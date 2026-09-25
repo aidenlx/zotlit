@@ -491,8 +491,8 @@ function Popup({ className, style, ref, ...rest }: ChooserPopupProps) {
         themeHook.chooser,
         "zt:inset-auto zt:my-1 zt:[max-height:min(--spacing(75),calc(100%_-_--spacing(2)))] zt:max-w-80 zt:min-w-50 zt:flex-col zt:[&:popover-open]:flex",
         // No padding of its own: the search field runs edge to edge over its
-        // rule, and the list carries the inset, as Obsidian's Bases toolbar
-        // menus are built.
+        // rule, and the list carries the inset — `--menu-padding` — as
+        // Obsidian's Bases toolbar menus are built.
         "zt:border-(length:--menu-border-width) zt:border-(--menu-border-color) zt:bg-(--menu-background) zt:text-foreground zt:shadow-(--menu-shadow)",
         "zt:rounded-(--menu-radius) zt:[corner-shape:var(--menu-corner-shape)]",
         "zt:[position-anchor:var(--zt-chooser-anchor)] zt:[position-area:block-end_span-inline-end] zt:[position-try-fallbacks:flip-block]",
@@ -666,7 +666,7 @@ function List<Row extends ChooserRow>({
         aria-activedescendant={activeOptionId ?? undefined}
         {...rest}
         className={cn(
-          "zt:min-h-0 zt:flex-1 zt:overflow-y-auto zt:p-1.5",
+          "zt:min-h-0 zt:flex-1 zt:overflow-y-auto zt:p-(--menu-padding)",
           className,
         )}
       >

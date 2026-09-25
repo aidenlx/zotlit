@@ -12,13 +12,11 @@ import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 
 import type { ResolvedAnnotationTypeName } from "@zotlit/db";
 
-import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import { useSanitizedHtml } from "@/lib/sanitize-html";
-import { themeHook } from "@/lib/theme-hooks";
 import {
   activatable,
   claimClick,
@@ -30,16 +28,24 @@ import type { AnnotationRecord } from "@/services/annotation-repository/service"
 import type { ExcerptImage } from "@/services/excerpt-image/format";
 
 import { AnnotActionsContext } from "./actions";
+import type { AnnotActions } from "./actions";
 import { conflictPanel } from "./card-conflict";
 import {
   cardControls,
   commentIcon,
   commentEditorControls,
+  editingLive,
   heldCommentDraft,
 } from "./card-controls";
 import type { CardControl, CardControls, HeldDraft } from "./card-controls";
-import { createCommentEditor } from "./comment-editor";
-import type { CommentEditor as CommentEditorHandle } from "./comment-editor";
+import {
+  commentViewClass,
+  opensCommentEditor,
+  renderCommentSheet,
+  renderConflictPanel,
+  renderHeldDraftPanel,
+} from "./comment-sheet";
+import type { CommentDraftActions, CommentSheet } from "./comment-sheet";
 import {
   excerptImageOwnership,
   excerptImageTarget,
@@ -137,10 +143,19 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
       data-annot-color={annot.color ?? undefined}
       data-zotero-annotation-key={annot.key}
       data-selected={selected ? "" : undefined}
+      // A card takes focus from a click and holds it, which is what the
+      // Annotation History keys read to know the card is the surface the key
+      // belongs to. It stays out of the tab sequence: a list of hundreds of
+      // cards would otherwise be that many stops on the way past it, and each
+      // card's own controls are the stops that do something.
+      tabIndex={-1}
       onClick={(e) => {
         // A control inside the card already answered this click; the card's
-        // selection is not it.
+        // selection is not it, and the control keeps the focus.
         if (clickClaimed(e)) return;
+        // The list is already where the user clicked, so the focus moves
+        // without scrolling it.
+        e.currentTarget.focus({ preventScroll: true });
         actions.onSelectAnnotation(annot);
       }}
     >
@@ -196,55 +211,38 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
 function ConflictSlot({ annot }: { annot: AnnotationRecord }) {
   const actions = useContext(AnnotActionsContext);
   const mutation = useMutation(annot.key);
-  const capability = useAnnotStore((state) => state.capability);
+  const live = useAnnotStore((state) => editingLive(state.capability));
+  const ref = useRef<HTMLDivElement>(null);
   const panel = useMemo(
     () =>
       mutation.kind === "conflict" ? conflictPanel(mutation.conflict) : null,
     [mutation],
   );
+  useLayoutEffect(() => {
+    if (!ref.current || !panel) return;
+    renderConflictPanel(ref.current, panel, {
+      surface: "card",
+      live,
+      actions: cardDraftActions(actions, annot, annot.comment ?? ""),
+    });
+  }, [panel, live, actions, annot]);
   if (!panel) return null;
+  return <div ref={ref} />;
+}
 
-  return (
-    <div
-      className={cn(
-        themeHook.annotConflict,
-        "zt:-mx-3 zt:flex zt:flex-col zt:gap-1 zt:bg-popover zt:px-3 zt:py-1.5",
-      )}
-    >
-      <div className="zt:flex zt:items-center zt:gap-1 zt:font-medium">
-        <Icon name="alert-triangle" size={14} />
-        {panel.title}
-      </div>
-      {panel.prompt !== null && (
-        <div className="zt:text-muted-foreground">{panel.prompt}</div>
-      )}
-      {panel.values.map((value) => (
-        <div key={value.label} className="zt:flex zt:gap-1">
-          <span className="zt:shrink-0 zt:text-muted-foreground">
-            {value.label}
-          </span>
-          <span className="zt:min-w-0 zt:break-words">{value.value}</span>
-        </div>
-      ))}
-      <div className="zt:mt-2 zt:flex zt:flex-wrap zt:gap-2">
-        {panel.actions.map((action) => (
-          <Button
-            key={action.kind}
-            disabled={
-              action.kind !== "discard" && capability.kind !== "writable"
-            }
-            onClick={(event) => {
-              event.stopPropagation();
-              if (action.kind === "discard") actions.onDiscardConflict(annot);
-              else actions.onApplyAgain(annot);
-            }}
-          >
-            {action.label}
-          </Button>
-        ))}
-      </div>
-    </div>
-  );
+/** The panels' verbs, bound to the Annotation View's own actions. */
+function cardDraftActions(
+  actions: AnnotActions,
+  annot: AnnotationRecord,
+  text: string,
+): CommentDraftActions {
+  return {
+    save: () => actions.onSaveComment(annot, text),
+    allowEditing: () => actions.onAllowEditing(),
+    discard: () => actions.onDiscardComment(annot),
+    applyAgain: () => actions.onApplyAgain(annot),
+    discardConflict: () => actions.onDiscardConflict(annot),
+  };
 }
 
 /**
@@ -386,11 +384,16 @@ function CommentSlot({
     (state) => state.commentDrafts.get(annot.key) ?? null,
   );
   const capability = useAnnotStore((state) => state.capability);
+  // Held by identity while the draft and the capability stand, so the panel
+  // redraws on a change and not on every render of the card.
+  const held = useMemo(
+    () => heldCommentDraft(capability, draft, Temporal.Now.instant()),
+    [capability, draft],
+  );
   if (editing) return <CommentEditor annot={annot} />;
   // A draft the plugin still resolves by itself draws nothing of its own: the
   // card keeps showing what Zotero holds until the write lands or the draft
   // turns into something the user must answer.
-  const held = heldCommentDraft(capability, draft, Temporal.Now.instant());
   if (held) return <HeldDraftPanel annot={annot} held={held} />;
   if (annot.comment === null) return null;
   return (
@@ -418,71 +421,27 @@ function HeldDraftPanel({
 }) {
   const actions = useContext(AnnotActionsContext);
   const setEditing = useSetEditingComment();
-  return (
-    <div
-      className={cn(
-        themeHook.annotDraft,
-        // `popover` is the surface token; `secondary` is the token Obsidian
-        // gives a resting button, so a panel wearing it leaves every button on
-        // it at 1:1 against its own fill.
-        "zt:-mx-3 zt:flex zt:flex-col zt:gap-1 zt:bg-popover zt:px-3 zt:py-1.5",
-      )}
-      // The panel is the draft's own surface; the card's selection is not it.
-      onClick={claimClick}
-    >
-      <div className="zt:flex zt:items-center zt:gap-1 zt:font-medium">
-        <Icon name="pencil-line" size={14} />
-        {m.annot_view_comment_draft()}
-      </div>
-      <div
-        className="zt:cursor-text zt:break-words zt:whitespace-pre-wrap zt:select-text"
-        // The held text opens the editor on a click, as a saved comment does:
-        // the state that most needs editing is not the one you cannot reach.
-        onClick={(e) => {
-          if (e.currentTarget.win.getSelection()?.isCollapsed === false) return;
-          actions.onOpenComment(annot);
-          setEditing(annot.key);
-        }}
-      >
-        {held.text}
-      </div>
-      {held.reason !== null && (
-        // The reason runs to three and four lines in a narrow dock, past where
-        // the card's own tight leading stays readable.
-        <div
-          role="status"
-          className="zt:leading-normal zt:text-pretty zt:text-muted-foreground"
-        >
-          {held.reason}
-        </div>
-      )}
-      <div className="zt:mt-1 zt:flex zt:flex-wrap zt:gap-2">
-        {held.actions.map((action) => (
-          <Button
-            key={action.kind}
-            variant={action.primary ? "cta" : "default"}
-            disabled={!action.enabled}
-            onClick={() => {
-              if (action.kind === "save")
-                actions.onSaveComment(annot, held.text);
-              else if (action.kind === "allow-editing")
-                actions.onAllowEditing();
-              else actions.onDiscardComment(annot);
-            }}
-          >
-            {action.label}
-          </Button>
-        ))}
-      </div>
-    </div>
-  );
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!ref.current) return;
+    renderHeldDraftPanel(ref.current, held, {
+      surface: "card",
+      actions: cardDraftActions(actions, annot, held.text),
+      onOpen: () => {
+        actions.onOpenComment(annot);
+        setEditing(annot.key);
+      },
+    });
+    // A redraw between press and release would drop the click, so the panel
+    // redraws only when what it shows changes.
+  }, [held, actions, annot, setEditing]);
+  // The panel is the draft's own surface; the card's selection is not it.
+  return <div ref={ref} onClick={claimClick} />;
 }
 
 /**
- * `markdown-rendered` is what buys the theme's own prose styling: Obsidian
- * declares those rules unlayered, so they outrank the scoped Tailwind preflight.
- * `zt-annot-comment` is the card-scoped hook the view stylesheet compacts them
- * through.
+ * The rendered comment, from the pieces the Mark Popup's own comment view
+ * shares; see {@link commentViewClass}.
  */
 function Comment({
   annot,
@@ -501,17 +460,9 @@ function Comment({
   return (
     <div
       ref={ref}
-      className={cn(
-        "markdown-rendered zt-annot-comment zt:overflow-x-auto zt:text-xs zt:break-words zt:text-foreground zt:select-text",
-        editable && "zt:cursor-text",
-      )}
+      className={commentViewClass("card", editable)}
       onClick={(e) => {
-        // A link keeps its own click, and a click that ends a text selection is
-        // the user copying rather than asking to edit.
-        if (!editable) return;
-        const target = e.target as Node | null;
-        if (target?.instanceOf(HTMLElement) && target.closest("a")) return;
-        if (e.currentTarget.win.getSelection()?.isCollapsed === false) return;
+        if (!editable || !opensCommentEditor(e)) return;
         // Opening the editor is a verb; the card's own click is not that.
         e.stopPropagation();
         actions.onOpenComment(annot);
@@ -523,8 +474,8 @@ function Comment({
 
 /**
  * The comment editor, in the slot the rendered comment stood in, with the
- * caret at the end of what is already there. It edits the comment as Zotero
- * stores it, formats and all; see {@link createCommentEditor}.
+ * caret at the end of what is already there. It is the shared comment sheet;
+ * see {@link renderCommentSheet}.
  *
  * Escape and blur store the text and close the editor. Ctrl/Command+Enter
  * stores it and keeps the editor open.
@@ -548,7 +499,7 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
   const annotRef = useRef(annot);
   annotRef.current = annot;
   const app = useObsidianApp();
-  const editor = useRef<CommentEditorHandle | null>(null);
+  const sheet = useRef<CommentSheet | null>(null);
 
   // Every close asks for the submit, including one that changed nothing: the
   // request is what drops a draft holding only what Zotero already has, so
@@ -557,94 +508,54 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
     setEditing(null);
     actions.onSaveComment(annot, text, true);
   };
-  // The editor outlives renders; its callbacks read this render's values.
+  // The sheet outlives renders; its callbacks read this render's values.
   const latest = useRef({ text, controls, save });
   latest.current = { text, controls, save };
 
   const mount = useCallback(
     (el: HTMLDivElement | null) => {
-      editor.current?.[Symbol.dispose]();
-      editor.current = null;
+      sheet.current?.[Symbol.dispose]();
+      sheet.current = null;
       if (!el) return;
-      const handle = createCommentEditor({
-        app,
-        parent: el,
-        text: latest.current.text,
-        readOnly: latest.current.controls.readOnly,
-        onChange: (value) => actions.onEditComment(annotRef.current, value),
-        onEscape: () => latest.current.save(),
-        onSubmit: () =>
-          actions.onSaveComment(
-            annotRef.current,
-            handle.view.state.doc.toString(),
-          ),
-        onBlur: (next) => {
-          if (el.parentElement?.contains(next)) return;
-          const { controls: now } = latest.current;
-          if (!now.manual && !now.readOnly) latest.current.save();
+      const store = (): void => {
+        if (sheet.current)
+          actions.onSaveComment(annotRef.current, sheet.current.text());
+      };
+      sheet.current = renderCommentSheet(
+        el,
+        {
+          app,
+          surface: "card",
+          value: latest.current.text,
+          onChange: (value) => actions.onEditComment(annotRef.current, value),
+          onSubmit: store,
+          onSave: store,
+          onCancel: () => latest.current.save(),
+          onLeave: () => latest.current.save(),
         },
-      });
-      editor.current = handle;
-      const { view } = handle;
-      view.focus();
-      view.dispatch({ selection: { anchor: view.state.doc.length } });
+        latest.current.controls,
+      );
     },
     [actions, app],
   );
 
   useLayoutEffect(() => {
-    editor.current?.setText(text);
+    sheet.current?.editor.setText(text);
   }, [text]);
 
+  const { readOnly, hint, manual, saveDisabled } = controls;
   useLayoutEffect(() => {
-    editor.current?.setReadOnly(controls.readOnly);
-  }, [controls.readOnly]);
+    sheet.current?.update({ readOnly, hint, manual, saveDisabled });
+  }, [readOnly, hint, manual, saveDisabled]);
 
   return (
-    // Placing the caret is not the card's selection.
-    <div onClick={(e) => e.stopPropagation()}>
-      {/* Obsidian's own text field — its fill, radius, resting border and
-          focus ring — drawn as rings so neither changes the layout. The inset
-          is taken back out of the margin on every side, so the text keeps the
-          place the rendered comment held and opening the editor moves
-          nothing; the field fades in around it. */}
-      <div
-        ref={mount}
-        className={cn(
-          "zt-annot-comment-editor zt:-mx-1.5 zt:-my-1 zt:rounded-(--input-radius) zt:bg-(--background-modifier-form-field) zt:px-1.5 zt:py-1 zt:text-xs zt:text-foreground",
-          "zt:ring-1 zt:ring-(--background-modifier-border) zt:focus-within:ring-2 zt:focus-within:ring-(--background-modifier-border-focus)",
-          "zt:motion-safe:transition-[box-shadow,background-color] zt:starting:bg-transparent zt:starting:ring-transparent",
-        )}
-        onKeyDown={(e: KeyboardEvent<HTMLDivElement>) => e.stopPropagation()}
-      />
-      {/* The row's air belongs to what it holds: an automatic save says
-          nothing and shows no button, so the editor ends at the text rather
-          than over an empty strip. */}
-      <div
-        className={cn(
-          "zt:flex zt:flex-wrap zt:items-center zt:gap-2",
-          (controls.hint !== null || controls.manual) && "zt:mt-2",
-        )}
-      >
-        {/* The live region stays mounted through the quiet case, so the save
-            states it announces are a change inside it rather than a new node,
-            and the Save button keeps the row's end. */}
-        <span
-          role="status"
-          className="zt:min-w-0 zt:flex-1 zt:text-xs zt:text-muted-foreground"
-        >
-          {controls.hint}
-        </span>
-        {controls.manual && (
-          <Button
-            disabled={controls.saveDisabled}
-            onClick={() => actions.onSaveComment(annot, text)}
-          >
-            {m.annot_view_comment_save()}
-          </Button>
-        )}
-      </div>
-    </div>
+    // Placing the caret is not the card's selection, and its keys are the
+    // editor's own.
+    <div
+      ref={mount}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e: KeyboardEvent<HTMLDivElement>) => e.stopPropagation()}
+    />
   );
 }
 

@@ -1,15 +1,19 @@
 // @vitest-environment happy-dom
-import { FileSystemAdapter } from "obsidian";
-import { expect, it, vi } from "vitest";
+import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
+import { FileSystemAdapter, Scope } from "obsidian";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import { themeHook } from "@/lib/theme-hooks";
+import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
+import { NoteIndexStub } from "@/services/note-index/test-stub";
 
 import {
   annotation,
   annotationReads,
   attachmentReads,
   capabilityGestures,
+  dispatchKey,
   failedIn,
   markGestures,
   pageView,
@@ -18,6 +22,14 @@ import {
 } from "./__fixtures__";
 import { PdfAnnotationEditor } from "./service";
 import type { AttachmentResolution } from "./service";
+
+beforeEach(() => {
+  setMockPlatform({ isMacOS: false });
+});
+
+afterEach(() => {
+  resetMockPlatform();
+});
 
 /** The eleven probes of the seam re-verification, as issue #1140 numbers them. */
 const PROBE_COUNT = 11;
@@ -61,6 +73,8 @@ function pdfView(path: string | null, reader = pdfReader()) {
     // `View.containerEl` — public API, and where the reader's own keystrokes
     // reach the binding.
     containerEl: document.createElement("div"),
+    // `View.scope` — the Scope Obsidian gives every PDF view.
+    scope: new Scope(),
   };
 }
 
@@ -131,6 +145,16 @@ function markedKeys(page: { div: HTMLElement }): (string | undefined)[] {
   ].map((mark) => mark.dataset.zoteroAnnotationKey);
 }
 
+// The Reader Keymap binds the Annotation History keys for the host platform,
+// which every binding these tests build reads as it mounts.
+beforeEach(() => {
+  setMockPlatform({ isMacOS: false });
+});
+
+afterEach(() => {
+  resetMockPlatform();
+});
+
 it("binds an open PDF view, resolves its vault path, and unbinds on unload", async () => {
   const reader = pdfReader();
   const view = pdfView("attachments/rougier-2014.pdf", reader);
@@ -144,6 +168,7 @@ it("binds an open PDF view, resolves its vault path, and unbinds on unload", asy
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
 
   {
@@ -189,6 +214,7 @@ it("refreshes the repository when an open PDF leaf becomes active", async () => 
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
 
@@ -210,6 +236,7 @@ it("paints the attachment's annotations over every page it renders", async () =>
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -234,6 +261,7 @@ it("rebuilds the marks from data after PDF.js recycles the page", async () => {
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
   await service.bindings[0]!.refreshed;
@@ -262,6 +290,7 @@ it("replaces the whole list when the repository announces a change", async () =>
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -292,6 +321,7 @@ it("takes every mark off the page when the leaf closes", async () => {
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
   await service.bindings[0]!.refreshed;
@@ -316,6 +346,7 @@ it("probes the page a view had already painted before the binding attached", asy
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -333,6 +364,167 @@ it("probes the page a view had already painted before the binding attached", asy
   expect(reader.page.pdfPage?.getTextContent).toHaveBeenCalledOnce();
 });
 
+/**
+ * A painted page one glyph wide, laid out in the document so a drag across it
+ * reaches selection capture. The page's text layer shows the glyph the text
+ * content carries.
+ */
+function paintedPage() {
+  const page = pageView();
+  const box = {
+    left: 0,
+    top: 0,
+    right: 918,
+    bottom: 1188,
+    width: 918,
+    height: 1188,
+  };
+  page.div.getBoundingClientRect = () => box as never;
+  const textLayer = page.div.createDiv({ cls: "textLayer", text: "E" });
+  Object.assign(page, { renderingState: 3 });
+  const reader = pdfReader(page);
+  const view = pdfView("attachments/rougier-2014.pdf", reader);
+  view.containerEl.getBoundingClientRect = () => box as never;
+  view.containerEl.append(page.div);
+  document.body.append(view.containerEl);
+  const viewer = reader.child.pdfViewer as { pdfDocument?: unknown };
+  return {
+    page,
+    reader,
+    view,
+    /** The document proxy the reader's viewer holds; `undefined` while opening. */
+    get pdfDocument(): unknown {
+      return viewer.pdfDocument;
+    },
+    set pdfDocument(value: unknown) {
+      viewer.pdfDocument = value;
+    },
+    /** Drags across the glyph, the gesture that opens the create popup. */
+    dragAcrossGlyph: async (service: PdfAnnotationEditor) => {
+      const range = document.createRange();
+      range.selectNodeContents(textLayer);
+      vi.spyOn(Range.prototype, "getClientRects").mockReturnValue([
+        { left: 87, top: 81, right: 96, bottom: 98 },
+      ] as never);
+      vi.spyOn(window, "getSelection").mockReturnValue({
+        rangeCount: 1,
+        isCollapsed: false,
+        anchorNode: textLayer,
+        getRangeAt: () => range,
+        removeAllRanges: () => undefined,
+        toString: () => "E",
+      } as never);
+      page.div.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          clientX: 100,
+          clientY: 260,
+        }),
+      );
+      document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+      await service.bindings[0]!.settled;
+      vi.restoreAllMocks();
+    },
+    cleanup: () => {
+      view.containerEl.remove();
+      document.body.querySelector(".zt-pdf-mark-popup")?.remove();
+    },
+  };
+}
+
+function createPopup(): Element | null {
+  return document.querySelector(".zt-pdf-mark-popup [data-zt-verb]");
+}
+
+// A plugin reload over an open PDF tab attaches to pages PDF.js has already
+// painted, and those send no render event until the reader moves.
+it("opens the create popup over a page painted before the binding attached", async () => {
+  const painted = paintedPage();
+  const { app } = workspace([{ view: painted.view }]);
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations: annotationReads(),
+    capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
+    settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
+  });
+  await service.ready;
+  await service.bindings[0]!.refreshed;
+
+  await painted.dragAcrossGlyph(service);
+
+  expect(createPopup()).not.toBeNull();
+  painted.cleanup();
+});
+
+// A PDF opened in a hidden tab has a viewer before it has a document or a
+// loaded page: Obsidian defers the open until the tab shows, and the binding
+// has attached by then.
+it("reads the text structure of a document Obsidian opened after the binding attached", async () => {
+  const painted = paintedPage();
+  const { pdfDocument } = painted;
+  const { pdfPage } = painted.page;
+  painted.pdfDocument = undefined;
+  delete painted.page.pdfPage;
+  const { app } = workspace([{ view: painted.view }]);
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations: annotationReads(),
+    capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
+    settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
+  });
+  await service.ready;
+  await service.bindings[0]!.refreshed;
+
+  painted.pdfDocument = pdfDocument;
+  painted.page.pdfPage = pdfPage;
+  painted.reader.renderFirstPage();
+  await painted.dragAcrossGlyph(service);
+
+  expect(createPopup()).not.toBeNull();
+  painted.cleanup();
+});
+
+// A vault modify and a pop-out migration reopen a new document proxy in the
+// same view; the characters memoized from the old proxy describe stale bytes.
+it("reads the text structure again once the view reopened its document", async () => {
+  const painted = paintedPage();
+  const { app } = workspace([{ view: painted.view }]);
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations: annotationReads(),
+    capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
+    settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
+  });
+  await service.ready;
+  await service.bindings[0]!.refreshed;
+  await painted.dragAcrossGlyph(service);
+  const readsOfOld = painted.page.pdfPage!.getTextContent.mock.calls.length;
+
+  const reopened = pageView();
+  painted.pdfDocument = {
+    numPages: 1,
+    getPage: vi.fn(async () => reopened.pdfPage),
+    getPageLabels: vi.fn(async () => null),
+  };
+  painted.reader.renderFirstPage();
+  await painted.dragAcrossGlyph(service);
+
+  expect(reopened.pdfPage?.getTextContent).toHaveBeenCalledOnce();
+  expect(painted.page.pdfPage!.getTextContent).toHaveBeenCalledTimes(
+    readsOfOld,
+  );
+  painted.cleanup();
+});
+
 it("waits for the first render when Obsidian is still opening the document", async () => {
   const reader = loadingReader();
   const view = pdfView("attachments/rougier-2014.pdf", reader);
@@ -345,6 +537,7 @@ it("waits for the first render when Obsidian is still opening the document", asy
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -372,6 +565,7 @@ it("reads an external file's absolute path from its `file:` prefix", async () =>
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
 
@@ -397,6 +591,7 @@ it("leaves a PDF Zotero does not know exactly as Obsidian opened it", async () =
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -431,6 +626,7 @@ it("paints a view bound while the resolver could not answer yet", async () => {
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -465,6 +661,7 @@ it("unbinds a leaf whose viewer Obsidian already closed", async () => {
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
   await service.bindings[0]!.refreshed;
@@ -496,6 +693,7 @@ it("fails closed to the reader when the controller seam changed shape", async ()
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -524,6 +722,7 @@ it("drops its page listener when a page's viewport changed shape", async () => {
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -553,6 +752,7 @@ it("rebinds a leaf that opened another PDF and unbinds a closed leaf", async () 
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
 
@@ -595,6 +795,7 @@ it("waits for the file a view has yet to load before it resolves anything", asyn
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
 
@@ -623,6 +824,7 @@ it("exposes each open PDF view as a Reader Session, by the file it holds", async
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
 
@@ -648,6 +850,7 @@ it("announces a late PDF session after its resolved target is available", async 
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
   const announced: unknown[] = [];
@@ -685,6 +888,7 @@ it("names a standalone attachment in its session, with no parent Item", async ()
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
 
@@ -705,6 +909,7 @@ it("holds the selection a consumer sets, and announces it", async () => {
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
   const session = service.bindings[0]!.session;
@@ -730,6 +935,7 @@ it("paints the mark a consumer selected, and drops one the read retired", async 
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -759,6 +965,7 @@ it("moves the reader to the page an annotation is drawn on", async () => {
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -788,6 +995,7 @@ it("stops announcing once the view's binding is gone", async () => {
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
   const session = service.bindings[0]!.session;
@@ -815,6 +1023,7 @@ it("shows the Editing Capability in the reader's toolbar and follows it", async 
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   {
     await using _service = service;
@@ -840,6 +1049,57 @@ it("shows the Editing Capability in the reader's toolbar and follows it", async 
   expect(reader.toolbarRightEl.childElementCount).toBe(0);
 });
 
+it("keeps the toolbar's nodes across capability announcements, and stands them down in place", async () => {
+  const reader = pdfReader();
+  const view = pdfView("attachments/rougier-2014.pdf", reader);
+  const annotations = annotationReads();
+  const { app } = workspace([{ view }]);
+  const controls = () => [
+    ...reader.toolbarRightEl.querySelectorAll<HTMLElement>("[data-zt-tool]"),
+  ];
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations,
+    capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
+    settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
+    now: () => NOW,
+  });
+  await service.ready;
+  const drawn = controls();
+  expect(drawn.map((node) => node.dataset.ztTool)).toEqual([
+    "highlight",
+    "highlight-color",
+    "underline",
+    "underline-color",
+    "note",
+    "note-color",
+    "text",
+    "text-color",
+    "image",
+    "image-color",
+    "ink",
+    "ink-color",
+    "visibility",
+  ]);
+
+  // A probe that learned nothing new, announced while a press is under way:
+  // the node under the pointer has to be the one the click lands on.
+  annotations.setCapability({ kind: "writable" });
+  controls().forEach((node, index) => expect(node).toBe(drawn[index]));
+
+  const blocked = { kind: "read-only", reason: "zotero-unavailable" } as const;
+  annotations.setCapability(blocked);
+  const copy = editingCapabilityCopy(blocked, NOW);
+  const highlight = controls()[0]!;
+  expect(highlight).toBe(drawn[0]);
+  expect(highlight.getAttribute("aria-disabled")).toBe("true");
+  expect(highlight.getAttribute("aria-label")).toBe(copy.detail ?? copy.label);
+});
+
 it("counts a cooldown down on the toolbar's window, under the binding's disposer", async () => {
   const reader = pdfReader();
   const view = pdfView("attachments/rougier-2014.pdf", reader);
@@ -857,6 +1117,7 @@ it("counts a cooldown down on the toolbar's window, under the binding's disposer
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
     now: () => NOW,
   });
   {
@@ -895,6 +1156,7 @@ it("keeps pending authorization informational in the PDF reader", async () => {
     capabilityGestures: gestures,
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
 
@@ -922,6 +1184,7 @@ it("probes before a blocked keystroke is answered, and stays out of the way othe
     capabilityGestures: gestures,
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
 
@@ -955,4 +1218,86 @@ it("probes before a blocked keystroke is answered, and stays out of the way othe
   await press("h");
   expect(annotations.probe).toHaveBeenCalledTimes(2);
   expect(gestures.reportBlockedGesture).toHaveBeenCalledTimes(2);
+});
+
+it("opens one Annotation History per Attachment and ends it with the last view", async () => {
+  const first = pdfView("attachments/rougier-2014.pdf");
+  const second = pdfView("attachments/rougier-2014.pdf");
+  const annotations = annotationReads();
+  const open = [{ view: first }, { view: second }];
+  const { app, relayout } = workspace(open);
+  const service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations,
+    capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
+    settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
+  });
+
+  {
+    await using _service = service;
+    await service.ready;
+
+    // Two views of one Attachment share one history.
+    expect(annotations.histories).toEqual(new Map([["ABCD2345", 2]]));
+
+    open.pop();
+    relayout();
+    expect(annotations.histories).toEqual(new Map([["ABCD2345", 1]]));
+  }
+
+  // Plugin unload closed the last view, and the history ended with it.
+  expect(annotations.histories).toEqual(new Map());
+});
+
+it("lands on the Annotation an undo changed, and reports one Zotero moved", async () => {
+  const reader = pdfReader();
+  const view = pdfView("attachments/rougier-2014.pdf", reader);
+  const annotations = annotationReads([HIGHLIGHT]);
+  const gestures = capabilityGestures();
+  const { app } = workspace([{ view }]);
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations,
+    capabilityGestures: gestures,
+    markGestures: markGestures(),
+    settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
+  });
+  await service.ready;
+  const binding = service.bindings[0]!;
+  await binding.refreshed;
+  reader.renderFirstPage();
+  await binding.probed;
+
+  annotations.undo.mockResolvedValueOnce({
+    kind: "stepped",
+    annotationKey: "PUPR5FG5",
+  });
+  dispatchKey(view.scope, { key: "z", ctrlKey: true }, view.containerEl);
+  await binding.stepped;
+
+  expect(annotations.undo).toHaveBeenCalledExactlyOnceWith("ABCD2345");
+  // Mark Landing: the Annotation the step changed is the one selected.
+  expect(selectedKeys(reader.page)).toEqual(["PUPR5FG5"]);
+
+  // Editing that is not allowed now reports itself the way every other
+  // blocked edit gesture does.
+  annotations.redo.mockResolvedValueOnce({ kind: "blocked" });
+  annotations.setCapability({
+    kind: "read-only",
+    reason: "local-api-disabled",
+  });
+  dispatchKey(view.scope, { key: "y", ctrlKey: true }, view.containerEl);
+  await binding.stepped;
+  await binding.gestured;
+
+  expect(annotations.redo).toHaveBeenCalledExactlyOnceWith("ABCD2345");
+  expect(gestures.reportBlockedGesture).toHaveBeenCalledExactlyOnceWith(
+    "ABCD2345",
+  );
 });

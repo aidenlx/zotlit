@@ -7,11 +7,15 @@
 // @see apps/obsidian/policies/theme-hooks.md
 import { expect, it } from "vitest";
 
-import { themeHook } from "./theme-hooks";
+import { themeAttribute, themeHook } from "./theme-hooks";
 
 it("promises the Annotation View hooks by literal name", () => {
-  expect({ conflict: themeHook.annotConflict }).toEqual({
+  expect({
+    conflict: themeHook.annotConflict,
+    draft: themeHook.annotDraft,
+  }).toEqual({
     conflict: "zt-annot-conflict",
+    draft: "zt-annot-draft",
   });
 });
 
@@ -22,5 +26,17 @@ it("promises the Chooser hooks by literal name", () => {
   }).toEqual({
     popup: "zt-chooser",
     trigger: "zt-chooser-trigger",
+  });
+});
+
+it("promises the PDF reader's mode attributes by literal name", () => {
+  expect({ inking: themeAttribute.pdfInking }).toEqual({
+    inking: "data-zt-inking",
+  });
+});
+
+it("promises the Text Draft hook by literal name", () => {
+  expect({ textDraft: themeHook.pdfTextDraft }).toEqual({
+    textDraft: "zt-pdf-text-draft",
   });
 });

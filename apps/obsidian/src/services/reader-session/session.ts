@@ -53,6 +53,15 @@ export interface ReaderSession {
    * the card and the Mark Popup's stepper (aidenlx/zotlit#1148).
    */
   setSelectedAnnotations(annotationKeys: readonly string[]): void;
+  /**
+   * Name an element outside the reader that drives this selection, such as the
+   * Annotation View's card list. A press inside it is no click-away: the
+   * surface's own gesture says what the selection becomes. A reader without
+   * click-away has nothing to ask it.
+   *
+   * @returns what takes the element back.
+   */
+  addSelectionSurface(el: HTMLElement): () => void;
   on<K extends keyof ReaderSessionEvents>(
     event: K,
     cb: ReaderSessionEvents[K],
@@ -85,6 +94,7 @@ export class ReaderSessionHost implements ReaderSession, Disposable {
   readonly #emitter = createNanoEvents<ReaderSessionEvents>();
   #target: ReaderSessionTarget | null = null;
   #selected: readonly string[] = [];
+  readonly #selectionSurfaces = new Set<HTMLElement>();
 
   constructor({ source, navigate, select }: ReaderSessionHostDeps) {
     this.source = source;
@@ -106,6 +116,20 @@ export class ReaderSessionHost implements ReaderSession, Disposable {
 
   setSelectedAnnotations(annotationKeys: readonly string[]): void {
     this.#select(annotationKeys);
+  }
+
+  addSelectionSurface(el: HTMLElement): () => void {
+    this.#selectionSurfaces.add(el);
+    return () => {
+      this.#selectionSurfaces.delete(el);
+    };
+  }
+
+  /** Whether a node lies inside a surface that drives this selection. */
+  onSelectionSurface(node: Node | null): boolean {
+    for (const el of this.#selectionSurfaces)
+      if (el.contains(node)) return true;
+    return false;
   }
 
   on<K extends keyof ReaderSessionEvents>(
@@ -133,9 +157,13 @@ export class ReaderSessionHost implements ReaderSession, Disposable {
     this.#emitter.emit("selection-changed", this.#selected);
   }
 
-  /** Drops every subscriber, so a closed reader announces nothing further. */
+  /**
+   * Drops every subscriber and surface, so a closed reader announces nothing
+   * further.
+   */
   [Symbol.dispose](): void {
     this.#emitter.events = {};
+    this.#selectionSurfaces.clear();
   }
 }
 

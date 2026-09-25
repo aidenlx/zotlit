@@ -1,4 +1,4 @@
-import { ItemView, Scope } from "obsidian";
+import { ItemView, Platform, Scope } from "obsidian";
 import type {
   Menu as ObsidianMenu,
   App,
@@ -36,12 +36,17 @@ import { itemSummary } from "@/lib/item-summary";
 import type { ItemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
+import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type {
   AnnotationRecord,
   AnnotationRepository,
   AnnotationSource,
+  HistoryDirection,
 } from "@/services/annotation-repository/service";
-import { IDLE } from "@/services/annotation-repository/write";
+import {
+  IDLE,
+  writeFailureMessage,
+} from "@/services/annotation-repository/write";
 import type { DatabaseService } from "@/services/database/service";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import { savedExcerptRequest } from "@/services/excerpt-image/request";
@@ -73,6 +78,7 @@ import { createCommentRenderer } from "./comment-render";
 import { createDragInsertHandler, createInsertHandler } from "./drag-insert";
 import { sanitizeSavedFilter } from "./filter";
 import type { SavedFilter } from "./filter";
+import { mountCardHistoryKeys } from "./history";
 import { buildPaneMenu } from "./pane-menu";
 import { resolveLoadTarget } from "./resolve-target";
 import type { ActiveLeafTarget, LoadTarget } from "./resolve-target";
@@ -136,13 +142,22 @@ export interface AnnotViewDeps {
     | "patchColor"
     | "editComment"
     | "read"
+    | "redo"
     | "refresh"
     | "retryWrite"
     | "retryCommentDraft"
     | "submitComment"
+    | "undo"
   >;
   /** The Editing Capability affordance's click, which the UI seam owns. */
   showEditingCapability: () => void;
+  /**
+   * An edit gesture met a block on this Attachment, which the one notice
+   * ledger answers — the same seam the reader's blocked keystrokes reach.
+   *
+   * @param attachmentKey the Attachment's Indexed Key.
+   */
+  reportBlockedGesture: (attachmentKey: string) => void;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
   /** The plugin's live display surface for Excerpt Images. */
   excerptDisplay: Pick<
@@ -158,7 +173,7 @@ export interface AnnotViewDeps {
   settings: SettingsService;
 }
 
-export class AnnotationView extends ItemView {
+export class AnnotationView extends ItemView implements HistorySurface {
   override scope: Scope;
   readonly #store = createAnnotStore();
   readonly #deps: AnnotViewDeps;
@@ -176,6 +191,8 @@ export class AnnotationView extends ItemView {
   /** Counts the annotation reads, so a slower one never lands after a later one. */
   #reads = 0;
   #reading = Promise.resolve();
+  /** Whether the view has closed, which the work it started away reads. */
+  #closed = false;
 
   /**
    * Settles once the list on screen matches the last read this view started.
@@ -244,6 +261,66 @@ export class AnnotationView extends ItemView {
    */
   get gestures(): AnnotActions | null {
     return this.#actions;
+  }
+
+  /**
+   * The Attachment whose Annotation History this view steps, which is the one
+   * its cards show; `null` while it shows none. An Attachment no PDF view has
+   * open holds no history, so the verbs that read this find nothing to take.
+   */
+  get historyAttachment(): string | null {
+    return this.#store.getState().selectedAttachmentKey;
+  }
+
+  /**
+   * Step one confirmed edit of the Attachment this view shows, from a card's
+   * undo key or from the palette. An edit made on a card and one made in a PDF
+   * view of the same Attachment are one history, in the order they were made.
+   *
+   * The repository decides and writes; this seam shows its answer — a step
+   * Zotero moved under says so, a write that did not land says why, and a
+   * block is reported the way every other blocked edit gesture is.
+   *
+   * @see apps/obsidian/policies/ui-seams.md
+   */
+  stepHistory(direction: HistoryDirection): void {
+    const attachmentKey = this.historyAttachment;
+    if (attachmentKey === null) return;
+    const stepping =
+      direction === "undo"
+        ? this.#deps.annotations.undo(attachmentKey)
+        : this.#deps.annotations.redo(attachmentKey);
+    void stepping.then((outcome) => {
+      // The view can close while the step is away, and a closed view neither
+      // scrolls nor speaks.
+      if (this.#closed) return;
+      switch (outcome.kind) {
+        case "stepped":
+          return this.#scrollToCard([outcome.annotationKey]);
+        case "removed":
+          // The step took its Annotations off the Attachment, so this view
+          // has no card left to bring into view. The reader that holds the
+          // PDF lands on the page they sat on.
+          return;
+        case "changed":
+          new BaseNotice(m.annot_history_changed_in_zotero());
+          return;
+        case "failed":
+          new BaseNotice(
+            writeFailureMessage(outcome.failure, Temporal.Now.instant()),
+          );
+          return;
+        case "blocked":
+          this.#deps.reportBlockedGesture(attachmentKey);
+          return;
+        case "idle":
+          return;
+        default:
+          // A new outcome must be answered here rather than fall through.
+          outcome satisfies never;
+          return;
+      }
+    });
   }
 
   /** "Refresh data" and the mode switches live here, off the toolbar row. */
@@ -428,6 +505,15 @@ export class AnnotationView extends ItemView {
     });
     this.register(() => escape[Symbol.dispose]());
 
+    // The platform's undo and redo keys, which a card answers with the
+    // Annotation History of the Attachment this view shows.
+    const historyKeys = mountCardHistoryKeys(
+      this.scope,
+      (direction) => this.stepHistory(direction),
+      { isMacOS: Platform.isMacOS },
+    );
+    this.register(() => historyKeys[Symbol.dispose]());
+
     this.register(
       this.#deps.liveUpdate.on("available", (available) => {
         // The mode is the user's, so it stands: only the reason the view shows
@@ -490,6 +576,7 @@ export class AnnotationView extends ItemView {
   }
 
   protected override async onClose(): Promise<void> {
+    this.#closed = true;
     const editingCommentKey = this.#store.getState().editingCommentKey;
     if (editingCommentKey) {
       void this.#deps.annotations.submitComment(editingCommentKey, {
@@ -669,6 +756,9 @@ export class AnnotationView extends ItemView {
       });
     if (!session) return;
     const stack = new DisposableStack();
+    // The cards drive this selection, so a press on them is no click-away:
+    // the card's own click says what becomes selected.
+    stack.defer(session.addSelectionSurface(this.contentEl));
     stack.defer(session.on("target-changed", () => this.#reload()));
     stack.defer(
       session.on("selection-changed", (selected) => {

@@ -1,5 +1,4 @@
-// The Mark Popup in create mode: the row a settled text selection offers, and
-// the comment sheet it opens under that row.
+// The Mark Popup in create mode: the row a settled text selection offers.
 //
 // The popup itself is the same one a selected mark hangs under — this module
 // supplies its row and nothing else.
@@ -13,18 +12,18 @@ import {
   isColor,
 } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
-import { themeHook } from "@/lib/theme-hooks";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { MutationState } from "@/services/annotation-repository/write";
 import { editingBlockedReason } from "@/views/annot-view/card-controls";
 
 import { markPopupControl } from "./mark-popup";
-import type { AnnotationTool, MarkTool } from "./tools";
+import { selectionToolOf } from "./tools";
+import type { AnnotationTool, MarkTool, SelectionTool } from "./tools";
 
 /** What a pressed control of the create-mode row asks for. */
 export type CreatePopupAction =
   /** Create the selection as this mark, in that tool's own colour. */
-  | { kind: "tool"; tool: MarkTool }
+  | { kind: "tool"; tool: SelectionTool }
   /** Create the selection in this colour, with the armed tool. */
   | { kind: "color"; color: string }
   /** Open or close the comment sheet. */
@@ -44,13 +43,20 @@ export interface CreatePopupControl {
   color: string | null;
   /** A toggle's state, or `null` for a control that is not a toggle. */
   pressed: boolean | null;
+  /** Classes beside Obsidian's own `clickable-icon`. */
+  cls?: readonly string[];
   action: CreatePopupAction;
 }
 
 export interface CreatePopupRowInput {
-  /** The armed tool, which a colour commits with; highlight where none is. */
+  /**
+   * The armed tool, which a colour commits with; highlight where none is, and
+   * where the armed one takes no text.
+   */
   armed: MarkTool | null;
   colors: Readonly<Record<AnnotationTool, string>>;
+  /** The swatches the row offers, in the order it draws them. */
+  swatches: readonly string[];
   /** What this Attachment's Annotations may be edited to right now. */
   capability: EditingCapability;
   /** What the create in flight, if any, left on the selection. */
@@ -62,8 +68,9 @@ export interface CreatePopupRowInput {
 }
 
 /**
- * The create-mode row: the two tools, Zotero's eight colours, the comment
- * sheet, and copy.
+ * The create-mode row: the two tools, the swatches it is handed, the comment
+ * sheet, and copy. A swatch keeps its seat in Zotero's palette as its id, so
+ * `color-3` and the `3` key name the same colour whatever the row offers.
  *
  * Copying never changes Zotero, so it never stands down; every verb that
  * creates follows the same rule the Annotation Card's header does, because they
@@ -72,13 +79,14 @@ export interface CreatePopupRowInput {
 export function createPopupRow({
   armed,
   colors,
+  swatches,
   capability,
   mutation,
   commenting,
   now,
 }: CreatePopupRowInput): readonly CreatePopupControl[] {
   const blocked = editingBlockedReason(capability, mutation, now);
-  const tool = armed ?? "highlight";
+  const tool = selectionToolOf(armed);
   const creating = (
     control: Omit<CreatePopupControl, "disabled" | "tooltip"> & {
       label: string;
@@ -105,14 +113,16 @@ export function createPopupRow({
       color: colors.underline,
       pressed: armed === "underline",
     }),
-    ...ANNOTATION_COLORS.map((hex, index) =>
+    ...swatches.map((hex) =>
       creating({
-        id: `color-${index + 1}`,
+        id: `color-${ANNOTATION_COLORS.indexOf(hex) + 1}`,
         icon: "circle",
         label: annotationColorLabel(hex),
         action: { kind: "color", color: hex },
         color: hex,
         pressed: isColor(colors[tool], hex),
+        // A swatch is a solid dot of its colour, not an outline.
+        cls: ["zt:[&_svg]:fill-current"],
       }),
     ),
     creating({
@@ -149,81 +159,8 @@ export function renderCreatePopupRow(
 ): void {
   row.empty();
   for (const control of controls) {
-    const node = markPopupControl(row, control, (pressed) =>
+    markPopupControl(row, control, (pressed) =>
       activate(control.action, pressed),
     );
-    if (control.pressed === null) continue;
-    node.classList.toggle("is-active", control.pressed);
-    node.setAttribute("aria-pressed", String(control.pressed));
   }
-}
-
-export interface CommentSheetProps {
-  /** What the editor opens with. */
-  value: string;
-  /** Saves the comment and creates the Annotation. */
-  onSave: (comment: string) => void;
-  /** Steps back one level, leaving the selection and the row standing. */
-  onCancel: () => void;
-  /** The caller binds Mod+Enter through its owning native Scope. */
-  nativeSubmit?: boolean;
-  /**
-   * Why the Editing Capability refuses the write, or `null` while it takes
-   * one. The sheet reads the refusal off the reason rather than off a second
-   * flag, so the two can never disagree.
-   */
-  blocked?: string | null;
-}
-
-/**
- * The optional comment sheet, under the create-mode row. `Ctrl+Enter`
- * (Windows) or `Command+Enter` (macOS) saves and `Escape` steps back; the
- * reader's own keymap is inert inside the editor, so both are bound here.
- *
- * @param sheet the element the editor is drawn into, replacing what it held.
- */
-export function renderCommentSheet(
-  sheet: HTMLElement,
-  {
-    value,
-    onSave,
-    onCancel,
-    nativeSubmit = false,
-    blocked = null,
-  }: CommentSheetProps,
-): HTMLTextAreaElement {
-  sheet.empty();
-  sheet.addClass(themeHook.pdfCommentSheet);
-  const editor = sheet.createEl("textarea", {
-    cls: ["zt:w-full", "zt:resize-none"],
-    attr: {
-      rows: "3",
-      placeholder: m.annot_view_card_comment_placeholder(),
-      "aria-label": m.annot_view_card_add_comment(),
-    },
-  });
-  editor.value = value;
-  editor.readOnly = blocked !== null;
-  if (!nativeSubmit)
-    sheet.createDiv({
-      cls: ["zt:text-xs", "zt:text-muted-foreground"],
-      text: blocked ?? m.pdf_create_popup_comment_hint(),
-    });
-  editor.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onCancel();
-      return;
-    }
-    if (
-      nativeSubmit ||
-      event.key !== "Enter" ||
-      !(event.metaKey || event.ctrlKey)
-    ) {
-      return;
-    }
-    event.preventDefault();
-    if (!editor.readOnly) onSave(editor.value);
-  });
-  return editor;
 }

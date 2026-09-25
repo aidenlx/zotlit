@@ -517,6 +517,10 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       // undefined variable would leave both boxes bare and make equality say
       // nothing.
       //
+      // The padding is the one read taken from the list box. The popup keeps
+      // none of its own, so the search field runs edge to edge, and the list
+      // carries `--menu-padding` as the inset.
+      //
       // The shadow is the one read compared by suffix. Tailwind's `shadow-()`
       // utility composes its ring and inset placeholders ahead of the value, so
       // the popup carries four transparent stops in front of the three
@@ -530,7 +534,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       // kept for the same reason — only a running Obsidian has the user-agent
       // rule it depends on. `rows` names the vocabulary, which is what proves
       // the popup under measurement is the tag one.
-      const tagChooserBox = `JSON.stringify((()=>{const popup=${tagPopup};if(!popup)return{open:false,rows:[],rowsInsidePopup:false,menuChrome:false};const box=popup.getBoundingClientRect();const rows=Array.from(popup.querySelectorAll('[role="option"]'));const probe=popup.parentElement.appendChild(document.createElement('div'));probe.style.cssText='position:absolute;left:-9999px;visibility:hidden;background-color:var(--menu-background);border:var(--menu-border-width) solid var(--menu-border-color);border-radius:var(--menu-radius);corner-shape:var(--menu-corner-shape);padding:var(--menu-padding);box-shadow:var(--menu-shadow)';const got=getComputedStyle(popup),want=getComputedStyle(probe);const reads=['backgroundColor','borderTopWidth','borderTopColor','borderTopLeftRadius','cornerShape','paddingTop'];const chrome=reads.every(name=>got[name]===want[name])&&got.boxShadow.endsWith(want.boxShadow)&&want.backgroundColor!=='rgba(0, 0, 0, 0)'&&parseFloat(want.borderTopWidth)>0&&parseFloat(want.borderTopLeftRadius)>0&&parseFloat(want.paddingTop)>0&&want.cornerShape!==''&&want.boxShadow!=='none';probe.remove();return{open:popup.matches(':popover-open'),rows:rows.map(row=>row.textContent).sort(),rowsInsidePopup:rows.length>0&&rows.every(row=>{const r=row.getBoundingClientRect();return r.height>0&&r.top>=box.top&&r.bottom<=box.bottom&&r.left>=box.left&&r.right<=box.right;}),menuChrome:chrome};})())`;
+      const tagChooserBox = `JSON.stringify((()=>{const popup=${tagPopup};if(!popup)return{open:false,rows:[],rowsInsidePopup:false,menuChrome:false};const box=popup.getBoundingClientRect();const rows=Array.from(popup.querySelectorAll('[role="option"]'));const probe=popup.parentElement.appendChild(document.createElement('div'));probe.style.cssText='position:absolute;left:-9999px;visibility:hidden;background-color:var(--menu-background);border:var(--menu-border-width) solid var(--menu-border-color);border-radius:var(--menu-radius);corner-shape:var(--menu-corner-shape);padding:var(--menu-padding);box-shadow:var(--menu-shadow)';const got=getComputedStyle(popup),want=getComputedStyle(probe);const list=popup.querySelector('[role="listbox"]');const reads=['backgroundColor','borderTopWidth','borderTopColor','borderTopLeftRadius','cornerShape'];const chrome=reads.every(name=>got[name]===want[name])&&list!==null&&getComputedStyle(list).paddingTop===want.paddingTop&&got.boxShadow.endsWith(want.boxShadow)&&want.backgroundColor!=='rgba(0, 0, 0, 0)'&&parseFloat(want.borderTopWidth)>0&&parseFloat(want.borderTopLeftRadius)>0&&parseFloat(want.paddingTop)>0&&want.cornerShape!==''&&want.boxShadow!=='none';probe.remove();return{open:popup.matches(':popover-open'),rows:rows.map(row=>row.textContent).sort(),rowsInsidePopup:rows.length>0&&rows.every(row=>{const r=row.getBoundingClientRect();return r.height>0&&r.top>=box.top&&r.bottom<=box.bottom&&r.left>=box.left&&r.right<=box.right;}),menuChrome:chrome};})())`;
       const tagChooserClosed = `JSON.stringify((()=>{const popup=${tagPopup};if(!popup)return{open:false,hidden:false};return{open:popup.matches(':popover-open'),hidden:!popup.checkVisibility()&&popup.getBoundingClientRect().height===0};})())`;
       expect(
         await obEvalUntil(vaultId, tagChooserBox, {
@@ -2213,8 +2217,9 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
   // entries passed while the menu read as empty on screen.
   //
   // @see apps/obsidian/docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md
-  it("renders the Follow Mode entries inside the popup's own box", async () => {
-    const trigger = `app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.contentEl.querySelector('button[aria-label=${JSON.stringify(m.annot_view_mode_active_tab())}]')`;
+  it("renders the header menu's Follow Mode entries inside the popup's own box", async () => {
+    const trigger =
+      "app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.contentEl.querySelector('button.zt-annot-header')";
     const popup =
       "app.workspace.getLeavesOfType('zotero-annotation-view')[0].view.contentEl.doc.querySelector('.menu')";
 
@@ -2242,10 +2247,11 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       overlapsTriggerX: boolean;
     };
 
-    // The two modes lead, always in this order. The pin's row is followed by a
-    // reason line whenever this vault has nothing to pin, so what comes after
-    // them is asserted by presence rather than by position.
-    expect(report.labels.slice(0, 2)).toEqual([
+    // The two modes lead under their heading, always in this order. The pin's
+    // row is followed by a reason line whenever this vault has nothing to pin,
+    // so what comes after them is asserted by presence rather than by position.
+    expect(report.labels.slice(0, 3)).toEqual([
+      m.annot_view_header_menu_label(),
       m.annot_view_mode_active_tab(),
       m.annot_view_mode_zotero_reader(),
     ]);

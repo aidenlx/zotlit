@@ -13,7 +13,13 @@ import {
   DEFAULT_LIBRARY_SCOPE,
   libraryScopeSchema,
 } from "@/services/library-scope/scope";
-import { annotationToolColorsSchema } from "@/services/pdf-annotation-editor/tools";
+import {
+  annotationToolColorsSchema,
+  DEFAULT_INK_WIDTH,
+  DEFAULT_TEXT_FONT_SIZE,
+  inkWidthSchema,
+  textFontSizeSchema,
+} from "@/services/pdf-annotation-editor/tools";
 import { DEFAULT_FRONTMATTER_FIELDS } from "@/services/template/defaults";
 
 /**
@@ -183,6 +189,15 @@ export const schema = v.object({
    * never recoloured follows Zotero's own default.
    */
   "reader.annotation-colors": annotationToolColorsSchema,
+  /**
+   * The annotation colours used last in the PDF reader, most recent first. One
+   * list for every tool, so the popup offers the same swatches to each.
+   */
+  "reader.recent-colors": v.array(v.string()),
+  /** The pen width the PDF reader's ink tool draws at, in PDF points. */
+  "reader.ink-width": inkWidthSchema,
+  /** The font size the PDF reader's text tool types at, in PDF points. */
+  "reader.text-font-size": textFontSizeSchema,
 
   "release.previous-version": v.nullable(v.string()),
   "release.notices-enabled": v.boolean(),
@@ -236,6 +251,9 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "reader.focus-annot-view": true,
   "reader.open-file-links": true,
   "reader.annotation-colors": {},
+  "reader.recent-colors": [],
+  "reader.ink-width": DEFAULT_INK_WIDTH,
+  "reader.text-font-size": DEFAULT_TEXT_FONT_SIZE,
   // Absent until the release check records a launch; see the release service.
   "release.previous-version": null,
   "release.notices-enabled": true,

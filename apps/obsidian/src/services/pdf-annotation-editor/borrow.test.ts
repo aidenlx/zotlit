@@ -2,9 +2,12 @@
 // open PDF view's document, and what a closed or replaced one withdraws.
 
 // @vitest-environment happy-dom
-import { FileSystemAdapter } from "obsidian";
-import { expect, it, vi } from "vitest";
+import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
+import { FileSystemAdapter, Scope } from "obsidian";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
+
+import { NoteIndexStub } from "@/services/note-index/test-stub";
 
 import {
   annotationReads,
@@ -33,6 +36,8 @@ function pdfView(path: string | null, reader = pdfReader()) {
     file: path === null ? null : { path },
     viewer: reader.viewer,
     containerEl: document.createElement("div"),
+    // `View.scope` — the Scope Obsidian gives every PDF view.
+    scope: new Scope(),
   };
 }
 
@@ -61,10 +66,21 @@ async function readerRegistry(
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
   return service;
 }
+
+// The Reader Keymap binds the Annotation History keys for the host platform,
+// which every binding these tests build reads as it mounts.
+beforeEach(() => {
+  setMockPlatform({ isMacOS: false });
+});
+
+afterEach(() => {
+  resetMockPlatform();
+});
 
 it("lends the open document's bytes and pages for an absolute path", async () => {
   const reader = pdfReader();

@@ -1,7 +1,8 @@
 // Everything the Paired Run scenario needs from the Zotero half of a Paired
 // Run: the two reachability probes that decide whether it runs, a Zotero Local
-// API client, and the RDP levers its authorization tiers pull. One module,
-// because every part of it describes the same running Zotero.
+// API client, the RDP levers its authorization tiers pull, and the RDP reads
+// and erases of Annotations the reader tests take. One module, because every
+// part of it describes the same running Zotero.
 //
 // The wire facts this drives — the browser-traffic refusal, the authorize
 // endpoint's outcomes, the single-use consumption rule, the rate limit — are
@@ -10,6 +11,7 @@
 import { regex } from "arkregex";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { expect } from "vitest";
 
 import { getFixtureLayout, livePairedZotero } from "@zotlit/scripts/fixture";
 import type { FixtureLayout } from "@zotlit/scripts/fixture";
@@ -404,5 +406,225 @@ export async function denyAnyAuthorizationDialog(
     if (!dialog) return false;
     dialog.document.getElementById("commonDialog").getButton("extra1").click();
     return true;
+  })()`);
+}
+
+/** One Annotation on an Attachment Zotero's Reader has open. */
+export interface ReaderAnnotation {
+  rdp: ZoteroRdp;
+  /** The Attachment's key in the user library. */
+  attachmentKey: string;
+  annotationKey: string;
+}
+
+/** The Reader open on an Attachment, as an RDP expression; `undefined` for none. */
+function openReader(attachmentKey: string): string {
+  return `(() => {
+    const attachment = Zotero.Items.getByLibraryAndKey(
+      Zotero.Libraries.userLibraryID,
+      ${JSON.stringify(attachmentKey)},
+    );
+    return Zotero.Reader._readers.find(
+      (candidate) => candidate.itemID === attachment.id,
+    );
+  })()`;
+}
+
+/**
+ * The position and quoted text of one Annotation as Zotero's open Reader holds
+ * it — the serialized Annotation its own item hands the view it draws — or
+ * `null` where no Reader shows it.
+ */
+export function readerAnnotation({
+  rdp,
+  attachmentKey,
+  annotationKey,
+}: ReaderAnnotation): Promise<{
+  position: string;
+  text: string | null;
+} | null> {
+  return rdp.json(`(() => {
+    const annotation = ${openReader(attachmentKey)}?._item
+      .getAnnotations()
+      .find(({ key }) => key === ${JSON.stringify(annotationKey)});
+    return annotation
+      ? {
+          position: annotation.annotationPosition,
+          text: annotation.annotationText ?? null,
+        }
+      : null;
+  })()`);
+}
+
+/**
+ * Waits until Zotero is done with the last position write on one Annotation.
+ * The write drops the cached Excerpt Image of an image or ink in a commit
+ * callback nothing awaits; Zotero's open Reader then renders a fresh image and
+ * saves it. A write sent before that is done can meet a newer version and be
+ * refused with 412, so this waits for the Reader's own state:
+ *
+ * - it holds the stored position at the stored modification time, with
+ *   nothing left unsaved and no save in flight;
+ * - for an image or ink, it holds an image, its renderer last rendered this
+ *   modification (or never rendered this Annotation, whose image came from
+ *   the cache), and the cache image is back;
+ * - two Local API reads, one poll apart, agree on the version, with the
+ *   Reader state holding at both.
+ *
+ * @param options.image whether the Annotation carries an Excerpt Image the
+ *   Reader renders; a highlight or underline has none to wait for.
+ * @throws when the Reader does not settle within the poll's bound.
+ */
+export async function readerSettled(
+  annotation: ReaderAnnotation,
+  { api, serverID, image }: { api: string; serverID: string; image: boolean },
+): Promise<void> {
+  const { rdp, attachmentKey, annotationKey } = annotation;
+  const key = JSON.stringify(annotationKey);
+  /** What the Reader has yet to finish, by name; empty once it is done. */
+  const readerPending = () =>
+    rdp.json<string[]>(`(async () => {
+      const reader = ${openReader(attachmentKey)};
+      const item = reader
+        ? Zotero.Items.getByLibraryAndKey(reader._item.libraryID, ${key})
+        : null;
+      const manager = reader?._internalReader?._annotationManager;
+      if (!item || !manager) return ["reader"];
+      // The Reader's annotations live in its content window, so they are read
+      // by index rather than handed a chrome callback.
+      let held = null;
+      for (let index = 0; index < manager._annotations.length; index++) {
+        const candidate = manager._annotations[index];
+        if (candidate.id === ${key}) held = candidate;
+      }
+      if (!held) return ["annotation"];
+      const canonical = (position) =>
+        JSON.stringify(position, Object.keys(position).sort());
+      // Zotero stores "YYYY-MM-DD hh:mm:ss" in UTC; the Reader holds ISO.
+      const modified = item.dateModified.replace(" ", "T") + "Z";
+      const rendered = reader._internalReader._primaryView?._pdfRenderer
+        ?._lastRendered.get(${key});
+      const image = ${JSON.stringify(image)};
+      return Object.entries({
+        position:
+          canonical(held.position) !==
+          canonical(JSON.parse(item.annotationPosition)),
+        modified: held.dateModified !== modified,
+        unsaved: manager._unsavedAnnotations.size > 0,
+        saving: !!manager._savingInProgress,
+        image: image && !held.image,
+        rendered:
+          image && rendered !== undefined && rendered !== held.dateModified,
+        cache: image && !(await Zotero.Annotations.hasCacheImage(item)),
+      })
+        .filter(([, pending]) => pending)
+        .map(([name]) => name);
+    })()`);
+  const version = async () =>
+    (
+      (await (
+        await zoteroFetch(api, `users/0/items/${annotationKey}`, {
+          headers: { "Zotero-Server-ID": serverID },
+        })
+      ).json()) as { version: number }
+    ).version;
+  let seen: number | null = null;
+  let pending: string[] = [];
+  const settled = await waitFor(async () => {
+    pending = await readerPending();
+    if (pending.length > 0) {
+      seen = null;
+      return false;
+    }
+    const now = await version();
+    const still = now === seen;
+    seen = now;
+    return still;
+  }, 120);
+  if (!settled)
+    throw new Error(
+      `the Zotero Reader never settled on ${annotationKey}: ${pending.join(", ") || "version moving"}`,
+    );
+}
+
+/**
+ * The Annotations Zotero holds on an item, by key, read over RDP.
+ *
+ * @param item the Zotero item as an RDP expression.
+ */
+export function heldAnnotationKeys(
+  rdp: ZoteroRdp,
+  item: string,
+): Promise<string[]> {
+  return rdp.json<string[]>(`${item}.getAnnotations().map(({ key }) => key)`);
+}
+
+/**
+ * The one Annotation Zotero holds on `item` beyond `before`, once it does.
+ * Every fresh key is handed to `created`, where given, before the count is
+ * asserted, so a test that made more than one still erases them all.
+ */
+export async function freshAnnotationKey(
+  rdp: ZoteroRdp,
+  {
+    item,
+    before,
+    created,
+  }: {
+    item: string;
+    before: readonly string[];
+    created?: (keys: readonly string[]) => void;
+  },
+): Promise<string> {
+  let fresh: string[] = [];
+  expect(
+    await waitFor(async () => {
+      fresh = (await heldAnnotationKeys(rdp, item)).filter(
+        (key) => !before.includes(key),
+      );
+      return fresh.length > 0;
+    }),
+  ).toBe(true);
+  created?.(fresh);
+  expect(fresh).toHaveLength(1);
+  return fresh[0]!;
+}
+
+/** The fields of one Annotation a create test reads from the Local API. */
+export interface StoredAnnotation {
+  annotationType: string;
+  annotationColor: string;
+  annotationComment: string;
+  annotationPosition: string;
+  annotationPageLabel: string;
+  annotationSortIndex: string;
+}
+
+/** One Annotation's fields, as the Local API answers them. */
+export async function storedAnnotation(
+  baseUrl: string,
+  serverID: string,
+  key: string,
+): Promise<StoredAnnotation> {
+  const reply = await zoteroFetch(baseUrl, `users/0/items/${key}`, {
+    headers: { "Zotero-Server-ID": serverID },
+  });
+  return ((await reply.json()) as { data: StoredAnnotation }).data;
+}
+
+/** Erases Annotations from Zotero by key, over RDP; a key already gone is skipped. */
+export async function eraseAnnotations(
+  rdp: ZoteroRdp,
+  keys: readonly string[],
+): Promise<void> {
+  await rdp.json(`(async () => {
+    for (const key of ${JSON.stringify(keys)}) {
+      const item = Zotero.Items.getByLibraryAndKey(
+        Zotero.Libraries.userLibraryID,
+        key,
+      );
+      if (item) await item.eraseTx();
+    }
+    return "erased";
   })()`);
 }

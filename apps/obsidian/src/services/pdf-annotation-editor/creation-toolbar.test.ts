@@ -19,7 +19,14 @@ import type { MarkTool } from "./tools";
 
 const NOW = Temporal.Instant.from("2026-09-17T10:00:00Z");
 
-const COLORS = { highlight: "#ffd400", underline: "#2ea8e5" } as const;
+const COLORS = {
+  highlight: "#ffd400",
+  underline: "#2ea8e5",
+  note: "#5fb236",
+  text: "#e56eee",
+  image: "#ff6666",
+  ink: "#a28ae5",
+} as const;
 
 /** Both halves of one tool, in the order the toolbar draws them. */
 function halves(tool: MarkTool): CreationToolbarControlId[] {
@@ -28,7 +35,7 @@ function halves(tool: MarkTool): CreationToolbarControlId[] {
 
 function model(
   overrides: {
-    armed?: "highlight" | "underline" | null;
+    armed?: MarkTool | null;
     marksVisible?: boolean;
     capability?: EditingCapability;
   } = {},
@@ -79,11 +86,28 @@ it("splits every tool in two, then mark visibility, and nothing else", () => {
   ]);
 });
 
+it("seats the tools in Zotero's toolbar order, note and text between underline and image", () => {
+  expect(
+    model()
+      .filter(({ id }) => !id.endsWith("-color"))
+      .map(({ id }) => id),
+  ).toEqual([
+    "highlight",
+    "underline",
+    "note",
+    "text",
+    "image",
+    "ink",
+    "visibility",
+  ]);
+});
+
 it("shows each tool's own colour on its toggle, so underline is a peer of highlight", () => {
   const byId = new Map(model().map((control) => [control.id, control]));
 
   expect(byId.get("highlight")?.color).toBe(COLORS.highlight);
   expect(byId.get("underline")?.color).toBe(COLORS.underline);
+  expect(byId.get("image")?.color).toBe(COLORS.image);
   // The chevron says a menu opens; the toggle beside it shows the colour.
   expect(byId.get("highlight-color")?.color).toBeNull();
   expect(byId.get("underline-color")?.color).toBeNull();
@@ -244,6 +268,160 @@ it("rewrites its controls in place and keeps the capability slot", () => {
   ).toBe("true");
 });
 
+it("keeps every control node across a redraw with equal controls", () => {
+  const slot = toolbarSlot();
+  draw(slot);
+  const before = [...slot.querySelectorAll("[data-zt-tool]")];
+
+  draw(slot);
+
+  const after = [...slot.querySelectorAll("[data-zt-tool]")];
+  expect(after).toHaveLength(before.length);
+  after.forEach((node, index) => expect(node).toBe(before[index]));
+});
+
+it("patches changed controls in place rather than rebuilding them", () => {
+  const slot = toolbarSlot();
+  draw(slot);
+  const before = [...slot.querySelectorAll("[data-zt-tool]")];
+  const capability = {
+    kind: "read-only",
+    reason: "library-read-only",
+  } as const;
+  const copy = editingCapabilityCopy(capability, NOW);
+  const why = copy.detail ?? copy.label;
+
+  draw(slot, model({ armed: "underline", marksVisible: false, capability }));
+
+  const after = [...slot.querySelectorAll("[data-zt-tool]")];
+  after.forEach((node, index) => expect(node).toBe(before[index]));
+  expect(shownIn(slot)).toEqual([
+    {
+      id: "highlight",
+      pressed: "false",
+      disabled: "true",
+      tooltip: why,
+      color: "#ffd400",
+      icon: expect.stringContaining("lucide-highlighter"),
+    },
+    {
+      id: "highlight-color",
+      pressed: null,
+      disabled: "true",
+      tooltip: why,
+      color: "",
+      icon: expect.stringContaining("lucide-chevron-down"),
+    },
+    {
+      id: "underline",
+      pressed: "true",
+      disabled: "true",
+      tooltip: why,
+      color: "#2ea8e5",
+      icon: expect.stringContaining("lucide-underline"),
+    },
+    {
+      id: "underline-color",
+      pressed: null,
+      disabled: "true",
+      tooltip: why,
+      color: "",
+      icon: expect.stringContaining("lucide-chevron-down"),
+    },
+    {
+      id: "note",
+      pressed: "false",
+      disabled: "true",
+      tooltip: why,
+      color: "#5fb236",
+      icon: expect.stringContaining("lucide-sticky-note"),
+    },
+    {
+      id: "note-color",
+      pressed: null,
+      disabled: "true",
+      tooltip: why,
+      color: "",
+      icon: expect.stringContaining("lucide-chevron-down"),
+    },
+    {
+      id: "text",
+      pressed: "false",
+      disabled: "true",
+      tooltip: why,
+      color: "#e56eee",
+      icon: expect.stringContaining("lucide-type"),
+    },
+    {
+      id: "text-color",
+      pressed: null,
+      disabled: "true",
+      tooltip: why,
+      color: "",
+      icon: expect.stringContaining("lucide-chevron-down"),
+    },
+    {
+      id: "image",
+      pressed: "false",
+      disabled: "true",
+      tooltip: why,
+      color: "#ff6666",
+      icon: expect.stringContaining("lucide-square-dashed-mouse-pointer"),
+    },
+    {
+      id: "image-color",
+      pressed: null,
+      disabled: "true",
+      tooltip: why,
+      color: "",
+      icon: expect.stringContaining("lucide-chevron-down"),
+    },
+    {
+      id: "ink",
+      pressed: "false",
+      disabled: "true",
+      tooltip: why,
+      color: "#a28ae5",
+      icon: expect.stringContaining("lucide-pencil"),
+    },
+    {
+      id: "ink-color",
+      pressed: null,
+      disabled: "true",
+      tooltip: why,
+      color: "",
+      icon: expect.stringContaining("lucide-chevron-down"),
+    },
+    {
+      id: "visibility",
+      pressed: "false",
+      disabled: null,
+      tooltip: "Show Zotero annotations",
+      color: "",
+      icon: expect.stringContaining("lucide-eye-off"),
+    },
+  ]);
+});
+
+it("runs nothing for a press on a control that was stood down after it was built", () => {
+  const slot = toolbarSlot();
+  const activate = vi.fn();
+  draw(slot, model(), activate);
+  const highlight = slot.querySelector<HTMLElement>(
+    '[data-zt-tool="highlight"]',
+  )!;
+
+  draw(
+    slot,
+    model({ capability: { kind: "read-only", reason: "zotero-unavailable" } }),
+    activate,
+  );
+  highlight.click();
+  highlight.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+
+  expect(activate).not.toHaveBeenCalled();
+});
+
 it("mounts bare clickable icons, with no preflight root in Obsidian's toolbar", () => {
   const slot = toolbarSlot();
 
@@ -273,6 +451,14 @@ it("promises the theme hook and the data attribute by their literal names", () =
     "highlight-color",
     "underline",
     "underline-color",
+    "note",
+    "note-color",
+    "text",
+    "text-color",
+    "image",
+    "image-color",
+    "ink",
+    "ink-color",
     "visibility",
   ]);
 });

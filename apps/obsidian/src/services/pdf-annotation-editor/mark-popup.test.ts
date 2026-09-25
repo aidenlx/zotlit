@@ -35,6 +35,7 @@ function row(
     capability: overrides.capability ?? { kind: "writable" },
     mutation: overrides.mutation ?? IDLE,
     stack: overrides.stack ?? { index: 0, total: 1 },
+    commenting: false,
     now: NOW,
   });
 }
@@ -64,7 +65,8 @@ describe("markPopupRow", () => {
     expect(row({ annotation: commented }).verbs[1]).toEqual({
       id: "comment",
       icon: "message-square",
-      tooltip: "Edit comment in the annotation view",
+      pressed: false,
+      tooltip: "Edit comment",
       disabled: false,
     });
     expect(row().color).toBe("#2ea8e5");
@@ -85,7 +87,7 @@ describe("markPopupRow", () => {
   });
 
   it("stands them down while a write of its own is in flight", () => {
-    const built = row({ mutation: { kind: "pending" } });
+    const built = row({ mutation: { kind: "pending", write: "color" } });
     expect(verbs(built).delete).toEqual([true, "Saving to Zotero…"]);
   });
 
@@ -208,6 +210,17 @@ describe("MarkPopup", () => {
     expect(open.popup.staticPos).toEqual({ x: 120, y: 240 });
 
     vi.advanceTimersByTime(0);
+
+    expect(open.popup.hoverEl.isConnected).toBe(true);
+    expect(open.parent.hoverPopover).toBe(open.popup);
+  });
+
+  // The create popup opens on the release of a drag, and the same release
+  // then clicks, before any timer can run.
+  it("stays open through the click that ends the gesture which opened it", () => {
+    using open = openPopup();
+
+    document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     expect(open.popup.hoverEl.isConnected).toBe(true);
     expect(open.parent.hoverPopover).toBe(open.popup);

@@ -336,9 +336,37 @@ _Avoid_: overlay element, highlight box, mark widget
 The one popover the reader shows for the selected Annotation Mark or a fresh text selection, holding the verbs for that Annotation: colour, comment, copy, delete, reveal, and the stepper through overlapping marks. Opened and closed by the selection alone, never by hover — except a Mark Landing, which selects without summoning it.
 _Avoid_: selection toolbar, floating toolbar, annotation popover, hover popover (the primitive, not the surface)
 
+**Mark Handle**:
+A grip drawn on the selected Annotation Mark, while editing is live, that begins a Geometry Edit. Paint like the mark it sits on, hit-tested by geometry.
+_Avoid_: resize handle (a highlight's handles move an end of its range), grip, control point
+
+**Geometry Edit**:
+A change of an Annotation's position — and, for a highlight or underline, its text range and quoted text — saved to Zotero with a recomputed Sort Index. The page and the Page Label stay.
+_Avoid_: move, resize, drag (the gestures, not the edit), position edit
+
 **Creation Toolbar**:
-The controls ZotLit adds to the reader's own toolbar: the armed tool (highlight or underline), its colour, Annotation Mark visibility, and the Editing Capability affordance. Holds the defaults; the Mark Popup decides for one Annotation.
+The controls ZotLit adds to the reader's own toolbar: the armed tool (highlight, underline, note, text, image, or ink), its colour and, for ink, its pen width and, for text, its font size, Annotation Mark visibility, and the Editing Capability affordance. Holds the defaults; the Mark Popup decides for one Annotation.
 _Avoid_: reader toolbar (that is Obsidian's), PDF toolbar, tool bar
+
+**Ink Stroke**:
+One continuous pointer gesture with the ink tool armed, from press to release, stored as one path of an ink Annotation: its points smoothed as Zotero's reader smooths them, in PDF points on the page it was pressed on.
+_Avoid_: path (the stored form), line, drawing, scribble
+
+**Live Stroke**:
+The Ink Stroke still under the pointer, drawn on its page from the Reader Surface State as the last animation frame smoothed it. At its release it becomes a Pending Stroke; a discarded one goes with nothing created.
+_Avoid_: preview stroke, current stroke
+
+**Pending Stroke**:
+An Ink Stroke that has been released and rounded, drawn on the page while its create is in flight.
+_Avoid_: optimistic mark, draft stroke, Annotation Draft (that is a comment)
+
+**Text Draft**:
+A text box the text tool opened on a page, typed into in Obsidian and created in Zotero once, with its text, when it is finished. Drawn on the page while its create is in flight.
+_Avoid_: text box (Zotero's, which exists in Zotero while it is typed), text editor, Annotation Draft (that is a comment)
+
+**Reader Surface State**:
+What the surfaces of one Reader Session in Obsidian's PDF view draw from: the armed tool, each tool's colour, Annotation Mark visibility, the Editing Capability, the clock a cooldown is read against, the one floating surface (nothing, the selected Annotation Mark, a text selection about to become one, an image capture, or a Text Draft), the Live Stroke and the Pending Strokes, and the Attachment's Annotations with the write state and Annotation Draft of each. One per bound PDF view; outside signals enter it through the binding alone, and each surface redraws only when its own part changed.
+_Avoid_: reader store, toolbar state, view state (that is the Annotation View's)
 
 **Annotation Draft**:
 The shared unsaved comment for one Annotation, with the text the user started from and their current text. The Annotation View and Mark Popup access the same draft before a confirmed change in Zotero.
@@ -348,8 +376,16 @@ _Avoid_: pending write (the draft has not been submitted), cached comment
 A conflict between the user's intended Annotation change and a different change in Zotero since the user started editing. It requires a choice between the competing values; a Zotero value already equal to the intended one is no conflict.
 _Avoid_: 412 (also a changed server or a reused write token), version mismatch, stale write, merge conflict
 
+**Annotation History**:
+The ephemeral, ordered record of ZotLit's own confirmed edits to one Attachment's Annotations that can be undone and redone. It lives while a PDF view of that Attachment is open; Zotero keeps no such record.
+_Avoid_: undo stack, edit log, history (alone; Obsidian's workspace History is navigation)
+
+**History Step**:
+One user action in the Annotation History — a create, a delete, a colour pick, a Geometry Edit, or one comment editing session — held as the before and after values of the fields it changed on each Annotation it touched.
+_Avoid_: history point, undo entry, transaction
+
 **Sort Index**:
-The reading-order key Zotero keeps on every Annotation. For a PDF it names the page, the nearest character in that page's Structured Characters, and the distance from the page top. ZotLit computes it once, at creation, and never rewrites it.
+The reading-order key Zotero keeps on every Annotation. For a PDF it names the page, the nearest character in that page's Structured Characters, and the distance from the page top. ZotLit computes it at creation and recomputes it on a Geometry Edit, the one edit Zotero's own reader recomputes it for.
 _Avoid_: sort key, reading position, annotation order
 
 **Structured Characters**:

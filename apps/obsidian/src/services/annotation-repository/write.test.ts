@@ -5,12 +5,15 @@ import type { ResolvedAnnotationTypeName } from "@zotlit/db";
 import { editingCapabilityCopy } from "./capability-copy";
 import {
   createRequest,
+  geometryPatch,
   MAX_POSITION_LENGTH,
   newWriteToken,
   writeFailureMessage,
   writePosition,
 } from "./write";
 import type { AnnotationDraft, WriteFailure } from "./write";
+
+const TARGET = { library: "users/0", key: "FDRFQ7C2", version: 12 };
 
 const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
 
@@ -175,6 +178,63 @@ it("rounds the stored rects to three decimals, on both pages", () => {
   });
 });
 
+it("sends an ink draft's width and strokes rounded, and no quoted text", () => {
+  const object = created(
+    createRequest(
+      "users/0",
+      draft({
+        type: "ink",
+        text: "",
+        position: {
+          pageIndex: 0,
+          width: 2.000_4,
+          paths: [[120.123_45, 610.987_65, 121.5, 612.000_49]],
+        },
+      }),
+      TOKEN,
+    ),
+  );
+
+  expect(object.annotationType).toBe("ink");
+  expect(object).not.toHaveProperty("annotationText");
+  expect(JSON.parse(object.annotationPosition as string)).toEqual({
+    pageIndex: 0,
+    width: 2,
+    paths: [[120.123, 610.988, 121.5, 612]],
+  });
+});
+
+it("sends a text draft's font size and rotation as given, rounding only its box", () => {
+  const object = created(
+    createRequest(
+      "users/0",
+      draft({
+        type: "text",
+        comment: "Two\nlines",
+        text: "",
+        position: {
+          pageIndex: 0,
+          fontSize: 10.123_45,
+          rotation: 12.345_67,
+          rects: [[120.123_45, 610.987_65, 180.5, 640.000_49]],
+        },
+      }),
+      TOKEN,
+    ),
+  );
+
+  expect(object.annotationType).toBe("text");
+  expect(object).not.toHaveProperty("annotationText");
+  // Zotero's reader rounds the rects before a save and nothing else, so a
+  // fractional size or turn reaches Zotero as the reader computed it.
+  expect(JSON.parse(object.annotationPosition as string)).toEqual({
+    pageIndex: 0,
+    fontSize: 10.123_45,
+    rotation: 12.345_67,
+    rects: [[120.123, 610.988, 180.5, 640]],
+  });
+});
+
 it("leaves nextPageRects out of a quote that stayed on one page", () => {
   const object = created(createRequest("users/0", draft(), TOKEN));
 
@@ -231,3 +291,79 @@ it("measures the stored position against Zotero's own limit", () => {
     MAX_POSITION_LENGTH,
   );
 });
+
+/** The one object a patch's body carries. */
+function patched(request: { body?: string }): Record<string, unknown> {
+  return JSON.parse(request.body!) as Record<string, unknown>;
+}
+
+it("sends a Geometry Edit as one patch, the position a JSON string", () => {
+  // Zotero's `annotationPosition` setter throws on anything but a string.
+  // @see https://github.com/zotero/zotero/blob/22f08d1ceddc8bad5718b3bc6eee9d3ae5dccc2c/chrome/content/zotero/xpcom/data/item.js#L4586-L4605
+  const request = geometryPatch(TARGET, "image", {
+    position: {
+      pageIndex: 1,
+      rects: [[48.750_4, 395.509, 610.000_6, 743.723]],
+    },
+    sortIndex: "00001|001860|00047",
+  });
+
+  expect([request.method, request.path]).toEqual([
+    "PATCH",
+    "/api/users/0/items/FDRFQ7C2",
+  ]);
+  expect(patched(request)).toEqual({
+    version: 12,
+    annotationPosition:
+      '{"pageIndex":1,"rects":[[48.75,395.509,610.001,743.723]]}',
+    annotationSortIndex: "00001|001860|00047",
+  });
+});
+
+it("writes an ink position's width and paths, rounded like rects", () => {
+  const request = geometryPatch(TARGET, "ink", {
+    position: {
+      pageIndex: 0,
+      width: 2.828_427,
+      paths: [[203.571_4, 673.009_6, 204.45, 672.256]],
+    },
+    sortIndex: "00000|000067|00104",
+  });
+
+  expect(JSON.parse(patched(request).annotationPosition as string)).toEqual({
+    pageIndex: 0,
+    width: 2.828,
+    paths: [[203.571, 673.01, 204.45, 672.256]],
+  });
+});
+
+it.each(["highlight", "underline"] satisfies ResolvedAnnotationTypeName[])(
+  "sends the new quoted text with a %s's Geometry Edit",
+  (type) => {
+    const request = geometryPatch(TARGET, type, {
+      position: { pageIndex: 0, rects: UNROUNDED },
+      sortIndex: "00000|000434|00180",
+      text: "Scientific visualization is",
+    });
+
+    expect(patched(request).annotationText).toBe("Scientific visualization is");
+  },
+);
+
+it.each([
+  "note",
+  "image",
+  "ink",
+  "text",
+] satisfies ResolvedAnnotationTypeName[])(
+  "sends no text with a %s's Geometry Edit, which Zotero refuses it on",
+  (type) => {
+    const request = geometryPatch(TARGET, type, {
+      position: { pageIndex: 0, rects: UNROUNDED },
+      sortIndex: "00000|000434|00180",
+      text: "stray",
+    });
+
+    expect(patched(request)).not.toHaveProperty("annotationText");
+  },
+);

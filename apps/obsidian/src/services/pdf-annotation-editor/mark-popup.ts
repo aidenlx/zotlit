@@ -3,10 +3,11 @@
 //
 // The popover has no target element, because a mark takes no pointer input and
 // a page re-render wipes every node ZotLit could point at; it hangs from a
-// virtual point instead. A fresh popover always waits its delay before the
-// first `show()`, so the delay is zero, and only `isFocused` keeps one open
-// with no target, so it is pinned at once — mouse-out and focus-out never close
-// it, and the binding alone hides it.
+// virtual point instead. It shows at once rather than after a delay, because
+// the create popup opens on the pointer release and the release's own `click`
+// hides a popover still waiting to show. Only `isFocused` keeps one open with
+// no target, so it is pinned at once — mouse-out and focus-out never close it,
+// and the binding alone hides it.
 //
 // @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
 // @see apps/obsidian/policies/hover-popover.md
@@ -58,6 +59,8 @@ export interface MarkPopupVerb {
   /** The accessible name, which Obsidian also renders as the hover tooltip. */
   tooltip: string;
   disabled: boolean;
+  /** A toggle's state, or `null` for a verb that is not a toggle. */
+  pressed: boolean | null;
 }
 
 /** Where the selected mark sits in the stack of marks under one point. */
@@ -90,6 +93,8 @@ export interface MarkPopupRowInput {
   /** What the last write left on this Annotation. */
   mutation: MutationState;
   stack: MarkStack;
+  /** Whether the comment editor stands open under the row. */
+  commenting: boolean;
   /** The instant a cooldown's remaining seconds are measured from. */
   now: Temporal.Instant;
 }
@@ -108,6 +113,7 @@ export function markPopupRow({
   capability,
   mutation,
   stack,
+  commenting,
   now,
 }: MarkPopupRowInput): MarkPopupRow {
   const blocked = editingBlockedReason(capability, mutation, now);
@@ -117,23 +123,28 @@ export function markPopupRow({
     icon,
     tooltip: blocked ?? label,
     disabled: blocked !== null,
+    pressed: null,
   });
   return {
     color: annotation.color,
     verbs: [
       editing("color", "palette", m.annot_view_card_color()),
-      editing(
-        "comment",
-        commentIcon(hasComment),
-        hasComment
-          ? m.pdf_mark_popup_edit_comment()
-          : m.pdf_mark_popup_add_comment(),
-      ),
+      {
+        ...editing(
+          "comment",
+          commentIcon(hasComment),
+          hasComment
+            ? m.annot_view_card_edit_comment()
+            : m.annot_view_card_add_comment(),
+        ),
+        pressed: commenting,
+      },
       {
         id: "copy",
         icon: "copy",
         tooltip: m.annot_view_menu_copy_text(),
         disabled: annotation.text === null,
+        pressed: null,
       },
       editing("delete", "trash-2", m.annot_view_menu_delete()),
       {
@@ -141,6 +152,7 @@ export function markPopupRow({
         icon: "panel-right-open",
         tooltip: m.pdf_mark_popup_reveal(),
         disabled: false,
+        pressed: null,
       },
     ],
     stepper:
@@ -192,8 +204,9 @@ export function renderMarkPopupRow(
 /**
  * One control of a Mark Popup row, in either mode: an Obsidian
  * `clickable-icon` carrying its id in `data-zt-verb`, its accessible name and
- * tooltip, and — for a swatch — its colour through the element's own style,
- * where a stylesheet's rules can still reach it and `var()` still substitutes.
+ * tooltip, a toggle's state, and — for a swatch — its colour through the
+ * element's own style, where a stylesheet's rules can still reach it and
+ * `var()` still substitutes.
  *
  * A blocked control keeps its seat and carries the reason in its tooltip and
  * its accessible state, rather than leaving the row.
@@ -210,22 +223,48 @@ export function markPopupControl(
     tooltip,
     disabled = false,
     color = null,
+    pressed = null,
+    cls,
   }: {
     id: string;
     icon: IconName;
     tooltip: string;
     disabled?: boolean;
     color?: string | null;
+    pressed?: boolean | null;
+    cls?: readonly string[];
   },
   activate: (node: HTMLElement) => void,
 ): HTMLElement {
   const node = renderIconButton(
     row,
-    { icon, tooltip, color, disabled },
+    { icon, tooltip, color, disabled, pressed, cls },
     activate,
   );
   node.dataset.ztVerb = id;
   return node;
+}
+
+/**
+ * The popup's content laid out as a column: the row of verbs, then whatever
+ * stands under it — the comment sheet, a held draft, a Write Conflict. The row
+ * is centred, so a sheet that widens the popup leaves each verb where the
+ * pointer pressed it.
+ *
+ * @param content the popup's content element, emptied first.
+ */
+export function popupColumn(content: HTMLElement): {
+  column: HTMLElement;
+  row: HTMLElement;
+} {
+  content.empty();
+  const column = content.createDiv({
+    cls: ["zt:flex", "zt:flex-col", "zt:gap-1"],
+  });
+  const row = column.createDiv({
+    cls: ["zt:flex", "zt:items-center", "zt:gap-0.5", "zt:self-center"],
+  });
+  return { column, row };
 }
 
 export interface MarkPopupDeps {
@@ -246,14 +285,17 @@ export interface MarkPopupDeps {
 export class MarkPopup extends PopoutAwareHoverPopover {
   readonly #row: HTMLElement;
   readonly #render;
+  #anchor: Point;
 
   constructor({ parent, anchor, render }: MarkPopupDeps) {
     super(parent, null, 0, anchor);
+    this.#anchor = anchor;
     this.setIsFocused(true);
     this.hoverEl.addClass(themeHook.pdfMarkPopup);
     this.#render = render;
     this.#row = this.hoverEl.createDiv({ cls: ["zt-root", ...ROW_CLASSES] });
     this.refresh();
+    this.showNow();
   }
 
   /**
@@ -262,12 +304,28 @@ export class MarkPopup extends PopoutAwareHoverPopover {
    * through {@link MarkPopup.refresh}.
    */
   retarget(anchor: Point): void {
-    this.staticPos = anchor;
+    this.#anchor = anchor;
     this.position();
   }
 
   /** Redraw the row where it stands, after what it acts on changed. */
   refresh(): void {
     this.#render(this.#row);
+  }
+
+  /**
+   * Obsidian hangs a popover's left edge from its point; the popup centres on
+   * the anchor instead. The popover joins the document on its first placement,
+   * so that placement runs twice: once to measure it, once to centre it.
+   * Obsidian's viewport clamp still applies.
+   */
+  override position(): void {
+    const { x, y } = this.#anchor;
+    if (!this.hoverEl.isConnected) {
+      this.staticPos = this.#anchor;
+      super.position();
+    }
+    this.staticPos = { x: x - this.hoverEl.offsetWidth / 2, y };
+    super.position();
   }
 }

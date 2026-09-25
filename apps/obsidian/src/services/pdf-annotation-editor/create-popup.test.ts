@@ -7,32 +7,32 @@ import { editingCapabilityCopy } from "@/services/annotation-repository/capabili
 import { IDLE } from "@/services/annotation-repository/write";
 import type { MutationState } from "@/services/annotation-repository/write";
 
-import {
-  createPopupRow,
-  renderCommentSheet,
-  renderCreatePopupRow,
-} from "./create-popup";
+import { createPopupRow, renderCreatePopupRow } from "./create-popup";
 import type { CreatePopupAction, CreatePopupControl } from "./create-popup";
 import { resolveToolColors } from "./tools";
+import type { MarkTool } from "./tools";
 
 const NOW = Temporal.Instant.from("2026-09-17T10:00:00Z");
 
 const COLORS = resolveToolColors({
   highlight: "#ffd400",
   underline: "#2ea8e5",
+  image: "#ff6666",
 });
 
 function row(
   overrides: {
-    armed?: "highlight" | "underline" | null;
+    armed?: MarkTool | null;
     capability?: EditingCapability;
     mutation?: MutationState;
     commenting?: boolean;
+    swatches?: readonly string[];
   } = {},
 ): readonly CreatePopupControl[] {
   return createPopupRow({
     armed: overrides.armed ?? null,
     colors: COLORS,
+    swatches: overrides.swatches ?? ANNOTATION_COLORS.slice(0, 4),
     capability: overrides.capability ?? { kind: "writable" },
     mutation: overrides.mutation ?? IDLE,
     commenting: overrides.commenting ?? false,
@@ -40,22 +40,30 @@ function row(
   });
 }
 
-it("offers both tools, Zotero's eight colours, the comment sheet and copy", () => {
+it("offers both tools, the swatches it is handed, the comment sheet and copy", () => {
   expect(row().map(({ id }) => id)).toEqual([
     "highlight",
     "underline",
-    ...ANNOTATION_COLORS.map((_, index) => `color-${index + 1}`),
+    "color-1",
+    "color-2",
+    "color-3",
+    "color-4",
     "comment",
     "copy",
   ]);
 });
 
-it("names the eight swatches in Zotero's own order", () => {
-  const swatches = row().flatMap(({ action }) =>
-    action.kind === "color" ? [action.color] : [],
+it("names each swatch by its seat in Zotero's palette, in the order handed", () => {
+  const swatches = row({
+    swatches: [ANNOTATION_COLORS[5]!, ANNOTATION_COLORS[1]!],
+  }).flatMap(({ id, action }) =>
+    action.kind === "color" ? [[id, action.color]] : [],
   );
 
-  expect(swatches).toEqual(ANNOTATION_COLORS);
+  expect(swatches).toEqual([
+    ["color-6", ANNOTATION_COLORS[5]],
+    ["color-2", ANNOTATION_COLORS[1]],
+  ]);
 });
 
 it("marks the armed tool's own colour, so the popup and the toolbar agree", () => {
@@ -72,6 +80,19 @@ it("commits with highlight while nothing is armed", () => {
   const armed = row().filter(({ pressed }) => pressed === true);
 
   expect(armed.map(({ color }) => color)).toEqual([COLORS.highlight]);
+});
+
+it("commits with highlight while the image tool is armed, since a selection is text", () => {
+  const pressed = row({ armed: "image" }).filter(
+    ({ pressed }) => pressed === true,
+  );
+
+  expect(pressed.map(({ id, color }) => [id, color])).toEqual([
+    [
+      `color-${ANNOTATION_COLORS.indexOf(COLORS.highlight) + 1}`,
+      COLORS.highlight,
+    ],
+  ]);
 });
 
 it.each([
@@ -91,7 +112,7 @@ it.each([
 );
 
 it("stands the creating verbs down while a create is in flight", () => {
-  const controls = row({ mutation: { kind: "pending" } });
+  const controls = row({ mutation: { kind: "pending", write: "create" } });
 
   expect(
     controls.filter(({ disabled }) => !disabled).map(({ id }) => id),
@@ -147,62 +168,4 @@ it("gives a blocked control no listener", () => {
   content.querySelector<HTMLElement>('[data-zt-verb="copy"]')!.click();
 
   expect(pressed).toEqual([{ kind: "copy" }]);
-});
-
-it("saves the comment sheet on Ctrl+Enter and on Command+Enter", () => {
-  const sheet = document.createElement("div");
-  const onSave = vi.fn();
-  const editor = renderCommentSheet(sheet, {
-    value: "a thought",
-    onSave,
-    onCancel: vi.fn(),
-  });
-
-  editor.value = "a second thought";
-  editor.dispatchEvent(
-    new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true }),
-  );
-  editor.dispatchEvent(
-    new KeyboardEvent("keydown", { key: "Enter", metaKey: true }),
-  );
-
-  expect(onSave.mock.calls).toEqual([
-    ["a second thought"],
-    ["a second thought"],
-  ]);
-});
-
-it("leaves a plain Enter to the editor and steps back on Escape", () => {
-  const sheet = document.createElement("div");
-  const onSave = vi.fn();
-  const onCancel = vi.fn();
-  const editor = renderCommentSheet(sheet, { value: "", onSave, onCancel });
-
-  editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
-  editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-
-  expect(onSave).not.toHaveBeenCalled();
-  expect(onCancel).toHaveBeenCalledOnce();
-});
-
-it("promises the comment sheet's theme hook by its literal name", () => {
-  // The name itself is the public surface, so the literal is the test.
-  // @see apps/obsidian/policies/theme-hooks.md
-  const sheet = document.createElement("div");
-
-  renderCommentSheet(sheet, { value: "", onSave: vi.fn(), onCancel: vi.fn() });
-
-  expect(sheet.classList.contains("zt-pdf-comment-sheet")).toBe(true);
-});
-
-it("opens the sheet on the comment already typed", () => {
-  const sheet = document.createElement("div");
-
-  const editor = renderCommentSheet(sheet, {
-    value: "kept across a redraw",
-    onSave: vi.fn(),
-    onCancel: vi.fn(),
-  });
-
-  expect(editor.value).toBe("kept across a redraw");
 });
