@@ -1,20 +1,14 @@
 // Everything the Paired Run scenario needs from the Zotero half of a Paired
-// Run: the two reachability probes that decide whether it runs, a Zotero Local
-// API client, the RDP levers its authorization tiers pull, and the RDP reads
-// and erases of Annotations the reader tests take. One module, because every
-// part of it describes the same running Zotero.
+// Run: a Zotero Local API client, the RDP levers its authorization tiers pull,
+// and the RDP reads and erases of Annotations the reader tests take. One
+// module, because every part of it describes the same running Zotero.
 //
 // The wire facts this drives — the browser-traffic refusal, the authorize
 // endpoint's outcomes, the rate limit — are the ones docs/fixture.md § "Trial
 // the Zotero Local API" documents.
 
-import { regex } from "arkregex";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { expect } from "vitest";
 
-import { getFixtureLayout, livePairedZotero } from "@zotlit/scripts/fixture";
-import type { FixtureLayout } from "@zotlit/scripts/fixture";
 import { openRdpSession } from "@zotlit/scripts/zotero-rdp";
 
 import { waitFor } from "./obsidian-cli.ts";
@@ -25,69 +19,6 @@ import { waitFor } from "./obsidian-cli.ts";
  * user agent, and the caller sees a network failure with no status.
  */
 const ALLOWED_REQUEST = { "Zotero-Allowed-Request": "1" } as const;
-
-/** Where the Fixture build wrote the Zotero HTTP port this run allocated. */
-const HTTP_PORT_PREF = regex('httpServer\\.port", *(?<port>\\d+)');
-
-/**
- * What a Paired Run left reachable on this machine. Every field a probe could
- * not establish is null, and no probe throws: a missing file, a closed port or
- * an Obsidian that does not answer is a reason to skip, never a failure.
- */
-export interface PairedRunReach {
-  layout: FixtureLayout;
-  /** `http://127.0.0.1:<port>/api/`, or null where nothing answers there. */
-  baseUrl: string | null;
-  /** The remote debugging port the run reported, or null. */
-  debuggerPort: number | null;
-}
-
-/**
- * Probe the Paired Run on `fixtureRoot`. Safe to call at module scope: it
- * swallows its own failures.
- */
-export async function probePairedRun(
-  fixtureRoot: string,
-): Promise<PairedRunReach> {
-  const layout = getFixtureLayout(fixtureRoot);
-  const baseUrl = await reachableLocalApi(layout);
-  const debuggerPort = await reachableDebugger(layout);
-  return { layout, baseUrl, debuggerPort };
-}
-
-async function reachableLocalApi(
-  layout: FixtureLayout,
-): Promise<string | null> {
-  const prefs = await readFile(
-    join(layout.profileDir, "prefs.js"),
-    "utf-8",
-  ).catch(() => null);
-  const port =
-    prefs === null ? undefined : HTTP_PORT_PREF.exec(prefs)?.groups.port;
-  if (port === undefined) return null;
-  const baseUrl = `http://127.0.0.1:${port}/api/`;
-  // `GET /api/` answers 200 text/plain "Nothing to see here." and needs no key.
-  const reply = await zoteroFetch(baseUrl, "").catch(() => null);
-  return reply?.status === 200 ? baseUrl : null;
-}
-
-/**
- * The RDP port from the Paired Run's own report, or from `ZOTERO_RDP_PORT` for
- * a Zotero someone started by hand. Null unless a session actually opens on it.
- */
-async function reachableDebugger(
-  layout: FixtureLayout,
-): Promise<number | null> {
-  const reported = await livePairedZotero(layout).catch(() => null);
-  const override = Number(process.env.ZOTERO_RDP_PORT);
-  const port =
-    reported?.debuggerPort ?? (Number.isInteger(override) ? override : null);
-  if (port === null) return null;
-  const session = await openRdpSession(port).catch(() => null);
-  if (!session) return null;
-  session[Symbol.dispose]();
-  return port;
-}
 
 export interface ZoteroRequest {
   method?: string;

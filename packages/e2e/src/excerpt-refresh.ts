@@ -17,8 +17,8 @@ export async function verifyExcerptRefresh(vaultId: string): Promise<void> {
     })()`,
     );
   });
-  // The Development Vault keeps its device-local excerpt store across runs, and
-  // an earlier test's card can still hold this Annotation's image. The trial
+  // The vault keeps its device-local excerpt store across tests, and an
+  // earlier test's card can still hold this Annotation's image. The trial
   // starts from a device that holds nothing for it: no stored image, and no
   // live display read.
   await obEval(

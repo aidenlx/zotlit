@@ -49,8 +49,9 @@ development.
 _Avoid_: test Zotero, dev Zotero, fixture instance
 
 **Paired Run**:
-A manual session with Paired Zotero and a Development Vault open together on
-the same Fixture.
+A session with Paired Zotero and a vault open together on the same Fixture: a
+Development Vault for manual work, or a vault the End-to-end Run opens and
+disposes.
 _Avoid_: smoke run, manual End-to-end Run
 
 **Stress Build**:

@@ -2,20 +2,17 @@
 // window against the Fixture, over the official Obsidian CLI. See
 // packages/e2e/AGENTS.md and packages/scripts/CONTEXT.md for vocabulary.
 //
-// Skips cleanly (not fails) in two cases, both decided before test collection
-// by the `describe.skipIf` below, so `vitest run` exits 0 with every test
-// reported as skipped rather than erroring: when no desktop Obsidian is
-// reachable, and when a live Paired Zotero holds the Fixture. The second is
-// not a preference — this suite's `obsidian-vault create` rebuilds the
-// Fixture, which would replace `zotero.sqlite` under the process holding it
-// open. src/paired-run.e2e.ts is the suite that runs in that case.
+// Skips cleanly (not fails) when no desktop Obsidian is reachable, decided
+// before test collection by the `describe.skipIf` below, so `vitest run` exits
+// 0 with every test reported as skipped rather than erroring.
+//
+// It builds a Fixture of its own under `.scratch/e2e-fixture`, never the
+// developer's `.scratch/acceptance-fixture`, so a Paired Run open there keeps
+// its database and this suite starts from the Fixture Spec every time.
 
-import { execFile } from "node:child_process";
 import {
-  access,
   cp,
   mkdir,
-  mkdtemp,
   readFile,
   readdir,
   rename,
@@ -23,7 +20,6 @@ import {
 } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -35,11 +31,10 @@ import {
   ANNOTATIONS,
   ATTACHMENTS,
   COLLECTIONS,
+  discardFixture,
   findScopeCase,
   getFixtureLayout,
-  getFixtureRoot,
   ITEMS,
-  livePairedZotero,
   LITERATURE_NOTE_PROFILES,
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
@@ -63,25 +58,22 @@ import {
   obEvalUntil,
   waitFor,
 } from "./obsidian-cli.ts";
+import {
+  clearVault,
+  e2eVaultDir,
+  isObsidianReachable,
+  vaultScript,
+} from "./vault-script.ts";
 
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
-const vaultScriptPath = join(
-  workspaceRoot,
-  "packages",
-  "scripts",
-  "scripts",
-  "obsidian-vault.ts",
-);
 // Distinct from the per-worktree dev vault (`getDevVaultDir`) and the raw
 // Fixture Vault (`getFixtureLayout(...).vaultDir`) — see AGENTS.md → Working files.
-const e2eVaultPath = join(workspaceRoot, ".scratch", "e2e-fixture-vault");
-const execFileAsync = promisify(execFile);
-
-function runVaultScript(args: string[]) {
-  return execFileAsync(process.execPath, [vaultScriptPath, ...args], {
-    windowsHide: true,
-  });
-}
+const e2eVaultPath = e2eVaultDir(workspaceRoot, "fixture-vault");
+/** The suite's own Fixture, which every vault it opens builds and links. */
+const e2eFixture = getFixtureLayout(
+  join(workspaceRoot, ".scratch", "e2e-fixture"),
+);
+const runVaultScript = vaultScript(workspaceRoot, e2eFixture.root);
 
 // The one My Library Fixture Item this suite renders and asserts against —
 // itemID is unique across every Library, so it names the item without
@@ -110,11 +102,6 @@ const annotationKeysByPage = Map.groupBy(
   ({ position }) => position.pageIndex,
 );
 
-async function isObsidianReachable(): Promise<boolean> {
-  const result = await runVaultScript(["status"]).catch(() => undefined);
-  return result?.stdout.trim().startsWith("ready ") ?? false;
-}
-
 async function availableLoopbackPort(): Promise<number> {
   await using server = createServer();
   await new Promise<void>((resolve, reject) => {
@@ -127,17 +114,9 @@ async function availableLoopbackPort(): Promise<number> {
   return address.port;
 }
 
-const reachable = await isObsidianReachable();
-// A report naming a process that has exited is not a live Paired Zotero, so a
-// developer who closed one still gets this suite.
-const pairedZotero = await livePairedZotero(
-  getFixtureLayout(getFixtureRoot(workspaceRoot)),
-).catch(() => null);
-if (reachable && pairedZotero) {
-  console.warn(
-    `Skipping the End-to-end Run: Paired Zotero (pid ${pairedZotero.pid}) holds the Fixture, and this suite rebuilds it. Close the Paired Run to run it.`,
-  );
-}
+const reachable = await isObsidianReachable(workspaceRoot);
+// File scope, so it runs after every suite that builds this Fixture is done.
+afterAll(() => discardFixture(e2eFixture));
 const webWorkbenchEnabled = process.env.WEB_WORKBENCH_ENABLED === "true";
 const settingsContent = "app.setting.containerEl";
 
@@ -200,7 +179,7 @@ async function changeNativeAnnotationCallout(
   ).toBe(true);
 }
 
-describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
+describe.skipIf(!reachable)("End-to-end Run", () => {
   let vaultId = "";
   let booksNotePath = "";
   let m: typeof import("@obsidian-messages");
@@ -385,15 +364,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     // A run that stopped before `afterAll` leaves its vault registered and its
     // folder in place, and `create` refuses a registered path. Remove both
     // first, so every run starts from a fresh vault with fresh storage.
-    const stale = await access(join(e2eVaultPath, ".obsidian")).then(
-      () => true,
-      () => false,
-    );
-    await runVaultScript([
-      "remove",
-      e2eVaultPath,
-      ...(stale ? ["--purge"] : []),
-    ]);
+    await clearVault(runVaultScript, e2eVaultPath);
     // `create` seeds the target vault from `apps/obsidian/dist-dev`, and falls
     // back to the vault's own plugin folder only when the worktree holds no
     // dev build. Copy the bundle in first, so a run without a dev build still
@@ -659,17 +630,19 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
   // its own excerpts, cold and then warm. The Node harness behind the
   // measurements record models PDF work; this case is the app's own answer.
   it("measures a multi-PDF excerpt batch cold and warm", async () => {
-    const fixture = getFixtureLayout(getFixtureRoot(workspaceRoot));
     const rougier = join(e2eVaultPath, "attachments/rougier-2014.pdf");
     const generated = join(
       e2eVaultPath,
       "attachments/excerpt-acceptance/excerpt-rendering.pdf",
     );
     const researchInterfaces = join(
-      fixture.dataDir,
+      e2eFixture.dataDir,
       "storage/CNPDF26A/research-interfaces.pdf",
     );
-    const sakimas = join(fixture.dataDir, "storage/PDFSTR22/sakimas-song.pdf");
+    const sakimas = join(
+      e2eFixture.dataDir,
+      "storage/PDFSTR22/sakimas-song.pdf",
+    );
     // Four of the Fixture's PDFs, two excerpts each, grouped so the second of
     // each pair is a repeated same-PDF excerpt: what one resident document
     // serves. The rects are inside every page the Fixture ships.
@@ -747,9 +720,8 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
   );
 
   it("creates durable image and ink excerpts with PDF readers closed", async () => {
-    const parent = join(workspaceRoot, "tmp");
-    await mkdir(parent, { recursive: true });
-    const path = await mkdtemp(join(parent, "e2e-excerpt-note-vault-"));
+    const path = e2eVaultDir(workspaceRoot, "excerpt-note-vault");
+    await clearVault(runVaultScript, path);
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await runVaultScript(["remove", path, "--purge"]);
@@ -761,7 +733,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       "fresh",
     ]);
     const id = opened.stdout.trim().split("\n")[0]!.trim();
-    // This suite skips when its Fixture has a live Zotero process.
+    // No Zotero process runs on this suite's Fixture.
     expect(
       await obEval(
         id,
@@ -918,7 +890,8 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
 
   it("customizes a first note in a fresh vault, then explicitly updates that note", async () => {
     const annotatedItem = ITEMS.find((item) => item.itemID === 46)!;
-    const freshPath = join(workspaceRoot, ".scratch", "e2e-first-note-vault");
+    const freshPath = e2eVaultDir(workspaceRoot, "first-note-vault");
+    await clearVault(runVaultScript, freshPath);
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await runVaultScript(["remove", freshPath, "--purge"]);
@@ -2372,216 +2345,210 @@ interface LibraryScopeReport {
   unavailable?: unknown[];
 }
 
-describe.skipIf(!reachable || pairedZotero !== null)(
-  "Fresh destination flow",
-  () => {
-    const vaultPath = join(workspaceRoot, ".scratch", "e2e-destination-vault");
-    let vaultId = "";
-    let m: typeof import("@obsidian-messages");
+describe.skipIf(!reachable)("Fresh destination flow", () => {
+  const vaultPath = e2eVaultDir(workspaceRoot, "destination-vault");
+  let vaultId = "";
+  let m: typeof import("@obsidian-messages");
 
-    beforeAll(async () => {
-      m = await import("@obsidian-messages");
-      const pluginDir = join(vaultPath, ".obsidian", "plugins", "zotlit");
-      await mkdir(pluginDir, { recursive: true });
-      await cp(join(workspaceRoot, "apps", "obsidian", "dist-dev"), pluginDir, {
-        recursive: true,
-      });
-      const created = await runVaultScript([
-        "open",
-        vaultPath,
-        "--vault-case",
-        "fresh",
-      ]);
-      vaultId = created.stdout.trim().split("\n")[0]!.trim();
-      await obEval(
+  beforeAll(async () => {
+    m = await import("@obsidian-messages");
+    await clearVault(runVaultScript, vaultPath);
+    const pluginDir = join(vaultPath, ".obsidian", "plugins", "zotlit");
+    await mkdir(pluginDir, { recursive: true });
+    await cp(join(workspaceRoot, "apps", "obsidian", "dist-dev"), pluginDir, {
+      recursive: true,
+    });
+    const created = await runVaultScript([
+      "open",
+      vaultPath,
+      "--vault-case",
+      "fresh",
+    ]);
+    vaultId = created.stdout.trim().split("\n")[0]!.trim();
+    await obEval(
+      vaultId,
+      "app.plugins.plugins.zotlit.services.settings.update({'server.live-update':false});true",
+    );
+  }, 180000);
+
+  afterAll(async () => {
+    await runVaultScript(["remove", vaultPath, "--purge"]);
+  }, 120000);
+
+  it("creates Books from the edited Default appearance after cancelling a destination", async () => {
+    const first = await createFixtureNote(vaultId, 46, "default");
+    expect(first.outcome, JSON.stringify(first)).toBe("created");
+    if (first.outcome !== "created")
+      throw new Error("First Literature Note was not created");
+    expect(first.path).toBe("literatures/rougierTenSimpleRules2014.md");
+    const original = await readFile(join(vaultPath, first.path), "utf-8");
+    expect(original).toContain("[!note]");
+    await obEval(
+      vaultId,
+      `(async function(){await app.workspace.getLeaf(false).openFile(app.vault.getFileByPath(${JSON.stringify(first.path)}));return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
         vaultId,
-        "app.plugins.plugins.zotlit.services.settings.update({'server.live-update':false});true",
-      );
-    }, 180000);
+        "app.commands.executeCommandById('zotlit:customize-note-template')",
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    const defaultView =
+      "app.workspace.getLeavesOfType('zotlit-template-workbench').find(leaf=>leaf.view.file?.path===app.plugins.plugins.zotlit.services.profile.defaultDocumentPath)?.view";
+    await changeNativeAnnotationCallout(vaultId, {
+      view: defaultView,
+      vaultPath,
+      tabLabel: m.workbench_tab_annotation(),
+    });
+    expect(await readFile(join(vaultPath, first.path), "utf-8")).toBe(original);
 
-    afterAll(async () => {
-      await runVaultScript(["remove", vaultPath, "--purge"]);
-    }, 120000);
-
-    it("creates Books from the edited Default appearance after cancelling a destination", async () => {
-      const first = await createFixtureNote(vaultId, 46, "default");
-      expect(first.outcome, JSON.stringify(first)).toBe("created");
-      if (first.outcome !== "created")
-        throw new Error("First Literature Note was not created");
-      expect(first.path).toBe("literatures/rougierTenSimpleRules2014.md");
-      const original = await readFile(join(vaultPath, first.path), "utf-8");
-      expect(original).toContain("[!note]");
-      await obEval(
-        vaultId,
-        `(async function(){await app.workspace.getLeaf(false).openFile(app.vault.getFileByPath(${JSON.stringify(first.path)}));return true;})()`,
-      );
-      expect(
-        await obEvalUntil(
-          vaultId,
-          "app.commands.executeCommandById('zotlit:customize-note-template')",
-          { expected: "true" },
-        ),
-      ).toBe(true);
-      const defaultView =
-        "app.workspace.getLeavesOfType('zotlit-template-workbench').find(leaf=>leaf.view.file?.path===app.plugins.plugins.zotlit.services.profile.defaultDocumentPath)?.view";
-      await changeNativeAnnotationCallout(vaultId, {
-        view: defaultView,
-        vaultPath,
-        tabLabel: m.workbench_tab_annotation(),
-      });
-      expect(await readFile(join(vaultPath, first.path), "utf-8")).toBe(
-        original,
-      );
-
-      const openAdd = async () => {
-        await obEval(
-          vaultId,
-          `(async function(){var leaf=app.workspace.getLeavesOfType('markdown').find(leaf=>leaf.view.file?.path===${JSON.stringify(first.path)});await app.workspace.revealLeaf(leaf);leaf.getContainer().focus();return true;})()`,
-        );
-        await openProfilesSettings(vaultId, "settings_page_profiles");
-        expect(
-          await obEvalUntil(
-            vaultId,
-            `(function(){var settings=${settingsContent};var button=Array.from(settings.querySelectorAll('[aria-label],button')).find(el=>el.getAttribute('aria-label')===${JSON.stringify(m.settings_profile_add())}||el.textContent.trim()===${JSON.stringify(m.settings_profile_add())});if(!button||button.disabled)return false;button.click();return true;})()`,
-            { expected: "true" },
-          ),
-        ).toBe(true);
-        expect(
-          await obEvalUntil(
-            vaultId,
-            `String(Array.from(document.querySelectorAll('.modal-title')).some(el=>el.textContent===${JSON.stringify(m.settings_profile_add())}))`,
-            { expected: "true" },
-          ),
-        ).toBe(true);
-      };
-      await openAdd();
-      expect(await clickModalButton(vaultId, m.modal_cancel())).toBe(true);
-      expect(
-        await obEval(
-          vaultId,
-          "String(app.plugins.plugins.zotlit.services.profile.profiles.length)",
-        ),
-      ).toBe("0");
-      expect(
-        (await readdir(vaultPath, { recursive: true }))
-          .filter(
-            (path) => path.includes("zotlit-profile.") && path.endsWith(".md"),
-          )
-          .map((path) => path.replaceAll("\\", "/")),
-      ).toEqual(["templates/zotlit-profile.default.md"]);
-
-      await openAdd();
-      // The native label wraps each input, so keyboard focus and its accessible name share the same control.
-      expect(
-        await obEval(
-          vaultId,
-          `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var labels=Array.from(modal.querySelectorAll('label'));var name=labels.find(el=>el.textContent===${JSON.stringify(m.settings_profile_name_name())})?.querySelector('input');var folder=labels.find(el=>el.textContent===${JSON.stringify(m.settings_profile_folder_name())})?.querySelector('input');return String(!!name&&!!folder&&name.tabIndex===0&&folder.tabIndex===0&&name===name.ownerDocument.activeElement);})()`,
-        ),
-      ).toBe("true");
-      const fill = async (name: string, folder: string) => {
-        await obEval(
-          vaultId,
-          `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var values=${JSON.stringify([name, folder])};Array.from(modal.querySelectorAll('input')).forEach((input,i)=>{input.value=values[i];input.dispatchEvent(new Event('input',{bubbles:true}));});return true;})()`,
-        );
-      };
-      await fill("Default", "books");
-      expect(
-        await obEvalUntil(
-          vaultId,
-          `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var status=modal?.querySelector('[role=status]');var button=Array.from(modal?.querySelectorAll('button')??[]).find(el=>el.textContent===${JSON.stringify(m.settings_profile_add())});return String(status?.textContent===${JSON.stringify(m.settings_profile_name_invalid())}&&status.getBoundingClientRect().height>0&&button?.disabled);})()`,
-          { expected: "true" },
-        ),
-      ).toBe(true);
-      await fill("Books", "books");
-      expect(await clickModalButton(vaultId, m.settings_profile_add())).toBe(
-        true,
-      );
-      expect(
-        await obEvalUntil(
-          vaultId,
-          "String(app.plugins.plugins.zotlit.services.profile.profiles.some(p=>p.label==='Books'))",
-          { expected: "true" },
-        ),
-      ).toBe(true);
-      const books = JSON.parse(
-        await obEval(
-          vaultId,
-          "JSON.stringify(app.plugins.plugins.zotlit.services.profile.profiles.find(p=>p.label==='Books'))",
-        ),
-      ) as { id: string; path: string };
-      const saved = await readFile(join(vaultPath, books.path), "utf-8");
-      expect(saved).toContain("[!quote]");
-      expect(saved).toContain("folder: books");
-      const booksView = `app.workspace.getLeavesOfType('zotlit-template-workbench').find(leaf=>leaf.view.file?.path===${JSON.stringify(books.path)})?.view`;
-      expect(
-        await obEvalUntil(
-          vaultId,
-          `(function(){var view=${booksView};return String(view?.contentEl.querySelector('[role=tab][aria-selected=true]')?.textContent.trim()===${JSON.stringify(m.workbench_tab_name_and_folder())}&&Array.from(view.contentEl.querySelectorAll('input')).some(el=>el.value==='books'));})()`,
-          { expected: "true" },
-        ),
-      ).toBe(true);
-
+    const openAdd = async () => {
       await obEval(
         vaultId,
         `(async function(){var leaf=app.workspace.getLeavesOfType('markdown').find(leaf=>leaf.view.file?.path===${JSON.stringify(first.path)});await app.workspace.revealLeaf(leaf);leaf.getContainer().focus();return true;})()`,
       );
-      expect(
-        await obEvalUntil(vaultId, "String(activeWindow===window)", {
-          expected: "true",
-        }),
-      ).toBe(true);
-      await obEval(
-        vaultId,
-        "app.commands.executeCommandById('zotlit:note-quick-switcher')",
-      );
+      await openProfilesSettings(vaultId, "settings_page_profiles");
       expect(
         await obEvalUntil(
           vaultId,
-          "String(!!activeDocument.querySelector('.prompt input'))",
+          `(function(){var settings=${settingsContent};var button=Array.from(settings.querySelectorAll('[aria-label],button')).find(el=>el.getAttribute('aria-label')===${JSON.stringify(m.settings_profile_add())}||el.textContent.trim()===${JSON.stringify(m.settings_profile_add())});if(!button||button.disabled)return false;button.click();return true;})()`,
           { expected: "true" },
         ),
       ).toBe(true);
-      await obEval(
-        vaultId,
-        "(function(){var input=activeDocument.querySelector('.prompt input');input.value='Thinking, fast and slow';input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()",
-      );
-      await selectSuggestion(vaultId, "Thinking, fast and slow");
-      await obEval(
-        vaultId,
-        "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-      );
-      const choice = await selectSuggestion(vaultId, "books/Kahneman2011.md");
-      expect(choice).toContain("Books");
-      expect(choice).toContain("books/Kahneman2011.md");
-      await obEval(
-        vaultId,
-        "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-      );
       expect(
-        await waitFor(async () =>
-          (
-            await readFile(
-              join(vaultPath, "books/Kahneman2011.md"),
-              "utf-8",
-            ).catch(() => "")
-          ).includes("Thinking, fast and slow"),
+        await obEvalUntil(
+          vaultId,
+          `String(Array.from(document.querySelectorAll('.modal-title')).some(el=>el.textContent===${JSON.stringify(m.settings_profile_add())}))`,
+          { expected: "true" },
         ),
       ).toBe(true);
-      const book = await readFile(
-        join(vaultPath, "books/Kahneman2011.md"),
-        "utf-8",
+    };
+    await openAdd();
+    expect(await clickModalButton(vaultId, m.modal_cancel())).toBe(true);
+    expect(
+      await obEval(
+        vaultId,
+        "String(app.plugins.plugins.zotlit.services.profile.profiles.length)",
+      ),
+    ).toBe("0");
+    expect(
+      (await readdir(vaultPath, { recursive: true }))
+        .filter(
+          (path) => path.includes("zotlit-profile.") && path.endsWith(".md"),
+        )
+        .map((path) => path.replaceAll("\\", "/")),
+    ).toEqual(["templates/zotlit-profile.default.md"]);
+
+    await openAdd();
+    // The native label wraps each input, so keyboard focus and its accessible name share the same control.
+    expect(
+      await obEval(
+        vaultId,
+        `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var labels=Array.from(modal.querySelectorAll('label'));var name=labels.find(el=>el.textContent===${JSON.stringify(m.settings_profile_name_name())})?.querySelector('input');var folder=labels.find(el=>el.textContent===${JSON.stringify(m.settings_profile_folder_name())})?.querySelector('input');return String(!!name&&!!folder&&name.tabIndex===0&&folder.tabIndex===0&&name===name.ownerDocument.activeElement);})()`,
+      ),
+    ).toBe("true");
+    const fill = async (name: string, folder: string) => {
+      await obEval(
+        vaultId,
+        `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var values=${JSON.stringify([name, folder])};Array.from(modal.querySelectorAll('input')).forEach((input,i)=>{input.value=values[i];input.dispatchEvent(new Event('input',{bubbles:true}));});return true;})()`,
       );
-      expect(book).toContain(`zotlit-profile: Books (${books.id})`);
-      expect(await readFile(join(vaultPath, first.path), "utf-8")).toBe(
-        original,
-      );
-      expect(await indexedNote(vaultId, 46)).toEqual({
-        indexedKey: first.indexedKey,
-        path: first.path,
-      });
-    }, 180000);
-  },
-);
+    };
+    await fill("Default", "books");
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var status=modal?.querySelector('[role=status]');var button=Array.from(modal?.querySelectorAll('button')??[]).find(el=>el.textContent===${JSON.stringify(m.settings_profile_add())});return String(status?.textContent===${JSON.stringify(m.settings_profile_name_invalid())}&&status.getBoundingClientRect().height>0&&button?.disabled);})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await fill("Books", "books");
+    expect(await clickModalButton(vaultId, m.settings_profile_add())).toBe(
+      true,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "String(app.plugins.plugins.zotlit.services.profile.profiles.some(p=>p.label==='Books'))",
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    const books = JSON.parse(
+      await obEval(
+        vaultId,
+        "JSON.stringify(app.plugins.plugins.zotlit.services.profile.profiles.find(p=>p.label==='Books'))",
+      ),
+    ) as { id: string; path: string };
+    const saved = await readFile(join(vaultPath, books.path), "utf-8");
+    expect(saved).toContain("[!quote]");
+    expect(saved).toContain("folder: books");
+    const booksView = `app.workspace.getLeavesOfType('zotlit-template-workbench').find(leaf=>leaf.view.file?.path===${JSON.stringify(books.path)})?.view`;
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(function(){var view=${booksView};return String(view?.contentEl.querySelector('[role=tab][aria-selected=true]')?.textContent.trim()===${JSON.stringify(m.workbench_tab_name_and_folder())}&&Array.from(view.contentEl.querySelectorAll('input')).some(el=>el.value==='books'));})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+
+    await obEval(
+      vaultId,
+      `(async function(){var leaf=app.workspace.getLeavesOfType('markdown').find(leaf=>leaf.view.file?.path===${JSON.stringify(first.path)});await app.workspace.revealLeaf(leaf);leaf.getContainer().focus();return true;})()`,
+    );
+    expect(
+      await obEvalUntil(vaultId, "String(activeWindow===window)", {
+        expected: "true",
+      }),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      "app.commands.executeCommandById('zotlit:note-quick-switcher')",
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "String(!!activeDocument.querySelector('.prompt input'))",
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      "(function(){var input=activeDocument.querySelector('.prompt input');input.value='Thinking, fast and slow';input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()",
+    );
+    await selectSuggestion(vaultId, "Thinking, fast and slow");
+    await obEval(
+      vaultId,
+      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+    );
+    const choice = await selectSuggestion(vaultId, "books/Kahneman2011.md");
+    expect(choice).toContain("Books");
+    expect(choice).toContain("books/Kahneman2011.md");
+    await obEval(
+      vaultId,
+      "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+    );
+    expect(
+      await waitFor(async () =>
+        (
+          await readFile(
+            join(vaultPath, "books/Kahneman2011.md"),
+            "utf-8",
+          ).catch(() => "")
+        ).includes("Thinking, fast and slow"),
+      ),
+    ).toBe(true);
+    const book = await readFile(
+      join(vaultPath, "books/Kahneman2011.md"),
+      "utf-8",
+    );
+    expect(book).toContain(`zotlit-profile: Books (${books.id})`);
+    expect(await readFile(join(vaultPath, first.path), "utf-8")).toBe(original);
+    expect(await indexedNote(vaultId, 46)).toEqual({
+      indexedKey: first.indexedKey,
+      path: first.path,
+    });
+  }, 180000);
+});
 
 interface ManagedFrontmatterReport {
   title?: unknown;

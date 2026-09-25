@@ -27,8 +27,3 @@ export async function keepRendering(vaultId: string): Promise<void> {
     throw new Error(`background throttling stayed on in ${vaultId}: ${reply}`);
   }
 }
-
-/** Undoes {@link keepRendering} for a vault the run does not own. */
-export async function restoreRendering(vaultId: string): Promise<void> {
-  await obEval(vaultId, `(()=>{window.${RESTORE}?.();return true;})()`);
-}
