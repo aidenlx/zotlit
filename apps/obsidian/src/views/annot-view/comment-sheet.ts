@@ -19,9 +19,12 @@ import type {
   commentEditorControls,
   HeldDraft,
   HeldDraftAction,
+  HeldTags,
+  HeldTagsActions,
 } from "./card-controls";
 import { createCommentEditor } from "./comment-editor";
 import type { CommentEditor } from "./comment-editor";
+import { tagChipVariants } from "./tag-chip";
 
 /** Where the controls stand: an Annotation Card, or the reader's Mark Popup. */
 export type CommentSurface = "card" | "popup";
@@ -354,14 +357,12 @@ function buttons(
   }
 }
 
-const HELD_DRAFT_VERB: Record<
-  HeldDraftAction["kind"],
-  keyof CommentDraftActions
-> = {
-  save: "save",
-  "allow-editing": "allowEditing",
-  discard: "discard",
-};
+const HELD_DRAFT_VERB: Record<HeldDraftAction["kind"], keyof HeldTagsActions> =
+  {
+    save: "save",
+    "allow-editing": "allowEditing",
+    discard: "discard",
+  };
 
 const CONFLICT_VERB: Record<ConflictVerb, keyof CommentDraftActions> = {
   "apply-again": "applyAgain",
@@ -407,6 +408,62 @@ export function renderHeldDraftPanel(
     if (text.win.getSelection()?.isCollapsed === false) return;
     onOpen();
   });
+  heldReasonAndVerbs(box, held, actions);
+}
+
+/**
+ * The tags the user holds that Zotero has not taken, with the verbs that end
+ * them: the held comment panel, with the draft's tag chips in place of its
+ * text.
+ *
+ * @param onOpen a click on the chips opens the tag editor; absent while
+ *   editing is unavailable.
+ * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
+ */
+export function renderHeldTagsPanel(
+  parent: HTMLElement,
+  held: HeldTags,
+  {
+    surface,
+    actions,
+    onOpen,
+  }: {
+    surface: CommentSurface;
+    actions: HeldTagsActions;
+    onOpen?: () => void;
+  },
+): void {
+  const box = panel(parent, {
+    surface,
+    hook: themeHook.annotDraft,
+    icon: "tags",
+    title: m.annot_view_tags_draft(),
+  });
+  const chips = box.createDiv({
+    cls: `zt:flex zt:flex-wrap zt:gap-1 ${onOpen ? "zt:cursor-text" : ""}`,
+  });
+  for (const name of held.names) {
+    chips
+      .createSpan({
+        cls: tagChipVariants({
+          state: "resting",
+          density: "dense",
+          truncate: true,
+          class: "zt:cursor-[inherit]",
+        }),
+      })
+      .createSpan({ cls: "zt:block zt:truncate", text: name });
+  }
+  if (onOpen) chips.addEventListener("click", onOpen);
+  heldReasonAndVerbs(box, held, actions);
+}
+
+/** A held panel's tail: why the draft is held, and the verbs that end it. */
+function heldReasonAndVerbs(
+  box: HTMLElement,
+  held: Pick<HeldDraft, "reason" | "actions">,
+  actions: HeldTagsActions,
+): void {
   if (held.reason !== null) {
     // The reason runs to three and four lines in a narrow dock, past where
     // the card's own tight leading stays readable.

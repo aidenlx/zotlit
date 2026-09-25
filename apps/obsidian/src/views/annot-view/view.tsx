@@ -137,6 +137,7 @@ export interface AnnotViewDeps {
     | "commentDraftFor"
     | "deleteAnnotation"
     | "discardCommentDraft"
+    | "discardTagDraft"
     | "discardConflict"
     | "mutationFor"
     | "on"

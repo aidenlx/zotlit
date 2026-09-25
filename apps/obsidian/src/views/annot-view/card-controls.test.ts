@@ -1,9 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
-import type { CommentDraft } from "@/services/annotation-repository/service";
+import type {
+  CommentDraft,
+  TagDraft,
+} from "@/services/annotation-repository/service";
 import type { MutationState } from "@/services/annotation-repository/write";
 import { IDLE } from "@/services/annotation-repository/write";
 
@@ -15,6 +18,8 @@ import {
   commentEditorControls,
   editingBlockedReason,
   heldCommentDraft,
+  heldTagDraft,
+  heldTagsActions,
 } from "./card-controls";
 import type { CardBlock, CardControls } from "./card-controls";
 
@@ -457,5 +462,112 @@ describe("the held-draft panel", () => {
         primary: false,
       },
     ]);
+  });
+});
+
+describe("the held tags panel", () => {
+  const draft: TagDraft = {
+    annotationKey: "PUPR5FG5",
+    attachmentKey: "RGRPDF24",
+    serverID: "fixture",
+    baseline: ["review"],
+    names: ["review", "figure"],
+    state: { kind: "editing" },
+    manualSave: true,
+    held: true,
+  };
+
+  it("stays quiet while a session is open, a save is in flight, or nothing changed", () => {
+    // A session open on either surface: Save tags there would cut it short.
+    expect(
+      heldTagDraft({ kind: "writable" }, { ...draft, held: false }, NOW),
+    ).toBeNull();
+    expect(
+      heldTagDraft({ kind: "writable" }, { ...draft, names: ["review"] }, NOW),
+    ).toBeNull();
+    expect(
+      heldTagDraft(
+        { kind: "writable" },
+        { ...draft, state: { kind: "pending" } },
+        NOW,
+      ),
+    ).toBeNull();
+  });
+
+  it("states each hold with the comment's reason line and offers Save tags", () => {
+    const reason = (capability: EditingCapability, held: TagDraft) =>
+      heldTagDraft(capability, held, NOW)?.reason;
+    expect(
+      reason(
+        { kind: "writable" },
+        {
+          ...draft,
+          state: { kind: "failed", failure: { kind: "unreachable" } },
+        },
+      ),
+    ).toBe(m.annot_view_comment_unconfirmed());
+    const unavailable: EditingCapability = {
+      kind: "read-only",
+      reason: "zotero-unavailable",
+    };
+    expect(reason(unavailable, draft)).toBe(
+      editingCapabilityCopy(unavailable, NOW).detail,
+    );
+    const refused = heldTagDraft(
+      { kind: "authorization-required" },
+      {
+        ...draft,
+        state: { kind: "failed", failure: { kind: "unauthorized" } },
+      },
+      NOW,
+    );
+    expect(refused?.reason).toBe(m.capability_authorization_required_detail());
+    expect(refused?.names).toEqual(["review", "figure"]);
+    expect(refused?.actions).toEqual([
+      {
+        kind: "save",
+        label: m.annot_view_tags_save(),
+        enabled: false,
+        primary: false,
+      },
+      {
+        kind: "allow-editing",
+        label: m.capability_enable_editing(),
+        enabled: true,
+        primary: true,
+      },
+      {
+        kind: "discard",
+        label: m.annot_view_comment_discard(),
+        enabled: true,
+        primary: false,
+      },
+    ]);
+  });
+
+  it("binds Save tags to the explicit save, and Discard to the draft", async () => {
+    const annotations = {
+      submitTags: vi.fn(async (): Promise<MutationState> => IDLE),
+      discardTagDraft: vi.fn(),
+    };
+    const reported: Promise<MutationState>[] = [];
+    const allowEditing = vi.fn();
+    const actions = heldTagsActions(annotations, "PUPR5FG5", {
+      allowEditing,
+      report: (outcome) => reported.push(outcome),
+    });
+
+    actions.save();
+    // Save tags carries no `automatic`, so a held draft is written.
+    expect(annotations.submitTags).toHaveBeenCalledExactlyOnceWith("PUPR5FG5");
+    expect(reported).toHaveLength(1);
+    await expect(reported[0]).resolves.toEqual(IDLE);
+
+    actions.discard();
+    expect(annotations.discardTagDraft).toHaveBeenCalledExactlyOnceWith(
+      "PUPR5FG5",
+    );
+    actions.allowEditing();
+    expect(allowEditing).toHaveBeenCalledOnce();
   });
 });

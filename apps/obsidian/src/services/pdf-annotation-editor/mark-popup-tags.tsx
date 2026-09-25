@@ -15,8 +15,16 @@ import type {
   AnnotationRecord,
   TagDraft,
 } from "@/services/annotation-repository/service";
+import type {
+  HeldTags,
+  HeldTagsActions,
+} from "@/views/annot-view/card-controls";
 import { tagChipVariants } from "@/views/annot-view/tag-chip";
-import { autoTags, TagEditor } from "@/views/annot-view/tag-editor";
+import {
+  autoTags,
+  HeldTagsPanel,
+  TagEditor,
+} from "@/views/annot-view/tag-editor";
 import type { TagEditorProps } from "@/views/annot-view/tag-editor";
 
 export interface TagSectionProps {
@@ -25,6 +33,18 @@ export interface TagSectionProps {
   draft: TagDraft | null;
   /** Whether the tag editor stands open. */
   tagging: boolean;
+  /**
+   * Whether editing is unavailable. The editor then closes, which holds the
+   * draft for Save tags.
+   */
+  readOnly: boolean;
+  /** The line under the editor, as the card's editor says it. */
+  hint: string | null;
+  /** The held tag draft the section shows in the chips' place, if any. */
+  held: HeldTags | null;
+  heldActions: HeldTagsActions;
+  /** Opens the tag editor from the held chips; absent while editing is unavailable. */
+  onOpen?: () => void;
   libraryNames: () => readonly string[];
   onChange: (names: readonly string[]) => void;
   /**
@@ -38,17 +58,23 @@ export interface TagSectionProps {
 
 /**
  * Whether the tag section stands: while the Annotation has tags, or a session
- * elsewhere left it some, while the editor is open, and while a session's
- * save is in flight, which the editor shows as saving until the read-back.
+ * elsewhere left it some, while the editor is open, while a session's save is
+ * in flight, which the editor shows as saving until the read-back, and while
+ * a tag draft is held.
  */
 export function tagSectionShows({
   annotation,
   draft,
   tagging,
-}: Pick<TagSectionProps, "annotation" | "draft" | "tagging">): boolean {
+  held,
+}: Pick<
+  TagSectionProps,
+  "annotation" | "draft" | "tagging" | "held"
+>): boolean {
   return (
     tagging ||
     draft?.state.kind === "pending" ||
+    held !== null ||
     sessionNames(annotation, draft).length > 0
   );
 }
@@ -137,6 +163,11 @@ function TagSection({
   annotation,
   draft,
   tagging,
+  readOnly,
+  hint,
+  held,
+  heldActions,
+  onOpen,
   libraryNames,
   onChange,
   onClose,
@@ -145,18 +176,30 @@ function TagSection({
   suggestRef,
 }: TagSectionProps & Pick<TagEditorProps, "endRef" | "suggestRef">) {
   const saving = draft?.state.kind === "pending";
-  if (tagging || saving) {
+  // Editing that becomes unavailable closes the editor, which holds the draft.
+  if (saving || (tagging && !readOnly)) {
     return (
       <TagEditor
         names={sessionNames(annotation, draft)}
         auto={autoTags(annotation)}
         saving={saving}
+        hint={hint}
         libraryNames={libraryNames}
         onChange={onChange}
         onClose={onClose}
         endRef={endRef}
         within={within}
         suggestRef={suggestRef}
+      />
+    );
+  }
+  if (held) {
+    return (
+      <HeldTagsPanel
+        held={held}
+        surface="popup"
+        actions={heldActions}
+        onOpen={onOpen}
       />
     );
   }

@@ -140,6 +140,7 @@ export type AnnotationReads = Pick<
   | "createAnnotation"
   | "deleteAnnotation"
   | "discardCommentDraft"
+  | "discardTagDraft"
   | "editComment"
   | "editTags"
   | "mutationFor"

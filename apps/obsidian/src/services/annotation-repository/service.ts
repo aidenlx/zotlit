@@ -258,6 +258,17 @@ export interface TagDraft {
   names: readonly string[];
   /** `pending` while the save is in flight, which the editor shows as saving. */
   state: TagDraftState;
+  /**
+   * The next save requires Save tags: set after a failed or unconfirmed
+   * write, or when editing is lost while this draft is open.
+   */
+  manualSave?: boolean;
+  /**
+   * The session ended with no write, and the draft waits for Save tags. No
+   * editor holds it open, so a surface may offer Save tags without cutting a
+   * session short.
+   */
+  held?: boolean;
 }
 
 type CommentWriteDecision =
@@ -982,12 +993,16 @@ export class AnnotationRepository extends Service<void> {
     const held = standing ? null : this.#holding(annotationKey);
     if (!standing && (!source || !held)) return null;
     const attachmentKey = standing?.attachmentKey ?? held!.attachmentKey;
-    if (this.capabilityFor(attachmentKey).kind !== "writable") {
+    const capability = this.capabilityFor(attachmentKey);
+    // While editing is unavailable no session starts, but a standing one
+    // still takes its editor's last names: the editor closing as editing goes
+    // adds the text still typed, which the held draft keeps for Save tags.
+    if (capability.kind !== "writable" && (!standing || names === undefined))
       return standing;
-    }
     const draft: TagDraft = standing
       ? {
           ...standing,
+          held: false,
           ...(names !== undefined && {
             names,
             state: { kind: "editing" } as const,
@@ -1006,15 +1021,24 @@ export class AnnotationRepository extends Service<void> {
   }
 
   /**
-   * Save one tag editing session, when its editor closes: one write that
-   * applies the session's added and removed names to the tags Zotero holds
-   * now. A session that changed nothing ends with no write. The draft stays,
-   * `pending`, until the Annotation is read back, and then goes, so the editor
-   * closes onto the confirmed tags.
+   * Save one tag editing session: one write that applies the session's added
+   * and removed names to the tags Zotero holds now. A session that changed
+   * nothing ends with no write. The draft stays, `pending`, until the
+   * Annotation is read back, and then goes, so the editor closes onto the
+   * confirmed tags.
    *
+   * A draft that is not saved — held for Save tags, blocked, or failed — is
+   * marked `held`, since its editor has closed.
+   *
+   * @param options.automatic whether the editor closing asks, rather than
+   *   Save tags. A draft that needs Save tags — editing unavailable, or a
+   *   failed save — is then held, unsaved.
    * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
    */
-  async submitTags(annotationKey: string): Promise<MutationState> {
+  async submitTags(
+    annotationKey: string,
+    { automatic = false }: { automatic?: boolean } = {},
+  ): Promise<MutationState> {
     const draft = this.tagDraftFor(annotationKey);
     if (!draft) return IDLE;
     if (draft.state.kind === "pending") return this.mutationFor(annotationKey);
@@ -1023,10 +1047,21 @@ export class AnnotationRepository extends Service<void> {
       this.#dropTagDraft(draft);
       return IDLE;
     }
+    if (automatic && !this.#canAutosave(draft)) {
+      logger.debug("A tag draft is held for Save tags", {
+        annotationKey,
+        state: draft.state.kind,
+        capability: this.capabilityFor(draft.attachmentKey).kind,
+      });
+      this.#setTagDraft({ ...draft, manualSave: true, held: true });
+      return IDLE;
+    }
     const blocked = this.#writeBlocked(draft.attachmentKey);
     if (blocked) {
       this.#setTagDraft({
         ...draft,
+        manualSave: true,
+        held: true,
         state: { kind: "failed", failure: blocked },
       });
       return { kind: "failed", failure: blocked };
@@ -1047,11 +1082,22 @@ export class AnnotationRepository extends Service<void> {
     );
     if (!current) return outcome;
     if (outcome.kind === "failed") {
-      this.#setTagDraft({ ...current, state: outcome });
+      this.#setTagDraft({
+        ...current,
+        manualSave: true,
+        held: true,
+        state: outcome,
+      });
     } else {
       this.#dropTagDraft(current);
     }
     return outcome;
+  }
+
+  /** Drop a held tag draft and keep the tags Zotero holds. */
+  discardTagDraft(annotationKey: string): void {
+    const draft = this.tagDraftFor(annotationKey);
+    if (draft && draft.state.kind !== "pending") this.#dropTagDraft(draft);
   }
 
   /**
@@ -1389,6 +1435,16 @@ export class AnnotationRepository extends Service<void> {
           this.#commentDrafts.set(id, { ...draft, manualSave: true });
           this.#emitter.emit("comment-draft-changed", draft.annotationKey);
         }
+        // A tag draft has no timer or queued save to cancel, unlike a comment
+        // draft, so one already held needs no second event.
+        for (const draft of this.#tagDrafts.values()) {
+          if (
+            draft.manualSave ||
+            this.capabilityFor(draft.attachmentKey).kind === "writable"
+          )
+            continue;
+          this.#setTagDraft({ ...draft, manualSave: true });
+        }
         this.#emitter.emit("capability-changed");
       }),
     );
@@ -1601,7 +1657,11 @@ export class AnnotationRepository extends Service<void> {
         failure: applied.failure,
       });
     }
-    if (command.settle === "drop") this.#dropCommentDraft(annotationKey);
+    if (command.settle === "drop") {
+      this.#dropCommentDraft(annotationKey);
+      const tags = this.tagDraftFor(annotationKey);
+      if (tags) this.#dropTagDraft(tags);
+    }
     this.#publishQuery(held.attachmentKey, held.queryKey);
     if (applied.value.kind === "deleted") {
       this.#reconcilePublishedDrafts(
@@ -2600,7 +2660,9 @@ export class AnnotationRepository extends Service<void> {
     return save;
   }
 
-  #canAutosave(draft: CommentDraft): boolean {
+  #canAutosave(
+    draft: Pick<CommentDraft, "attachmentKey" | "manualSave">,
+  ): boolean {
     const capability = this.capabilityFor(draft.attachmentKey);
     return !draft.manualSave && capability.kind === "writable";
   }
@@ -2675,12 +2737,33 @@ export class AnnotationRepository extends Service<void> {
   }
 
   /** Reconcile drafts only against a complete read from their own database. */
-  #reconcileCommentDrafts(
+  #reconcileDrafts(
     serverID: string,
     attachmentKey: string,
     annotations: readonly AnnotationRecord[],
   ): void {
     const records = new Map(annotations.map((record) => [record.key, record]));
+    // Deletion confirmed in Zotero discards the tag draft with the comment
+    // draft, and announces the deletion once for the two.
+    for (const draft of this.#tagDrafts.values()) {
+      if (
+        draft.serverID !== serverID ||
+        draft.attachmentKey !== attachmentKey ||
+        records.has(draft.annotationKey)
+      )
+        continue;
+      this.#dropTagDraft(draft);
+      if (
+        this.#commentDrafts.has(commentDraftID(serverID, draft.annotationKey))
+      )
+        continue;
+      this.#settle(draft.annotationKey, IDLE);
+      this.#emitter.emit(
+        "annotation-deleted",
+        draft.annotationKey,
+        attachmentKey,
+      );
+    }
     for (const draft of this.#commentDrafts.values()) {
       if (
         draft.serverID !== serverID ||
@@ -2763,7 +2846,7 @@ export class AnnotationRepository extends Service<void> {
         ? list.source.serverID
         : list.source.database.serverID;
     if (serverID === null) return;
-    this.#reconcileCommentDrafts(serverID, attachmentKey, list.annotations);
+    this.#reconcileDrafts(serverID, attachmentKey, list.annotations);
   }
 
   /**

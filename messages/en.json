@@ -300,6 +300,8 @@
   "annot_view_comment_save": "Save comment",
   "annot_view_comment_discard": "Discard",
   "annot_view_comment_unconfirmed": "Save not confirmed. Reconnect to Zotero to check.",
+  "annot_view_tags_draft": "Unsaved tags",
+  "annot_view_tags_save": "Save tags",
   "settings_zotero_editing_name": "Zotero editing",
   "settings_zotero_editing_desc": "Allow ZotLit to change annotations in Zotero.",
   "settings_zotero_editing_enable": "Allow editing",

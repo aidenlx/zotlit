@@ -757,12 +757,16 @@ it("saves a tag session once as it ends, from the tag verb or a new selection", 
 
   verb().click();
   expect(h.store.getState().floating).toMatchObject({ tagging: false });
-  expect(h.annotations.submitTags).toHaveBeenCalledExactlyOnceWith("WORD2222");
+  expect(h.annotations.submitTags).toHaveBeenCalledExactlyOnceWith("WORD2222", {
+    automatic: true,
+  });
 
   verb().click();
   h.selection.select("PARA1111");
   expect(h.annotations.submitTags).toHaveBeenCalledTimes(2);
-  expect(h.annotations.submitTags).toHaveBeenLastCalledWith("WORD2222");
+  expect(h.annotations.submitTags).toHaveBeenLastCalledWith("WORD2222", {
+    automatic: true,
+  });
 });
 
 it("closes only the tag editor for Escape, and keeps the selection", () => {
@@ -780,7 +784,9 @@ it("closes only the tag editor for Escape, and keeps the selection", () => {
     key: "WORD2222",
     tagging: false,
   });
-  expect(h.annotations.submitTags).toHaveBeenCalledExactlyOnceWith("WORD2222");
+  expect(h.annotations.submitTags).toHaveBeenCalledExactlyOnceWith("WORD2222", {
+    automatic: true,
+  });
 });
 
 it("takes no typed name into a tag draft a database switch hid", () => {

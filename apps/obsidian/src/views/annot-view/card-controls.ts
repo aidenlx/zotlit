@@ -10,9 +10,20 @@ import type { IconName } from "obsidian";
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
-import type { CommentDraft } from "@/services/annotation-repository/service";
-import { writeFailureMessage } from "@/services/annotation-repository/write";
-import type { MutationState } from "@/services/annotation-repository/write";
+import type {
+  AnnotationRepository,
+  CommentDraft,
+  TagDraft,
+} from "@/services/annotation-repository/service";
+import {
+  noTagChange,
+  tagChange,
+  writeFailureMessage,
+} from "@/services/annotation-repository/write";
+import type {
+  MutationState,
+  WriteFailure,
+} from "@/services/annotation-repository/write";
 
 /**
  * Why a verb cannot act while the Editing Capability stands in its way, and the
@@ -198,18 +209,8 @@ export function commentEditorControls(
   const pending = manual && draft?.state.kind === "pending";
   let hint: string | null = null;
   if (pending) hint = m.annot_view_card_saving();
-  else if (draft?.state.kind === "failed") {
-    const { failure } = draft.state;
-    hint =
-      // A refused write and a refused editor are one state, so they say one
-      // thing: the capability's own sentence, as the blocked case below says it.
-      failure.kind === "unauthorized"
-        ? (capabilityBlock(capability, now)?.reason ??
-          writeFailureMessage(failure, now))
-        : failure.kind === "unknown-outcome" || failure.kind === "unreachable"
-          ? m.annot_view_comment_unconfirmed()
-          : writeFailureMessage(failure, now);
-  }
+  else if (draft?.state.kind === "failed")
+    hint = failedSaveReason(capability, draft.state.failure, now);
   // The capability's own sentence, which names the state and the gesture that
   // ends it. A line of its own here could only restate it more vaguely.
   else if (!available) hint = capabilityBlock(capability, now)?.reason ?? null;
@@ -221,6 +222,47 @@ export function commentEditorControls(
     manual,
     hint,
   };
+}
+
+/**
+ * Why a draft's save failed, in the words a comment and tags share: the
+ * reason line a held draft carries.
+ */
+function failedSaveReason(
+  capability: EditingCapability,
+  failure: WriteFailure,
+  now: Temporal.Instant,
+): string {
+  // A refused write and a refused editor are one state, so they say one
+  // thing: the capability's own sentence, as the blocked case says it.
+  if (failure.kind === "unauthorized")
+    return (
+      capabilityBlock(capability, now)?.reason ??
+      writeFailureMessage(failure, now)
+    );
+  if (failure.kind === "unknown-outcome" || failure.kind === "unreachable")
+    return m.annot_view_comment_unconfirmed();
+  return writeFailureMessage(failure, now);
+}
+
+/**
+ * The line under the tag editor, and whether the editor takes changes: the
+ * comment editor's rules, for a draft that saves when the editor closes. A
+ * save in flight says so in the field itself.
+ *
+ * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
+ */
+export function tagEditorControls(
+  capability: EditingCapability,
+  draft: TagDraft | null,
+  now: Temporal.Instant,
+): { readOnly: boolean; hint: string | null } {
+  const available = editingLive(capability);
+  let hint: string | null = null;
+  if (draft?.state.kind === "failed")
+    hint = failedSaveReason(capability, draft.state.failure, now);
+  else if (!available) hint = capabilityBlock(capability, now)?.reason ?? null;
+  return { readOnly: !available, hint };
 }
 
 /** One verb the held-draft panel offers. */
@@ -284,10 +326,104 @@ export function heldCommentDraft(
   // An automatic save is already on its way, so the card waits for it rather
   // than asking the user to do what the plugin is about to do.
   if (!manual && !saveDisabled) return null;
+  return {
+    text: draft.text,
+    reason: block?.reason ?? hint,
+    actions: heldDraftActions(block, {
+      save: m.annot_view_comment_save(),
+      saveDisabled,
+    }),
+  };
+}
+
+/** Tags the user holds that Zotero does not have, with the verbs that end them. */
+export interface HeldTags {
+  /** The draft's names, which the panel shows in place of Zotero's tags. */
+  names: readonly string[];
+  /** Why the tags are still held. */
+  reason: string | null;
+  actions: readonly HeldDraftAction[];
+}
+
+/**
+ * What the card and the Mark Popup announce about one held tag draft, or
+ * `null` where they announce nothing: the comment's rule, for a draft whose
+ * editor has closed. A session still open on either surface, a save in
+ * flight, and a session that changed nothing ask the user for nothing, so
+ * Save tags never cuts a session short.
+ *
+ * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
+ */
+export function heldTagDraft(
+  capability: EditingCapability,
+  draft: TagDraft | null,
+  now: Temporal.Instant,
+): HeldTags | null {
+  if (!draft?.held || draft.state.kind === "pending") return null;
+  if (noTagChange(tagChange(draft.baseline, draft.names))) return null;
+  const available = editingLive(capability);
+  const block = capabilityBlock(capability, now);
+  return {
+    names: draft.names,
+    reason:
+      block?.reason ??
+      (draft.state.kind === "failed"
+        ? failedSaveReason(capability, draft.state.failure, now)
+        : null),
+    actions: heldDraftActions(block, {
+      save: m.annot_view_tags_save(),
+      saveDisabled: !available,
+    }),
+  };
+}
+
+/** What the held tags panel's verbs run. */
+export interface HeldTagsActions {
+  /** Save tags: the explicit save, which a held draft waits for. */
+  save: () => void;
+  /** Ask Zotero for editing again. */
+  allowEditing: () => void;
+  /** Drop the held tags and keep what Zotero holds. */
+  discard: () => void;
+}
+
+/**
+ * The held tags panel's verbs for one Annotation, bound to the repository:
+ * the card and the Mark Popup bind them the same way.
+ *
+ * @param report where the save's outcome goes, which raises its notice.
+ */
+export function heldTagsActions(
+  annotations: Pick<AnnotationRepository, "discardTagDraft" | "submitTags">,
+  annotationKey: string,
+  {
+    allowEditing,
+    report,
+  }: {
+    allowEditing: () => void;
+    report: (outcome: Promise<MutationState>) => void;
+  },
+): HeldTagsActions {
+  return {
+    // Save tags is the explicit save, never the editor's automatic one.
+    save: () => report(annotations.submitTags(annotationKey)),
+    allowEditing,
+    discard: () => annotations.discardTagDraft(annotationKey),
+  };
+}
+
+/**
+ * The held-draft panel's verbs. Save wears the accent while it can act; where
+ * it cannot, the grant that ends the refusal does.
+ */
+function heldDraftActions(
+  block: CardBlock | null,
+  { save, saveDisabled }: { save: string; saveDisabled: boolean },
+): HeldDraftAction[] {
   const actions: HeldDraftAction[] = [
     {
       kind: "save",
-      label: m.annot_view_comment_save(),
+      label: save,
       enabled: !saveDisabled,
       primary: !saveDisabled,
     },
@@ -307,5 +443,5 @@ export function heldCommentDraft(
     enabled: true,
     primary: false,
   });
-  return { text: draft.text, reason: block?.reason ?? hint, actions };
+  return actions;
 }

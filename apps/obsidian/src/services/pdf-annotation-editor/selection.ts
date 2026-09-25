@@ -48,7 +48,11 @@ import {
   editingBlockedReason,
   editingLive,
   heldCommentDraft,
+  heldTagDraft,
+  heldTagsActions,
+  tagEditorControls,
 } from "@/views/annot-view/card-controls";
+import type { HeldTags } from "@/views/annot-view/card-controls";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
 import {
   renderCommentSheet,
@@ -151,6 +155,7 @@ export type AnnotationEdits = Pick<
   | "commentDraftFor"
   | "deleteAnnotation"
   | "discardCommentDraft"
+  | "discardTagDraft"
   | "editComment"
   | "editTags"
   | "patchColor"
@@ -292,6 +297,8 @@ export class MarkSelection implements Disposable {
   } | null = null;
   /** The popup's tag section, while it stands in the popup's content. */
   #tags: MarkPopupTags | null = null;
+  /** The held tags panel the popup last drew; see {@link #keepHeldTags}. */
+  #heldTags: HeldTags | null = null;
   #pressedAt: Point | null = null;
   /** The pointer a Geometry Edit holds, and where it last stood. */
   #dragging: { pointerId: number; client: Point } | null = null;
@@ -1039,7 +1046,10 @@ export class MarkSelection implements Disposable {
   ): void {
     const { annotation, tagging } = input;
     const draft = selectSelectedTagDraft(this.#state());
-    const shows = tagSectionShows({ annotation, draft, tagging });
+    const capability = this.#capability();
+    const { readOnly, hint } = tagEditorControls(capability, draft, input.now);
+    const held = this.#keepHeldTags(heldTagDraft(capability, draft, input.now));
+    const shows = tagSectionShows({ annotation, draft, tagging, held });
     if (this.#tags && (!shows || this.#tags.key !== annotation.key))
       this.#dropTags();
     if (!shows) return;
@@ -1050,6 +1060,14 @@ export class MarkSelection implements Disposable {
       annotation,
       draft,
       tagging,
+      readOnly,
+      hint,
+      held,
+      heldActions: heldTagsActions(annotations, annotation.key, {
+        allowEditing: () => this.#deps.gestures.allowEditing(),
+        report: (outcome) => this.#write(outcome),
+      }),
+      onOpen: readOnly ? undefined : () => this.#toggleTags(annotation),
       libraryNames: () => this.#deps.libraryTagNames(annotation.key),
       onChange: (names) => {
         // A change that lands once no session stands and its draft is gone —
@@ -1069,6 +1087,18 @@ export class MarkSelection implements Disposable {
   }
 
   /**
+   * The held tags panel as the popup last drew it, kept while what it shows
+   * is unchanged: every refresh rebuilds the popup, and a panel drawn again
+   * between press and release drops the click.
+   */
+  #keepHeldTags(next: HeldTags | null): HeldTags | null {
+    const kept = this.#heldTags;
+    if (!next || !kept || JSON.stringify(next) !== JSON.stringify(kept))
+      this.#heldTags = next;
+    return this.#heldTags;
+  }
+
+  /**
    * The tag section goes, and its Preact root is unmounted. Unmounting ends
    * an open editor's session, which can rebuild the popup and drop the
    * section again before this returns, so the field is cleared first.
@@ -1079,9 +1109,14 @@ export class MarkSelection implements Disposable {
     tags?.[Symbol.dispose]();
   }
 
-  /** Save the tag editing session that just ended on one Annotation. */
+  /**
+   * Save the tag editing session that just ended on one Annotation, or hold
+   * it where it needs Save tags.
+   */
   #submitTags(annotationKey: string): void {
-    this.#write(this.#deps.annotations.submitTags(annotationKey));
+    this.#write(
+      this.#deps.annotations.submitTags(annotationKey, { automatic: true }),
+    );
   }
 
   #renderVerbs(row: HTMLElement, input: MarkPopupRowInput): void {

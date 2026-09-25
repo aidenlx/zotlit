@@ -19,6 +19,9 @@ import * as m from "@/lib/i18n/generated/messages";
 import { tooltipAttrs } from "@/lib/utils";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
+import type { HeldTags, HeldTagsActions } from "./card-controls";
+import { renderHeldTagsPanel } from "./comment-sheet";
+import type { CommentSurface } from "./comment-sheet";
 import { tagChipVariants } from "./tag-chip";
 
 export interface TagEditorProps {
@@ -28,6 +31,11 @@ export interface TagEditorProps {
   auto: ReadonlySet<string>;
   /** The save is in flight: the input and the remove buttons rest disabled. */
   saving: boolean;
+  /**
+   * The line under the editor, as the comment editor says it: why the last
+   * save failed, or why editing stopped while a save is in flight.
+   */
+  hint: string | null;
   /** The tag names of the Annotation's Library, read when the editor opens. */
   libraryNames: () => readonly string[];
   onChange: (names: string[]) => void;
@@ -66,6 +74,7 @@ export function TagEditor({
   names,
   auto,
   saving,
+  hint,
   libraryNames,
   onChange,
   onClose,
@@ -74,62 +83,74 @@ export function TagEditor({
   suggestRef,
 }: TagEditorProps) {
   return (
-    <TagsInput.Root
-      value={names}
-      onValueChange={onChange}
-      aria-busy={saving}
-      // A press on a chip keeps the focus in the field, so it neither ends the
-      // session nor lands on the surface around the editor. A press on the
-      // editor's own empty space is Root's to answer.
-      onMouseDown={(event) => {
-        const target = event.target as HTMLElement;
-        if (target === event.currentTarget) return;
-        if (target.dataset.slot === "tags-input-input") return;
-        event.preventDefault();
-      }}
-      className="zt:flex zt:flex-wrap zt:items-center zt:gap-1 zt:rounded-sm zt:p-0.5 zt:ring-1 zt:ring-border zt:focus-within:ring-border-focus"
-    >
-      {names.map((name) => (
-        <TagsInput.Item
-          key={name}
-          value={name}
-          data-auto={auto.has(name) ? "" : undefined}
-          className={tagChipVariants({
-            state: "resting",
-            density: "dense",
-            truncate: true,
-            class:
-              "zt:flex zt:cursor-default zt:items-center zt:gap-0.5 zt:pe-0.5",
-          })}
-        >
-          {auto.has(name) && (
-            <span
-              className="zt:flex zt:shrink-0"
-              {...tooltipAttrs(m.annot_view_card_tag_auto())}
-            >
-              <Icon name="bot" size={12} aria-hidden />
-              <span className="zt:sr-only">{m.annot_view_card_tag_auto()}</span>
-            </span>
-          )}
-          <TagsInput.ItemText className="zt:block zt:truncate" />
-          <TagsInput.ItemRemove
-            className="zt-annot-tag-remove clickable-icon"
-            disabled={saving}
-            {...tooltipAttrs(m.annot_view_card_tag_remove({ name }))}
+    <>
+      <TagsInput.Root
+        value={names}
+        onValueChange={onChange}
+        aria-busy={saving}
+        // A press on a chip keeps the focus in the field, so it neither ends the
+        // session nor lands on the surface around the editor. A press on the
+        // editor's own empty space is Root's to answer.
+        onMouseDown={(event) => {
+          const target = event.target as HTMLElement;
+          if (target === event.currentTarget) return;
+          if (target.dataset.slot === "tags-input-input") return;
+          event.preventDefault();
+        }}
+        className="zt:flex zt:flex-wrap zt:items-center zt:gap-1 zt:rounded-sm zt:p-0.5 zt:ring-1 zt:ring-border zt:focus-within:ring-border-focus"
+      >
+        {names.map((name) => (
+          <TagsInput.Item
+            key={name}
+            value={name}
+            data-auto={auto.has(name) ? "" : undefined}
+            className={tagChipVariants({
+              state: "resting",
+              density: "dense",
+              truncate: true,
+              class:
+                "zt:flex zt:cursor-default zt:items-center zt:gap-0.5 zt:pe-0.5",
+            })}
           >
-            <Icon name="x" size={12} />
-          </TagsInput.ItemRemove>
-        </TagsInput.Item>
-      ))}
-      <TagField
-        saving={saving}
-        libraryNames={libraryNames}
-        onClose={onClose}
-        endRef={endRef}
-        within={within}
-        suggestRef={suggestRef}
-      />
-    </TagsInput.Root>
+            {auto.has(name) && (
+              <span
+                className="zt:flex zt:shrink-0"
+                {...tooltipAttrs(m.annot_view_card_tag_auto())}
+              >
+                <Icon name="bot" size={12} aria-hidden />
+                <span className="zt:sr-only">
+                  {m.annot_view_card_tag_auto()}
+                </span>
+              </span>
+            )}
+            <TagsInput.ItemText className="zt:block zt:truncate" />
+            <TagsInput.ItemRemove
+              className="zt-annot-tag-remove clickable-icon"
+              disabled={saving}
+              {...tooltipAttrs(m.annot_view_card_tag_remove({ name }))}
+            >
+              <Icon name="x" size={12} />
+            </TagsInput.ItemRemove>
+          </TagsInput.Item>
+        ))}
+        <TagField
+          saving={saving}
+          libraryNames={libraryNames}
+          onClose={onClose}
+          endRef={endRef}
+          within={within}
+          suggestRef={suggestRef}
+        />
+      </TagsInput.Root>
+      {hint !== null && (
+        <div
+          role="status"
+          className="zt:mt-1 zt:text-xs zt:text-pretty zt:text-muted-foreground"
+        >
+          {hint}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -264,6 +285,47 @@ function TagField({
       />
     </>
   );
+}
+
+/**
+ * The tags the user holds that Zotero has not taken, in the tag row's place,
+ * with the verbs that end them; see {@link renderHeldTagsPanel}. The card and
+ * the Mark Popup both draw it.
+ *
+ * @param onOpen a click on the chips opens the tag editor; absent while
+ *   editing is unavailable.
+ */
+export function HeldTagsPanel({
+  held,
+  surface,
+  actions,
+  onOpen,
+}: {
+  held: HeldTags;
+  surface: CommentSurface;
+  actions: HeldTagsActions;
+  onOpen?: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  // The panel outlives renders; its verbs read this render's callbacks.
+  const latest = useRef({ actions, onOpen });
+  latest.current = { actions, onOpen };
+  const openable = onOpen !== undefined;
+  useLayoutEffect(() => {
+    if (!ref.current) return;
+    renderHeldTagsPanel(ref.current, held, {
+      surface,
+      actions: {
+        save: () => latest.current.actions.save(),
+        allowEditing: () => latest.current.actions.allowEditing(),
+        discard: () => latest.current.actions.discard(),
+      },
+      onOpen: openable ? () => latest.current.onOpen?.() : undefined,
+    });
+    // A redraw between press and release would drop the click, so the panel
+    // redraws only when what it shows changes.
+  }, [held, surface, openable]);
+  return <div ref={ref} />;
 }
 
 /** Where a {@link TagSuggest} reads its names and hands its pick. */

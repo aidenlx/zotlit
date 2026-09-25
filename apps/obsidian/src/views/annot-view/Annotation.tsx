@@ -36,6 +36,8 @@ import {
   commentEditorControls,
   editingLive,
   heldCommentDraft,
+  heldTagDraft,
+  tagEditorControls,
 } from "./card-controls";
 import type { CardControl, CardControls, HeldDraft } from "./card-controls";
 import {
@@ -62,7 +64,7 @@ import {
   useToggleSelectedTag,
 } from "./store";
 import { tagChipVariants } from "./tag-chip";
-import { autoTags, TagEditor } from "./tag-editor";
+import { autoTags, HeldTagsPanel, TagEditor } from "./tag-editor";
 
 const TYPE_ICON: Record<string, string> = {
   highlight: "align-left",
@@ -381,7 +383,7 @@ function useTagSession(annot: AnnotationRecord) {
     },
     close: (): void => {
       setEditing(null);
-      actions.onSaveTags(annot);
+      actions.onSaveTags(annot, { automatic: true });
     },
   };
 }
@@ -403,7 +405,21 @@ function TagSlot({
   const actions = useContext(AnnotActionsContext);
   const session = useTagSession(annot);
   const auto = useMemo(() => autoTags(annot), [annot]);
-  if (session.open) {
+  const capability = useAnnotStore((s) => s.capability);
+  const { draft } = session;
+  // Held by identity while the draft and the capability stand, as the held
+  // comment panel is.
+  const { editor, held } = useMemo(() => {
+    const now = Temporal.Now.instant();
+    return {
+      editor: tagEditorControls(capability, draft, now),
+      held: heldTagDraft(capability, draft, now),
+    };
+  }, [capability, draft]);
+  const editable = !control.disabled && control.blocked === null;
+  // Editing that becomes unavailable closes the editor, which holds the
+  // draft for Save tags; a save in flight keeps it open until the read-back.
+  if (session.saving || (session.open && !editor.readOnly)) {
     return (
       // Editing is not the card's selection. The handler is a function of its
       // own: Preact records when a handler was first attached on the function
@@ -415,6 +431,7 @@ function TagSlot({
           names={session.draft?.names ?? annot.tags}
           auto={auto}
           saving={session.saving}
+          hint={editor.hint}
           libraryNames={() => actions.libraryTagNames(annot)}
           onChange={(names) => actions.onEditTags(annot, names)}
           onClose={session.close}
@@ -423,7 +440,19 @@ function TagSlot({
       </div>
     );
   }
-  const editable = !control.disabled && control.blocked === null;
+  if (held) {
+    return (
+      // The panel is the draft's own surface; the card's selection is not it.
+      <div onClick={(e) => claimClick(e)}>
+        <HeldTagsPanel
+          held={held}
+          surface="card"
+          actions={actions.heldTags(annot)}
+          onOpen={editable ? session.start : undefined}
+        />
+      </div>
+    );
+  }
   return <TagRow annot={annot} onOpen={editable ? session.start : undefined} />;
 }
 
