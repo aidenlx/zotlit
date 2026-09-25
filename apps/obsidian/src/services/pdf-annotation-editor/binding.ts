@@ -238,13 +238,21 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   /**
    * This view as a reader: what it holds and what is selected in it. ZotLit
    * owns the selection here, so a consumer's `setSelectedAnnotations` is taken
-   * by the selection itself, which paints it and reports it back.
+   * by the selection itself, which paints it and reports it back. The
+   * consumer is the Annotation View's Card Selection, which the reader takes
+   * quietly: the Mark Popup opens only over a mark selected in the PDF.
    */
   readonly #session = new ReaderSessionHost({
     source: "obsidian-pdf",
-    navigate: (annotationKey) => this.#navigate(annotationKey),
-    select: (annotationKeys) =>
-      this.#selection?.select(annotationKeys[0] ?? null),
+    navigate: (annotationKey) => void this.#landOn(annotationKey),
+    select: (annotationKeys) => {
+      // The consumer's selection is the latest word: a Landing still waiting
+      // on its page, or on the read, names a selection this one replaced.
+      this.#landing = null;
+      this.#landingAsk++;
+      this.#cancelScroll();
+      this.#selection?.select(annotationKeys[0] ?? null, { popup: false });
+    },
   });
   /** Every listener and node this binding added for this view. */
   readonly #surfaces = new DisposableStack();
@@ -277,6 +285,11 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   #landing: MarkLandingTarget | null = null;
   /** The frame a Landing's scroll is waiting on; `null` while none is. */
   #landingFrame: number | null = null;
+  /**
+   * Counts the consumer selections, so a Landing that waited on the read
+   * while a later selection came in is dropped.
+   */
+  #landingAsk = 0;
   /** The creation surfaces of this view; `null` until they can be mounted. */
   #creation: MarkCreation | null = null;
   /** The one Mark Popup of this view; `null` until the surfaces are mounted. */
@@ -1234,16 +1247,18 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   }
 
   /**
-   * Bring the reader to the Annotation a History Step changed, once the marks
-   * on screen match the read that step announced.
+   * A Mark Landing on one Annotation — the one a History Step changed, or the
+   * one whose card was clicked in the Annotation View — once the marks on
+   * screen match the last read.
    *
    * A page PDF.js has not built yet is reached by Obsidian's own page jump,
    * and the render it triggers is what the waiting Landing lands on — the
    * Annotation Anchor's own path.
    */
   #landOn(annotationKey: string): Promise<void> {
+    const ask = this.#landingAsk;
     return this.refreshed.then(() => {
-      if (this.#surfaces.disposed) return;
+      if (this.#surfaces.disposed || ask !== this.#landingAsk) return;
       const controller = this.#controller;
       const pageIndex = pageOfMark(this.#marks, annotationKey);
       if (pageIndex === null || !controller) {

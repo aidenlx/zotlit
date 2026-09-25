@@ -325,8 +325,10 @@ function SearchRow({
 }
 
 function AnnotList({ collapsed }: { collapsed: boolean }) {
+  const actions = useContext(AnnotActionsContext);
   const annotations = useAnnotStore((s) => s.annotations);
   const clearFilters = useClearFilters();
+  const gridRef = useRef<HTMLDivElement>(null);
 
   const filter = useAnnotFilter();
   const filtered = useMemo(
@@ -349,8 +351,21 @@ function AnnotList({ collapsed }: { collapsed: boolean }) {
     // The tracks answer to the scroll box's own width through the container
     // query on it, and `items-start` keeps each card the height of its own
     // content rather than its row's.
-    <div className="annots-container zt:@container zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:py-3">
-      <div className="zt:grid zt:grid-cols-1 zt:items-start zt:gap-2 zt:@2xl:grid-cols-2 zt:@5xl:grid-cols-3">
+    //
+    // A click on the list's empty space, around or between the cards, closes
+    // an open card editor or clears the Card Selection.
+    <div
+      className="annots-container zt:@container zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:py-3"
+      onClick={(e) => {
+        if (e.target !== e.currentTarget && e.target !== gridRef.current)
+          return;
+        actions.onClearSelection();
+      }}
+    >
+      <div
+        ref={gridRef}
+        className="zt:grid zt:grid-cols-1 zt:items-start zt:gap-2 zt:@2xl:grid-cols-2 zt:@5xl:grid-cols-3"
+      >
         {filtered.map((annot) => (
           <Annotation key={annot.key} annot={annot} collapsed={collapsed} />
         ))}

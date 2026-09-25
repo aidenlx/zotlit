@@ -4748,6 +4748,257 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         });
       });
 
+      describe("the Card Selection", () => {
+        /** A highlight the card is clicked on, apart from the mark clicked. */
+        const cardKey = "Q8ZR4TDH";
+        /** The highlight clicked in the PDF, as the history tests click it. */
+        const markKey = "PUPR5FG5";
+        const annotView =
+          "app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view";
+        const cardOf = (key: string) =>
+          `${annotView}?.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(key)}]')`;
+        const poll = { timeout: 10_000, interval: 250 };
+
+        /**
+         * What each surface shows selected: the Selected Cards, the marks the
+         * PDF paints `is-selected`, and whether a Mark Popup stands.
+         */
+        const shown = () =>
+          obJson<{ cards: string[]; marks: string[]; popup: boolean }>(
+            `(function(){const cards=[...(${annotView}?.containerEl.querySelectorAll('.zt-annot-card[data-selected]')??[])].map((card)=>card.dataset.zoteroAnnotationKey);const marks=[...new Set([...${pdfView}.containerEl.querySelectorAll('.zt-pdf-annotation-mark.is-selected')].map((mark)=>mark.dataset.zoteroAnnotationKey))];return JSON.stringify({cards,marks,popup:!!document.querySelector('.zt-pdf-mark-popup')});})()`,
+          );
+
+        /** A plain click on one card, as the browser delivers it. */
+        async function clickCard(key: string): Promise<void> {
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(function(){const card=${cardOf(key)};if(!card)return 'no card';card.click();return 'clicked';})()`,
+              { expected: "clicked" },
+            ),
+          ).toBe(true);
+        }
+
+        beforeEach(async () => {
+          // A fresh binding holds no selection and no popup from an earlier
+          // test, and its first page is on screen for the marks.
+          await reopenPdfView(vaultId!, attachmentPath);
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;const rect=view.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(markKey)}]')?.getBoundingClientRect();return String(!!rect&&rect.width>0);})()`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+        });
+
+        /** A mark click in the PDF, at the mark's centre, as a researcher makes it. */
+        async function tapMark(key: string): Promise<void> {
+          expect(
+            await obEval(
+              vaultId!,
+              `(function(){${FIRE}${TAP}const mark=${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(key)}]');const rect=mark.getBoundingClientRect();tap(rect.left+rect.width/2,rect.top+rect.height/2);return 'tapped';})()`,
+            ),
+          ).toBe("tapped");
+        }
+
+        /** Runs one Annotation View command from the palette's own registry. */
+        const command = (id: string) =>
+          obEval(
+            vaultId!,
+            `(function(){app.commands.executeCommandById(${JSON.stringify(id)});return String(${annotView}?.snapshot.followMode);})()`,
+          );
+
+        it("selects a card in Pinned mode, and clears it for Escape", async () => {
+          expect(await command("zotlit:annot-view-pin-current-item")).toBe(
+            "pinned",
+          );
+          try {
+            await clickCard(cardKey);
+            // Pinned binds no reader, so the PDF beside it selects nothing.
+            await expect
+              .poll(shown, poll)
+              .toEqual({ cards: [cardKey], marks: [], popup: false });
+
+            // Escape on the focused card of the active view, which Obsidian's
+            // keymap hands to that view's Scope.
+            expect(
+              await obJson<{ prevented: boolean }>(
+                `(function(){const leaf=app.workspace.getLeavesOfType('zotero-annotation-view')[0];app.workspace.setActiveLeaf(leaf,{focus:true});const card=${cardOf(cardKey)};card.focus();const event=new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true,cancelable:true});card.dispatchEvent(event);return JSON.stringify({prevented:event.defaultPrevented});})()`,
+              ),
+            ).toEqual({ prevented: true });
+            await expect
+              .poll(shown, poll)
+              .toEqual({ cards: [], marks: [], popup: false });
+          } finally {
+            await command("zotlit:annot-view-unpin");
+            // The PDF is the active tab the view follows again.
+            await obEval(
+              vaultId!,
+              `(function(){app.workspace.setActiveLeaf(${pdfView}.leaf,{focus:true});return true;})()`,
+            );
+          }
+        }, 120000);
+
+        it("lands quietly on a clicked card's mark, and selects the card of a clicked mark", async () => {
+          expect(
+            await obEval(vaultId!, `String(${annotView}?.snapshot.followMode)`),
+          ).toBe("active-tab");
+          // The PDF stands pages away, so the mark in view is the Landing's
+          // own scroll: the last step it takes.
+          await obEval(
+            vaultId!,
+            `(function(){${pdfView}.viewer.child.pdfViewer.pdfViewer.currentPageNumber=4;return true;})()`,
+          );
+
+          await clickCard(cardKey);
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(function(){const view=${pdfView};const box=view.viewer.child.pdfViewer.pdfViewer.container.getBoundingClientRect();const mark=view.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(cardKey)}]');const rect=mark?.getBoundingClientRect();return String(!!mark&&mark.classList.contains('is-selected')&&rect.top>=box.top&&rect.bottom<=box.bottom);})()`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+          // With the Landing done, no Mark Popup stands over the mark.
+          expect(await shown()).toEqual({
+            cards: [cardKey],
+            marks: [cardKey],
+            popup: false,
+          });
+
+          await tapMark(markKey);
+          // The mark click replaces the Card Selection.
+          await expect
+            .poll(shown, poll)
+            .toMatchObject({ cards: [markKey], marks: [markKey] });
+        }, 120000);
+
+        it("keeps one editor open on a card: its comment editor or its tag editor, from the card or the Mark Popup", async () => {
+          await raiseWindow(vaultId!);
+          await clickCard(cardKey);
+          await expect
+            .poll(shown, poll)
+            .toMatchObject({ cards: [cardKey], marks: [cardKey] });
+          const card = cardOf(cardKey);
+          const toggle = (icon: string) =>
+            `${card}?.querySelector('.clickable-icon:has(svg.lucide-${icon})')`;
+          /** Which of the card's two editors stand. */
+          const editors = () =>
+            obJson<{ comment: boolean; tags: boolean }>(
+              `JSON.stringify({comment:!!${card}?.querySelector('.cm-content'),tags:!!${card}?.querySelector('[data-slot=tags-input]')})`,
+            );
+
+          await trustedClick(toggle("message-square-plus"));
+          await expect
+            .poll(editors, poll)
+            .toEqual({ comment: true, tags: false });
+
+          // The tag toggle saves and closes the comment editor first.
+          await trustedClick(toggle("tag"));
+          await expect
+            .poll(editors, poll)
+            .toEqual({ comment: false, tags: true });
+
+          // The comment toggle ends the tag session first.
+          await trustedClick(toggle("message-square-plus"));
+          await expect
+            .poll(editors, poll)
+            .toEqual({ comment: true, tags: false });
+
+          // The Mark Popup's way to the card's comment editor ends the tag
+          // session first as well.
+          await trustedClick(toggle("tag"));
+          await expect
+            .poll(editors, poll)
+            .toEqual({ comment: false, tags: true });
+          await obEval(
+            vaultId!,
+            `(function(){${annotView}.revealAnnotation(${JSON.stringify(cardKey)},{comment:true});return true;})()`,
+          );
+          await expect
+            .poll(editors, poll)
+            .toEqual({ comment: true, tags: false });
+
+          // Escape in the editor closes it.
+          expect(
+            await obEval(
+              vaultId!,
+              `(function(){const contents=require('@electron/remote').getCurrentWebContents();contents.sendInputEvent({type:'keyDown',keyCode:'Escape'});contents.sendInputEvent({type:'keyUp',keyCode:'Escape'});return 'pressed';})()`,
+            ),
+          ).toBe("pressed");
+          await expect
+            .poll(editors, poll)
+            .toEqual({ comment: false, tags: false });
+        }, 120000);
+
+        /**
+         * A press and release the window's own input delivers at the centre
+         * of what `target` names, so the focus moves as a researcher's click
+         * moves it.
+         */
+        async function trustedClick(target: string): Promise<void> {
+          expect(
+            await obEval(
+              vaultId!,
+              `(function(){const rect=(${target}).getBoundingClientRect();const zoom=require('electron').webFrame.getZoomFactor();const x=Math.round((rect.left+rect.width/2)*zoom),y=Math.round((rect.top+rect.height/2)*zoom);const contents=require('@electron/remote').getCurrentWebContents();contents.sendInputEvent({type:'mouseDown',x,y,button:'left',clickCount:1});contents.sendInputEvent({type:'mouseUp',x,y,button:'left',clickCount:1});return 'clicked';})()`,
+            ),
+          ).toBe("clicked");
+        }
+
+        it("keeps the card an editor is open on through a mark click, and takes the mark once it closes", async () => {
+          await raiseWindow(vaultId!);
+          await clickCard(cardKey);
+          await expect
+            .poll(shown, poll)
+            .toMatchObject({ cards: [cardKey], marks: [cardKey] });
+          const editor = `${cardOf(cardKey)}?.querySelector('.cm-content')`;
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(function(){if(${editor})return 'open';${cardOf(cardKey)}?.querySelector('.clickable-icon:has(.lucide-message-square-plus)')?.click();return String(!!${editor}&&'open');})()`,
+              { expected: "open" },
+            ),
+          ).toBe(true);
+          await trustedClick(editor);
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `String(!!${editor}?.contains(document.activeElement))`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+
+          // The click in the PDF takes the focus out of the editor, which
+          // saves and stays open; the card keeps the selection.
+          await trustedClick(
+            `${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(markKey)}]')`,
+          );
+          await expect
+            .poll(shown, poll)
+            .toMatchObject({ cards: [cardKey], marks: [markKey] });
+          expect(
+            await obEval(
+              vaultId!,
+              `JSON.stringify({open:!!${editor},focused:!!${editor}?.contains(document.activeElement)})`,
+            ),
+          ).toBe(JSON.stringify({ open: true, focused: false }));
+
+          // Escape back in the editor closes it, and the PDF's selection
+          // applies.
+          await trustedClick(editor);
+          expect(
+            await obEval(
+              vaultId!,
+              `(function(){const contents=require('@electron/remote').getCurrentWebContents();contents.sendInputEvent({type:'keyDown',keyCode:'Escape'});contents.sendInputEvent({type:'keyUp',keyCode:'Escape'});return 'pressed';})()`,
+            ),
+          ).toBe("pressed");
+          await expect
+            .poll(shown, poll)
+            .toMatchObject({ cards: [markKey], marks: [markKey] });
+          expect(await obEval(vaultId!, `String(!!${editor})`)).toBe("false");
+        }, 120000);
+      });
+
       // The one place a confirmed write can land: the Local API is serving
       // this Attachment, so a saved colour edit really moves the pixels the
       // card paints, and the card's own publication of them is observable.

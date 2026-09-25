@@ -70,12 +70,17 @@ export interface AnnotActions {
   /** Turn Live updates on, so the Zotero reader can reach this view. */
   onEnableLiveUpdates(): void;
   /**
-   * Take this Annotation as the selection, from a click on its card: the reader
-   * the view follows selects it and moves to its Annotation Mark.
+   * Take this card alone as the Card Selection, from a click on it. A bound
+   * Obsidian PDF view lands quietly on its Annotation Mark.
    *
-   * @see https://github.com/aidenlx/zotlit/issues/1148
+   * @see apps/obsidian/docs/adr/0061-the-annotation-view-owns-its-card-selection.md
    */
   onSelectAnnotation(annot: AnnotationRecord): void;
+  /**
+   * A click on the empty list: an open card editor closes, or, with none
+   * open, the Card Selection clears.
+   */
+  onClearSelection(): void;
   /** Recolour one Annotation in Zotero, from a swatch in the card's menu. */
   onSetColor(annot: AnnotationRecord, color: string): void;
   /** Store what the card's comment editor holds, from the gesture that closed it. */
@@ -84,6 +89,10 @@ export interface AnnotActions {
     comment: string,
     automatic?: boolean,
   ): void;
+  /**
+   * Start one card's comment editing. An open tag editor first ends its
+   * session.
+   */
   onOpenComment(annot: AnnotationRecord): void;
   onEditComment(annot: AnnotationRecord, comment: string): void;
   /**
@@ -93,7 +102,8 @@ export interface AnnotActions {
    */
   onDiscardComment(annot: AnnotationRecord): void;
   /**
-   * Start or rejoin one card's tag editing session.
+   * Start or rejoin one card's tag editing session. An open comment editor is
+   * first saved and closed.
    *
    * @returns whether a session stands, which it does only while editing is
    *   available or a draft is already held.
@@ -205,6 +215,12 @@ export interface AnnotActionDeps {
   onUnpin: AnnotActions["onUnpin"];
   onEnableLiveUpdates: AnnotActions["onEnableLiveUpdates"];
   onSelectAnnotation: AnnotActions["onSelectAnnotation"];
+  onClearSelection: AnnotActions["onClearSelection"];
+  /**
+   * Save and close the open card editors: an editor opens only once the other
+   * has closed, as the Mark Popup opens one at a time.
+   */
+  closeEditors: () => void;
   onExploreAnnotation: (annotationKey: string) => void;
 }
 
@@ -232,6 +248,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     deps.annotations.editComment(annot.key, comment);
   };
   const onOpenComment = (annot: AnnotationRecord): void => {
+    deps.closeEditors();
     deps.annotations.editComment(annot.key);
   };
   const onDiscardComment = (annot: AnnotationRecord): void => {
@@ -245,8 +262,10 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     deps.annotations.editComment(annot.key, comment);
     report(deps.annotations.submitComment(annot.key, { automatic }));
   };
-  const onOpenTags = (annot: AnnotationRecord): boolean =>
-    deps.annotations.editTags(annot.key) !== null;
+  const onOpenTags = (annot: AnnotationRecord): boolean => {
+    deps.closeEditors();
+    return deps.annotations.editTags(annot.key) !== null;
+  };
   const onEditTags = (
     annot: AnnotationRecord,
     names: readonly string[],
@@ -519,6 +538,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     onUnpin: deps.onUnpin,
     onEnableLiveUpdates: deps.onEnableLiveUpdates,
     onSelectAnnotation: deps.onSelectAnnotation,
+    onClearSelection: deps.onClearSelection,
     onRefresh() {
       void toast.promise(deps.refresh(), {
         loading: m.annot_view_refreshing(),
@@ -557,6 +577,7 @@ const NOOP_ACTIONS: AnnotActions = {
   onUnpin: () => {},
   onEnableLiveUpdates: () => {},
   onSelectAnnotation: () => {},
+  onClearSelection: () => {},
   onSetColor: () => {},
   onSaveComment: () => {},
   onDiscardComment: () => {},

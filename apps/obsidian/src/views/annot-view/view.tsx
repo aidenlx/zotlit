@@ -74,6 +74,8 @@ import type { AnnotActions } from "./actions";
 import { AnnotView } from "./AnnotView";
 import { cardControls } from "./card-controls";
 import type { CardControls } from "./card-controls";
+import { NO_SELECTION, nextCardSelection, sameKeys } from "./card-selection";
+import type { CardSelection, SelectionChange } from "./card-selection";
 import { createCommentRenderer } from "./comment-render";
 import { createDragInsertHandler, createInsertHandler } from "./drag-insert";
 import { sanitizeSavedFilter } from "./filter";
@@ -85,8 +87,10 @@ import type { ActiveLeafTarget, LoadTarget } from "./resolve-target";
 import {
   AnnotStoreProvider,
   createAnnotStore,
+  editorOpen,
   INITIAL_FILTER_STATE,
   toggledTags,
+  visibleOrder,
 } from "./store";
 import type { AnnotState, FollowMode } from "./store";
 import {
@@ -192,6 +196,17 @@ export class AnnotationView extends ItemView implements HistorySurface {
   #zoteroReader: ZoteroReaderSession | null = null;
   /** The active leaf's PDF view session, while one is being followed. */
   #leafSession: (() => void) | null = null;
+  /**
+   * The reader the Card Selection is kept in step with: the followed Obsidian
+   * PDF view, or the Zotero Reader. `null` in Pinned and on a Literature Note.
+   */
+  #boundReader: ReaderSession | null = null;
+  /**
+   * Whether the bound reader's selection waits to replace the Card Selection:
+   * an open card editor holds it back, or it names a key the list has not
+   * loaded. The selection itself is read from the reader when it applies.
+   */
+  #readerPending = false;
   /** What the attachment choice and the saved filter are remembered against. */
   #memoryKey: string | null = null;
   #itemKey: string | null = null;
@@ -401,7 +416,10 @@ export class AnnotationView extends ItemView implements HistorySurface {
       onUnpin: () => this.#unpin(),
       onEnableLiveUpdates: () => this.#enableLiveUpdates(),
       onAllowEditing: () => this.#deps.allowEditing(),
-      onSelectAnnotation: (annot) => this.#selectAnnotation(annot.key),
+      onSelectAnnotation: (annot) =>
+        this.#changeFromView({ kind: "click", key: annot.key }, annot.key),
+      onClearSelection: () => void this.#clearFromView(),
+      closeEditors: () => void this.#closeEditors(),
       onDragStart: drag,
       insertAnnotation: (annotation) => {
         void insert(annotation);
@@ -489,23 +507,19 @@ export class AnnotationView extends ItemView implements HistorySurface {
       }),
     );
     this.register(
-      this.#zoteroReader.on("selection-changed", (selected) => {
-        if (this.#followMode !== "zotero-reader") return;
-        this.#applySelection(selected);
+      this.#zoteroReader.on("selection-changed", () => {
+        if (this.#boundReader === this.#zoteroReader)
+          this.#takeReaderSelection();
       }),
     );
 
-    // Escape clears a selection this view drives. One typed into a field goes
-    // on to the field. Otherwise Obsidian moves focus to the last navigable
-    // leaf: right from the sidebar, but in the main area that switches the tab
-    // away from this view, so the key stops here.
+    // Escape closes an open card editor, then clears the Card Selection. One
+    // typed into a field goes on to the field. Otherwise Obsidian moves focus
+    // to the last navigable leaf: right from the sidebar, but in the main area
+    // that switches the tab away from this view, so the key stops here.
     const escape = registerKeymap(this.scope, [], "Escape", (event) => {
       if (inTextEntry(event.target)) return;
-      const session = this.#boundPdfSession();
-      if (session && session.selected.length > 0) {
-        session.setSelectedAnnotations([]);
-        return false;
-      }
+      if (this.#clearFromView()) return false;
       const { leftSplit, rightSplit } = this.#deps.app.workspace;
       const root = this.leaf.getRoot();
       if (root === leftSplit || root === rightSplit) return;
@@ -549,6 +563,51 @@ export class AnnotationView extends ItemView implements HistorySurface {
         (s) => s.selectedAttachmentKey,
         () => {
           this.#syncCapability();
+        },
+      ),
+    );
+    // A Card Selection belongs to one Attachment; the bound reader's own
+    // selection, which is of the same Attachment, applies over the clear.
+    this.register(
+      this.#store.subscribe(
+        (s) => s.selectedAttachmentKey,
+        () => {
+          this.#store.setState({ cardSelection: NO_SELECTION });
+          this.#takeReaderSelection();
+        },
+      ),
+    );
+    // A filter, a search, or a list that lost an Annotation drops the cards it
+    // no longer shows. It only prunes: a reader selection is never applied
+    // again for a card the list shows once more.
+    this.register(
+      this.#store.subscribe(
+        (s) => visibleOrder(s),
+        () => this.#setSelection({ kind: "prune" }),
+        { equalityFn: sameKeys },
+      ),
+    );
+    // A waiting reader selection applies once the list loads a key it names.
+    this.register(
+      this.#store.subscribe(
+        (s) => s.annotations,
+        (next, previous) => {
+          if (!this.#readerPending) return;
+          const before = new Set(previous?.map(({ key }) => key));
+          const loaded = next?.some(
+            ({ key }) =>
+              !before.has(key) && this.#boundReader?.selected.includes(key),
+          );
+          if (loaded) this.#takeReaderSelection();
+        },
+      ),
+    );
+    // A reader selection an open editor held back applies once it closes.
+    this.register(
+      this.#store.subscribe(
+        (s) => editorOpen(s),
+        (open) => {
+          if (!open && this.#readerPending) this.#takeReaderSelection();
         },
       ),
     );
@@ -672,9 +731,10 @@ export class AnnotationView extends ItemView implements HistorySurface {
 
   #commitMode(next: AnnotViewState): void {
     logger.debug("Follow mode changed by a gesture", { ...next });
-    // The selection belongs to the reader the old mode followed; the new one
-    // reports its own, or none.
-    this.#store.setState({ ...next, selectedAnnotationKeys: [] });
+    // A Follow Mode change clears the Card Selection; a reader the new mode
+    // binds reports its own when the reload binds it.
+    this.#readerPending = false;
+    this.#store.setState({ ...next, cardSelection: NO_SELECTION });
     void this.#deps.app.workspace.requestSaveLayout();
     this.#reload();
   }
@@ -698,6 +758,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
         ? (this.#deps.app.workspace.getActiveFile()?.path ?? null)
         : null,
     );
+    this.#bindReader();
     if (this.#deps.db.state !== "ready") {
       this.#clearState();
       return;
@@ -761,12 +822,6 @@ export class AnnotationView extends ItemView implements HistorySurface {
     this.#leafSession?.();
     this.#leafSession = null;
     const session = filePath && this.#deps.pdfReaders.sessionForPath(filePath);
-    // Under Active Tab the selection is the followed PDF's own: with no PDF
-    // bound, there is none to show.
-    if (this.#followMode === "active-tab")
-      this.#store.setState({
-        selectedAnnotationKeys: session ? session.selected : [],
-      });
     if (!session) return;
     const stack = new DisposableStack();
     // The cards drive this selection, so a press on them is no click-away:
@@ -774,8 +829,8 @@ export class AnnotationView extends ItemView implements HistorySurface {
     stack.defer(session.addSelectionSurface(this.contentEl));
     stack.defer(session.on("target-changed", () => this.#reload()));
     stack.defer(
-      session.on("selection-changed", (selected) => {
-        if (this.#followMode === "active-tab") this.#applySelection(selected);
+      session.on("selection-changed", () => {
+        if (this.#boundReader === session) this.#takeReaderSelection();
       }),
     );
     this.#leafSession = () => stack.dispose();
@@ -1095,11 +1150,134 @@ export class AnnotationView extends ItemView implements HistorySurface {
     return this.#deps.noteIndex.getNotesByItemKey(this.#itemKey)[0]?.path ?? "";
   }
 
-  /** Mirror the reader's selection and bring its first card into view. */
-  #applySelection(selected: readonly string[]): void {
-    this.#store.setState({ selectedAnnotationKeys: selected });
-    this.#scrollToCard(selected);
+  // #region card selection
+
+  /**
+   * Bind the reader this Follow Mode keeps in step, and take its selection
+   * when it is a new one. Two views bound to one Obsidian PDF view share a
+   * selection through it.
+   */
+  #bindReader(): void {
+    const reader = this.#followedSession();
+    if (reader === this.#boundReader) return;
+    logger.debug("The Card Selection binds another reader", {
+      followMode: this.#followMode,
+      source: reader?.source ?? null,
+    });
+    this.#boundReader = reader;
+    this.#takeReaderSelection();
   }
+
+  /** @returns the Card Selection after the change, and whether it moved. */
+  #setSelection(change: SelectionChange): {
+    selection: CardSelection;
+    changed: boolean;
+  } {
+    const state = this.#store.getState();
+    const current = state.cardSelection;
+    const selection = nextCardSelection(current, visibleOrder(state), change);
+    if (selection === current) return { selection, changed: false };
+    this.#store.setState({ cardSelection: selection });
+    return { selection, changed: true };
+  }
+
+  /**
+   * The bound reader's selection replaces the Card Selection, and brings its
+   * first card into view. While a card editor is open it waits, so the card
+   * being edited keeps its selection; a key the list has not loaded waits for
+   * the list. Each call drops what waited before it: the reader's selection
+   * now is the latest.
+   */
+  #takeReaderSelection(): void {
+    this.#readerPending = false;
+    const reader = this.#boundReader;
+    if (!reader) return;
+    const state = this.#store.getState();
+    const keys = reader.selected;
+    if (editorOpen(state)) {
+      this.#readerPending = true;
+      logger.debug("A reader selection waits for the card editor to close", {
+        source: reader.source,
+        keys: keys.length,
+      });
+      return;
+    }
+    const listed = new Set(state.annotations?.map(({ key }) => key));
+    this.#readerPending = !keys.every((key) => listed.has(key));
+    const { selection, changed } = this.#setSelection({
+      kind: "replace",
+      keys,
+    });
+    logger.debug("A reader selection replaced the Card Selection", {
+      source: reader.source,
+      keys: keys.length,
+      selected: selection.selected.length,
+      waitsForList: this.#readerPending,
+    });
+    if (changed) this.#scrollToCard(selection.selected);
+  }
+
+  /**
+   * A gesture in the view changes the Card Selection, and a change saves and
+   * closes an open card editor. A bound Obsidian PDF view takes the selection;
+   * the Zotero Reader takes nothing from ZotLit (ADR 0036).
+   *
+   * @param landOn the Annotation whose Mark the PDF view lands on quietly: a
+   *   Mark Landing, with no Mark Popup.
+   */
+  #changeFromView(change: SelectionChange, landOn?: string): void {
+    this.#readerPending = false;
+    const { selection, changed } = this.#setSelection(change);
+    if (changed) this.#closeEditors();
+    const session = this.#boundPdfSession();
+    if (!session) return;
+    if (!sameKeys(session.selected, selection.selected))
+      session.setSelectedAnnotations(selection.selected);
+    if (landOn !== undefined) session.navigateToAnnotation(landOn);
+  }
+
+  /**
+   * Escape, or a click on the empty list: an open card editor closes first,
+   * and with none open the selection clears — the view's own, and a bound PDF
+   * view's where that holds a mark the list hides.
+   *
+   * @returns whether there was anything to close or clear.
+   */
+  #clearFromView(): boolean {
+    if (this.#closeEditors()) return true;
+    const selected =
+      this.#store.getState().cardSelection.selected.length > 0 ||
+      (this.#boundPdfSession()?.selected.length ?? 0) > 0;
+    if (selected) this.#changeFromView({ kind: "clear" });
+    return selected;
+  }
+
+  /**
+   * Saves and closes the open card editors. The tag editor saves its session
+   * as it unmounts; the comment editor's text is already the draft, which
+   * this submits as its own close would.
+   *
+   * @returns whether one was open.
+   */
+  #closeEditors(): boolean {
+    const state = this.#store.getState();
+    if (!editorOpen(state)) return false;
+    const { editingCommentKey } = state;
+    if (editingCommentKey !== null) {
+      void this.#deps.annotations
+        .submitComment(editingCommentKey, { automatic: true })
+        .then((outcome) => {
+          if (outcome.kind === "failed")
+            new BaseNotice(
+              writeFailureMessage(outcome.failure, Temporal.Now.instant()),
+            );
+        });
+    }
+    this.#store.setState({ editingCommentKey: null, editingTagsKey: null });
+    return true;
+  }
+
+  // #endregion
 
   /** Bring the first of these cards the list holds into view. */
   #scrollToCard(keys: readonly string[]): void {
@@ -1115,10 +1293,10 @@ export class AnnotationView extends ItemView implements HistorySurface {
   }
 
   /**
-   * Bring one Annotation's card forward, from the Mark Popup in the PDF reader.
-   * A card the list on screen does not hold is left alone: the Follow Mode is
-   * the user's, and a reveal is not one of the gestures that changes it. The
-   * card is selected only through a bound Obsidian PDF reader.
+   * Bring one Annotation's card forward and select it, from the Mark Popup in
+   * the PDF reader or a notice. A card the list on screen does not hold is
+   * left alone: the Follow Mode is the user's, and a reveal is not one of the
+   * gestures that changes it.
    *
    * @param comment whether the card's comment editor takes the caret, which is
    *   the popup's answer to anything that needs typing.
@@ -1132,30 +1310,22 @@ export class AnnotationView extends ItemView implements HistorySurface {
       .getState()
       .annotations?.some((record) => record.key === annotationKey);
     if (held !== true) return;
-    this.#boundPdfSession()?.setSelectedAnnotations([annotationKey]);
+    this.#changeFromView({ kind: "click", key: annotationKey });
     this.#scrollToCard([annotationKey]);
-    if (comment) this.#store.setState({ editingCommentKey: annotationKey });
+    if (!comment || this.#store.getState().editingCommentKey === annotationKey)
+      return;
+    // One editor at a time: an open tag editor saves and closes first.
+    this.#closeEditors();
+    this.#store.setState({ editingCommentKey: annotationKey });
   }
 
   /**
-   * A card was activated: the Obsidian PDF reader this view follows takes the
-   * selection and moves to the mark. A selection means nothing without a
-   * reader to show it in, so with no PDF bound the card takes none.
-   */
-  #selectAnnotation(annotationKey: string): void {
-    const session = this.#boundPdfSession();
-    if (!session) return;
-    session.setSelectedAnnotations([annotationKey]);
-    session.navigateToAnnotation(annotationKey);
-  }
-
-  /**
-   * The followed reader, while it is an Obsidian PDF view: the one reader this
+   * The bound reader, while it is an Obsidian PDF view: the one reader this
    * view can select in. Zotero owns every gesture on its own reader.
    */
   #boundPdfSession(): ReaderSession | null {
-    const session = this.#followedSession();
-    return session?.source === "obsidian-pdf" ? session : null;
+    const reader = this.#boundReader;
+    return reader?.source === "obsidian-pdf" ? reader : null;
   }
 
   /** The reader this view's Follow Mode is driven by, while one answers. */
@@ -1245,7 +1415,6 @@ export class AnnotationView extends ItemView implements HistorySurface {
       editingCommentKey: null,
       tagDrafts: new Map(),
       editingTagsKey: null,
-      selectedAnnotationKeys: [],
     });
     this.#itemKey = null;
     this.#memoryKey = null;

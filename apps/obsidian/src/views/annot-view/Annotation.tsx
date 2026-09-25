@@ -125,7 +125,7 @@ function useCardControls(annot: AnnotationRecord): CardControls {
 export function Annotation({ annot, collapsed }: AnnotationProps) {
   const actions = useContext(AnnotActionsContext);
   const selected = useAnnotStore((s) =>
-    s.selectedAnnotationKeys.includes(annot.key),
+    s.cardSelection.selected.includes(annot.key),
   );
   const editing = useAnnotStore((s) => s.editingCommentKey === annot.key);
   const controls = useCardControls(annot);
@@ -619,8 +619,11 @@ function Comment({
  * caret at the end of what is already there. It is the shared comment sheet;
  * see {@link CommentSheetSlot}.
  *
- * Escape and blur store the text and close the editor. Ctrl/Command+Enter
- * stores it and keeps the editor open.
+ * Escape stores the text and closes the editor. Blur and Ctrl/Command+Enter
+ * store it and keep the editor open: a click in the PDF beside the card, or a
+ * menu that takes the focus, is not the end of the edit, and a reader change
+ * waits for the editor to close. A view gesture that changes the Card
+ * Selection closes it as well.
  */
 function CommentEditor({ annot }: { annot: AnnotationRecord }) {
   const actions = useContext(AnnotActionsContext);
@@ -647,6 +650,8 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
     setEditing(null);
     actions.onSaveComment(annot, text, true);
   };
+  /** Blur: the same automatic submit, with the editor left open. */
+  const saveOnLeave = (): void => actions.onSaveComment(annot, text, true);
   const store = (): void => {
     if (sheet.current) actions.onSaveComment(annot, sheet.current.text());
   };
@@ -665,7 +670,7 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
       onSubmit={store}
       onSave={store}
       onCancel={save}
-      onLeave={save}
+      onLeave={saveOnLeave}
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e: KeyboardEvent<HTMLDivElement>) => e.stopPropagation()}
     />

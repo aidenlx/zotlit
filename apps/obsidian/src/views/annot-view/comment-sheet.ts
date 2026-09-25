@@ -156,7 +156,8 @@ export interface CommentSheetProps {
   onCancel: () => void;
   /**
    * Focus left the sheet while the save is automatic and the editor takes a
-   * write: store the comment and close. Absent where leaving saves nothing.
+   * write: store the comment. The surface decides whether the sheet closes
+   * with it. Absent where leaving saves nothing.
    */
   onLeave?: () => void;
   /** What focus may move within without leaving; the sheet itself by default. */

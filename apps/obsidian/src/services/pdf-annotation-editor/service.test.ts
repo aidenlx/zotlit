@@ -915,7 +915,7 @@ it("paints the mark a consumer selected, and drops one the read retired", async 
   expect(binding.session.selected).toEqual([]);
 });
 
-it("moves the reader to the page an annotation is drawn on", async () => {
+it("lands on the mark a card click names, on a page Obsidian moves to first", async () => {
   const reader = pdfReader();
   const view = pdfView("attachments/rougier-2014.pdf", reader);
   const { app } = workspace([{ view }]);
@@ -930,18 +930,54 @@ it("moves the reader to the page an annotation is drawn on", async () => {
   await service.ready;
   const binding = service.bindings[0]!;
   await binding.refreshed;
-  reader.renderFirstPage();
-  await binding.probed;
 
   const applySubpath = reader.child.applySubpath as Mock<(s: string) => void>;
 
+  // What the Annotation View asks of the reader for a card click.
+  binding.session.setSelectedAnnotations(["PUPR5FG5"]);
   binding.session.navigateToAnnotation("PUPR5FG5");
+  await binding.refreshed;
+  // PDF.js has not painted the mark's page, so Obsidian's own jump goes first.
   expect(applySubpath).toHaveBeenCalledWith("#page=1");
+
+  reader.renderFirstPage();
+  await binding.probed;
+  expect(selectedKeys(reader.page)).toEqual(["PUPR5FG5"]);
+  expect(binding.session.selected).toEqual(["PUPR5FG5"]);
 
   // An annotation this reader draws nowhere moves nothing.
   applySubpath.mockClear();
   binding.session.navigateToAnnotation("K3JRFLFQ");
+  await binding.refreshed;
   expect(applySubpath).not.toHaveBeenCalled();
+});
+
+it("drops a Landing still waiting on its page when a consumer clears the selection", async () => {
+  const reader = pdfReader();
+  const view = pdfView("attachments/rougier-2014.pdf", reader);
+  const { app } = workspace([{ view }]);
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations: annotationReads([HIGHLIGHT]),
+    capabilityGestures: capabilityGestures(),
+    ...standingDeps(),
+  });
+  await service.ready;
+  const binding = service.bindings[0]!;
+  await binding.refreshed;
+
+  // A card click on a page PDF.js has not painted, then Escape in the view.
+  binding.session.setSelectedAnnotations(["PUPR5FG5"]);
+  binding.session.navigateToAnnotation("PUPR5FG5");
+  await binding.refreshed;
+  binding.session.setSelectedAnnotations([]);
+
+  reader.renderFirstPage();
+  await binding.probed;
+  expect(selectedKeys(reader.page)).toEqual([]);
+  expect(binding.session.selected).toEqual([]);
 });
 
 it("stops announcing once the view's binding is gone", async () => {
