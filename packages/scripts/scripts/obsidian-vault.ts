@@ -58,8 +58,9 @@ const execFileAsync = promisify(execFile);
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 
 const defaultVault = getDevVaultDir(workspaceRoot);
-const fixtureLayout = getFixtureLayout(getFixtureRoot(workspaceRoot));
-const fixtureVault = getFixtureVaultDir(workspaceRoot);
+// `--fixture-root` moves both to another Fixture, before any command runs.
+let fixtureLayout = getFixtureLayout(getFixtureRoot(workspaceRoot));
+let fixtureVault = getFixtureVaultDir(workspaceRoot);
 const pluginId = "zotlit";
 
 interface VaultEntry {
@@ -956,6 +957,16 @@ ${hostReadinessReference}`;
 
 const vaultCli = yargs(hideBin(process.argv))
   .scriptName("obsidian-vault.ts")
+  .option("fixture-root", {
+    describe: `Fixture to build and link, instead of this worktree's own (default: ${getFixtureRoot(workspaceRoot)})`,
+    type: "string",
+    global: true,
+  })
+  .middleware((argv) => {
+    if (argv["fixture-root"] === undefined) return;
+    fixtureLayout = getFixtureLayout(resolve(argv["fixture-root"]));
+    fixtureVault = fixtureLayout.vaultDir;
+  })
   .command(
     "check",
     "verify that a live Obsidian vault can host CLI calls",
