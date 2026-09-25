@@ -45,7 +45,13 @@ function controlsOf(
   capability: EditingCapability,
   mutation: MutationState = { kind: "idle" },
 ): CardControls {
-  return cardControls({ capability, mutation, hasComment: false, now: NOW });
+  return cardControls({
+    capability,
+    mutation,
+    hasComment: false,
+    hasTags: false,
+    now: NOW,
+  });
 }
 
 function states(controls: CardControls): boolean[] {
@@ -223,6 +229,57 @@ it("names the comment verb for what pressing it would do", () => {
   expect(controlsOf({ kind: "writable" }).comment.tooltip).toBe(
     commentLabel(false),
   );
+});
+
+it("gives the tag toggle the comment toggle's enabled state and blocked reason", () => {
+  expect(controlsOf(LIVE).tags).toEqual({
+    disabled: false,
+    blocked: null,
+    tooltip: m.annot_view_card_add_tags(),
+  });
+  for (const capability of BLOCKED) {
+    const copy = editingCapabilityCopy(capability, NOW);
+    // Pressable, so the press raises the notice that states the reason.
+    expect(controlsOf(capability).tags).toEqual({
+      disabled: false,
+      blocked: {
+        reason: copy.detail ?? copy.label,
+        action:
+          capability.kind === "authorization-required" ? "allow-editing" : null,
+      },
+      tooltip: m.annot_view_card_add_tags(),
+    });
+  }
+  expect(
+    controlsOf({ kind: "writable" }, { kind: "pending", write: "color" }).tags,
+  ).toEqual({
+    disabled: true,
+    blocked: null,
+    tooltip: m.annot_view_card_saving(),
+  });
+});
+
+it("keeps every verb live while tags save, since a tag save is no gesture", () => {
+  const tags = { kind: "pending", write: "tags" } as const;
+
+  expect(controlsOf({ kind: "writable" }, tags)).toEqual(
+    controlsOf({ kind: "writable" }),
+  );
+  expect(editingBlockedReason({ kind: "writable" }, tags, NOW)).toBeNull();
+});
+
+it("names the tag toggle for what pressing it would do", () => {
+  const tooltip = (hasTags: boolean) =>
+    cardControls({
+      capability: { kind: "writable" },
+      mutation: IDLE,
+      hasComment: false,
+      hasTags,
+      now: NOW,
+    }).tags.tooltip;
+
+  expect(tooltip(false)).toBe(m.annot_view_card_add_tags());
+  expect(tooltip(true)).toBe(m.annot_view_card_edit_tags());
 });
 
 it("shows the current save outcome and preserves a manual recovery action", () => {

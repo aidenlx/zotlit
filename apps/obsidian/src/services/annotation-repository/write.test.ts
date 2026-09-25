@@ -8,6 +8,7 @@ import {
   geometryPatch,
   MAX_POSITION_LENGTH,
   newWriteToken,
+  tagsPatch,
   writeFailureMessage,
   writePosition,
 } from "./write";
@@ -367,3 +368,33 @@ it.each([
     expect(patched(request)).not.toHaveProperty("annotationText");
   },
 );
+
+it("sends a tag change as the whole list, each tag with its type, beside the version", () => {
+  const request = tagsPatch(TARGET, [
+    { name: "probe-manual", type: 0 },
+    { name: "probe-auto", type: 1 },
+    { name: "probe-added", type: 0 },
+  ]);
+
+  expect([request.method, request.path]).toEqual([
+    "PATCH",
+    "/api/users/0/items/FDRFQ7C2",
+  ]);
+  // The body the paired probe sent, which Zotero answered `204` and stored as
+  // this list exactly (aidenlx/zotlit#1231).
+  expect(JSON.parse(request.body!)).toEqual({
+    version: 12,
+    tags: [
+      { tag: "probe-manual", type: 0 },
+      { tag: "probe-auto", type: 1 },
+      { tag: "probe-added", type: 0 },
+    ],
+  });
+});
+
+it("clears every tag with an empty list", () => {
+  expect(JSON.parse(tagsPatch(TARGET, []).body!)).toEqual({
+    version: 12,
+    tags: [],
+  });
+});

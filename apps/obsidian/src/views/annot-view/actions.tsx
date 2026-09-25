@@ -92,6 +92,18 @@ export interface AnnotActions {
    * the discard leaves.
    */
   onDiscardComment(annot: AnnotationRecord): void;
+  /**
+   * Start or rejoin one card's tag editing session.
+   *
+   * @returns whether a session stands, which it does only while editing is
+   *   available or a draft is already held.
+   */
+  onOpenTags(annot: AnnotationRecord): boolean;
+  onEditTags(annot: AnnotationRecord, names: readonly string[]): void;
+  /** Save the card's tag session, from the gesture that closed its editor. */
+  onSaveTags(annot: AnnotationRecord): void;
+  /** The tag names of the Annotation's Library, which the editor suggests. */
+  libraryTagNames(annot: AnnotationRecord): readonly string[];
   /** Erase one Annotation in Zotero, from the card's overflow menu. */
   onDeleteAnnotation(annot: AnnotationRecord): void;
   /**
@@ -133,9 +145,11 @@ export interface AnnotActionDeps {
     | "patchColor"
     | "editComment"
     | "commentDraftFor"
+    | "editTags"
     | "retryCommentDraft"
     | "retryWrite"
     | "submitComment"
+    | "submitTags"
   >;
   /** The clock a failure notice reads a cooldown's remaining seconds against. */
   now?: () => Temporal.Instant;
@@ -154,6 +168,7 @@ export interface AnnotActionDeps {
    * @see apps/obsidian/docs/adr/0033-zotero-object-identity-is-the-indexed-key-server-id-is-source-data.md
    */
   resolveAnnotationID: (indexedKey: string) => number | null;
+  libraryTagNames: AnnotActions["libraryTagNames"];
   /**
    * What the view is showing right now. A native menu is built at the moment
    * the gesture opens it, so its entries are read then rather than subscribed
@@ -222,6 +237,16 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     deps.annotations.editComment(annot.key, comment);
     report(deps.annotations.submitComment(annot.key, { automatic }));
   };
+  const onOpenTags = (annot: AnnotationRecord): boolean =>
+    deps.annotations.editTags(annot.key) !== null;
+  const onEditTags = (
+    annot: AnnotationRecord,
+    names: readonly string[],
+  ): void => {
+    deps.annotations.editTags(annot.key, names);
+  };
+  const onSaveTags = (annot: AnnotationRecord): void =>
+    report(deps.annotations.submitTags(annot.key));
   const onDeleteAnnotation = (annot: AnnotationRecord): void =>
     report(deps.annotations.deleteAnnotation(annot.key));
   /**
@@ -418,6 +443,10 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     excerptImageRequest: deps.excerptImageRequest,
     onSetColor,
     onSaveComment,
+    onOpenTags,
+    onEditTags,
+    onSaveTags,
+    libraryTagNames: deps.libraryTagNames,
     onOpenComment,
     onEditComment,
     onDiscardComment,
@@ -520,6 +549,10 @@ const NOOP_ACTIONS: AnnotActions = {
   onDiscardComment: () => {},
   onOpenComment: () => {},
   onEditComment: () => {},
+  onOpenTags: () => false,
+  onEditTags: () => {},
+  onSaveTags: () => {},
+  libraryTagNames: () => [],
   onDeleteAnnotation: () => {},
   onApplyAgain: () => {},
   onDiscardConflict: () => {},

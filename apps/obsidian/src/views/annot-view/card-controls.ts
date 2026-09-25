@@ -1,6 +1,7 @@
 // What an Annotation Card's header controls may do, decided as data rather
-// than in a component: one rule read by the colour dot, the comment toggle and
-// the delete verb, keyed by the Editing Capability and by what a write left.
+// than in a component: one rule read by the colour dot, the comment toggle, the
+// tag toggle and the delete verb, keyed by the Editing Capability and by what a
+// write left.
 //
 // @see apps/obsidian/policies/ui-seams.md
 // @see https://github.com/aidenlx/zotlit/issues/1145
@@ -50,17 +51,21 @@ export interface CardControlsInput {
   mutation: MutationState;
   /** Whether the Annotation already carries a comment. */
   hasComment: boolean;
+  /** Whether the Annotation already carries a tag. */
+  hasTags: boolean;
   /** The instant a cooldown's remaining seconds are measured from. */
   now: Temporal.Instant;
 }
 
 /**
- * The three verbs an Annotation Card offers. Copying and revealing are absent
+ * The verbs an Annotation Card offers. Copying and revealing are absent
  * because they never change Zotero and so never stand down.
  */
 export interface CardControls {
   color: CardControl;
   comment: CardControl;
+  /** The tag toggle, which follows the comment toggle's rules. */
+  tags: CardControl;
   delete: CardControl;
 }
 
@@ -75,7 +80,7 @@ export function editingLive(capability: EditingCapability): boolean {
  * Every editing control of one card, with the reason for each that cannot run.
  *
  * The two reasons a verb cannot act are not the same thing. A write in flight
- * disables all three and says so: pending shows as disabled verbs and nothing
+ * disables all of them and says so: pending shows as disabled verbs and nothing
  * else, because no provisional value is ever drawn, and it ends without the
  * user doing anything. A capability that refuses writes is a state the user can
  * read about and sometimes end, so the verb stays pressable and its press
@@ -88,6 +93,7 @@ export function cardControls({
   capability,
   mutation,
   hasComment,
+  hasTags,
   now,
 }: CardControlsInput): CardControls {
   const pending = gestureInFlight(mutation);
@@ -107,6 +113,9 @@ export function cardControls({
   return {
     color: control(m.annot_view_card_color()),
     comment: control(commentLabel(hasComment)),
+    tags: control(
+      hasTags ? m.annot_view_card_edit_tags() : m.annot_view_card_add_tags(),
+    ),
     delete: control(m.annot_view_menu_delete()),
   };
 }
@@ -144,10 +153,16 @@ export function editingBlockedReason(
 /**
  * Whether a write in flight stands the verbs down. A comment write does not:
  * its text is already drawn by the editor, and a verb pressed meanwhile queues
- * behind it, so disabling the row would only flicker it on every autosave.
+ * behind it, so disabling the row would only flicker it on every autosave. A
+ * tag save does not either: the tag editor shows it as saving, and it is no
+ * gesture's write.
  */
 function gestureInFlight(mutation: MutationState): boolean {
-  return mutation.kind === "pending" && mutation.write !== "comment";
+  return (
+    mutation.kind === "pending" &&
+    mutation.write !== "comment" &&
+    mutation.write !== "tags"
+  );
 }
 
 /**

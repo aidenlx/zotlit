@@ -593,6 +593,9 @@ importers:
       '@zotlit/templates':
         specifier: workspace:*
         version: link:../../packages/templates
+      '@zotlit/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       '@zotlit/workbench':
         specifier: workspace:*
         version: link:../../packages/workbench

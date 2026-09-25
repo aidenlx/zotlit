@@ -25,6 +25,7 @@ import {
   SERVER_ID,
   serverChanged,
   staleVersion,
+  staleVersionPatch,
   unreachable,
   writeAccepted,
 } from "@/services/zotero-local-api/__fixtures__";
@@ -34,6 +35,7 @@ import type {
   ZoteroAnswers,
   ZoteroRequest,
 } from "@/services/zotero-local-api/__fixtures__";
+import type { WireTag } from "@/services/zotero-local-api/wire";
 import {
   cardControls,
   commentEditorControls,
@@ -144,6 +146,7 @@ it("reads every type the Fixture carries on one attachment, in Zotero's reading 
     pageLabel: "1",
     sortIndex: "00000|000191|00088",
     tags: [],
+    tagDetails: [],
     position: {
       kind: "pdf-text",
       pageIndex: 0,
@@ -201,6 +204,44 @@ it("converts raw database tag types for annotation template metadata", async () 
     list?.annotations.find(({ key }) => key === "FDRFQ7C2")?.templateMetadata
       ?.tags,
   ).toEqual([
+    { name: "hand-added", type: "manual" },
+    { name: "translator", type: "auto" },
+  ]);
+});
+
+it("carries each tag's type from both Annotation Sources", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, client } = await setup(stack, {
+    children: () =>
+      annotationPage(
+        ROUGIER_ANNOTATIONS.map((entry) =>
+          entry.key === "FDRFQ7C2"
+            ? { ...entry, tags: ["hand-added", { tag: "translator", type: 1 }] }
+            : entry,
+        ),
+      ),
+  });
+  client.$client.exec(`
+    insert into tags (tagID, name) values (991, 'hand-added'), (992, 'translator');
+    insert into itemTags (itemID, tagID, type) values (49, 991, 0), (49, 992, 1);
+  `);
+  const tagsOf = (list: AnnotationList | null) =>
+    list?.annotations.find(({ key }) => key === "FDRFQ7C2");
+  const expected = [
+    { name: "hand-added", type: 0 },
+    { name: "translator", type: 1 },
+  ];
+
+  const announced = nextChange(repository);
+  const fromDatabase = await repository.read("RGRPDF24");
+  await announced;
+  const fromLocalApi = await repository.read("RGRPDF24");
+
+  expect(fromDatabase?.source.kind).toBe("zotero-db");
+  expect(tagsOf(fromDatabase)?.tagDetails).toEqual(expected);
+  expect(fromLocalApi?.source.kind).toBe("zotero-local-api");
+  expect(tagsOf(fromLocalApi)?.tagDetails).toEqual(expected);
+  expect(tagsOf(fromLocalApi)?.templateMetadata?.tags).toEqual([
     { name: "hand-added", type: "manual" },
     { name: "translator", type: "auto" },
   ]);
@@ -3146,6 +3187,7 @@ it("draws nothing while an automatic comment save is in flight", async () => {
           capability,
           mutation,
           hasComment: true,
+          hasTags: false,
           now: NOW,
         }),
         blocked: editingBlockedReason(capability, mutation, NOW),
@@ -4532,6 +4574,304 @@ it("records an autosave that lands while a step runs beside it", async () => {
   } finally {
     vi.useRealTimers();
   }
+});
+
+// #endregion
+
+// #region tag editing sessions
+
+/** A tag as a tag `PATCH` sends it: always with its type. */
+type SentTag = Required<WireTag>;
+
+/**
+ * A Zotero holding one Annotation's tags. It keeps the whole list a tag `PATCH`
+ * names and answers `412` to a body version it does not hold, as the paired
+ * probe recorded (aidenlx/zotlit#1231): what Zotero received and holds is the
+ * oracle, never the draft.
+ */
+function zoteroTagging(
+  annotationKey: string,
+  tags: NonNullable<WireAnnotation["tags"]>,
+) {
+  let stored: WireAnnotation = { ...afterWrite(annotationKey, {}), tags };
+  const patches: { version: number; tags: SentTag[] }[] = [];
+  let hold: Promise<void> | null = null;
+  return {
+    answers: {
+      children: () =>
+        annotationPage(
+          ROUGIER_ANNOTATIONS.map((entry) =>
+            entry.key === annotationKey ? stored : entry,
+          ),
+        ),
+      item: () => annotationItem(stored),
+      write: async (request) => {
+        const body = JSON.parse(request.body ?? "{}") as {
+          version: number;
+          tags: SentTag[];
+        };
+        patches.push(body);
+        if (hold) await hold;
+        if (body.version !== stored.version) return staleVersionPatch();
+        stored = {
+          ...stored,
+          // Zotero writes a type for an automatic tag only.
+          tags: body.tags.map(({ tag, type }) =>
+            type === 0 ? tag : { tag, type },
+          ),
+          version: stored.version + 1,
+        };
+        return writeAccepted();
+      },
+    } satisfies ZoteroAnswers,
+    /** Every tag `PATCH` body Zotero received. */
+    patches,
+    /** The tags Zotero holds, as the wire writes them. */
+    get tags() {
+      return stored.tags;
+    },
+    /** An edit made in Zotero itself, beside ZotLit. */
+    changeInZotero(patch: Partial<WireAnnotation>): void {
+      stored = { ...stored, ...patch, version: stored.version + 1 };
+    },
+    /** Hold every write until `release` is called. */
+    holdWrites(): () => void {
+      const { promise, resolve } = Promise.withResolvers<void>();
+      hold = promise;
+      return () => {
+        hold = null;
+        resolve();
+      };
+    },
+  };
+}
+
+/** The Fixture's highlight with a manual, an automatic, and a manual tag. */
+const TAGGED = ["review", { tag: "nlp", type: 1 }, "todo"] as const;
+
+it("saves one tag session as one PATCH of the whole list, with the precondition", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
+  const { repository } = await writable(stack, zotero.answers);
+
+  repository.editTags("PUPR5FG5");
+  repository.editTags("PUPR5FG5", ["review", "nlp", "todo", "Smith, J."]);
+  repository.editTags("PUPR5FG5", ["review", "nlp", "Smith, J."]);
+  repository.editTags("PUPR5FG5", ["review", "nlp", "Smith, J.", "figure"]);
+  expect(zotero.patches).toEqual([]);
+
+  expect(await repository.submitTags("PUPR5FG5")).toEqual({ kind: "idle" });
+
+  // Kept tags keep their types and new tags are manual. The version is the
+  // Fixture highlight's own.
+  expect(zotero.patches).toEqual([
+    {
+      version: 11,
+      tags: [
+        { tag: "review", type: 0 },
+        { tag: "nlp", type: 1 },
+        { tag: "Smith, J.", type: 0 },
+        { tag: "figure", type: 0 },
+      ],
+    },
+  ]);
+  expect(repository.tagDraftFor("PUPR5FG5")).toBeNull();
+  const record = repository
+    .peek("RGRPDF24")
+    ?.value.annotations.find(({ key }) => key === "PUPR5FG5");
+  expect(record?.tagDetails).toEqual([
+    { name: "review", type: 0 },
+    { name: "nlp", type: 1 },
+    { name: "Smith, J.", type: 0 },
+    { name: "figure", type: 0 },
+  ]);
+});
+
+it("removes an automatic tag, as Zotero lets the user do", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
+  const { repository } = await writable(stack, zotero.answers);
+
+  repository.editTags("PUPR5FG5", ["review", "todo"]);
+  await repository.submitTags("PUPR5FG5");
+
+  expect(zotero.tags).toEqual(["review", "todo"]);
+});
+
+it("ends a session that changed nothing with no write", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
+  const { repository } = await writable(stack, zotero.answers);
+
+  repository.editTags("PUPR5FG5", ["review", "nlp", "todo", "figure"]);
+  repository.editTags("PUPR5FG5", ["review", "nlp", "todo"]);
+
+  expect(await repository.submitTags("PUPR5FG5")).toEqual({ kind: "idle" });
+  expect(zotero.patches).toEqual([]);
+  expect(repository.tagDraftFor("PUPR5FG5")).toBeNull();
+});
+
+it("merges tags Zotero added and removed during the session, not overwriting them", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
+  const { repository } = await writable(stack, zotero.answers);
+
+  repository.editTags("PUPR5FG5", ["review", "nlp", "todo", "figure"]);
+  zotero.changeInZotero({
+    tags: ["review", { tag: "nlp", type: 1 }, "from Zotero"],
+  });
+  await repository.refresh("RGRPDF24");
+
+  await repository.submitTags("PUPR5FG5");
+
+  // `from Zotero` stays, and `todo`, which Zotero removed, does not come back.
+  expect(zotero.tags).toEqual([
+    "review",
+    { tag: "nlp", type: 1 },
+    "from Zotero",
+    "figure",
+  ]);
+});
+
+it("re-reads after a 412 and applies the same names again, with no Write Conflict", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
+  const { repository } = await writable(stack, zotero.answers);
+  let conflicts = 0;
+  stack.defer(repository.on("write-conflict", () => (conflicts += 1)));
+
+  repository.editTags("PUPR5FG5", ["review", "nlp", "figure"]);
+  // Zotero moves under the session, and ZotLit has not read it yet.
+  zotero.changeInZotero({ tags: [...TAGGED, "from Zotero"] });
+
+  expect(await repository.submitTags("PUPR5FG5")).toEqual({ kind: "idle" });
+
+  expect(zotero.patches.map(({ version }) => version)).toEqual([11, 12]);
+  expect(zotero.tags).toEqual([
+    "review",
+    { tag: "nlp", type: 1 },
+    "from Zotero",
+    "figure",
+  ]);
+  expect(conflicts).toBe(0);
+  expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
+  expect(repository.tagDraftFor("PUPR5FG5")).toBeNull();
+});
+
+it("shares one tag draft and preserves it across unrelated refresh changes", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
+  const { repository } = await writable(stack, zotero.answers);
+  const announced: string[] = [];
+  stack.defer(
+    repository.on("comment-draft-changed", (key) => announced.push(key)),
+  );
+
+  // The Mark Popup starts the session; the card opens onto the same draft.
+  repository.editTags("PUPR5FG5", ["review", "figure"]);
+  expect(repository.editTags("PUPR5FG5")).toMatchObject({
+    names: ["review", "figure"],
+  });
+  zotero.changeInZotero({ color: "#ff6666" });
+  await repository.refresh("RGRPDF24");
+
+  expect(repository.tagDraftFor("PUPR5FG5")).toMatchObject({
+    serverID: SERVER_ID,
+    baseline: ["review", "nlp", "todo"],
+    names: ["review", "figure"],
+    state: { kind: "editing" },
+  });
+  expect(announced).toContain("PUPR5FG5");
+  expect(colorOf(await repository.read("RGRPDF24"), "PUPR5FG5")).toBe(
+    "#ff6666",
+  );
+});
+
+it("keeps the verbs live and the draft saving until the read-back lands", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
+  const { repository } = await writable(stack, zotero.answers);
+  const release = zotero.holdWrites();
+
+  repository.editTags("PUPR5FG5", ["review", "nlp", "todo", "figure"]);
+  const saved = repository.submitTags("PUPR5FG5");
+  await vi.waitFor(() => expect(zotero.patches).toHaveLength(1));
+
+  expect(repository.tagDraftFor("PUPR5FG5")?.state).toEqual({
+    kind: "pending",
+  });
+  // The editor is saving, so a change meanwhile is not taken.
+  repository.editTags("PUPR5FG5", ["review"]);
+  expect(repository.tagDraftFor("PUPR5FG5")?.names).toEqual([
+    "review",
+    "nlp",
+    "todo",
+    "figure",
+  ]);
+  const mutation = repository.mutationFor("PUPR5FG5");
+  expect(mutation).toEqual({ kind: "pending", write: "tags" });
+  const verbs = cardControls({
+    capability: repository.capabilityFor("RGRPDF24"),
+    mutation,
+    hasComment: false,
+    hasTags: true,
+    now: NOW,
+  });
+  expect([verbs.color, verbs.comment, verbs.delete]).toMatchObject([
+    { disabled: false },
+    { disabled: false },
+    { disabled: false },
+  ]);
+
+  // The draft leaves only once the confirmed record stands, so the editor
+  // closes onto the new chips rather than the old ones.
+  let tagsWhenClosed: readonly string[] | undefined;
+  stack.defer(
+    repository.on("comment-draft-changed", () => {
+      if (repository.tagDraftFor("PUPR5FG5")) return;
+      tagsWhenClosed = repository
+        .peek("RGRPDF24")
+        ?.value.annotations.find(({ key }) => key === "PUPR5FG5")?.tags;
+    }),
+  );
+  release();
+  await saved;
+  expect(tagsWhenClosed).toEqual(["review", "nlp", "todo", "figure"]);
+});
+
+it("hides an old database's tag draft when the database switches", async () => {
+  await using stack = new AsyncDisposableStack();
+  let serverID = SERVER_ID;
+  let answering = true;
+  const { repository, client, dbEvents, serverEvents } = await writable(
+    stack,
+    {
+      root: () =>
+        answering ? rootOk({ "Zotero-Server-ID": serverID }) : unreachable(),
+      children: () => annotationPage(ROUGIER_ANNOTATIONS, { serverID }),
+    },
+    { key: REMEMBERED_KEY },
+  );
+  repository.editTags("PUPR5FG5", ["figure"]);
+  const hidden = new Promise<string>((resolve) => {
+    stack.defer(repository.on("comment-draft-hidden", resolve));
+  });
+
+  // With the Local API gone, the draft is found by the database it was made
+  // in, so the switch itself must hide it.
+  answering = false;
+  const lost = nextChange(repository);
+  freshnessSignal(serverEvents);
+  await lost;
+  serverID = "Zzzz11119999";
+  client.$client.exec(
+    `update settings set value = '${serverID}' where setting = 'localAPI' and key = 'serverID'`,
+  );
+  dbEvents.emit("changed");
+  await repository.read("RGRPDF24");
+
+  await expect(hidden).resolves.toBe("PUPR5FG5");
+  expect(repository.tagDraftFor("PUPR5FG5")).toBeNull();
 });
 
 // #endregion

@@ -18,6 +18,7 @@ import {
   getAttachmentByKey,
   getItemRefByID,
   getItemsByKey,
+  getLibraryTagNames,
   getLibraries,
   isChildItemFields,
   parseIndexedKey,
@@ -141,12 +142,16 @@ export interface AnnotViewDeps {
     | "on"
     | "patchColor"
     | "editComment"
+    | "editTags"
+    | "peek"
     | "read"
     | "redo"
     | "refresh"
     | "retryWrite"
     | "retryCommentDraft"
     | "submitComment"
+    | "submitTags"
+    | "tagDraftFor"
     | "undo"
   >;
   /** Allow editing, from every entry the view offers, which the UI seam owns. */
@@ -371,6 +376,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
       deleteControl: (annot) => this.#cardControls(annot).delete,
       resolveAnnotationID: (indexedKey) =>
         this.#resolveAnnotationID(indexedKey),
+      libraryTagNames: (annot) => this.#libraryTagNames(annot),
       getState: () => this.#store.getState(),
       setSelectedAttachmentKey: (key) =>
         this.#store.setState({ selectedAttachmentKey: key }),
@@ -556,17 +562,30 @@ export class AnnotationView extends ItemView implements HistorySurface {
     );
     this.register(
       this.#deps.annotations.on("comment-draft-changed", (annotationKey) => {
-        const commentDrafts = new Map(this.#store.getState().commentDrafts);
+        const state = this.#store.getState();
+        const commentDrafts = new Map(state.commentDrafts);
         const draft = this.#deps.annotations.commentDraftFor(annotationKey);
         if (draft) commentDrafts.set(annotationKey, draft);
         else commentDrafts.delete(annotationKey);
-        this.#store.setState({ commentDrafts });
+        const tagDrafts = new Map(state.tagDrafts);
+        const tagDraft = this.#deps.annotations.tagDraftFor(annotationKey);
+        const ended = tagDraft ? undefined : tagDrafts.get(annotationKey);
+        if (tagDraft) tagDrafts.set(annotationKey, tagDraft);
+        else tagDrafts.delete(annotationKey);
+        this.#store.setState({
+          commentDrafts,
+          tagDrafts,
+          ...(ended && this.#heldList(ended.attachmentKey)),
+        });
       }),
     );
     this.register(
       this.#deps.annotations.on("annotation-deleted", (annotationKey) => {
         if (this.#store.getState().editingCommentKey === annotationKey) {
           this.#store.setState({ editingCommentKey: null });
+        }
+        if (this.#store.getState().editingTagsKey === annotationKey) {
+          this.#store.setState({ editingTagsKey: null });
         }
       }),
     );
@@ -587,6 +606,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     this.#loadDisposables = null;
     this.#leafSession?.();
     this.#leafSession = null;
+    // An open tag editor ends its session, and saves it, as it unmounts.
     this.#root?.unmount();
     this.#root = null;
     this.#actions = null;
@@ -909,6 +929,28 @@ export class AnnotationView extends ItemView implements HistorySurface {
   }
 
   /**
+   * The list the repository holds for the Attachment on screen, for the update
+   * that drops a tag draft. The repository drops a saved draft only once the
+   * read-back stands in that list, and the view's own re-read lands later; so
+   * the draft and the confirmed chips change in one update, and the editor
+   * closes onto the new chips.
+   */
+  #heldList(
+    attachmentKey: string,
+  ): Pick<AnnotState, "annotations" | "annotationSource"> | null {
+    if (attachmentKey !== this.#store.getState().selectedAttachmentKey) {
+      return null;
+    }
+    const held = this.#deps.annotations.peek(attachmentKey);
+    return held
+      ? {
+          annotations: held.value.annotations,
+          annotationSource: held.value.source,
+        }
+      : null;
+  }
+
+  /**
    * Reads one Attachment's Annotations through the repository, so the list on
    * screen comes from whichever Annotation Source is active for it and says
    * which — the same source, and the same records, the overlay draws from.
@@ -943,11 +985,18 @@ export class AnnotationView extends ItemView implements HistorySurface {
             return draft ? [[annotation.key, draft] as const] : [];
           }),
         );
+        const tagDrafts = new Map(
+          list.annotations.flatMap((annotation) => {
+            const draft = this.#deps.annotations.tagDraftFor(annotation.key);
+            return draft ? [[annotation.key, draft] as const] : [];
+          }),
+        );
         this.#store.setState({
           annotations: list.annotations,
           annotationSource: list.source,
           annotationSourceScope: sourceScope,
           commentDrafts,
+          tagDrafts,
         });
         if (!restoreFilter || memoryKey === null) return;
         const saved = this.#loadFilterSelection(memoryKey, list.annotations);
@@ -1013,6 +1062,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
       capability,
       mutation: mutations.get(annot.key) ?? IDLE,
       hasComment: annot.comment !== null,
+      hasTags: annot.tags.length > 0,
       now: Temporal.Now.instant(),
     });
   }
@@ -1170,6 +1220,26 @@ export class AnnotationView extends ItemView implements HistorySurface {
     }
   }
 
+  /**
+   * The tag names in use in the Annotation's Library, which the tag editor
+   * suggests. The Zotero database answers them, so a tag saved moments ago
+   * joins once the database has caught up.
+   */
+  #libraryTagNames(annot: AnnotationRecord): readonly string[] {
+    if (this.#deps.db.state !== "ready") return [];
+    try {
+      const client = this.#deps.db.client;
+      const library = resolveIndexedKeyLibrary(client, annot.key);
+      return library ? getLibraryTagNames(client, library.libraryID) : [];
+    } catch (error) {
+      logger.warn("Failed to read a library's tag names", {
+        annotationKey: annot.key,
+        error,
+      });
+      return [];
+    }
+  }
+
   #getLibraries(): Library[] | null {
     if (this.#librariesCache) return this.#librariesCache;
     try {
@@ -1196,6 +1266,8 @@ export class AnnotationView extends ItemView implements HistorySurface {
       annotationSourceScope: null,
       commentDrafts: new Map(),
       editingCommentKey: null,
+      tagDrafts: new Map(),
+      editingTagsKey: null,
       selectedAnnotationKeys: [],
     });
     this.#itemKey = null;

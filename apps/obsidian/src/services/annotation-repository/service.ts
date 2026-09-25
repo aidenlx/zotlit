@@ -16,6 +16,7 @@ import type {
   Annotation,
   AnnotationPosition,
   ResolvedAnnotationTypeName,
+  TagType,
   TemplateTag,
 } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
@@ -69,11 +70,15 @@ import {
   geometryPatch,
   IDLE,
   MAX_POSITION_LENGTH,
+  mergeTags,
   newWriteToken,
+  tagChange,
+  tagsPatch,
   writePosition,
 } from "./write";
 import type {
   AnnotationDraft,
+  AnnotationTag,
   ConflictedWrite,
   GeometryEdit,
   GeometryInput,
@@ -93,6 +98,7 @@ export type {
 } from "./history";
 export type {
   AnnotationDraft,
+  AnnotationTag,
   GeometryEdit,
   GeometryInput,
   MutationState,
@@ -170,6 +176,11 @@ export interface AnnotationRecord {
    * ids SQLite keeps, because a name is what both sources can supply.
    */
   tags: readonly string[];
+  /**
+   * The same tags with the type Zotero stores for each, which a tag write
+   * sends back. Both sources fill it; a record without it holds manual tags.
+   */
+  tagDetails?: readonly AnnotationTag[];
   /** Parsed once per read, so a redraw parses nothing. */
   position: AnnotationPosition;
   /**
@@ -220,6 +231,31 @@ export interface CommentDraft {
    * unconfirmed write, or when editing is lost while this draft is open.
    */
   manualSave?: boolean;
+}
+
+export type TagDraftState =
+  | { kind: "editing" }
+  | { kind: "pending" }
+  | { kind: "failed"; failure: WriteFailure };
+
+/**
+ * The tag field of one Annotation Draft: one tag editing session, shared by
+ * every surface through the comment draft's key. It is saved once, when the
+ * editor closes.
+ *
+ * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
+ */
+export interface TagDraft {
+  annotationKey: string;
+  attachmentKey: string;
+  /** Zotero database that supplied the record when the session began. */
+  serverID: string;
+  /** Confirmed tag names the session started from. */
+  baseline: readonly string[];
+  /** Current names in the shared editor. */
+  names: readonly string[];
+  /** `pending` while the save is in flight, which the editor shows as saving. */
+  state: TagDraftState;
 }
 
 type CommentWriteDecision =
@@ -314,7 +350,7 @@ export interface AnnotationRepositoryEvents {
    * @param annotationKey the Annotation's Indexed Key.
    */
   "mutation-changed": (annotationKey: string) => void;
-  /** One shared comment draft moved. */
+  /** One shared Annotation Draft moved: its comment or its tags. */
   "comment-draft-changed": (annotationKey: string) => void;
   /** A database switch hid a draft that belongs to the previous database. */
   "comment-draft-hidden": (annotationKey: string) => void;
@@ -397,13 +433,14 @@ interface HeldAnnotation {
 /** What one command asks Zotero for, which a conflict puts beside the fresh record. */
 type WriteAttempt =
   | { write: Exclude<ConflictedWrite, "geometry">; attempted: string | null }
-  | { write: "geometry"; attempted: GeometryEdit; input: GeometryInput };
+  | { write: "geometry"; attempted: GeometryEdit; input: GeometryInput }
+  | { write: "tags" };
 
 type ConfirmedWrite =
   | {
       kind: "record";
       record: AnnotationRecord;
-      write: "color" | "comment" | "geometry";
+      write: "color" | "comment" | "geometry" | "tags";
     }
   | { kind: "created"; record: AnnotationRecord }
   | { kind: "deleted"; annotationKey: string };
@@ -481,6 +518,9 @@ export class AnnotationRepository extends Service<void> {
   readonly #commentDrafts = new Map<string, CommentDraft>();
   readonly #commentDraftSources = new Map<string, string>();
   readonly #commentSaves = new Map<string, CommentSave>();
+  /** Tag drafts, under the comment draft's key. */
+  readonly #tagDrafts = new Map<string, TagDraft>();
+  readonly #tagDraftSources = new Map<string, string>();
   readonly #commands = new Map<string, Promise<MutationState>>();
   /**
    * One Annotation History per Attachment, held only while a PDF view of the
@@ -915,6 +955,103 @@ export class AnnotationRepository extends Service<void> {
     }
   }
 
+  /** The active Zotero database's shared tag draft for one Annotation. */
+  tagDraftFor(annotationKey: string): TagDraft | null {
+    const serverID =
+      this.#localApi.demandSource()?.serverID ??
+      this.#tagDraftSources.get(annotationKey);
+    return serverID
+      ? (this.#tagDrafts.get(commentDraftID(serverID, annotationKey)) ?? null)
+      : null;
+  }
+
+  /**
+   * Start or update one tag editing session. A session starts from the
+   * confirmed names and only while editing is available. A draft whose save
+   * is in flight stays as it is, because the editor is saving.
+   *
+   * @param names the editor's current names; left out, the session starts or
+   *   stays as it is.
+   */
+  editTags(annotationKey: string, names?: readonly string[]): TagDraft | null {
+    const standing = this.tagDraftFor(annotationKey);
+    if (standing?.state.kind === "pending") return standing;
+    const source = this.#localApi.demandSource();
+    const held = standing ? null : this.#holding(annotationKey);
+    if (!standing && (!source || !held)) return null;
+    const attachmentKey = standing?.attachmentKey ?? held!.attachmentKey;
+    if (this.capabilityFor(attachmentKey).kind !== "writable") {
+      return standing;
+    }
+    const draft: TagDraft = standing
+      ? {
+          ...standing,
+          ...(names !== undefined && {
+            names,
+            state: { kind: "editing" } as const,
+          }),
+        }
+      : {
+          annotationKey,
+          attachmentKey,
+          serverID: source!.serverID,
+          baseline: held!.record.tags,
+          names: names ?? held!.record.tags,
+          state: { kind: "editing" },
+        };
+    this.#setTagDraft(draft);
+    return draft;
+  }
+
+  /**
+   * Save one tag editing session, when its editor closes: one write that
+   * applies the session's added and removed names to the tags Zotero holds
+   * now. A session that changed nothing ends with no write. The draft stays,
+   * `pending`, until the Annotation is read back, and then goes, so the editor
+   * closes onto the confirmed tags.
+   *
+   * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
+   */
+  async submitTags(annotationKey: string): Promise<MutationState> {
+    const draft = this.tagDraftFor(annotationKey);
+    if (!draft) return IDLE;
+    if (draft.state.kind === "pending") return this.mutationFor(annotationKey);
+    const change = tagChange(draft.baseline, draft.names);
+    if (change.added.length === 0 && change.removed.length === 0) {
+      this.#dropTagDraft(draft);
+      return IDLE;
+    }
+    const blocked = this.#writeBlocked(draft.attachmentKey);
+    if (blocked) {
+      this.#setTagDraft({
+        ...draft,
+        state: { kind: "failed", failure: blocked },
+      });
+      return { kind: "failed", failure: blocked };
+    }
+    this.#setTagDraft({ ...draft, state: { kind: "pending" } });
+    logger.debug("A tag editing session is saved", {
+      annotationKey,
+      added: change.added.length,
+      removed: change.removed.length,
+    });
+    const outcome = await this.#command(annotationKey, {
+      write: "tags",
+      request: (target, record) =>
+        tagsPatch(target, mergeTags(annotationTags(record), change)),
+    });
+    const current = this.#tagDrafts.get(
+      commentDraftID(draft.serverID, annotationKey),
+    );
+    if (!current) return outcome;
+    if (outcome.kind === "failed") {
+      this.#setTagDraft({ ...current, state: outcome });
+    } else {
+      this.#dropTagDraft(current);
+    }
+    return outcome;
+  }
+
   /**
    * Create one highlight or underline on an Attachment, from a user gesture.
    *
@@ -1347,6 +1484,8 @@ export class AnnotationRepository extends Service<void> {
       request: (target: WriteTarget, record: AnnotationRecord) => WriteRequest;
       settle?: "re-read" | "drop";
       join?: HistoryJoin;
+      /** Set on the second send of a tag write, after its `412` re-read. */
+      reapplied?: true;
     },
   ): Promise<MutationState> {
     if (command.generation !== this.#commandGeneration) {
@@ -1422,10 +1561,23 @@ export class AnnotationRepository extends Service<void> {
         method,
         failure: reply.failure,
       });
-      const state = await this.#writeRefused(held, annotationKey, {
+      const refused = await this.#writeRefused(held, annotationKey, {
         ...command,
         failure: reply.failure,
       });
+      if (refused.kind === "re-apply" && !command.reapplied) {
+        logger.debug("A tag write applies its names again to fresh tags", {
+          annotationKey,
+        });
+        return await this.#runCommand(annotationKey, {
+          ...command,
+          reapplied: true,
+        });
+      }
+      const state: MutationState =
+        refused.kind === "re-apply"
+          ? { kind: "failed", failure: reply.failure }
+          : refused;
       if (state.kind === "failed") await this.refresh(held.attachmentKey);
       this.#settle(annotationKey, state);
       if (state.kind === "conflict") {
@@ -1759,6 +1911,8 @@ export class AnnotationRepository extends Service<void> {
       return;
     }
     if (applied.kind !== "record") return;
+    // A tag session's History Step is aidenlx/zotlit#1230.
+    if (applied.write === "tags") return;
     if (applied.write === "comment") {
       this.#recordCommentStep(history, {
         attachmentKey,
@@ -2060,13 +2214,17 @@ export class AnnotationRepository extends Service<void> {
    * A `404` is the other end of the same story — Zotero no longer holds the
    * Annotation — so the list drops and the card leaves on the next read.
    *
+   * A tag write never conflicts: once the fresh record stands in the list, it
+   * answers `re-apply`, and the same names are applied to the fresh tags.
+   *
    * @see https://github.com/aidenlx/zotlit/issues/1139 — "Editing Capability and degraded states"
+   * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
    */
   async #writeRefused(
     held: HeldAnnotation,
     annotationKey: string,
     refusal: WriteAttempt & { failure: WriteFailure },
-  ): Promise<MutationState> {
+  ): Promise<MutationState | { kind: "re-apply" }> {
     const { failure } = refusal;
     if (failure.kind === "not-found") {
       this.#dropAttachment(held.attachmentKey, held.queryKey);
@@ -2102,6 +2260,7 @@ export class AnnotationRepository extends Service<void> {
     }));
     this.#dropAttachment(held.attachmentKey, held.queryKey);
 
+    if (refusal.write === "tags") return { kind: "re-apply" };
     const conflict = conflictOf(refusal, record);
     if (!conflict) {
       logger.debug("A write conflict resolved to the value Zotero holds", {
@@ -2125,7 +2284,10 @@ export class AnnotationRepository extends Service<void> {
   async #applyWrite(
     held: HeldAnnotation,
     annotationKey: string,
-    { write, settle }: { write: ConflictedWrite; settle: "re-read" | "drop" },
+    {
+      write,
+      settle,
+    }: { write: ConflictedWrite | "tags"; settle: "re-read" | "drop" },
   ): Promise<{ value: ConfirmedWrite } | { failure: LocalApiFailure }> {
     const { queryKey, attachmentKey } = held;
     if (settle === "drop") {
@@ -2268,6 +2430,24 @@ export class AnnotationRepository extends Service<void> {
       this.#commentDraftSources.delete(annotationKey);
     }
     this.#cancelCommentSave(annotationKey, activeServerID);
+    this.#emitter.emit("comment-draft-changed", annotationKey);
+  }
+
+  #setTagDraft(draft: TagDraft): void {
+    this.#tagDrafts.set(
+      commentDraftID(draft.serverID, draft.annotationKey),
+      draft,
+    );
+    this.#tagDraftSources.set(draft.annotationKey, draft.serverID);
+    this.#emitter.emit("comment-draft-changed", draft.annotationKey);
+  }
+
+  #dropTagDraft({ serverID, annotationKey }: TagDraft): void {
+    if (!this.#tagDrafts.delete(commentDraftID(serverID, annotationKey)))
+      return;
+    if (this.#tagDraftSources.get(annotationKey) === serverID) {
+      this.#tagDraftSources.delete(annotationKey);
+    }
     this.#emitter.emit("comment-draft-changed", annotationKey);
   }
 
@@ -2532,6 +2712,16 @@ export class AnnotationRepository extends Service<void> {
         ) {
           this.#commentDraftSources.delete(draft.annotationKey);
           this.#cancelCommentSave(draft.annotationKey, draft.serverID);
+          this.#emitter.emit("comment-draft-hidden", draft.annotationKey);
+        }
+      }
+      for (const draft of this.#tagDrafts.values()) {
+        if (
+          draft.attachmentKey === attachmentKey &&
+          draft.serverID !== source.database.serverID &&
+          this.#tagDraftSources.get(draft.annotationKey) === draft.serverID
+        ) {
+          this.#tagDraftSources.delete(draft.annotationKey);
           this.#emitter.emit("comment-draft-hidden", draft.annotationKey);
         }
       }
@@ -2804,7 +2994,7 @@ function confirmationKey(confirmation: ConfirmedWrite): string {
  * now, or `null` where that record already holds what the write asked for.
  */
 function conflictOf(
-  attempt: WriteAttempt,
+  attempt: Exclude<WriteAttempt, { write: "tags" }>,
   record: AnnotationRecord,
 ): WriteConflict | null {
   if (attempt.write === "geometry") {
@@ -2828,7 +3018,7 @@ function conflictOf(
 /** What Zotero holds now for the field one refused write asked to change. */
 function freshValueOf(
   record: AnnotationRecord,
-  write: ConflictedWrite,
+  write: ConflictedWrite | "tags",
 ): string | null {
   switch (write) {
     case "color":
@@ -2842,7 +3032,17 @@ function freshValueOf(
     // The stored position and the quoted text, as one comparable value.
     case "geometry":
       return JSON.stringify([storedPosition(record.position), record.text]);
+    case "tags":
+      return JSON.stringify(annotationTags(record));
   }
+}
+
+/** One record's tags with their types, as a tag write merges into them. */
+function annotationTags(record: AnnotationRecord): readonly AnnotationTag[] {
+  return (
+    record.tagDetails ??
+    record.tags.map((name) => ({ name, type: 0 satisfies TagType }))
+  );
 }
 
 /**
@@ -2921,6 +3121,7 @@ function toRecord(
     pageLabel: annotation.pageLabel,
     sortIndex: annotation.sortIndex,
     tags: annotation.tags,
+    tagDetails: annotation.tagDetails,
     position: parseAnnotationPosition(annotation.position, contentType),
     version: annotation.version,
     templateMetadata: {
@@ -2928,12 +3129,14 @@ function toRecord(
       dateModified: annotation.dateModified.toString(),
       authorName: annotation.authorName,
       isExternal: annotation.isExternal,
-      tags: annotation.tagDetails?.map(({ name, type }) => ({
-        name,
-        type: tagTypeToName(type),
-      })),
+      tags: templateTags(annotation.tagDetails),
     },
   };
+}
+
+/** Tags with their types named, as a template reads them from either source. */
+function templateTags(tags: readonly AnnotationTag[] | undefined) {
+  return tags?.map(({ name, type }) => ({ name, type: tagTypeToName(type) }));
 }
 
 /** The Sort Index comes across: it orders the list, and a restore sends it back. */
@@ -2965,6 +3168,7 @@ function fromLocalApi({
     pageLabel,
     sortIndex,
     tags,
+    tagDetails,
     position,
     version,
     templateMetadata: {
@@ -2972,7 +3176,7 @@ function fromLocalApi({
       dateModified: dateModified ?? null,
       authorName: authorName ?? null,
       isExternal: isExternal ?? null,
-      tags: tagDetails,
+      tags: templateTags(tagDetails),
     },
   };
 }

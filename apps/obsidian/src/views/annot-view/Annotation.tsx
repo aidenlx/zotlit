@@ -8,8 +8,9 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
+import type { DragEvent, KeyboardEvent, MouseEvent, RefObject } from "react";
 
+import { tagTypeToName } from "@zotlit/db";
 import type { ResolvedAnnotationTypeName } from "@zotlit/db";
 
 import { Icon } from "@/components/obsidian/icon";
@@ -58,9 +59,11 @@ import {
   useAnnotStore,
   useMutation,
   useSetEditingComment,
+  useSetEditingTags,
   useToggleSelectedTag,
 } from "./store";
 import { tagChipVariants } from "./tag-chip";
+import { TagEditor } from "./tag-editor";
 
 const TYPE_ICON: Record<string, string> = {
   highlight: "align-left",
@@ -99,17 +102,19 @@ function useCardControls(annot: AnnotationRecord): CardControls {
   const capability = useAnnotStore((s) => s.capability);
   const mutation = useMutation(annot.key);
   const hasComment = annot.comment !== null;
+  const hasTags = annot.tags.length > 0;
   return useMemo(
     () =>
       cardControls({
         capability,
         mutation,
         hasComment,
+        hasTags,
         // A card's tooltip is read at the moment it is drawn; the ticking
         // countdown belongs to the toolbar affordance, not to every card.
         now: Temporal.Now.instant(),
       }),
-    [capability, mutation, hasComment],
+    [capability, mutation, hasComment, hasTags],
   );
 }
 
@@ -120,6 +125,7 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
   );
   const editing = useAnnotStore((s) => s.editingCommentKey === annot.key);
   const controls = useCardControls(annot);
+  const endTags = useRef<(() => void) | null>(null);
 
   return (
     <div
@@ -186,7 +192,12 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
             actions.onDragStart(e, annot);
           }}
         />
-        <CardActionBar annot={annot} controls={controls} editing={editing} />
+        <CardActionBar
+          annot={annot}
+          controls={controls}
+          editing={editing}
+          endTags={endTags}
+        />
       </div>
 
       <ConflictSlot annot={annot} />
@@ -195,7 +206,7 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
 
       <CommentSlot annot={annot} editing={editing} control={controls.comment} />
 
-      <TagRow annot={annot} />
+      <TagSlot annot={annot} control={controls.tags} endRef={endTags} />
     </div>
   );
 }
@@ -247,13 +258,13 @@ function cardDraftActions(
 
 /**
  * The card's verbs, as the same `clickable-icon` row the Mark Popup draws over
- * a selected mark — colour, comment and delete are the same three writes
- * reached from another surface, so they wear the same control.
+ * a selected mark, so a write reached from either surface wears the same
+ * control.
  *
- * The three editing verbs rest dimmed and come up to full on hover, while
- * focus is inside the card so the keyboard reaches them, and while the card is
- * selected. The overflow control never dims: it is the only route to copying,
- * revealing and deleting.
+ * The three editing verbs — colour, comment and tags — rest dimmed and come
+ * up to full on hover, while focus is inside the card so the keyboard reaches
+ * them, and while the card is selected. The overflow control never dims: it is
+ * the only route to copying, revealing and deleting.
  *
  * @see apps/obsidian/src/services/pdf-annotation-editor/mark-popup.ts
  */
@@ -261,14 +272,18 @@ function CardActionBar({
   annot,
   controls,
   editing,
+  endTags,
 }: {
   annot: AnnotationRecord;
   controls: CardControls;
   editing: boolean;
+  /** Ends the open tag session through its editor, typed text and all. */
+  endTags: RefObject<(() => void) | null>;
 }) {
   const actions = useContext(AnnotActionsContext);
   const setEditing = useSetEditingComment();
   const hasComment = annot.comment !== null;
+  const tags = useTagSession(annot);
 
   /**
    * What one verb's press does. A verb the Editing Capability blocks keeps its
@@ -318,6 +333,23 @@ function CardActionBar({
           })}
           {...tooltipAttrs(controls.comment.tooltip)}
         />
+        <IconButton
+          icon="tag"
+          className={BLOCKED_VERB_DIM}
+          active={tags.open}
+          disabled={controls.tags.disabled}
+          data-blocked={controls.tags.blocked ? "" : undefined}
+          // An open editor keeps the focus through this press, so the press
+          // itself is what closes it rather than the blur before it.
+          onMouseDown={(evt) => {
+            if (tags.open) evt.preventDefault();
+          }}
+          onClick={press(controls.tags, () => {
+            if (tags.open) endTags.current?.();
+            else tags.start();
+          })}
+          {...tooltipAttrs(controls.tags.tooltip)}
+        />
       </div>
       <IconButton
         icon="more-horizontal"
@@ -329,6 +361,83 @@ function CardActionBar({
 }
 
 /**
+ * One card's tag editing session, as the toggle and the tag row read it. The
+ * editor is open while the user holds it open, and stays open, saving, until
+ * the read-back lands, so it closes onto the confirmed chips.
+ *
+ * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
+ */
+function useTagSession(annot: AnnotationRecord) {
+  const actions = useContext(AnnotActionsContext);
+  const setEditing = useSetEditingTags();
+  const editing = useAnnotStore((s) => s.editingTagsKey === annot.key);
+  const draft = useAnnotStore((s) => s.tagDrafts.get(annot.key) ?? null);
+  const saving = draft?.state.kind === "pending";
+  return {
+    draft,
+    saving,
+    open: editing || saving,
+    start: (): void => {
+      if (actions.onOpenTags(annot)) setEditing(annot.key);
+    },
+    close: (): void => {
+      setEditing(null);
+      actions.onSaveTags(annot);
+    },
+  };
+}
+
+/** The names Zotero holds as automatic tags on this Annotation. */
+function autoTags(annot: AnnotationRecord): ReadonlySet<string> {
+  return new Set(
+    annot.tagDetails
+      ?.filter(({ type }) => tagTypeToName(type) === "auto")
+      .map(({ name }) => name),
+  );
+}
+
+/**
+ * The tag row, or the tag editor in its place. A click on the row's empty
+ * space opens the editor where the tag control would, as a click on the
+ * comment opens the comment editor.
+ */
+function TagSlot({
+  annot,
+  control,
+  endRef,
+}: {
+  annot: AnnotationRecord;
+  control: CardControl;
+  endRef: RefObject<(() => void) | null>;
+}) {
+  const actions = useContext(AnnotActionsContext);
+  const session = useTagSession(annot);
+  const auto = useMemo(() => autoTags(annot), [annot]);
+  if (session.open) {
+    return (
+      // Editing is not the card's selection. The handler is a function of its
+      // own: Preact records when a handler was first attached on the function
+      // itself and skips it for an event that began earlier, so the shared
+      // `claimClick` mounted here by the toggle's press would silence the
+      // action bar's claim of that same press.
+      <div onClick={(e) => claimClick(e)}>
+        <TagEditor
+          names={session.draft?.names ?? annot.tags}
+          auto={auto}
+          saving={session.saving}
+          libraryNames={() => actions.libraryTagNames(annot)}
+          onChange={(names) => actions.onEditTags(annot, names)}
+          onClose={session.close}
+          endRef={endRef}
+        />
+      </div>
+    );
+  }
+  const editable = !control.disabled && control.blocked === null;
+  return <TagRow annot={annot} onOpen={editable ? session.start : undefined} />;
+}
+
+/**
  * The Annotation's own tags, in the card rather than behind a control: a
  * researcher scanning a column reads what an Annotation is filed under without
  * opening anything. They wear the same native-tag chip the filter bar and its
@@ -336,14 +445,31 @@ function CardActionBar({
  *
  * A chip is a filter toggle, so a tag seen on one card is the gesture that
  * narrows the list to it, and a chip already in the filter rests in the accent.
+ *
+ * @param onOpen opens the tag editor from a click on the row's empty space;
+ *   absent while editing is unavailable.
  */
-function TagRow({ annot }: { annot: AnnotationRecord }) {
+function TagRow({
+  annot,
+  onOpen,
+}: {
+  annot: AnnotationRecord;
+  onOpen?: () => void;
+}) {
   const selectedTags = useAnnotStore((s) => s.selectedTags);
   const toggleTag = useToggleSelectedTag();
   if (annot.tags.length === 0) return null;
 
   return (
-    <div className="zt:flex zt:flex-wrap zt:gap-1">
+    <div
+      className="zt:flex zt:flex-wrap zt:gap-1 zt:data-editable:cursor-text"
+      data-editable={onOpen ? "" : undefined}
+      onClick={(e) => {
+        if (!onOpen || e.target !== e.currentTarget) return;
+        claimClick(e);
+        onOpen();
+      }}
+    >
       {annot.tags.map((tag) => {
         const selected = selectedTags.includes(tag);
         return (
