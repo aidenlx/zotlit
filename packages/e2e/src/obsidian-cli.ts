@@ -14,12 +14,11 @@ const CLI_TIMEOUT_MS = 15_000;
 const boundedCall = createObsidianCall({ timeoutMs: CLI_TIMEOUT_MS });
 
 /**
- * The Obsidian CLI always exits 0 — failures come back only as output text.
+ * Obsidian reports failures only as output text.
  *
- * A single `eval` can hang while its window keeps answering every other call,
- * and the CLI process then outlives SIGTERM. Unbounded, that stalled one test
- * per run until Vitest's own timeout, on a different test each run. The
- * bounded call turns it into a named failure in {@link CLI_TIMEOUT_MS}.
+ * A call that gets no reply — a window that reloads mid-call, or one whose
+ * renderer is gone — would otherwise stall a test until Vitest's own timeout.
+ * The bounded call turns it into a named failure in {@link CLI_TIMEOUT_MS}.
  *
  * `timeoutMs` raises that deadline for one call; the bound itself stays, so a
  * longer measurement is still answered or reported unreachable.

@@ -1,4 +1,6 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import type { Socket } from "node:net";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -127,37 +129,85 @@ describe("bounded Obsidian CLI call", () => {
   });
 });
 
-describe("Obsidian CLI child reaping", () => {
-  function alive(pid: number): boolean {
-    try {
-      process.kill(pid, 0);
-      return true;
-    } catch (error) {
-      return (error as NodeJS.ErrnoException).code === "EPERM";
-    }
+describe("Obsidian CLI socket call", () => {
+  /** A stand-in for Obsidian's CLI server; `reply` answers each request line. */
+  async function fakeObsidian(
+    reply: (request: string, socket: Socket) => void,
+  ) {
+    const dir = await mkdtemp(join(tmpdir(), "zt-cli-"));
+    const socketPath = join(dir, "cli.sock");
+    const requests: string[] = [];
+    const closed = Promise.withResolvers<void>();
+    const server = createServer((socket) => {
+      let received = "";
+      socket.on("data", (chunk) => {
+        received += chunk.toString("latin1");
+        if (!received.includes("\n")) return;
+        requests.push(received);
+        reply(received, socket);
+      });
+      socket.on("close", () => closed.resolve());
+    });
+    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    return {
+      socketPath,
+      requests,
+      clientClosed: closed.promise,
+      async [Symbol.asyncDispose]() {
+        server.close();
+        await rm(dir, { recursive: true, force: true });
+      },
+    };
   }
 
-  // The defect this guards: a CLI waiting on a window that never answers
-  // outlives SIGTERM and keeps its pipes, so `execFile` never settles and the
-  // caller waits forever. Seen in the End-to-end Run as a 60 s Vitest timeout
-  // on a different test each run, and as orphans surviving for hours.
-  it("settles and reaps a child that ignores SIGTERM", async () => {
-    const pidFile = join(await mkdtemp(join(tmpdir(), "zt-cli-")), "pid");
-    // Stands in for the real CLI: reports its pid, ignores SIGTERM, never answers.
-    const deaf = [
-      "-e",
-      `require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));` +
-        "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);",
-    ];
+  it("sends the binary's request line and answers with the whole reply", async () => {
+    await using obsidian = await fakeObsidian((_request, socket) => {
+      socket.write("Received CLI command\n");
+      socket.end("=> 中文\n");
+    });
+    const call = createObsidianCall({ socketPath: obsidian.socketPath });
+
+    await expect(
+      call(["vault=research-id", "eval", "code='中文'"]),
+    ).resolves.toBe("Received CLI command\n=> 中文");
+
+    const [request] = obsidian.requests;
+    // ASCII only: Obsidian decodes each chunk on its own.
+    expect(request).toMatch(/^[ -~]*\n$/);
+    expect(JSON.parse(request!)).toMatchObject({
+      argv: ["vault=research-id", "eval", "code='中文'"],
+      tty: false,
+    });
+  });
+
+  // A window that never finishes its reply must neither hold the caller nor
+  // leave the connection open once the deadline has passed.
+  it("names the vault unreachable and closes a connection that never ends", async () => {
+    await using obsidian = await fakeObsidian((_request, socket) => {
+      socket.write("=> partial");
+    });
     const call = createObsidianCall({
-      command: process.execPath,
+      socketPath: obsidian.socketPath,
       timeoutMs: 300,
     });
 
-    await expect(call(deaf)).rejects.toThrow(ObsidianUnreachableError);
+    await expect(call(["vault=research-id", "eval", "code=1"])).rejects.toThrow(
+      ObsidianUnreachableError,
+    );
+    await obsidian.clientClosed;
+  });
 
-    const pid = Number(await readFile(pidFile, "utf8"));
-    expect(Number.isInteger(pid)).toBe(true);
-    await vi.waitFor(() => expect(alive(pid)).toBe(false), { timeout: 5000 });
+  it("reports a stopped Obsidian as the socket's own error", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zt-cli-"));
+    await using _dir = {
+      [Symbol.asyncDispose]: () => rm(dir, { recursive: true, force: true }),
+    };
+    const call = createObsidianCall({ socketPath: join(dir, "missing.sock") });
+
+    const error = await call(["eval", "code=1"]).catch(
+      (reason: unknown) => reason,
+    );
+    expect(isObsidianUnreachable(error)).toBe(false);
+    expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
   });
 });

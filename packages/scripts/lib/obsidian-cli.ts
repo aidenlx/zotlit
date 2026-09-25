@@ -1,14 +1,21 @@
 // Bounded Obsidian CLI invocation, so one unanswered call cannot stall a script.
 //
-// An Obsidian vault window can disappear while the vault registry still reports
-// it `open`. Obsidian's main process then refuses to reopen that vault, and
-// every CLI call aimed at it waits forever — `eval` and plugin commands alike,
-// while other vault windows keep answering. Nothing the CLI offers revives the
-// window; only restarting Obsidian clears the stale flag. A bounded call turns
-// that endless wait into a diagnosis the caller can act on, and aborts the CLI
-// process instead of stranding it.
+// Calls speak the `obsidian` binary's socket protocol in-process instead of
+// spawning the binary. The native client reads its reply in a thread blocked
+// in `read()`, and on macOS that read can miss the end of the connection: the
+// reply is already printed and Obsidian has closed its side, yet the process
+// waits until SIGKILL. Measured with a mixed eval workload: the binary missed
+// about 1 in 1,100 replies; this client missed none in 17,800.
+//
+// An Obsidian vault window can also disappear while the vault registry still
+// reports it `open` — a crashed renderer stays in Obsidian's window map — and
+// every call aimed at it then waits forever, while other vault windows keep
+// answering. Only restarting Obsidian clears that. A bounded call turns such
+// an endless wait into a diagnosis the caller can act on.
 
-import { execFile } from "node:child_process";
+import { createConnection } from "node:net";
+import { homedir, userInfo } from "node:os";
+import { join } from "node:path";
 
 /** Generous next to the slowest observed answer (a database refresh, ~5 s). */
 export const OBSIDIAN_CALL_TIMEOUT_MS = 30_000;
@@ -35,9 +42,12 @@ export class ObsidianUnreachableError extends Error {
     const vault = targetVault(args);
     super(
       `${vault ? `Obsidian vault ${vault}` : "The focused Obsidian vault window"} did not answer within ${timeoutLabel(timeoutMs)}.\n\n` +
-        "Its window is gone while the vault registry still reports it open, so\n" +
-        "Obsidian refuses to reopen it and every call to it waits forever.\n\n" +
-        "Restart Obsidian, then rerun the command.",
+        "Known causes: the evaluated code awaits a promise that never settles\n" +
+        "(requestAnimationFrame in a hidden window, for example); the window\n" +
+        "reloaded during the call; or the window's renderer crashed while the\n" +
+        "vault registry still reports it open, so every call to it waits forever.\n\n" +
+        "Restart Obsidian if a quick call to the same vault, such as\n" +
+        "`eval code=1`, also gets no answer, then rerun the command.",
     );
     this.name = "ObsidianUnreachableError";
     this.vault = vault;
@@ -74,7 +84,7 @@ export function createBoundedObsidianCall(
     signal?.addEventListener("abort", abortCall);
     // Raced rather than awaited: a runner that ignores its abort signal is the
     // very failure this wrapper exists to contain, so the deadline settles the
-    // call on its own and the abort is left to reap the CLI process.
+    // call on its own and the abort is left to close the connection.
     const expiry = Promise.withResolvers<never>();
     let expired = false;
     const timer = setTimeout(() => {
@@ -100,47 +110,72 @@ export function createBoundedObsidianCall(
 }
 
 /**
+ * Where Obsidian's main process listens for CLI calls — the path the
+ * `obsidian` binary connects to (Obsidian 1.14 `main.js`).
+ */
+export function obsidianCliSocketPath(): string {
+  if (process.platform === "win32") {
+    return `\\\\.\\pipe\\obsidian-cli-${userInfo().username}`;
+  }
+  const base =
+    (process.platform !== "darwin" && process.env.XDG_RUNTIME_DIR) || homedir();
+  return join(base, ".obsidian-cli.sock");
+}
+
+/**
+ * The request line the `obsidian` binary sends. Escaped to ASCII: Obsidian
+ * decodes each received chunk on its own, so a multi-byte character split
+ * across two chunks would reach the window as U+FFFD.
+ */
+function requestLine(argv: string[]): string {
+  const json = JSON.stringify({ argv, tty: false, cwd: process.cwd() });
+  return `${json.replaceAll(
+    /[\u007f-\uffff]/g,
+    (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  )}\n`;
+}
+
+/**
  * The bounded CLI call every caller shares — scripts and the End-to-end Run
- * suite alike, so the reaping behaviour cannot drift between two copies.
+ * suite alike, so the transport cannot drift between two copies.
  *
- * @param command the executable, injectable so the reaping is provable
- *   against a child that ignores SIGTERM — the failure this call contains.
+ * Obsidian writes the reply and then ends the connection, so the end of the
+ * stream is the whole answer. The output matches what the `obsidian` binary
+ * prints, trimmed. With Obsidian not running, the call rejects with the
+ * socket's own `ENOENT` / `ECONNREFUSED`.
+ *
+ * @param socketPath injectable so the deadline is provable against a server
+ *   that never ends the connection — the failure this call contains.
  */
 export function createObsidianCall({
-  command = "obsidian",
+  socketPath = obsidianCliSocketPath(),
   timeoutMs = OBSIDIAN_CALL_TIMEOUT_MS,
-}: { command?: string; timeoutMs?: number } = {}): (
+}: { socketPath?: string; timeoutMs?: number } = {}): (
   args: string[],
   options?: CallOptions,
 ) => Promise<string> {
   return createBoundedObsidianCall(
     (args, signal) =>
       new Promise<string>((resolve, reject) => {
-        const child = execFile(
-          command,
-          args,
-          {
-            // `timeout` paired with SIGKILL is what settles this promise. A
-            // CLI waiting on a window that never answers sits in
-            // `pthread_join` and outlives SIGTERM, which keeps its pipes — so
-            // `execFile` never fires its callback and the caller waits for
-            // ever. Measured against a child that ignores SIGTERM: the
-            // default leaves the call pending and the child running, while
-            // SIGKILL settles in ~300 ms and reaps it.
-            timeout: timeoutMs,
-            killSignal: "SIGKILL",
-            windowsHide: true,
-          },
-          (error, stdout, stderr) => {
-            if (error) reject(error);
-            else resolve(`${stdout}${stderr}`.trim());
-          },
+        const socket = createConnection(socketPath);
+        const chunks: Buffer[] = [];
+        signal.addEventListener(
+          "abort",
+          () => socket.destroy(new Error("Obsidian CLI call aborted")),
+          { once: true },
         );
-        // Node applies `killSignal` to `timeout` but not to an abort, so a
-        // caller's own cancellation needs the signal sent by hand.
-        signal.addEventListener("abort", () => child.kill("SIGKILL"), {
-          once: true,
-        });
+        socket.setNoDelay(true);
+        socket.on("connect", () => socket.write(requestLine(args)));
+        socket.on("data", (chunk: Buffer) => chunks.push(chunk));
+        socket.on("end", () =>
+          resolve(Buffer.concat(chunks).toString("utf8").trim()),
+        );
+        socket.on("error", reject);
+        socket.on("close", () =>
+          reject(
+            new Error("Obsidian closed the CLI connection without a reply"),
+          ),
+        );
       }),
     { timeoutMs },
   );
