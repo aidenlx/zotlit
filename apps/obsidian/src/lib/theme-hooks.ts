@@ -125,7 +125,10 @@ export const themeHook = {
   pdfCommentSheet: "zt-pdf-comment-sheet",
   /** The panel an Annotation Card shows while a Write Conflict stands on it. */
   annotConflict: "zt-annot-conflict",
-  /** The panel an Annotation Card shows over a comment draft Zotero has not taken. */
+  /**
+   * The panel an Annotation Card or the Mark Popup shows over a comment or
+   * tag draft Zotero has not taken.
+   */
   annotDraft: "zt-annot-draft",
   /**
    * The Chooser popup: the anchored popover a filtering multi-select opens,

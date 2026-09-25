@@ -349,7 +349,7 @@ The painted region of one Annotation on a page of Obsidian's PDF reader. Paint, 
 _Avoid_: overlay element, highlight box, mark widget
 
 **Mark Popup**:
-The one popover the reader shows for the selected Annotation Mark or a fresh text selection, holding the verbs for that Annotation: colour, comment, copy, delete, reveal, and the stepper through overlapping marks. Opened and closed by the selection alone, never by hover — except a Mark Landing, which selects without summoning it.
+The one popover the reader shows for the selected Annotation Mark or a fresh text selection, holding the verbs for that Annotation: colour, comment, tags, copy, delete, reveal, and the stepper through overlapping marks. Opened and closed by the selection alone, never by hover — except a Mark Landing, which selects without summoning it.
 _Avoid_: selection toolbar, floating toolbar, annotation popover, hover popover (the primitive, not the surface)
 
 **Mark Handle**:
@@ -385,11 +385,11 @@ What the surfaces of one Reader Session in Obsidian's PDF view draw from: the ar
 _Avoid_: reader store, toolbar state, view state (that is the Annotation View's)
 
 **Annotation Draft**:
-The shared unsaved comment or Quoted Text for one Annotation, one draft per field, with the text the user started from and their current text. The Annotation View and Mark Popup access the same draft before a confirmed change in Zotero.
+The shared unsaved comment, Quoted Text, or tags of one Annotation, one draft per field, with the value the user started from and their current value. The Annotation View and Mark Popup access the same draft before a confirmed change in Zotero.
 _Avoid_: pending write (the draft has not been submitted), cached comment
 
 **Write Conflict**:
-A conflict between the user's intended Annotation change and a different change in Zotero since the user started editing. It requires a choice between the competing values; a Zotero value already equal to the intended one is no conflict.
+A conflict between the user's intended Annotation change and a different change in Zotero since the user started editing. It requires a choice between the competing values; a Zotero value already equal to the intended one is no conflict, and tags never conflict, since added and removed names merge into Zotero's current tags.
 _Avoid_: 412 (also a changed server or a reused write token), version mismatch, stale write, merge conflict
 
 **Annotation History**:
@@ -397,7 +397,7 @@ The ephemeral, ordered record of ZotLit's own confirmed edits to one Attachment'
 _Avoid_: undo stack, edit log, history (alone; Obsidian's workspace History is navigation)
 
 **History Step**:
-One user action in the Annotation History — a create, a delete, a colour pick, a Geometry Edit, one comment editing session, or one Text Edit session — held as the before and after values of the fields it changed on each Annotation it touched.
+One user action in the Annotation History — a create, a delete, a colour pick, a Geometry Edit, one comment editing session, one Text Edit session, or one tag editing session — held as the before and after values of the fields it changed on each Annotation it touched.
 _Avoid_: history point, undo entry, transaction
 
 **Sort Index**:

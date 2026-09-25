@@ -6,17 +6,22 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { RangeAdjustment, SelectedText } from "@zotlit/pdf-structure";
 
+import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
-import type { AnnotationRecord } from "@/services/annotation-repository/service";
+import type {
+  AnnotationRecord,
+  TagDraft,
+} from "@/services/annotation-repository/service";
 
 import {
   annotation,
   annotationEdits,
   pageView,
+  READER_NOW,
   readerSurfaces,
   viewport,
 } from "./__fixtures__";
-import { setCommenting } from "./reader-surface-state";
+import { ingestCapability, setCommenting } from "./reader-surface-state";
 import type { OverlayPageView } from "./render";
 
 /**
@@ -728,6 +733,133 @@ it("selects a landed mark without a popup, and opens one for the next selection"
 
   h.selection.select("PARA1111");
   expect(h.popup()?.staticPos).toEqual({ x: 300, y: 192 });
+});
+
+/** A tag session's draft, as the repository starts it for the word mark. */
+const WORD_TAGS: TagDraft = {
+  annotationKey: "WORD2222",
+  attachmentKey: "ABCD2345",
+  serverID: "test",
+  baseline: [],
+  names: [],
+  state: { kind: "editing" },
+};
+
+it("saves a tag session once as it ends, from the tag verb or a new selection", () => {
+  using h = setup();
+  click(h.page.div, ON_WORD);
+  h.annotations.editTags.mockReturnValue(WORD_TAGS);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  const verb = () =>
+    popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='tags']")!;
+
+  verb().click();
+  expect(h.store.getState().floating).toMatchObject({ tagging: true });
+  expect(h.annotations.submitTags).not.toHaveBeenCalled();
+
+  verb().click();
+  expect(h.store.getState().floating).toMatchObject({ tagging: false });
+  expect(h.annotations.submitTags).toHaveBeenCalledExactlyOnceWith("WORD2222", {
+    automatic: true,
+  });
+
+  verb().click();
+  h.selection.select("PARA1111");
+  expect(h.annotations.submitTags).toHaveBeenCalledTimes(2);
+  expect(h.annotations.submitTags).toHaveBeenLastCalledWith("WORD2222", {
+    automatic: true,
+  });
+});
+
+it("closes only the tag editor for Escape, and keeps the selection", () => {
+  using h = setup();
+  click(h.page.div, ON_WORD);
+  h.annotations.editTags.mockReturnValue(WORD_TAGS);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='tags']")!.click();
+
+  // The Reader Keymap runs this for an Escape outside a text field, such as
+  // one on a chip's remove button.
+  expect(h.selection.escape()).toBe(true);
+
+  expect(h.store.getState().floating).toMatchObject({
+    key: "WORD2222",
+    tagging: false,
+  });
+  expect(h.annotations.submitTags).toHaveBeenCalledExactlyOnceWith("WORD2222", {
+    automatic: true,
+  });
+});
+
+it("takes no typed name into a tag draft a database switch hid", () => {
+  using h = setup();
+  click(h.page.div, ON_WORD);
+  h.annotations.editTags.mockReturnValue(WORD_TAGS);
+  h.annotations.tagDraftFor.mockReturnValue(WORD_TAGS);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='tags']")!.click();
+  h.annotations.emit("comment-draft-changed", "WORD2222");
+  popup.hoverEl.querySelector<HTMLInputElement>(".zt-annot-tag-input")!.value =
+    "typed before the switch";
+
+  h.annotations.tagDraftFor.mockReturnValue(null);
+  h.annotations.emit("comment-draft-hidden", "WORD2222");
+
+  expect(h.store.getState().floating).toMatchObject({ tagging: false });
+  expect(popup.hoverEl.querySelector(".zt-annot-tag-input")).toBeNull();
+  // Only the session's own start: the typed name starts no second draft.
+  expect(h.annotations.editTags).toHaveBeenCalledExactlyOnceWith("WORD2222");
+});
+
+it("opens no tag editor while no tag session can start", () => {
+  using h = setup();
+  click(h.page.div, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+
+  popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='tags']")!.click();
+
+  expect(h.store.getState().floating).toMatchObject({ tagging: false });
+});
+
+it("binds the held tags panel to Save tags and Discard, and keeps it through a refresh", () => {
+  using h = setup([PARAGRAPH, WORD], { kind: "writable" });
+  h.annotations.tagDraftFor.mockReturnValue({
+    ...WORD_TAGS,
+    names: ["figure"],
+    manualSave: true,
+    held: true,
+  });
+  h.annotations.emit("comment-draft-changed", "WORD2222");
+  click(h.page.div, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  const button = (label: string) =>
+    [...popup.hoverEl.querySelectorAll("button")].find(
+      (el) => el.textContent === label,
+    );
+  const save = button(m.annot_view_tags_save());
+  expect(save).toBeDefined();
+
+  // A comment write in flight refreshes the popup, and the held panel it
+  // draws again is the same, so a click between press and release lands.
+  h.annotations.mutationFor.mockReturnValue({
+    kind: "pending",
+    write: "comment",
+  });
+  h.annotations.emit("mutation-changed", "WORD2222");
+  expect(button(m.annot_view_tags_save())).toBe(save);
+
+  save!.click();
+  // Save tags carries no `automatic`, so the held draft is written.
+  expect(h.annotations.submitTags).toHaveBeenCalledExactlyOnceWith("WORD2222");
+  button(m.annot_view_comment_discard())!.click();
+  expect(h.annotations.discardTagDraft).toHaveBeenCalledExactlyOnceWith(
+    "WORD2222",
+  );
+
+  // Editing that needs Allow editing puts the reader's own route on the panel.
+  ingestCapability(h.store, { kind: "authorization-required" }, READER_NOW);
+  button(m.capability_enable_editing())!.click();
+  expect(h.gestures.allowEditing).toHaveBeenCalledOnce();
 });
 
 it("falls back to the row, and closes the editor, when no draft can be started", () => {

@@ -53,6 +53,13 @@ declare module "obsidian" {
     group: string | null;
     pinned: boolean;
   }
+  interface PopoverSuggest<T> {
+    /**
+     * The suggestion popup's element, placed on the body while it shows.
+     * Internal; verified against Obsidian 1.14.2.
+     */
+    suggestEl: HTMLElement;
+  }
   interface ItemView {
     /** Native content header title; refreshed separately from the tab (Obsidian 1.14). */
     titleEl: HTMLElement;

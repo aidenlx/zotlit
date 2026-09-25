@@ -32,6 +32,7 @@ import type { LocalServerEvents } from "@/services/local-server/service";
 import type { ZoteroPrefEvents } from "@/services/zotero-pref/service";
 
 import { ZoteroLocalApiClient } from "./service";
+import type { WireTag } from "./wire";
 
 /**
  * The server id the recording carried. Zotero generates a fresh one for every
@@ -67,7 +68,11 @@ export interface WireAnnotation {
   position: unknown;
   parentItem?: string;
   groupID?: number;
-  tags?: string[];
+  /**
+   * A bare name is a manual tag, which Zotero writes with no `type`; an
+   * automatic tag carries `type: 1`, as the paired probe recorded.
+   */
+  tags?: readonly (string | WireTag)[];
   /** ISO 8601 UTC, as Zotero writes it; omitted where an answer names none. */
   dateAdded?: string;
 }
@@ -790,7 +795,9 @@ function wireItem(
         dateAdded: annotation.dateAdded,
       }),
       ...(annotation.tags !== undefined && {
-        tags: annotation.tags.map((tag) => ({ tag })),
+        tags: annotation.tags.map((tag) =>
+          typeof tag === "string" ? { tag } : tag,
+        ),
       }),
     },
   };

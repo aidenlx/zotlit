@@ -7,7 +7,6 @@ import {
   formatIndexedKey,
   isItemKey,
   parseAnnotationPosition,
-  tagTypeToName,
 } from "@zotlit/db";
 import type {
   AnnotationPosition,
@@ -180,7 +179,17 @@ export interface LocalApiAnnotation {
   isExternal?: boolean | null;
   /** The Annotation's Zotero tags, by name, in the order Zotero answered them. */
   tags: string[];
-  tagDetails?: { name: string; type: "manual" | "auto" | "unknown" }[];
+  /** The same tags with Zotero's type number: `0` manual, `1` automatic. */
+  tagDetails?: { name: string; type: number }[];
+}
+
+/**
+ * One tag as Zotero's item JSON names it. Zotero leaves `type` out of a
+ * manual tag.
+ */
+export interface WireTag {
+  tag: string;
+  type?: number;
 }
 
 /**
@@ -527,10 +536,7 @@ function toAnnotation(
       tags: (data.tags ?? []).map((entry) => entry.tag),
       tagDetails: (data.tags ?? []).map((entry) => ({
         name: entry.tag,
-        type:
-          entry.type === 0 || entry.type === 1
-            ? tagTypeToName(entry.type)
-            : "unknown",
+        type: entry.type,
       })),
     },
   };

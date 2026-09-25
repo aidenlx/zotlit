@@ -125,3 +125,17 @@
 .zt-annot-attachment-suggester .suggestion-item {
   white-space: normal;
 }
+
+/* The tag editor's field is text set among the chips, not a form box: Obsidian
+   draws a bare `input` with its own height, border, fill and focus shadow,
+   unlayered, where no utility reaches them. `revert-layer` rolls the field
+   back to the plugin's layers, where its utilities draw it. */
+.zt-root input.zt-annot-tag-input {
+  all: revert-layer;
+}
+
+/* A chip's remove button sits inside the chip's own line, so it drops the
+   4px the card gives every `clickable-icon`; that padding is unlayered. */
+.zt-annot-card .zt-annot-tag-remove.clickable-icon {
+  padding: 0;
+}

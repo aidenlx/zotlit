@@ -34,11 +34,12 @@ const ROW_CLASSES = ["zt:flex", "zt:items-center", "zt:gap-0.5", "zt:p-1"];
 export type MarkPopupVerbId =
   | "color"
   | "comment"
+  | "tags"
   | "copy"
   | "delete"
   | "reveal";
 
-/** Every control the row can hold: the five verbs, and the stack stepper. */
+/** Every control the row can hold: the six verbs, and the stack stepper. */
 export type MarkPopupControlId = MarkPopupVerbId | "stack";
 
 /**
@@ -95,6 +96,8 @@ export interface MarkPopupRowInput {
   stack: MarkStack;
   /** Whether the comment editor stands open under the row. */
   commenting: boolean;
+  /** Whether the tag editor stands open in the tag section. */
+  tagging: boolean;
   /** The instant a cooldown's remaining seconds are measured from. */
   now: Temporal.Instant;
 }
@@ -103,8 +106,10 @@ export interface MarkPopupRowInput {
  * The verbs of the selected-mode row, in the order they are drawn.
  *
  * Copying and revealing never change Zotero, so neither ever stands down;
- * colour, comment and delete follow the same rule the Annotation Card's header
- * does, because they are the same three writes reached from another surface.
+ * colour, comment, tags and delete follow the same rule the Annotation Card's
+ * header does, because they are the same writes reached from another surface.
+ * The creation row has no tag verb: the popup reopens on the new mark, where
+ * tags can be added.
  *
  * @see https://github.com/aidenlx/zotlit/issues/1148
  */
@@ -114,10 +119,12 @@ export function markPopupRow({
   mutation,
   stack,
   commenting,
+  tagging,
   now,
 }: MarkPopupRowInput): MarkPopupRow {
   const blocked = editingBlockedReason(capability, mutation, now);
   const hasComment = annotation.comment !== null;
+  const hasTags = annotation.tags.length > 0;
   const editing = (id: MarkPopupVerbId, icon: IconName, label: string) => ({
     id,
     icon,
@@ -138,6 +145,16 @@ export function markPopupRow({
             : m.annot_view_card_add_comment(),
         ),
         pressed: commenting,
+      },
+      {
+        ...editing(
+          "tags",
+          "tag",
+          hasTags
+            ? m.annot_view_card_edit_tags()
+            : m.annot_view_card_add_tags(),
+        ),
+        pressed: tagging,
       },
       {
         id: "copy",
@@ -247,7 +264,8 @@ export function markPopupControl(
 
 /**
  * The popup's content laid out as a column: the row of verbs, then whatever
- * stands under it — the comment sheet, a held draft, a Write Conflict. The row
+ * stands under it — the comment sheet, a held draft, a Write Conflict, the tag
+ * section. The row
  * is centred, so a sheet that widens the popup leaves each verb where the
  * pointer pressed it.
  *

@@ -18,6 +18,7 @@ import type {
   AnnotationRecord,
   AnnotationRepository,
   CommentDraft,
+  TagDraft,
 } from "@/services/annotation-repository/service";
 import {
   IDLE,
@@ -25,6 +26,7 @@ import {
   writePosition,
 } from "@/services/annotation-repository/write";
 import type {
+  AnnotationTag,
   InkPosition,
   MutationState,
   TextPosition,
@@ -151,6 +153,11 @@ export type Floating =
       quiet: boolean;
       /** Whether the comment editor stands open under the popup's row. */
       commenting: boolean;
+      /**
+       * Whether the tag editor stands open in the popup's tag section. It and
+       * the comment editor never stand open together.
+       */
+      tagging: boolean;
       /** The Geometry Edit a press on a Mark Handle or the body began. */
       adjust?: Adjustment;
     }
@@ -222,6 +229,8 @@ export interface ReaderSurfaceState {
   mutations: ReadonlyMap<string, MutationState>;
   /** The shared comment drafts, by Indexed Key. */
   commentDrafts: ReadonlyMap<string, CommentDraft>;
+  /** The shared tag drafts, by Indexed Key. */
+  tagDrafts: ReadonlyMap<string, TagDraft>;
 }
 
 export type ReaderSurfaceStore = ReturnType<typeof createReaderSurfaceState>;
@@ -249,6 +258,7 @@ export function createReaderSurfaceState({
         records: [],
         mutations: new Map(),
         commentDrafts: new Map(),
+        tagDrafts: new Map(),
       }),
     ),
   );
@@ -346,6 +356,7 @@ export function selectMark(
   store.setState(({ floating }) => {
     if (key === null) return { floating: NONE };
     const held = stack?.includes(key) ? stack : [key];
+    const same = floating.kind === "selected" && floating.key === key;
     return {
       floating: {
         kind: "selected",
@@ -353,11 +364,8 @@ export function selectMark(
         stack: held,
         index: held.indexOf(key),
         quiet,
-        commenting:
-          commenting ||
-          (floating.kind === "selected" &&
-            floating.key === key &&
-            floating.commenting),
+        commenting: commenting || (same && floating.commenting),
+        tagging: !commenting && same && floating.tagging,
       },
     };
   });
@@ -396,6 +404,7 @@ export function stepStack(store: ReaderSurfaceStore): void {
       key: floating.stack[index]!,
       index,
       commenting: false,
+      tagging: false,
     },
   });
 }
@@ -641,7 +650,10 @@ export function dropTextDraft(store: ReaderSurfaceStore): void {
   if (store.getState().floating.kind === "text-draft") clearFloating(store);
 }
 
-/** Opens or closes the comment editor or sheet of whatever is floating. */
+/**
+ * Opens or closes the comment editor or sheet of whatever is floating. The
+ * comment editor opens in place of the tag editor.
+ */
 export function setCommenting(
   store: ReaderSurfaceStore,
   commenting: boolean,
@@ -654,7 +666,32 @@ export function setCommenting(
     floating.commenting === commenting
   )
     return;
-  store.setState({ floating: { ...floating, commenting } });
+  store.setState({
+    floating:
+      floating.kind === "selected"
+        ? {
+            ...floating,
+            commenting,
+            tagging: commenting ? false : floating.tagging,
+          }
+        : { ...floating, commenting },
+  });
+}
+
+/**
+ * Opens or closes the selected mark's tag editor. The tag editor opens in
+ * place of the comment editor.
+ */
+export function setTagging(store: ReaderSurfaceStore, tagging: boolean): void {
+  const { floating } = store.getState();
+  if (floating.kind !== "selected" || floating.tagging === tagging) return;
+  store.setState({
+    floating: {
+      ...floating,
+      tagging,
+      commenting: tagging ? false : floating.commenting,
+    },
+  });
 }
 
 export function setInFlight(
@@ -809,23 +846,26 @@ export function textDraftPosition({
  * write and a draft held on it.
  */
 export function dropRecord(store: ReaderSurfaceStore, key: string): void {
-  store.setState(({ records, mutations, commentDrafts, floating }) => {
-    const held = records.filter((record) => record.key !== key);
-    const heldMutations = new Map(mutations);
-    heldMutations.delete(key);
-    return {
-      records: held,
-      floating: heldBy(floating, held),
-      mutations: heldMutations,
-      commentDrafts: withDraft(commentDrafts, key, null),
-    };
-  });
+  store.setState(
+    ({ records, mutations, commentDrafts, tagDrafts, floating }) => {
+      const held = records.filter((record) => record.key !== key);
+      const heldMutations = new Map(mutations);
+      heldMutations.delete(key);
+      return {
+        records: held,
+        floating: heldBy(floating, held),
+        mutations: heldMutations,
+        commentDrafts: withDraft(commentDrafts, key, null),
+        tagDrafts: withDraft(tagDrafts, key, null),
+      };
+    },
+  );
 }
 
 /** What the per-Annotation facts are read and announced through. */
 export type AnnotationFacts = Pick<
   AnnotationRepository,
-  "commentDraftFor" | "mutationFor" | "on"
+  "commentDraftFor" | "mutationFor" | "on" | "tagDraftFor"
 >;
 
 /**
@@ -841,6 +881,7 @@ export function ingestAnnotations(
   for (const { key } of records) {
     ingestMutation(store, key, annotations.mutationFor(key));
     ingestCommentDraft(store, key, annotations.commentDraftFor(key));
+    ingestTagDraft(store, key, annotations.tagDraftFor(key));
   }
 }
 
@@ -861,14 +902,21 @@ export function listenAnnotationEvents(
     ),
   );
   listening.defer(
-    annotations.on("comment-draft-changed", (key) =>
-      ingestCommentDraft(store, key, annotations.commentDraftFor(key)),
-    ),
+    annotations.on("comment-draft-changed", (key) => {
+      ingestCommentDraft(store, key, annotations.commentDraftFor(key));
+      ingestTagDraft(store, key, annotations.tagDraftFor(key));
+    }),
   );
+  // One announcement for either draft: the one hidden is the one the
+  // repository no longer answers for the database that began it.
   listening.defer(
-    annotations.on("comment-draft-hidden", (key) =>
-      hideCommentDraft(store, key),
-    ),
+    annotations.on("comment-draft-hidden", (key) => {
+      const { commentDrafts, tagDrafts } = store.getState();
+      if (hidden(commentDrafts.get(key), annotations.commentDraftFor(key)))
+        hideCommentDraft(store, key);
+      if (hidden(tagDrafts.get(key), annotations.tagDraftFor(key)))
+        hideTagDraft(store, key);
+    }),
   );
   listening.defer(
     annotations.on("annotation-deleted", (key) => dropRecord(store, key)),
@@ -912,6 +960,21 @@ export function ingestCommentDraft(
   });
 }
 
+/**
+ * Takes one Annotation's tag draft, or its absence once its save settled. The
+ * repository hands back the same draft while it stands unchanged, so a comment
+ * change announced on the same event leaves this one alone.
+ */
+function ingestTagDraft(
+  store: ReaderSurfaceStore,
+  key: string,
+  draft: TagDraft | null,
+): void {
+  const { tagDrafts } = store.getState();
+  if ((tagDrafts.get(key) ?? null) === draft) return;
+  store.setState({ tagDrafts: withDraft(tagDrafts, key, draft) });
+}
+
 /** A database switch hid this draft; its editor closes in the same update. */
 export function hideCommentDraft(store: ReaderSurfaceStore, key: string): void {
   const { commentDrafts, floating } = store.getState();
@@ -921,11 +984,37 @@ export function hideCommentDraft(store: ReaderSurfaceStore, key: string): void {
   });
 }
 
-function withDraft(
-  drafts: ReadonlyMap<string, CommentDraft>,
+/**
+ * A database switch hid this tag draft; its editor closes in the same update,
+ * with nothing to save.
+ */
+function hideTagDraft(store: ReaderSurfaceStore, key: string): void {
+  const { tagDrafts, floating } = store.getState();
+  store.setState({
+    tagDrafts: withDraft(tagDrafts, key, null),
+    floating:
+      floating.kind === "selected" && floating.key === key && floating.tagging
+        ? { ...floating, tagging: false }
+        : floating,
+  });
+}
+
+/**
+ * Whether the repository hid a draft: it answers none for the Annotation, or
+ * one that another database began.
+ */
+function hidden(
+  held: { serverID: string } | undefined,
+  now: { serverID: string } | null,
+): boolean {
+  return now === null || (held !== undefined && now.serverID !== held.serverID);
+}
+
+function withDraft<T>(
+  drafts: ReadonlyMap<string, T>,
   key: string,
-  draft: CommentDraft | null,
-): ReadonlyMap<string, CommentDraft> {
+  draft: T | null,
+): ReadonlyMap<string, T> {
   const next = new Map(drafts);
   if (draft) next.set(key, draft);
   else next.delete(key);
@@ -976,6 +1065,7 @@ export interface FloatingHead {
   kind: Floating["kind"];
   key: string | null;
   commenting: boolean;
+  tagging: boolean;
 }
 
 export function selectFloatingHead({
@@ -985,6 +1075,7 @@ export function selectFloatingHead({
     kind: floating.kind,
     key: floating.kind === "selected" ? floating.key : null,
     commenting: "commenting" in floating && floating.commenting,
+    tagging: floating.kind === "selected" && floating.tagging,
   };
 }
 
@@ -1026,6 +1117,16 @@ export function selectSelectedDraft({
     : null;
 }
 
+/** The selected Annotation's tag draft, or `null` while it has none. */
+export function selectSelectedTagDraft({
+  floating,
+  tagDrafts,
+}: ReaderSurfaceState): TagDraft | null {
+  return floating.kind === "selected"
+    ? (tagDrafts.get(floating.key) ?? null)
+    : null;
+}
+
 /**
  * What the selected-mode row is decided from, or `null` while no mark is
  * selected or its Annotation is not among the records. The copy is read
@@ -1048,6 +1149,7 @@ export function selectSelectedRowInput({
     mutation: mutations.get(floating.key) ?? IDLE,
     stack: { index: floating.index, total: floating.stack.length },
     commenting: floating.commenting,
+    tagging: floating.tagging,
     now: capabilityAt,
   };
 }
@@ -1063,21 +1165,33 @@ export interface SelectedRowHead {
   draft: CommentDraft | null;
   /** The stored comment the popup renders under its row. */
   comment: string | null;
+  /** Held by identity, as {@link SelectedRowHead.draft} is. */
+  tagDraft: TagDraft | null;
 }
 
 /**
+ * One stored tag the popup renders under the comment, compared by value: a
+ * re-read hands back new records for the same tags. The type is absent where
+ * the record holds names alone.
+ */
+type SelectedRowTag = Pick<AnnotationTag, "name"> &
+  Partial<Pick<AnnotationTag, "type">>;
+
+/**
  * The selected-mode row as flat records, for {@link sameFlatList}: the verbs as
- * {@link markPopupRow} decides them, then one record for the rest. Empty while
- * no row stands.
+ * {@link markPopupRow} decides them, one record per stored tag, then one record
+ * for the rest. Empty while no row stands.
  */
 export function selectSelectedRow(
   state: ReaderSurfaceState,
-): readonly (MarkPopupVerb | SelectedRowHead)[] {
+): readonly (MarkPopupVerb | SelectedRowTag | SelectedRowHead)[] {
   const input = selectSelectedRowInput(state);
   if (!input) return [];
   const { verbs, color } = markPopupRow(input);
+  const { tags, tagDetails } = input.annotation;
   return [
     ...verbs,
+    ...(tagDetails ?? tags.map((name): SelectedRowTag => ({ name }))),
     {
       key: input.annotation.key,
       color,
@@ -1086,6 +1200,7 @@ export function selectSelectedRow(
       mutation: input.mutation,
       draft: selectSelectedDraft(state),
       comment: input.annotation.comment,
+      tagDraft: selectSelectedTagDraft(state),
     },
   ];
 }

@@ -136,8 +136,8 @@ it("preserves template metadata supplied by the Local API", async () => {
     authorName: "A. Reader",
     isExternal: true,
     tagDetails: [
-      { name: "review", type: "manual" },
-      { name: "imported", type: "auto" },
+      { name: "review", type: 0 },
+      { name: "imported", type: 1 },
     ],
   });
 });

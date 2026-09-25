@@ -488,6 +488,120 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       expect(written.status).toBe(204);
       expect(written.headers.get("Last-Modified-Version")).not.toBeNull();
     });
+
+    it("replaces an Annotation's whole tag list, types kept, under the version precondition", async () => {
+      // The probe ADR 0063's tag write stands on (#1231): Zotero replaces the
+      // list it receives, so ZotLit sends every tag with its type. A disposable
+      // Annotation carries the tags, so the seeded ones stay as the Fixture
+      // declares them.
+      const key = await grantRememberedKey(api, rdp, {
+        serverID,
+        appName: APP_NAME,
+      });
+      const annotationKey = await rdp.json<string>(`(async () => {
+        const attachment = ${ATTACHMENT_ITEM};
+        const json = await Zotero.Annotations.toJSON(
+          attachment.getAnnotations()[0],
+        );
+        json.key = Zotero.DataObjectUtilities.generateKey();
+        delete json.tags;
+        const item = await Zotero.Annotations.saveFromJSON(attachment, json);
+        item.setTags([
+          { tag: "probe-manual", type: 0 },
+          { tag: "probe-auto", type: 1 },
+          { tag: "probe-removed", type: 0 },
+        ]);
+        await item.saveTx();
+        return item.key;
+      })()`);
+      await using erase = new AsyncDisposableStack();
+      erase.defer(async () => {
+        await eraseAnnotations(rdp, [annotationKey]);
+      });
+      const path = `users/0/items/${annotationKey}`;
+      const readTags = async () => {
+        const reply = await zoteroFetch(api, path, {
+          headers: { "Zotero-Server-ID": serverID },
+        });
+        expect(reply.status).toBe(200);
+        const record = (await reply.json()) as {
+          version: number;
+          data: { tags: { tag: string; type?: number }[] };
+        };
+        return {
+          version: record.version,
+          tags: record.data.tags.toSorted((a, b) => a.tag.localeCompare(b.tag)),
+        };
+      };
+      /**
+       * One tag write. `body` puts the version in the body, as ZotLit's
+       * request builders do; `header` sends it as If-Unmodified-Since-Version.
+       */
+      const patchTags = (
+        precondition: "body" | "header",
+        version: number,
+        tags: { tag: string; type: number }[],
+      ) =>
+        zoteroFetch(api, path, {
+          method: "PATCH",
+          headers: {
+            "Zotero-Server-ID": serverID,
+            "Zotero-API-Key": key,
+            "Content-Type": "application/json",
+            ...(precondition === "header" && {
+              "If-Unmodified-Since-Version": String(version),
+            }),
+          },
+          body: JSON.stringify(
+            precondition === "body" ? { version, tags } : { tags },
+          ),
+        });
+
+      const before = await readTags();
+      // The wire names an automatic tag's type and omits a manual tag's.
+      expect(before.tags).toStrictEqual([
+        { tag: "probe-auto", type: 1 },
+        { tag: "probe-manual" },
+        { tag: "probe-removed" },
+      ]);
+
+      const written = await patchTags("body", before.version, [
+        { tag: "probe-manual", type: 0 },
+        { tag: "probe-auto", type: 1 },
+        { tag: "probe-added", type: 0 },
+      ]);
+      expect(written.status).toBe(204);
+      const after = await readTags();
+      expect(written.headers.get("Last-Modified-Version")).toBe(
+        String(after.version),
+      );
+      expect(after.version).toBeGreaterThan(before.version);
+      expect(after.tags).toStrictEqual([
+        { tag: "probe-added" },
+        { tag: "probe-auto", type: 1 },
+        { tag: "probe-manual" },
+      ]);
+
+      // A stale version in either form is refused as plain text naming both
+      // versions, with no Last-Modified-Version, and the tags stay as they
+      // were. The two forms word the refusal differently.
+      const refusals = {
+        body: `item version mismatch: expected ${before.version}, found ${after.version}`,
+        header: `item has been modified since specified version (expected ${before.version}, found ${after.version})`,
+      };
+      for (const [precondition, refusal] of Object.entries(refusals)) {
+        const stale = await patchTags(
+          precondition as keyof typeof refusals,
+          before.version,
+          [{ tag: "never-stored", type: 0 }],
+        );
+        expect(stale.status).toBe(412);
+        expect(stale.headers.get("Content-Type")).toBe("text/plain");
+        expect(stale.headers.get("Last-Modified-Version")).toBeNull();
+        expect(await stale.text()).toBe(refusal);
+      }
+      expect(await readTags()).toStrictEqual(after);
+    });
   });
 
   // ── Tier 3 ────────────────────────────────────────────────────────────────
@@ -1143,6 +1257,142 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { expected: "true" },
           ),
         ).toBe(true);
+      }, 120000);
+
+      it("adds and removes tags on the card, and Zotero holds the list", async () => {
+        // The card's own gestures: the tag toggle and a click on the tag row's
+        // empty space open the editor, Enter adds the typed name, a chip's
+        // remove button drops it, and the toggle's second press ends the
+        // session with its one write. The session ends through the toggle
+        // rather than through a blur: a window without the system focus sends
+        // no focus events.
+        const {
+          press,
+          toggle,
+          editorOpen,
+          cardTags,
+          editorChips,
+          type,
+          remove,
+        } = cardTagEditor(createdKey);
+        const storedTags = () => annotationTags(api, serverID, createdKey);
+        const poll = { timeout: 10_000, interval: 250 };
+        const kept = "End-to-end Run tag, kept whole";
+        const dropped = "End-to-end Run tag dropped";
+        const typed = "End-to-end Run tag left typed";
+
+        expect(await storedTags()).toStrictEqual([]);
+        expect(await press(toggle)).toBe(true);
+        expect(await editorOpen()).toBe(true);
+        // Each chip is the signal that Enter added its name.
+        await type(kept, { enter: true });
+        await expect.poll(editorChips, poll).toEqual([kept]);
+        await type(dropped, { enter: true });
+        await expect.poll(editorChips, poll).toEqual([kept, dropped]);
+        // Nothing reaches Zotero while the session stands.
+        expect(await storedTags()).toStrictEqual([]);
+        expect(await press(toggle)).toBe(true);
+
+        await expect
+          .poll(storedTags, poll)
+          .toEqual([`${dropped}:0`, `${kept}:0`]);
+        await expect
+          .poll(async () => (await cardTags()).toSorted(), poll)
+          .toEqual([dropped, kept]);
+
+        expect(await press("[data-editable]")).toBe(true);
+        expect(await editorOpen()).toBe(true);
+        expect(await remove(dropped)).toBe("removed");
+        await expect.poll(editorChips, poll).toEqual([kept]);
+        // The toggle ends the session with the text still in the field.
+        await type(typed, { enter: false });
+        expect(await press(toggle)).toBe(true);
+
+        await expect
+          .poll(storedTags, poll)
+          .toEqual([`${typed}:0`, `${kept}:0`]);
+        await expect
+          .poll(async () => (await cardTags()).toSorted(), poll)
+          .toEqual([typed, kept]);
+      }, 120000);
+
+      it("adds and removes tags from the Mark Popup, and Zotero holds the list", async () => {
+        // The Mark Popup's tag verb opens the same inline editor under the
+        // comment; its second press ends the session with its one write. As on
+        // the card, the session ends through the verb: a window without the
+        // system focus sends no focus events.
+        const mark = `${pdfView}?.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')`;
+        const popup = "document.querySelector('.zt-pdf-mark-popup')";
+        const section = `${popup}?.querySelector('[data-zt-section=tags]')`;
+        const { editorOpen, editorChips, type, remove } = tagEditorIn(section);
+        const pressVerb = () =>
+          obEvalUntil(
+            vaultId!,
+            `(function(){const verb=${popup}?.querySelector('[data-zt-verb=tags]');if(!verb)return 'absent';verb.click();return 'pressed';})()`,
+            { expected: "pressed" },
+          );
+        /** The read-only chips under the comment, by name, while no editor is open. */
+        const popupTags = () =>
+          obJson<string[] | null>(
+            `JSON.stringify((${section})?.querySelector('.zt-annot-tag-input')?null:[...((${section})?.querySelectorAll(':scope > div > span')??[])].map(chip=>chip.textContent).sort())`,
+          );
+        const storedTags = () => annotationTags(api, serverID, createdKey);
+        const poll = { timeout: 10_000, interval: 250 };
+        const kept = "End-to-end Run tag, kept whole";
+        const removed = "End-to-end Run tag left typed";
+        const added = "End-to-end Run tag from the popup";
+        // The case's own tags, whatever the cases before it left.
+        await setAnnotationTags(rdp, createdKey, [
+          { tag: removed },
+          { tag: kept },
+        ]);
+
+        // A click on the mark's body selects it, as a researcher would. A
+        // seeded underline lies under the same point, so the popup's stepper
+        // walks the stack to the created mark.
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;const rect=(${mark})?.getBoundingClientRect();return String(!!rect&&rect.width>0);})()`,
+            { expected: "true" },
+          ),
+        ).toBe(true);
+        await obEval(
+          vaultId!,
+          `(function(){${FIRE}${TAP}const rect=(${mark}).getBoundingClientRect();tap(rect.left+rect.width/2,rect.top+rect.height/2);return true;})()`,
+        );
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `(function(){if(!${popup})return 'no popup';if((${mark})?.classList.contains('is-selected'))return 'selected';${popup}.querySelector('[data-zt-verb=stack]')?.click();return 'stepped';})()`,
+            { expected: "selected" },
+          ),
+        ).toBe(true);
+        // The tags show read-only under the comment.
+        await expect.poll(popupTags, poll).toEqual([removed, kept].toSorted());
+
+        expect(await pressVerb()).toBe(true);
+        expect(await editorOpen()).toBe(true);
+        // Each chip is the signal that the gesture landed.
+        await type(added, { enter: true });
+        await expect.poll(editorChips, poll).toContain(added);
+        expect(await remove(removed)).toBe("removed");
+        await expect.poll(editorChips, poll).not.toContain(removed);
+        // Nothing reaches Zotero while the session stands.
+        expect(await storedTags()).toStrictEqual([`${removed}:0`, `${kept}:0`]);
+        expect(await pressVerb()).toBe(true);
+
+        await expect
+          .poll(storedTags, poll)
+          .toEqual([`${added}:0`, `${kept}:0`]);
+        // The popup closes onto the confirmed tags, and the selection stays.
+        await expect.poll(popupTags, poll).toEqual([added, kept].toSorted());
+        expect(
+          await obEval(
+            vaultId!,
+            `String(!!(${mark})?.classList.contains('is-selected'))`,
+          ),
+        ).toBe("true");
       }, 120000);
 
       describe("the image tool on the first page", () => {
@@ -4323,6 +4573,75 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               await waitFor(async () => (await storedColor()) === seedColor),
             ).toBe(true);
           }, 120000);
+
+          describe("a tag session", () => {
+            /** The Fixture's own tags on the Annotation, which each test puts back. */
+            const seededTags: WireTag[] = (seeded.tags ?? []).map(
+              ({ name, type }) => ({ tag: name, type }),
+            );
+            /** An automatic tag the session removes, so its undo must restore the type. */
+            const autoTag = { tag: "e2e-auto", type: 1 };
+            /** The name the session adds, which Zotero stores as manual. */
+            const addedName = "e2e-card";
+            const poll = { timeout: 10_000, interval: 250 };
+            const { press, toggle, editorOpen, editorChips, type, remove } =
+              cardTagEditor(historyKey);
+            const storedTags = () => annotationTags(api, serverID, historyKey);
+
+            const setTagsInZotero = (tags: readonly WireTag[]) =>
+              setAnnotationTags(rdp, historyKey, tags);
+
+            /**
+             * The toggle's second press, which ends the session and saves it
+             * once. Settles when the editor has closed onto the confirmed tags.
+             */
+            async function closeTagEditor(): Promise<void> {
+              expect(await press(toggle)).toBe(true);
+              expect(
+                await obEvalUntil(
+                  vaultId!,
+                  `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(!(${card})?.querySelector('.zt-annot-tag-input')&&repository.mutationFor(${JSON.stringify(historyKey)}).kind==='idle'&&!repository.tagDraftFor(${JSON.stringify(historyKey)}));})()`,
+                  { expected: "true" },
+                ),
+              ).toBe(true);
+            }
+
+            beforeEach(async () => {
+              await setTagsInZotero([...seededTags, autoTag]);
+            });
+
+            afterEach(async () => {
+              await setTagsInZotero(seededTags);
+            });
+
+            it("puts the tags a card session changed back for the undo key, and applies them again for redo", async () => {
+              expect(await press(toggle)).toBe(true);
+              expect(await editorOpen()).toBe(true);
+              expect(await remove(autoTag.tag)).toBe("removed");
+              await type(addedName, { enter: true });
+              // The chip is the signal that Enter added the name.
+              await expect
+                .poll(editorChips, poll)
+                .toEqual([...seededTags.map(({ tag }) => tag), addedName]);
+              await closeTagEditor();
+              const edited = spelledTags([...seededTags, { tag: addedName }]);
+              await expect.poll(storedTags, poll).toEqual(edited);
+
+              expect(await undoKey()).toEqual({ handled: true });
+              await stepSettled();
+
+              // The whole session went back: the added name left, and the
+              // automatic tag came back as automatic.
+              await expect
+                .poll(storedTags, poll)
+                .toEqual(spelledTags([...seededTags, autoTag]));
+
+              expect(await redoKey()).toEqual({ handled: true });
+              await stepSettled();
+
+              await expect.poll(storedTags, poll).toEqual(edited);
+            }, 120000);
+          });
         });
 
         describe("a create and a delete", () => {
@@ -5662,6 +5981,126 @@ function eraseConcurrencyAnnotations(rdp: ZoteroRdp): Promise<string> {
 }
 
 /** Independent Local API read used as the final-state oracle. */
+/** A Zotero tag as the Local API and Zotero's own `setTags` spell it. */
+interface WireTag {
+  tag: string;
+  type?: number;
+}
+
+/** Tags as comparable text: `name:type` in sorted order, a manual tag typed `0`. */
+function spelledTags(tags: readonly WireTag[]): string[] {
+  return tags.map(({ tag, type }) => `${tag}:${type ?? 0}`).toSorted();
+}
+
+/** The tags the Local API holds for one Annotation, spelled by {@link spelledTags}. */
+async function annotationTags(
+  api: string,
+  serverID: string,
+  annotationKey: string,
+): Promise<string[]> {
+  const reply = await zoteroFetch(api, `users/0/items/${annotationKey}`, {
+    headers: { "Zotero-Server-ID": serverID },
+  });
+  expect(reply.status).toBe(200);
+  const record = (await reply.json()) as { data: { tags: WireTag[] } };
+  return spelledTags(record.data.tags);
+}
+
+/**
+ * Sets one Annotation's tags in Zotero itself, and waits until ZotLit reads
+ * them.
+ */
+async function setAnnotationTags(
+  rdp: ZoteroRdp,
+  annotationKey: string,
+  tags: readonly WireTag[],
+): Promise<void> {
+  await rdp.json(`(async () => {
+    const item = Zotero.Items.getByLibraryAndKey(
+      Zotero.Libraries.userLibraryID,
+      ${JSON.stringify(annotationKey)},
+    );
+    item.setTags(${JSON.stringify(tags)});
+    await item.saveTx();
+    return "saved";
+  })()`);
+  expect(
+    await obEvalUntil(
+      vaultId!,
+      `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const list=await repository.refresh(${JSON.stringify(attachment.key)});const record=list?.annotations.find((annotation)=>annotation.key===${JSON.stringify(annotationKey)});return JSON.stringify((record?.tagDetails??[]).map(({name,type})=>name+':'+type).toSorted());})()`,
+      { expected: JSON.stringify(spelledTags(tags)) },
+    ),
+  ).toBe(true);
+}
+
+/**
+ * One Annotation Card's tag gestures, through the card's own controls: the tag
+ * toggle and a click on the tag row's empty space open the editor, Enter adds
+ * the typed name, a chip's remove button drops it, and the toggle's second
+ * press ends the session. A window without the system focus sends no focus
+ * events, so no blur ends a session here.
+ *
+ * @param annotationKey the Annotation whose card, in whichever Annotation View
+ *   holds it, the gestures act on.
+ */
+function cardTagEditor(annotationKey: string) {
+  const card = `app.workspace.getLeavesOfType('zotero-annotation-view').map(leaf=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(annotationKey)}]')).find(Boolean)`;
+  return {
+    ...tagEditorIn(card),
+    /** One click on a part of the card, once the card draws it. */
+    press: (target: string) =>
+      obEvalUntil(
+        vaultId!,
+        `(function(){const target=(${card})?.querySelector(${JSON.stringify(target)});if(!target)return 'absent';target.click();return 'pressed';})()`,
+        { expected: "pressed" },
+      ),
+    /** The tag toggle in the card's action bar. */
+    toggle: ".clickable-icon:has(svg.lucide-tag)",
+    /** The names the card draws while no session is open. */
+    cardTags: () =>
+      obJson<string[]>(
+        `JSON.stringify([...((${card})?.querySelectorAll('[aria-pressed]')??[])].map(chip=>chip.textContent))`,
+      ),
+  };
+}
+
+/**
+ * The inline tag editor inside one surface, the Annotation Card or the Mark
+ * Popup: one editor component, so one set of gestures reaches both.
+ *
+ * @param root an expression for the element that holds the editor.
+ */
+function tagEditorIn(root: string) {
+  return {
+    editorOpen: () =>
+      obEvalUntil(
+        vaultId!,
+        `String(!!(${root})?.querySelector('.zt-annot-tag-input'))`,
+        { expected: "true" },
+      ),
+    /** The names the open editor draws as chips. */
+    editorChips: () =>
+      obJson<string[]>(
+        `JSON.stringify([...((${root})?.querySelectorAll('[data-slot=tags-input-item-text]')??[])].map(chip=>chip.textContent))`,
+      ),
+    /** Text typed into the tag field; `enter` presses Enter after it. */
+    type: (text: string, { enter }: { enter: boolean }) =>
+      obEval(
+        vaultId!,
+        `(function(){const field=(${root}).querySelector('.zt-annot-tag-input');field.value=${JSON.stringify(text)};field.dispatchEvent(new Event('input',{bubbles:true}));if(${enter})field.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));return 'typed';})()`,
+      ),
+    /**
+     * One chip's remove button. The chip is found by its name part, because
+     * an automatic chip also holds its label.
+     */
+    remove: (name: string) =>
+      obEval(
+        vaultId!,
+        `(function(){const chip=[...(${root}).querySelectorAll('[data-slot=tags-input-item]')].find(item=>item.querySelector('[data-slot=tags-input-item-text]')?.textContent===${JSON.stringify(name)});if(!chip)return 'absent';chip.querySelector('[data-slot=tags-input-item-remove]').click();return 'removed';})()`,
+      ),
+  };
+}
+
 async function readAnnotationState(
   api: string,
   serverID: string,
