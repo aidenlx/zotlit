@@ -24,3 +24,7 @@ Every other ZotLit surface is a Preact root. The three surfaces ZotLit puts insi
 ## Amendment: Mark Handles and the selected mark's body take the pointer
 
 While editing is live, the Mark Handles of the selected Annotation Mark and the body of a selected image or ink mark take pointer events. A Geometry Edit captures the pointer from the press, and each grip shows the cursor of what a press there does, so these nodes carry `pointer-events: all`. Which grip a press takes is still decided from geometry, as a mark click is. This is the one exception to "Annotation Marks are paint": every other mark, and every mark while editing is not live, stays `pointer-events: none`, so text selection and PDF links under an unselected mark keep their path, and the body of a selected highlight or underline stays the text selection's.
+
+## Amendment: several Annotation Marks can be selected
+
+With the Card Selection owned by the Annotation View ([ADR 0061](0061-the-annotation-view-owns-its-card-selection.md)), the reader paints `is-selected` on every mark in a Card Selection of several. The Mark Popup and the Mark Handles stay for a single selected mark, so the popup's anchor is still one mark's union rect. The PDF gains no multi-select gesture: a mark click selects that mark alone. The reader's colour keys and Delete act on every selected mark, and ↑/↓ reduce a selection of several to one mark.
