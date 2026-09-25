@@ -107,3 +107,86 @@ describe("replace", () => {
     ).toBe(alone);
   });
 });
+
+describe("move", () => {
+  const down = { kind: "move", step: 1 } as const;
+  const up = { kind: "move", step: -1 } as const;
+  const alone = (key: string): CardSelection => ({
+    selected: [key],
+    anchor: key,
+  });
+
+  it("takes the next or the previous card in list order alone", () => {
+    expect(nextCardSelection(alone("BBBB2222"), LIST, down)).toEqual(
+      alone("CCCC3333"),
+    );
+    expect(nextCardSelection(alone("BBBB2222"), LIST, up)).toEqual(
+      alone("AAAA1111"),
+    );
+  });
+
+  it("stays on the card at either end of the list", () => {
+    const last = alone("EEEE5555");
+    expect(nextCardSelection(last, LIST, down)).toBe(last);
+    const first = alone("AAAA1111");
+    expect(nextCardSelection(first, LIST, up)).toBe(first);
+  });
+
+  it("reduces a group to the card at the end it cannot pass", () => {
+    const toEnd: CardSelection = {
+      selected: ["BBBB2222", "EEEE5555"],
+      anchor: "EEEE5555",
+    };
+    expect(nextCardSelection(toEnd, LIST, down)).toEqual(alone("EEEE5555"));
+  });
+
+  it("steps from the anchor of a group, not from its first card", () => {
+    expect(nextCardSelection(group, LIST, down)).toEqual(alone("EEEE5555"));
+    expect(nextCardSelection(group, LIST, up)).toEqual(alone("CCCC3333"));
+  });
+
+  it("enters the list at the first card on ↓ and the last on ↑", () => {
+    expect(nextCardSelection(NO_SELECTION, LIST, down)).toEqual(
+      alone("AAAA1111"),
+    );
+    expect(nextCardSelection(NO_SELECTION, LIST, up)).toEqual(
+      alone("EEEE5555"),
+    );
+  });
+
+  it("answers the selection itself for an empty list", () => {
+    expect(nextCardSelection(NO_SELECTION, [], down)).toBe(NO_SELECTION);
+  });
+
+  it("passes over the cards a filter hides", () => {
+    const filtered = ["AAAA1111", "BBBB2222", "EEEE5555"];
+    expect(nextCardSelection(alone("BBBB2222"), filtered, down)).toEqual(
+      alone("EEEE5555"),
+    );
+    expect(nextCardSelection(alone("EEEE5555"), filtered, up)).toEqual(
+      alone("BBBB2222"),
+    );
+  });
+
+  it("steps from the first Selected Card where a filter hides the anchor", () => {
+    // A prune keeps the anchor on a card the list no longer shows.
+    const pruned: CardSelection = {
+      selected: ["DDDD4444"],
+      anchor: "BBBB2222",
+    };
+    const filtered = ["AAAA1111", "CCCC3333", "DDDD4444", "EEEE5555"];
+    expect(nextCardSelection(pruned, filtered, down)).toEqual(
+      alone("EEEE5555"),
+    );
+    expect(nextCardSelection(pruned, filtered, up)).toEqual(alone("CCCC3333"));
+  });
+
+  it("enters the list afresh where a filter hides the anchor and every Selected Card", () => {
+    const hidden: CardSelection = { selected: [], anchor: "BBBB2222" };
+    const filtered = ["AAAA1111", "CCCC3333"];
+    expect(nextCardSelection(hidden, filtered, down)).toEqual(
+      alone("AAAA1111"),
+    );
+    expect(nextCardSelection(hidden, filtered, up)).toEqual(alone("CCCC3333"));
+  });
+});

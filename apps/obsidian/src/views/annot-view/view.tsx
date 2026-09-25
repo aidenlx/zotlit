@@ -527,6 +527,21 @@ export class AnnotationView extends ItemView implements HistorySurface {
     });
     this.register(() => escape[Symbol.dispose]());
 
+    // ↑ and ↓ move the Card Selection to one card in list order, which reads
+    // across the grid's columns row by row. A key on any other control goes on
+    // to it, and so does one that moves nothing, so the list still scrolls at
+    // either end; ← and → are left to Obsidian.
+    for (const [key, step] of [
+      ["ArrowUp", -1],
+      ["ArrowDown", 1],
+    ] as const) {
+      const move = registerKeymap(this.scope, [], key, (event) => {
+        if (!this.#onCardList(event.target)) return;
+        if (this.#moveFromView(step)) return false;
+      });
+      this.register(() => move[Symbol.dispose]());
+    }
+
     // The platform's undo and redo keys, which a card answers with the
     // Annotation History of the Attachment this view shows.
     const historyKeys = mountCardHistoryKeys(
@@ -1225,15 +1240,52 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * @param landOn the Annotation whose Mark the PDF view lands on quietly: a
    *   Mark Landing, with no Mark Popup.
    */
-  #changeFromView(change: SelectionChange, landOn?: string): void {
+  #changeFromView(change: SelectionChange, landOn?: string): CardSelection {
     this.#readerPending = false;
     const { selection, changed } = this.#setSelection(change);
     if (changed) this.#closeEditors();
     const session = this.#boundPdfSession();
-    if (!session) return;
+    if (!session) return selection;
     if (!sameKeys(session.selected, selection.selected))
       session.setSelectedAnnotations(selection.selected);
     if (landOn !== undefined) session.navigateToAnnotation(landOn);
+    return selection;
+  }
+
+  /**
+   * Whether a key landed on the card list itself: a card's row, the grid, or
+   * the view around it with no control focused. A click on the empty list
+   * leaves the focus on the body, and the key reaches this view's Scope only
+   * while the view is the active leaf.
+   */
+  #onCardList(target: EventTarget | null): boolean {
+    const node = target as Node | null;
+    if (!node?.instanceOf(HTMLElement)) return false;
+    if (node === this.containerEl || node === this.contentEl) return true;
+    if (node === node.doc.body) return true;
+    return (
+      this.contentEl.contains(node) &&
+      node.matches('.zt-annot-card, .annots-container, [role="grid"]')
+    );
+  }
+
+  /**
+   * A key moves the Card Selection to one card. The card takes the focus and
+   * comes into view, and a bound Obsidian PDF view lands quietly on its mark,
+   * as a click does.
+   *
+   * @returns whether the selection moved; at either end of the list it stays.
+   */
+  #moveFromView(step: 1 | -1): boolean {
+    const current = this.#store.getState().cardSelection;
+    const next = this.#changeFromView({ kind: "move", step });
+    const [key] = next.selected;
+    if (next === current || key === undefined) return false;
+    this.#boundPdfSession()?.navigateToAnnotation(key);
+    const card = this.#cardElement(key);
+    card?.focus({ preventScroll: true });
+    card?.scrollIntoView({ block: "nearest" });
+    return true;
   }
 
   /**
@@ -1282,14 +1334,20 @@ export class AnnotationView extends ItemView implements HistorySurface {
   /** Bring the first of these cards the list holds into view. */
   #scrollToCard(keys: readonly string[]): void {
     for (const key of keys) {
-      const el = this.contentEl.querySelector(
-        `.zt-annot-card[data-zotero-annotation-key="${key}"]`,
-      );
-      if (el?.instanceOf(HTMLElement)) {
+      const el = this.#cardElement(key);
+      if (el) {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
         return;
       }
     }
+  }
+
+  /** One Annotation's card, while the list shows it. */
+  #cardElement(key: string): HTMLElement | null {
+    const el = this.contentEl.querySelector(
+      `.zt-annot-card[data-zotero-annotation-key="${key}"]`,
+    );
+    return el?.instanceOf(HTMLElement) ? el : null;
   }
 
   /**

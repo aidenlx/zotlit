@@ -28,7 +28,13 @@ export type SelectionChange =
    */
   | { kind: "prune" }
   /** A reader reported its own selection, a clear included. */
-  | { kind: "replace"; keys: readonly string[] };
+  | { kind: "replace"; keys: readonly string[] }
+  /**
+   * ↑ (`-1`) or ↓ (`1`): one card, the next in list order from the
+   * {@link moveOrigin}. It stops at either end of the list. With no origin,
+   * ↓ takes the first card and ↑ the last.
+   */
+  | { kind: "move"; step: 1 | -1 };
 
 /**
  * The Card Selection after one change. The selection only ever holds cards
@@ -45,6 +51,22 @@ export function nextCardSelection(
 ): CardSelection {
   const next = transition(current, visible, change);
   return sameSelection(current, next) ? current : next;
+}
+
+/**
+ * The card a move steps from: the anchor while the list shows it, else the
+ * first Selected Card. It is also the list's one tab stop.
+ *
+ * @param visible the Indexed Keys the list shows, in list order.
+ * @returns `null` while the selection holds no card the list shows.
+ */
+export function moveOrigin(
+  current: CardSelection,
+  visible: readonly string[],
+): string | null {
+  if (current.anchor !== null && visible.includes(current.anchor))
+    return current.anchor;
+  return current.selected.find((key) => visible.includes(key)) ?? null;
 }
 
 function transition(
@@ -67,6 +89,19 @@ function transition(
       // In list order, so the anchor is the first pushed card the list shows.
       const selected = visible.filter((key) => change.keys.includes(key));
       return { selected, anchor: selected[0] ?? null };
+    }
+    case "move": {
+      const from = moveOrigin(current, visible);
+      if (from === null) {
+        const entry = visible.at(change.step > 0 ? 0 : -1);
+        return entry === undefined
+          ? current
+          : { selected: [entry], anchor: entry };
+      }
+      const at = visible.indexOf(from) + change.step;
+      const key =
+        visible[Math.min(Math.max(at, 0), visible.length - 1)] ?? from;
+      return { selected: [key], anchor: key };
     }
   }
 }

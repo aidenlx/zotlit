@@ -4997,6 +4997,105 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             .toMatchObject({ cards: [markKey], marks: [markKey] });
           expect(await obEval(vaultId!, `String(!!${editor})`)).toBe("false");
         }, 120000);
+
+        /** A key the window's own input delivers to whatever holds the focus. */
+        async function press(keyCode: string): Promise<void> {
+          expect(
+            await obEval(
+              vaultId!,
+              `(function(){const contents=require('@electron/remote').getCurrentWebContents();contents.sendInputEvent({type:'keyDown',keyCode:${JSON.stringify(keyCode)}});contents.sendInputEvent({type:'keyUp',keyCode:${JSON.stringify(keyCode)}});return 'pressed';})()`,
+            ),
+          ).toBe("pressed");
+        }
+
+        it("moves to the next card in list order for ↓ on a focused card, and lands quietly on its mark; ↓ in a text field moves nothing", async () => {
+          await raiseWindow(vaultId!);
+          expect(
+            await obEval(vaultId!, `String(${annotView}?.snapshot.followMode)`),
+          ).toBe("active-tab");
+          // The card after the clicked one, in the order the grid holds its
+          // rows.
+          const next = await obEval(
+            vaultId!,
+            `(function(){const rows=[...${annotView}.containerEl.querySelectorAll('[role="grid"] > [role="row"]')].map((row)=>row.dataset.zoteroAnnotationKey);return String(rows[rows.indexOf(${JSON.stringify(cardKey)})+1]);})()`,
+          );
+          expect(next).toMatch(/^[A-Z0-9]{8}$/);
+
+          await trustedClick(cardOf(cardKey));
+          await expect
+            .poll(shown, poll)
+            .toEqual({ cards: [cardKey], marks: [cardKey], popup: false });
+          expect(
+            await obEval(
+              vaultId!,
+              `String(document.activeElement===${cardOf(cardKey)})`,
+            ),
+          ).toBe("true");
+          // The PDF stands pages away, so the next mark in view is the
+          // Landing's own scroll.
+          await obEval(
+            vaultId!,
+            `(function(){${pdfView}.viewer.child.pdfViewer.pdfViewer.currentPageNumber=4;return true;})()`,
+          );
+
+          await press("Down");
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(function(){const view=${pdfView};const box=view.viewer.child.pdfViewer.pdfViewer.container.getBoundingClientRect();const mark=view.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(next)}]');const rect=mark?.getBoundingClientRect();return String(!!mark&&mark.classList.contains('is-selected')&&rect.top>=box.top&&rect.bottom<=box.bottom);})()`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+          expect(await shown()).toEqual({
+            cards: [next],
+            marks: [next],
+            popup: false,
+          });
+          expect(
+            await obEval(
+              vaultId!,
+              `String(document.activeElement===${cardOf(next)}&&${cardOf(next)}.tabIndex===0)`,
+            ),
+          ).toBe("true");
+
+          // The search field holds the focus, and ↓ is the field's. Its own
+          // keyup says the keydown before it has run its course.
+          const search = `${annotView}.containerEl.querySelector('input[placeholder^="Search annotations"]')`;
+          const toggleSearch = `${annotView}.containerEl.querySelector('[aria-label="Search annotations"]').click()`;
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(function(){if(!${search})${toggleSearch};const input=${search};if(!input)return 'closed';input.focus();return String(document.activeElement===input&&'focused');})()`,
+              { expected: "focused" },
+            ),
+          ).toBe(true);
+          try {
+            await obEval(
+              vaultId!,
+              `(function(){const input=${search};input.dataset.ztKeyUp='';input.addEventListener('keyup',()=>{input.dataset.ztKeyUp='done';},{once:true});return true;})()`,
+            );
+            await press("Down");
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `String(${search}?.dataset.ztKeyUp)`,
+                {
+                  expected: "done",
+                },
+              ),
+            ).toBe(true);
+            expect(await shown()).toEqual({
+              cards: [next],
+              marks: [next],
+              popup: false,
+            });
+          } finally {
+            await obEval(
+              vaultId!,
+              `(function(){if(${search})${toggleSearch};return true;})()`,
+            );
+          }
+        }, 120000);
       });
 
       // The one place a confirmed write can land: the Local API is serving

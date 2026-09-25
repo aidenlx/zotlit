@@ -1,5 +1,6 @@
 import type { IconName } from "obsidian";
 import {
+  useCallback,
   useContext,
   useId,
   useLayoutEffect,
@@ -15,6 +16,7 @@ import * as m from "@/lib/i18n/generated/messages";
 
 import { AnnotActionsContext } from "./actions";
 import { Annotation } from "./Annotation";
+import { moveOrigin } from "./card-selection";
 import { filterAnnotations, isFilterActive } from "./filter";
 import { FilterBar } from "./FilterBar";
 import { annotViewBody, headerShape } from "./presentation";
@@ -30,6 +32,7 @@ import {
   useSetFilterQuery,
   useToggleSearchOpen,
 } from "./store";
+import { confineTabOrder } from "./tab-order";
 
 /**
  * Each shape `presentation.ts` derives is a fresh object, and the store is read
@@ -335,6 +338,18 @@ function AnnotList({ collapsed }: { collapsed: boolean }) {
     () => (annotations ? filterAnnotations(annotations, filter) : []),
     [annotations, filter],
   );
+  const visible = useMemo(() => filtered.map(({ key }) => key), [filtered]);
+  /** The list's one tab stop: the card a move steps from, else the first. */
+  const tabStop = useAnnotStore(
+    (s) => moveOrigin(s.cardSelection, visible) ?? visible[0] ?? null,
+  );
+  const tabOrder = useRef<Disposable | null>(null);
+  /** Only the tab stop's controls stay in the Tab order. */
+  const mountGrid = useCallback((grid: HTMLDivElement | null) => {
+    gridRef.current = grid;
+    tabOrder.current?.[Symbol.dispose]();
+    tabOrder.current = grid ? confineTabOrder(grid) : null;
+  }, []);
 
   if (isFilterActive(filter) && filtered.length === 0) {
     return (
@@ -362,12 +377,22 @@ function AnnotList({ collapsed }: { collapsed: boolean }) {
         actions.onClearSelection();
       }}
     >
+      {/* To assistive technology the cards are one column of rows, in list
+          order, however many tracks the layout draws them in. */}
       <div
-        ref={gridRef}
+        ref={mountGrid}
         className="zt:grid zt:grid-cols-1 zt:items-start zt:gap-2 zt:@2xl:grid-cols-2 zt:@5xl:grid-cols-3"
+        role="grid"
+        aria-multiselectable="true"
+        aria-label={m.annot_view_name()}
       >
         {filtered.map((annot) => (
-          <Annotation key={annot.key} annot={annot} collapsed={collapsed} />
+          <Annotation
+            key={annot.key}
+            annot={annot}
+            collapsed={collapsed}
+            tabStop={annot.key === tabStop}
+          />
         ))}
       </div>
     </div>
