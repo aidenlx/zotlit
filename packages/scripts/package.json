@@ -12,6 +12,7 @@
     "#obsidian-host-readiness": "./lib/obsidian-host-readiness.ts",
     "#paired-zotero": "./lib/fixture/paired-zotero.ts",
     "#package-roots": "./lib/package-roots.ts",
+    "#zotero-rdp": "./lib/zotero-rdp.ts",
     "#dev-vault": "./lib/dev-vault.ts"
   },
   "exports": {
@@ -22,6 +23,7 @@
     "./obsidian-cli": "./lib/obsidian-cli.ts",
     "./obsidian-manifest": "./lib/obsidian-manifest.ts",
     "./package-roots": "./lib/package-roots.ts",
+    "./zotero-rdp": "./lib/zotero-rdp.ts",
     "./dev-vault": "./lib/dev-vault.ts"
   },
   "scripts": {

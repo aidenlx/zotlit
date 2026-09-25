@@ -452,7 +452,7 @@ export interface PairedZotero {
   pid: number;
   /**
    * The remote debugging port this instance listens on, for evaluating JS in
-   * Zotero's parent process (`apps/zotero/scripts/debug/rdp-eval.ts`). A
+   * Zotero's parent process (`packages/scripts/scripts/zotero-rdp.ts`). A
    * Paired Run reports it; {@link launchPairedZotero} starts Zotero without a
    * debugger, so it reports none.
    */

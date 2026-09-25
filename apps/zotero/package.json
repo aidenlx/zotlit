@@ -8,9 +8,6 @@
   "imports": {
     "#constant": "./src/constant.ts"
   },
-  "exports": {
-    "./debug/rdp-eval": "./scripts/debug/rdp-eval.ts"
-  },
   "scripts": {
     "build": "vite build && pnpm typecheck",
     "build:dev": "vite build --mode development",

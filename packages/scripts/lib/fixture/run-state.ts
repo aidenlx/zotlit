@@ -12,7 +12,7 @@ export interface PairedRunState {
   pid: number;
   /**
    * The remote debugging port this instance listens on, for evaluating JS in
-   * Zotero's parent process (`apps/zotero/scripts/debug/rdp-eval.ts`).
+   * Zotero's parent process (`packages/scripts/scripts/zotero-rdp.ts`).
    *
    * Absent where the launcher started Zotero without a debugger, which
    * `pnpm fixture zotero` does. Such an instance still holds `zotero.sqlite`,

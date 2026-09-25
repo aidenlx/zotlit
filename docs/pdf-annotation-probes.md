@@ -123,7 +123,7 @@ The two P9 caveats: `net.request` through `@electron/remote` carries the same Ch
 
 3. Run the seam probes by opening `attachments/rougier-2014.pdf` in the Development Vault with the log level at **debug**, then reading the eleven `PDF reader seam probe passed` records in the developer console. Read the same verdicts as data from the binding's `probes` getter.
 
-4. Run the transport probes from the developer console of the same window for the `requestUrl` half, and from `require("http")` in that console for the Node half. That is the same stack `nodeFetch` uses. Drive the Zotero half over RDP with `apps/zotero/scripts/debug/rdp-eval.ts` against `<rdp-port>`.
+4. Run the transport probes from the developer console of the same window for the `requestUrl` half, and from `require("http")` in that console for the Node half. That is the same stack `nodeFetch` uses. Drive the Zotero half over RDP with `packages/scripts/scripts/zotero-rdp.ts --port <rdp-port>`.
 
 5. Rebuild the Fixture afterwards with `pnpm fixture`. A probe run leaves seeded annotations behind.
 

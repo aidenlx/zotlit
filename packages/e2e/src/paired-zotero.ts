@@ -15,7 +15,7 @@ import { expect } from "vitest";
 
 import { getFixtureLayout, livePairedZotero } from "@zotlit/scripts/fixture";
 import type { FixtureLayout } from "@zotlit/scripts/fixture";
-import { openRdpSession } from "@zotlit/zotero/debug/rdp-eval";
+import { openRdpSession } from "@zotlit/scripts/zotero-rdp";
 
 import { waitFor } from "./obsidian-cli.ts";
 
