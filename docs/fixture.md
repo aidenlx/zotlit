@@ -101,10 +101,10 @@ pnpm --filter @zotlit/obsidian dev:vault
 
 This command builds the development plugin, creates or synchronizes the vault, and starts the watch build. An ordinary worktree uses `tests/fixture-vault-<worktree-folder-name>`. A Codex worktree under `.codex/worktrees/<id>/<repo>` uses `tests/fixture-vault-<repo>-<id>`. These names keep Development Vaults distinct across worktrees.
 
-Name that vault in each `obsidian` command. A command without a `vault=` option reaches the window that answers first, so a machine with more than one open vault can answer from another worktree's Development Vault or from the repository's own. A probe that reports code you already replaced is the usual symptom, and `restart` or `plugin:reload` then acts on that other vault:
+Name that vault in each Obsidian CLI command, as the first argument. A command without a leading `vault=` option reaches the window that answers first, so a machine with more than one open vault can answer from another worktree's Development Vault or from the repository's own. A probe that reports code you already replaced is the usual symptom, and `restart` or `plugin:reload` then acts on that other vault:
 
 ```sh
-obsidian eval vault=fixture-vault-<worktree-folder-name> code='app.vault.adapter.basePath'
+packages/scripts/scripts/obsidian-cli.ts vault=fixture-vault-<worktree-folder-name> eval code='app.vault.adapter.basePath'
 ```
 
 The open and sync operations rebuild the Fixture Vault before they copy it. A normal sync keeps files that exist only in the Development Vault. Use a purge sync to restore the complete generated seed:
@@ -117,13 +117,13 @@ A purge deletes the Development Vault folder, the plugin's vault-scoped local st
 
 Vault creation needs Obsidian 1.13.4 or later. Enable **Settings → General → Advanced → Command line interface**, and keep one Obsidian vault window open to host the registration calls.
 
-Verify the registered cross-platform command in a new terminal:
+Verify that Obsidian answers CLI calls:
 
 ```sh
-obsidian version
+packages/scripts/scripts/obsidian-cli.ts version
 ```
 
-Use the registered `obsidian` command on Windows, macOS, and Linux. If the command is missing, follow the official [Obsidian CLI installation guide](https://obsidian.md/help/cli#Install%20Obsidian%20CLI), then restart the terminal. ZotLit calls this command directly.
+ZotLit scripts use this in-house client, not the registered `obsidian` command. It sends the same arguments over Obsidian's CLI socket, so the `obsidian` command need not be registered. Run `packages/scripts/scripts/obsidian-cli.ts --help` for its arguments and exit codes.
 
 Check the host vault before you create, open, or synchronize a Development Vault:
 
