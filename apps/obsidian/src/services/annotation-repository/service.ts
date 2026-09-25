@@ -1,5 +1,5 @@
 // The Annotations of one Attachment, read from one Annotation Source at a time.
-import type { QueryFunction, QueryKey } from "@tanstack/query-core";
+import type { Mutation, QueryFunction, QueryKey } from "@tanstack/query-core";
 
 import {
   annotationTypeToName,
@@ -15,6 +15,7 @@ import {
 import type {
   Annotation,
   AnnotationPosition,
+  AnnotationPositionRaw,
   ResolvedAnnotationTypeName,
   TemplateTag,
 } from "@zotlit/db";
@@ -77,6 +78,7 @@ import {
   noTagChange,
   tagChange,
   tagsPatch,
+  wireColor,
   writePosition,
 } from "./write";
 import type {
@@ -398,7 +400,7 @@ export interface AnnotationRepositoryDeps {
   db: Pick<DatabaseService, "acquireRead" | "on" | "refresh">;
   queryClient: Pick<
     QueryClientService,
-    "invalidate" | "keysUnder" | "peek" | "read" | "update"
+    "client" | "invalidate" | "keysUnder" | "peek" | "read" | "update"
   >;
   localApi: Pick<
     ZoteroLocalApiClient,
@@ -463,10 +465,51 @@ type ConfirmedWrite =
 interface CommentSave {
   idleTimer: ReturnType<typeof setTimeout> | null;
   burstTimer: ReturnType<typeof setTimeout> | null;
-  inFlight: Promise<MutationState> | null;
-  submittedText: string | null;
-  queued: boolean;
 }
+
+/** The fields a write in flight proposes, as Zotero will answer them. */
+type ProposedFields = Partial<
+  Pick<
+    AnnotationRecord,
+    | "color"
+    | "comment"
+    | "tags"
+    | "tagDetails"
+    | "position"
+    | "sortIndex"
+    | "text"
+  >
+>;
+
+/**
+ * What one write in flight proposes for its Annotation: its mutation's
+ * variables, which every published list draws in place of the confirmed fields
+ * until the write settles.
+ */
+interface PendingProposal {
+  annotationKey: string;
+  attachmentKey: string;
+  /** The Zotero database the write goes to; another's list draws none of it. */
+  serverID: string | null;
+  fields: ProposedFields;
+}
+
+/** One write on the query client's mutation cache; its variables are its proposal. */
+/**
+ * What a write does once its turn comes, given the send itself: it can resolve
+ * as still pending with nothing sent, or act on its outcome before the next
+ * write on the Annotation starts.
+ */
+type WriteTurn = (
+  send: () => Promise<MutationState>,
+  own: AnnotationMutation,
+) => Promise<MutationState>;
+
+type AnnotationMutation = Mutation<
+  MutationState,
+  Error,
+  PendingProposal | null
+>;
 /** What one create ended with. */
 export type CreateOutcome =
   /** @param annotationKey the Indexed Key Zotero generated. */
@@ -500,8 +543,12 @@ export class LocalApiReadFailed extends Error {
  * It is also the one write path. A command takes Indexed Keys alone: the record
  * the active source answered supplies the version the write sends as its
  * precondition, and a record with no version — the Zotero DB source's — refuses
- * the write before any request. Nothing is drawn ahead of Zotero, so the only
- * thing a write in flight changes on screen is that the verbs stand down.
+ * the write before any request. Each write is a mutation on the plugin-wide
+ * query client, run one at a time per Annotation, and its variables are its
+ * Pending Proposal: every list this repository publishes draws the proposal in
+ * place of the confirmed fields until the write settles, and the query cache
+ * behind it keeps the confirmed record every write, conflict, and History Step
+ * is decided against.
  *
  * The Zotero DB partition is dropped wholesale whenever the database refreshes,
  * and the Zotero Local API partition whenever that source moves — a Freshness
@@ -536,7 +583,11 @@ export class AnnotationRepository extends Service<void> {
   /** Tag drafts, under the comment draft's key. */
   readonly #tagDrafts = new Map<string, TagDraft>();
   readonly #tagDraftSources = new Map<string, string>();
-  readonly #commands = new Map<string, Promise<MutationState>>();
+  /** What each write on the mutation cache answers its callers. */
+  readonly #operations = new WeakMap<
+    AnnotationMutation,
+    Promise<MutationState>
+  >();
   /**
    * One Annotation History per Attachment, held only while a PDF view of the
    * Attachment keeps it open. An Attachment with no entry records nothing.
@@ -608,7 +659,8 @@ export class AnnotationRepository extends Service<void> {
 
   /**
    * @param attachmentKey the Attachment's Indexed Key.
-   * @returns the list that stands, or null while no read has answered for it.
+   * @returns the list that stands, with the Pending Proposal of each write in
+   *   flight drawn over it, or null while no read has answered for it.
    */
   async read(attachmentKey: string): Promise<AnnotationList | null> {
     const { queryKey, read } = this.#activePartition(attachmentKey);
@@ -629,9 +681,9 @@ export class AnnotationRepository extends Service<void> {
       );
       this.#reconcilePublishedDrafts(queryKey, attachmentKey, candidate);
       await this.#announceReadPixels(superseded, candidate);
-      return candidate;
+      return this.#withProposals(attachmentKey, candidate);
     }
-    const published = this.#published(attachmentKey)?.value;
+    const published = this.#publishedLists.get(attachmentKey);
     if (
       candidate?.source.kind === "zotero-local-api" &&
       published?.source.kind === "zotero-local-api" &&
@@ -639,7 +691,7 @@ export class AnnotationRepository extends Service<void> {
     ) {
       this.#queries.update<AnnotationList>(queryKey, () => published);
     }
-    return published ?? null;
+    return this.#published(attachmentKey)?.value ?? null;
   }
 
   /**
@@ -798,71 +850,102 @@ export class AnnotationRepository extends Service<void> {
   ): Promise<MutationState> {
     const draft = this.commentDraftFor(annotationKey);
     if (!draft) return Promise.resolve(IDLE);
-    const id = commentDraftID(draft.serverID, annotationKey);
-    const save = this.#commentSave(id);
-    this.#clearCommentTimers(save);
+    this.#clearCommentTimers(
+      this.#commentSave(commentDraftID(draft.serverID, annotationKey)),
+    );
     if (draft.state.kind === "conflict") {
       return Promise.resolve(this.mutationFor(annotationKey));
     }
+    const saving = this.#savingComment(annotationKey);
     // A draft holding what Zotero already has is not a draft: it is dropped
     // ahead of every other answer, so an editor the user opened and closed
     // without typing leaves nothing behind for a card to announce. Manual-save
     // mode does not hold it either — there is nothing there to save.
-    if (!save.inFlight && sameComment(draft.text, draft.baseline)) {
+    if (!saving && sameComment(draft.text, draft.baseline)) {
       this.#dropCommentDraft(annotationKey);
       return Promise.resolve(IDLE);
     }
+    // Text a save already carries needs no second one.
+    if (
+      saving &&
+      sameComment(saving.state.variables?.fields.comment ?? null, draft.text)
+    ) {
+      return this.#answerOf(saving);
+    }
     // Text typed while a save is in flight queues behind it, even behind the
     // Save comment pressed on a held draft, which that save's success ends.
-    if (save.inFlight) {
-      save.queued = draft.text !== save.submittedText;
-      return save.inFlight;
+    if (!saving) {
+      if (automatic && !this.#canAutosave(draft)) return Promise.resolve(IDLE);
+      const capability = this.capabilityFor(draft.attachmentKey);
+      if (capability.kind !== "writable")
+        return Promise.resolve({
+          kind: "failed",
+          failure: this.#writeBlocked(draft.attachmentKey)!,
+        });
     }
-    if (automatic && !this.#canAutosave(draft)) return Promise.resolve(IDLE);
-    const capability = this.capabilityFor(draft.attachmentKey);
-    if (capability.kind !== "writable")
-      return Promise.resolve({
-        kind: "failed",
-        failure: this.#writeBlocked(draft.attachmentKey)!,
-      });
     const submittedText = draft.text;
     this.#setCommentDraft(draft, { kind: "pending" });
-    save.submittedText = submittedText;
-    save.queued = false;
-    const operation = this.#submitComment(annotationKey, draft, submittedText);
-    save.inFlight = operation;
-    void operation.then(
-      (outcome) => {
-        this.#saveSettled(save);
-        if (
-          outcome.kind === "idle" &&
-          save.queued &&
-          this.#commentDrafts.has(id)
-        ) {
-          void this.submitComment(annotationKey, { automatic: true });
-        }
-      },
-      this.#saveRejected(save, annotationKey),
-    );
-    return operation;
+    return this.#submitComment(annotationKey, draft, {
+      submittedText,
+      automatic,
+    });
   }
 
   async #submitComment(
     annotationKey: string,
     submitted: CommentDraft,
-    submittedText: string,
+    { submittedText, automatic }: { submittedText: string; automatic: boolean },
   ): Promise<MutationState> {
     const id = commentDraftID(submitted.serverID, annotationKey);
-    const outcome = await this.patchComment(annotationKey, submittedText);
-    const current = this.#commentDrafts.get(id);
-    if (!current || current.state.kind === "conflict") return outcome;
-    this.#applyCommentWriteDecision({
-      annotationKey,
-      current,
-      submittedText,
-      outcome,
+    return await this.#writeComment(annotationKey, submittedText, {
+      // The draft takes the save's outcome before the next write on the
+      // Annotation starts, so a save queued behind a failed one is held.
+      run: async (send, own) => {
+        if (this.#commentSuperseded(annotationKey, own, { id, automatic })) {
+          logger.debug("A queued comment save stood down", { annotationKey });
+          return { kind: "pending", write: "comment" };
+        }
+        const outcome = await send();
+        const current = this.#commentDrafts.get(id);
+        if (current && current.state.kind !== "conflict") {
+          this.#applyCommentWriteDecision({
+            annotationKey,
+            current,
+            submittedText,
+            outcome,
+            own,
+          });
+        }
+        return outcome;
+      },
     });
-    return outcome;
+  }
+
+  /**
+   * Whether a comment save that waited its turn is no longer needed: a later
+   * comment save or a delete on the same Annotation replaces it, or its draft
+   * ended, met a conflict, or was held by a failed save while it waited. An
+   * automatic save also stands down where autosave is off.
+   */
+  #commentSuperseded(
+    annotationKey: string,
+    own: AnnotationMutation,
+    { id, automatic }: { id: string; automatic: boolean },
+  ): boolean {
+    const current = this.#commentDrafts.get(id);
+    if (
+      !current ||
+      current.state.kind === "conflict" ||
+      current.state.kind === "failed" ||
+      (automatic && !this.#canAutosave(current))
+    ) {
+      return true;
+    }
+    const writes = this.#pendingWrites(annotationKey);
+    return writes.slice(writes.indexOf(own) + 1).some(({ options }) => {
+      const write = options.mutationKey?.[2];
+      return write === "comment" || write === "delete";
+    });
   }
 
   /** Keep Zotero's reviewed comment and discard the local draft. */
@@ -881,28 +964,12 @@ export class AnnotationRepository extends Service<void> {
   retryCommentDraft(annotationKey: string): Promise<MutationState> {
     const draft = this.commentDraftFor(annotationKey);
     if (!draft) return Promise.resolve(IDLE);
-    const id = commentDraftID(draft.serverID, annotationKey);
-    const save = this.#commentSave(id);
-    this.#clearCommentTimers(save);
-    if (save.inFlight) return save.inFlight;
-    save.submittedText = draft.text;
-    save.queued = false;
-    const operation = this.#retryCommentDraft(annotationKey, draft);
-    save.inFlight = operation;
-    void operation.then(
-      (outcome) => {
-        this.#saveSettled(save);
-        if (
-          outcome.kind === "idle" &&
-          save.queued &&
-          this.#commentDrafts.has(id)
-        ) {
-          void this.submitComment(annotationKey, { automatic: true });
-        }
-      },
-      this.#saveRejected(save, annotationKey),
+    this.#clearCommentTimers(
+      this.#commentSave(commentDraftID(draft.serverID, annotationKey)),
     );
-    return operation;
+    const saving = this.#savingComment(annotationKey);
+    if (saving) return this.#answerOf(saving);
+    return this.#retryCommentDraft(annotationKey, draft);
   }
 
   async #retryCommentDraft(
@@ -952,13 +1019,26 @@ export class AnnotationRepository extends Service<void> {
     current,
     submittedText,
     outcome,
+    own,
   }: {
     annotationKey: string;
     current: CommentDraft;
     submittedText: string;
     outcome: MutationState;
+    /** The write that answered, while it still counts as in flight. */
+    own?: AnnotationMutation;
   }): void {
     const decision = commentDraftAfterWrite(current, submittedText, outcome);
+    const later = this.#savingComment(annotationKey);
+    // A later save of the draft is still on its way.
+    if (
+      decision.kind === "update" &&
+      decision.draft.state.kind === "editing" &&
+      later &&
+      later !== own
+    ) {
+      decision.draft = { ...decision.draft, state: { kind: "pending" } };
+    }
     if (decision.kind === "drop") {
       this.#dropCommentDraft(annotationKey, current.serverID);
     } else if (decision.kind === "update") {
@@ -967,6 +1047,11 @@ export class AnnotationRepository extends Service<void> {
         decision.draft,
       );
       this.#emitter.emit("comment-draft-changed", annotationKey);
+      // Text typed while the save was away, even behind a Save comment
+      // pressed on a held draft, whose success ends the hold, is sent now.
+      if (outcome.kind === "idle" && decision.draft.state.kind === "editing") {
+        void this.submitComment(annotationKey, { automatic: true });
+      }
     }
   }
 
@@ -1079,6 +1164,8 @@ export class AnnotationRepository extends Service<void> {
       session: true,
       request: (target, record) =>
         tagsPatch(target, mergeTags(annotationTags(record), change)),
+      propose: (record) =>
+        proposedTags(mergeTags(annotationTags(record), change)),
     });
     const current = this.#tagDrafts.get(
       commentDraftID(draft.serverID, annotationKey),
@@ -1233,6 +1320,7 @@ export class AnnotationRepository extends Service<void> {
       write: "color",
       attempted: color,
       request: (target) => colorPatch(target, color),
+      propose: () => ({ color: wireColor(color) }),
     });
   }
 
@@ -1245,10 +1333,21 @@ export class AnnotationRepository extends Service<void> {
     annotationKey: string,
     comment: string,
   ): Promise<MutationState> {
+    return await this.#writeComment(annotationKey, comment);
+  }
+
+  async #writeComment(
+    annotationKey: string,
+    comment: string,
+    { run }: { run?: WriteTurn } = {},
+  ): Promise<MutationState> {
     return await this.#command(annotationKey, {
       write: "comment",
       attempted: comment,
       request: (target) => commentPatch(target, comment),
+      // Zotero stores an empty comment as no value.
+      propose: () => ({ comment: comment === "" ? null : comment }),
+      run,
     });
   }
 
@@ -1282,6 +1381,7 @@ export class AnnotationRepository extends Service<void> {
       attempted: edit,
       input,
       request: (target, record) => geometryPatch(target, record.type, edit),
+      propose: (record) => proposedGeometry(record, edit),
       ...(input === "keyboard" && {
         join: { input, at: this.#now() },
       }),
@@ -1516,25 +1616,51 @@ export class AnnotationRepository extends Service<void> {
       request: (target: WriteTarget, record: AnnotationRecord) => WriteRequest;
       settle?: "re-read" | "drop";
       join?: HistoryJoin;
+      /** The fields the write proposes, from the confirmed record it goes to. */
+      propose?: (record: AnnotationRecord) => ProposedFields;
+      run?: WriteTurn;
     },
   ): Promise<MutationState> {
     const expectedServerID = this.#localApi.demandSource()?.serverID ?? null;
     const generation = this.#commandGeneration;
-    const previous = this.#commands.get(annotationKey);
+    const held = this.#holding(annotationKey);
+    const proposal: PendingProposal | null =
+      held && command.propose
+        ? {
+            annotationKey,
+            attachmentKey: held.attachmentKey,
+            serverID: expectedServerID,
+            fields: command.propose(held.record),
+          }
+        : null;
     const queued = { expectedServerID, generation, ...command };
-    const operation = previous
-      ? previous.then(() => this.#runCommand(annotationKey, queued))
-      : this.#runCommand(annotationKey, queued);
-    this.#commands.set(annotationKey, operation);
-    void operation.finally(() => {
-      if (this.#commands.get(annotationKey) === operation) {
-        this.#commands.delete(annotationKey);
-      }
-    });
-    return await this.#counted(
-      this.#holding(annotationKey)?.attachmentKey,
-      operation,
-    );
+    const { client } = this.#queries;
+    const mutation: AnnotationMutation = client
+      .getMutationCache()
+      .build(client, {
+        mutationKey: [ANNOTATIONS, annotationKey, command.write],
+        // One write per Annotation at a time, in the order they were asked for.
+        scope: { id: JSON.stringify([ANNOTATIONS, annotationKey]) },
+        // Zotero runs on this device, so no write waits for an online event.
+        networkMode: "always",
+        mutationFn: async () => {
+          const send = () => this.#runCommand(annotationKey, queued);
+          return await (command.run?.(send, mutation) ?? send());
+        },
+      });
+    // The mutation holds its proposal from here on, so a surface redrawing on
+    // this announcement draws it in the same task.
+    const operation = mutation.execute(proposal);
+    this.#operations.set(mutation, operation);
+    if (proposal) {
+      this.#emitter.emit("annotations-changed", proposal.attachmentKey);
+      // A write that settles lets its proposal go: confirmed, the list already
+      // holds the same value; refused, the confirmed value is drawn again.
+      const settled = () =>
+        this.#emitter.emit("annotations-changed", proposal.attachmentKey);
+      void operation.then(settled, settled);
+    }
+    return await this.#counted(held?.attachmentKey, operation);
   }
 
   async #runCommand(
@@ -1931,6 +2057,8 @@ export class AnnotationRepository extends Service<void> {
           sent = against;
           return tagsPatch(target, mergeTags(annotationTags(against), reverse));
         },
+        propose: (against) =>
+          proposedTags(mergeTags(annotationTags(against), reverse)),
       });
     } finally {
       this.#steppingWrites.delete(annotationKey);
@@ -2256,8 +2384,7 @@ export class AnnotationRepository extends Service<void> {
         commentDraftID(draft.serverID, draft.annotationKey),
       );
       if (!save) continue;
-      if (save.inFlight || save.idleTimer !== null || save.burstTimer !== null)
-        return true;
+      if (save.idleTimer !== null || save.burstTimer !== null) return true;
     }
     return false;
   }
@@ -2656,13 +2783,7 @@ export class AnnotationRepository extends Service<void> {
   #commentSave(id: string): CommentSave {
     const standing = this.#commentSaves.get(id);
     if (standing) return standing;
-    const save: CommentSave = {
-      idleTimer: null,
-      burstTimer: null,
-      inFlight: null,
-      submittedText: null,
-      queued: false,
-    };
+    const save: CommentSave = { idleTimer: null, burstTimer: null };
     this.#commentSaves.set(id, save);
     return save;
   }
@@ -2677,10 +2798,8 @@ export class AnnotationRepository extends Service<void> {
   #scheduleCommentSave(draft: CommentDraft): void {
     const id = commentDraftID(draft.serverID, draft.annotationKey);
     const save = this.#commentSave(id);
-    if (save.inFlight) {
-      save.queued = draft.text !== save.submittedText;
-      return;
-    }
+    // Text typed behind a save in flight is sent once that save lands.
+    if (this.#savingComment(draft.annotationKey)) return;
     if (!this.#canAutosave(draft)) return;
     if (sameComment(draft.text, draft.baseline)) return;
     if (save.idleTimer !== null) clearTimeout(save.idleTimer);
@@ -2692,29 +2811,6 @@ export class AnnotationRepository extends Service<void> {
       save.burstTimer = null;
       void this.submitComment(draft.annotationKey, { automatic: true });
     }, COMMENT_BURST_SAVE_MS);
-  }
-
-  /**
-   * Let go of a save that has settled, whatever it left: `#savePending` reads
-   * this, and a save still named there turns away every Annotation History
-   * press on the Attachment.
-   */
-  #saveSettled(save: CommentSave): void {
-    save.inFlight = null;
-    save.submittedText = null;
-  }
-
-  /**
-   * The same, for a save whose promise rejected. Nothing else answers a
-   * rejection — the Local API seam answers a `failure` value rather than
-   * throwing — so without this the Attachment's history would be shut for the
-   * rest of the session.
-   */
-  #saveRejected(save: CommentSave, annotationKey: string): () => void {
-    return () => {
-      logger.debug("A comment save rejected, and is let go", { annotationKey });
-      this.#saveSettled(save);
-    };
   }
 
   #clearCommentTimers(save: CommentSave): void {
@@ -2732,14 +2828,12 @@ export class AnnotationRepository extends Service<void> {
     const save = this.#commentSaves.get(id);
     if (!save) return;
     this.#clearCommentTimers(save);
-    save.queued = false;
-    if (!save.inFlight) this.#commentSaves.delete(id);
+    this.#commentSaves.delete(id);
   }
 
   #cancelAllCommentSaves(): void {
     for (const save of this.#commentSaves.values()) {
       this.#clearCommentTimers(save);
-      save.queued = false;
     }
   }
 
@@ -2790,14 +2884,13 @@ export class AnnotationRepository extends Service<void> {
         continue;
       }
       const fresh = record.comment ?? "";
-      const save = this.#commentSaves.get(
-        commentDraftID(serverID, draft.annotationKey),
-      );
       if (draft.state.kind === "pending") {
         if (
-          save &&
-          save.submittedText !== null &&
-          sameComment(fresh, save.submittedText)
+          this.#pendingWrites(draft.annotationKey).some(
+            ({ options, state }) =>
+              options.mutationKey?.[2] === "comment" &&
+              sameComment(fresh, state.variables?.fields.comment ?? null),
+          )
         ) {
           this.#commentDrafts.set(
             commentDraftID(serverID, draft.annotationKey),
@@ -3048,8 +3141,10 @@ export class AnnotationRepository extends Service<void> {
     }
   }
 
+  /** The published list as surfaces draw it: with every Pending Proposal. */
   #published(attachmentKey: string): Held<AnnotationList> | null {
-    const value = this.#publishedLists.get(attachmentKey);
+    const confirmed = this.#publishedLists.get(attachmentKey);
+    const value = confirmed && this.#withProposals(attachmentKey, confirmed);
     return value
       ? {
           value,
@@ -3057,6 +3152,67 @@ export class AnnotationRepository extends Service<void> {
           settled: Promise.resolve(value),
         }
       : null;
+  }
+
+  /** The writes on one Annotation still in flight or waiting, oldest first. */
+  #pendingWrites(annotationKey: string): AnnotationMutation[] {
+    return this.#queries.client.getMutationCache().findAll({
+      mutationKey: [ANNOTATIONS, annotationKey],
+      status: "pending",
+    }) as AnnotationMutation[];
+  }
+
+  /** The latest comment write on one Annotation still in flight or waiting. */
+  #savingComment(annotationKey: string): AnnotationMutation | undefined {
+    return this.#pendingWrites(annotationKey).findLast(
+      ({ options }) => options.mutationKey?.[2] === "comment",
+    );
+  }
+
+  /** What a write in flight answers, for a caller that joins it. */
+  #answerOf(mutation: AnnotationMutation): Promise<MutationState> {
+    return (
+      this.#operations.get(mutation) ??
+      Promise.resolve(
+        this.mutationFor(String(mutation.options.mutationKey?.[1])),
+      )
+    );
+  }
+
+  /**
+   * One confirmed list with the Pending Proposal of every write in flight on
+   * its Annotations drawn over it, the later write's field over the earlier's.
+   * A proposal is drawn only over the list of the Zotero database it was sent
+   * to. The list itself is answered while nothing is proposed.
+   */
+  #withProposals(attachmentKey: string, list: AnnotationList): AnnotationList {
+    if (list.source.kind !== "zotero-local-api") return list;
+    const { serverID } = list.source;
+    const proposed = new Map<string, ProposedFields>();
+    for (const mutation of this.#queries.client
+      .getMutationCache()
+      .findAll({ mutationKey: [ANNOTATIONS], status: "pending" })) {
+      const proposal = (mutation as AnnotationMutation).state.variables;
+      if (
+        !proposal ||
+        proposal.attachmentKey !== attachmentKey ||
+        proposal.serverID !== serverID
+      )
+        continue;
+      const { annotationKey, fields } = proposal;
+      proposed.set(annotationKey, {
+        ...proposed.get(annotationKey),
+        ...fields,
+      });
+    }
+    if (proposed.size === 0) return list;
+    return {
+      ...list,
+      annotations: list.annotations.map((record) => {
+        const fields = proposed.get(record.key);
+        return fields ? { ...record, ...fields } : record;
+      }),
+    };
   }
 
   #compatibleApiSource(attachmentKey: string | null): LocalApiSource | null {
@@ -3263,6 +3419,35 @@ function freshValueOf(
 }
 
 /** One record's tags with their types, as a tag write merges into them. */
+/**
+ * A Geometry Edit as the record Zotero answers after the write holds it: the
+ * position rounded as it is sent and parsed as a read parses it, the Sort
+ * Index, and a highlight's or underline's quoted text.
+ */
+function proposedGeometry(
+  record: AnnotationRecord,
+  edit: GeometryEdit,
+): ProposedFields {
+  const position = parseAnnotationPosition(
+    JSON.parse(writePosition(edit.position)) as AnnotationPositionRaw,
+    "application/pdf",
+  );
+  const quotes = record.type === "highlight" || record.type === "underline";
+  return {
+    ...(position.kind !== "unknown" && { position }),
+    sortIndex: edit.sortIndex,
+    ...(quotes &&
+      edit.text !== undefined && {
+        text: edit.text === "" ? null : edit.text,
+      }),
+  };
+}
+
+/** A merged tag list as the record Zotero answers after the write holds it. */
+function proposedTags(tags: readonly AnnotationTag[]): ProposedFields {
+  return { tags: tags.map(({ name }) => name), tagDetails: tags };
+}
+
 function annotationTags(record: AnnotationRecord): readonly AnnotationTag[] {
   return (
     record.tagDetails ??

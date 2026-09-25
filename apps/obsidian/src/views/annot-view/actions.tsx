@@ -213,9 +213,9 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
 
   /**
    * The seam a write's outcome is rendered at: the repository answers data and
-   * the notice is raised here, once, naming the reason. Nothing was drawn
-   * ahead of Zotero, so a failure needs no undo — the card already shows what
-   * Zotero holds.
+   * the notice is raised here, once, naming the reason. A failed write's
+   * Pending Proposal goes with it, so a failure needs no undo — the card goes
+   * back to what Zotero holds.
    *
    * @see apps/obsidian/policies/ui-seams.md
    */

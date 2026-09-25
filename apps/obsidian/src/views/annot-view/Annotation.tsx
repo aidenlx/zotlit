@@ -220,8 +220,8 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
 /**
  * Zotero's copy of this Annotation moved under the user's write, so the card
  * puts the fresh Zotero value beside what the user asked for and offers the
- * two verbs that end it. Nothing was drawn ahead of Zotero, so the card around
- * this panel already shows what Zotero holds.
+ * two verbs that end it. The write's Pending Proposal went with the conflict,
+ * so the card around this panel shows what Zotero holds.
  *
  * @see https://github.com/aidenlx/zotlit/issues/1151
  */
@@ -381,8 +381,8 @@ function CardActionBar({
 
 /**
  * One card's tag editing session, as the toggle and the tag row read it. The
- * editor is open while the user holds it open, and stays open, saving, until
- * the read-back lands, so it closes onto the confirmed chips.
+ * editor is open while the user holds it open; it closes onto the session's
+ * Pending Proposal, which the record carries until Zotero answers.
  *
  * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
  */
@@ -391,11 +391,9 @@ function useTagSession(annot: AnnotationRecord) {
   const setEditing = useSetEditingTags();
   const editing = useAnnotStore((s) => s.editingTagsKey === annot.key);
   const draft = useAnnotStore((s) => s.tagDrafts.get(annot.key) ?? null);
-  const saving = draft?.state.kind === "pending";
   return {
     draft,
-    saving,
-    open: editing || saving,
+    open: editing,
     start: (): void => {
       if (actions.onOpenTags(annot)) setEditing(annot.key);
     },
@@ -432,8 +430,8 @@ function TagSlot({
   const held = heldTagDraft(capability, draft, now);
   const editable = !control.disabled && control.blocked === null;
   // Editing that becomes unavailable closes the editor, which holds the
-  // draft for Save tags; a save in flight keeps it open until the read-back.
-  if (session.saving || (session.open && !editor.readOnly)) {
+  // draft for Save tags.
+  if (session.open && !editor.readOnly) {
     return (
       // Editing is not the card's selection. The handler is a function of its
       // own: Preact records when a handler was first attached on the function
@@ -444,7 +442,6 @@ function TagSlot({
         <TagEditor
           names={session.draft?.names ?? annot.tags}
           auto={auto}
-          saving={session.saving}
           hint={editor.hint}
           libraryNames={() => actions.libraryTagNames(annot)}
           onChange={(names) => actions.onEditTags(annot, names)}
@@ -469,9 +466,10 @@ function TagSlot({
   }
   return (
     <TagRow
-      // While a tag draft stands, the row shows its names, as the Mark Popup
-      // does, so the two surfaces show the same unsaved change.
-      names={draft?.names ?? annot.tags}
+      // While a tag draft stands unsaved, the row shows its names, as the Mark
+      // Popup does, so the two surfaces show the same unsaved change; a saving
+      // draft's names are the record's Pending Proposal.
+      names={draft && draft.state.kind !== "pending" ? draft.names : annot.tags}
       onOpen={editable ? session.start : undefined}
     />
   );

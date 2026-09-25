@@ -90,9 +90,8 @@ export function editingLive(capability: EditingCapability): boolean {
  * Every editing control of one card, with the reason for each that cannot run.
  *
  * The two reasons a verb cannot act are not the same thing. A write in flight
- * disables all of them and says so: pending shows as disabled verbs and nothing
- * else, because no provisional value is ever drawn, and it ends without the
- * user doing anything. A capability that refuses writes is a state the user can
+ * disables all of them and says so, and it ends without the user doing
+ * anything; what it proposes the card already draws as its Pending Proposal. A capability that refuses writes is a state the user can
  * read about and sometimes end, so the verb stays pressable and its press
  * carries {@link CardControl.blocked} to the notice.
  *
@@ -301,8 +300,7 @@ export interface HeldDraft {
  *
  * Three states stay quiet, because none of them asks the user for anything.
  * A draft matching Zotero holds nothing. A write in flight settles by itself,
- * and drawing the user's text beside "Saving to Zotero…" would put a
- * provisional value on the card. A conflict has its own panel with its own two
+ * and the card already draws its text as the write's Pending Proposal. A conflict has its own panel with its own two
  * verbs (aidenlx/zotlit#1151).
  *
  * @see apps/obsidian/policies/ui-seams.md

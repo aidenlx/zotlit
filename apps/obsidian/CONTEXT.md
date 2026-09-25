@@ -388,6 +388,10 @@ _Avoid_: reader store, toolbar state, view state (that is the Annotation View's)
 The shared unsaved comment, Quoted Text, or tags of one Annotation, one draft per field, with the value the user started from and their current value. The Annotation View and Mark Popup access the same draft before a confirmed change in Zotero.
 _Avoid_: pending write (the draft has not been submitted), cached comment
 
+**Pending Proposal**:
+The value a submitted write intends for one field of an Annotation — comment, colour, tags, or position — drawn by every surface in place of the confirmed value until the write settles. An Annotation Draft becomes one when it is submitted; a refused, conflicted, or lost write leaves the confirmed value drawn again.
+_Avoid_: optimistic value, provisional value, Annotation Draft (not yet submitted)
+
 **Write Conflict**:
 A conflict between the user's intended Annotation change and a different change in Zotero since the user started editing. It requires a choice between the competing values; a Zotero value already equal to the intended one is no conflict, and tags never conflict, since added and removed names merge into Zotero's current tags.
 _Avoid_: 412 (also a changed server or a reused write token), version mismatch, stale write, merge conflict

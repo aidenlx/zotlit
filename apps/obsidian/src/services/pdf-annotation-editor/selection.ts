@@ -259,11 +259,6 @@ export interface MarkSelectionDeps {
   adjustRange: (adjustment: RangeAdjustment) => Promise<SelectedText | null>;
   /** The text rotation a text range's handles lie across, as they are drawn. */
   textRotation: TextRotation;
-  /**
-   * Settles when the marks match the last read the view started — the read a
-   * saved Geometry Edit announced, which the mark then draws.
-   */
-  refreshed: () => Promise<void>;
   /** The clock a cooldown's remaining seconds are read against. */
   now: () => Temporal.Instant;
 }
@@ -940,9 +935,11 @@ export class MarkSelection implements Disposable {
 
   /**
    * Saves a released proposal with the Sort Index recomputed from it. The mark
-   * draws the proposal until the write settles: a saved one then draws the
-   * record Zotero answered, and any other snaps back to the confirmed record,
-   * with a failure told at the notice seam.
+   * draws the proposal while that index is computed; from the write on, the
+   * repository's Pending Proposal stands in its place until the write
+   * settles: a saved one then draws the record Zotero answered, and any other
+   * snaps back to the confirmed record, with a failure told at the notice
+   * seam.
    */
   async #saveGeometry(
     key: string,
@@ -974,11 +971,11 @@ export class MarkSelection implements Disposable {
       },
       input,
     );
+    // The write's proposal is drawn from here on.
+    end();
     this.#write(outcome, (failure, now) =>
       m.pdf_adjust_failed({ reason: writeFailureReason(failure, now) }),
     );
-    if ((await outcome).kind === "idle") await this.#deps.refreshed();
-    end();
   }
 
   /**
@@ -1384,8 +1381,8 @@ export class MarkSelection implements Disposable {
 
   /**
    * The seam a write's outcome is rendered at: the repository answers data and
-   * the notice is raised here, once, naming the reason. Nothing was drawn ahead
-   * of Zotero, so a failure needs no undo.
+   * the notice is raised here, once, naming the reason. A failed write's
+   * Pending Proposal goes with it, so a failure needs no undo here.
    *
    * @param message the notice for a failure; a Geometry Edit names itself.
    * @see apps/obsidian/policies/ui-seams.md

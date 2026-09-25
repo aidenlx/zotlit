@@ -1316,6 +1316,32 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           .toEqual([typed, kept]);
       }, 120000);
 
+      it("shows the card's new tags from the moment its tag editor closes", async () => {
+        const { press, toggle, editorOpen, cardTags, editorChips, type } =
+          cardTagEditor(createdKey);
+        const poll = { timeout: 10_000, interval: 250 };
+        const added = "End-to-end Run tag drawn at once";
+        await setAnnotationTags(rdp, createdKey, []);
+        await expect.poll(cardTags, poll).toEqual([]);
+
+        expect(await press(toggle)).toBe(true);
+        expect(await editorOpen()).toBe(true);
+        await type(added, { enter: true });
+        await expect.poll(editorChips, poll).toEqual([added]);
+
+        // Each state of the card's tag row, from the toggle that ends the
+        // session until ZotLit has read its write back, recorded in one turn.
+        // The old, empty row drawn between the closed editor and the new chip
+        // is the flicker this guards.
+        const shown = await obJson<string[]>(
+          `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const key=${JSON.stringify(createdKey)};const card=()=>app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(key)+']')).find(Boolean);const row=()=>card()?.querySelector('.zt-annot-tag-input')?'editor':'chips:'+[...(card()?.querySelectorAll('[aria-pressed]')??[])].map((chip)=>chip.textContent).join('|');const shown=[row()];const record=()=>{const state=row();if(state!==shown.at(-1))shown.push(state);};const observer=new MutationObserver(record);observer.observe(document.body,{subtree:true,childList:true,characterData:true});card().querySelector(${JSON.stringify(toggle)}).click();const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));for(let waited=0;waited<10000&&!(repository.mutationFor(key).kind==='idle'&&!repository.tagDraftFor(key));waited+=50)await sleep(50);await sleep(300);observer.disconnect();record();return JSON.stringify(shown);})()`,
+        );
+        expect(shown).toEqual(["editor", `chips:${added}`]);
+        expect(await annotationTags(api, serverID, createdKey)).toEqual([
+          `${added}:0`,
+        ]);
+      }, 120000);
+
       it("adds and removes tags from the Mark Popup, and Zotero holds the list", async () => {
         // The Mark Popup's tag verb opens the same inline editor under the
         // comment; its second press ends the session with its one write. As on
@@ -4503,6 +4529,32 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(await storedComment()).toBe("Typed once");
 
           await closeCommentEditor();
+        }, 120000);
+
+        it("shows the new comment from the moment a blur closes its editor", async () => {
+          await selectMark();
+          await openCommentEditor();
+          const before = "Stored before the blur";
+          const after = "Typed just before the blur";
+          await typeComment(before);
+          expect(
+            await waitFor(async () => (await storedComment()) === before),
+          ).toBe(true);
+          await typeComment(after);
+
+          // Each state of the comment slot in the popup and on the Annotation
+          // Card, from the blur until ZotLit has read its write back, recorded
+          // in one turn. The stored comment drawn for one frame between the
+          // closed editor and the new text is the flicker this guards.
+          const shown = await obJson<{ popup: string[]; card: string[] }>(
+            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const key=${JSON.stringify(historyKey)};const slot=(root)=>{if(root?.querySelector('.cm-content'))return 'editor';const view=root?.querySelector('.zt-annot-comment');return view?'view:'+view.textContent:'none';};const roots={popup:()=>document.querySelector('.zt-pdf-mark-popup'),card:()=>app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(key)+']')).find(Boolean)};const shown={popup:[slot(roots.popup())],card:[slot(roots.card())]};const record=()=>{for(const name of ['popup','card']){const state=slot(roots[name]());if(state!==shown[name].at(-1))shown[name].push(state);}};const observer=new MutationObserver(record);observer.observe(document.body,{subtree:true,childList:true,characterData:true});${POPUP_EDITOR}.dispatchEvent(new FocusEvent('blur',{relatedTarget:null}));const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));for(let waited=0;waited<10000&&!(repository.mutationFor(key).kind==='idle'&&!repository.commentDraftFor(key));waited+=50)await sleep(50);await sleep(300);observer.disconnect();record();return JSON.stringify(shown);})()`,
+          );
+          expect(shown.popup).toEqual(["editor", `view:${after}`]);
+          // The card may show the stored comment up to the blur; from there it
+          // changes once, to the new text.
+          expect(shown.card.at(-1)).toBe(`view:${after}`);
+          expect(shown.card.length).toBeLessThanOrEqual(2);
+          expect(await storedComment()).toBe(after);
         }, 120000);
 
         describe("and the Annotation Card beside it", () => {
