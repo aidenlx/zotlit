@@ -385,14 +385,23 @@ export async function verifyReaderBackedExcerpts(
       "JSON.stringify(app.vault.getFiles().map(file=>file.path))",
     ),
   );
+  // The colour filter pressed below is saved per Item in vault localStorage,
+  // and every later view pinned to the Item opens with it. The view that
+  // holds the swatch is gone by cleanup time, so the saved value is put back
+  // as it was found, not released through the swatch.
+  const filterKey = JSON.stringify(`zotlit-annot-filter-${item.key}`);
+  const savedFilter = await obEval(
+    vaultId,
+    `JSON.stringify(app.loadLocalStorage(${filterKey})??null)`,
+  );
   await using cleanup = new AsyncDisposableStack();
-  // Disposal is LIFO, so these read bottom to top: the case leaves the layout
-  // it found last of all, once the view that holds the filter is gone.
+  // Disposal is LIFO, so these read bottom to top: the saved filter goes back
+  // last of all, once the layout no longer holds a view that could save it.
   cleanup.defer(() =>
     cleanupStep(async () => {
       await obEval(
         vaultId,
-        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+        `(()=>{app.saveLocalStorage(${filterKey},${savedFilter});return true;})()`,
       );
     }),
   );
@@ -400,7 +409,7 @@ export async function verifyReaderBackedExcerpts(
     cleanupStep(async () => {
       await obEval(
         vaultId,
-        `(()=>{const element=${swatch(target.color)};if(element&&element.getAttribute('aria-pressed')==='true')element.click();return true;})()`,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
       );
     }),
   );

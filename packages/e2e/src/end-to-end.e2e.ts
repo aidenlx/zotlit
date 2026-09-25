@@ -1202,6 +1202,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       { expected: "seeded" },
     );
     expect(staleFieldSeeded).toBe(true);
+    // The batch reads each note's Profile stamp from the metadata cache, and
+    // the write above sends the Books note back through the parser. Until the
+    // cache holds the rewritten frontmatter, the note reads as unstamped.
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(app.metadataCache.getFileCache(app.vault.getAbstractFileByPath(${JSON.stringify(booksNotePath)}))?.frontmatter?.['fixture-manual']==='mine')`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
 
     await using notices = await observeNotices(vaultId);
     const triggered = await obEvalUntil(
