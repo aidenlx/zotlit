@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
+import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
 import { FileSystemAdapter, Scope } from "obsidian";
-import { expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import { themeHook } from "@/lib/theme-hooks";
@@ -20,6 +21,14 @@ import {
 } from "./__fixtures__";
 import { PdfAnnotationEditor } from "./service";
 import type { AttachmentResolution } from "./service";
+
+beforeEach(() => {
+  setMockPlatform({ isMacOS: false });
+});
+
+afterEach(() => {
+  resetMockPlatform();
+});
 
 /** The eleven probes of the seam re-verification, as issue #1140 numbers them. */
 const PROBE_COUNT = 11;

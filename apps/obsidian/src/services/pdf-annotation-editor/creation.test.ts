@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { EditorView } from "@codemirror/view";
-import { Menu } from "@mock/obsidian";
-import { afterEach, expect, it, vi } from "vitest";
+import { Menu, resetMockPlatform, setMockPlatform } from "@mock/obsidian";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { PdfTextStructure } from "@zotlit/pdf-structure";
 import type {
@@ -227,9 +227,14 @@ function reader(
   };
 }
 
+beforeEach(() => {
+  setMockPlatform({ isMacOS: false });
+});
+
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  resetMockPlatform();
   document.body.empty();
 });
 
