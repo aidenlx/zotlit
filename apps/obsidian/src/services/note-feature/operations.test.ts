@@ -686,7 +686,7 @@ describe("createNote", () => {
         mode === "overwrite";
       const parent = join(
         await getWorkspaceRoot(import.meta.dirname),
-        "tmp/excerpt-note-tests",
+        ".scratch/excerpt-note-tests",
       );
       await mkdir(parent, { recursive: true });
       const root = await mkdtemp(`${parent}/vault-`);

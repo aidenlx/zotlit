@@ -36,7 +36,7 @@ export async function runInElectron(options: {
   alias?: Record<string, string>;
 }): Promise<unknown> {
   const workspaceRoot = await getWorkspaceRoot(options.entry);
-  const parent = resolve(workspaceRoot, "tmp");
+  const parent = resolve(workspaceRoot, ".scratch");
   await mkdir(parent, { recursive: true });
   await using resources = new AsyncDisposableStack();
   const folder = resources.adopt(
