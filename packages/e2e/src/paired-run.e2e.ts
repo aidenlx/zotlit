@@ -36,6 +36,7 @@ import {
 import { createNodePairedRunPorts } from "@zotlit/scripts/fixture/paired-run-node";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
+import { keepRendering, restoreRendering } from "./background-throttling.ts";
 import { verifySavedEditDisplay } from "./excerpt-acceptance.ts";
 import { verifyExcerptRefresh } from "./excerpt-refresh.ts";
 import {
@@ -178,6 +179,17 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         : null,
       rdp,
     };
+  });
+
+  // The run seldom shows the Development Vault's windows, and a hidden window
+  // gets no animation frames. The vault is the developer's, so it gets its
+  // throttling back when the run ends.
+  beforeAll(async () => {
+    if (vaultId) await keepRendering(vaultId);
+  });
+
+  afterAll(async () => {
+    if (vaultId) await restoreRendering(vaultId);
   });
 
   const prepareAuthorizationFixture = async (): Promise<void> => {

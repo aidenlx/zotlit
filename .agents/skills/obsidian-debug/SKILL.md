@@ -113,12 +113,21 @@ the focused window — either may belong to another worktree. Pass
 Development Vault path reported by `obsidian-vault.ts --help` for the worktree you build
 from. `data.json` edits target that same path.
 
-### Occluded window
+### Hidden window
 
-When `document.visibilityState === "hidden"`, scroll events don't dispatch and the compositor
-stops repainting — scroll-driven UI (e.g. TanStack Virtual) looks frozen and screenshots return
-stale frames. Drive scrolling with `el.scrollTop = x; el.dispatchEvent(new Event("scroll"))` and
-assert via DOM queries.
+A hidden, minimized, or covered window is throttled: `requestAnimationFrame` never fires, so an
+eval that awaits one never answers; scroll events never dispatch; and screenshots lag one frame
+behind the DOM. Turn throttling off for the vault's main window and its open popouts before you
+probe:
+
+```bash
+packages/scripts/scripts/obsidian-cli.ts vault=<id> eval \
+  code='(()=>{const r=require("@electron/remote"),m=r.getCurrentWebContents();for(const c of r.webContents.getAllWebContents())if(c===m||(c.opener?.top?.processId===m.mainFrame.processId&&c.opener?.top?.routingId===m.mainFrame.routingId))c.setBackgroundThrottling(false);return "off"})()'
+```
+
+Done when it prints `=> off`. Run it again after you open a popout, and once more with `true` in
+place of `false` when you are done. The setting lasts until Obsidian restarts.
+`document.visibilityState` can still read `hidden` — judge by frames and events.
 
 ### Full-scale Fixture data
 
