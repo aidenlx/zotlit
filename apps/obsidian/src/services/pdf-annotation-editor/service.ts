@@ -3,6 +3,7 @@ import type {
   App,
   FileSystemAdapter,
   PDFFileView,
+  View,
   WorkspaceLeaf,
 } from "obsidian";
 
@@ -20,11 +21,11 @@ import type {
   AnnotationReads,
   AttachmentReads,
   CapabilityGestures,
+  CommentNotes,
 } from "./binding";
 import { openFilePathOf, PDF_VIEW_TYPE } from "./seam";
 import type { MarkGestures } from "./selection";
-import { resolveToolColors, TOOL_COLORS_SETTING } from "./tools";
-import type { AnnotationTool, ToolColorStore } from "./tools";
+import { toolColorStore } from "./tools";
 
 // Re-exported so a consumer of the reader seam reaches the resolution it binds
 // a view to without naming the resolver service.
@@ -37,6 +38,7 @@ export type {
   AnnotationReads,
   AttachmentReads,
   CapabilityGestures,
+  CommentNotes,
   PdfViewBinding,
 } from "./binding";
 export type { MarkGestures } from "./selection";
@@ -50,6 +52,8 @@ export interface PdfAnnotationEditorDeps {
   capabilityGestures: CapabilityGestures;
   /** What the Mark Popup's reveal and comment verbs reach in the sidebar. */
   markGestures: Pick<MarkGestures, "revealAnnotation">;
+  /** The Literature Notes a rendered comment's links resolve against. */
+  noteIndex: CommentNotes;
   /** Where each annotation tool's colour is kept, so it holds across PDFs. */
   settings: Pick<SettingsService, "current" | "update">;
   /** The clock each binding's cooldown countdown is read against. */
@@ -77,6 +81,7 @@ export class PdfAnnotationEditor extends Service<void> {
   readonly #capabilityGestures;
   readonly #markGestures;
   readonly #toolColors;
+  readonly #noteIndex;
   readonly #now;
   readonly #emitter = createNanoEvents<PdfAnnotationEditorEvents>();
   readonly #bindings = new Map<PDFFileView, PdfViewBinding>();
@@ -90,6 +95,7 @@ export class PdfAnnotationEditor extends Service<void> {
     annotations,
     capabilityGestures,
     markGestures,
+    noteIndex,
     settings,
     now = () => Temporal.Now.instant(),
   }: PdfAnnotationEditorDeps) {
@@ -100,6 +106,7 @@ export class PdfAnnotationEditor extends Service<void> {
     this.#capabilityGestures = capabilityGestures;
     this.#markGestures = markGestures;
     this.#toolColors = toolColorStore(settings);
+    this.#noteIndex = noteIndex;
     this.#now = now;
     this.ready = this.#load();
   }
@@ -107,6 +114,19 @@ export class PdfAnnotationEditor extends Service<void> {
   /** The live binding for each open PDF view, in workspace order. */
   get bindings(): readonly PdfViewBinding[] {
     return [...this.#bindings.values()];
+  }
+
+  /**
+   * The binding one view holds, for a surface that acts on the PDF view a
+   * gesture arrived from — the command palette on the active view, and the
+   * More options menu on the leaf it was opened over.
+   *
+   * @returns that view's binding, or `null` for anything other than a PDF view
+   *   this service bound.
+   */
+  bindingFor(view: View | null | undefined): PdfViewBinding | null {
+    if (!view) return null;
+    return this.#bindings.get(view as PDFFileView) ?? null;
   }
 
   /**
@@ -213,6 +233,7 @@ export class PdfAnnotationEditor extends Service<void> {
         capabilityGestures: this.#capabilityGestures,
         markGestures: this.#markGestures,
         toolColors: this.#toolColors,
+        noteIndex: this.#noteIndex,
         now: this.#now,
       });
       this.#bindings.set(view, binding);
@@ -221,22 +242,4 @@ export class PdfAnnotationEditor extends Service<void> {
         this.#emitter.emit("session-added", binding.filePath);
     }
   }
-}
-
-/**
- * Each tool's colour, read and written through the settings file, so a colour
- * chosen in one PDF is the colour the next one opens with. A choice made before
- * the settings have loaded is dropped rather than written over what is on disk.
- */
-function toolColorStore(
-  settings: Pick<SettingsService, "current" | "update">,
-): ToolColorStore {
-  return {
-    current: () => resolveToolColors(settings.current?.[TOOL_COLORS_SETTING]),
-    set: (tool: AnnotationTool, color: string) => {
-      const stored = settings.current?.[TOOL_COLORS_SETTING];
-      if (!stored) return;
-      settings.update({ [TOOL_COLORS_SETTING]: { ...stored, [tool]: color } });
-    },
-  };
 }

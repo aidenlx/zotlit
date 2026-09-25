@@ -239,12 +239,14 @@ export function buildServices(
         attachmentResolver,
         annotationRepository,
         capabilityNotices,
+        noteIndex,
         settings,
       }) => {
         reader = new PdfAnnotationEditor({
           app: plugin.app,
           attachments: attachmentResolver,
           annotations: annotationRepository,
+          noteIndex,
           settings,
           capabilityGestures: {
             reportBlockedGesture: (attachmentKey) =>

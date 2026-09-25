@@ -8,8 +8,7 @@
 import { setIcon } from "obsidian";
 
 import { themeHook } from "@/lib/theme-hooks";
-import type { EditingCapability } from "@/services/annotation-repository/capability";
-import { editingCapabilityAffordance } from "@/services/annotation-repository/capability-copy";
+import type { CapabilityAffordance } from "@/services/annotation-repository/capability-copy";
 
 /** Aligns the status icon and text within the native toolbar. */
 const LAYOUT_CLASSES = ["zt:flex", "zt:items-center", "zt:gap-1"];
@@ -35,29 +34,19 @@ const EDIT_GESTURE_KEYS = new Set([
   "8",
 ]);
 
-export interface CapabilityAffordanceProps {
-  capability: EditingCapability;
-  /** The instant a cooldown's remaining seconds are measured from. */
-  now: Temporal.Instant;
-}
-
 /**
  * Draws the pending-authorization status into the reader's right toolbar slot,
  * building its node on the first call and rewriting the contents on every call
- * after. Removes it when normal editing controls are available.
+ * after. Removes it for `null`, which is what the Reader Surface State selects
+ * while normal editing controls are available.
  *
  * @param slot the reader's right toolbar slot.
  * @returns the node it drew, so a caller can read back what is on screen.
  */
 export function renderCapabilityAffordance(
   slot: HTMLElement,
-  { capability, now }: CapabilityAffordanceProps,
+  affordance: CapabilityAffordance | null,
 ): HTMLElement | null {
-  // Authorization is offered in the Annotation View and settings.
-  const affordance =
-    capability.kind === "authorizing" || capability.kind === "cooldown"
-      ? editingCapabilityAffordance(capability, now)
-      : null;
   if (affordance === null) {
     removeCapabilityAffordance(slot);
     return null;

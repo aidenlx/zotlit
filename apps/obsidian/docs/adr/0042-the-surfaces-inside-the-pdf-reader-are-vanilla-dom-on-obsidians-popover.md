@@ -20,3 +20,7 @@ Every other ZotLit surface is a Preact root. The three surfaces ZotLit puts insi
 - The per-view binding is the popup's `HoverParent`, so Obsidian's Page Preview on the PDF view keeps its own `hoverPopover`.
 - The Editing Capability affordance is "one copy table and icon map, two renderers": a pure module the reader renders with its vanilla function and the Annotation View renders in its Preact toolbar. The cooldown countdown is a `setInterval` under the binding's disposer in the reader and an effect in the view.
 - Reader surfaces publish through the Reader Session; no reader code imports Preact. A Preact root inside `hoverEl`, the citation popover's pattern, stays available if the popup row grows, at no lifecycle risk.
+
+## Amendment: Mark Handles and the selected mark's body take the pointer
+
+While editing is live, the Mark Handles of the selected Annotation Mark and the body of a selected image or ink mark take pointer events. A Geometry Edit captures the pointer from the press, and each grip shows the cursor of what a press there does, so these nodes carry `pointer-events: all`. Which grip a press takes is still decided from geometry, as a mark click is. This is the one exception to "Annotation Marks are paint": every other mark, and every mark while editing is not live, stays `pointer-events: none`, so text selection and PDF links under an unselected mark keep their path, and the body of a selected highlight or underline stays the text selection's.

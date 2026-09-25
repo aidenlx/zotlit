@@ -44,6 +44,13 @@ export const themeHook = {
    */
   pdfAnnotationSelectionOutline: "zt-pdf-annotation-selection-outline",
   /**
+   * One Mark Handle on the selected Annotation Mark, drawn while editing is
+   * live. `data-zt-grip` names the edges it moves — `tl`, `t`, `tr`, `r`,
+   * `br`, `b`, `bl` or `l`, in PDF space — and the mark whose body moves it
+   * carries `data-zt-grip="body"`.
+   */
+  pdfAnnotationHandle: "zt-pdf-annotation-handle",
+  /**
    * The `<g>` a note Annotation Mark draws its glyph into, stroked in the
    * Annotation's own colour. Its `stroke-width` sets
    * both {@link themeHook.pdfAnnotationNoteFill} and
@@ -59,6 +66,29 @@ export const themeHook = {
    */
   pdfAnnotationNoteCrease: "zt-pdf-annotation-note-crease",
   /**
+   * The rectangle the armed image tool drags out on a page, in the tool's own
+   * colour, faint while a side is under ten points. It stands in the page's
+   * {@link themeHook.pdfAnnotationOverlay} until the capture ends.
+   */
+  pdfCaptureRect: "zt-pdf-capture-rect",
+  /**
+   * The stroke the armed ink tool is drawing on a page, drawn as a saved ink
+   * mark is. It stands in the page's {@link themeHook.pdfAnnotationOverlay}
+   * until the pointer is released or the stroke is discarded.
+   */
+  pdfLiveStroke: "zt-pdf-live-stroke",
+  /**
+   * A released ink stroke drawn on its page while Zotero saves it, under the
+   * Annotation Marks, until the saved mark takes its place.
+   */
+  pdfPendingStroke: "zt-pdf-pending-stroke",
+  /**
+   * The textarea a Text Draft is typed into, over its page, in the text
+   * tool's colour darkened as a saved text mark is drawn. It stands until the
+   * draft is discarded or its saved mark takes its place.
+   */
+  pdfTextDraft: "zt-pdf-text-draft",
+  /**
    * The always-present Editing Capability affordance in the PDF reader's own
    * toolbar. `data-zt-capability-tone` names the state it is showing —
    * `ready`, `action`, `busy` or `warning`.
@@ -70,7 +100,9 @@ export const themeHook = {
    * carries `data-zt-tool`. Each tool of its tool group is split in two — the
    * toggle under the tool's own name and the chevron that opens its colours
    * under `<tool>-color` — which today is `highlight`, `highlight-color`,
-   * `underline` and `underline-color`. `visibility` stands outside the group.
+   * `underline`, `underline-color`, `note`, `note-color`, `text`,
+   * `text-color`, `image`, `image-color`, `ink` and `ink-color`. `visibility`
+   * stands outside the group.
    */
   pdfCreationToolbar: "zt-pdf-creation-toolbar",
   /**
@@ -85,11 +117,11 @@ export const themeHook = {
    * Each control inside it carries `data-zt-verb` — `color`, `comment`,
    * `copy`, `delete`, `reveal`, and `stack` for the stepper through
    * overlapping marks when a mark is selected; `highlight`, `underline`,
-   * `color-1` to `color-8`, `comment` and `copy` when a fresh text selection
-   * is waiting to be created.
+   * the four most recently used of `color-1` to `color-8`, `comment` and
+   * `copy` when a fresh text selection is waiting to be created.
    */
   pdfMarkPopup: "zt-pdf-mark-popup",
-  /** The comment sheet the Mark Popup opens under its create-mode row. */
+  /** The comment sheet the Mark Popup opens under its row, in either mode. */
   pdfCommentSheet: "zt-pdf-comment-sheet",
   /** The panel an Annotation Card shows while a Write Conflict stands on it. */
   annotConflict: "zt-annot-conflict",
@@ -123,4 +155,17 @@ export const themeProperty = {
   graphCitedWorkNode: "--zt-graph-cited-work-node-color",
   /** The line colour of a citation edge in the graph views. */
   graphCitationLink: "--zt-graph-citation-link-color",
+} as const;
+
+/**
+ * The stable attributes ZotLit sets on a host element while a mode stands, for
+ * a rule that applies only then. Each is present with an empty value, or
+ * absent.
+ */
+export const themeAttribute = {
+  /**
+   * On the PDF view's container while the ink tool is armed. ZotLit's own rule
+   * under it takes touch panning off the pages, so a finger draws.
+   */
+  pdfInking: "data-zt-inking",
 } as const;

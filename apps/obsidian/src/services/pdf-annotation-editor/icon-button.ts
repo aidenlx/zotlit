@@ -45,35 +45,61 @@ export interface IconButtonSpec {
  */
 export function renderIconButton(
   parent: HTMLElement,
-  {
-    icon,
-    tooltip,
-    cls = [],
-    color = null,
-    pressed = null,
-    disabled = false,
-  }: IconButtonSpec,
+  spec: IconButtonSpec,
   activate: (node: HTMLElement) => void,
 ): HTMLElement {
   const node = parent.createDiv({
-    cls: ["clickable-icon", ...cls],
+    cls: ["clickable-icon", ...(spec.cls ?? [])],
     attr: { role: "button", tabindex: "0" },
   });
-  setTooltip(node, tooltip);
-  setIcon(node, icon);
-  if (color !== null) node.style.color = color;
-  if (pressed !== null) {
-    node.classList.toggle("is-active", pressed);
-    node.setAttribute("aria-pressed", String(pressed));
-  }
-  if (disabled) {
-    node.addClass("is-disabled");
-    node.setAttribute("aria-disabled", "true");
-    return node;
-  }
+  updateIconButton(node, spec);
+  if (spec.disabled) return node;
   node.addEventListener("click", () => activate(node));
   node.addEventListener("keydown", (event) =>
     onActivateKey(event, () => activate(node)),
   );
   return node;
+}
+
+/** The icon each button was last drawn with, so a redraw keeps its glyph node. */
+const drawnIcons = new WeakMap<HTMLElement, IconName>();
+
+/**
+ * Rewrites what a built icon button shows, in place: its icon, tooltip,
+ * colour, toggle state, and blocked state. Its classes and its listeners stay
+ * as they were built.
+ *
+ * The icon is redrawn only when it changed, because the glyph can be the very
+ * node under a pointer that is still down, and a click needs it to stay.
+ *
+ * A button built blocked took no listeners, so only one built live can be
+ * stood down and brought back here; a surface that redraws builds live and
+ * gates the press itself.
+ */
+export function updateIconButton(
+  node: HTMLElement,
+  {
+    icon,
+    tooltip,
+    color = null,
+    pressed = null,
+    disabled = false,
+  }: IconButtonSpec,
+): void {
+  setTooltip(node, tooltip);
+  if (drawnIcons.get(node) !== icon) {
+    setIcon(node, icon);
+    drawnIcons.set(node, icon);
+  }
+  node.style.color = color ?? "";
+  if (pressed === null) {
+    node.removeClass("is-active");
+    node.removeAttribute("aria-pressed");
+  } else {
+    node.classList.toggle("is-active", pressed);
+    node.setAttribute("aria-pressed", String(pressed));
+  }
+  node.classList.toggle("is-disabled", disabled);
+  if (disabled) node.setAttribute("aria-disabled", "true");
+  else node.removeAttribute("aria-disabled");
 }

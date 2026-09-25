@@ -22,6 +22,7 @@ function makeAnnot(
     comment: null,
     color: null,
     pageLabel: null,
+    sortIndex: "00000|000000|00000",
     parentKey: "PPPPPPPP",
     tags: [],
     position: { kind: "unknown", raw: null },

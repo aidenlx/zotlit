@@ -1,4 +1,4 @@
-import { getLanguage, Plugin, requestUrl } from "obsidian";
+import { getLanguage, Plugin, requestUrl, View } from "obsidian";
 import type { FileSystemAdapter } from "obsidian";
 import semverGte from "semver/functions/gte";
 
@@ -15,6 +15,9 @@ import {
 import { enableStartupLogging } from "./lib/log";
 import { BaseNotice } from "./lib/notice";
 import { openSettingsTab, revealSetting } from "./lib/open-settings";
+import { addAnnotationHistoryActions } from "./services/annotation-repository/actions";
+import type { HistorySurface } from "./services/annotation-repository/actions";
+import { registerAnnotationHistoryFileMenu } from "./services/annotation-repository/menu";
 import { registerAttachmentSkipNotice } from "./services/attachment-import/notices";
 import {
   addAttachmentOpenActions,
@@ -51,6 +54,7 @@ import { registerTemplateWorkbench } from "./services/template-workbench/registe
 import { addCitationTemplateActions } from "./services/template/actions";
 import { ZotLitSettingTab } from "./setting-tab";
 import { registerAnnotView } from "./views/annot-view/register";
+import { AnnotationView } from "./views/annot-view/view";
 import { registerCitationPresentation } from "./views/citation-presentation/register";
 import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerCitedByView } from "./views/cited-by/register";
@@ -397,11 +401,31 @@ export default class ZotLitPlugin extends Plugin {
       annotations: services.annotationRepository,
       excerptDisplay: services.excerptDisplay,
       showEditingCapability: () => void services.zoteroLocalApi.authorize(),
+      reportBlockedGesture: (attachmentKey) =>
+        services.capabilityNotices.reportBlockedGesture(attachmentKey),
       zoteroPref: services.zoteroPref,
       noteFeature: services.noteFeature,
       noteIndex: services.noteIndex,
       itemLookup: services.itemLookup,
       settings: services.settings,
+    });
+
+    // The Annotation History's own verbs. A bound PDF view and an Annotation
+    // View each step the Attachment they show, so the palette acts on
+    // whichever of them the user is in, and the menu on the leaf it was
+    // opened over.
+    addAnnotationHistoryActions(this, {
+      annotations: services.annotationRepository,
+      activeSurface: (): HistorySurface | null => {
+        const view = this.app.workspace.getActiveViewOfType(View);
+        return view instanceof AnnotationView
+          ? view
+          : services.pdfAnnotationEditor.bindingFor(view);
+      },
+    });
+    registerAnnotationHistoryFileMenu(this, {
+      annotations: services.annotationRepository,
+      surfaceFor: (leaf) => services.pdfAnnotationEditor.bindingFor(leaf.view),
     });
 
     registerTemplateWorkbenchView(this, {

@@ -123,6 +123,9 @@ export function createCommentEditor(opts: CommentEditorOptions): CommentEditor {
             event.preventDefault();
             const menu = new Menu();
             fillCommentMenu(menu, v);
+            // The editor is the menu's parent, so the surface it stands in
+            // takes a press on the menu as its own.
+            menu.setParentElement(v.dom);
             menuOpen = true;
             menu.onHide(() => {
               menuOpen = false;

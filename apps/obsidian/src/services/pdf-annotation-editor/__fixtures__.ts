@@ -1,19 +1,22 @@
 // The fake Obsidian PDF reader — viewer host, viewer child, toolbar slot and
 // page view — that both pdf-annotation-editor suites drive the seam through.
 // Needs a DOM, so every consumer runs under `// @vitest-environment happy-dom`.
-import type { PDFPageViewport } from "obsidian";
+import type { HoverParent, Modifier, PDFPageViewport, Scope } from "obsidian";
 import { vi } from "vitest";
 import type { Mock } from "vitest";
 
 import { parseAnnotationPosition } from "@zotlit/db";
 import type { AnnotationPositionRaw } from "@zotlit/db";
+import type { PdfPosition, PdfTextStructure } from "@zotlit/pdf-structure";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import { withRecentColor } from "@/lib/annotation-colors";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   AnnotationList,
   AnnotationRecord,
   AnnotationRepositoryEvents,
+  HistoryOutcome,
 } from "@/services/annotation-repository/service";
 import { IDLE } from "@/services/annotation-repository/write";
 import type { MutationState } from "@/services/annotation-repository/write";
@@ -21,12 +24,38 @@ import type {
   AttachmentResolution,
   AttachmentResolverEvents,
 } from "@/services/attachment-resolver/service";
+import { ReaderSessionHost } from "@/services/reader-session/session";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
+import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
-import { resolveToolColors } from "./tools";
-import type { AnnotationToolColors, ToolColorStore } from "./tools";
+import { MarkCreation } from "./creation";
+import type { AnnotationCreates } from "./creation";
+import { MarkPopupHost } from "./mark-popup-host";
+import { mountReaderKeymap } from "./reader-keymap";
+import type { HistoryVerb } from "./reader-keymap";
+import {
+  createReaderSurfaceState,
+  ingestAnnotations,
+  listenAnnotationEvents,
+} from "./reader-surface-state";
+import type { AnnotationFacts } from "./reader-surface-state";
+import { groupAnnotationsByPage } from "./render";
+import type { OverlayPageView } from "./render";
+import { MarkSelection } from "./selection";
+import type { AnnotationEdits, MarkSelectionDeps } from "./selection";
+import {
+  DEFAULT_INK_WIDTH,
+  DEFAULT_TEXT_FONT_SIZE,
+  resolveToolColors,
+} from "./tools";
+import type {
+  AnnotationToolColors,
+  InkWidth,
+  TextFontSize,
+  ToolColorStore,
+} from "./tools";
 
 /** One glyph as Obsidian's patched worker answers it, from the 1.14.2 reading. */
 export const GLYPH = {
@@ -103,6 +132,11 @@ export function viewport({
         return [x1 + x / total, y2 - y / total];
     }
   };
+  // PDF.js's `transform` is the affine map `convertToViewportPoint` applies,
+  // so it is read off that map, rotation included.
+  const [e, f] = convertToViewportPoint(0, 0);
+  const [ax, bx] = convertToViewportPoint(1, 0);
+  const [cy, dy] = convertToViewportPoint(0, 1);
   return {
     viewBox: box,
     userUnit,
@@ -110,7 +144,7 @@ export function viewport({
     rotation,
     offsetX: 0,
     offsetY: 0,
-    transform: [total, 0, 0, -total, -total * x1, total * y2],
+    transform: [ax - e, bx - f, cy - e, dy - f, e, f],
     width: total * (axesSwap ? y2 - y1 : x2 - x1),
     height: total * (axesSwap ? x2 - x1 : y2 - y1),
     convertToViewportPoint,
@@ -129,6 +163,8 @@ export interface FakePageView {
     commonObjs: { has: Mock; get: Mock };
     getTextContent: Mock;
   };
+  /** PDF.js `RenderingStates`: `3` once the page has finished painting. */
+  renderingState?: number;
 }
 
 /**
@@ -188,6 +224,7 @@ export function pdfReader(page = pageView()) {
     viewer: host(child),
     /** What Obsidian dispatches once PDF.js paints page one. */
     renderFirstPage: () => {
+      page.renderingState = 3;
       for (const listener of listeners) {
         listener({ pageNumber: 1, source: page });
       }
@@ -232,6 +269,7 @@ export function annotation(
     text: null,
     parentKey: "RGRPDF24",
     pageLabel: "1",
+    sortIndex: "00000|000000|00000",
     tags: [],
     position: parseAnnotationPosition(
       position as AnnotationPositionRaw,
@@ -290,6 +328,8 @@ export function annotationReads(
     annotations: records,
   };
   let current = capability;
+  /** How many PDF views hold each Attachment's Annotation History open. */
+  const histories = new Map<string, number>();
   return {
     read: vi.fn(() => Promise.resolve(list)),
     refresh: vi.fn(() => Promise.resolve(list)),
@@ -301,6 +341,7 @@ export function annotationReads(
     discardCommentDraft: vi.fn(),
     retryCommentDraft: vi.fn(() => Promise.resolve(IDLE)),
     patchColor: vi.fn(() => Promise.resolve(IDLE)),
+    patchGeometry: vi.fn(() => Promise.resolve(IDLE)),
     deleteAnnotation: vi.fn(() => Promise.resolve(IDLE)),
     createAnnotation: vi.fn(() =>
       Promise.resolve({ kind: "created" as const, annotationKey: "MADE2345" }),
@@ -309,6 +350,26 @@ export function annotationReads(
       return current;
     },
     probe: vi.fn(() => Promise.resolve()),
+    openHistory: vi.fn((attachmentKey: string) => {
+      histories.set(attachmentKey, (histories.get(attachmentKey) ?? 0) + 1);
+    }),
+    closeHistory: vi.fn((attachmentKey: string) => {
+      const left = (histories.get(attachmentKey) ?? 1) - 1;
+      if (left > 0) histories.set(attachmentKey, left);
+      else histories.delete(attachmentKey);
+    }),
+    undo: vi.fn(
+      (_attachmentKey: string): Promise<HistoryOutcome> =>
+        Promise.resolve({ kind: "idle" }),
+    ),
+    redo: vi.fn(
+      (_attachmentKey: string): Promise<HistoryOutcome> =>
+        Promise.resolve({ kind: "idle" }),
+    ),
+    /** The Attachments a history stands open for, and how many views hold each. */
+    get histories(): ReadonlyMap<string, number> {
+      return histories;
+    },
     on: <K extends keyof AnnotationRepositoryEvents>(
       event: K,
       cb: AnnotationRepositoryEvents[K],
@@ -363,10 +424,25 @@ export function readerSettings(): Pick<SettingsService, "current" | "update"> {
 /** Each tool's colour, held the way the settings-backed store holds it. */
 export function toolColors(): ToolColorStore {
   let stored: AnnotationToolColors = {};
+  let recent: readonly string[] = [];
+  let inkWidth: InkWidth = DEFAULT_INK_WIDTH;
+  let textFontSize: TextFontSize = DEFAULT_TEXT_FONT_SIZE;
   return {
     current: () => resolveToolColors(stored),
     set: (tool, color) => {
       stored = { ...stored, [tool]: color };
+    },
+    recent: () => recent,
+    use: (color) => {
+      recent = withRecentColor(recent, color);
+    },
+    inkWidth: () => inkWidth,
+    setInkWidth: (width) => {
+      inkWidth = width;
+    },
+    textFontSize: () => textFontSize,
+    setTextFontSize: (size) => {
+      textFontSize = size;
     },
   };
 }
@@ -376,4 +452,346 @@ export function failedIn(
   results: readonly { probe: string; ok: boolean }[],
 ): string[] {
   return results.filter(({ ok }) => !ok).map(({ probe }) => probe);
+}
+
+/**
+ * The repository, reduced to what the selected mark reads and writes through,
+ * with a hand on its announcements.
+ */
+export function annotationEdits() {
+  let commentDraft: {
+    annotationKey: string;
+    attachmentKey: string;
+    serverID: string;
+    baseline: string;
+    text: string;
+    state: { kind: "editing" };
+  } | null = null;
+  const listeners = new Map<string, Set<(...args: never[]) => void>>();
+  function on<K extends keyof AnnotationRepositoryEvents>(
+    event: K,
+    listener: AnnotationRepositoryEvents[K],
+  ): () => void {
+    const registered = listeners.get(event) ?? new Set();
+    const callback = listener as (...args: never[]) => void;
+    registered.add(callback);
+    listeners.set(event, registered);
+    return () => {
+      registered.delete(callback);
+    };
+  }
+  return {
+    mutationFor: vi.fn((_key: string): MutationState => IDLE),
+    patchColor: vi.fn(async () => IDLE),
+    patchGeometry: vi.fn(async (): Promise<MutationState> => IDLE),
+    deleteAnnotation: vi.fn(async () => IDLE),
+    commentDraftFor: vi.fn(() => commentDraft),
+    editComment: vi.fn((annotationKey: string, text = "") => {
+      commentDraft = {
+        annotationKey,
+        attachmentKey: "ABCD2345",
+        serverID: "test",
+        baseline: "",
+        text,
+        state: { kind: "editing" },
+      };
+      return commentDraft;
+    }),
+    submitComment: vi.fn(async () => IDLE),
+    discardCommentDraft: vi.fn(),
+    retryCommentDraft: vi.fn(async () => IDLE),
+    on: vi.fn(on),
+    hideCommentDraft() {
+      commentDraft = null;
+    },
+    emit(event: string, annotationKey: string) {
+      for (const listener of listeners.get(event) ?? []) {
+        listener(annotationKey as never);
+      }
+    },
+  };
+}
+
+const MODIFIER_HELD: Readonly<
+  Record<string, (event: KeyboardEvent) => boolean>
+> = {
+  Ctrl: (event) => event.ctrlKey,
+  Meta: (event) => event.metaKey,
+  Alt: (event) => event.altKey,
+  Shift: (event) => event.shiftKey,
+};
+
+/**
+ * Whether a registration's modifiers are the ones the keystroke carries, as
+ * Obsidian's own keymap compares them: a registration that names none matches
+ * a bare key alone, and one that names `null` matches whatever is held.
+ */
+function heldModifiers(
+  modifiers: Modifier[] | null,
+  event: KeyboardEvent,
+): boolean {
+  if (modifiers === null) return true;
+  return Object.entries(MODIFIER_HELD).every(
+    ([name, held]) => modifiers.includes(name as Modifier) === held(event),
+  );
+}
+
+/**
+ * One keystroke as Obsidian delivers it: the view's Scope hears it first, and
+ * the page hears it only when no handler there took it.
+ *
+ * The Scope's own search rule is Obsidian's: a registration that answers
+ * `false` takes the key, and one that answers nothing ends the search all the
+ * same unless it is a catch-all — a registration naming neither key nor
+ * modifiers, which the search walks past to whatever stands behind it.
+ *
+ * @param target where the focus sits, which the Scope reads before the page is
+ *   dispatched the event.
+ * @see `Scope.handleKey` in Obsidian's own `app.js`.
+ */
+export function dispatchKey(
+  scope: Scope,
+  init: KeyboardEventInit,
+  target: EventTarget,
+): KeyboardEvent {
+  const event = new KeyboardEvent("keydown", {
+    bubbles: true,
+    cancelable: true,
+    ...init,
+  });
+  Object.defineProperty(event, "target", { value: target });
+  // The mock Scope records its registrations, in the order made.
+  const { handlers } = scope as unknown as {
+    handlers: {
+      modifiers: Modifier[] | null;
+      key: string | null;
+      func: (evt: KeyboardEvent) => boolean | void;
+    }[];
+  };
+  for (const { modifiers, key, func } of handlers) {
+    if (key !== null && key.toLowerCase() !== event.key.toLowerCase()) continue;
+    if (!heldModifiers(modifiers, event)) continue;
+    const answer = func(event);
+    if (answer === false) {
+      // The registration took the key: Obsidian prevents the event and stops
+      // it, so the page never hears it.
+      event.preventDefault();
+      return event;
+    }
+    // A keyed registration ends the search whatever else it answers, so no
+    // registration behind it and no parent Scope hears the keystroke. The page
+    // hears it all the same: nothing prevented the event.
+    if (answer !== undefined || key !== null || modifiers !== null) break;
+  }
+  target.dispatchEvent(event);
+  return event;
+}
+
+/** The instant the reader surfaces read their clock at. */
+export const READER_NOW = Temporal.Instant.from("2026-09-17T10:00:00Z");
+
+export interface ReaderSurfacesOptions {
+  /** The PDF view's container, where the gestures are heard. */
+  containerEl: HTMLElement;
+  /** The one page the reader holds, at page index 0. */
+  page: OverlayPageView;
+  /** What the last read answered. */
+  records: readonly AnnotationRecord[];
+  capability?: EditingCapability;
+  annotations: AnnotationEdits & AnnotationCreates & AnnotationFacts;
+  /**
+   * This document's Structured Characters; `null` until one is open. As a
+   * function, read on each ask, as the viewer is.
+   */
+  structure?: PdfTextStructure | null | (() => PdfTextStructure | null);
+  /** The Sort Index a Geometry Edit is saved with. */
+  sortIndex?: (position: PdfPosition) => Promise<string | null>;
+  /** The range a text range's dragged end reaches. */
+  adjustRange?: MarkSelectionDeps["adjustRange"];
+  /** The text rotation a range's handles lie across. */
+  textRotation?: MarkSelectionDeps["textRotation"];
+  /** Each tool's colour and the ink width; held in memory unless given. */
+  colors?: ToolColorStore;
+  /**
+   * The platform the Reader Keymap binds the Annotation History keys for.
+   *
+   * @default false
+   */
+  isMacOS?: boolean;
+}
+
+/**
+ * The reader surfaces over one page, wired the way the binding wires them: one
+ * Reader Surface State, the Mark Selection and the Mark Creation that draw from
+ * it, and the one popup host over both.
+ */
+export function readerSurfaces({
+  containerEl,
+  page,
+  records,
+  capability = { kind: "writable" },
+  annotations,
+  structure = null,
+  sortIndex = async () => null,
+  adjustRange = async () => null,
+  textRotation = () => 0,
+  colors = toolColors(),
+  isMacOS = false,
+}: ReaderSurfacesOptions) {
+  const parent: HoverParent = { hoverPopover: null };
+  const store = createReaderSurfaceState({
+    colors: colors.current(),
+    capability,
+    now: READER_NOW,
+  });
+  let held = records;
+  ingestAnnotations(store, held, annotations);
+  const listening = listenAnnotationEvents(store, annotations);
+  const gestures = {
+    revealAnnotation: vi.fn(),
+    reportBlockedGesture: vi.fn(),
+    allowEditing: vi.fn(),
+  };
+  /** Why each create that made nothing said it made nothing, in order. */
+  const reportCreateFailure = vi.fn<(reason: string) => void>();
+  /** Each time the toolbar handed the keyboard to the pages. */
+  const focusReader = vi.fn();
+  const reported: (readonly string[])[] = [];
+  /** The session a consumer names its selection surfaces on. */
+  const session = new ReaderSessionHost({
+    source: "obsidian-pdf",
+    navigate: vi.fn(),
+    select: vi.fn(),
+  });
+  const navigated: string[] = [];
+  const revealed: string[] = [];
+  /** The options each reveal was asked with, in reveal order. */
+  const revealedWith: { commenting?: boolean }[] = [];
+  const popup = {
+    contains: (node: Node | null) => host.contains(node),
+    sync: () => host.sync(),
+  };
+  const app = editorApp();
+  const creation = new MarkCreation({
+    app,
+    containerEl,
+    popup,
+    attachmentKey: "RGRPDF24",
+    pages: () => [{ pageIndex: 0, view: page }],
+    records: () => held,
+    structure: typeof structure === "function" ? structure : () => structure,
+    repaint: vi.fn(),
+    reveal: (annotationKey, options = {}) => {
+      revealed.push(annotationKey);
+      revealedWith.push(options);
+    },
+    reportBlockedGesture: gestures.reportBlockedGesture,
+    reportCreateFailure,
+    renderCapability: vi.fn(),
+    focusReader,
+    colors,
+    surfaceState: store,
+    annotations,
+    now: () => READER_NOW,
+  });
+  const selection = new MarkSelection({
+    app,
+    renderComment: (el, html) => {
+      el.setText(html);
+      return () => el.empty();
+    },
+    containerEl,
+    popup,
+    selectionSurfaces: session,
+    marks: () =>
+      store.getState().marksVisible ? groupAnnotationsByPage(held) : new Map(),
+    records: () => held,
+    pageAt: (pageIndex) => (pageIndex === 0 ? page : null),
+    repaint: vi.fn(),
+    navigate: (key) => navigated.push(key),
+    report: (keys) => reported.push(keys),
+    annotations,
+    colors,
+    surfaceState: store,
+    gestures,
+    creation,
+    sortIndex,
+    adjustRange,
+    textRotation,
+    refreshed: () => Promise.resolve(),
+    now: () => READER_NOW,
+  });
+  selection.load();
+  const view: { scope: Scope | null; app: typeof app } = { scope: null, app };
+  /** Each press of the Annotation History keys this fixture answered, in order. */
+  const stepped: HistoryVerb[] = [];
+  const unmountKeymap = mountReaderKeymap(
+    view,
+    {
+      escape: () => selection.escape() || creation.escape(),
+      undo: () => stepped.push("undo"),
+      redo: () => stepped.push("redo"),
+    },
+    { isMacOS },
+  );
+  const host = new MarkPopupHost({
+    parent,
+    store,
+    variants: {
+      selected: {
+        anchor: () => selection.anchor(),
+        render: (content) => selection.renderPopup(content),
+      },
+      create: {
+        anchor: () => creation.anchor(),
+        render: (content) => creation.renderPopup(content),
+        unanchored: () => creation.unanchored(),
+      },
+    },
+  });
+
+  return {
+    app,
+    store,
+    host,
+    selection,
+    creation,
+    session,
+    parent,
+    colors,
+    gestures,
+    reportCreateFailure,
+    focusReader,
+    reported,
+    navigated,
+    revealed,
+    revealedWith,
+    stepped,
+    /** What a refresh does once the read answers: the records, replaced. */
+    replace(next: readonly AnnotationRecord[]) {
+      held = next;
+      ingestAnnotations(store, next, annotations);
+    },
+    /** What the binding does once a page re-rendered. */
+    sync() {
+      host.sync();
+    },
+    /**
+     * One keystroke as Obsidian delivers it: the view's Scope hears it first,
+     * and the page hears it only when no handler there took it.
+     *
+     * @param target where the focus sits; the container when not given.
+     */
+    key(init: KeyboardEventInit, target: EventTarget = containerEl) {
+      return dispatchKey(view.scope!, init, target);
+    },
+    [Symbol.dispose]() {
+      unmountKeymap();
+      selection[Symbol.dispose]();
+      creation[Symbol.dispose]();
+      host[Symbol.dispose]();
+      session[Symbol.dispose]();
+      listening.dispose();
+    },
+  };
 }

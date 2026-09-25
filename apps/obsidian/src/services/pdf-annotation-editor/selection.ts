@@ -4,16 +4,25 @@
 // Marks take no pointer input, so every gesture here is answered from geometry
 // and nothing is hung on a mark's own node. Click-away belongs to this hit test
 // rather than to the popup: the press that opens the popup is not an outside
-// press, and this is the only thing that hides it.
+// press, and this is the only thing that hides it. A surface outside the reader
+// that drives the selection, such as the Annotation View, is not outside either:
+// its own gesture says what the selection becomes.
 //
 // @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
 // @see https://github.com/aidenlx/zotlit/issues/1148
-import type { HoverParent, Scope } from "obsidian";
+import type { App } from "obsidian";
+import { Keymap } from "obsidian";
+
+import type {
+  PdfPosition,
+  RangeAdjustment,
+  SelectedText,
+} from "@zotlit/pdf-structure";
 
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import { registerDomEvent } from "@/lib/disposables";
-import { bindEditorSubmitScope } from "@/lib/editor-scope";
 import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
@@ -21,48 +30,138 @@ import type { EditingCapability } from "@/services/annotation-repository/capabil
 import type {
   AnnotationRecord,
   AnnotationRepository,
+  CommentDraft,
+  GeometryInput,
 } from "@/services/annotation-repository/service";
-import { writeFailureMessage } from "@/services/annotation-repository/write";
-import type { MutationState } from "@/services/annotation-repository/write";
+import {
+  writeFailureMessage,
+  writeFailureReason,
+} from "@/services/annotation-repository/write";
+import type {
+  MutationState,
+  WriteFailure,
+} from "@/services/annotation-repository/write";
+import type { ReaderSessionHost } from "@/services/reader-session/session";
 import { conflictPanel } from "@/views/annot-view/card-conflict";
 import {
   commentEditorControls,
+  editingBlockedReason,
   editingLive,
   heldCommentDraft,
 } from "@/views/annot-view/card-controls";
-import type { HeldDraftAction } from "@/views/annot-view/card-controls";
+import type { CommentRenderer } from "@/views/annot-view/comment-render";
+import {
+  renderCommentSheet,
+  renderCommentView,
+  renderConflictPanel,
+  renderHeldDraftPanel,
+} from "@/views/annot-view/comment-sheet";
+import type {
+  CommentDraftActions,
+  CommentSheet,
+} from "@/views/annot-view/comment-sheet";
 
 import { inTextEntry, isEditGesture } from "./capability-affordance";
-import { renderCommentSheet } from "./create-popup";
 import type { CreationGestures } from "./creation";
+import {
+  bodyRect,
+  gripAt,
+  HANDLE_RADIUS,
+  handleLayout,
+  isEditablePosition,
+  isRangeGrip,
+  keyedPosition,
+  keyEdit,
+  proposePosition,
+  RANGE_HANDLE_PADDING,
+  rangeGripAt,
+  rangeHandles,
+  releasedPosition,
+} from "./geometry-edit";
+import type {
+  Arrow,
+  EditablePosition,
+  FreeTextContent,
+  Grip,
+  PdfPoint,
+  RangeGrip,
+  TextRotation,
+} from "./geometry-edit";
 import {
   distance,
   markAnchor,
+  marksAtPoint,
   pagePointOf,
   resolveMarkClick,
 } from "./hit-test";
 import type { HitPage, MarkSelectionPoint, PageBox, Point } from "./hit-test";
-import { MarkPopup, markPopupRow, renderMarkPopupRow } from "./mark-popup";
-import type { MarkPopupControlId } from "./mark-popup";
+import { markPopupRow, popupColumn, renderMarkPopupRow } from "./mark-popup";
+import type { MarkPopupControlId, MarkPopupRowInput } from "./mark-popup";
+import type { MarkPopupHost } from "./mark-popup-host";
+import {
+  beginAdjust,
+  cancelAdjust,
+  endAdjust,
+  moveAdjust,
+  sameFlat,
+  selectAdjust,
+  selectSelectedRowInput,
+  selectFloatingHead,
+  selectMark,
+  selectSelectedDraft,
+  selectSelectedKey,
+  recordColorUse,
+  setCommenting,
+  stepStack,
+} from "./reader-surface-state";
+import type {
+  ReaderSurfaceState,
+  ReaderSurfaceStore,
+} from "./reader-surface-state";
 import { readingOrder, stepReadingOrder } from "./reading-order";
-import { markTargets, pageUnitSize } from "./render";
+import {
+  freeTextOf,
+  interfaceFont,
+  markTargets,
+  unitPointOf,
+  unitsPerPixel,
+} from "./render";
 import type { OverlayPageView, PdfPageAnnotation } from "./render";
-import { colorMenu, onScreen, selectionCollapsed } from "./surface";
+import {
+  colorMenu,
+  drawnBoxOf,
+  onScreen,
+  pageBoxOf,
+  pdfPointAt,
+  pdfPointOf,
+  releaseCapture,
+  selectionCollapsed,
+  unitsOf,
+} from "./surface";
+import type { ToolColorStore } from "./tools";
+
+const logger = getLogger("pdf-annotation-editor");
 
 /** What the selection reads and writes one Annotation through. */
 export type AnnotationEdits = Pick<
   AnnotationRepository,
-  | "capabilityFor"
   | "commentDraftFor"
   | "deleteAnnotation"
   | "discardCommentDraft"
   | "editComment"
-  | "mutationFor"
-  | "on"
   | "patchColor"
+  | "patchGeometry"
   | "retryCommentDraft"
   | "submitComment"
 >;
+
+/** How a selection taken from outside the reader opens its Mark Popup. */
+export interface SelectOptions {
+  /** Whether the Mark Popup opens over the selection. */
+  popup?: boolean;
+  /** Whether the popup opens on its comment editor. */
+  commenting?: boolean;
+}
 
 /**
  * The gestures the Mark Popup hands to its UI seam, which render and decide
@@ -96,15 +195,20 @@ export interface MarkGestures {
 export interface MarkSelectionDeps {
   /** The PDF view's container: where the gestures are heard, and what scrolls. */
   containerEl: HTMLElement;
-  /** The PDF view's native key scope, active only while this editor is focused. */
-  scope: Scope;
+  /** The app the comment editor takes its keys through. */
+  app: App;
+  /** Renders a stored comment as the Annotation Card does. */
+  renderComment: CommentRenderer;
   /**
-   * The popup's hover parent. It is the binding rather than the PDF view, so
-   * Obsidian's Page Preview on that view keeps its own `hoverPopover`.
+   * The one popup of this view: a press inside it leaves the selection
+   * standing, and a scroll re-hangs it.
    */
-  parent: HoverParent;
-  /** The Attachment whose Annotations are on screen, by Indexed Key. */
-  attachmentKey: string;
+  popup: Pick<MarkPopupHost, "contains" | "sync">;
+  /**
+   * The surfaces outside the reader that drive this selection: a press inside
+   * one leaves the selection standing too.
+   */
+  selectionSurfaces: Pick<ReaderSessionHost, "onSelectionSurface">;
   /** The marks on screen, by page index, as the binding last painted them. */
   marks: () => ReadonlyMap<number, readonly PdfPageAnnotation[]>;
   /** Every Annotation of this Attachment, as the repository last answered. */
@@ -118,38 +222,81 @@ export interface MarkSelectionDeps {
   /** Announces the selection to whoever follows this reader. */
   report: (annotationKeys: readonly string[]) => void;
   annotations: AnnotationEdits;
+  /** The colours used last, which a recolour puts a colour first in. */
+  colors: ToolColorStore;
+  /** What this view's surfaces draw from, the Editing Capability among it. */
+  surfaceState: ReaderSurfaceStore;
   gestures: MarkGestures;
   /**
-   * The creation surfaces, which hear the same pointer, key and scroll gestures
-   * this class already owns. One listener set serves both, so the selected mark
-   * and a fresh text selection can never both have a popup open.
+   * The creation surfaces, which hear the same pointer and key gestures this
+   * class already owns. One listener set serves both.
    *
    * @see https://github.com/aidenlx/zotlit/issues/1150
    */
   creation: CreationGestures | null;
+  /**
+   * The Sort Index of a position in the open document, which a Geometry Edit
+   * is saved with; `null` while no document is open.
+   */
+  sortIndex: (position: PdfPosition) => Promise<string | null>;
+  /**
+   * A highlight's or underline's range with one end dragged to a point, from
+   * the open document's Structured Characters; `null` while no document is
+   * open, or for a point no range can be placed from.
+   */
+  adjustRange: (adjustment: RangeAdjustment) => Promise<SelectedText | null>;
+  /** The text rotation a text range's handles lie across, as they are drawn. */
+  textRotation: TextRotation;
+  /**
+   * Settles when the marks match the last read the view started — the read a
+   * saved Geometry Edit announced, which the mark then draws.
+   */
+  refreshed: () => Promise<void>;
   /** The clock a cooldown's remaining seconds are read against. */
   now: () => Temporal.Instant;
 }
 
 /**
- * One selected mark per PDF view, and one popup retargeted across marks rather
- * than rebuilt per mark.
+ * One selected mark per PDF view, held in the Reader Surface State, with the
+ * row and the comment editor the popup host draws over it.
  */
 export class MarkSelection implements Disposable {
   readonly #deps;
   readonly #surfaces = new DisposableStack();
-  #selected: string | null = null;
-  /** Whether the standing selection declined its popup, as a Landing's does. */
-  #quiet = false;
-  /** Where the click that made the selection fell, which a repeat click steps from. */
-  #at: MarkSelectionPoint | null = null;
-  /** The marks under that point, smallest first, which the stepper walks. */
-  #stack: readonly string[] = [];
-  #popup: MarkPopup | null = null;
-  #commenting = false;
-  #commentEditor: HTMLTextAreaElement | null = null;
-  #commentEditorLife: DisposableStack | null = null;
+  /**
+   * Where the click that made the selection fell, which a repeat click steps
+   * from; `null` for a selection no click made.
+   */
+  #at: Pick<MarkSelectionPoint, "pageIndex" | "point"> | null = null;
+  /** The row of verbs the popup last built; `null` until one is. */
+  #row: HTMLElement | null = null;
+  #commentEditor: CommentSheet | null = null;
+  /**
+   * The rendered comment under the row, kept across refreshes while what it
+   * shows stands, so a refresh does not render the Markdown again.
+   */
+  #commentView: {
+    frame: HTMLElement;
+    key: string;
+    html: string;
+    editable: boolean;
+    dispose: () => void;
+  } | null = null;
   #pressedAt: Point | null = null;
+  /** The pointer a Geometry Edit holds, and where it last stood. */
+  #dragging: { pointerId: number; client: Point } | null = null;
+  /** Whether the last press took a Mark Handle, whose click selects nothing. */
+  #pressedHandle = false;
+  /** Whether the last press was the armed ink tool's, whose click selects nothing. */
+  #pressedStroke = false;
+  #adjusting = Promise.resolve();
+  /**
+   * The text range the pointer last asked for, which a release waits on so
+   * it saves where the pointer let go.
+   */
+  #ranging = Promise.resolve();
+  /** Counts the range asks, so an answer a later ask or a cancel overtook is dropped. */
+  #rangeAsk = 0;
 
   constructor(deps: MarkSelectionDeps) {
     this.#deps = deps;
@@ -157,7 +304,16 @@ export class MarkSelection implements Disposable {
 
   /** The Indexed Keys the overlay draws as selected. */
   get selected(): ReadonlySet<string> {
-    return new Set(this.#selected === null ? [] : [this.#selected]);
+    const key = this.#selectedKey();
+    return new Set(key === null ? [] : [key]);
+  }
+
+  /**
+   * Settles when the last Geometry Edit released in this reader has saved, or
+   * ended without a write. Already settled while none has. Never rejects.
+   */
+  get adjusted(): Promise<void> {
+    return this.#adjusting;
   }
 
   load(): void {
@@ -165,6 +321,56 @@ export class MarkSelection implements Disposable {
     this.#surfaces.use(
       registerDomEvent(containerEl, "pointerdown", (event) => {
         this.#pressedAt = { x: event.clientX, y: event.clientY };
+        this.#pressGrip(event);
+        // A press no grip took is the armed image tool's, unless a mark
+        // lies under it.
+        if (!this.#dragging)
+          this.#deps.creation?.grab(event, {
+            onMark: () => this.#onMark(event),
+          });
+        // The armed ink tool takes every main-button press before any mark
+        // could, as Zotero's reader does, whether or not the press drew.
+        this.#pressedStroke =
+          event.button === 0 && this.#state().armed === "ink";
+      }),
+    );
+    this.#surfaces.use(
+      registerDomEvent(containerEl, "pointermove", (event) => {
+        if (event.pointerId !== this.#dragging?.pointerId) {
+          this.#deps.creation?.move(event);
+          return;
+        }
+        this.#dragging.client = { x: event.clientX, y: event.clientY };
+        this.#propose();
+      }),
+    );
+    this.#surfaces.use(
+      registerDomEvent(containerEl, "pointerup", (event) => {
+        if (event.pointerId === this.#dragging?.pointerId) this.#release();
+        else this.#deps.creation?.release(event);
+      }),
+    );
+    // A drag on a grip moves the mark, and an image capture draws a
+    // rectangle; the browser selects no text under either.
+    this.#surfaces.use(
+      registerDomEvent(containerEl, "selectstart", (event) => {
+        if (this.#dragging || this.#deps.creation?.capturing)
+          event.preventDefault();
+      }),
+    );
+    this.#surfaces.use(
+      registerDomEvent(containerEl, "pointercancel", (event) => {
+        if (event.pointerId === this.#dragging?.pointerId) this.#cancelDrag();
+        else this.#deps.creation?.cancel(event);
+      }),
+    );
+    // A capture the browser took away without a cancel ends the stroke or the
+    // rectangle it held; a release lets go of its own first, so its loss
+    // matches nothing.
+    this.#surfaces.use(
+      registerDomEvent(containerEl, "lostpointercapture", (event) => {
+        if (event.pointerId !== this.#dragging?.pointerId)
+          this.#deps.creation?.cancel(event);
       }),
     );
     this.#surfaces.use(
@@ -188,9 +394,17 @@ export class MarkSelection implements Disposable {
     // Scrolling does not bubble, so the page's own scroller is reached by
     // listening on the way down.
     this.#surfaces.use(
-      registerDomEvent(containerEl, "scroll", () => this.sync(), {
-        capture: true,
-      }),
+      registerDomEvent(
+        containerEl,
+        "scroll",
+        () => {
+          // The page moved under a pointer that did not, so the drag is
+          // measured again against the page where it now stands.
+          if (this.#dragging) this.#propose();
+          this.#deps.popup.sync();
+        },
+        { capture: true },
+      ),
     );
     this.#surfaces.use(
       registerDomEvent(
@@ -210,67 +424,35 @@ export class MarkSelection implements Disposable {
     this.#surfaces.use(
       registerDomEvent(containerEl.doc, "selectionchange", () => {
         if (
-          this.#selected !== null &&
+          this.#selectedKey() !== null &&
           !selectionCollapsed(this.#deps.containerEl)
         )
           this.#apply(null);
         this.#deps.creation?.changed();
       }),
     );
+    const state = this.#deps.surfaceState;
     this.#surfaces.defer(
-      this.#deps.annotations.on("capability-changed", () => {
-        if (!this.#commenting) this.#popup?.refresh();
-        else this.#updateCommentControls();
+      state.subscribe(selectSelectedKey, (key) => {
+        this.#deps.repaint();
+        this.#deps.report(key === null ? [] : [key]);
       }),
     );
+    // The editor goes with the episode it was opened for: a closed editor, a
+    // stepped or dropped selection, and a hidden or conflicting draft alike.
     this.#surfaces.defer(
-      this.#deps.annotations.on("mutation-changed", (annotationKey) => {
-        if (annotationKey === this.#selected && !this.#commenting) {
-          this.#popup?.refresh();
-        }
-      }),
+      state.subscribe(
+        selectFloatingHead,
+        ({ kind, commenting }) => {
+          if (kind !== "selected" || !commenting) this.#closeCommentEditor();
+          if (kind !== "selected" || commenting) this.#closeCommentView();
+        },
+        { equalityFn: sameFlat },
+      ),
     );
     this.#surfaces.defer(
-      this.#deps.annotations.on("comment-draft-changed", (annotationKey) => {
-        if (annotationKey !== this.#selected) return;
-        if (!this.#commenting) {
-          this.#popup?.refresh();
-          return;
-        }
-        const draft = this.#deps.annotations.commentDraftFor(annotationKey);
-        if (draft?.state.kind === "conflict") {
-          if (!this.#commenting) return;
-          this.#closeCommentEditor();
-          this.#popup?.refresh();
-          return;
-        }
-        this.#updateCommentControls();
-        if (!draft) return;
-        if (!this.#commentEditor) return;
-        if (this.#commentEditor.value === draft.text) return;
-        const { selectionStart, selectionEnd } = this.#commentEditor;
-        this.#commentEditor.value = draft.text;
-        this.#commentEditor.setSelectionRange(
-          Math.min(selectionStart, draft.text.length),
-          Math.min(selectionEnd, draft.text.length),
-        );
-      }),
+      state.subscribe(selectSelectedDraft, (draft) => this.#patchEditor(draft)),
     );
-    this.#surfaces.defer(
-      this.#deps.annotations.on("comment-draft-hidden", (annotationKey) => {
-        if (annotationKey !== this.#selected || !this.#commenting) return;
-        this.#closeCommentEditor();
-        this.#popup?.refresh();
-      }),
-    );
-    this.#surfaces.defer(
-      this.#deps.annotations.on("annotation-deleted", (annotationKey) => {
-        if (annotationKey !== this.#selected) return;
-        this.#closeCommentEditor();
-        this.#apply(null);
-      }),
-    );
-    this.#surfaces.defer(() => this.#close());
   }
 
   /**
@@ -282,56 +464,21 @@ export class MarkSelection implements Disposable {
    *   passage, not for a popover over a document they have only just arrived
    *   at. The suppression lasts until the next selection, so a page re-render
    *   does not summon the popup the Landing declined.
+   * @param options.commenting whether the popup opens on its comment editor,
+   *   as it does for a note just placed.
    */
   select(
     annotationKey: string | null,
-    { popup = true }: { popup?: boolean } = {},
+    { popup = true, commenting = false }: SelectOptions = {},
   ): void {
-    this.#apply(annotationKey, null, { popup });
-  }
-
-  /**
-   * The page moved or its marks were rebuilt: a selection whose Annotation is
-   * gone stands down, and the popup follows whatever is left. A mark that
-   * scrolled out of the reader hides the popup and keeps the selection.
-   */
-  sync(): void {
-    this.#deps.creation?.sync();
-    const key = this.#selected;
-    if (key !== null && !this.#deps.records().some((one) => one.key === key)) {
-      this.#apply(null);
-      return;
-    }
-    const anchor = this.#quiet ? null : this.#anchor();
-    if (!anchor) {
-      this.#close();
-      return;
-    }
-    if (this.#popup) {
-      this.#popup.retarget(anchor);
-      return;
-    }
-    const popup = new MarkPopup({
-      parent: this.#deps.parent,
-      anchor,
-      render: (row) => this.#renderRow(row),
-    });
-    popup.register(() => {
-      if (this.#popup === popup) this.#popup = null;
-    });
-    this.#popup = popup;
+    this.#apply(annotationKey, null, { popup, commenting });
   }
 
   [Symbol.dispose](): void {
     this.#submitAndCloseCommentEditor();
+    this.#closeCommentView();
     this.#surfaces.dispose();
-  }
-
-  #close(): void {
-    this.#submitAndCloseCommentEditor();
-    const popup = this.#popup;
-    this.#popup = null;
-    popup?.hide();
+    if (this.#selectedKey() !== null) selectMark(this.#deps.surfaceState, null);
   }
 
   #apply(
@@ -341,30 +488,36 @@ export class MarkSelection implements Disposable {
       point: Point;
       stack: readonly string[];
     } | null = null,
-    { popup = true }: { popup?: boolean } = {},
+    { popup = true, commenting = false }: SelectOptions = {},
   ): void {
-    if (key !== this.#selected) {
+    if (key !== this.#selectedKey()) {
       this.#submitAndCloseCommentEditor();
     }
-    this.#quiet = !popup && key !== null;
-    this.#selected = key;
     this.#at =
       key !== null && at !== null
-        ? { key, pageIndex: at.pageIndex, point: at.point }
+        ? { pageIndex: at.pageIndex, point: at.point }
         : null;
-    this.#stack = at?.stack ?? (key === null ? [] : [key]);
-    this.#deps.repaint();
-    this.#deps.report(key === null ? [] : [key]);
-    // A popup that was already open now stands over another mark, so it says
-    // what that one offers; one this opened drew itself as it was built.
-    const open = this.#popup;
-    this.sync();
-    if (open !== null && this.#popup === open) open.refresh();
+    selectMark(this.#deps.surfaceState, key, {
+      stack: at?.stack,
+      quiet: !popup,
+      commenting,
+    });
   }
 
   #click(event: MouseEvent): void {
     const pressed = this.#pressedAt;
     this.#pressedAt = null;
+    // A Mark Handle is a grip, not a mark: its click keeps the selection.
+    if (this.#pressedHandle) {
+      this.#pressedHandle = false;
+      return;
+    }
+    // A press of the ink tool on a mark — a stroke, a dot, or one that editing
+    // blocked — selects nothing.
+    if (this.#pressedStroke) {
+      this.#pressedStroke = false;
+      return;
+    }
     const client = { x: event.clientX, y: event.clientY };
     const page = this.#pageUnder(client);
     const outcome = resolveMarkClick({
@@ -373,13 +526,13 @@ export class MarkSelection implements Disposable {
       collapsed: selectionCollapsed(this.#deps.containerEl),
       onLink: linkUnder(event.target),
       altKey: event.altKey,
-      previous: this.#at,
+      previous: this.#previous(),
     });
     switch (outcome.kind) {
       case "ignore":
         return;
       case "deselect":
-        if (this.#selected !== null) this.#apply(null);
+        if (this.#selectedKey() !== null) this.#apply(null);
         return;
       case "select":
         if (page) {
@@ -393,16 +546,32 @@ export class MarkSelection implements Disposable {
     }
   }
 
+  /**
+   * Escape on the selected mark, which the Reader Keymap runs ahead of the
+   * creation surfaces: a drag is taken back first, and the selection only
+   * after.
+   *
+   * @returns whether a mark was selected to step back from.
+   */
+  escape(): boolean {
+    if (this.#selectedKey() === null) return false;
+    if (this.#dragging) this.#cancelDrag();
+    else this.#apply(null);
+    return true;
+  }
+
   #key(event: KeyboardEvent): void {
-    // A modified keystroke belongs to Obsidian's own commands, and one inside a
-    // text field belongs to the field.
-    if (event.ctrlKey || event.metaKey || inTextEntry(event.target)) return;
+    // A keystroke inside a text field belongs to the field.
+    if (inTextEntry(event.target)) return;
+    if (this.#geometryKey(event)) return;
+    // A modified keystroke belongs to Obsidian's own commands.
+    if (event.ctrlKey || event.metaKey) return;
     const walk =
       event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : null;
     if (walk !== null) {
       const next = stepReadingOrder(
         readingOrder(this.#deps.records()),
-        this.#selected,
+        this.#selectedKey(),
         walk,
       );
       if (next === null) return;
@@ -411,13 +580,8 @@ export class MarkSelection implements Disposable {
       this.#deps.navigate(next);
       return;
     }
-    const key = this.#selected;
+    const key = this.#selectedKey();
     if (key === null) return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      this.#apply(null);
-      return;
-    }
     // `1`–`8` are the palette's own order, so the key and the swatch can never
     // name different colours.
     const swatch = ANNOTATION_COLORS[Number(event.key) - 1];
@@ -430,7 +594,7 @@ export class MarkSelection implements Disposable {
       // listener, which hears every key of the shared edit keymap.
       if (this.#live()) {
         event.preventDefault();
-        this.#write(this.#deps.annotations.patchColor(key, swatch));
+        this.#recolor(key, swatch);
       }
       return;
     }
@@ -443,213 +607,545 @@ export class MarkSelection implements Disposable {
   }
 
   /**
-   * A press outside the reader and outside the popup stands the selection down.
-   * The press that opens the popup lands inside the reader, so it is never one
-   * of these.
+   * A modified arrow on the selected mark is one Geometry Edit, committed
+   * through the same path a released drag takes: `Shift` steps a text range's
+   * end, `Mod`+`Shift` its start, `Shift` resizes an image or ink, and `Alt`
+   * nudges it. While editing is not live the key does nothing, and while an
+   * earlier edit is still on its way it waits for none.
+   *
+   * @returns whether the key was one of these, which no other verb then takes.
+   */
+  #geometryKey(event: KeyboardEvent): boolean {
+    const arrow = ARROWS[event.key];
+    const record = this.#record();
+    if (!arrow || !record || !isEditablePosition(record.position)) return false;
+    const mod = Keymap.isModifier(event, "Mod");
+    // `Ctrl` on macOS, and `Meta` elsewhere, is no platform key.
+    if ((event.ctrlKey || event.metaKey) && !mod) return false;
+    const edit = keyEdit(record.type, {
+      shift: event.shiftKey,
+      alt: event.altKey,
+      mod,
+    });
+    if (!edit) return false;
+    if (!this.#live() || this.#dragging || selectAdjust(this.#state()))
+      return true;
+    event.preventDefault();
+    const store = this.#deps.surfaceState;
+    const { position } = record;
+    if (edit.kind === "range") {
+      if (position.kind !== "pdf-rects") return true;
+      beginAdjust(store, { grip: edit.end, from: [0, 0] });
+      const ask = ++this.#rangeAsk;
+      this.#adjusting = this.#deps
+        .adjustRange({ position, end: edit.end, step: arrow })
+        .then((selected) => {
+          if (ask !== this.#rangeAsk) return;
+          if (!selected) {
+            cancelAdjust(store);
+            return;
+          }
+          moveAdjust(store, rectsPositionOf(selected), selected.text);
+          return this.#settle(record.key, "keyboard");
+        })
+        .catch((error: unknown) => {
+          cancelAdjust(store);
+          logger.warn("Could not step a highlight's range", {
+            error,
+            annotationKey: record.key,
+          });
+        });
+      return true;
+    }
+    const page = this.#deps.pageAt(position.pageIndex);
+    const keyed =
+      page &&
+      keyedPosition({
+        confirmed: position,
+        edit: edit.kind,
+        arrow,
+        viewBox: page.viewport.viewBox,
+        text: this.#textContent(record),
+      });
+    if (!keyed) return true;
+    beginAdjust(store, { grip: keyed.grip, from: [0, 0] });
+    moveAdjust(store, keyed.proposal);
+    const saving = this.#settle(record.key, "keyboard");
+    if (saving) this.#adjusting = saving;
+    return true;
+  }
+
+  /**
+   * A press on a Mark Handle, or on the body of a selected mark that moves by
+   * it, begins a Geometry Edit: the pointer is captured and the browser's text
+   * selection is held off for the drag. Every other press, and every press
+   * while editing is not live, is left to the click and the text selection.
+   */
+  #pressGrip(event: PointerEvent): void {
+    this.#pressedHandle = false;
+    const record = this.#record();
+    if (event.button !== 0 || !record || !this.#live()) return;
+    const state = this.#state();
+    if (!state.marksVisible || selectAdjust(state)) return;
+    if (!isEditablePosition(record.position)) return;
+    const client = { x: event.clientX, y: event.clientY };
+    const range = this.#rangeGripAt(record, client);
+    if (range) {
+      this.#holdGrip(event, range.grip, range.from);
+      return;
+    }
+    const page = this.#deps.pageAt(record.position.pageIndex);
+    if (!page) return;
+    const box = drawnBoxOf(page);
+    const point = unitsOf(box, { x: event.clientX, y: event.clientY });
+    const rect = bodyRect(record);
+    let body: [number, number, number, number] | null = null;
+    if (rect) {
+      const a = unitPointOf(page, [rect[0], rect[1]]);
+      const b = unitPointOf(page, [rect[2], rect[3]]);
+      body = [
+        Math.min(a.x, b.x),
+        Math.min(a.y, b.y),
+        Math.max(a.x, b.x),
+        Math.max(a.y, b.y),
+      ];
+    }
+    const grip = gripAt({
+      handles: handleLayout(record).map(({ grip, at }) => ({
+        grip,
+        at: unitPointOf(page, at),
+      })),
+      body,
+      point,
+      radius: HANDLE_RADIUS * unitsPerPixel(page),
+    });
+    if (!grip) return;
+    this.#holdGrip(event, grip, pdfPointOf(page, point));
+  }
+
+  /**
+   * Captures the pointer for a Geometry Edit on a grip, holding the browser's
+   * text selection off for the drag.
+   */
+  #holdGrip(event: PointerEvent, grip: Grip, from: PdfPoint): void {
+    event.preventDefault();
+    this.#deps.containerEl.setPointerCapture(event.pointerId);
+    this.#dragging = {
+      pointerId: event.pointerId,
+      client: { x: event.clientX, y: event.clientY },
+    };
+    this.#pressedHandle = grip !== "body";
+    beginAdjust(this.#deps.surfaceState, { grip, from });
+  }
+
+  /**
+   * The end of a selected highlight's or underline's range a press takes, and
+   * where it fell on the page of that end's strip; `null` for a press on
+   * neither, or on a mark that is no text range.
+   */
+  #rangeGripAt(
+    record: AnnotationRecord,
+    client: Point,
+  ): { grip: RangeGrip; from: PdfPoint } | null {
+    const { pageIndex } = record.position as EditablePosition;
+    const page = this.#deps.pageAt(pageIndex);
+    if (!page) return null;
+    const handles = rangeHandles(
+      record,
+      RANGE_HANDLE_PADDING * unitsPerPixel(page),
+      this.#deps.textRotation,
+    );
+    const pointOn = (index: number): PdfPoint | null => {
+      const on = this.#deps.pageAt(index);
+      return on && pdfPointAt(on, client);
+    };
+    const grip = rangeGripAt(handles, pointOn);
+    const on = handles.find((handle) => handle.grip === grip);
+    const from = on && pointOn(on.pageIndex);
+    return grip && from ? { grip, from } : null;
+  }
+
+  /** Proposes the position the held grip reaches at the pointer's last place. */
+  #propose(): void {
+    const record = this.#record();
+    const adjust = selectAdjust(this.#state());
+    const dragging = this.#dragging;
+    if (!record || !adjust || !dragging) return;
+    if (!isEditablePosition(record.position)) return;
+    // Read on every move, so a scroll or a zoom mid-drag is measured against
+    // the page as it now stands.
+    if (isRangeGrip(adjust.grip)) {
+      this.#proposeRange(record, adjust.grip, dragging.client);
+      return;
+    }
+    const page = this.#deps.pageAt(record.position.pageIndex);
+    if (!page) return;
+    moveAdjust(
+      this.#deps.surfaceState,
+      proposePosition({
+        confirmed: record.position,
+        grip: adjust.grip,
+        from: adjust.from,
+        to: pdfPointAt(page, dragging.client),
+        viewBox: page.viewport.viewBox,
+        text: this.#textContent(record),
+      }),
+    );
+  }
+
+  /**
+   * What a selected free-text box's height is fitted to: its text, measured
+   * in the font it is drawn in. Every mark's edit takes it; only a free-text
+   * box's measures anything.
+   */
+  #textContent(record: AnnotationRecord): FreeTextContent {
+    const win = this.#deps.containerEl.win;
+    return {
+      comment: freeTextOf(record),
+      measure: (text, fontSize) => interfaceFont(win).measure(text, fontSize),
+    };
+  }
+
+  /**
+   * Asks the document for the range the held end reaches at a client point,
+   * and proposes it once it answers, unless a later ask or a cancel came
+   * first. A point no range can be placed from keeps the last proposal.
+   *
+   * The start is measured on the Annotation's own page, however far off it
+   * the pointer is, since the start never leaves that page. The end is
+   * measured on that page or the next, whichever box the pointer is nearer.
+   */
+  #proposeRange(
+    record: AnnotationRecord,
+    grip: RangeGrip,
+    client: Point,
+  ): void {
+    const position = record.position;
+    if (position.kind !== "pdf-rects") return;
+    const pages = [position.pageIndex, position.pageIndex + 1].flatMap(
+      (pageIndex) => {
+        const page = this.#deps.pageAt(pageIndex);
+        return page ? [{ pageIndex, page, box: drawnBoxOf(page) }] : [];
+      },
+    );
+    const [on] = pages
+      .filter(
+        ({ pageIndex }) => grip === "end" || pageIndex === position.pageIndex,
+      )
+      .toSorted(
+        (a, b) => boxDistance(a.box, client) - boxDistance(b.box, client),
+      );
+    if (!on) return;
+    const [x, y] = pdfPointAt(on.page, client);
+    const ask = ++this.#rangeAsk;
+    const store = this.#deps.surfaceState;
+    this.#ranging = this.#deps
+      .adjustRange({
+        position,
+        end: grip,
+        point: { pageIndex: on.pageIndex, x, y },
+      })
+      .then((selected) => {
+        if (ask !== this.#rangeAsk || !selected) return;
+        moveAdjust(store, rectsPositionOf(selected), selected.text);
+      })
+      .catch((error: unknown) => {
+        logger.warn("Could not place a highlight's dragged range", {
+          error,
+          annotationKey: record.key,
+        });
+      });
+  }
+
+  #release(): void {
+    this.#dragging = releaseCapture(this.#deps.containerEl, this.#dragging);
+    const key = this.#selectedKey();
+    const store = this.#deps.surfaceState;
+    const settle = () =>
+      key === null ? undefined : this.#settle(key, "pointer");
+    // A text range's last proposal may still be on its way from the document.
+    const adjust = selectAdjust(store.getState());
+    if (isRangeGrip(adjust?.grip ?? "body")) {
+      this.#adjusting = this.#ranging.then(settle);
+      return;
+    }
+    // A free-text box whose side was dragged is sized to its text once more.
+    const record = this.#record();
+    const page =
+      record &&
+      isEditablePosition(record.position) &&
+      this.#deps.pageAt(record.position.pageIndex);
+    if (adjust?.phase === "dragging" && record && page) {
+      moveAdjust(
+        store,
+        releasedPosition({
+          proposal: adjust.proposal,
+          grip: adjust.grip,
+          viewBox: page.viewport.viewBox,
+          text: this.#textContent(record),
+        }),
+      );
+    }
+    const saving = settle();
+    if (saving) this.#adjusting = saving;
+  }
+
+  /**
+   * Ends the adjustment and saves its proposal, unless it changed nothing.
+   *
+   * @param input what made the edit, which the Annotation History groups a run
+   *   of keyboard edits by.
+   * @returns the save, or `undefined` where nothing is written.
+   */
+  #settle(key: string, input: GeometryInput): Promise<void> | undefined {
+    const store = this.#deps.surfaceState;
+    const text = selectAdjust(store.getState())?.text;
+    const proposal = endAdjust(store);
+    return proposal
+      ? this.#saveGeometry(key, proposal, { text, input })
+      : undefined;
+  }
+
+  #cancelDrag(): void {
+    this.#dragging = releaseCapture(this.#deps.containerEl, this.#dragging);
+    this.#rangeAsk++;
+    cancelAdjust(this.#deps.surfaceState);
+  }
+
+  /**
+   * Saves a released proposal with the Sort Index recomputed from it. The mark
+   * draws the proposal until the write settles: a saved one then draws the
+   * record Zotero answered, and any other snaps back to the confirmed record,
+   * with a failure told at the notice seam.
+   */
+  async #saveGeometry(
+    key: string,
+    proposal: EditablePosition,
+    { text, input }: { text?: string; input: GeometryInput },
+  ): Promise<void> {
+    const store = this.#deps.surfaceState;
+    const end = () => {
+      if (selectAdjust(store.getState())?.proposal === proposal)
+        cancelAdjust(store);
+    };
+    // The capability can lapse while the pointer is down.
+    if (!this.#live()) {
+      end();
+      this.#deps.gestures.reportBlockedGesture();
+      return;
+    }
+    const sortIndex = await this.#deps.sortIndex(proposal);
+    if (sortIndex === null) {
+      end();
+      return;
+    }
+    const outcome = this.#deps.annotations.patchGeometry(
+      key,
+      {
+        position: proposal,
+        sortIndex,
+        ...(text !== undefined && { text }),
+      },
+      input,
+    );
+    this.#write(outcome, (failure, now) =>
+      m.pdf_adjust_failed({ reason: writeFailureReason(failure, now) }),
+    );
+    if ((await outcome).kind === "idle") await this.#deps.refreshed();
+    end();
+  }
+
+  /**
+   * A press outside the reader, the popup and every surface that drives the
+   * selection stands the selection down. The press that opens the popup lands
+   * inside the reader, so it is never one of these.
    */
   #outsidePress(event: PointerEvent): void {
-    if (this.#selected === null) return;
+    if (this.#selectedKey() === null) return;
     const target = event.target as Node | null;
     if (this.#deps.containerEl.contains(target)) return;
-    if (this.#popup?.hoverEl.contains(target) === true) return;
+    if (this.#deps.popup.contains(target)) return;
+    if (this.#deps.selectionSurfaces.onSelectionSurface(target)) return;
     this.#apply(null);
   }
 
-  #renderRow(content: HTMLElement): void {
-    const annotation = this.#record();
-    if (!annotation) return;
-    if (this.#commenting) {
-      this.#renderCommentEditor(content, annotation);
+  /**
+   * The popup's content in selected mode, for the popup host: the row, with the
+   * comment editor under it while it is open. The editor is built into an
+   * empty content element only; a refresh redraws the row and patches the
+   * editor's controls, leaving its caret alone.
+   */
+  renderPopup(content: HTMLElement): void {
+    const input = selectSelectedRowInput(this.#state());
+    if (!input) return;
+    if (input.commenting && content.firstChild && this.#commentEditor) {
+      if (this.#row) this.#renderVerbs(this.#row, input);
+      this.#updateCommentControls();
       return;
     }
-    content.empty();
-    const column = content.createDiv({
-      cls: ["zt:flex", "zt:flex-col", "zt:gap-1"],
-    });
-    const row = column.createDiv({
-      cls: ["zt:flex", "zt:items-center", "zt:gap-0.5"],
-    });
-    const stack = this.#stack.indexOf(annotation.key);
-    const mutation = this.#deps.annotations.mutationFor(annotation.key);
-    renderMarkPopupRow(
-      row,
-      markPopupRow({
-        annotation,
-        capability: this.#capability(),
-        mutation,
-        stack: {
-          index: stack === -1 ? 0 : stack,
-          total: stack === -1 ? 1 : this.#stack.length,
-        },
-        now: this.#deps.now(),
-      }),
-      (id, node) => this.#activate(id, node, annotation),
+    this.#closeCommentEditor();
+    const column = this.#renderRow(content, input);
+    if (input.commenting) this.#renderCommentEditor(column, input);
+  }
+
+  #renderVerbs(row: HTMLElement, input: MarkPopupRowInput): void {
+    renderMarkPopupRow(row, markPopupRow(input), (id, node) =>
+      this.#activate(id, node, input.annotation),
     );
+  }
+
+  /** @returns the column the row stands in, which the editor joins. */
+  #renderRow(content: HTMLElement, input: MarkPopupRowInput): HTMLElement {
+    const { annotation, mutation } = input;
+    const { column, row } = popupColumn(content);
+    this.#row = row;
+    this.#renderVerbs(row, input);
+    // The open editor is where the draft stands, so neither panel repeats it.
+    if (input.commenting) return column;
     // The popup announces a held draft on the same rule the card does, and
     // carries the same verbs: the two surfaces reach one shared draft, so a
-    // decision offered on one is offered on the other.
+    // decision offered on one is offered on the other. Like the card, it
+    // shows the held draft in the stored comment's place.
     const held = heldCommentDraft(
       this.#capability(),
       this.#deps.annotations.commentDraftFor(annotation.key),
-      this.#deps.now(),
+      input.now,
     );
     if (held) {
-      const preview = column.createDiv({
-        cls: ["zt-pdf-comment-sheet", "zt:mt-2"],
+      this.#closeCommentView();
+      renderHeldDraftPanel(column.createDiv(), held, {
+        surface: "popup",
+        actions: this.#draftActions(annotation),
+        onOpen: () => this.#toggleComment(annotation),
       });
-      preview.createDiv({
-        cls: "zt:text-xs zt:text-muted-foreground",
-        text: m.annot_view_comment_draft(),
-      });
-      preview.createDiv({
-        cls: "zt:whitespace-pre-wrap zt:break-words zt:select-text",
-        text: held.text,
-      });
-      if (held.reason !== null) {
-        preview.createDiv({
-          cls: "zt:text-xs zt:text-muted-foreground",
-          attr: { role: "status" },
-          text: held.reason,
-        });
-      }
-      const verbs = preview.createDiv({
-        cls: ["zt:flex", "zt:flex-wrap", "zt:gap-2", "zt:mt-2"],
-      });
-      for (const action of held.actions) {
-        const button = verbs.createEl("button", {
-          ...(action.primary && { cls: "mod-cta" }),
-          text: action.label,
-        });
-        button.disabled = !action.enabled;
-        button.addEventListener("click", () => {
-          this.#runHeldDraftAction(action.kind, annotation);
-        });
-      }
+    } else {
+      this.#renderCommentView(column, input);
     }
     if (
       mutation.kind === "conflict" &&
       mutation.conflict.write === "comment" &&
       this.#deps.annotations.commentDraftFor(annotation.key)
     ) {
-      this.#renderCommentConflict(column, annotation, mutation.conflict);
+      renderConflictPanel(
+        column.createDiv(),
+        conflictPanel(mutation.conflict),
+        {
+          surface: "popup",
+          live: editingLive(this.#capability()),
+          actions: this.#draftActions(annotation),
+        },
+      );
     }
+    return column;
   }
 
-  /** One verb from the held-draft panel, which both surfaces offer. */
-  #runHeldDraftAction(
-    kind: HeldDraftAction["kind"],
-    annotation: AnnotationRecord,
-  ): void {
-    if (kind === "save") {
-      this.#write(this.#deps.annotations.submitComment(annotation.key));
-    } else if (kind === "allow-editing") {
-      this.#deps.gestures.allowEditing();
-    } else {
-      this.#deps.annotations.discardCommentDraft(annotation.key);
-    }
-    this.#popup?.refresh();
-  }
-
-  #renderCommentEditor(
-    content: HTMLElement,
-    annotation: AnnotationRecord,
-  ): void {
-    const draft =
-      this.#deps.annotations.commentDraftFor(annotation.key) ??
-      this.#deps.annotations.editComment(annotation.key);
-    if (!draft) {
-      this.#closeCommentEditor();
-      this.#renderRow(content);
+  /**
+   * The stored comment under the row, which a click opens the editor on, as
+   * the card's does. The frame is moved into the new column when a refresh
+   * leaves the comment and its editability as they were.
+   */
+  #renderCommentView(column: HTMLElement, input: MarkPopupRowInput): void {
+    const { annotation } = input;
+    const html = annotation.comment;
+    if (html === null) {
+      this.#closeCommentView();
       return;
     }
-    this.#commentEditorLife?.[Symbol.dispose]();
-    const life = new DisposableStack();
-    this.#commentEditorLife = life;
-    content.empty();
-    const column = content.createDiv({
-      cls: ["zt:flex", "zt:flex-col", "zt:gap-1"],
+    const editable =
+      editingBlockedReason(input.capability, input.mutation, input.now) ===
+      null;
+    const kept = this.#commentView;
+    if (
+      kept?.key === annotation.key &&
+      kept.html === html &&
+      kept.editable === editable
+    ) {
+      column.append(kept.frame);
+      return;
+    }
+    this.#closeCommentView();
+    const frame = column.createDiv();
+    const dispose = renderCommentView(frame, {
+      surface: "popup",
+      render: this.#deps.renderComment,
+      html,
+      editable,
+      onOpen: () => this.#toggleComment(annotation),
     });
-    const editor = renderCommentSheet(column, {
-      value: draft.text,
-      onSave: (comment) => {
-        this.#deps.annotations.editComment(annotation.key, comment);
-        this.#write(this.#deps.annotations.submitComment(annotation.key));
+    this.#commentView = { frame, key: annotation.key, html, editable, dispose };
+  }
+
+  #closeCommentView(): void {
+    this.#commentView?.dispose();
+    this.#commentView = null;
+  }
+
+  /** The panels' verbs, bound to the repository's own writes. */
+  #draftActions(annotation: AnnotationRecord): CommentDraftActions {
+    const { annotations, gestures } = this.#deps;
+    const discard = () => annotations.discardCommentDraft(annotation.key);
+    return {
+      save: () => this.#write(annotations.submitComment(annotation.key)),
+      allowEditing: () => gestures.allowEditing(),
+      discard,
+      applyAgain: () =>
+        this.#write(annotations.retryCommentDraft(annotation.key)),
+      discardConflict: discard,
+    };
+  }
+
+  #renderCommentEditor(column: HTMLElement, input: MarkPopupRowInput): void {
+    const { annotation } = input;
+    const draft =
+      selectSelectedDraft(this.#state()) ??
+      this.#deps.annotations.editComment(annotation.key);
+    if (!draft) {
+      // Closed in the state too, so a later refresh does not try again.
+      setCommenting(this.#deps.surfaceState, false);
+      return;
+    }
+    const close = (): void => {
+      this.#submitCommentEditor(annotation, true);
+      setCommenting(this.#deps.surfaceState, false);
+    };
+    this.#commentEditor = renderCommentSheet(
+      column.createDiv(),
+      {
+        app: this.#deps.app,
+        surface: "popup",
+        value: draft.text,
+        onChange: (text) =>
+          this.#deps.annotations.editComment(annotation.key, text),
+        onSubmit: () => this.#submitCommentEditor(annotation),
+        onSave: () => this.#submitCommentEditor(annotation),
+        onCancel: close,
+        onLeave: close,
+        // The row's own verbs stand beside the editor, so reaching one is not
+        // leaving it.
+        within: column,
       },
-      onCancel: () => {
-        this.#submitCommentEditor(annotation, true);
-        this.#closeCommentEditor();
-        this.#popup?.refresh();
-      },
-      nativeSubmit: true,
-    });
-    editor.addEventListener("input", () => {
-      this.#deps.annotations.editComment(annotation.key, editor.value);
-    });
-    this.#commentEditor = editor;
-    const feedback = column.createDiv({
-      cls: "zt:flex zt:flex-wrap zt:items-center zt:gap-2 zt:mt-2",
-    });
-    feedback.createSpan({
-      cls: "zt:flex-1 zt:min-w-0 zt:text-xs zt:text-muted-foreground",
-      attr: { "data-comment-status": "", role: "status" },
-    });
-    const save = feedback.createEl("button", {
-      text: m.annot_view_comment_save(),
-      attr: { "data-comment-save": "", type: "button" },
-    });
-    save.addEventListener("click", () => this.#submitCommentEditor(annotation));
-    this.#updateCommentControls();
-    life.use(
-      bindEditorSubmitScope(editor, this.#deps.scope, () =>
-        this.#submitCommentEditor(annotation),
-      ),
+      this.#commentControls(annotation),
     );
-    life.use(
-      registerDomEvent(editor, "blur", (event) => {
-        const target = event.relatedTarget as Node | null;
-        if (target?.instanceOf(Node) && column.contains(target)) return;
-        const controls = commentEditorControls(
-          this.#capability(),
-          this.#deps.annotations.commentDraftFor(annotation.key),
-          this.#deps.now(),
-        );
-        if (controls.manual || controls.readOnly) return;
-        this.#submitCommentEditor(annotation, true);
-        this.#closeCommentEditor();
-        this.#popup?.refresh();
-      }),
+  }
+
+  #commentControls(annotation: AnnotationRecord) {
+    return commentEditorControls(
+      this.#capability(),
+      this.#deps.annotations.commentDraftFor(annotation.key),
+      this.#state().capabilityAt,
     );
-    editor.focus();
-    editor.setSelectionRange(editor.value.length, editor.value.length);
   }
 
   #updateCommentControls(): void {
-    const editor = this.#commentEditor;
     const annotation = this.#record();
-    if (!editor || !annotation) return;
-    const controls = commentEditorControls(
-      this.#capability(),
-      this.#deps.annotations.commentDraftFor(annotation.key),
-      this.#deps.now(),
-    );
-    editor.readOnly = controls.readOnly;
-    const status = editor.parentElement?.querySelector<HTMLElement>(
-      "[data-comment-status]",
-    );
-    if (status) status.textContent = controls.hint ?? "";
-    const save = editor.parentElement?.querySelector<HTMLButtonElement>(
-      "[data-comment-save]",
-    );
-    if (save) {
-      save.toggle(controls.manual);
-      save.disabled = controls.saveDisabled;
-    }
+    if (!annotation) return;
+    this.#commentEditor?.update(this.#commentControls(annotation));
   }
 
   #submitCommentEditor(annotation: AnnotationRecord, automatic = false): void {
     const editor = this.#commentEditor;
     if (!editor) return;
-    this.#deps.annotations.editComment(annotation.key, editor.value);
+    this.#deps.annotations.editComment(annotation.key, editor.text());
     this.#write(
       this.#deps.annotations.submitComment(annotation.key, { automatic }),
     );
@@ -664,44 +1160,19 @@ export class MarkSelection implements Disposable {
   }
 
   #closeCommentEditor(): void {
-    this.#commentEditorLife?.[Symbol.dispose]();
-    this.#commentEditorLife = null;
-    this.#commenting = false;
+    this.#commentEditor?.[Symbol.dispose]();
     this.#commentEditor = null;
   }
 
-  #renderCommentConflict(
-    content: HTMLElement,
-    annotation: AnnotationRecord,
-    conflict: Extract<MutationState, { kind: "conflict" }>["conflict"],
-  ): void {
-    const panel = conflictPanel(conflict);
-    const box = content.createDiv({
-      cls: ["zt:flex", "zt:flex-col", "zt:gap-1", "zt:px-2", "zt:pb-1"],
-    });
-    box.createDiv({ cls: "zt:font-medium", text: panel.title });
-    for (const value of panel.values) {
-      box.createDiv({ text: `${value.label}: ${value.value}` });
-    }
-    const actions = box.createDiv({
-      cls: ["zt:flex", "zt:flex-wrap", "zt:gap-2", "zt:mt-2"],
-    });
-    for (const action of panel.actions) {
-      const button = actions.createEl("button", {
-        cls: "mod-cta",
-        text: action.label,
-      });
-      button.disabled =
-        action.kind !== "discard" && !editingLive(this.#capability());
-      button.addEventListener("click", () => {
-        if (action.kind === "apply-again") {
-          this.#write(this.#deps.annotations.retryCommentDraft(annotation.key));
-        } else {
-          this.#deps.annotations.discardCommentDraft(annotation.key);
-        }
-        this.#popup?.refresh();
-      });
-    }
+  /**
+   * Takes the shared draft into the open editor, keeping the caret, so the
+   * Annotation View and the popup edit one draft.
+   */
+  #patchEditor(draft: CommentDraft | null): void {
+    const editor = this.#commentEditor;
+    if (!editor) return;
+    this.#updateCommentControls();
+    if (draft) editor.editor.setText(draft.text);
   }
 
   #activate(
@@ -714,15 +1185,13 @@ export class MarkSelection implements Disposable {
       case "color":
         showMenuAtButton(
           colorMenu(annotation.color, (hex) =>
-            this.#write(annotations.patchColor(annotation.key, hex)),
+            this.#recolor(annotation.key, hex),
           ),
           node,
         );
         return;
       case "comment":
-        this.#commenting = true;
-        annotations.editComment(annotation.key);
-        this.#popup?.refresh();
+        this.#toggleComment(annotation);
         return;
       case "copy":
         if (annotation.text === null) return;
@@ -743,17 +1212,24 @@ export class MarkSelection implements Disposable {
     }
   }
 
+  /** The comment verb is a toggle: pressed again, it stores and closes. */
+  #toggleComment(annotation: AnnotationRecord): void {
+    if (this.#commentEditor) {
+      this.#submitCommentEditor(annotation, true);
+      setCommenting(this.#deps.surfaceState, false);
+    } else if (this.#deps.annotations.editComment(annotation.key)) {
+      setCommenting(this.#deps.surfaceState, true);
+    }
+  }
+
+  #recolor(key: string, color: string): void {
+    recordColorUse(this.#deps.surfaceState, this.#deps.colors, color);
+    this.#write(this.#deps.annotations.patchColor(key, color));
+  }
+
   /** Forward through the stack under the last click, wrapping at its end. */
   #step(): void {
-    const at = this.#at;
-    if (at === null || this.#stack.length < 2) return;
-    const next =
-      this.#stack[(this.#stack.indexOf(at.key) + 1) % this.#stack.length]!;
-    this.#apply(next, {
-      pageIndex: at.pageIndex,
-      point: at.point,
-      stack: this.#stack,
-    });
+    stepStack(this.#deps.surfaceState);
   }
 
   /**
@@ -761,12 +1237,19 @@ export class MarkSelection implements Disposable {
    * the notice is raised here, once, naming the reason. Nothing was drawn ahead
    * of Zotero, so a failure needs no undo.
    *
+   * @param message the notice for a failure; a Geometry Edit names itself.
    * @see apps/obsidian/policies/ui-seams.md
    */
-  #write(outcome: Promise<MutationState>): void {
+  #write(
+    outcome: Promise<MutationState>,
+    message: (
+      failure: WriteFailure,
+      now: Temporal.Instant,
+    ) => string = writeFailureMessage,
+  ): void {
     void outcome.then((state) => {
       if (state.kind !== "failed") return;
-      new BaseNotice(writeFailureMessage(state.failure, this.#deps.now()));
+      new BaseNotice(message(state.failure, this.#deps.now()));
     });
   }
 
@@ -775,12 +1258,31 @@ export class MarkSelection implements Disposable {
   }
 
   #capability(): EditingCapability {
-    return this.#deps.annotations.capabilityFor(this.#deps.attachmentKey);
+    return this.#state().capability;
+  }
+
+  #state(): ReaderSurfaceState {
+    return this.#deps.surfaceState.getState();
+  }
+
+  #selectedKey(): string | null {
+    return selectSelectedKey(this.#state());
   }
 
   #record(): AnnotationRecord | null {
-    const key = this.#selected;
-    return this.#deps.records().find((record) => record.key === key) ?? null;
+    return selectSelectedRowInput(this.#state())?.annotation ?? null;
+  }
+
+  /** Whether an Annotation Mark lies under a press. */
+  #onMark(event: PointerEvent): boolean {
+    const page = this.#pageUnder({ x: event.clientX, y: event.clientY });
+    return page !== null && marksAtPoint(page.targets, page.at).length > 0;
+  }
+
+  /** What is selected now, and where the click that selected it fell. */
+  #previous(): MarkSelectionPoint | null {
+    const key = this.#selectedKey();
+    return key !== null && this.#at !== null ? { key, ...this.#at } : null;
   }
 
   /** The page with marks under a client point, and where the point fell on it. */
@@ -795,13 +1297,13 @@ export class MarkSelection implements Disposable {
   }
 
   /**
-   * Where the popup hangs: the bottom centre of the selected mark's union rect,
-   * recomputed from the page as it stands now — a page re-render can wipe the
-   * mark while the popup is open. `null` once the mark is off screen, which
-   * hides the popup and keeps the selection.
+   * Where the popup hangs, for the popup host: the bottom centre of the
+   * selected mark's union rect, recomputed from the page as it stands now — a
+   * page re-render can wipe the mark while the popup is open. `null` once the
+   * mark is off screen, which hides the popup and keeps the selection.
    */
-  #anchor(): Point | null {
-    const key = this.#selected;
+  anchor(): Point | null {
+    const key = this.#selectedKey();
     if (key === null) return null;
     for (const [index, annotations] of this.#deps.marks()) {
       const drawn = annotations.filter(
@@ -817,17 +1319,36 @@ export class MarkSelection implements Disposable {
   }
 }
 
-function pageBoxOf(page: OverlayPageView): PageBox {
-  const rect = page.div.getBoundingClientRect();
-  const unit = pageUnitSize(page);
+/** The arrow keys, by the way they point on the page. */
+const ARROWS: Partial<Record<string, Arrow>> = {
+  ArrowLeft: "left",
+  ArrowRight: "right",
+  ArrowUp: "up",
+  ArrowDown: "down",
+};
+
+/** The position a highlight's or underline's placed range stores. */
+function rectsPositionOf(selected: SelectedText): EditablePosition {
   return {
-    left: rect.left,
-    top: rect.top,
-    width: rect.width,
-    height: rect.height,
-    unitWidth: unit.width,
-    unitHeight: unit.height,
+    kind: "pdf-rects",
+    pageIndex: selected.pageIndex,
+    rects: selected.rects.map(([x1, y1, x2, y2]) => [x1, y1, x2, y2]),
+    ...(selected.nextPageRects && {
+      nextPageRects: selected.nextPageRects.map(([x1, y1, x2, y2]) => [
+        x1,
+        y1,
+        x2,
+        y2,
+      ]),
+    }),
   };
+}
+
+/** How far a client point lies outside a page's drawn box; `0` inside it. */
+function boxDistance(box: PageBox, { x, y }: Point): number {
+  const dx = Math.max(box.left - x, 0, x - (box.left + box.width));
+  const dy = Math.max(box.top - y, 0, y - (box.top + box.height));
+  return Math.hypot(dx, dy);
 }
 
 /**

@@ -210,6 +210,8 @@ export class ZoteroLocalApiClient extends Service<void> {
   readonly #emitter = createNanoEvents<ZoteroLocalApiEvents>();
 
   #state: ProbeState = { kind: "unprobed" };
+  /** What the last probe announced, so a probe that learned nothing new stays quiet. */
+  #announced: ProbeState = { kind: "unprobed" };
   /** The probe in flight, so concurrent demands cost one request. */
   #probing: Promise<void> | null = null;
   /** A Freshness Signal that arrived while that probe ran, still to announce. */
@@ -610,7 +612,13 @@ export class ZoteroLocalApiClient extends Service<void> {
       was: previous.kind,
       state: this.#state,
     });
-    this.#emitter.emit("capability-changed");
+    // A focus inside the reader probes again, and every surface redraws on the
+    // announcement — so one that changed nothing would rebuild a control under
+    // the pointer and swallow the press.
+    if (!sameProbeState(this.#announced, this.#state)) {
+      this.#announced = this.#state;
+      this.#emitter.emit("capability-changed");
+    }
     // The one place a swapped database is both detected and settled. A read
     // that quarantined the session and a write that answered `412` both send a
     // probe looking, so every route to a change ends here.
@@ -949,6 +957,22 @@ function noSessionFailure(
  * A probe that was cancelled by its own deadline has learned the same thing a
  * refused connection teaches: Zotero is not answering.
  */
+/**
+ * Whether two probe answers leave every surface with the same capability: the
+ * same server and authorization, or the same kind of failure.
+ */
+function sameProbeState(a: ProbeState, b: ProbeState): boolean {
+  if (a.kind === "available" && b.kind === "available") {
+    return (
+      a.source.serverID === b.source.serverID && a.authorized === b.authorized
+    );
+  }
+  if (a.kind === "unavailable" && b.kind === "unavailable") {
+    return a.failure.kind === b.failure.kind;
+  }
+  return a.kind === b.kind;
+}
+
 function probeFailure(failure: LocalApiFailure): LocalApiFailure {
   return failure.kind === "unknown-outcome" ? { kind: "unreachable" } : failure;
 }

@@ -36,6 +36,18 @@ export interface MenuAnchor {
 }
 
 /**
+ * Whether a menu opened from a trigger inside `el` stands now, as
+ * `setParentElement` marks it. The menu itself hangs from the document body,
+ * so this is how a surface tells a press on its own menu from one outside it.
+ */
+export function hasActiveMenu(el: HTMLElement): boolean {
+  return (
+    el.hasClass(ACTIVE_MENU_CLASS) ||
+    el.querySelector(`.${ACTIVE_MENU_CLASS}`) !== null
+  );
+}
+
+/**
  * Open `menu` under the box in `anchor`, 2px below it, aligned to the named
  * edge — the same geometry {@link showMenuAtButton} uses.
  *

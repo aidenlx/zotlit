@@ -1,5 +1,11 @@
 // Zotero's reader-side Sort Index, computed from a page's Structured
 // Characters and the rectangle an Annotation covers.
+//
+// Ported from zotero/reader `src/pdf/selection.js` and `src/pdf/lib/utilities.js`
+// at 132bb787937a540a09513415fd507654eb0e88f9. pdf-reader is copyright ©
+// 2020–2021 Corporation for Digital Scholarship, Vienna, Virginia, USA, and
+// distributed under the GNU Affero General Public License v3; ZotLit's
+// AGPL-3.0-or-later grant lets this port be distributed under AGPL v3.
 
 import type { Rect, StructuredChar, StructuredPage } from "@/chars";
 

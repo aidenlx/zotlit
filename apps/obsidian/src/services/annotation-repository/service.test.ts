@@ -31,10 +31,18 @@ import type {
   ClientOptions,
   WireAnnotation,
   ZoteroAnswers,
+  ZoteroRequest,
 } from "@/services/zotero-local-api/__fixtures__";
+import {
+  cardControls,
+  commentEditorControls,
+  editingBlockedReason,
+} from "@/views/annot-view/card-controls";
 
+import { JOIN_WINDOW_MS } from "./history";
 import { AnnotationRepository } from "./service";
 import type { AnnotationList, AnnotationRepositoryDeps } from "./service";
+import type { GeometryEdit } from "./write";
 
 const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
 
@@ -133,6 +141,7 @@ it("reads every type the Fixture carries on one attachment, in Zotero's reading 
     text: null,
     parentKey: "RGRPDF24",
     pageLabel: "1",
+    sortIndex: "00000|000191|00088",
     tags: [],
     position: {
       kind: "pdf-text",
@@ -2216,7 +2225,10 @@ it("shows a write in flight as pending, and draws no provisional value", async (
 
   const running = repository.patchColor("PUPR5FG5", "#5fb236");
 
-  expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "pending" });
+  expect(repository.mutationFor("PUPR5FG5")).toEqual({
+    kind: "pending",
+    write: "color",
+  });
   expect(colorOf(repository.peek("RGRPDF24")?.value ?? null, "PUPR5FG5")).toBe(
     "#2ea8e5",
   );
@@ -2676,6 +2688,159 @@ it("refuses a create under the Zotero DB source before any request", async () =>
   expect(requests).toHaveLength(sent);
 });
 
+/**
+ * The Fixture's image, 40 points wider on the right, and the Sort Index its
+ * new top-left gives. The seed rect is `[48.75, 395.509, 570, 743.723]`.
+ */
+const WIDER_IMAGE = {
+  position: { pageIndex: 1, rects: [[48.75, 395.509, 610, 743.723]] },
+  sortIndex: "00001|001860|00048",
+};
+
+it("saves a Geometry Edit in one patch and publishes the record Zotero answers", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, requests } = await writable(stack, {
+    item: () =>
+      annotationItem(afterWrite("FDRFQ7C2", { ...WIDER_IMAGE, version: 21 })),
+  });
+  const announced: unknown[] = [];
+  stack.defer(
+    repository.on("excerpt-pixels-changed", (record) =>
+      announced.push([record.key, record.position]),
+    ),
+  );
+  const sent = requests.length;
+
+  const outcome = await repository.patchGeometry(
+    "FDRFQ7C2",
+    WIDER_IMAGE,
+    "pointer",
+  );
+
+  expect(outcome).toEqual({ kind: "idle" });
+  const [write] = requests.slice(sent);
+  expect([write?.method, write?.url.pathname]).toEqual([
+    "PATCH",
+    "/api/users/0/items/FDRFQ7C2",
+  ]);
+  expect(JSON.parse(write?.body ?? "")).toEqual({
+    version: 12,
+    annotationPosition: '{"pageIndex":1,"rects":[[48.75,395.509,610,743.723]]}',
+    annotationSortIndex: "00001|001860|00048",
+  });
+  const moved = { kind: "pdf-rects", ...WIDER_IMAGE.position };
+  expect(
+    (await repository.read("RGRPDF24"))?.annotations.find(
+      ({ key }) => key === "FDRFQ7C2",
+    )?.position,
+  ).toEqual(moved);
+  expect(announced).toEqual([["FDRFQ7C2", moved]]);
+});
+
+it("refuses a Geometry Edit longer than Zotero accepts before the write", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, requests } = await writable(stack);
+  const sent = requests.length;
+
+  const outcome = await repository.patchGeometry(
+    "FDRFQ7C2",
+    {
+      position: {
+        pageIndex: 1,
+        width: 2,
+        paths: [Array.from({ length: 12_000 }, () => 123.456)],
+      },
+      sortIndex: "00001|000000|00047",
+    },
+    "pointer",
+  );
+
+  expect(outcome).toEqual({
+    kind: "failed",
+    failure: { kind: "position-too-large" },
+  });
+  expect(requests).toHaveLength(sent);
+});
+
+it("puts Zotero's geometry beside the attempted Geometry Edit on a 412", async () => {
+  await using stack = new AsyncDisposableStack();
+  const moved = { pageIndex: 1, rects: [[60, 400, 570, 743.723]] };
+  const { repository } = await writable(stack, {
+    write: () => staleVersion(),
+    item: () =>
+      annotationItem(afterWrite("FDRFQ7C2", { position: moved, version: 30 })),
+  });
+  const conflicted: string[] = [];
+  stack.defer(repository.on("write-conflict", (key) => conflicted.push(key)));
+
+  const outcome = await repository.patchGeometry(
+    "FDRFQ7C2",
+    WIDER_IMAGE,
+    "pointer",
+  );
+
+  expect(outcome).toEqual({
+    kind: "conflict",
+    conflict: {
+      write: "geometry",
+      attempted: WIDER_IMAGE,
+      input: "pointer",
+      fresh: { position: { kind: "pdf-rects", ...moved }, text: null },
+    },
+  });
+  expect(conflicted).toEqual(["FDRFQ7C2"]);
+});
+
+it("resolves a Geometry Edit silently where Zotero already holds that geometry", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await writable(stack, {
+    write: () => staleVersion(),
+    item: () =>
+      annotationItem(afterWrite("FDRFQ7C2", { ...WIDER_IMAGE, version: 30 })),
+  });
+
+  const outcome = await repository.patchGeometry(
+    "FDRFQ7C2",
+    {
+      ...WIDER_IMAGE,
+      // Unrounded, as the reader computes it; Zotero stores three decimals.
+      position: {
+        pageIndex: 1,
+        rects: [[48.750_2, 395.509, 610.000_4, 743.723]],
+      },
+    },
+    "pointer",
+  );
+
+  expect(outcome).toEqual({ kind: "idle" });
+});
+
+it("sends a conflicted Geometry Edit again against the version Zotero holds now", async () => {
+  await using stack = new AsyncDisposableStack();
+  let refuse = true;
+  const { repository, requests } = await writable(stack, {
+    write: () => (refuse ? staleVersion() : writeAccepted()),
+    item: () =>
+      annotationItem(
+        afterWrite("FDRFQ7C2", {
+          position: { pageIndex: 1, rects: [[60, 400, 570, 743.723]] },
+          version: 30,
+        }),
+      ),
+  });
+  await repository.patchGeometry("FDRFQ7C2", WIDER_IMAGE, "pointer");
+  refuse = false;
+  const sent = requests.length;
+
+  await repository.retryWrite("FDRFQ7C2");
+
+  expect(JSON.parse(requests[sent]!.body ?? "")).toEqual({
+    version: 30,
+    annotationPosition: '{"pageIndex":1,"rects":[[48.75,395.509,610,743.723]]}',
+    annotationSortIndex: "00001|001860|00048",
+  });
+});
+
 it("refuses a position longer than Zotero accepts before the write", async () => {
   await using stack = new AsyncDisposableStack();
   const { repository, requests } = await writable(stack);
@@ -2940,3 +3105,1421 @@ it("drops a comment draft holding what Zotero already has", async () => {
     requests.slice(sent).filter(({ method }) => method === "PATCH"),
   ).toHaveLength(0);
 });
+
+it("draws nothing while an automatic comment save is in flight", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const answer = Promise.withResolvers<Response>();
+    let saved = "";
+    const { repository } = await writable(stack, {
+      write: (request) => {
+        saved = String(JSON.parse(request.body ?? "{}").annotationComment);
+        return answer.promise;
+      },
+      item: () =>
+        annotationItem(afterWrite("PUPR5FG5", { comment: saved, version: 21 })),
+    });
+    // What the card and the Mark Popup draw from this Annotation's state.
+    const drawn = () => {
+      const capability = repository.capabilityFor("RGRPDF24");
+      const mutation = repository.mutationFor("PUPR5FG5");
+      const editor = commentEditorControls(
+        capability,
+        repository.commentDraftFor("PUPR5FG5"),
+        NOW,
+      );
+      return {
+        verbs: cardControls({
+          capability,
+          mutation,
+          hasComment: true,
+          now: NOW,
+        }),
+        blocked: editingBlockedReason(capability, mutation, NOW),
+        hint: editor.hint,
+        saveDisabled: editor.saveDisabled,
+      };
+    };
+    repository.editComment("PUPR5FG5", "typed");
+    const resting = drawn();
+    const frames: unknown[] = [];
+    stack.defer(repository.on("mutation-changed", () => frames.push(drawn())));
+    stack.defer(
+      repository.on("comment-draft-changed", () => frames.push(drawn())),
+    );
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    frames.push(drawn());
+    answer.resolve(writeAccepted());
+    await vi.waitFor(() =>
+      expect(repository.commentDraftFor("PUPR5FG5")).toBeNull(),
+    );
+
+    expect(frames.length).toBeGreaterThan(1);
+    for (const frame of frames) expect(frame).toEqual(resting);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+// #region annotation history
+
+/**
+ * A Zotero that keeps what a patch sends, Annotation by Annotation, so every
+ * later read answers the colour and comment the last accepted write asked for.
+ * What the Local API holds is the oracle an undo is read through; nothing here
+ * asks the history what it thinks.
+ */
+function zoteroHolding(annotationKey: string) {
+  const held = new Map<string, WireAnnotation>(
+    ROUGIER_ANNOTATIONS.map((entry) => [entry.key, { ...entry }]),
+  );
+  if (!held.has(annotationKey)) {
+    throw new Error(`No fixture annotation ${annotationKey}`);
+  }
+  let refuseOnce = false;
+  const list = () =>
+    ROUGIER_ANNOTATIONS.flatMap((entry) => {
+      const stored = held.get(entry.key);
+      return stored ? [stored] : [];
+    });
+  /** The item key a route names, which is its last segment. */
+  const keyOf = ({ url }: ZoteroRequest) =>
+    url.pathname.slice(url.pathname.lastIndexOf("/") + 1);
+  return {
+    answers: {
+      children: () => annotationPage(list()),
+      item: (request) => {
+        const stored = held.get(keyOf(request));
+        return stored ? annotationItem(stored) : notFound();
+      },
+      write: (request) => {
+        if (refuseOnce) {
+          refuseOnce = false;
+          return staleVersion();
+        }
+        const key = keyOf(request);
+        const stored = held.get(key);
+        const { annotationColor, annotationComment } = JSON.parse(
+          request.body ?? "{}",
+        ) as { annotationColor?: string; annotationComment?: string };
+        const patched =
+          typeof annotationColor === "string" ||
+          typeof annotationComment === "string";
+        if (stored && patched) {
+          held.set(key, {
+            ...stored,
+            ...(typeof annotationColor === "string" && {
+              color: annotationColor,
+            }),
+            ...(typeof annotationComment === "string" && {
+              comment: annotationComment,
+            }),
+            version: stored.version + 1,
+          });
+        }
+        return writeAccepted();
+      },
+    } satisfies ZoteroAnswers,
+    /** What the Local API holds for the Annotation, or `null` once erased. */
+    get held(): WireAnnotation | null {
+      return held.get(annotationKey) ?? null;
+    },
+    /** What it holds for any other Annotation of the same Attachment. */
+    heldOf(key: string): WireAnnotation | null {
+      return held.get(key) ?? null;
+    },
+    /** An edit made in Zotero itself, beside ZotLit. */
+    changeInZotero(patch: Partial<WireAnnotation>): void {
+      const stored = held.get(annotationKey);
+      if (stored) {
+        held.set(annotationKey, {
+          ...stored,
+          ...patch,
+          version: stored.version + 1,
+        });
+      }
+    },
+    /** An erase in Zotero itself. */
+    eraseInZotero(): void {
+      held.delete(annotationKey);
+    },
+    /** Refuse the next write with the `412` a moved object answers. */
+    refuseNextWrite(): void {
+      refuseOnce = true;
+    },
+  };
+}
+
+it("puts the previous colour back when a colour pick is undone", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+  expect(zotero.held?.color).toBe("#ff6666");
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "stepped",
+    annotationKey: "PUPR5FG5",
+  });
+  expect(zotero.held?.color).toBe("#2ea8e5");
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+  expect(repository.canRedo("RGRPDF24")).toBe(true);
+});
+
+it("builds the redo from the undo's own confirmed result", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+  await repository.undo("RGRPDF24");
+
+  expect(await repository.redo("RGRPDF24")).toEqual({
+    kind: "stepped",
+    annotationKey: "PUPR5FG5",
+  });
+  expect(zotero.held?.color).toBe("#ff6666");
+  // Stepping back and forth compares the two states as often as asked.
+  expect(await repository.undo("RGRPDF24")).toMatchObject({
+    kind: "stepped",
+  });
+  expect(zotero.held?.color).toBe("#2ea8e5");
+});
+
+it("discards the redo steps when a new edit is recorded", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+  await repository.undo("RGRPDF24");
+
+  await repository.patchColor("PUPR5FG5", "#5fb236");
+
+  expect(repository.canRedo("RGRPDF24")).toBe(false);
+  expect(await repository.redo("RGRPDF24")).toEqual({ kind: "idle" });
+  expect(zotero.held?.color).toBe("#5fb236");
+});
+
+it("undoes where Zotero already holds the colour the undo would write", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  // Someone put the first colour back in Zotero. The undo's write is refused
+  // over the version it moved, and the re-read finds the very value the undo
+  // asked for: an equal value is a match, so no false conflict appears.
+  zotero.refuseNextWrite();
+  zotero.changeInZotero({ color: "#2ea8e5" });
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "stepped",
+    annotationKey: "PUPR5FG5",
+  });
+  expect(zotero.held?.color).toBe("#2ea8e5");
+  expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
+  expect(repository.canRedo("RGRPDF24")).toBe(true);
+});
+
+it("undoes a colour pick when Zotero changed another field of it", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  zotero.changeInZotero({ comment: "Read again in Zotero" });
+  await repository.refresh("RGRPDF24");
+
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held?.color).toBe("#2ea8e5");
+  expect(zotero.held?.comment).toBe("Read again in Zotero");
+});
+
+it("writes nothing and drops the step where Zotero holds another colour", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  zotero.changeInZotero({ color: "#5fb236" });
+  await repository.refresh("RGRPDF24");
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "changed",
+    annotationKey: "PUPR5FG5",
+  });
+  expect(zotero.held?.color).toBe("#5fb236");
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
+it("drops a step whose Annotation Zotero no longer holds", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  zotero.eraseInZotero();
+  await repository.refresh("RGRPDF24");
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "changed",
+    annotationKey: "PUPR5FG5",
+  });
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
+it("sends the undo again after a 412 that only moved the version", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository, requests } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+  const sent = requests.length;
+
+  zotero.refuseNextWrite();
+
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held?.color).toBe("#2ea8e5");
+  // The refused write, and the one that landed after the re-read.
+  expect(
+    requests.slice(sent).filter(({ method }) => method === "PATCH"),
+  ).toHaveLength(2);
+});
+
+it("drops the step where the 412 answers a colour changed in Zotero", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  // The list ZotLit holds still says `#ff6666`; Zotero moved under the write.
+  zotero.refuseNextWrite();
+  zotero.changeInZotero({ color: "#5fb236" });
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "changed",
+    annotationKey: "PUPR5FG5",
+  });
+  expect(zotero.held?.color).toBe("#5fb236");
+  expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
+it("drops the step and names the failure where the undo does not land", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  let deny = false;
+  const { repository } = await writable(stack, {
+    ...zotero.answers,
+    write: (request) => (deny ? notFound() : zotero.answers.write(request)),
+  });
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  deny = true;
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "failed",
+    failure: { kind: "not-found" },
+  });
+  expect(zotero.held?.color).toBe("#ff6666");
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
+it("keeps the last 100 steps and drops the oldest first", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+
+  // 101 picks make 101 steps; the first one recorded is the one that goes.
+  const picks = Array.from(
+    { length: 101 },
+    (_unused, index) => `#0000${index.toString(16).padStart(2, "0")}`,
+  );
+  for (const color of picks) await repository.patchColor("PUPR5FG5", color);
+
+  let stepped = 0;
+  while ((await repository.undo("RGRPDF24")).kind === "stepped") stepped += 1;
+
+  expect(stepped).toBe(100);
+  // The oldest step held `#2ea8e5`; with it gone, the walk ends on the first
+  // colour this test picked.
+  expect(zotero.held?.color).toBe(picks[0]);
+});
+
+it("does nothing while a write on the Attachment is still on its way", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const gate = Promise.withResolvers<void>();
+  let holdNext = false;
+  const { repository } = await writable(stack, {
+    ...zotero.answers,
+    write: async (request) => {
+      if (holdNext) {
+        holdNext = false;
+        await gate.promise;
+      }
+      return zotero.answers.write(request);
+    },
+  });
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  holdNext = true;
+  const slow = repository.patchColor("PUPR5FG5", "#5fb236");
+
+  expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
+  gate.resolve();
+  await slow;
+  // The key was not queued: nothing ran when the save landed.
+  expect(zotero.held?.color).toBe("#5fb236");
+  expect(repository.canUndo("RGRPDF24")).toBe(true);
+});
+
+it("does nothing while an undo of the same Attachment is running", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const gate = Promise.withResolvers<void>();
+  let holdNext = false;
+  const { repository } = await writable(stack, {
+    ...zotero.answers,
+    write: async (request) => {
+      if (holdNext) {
+        holdNext = false;
+        await gate.promise;
+      }
+      return zotero.answers.write(request);
+    },
+  });
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+  await repository.patchColor("PUPR5FG5", "#5fb236");
+
+  holdNext = true;
+  const running = repository.undo("RGRPDF24");
+
+  expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
+  gate.resolve();
+  expect(await running).toMatchObject({ kind: "stepped" });
+  expect(zotero.held?.color).toBe("#ff6666");
+});
+
+it("answers blocked and writes nothing without the Editing Capability", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  let running = true;
+  const { repository } = await writable(stack, {
+    ...zotero.answers,
+    root: () => (running ? rootOk() : localApiDisabled()),
+  });
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  running = false;
+  await repository.probe();
+
+  expect(await repository.undo("RGRPDF24")).toEqual({ kind: "blocked" });
+  expect(zotero.held?.color).toBe("#ff6666");
+  // The step stands, so the key works again once editing is allowed.
+  expect(repository.canUndo("RGRPDF24")).toBe(true);
+});
+
+it("records nothing while no PDF view holds a history open", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+  repository.openHistory("RGRPDF24");
+
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+  expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
+  expect(zotero.held?.color).toBe("#ff6666");
+});
+
+it("shares one history across two views, and ends it with the last", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+  const changed: string[] = [];
+  stack.defer(repository.on("history-changed", (key) => changed.push(key)));
+
+  repository.openHistory("RGRPDF24");
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  // The second view closed; the history the first one opened stands.
+  repository.closeHistory("RGRPDF24");
+  expect(repository.canUndo("RGRPDF24")).toBe(true);
+
+  repository.closeHistory("RGRPDF24");
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+  expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
+  expect(zotero.held?.color).toBe("#ff6666");
+  expect(new Set(changed)).toEqual(new Set(["RGRPDF24"]));
+});
+
+it("keeps the history across a Refresh and a change made in Zotero", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  zotero.changeInZotero({ comment: "Noted in Zotero" });
+  await repository.refresh("RGRPDF24");
+
+  expect(repository.canUndo("RGRPDF24")).toBe(true);
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held?.color).toBe("#2ea8e5");
+});
+
+/**
+ * A Zotero that keeps everything ZotLit writes to it — a colour patch, an
+ * erase, and a create it answers with a key of its own, as Zotero 10 does with
+ * the client-supplied key it refuses. What the Local API holds is the oracle
+ * every assertion below reads through; nothing asks the history what it thinks.
+ */
+function zoteroLibrary() {
+  const held = new Map<string, WireAnnotation>(
+    ROUGIER_ANNOTATIONS.map((entry) => [entry.key, { ...entry }]),
+  );
+  /** The keys this Zotero hands out, in order, for the creates it takes. */
+  const generated = ["MADE2345", "MADE2346", "MADE2347", "MADE2348"];
+  let made = 0;
+  const keyOf = ({ url }: ZoteroRequest): string =>
+    url.pathname.split("/").at(-1) ?? "";
+  const create = (request: ZoteroRequest): Response => {
+    const [body] = JSON.parse(request.body ?? "[]") as {
+      annotationType: string;
+      annotationText?: string;
+      annotationComment: string;
+      annotationColor: string;
+      annotationPageLabel: string;
+      annotationSortIndex: string;
+      annotationPosition: string;
+    }[];
+    const key = generated[made++];
+    if (!body || key === undefined) return createRefused();
+    const record: WireAnnotation = {
+      key,
+      version: 60 + made,
+      type: body.annotationType,
+      ...(body.annotationText !== undefined && { text: body.annotationText }),
+      comment: body.annotationComment,
+      color: body.annotationColor,
+      pageLabel: body.annotationPageLabel,
+      sortIndex: body.annotationSortIndex,
+      position: JSON.parse(body.annotationPosition),
+    };
+    held.set(key, record);
+    return createAccepted(record);
+  };
+  return {
+    answers: {
+      children: () => annotationPage([...held.values()]),
+      item: (request) => {
+        const entry = held.get(keyOf(request));
+        return entry ? annotationItem(entry) : notFound();
+      },
+      write: (request) => {
+        if (request.method === "POST") return create(request);
+        const key = keyOf(request);
+        const entry = held.get(key);
+        if (request.method === "DELETE") {
+          if (!entry) return notFound();
+          held.delete(key);
+          return writeAccepted();
+        }
+        const patch = JSON.parse(request.body ?? "{}") as {
+          annotationColor?: string;
+          annotationComment?: string;
+        };
+        if (entry) {
+          held.set(key, {
+            ...entry,
+            ...(patch.annotationColor !== undefined && {
+              color: patch.annotationColor,
+            }),
+            ...(patch.annotationComment !== undefined && {
+              comment: patch.annotationComment,
+            }),
+            version: entry.version + 1,
+          });
+        }
+        return writeAccepted();
+      },
+    } satisfies ZoteroAnswers,
+    /** What the Local API holds for one Annotation, or `null` once erased. */
+    at(key: string): WireAnnotation | null {
+      return held.get(key) ?? null;
+    },
+    /** An edit made in Zotero itself, beside ZotLit. */
+    changeInZotero(key: string, patch: Partial<WireAnnotation>): void {
+      const entry = held.get(key);
+      if (entry)
+        held.set(key, { ...entry, ...patch, version: entry.version + 1 });
+    },
+    /** An erase in Zotero itself. */
+    eraseInZotero(key: string): void {
+      held.delete(key);
+    },
+    /** An Annotation put back in Zotero itself, out of its trash. */
+    restoreInZotero(key: string): void {
+      const seed = ROUGIER_ANNOTATIONS.find((entry) => entry.key === key);
+      if (seed) held.set(key, { ...seed, version: seed.version + 1 });
+    },
+  };
+}
+
+/** One part of an ink stroke, as the reader hands it to the repository. */
+const INK_DRAFT = {
+  type: "ink",
+  color: "#5fb236",
+  comment: "",
+  text: "",
+  pageLabel: "1",
+  sortIndex: "00000|000040|00100",
+  position: { pageIndex: 0, width: 2, paths: [[10, 20, 11, 21, 12, 22]] },
+} as const;
+
+it("erases the Annotation a create made, and redoes it under a new key", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+
+  const made = await repository.createAnnotation("RGRPDF24", DRAFT);
+  expect(made).toEqual({ kind: "created", annotationKey: "MADE2345" });
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "removed",
+    annotationKey: "MADE2345",
+    pageIndex: 0,
+  });
+  expect(zotero.at("MADE2345")).toBeNull();
+
+  expect(await repository.redo("RGRPDF24")).toEqual({
+    kind: "stepped",
+    annotationKey: "MADE2346",
+  });
+  // Zotero names the Annotation itself, so the redo brings it back elsewhere.
+  expect(zotero.at("MADE2345")).toBeNull();
+  expect(zotero.at("MADE2346")).toMatchObject({
+    type: "highlight",
+    color: "#ffd400",
+    text: "Identify Your Message",
+  });
+  expect(repository.canUndo("RGRPDF24")).toBe(true);
+});
+
+it("puts a deleted Annotation back under a new key, with what it held", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  const seed = zotero.at("HRK7BG32")!;
+
+  expect(await repository.deleteAnnotation("HRK7BG32")).toEqual({
+    kind: "idle",
+  });
+  expect(zotero.at("HRK7BG32")).toBeNull();
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "stepped",
+    annotationKey: "MADE2345",
+  });
+  expect(zotero.at("MADE2345")).toMatchObject({
+    type: seed.type,
+    color: seed.color,
+    comment: seed.comment,
+    pageLabel: seed.pageLabel,
+    sortIndex: seed.sortIndex,
+    position: seed.position,
+  });
+
+  // The redo erases the Annotation the restore made, not the key that is gone.
+  expect(await repository.redo("RGRPDF24")).toEqual({
+    kind: "removed",
+    annotationKey: "MADE2345",
+    pageIndex: 0,
+  });
+  expect(zotero.at("MADE2345")).toBeNull();
+});
+
+it("answers for the new key in every step of both stacks after a restore", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+  await repository.deleteAnnotation("PUPR5FG5");
+
+  // The delete comes back first, under a key Zotero picked.
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "stepped",
+    annotationKey: "MADE2345",
+  });
+  expect(zotero.at("MADE2345")?.color).toBe("#ff6666");
+
+  // The colour step below it was recorded against the old key and takes the
+  // new one, so the second press puts the first colour back on the restore.
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "stepped",
+    annotationKey: "MADE2345",
+  });
+  expect(zotero.at("MADE2345")?.color).toBe("#2ea8e5");
+  expect(zotero.at("PUPR5FG5")).toBeNull();
+});
+
+it("takes every Annotation of one gesture in a single step", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+
+  // One stroke split at the position ceiling: two creates, one gesture.
+  await repository.createAnnotation("RGRPDF24", INK_DRAFT, { group: "ink-1" });
+  await repository.createAnnotation(
+    "RGRPDF24",
+    { ...INK_DRAFT, sortIndex: "00000|000040|00101" },
+    { group: "ink-1" },
+  );
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "removed",
+    annotationKey: "MADE2345",
+    pageIndex: 0,
+  });
+  expect(zotero.at("MADE2345")).toBeNull();
+  expect(zotero.at("MADE2346")).toBeNull();
+  // One step held both, so there is nothing left to undo.
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
+it("writes nothing where one Annotation of a gesture moved in Zotero", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository, requests } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.createAnnotation("RGRPDF24", INK_DRAFT, { group: "ink-1" });
+  await repository.createAnnotation(
+    "RGRPDF24",
+    { ...INK_DRAFT, sortIndex: "00000|000040|00101" },
+    { group: "ink-1" },
+  );
+
+  zotero.changeInZotero("MADE2346", { color: "#a28ae5" });
+  await repository.refresh("RGRPDF24");
+  const sent = requests.length;
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "changed",
+    annotationKey: "MADE2346",
+  });
+  // The first part of the stroke stands: the step is taken whole or not at all.
+  expect(zotero.at("MADE2345")).not.toBeNull();
+  expect(zotero.at("MADE2346")).not.toBeNull();
+  expect(
+    requests.slice(sent).filter(({ method }) => method === "DELETE"),
+  ).toHaveLength(0);
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
+it("drops the step where Zotero already erased the Annotation a create made", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository, requests } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.createAnnotation("RGRPDF24", DRAFT);
+
+  zotero.eraseInZotero("MADE2345");
+  await repository.refresh("RGRPDF24");
+  const sent = requests.length;
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "changed",
+    annotationKey: "MADE2345",
+  });
+  expect(
+    requests.slice(sent).filter(({ method }) => method === "DELETE"),
+  ).toHaveLength(0);
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
+it("drops the step where Zotero put the deleted Annotation back itself", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository, requests } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.deleteAnnotation("C94NJNYG");
+
+  // Zotero's own trash gave the note Annotation back while the reader stood
+  // open, so there is nothing for the undo to create.
+  zotero.restoreInZotero("C94NJNYG");
+  await repository.refresh("RGRPDF24");
+  const sent = requests.length;
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "changed",
+    annotationKey: "C94NJNYG",
+  });
+  expect(
+    requests.slice(sent).filter(({ method }) => method === "POST"),
+  ).toHaveLength(0);
+});
+
+// #endregion
+
+// #region geometry history
+
+/**
+ * A Zotero that keeps what every patch sends, on any Annotation of the
+ * Attachment: the geometry a Geometry Edit writes and the colour a pick
+ * writes. What the Local API holds is the oracle a Geometry Edit's undo is
+ * read through, field by field.
+ */
+function zoteroHoldingMarks() {
+  const held = new Map(
+    ROUGIER_ANNOTATIONS.map((entry) => [entry.key, { ...entry }]),
+  );
+  const keyed = (request: ZoteroRequest) =>
+    held.get(request.url.pathname.split("/").at(-1) ?? "") ?? null;
+  return {
+    answers: {
+      children: () => annotationPage([...held.values()]),
+      item: (request) => {
+        const record = keyed(request);
+        return record ? annotationItem(record) : notFound();
+      },
+      write: (request) => {
+        const record = keyed(request);
+        const body = JSON.parse(request.body ?? "{}") as {
+          annotationColor?: string;
+          annotationPosition?: string;
+          annotationSortIndex?: string;
+          annotationText?: string;
+        };
+        if (record) {
+          held.set(record.key, {
+            ...record,
+            ...(body.annotationColor !== undefined && {
+              color: body.annotationColor,
+            }),
+            ...(body.annotationPosition !== undefined && {
+              position: JSON.parse(body.annotationPosition) as unknown,
+            }),
+            ...(body.annotationSortIndex !== undefined && {
+              sortIndex: body.annotationSortIndex,
+            }),
+            ...(body.annotationText !== undefined && {
+              text: body.annotationText,
+            }),
+            version: record.version + 1,
+          });
+        }
+        return writeAccepted();
+      },
+    } satisfies ZoteroAnswers,
+    /** What the Local API holds for one Annotation. */
+    held: (annotationKey: string) => held.get(annotationKey) ?? null,
+  };
+}
+
+/** One Fixture Annotation as the Fixture seeded it, the state an undo aims at. */
+function seeded(annotationKey: string): WireAnnotation {
+  const record = ROUGIER_ANNOTATIONS.find(({ key }) => key === annotationKey);
+  if (!record) throw new Error(`No fixture annotation ${annotationKey}`);
+  return record;
+}
+
+/**
+ * Where a Geometry Edit puts each seeded mark, one step at a time: the whole
+ * rectangle a nudge or a drag moved down the page, and the Sort Index the new
+ * place gives it. Written out rather than computed, so the values a write
+ * rounds are the values the Local API is read back for.
+ */
+const MOVES: Readonly<Record<string, readonly GeometryEdit[]>> = {
+  PUPR5FG5: [
+    {
+      position: { pageIndex: 0, rects: [[265.833, 610.202, 374.503, 619.019]] },
+      sortIndex: "00000|002042|00170",
+    },
+    {
+      position: { pageIndex: 0, rects: [[265.833, 609.202, 374.503, 618.019]] },
+      sortIndex: "00000|002043|00170",
+    },
+  ],
+  K3JRFLFQ: [
+    {
+      position: {
+        pageIndex: 0,
+        rects: [
+          [67.011, 611.638, 211.485, 619.77],
+          [58.054, 600.98, 211.489, 609.112],
+          [58.054, 590.321, 153.781, 598.454],
+        ],
+      },
+      sortIndex: "00000|000435|00180",
+    },
+  ],
+};
+
+/** One step of {@link MOVES}, as a Geometry Edit the reader would have made. */
+function moved(annotationKey: string, step = 0): GeometryEdit {
+  const edit = MOVES[annotationKey]?.[step];
+  if (!edit) throw new Error(`No move ${step} for ${annotationKey}`);
+  return edit;
+}
+
+/** The geometry a landed {@link moved} leaves in Zotero. */
+function movedGeometry(annotationKey: string, step = 0) {
+  const { position, sortIndex } = moved(annotationKey, step);
+  return { position, sortIndex };
+}
+
+/**
+ * A clock the test moves itself, for the window a run of keyboard nudges joins
+ * inside. Nothing waits on real time.
+ */
+function clock() {
+  let at = NOW;
+  return {
+    now: () => at,
+    /** The pause between two presses. */
+    pass(milliseconds: number): void {
+      at = at.add({ milliseconds });
+    },
+  };
+}
+
+it("puts the position, Sort Index and quoted text back when a drag is undone", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHoldingMarks();
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  const seed = seeded("PUPR5FG5");
+
+  await repository.patchGeometry(
+    "PUPR5FG5",
+    { ...moved("PUPR5FG5"), text: "Identify Your" },
+    "pointer",
+  );
+  expect(zotero.held("PUPR5FG5")).toMatchObject({
+    ...movedGeometry("PUPR5FG5"),
+    text: "Identify Your",
+  });
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "stepped",
+    annotationKey: "PUPR5FG5",
+  });
+  expect(zotero.held("PUPR5FG5")).toMatchObject({
+    position: seed.position,
+    sortIndex: seed.sortIndex,
+    text: seed.text,
+  });
+
+  expect(await repository.redo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held("PUPR5FG5")).toMatchObject({
+    ...movedGeometry("PUPR5FG5"),
+    text: "Identify Your",
+  });
+});
+
+it("undoes a run of keyboard nudges inside the window as one step", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHoldingMarks();
+  const time = clock();
+  const { repository } = await writable(stack, zotero.answers, {
+    repositoryNow: time.now,
+  });
+  repository.openHistory("RGRPDF24");
+
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
+  time.pass(200);
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "keyboard");
+  expect(zotero.held("PUPR5FG5")).toMatchObject(movedGeometry("PUPR5FG5", 1));
+
+  // One press goes back to where the mark stood before the first nudge.
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held("PUPR5FG5")).toMatchObject({
+    position: seeded("PUPR5FG5").position,
+    sortIndex: seeded("PUPR5FG5").sortIndex,
+  });
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
+it("redoes a joined run of nudges as the one step it became", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHoldingMarks();
+  const time = clock();
+  const { repository } = await writable(stack, zotero.answers, {
+    repositoryNow: time.now,
+  });
+  repository.openHistory("RGRPDF24");
+
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
+  time.pass(200);
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "keyboard");
+  await repository.undo("RGRPDF24");
+
+  // One press forward puts the whole run back, at the place the last nudge of
+  // it left the mark.
+  expect(await repository.redo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held("PUPR5FG5")).toMatchObject(movedGeometry("PUPR5FG5", 1));
+  expect(repository.canRedo("RGRPDF24")).toBe(false);
+});
+
+it("discards the redo steps when a nudge joins the run on top", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHoldingMarks();
+  const time = clock();
+  const { repository } = await writable(stack, zotero.answers, {
+    repositoryNow: time.now,
+  });
+  repository.openHistory("RGRPDF24");
+
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
+  await repository.patchGeometry("K3JRFLFQ", moved("K3JRFLFQ"), "keyboard");
+  await repository.undo("RGRPDF24");
+  expect(repository.canRedo("RGRPDF24")).toBe(true);
+
+  // A nudge on the Annotation the step under the undone one names joins that
+  // step, and a joined edit is a new edit: what a redo would have put back is
+  // discarded, as it is for a step of its own.
+  time.pass(200);
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "keyboard");
+
+  expect(repository.canRedo("RGRPDF24")).toBe(false);
+  expect(await repository.redo("RGRPDF24")).toEqual({ kind: "idle" });
+});
+
+it("keeps a keyboard nudge made after the window as its own step", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHoldingMarks();
+  const time = clock();
+  const { repository } = await writable(stack, zotero.answers, {
+    repositoryNow: time.now,
+  });
+  repository.openHistory("RGRPDF24");
+
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
+  time.pass(600);
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "keyboard");
+
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held("PUPR5FG5")).toMatchObject(movedGeometry("PUPR5FG5", 0));
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held("PUPR5FG5")).toMatchObject({
+    position: seeded("PUPR5FG5").position,
+    sortIndex: seeded("PUPR5FG5").sortIndex,
+  });
+});
+
+it("keeps a keyboard nudge made at the window's own edge as its own step", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHoldingMarks();
+  const time = clock();
+  const { repository } = await writable(stack, zotero.answers, {
+    repositoryNow: time.now,
+  });
+  repository.openHistory("RGRPDF24");
+
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
+  // Exactly the window: the run ends at it rather than inside it.
+  time.pass(JOIN_WINDOW_MS);
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "keyboard");
+
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held("PUPR5FG5")).toMatchObject(movedGeometry("PUPR5FG5", 0));
+  expect(repository.canUndo("RGRPDF24")).toBe(true);
+});
+
+it("keeps a keyboard nudge on another Annotation as its own step", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHoldingMarks();
+  const time = clock();
+  const { repository } = await writable(stack, zotero.answers, {
+    repositoryNow: time.now,
+  });
+  repository.openHistory("RGRPDF24");
+
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5"), "keyboard");
+  time.pass(100);
+  await repository.patchGeometry("K3JRFLFQ", moved("K3JRFLFQ"), "keyboard");
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "stepped",
+    annotationKey: "K3JRFLFQ",
+  });
+  expect(zotero.held("K3JRFLFQ")).toMatchObject({
+    position: seeded("K3JRFLFQ").position,
+    sortIndex: seeded("K3JRFLFQ").sortIndex,
+  });
+  // The other mark's nudge stands as a step of its own.
+  expect(zotero.held("PUPR5FG5")).toMatchObject(movedGeometry("PUPR5FG5"));
+  expect(repository.canUndo("RGRPDF24")).toBe(true);
+});
+
+it("keeps a pointer Geometry Edit out of a run of keyboard nudges", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHoldingMarks();
+  const time = clock();
+  const { repository } = await writable(stack, zotero.answers, {
+    repositoryNow: time.now,
+  });
+  repository.openHistory("RGRPDF24");
+
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
+  time.pass(100);
+  // A handle drag, inside the window a nudge would have joined in.
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "pointer");
+
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held("PUPR5FG5")).toMatchObject(movedGeometry("PUPR5FG5", 0));
+  expect(repository.canUndo("RGRPDF24")).toBe(true);
+});
+
+it("keeps a colour pick out of a run of keyboard nudges", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHoldingMarks();
+  const time = clock();
+  const { repository } = await writable(stack, zotero.answers, {
+    repositoryNow: time.now,
+  });
+  repository.openHistory("RGRPDF24");
+
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
+  time.pass(100);
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+  time.pass(100);
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "keyboard");
+
+  // Steps of different kinds never merge, so the nudge after the pick is its
+  // own step and undoing it leaves the picked colour alone.
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held("PUPR5FG5")).toMatchObject({
+    ...movedGeometry("PUPR5FG5", 0),
+    color: "#ff6666",
+  });
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held("PUPR5FG5")).toMatchObject({
+    ...movedGeometry("PUPR5FG5", 0),
+    color: "#2ea8e5",
+  });
+});
+
+// #endregion
+
+// #region comment editing sessions
+//
+// Each session's autosaves run on the fake clock the idle timer is armed on.
+
+it("makes one step of a comment session, however many times it saved", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const zotero = zoteroHolding("PUPR5FG5");
+    const { repository } = await writable(stack, zotero.answers);
+    repository.openHistory("RGRPDF24");
+
+    // The Mark Popup types, and an Annotation Card carries the editing on
+    // through the very same verb: the hand-off between them is one session.
+    repository.editComment("PUPR5FG5", "Worth");
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(zotero.held?.comment).toBe("Worth");
+    repository.editComment("PUPR5FG5", "Worth citing");
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(zotero.held?.comment).toBe("Worth citing");
+    repository.editComment("PUPR5FG5", "Worth citing twice");
+    await repository.submitComment("PUPR5FG5");
+    expect(zotero.held?.comment).toBe("Worth citing twice");
+
+    expect(await repository.undo("RGRPDF24")).toEqual({
+      kind: "stepped",
+      annotationKey: "PUPR5FG5",
+    });
+    // The whole session went back in one press, to the text the draft was born
+    // with rather than the text the last autosave left.
+    expect(zotero.held?.comment).toBe("");
+    expect(repository.canUndo("RGRPDF24")).toBe(false);
+
+    expect(await repository.redo("RGRPDF24")).toMatchObject({
+      kind: "stepped",
+    });
+    expect(zotero.held?.comment).toBe("Worth citing twice");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("starts a new step where the comment moved in Zotero between two saves", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const zotero = zoteroHolding("PUPR5FG5");
+    const { repository } = await writable(stack, zotero.answers);
+    repository.openHistory("RGRPDF24");
+
+    repository.editComment("PUPR5FG5", "Worth citing");
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(zotero.held?.comment).toBe("Worth citing");
+
+    // The same comment is changed in Zotero, so the next save is refused and
+    // the card offers "Apply again" against the value Zotero holds now.
+    zotero.changeInZotero({ comment: "Cited by Perez" });
+    zotero.refuseNextWrite();
+    repository.editComment("PUPR5FG5", "Worth citing twice");
+    await vi.advanceTimersByTimeAsync(1_000);
+    await repository.retryCommentDraft("PUPR5FG5");
+    expect(zotero.held?.comment).toBe("Worth citing twice");
+    repository.discardCommentDraft("PUPR5FG5");
+
+    // The write that landed was stamped off the Zotero-side text, so it
+    // starts a step of its own: one press puts that text back rather than
+    // writing over it with the empty comment the first session began with.
+    expect(await repository.undo("RGRPDF24")).toEqual({
+      kind: "stepped",
+      annotationKey: "PUPR5FG5",
+    });
+    expect(zotero.held?.comment).toBe("Cited by Perez");
+
+    // The first session's own step stands behind it, and it is the Zotero-side
+    // text that now blocks it rather than the step having written it away.
+    expect(await repository.undo("RGRPDF24")).toEqual({
+      kind: "changed",
+      annotationKey: "PUPR5FG5",
+    });
+    expect(zotero.held?.comment).toBe("Cited by Perez");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("records no step for a comment draft discarded before it saved", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const zotero = zoteroHolding("PUPR5FG5");
+    const { repository } = await writable(stack, zotero.answers);
+    repository.openHistory("RGRPDF24");
+
+    repository.editComment("PUPR5FG5", "Never saved");
+    repository.discardCommentDraft("PUPR5FG5");
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(repository.canUndo("RGRPDF24")).toBe(false);
+    expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
+    expect(zotero.held?.comment).toBeUndefined();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("records no step where a comment session settles on its starting text", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const zotero = zoteroHolding("HRK7BG32");
+    const seeded = zotero.held!.comment!;
+    const { repository } = await writable(stack, zotero.answers);
+    repository.openHistory("RGRPDF24");
+
+    repository.editComment("HRK7BG32", `${seeded} and slow`);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(zotero.held?.comment).toBe(`${seeded} and slow`);
+
+    // The researcher typed the ending away again before leaving the editor.
+    repository.editComment("HRK7BG32", seeded);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(zotero.held?.comment).toBe(seeded);
+
+    expect(repository.canUndo("RGRPDF24")).toBe(false);
+    expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
+    expect(zotero.held?.comment).toBe(seeded);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("does nothing while the Annotation the top step touches is being edited", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const zotero = zoteroHolding("PUPR5FG5");
+    const { repository } = await writable(stack, zotero.answers);
+    repository.openHistory("RGRPDF24");
+
+    repository.editComment("PUPR5FG5", "Half typed");
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(zotero.held?.comment).toBe("Half typed");
+
+    // The comment editor is open again on the same Annotation, with nothing
+    // typed into it yet, so the keys belong to the editor holding it.
+    repository.editComment("PUPR5FG5");
+    expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
+    expect(zotero.held?.comment).toBe("Half typed");
+    // The menu row and the palette entry read this, so neither is drawn for a
+    // press that would do nothing and say nothing.
+    expect(repository.canUndo("RGRPDF24")).toBe(false);
+
+    // The editor closed, keeping what Zotero holds.
+    repository.discardCommentDraft("PUPR5FG5");
+    expect(repository.canUndo("RGRPDF24")).toBe(true);
+
+    expect(await repository.undo("RGRPDF24")).toEqual({
+      kind: "stepped",
+      annotationKey: "PUPR5FG5",
+    });
+    expect(zotero.held?.comment).toBe("");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("does nothing while an autosave on the Attachment is still due", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const zotero = zoteroHolding("PUPR5FG5");
+    const { repository } = await writable(stack, zotero.answers);
+    repository.openHistory("RGRPDF24");
+    await repository.patchColor("PUPR5FG5", "#ff6666");
+
+    // Another Annotation of the same Attachment is being typed into, and its
+    // save is armed: the undo waits for it rather than stepping past it.
+    repository.editComment("HRK7BG32", "Still typing");
+
+    expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
+    expect(zotero.held?.color).toBe("#ff6666");
+    expect(repository.canUndo("RGRPDF24")).toBe(true);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("discards the redo steps when a comment session moves its own step", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const zotero = zoteroHolding("PUPR5FG5");
+    const { repository } = await writable(stack, zotero.answers);
+    repository.openHistory("RGRPDF24");
+
+    // A comment session on one Annotation, then a colour pick on another.
+    repository.editComment("PUPR5FG5", "Worth citing");
+    await vi.advanceTimersByTimeAsync(1_000);
+    repository.discardCommentDraft("PUPR5FG5");
+    await repository.patchColor("HRK7BG32", "#ff6666");
+    await repository.undo("RGRPDF24");
+    const seededColor = zotero.heldOf("HRK7BG32")!.color;
+    expect(repository.canRedo("RGRPDF24")).toBe(true);
+
+    // Typing in the first Annotation's comment again moves the step that
+    // session left rather than pushing a new one, and a moved step is a newly
+    // confirmed edit like any other: the undone colour pick is not offered
+    // again.
+    repository.editComment("PUPR5FG5", "Worth citing twice");
+    await vi.advanceTimersByTimeAsync(1_000);
+    repository.discardCommentDraft("PUPR5FG5");
+
+    expect(repository.canRedo("RGRPDF24")).toBe(false);
+    expect(await repository.redo("RGRPDF24")).toEqual({ kind: "idle" });
+    expect(zotero.heldOf("HRK7BG32")?.color).toBe(seededColor);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("records a colour pick after a comment session as a step of its own", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const zotero = zoteroHolding("PUPR5FG5");
+    const { repository } = await writable(stack, zotero.answers);
+    repository.openHistory("RGRPDF24");
+
+    repository.editComment("PUPR5FG5", "Noted");
+    await vi.advanceTimersByTimeAsync(1_000);
+    await repository.submitComment("PUPR5FG5");
+    await repository.patchColor("PUPR5FG5", "#ff6666");
+
+    expect(await repository.undo("RGRPDF24")).toMatchObject({
+      kind: "stepped",
+    });
+    expect(zotero.held?.color).toBe("#2ea8e5");
+    expect(zotero.held?.comment).toBe("Noted");
+
+    expect(await repository.undo("RGRPDF24")).toMatchObject({
+      kind: "stepped",
+    });
+    expect(zotero.held?.comment).toBe("");
+    expect(zotero.held?.color).toBe("#2ea8e5");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("records an autosave that lands while a step runs beside it", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const zotero = zoteroHolding("PUPR5FG5");
+    const seeded = zotero.heldOf("HRK7BG32")!.comment!;
+    const gate = Promise.withResolvers<void>();
+    const away = Promise.withResolvers<void>();
+    let holdNext = false;
+    const { repository } = await writable(stack, {
+      ...zotero.answers,
+      write: async (request) => {
+        if (holdNext) {
+          holdNext = false;
+          away.resolve();
+          await gate.promise;
+        }
+        return zotero.answers.write(request);
+      },
+    });
+    repository.openHistory("RGRPDF24");
+    await repository.patchColor("PUPR5FG5", "#ff6666");
+
+    holdNext = true;
+    const undone = repository.undo("RGRPDF24");
+    // The undo's own write is away and waiting, which the write itself says.
+    await away.promise;
+    // Another Annotation's comment session saves while the undo's own write is
+    // still away.
+    repository.editComment("HRK7BG32", "Typed meanwhile");
+    await vi.advanceTimersByTimeAsync(1_000);
+    gate.resolve();
+    expect(await undone).toMatchObject({ kind: "stepped" });
+    expect(zotero.held?.color).toBe("#2ea8e5");
+
+    // The session's own step stands beside the undo rather than being lost to
+    // it, so the editor's comment can be stepped back in its turn.
+    await repository.submitComment("HRK7BG32");
+    expect(zotero.heldOf("HRK7BG32")?.comment).toBe("Typed meanwhile");
+    expect(await repository.undo("RGRPDF24")).toEqual({
+      kind: "stepped",
+      annotationKey: "HRK7BG32",
+    });
+    expect(zotero.heldOf("HRK7BG32")?.comment).toBe(seeded);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+// #endregion

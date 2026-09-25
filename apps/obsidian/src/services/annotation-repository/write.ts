@@ -3,12 +3,16 @@
 //
 // @see https://github.com/aidenlx/zotlit/issues/1145
 
-import type { ResolvedAnnotationTypeName } from "@zotlit/db";
+import type {
+  AnnotationPosition,
+  ResolvedAnnotationTypeName,
+} from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { LocalApiFailure } from "@/services/zotero-local-api/service";
 
 import { capabilityOfFailure } from "./capability";
+import type { EditingCapability } from "./capability";
 import { editingCapabilityCopy } from "./capability-copy";
 
 /**
@@ -28,15 +32,15 @@ export type WriteFailure =
   /** No list the repository holds names this Annotation, so nothing was read. */
   | { kind: "unknown-annotation" }
   /**
-   * The stored position would be longer than Zotero accepts, so the create is
-   * refused before the write rather than answered `413`.
+   * The stored position would be longer than Zotero accepts, so the create or
+   * Geometry Edit is refused before the write rather than answered `413`.
    *
    * @see https://github.com/aidenlx/zotlit/issues/1139 — "Zotero Local API contract"
    */
   | { kind: "position-too-large" };
 
-/** Which of the three editing verbs a Write Conflict stands on. */
-export type ConflictedWrite = "color" | "comment" | "delete";
+/** Which of the four editing verbs a Write Conflict stands on. */
+export type ConflictedWrite = "color" | "comment" | "delete" | "geometry";
 
 /**
  * Zotero's copy of one Annotation moved between the read a write stamped its
@@ -44,26 +48,48 @@ export type ConflictedWrite = "color" | "comment" | "delete";
  * shows the fresh Zotero value beside the user's input and neither may be lost
  * silently.
  *
+ * A Geometry Edit carries its whole attempt, so "Apply again" re-sends the
+ * position, Sort Index, and quoted text it computed.
+ *
  * @see https://github.com/aidenlx/zotlit/issues/1139 — "Editing Capability and degraded states"
  */
-export interface WriteConflict {
-  write: ConflictedWrite;
-  /** What the user asked for; `null` for a delete, which names no value. */
-  attempted: string | null;
-  /** What Zotero holds now for the same field; `null` where Zotero holds none. */
-  fresh: string | null;
-}
+export type WriteConflict =
+  | {
+      write: Exclude<ConflictedWrite, "geometry">;
+      /** What the user asked for; `null` for a delete, which names no value. */
+      attempted: string | null;
+      /** What Zotero holds now for the same field; `null` where Zotero holds none. */
+      fresh: string | null;
+    }
+  | {
+      write: "geometry";
+      attempted: GeometryEdit;
+      /**
+       * What made the refused edit, which "Apply again" sends it again as: a
+       * nudge re-sent by hand is still a nudge, and joins the run it belongs
+       * to.
+       */
+      input: GeometryInput;
+      /** The geometry Zotero holds now. */
+      fresh: { position: AnnotationPosition; text: string | null };
+    };
+
+/** Which write is in flight: one of the four editing verbs, or a create. */
+export type PendingWrite = ConflictedWrite | "create";
 
 /**
- * What a write left on one Annotation. `pending` is the only state a surface
- * draws a value for, and what it draws is disabled verbs: no provisional
- * value is ever shown.
+ * What a write left on one Annotation. `pending` names its write, because not
+ * every write in flight is drawn. A gesture's write shows as disabled verbs,
+ * never as a provisional value. A comment write shows as nothing: its text
+ * stands in the comment draft the editor already draws, and any verb pressed
+ * meanwhile queues behind it, so the save is a background sync the user only
+ * hears about when it fails.
  *
  * A conflict stands on one Annotation and carries both values the card offers.
  */
 export type MutationState =
   | { kind: "idle" }
-  | { kind: "pending" }
+  | { kind: "pending"; write: PendingWrite }
   | { kind: "conflict"; conflict: WriteConflict }
   | { kind: "failed"; failure: WriteFailure };
 
@@ -107,8 +133,8 @@ export function wireColor(color: string): string {
  * one rule for all six, so an ink stroke recolours like a highlight.
  *
  * A `PATCH` is a merge patch, so naming the colour changes the colour and
- * nothing else: the Sort Index is never rewritten after creation, and this
- * body carries none.
+ * nothing else: only a Geometry Edit rewrites the Sort Index after creation,
+ * and this body carries none.
  *
  * @see apps/obsidian/docs/adr/0040-the-sort-index-and-page-label-are-computed-in-obsidian-from-a-port-of-zoteros-text-structure.md
  */
@@ -128,9 +154,32 @@ export function commentPatch(
 }
 
 /**
- * The longest `annotationPosition` a create may send. Zotero's own reader
- * splits a longer position into several Annotations; ZotLit creates one
- * Annotation per selection, so it refuses rather than splits.
+ * A Geometry Edit: the position as the JSON string Zotero's setter demands, the
+ * recomputed Sort Index, and for a highlight or underline the quoted text. The
+ * Page Label stays, because a Geometry Edit never changes the page.
+ *
+ * @param type the Annotation's own type, which decides whether text is sent.
+ * @see https://github.com/zotero/zotero/blob/22f08d1ceddc8bad5718b3bc6eee9d3ae5dccc2c/chrome/content/zotero/xpcom/data/item.js#L4586-L4605
+ * @see apps/obsidian/docs/adr/0040-the-sort-index-and-page-label-are-computed-in-obsidian-from-a-port-of-zoteros-text-structure.md
+ */
+export function geometryPatch(
+  target: WriteTarget,
+  type: ResolvedAnnotationTypeName,
+  edit: GeometryEdit,
+): WriteRequest {
+  const quotes = type === "highlight" || type === "underline";
+  return patch(target, {
+    annotationPosition: writePosition(edit.position),
+    annotationSortIndex: edit.sortIndex,
+    ...(quotes && edit.text !== undefined && { annotationText: edit.text }),
+  });
+}
+
+/**
+ * The longest `annotationPosition` a create or a Geometry Edit may send.
+ * Zotero's own reader splits a longer position into several Annotations;
+ * ZotLit creates one Annotation per selection, so it refuses rather than
+ * splits.
  *
  * @see https://github.com/zotero/zotero/blob/22f08d1ceddc8bad5718b3bc6eee9d3ae5dccc2c/chrome/content/zotero/xpcom/data/item.js#L4546-L4560
  */
@@ -145,6 +194,65 @@ export interface CreatePosition {
   rects: readonly (readonly number[])[];
   /** The second page's boxes, for a quote that ran over a page break. */
   nextPageRects?: readonly (readonly number[])[];
+}
+
+/** The strokes of an ink Annotation, unrounded. */
+export interface InkPosition {
+  pageIndex: number;
+  width: number;
+  paths: readonly (readonly number[])[];
+}
+
+/**
+ * The box of a free-text Annotation, unrounded, with the font size and turn
+ * its text is laid out at.
+ */
+export interface TextPosition {
+  pageIndex: number;
+  fontSize: number;
+  /** Degrees counter-clockwise, as Zotero stores it. */
+  rotation: number;
+  rects: readonly (readonly number[])[];
+}
+
+/** Every PDF position ZotLit writes: rects, ink strokes, or a text box. */
+export type WritablePosition = CreatePosition | InkPosition | TextPosition;
+
+/**
+ * A read position as a write sends it, or `null` for a position no write ever
+ * proposes — an EPUB or snapshot selector, or one this plugin could not parse.
+ */
+export function writablePosition(
+  position: AnnotationPosition,
+): WritablePosition | null {
+  switch (position.kind) {
+    case "pdf-rects":
+    case "pdf-ink":
+    case "pdf-text":
+      return position;
+    default:
+      return null;
+  }
+}
+
+/**
+ * What made one Geometry Edit. The Annotation History reads it and nothing
+ * else does: a run of keyboard edits joins into one History Step, and every
+ * pointer gesture is a step of its own.
+ */
+export type GeometryInput = "pointer" | "keyboard";
+
+/**
+ * One Geometry Edit, as the reader computed it: the new position, the Sort
+ * Index recomputed from it, and for a highlight or underline the quoted text
+ * the new range covers.
+ */
+export interface GeometryEdit {
+  position: WritablePosition;
+  /** Computed from the **unrounded** position, as Zotero's reader does. */
+  sortIndex: string;
+  /** The quoted text; sent for highlight and underline only. */
+  text?: string;
 }
 
 /** One Annotation to create, as the reader decided it. */
@@ -162,7 +270,7 @@ export interface AnnotationDraft {
   pageLabel: string;
   /** Computed from the **unrounded** position, as Zotero's reader does. */
   sortIndex: string;
-  position: CreatePosition;
+  position: WritablePosition;
 }
 
 /** One create request with Zotero's write token as a transport detail. */
@@ -224,26 +332,84 @@ export function createRequest(
   };
 }
 
+/** One PDF coordinate as Zotero stores it: three decimals. */
+export function roundCoordinate(value: number): number {
+  return Math.round(value * POSITION_DECIMALS) / POSITION_DECIMALS;
+}
+
 /**
  * The stored position, rounded the way Zotero's reader rounds it before every
- * save: three decimals in PDF user-space points.
+ * save: three decimals in PDF user-space points, on rects, ink paths, and ink
+ * width alike. A text box's font size and rotation are kept as given, as
+ * Zotero keeps them.
  *
  * @see https://github.com/zotero/reader/blob/132bb787937a540a09513415fd507654eb0e88f9/src/pdf/lib/utilities.js#L686-L712
  */
-export function writePosition(position: CreatePosition): string {
-  const round = (rects: readonly (readonly number[])[]) =>
-    rects.map((rect) =>
-      rect.map(
-        (value) => Math.round(value * POSITION_DECIMALS) / POSITION_DECIMALS,
-      ),
-    );
+export function writePosition(position: WritablePosition): string {
+  const roundAll = (rects: readonly (readonly number[])[]) =>
+    rects.map((rect) => rect.map(roundCoordinate));
+  if ("paths" in position) {
+    return JSON.stringify({
+      pageIndex: position.pageIndex,
+      width: roundCoordinate(position.width),
+      paths: roundAll(position.paths),
+    });
+  }
+  if ("fontSize" in position) {
+    return JSON.stringify({
+      pageIndex: position.pageIndex,
+      fontSize: position.fontSize,
+      rotation: position.rotation,
+      rects: roundAll(position.rects),
+    });
+  }
   return JSON.stringify({
     pageIndex: position.pageIndex,
-    rects: round(position.rects),
+    rects: roundAll(position.rects),
     ...(position.nextPageRects && {
-      nextPageRects: round(position.nextPageRects),
+      nextPageRects: roundAll(position.nextPageRects),
     }),
   });
+}
+
+/**
+ * A fitted box, `[left, bottom, right, top]`, widened out to the thousandths
+ * of a point Zotero stores. A box fitted to its widest line has no room past
+ * it, and rounding its sides to the nearest thousandth could narrow it enough
+ * to wrap that line.
+ */
+export function storedWide([left, bottom, right, top]: readonly [
+  number,
+  number,
+  number,
+  number,
+]): [number, number, number, number] {
+  return [
+    Math.floor(left * POSITION_DECIMALS) / POSITION_DECIMALS,
+    bottom,
+    Math.ceil(right * POSITION_DECIMALS) / POSITION_DECIMALS,
+    top,
+  ];
+}
+
+/**
+ * A text Annotation as Zotero stores it: its rounded position, colour and
+ * text. Two that compare equal are the same stored Annotation.
+ */
+export function textIdentity(
+  position: TextPosition,
+  { color, comment }: { color: string | null; comment: string | null },
+): string {
+  return JSON.stringify([
+    color?.toLowerCase(),
+    comment,
+    writePosition({
+      pageIndex: position.pageIndex,
+      fontSize: position.fontSize,
+      rotation: position.rotation,
+      rects: position.rects,
+    }),
+  ]);
 }
 
 /**
@@ -306,16 +472,27 @@ export function writeFailureReason(
       return m.annot_view_write_reason_conflict();
     case "unknown-outcome":
       return m.annot_view_write_reason_unknown_outcome();
-    default: {
-      const copy = editingCapabilityCopy(
+    default:
+      return blockedReason(
         capabilityOfFailure(failure, () => now),
         now,
       );
-      return copy.detail === null
-        ? copy.label
-        : `${copy.label}. ${copy.detail}`;
-    }
   }
+}
+
+/**
+ * Why a blocked Editing Capability lets no write land, in one clause, as
+ * {@link writeFailureReason} says it for a failure with that capability behind
+ * it.
+ *
+ * @param now the instant a cooldown's remaining seconds are measured from.
+ */
+export function blockedReason(
+  capability: EditingCapability,
+  now: Temporal.Instant,
+): string {
+  const copy = editingCapabilityCopy(capability, now);
+  return copy.detail === null ? copy.label : `${copy.label}. ${copy.detail}`;
 }
 
 /**

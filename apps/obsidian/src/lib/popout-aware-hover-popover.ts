@@ -26,4 +26,15 @@ export class PopoutAwareHoverPopover extends HoverPopover {
     this.#timerWindow.clearTimeout(this.timer);
     super.hide();
   }
+
+  /**
+   * Show now instead of after the wait. Obsidian's global click handler hides
+   * every popover still waiting to show, focused or not, so a popover opened
+   * on a pointer release would meet that release's own `click` and never show.
+   * Verified against Obsidian 1.14.2.
+   */
+  showNow(): void {
+    this.#timerWindow.clearTimeout(this.timer);
+    this.show();
+  }
 }

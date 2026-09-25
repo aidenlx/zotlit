@@ -164,6 +164,27 @@ export enum PopoverState {
 }
 
 /**
+ * The popovers still waiting on their show timer. Obsidian's global click
+ * handler hides each of them on any click, focused or not, before it looks at
+ * the shown ones. Verified against Obsidian 1.14.2.
+ */
+const pendingPopovers = new Set<HoverPopover>();
+let clickHandlerArmed = false;
+
+/** Arms the global click handler once, with the first popover, as Obsidian does. */
+function armClickHandler(): void {
+  if (clickHandlerArmed) return;
+  clickHandlerArmed = true;
+  window.addEventListener(
+    "click",
+    () => {
+      for (const popover of pendingPopovers) popover.hide();
+    },
+    { capture: true },
+  );
+}
+
+/**
  * Stand-in for Obsidian's own hover popover: the element a plugin fills, the
  * unload hook its content is torn down through, and the placement `position()`
  * records as an inline style. Placement is inert here — a test that asserts a
@@ -223,6 +244,8 @@ export class HoverPopover {
     this.timer = activeWindow.setTimeout(() => {
       this.show();
     }, waitTime);
+    pendingPopovers.add(this);
+    armClickHandler();
   }
 
   onMouseIn = (event: MouseEvent): void => {
@@ -287,6 +310,7 @@ export class HoverPopover {
       return;
     }
     this.state = PopoverState.Shown;
+    pendingPopovers.delete(this);
     this.position();
     this.onShow();
     this.load();
@@ -312,6 +336,7 @@ export class HoverPopover {
 
   hide(): void {
     clearTimeout(this.timer);
+    pendingPopovers.delete(this);
     this.state = PopoverState.Hidden;
     this.targetEl?.removeEventListener("mouseover", this.onMouseIn);
     this.targetEl?.removeEventListener("mouseout", this.onMouseOut);

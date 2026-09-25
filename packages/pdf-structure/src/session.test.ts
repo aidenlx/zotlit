@@ -129,3 +129,55 @@ describe("a Sort Index on a page with no text layer", () => {
     });
   });
 });
+
+describe("a Reader Session's range adjustment", () => {
+  it("reads the next page only when the point reaches it", async () => {
+    const { source, textCalls } = stubSource();
+    const structure = new PdfTextStructure(source);
+    const seven = { pageIndex: 0, rects: [[72, 694, 78, 708]] as const };
+
+    const onPage = await structure.adjustRange({
+      position: seven,
+      end: "end",
+      point: { pageIndex: 0, x: 80, y: 700 },
+    });
+    expect(textCalls).toEqual([0]);
+    expect(onPage?.text).toBe("7");
+
+    const spilled = await structure.adjustRange({
+      position: seven,
+      end: "end",
+      point: { pageIndex: 1, x: 80, y: 690 },
+    });
+    expect(textCalls).toEqual([0, 1]);
+    expect(spilled).toMatchObject({ pageIndex: 0, text: "7 7" });
+    expect(spilled?.nextPageRects).toHaveLength(1);
+  });
+
+  it("reads the next page for an end stepped past its page's last character", async () => {
+    const { source, textCalls } = stubSource();
+    const structure = new PdfTextStructure(source);
+    const seven = { pageIndex: 0, rects: [[72, 694, 78, 708]] as const };
+
+    const stepped = await structure.adjustRange({
+      position: seven,
+      end: "end",
+      step: "right",
+    });
+    expect(textCalls).toEqual([0, 1]);
+    expect(stepped).toMatchObject({ pageIndex: 0, text: "7 7" });
+  });
+});
+
+describe("the text rotation a Reader Session reads synchronously", () => {
+  it("is unknown until the page is structured, then read from its characters", async () => {
+    const structure = new PdfTextStructure(stubSource().source);
+    // Page zero's one glyph spans x 72–78 and y 695–707.
+    const rect = [70, 690, 80, 710] as const;
+
+    expect(structure.textRotation(0, rect)).toBeNull();
+    await structure.page(0);
+    expect(structure.textRotation(0, rect)).toBe(0);
+    expect(structure.textRotation(1, rect)).toBeNull();
+  });
+});

@@ -59,6 +59,37 @@ export function isColor(stored: string | null, swatch: string): boolean {
   return stored !== null && stored.toLowerCase() === swatch.toLowerCase();
 }
 
+/**
+ * The swatches to offer, `count` at most: the recently used ones first, most
+ * recent first, then the rest of the palette in Zotero's own order. A colour
+ * outside the palette is not offered.
+ *
+ * @param recent the colours used last, most recent first, in any case.
+ */
+export function offeredSwatches(
+  recent: readonly string[],
+  count: number,
+): readonly string[] {
+  const used = recent.flatMap((color) =>
+    ANNOTATION_COLORS.filter((hex) => isColor(color, hex)),
+  );
+  return [...new Set([...used, ...ANNOTATION_COLORS])].slice(0, count);
+}
+
+/**
+ * The recent list after one more use: that colour first, each colour once,
+ * never longer than the palette.
+ */
+export function withRecentColor(
+  recent: readonly string[],
+  color: string,
+): string[] {
+  return [color, ...recent.filter((stored) => !isColor(stored, color))].slice(
+    0,
+    ANNOTATION_COLORS.length,
+  );
+}
+
 export interface ColorMenuInput {
   /** The colour in hand, in whatever case it was stored; that entry shows checked. */
   color: string | null;

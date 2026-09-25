@@ -15,3 +15,7 @@ Only Zotero's reader computes a PDF Annotation's Sort Index and Page Label; the 
 - A Sort Index is never rewritten after creation. Colour and comment edits send none; ordering repairs are left to Zotero's reader, which recomputes on drag.
 - Parity means parity with the pinned fork. Drift across Zotero versions is accepted, as Zotero's own import worker already produces it.
 - The parity fixture needs PDFs beyond `rougier-2014`: one that enters the rotation, ligature, or multi-column branches of the line grouping, and one scanned page with no text layer.
+
+## Amendment: a Geometry Edit recomputes the Sort Index
+
+ZotLit computes the Sort Index at creation and recomputes it on a Geometry Edit, the one edit Zotero's own reader recomputes it for. The new value comes from the moved position through the same text structure call a creation makes, from the unrounded geometry, and travels in the same patch as the position and, for a highlight or underline, the quoted text. The Page Label is not recomputed, because a Geometry Edit keeps the page. This replaces the consequence "A Sort Index is never rewritten after creation": colour and comment edits still send none, and a Geometry Edit is now the one write after creation that sends one.

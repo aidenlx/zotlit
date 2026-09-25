@@ -9,9 +9,28 @@ import type {
 
 import { themeHook } from "@/lib/theme-hooks";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
+import type { InkPosition } from "@/services/annotation-repository/write";
 
-import { freeTextLayout } from "./free-text-layout";
-import type { PagePoint, PageRect, Turn } from "./free-text-layout";
+import { freeTextLayout, freeTextLines, LINE_HEIGHT } from "./free-text-layout";
+import type {
+  PagePoint,
+  PageRect,
+  TextMeasure,
+  Turn,
+} from "./free-text-layout";
+import {
+  capturesImage,
+  gripCursor,
+  HANDLE_RADIUS,
+  handleLayout,
+  movesByBody,
+  RANGE_HANDLE_PADDING,
+  rangeHandles,
+} from "./geometry-edit";
+import type { Grip, PdfPoint, TextRotation } from "./geometry-edit";
+import type { Point } from "./hit-test";
+import { inkReach } from "./ink-path";
+import type { LiveStroke, PendingStroke } from "./reader-surface-state";
 import { unionOutlinePath } from "./rect-union-outline";
 import "./style.css";
 
@@ -91,6 +110,8 @@ export type OverlayPageView = Pick<PDFPageView, "div"> & {
     | "scale"
     | "rotation"
     | "userUnit"
+    // The page box in PDF points, which a Geometry Edit keeps the mark inside.
+    | "viewBox"
     // The PDF-point to viewport-pixel matrix, which selection capture inverts.
     | "transform"
     | "convertToViewportPoint"
@@ -101,9 +122,26 @@ export type OverlayPageView = Pick<PDFPageView, "div"> & {
 export interface AnnotationOverlayOptions {
   /** One page's placements, as {@link groupAnnotationsByPage} keyed them. */
   annotations: readonly PdfPageAnnotation[];
+  /** The Pending Strokes on this page, drawn under every mark. */
+  pending?: readonly PendingStroke[];
   /** The Indexed Keys drawn as selected. */
   selected?: ReadonlySet<string>;
+  /** Whether the selected marks carry their Mark Handles: editing is live. */
+  handles?: boolean;
+  /**
+   * The text rotation a text range's handles lie across.
+   *
+   * @default upright text, for a caller that holds no rotation
+   */
+  textRotation?: TextRotation;
+  /**
+   * The font free text is drawn and measured in: Obsidian's interface font,
+   * from {@link interfaceFont}, resolved once per paint.
+   */
+  font: MeasuredFont;
 }
+
+const UPRIGHT: TextRotation = () => 0;
 
 /**
  * Rebuilds this page's overlay from the Annotations given, replacing whatever
@@ -122,31 +160,37 @@ export interface AnnotationOverlayOptions {
  */
 export function renderAnnotationOverlay(
   page: OverlayPageView,
-  { annotations, selected }: AnnotationOverlayOptions,
+  {
+    annotations,
+    pending = [],
+    selected,
+    handles = false,
+    textRotation = UPRIGHT,
+    font,
+  }: AnnotationOverlayOptions,
 ): void {
   page.div.querySelector(`.${themeHook.pdfAnnotationOverlay}`)?.remove();
 
-  const unitPage = toPageUnits(page);
-  const document_ = page.div.ownerDocument;
-  const overlay = document_.createElementNS(SVG_NS, "svg");
-  overlay.classList.add(themeHook.pdfAnnotationOverlay);
-  overlay.setAttribute("aria-hidden", "true");
-  overlay.setAttribute(
-    "viewBox",
-    `0 0 ${unitPage.viewport.width} ${unitPage.viewport.height}`,
-  );
-  overlay.setAttribute("preserveAspectRatio", "none");
+  const unitPage = drawingPageOf(page, font);
+  const overlay = createOverlay(unitPage);
+
+  for (const stroke of pending) {
+    const element = inkStroke(unitPage, stroke);
+    element.classList.add(themeHook.pdfPendingStroke);
+    overlay.append(element);
+  }
 
   for (const placement of annotations) {
     const { annotation } = placement;
-    for (const mark of marksFor(unitPage, placement)) {
-      mark.classList.add(themeHook.pdfAnnotationMark);
+    for (const mark of markNodes(
+      unitPage,
+      placement,
+      handles && selected?.has(annotation.key) === true,
+    )) {
       mark.classList.toggle(
         SELECTED_CLASS,
         selected?.has(annotation.key) === true,
       );
-      mark.dataset.zoteroAnnotationKey = annotation.key;
-      mark.dataset.zoteroAnnotationType = annotation.type;
       overlay.append(mark);
     }
   }
@@ -163,8 +207,238 @@ export function renderAnnotationOverlay(
     else overlay.append(outline);
   }
 
+  // Above the outline, so a handle is never covered by the ring it sits on.
+  for (const placement of annotations) {
+    if (!handles || selected?.has(placement.annotation.key) !== true) continue;
+    overlay.append(...renderHandles(page, placement, textRotation));
+  }
+
   // Appended last, so nothing PDF.js paints later sits over the marks.
   if (overlay.childElementCount > 0) page.div.append(overlay);
+}
+
+/** An empty overlay over the page, measured in the page's own units. */
+function createOverlay(unitPage: OverlayPage): SVGSVGElement {
+  const overlay = unitPage.document.createElementNS(SVG_NS, "svg");
+  overlay.classList.add(themeHook.pdfAnnotationOverlay);
+  overlay.setAttribute("aria-hidden", "true");
+  overlay.setAttribute(
+    "viewBox",
+    `0 0 ${unitPage.viewport.width} ${unitPage.viewport.height}`,
+  );
+  overlay.setAttribute("preserveAspectRatio", "none");
+  return overlay;
+}
+
+/**
+ * Draws the rectangle an image capture drags out on this page, over every
+ * mark, or takes it away for `null`. Zotero's reader draws it as a solid
+ * three-pixel frame in the tool's colour, faint while a side is under ten
+ * points, so the release that would keep nothing shows as such.
+ *
+ * The overlay is rebuilt on every page render and is absent on a page with
+ * no marks, so this builds one where none stands, and takes back an overlay it
+ * leaves empty.
+ *
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/page.js — `_pushImage`
+ */
+export function renderCapture(
+  page: OverlayPageView,
+  capture: { rect: PdfRect; color: string } | null,
+): void {
+  const held = page.div.querySelector(`.${themeHook.pdfAnnotationOverlay}`);
+  held?.querySelector(`.${themeHook.pdfCaptureRect}`)?.remove();
+  if (!capture) {
+    if (held?.childElementCount === 0) held.remove();
+    return;
+  }
+  const unitPage = toPageUnits(page);
+  const overlay = held ?? page.div.appendChild(createOverlay(unitPage));
+  const element = createRect(
+    unitPage,
+    pdfRectToPage(unitPage.viewport, capture.rect),
+  );
+  element.classList.add(themeHook.pdfCaptureRect);
+  element.setAttribute("fill", "none");
+  element.setAttribute("stroke", capture.color);
+  element.setAttribute("stroke-width", "3");
+  element.setAttribute("vector-effect", "non-scaling-stroke");
+  element.setAttribute("opacity", capturesImage(capture.rect) ? "1" : "0.2");
+  overlay.append(element);
+}
+
+/**
+ * Draws the Ink Stroke being drawn on this page, over every mark, or takes it
+ * away for `null`. The stroke is drawn as a saved ink mark is, so the release
+ * that saves it changes no pixel. A stroke already drawn is patched in place,
+ * so each frame rewrites one `d` and builds nothing.
+ *
+ * The overlay is rebuilt on every page render and is absent on a page with
+ * no marks, so this builds one where none stands, and takes back an overlay it
+ * leaves empty.
+ */
+export function renderLiveStroke(
+  page: OverlayPageView,
+  stroke: Omit<LiveStroke, "pageIndex"> | null,
+): void {
+  const held = page.div.querySelector(`.${themeHook.pdfAnnotationOverlay}`);
+  const drawn = held?.querySelector(`.${themeHook.pdfLiveStroke}`);
+  if (!stroke) {
+    drawn?.remove();
+    if (held?.childElementCount === 0) held.remove();
+    return;
+  }
+  const unitPage = toPageUnits(page);
+  const fresh = inkStroke(unitPage, stroke);
+  if (drawn) {
+    for (const { name, value } of fresh.attributes)
+      drawn.setAttribute(name, value);
+    return;
+  }
+  fresh.classList.add(themeHook.pdfLiveStroke);
+  const overlay = held ?? page.div.appendChild(createOverlay(unitPage));
+  overlay.append(fresh);
+}
+
+/**
+ * Redraws the selected mark on this page from another placement — the
+ * proposal of a Geometry Edit — by writing the geometry of freshly built nodes
+ * onto the ones the overlay holds, so a drag redraws one mark and leaves every
+ * other node, and the overlay itself, standing.
+ *
+ * @param options.handles whether the mark carries its Mark Handles.
+ * @returns `false` when the overlay does not hold the same nodes for this
+ *   mark, which a full {@link renderAnnotationOverlay} answers instead.
+ */
+export function patchSelectedMark(
+  page: OverlayPageView,
+  placement: PdfPageAnnotation,
+  {
+    handles,
+    textRotation = UPRIGHT,
+    font,
+  }: Pick<AnnotationOverlayOptions, "textRotation" | "font"> & {
+    handles: boolean;
+  },
+): boolean {
+  const overlay = page.div.querySelector(`.${themeHook.pdfAnnotationOverlay}`);
+  if (!overlay) return false;
+  const unitPage = drawingPageOf(page, font);
+  const { key } = placement.annotation;
+  const held = [
+    ...[
+      ...overlay.querySelectorAll<SVGElement>(
+        `.${themeHook.pdfAnnotationMark}`,
+      ),
+    ].filter((mark) => mark.dataset.zoteroAnnotationKey === key),
+    ...overlay.querySelectorAll<SVGElement>(
+      `.${themeHook.pdfAnnotationSelectionOutline}`,
+    ),
+    ...overlay.querySelectorAll<SVGElement>(
+      `.${themeHook.pdfAnnotationHandle}`,
+    ),
+  ];
+  const outline = renderSelectionOutline(unitPage, placement);
+  const fresh = [
+    ...markNodes(unitPage, placement, handles).map((mark) => {
+      mark.classList.add(SELECTED_CLASS);
+      return mark;
+    }),
+    ...(outline ? [outline] : []),
+    ...(handles ? renderHandles(page, placement, textRotation) : []),
+  ];
+  if (held.length === 0 || held.length !== fresh.length) return false;
+  held.forEach((node, index) => mirrorNode(node, fresh[index]!));
+  return true;
+}
+
+/**
+ * Makes a held node draw what a freshly built one draws: the same attributes,
+ * none left over, and the same children, such as a free-text run's lines.
+ */
+function mirrorNode(node: Element, fresh: Element): void {
+  for (const name of node.getAttributeNames()) {
+    if (!fresh.hasAttribute(name)) node.removeAttribute(name);
+  }
+  for (const { name, value } of fresh.attributes)
+    node.setAttribute(name, value);
+  node.replaceChildren(...fresh.childNodes);
+}
+
+/**
+ * One placement's mark nodes, carrying the hooks and data a theme and the hit
+ * test read. A mark that moves by its body takes the pointer while its handles
+ * stand, so its cursor shows the move.
+ */
+function markNodes(
+  page: DrawingPage,
+  placement: PdfPageAnnotation,
+  handles: boolean,
+): SVGElement[] {
+  const { annotation } = placement;
+  const grips = handles && movesByBody(annotation.type);
+  return marksFor(page, placement).map((mark) => {
+    mark.classList.add(themeHook.pdfAnnotationMark);
+    mark.dataset.zoteroAnnotationKey = annotation.key;
+    mark.dataset.zoteroAnnotationType = annotation.type;
+    if (grips) {
+      mark.dataset.ztGrip = "body";
+      mark.dataset.ztCursor = gripCursor("body", page.viewport.rotation);
+    }
+    return mark;
+  });
+}
+
+/**
+ * The Mark Handles of one selected placement: squares ten pixels wide at
+ * every zoom step, or a text range's strips six pixels wide, each showing the
+ * cursor of the edges it moves. They take the pointer for their cursor; which
+ * one a press takes is still decided from geometry.
+ */
+function renderHandles(
+  view: OverlayPageView,
+  placement: PdfPageAnnotation,
+  textRotation: TextRotation,
+): SVGRectElement[] {
+  const page = toPageUnits(view);
+  const toUnits = unitsPerPixel(view);
+  const half = HANDLE_RADIUS * toUnits;
+  const handle = (grip: Grip, rect: PageRect, turn = 0) => {
+    const element = createRect(page, rect);
+    element.classList.add(themeHook.pdfAnnotationHandle);
+    element.setAttribute("vector-effect", "non-scaling-stroke");
+    element.dataset.ztGrip = grip;
+    element.dataset.ztCursor = gripCursor(grip, page.viewport.rotation + turn);
+    return element;
+  };
+  // A text range's two strips, each drawn on the page that holds its rect: a
+  // spilled-over range's end is on the next page.
+  const { annotation, position } = placement;
+  const onPage =
+    position.kind === "pdf-rects" && placement.rects === position.nextPageRects
+      ? position.pageIndex + 1
+      : position.pageIndex;
+  const strips = rangeHandles(
+    annotation,
+    RANGE_HANDLE_PADDING * toUnits,
+    textRotation,
+  )
+    .filter(({ pageIndex }) => pageIndex === onPage)
+    .map(({ grip, rect, rotation }) =>
+      handle(grip, pdfRectToPage(page.viewport, rect), rotation),
+    );
+  return [
+    ...strips,
+    ...handleLayout(annotation).map(({ grip, at }) => {
+      const { x, y } = unitPointOf(view, at);
+      const element = handle(grip, [x - half, y - half, x + half, y + half]);
+      // Zotero's reader shows the move cursor over every handle of a turned
+      // free-text box, whose edges no resize cursor points along.
+      if (position.kind === "pdf-text" && position.rotation % 360 !== 0)
+        element.dataset.ztCursor = "move";
+      return element;
+    }),
+  ];
 }
 
 /**
@@ -188,12 +462,52 @@ export function scrollMarkIntoView(
   }
 }
 
+/**
+ * The marks with one Annotation drawn from another position — a Geometry
+ * Edit's proposal — each placement keeping its place in its page's list.
+ */
+export function withPosition(
+  marks: ReadonlyMap<number, readonly PdfPageAnnotation[]>,
+  key: string,
+  position: PdfPageAnnotation["position"],
+): ReadonlyMap<number, readonly PdfPageAnnotation[]> {
+  const annotation = [...marks.values()]
+    .flat()
+    .find((placement) => placement.annotation.key === key)?.annotation;
+  if (!annotation) return marks;
+  const moved = groupAnnotationsByPage([{ ...annotation, position }]);
+  const next = new Map<number, readonly PdfPageAnnotation[]>();
+  for (const [pageIndex, placements] of marks) {
+    const [replacement] = moved.get(pageIndex) ?? [];
+    next.set(
+      pageIndex,
+      placements.flatMap((placement) =>
+        placement.annotation.key !== key
+          ? [placement]
+          : replacement
+            ? [replacement]
+            : [],
+      ),
+    );
+  }
+  for (const [pageIndex, placements] of moved) {
+    if (!marks.get(pageIndex)?.some(({ annotation: held }) => held.key === key))
+      next.set(pageIndex, [...(next.get(pageIndex) ?? []), ...placements]);
+  }
+  return next;
+}
+
 /** One Annotation's hit area on one page, as the hit test measures it. */
 export interface MarkTarget {
   /** The Annotation's Indexed Key. */
   key: string;
   /** Every box it covers on this page, in the page's own units. */
   rects: readonly PageRect[];
+  /**
+   * An ink mark's strokes, in page units: a point hits it only within `reach`
+   * of one of their segments, and its box in `rects` is the cheap first check.
+   */
+  ink?: { paths: readonly (readonly PagePoint[])[]; reach: number };
 }
 
 /**
@@ -202,17 +516,68 @@ export interface MarkTarget {
  * per mark.
  *
  * Ink and free text carry no per-page rectangles, so each answers with the box
- * it paints: an ink stroke's path bounds and a comment's own rectangle.
+ * it paints: an ink stroke's path bounds, beside the strokes themselves, and a
+ * comment's own rectangle.
  */
 export function markTargets(
   page: OverlayPageView,
   annotations: readonly PdfPageAnnotation[],
 ): MarkTarget[] {
   const unitPage = toPageUnits(page);
-  return annotations.flatMap((placement) => {
+  return annotations.flatMap((placement): MarkTarget[] => {
+    if (isInk(placement)) {
+      const target = inkTarget(unitPage, placement);
+      return target ? [target] : [];
+    }
     const rects = hitRectsOf(unitPage, placement);
     return rects.length === 0 ? [] : [{ key: placement.annotation.key, rects }];
   });
+}
+
+/**
+ * An ink mark as the hit test takes it: its strokes, the reach round them,
+ * and their box grown by half the pen, which is where the Mark Popup hangs.
+ * A single-point dot is a target like any other stroke.
+ */
+function inkTarget(
+  page: OverlayPage,
+  { annotation, position }: PdfPageAnnotation & { position: PdfInkPosition },
+): MarkTarget | null {
+  const paths = position.paths.map((path) => pagePoints(page, path));
+  const points = paths.flat();
+  if (points.length === 0) return null;
+  const xs = points.map(([x]) => x);
+  const ys = points.map(([, y]) => y);
+  const spill = position.width / 2;
+  return {
+    key: annotation.key,
+    rects: [
+      [
+        Math.min(...xs) - spill,
+        Math.min(...ys) - spill,
+        Math.max(...xs) + spill,
+        Math.max(...ys) + spill,
+      ],
+    ],
+    ink: { paths, reach: inkReach(position.width) },
+  };
+}
+
+/**
+ * A PDF point in the page's own units: where the overlay draws it, and where a
+ * press on a Mark Handle drawn there is measured.
+ */
+export function unitPointOf(view: OverlayPageView, [x, y]: PdfPoint): Point {
+  const [px, py] = toPageUnits(view).viewport.convertToViewportPoint(x, y);
+  return { x: px, y: py };
+}
+
+/**
+ * How many page units one CSS pixel of the page spans: what sizes a Mark
+ * Handle drawn in the overlay and the reach a press on it has.
+ */
+export function unitsPerPixel(view: OverlayPageView): number {
+  return pageUnitSize(view).width / view.viewport.width;
 }
 
 /**
@@ -338,32 +703,9 @@ function hitRectsOf(
   if (rects.length > 0) {
     return rects.map((rect) => pdfRectToPage(page.viewport, rect));
   }
-  switch (position.kind) {
-    case "pdf-ink":
-      return inkBounds(page, position);
-    case "pdf-text":
-      return position.rects[0] ? [layoutOf(page, position).hit] : [];
-    default:
-      return [];
-  }
-}
-
-function inkBounds(page: OverlayPage, position: PdfInkPosition): PageRect[] {
-  const points = position.paths.flatMap((path) => pagePoints(page, path));
-  if (points.length === 0) return [];
-  // Half the stroke width spills either side of the path, which is what makes a
-  // one-pixel-thin stroke reachable at all.
-  const spill = position.width / 2;
-  const xs = points.map(([x]) => x);
-  const ys = points.map(([, y]) => y);
-  return [
-    [
-      Math.min(...xs) - spill,
-      Math.min(...ys) - spill,
-      Math.max(...xs) + spill,
-      Math.max(...ys) + spill,
-    ],
-  ];
+  return position.kind === "pdf-text" && position.rects[0]
+    ? [layoutOf(page, position).hit]
+    : [];
 }
 
 interface PdfPagePlacement extends PdfPageAnnotation {
@@ -376,7 +718,7 @@ interface PdfPagePlacement extends PdfPageAnnotation {
  * Zotero never writes — draws nothing.
  */
 function marksFor(
-  page: OverlayPage,
+  page: DrawingPage,
   { annotation, position, rects }: PdfPageAnnotation,
 ): SVGElement[] {
   switch (annotation.type) {
@@ -502,56 +844,176 @@ function renderImage(
 }
 
 /**
- * One path per stroke, at the width Zotero stored. The width is used raw: it is
- * already in PDF points, which is what the page-unit `viewBox` is measured in.
+ * One path per stroke, at the width Zotero stored, in the stored colour
+ * darkened as Zotero's reader strokes it on screen. The width is used raw: it
+ * is already in PDF points, which is what the page-unit `viewBox` is measured
+ * in.
  */
 function renderInk(
   page: OverlayPage,
   annotation: AnnotationRecord,
   position: PdfInkPosition,
 ): SVGPathElement {
+  return inkStroke(page, { ...position, color: colorOf(annotation) });
+}
+
+/**
+ * The one path every ink stroke is drawn with — a saved mark, a Pending
+ * Stroke, and the stroke being drawn — so none of the three can draw the same
+ * points apart from the others.
+ */
+function inkStroke(
+  page: OverlayPage,
+  { paths, width, color }: Omit<InkPosition, "pageIndex"> & { color: string },
+): SVGPathElement {
   const element = page.document.createElementNS(SVG_NS, "path");
-  element.setAttribute("d", inkPathOf(page, position));
+  element.setAttribute("d", inkPathOf(page, { paths }));
   element.setAttribute("fill", "none");
-  element.setAttribute("stroke", colorOf(annotation));
-  element.setAttribute("stroke-width", String(position.width));
+  element.setAttribute("stroke", darken(color));
+  element.setAttribute("stroke-width", String(width));
   element.setAttribute("stroke-linecap", "round");
   element.setAttribute("stroke-linejoin", "round");
   return element;
 }
 
-/** Every stroke of one ink mark as one `d`, which both the pen and the casing
- * under it are drawn from. */
-function inkPathOf(page: OverlayPage, position: PdfInkPosition): string {
+/**
+ * Every stroke of one ink mark as one `d`, which both the pen and the casing
+ * under it are drawn from. The first point is a line-to as well as a move-to,
+ * as in Zotero's reader, so a single-point stroke draws a round dot.
+ *
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/page.js#L260-L278
+ */
+function inkPathOf(
+  page: OverlayPage,
+  position: Pick<InkPosition, "paths">,
+): string {
   return position.paths
     .map((path) =>
       pagePoints(page, path)
-        .map(([x, y], index) => `${index === 0 ? "M" : "L"} ${x} ${y}`)
+        .map(
+          ([x, y], index) => `${index === 0 ? `M ${x} ${y} ` : ""}L ${x} ${y}`,
+        )
         .join(" "),
     )
     .join(" ");
 }
 
 /**
- * The comment typed onto the page, at the stored font size and rotation. Zotero
- * lays the same text out in a wrapping textarea; one run is the approximation
- * this milestone accepts.
+ * How much darker than its stored colour Zotero's reader draws ink and free
+ * text on screen, in percent. The Excerpt Image keeps the stored colour.
+ *
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/common/defines.js#L17
+ */
+const INK_AND_TEXT_DARKEN_PERCENT = 5;
+
+/**
+ * Zotero's `darkenHex`: each channel scaled down and rounded. A colour that is
+ * not `#rrggbb` — the page's own `currentColor` — is drawn as it is.
+ *
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/lib/utilities.js#L514-L520
+ */
+export function darken(color: string): string {
+  if (!/^#[\da-f]{6}$/i.test(color)) return color;
+  const channels = [1, 3, 5].map((start) =>
+    Math.round(
+      Number.parseInt(color.slice(start, start + 2), 16) *
+        (1 - INK_AND_TEXT_DARKEN_PERCENT / 100),
+    ),
+  );
+  return `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/**
+ * The comment typed onto the page, broken into the lines its box holds, at the
+ * stored font size and rotation, in the stored colour darkened as Zotero's
+ * reader draws it on screen. Each line is one `tspan` placed in the run's own
+ * unturned frame, so the run's turns carry every line into the box.
  */
 function renderText(
-  page: OverlayPage,
+  page: DrawingPage,
   annotation: AnnotationRecord,
   position: PdfTextPosition,
 ): SVGTextElement {
+  const { family, measure } = page.font;
   const element = page.document.createElementNS(SVG_NS, "text");
   const { baseline, turns } = layoutOf(page, position);
+  const [left, , right] = position.rects[0]!;
+  const lines = freeTextLines(
+    freeTextOf(annotation),
+    Math.abs(right! - left!),
+    { fontSize: position.fontSize, measure },
+  );
   element.setAttribute("x", String(baseline[0]));
   element.setAttribute("y", String(baseline[1]));
-  element.setAttribute("fill", colorOf(annotation));
+  element.setAttribute("fill", darken(colorOf(annotation)));
   element.setAttribute("font-size", String(position.fontSize));
+  element.setAttribute("font-family", family);
+  // What the measure assumes, so a page ancestor cannot widen the drawn run.
+  element.setAttribute("font-weight", "normal");
+  element.setAttribute("font-style", "normal");
+  element.setAttribute("letter-spacing", "0");
   const turn = transformOf(turns);
   if (turn !== undefined) element.setAttribute("transform", turn);
-  element.textContent = annotation.comment ?? annotation.text ?? "";
+  element.append(
+    ...lines.map((line, index) => {
+      const tspan = page.document.createElementNS(SVG_NS, "tspan");
+      tspan.setAttribute("x", String(baseline[0]));
+      tspan.setAttribute(
+        "y",
+        String(baseline[1] + index * LINE_HEIGHT * position.fontSize),
+      );
+      tspan.textContent = line;
+      return tspan;
+    }),
+  );
   return element;
+}
+
+/**
+ * The text a free-text Annotation shows: its comment, where Zotero keeps it,
+ * or its quoted text.
+ */
+export function freeTextOf({
+  comment,
+  text,
+}: Pick<AnnotationRecord, "comment" | "text">): string {
+  return comment ?? text ?? "";
+}
+
+/** The font free text is drawn in, and the width of a run in it. */
+export interface MeasuredFont {
+  /** The CSS font family, as resolved in the document. */
+  family: string;
+  measure: TextMeasure;
+}
+
+const measureContexts = new WeakMap<Document, CanvasRenderingContext2D>();
+
+/**
+ * Obsidian's interface font, as the document resolves it, and a measure over
+ * it: the one font a saved text mark, a Text Draft, and the box fitted to it
+ * are all laid out in, so the three break the same text into the same lines.
+ * Zotero's reader uses its own interface font the same way.
+ *
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/common/reader.js#L54
+ */
+export function interfaceFont(window_: Window): MeasuredFont {
+  const document_ = window_.document;
+  const { fontFamily: family } = window_.getComputedStyle(document_.body);
+  return {
+    family,
+    measure: (text, fontSize) => {
+      let context = measureContexts.get(document_);
+      if (!context) {
+        const created = document_.createElement("canvas").getContext("2d");
+        if (!created) throw new Error("No 2D canvas to measure text with");
+        context = created;
+        measureContexts.set(document_, context);
+      }
+      context.font = `${fontSize}px ${family}`;
+      return context.measureText(text).width;
+    },
+  };
 }
 
 /** A turn list as SVG writes it, applied from the last one to the first. */
@@ -588,6 +1050,15 @@ interface OverlayPage {
     PDFPageViewport,
     "width" | "height" | "rotation" | "convertToViewportPoint"
   >;
+}
+
+/** The page a mark is drawn on: page units, and the font free text is in. */
+interface DrawingPage extends OverlayPage {
+  font: MeasuredFont;
+}
+
+function drawingPageOf(page: OverlayPageView, font: MeasuredFont): DrawingPage {
+  return { ...toPageUnits(page), font };
 }
 
 /**

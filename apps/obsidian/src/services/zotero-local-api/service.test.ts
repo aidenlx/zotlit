@@ -596,6 +596,27 @@ it("holds the source it has while a second probe runs, and joins one in flight",
   expect(requests).toHaveLength(2);
 });
 
+// A focus inside the PDF reader probes again, and the reader's toolbar redraws
+// on every announcement — so an announcement that changed nothing replaced the
+// button under a press and the press never clicked.
+it("announces a capability change only when a probe changes what it learned", async () => {
+  await using stack = new AsyncDisposableStack();
+  let enabled = true;
+  const { client } = await setup(stack, {
+    root: () => (enabled ? rootOk() : localApiDisabled()),
+  });
+  await client.probe();
+  let announced = 0;
+  stack.defer(client.on("capability-changed", () => (announced += 1)));
+
+  await client.probe();
+  expect(announced).toBe(0);
+
+  enabled = false;
+  await client.probe();
+  expect(announced).toBe(1);
+});
+
 function read(
   result: Awaited<ReturnType<ZoteroLocalApiClient["listAnnotations"]>>,
 ) {

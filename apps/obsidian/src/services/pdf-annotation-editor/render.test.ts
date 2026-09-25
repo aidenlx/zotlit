@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { parseAnnotationPosition } from "@zotlit/db";
 
@@ -7,8 +7,19 @@ import { themeHook } from "@/lib/theme-hooks";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
 import { annotation, viewport } from "./__fixtures__";
-import { groupAnnotationsByPage, renderAnnotationOverlay } from "./render";
-import type { OverlayPageView } from "./render";
+import { HANDLE_RADIUS } from "./geometry-edit";
+import { markAnchor, marksAtPoint, pagePointOf } from "./hit-test";
+import type { PageBox } from "./hit-test";
+import {
+  groupAnnotationsByPage,
+  markTargets,
+  patchSelectedMark,
+  renderAnnotationOverlay,
+  unitPointOf,
+  unitsPerPixel,
+  withPosition,
+} from "./render";
+import type { MeasuredFont, OverlayPageView } from "./render";
 
 /** The same page, described from a non-zero origin, as a PDF may do. */
 const OFFSET_BOX = [10, 20, 622, 812] as const;
@@ -21,6 +32,16 @@ const FIXTURE_COLORS: Record<string, string> = {
   FDRFQ7C2: "#ffd400",
   TYY6Z6ZF: "#5fb236",
   HRK7BG32: "#a28ae5",
+};
+
+/**
+ * A fixed-width font: every character is 0.4 font sizes wide, 5.6 points at
+ * 14, so the Fixture's 25-character comment is 140 points and fits its
+ * 162-point box on one line.
+ */
+const MONO: MeasuredFont = {
+  family: "monospace",
+  measure: (text, fontSize) => text.length * fontSize * 0.4,
 };
 
 /** One rectangle near the top of the page, in PDF points. */
@@ -50,6 +71,7 @@ it("draws all six Zotero annotation types with the primitive each one calls for"
   const page = pageView();
 
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([
       record("PUPR5FG5", "highlight", {
         pageIndex: 0,
@@ -98,14 +120,16 @@ it("draws all six Zotero annotation types with the primitive each one calls for"
     stroke: "#ff6666",
     "stroke-width": "1",
   });
-  // The ink stroke keeps the width Zotero stored, in the page's own points.
+  // The ink stroke keeps the width Zotero stored, in the page's own points,
+  // and is stroked five percent darker than stored, as Zotero's reader does:
+  // #5fb236 is (95, 178, 54), which scales to (90.25, 169.1, 51.3).
   expect(pathOf(page, "TYY6Z6ZF")).toEqual([
     [66.964, 117.652],
     [66.629, 118.74],
   ]);
   expect(attributesOf(page, "TYY6Z6ZF")).toMatchObject({
     fill: "none",
-    stroke: "#5fb236",
+    stroke: "#5aa933",
     "stroke-width": "2",
   });
   // The image is stroked, never filled, so the excerpt underneath stays legible.
@@ -143,11 +167,131 @@ it("draws all six Zotero annotation types with the primitive each one calls for"
   ]);
   expect(note.lastElementChild!.getAttribute("fill")).toBeNull();
   expect(note.lastElementChild!.getAttribute("stroke")).toBeNull();
-  // The free text is the comment, at the size Zotero stored.
-  expect(markIn(page, "HRK7BG32").textContent).toBe(
-    "Making figures is hard :(",
-  );
-  expect(attributesOf(page, "HRK7BG32")["font-size"]).toBe("14");
+  // The free text is the comment on one line, at the size Zotero stored,
+  // filled five percent darker than stored as Zotero's reader draws it:
+  // #a28ae5 is (162, 138, 229), which scales to (153.9, 131.1, 217.55).
+  expect(linesOf(page, "HRK7BG32")).toEqual([
+    ["Making figures is hard :(", 398.804, 103.893],
+  ]);
+  expect(attributesOf(page, "HRK7BG32")).toMatchObject({
+    "font-size": "14",
+    fill: "#9a83da",
+  });
+});
+
+describe("free text", () => {
+  /** A text Annotation in the Fixture's box, its top edge at y 702.107. */
+  const text = (comment: string, rect: readonly number[]) => ({
+    ...record("HRK7BG32", "text", {
+      pageIndex: 0,
+      fontSize: 14,
+      rotation: 0,
+      rects: [rect],
+    }),
+    comment,
+  });
+
+  it("starts a line at each newline, each 1.2 font sizes below the last", () => {
+    const page = pageView();
+
+    renderAnnotationOverlay(page, {
+      font: MONO,
+      annotations: pageAnnotations([
+        text("Two\nlines", [398.804, 668.507, 560.804, 702.107]),
+      ]),
+    });
+
+    // The first baseline hangs one font size below the top edge,
+    // 792 - 702.107 + 14; the next one 16.8 below that.
+    expect(linesOf(page, "HRK7BG32")).toEqual([
+      ["Two", 398.804, 103.893],
+      ["lines", 398.804, 120.693],
+    ]);
+  });
+
+  it("stacks the lines across the reading direction on a page turned a quarter", () => {
+    const page = pageView(viewport({ rotation: 90 }));
+
+    renderAnnotationOverlay(page, {
+      font: MONO,
+      annotations: pageAnnotations([
+        text("Two\nlines", [398.804, 668.507, 560.804, 702.107]),
+      ]),
+    });
+
+    // A quarter turn maps PDF (x, y) to page (y, x), so the baseline start,
+    // PDF (398.804, 702.107 - 14), lands at (688.107, 398.804), and one point
+    // along the run moves y by one: the run reads down, turned 90 degrees
+    // about that start. The lines are laid out unturned, 16.8 apart, and the
+    // turn carries the second one to the left of the first.
+    expect(attributesOf(page, "HRK7BG32").transform).toBe(
+      "rotate(90 688.107 398.804)",
+    );
+    expect(linesOf(page, "HRK7BG32")).toEqual([
+      ["Two", 688.107, 398.804],
+      ["lines", 688.107, 415.604],
+    ]);
+  });
+
+  it("wraps the text at the width of its box", () => {
+    const page = pageView();
+
+    renderAnnotationOverlay(page, {
+      font: MONO,
+      annotations: pageAnnotations([
+        text("Making figures is hard :(", [398.804, 651.707, 468.804, 702.107]),
+      ]),
+    });
+
+    // 70 points hold 12 characters: "Making figures" is 14, "figures is" 10,
+    // "figures is hard" 15.
+    expect(linesOf(page, "HRK7BG32").map(([line]) => line)).toEqual([
+      "Making",
+      "figures is",
+      "hard :(",
+    ]);
+  });
+
+  it("patches its lines as a resize moves and narrows its box", () => {
+    const page = pageView();
+    renderAnnotationOverlay(page, {
+      font: MONO,
+      annotations: pageAnnotations([
+        text("Making figures is hard :(", [398.804, 668.507, 560.804, 702.107]),
+      ]),
+      selected: new Set(["HRK7BG32"]),
+      handles: true,
+    });
+    const mark = markIn(page, "HRK7BG32");
+
+    const patched = patchSelectedMark(
+      page,
+      pageAnnotations([
+        text("Making figures is hard :(", [490.804, 651.707, 560.804, 702.107]),
+      ])[0]!,
+      { handles: true, font: MONO },
+    );
+
+    expect(patched).toBe(true);
+    expect(markIn(page, "HRK7BG32")).toBe(mark);
+    // The left side moved to 490.804, and 70 points wrap the text in three.
+    expect(linesOf(page, "HRK7BG32")).toEqual([
+      ["Making", 490.804, 103.893],
+      ["figures is", 490.804, 120.693],
+      ["hard :(", 490.804, 137.493],
+    ]);
+    // What a full render of the new box draws, node for node.
+    const redrawn = pageView();
+    renderAnnotationOverlay(redrawn, {
+      font: MONO,
+      annotations: pageAnnotations([
+        text("Making figures is hard :(", [490.804, 651.707, 560.804, 702.107]),
+      ]),
+      selected: new Set(["HRK7BG32"]),
+      handles: true,
+    });
+    expect(overlayIn(page).outerHTML).toBe(overlayIn(redrawn).outerHTML);
+  });
 });
 
 it.each(ROTATIONS)(
@@ -156,6 +300,7 @@ it.each(ROTATIONS)(
     const page = pageView(viewport({ rotation }));
 
     renderAnnotationOverlay(page, {
+      font: MONO,
       annotations: pageAnnotations([highlight()]),
     });
 
@@ -171,6 +316,7 @@ it("carries the page's own `/UserUnit` into the page-unit box", () => {
   const page = pageView(viewport({ userUnit: 0.5 }));
 
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([highlight()]),
   });
 
@@ -184,6 +330,7 @@ it("measures from the page box's own origin rather than from zero", () => {
   const page = pageView(viewport({ box: OFFSET_BOX }));
 
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([highlight()]),
   });
 
@@ -195,6 +342,7 @@ it("builds the same overlay at every zoom step", () => {
   const markup = (scale: number) => {
     const page = pageView(viewport({ scale }));
     renderAnnotationOverlay(page, {
+      font: MONO,
       annotations: pageAnnotations([highlight()]),
     });
     return overlayIn(page).outerHTML;
@@ -215,6 +363,7 @@ it("divides the built viewport out when the seam offers no rebuild", () => {
   const page = pageView({ ...built, clone: undefined });
 
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([highlight()]),
   });
 
@@ -233,9 +382,11 @@ it("draws a spilled-over mark on the next page from that page's own rectangles",
   const annotations = groupAnnotationsByPage([spilled]);
 
   renderAnnotationOverlay(first, {
+    font: MONO,
     annotations: annotations.get(0) ?? [],
   });
   renderAnnotationOverlay(second, {
+    font: MONO,
     annotations: annotations.get(1) ?? [],
   });
 
@@ -250,6 +401,7 @@ it("paints marks that take no pointer input, last in the page", () => {
   page.div.append(textLayer);
 
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([highlight()]),
     selected: new Set(["PUPR5FG5"]),
   });
@@ -287,6 +439,7 @@ it("casts a selected ink stroke's own path under it, wider, rather than framing 
   const page = pageView();
 
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([
       record("TYY6Z6ZF", "ink", {
         pageIndex: 0,
@@ -318,10 +471,35 @@ it("casts a selected ink stroke's own path under it, wider, rather than framing 
   );
 });
 
+it("draws a single-point ink stroke as a round dot, in the page's colour when none is stored", () => {
+  const page = pageView();
+
+  renderAnnotationOverlay(page, {
+    font: MONO,
+    annotations: pageAnnotations([
+      record("DOT23456", "ink", {
+        pageIndex: 0,
+        width: 4,
+        paths: [[100, 700]],
+      }),
+    ]),
+  });
+
+  // A move-to alone draws nothing; the line-to to the same point is what the
+  // round cap turns into a dot.
+  expect(attributesOf(page, "DOT23456")).toMatchObject({
+    d: "M 100 92 L 100 92",
+    stroke: "currentColor",
+    "stroke-linecap": "round",
+    "stroke-width": "4",
+  });
+});
+
 it("draws no outline for a mark the caller left unselected", () => {
   const page = pageView();
 
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([highlight()]),
   });
 
@@ -333,10 +511,11 @@ it("draws no outline for a mark the caller left unselected", () => {
 it("leaves the page as it found it when the annotations are gone", () => {
   const page = pageView();
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([highlight()]),
   });
 
-  renderAnnotationOverlay(page, { annotations: [] });
+  renderAnnotationOverlay(page, { font: MONO, annotations: [] });
 
   expect(page.div.childElementCount).toBe(0);
 });
@@ -345,6 +524,7 @@ it("draws nothing for a type whose stored position is not the shape it pairs wit
   const page = pageView();
 
   renderAnnotationOverlay(page, {
+    font: MONO,
     // An ink position under a highlight: a pairing Zotero never writes.
     annotations: pageAnnotations([
       record("PUPR5FG5", "highlight", {
@@ -408,6 +588,7 @@ it("drops an annotation whose position is not a PDF position", () => {
       text: null,
       parentKey: "EPUBBK23",
       pageLabel: null,
+      sortIndex: "00000|000000|00000",
       tags: [],
       position: parseAnnotationPosition(
         { type: "FragmentSelector", value: "epubcfi(/6/4!/4/2)" },
@@ -418,6 +599,357 @@ it("drops an annotation whose position is not a PDF position", () => {
   ]);
 
   expect(grouped.size).toBe(0);
+});
+
+describe("the ink hit test", () => {
+  /**
+   * A square loop 100 points on a side, in PDF points: in page units its
+   * strokes run along x = 100 and 200 and y = 92 and 192, round an empty
+   * middle.
+   */
+  const LOOP = [[100, 600, 200, 600, 200, 700, 100, 700, 100, 600]];
+
+  /** The page laid out at 100 % from the origin: client pixels are page units. */
+  const PAGE_BOX: PageBox = {
+    left: 0,
+    top: 0,
+    width: 612,
+    height: 792,
+    unitWidth: 612,
+    unitHeight: 792,
+  };
+
+  /** The marks a click takes on `PAGE_BOX`. */
+  function clickedAt(
+    records: readonly AnnotationRecord[],
+    x: number,
+    y: number,
+  ): string[] {
+    const at = pagePointOf(PAGE_BOX, { x, y })!;
+    return marksAtPoint(markTargets(pageView(), pageAnnotations(records)), at);
+  }
+
+  const ink = (width: number, paths: number[][]) =>
+    record("4PE492KU", "ink", { pageIndex: 0, width, paths });
+
+  it("takes no click in the empty middle of a loop", () => {
+    expect(clickedAt([ink(2, LOOP)], 150, 142)).toEqual([]);
+    // Ten units inside the bottom stroke is past the seven-point reach.
+    expect(clickedAt([ink(2, LOOP)], 150, 182)).toEqual([]);
+  });
+
+  it("takes a click closer than seven points to a thin stroke", () => {
+    // Zotero's test is strict: exactly the reach away is a miss.
+    expect(clickedAt([ink(2, LOOP)], 150, 192)).toEqual(["4PE492KU"]);
+    expect(clickedAt([ink(2, LOOP)], 150, 198.5)).toEqual(["4PE492KU"]);
+    expect(clickedAt([ink(2, LOOP)], 150, 199)).toEqual([]);
+  });
+
+  it("reaches a wide pen's full width from its stroke", () => {
+    expect(clickedAt([ink(30, LOOP)], 150, 221.5)).toEqual(["4PE492KU"]);
+    expect(clickedAt([ink(30, LOOP)], 150, 222)).toEqual([]);
+  });
+
+  it("measures to the segments, so sparse points still take a click between them", () => {
+    // A 90-degree turn with no vertex along its 100-point arms.
+    const turn = [[100, 600, 200, 600, 200, 700]];
+    expect(clickedAt([ink(2, turn)], 150, 192)).toEqual(["4PE492KU"]);
+  });
+
+  it("takes a click on a single-point dot, and on straight ink with a flat box", () => {
+    expect(clickedAt([ink(4, [[100, 600]])], 103, 195)).toEqual(["4PE492KU"]);
+    expect(clickedAt([ink(4, [[100, 600]])], 100, 199)).toEqual([]);
+    expect(clickedAt([ink(2, [[100, 600, 200, 600]])], 150, 196)).toEqual([
+      "4PE492KU",
+    ]);
+  });
+
+  it("hangs the Mark Popup of a dot under the dot", () => {
+    const [target] = markTargets(
+      pageView(),
+      pageAnnotations([ink(4, [[100, 600]])]),
+    );
+    // The pen's half-width of 2 below y = 192.
+    expect(markAnchor(target?.rects ?? [], PAGE_BOX)).toEqual({
+      x: 100,
+      y: 194,
+    });
+  });
+});
+
+/** An image region on page zero, `[x1, y1, x2, y2]` in PDF points. */
+function figure(rect = [100, 300, 300, 500]): AnnotationRecord {
+  return record("FDRFQ7C2", "image", { pageIndex: 0, rects: [rect] });
+}
+
+/** Each handle's `[x, y, width, height]`, by the grip it names. */
+function handlesIn(page: OverlayPageView): Record<string, number[]> {
+  return Object.fromEntries(
+    [
+      ...page.div.querySelectorAll<SVGElement>(
+        `.${themeHook.pdfAnnotationHandle}`,
+      ),
+    ].map((handle) => [
+      handle.dataset.ztGrip,
+      ["x", "y", "width", "height"].map((name) =>
+        round(handle.getAttribute(name)),
+      ),
+    ]),
+  );
+}
+
+it("draws eight Mark Handles on the selected image, five pixels either side", () => {
+  // At scale 2 one page unit is two pixels, so a ten-pixel handle is five
+  // units wide. The bottom-right corner (300, 300) sits at y 792 - 300.
+  const page = pageView(viewport({ scale: 2 }));
+
+  renderAnnotationOverlay(page, {
+    font: MONO,
+    annotations: pageAnnotations([figure()]),
+    selected: new Set(["FDRFQ7C2"]),
+    handles: true,
+  });
+
+  expect(handlesIn(page)).toEqual({
+    tl: [97.5, 289.5, 5, 5],
+    t: [197.5, 289.5, 5, 5],
+    tr: [297.5, 289.5, 5, 5],
+    r: [297.5, 389.5, 5, 5],
+    br: [297.5, 489.5, 5, 5],
+    b: [197.5, 489.5, 5, 5],
+    bl: [97.5, 489.5, 5, 5],
+    l: [97.5, 389.5, 5, 5],
+  });
+  // The public hook, and the cursor each handle shows over an upright page.
+  const corner = page.div.querySelector<SVGElement>('[data-zt-grip="tr"]')!;
+  expect([...corner.classList]).toEqual(["zt-pdf-annotation-handle"]);
+  expect(corner.dataset.ztCursor).toBe("nesw-resize");
+  // The body of the image moves it, so it takes the pointer too.
+  expect(markIn(page, "FDRFQ7C2").dataset.ztGrip).toBe("body");
+  expect(markIn(page, "FDRFQ7C2").dataset.ztCursor).toBe("move");
+});
+
+it("draws each Mark Handle where a press on it is measured, on a page turned a quarter turn", () => {
+  // A quarter turn lays PDF (x, y) at page units (y, x), and at scale 1.5 a
+  // unit is one and a half pixels, so a ten-pixel handle is 20/3 units wide.
+  // The bottom-right corner (300, 300) stands at (300, 300); the top-left
+  // corner (100, 500) at (500, 100). selection.test.ts presses there.
+  const page = pageView(viewport({ rotation: 90, scale: 1.5 }));
+
+  renderAnnotationOverlay(page, {
+    font: MONO,
+    annotations: pageAnnotations([figure()]),
+    selected: new Set(["FDRFQ7C2"]),
+    handles: true,
+  });
+
+  const side = 20 / 3;
+  const around = ({ x, y }: { x: number; y: number }) =>
+    [x - side / 2, y - side / 2, side, side].map((value) =>
+      round(String(value)),
+    );
+  expect(handlesIn(page).br).toEqual(around({ x: 300, y: 300 }));
+  expect(handlesIn(page).tl).toEqual(around({ x: 500, y: 100 }));
+  expect(unitPointOf(page, [300, 300])).toEqual({ x: 300, y: 300 });
+  expect(HANDLE_RADIUS * unitsPerPixel(page)).toBeCloseTo(side / 2, 9);
+});
+
+it("draws no Mark Handle while editing is not live, or off the selection", () => {
+  const drawn = (options: {
+    selected?: ReadonlySet<string>;
+    handles?: boolean;
+  }) => {
+    const page = pageView();
+    renderAnnotationOverlay(page, {
+      font: MONO,
+      annotations: pageAnnotations([figure(), highlight()]),
+      ...options,
+    });
+    return {
+      handles: Object.keys(handlesIn(page)),
+      body: markIn(page, "FDRFQ7C2").dataset.ztGrip,
+    };
+  };
+
+  expect(drawn({ selected: new Set(["FDRFQ7C2"]) })).toEqual({
+    handles: [],
+    body: undefined,
+  });
+  expect(drawn({ handles: true })).toEqual({ handles: [], body: undefined });
+});
+
+it("draws a selected highlight's two end strips, three pixels either side of its edges", () => {
+  // At scale 2 one page unit is two pixels, so a strip six pixels wide is
+  // three units wide. `RECT` spans x 100–200 and lands at y 72–92.
+  const page = pageView(viewport({ scale: 2 }));
+
+  renderAnnotationOverlay(page, {
+    font: MONO,
+    annotations: pageAnnotations([highlight()]),
+    selected: new Set(["PUPR5FG5"]),
+    handles: true,
+  });
+
+  expect(handlesIn(page)).toEqual({
+    start: [98.5, 72, 3, 20],
+    end: [198.5, 72, 3, 20],
+  });
+  const end = page.div.querySelector<SVGElement>('[data-zt-grip="end"]')!;
+  expect(end.dataset.ztCursor).toBe("ew-resize");
+  // The body stays the text selection's.
+  expect(markIn(page, "PUPR5FG5").dataset.ztGrip).toBeUndefined();
+});
+
+it("turns a selected range's strips, and their cursor, with the text under them", () => {
+  // `RECT` spans x 100–200 and y 700–720; text turned a quarter turn reads up
+  // the page, so at scale 2 the start's strip is three units high across the
+  // rect's foot, y 792 - 700 = 92 in page units, and the end's across its
+  // head, at 72.
+  const page = pageView(viewport({ scale: 2 }));
+
+  renderAnnotationOverlay(page, {
+    font: MONO,
+    annotations: pageAnnotations([highlight()]),
+    selected: new Set(["PUPR5FG5"]),
+    handles: true,
+    textRotation: () => 90,
+  });
+
+  expect(handlesIn(page)).toEqual({
+    start: [100, 90.5, 100, 3],
+    end: [100, 70.5, 100, 3],
+  });
+  const end = page.div.querySelector<SVGElement>('[data-zt-grip="end"]')!;
+  expect(end.dataset.ztCursor).toBe("ns-resize");
+});
+
+it("draws a spilled-over range's start on its first page and its end on the next", () => {
+  const spilled = record("PUPR5FG5", "highlight", {
+    pageIndex: 0,
+    rects: [RECT],
+    nextPageRects: [[72, 740, 150, 752]],
+  });
+  const grouped = groupAnnotationsByPage([spilled]);
+  const drawnOn = (pageIndex: number) => {
+    const page = pageView();
+    renderAnnotationOverlay(page, {
+      font: MONO,
+      annotations: grouped.get(pageIndex) ?? [],
+      selected: new Set(["PUPR5FG5"]),
+      handles: true,
+    });
+    return Object.keys(handlesIn(page));
+  };
+
+  expect(drawnOn(0)).toEqual(["start"]);
+  expect(drawnOn(1)).toEqual(["end"]);
+});
+
+it("patches the selected mark, its outline, and its handles in place", () => {
+  const page = pageView();
+  renderAnnotationOverlay(page, {
+    font: MONO,
+    annotations: pageAnnotations([figure(), highlight()]),
+    selected: new Set(["FDRFQ7C2"]),
+    handles: true,
+  });
+  const overlay = overlayIn(page);
+  const mark = markIn(page, "FDRFQ7C2");
+  const children = [...overlay.children];
+
+  const patched = patchSelectedMark(
+    page,
+    pageAnnotations([figure([100, 280, 340, 500])])[0]!,
+    {
+      handles: true,
+      font: MONO,
+    },
+  );
+
+  expect(patched).toBe(true);
+  // The same nodes, carrying the new geometry.
+  expect(overlayIn(page)).toBe(overlay);
+  expect([...overlay.children]).toEqual(children);
+  expect(markIn(page, "FDRFQ7C2")).toBe(mark);
+  expect(rectOf(page, "FDRFQ7C2")).toEqual(["100", "292", "240", "220"]);
+  expect(
+    overlay
+      .querySelector(`.${themeHook.pdfAnnotationSelectionOutline}`)!
+      .getAttribute("d"),
+  ).toBe("M 98.5 290.5 L 341.5 290.5 L 341.5 513.5 L 98.5 513.5 Z");
+  expect(handlesIn(page).br).toEqual([335, 507, 10, 10]);
+  // The neighbour is left as it stood.
+  expect(rectOf(page, "PUPR5FG5")).toEqual(["100", "72", "100", "20"]);
+});
+
+it("patches a scaled ink stroke, the width of its casing, and its four handles in place", () => {
+  const stroke = (paths: number[][], width: number) =>
+    record("4PE492KU", "ink", { pageIndex: 0, width, paths });
+  const page = pageView();
+  renderAnnotationOverlay(page, {
+    font: MONO,
+    annotations: pageAnnotations([stroke([[100, 300, 200, 400]], 2)]),
+    selected: new Set(["4PE492KU"]),
+    handles: true,
+  });
+  const overlay = overlayIn(page);
+  const children = [...overlay.children];
+  // The body of the ink moves it, and only its four corners scale it.
+  expect(markIn(page, "4PE492KU").dataset.ztGrip).toBe("body");
+  expect(Object.keys(handlesIn(page)).sort()).toEqual(["bl", "br", "tl", "tr"]);
+
+  // Doubled from the top-left corner: twice the size, twice the pen.
+  const patched = patchSelectedMark(
+    page,
+    pageAnnotations([stroke([[100, 200, 300, 400]], 4)])[0]!,
+    { handles: true, font: MONO },
+  );
+
+  expect(patched).toBe(true);
+  expect([...overlay.children]).toEqual(children);
+  const mark = markIn(page, "4PE492KU");
+  expect(mark.getAttribute("d")).toBe("M 100 592 L 100 592 L 300 392");
+  expect(mark.getAttribute("stroke-width")).toBe("4");
+  // The casing rides the pen's new width, padded 1.5 units either side.
+  const casing = overlay.querySelector<SVGElement>(
+    `.${themeHook.pdfAnnotationSelectionOutline}`,
+  )!;
+  expect(casing.getAttribute("d")).toBe("M 100 592 L 100 592 L 300 392");
+  expect(casing.style.strokeWidth).toBe("7");
+  // The bottom-right handle stands five units out from (300, 200).
+  expect(handlesIn(page).br).toEqual([300, 592, 10, 10]);
+});
+
+it("draws a proposed position in the mark's own place in its page's list", () => {
+  const marks = groupAnnotationsByPage([figure(), highlight()]);
+
+  const proposed = withPosition(marks, "FDRFQ7C2", {
+    kind: "pdf-rects",
+    pageIndex: 0,
+    rects: [[100, 280, 340, 500]],
+  });
+
+  expect(
+    proposed.get(0)?.map(({ annotation, rects }) => [annotation.key, rects]),
+  ).toEqual([
+    ["FDRFQ7C2", [[100, 280, 340, 500]]],
+    ["PUPR5FG5", [RECT]],
+  ]);
+});
+
+it("patches nothing on a page whose overlay holds no such mark", () => {
+  const page = pageView();
+  renderAnnotationOverlay(page, {
+    font: MONO,
+    annotations: pageAnnotations([highlight()]),
+  });
+
+  expect(
+    patchSelectedMark(page, pageAnnotations([figure()])[0]!, {
+      handles: true,
+      font: MONO,
+    }),
+  ).toBe(false);
 });
 
 /** The highlight the geometry cases place, on `RECT`. */
@@ -483,14 +1015,30 @@ function pointsOf(
   return names.map((name) => round(mark.getAttribute(name)));
 }
 
-/** An ink mark's path, as its points at PDF-point precision. */
+/**
+ * An ink mark's path, as the points its line-tos draw at PDF-point precision;
+ * each stroke's move-to only puts the pen down on its first point.
+ */
 function pathOf(page: OverlayPageView, key: string): number[][] {
   const commands = markIn(page, key)
     .getAttribute("d")!
-    .split(/(?=[ML])/);
+    .split(/(?=[ML])/)
+    .filter((command) => command.startsWith("L"));
   return commands.map((command) =>
     command.trim().slice(1).trim().split(" ").map(round),
   );
+}
+
+/** A free-text mark's lines, each beside where its baseline starts. */
+function linesOf(
+  page: OverlayPageView,
+  key: string,
+): [string, number, number][] {
+  return [...markIn(page, key).children].map((line) => [
+    line.textContent ?? "",
+    round(line.getAttribute("x")),
+    round(line.getAttribute("y")),
+  ]);
 }
 
 function attributesOf(

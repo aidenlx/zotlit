@@ -1,0 +1,477 @@
+// The comment controls every surface that edits an Annotation's comment draws:
+// the comment sheet (the editor, its status line and its Save button), the
+// held-draft panel, and the Write Conflict panel.
+//
+// Vanilla DOM, because the PDF reader's surfaces import no Preact; the
+// Annotation Card mounts the same nodes. What differs between the card and
+// the reader's Mark Popup is the surface's spacing and corners, never which
+// controls stand or what they do.
+//
+// @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
+import { setIcon } from "obsidian";
+import type { App } from "obsidian";
+
+import * as m from "@/lib/i18n/generated/messages";
+import { themeHook } from "@/lib/theme-hooks";
+
+import type { ConflictPanel, ConflictVerb } from "./card-conflict";
+import type {
+  commentEditorControls,
+  HeldDraft,
+  HeldDraftAction,
+} from "./card-controls";
+import { createCommentEditor } from "./comment-editor";
+import type { CommentEditor } from "./comment-editor";
+
+/** Where the controls stand: an Annotation Card, or the reader's Mark Popup. */
+export type CommentSurface = "card" | "popup";
+
+/**
+ * Obsidian's own text field — its fill, resting border and focus ring — drawn
+ * as rings so neither changes the layout.
+ */
+const FIELD =
+  "zt-annot-comment-editor zt:bg-(--background-modifier-form-field) zt:text-foreground zt:ring-1 zt:ring-(--background-modifier-border) zt:focus-within:ring-2 zt:focus-within:ring-(--background-modifier-border-focus)";
+
+/** The field fades in around text that stays where it stood. */
+const FIELD_ENTER =
+  "zt:motion-safe:transition-[box-shadow,background-color] zt:starting:bg-transparent zt:starting:ring-transparent";
+
+/** Where the popup's comment text stands, read or edited. */
+const POPUP_TEXT = "zt:px-1.5 zt:py-1 zt:text-sm";
+
+/** The popup's panels and its rendered comment take the row's width, as the sheet does. */
+const POPUP_WIDTH = "zt:w-0 zt:min-w-[max(100%,12em)]";
+
+/**
+ * Each surface's own spacing, corners and width, its sheet's theme hook, and
+ * the inset the element a sheet or a panel is drawn into takes from the
+ * surface's border. `field` and `view` put the comment's text in one place, so
+ * opening the editor over the rendered comment moves nothing.
+ */
+const SURFACE: Record<
+  CommentSurface,
+  {
+    sheet: string;
+    inset: string;
+    field: string;
+    view: string;
+    viewEditable: string;
+    viewFrame: string;
+    footer: string;
+    panel: string;
+  }
+> = {
+  // The field's inset is taken back out of the margin on every side, so the
+  // text keeps the place the rendered comment held. A panel runs to the
+  // card's edges.
+  card: {
+    sheet: "",
+    inset: "",
+    field: `zt:-mx-1.5 zt:-my-1 zt:rounded-(--input-radius) zt:px-1.5 zt:py-1 zt:text-xs ${FIELD_ENTER}`,
+    view: "zt:text-xs",
+    viewEditable: "",
+    viewFrame: "",
+    footer: "zt:mt-2",
+    panel: "zt:-mx-3 zt:px-3 zt:py-1.5",
+  },
+  // The popover's padding is the row's, which leaves a field or a panel under
+  // it close to the border, so what stands under the row keeps its own inset.
+  // The rendered comment is the field at rest: a recessed well with the
+  // field's box and corners, so it reads as content apart from the verbs, and
+  // opening the editor turns the well into the field without moving the text.
+  popup: {
+    sheet: themeHook.pdfCommentSheet,
+    inset: "zt:px-1.5 zt:pb-1.5",
+    field: `zt:rounded-(--radius-s) ${POPUP_TEXT} ${FIELD_ENTER}`,
+    view: `zt:rounded-(--radius-s) zt:bg-(--background-secondary) ${POPUP_TEXT}`,
+    viewEditable:
+      "zt:hover:bg-(--background-modifier-hover) zt:motion-safe:transition-[background-color] zt:duration-150",
+    viewFrame: POPUP_WIDTH,
+    footer: "zt:mt-1",
+    panel: `${POPUP_WIDTH} zt:rounded-(--radius-s) zt:px-2 zt:py-1.5`,
+  },
+};
+
+/**
+ * The rendered comment's classes. `markdown-rendered` is what buys the theme's
+ * own prose styling: Obsidian declares those rules unlayered, so they outrank
+ * the scoped Tailwind preflight. `zt-annot-comment` is the hook the view
+ * stylesheet compacts them through.
+ */
+export function commentViewClass(
+  surface: CommentSurface,
+  editable: boolean,
+): string {
+  return [
+    "markdown-rendered zt-annot-comment zt:overflow-x-auto zt:break-words zt:text-foreground zt:select-text",
+    SURFACE[surface].view,
+    editable ? `zt:cursor-text ${SURFACE[surface].viewEditable}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/**
+ * Whether a click on the rendered comment asks for its editor. A link keeps
+ * its own click, and a click that ends a text selection is the user copying
+ * rather than asking to edit.
+ */
+export function opensCommentEditor(
+  event: Pick<MouseEvent, "target" | "currentTarget">,
+): boolean {
+  const target = event.target as Node | null;
+  if (target?.instanceOf(HTMLElement) && target.closest("a")) return false;
+  const el = event.currentTarget as HTMLElement;
+  return el.win.getSelection()?.isCollapsed !== false;
+}
+
+export interface CommentViewProps {
+  surface: CommentSurface;
+  /** Renders the stored HTML into an element; returns what undoes it. */
+  render: (el: HTMLElement, html: string) => () => void;
+  html: string;
+  /** Whether a click opens the editor, or the comment is read-only here. */
+  editable: boolean;
+  /** Opens the comment sheet in the view's place. */
+  onOpen: () => void;
+}
+
+/**
+ * The rendered comment for a vanilla surface, the Annotation Card's `Comment`
+ * drawn from the same pieces: its text stands where the comment sheet's
+ * editor will put it, and a click on it opens that sheet.
+ *
+ * @param frame the element the view is drawn into, replacing what it held.
+ * @returns what tears the rendered Markdown down.
+ */
+export function renderCommentView(
+  frame: HTMLElement,
+  { surface, render, html, editable, onOpen }: CommentViewProps,
+): () => void {
+  const look = SURFACE[surface];
+  frame.empty();
+  frame.addClasses(
+    `${look.viewFrame} ${look.inset}`.split(" ").filter(Boolean),
+  );
+  const view = frame.createDiv({ cls: commentViewClass(surface, editable) });
+  if (editable) {
+    view.addEventListener("click", (event) => {
+      if (!opensCommentEditor(event)) return;
+      event.stopPropagation();
+      onOpen();
+    });
+  }
+  return render(view, html);
+}
+
+/** What the sheet says under its editor, and whether it takes a write. */
+export type CommentSheetStatus = Pick<
+  ReturnType<typeof commentEditorControls>,
+  "hint" | "manual" | "readOnly" | "saveDisabled"
+>;
+
+export interface CommentSheetProps {
+  app: App;
+  surface: CommentSurface;
+  /** What the editor opens with. */
+  value: string;
+  /** Every change the user makes, as the whole comment. */
+  onChange?: (text: string) => void;
+  /** Ctrl/Command+Enter: store the comment and keep editing. */
+  onSubmit: () => void;
+  /** The Save button, shown while the save is manual. */
+  onSave?: () => void;
+  /** Escape. */
+  onCancel: () => void;
+  /**
+   * Focus left the sheet while the save is automatic and the editor takes a
+   * write: store the comment and close. Absent where leaving saves nothing.
+   */
+  onLeave?: () => void;
+  /** What focus may move within without leaving; the sheet itself by default. */
+  within?: HTMLElement;
+}
+
+export interface CommentSheet extends Disposable {
+  readonly editor: CommentEditor;
+  /** The comment as it stands in the editor. */
+  text(): string;
+  /** Redraws the status line, the Save button and the editor's read-only state. */
+  update(status: CommentSheetStatus): void;
+}
+
+/**
+ * The comment sheet: the comment editor, then a status line and, while the
+ * save is manual, a Save button. The status row takes no room in the quiet
+ * case, so the editor ends at its text. The editor takes the caret at the end.
+ *
+ * @param sheet the element the sheet is drawn into, replacing what it held.
+ * @see {@link createCommentEditor}
+ */
+export function renderCommentSheet(
+  sheet: HTMLElement,
+  {
+    app,
+    surface,
+    value,
+    onChange,
+    onSubmit,
+    onSave,
+    onCancel,
+    onLeave,
+    within = sheet,
+  }: CommentSheetProps,
+  status: CommentSheetStatus,
+): CommentSheet {
+  const look = SURFACE[surface];
+  sheet.empty();
+  sheet.addClasses(`${look.sheet} ${look.inset}`.split(" ").filter(Boolean));
+  const field = sheet.createDiv({ cls: `${FIELD} ${look.field}` });
+  const footer = sheet.createDiv({
+    cls: "zt:flex zt:flex-wrap zt:items-center zt:gap-2",
+  });
+  // The live region stays mounted and shown through the quiet case, so a
+  // status it announces is a change inside it rather than a new node; the
+  // row's air belongs to what it holds, so an empty row takes none.
+  const hint = footer.createSpan({
+    cls: "zt:min-w-0 zt:flex-1 zt:text-xs zt:text-pretty zt:text-muted-foreground",
+    attr: { role: "status" },
+  });
+  const save = footer.createEl("button", {
+    text: m.annot_view_comment_save(),
+    attr: { type: "button" },
+  });
+  if (onSave) save.addEventListener("click", onSave);
+  let current = status;
+  // Tearing the editor down takes its focus away, which is no user leaving.
+  let disposed = false;
+  const editor = createCommentEditor({
+    app,
+    parent: field,
+    text: value,
+    readOnly: status.readOnly,
+    onChange: (text) => onChange?.(text),
+    onEscape: onCancel,
+    onSubmit,
+    onBlur: (next) => {
+      if (disposed || within.contains(next)) return;
+      if (!current.manual && !current.readOnly) onLeave?.();
+    },
+  });
+  const update = (next: CommentSheetStatus): void => {
+    current = next;
+    editor.setReadOnly(next.readOnly);
+    hint.textContent = next.hint ?? "";
+    save.toggle(next.manual && onSave !== undefined);
+    save.disabled = next.saveDisabled;
+    footer.toggleClass(look.footer, next.hint !== null || next.manual);
+  };
+  update(status);
+  const { view } = editor;
+  view.focus();
+  view.dispatch({ selection: { anchor: view.state.doc.length } });
+  return {
+    editor,
+    text: () => view.state.doc.toString(),
+    update,
+    [Symbol.dispose]: () => {
+      disposed = true;
+      editor[Symbol.dispose]();
+    },
+  };
+}
+
+/**
+ * What the held-draft and Write Conflict panels' verbs run. Each surface binds
+ * them to its own write path; which press runs which is decided here, once.
+ */
+export interface CommentDraftActions {
+  /** Store the held text in Zotero. */
+  save: () => void;
+  /** Ask Zotero for editing again. */
+  allowEditing: () => void;
+  /** Drop the held text. */
+  discard: () => void;
+  /** Send the conflicting write again, or delete anyway. */
+  applyAgain: () => void;
+  /** Drop the conflicting write and keep what Zotero holds. */
+  discardConflict: () => void;
+}
+
+/** A panel's surface: the popover token, with a header icon beside its title. */
+function panel(
+  parent: HTMLElement,
+  {
+    surface,
+    hook,
+    icon,
+    title,
+  }: { surface: CommentSurface; hook: string; icon: string; title: string },
+): HTMLElement {
+  parent.empty();
+  const look = SURFACE[surface];
+  parent.addClasses(look.inset.split(" ").filter(Boolean));
+  // `popover` is the surface token; `secondary` is the token Obsidian gives a
+  // resting button, so a panel wearing it leaves every button on it at 1:1
+  // against its own fill.
+  const box = parent.createDiv({
+    cls: `${hook} zt:flex zt:flex-col zt:gap-1 zt:bg-popover ${look.panel}`,
+  });
+  const head = box.createDiv({
+    cls: "zt:flex zt:items-center zt:gap-1 zt:font-medium",
+  });
+  const glyph = head.createSpan({
+    cls: "zt:flex zt:[--icon-size:14px]",
+  });
+  setIcon(glyph, icon);
+  head.createSpan({ text: title });
+  return box;
+}
+
+function buttons(
+  box: HTMLElement,
+  cls: string,
+  list: readonly {
+    label: string;
+    primary: boolean;
+    enabled: boolean;
+    run: () => void;
+  }[],
+): void {
+  const row = box.createDiv({ cls: `zt:flex zt:flex-wrap zt:gap-2 ${cls}` });
+  for (const { label, primary, enabled, run } of list) {
+    const button = row.createEl("button", {
+      text: label,
+      attr: { type: "button" },
+      ...(primary && { cls: "mod-cta" }),
+    });
+    button.disabled = !enabled;
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      run();
+    });
+  }
+}
+
+const HELD_DRAFT_VERB: Record<
+  HeldDraftAction["kind"],
+  keyof CommentDraftActions
+> = {
+  save: "save",
+  "allow-editing": "allowEditing",
+  discard: "discard",
+};
+
+const CONFLICT_VERB: Record<ConflictVerb, keyof CommentDraftActions> = {
+  "apply-again": "applyAgain",
+  "delete-anyway": "applyAgain",
+  discard: "discardConflict",
+};
+
+/**
+ * The text the user holds that Zotero has not taken, with the verbs that end
+ * it. It wears the Write Conflict panel's surface because it is the same kind
+ * of state — local text waiting on the user — and it carries its verbs for the
+ * same reason: a surface that only says "unsaved" leaves nowhere to go.
+ *
+ * @param onOpen a click on the held text opens the editor, as a saved
+ *   comment's does: the state that most needs editing is not one you cannot
+ *   reach.
+ * @see https://github.com/aidenlx/zotlit/issues/1145
+ */
+export function renderHeldDraftPanel(
+  parent: HTMLElement,
+  held: HeldDraft,
+  {
+    surface,
+    actions,
+    onOpen,
+  }: {
+    surface: CommentSurface;
+    actions: CommentDraftActions;
+    onOpen: () => void;
+  },
+): void {
+  const box = panel(parent, {
+    surface,
+    hook: themeHook.annotDraft,
+    icon: "pencil-line",
+    title: m.annot_view_comment_draft(),
+  });
+  const text = box.createDiv({
+    cls: "zt:cursor-text zt:break-words zt:whitespace-pre-wrap zt:select-text",
+    text: held.text,
+  });
+  text.addEventListener("click", () => {
+    if (text.win.getSelection()?.isCollapsed === false) return;
+    onOpen();
+  });
+  if (held.reason !== null) {
+    // The reason runs to three and four lines in a narrow dock, past where
+    // the card's own tight leading stays readable.
+    box.createDiv({
+      cls: "zt:leading-normal zt:text-pretty zt:text-muted-foreground",
+      attr: { role: "status" },
+      text: held.reason,
+    });
+  }
+  buttons(
+    box,
+    "zt:mt-1",
+    held.actions.map((action) => ({
+      ...action,
+      run: () => actions[HELD_DRAFT_VERB[action.kind]](),
+    })),
+  );
+}
+
+/**
+ * A Write Conflict: the fresh Zotero value beside what the user asked for, and
+ * the two verbs that end it. Applying again is a write, so it rests disabled
+ * while the Editing Capability refuses one; discarding never is.
+ *
+ * @see https://github.com/aidenlx/zotlit/issues/1151
+ */
+export function renderConflictPanel(
+  parent: HTMLElement,
+  conflict: ConflictPanel,
+  {
+    surface,
+    live,
+    actions,
+  }: {
+    surface: CommentSurface;
+    /** Whether the Editing Capability takes a write right now. */
+    live: boolean;
+    actions: CommentDraftActions;
+  },
+): void {
+  const box = panel(parent, {
+    surface,
+    hook: themeHook.annotConflict,
+    icon: "alert-triangle",
+    title: conflict.title,
+  });
+  if (conflict.prompt !== null) {
+    box.createDiv({ cls: "zt:text-muted-foreground", text: conflict.prompt });
+  }
+  for (const { label, value } of conflict.values) {
+    const line = box.createDiv({ cls: "zt:flex zt:gap-1" });
+    line.createSpan({
+      cls: "zt:shrink-0 zt:text-muted-foreground",
+      text: label,
+    });
+    line.createSpan({ cls: "zt:min-w-0 zt:break-words", text: value });
+  }
+  buttons(
+    box,
+    "zt:mt-2",
+    conflict.actions.map(({ kind, label }) => ({
+      label,
+      primary: false,
+      enabled: kind === "discard" || live,
+      run: () => actions[CONFLICT_VERB[kind]](),
+    })),
+  );
+}

@@ -1,8 +1,10 @@
 // One open Obsidian PDF view bound to the Zotero attachment it shows.
+import { Platform } from "obsidian";
 import type {
   FileSystemAdapter,
   HoverParent,
   HoverPopover,
+  PDFDocumentProxy,
   PDFFileView,
   PDFPageRenderedListener,
   PDFPageView,
@@ -10,18 +12,30 @@ import type {
 } from "obsidian";
 
 import { PdfTextStructure } from "@zotlit/pdf-structure";
+import type {
+  PdfPosition,
+  RangeAdjustment,
+  SelectedText,
+} from "@zotlit/pdf-structure";
 
 import { EXTERNAL_FILE_PREFIX } from "@/lib/constants";
 import {
   registerDomEvent,
   registerMigratingWindowEvent,
 } from "@/lib/disposables";
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { BaseNotice } from "@/lib/notice";
+import { themeAttribute } from "@/lib/theme-hooks";
+import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
+import type { CapabilityAffordance } from "@/services/annotation-repository/capability-copy";
 import type {
   AnnotationRecord,
   AnnotationRepository,
+  HistoryDirection,
 } from "@/services/annotation-repository/service";
+import { writeFailureMessage } from "@/services/annotation-repository/write";
 import type {
   AttachmentResolution,
   AttachmentResolver,
@@ -30,6 +44,7 @@ import type { BorrowedExcerptDocument } from "@/services/excerpt-image/reader-bo
 import { ReaderSessionHost } from "@/services/reader-session/session";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { editingLive } from "@/views/annot-view/card-controls";
+import { createCommentRenderer } from "@/views/annot-view/comment-render";
 
 import { dropPendingAnchor, peekPendingAnchor } from "./anchor-capture";
 import { borrowReaderDocument } from "./borrow";
@@ -40,12 +55,35 @@ import {
 } from "./capability-affordance";
 import { MarkCreation } from "./creation";
 import type { ReaderPage } from "./creation";
+import { isRangeGrip, rangeHandles } from "./geometry-edit";
+import type { TextRotation } from "./geometry-edit";
 import { decideMarkLanding } from "./mark-landing";
 import type { MarkLandingMiss, MarkLandingTarget } from "./mark-landing";
+import { MarkPopupHost } from "./mark-popup-host";
+import { mountReaderKeymap } from "./reader-keymap";
+import {
+  createReaderSurfaceState,
+  ingestAnnotations,
+  ingestCapability,
+  listenAnnotationEvents,
+  sameCapability,
+  sameFlat,
+  selectAdjust,
+  selectCapabilityAffordance,
+  selectCapture,
+  selectSelectedKey,
+  selectTextDraft,
+} from "./reader-surface-state";
+import type { Adjustment, ReaderSurfaceStore } from "./reader-surface-state";
 import {
   groupAnnotationsByPage,
+  interfaceFont,
+  patchSelectedMark,
   renderAnnotationOverlay,
+  renderCapture,
+  renderLiveStroke,
   scrollMarkIntoView,
+  withPosition,
 } from "./render";
 import type { PdfPageAnnotation } from "./render";
 import {
@@ -60,14 +98,20 @@ import {
   probePageView,
   probeRenderEvent,
   probeTextContent,
+  renderedPagesOf,
   toolbarSlotOf,
   whenViewerReady,
 } from "./seam";
 import type { PdfSeamProbeResult } from "./seam";
 import { MarkSelection } from "./selection";
 import type { MarkGestures } from "./selection";
+import {
+  createTextDraftArea,
+  placeTextDraft,
+  removeTextDraftArea,
+} from "./text-draft";
 import { pdfPageSource } from "./text-structure";
-import type { ToolColorStore } from "./tools";
+import type { MarkTool, ToolColorStore } from "./tools";
 
 const logger = getLogger("pdf-annotation-editor");
 
@@ -91,6 +135,7 @@ export type AnnotationReads = Pick<
   AnnotationRepository,
   | "capability"
   | "capabilityFor"
+  | "closeHistory"
   | "commentDraftFor"
   | "createAnnotation"
   | "deleteAnnotation"
@@ -98,12 +143,16 @@ export type AnnotationReads = Pick<
   | "editComment"
   | "mutationFor"
   | "on"
+  | "openHistory"
   | "patchColor"
+  | "patchGeometry"
   | "probe"
   | "read"
+  | "redo"
   | "refresh"
   | "retryCommentDraft"
   | "submitComment"
+  | "undo"
 >;
 
 /** What a binding names its Attachment through, and hears a re-resolution on. */
@@ -125,6 +174,11 @@ export interface CapabilityGestures {
   allowEditing: () => void;
 }
 
+/** The one read a rendered comment takes from the Note Index. */
+export interface CommentNotes {
+  getNotesByItemKey: (itemKey: string) => readonly { path: string }[];
+}
+
 export interface PdfViewBindingDeps {
   view: PDFFileView;
   adapter: FileSystemAdapter;
@@ -138,6 +192,8 @@ export interface PdfViewBindingDeps {
   markGestures: Pick<MarkGestures, "revealAnnotation">;
   /** Each annotation tool's own colour, which every open PDF view shares. */
   toolColors: ToolColorStore;
+  /** The Literature Notes a rendered comment's links resolve against. */
+  noteIndex: CommentNotes;
   /** The clock the affordance's cooldown countdown is read against. */
   now?: () => Temporal.Instant;
 }
@@ -151,7 +207,7 @@ export interface PdfViewBindingDeps {
  * resolves, and the annotation repository, the attachment resolver, and the
  * Annotation View never see the difference.
  */
-export class PdfViewBinding implements Disposable, HoverParent {
+export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   /**
    * The Mark Popup hangs off the binding rather than off the PDF view, so
    * Obsidian's Page Preview on that view keeps its own popover and neither
@@ -165,6 +221,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
   readonly #gestures;
   readonly #markGestures;
   readonly #toolColors;
+  readonly #noteIndex;
   readonly #now;
   readonly #probes = new PdfSeamProbeLog(() => this.filePath);
   /**
@@ -182,12 +239,14 @@ export class PdfViewBinding implements Disposable, HoverParent {
   readonly #surfaces = new DisposableStack();
   /** The pages this binding currently holds an overlay on. */
   readonly #painted = new Set<number>();
-  /**
-   * The pages PDF.js has built for this document, by zero-based index. A text
-   * selection can only reach a page that has rendered, so this is the whole
-   * search space selection capture and the popup's anchor walk.
-   */
-  readonly #rendered = new Set<number>();
+  /** The page an image capture's rectangle was last drawn on. */
+  #capturedOn: number | null = null;
+  /** The page the Live Stroke was last drawn on. */
+  #strokeOn: number | null = null;
+  /** The Text Draft's textarea, kept across page renders; `null` while none stands. */
+  #draftArea: HTMLTextAreaElement | null = null;
+  /** The pages the selected mark's last in-place redraw drew it on. */
+  #patchedOn: { key: string; pages: ReadonlySet<number> } | null = null;
   #attachment: AttachmentResolution = { kind: "pending" };
   #filePath: string | null = null;
   #absolutePath: string | null = null;
@@ -209,23 +268,45 @@ export class PdfViewBinding implements Disposable, HoverParent {
   #landingFrame: number | null = null;
   /** The creation surfaces of this view; `null` until they can be mounted. */
   #creation: MarkCreation | null = null;
+  /** The one Mark Popup of this view; `null` until the surfaces are mounted. */
+  #popupHost: MarkPopupHost | null = null;
+  /** What the reader surfaces draw from; `null` until they are mounted. */
+  #surfaceState: ReaderSurfaceStore | null = null;
   /**
-   * This Reader Session's Structured Characters, memoized per page for as long
-   * as the session lives. One PDF view is one Reader Session, so the memo is
-   * built here and released with the binding.
+   * This Reader Session's Structured Characters, memoized per page beside the
+   * document they were read from. The view opens its document after the
+   * binding attached when its tab is hidden, and reopens a new document proxy
+   * in place on a vault modify and a pop-out migration, so the memo is read
+   * against the live document on every ask and rebuilt once that changed.
    *
    * @see apps/obsidian/docs/adr/0040-the-sort-index-and-page-label-are-computed-in-obsidian-from-a-port-of-zoteros-text-structure.md
    */
-  #structure: PdfTextStructure | null = null;
+  #held: {
+    document: PDFDocumentProxy;
+    structure: PdfTextStructure;
+    /** The Page Label pass, scheduled in idle time on `win`. */
+    idle: number;
+    win: Window;
+  } | null = null;
+  /**
+   * The text rotation under a rect, read from the Structured Characters the
+   * document's structure already holds. A page it has not structured reads as
+   * upright until it has, and the selection of a text range asks for it.
+   */
+  readonly #textRotation: TextRotation = (pageIndex, rect) =>
+    this.#held?.structure.textRotation(pageIndex, rect) ?? 0;
   #refreshing = Promise.resolve();
   /** Serialises the refreshes, so a slower read never overwrites a later one. */
   #refreshSerial = 0;
   /** Redraws the Editing Capability affordance; a no-op until one is mounted. */
-  #drawCapability: () => void = () => undefined;
+  #drawCapability: (affordance: CapabilityAffordance | null) => void = () =>
+    undefined;
   /** The Creation Toolbar's own slot for the affordance; `null` until mounted. */
   #capabilitySlot: HTMLElement | null = null;
   #toolbarMounted = false;
   #gesturing = Promise.resolve();
+  /** The Annotation History press this view is answering; settled while none is. */
+  #stepping = Promise.resolve();
 
   constructor({
     view,
@@ -235,6 +316,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
     capabilityGestures,
     markGestures,
     toolColors,
+    noteIndex,
     now = () => Temporal.Now.instant(),
   }: PdfViewBindingDeps) {
     this.#view = view;
@@ -244,7 +326,19 @@ export class PdfViewBinding implements Disposable, HoverParent {
     this.#gestures = capabilityGestures;
     this.#markGestures = markGestures;
     this.#toolColors = toolColors;
+    this.#noteIndex = noteIndex;
     this.#now = now;
+  }
+
+  /**
+   * The Literature Note a rendered comment's links resolve against, as the
+   * Annotation View's are; `""` for the vault root.
+   */
+  #commentSourcePath(): string {
+    if (this.#attachment.kind !== "resolved") return "";
+    const { itemKey } = this.#attachment;
+    if (itemKey === null) return "";
+    return this.#noteIndex.getNotesByItemKey(itemKey)[0]?.path ?? "";
   }
 
   /**
@@ -270,6 +364,16 @@ export class PdfViewBinding implements Disposable, HoverParent {
     return this.#attachment;
   }
 
+  /**
+   * The Attachment whose Annotation History this view steps, which is the one
+   * it shows; `null` while the file it holds names none in Zotero.
+   */
+  get historyAttachment(): string | null {
+    return this.#attachment.kind === "resolved"
+      ? this.#attachment.attachmentKey
+      : null;
+  }
+
   /** This PDF view as a Reader Session, for a surface that follows a reader. */
   get session(): ReaderSession {
     return this.#session;
@@ -292,6 +396,33 @@ export class PdfViewBinding implements Disposable, HoverParent {
       controller: () => this.#controller,
       path: this.#absolutePath,
     });
+  }
+
+  /**
+   * The Sort Index Zotero's reader would give this position in the open
+   * document — the call a creation makes, and the one a Geometry Edit makes
+   * again for the position it moved to.
+   *
+   * @param position unrounded, as the gesture computed it.
+   * @returns `null` while no document is open.
+   * @see apps/obsidian/docs/adr/0040-the-sort-index-and-page-label-are-computed-in-obsidian-from-a-port-of-zoteros-text-structure.md
+   */
+  async sortIndex(position: PdfPosition): Promise<string | null> {
+    const structure = this.#structure();
+    return structure ? await structure.sortIndex(position) : null;
+  }
+
+  /**
+   * A highlight's or underline's range with one end dragged to a page point,
+   * from the open document's Structured Characters — the proposal of a
+   * Geometry Edit on a text range.
+   *
+   * @returns `null` while no document is open, or for a point no range can be
+   *   placed from.
+   */
+  async adjustRange(adjustment: RangeAdjustment): Promise<SelectedText | null> {
+    const structure = this.#structure();
+    return structure ? await structure.adjustRange(adjustment) : null;
   }
 
   /** Whether the reader surfaces may mount: every probe so far passed. */
@@ -330,6 +461,25 @@ export class PdfViewBinding implements Disposable, HoverParent {
    */
   get gestured(): Promise<void> {
     return this.#gesturing;
+  }
+
+  /**
+   * Settles when the last Annotation History press in this reader has been
+   * answered — the write sent, the step dropped, or the press turned away by a
+   * guard — and the reader has landed on what it changed. Already settled while
+   * none has run. Never rejects.
+   */
+  get stepped(): Promise<void> {
+    return this.#stepping;
+  }
+
+  /**
+   * Settles when the last text selection released in this reader has been
+   * placed on the page's characters, or refused. Already settled while none
+   * has. Never rejects.
+   */
+  get settled(): Promise<void> {
+    return this.#creation?.settled ?? Promise.resolve();
   }
 
   /** Revalidates this PDF surface when Obsidian activates its leaf. */
@@ -410,6 +560,10 @@ export class PdfViewBinding implements Disposable, HoverParent {
       return;
     }
     const { attachmentKey } = this.#attachment;
+    // Two views of one Attachment share one history, and the last of them to
+    // close ends it, so the open is matched on the surfaces stack.
+    this.#annotations.openHistory(attachmentKey);
+    this.#surfaces.defer(() => this.#annotations.closeHistory(attachmentKey));
     this.#mountSelection(attachmentKey);
     this.#mountToolbar();
     this.#surfaces.defer(
@@ -418,7 +572,10 @@ export class PdfViewBinding implements Disposable, HoverParent {
       }),
     );
     this.#surfaces.use(
-      registerDomEvent(this.#view.containerEl, "focusin", () => {
+      registerDomEvent(this.#view.containerEl, "focusin", (event) => {
+        // The Text Draft focuses itself as it opens; a read started then would
+        // race the create its finish sends.
+        if (event.target === this.#draftArea) return;
         void this.#annotations.refresh(attachmentKey);
       }),
     );
@@ -436,10 +593,8 @@ export class PdfViewBinding implements Disposable, HoverParent {
    * marks do not place — a position this build draws nowhere — moves nothing.
    */
   #navigate(annotationKey: string): void {
-    const pageIndex = [...this.#marks].find(([, annotations]) =>
-      annotations.some((mark) => mark.annotation.key === annotationKey),
-    )?.[0];
-    if (pageIndex === undefined || !this.#controller) {
+    const pageIndex = pageOfMark(this.#marks, annotationKey);
+    if (pageIndex === null || !this.#controller) {
       logger.debug("No page holds this annotation", {
         path: this.filePath,
         annotationKey,
@@ -455,7 +610,8 @@ export class PdfViewBinding implements Disposable, HoverParent {
     if (!this.supported) return;
 
     this.#controller = controller;
-    this.#openStructure(controller);
+    this.#surfaces.defer(() => this.#closeStructure());
+    this.#structure();
     this.#mountToolbar();
 
     const onRender: PDFPageRenderedListener = (event) => {
@@ -465,7 +621,9 @@ export class PdfViewBinding implements Disposable, HoverParent {
         this[Symbol.dispose]();
         return;
       }
-      this.#rendered.add(event.pageNumber - 1);
+      // A document that opened after the attach, or replaced the one this
+      // binding read, is painted before it is asked about.
+      this.#structure();
       // PDF.js drops every child it does not keep on a zoom, a rotation and a
       // page recycle, so each render rebuilds this page's marks from data.
       this.#paint(event.pageNumber - 1);
@@ -475,7 +633,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
         this.#applyLanding();
       // The re-render can have wiped the mark the popup hangs over, so its
       // anchor is taken from the page as it now stands.
-      this.#selection?.sync();
+      this.#popupHost?.sync();
     };
     this.#surfaces.use(onPageRendered(controller, onRender));
     this.#probePage(loadedPageOf(controller));
@@ -508,7 +666,8 @@ export class PdfViewBinding implements Disposable, HoverParent {
    */
   #mountToolbar(): void {
     const creation = this.#creation;
-    if (this.#toolbarMounted || !creation) return;
+    const state = this.#surfaceState;
+    if (this.#toolbarMounted || !creation || !state) return;
     const controller = this.#controller;
     const slot = controller && toolbarSlotOf(controller);
     if (!slot) return;
@@ -520,17 +679,17 @@ export class PdfViewBinding implements Disposable, HoverParent {
       ticking = null;
     };
 
-    this.#drawCapability = () => {
+    this.#drawCapability = (affordance) => {
       const capabilitySlot = this.#capabilitySlot;
       if (this.#surfaces.disposed || !capabilitySlot) return;
-      const capability = this.#capability();
-      renderCapabilityAffordance(capabilitySlot, {
-        capability,
-        now: this.#now(),
-      });
+      renderCapabilityAffordance(capabilitySlot, affordance);
+    };
+    // The clock runs only while a cooldown counts down. Each tick reads the
+    // capability afresh, because a cooldown lapses without an announcement.
+    const runClock = (capability: EditingCapability): void => {
       if (capability.kind === "cooldown") {
         ticking ??= slot.win.setInterval(
-          () => this.#drawCapability(),
+          () => this.#ingestCapability(),
           COUNTDOWN_INTERVAL.total("milliseconds"),
         );
       } else stopTicking();
@@ -547,7 +706,17 @@ export class PdfViewBinding implements Disposable, HoverParent {
       this.#capabilitySlot = null;
     });
     this.#surfaces.defer(
-      this.#annotations.on("capability-changed", () => this.#drawCapability()),
+      state.subscribe(
+        selectCapabilityAffordance,
+        (affordance) => this.#drawCapability(affordance),
+        { equalityFn: sameFlat },
+      ),
+    );
+    this.#surfaces.defer(
+      state.subscribe(({ capability }) => capability, runClock, {
+        equalityFn: sameCapability,
+        fireImmediately: true,
+      }),
     );
     this.#surfaces.use(
       registerDomEvent(this.#view.containerEl, "keydown", (event) => {
@@ -568,33 +737,70 @@ export class PdfViewBinding implements Disposable, HoverParent {
    */
   #mountSelection(attachmentKey: string): void {
     if (this.#selection) return;
+    const state = createReaderSurfaceState({
+      colors: this.#toolColors.current(),
+      recentColors: this.#toolColors.recent(),
+      capability: this.#capability(),
+      now: this.#now(),
+    });
+    this.#surfaceState = state;
+    // The one listener the reader surfaces hear the Editing Capability through.
+    this.#surfaces.defer(
+      this.#annotations.on("capability-changed", () =>
+        this.#ingestCapability(),
+      ),
+    );
+    // The per-Annotation facts the Mark Popup reads come in the same way.
+    this.#surfaces.use(listenAnnotationEvents(state, this.#annotations));
+    const popup = {
+      contains: (node: Node | null) => host.contains(node),
+      sync: () => host.sync(),
+    };
     const creation = new MarkCreation({
+      app: this.#view.app,
       containerEl: this.#view.containerEl,
-      parent: this,
+      popup,
       attachmentKey,
       pages: () => this.#pages(),
       records: () => this.#records,
-      structure: () => this.#structure,
+      structure: () => this.#structure(),
       repaint: () => this.#repaint(),
-      reveal: (annotationKey) => {
+      reveal: (annotationKey, { commenting } = {}) => {
         // The create dropped the Attachment's list, so the mark exists once the
         // refresh it started has answered.
-        void this.refreshed.then(() => this.#selection?.select(annotationKey));
+        void this.refreshed.then(() =>
+          this.#selection?.select(annotationKey, { commenting }),
+        );
+      },
+      reportBlockedGesture: () => this.#editGesture(),
+      reportCreateFailure: (reason) => {
+        new BaseNotice(m.pdf_create_failed({ reason }));
       },
       renderCapability: (slot) => {
         this.#capabilitySlot = slot;
-        this.#drawCapability();
+        this.#drawCapability(selectCapabilityAffordance(state.getState()));
       },
+      // Obsidian's own way into a view: the PDF view focuses its pages.
+      focusReader: () =>
+        this.#view.app.workspace.setActiveLeaf(this.#view.leaf, {
+          focus: true,
+        }),
       colors: this.#toolColors,
+      surfaceState: state,
       annotations: this.#annotations,
       now: this.#now,
     });
     this.#creation = creation;
     const selection = new MarkSelection({
+      app: this.#view.app,
+      renderComment: createCommentRenderer({
+        app: this.#view.app,
+        component: this.#view,
+        getSourcePath: () => this.#commentSourcePath(),
+      }),
       containerEl: this.#view.containerEl,
-      scope: this.#view.scope!,
-      parent: this,
-      attachmentKey,
+      popup,
+      selectionSurfaces: this.#session,
       marks: () => this.#visibleMarks(),
       records: () => this.#records,
       pageAt: (pageIndex) =>
@@ -603,6 +809,8 @@ export class PdfViewBinding implements Disposable, HoverParent {
       navigate: (annotationKey) => this.#navigate(annotationKey),
       report: (annotationKeys) => this.#session.reportSelection(annotationKeys),
       annotations: this.#annotations,
+      colors: this.#toolColors,
+      surfaceState: state,
       gestures: {
         revealAnnotation: (annotationKey, options) =>
           this.#markGestures.revealAnnotation(annotationKey, options),
@@ -610,30 +818,134 @@ export class PdfViewBinding implements Disposable, HoverParent {
         allowEditing: () => this.#gestures.allowEditing(),
       },
       creation,
+      sortIndex: (position) => this.sortIndex(position),
+      adjustRange: (adjustment) => this.adjustRange(adjustment),
+      textRotation: this.#textRotation,
+      refreshed: () => this.refreshed,
       now: this.#now,
     });
     this.#selection = selection;
+    this.#surfaces.defer(
+      mountReaderKeymap(
+        this.#view,
+        {
+          escape: () => selection.escape() || creation.escape(),
+          undo: () => this.stepHistory("undo"),
+          redo: () => this.stepHistory("redo"),
+        },
+        { isMacOS: Platform.isMacOS },
+      ),
+    );
+    // A Geometry Edit redraws the one mark it moves; the handles come and go
+    // with the capability to save one.
+    this.#surfaces.defer(
+      state.subscribe(selectAdjust, (adjust) => {
+        this.#patchSelected();
+        this.#showAdjusting(adjust);
+      }),
+    );
+    this.#surfaces.defer(() => this.#showAdjusting(null));
+    this.#surfaces.defer(
+      state.subscribe(selectSelectedKey, (key) => this.#readRangeText(key)),
+    );
+    // An image capture draws its rectangle on the page it was pressed on.
+    this.#surfaces.defer(
+      state.subscribe(selectCapture, () => this.#drawCapture()),
+    );
+    // A Text Draft stands as a textarea over its page until it goes.
+    this.#surfaces.defer(
+      state.subscribe(selectTextDraft, () => this.#drawTextDraft()),
+    );
+    this.#surfaces.defer(() => this.#dropTextDraftArea());
+    // An ink stroke draws on the page it was pressed on, one `d` per frame;
+    // the strokes saving draw under the marks until their records arrive.
+    this.#surfaces.defer(
+      state.subscribe(
+        ({ liveStroke }) => liveStroke,
+        () => this.#drawLiveStroke(),
+      ),
+    );
+    this.#surfaces.defer(
+      state.subscribe(
+        (current) =>
+          current.liveStroke !== null || selectCapture(current) !== null,
+        (drawing) => this.#showDrawing(drawing),
+      ),
+    );
+    this.#surfaces.defer(() => this.#showDrawing(false));
+    this.#surfaces.defer(
+      state.subscribe(
+        ({ pendingStrokes }) => pendingStrokes,
+        (pending, before) => {
+          const pages = new Set(
+            [...pending, ...before].map(({ pageIndex }) => pageIndex),
+          );
+          for (const pageIndex of pages) this.#paint(pageIndex);
+        },
+      ),
+    );
+    // A finger on an armed ink tool draws rather than pans, which the browser
+    // decides at contact, so the page takes it before any press.
+    this.#surfaces.defer(
+      state.subscribe(
+        ({ armed }) => armed,
+        (armed) => this.#showArmed(armed),
+        { fireImmediately: true },
+      ),
+    );
+    this.#surfaces.defer(() => this.#showArmed(null));
+    this.#surfaces.defer(
+      state.subscribe(
+        ({ capability }) => editingLive(capability),
+        () => this.#repaint(),
+      ),
+    );
+    // The owners subscribe first, so an editor that closes is let go before
+    // the host redraws or hides the popup it stood in.
+    selection.load();
+    const host = new MarkPopupHost({
+      parent: this,
+      store: state,
+      variants: {
+        selected: {
+          anchor: () => selection.anchor(),
+          render: (content) => selection.renderPopup(content),
+        },
+        create: {
+          anchor: () => creation.anchor(),
+          render: (content) => creation.renderPopup(content),
+          unanchored: () => creation.unanchored(),
+        },
+      },
+    });
+    this.#popupHost = host;
+    // Owners before the host, so an editor is let go before its popup goes.
     this.#surfaces.defer(() => {
       this.#selection = null;
       this.#creation = null;
+      this.#popupHost = null;
+      this.#surfaceState = null;
       selection[Symbol.dispose]();
       creation[Symbol.dispose]();
+      host[Symbol.dispose]();
     });
-    selection.load();
   }
 
   /**
-   * The Structured Characters of the open document, and the Page Label pass
-   * over them. The pass runs in idle time once the document is open, because a
-   * creation that arrives first awaits the same pass rather than starting one.
+   * The Structured Characters of the document the viewer holds right now, and
+   * the Page Label pass over them. The pass runs in idle time once the
+   * document is open, because a creation that arrives first awaits the same
+   * pass rather than starting one. `null` while no document is open.
    *
    * @see apps/obsidian/docs/adr/0040-the-sort-index-and-page-label-are-computed-in-obsidian-from-a-port-of-zoteros-text-structure.md
    */
-  #openStructure(controller: PDFViewerController): void {
-    const document_ = pdfDocumentOf(controller);
-    if (!document_ || this.#structure) return;
+  #structure(): PdfTextStructure | null {
+    const controller = this.#controller;
+    const document_ = controller && pdfDocumentOf(controller);
+    if (!document_) return null;
+    if (this.#held?.document === document_) return this.#held.structure;
+    this.#closeStructure();
     const structure = new PdfTextStructure(pdfPageSource(document_));
-    this.#structure = structure;
     const win = this.#view.containerEl.win;
     const idle = win.requestIdleCallback(() => {
       void structure.pageLabels().catch((error: unknown) => {
@@ -643,25 +955,196 @@ export class PdfViewBinding implements Disposable, HoverParent {
         });
       });
     });
-    this.#surfaces.defer(() => {
-      win.cancelIdleCallback(idle);
-      this.#structure = null;
-    });
+    this.#held = { document: document_, structure, idle, win };
+    return structure;
   }
 
-  /** The pages PDF.js still holds, of those this binding has seen render. */
+  /** Releases the held Structured Characters and their pending label pass. */
+  #closeStructure(): void {
+    const held = this.#held;
+    if (!held) return;
+    held.win.cancelIdleCallback(held.idle);
+    this.#held = null;
+  }
+
+  /**
+   * The pages PDF.js holds painted right now, read from the viewer on each
+   * ask. A text selection can only reach a page that has rendered, so this is
+   * the whole search space of selection capture and the popup's anchor walk.
+   */
   #pages(): ReaderPage[] {
     const controller = this.#controller;
     if (!controller) return [];
-    return [...this.#rendered].flatMap((pageIndex) => {
+    return renderedPagesOf(controller).flatMap((pageIndex) => {
       const view = pageViewOf(controller, pageIndex + 1);
       return view ? [{ pageIndex, view }] : [];
     });
   }
 
-  /** The marks the overlay draws, which mark visibility can stand down whole. */
+  /**
+   * The marks the overlay draws, which mark visibility can stand down whole.
+   * The selected mark is drawn from a Geometry Edit's proposal while one
+   * stands, so a re-render or a read mid-drag keeps it where the pointer put
+   * it.
+   */
   #visibleMarks(): ReadonlyMap<number, readonly PdfPageAnnotation[]> {
-    return this.#creation?.marksVisible === false ? new Map() : this.#marks;
+    const state = this.#surfaceState?.getState();
+    if (state?.marksVisible === false) return new Map();
+    const key = state ? selectSelectedKey(state) : null;
+    const adjust = state ? selectAdjust(state) : null;
+    return key !== null && adjust
+      ? withPosition(this.#marks, key, adjust.proposal)
+      : this.#marks;
+  }
+
+  /** Whether the selected mark carries its Mark Handles. */
+  #handles(): boolean {
+    const state = this.#surfaceState?.getState();
+    return state !== undefined && editingLive(state.capability);
+  }
+
+  /**
+   * Redraws the selected mark in place on each page that draws it, and
+   * repaints a page whose overlay cannot be patched.
+   */
+  #patchSelected(): void {
+    const controller = this.#controller;
+    const state = this.#surfaceState?.getState();
+    const key = state ? selectSelectedKey(state) : null;
+    if (!controller || key === null) return;
+    const drawn = new Set<number>();
+    for (const [pageIndex, placements] of this.#visibleMarks()) {
+      const placement = placements.find(
+        ({ annotation }) => annotation.key === key,
+      );
+      if (placement) drawn.add(pageIndex);
+      const page = placement && pageViewOf(controller, pageIndex + 1);
+      if (!page) continue;
+      if (
+        !patchSelectedMark(page, placement, {
+          handles: this.#handles(),
+          textRotation: this.#textRotation,
+          font: interfaceFont(page.div.win),
+        })
+      )
+        this.#paint(pageIndex);
+    }
+    // A page the mark left — the next page of a range that no longer spills
+    // onto it — is painted without it.
+    const before =
+      this.#patchedOn?.key === key
+        ? this.#patchedOn.pages
+        : pagesDrawing(this.#marks, key);
+    for (const pageIndex of before.difference(drawn)) this.#paint(pageIndex);
+    this.#patchedOn = { key, pages: drawn };
+  }
+
+  /**
+   * Draws the image capture's rectangle on its page, and takes it off the
+   * page it was last drawn on once it ends.
+   */
+  #drawCapture(): void {
+    const controller = this.#controller;
+    const state = this.#surfaceState?.getState();
+    const capture = state ? selectCapture(state) : null;
+    const held = this.#capturedOn;
+    this.#capturedOn = capture?.pageIndex ?? null;
+    if (!controller) return;
+    if (held !== null && held !== capture?.pageIndex) {
+      const page = pageViewOf(controller, held + 1);
+      if (page) renderCapture(page, null);
+    }
+    if (!capture || !state) return;
+    const page = pageViewOf(controller, capture.pageIndex + 1);
+    if (page)
+      renderCapture(page, { rect: capture.rect, color: state.colors.image });
+  }
+
+  /**
+   * Places the Text Draft's textarea over its page, building it for a new
+   * draft and focusing it; a page render that took it off the page puts it
+   * back, still focused. It goes with the draft.
+   */
+  #drawTextDraft(): void {
+    const controller = this.#controller;
+    const creation = this.#creation;
+    const state = this.#surfaceState?.getState();
+    const draft = state ? selectTextDraft(state) : null;
+    if (!draft || !controller || !creation) {
+      this.#dropTextDraftArea();
+      return;
+    }
+    const page = pageViewOf(controller, draft.pageIndex + 1);
+    if (!page) return;
+    const area = (this.#draftArea ??= createTextDraftArea(page.div.doc, {
+      input: (text) => creation.typeDraft(text),
+      finish: () => creation.finishDraft(),
+    }));
+    placeTextDraft(area, page, {
+      draft,
+      font: interfaceFont(page.div.win),
+    });
+    if (area.parentElement === page.div) return;
+    page.div.append(area);
+    if (draft.phase === "typing") area.focus({ preventScroll: true });
+  }
+
+  #dropTextDraftArea(): void {
+    if (this.#draftArea) removeTextDraftArea(this.#draftArea);
+    this.#draftArea = null;
+  }
+
+  /** Draws the Live Stroke on its page, as {@link #drawCapture} does. */
+  #drawLiveStroke(): void {
+    const controller = this.#controller;
+    const stroke = this.#surfaceState?.getState().liveStroke ?? null;
+    const held = this.#strokeOn;
+    this.#strokeOn = stroke?.pageIndex ?? null;
+    if (!controller) return;
+    if (held !== null && held !== stroke?.pageIndex) {
+      const page = pageViewOf(controller, held + 1);
+      if (page) renderLiveStroke(page, null);
+    }
+    if (!stroke) return;
+    const page = pageViewOf(controller, stroke.pageIndex + 1);
+    if (page) renderLiveStroke(page, stroke);
+  }
+
+  /**
+   * Marks the reader with the armed tool, so the stylesheet shows that tool's
+   * cursor over the pages; and while the ink tool is armed, so it takes touch
+   * panning off them.
+   */
+  #showArmed(armed: MarkTool | null): void {
+    const { containerEl } = this.#view;
+    containerEl.toggleAttribute(themeAttribute.pdfInking, armed === "ink");
+    if (armed) containerEl.dataset.ztArmed = armed;
+    else delete containerEl.dataset.ztArmed;
+  }
+
+  /**
+   * Marks the reader while a Live Stroke or an image capture holds the
+   * pointer, so the stylesheet keeps the crosshair over the captured pointer.
+   */
+  #showDrawing(drawing: boolean): void {
+    this.#view.containerEl.toggleAttribute("data-zt-drawing", drawing);
+  }
+
+  /**
+   * Marks the reader while a text range's end moves, so the stylesheet shows
+   * the text cursor, as Zotero's reader does, over the captured pointer.
+   */
+  #showAdjusting(adjust: Adjustment | null): void {
+    const moving =
+      adjust?.phase === "dragging" && isRangeGrip(adjust.grip) ? "text" : null;
+    if (moving) this.#view.containerEl.dataset.ztAdjusting = moving;
+    else delete this.#view.containerEl.dataset.ztAdjusting;
+  }
+
+  /** Takes the Attachment's capability as the repository now answers it. */
+  #ingestCapability(): void {
+    const state = this.#surfaceState;
+    if (state) ingestCapability(state, this.#capability(), this.#now());
   }
 
   /** What this view may do to its Attachment's Annotations right now. */
@@ -685,6 +1168,95 @@ export class PdfViewBinding implements Disposable, HoverParent {
       if (this.#surfaces.disposed) return;
       if (this.#attachment.kind !== "resolved") return;
       this.#gestures.reportBlockedGesture(this.#attachment.attachmentKey);
+    });
+  }
+
+  /**
+   * The undo or redo verb, answered for the Attachment this view shows — the
+   * reader's own keys, the palette's two commands, and the More options menu.
+   * The repository decides and writes; this seam renders its answer — the
+   * reader lands on what changed, a step Zotero moved under says so, and a
+   * block is reported the way every other blocked edit gesture is.
+   *
+   * @see apps/obsidian/policies/ui-seams.md
+   */
+  stepHistory(direction: HistoryDirection): void {
+    if (this.#attachment.kind !== "resolved") return;
+    const { attachmentKey } = this.#attachment;
+    const stepping =
+      direction === "undo"
+        ? this.#annotations.undo(attachmentKey)
+        : this.#annotations.redo(attachmentKey);
+    const answered = stepping.then((outcome) => {
+      if (this.#surfaces.disposed) return;
+      switch (outcome.kind) {
+        case "stepped":
+          return this.#landOn(outcome.annotationKey);
+        case "removed":
+          return this.#landOnPage(outcome.pageIndex);
+        case "changed":
+          new BaseNotice(m.annot_history_changed_in_zotero());
+          return;
+        case "failed":
+          new BaseNotice(writeFailureMessage(outcome.failure, this.#now()));
+          return;
+        case "blocked":
+          this.#editGesture();
+          return;
+        case "idle":
+          return;
+      }
+    });
+    // Chained rather than replaced, so a second press in flight leaves this
+    // settling behind both rather than behind the later one alone. Settled
+    // rather than resolved, so it answers however each press ended.
+    this.#stepping = Promise.allSettled([this.#stepping, answered]).then(
+      () => undefined,
+    );
+  }
+
+  /**
+   * Bring the reader to the Annotation a History Step changed, once the marks
+   * on screen match the read that step announced.
+   *
+   * A page PDF.js has not built yet is reached by Obsidian's own page jump,
+   * and the render it triggers is what the waiting Landing lands on — the
+   * Annotation Anchor's own path.
+   */
+  #landOn(annotationKey: string): Promise<void> {
+    return this.refreshed.then(() => {
+      if (this.#surfaces.disposed) return;
+      const controller = this.#controller;
+      const pageIndex = pageOfMark(this.#marks, annotationKey);
+      if (pageIndex === null || !controller) {
+        logger.debug("No page holds this annotation", {
+          path: this.filePath,
+          annotationKey,
+        });
+        return;
+      }
+      this.#landing = { annotationKey, pageIndex };
+      if (renderedPagesOf(controller).includes(pageIndex)) {
+        this.#applyLanding();
+        return;
+      }
+      controller.applySubpath(`#page=${pageIndex + 1}`);
+    });
+  }
+
+  /**
+   * Bring the reader back to where the Annotation a History Step took away
+   * was. Nothing is left to select, so the selection goes and Obsidian's own
+   * page jump answers for the scroll.
+   */
+  #landOnPage(pageIndex: number): Promise<void> {
+    return this.refreshed.then(() => {
+      if (this.#surfaces.disposed) return;
+      // A Landing left waiting by an earlier press names an Annotation this
+      // step erased, so it goes rather than selecting one on the next render.
+      this.#landing = null;
+      this.#selection?.select(null, { popup: false });
+      this.#controller?.applySubpath(`#page=${pageIndex + 1}`);
     });
   }
 
@@ -713,7 +1285,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
       read: this.#read,
       records: this.#records,
       marks: this.#marks,
-      rendered: this.#rendered,
+      rendered: new Set(renderedPagesOf(controller)),
     });
     if (landing.kind === "drop") return;
     if (landing.kind === "page") {
@@ -799,6 +1371,12 @@ export class PdfViewBinding implements Disposable, HoverParent {
         this.#read = true;
         this.#records = list.annotations;
         this.#marks = groupAnnotationsByPage(list.annotations);
+        if (this.#surfaceState)
+          ingestAnnotations(
+            this.#surfaceState,
+            list.annotations,
+            this.#annotations,
+          );
         logger.debug("Annotation marks rebuilt for a PDF view", {
           path: this.filePath,
           source: list.source.kind,
@@ -806,9 +1384,9 @@ export class PdfViewBinding implements Disposable, HoverParent {
           pages: this.#marks.size,
         });
         this.#repaint();
-        // A mark the read retired takes its selection with it; one that moved
-        // takes the popup along.
-        this.#selection?.sync();
+        // A mark the read retired took its selection with it above; one that
+        // moved takes the popup along.
+        this.#popupHost?.sync();
         // The Attachment's marks now stand, which is what an Anchor waiting on
         // this view — a cold open, or a read that answered after it — needs.
         this.#land();
@@ -820,6 +1398,35 @@ export class PdfViewBinding implements Disposable, HoverParent {
           attachmentKey,
         });
       });
+  }
+
+  /**
+   * Asks for the Structured Characters under a selected text range's ends, so
+   * its handles lie across its text once they are read.
+   */
+  #readRangeText(key: string | null): void {
+    const record = this.#records.find((held) => held.key === key);
+    const handles = record ? rangeHandles(record, 0, this.#textRotation) : [];
+    const structure = handles.length > 0 ? this.#structure() : null;
+    if (
+      !structure ||
+      handles.every(
+        ({ pageIndex, rect }) =>
+          structure.textRotation(pageIndex, rect) !== null,
+      )
+    )
+      return;
+    void Promise.all(
+      handles.map(({ pageIndex }) => structure.page(pageIndex)),
+    ).then(
+      () => this.#patchSelected(),
+      (error: unknown) => {
+        logger.debug("Could not read the text under a range's handles", {
+          error,
+          annotationKey: key,
+        });
+      },
+    );
   }
 
   /** Every page holding marks, and every page that has just lost them. */
@@ -834,11 +1441,28 @@ export class PdfViewBinding implements Disposable, HoverParent {
     const page = controller && pageViewOf(controller, pageIndex + 1);
     if (!page) return;
     const annotations = this.#visibleMarks().get(pageIndex) ?? [];
+    const pending = (
+      this.#surfaceState?.getState().pendingStrokes ?? []
+    ).filter((stroke) => stroke.pageIndex === pageIndex);
     renderAnnotationOverlay(page, {
       annotations,
+      pending,
       selected: this.#selection?.selected,
+      handles: this.#handles(),
+      textRotation: this.#textRotation,
+      font: interfaceFont(page.div.win),
     });
-    if (annotations.length > 0) this.#painted.add(pageIndex);
+    // The rebuild took the capture's rectangle and the Live Stroke with the
+    // overlay.
+    if (this.#capturedOn === pageIndex) this.#drawCapture();
+    if (this.#strokeOn === pageIndex) this.#drawLiveStroke();
+    if (
+      this.#surfaceState &&
+      selectTextDraft(this.#surfaceState.getState())?.pageIndex === pageIndex
+    )
+      this.#drawTextDraft();
+    if (annotations.length > 0 || pending.length > 0)
+      this.#painted.add(pageIndex);
     else this.#painted.delete(pageIndex);
   }
 
@@ -870,6 +1494,34 @@ export class PdfViewBinding implements Disposable, HoverParent {
     this.#probes.record([result]);
     if (!this.supported) this[Symbol.dispose]();
   }
+}
+
+/**
+ * The first page that draws an Annotation, which is the page the reader scrolls
+ * to for it; `null` where no page on screen draws it.
+ */
+function pageOfMark(
+  marks: ReadonlyMap<number, readonly PdfPageAnnotation[]>,
+  key: string,
+): number | null {
+  for (const [pageIndex, placements] of marks) {
+    if (placements.some(({ annotation }) => annotation.key === key))
+      return pageIndex;
+  }
+  return null;
+}
+
+/** The pages that draw an Annotation, by its Indexed Key. */
+function pagesDrawing(
+  marks: ReadonlyMap<number, readonly PdfPageAnnotation[]>,
+  key: string,
+): Set<number> {
+  const pages = new Set<number>();
+  for (const [pageIndex, placements] of marks) {
+    if (placements.some(({ annotation }) => annotation.key === key))
+      pages.add(pageIndex);
+  }
+  return pages;
 }
 
 /**
