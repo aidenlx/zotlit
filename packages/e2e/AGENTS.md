@@ -22,5 +22,6 @@ The e2e vault's plugin bundle comes from `@zotlit/obsidian`'s dev build (`build:
 Each suite file builds its own Fixture and new purged vaults under `.scratch/e2e-*`; `paired-run.e2e.ts` also starts its own Paired Zotero (`src/paired-environment.ts`). The file disposes all of them at its end, and the next run clears what a crashed run left. The developer's Fixture, Development Vault, and Paired Run stay open and untouched.
 
 - Files run serially (`fileParallelism: false`): both drive the one desktop Obsidian.
+- The OS focus stays with the developer and with runs in other worktrees. `keepRendering` makes a vault's windows render, and its main window act focused, behind other apps; bring a window back with `raiseWindow` (`showInactive`).
 - A Paired Zotero that fails to start or to serve its Local API fails the file.
 - `src/paired-zotero.ts` holds the Local API client and the RDP levers. The [Fixture guide](../../docs/fixture.md) has the paths.
