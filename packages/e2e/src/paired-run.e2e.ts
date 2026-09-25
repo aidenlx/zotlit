@@ -4575,7 +4575,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `String(!!(${card})?.querySelector('textarea'))`,
+            `String(!!(${card})?.querySelector('.cm-content'))`,
             {
               expected: "true",
             },
@@ -4585,12 +4585,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const shortcutComment = "Saved by pop-out card Mod+Enter";
         await obEval(
           vaultId!,
-          `(function(){const editor=(${card}).querySelector('textarea');editor.value=${JSON.stringify(shortcutComment)};editor.dispatchEvent(new editor.win.Event('input',{bubbles:true}));return true;})()`,
+          `(function(){const editor=(${card}).querySelector('.cm-content');editor.focus();editor.doc.execCommand('selectAll');editor.doc.execCommand('insertText',false,${JSON.stringify(shortcutComment)});return true;})()`,
         );
         const shortcut = JSON.parse(
           await obEval(
             vaultId!,
-            `(function(){const editor=(${card}).querySelector('textarea');const mac=editor.win.navigator.platform.startsWith('Mac');const event=new editor.win.KeyboardEvent('keydown',{key:'Enter',metaKey:mac,ctrlKey:!mac,bubbles:true,cancelable:true});editor.dispatchEvent(event);return JSON.stringify({prevented:event.defaultPrevented,open:editor.isConnected,owned:editor.win!==(${readerPdf}).win});})()`,
+            `(function(){const editor=(${card}).querySelector('.cm-content');const mac=editor.win.navigator.platform.startsWith('Mac');const event=new editor.win.KeyboardEvent('keydown',{key:'Enter',metaKey:mac,ctrlKey:!mac,bubbles:true,cancelable:true});editor.dispatchEvent(event);return JSON.stringify({prevented:event.defaultPrevented,open:editor.isConnected,owned:editor.win!==(${readerPdf}).win});})()`,
           ),
         ) as { prevented: boolean; open: boolean; owned: boolean };
         expect(shortcut).toEqual({ prevented: true, open: true, owned: true });
@@ -4604,7 +4604,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEval(
             vaultId!,
-            `String(!!(${card})?.querySelector('textarea'))`,
+            `String(!!(${card})?.querySelector('.cm-content'))`,
           ),
         ).toBe("true");
         await obEval(
