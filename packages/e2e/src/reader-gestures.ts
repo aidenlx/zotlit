@@ -173,15 +173,15 @@ export const FIRE = `const fire=(type,x,y,target,extra)=>{const node=target??doc
 export const TAP = `const tap=(x,y)=>{const node=fire('pointerdown',x,y);fire('pointerup',x,y,node);fire('click',x,y,node);return node;};`;
 
 /**
- * Shows and raises the vault's window. A pointer gesture is hit-tested against
- * the page as laid out, and a hidden or occluded window neither lays out nor
- * paints it.
+ * Shows the vault's window if it is hidden or minimized, and leaves the OS
+ * focus where it is. A pointer gesture is hit-tested against the page as laid
+ * out; `keepRendering` keeps a covered window laying it out.
  */
 export async function raiseWindow(vaultId: string): Promise<void> {
   expect(
     await obEvalUntil(
       vaultId,
-      "(function(){const electronWindow=require('@electron/remote').getCurrentWindow();electronWindow.show();electronWindow.moveTop();return document.visibilityState;})()",
+      "(function(){const electronWindow=require('@electron/remote').getCurrentWindow();if(!electronWindow.isVisible()||electronWindow.isMinimized())electronWindow.showInactive();return document.visibilityState;})()",
       { expected: "visible" },
     ),
   ).toBe(true);

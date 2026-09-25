@@ -733,6 +733,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "fresh",
     ]);
     const id = opened.stdout.trim().split("\n")[0]!.trim();
+    await keepRendering(id);
     // No Zotero process runs on this suite's Fixture.
     expect(
       await obEval(
@@ -903,6 +904,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "fresh",
     ]);
     const freshId = created.stdout.trim().split("\n")[0]!.trim();
+    await keepRendering(freshId);
     await obEval(
       freshId,
       "app.saveLocalStorage('zotlit-profile-customization','native');true",
@@ -2375,6 +2377,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       "fresh",
     ]);
     vaultId = created.stdout.trim().split("\n")[0]!.trim();
+    await keepRendering(vaultId);
     await obEval(
       vaultId,
       "app.plugins.plugins.zotlit.services.settings.update({'server.live-update':false});true",
