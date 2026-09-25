@@ -49,6 +49,7 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { verifyAnnotationDrag } from "./annotation-drag.ts";
 import { verifyAnnotationInsert } from "./annotation-insert.ts";
+import { keepRendering } from "./background-throttling.ts";
 import {
   verifyMultiPdfExcerptBatch,
   verifyReaderBackedExcerpts,
@@ -412,6 +413,9 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     // `afterAll`, so the setting is turned off here rather than worked around
     // in the one test that measures a menu.
     await obEval(vaultId, "app.vault.setConfig('nativeMenus',false);true");
+    // The run seldom shows this vault's windows, and a hidden window gets no
+    // animation frames. The window closes with the vault in `afterAll`.
+    await keepRendering(vaultId);
     const serverPort = await availableLoopbackPort();
     await obEval(
       vaultId,
