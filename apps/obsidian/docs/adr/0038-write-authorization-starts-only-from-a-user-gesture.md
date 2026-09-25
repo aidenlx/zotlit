@@ -4,7 +4,7 @@ Zotero grants Write Authorization through its own modal dialog: Allow, Always Al
 
 One authorization request belongs to the plugin and survives navigation between views. The Annotation View and settings show **Waiting for approval in Zotero** and prevent duplicate requests. The user completes or declines the request in Zotero. A denial or connection failure ends that attempt; another request requires Allow editing. A write that reports expired authorization also returns to this explicit action. Approval makes editing available; a subsequent editing action submits a change.
 
-Accepted on 2026-09-20. This replaces the earlier choice to authorize from an edit gesture. The decision is a target contract; implementation must be checked against it.
+Accepted on 2026-09-20. This replaces the earlier choice to authorize from an edit gesture. The decision is a target contract; implementation must be checked against it. Amended by [ADR 0062](0062-editing-requires-a-remembered-authorization-and-allow-leaves-zotlit-read-only.md): only Always Allow enables editing.
 
 ## Considered Options
 
@@ -15,8 +15,8 @@ Accepted on 2026-09-20. This replaces the earlier choice to authorize from an ed
 
 ## Consequences
 
-- A One-time Authorization (Allow) is consumed when a write validates its key, even if a later check or the mutation fails. Show **Next change allowed** while it is available. After consumption, editing controls require a new explicit authorization. Comments use **Save comment** with this grant; Remembered Authorization keeps automatic saving, as defined in [ADR 0048](0048-annotation-drafts-and-pending-writes-stay-in-memory.md).
-- The authorization request waits for Zotero's response across view closure. The initial interface directs the user to Zotero's explicit approval or Deny buttons. Client cancellation cannot promise to close Zotero's dialog; native dialog dismissal is not classified as denial without a verified result. Zotero limits prompts to five per minute, and a `429` keeps the action disabled for `Retry-After`.
+- Only Always Allow enables editing. Zotero's Allow issues a single-use key that ZotLit discards, leaving editing unavailable, as defined in [ADR 0062](0062-editing-requires-a-remembered-authorization-and-allow-leaves-zotlit-read-only.md).
+- The authorization request waits for Zotero's response across view closure. The initial interface directs the user to Zotero's Always Allow or Deny buttons. Client cancellation cannot promise to close Zotero's dialog; native dialog dismissal is not classified as denial without a verified result. Zotero limits prompts to five per minute, and a `429` keeps the action disabled for `Retry-After`.
 - A `403 Write access denied` marks that one library read-only in memory for the session, cleared by the next Capability Probe; no key is requested again for it.
 - The Client Name shown in Zotero's dialog is `ZotLit for Obsidian`, one string for every vault.
 - The settings row **Zotero editing** leads with the current editing outcome and the relevant next step. Connection availability and a saved authorization remain separate facts. **Ready to edit** replaces the authorization action when editing is available. **Forget authorization** is a secondary management action. A failed connection says **Cannot connect to Zotero**; Local API setup guidance requires evidence that the API is disabled.

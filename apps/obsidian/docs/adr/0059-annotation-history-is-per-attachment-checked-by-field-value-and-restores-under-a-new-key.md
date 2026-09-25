@@ -12,5 +12,5 @@ The Geometry Edit and ink specs (#1200, #1207) left undo out because "Zotero hol
 ## Consequences
 
 - An undo of a delete, or a redo of a create, gives the Annotation a new Zotero key. Links in notes, excerpt images, and `obsidian://` URIs that name the old key no longer resolve. The app shows no notice for this; the docs page on annotation editing states it.
-- An undo is a write: it needs the Editing Capability, uses up a One-time Authorization, and is ignored while a write on the Attachment is pending or an Annotation the step touches has an open Annotation Draft.
+- An undo is a write: it needs the Editing Capability and is ignored while a write on the Attachment is pending or an Annotation the step touches has an open Annotation Draft.
 - The history holds at most 100 steps and lives in memory only (ADR 0048).
