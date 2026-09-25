@@ -65,7 +65,14 @@ async function mount(element: ReturnType<typeof createElement>) {
  * One editable card, and the actions it calls: the card's click and the
  * editors it opens. Every other action is inert.
  */
-async function mountCard({ held = false }: { held?: boolean } = {}) {
+async function mountCard({
+  held = false,
+  opens = true,
+}: {
+  held?: boolean;
+  /** Whether the repository starts a comment draft for the editor to open on. */
+  opens?: boolean;
+} = {}) {
   const store = createAnnotStore();
   store.setState({
     capability: { kind: "writable" },
@@ -89,7 +96,7 @@ async function mountCard({ held = false }: { held?: boolean } = {}) {
     ),
   });
   const onSelectAnnotation = vi.fn();
-  const onOpenComment = vi.fn(() => true);
+  const onOpenComment = vi.fn(() => opens);
   const onOpenTags = vi.fn(() => true);
   const actions = new Proxy(
     { onSelectAnnotation, onOpenComment, onOpenTags } as Partial<AnnotActions>,
@@ -123,7 +130,7 @@ async function mountCard({ held = false }: { held?: boolean } = {}) {
       ),
     ),
   );
-  return { host, onSelectAnnotation, onOpenComment, onOpenTags };
+  return { host, store, onSelectAnnotation, onOpenComment, onOpenTags };
 }
 
 /** A click as the browser delivers it, with these keys held. */
@@ -200,4 +207,14 @@ it("opens the Mark Popup's comment editor for a Shift or Cmd/Ctrl click", async 
   await click(comment, { metaKey: true });
   await click(comment, { shiftKey: true });
   expect(onOpen).toHaveBeenCalledTimes(2);
+});
+
+it("opens the card's comment editor only where a draft starts", async () => {
+  for (const opens of [false, true]) {
+    const { host, store } = await mountCard({ opens });
+    await click(host.querySelector(".zt-annot-comment")!);
+    expect(store.getState().editingCommentKey).toBe(opens ? CARD.key : null);
+    await act(() => root?.unmount());
+    host.remove();
+  }
 });

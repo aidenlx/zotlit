@@ -141,7 +141,11 @@ describe("the card list", () => {
     const { host } = await mountList();
     const grid = cardGrid(host);
     expect(grid.getAttribute("aria-multiselectable")).toBe("true");
-    expect(grid.getAttribute("aria-label")).toBe(m.annot_view_name());
+    const label = document.getElementById(
+      grid.getAttribute("aria-labelledby") ?? "",
+    );
+    expect(label?.textContent).toBe(m.annot_view_name());
+    expect(grid.hasAttribute("aria-label")).toBe(false);
     const cards = [...grid.querySelectorAll(".zt-annot-card")];
     expect(cards.map((card) => card.getAttribute("role"))).toEqual(
       KEYS.map(() => "row"),

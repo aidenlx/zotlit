@@ -55,6 +55,7 @@ import {
 import { sameKeys } from "@/views/annot-view/card-selection";
 import {
   confirmDelete,
+  erase,
   copyText,
   recolor,
 } from "@/views/annot-view/card-verbs";
@@ -475,8 +476,9 @@ export class MarkSelection implements Disposable {
   }
 
   /**
-   * Take this Annotation as the selection, from a surface outside the reader —
-   * a click on its card in the Annotation View.
+   * Take this Annotation as the selection, from outside a mark click: a Mark
+   * Landing, a mark just created, or {@link selectMarks} with one mark. The
+   * Annotation View's cards enter through {@link selectMarks}.
    *
    * @param options.popup whether the Mark Popup opens over the selection.
    *   A Mark Landing passes `false`: the user followed a link to read a
@@ -639,14 +641,14 @@ export class MarkSelection implements Disposable {
     }
     // The Mac keyboards that print "delete" on the backspace key send
     // `Backspace`, so both reach the same verb. It erases every selected mark.
+    // A delete of one mark keeps its behaviour in the PDF: it asks nothing. A
+    // group asks once and names its count, as the Annotation View does.
     if (event.key === "Delete" || event.key === "Backspace") {
       const selected = this.#selectedKeys();
       if (selected.length === 0) return;
       event.preventDefault();
       if (!this.#live()) this.#deps.gestures.reportBlockedGesture();
-      else if (selected.length === 1)
-        this.#write(this.#deps.annotations.deleteAnnotation(selected[0]!));
-      // A group asks once and names its count, as the Annotation View does.
+      else if (selected.length === 1) this.#erase(selected);
       else
         void confirmDelete(this.#deps.app, this.#deps.annotations, {
           annotationKeys: selected,
@@ -1307,7 +1309,7 @@ export class MarkSelection implements Disposable {
     node: HTMLElement,
     annotation: AnnotationRecord,
   ): void {
-    const { annotations, gestures } = this.#deps;
+    const { gestures } = this.#deps;
     switch (id) {
       case "color":
         showMenuAtButton(
@@ -1327,7 +1329,7 @@ export class MarkSelection implements Disposable {
         copyText([annotation]);
         return;
       case "delete":
-        this.#write(annotations.deleteAnnotation(annotation.key));
+        this.#erase([annotation.key]);
         return;
       case "reveal":
         gestures.revealAnnotation(annotation.key, { comment: false });
@@ -1380,6 +1382,17 @@ export class MarkSelection implements Disposable {
     void recolor(this.#deps.annotations, {
       annotationKeys,
       color,
+      now: () => this.#deps.now(),
+    });
+  }
+
+  /**
+   * Erase these marks with no confirmation, through the verb the Annotation
+   * View's delete settles through.
+   */
+  #erase(annotationKeys: readonly string[]): void {
+    void erase(this.#deps.annotations, {
+      annotationKeys,
       now: () => this.#deps.now(),
     });
   }

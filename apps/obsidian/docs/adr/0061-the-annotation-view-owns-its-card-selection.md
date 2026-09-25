@@ -18,3 +18,15 @@ Under the mirror, a card could be selected only while an Obsidian PDF view was b
 - A card opens its full text and offers edit controls only when it is selected alone. A card selected with others offers neither, as in Zotero's own sidebar, so no card is "primary".
 - Pinned and a Literature Note tab bind no reader. Two views bound to the same Obsidian PDF view share a selection through that reader.
 - Multi-selection uses Zotero's gestures: Cmd/Ctrl-click toggles a card, Shift-click takes a range in list order, and Cmd/Ctrl+A takes every visible card. Keys go through the view's `Scope`.
+
+## Amendment: a card in a group keeps its comment and tag controls
+
+Accepted 2026-09-25. A card selected with others stays compact, but it still shows its comment and tag controls. A press on one of them first selects that card alone, then opens its editor, so an editor never opens on a card in a group.
+
+## Amendment: a blur saves the card comment editor and keeps it open
+
+Accepted 2026-09-25. A blur saves the card's comment editor and keeps it open, as Ctrl/Cmd+Enter does; Escape or a view gesture that changes the Card Selection saves and closes it, and a reader selection change waits until then. The card's tag editor still closes on blur, as [ADR 0063](0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md) decides.
+
+## Amendment: the card list is a grid of rows
+
+Accepted 2026-09-25. The list is a multi-select `grid` of `row`s that carry `aria-selected`, not a `listbox`, because each card holds controls and a `listbox` option cannot.

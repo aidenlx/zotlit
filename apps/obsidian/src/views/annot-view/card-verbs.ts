@@ -1,7 +1,8 @@
 // The verbs over one Annotation or a group that both surfaces share: the
 // Annotation View's menus and keys, and the Obsidian PDF view's keys and Mark
-// Popup. A delete asks once, and a group names its count. Every verb here
-// never rejects, so a caller may start one with `void`.
+// Popup. A delete asks once, and a group names its count; one mark in the PDF
+// is erased with no question. Every verb here never rejects, so a caller may
+// start one with `void`, and each returns the failure notices it raised.
 import type { App } from "obsidian";
 
 import { confirm } from "@/lib/confirm";
@@ -27,32 +28,54 @@ const logger = getLogger(["views", "annot-view"]);
  * new key, so the delete asks once, and a group names its count.
  */
 export function deleteConfirmation(count: number): ConfirmOptions {
-  return count > 1
-    ? {
-        title: m.annot_view_delete_group_confirm_title({ count }),
-        content: m.annot_view_delete_group_confirm_content(),
-        action: m.annot_view_delete_confirm_action(),
-        destructive: true,
-      }
-    : {
-        title: m.annot_view_delete_confirm_title(),
-        content: m.annot_view_delete_confirm_content(),
-        action: m.annot_view_delete_confirm_action(),
-        destructive: true,
-      };
+  return {
+    ...(count > 1
+      ? {
+          title: m.annot_view_delete_group_confirm_title({ count }),
+          content: m.annot_view_delete_group_confirm_content(),
+        }
+      : {
+          title: m.annot_view_delete_confirm_title(),
+          content: m.annot_view_delete_confirm_content(),
+        }),
+    action: m.annot_view_delete_confirm_action(),
+    destructive: true,
+  };
 }
 
 /**
- * Ask once, then erase these Annotations in Zotero: one alone, or two or more
- * as one History Step where each keeps its own outcome. A write that did not
- * land says why in a notice, once per reason, as every failed write does.
+ * Ask once, then {@link erase} these Annotations. Never rejects.
+ *
+ * @param options.annotationKeys Indexed Keys, in list order.
+ * @param options.now the clock a cooldown's remaining seconds are read against.
+ * @returns the failure notices raised, once per reason; none where the user
+ *   declined.
+ */
+export async function confirmDelete(
+  app: App,
+  annotations: Pick<
+    AnnotationRepository,
+    "deleteAnnotation" | "deleteAnnotations"
+  >,
+  options: { annotationKeys: readonly string[]; now: () => Temporal.Instant },
+): Promise<readonly string[]> {
+  if (options.annotationKeys.length === 0) return [];
+  if (!(await confirm(deleteConfirmation(options.annotationKeys.length), app)))
+    return [];
+  return await erase(annotations, options);
+}
+
+/**
+ * Erase these Annotations in Zotero with no confirmation: one alone, or two or
+ * more as one History Step where each keeps its own outcome. A write that did
+ * not land says why in a notice, once per reason, as every failed write does.
  * Never rejects.
  *
  * @param options.annotationKeys Indexed Keys, in list order.
  * @param options.now the clock a cooldown's remaining seconds are read against.
+ * @returns the failure notices raised, once per reason.
  */
-export async function confirmDelete(
-  app: App,
+export async function erase(
   annotations: Pick<
     AnnotationRepository,
     "deleteAnnotation" | "deleteAnnotations"
@@ -61,11 +84,10 @@ export async function confirmDelete(
     annotationKeys,
     now,
   }: { annotationKeys: readonly string[]; now: () => Temporal.Instant },
-): Promise<void> {
+): Promise<readonly string[]> {
   const [first] = annotationKeys;
-  if (first === undefined) return;
-  if (!(await confirm(deleteConfirmation(annotationKeys.length), app))) return;
-  await settleWrites(
+  if (first === undefined) return [];
+  return await settleWrites(
     async () =>
       annotationKeys.length === 1
         ? [await annotations.deleteAnnotation(first)]
@@ -82,6 +104,7 @@ export async function confirmDelete(
  * @param options.annotationKeys Indexed Keys, in list order.
  * @param options.color the swatch to store.
  * @param options.now the clock a cooldown's remaining seconds are read against.
+ * @returns the failure notices raised, once per reason.
  */
 export async function recolor(
   annotations: Pick<AnnotationRepository, "patchColor" | "patchColors">,
@@ -94,10 +117,10 @@ export async function recolor(
     color: string;
     now: () => Temporal.Instant;
   },
-): Promise<void> {
+): Promise<readonly string[]> {
   const [first] = annotationKeys;
-  if (first === undefined) return;
-  await settleWrites(
+  if (first === undefined) return [];
+  return await settleWrites(
     async () =>
       annotationKeys.length === 1
         ? [await annotations.patchColor(first, color)]
@@ -129,6 +152,8 @@ export function copyText(
  * Wait for the writes of one verb, and say why in a notice, once per reason,
  * for each that did not land. A send that threw is an outcome ZotLit never
  * learned.
+ *
+ * @returns the notices it raised, which is what the seam renders.
  */
 async function settleWrites(
   send: () => Promise<readonly MutationState[]>,
@@ -137,7 +162,7 @@ async function settleWrites(
     count,
     now,
   }: { what: string; count: number; now: () => Temporal.Instant },
-): Promise<void> {
+): Promise<readonly string[]> {
   let outcomes: readonly MutationState[];
   try {
     outcomes = await send();
@@ -149,6 +174,7 @@ async function settleWrites(
     });
     outcomes = [{ kind: "failed", failure: { kind: "unknown-outcome" } }];
   }
-  for (const message of groupFailureMessages(outcomes, now()))
-    new BaseNotice(message);
+  const messages = groupFailureMessages(outcomes, now());
+  for (const message of messages) new BaseNotice(message);
+  return messages;
 }

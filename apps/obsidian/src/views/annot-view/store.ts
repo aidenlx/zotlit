@@ -290,16 +290,41 @@ function filterOf(s: FilterSlices): AnnotFilter {
 }
 
 /**
+ * The last order worked out over each list, and the filter slices it was
+ * worked out under. Keyed on the list itself, so each view keeps its own.
+ */
+const orders = new WeakMap<
+  readonly AnnotationRecord[],
+  { slices: FilterSlices; order: readonly string[] }
+>();
+
+/**
  * The Indexed Keys the list shows, in the order it shows them — the list the
  * Card Selection's transitions read, filtered as {@link useAnnotFilter}
- * filters the cards on screen.
+ * filters the cards on screen. The view's subscription reads it on every
+ * store update, so it filters again only when the list or a filter slice
+ * changes.
  */
 export function visibleOrder(
   s: FilterSlices & Pick<AnnotState, "annotations">,
-): string[] {
-  return filterAnnotations(s.annotations ?? [], filterOf(s)).map(
+): readonly string[] {
+  if (s.annotations === null) return [];
+  const held = orders.get(s.annotations);
+  if (
+    held?.slices.filterQuery === s.filterQuery &&
+    held.slices.selectedColors === s.selectedColors &&
+    held.slices.selectedTags === s.selectedTags
+  )
+    return held.order;
+  const { filterQuery, selectedColors, selectedTags } = s;
+  const order = filterAnnotations(s.annotations, filterOf(s)).map(
     ({ key }) => key,
   );
+  orders.set(s.annotations, {
+    slices: { filterQuery, selectedColors, selectedTags },
+    order,
+  });
+  return order;
 }
 
 /** The {@link AnnotFilter} on screen, held while its slices are unchanged. */

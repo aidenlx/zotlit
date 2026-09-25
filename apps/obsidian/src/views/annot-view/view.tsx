@@ -26,6 +26,7 @@ import {
 import type { AnnotViewAttachment, Library } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
+import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import { AppContext } from "@/lib/app-context";
 import {
   registerKeymap,
@@ -108,6 +109,24 @@ import type { AnnotViewState } from "./view-state";
 export const ANNOT_VIEW_TYPE = "zotero-annotation-view";
 
 const logger = getLogger(["views", "annot-view"]);
+
+/** The composite widgets in the view that answer their own keys. */
+const COMPOSITE_WIDGET =
+  '[role="listbox"], [role="combobox"], [role="menu"], [role="menuitem"]';
+
+/**
+ * Whether a key belongs to the control it landed on rather than to the Card
+ * Selection: a text field, or a composite widget such as the filter bar's
+ * list boxes.
+ */
+function controlOwnsKey(target: EventTarget | null): boolean {
+  if (inTextEntry(target)) return true;
+  const node = target as Node | null;
+  return (
+    node?.instanceOf(HTMLElement) === true &&
+    node.closest(COMPOSITE_WIDGET) !== null
+  );
+}
 
 const STORAGE_KEY_PREFIX = "zotlit-annot-atch-";
 const FILTER_STORAGE_KEY_PREFIX = "zotlit-annot-filter-";
@@ -564,9 +583,9 @@ export class AnnotationView extends ItemView implements HistorySurface {
 
     // Cmd/Ctrl+A selects every card the list shows, from anywhere in the
     // view. One typed into a field goes on to the field, which selects its own
-    // text.
+    // text, and one on a list box or a menu goes on to that widget.
     const all = registerKeymap(this.scope, ["Mod"], "A", (event) => {
-      if (inTextEntry(event.target)) return;
+      if (controlOwnsKey(event.target)) return;
       this.#changeFromView({ kind: "all" });
       return false;
     });
@@ -585,11 +604,31 @@ export class AnnotationView extends ItemView implements HistorySurface {
       this.register(() => erase[Symbol.dispose]());
     }
 
+    // `1`–`8` recolour every Selected Card, in the palette's own order, as the
+    // same keys do in the PDF. One on a field, a list box or a menu goes on to
+    // that control.
+    for (const [index, color] of ANNOTATION_COLORS.entries()) {
+      const swatch = registerKeymap(
+        this.scope,
+        [],
+        String(index + 1),
+        (event) => {
+          if (controlOwnsKey(event.target)) return;
+          if (this.#store.getState().cardSelection.selected.length === 0)
+            return;
+          this.#actions?.onRecolorSelection(color);
+          return false;
+        },
+      );
+      this.register(() => swatch[Symbol.dispose]());
+    }
+
     // Cmd/Ctrl+C copies the text of every Selected Card, from anywhere in the
-    // view. One typed into a field, or over text the user selected in the
-    // view, goes on to the platform's own copy.
+    // view. One typed into a field, on a list box or a menu, or over text the
+    // user selected in the view, goes on to that control or the platform's own
+    // copy.
     const copy = registerKeymap(this.scope, ["Mod"], "C", (event) => {
-      if (inTextEntry(event.target)) return;
+      if (controlOwnsKey(event.target)) return;
       const selection = this.contentEl.win.getSelection();
       if (
         selection &&
@@ -745,12 +784,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
 
   protected override async onClose(): Promise<void> {
     this.#closed = true;
-    const editingCommentKey = this.#store.getState().editingCommentKey;
-    if (editingCommentKey) {
-      void this.#deps.annotations.submitComment(editingCommentKey, {
-        automatic: true,
-      });
-    }
+    this.#submitOpenComment();
     this.#loadDisposables?.[Symbol.dispose]();
     this.#loadDisposables = null;
     this.#leafSession?.();
@@ -1460,21 +1494,27 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * @returns whether one was open.
    */
   #closeEditors(): boolean {
-    const state = this.#store.getState();
-    if (!editorOpen(state)) return false;
-    const { editingCommentKey } = state;
-    if (editingCommentKey !== null) {
-      void this.#deps.annotations
-        .submitComment(editingCommentKey, { automatic: true })
-        .then((outcome) => {
-          if (outcome.kind === "failed")
-            new BaseNotice(
-              writeFailureMessage(outcome.failure, Temporal.Now.instant()),
-            );
-        });
-    }
+    if (!editorOpen(this.#store.getState())) return false;
+    this.#submitOpenComment();
     this.#store.setState({ editingCommentKey: null, editingTagsKey: null });
     return true;
+  }
+
+  /**
+   * Submits the open comment editor's text, as its own close would, and says
+   * why in a notice where the write did not land.
+   */
+  #submitOpenComment(): void {
+    const { editingCommentKey } = this.#store.getState();
+    if (editingCommentKey === null) return;
+    void this.#deps.annotations
+      .submitComment(editingCommentKey, { automatic: true })
+      .then((outcome) => {
+        if (outcome.kind === "failed")
+          new BaseNotice(
+            writeFailureMessage(outcome.failure, Temporal.Now.instant()),
+          );
+      });
   }
 
   // #endregion

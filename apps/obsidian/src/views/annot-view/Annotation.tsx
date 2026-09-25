@@ -184,7 +184,12 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
       onMouseDown={(e) => {
         if (!e.shiftKey || inTextEntry(e.target)) return;
         // A control keeps its press, and the focus it takes.
-        if ((e.target as Element).closest('button, a, [role="button"]')) return;
+        const target = e.target as Node;
+        if (
+          target.instanceOf(Element) &&
+          target.closest('button, a, [role="button"]')
+        )
+          return;
         e.preventDefault();
       }}
       onClick={(e) => {
@@ -392,8 +397,8 @@ function CardActionBar({
           disabled={controls.comment.disabled}
           data-blocked={controls.comment.blocked ? "" : undefined}
           onClick={press(controls.comment, () => {
-            if (!editing) actions.onOpenComment(annot);
-            setEditing(editing ? null : annot.key);
+            if (editing) setEditing(null);
+            else if (actions.onOpenComment(annot)) setEditing(annot.key);
           })}
           {...tooltipAttrs(controls.comment.tooltip)}
         />
@@ -640,8 +645,7 @@ function HeldDraftPanel({
       surface="card"
       actions={cardDraftActions(actions, annot, held.text)}
       onOpen={() => {
-        actions.onOpenComment(annot);
-        setEditing(annot.key);
+        if (actions.onOpenComment(annot)) setEditing(annot.key);
       }}
       // The panel is the draft's own surface; the card's selection is not it.
       // A Shift or Cmd/Ctrl click off its verbs is the card's own gesture.
@@ -675,8 +679,7 @@ function Comment({
       html={annot.comment ?? ""}
       editable={editable}
       onOpen={() => {
-        actions.onOpenComment(annot);
-        setEditing(annot.key);
+        if (actions.onOpenComment(annot)) setEditing(annot.key);
       }}
     />
   );

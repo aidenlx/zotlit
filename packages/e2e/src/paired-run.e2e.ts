@@ -4439,17 +4439,22 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           /** That Annotation's card, in whichever Annotation View holds it. */
           const card = `app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(historyKey)}]')).find(Boolean)`;
 
-          /** The card's own colour pick, through the verb its controls run. */
-          async function pickOnCard(color: string): Promise<void> {
+          /**
+           * The card's own colour pick: a click selects the card alone, and
+           * the number row's second key, on the view's own Scope, picks
+           * {@link picked} for it.
+           */
+          async function pickOnCard(): Promise<void> {
             expect(
               await obEvalUntil(
                 vaultId!,
-                `(function(){const view=app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view).find((candidate)=>candidate.gestures&&candidate.snapshot.annotations&&candidate.snapshot.annotations.some((record)=>record.key===${JSON.stringify(historyKey)}));if(!view)return 'no card';view.gestures.onSetColor(view.snapshot.annotations.find((record)=>record.key===${JSON.stringify(historyKey)}),${JSON.stringify(color)});return 'picked';})()`,
-                { expected: "picked" },
+                `(function(){const card=${card};if(!card)return 'no card';card.click();return String(card.hasAttribute('data-alone'));})()`,
+                { expected: "true" },
               ),
             ).toBe(true);
+            expect(await pressOnCard("2", {})).toEqual({ handled: true });
             expect(
-              await waitFor(async () => (await storedColor()) === color),
+              await waitFor(async () => (await storedColor()) === picked),
             ).toBe(true);
             await writeSettled();
           }
@@ -4476,7 +4481,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const undoOnCard = () => pressOnCard("z", { [platformKey]: true });
 
           it("puts back a colour the card picked, for the reader's undo key", async () => {
-            await pickOnCard(picked);
+            await pickOnCard();
 
             expect(await undoKey()).toEqual({ handled: true });
             await stepSettled();
@@ -4495,7 +4500,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           }, 120000);
 
           it("takes the top step of the Attachment's history for the card's own undo key", async () => {
-            await pickOnCard(picked);
+            await pickOnCard();
 
             expect(await undoOnCard()).toEqual({ handled: true });
 
@@ -5521,6 +5526,19 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               `(app.vault.setConfig('nativeMenus',${nativeMenus === "true"}),true)`,
             );
           }
+        }, 120000);
+
+        it("recolours a group with a colour key on the view, and one undo returns both colours", async () => {
+          await withGroupOfTwo(async (made) => {
+            // `3` on the focused card, through the view's own Scope, is the
+            // palette's third swatch, green.
+            expect(
+              await obJson<{ handled: boolean }>(
+                `(function(){const card=${cardOf(made[1])};card.focus();const event=new KeyboardEvent('keydown',{key:'3',bubbles:true,cancelable:true});Object.defineProperty(event,'target',{value:card});const handled=${annotView}.scope.handleKey(event,{modifiers:'',key:'3',vkey:'Digit3'})===false;return JSON.stringify({handled});})()`,
+              ),
+            ).toEqual({ handled: true });
+            await expectOneUndoReturnsBoth(made);
+          });
         }, 120000);
 
         it("copies the quoted text of a group for Cmd/Ctrl+C on the view, in list order", async () => {

@@ -332,6 +332,7 @@ function AnnotList({ collapsed }: { collapsed: boolean }) {
   const annotations = useAnnotStore((s) => s.annotations);
   const clearFilters = useClearFilters();
   const gridRef = useRef<HTMLDivElement>(null);
+  const labelId = useId();
 
   const filter = useAnnotFilter();
   const filtered = useMemo(
@@ -377,6 +378,13 @@ function AnnotList({ collapsed }: { collapsed: boolean }) {
         actions.onClearSelection();
       }}
     >
+      {/* The grid's name, held apart from the cards: an `aria-label` on the
+          grid would reach the pointer too, and Obsidian would draw it as a
+          hover tooltip over the whole list.
+          @see apps/obsidian/policies/tooltips.md */}
+      <span id={labelId} className="zt:sr-only">
+        {m.annot_view_name()}
+      </span>
       {/* To assistive technology the cards are one column of rows, in list
           order, however many tracks the layout draws them in. */}
       <div
@@ -384,7 +392,7 @@ function AnnotList({ collapsed }: { collapsed: boolean }) {
         className="zt:grid zt:grid-cols-1 zt:items-start zt:gap-2 zt:@2xl:grid-cols-2 zt:@5xl:grid-cols-3"
         role="grid"
         aria-multiselectable="true"
-        aria-label={m.annot_view_name()}
+        aria-labelledby={labelId}
       >
         {filtered.map((annot) => (
           <Annotation
