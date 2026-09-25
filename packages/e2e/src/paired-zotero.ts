@@ -472,10 +472,33 @@ export async function readerSettled(
     seen = now;
     return still;
   }, 120);
-  if (!settled)
+  if (!settled) {
+    // Where Zotero's windows and tabs stood, for a failure that only a full
+    // run reproduces.
+    const scene = await rdp
+      .json<unknown>(
+        `(async () => {
+      const reader = ${openReader(attachmentKey)};
+      const main = Zotero.getMainWindow();
+      const started = Date.now();
+      await new Promise((resolve) => main.setTimeout(resolve, 50));
+      return {
+        timerLagMs: Date.now() - started - 50,
+        bounds: [main.screenX, main.screenY, main.outerWidth, main.outerHeight],
+        selectedTab: main.Zotero_Tabs.selectedID,
+        readerTab: reader?.tabID ?? null,
+        mainVisibility: main.document.visibilityState,
+        readerVisibility: reader?._iframeWindow?.document.visibilityState ?? null,
+        readers: Zotero.Reader._readers.map((candidate) => candidate.tabID),
+        rendered: [...(reader?._internalReader?._primaryView?._pdfRenderer?._lastRendered.keys() ?? [])],
+      };
+    })()`,
+      )
+      .catch((error: unknown) => String(error));
     throw new Error(
-      `the Zotero Reader never settled on ${annotationKey}: ${pending.join(", ") || "version moving"}`,
+      `the Zotero Reader never settled on ${annotationKey}: ${pending.join(", ") || "version moving"}; ${JSON.stringify(scene)}`,
     );
+  }
 }
 
 /**
