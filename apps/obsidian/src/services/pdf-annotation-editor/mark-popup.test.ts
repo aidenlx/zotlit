@@ -124,9 +124,14 @@ describe("markPopupRow", () => {
     expect(verbs(built).tags).toEqual([true, m.annot_view_card_saving()]);
   });
 
-  it("keeps copying off a mark that carries no text", () => {
-    const image = { ...HIGHLIGHT, text: null };
+  it("keeps copying off a mark that carries no text and no comment", () => {
+    const image = { ...HIGHLIGHT, text: null, comment: null };
     expect(verbs(row({ annotation: image })).copy?.[0]).toBe(true);
+  });
+
+  it("offers copying on a mark that carries only a comment", () => {
+    const note = { ...HIGHLIGHT, text: null, comment: "Check the axis" };
+    expect(verbs(row({ annotation: note })).copy?.[0]).toBe(false);
   });
 
   it("offers the stepper only where marks overlap, counting from one", () => {

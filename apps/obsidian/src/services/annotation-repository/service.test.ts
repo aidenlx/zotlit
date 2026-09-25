@@ -4137,6 +4137,71 @@ it("keeps each Annotation's own outcome where one delete of a group is refused",
   expect(repository.canUndo("RGRPDF24")).toBe(false);
 });
 
+it("takes a group recolour in one step, and one undo puts every colour back", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository, requests } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  const keys = ["PUPR5FG5", "K3JRFLFQ", "C94NJNYG"];
+  const before = keys.map((key) => zotero.at(key)?.color);
+  const sent = requests.length;
+
+  expect(await repository.patchColors(keys, "#5FB236")).toEqual([
+    { kind: "idle" },
+    { kind: "idle" },
+    { kind: "idle" },
+  ]);
+  // One request per Annotation.
+  expect(
+    requests.slice(sent).filter(({ method }) => method === "PATCH"),
+  ).toHaveLength(3);
+  expect(keys.map((key) => zotero.at(key)?.color)).toEqual([
+    "#5fb236",
+    "#5fb236",
+    "#5fb236",
+  ]);
+
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(keys.map((key) => zotero.at(key)?.color)).toEqual(before);
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
+it("keeps each Annotation's own outcome where one recolour of a group is refused", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository } = await writable(stack, {
+    ...zotero.answers,
+    write: (request) =>
+      request.method === "PATCH" && request.url.pathname.endsWith("K3JRFLFQ")
+        ? staleVersion()
+        : zotero.answers.write!(request),
+  });
+  repository.openHistory("RGRPDF24");
+  // Zotero recoloured one of them since ZotLit read it.
+  zotero.changeInZotero("K3JRFLFQ", { color: "#a28ae5" });
+
+  const outcomes = await repository.patchColors(
+    ["PUPR5FG5", "K3JRFLFQ", "C94NJNYG"],
+    "#5fb236",
+  );
+
+  expect(outcomes[0]).toEqual({ kind: "idle" });
+  expect(outcomes[1]).toMatchObject({
+    kind: "conflict",
+    conflict: { write: "color" },
+  });
+  expect(outcomes[2]).toEqual({ kind: "idle" });
+  expect(repository.mutationFor("K3JRFLFQ")).toEqual(outcomes[1]);
+  expect(zotero.at("K3JRFLFQ")?.color).toBe("#a28ae5");
+
+  // The step holds the two recolours that landed and nothing of the refused one.
+  await repository.undo("RGRPDF24");
+  expect(zotero.at("PUPR5FG5")?.color).toBe("#2ea8e5");
+  expect(zotero.at("C94NJNYG")?.color).toBe("#ffd400");
+  expect(zotero.at("K3JRFLFQ")?.color).toBe("#a28ae5");
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
 it("drops the step where Zotero already erased the Annotation a create made", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroLibrary();

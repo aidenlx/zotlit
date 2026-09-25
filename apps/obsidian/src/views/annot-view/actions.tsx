@@ -29,10 +29,11 @@ import { InertTemplateError } from "@/services/template/errors";
 
 import { chooseAttachment } from "./attachment-suggester";
 import { groupControl } from "./card-controls";
-import type { CardBlock, CardControl } from "./card-controls";
+import type { CardBlock, CardControl, CardControls } from "./card-controls";
 import type { CardClick } from "./card-selection";
+import { confirmDelete, copyText, recolor } from "./card-verbs";
 import type { CommentRenderer } from "./comment-render";
-import { confirmDelete } from "./delete-confirm";
+import { copiedText } from "./copied-text";
 import type { ExcerptImageTarget } from "./excerpt-image-state";
 import { buildHeaderMenu } from "./menus";
 import { attachmentLine, headerMenu } from "./presentation";
@@ -66,7 +67,11 @@ export interface AnnotActions {
    * that could change it where there is one.
    */
   onBlockedPress(block: CardBlock): void;
-  /** Open Zotero's eight swatches from a card's palette control. */
+  /**
+   * Open Zotero's eight swatches from a card's palette control. On a card
+   * inside the Card Selection the swatch recolours the whole selection; on
+   * one outside it, the card is selected alone first.
+   */
   onColorMenu(evt: MouseEvent<HTMLElement>, annot: AnnotationRecord): void;
   onDragStart(evt: DragEvent<HTMLElement>, annot: AnnotationRecord): void;
   onRefresh(): void;
@@ -143,6 +148,13 @@ export interface AnnotActions {
    */
   onDeleteSelection(): void;
   /**
+   * Copy every Selected Card's text as `text/plain`, from Cmd/Ctrl+C on the
+   * view.
+   *
+   * @returns whether there was text to copy.
+   */
+  onCopySelection(): boolean;
+  /**
    * Send a conflicted write again, against the value Zotero holds now — the
    * card's "Apply again", and its "Delete anyway".
    */
@@ -181,6 +193,7 @@ export interface AnnotActionDeps {
     | "discardConflict"
     | "discardTagDraft"
     | "patchColor"
+    | "patchColors"
     | "editComment"
     | "commentDraftFor"
     | "editTags"
@@ -192,11 +205,11 @@ export interface AnnotActionDeps {
   /** The clock a failure notice reads a cooldown's remaining seconds against. */
   now?: () => Temporal.Instant;
   /**
-   * Whether the overflow menu's delete runs, and the reason it does not. The
+   * Whether each of the card's verbs runs, and the reason it does not. The
    * view supplies it: the capability and the Annotation's mutation state live
    * in its store, and the native menu is built outside React.
    */
-  deleteControl: (annot: AnnotationRecord) => CardControl;
+  controls: (annot: AnnotationRecord) => CardControls;
   /** The Selected Cards, in list order. */
   selectedCards: () => readonly AnnotationRecord[];
   /**
@@ -212,7 +225,7 @@ export interface AnnotActionDeps {
   /**
    * What the view is showing right now. A native menu is built at the moment
    * the gesture opens it, so its entries are read then rather than subscribed
-   * to — the same reason {@link AnnotActionDeps.deleteControl} is a callback.
+   * to — the same reason {@link AnnotActionDeps.controls} is a callback.
    */
   getState: () => AnnotState;
   /** Show another Attachment of the Item on screen, from the picker. */
@@ -270,8 +283,68 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     });
   };
 
+  /**
+   * Recolour these cards: one alone, or a group as one History Step in which
+   * each Annotation keeps its own outcome.
+   */
+  const setColors = (
+    annots: readonly AnnotationRecord[],
+    color: string,
+  ): void =>
+    void recolor(deps.annotations, {
+      annotationKeys: annots.map(({ key }) => key),
+      color,
+      now,
+    });
   const onSetColor = (annot: AnnotationRecord, color: string): void =>
-    report(deps.annotations.patchColor(annot.key, color));
+    setColors([annot], color);
+  /**
+   * One verb over these cards, which one card's control decides alone: refused
+   * while a write is in flight on any of them, and blocked for the same reason
+   * one card is.
+   */
+  const controlOf = (
+    verb: "color" | "delete",
+    annots: readonly AnnotationRecord[],
+  ): Pick<CardControl, "disabled" | "blocked"> =>
+    groupControl(annots.map((annot) => deps.controls(annot)[verb]));
+  /**
+   * Whether a press of this verb acts: a write in flight refuses it, and a
+   * blocked capability spends it on the notice that says why.
+   */
+  const pressAllowed = (
+    control: Pick<CardControl, "disabled" | "blocked">,
+  ): boolean => {
+    if (control.disabled) return false;
+    if (!control.blocked) return true;
+    onBlockedPress(control.blocked);
+    return false;
+  };
+  /** The swatches over these cards: checked only where every card has it. */
+  const fillColorMenu = (
+    menu: Menu,
+    annots: readonly AnnotationRecord[],
+  ): void =>
+    buildColorMenu(menu, {
+      colors: annots.map(({ color }) => color),
+      onSelect: (hex) => setColors(annots, hex),
+    });
+  /**
+   * The copy entry, for one card or a group. It is dimmed where no card has
+   * text or a comment to copy.
+   */
+  const addCopyItem = (
+    menu: Menu,
+    annots: readonly AnnotationRecord[],
+  ): void => {
+    menu.addItem((item) => {
+      item
+        .setTitle(m.annot_view_menu_copy_text())
+        .setIcon("copy")
+        .setDisabled(copiedText(annots) === "")
+        .onClick(() => copyText(annots));
+    });
+  };
   const onEditComment = (annot: AnnotationRecord, comment: string): void => {
     deps.annotations.editComment(annot.key, comment);
   };
@@ -321,11 +394,6 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
       annotationKeys: annots.map(({ key }) => key),
       now,
     });
-  /** The delete verb over these cards, which one card's control decides alone. */
-  const deleteControlOf = (
-    annots: readonly AnnotationRecord[],
-  ): Pick<CardControl, "disabled" | "blocked"> =>
-    groupControl(annots.map(deps.deleteControl));
   const commentConflict = (annotationKey: string): boolean => {
     const mutation = deps.getState().mutations.get(annotationKey);
     return (
@@ -423,19 +491,8 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
       });
     }
 
-    if (annot.text != null) {
-      menu.addItem((item) => {
-        item
-          .setTitle(m.annot_view_menu_copy_text())
-          .setIcon("copy")
-          .onClick(() => {
-            void toast.promise(navigator.clipboard.writeText(annot.text!), {
-              success: m.annot_view_copied_text(),
-              error: m.annot_view_copy_failed(),
-            });
-          });
-      });
-    }
+    // One card offers the copy only where it has text or a comment to copy.
+    if (copiedText([annot]) !== "") addCopyItem(menu, [annot]);
 
     addCopyIndexedKeyMenuItem(menu, {
       indexedKey: annot.key,
@@ -501,12 +558,24 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   /**
    * The menu for two or more Selected Cards: the verbs that act on every one
    * of them. The single-card entries — backlink, key, citation, insert,
-   * explore — name one Annotation and are left out.
+   * explore — name one Annotation and are left out. The colour entry is
+   * dimmed for the same reasons as the delete entry; copying never changes
+   * Zotero, so it is always there.
    */
   const fillGroupMenu = (
     menu: Menu,
     annots: readonly AnnotationRecord[],
   ): void => {
+    const color = controlOf("color", annots);
+    menu.addItem((item) => {
+      item
+        .setTitle(m.annot_view_card_color())
+        .setIcon("palette")
+        .setDisabled(color.disabled || color.blocked !== null);
+      fillColorMenu(item.setSubmenu(), annots);
+    });
+    addCopyItem(menu, annots);
+    menu.addSeparator();
     addDeleteItem(menu, annots);
   };
 
@@ -521,7 +590,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     menu: Menu,
     annots: readonly AnnotationRecord[],
   ): void => {
-    const control = deleteControlOf(annots);
+    const control = controlOf("delete", annots);
     menu.addItem((item) => {
       item
         .setTitle(
@@ -537,18 +606,24 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   };
 
   /**
-   * The menu a card opens: the group's where the card is one of several
-   * Selected Cards, and else its own. A card outside the Card Selection is
-   * selected alone first, so the menu acts on the card the user pressed.
+   * The cards a verb pressed on this card acts on: the Card Selection where
+   * the card is one of several Selected Cards, and else the card alone. A card
+   * outside the Card Selection is selected alone first, so the verb acts on
+   * the card the user pressed.
    */
-  const fillMenuFor = (menu: Menu, annot: AnnotationRecord): void => {
+  const cardsFor = (annot: AnnotationRecord): readonly AnnotationRecord[] => {
     const selected = deps.selectedCards();
-    if (selected.length > 1 && selected.some(({ key }) => key === annot.key)) {
-      fillGroupMenu(menu, selected);
-      return;
-    }
+    if (selected.length > 1 && selected.some(({ key }) => key === annot.key))
+      return selected;
     deps.selectAlone(annot);
-    fillCardMenu(menu, annot);
+    return [annot];
+  };
+
+  /** The menu a card opens: the group's, or its own. */
+  const fillMenuFor = (menu: Menu, annot: AnnotationRecord): void => {
+    const annots = cardsFor(annot);
+    if (annots.length > 1) fillGroupMenu(menu, annots);
+    else fillCardMenu(menu, annot);
   };
 
   return {
@@ -571,14 +646,9 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     onDeleteSelection() {
       const annots = deps.selectedCards();
       if (annots.length === 0) return;
-      const control = deleteControlOf(annots);
-      if (control.disabled) return;
-      if (control.blocked) {
-        onBlockedPress(control.blocked);
-        return;
-      }
-      void deleteCards(annots);
+      if (pressAllowed(controlOf("delete", annots))) void deleteCards(annots);
     },
+    onCopySelection: () => copyText(deps.selectedCards()),
     onMoreOptions(evt, annot) {
       showMenu(evt, (menu) => fillMenuFor(menu, annot), "end");
     },
@@ -606,12 +676,9 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     onAllowEditing: deps.onAllowEditing,
     onBlockedPress,
     onColorMenu(evt, annot) {
-      showMenu(evt, (menu) =>
-        buildColorMenu(menu, {
-          color: annot.color,
-          onSelect: (hex) => onSetColor(annot, hex),
-        }),
-      );
+      const annots = cardsFor(annot);
+      if (!pressAllowed(controlOf("color", annots))) return;
+      showMenu(evt, (menu) => fillColorMenu(menu, annots));
     },
     onDragStart: deps.onDragStart,
     renderComment: deps.renderComment,
@@ -674,6 +741,7 @@ const NOOP_ACTIONS: AnnotActions = {
   libraryTagNames: () => [],
   onDeleteAnnotation: () => {},
   onDeleteSelection: () => {},
+  onCopySelection: () => false,
   onApplyAgain: () => {},
   onDiscardConflict: () => {},
   onRefresh: () => {},

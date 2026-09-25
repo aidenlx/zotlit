@@ -488,10 +488,10 @@ interface GroupWrite {
 }
 
 /**
- * The kind of History Step a group records. A group of deletes is the only
- * group a gesture sends.
+ * The kind of History Step a group records: a group of deletes, or a group
+ * of recolours.
  */
-type GroupKind = Extract<FieldHistoryStep["kind"], "existence">;
+type GroupKind = Extract<FieldHistoryStep["kind"], "existence" | "color">;
 
 /** Where the writes of one group put what they landed. */
 interface GroupWrites {
@@ -1435,11 +1435,44 @@ export class AnnotationRepository extends Service<void> {
     annotationKey: string,
     color: string,
   ): Promise<MutationState> {
+    return await this.#recolor(annotationKey, color);
+  }
+
+  /**
+   * Recolour a group of Annotations in Zotero, from one gesture on the Card
+   * Selection. Each Annotation goes out as a request of its own and keeps its
+   * own outcome, a Write Conflict included. The recolours that land are one
+   * History Step, so one undo puts every colour back; a recolour that did not
+   * land is not in it.
+   *
+   * @param annotationKeys Indexed Keys, in the order the step names them.
+   * @param color the swatch to store, in any case; the write sends lower case.
+   * @returns one outcome per key, in the order of `annotationKeys`.
+   */
+  async patchColors(
+    annotationKeys: readonly string[],
+    color: string,
+  ): Promise<MutationState[]> {
+    return await this.#groupWrite("color", annotationKeys, (key, gather) =>
+      this.#recolor(key, color, gather),
+    );
+  }
+
+  /**
+   * @param gather where a recolour of a group puts its landed write, rather
+   *   than recording a step of its own.
+   */
+  async #recolor(
+    annotationKey: string,
+    color: string,
+    gather?: GroupWrites,
+  ): Promise<MutationState> {
     return await this.#command(annotationKey, {
       write: "color",
       attempted: color,
       request: (target) => colorPatch(target, color),
       propose: () => ({ color: wireColor(color) }),
+      ...(gather && { gather }),
     });
   }
 

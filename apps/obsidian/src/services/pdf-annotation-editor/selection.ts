@@ -28,7 +28,6 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
-import * as toast from "@/lib/toast";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   AnnotationRecord,
@@ -54,13 +53,17 @@ import {
   tagEditorControls,
 } from "@/views/annot-view/card-controls";
 import { sameKeys } from "@/views/annot-view/card-selection";
+import {
+  confirmDelete,
+  copyText,
+  recolor,
+} from "@/views/annot-view/card-verbs";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
 import type {
   CommentDraftActions,
   CommentSheet,
   HeldDraftActions,
 } from "@/views/annot-view/comment-sheet";
-import { confirmDelete } from "@/views/annot-view/delete-confirm";
 import type { EndTagSession } from "@/views/annot-view/tag-editor";
 
 import { inTextEntry, isEditGesture } from "./capability-affordance";
@@ -166,6 +169,7 @@ export type AnnotationEdits = Pick<
   | "editComment"
   | "editTags"
   | "patchColor"
+  | "patchColors"
   | "patchGeometry"
   | "retryCommentDraft"
   | "submitComment"
@@ -594,6 +598,22 @@ export class MarkSelection implements Disposable {
     return true;
   }
 
+  /**
+   * Cmd/Ctrl+C on the selected mark or group: its text, by the Annotation
+   * View's rule. A text selection in the PDF is the platform's to copy.
+   *
+   * @returns whether the selection had text to copy.
+   */
+  copy(): boolean {
+    const selected = this.#selectedKeys();
+    if (selected.length === 0 || !selectionCollapsed(this.#deps.containerEl))
+      return false;
+    const records = new Map(
+      this.#deps.records().map((record) => [record.key, record]),
+    );
+    return copyText(selected.flatMap((key) => records.get(key) ?? []));
+  }
+
   #key(event: KeyboardEvent): void {
     // A keystroke inside a text field belongs to the field.
     if (inTextEntry(event.target)) return;
@@ -634,10 +654,10 @@ export class MarkSelection implements Disposable {
         });
       return;
     }
-    const key = this.#selectedKey();
-    if (key === null) return;
+    const selected = this.#selectedKeys();
+    if (selected.length === 0) return;
     // `1`–`8` are the palette's own order, so the key and the swatch can never
-    // name different colours.
+    // name different colours. It recolours every selected mark.
     const swatch = ANNOTATION_COLORS[Number(event.key) - 1];
     if (swatch !== undefined) {
       // A colour key is one of the shared edit keymap's keys, so whether this
@@ -648,7 +668,7 @@ export class MarkSelection implements Disposable {
       // listener, which hears every key of the shared edit keymap.
       if (this.#live()) {
         event.preventDefault();
-        this.#recolor(key, swatch);
+        this.#recolor(selected, swatch);
       }
       return;
     }
@@ -1292,7 +1312,7 @@ export class MarkSelection implements Disposable {
       case "color":
         showMenuAtButton(
           colorMenu(annotation.color, (hex) =>
-            this.#recolor(annotation.key, hex),
+            this.#recolor([annotation.key], hex),
           ),
           node,
         );
@@ -1304,11 +1324,7 @@ export class MarkSelection implements Disposable {
         this.#toggleTags(annotation);
         return;
       case "copy":
-        if (annotation.text === null) return;
-        void toast.promise(navigator.clipboard.writeText(annotation.text), {
-          success: m.annot_view_copied_text(),
-          error: m.annot_view_copy_failed(),
-        });
+        copyText([annotation]);
         return;
       case "delete":
         this.#write(annotations.deleteAnnotation(annotation.key));
@@ -1355,9 +1371,17 @@ export class MarkSelection implements Disposable {
     if (!this.#endTags()) setTagging(this.#deps.surfaceState, false);
   }
 
-  #recolor(key: string, color: string): void {
+  /**
+   * Recolour one mark, or a group as one History Step, as the Annotation View
+   * does.
+   */
+  #recolor(annotationKeys: readonly string[], color: string): void {
     recordColorUse(this.#deps.surfaceState, this.#deps.colors, color);
-    this.#write(this.#deps.annotations.patchColor(key, color));
+    void recolor(this.#deps.annotations, {
+      annotationKeys,
+      color,
+      now: () => this.#deps.now(),
+    });
   }
 
   /** Forward through the stack under the last click, wrapping at its end. */

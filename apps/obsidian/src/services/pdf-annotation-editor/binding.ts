@@ -149,6 +149,7 @@ export type AnnotationReads = Pick<
   | "on"
   | "openHistory"
   | "patchColor"
+  | "patchColors"
   | "patchGeometry"
   | "peek"
   | "probe"
@@ -864,6 +865,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
           escape: () => selection.escape() || creation.escape(),
           undo: () => this.stepHistory("undo"),
           redo: () => this.stepHistory("redo"),
+          copy: () => selection.copy(),
         },
         { isMacOS: Platform.isMacOS },
       ),

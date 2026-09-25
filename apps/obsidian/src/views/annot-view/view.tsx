@@ -150,6 +150,7 @@ export interface AnnotViewDeps {
     | "discardConflict"
     | "on"
     | "patchColor"
+    | "patchColors"
     | "editComment"
     | "editTags"
     | "peek"
@@ -401,7 +402,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
       excerptDisplay: this.#deps.excerptDisplay,
       excerptImageRequest: (target) => this.#excerptRequest(target),
       annotations: this.#deps.annotations,
-      deleteControl: (annot) => this.#cardControls(annot).delete,
+      controls: (annot) => this.#cardControls(annot),
       selectedCards: () => this.#selectedCards(),
       resolveAnnotationID: (indexedKey) =>
         this.#resolveAnnotationID(indexedKey),
@@ -583,6 +584,22 @@ export class AnnotationView extends ItemView implements HistorySurface {
       });
       this.register(() => erase[Symbol.dispose]());
     }
+
+    // Cmd/Ctrl+C copies the text of every Selected Card, from anywhere in the
+    // view. One typed into a field, or over text the user selected in the
+    // view, goes on to the platform's own copy.
+    const copy = registerKeymap(this.scope, ["Mod"], "C", (event) => {
+      if (inTextEntry(event.target)) return;
+      const selection = this.contentEl.win.getSelection();
+      if (
+        selection &&
+        !selection.isCollapsed &&
+        this.contentEl.contains(selection.anchorNode)
+      )
+        return;
+      if (this.#actions?.onCopySelection()) return false;
+    });
+    this.register(() => copy[Symbol.dispose]());
 
     // The platform's undo and redo keys, which a card answers with the
     // Annotation History of the Attachment this view shows.

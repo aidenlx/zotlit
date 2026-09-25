@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { RangeAdjustment, SelectedText } from "@zotlit/pdf-structure";
 
 import { AbortError } from "@/lib/abort-error";
+import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import * as confirmation from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -479,15 +480,61 @@ it("takes a group the Card Selection sends with no popup, and Escape clears it",
   expect(h.reported.at(-1)).toEqual(["PARA7777", "WRDS2222"]);
   expect(h.popup()).toBeNull();
 
-  // The reader's colour keys leave a group alone.
-  key(h, "3");
-  await settled(h, "PARA7777");
-  await settled(h, "WRDS2222");
-  expect(h.writes()).toEqual([]);
-
   key(h, "Escape");
   expect(h.selection.selected.size).toBe(0);
   expect(h.reported.at(-1)).toEqual([]);
+});
+
+it("recolours every mark of a group for a colour key, in one gesture", async () => {
+  await using h = await setup();
+  h.selection.selectMarks(["PARA7777", "WRDS2222"]);
+
+  key(h, "3");
+
+  const color = ANNOTATION_COLORS[2]!.toLowerCase();
+  await vi.waitFor(() => expect(h.zotero.at("PARA7777")?.color).toBe(color));
+  await vi.waitFor(() => expect(h.zotero.at("WRDS2222")?.color).toBe(color));
+  expect(h.writes().map(({ method, key }) => ({ method, key }))).toEqual([
+    { method: "PATCH", key: "PARA7777" },
+    { method: "PATCH", key: "WRDS2222" },
+  ]);
+});
+
+it("copies the text of every selected mark for Ctrl+C, by the Annotation View's rule", async () => {
+  await using h = await setup([
+    { ...PARAGRAPH, text: "Scientific visualization" },
+    { ...WORD, comment: "Check <b>this</b>" },
+  ]);
+  const write = vi
+    .spyOn(navigator.clipboard, "writeText")
+    .mockResolvedValue(undefined);
+  h.selection.selectMarks(["PARA7777", "WRDS2222"]);
+
+  const event = h.key({ key: "c", ctrlKey: true });
+
+  expect(event.defaultPrevented).toBe(true);
+  expect(write).toHaveBeenCalledExactlyOnceWith(
+    "Scientific visualization\n\nCheck this",
+  );
+});
+
+it("leaves Ctrl+C to a text selection in the PDF", async () => {
+  await using h = await setup([
+    { ...PARAGRAPH, text: "Scientific visualization" },
+  ]);
+  const write = vi
+    .spyOn(navigator.clipboard, "writeText")
+    .mockResolvedValue(undefined);
+  h.selection.selectMarks(["PARA7777"]);
+  vi.mocked(window.getSelection).mockReturnValue({
+    isCollapsed: false,
+    anchorNode: h.page.div,
+  } as unknown as Selection);
+
+  const event = h.key({ key: "c", ctrlKey: true });
+
+  expect(event.defaultPrevented).toBe(false);
+  expect(write).not.toHaveBeenCalled();
 });
 
 it("deletes every mark of a group for Delete, after one confirmation that counts them", async () => {
