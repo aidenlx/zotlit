@@ -468,6 +468,53 @@ it("takes the selection a card sends through the Reader Session", async () => {
   expect(h.popup()?.staticPos).toEqual({ x: 300, y: 192 });
 });
 
+it("takes a group the Card Selection sends with no popup, and Escape clears it", async () => {
+  await using h = await setup();
+  click(h.page.div, ON_WORD);
+  expect(h.popup()).not.toBeNull();
+
+  h.selection.selectMarks(["PARA7777", "WRDS2222"]);
+  expect([...h.selection.selected]).toEqual(["PARA7777", "WRDS2222"]);
+  expect(h.reported.at(-1)).toEqual(["PARA7777", "WRDS2222"]);
+  expect(h.popup()).toBeNull();
+
+  // The reader's colour and delete keys leave a group alone.
+  key(h, "3");
+  key(h, "Delete");
+  await settled(h, "PARA7777");
+  await settled(h, "WRDS2222");
+  expect(h.writes()).toEqual([]);
+
+  key(h, "Escape");
+  expect(h.selection.selected.size).toBe(0);
+  expect(h.reported.at(-1)).toEqual([]);
+});
+
+it("keeps the marks of a group the last read still holds", async () => {
+  await using h = await setup();
+  h.selection.selectMarks(["PARA7777", "WRDS2222"]);
+
+  h.zotero.eraseInZotero("WRDS2222");
+  await h.repository.refresh("RGRPDF24");
+
+  await vi.waitFor(() =>
+    expect([...h.selection.selected]).toEqual(["PARA7777"]),
+  );
+  expect(h.reported.at(-1)).toEqual(["PARA7777"]);
+  // One mark left is a quiet selection: no popup opens over it.
+  expect(h.popup()).toBeNull();
+});
+
+it("reduces a group to one mark with the arrow keys", async () => {
+  await using h = await setup();
+  h.selection.selectMarks(["WRDS2222", "PARA7777"]);
+
+  // The walk starts from the group's first mark in reading order.
+  key(h, "ArrowDown");
+  expect([...h.selection.selected]).toEqual(["WRDS2222"]);
+  expect(h.navigated).toEqual(["WRDS2222"]);
+});
+
 it("walks reading order with the arrow keys, and brings the reader along", async () => {
   await using h = await setup();
 

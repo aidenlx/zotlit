@@ -30,6 +30,7 @@ import { InertTemplateError } from "@/services/template/errors";
 
 import { chooseAttachment } from "./attachment-suggester";
 import type { CardBlock, CardControl } from "./card-controls";
+import type { CardClick } from "./card-selection";
 import type { CommentRenderer } from "./comment-render";
 import type { ExcerptImageTarget } from "./excerpt-image-state";
 import { buildHeaderMenu } from "./menus";
@@ -70,12 +71,14 @@ export interface AnnotActions {
   /** Turn Live updates on, so the Zotero reader can reach this view. */
   onEnableLiveUpdates(): void;
   /**
-   * Take this card alone as the Card Selection, from a click on it. A bound
-   * Obsidian PDF view lands quietly on its Annotation Mark.
+   * Change the Card Selection from a click on this card: alone for a plain
+   * click, toggled for Cmd/Ctrl-click, a range for Shift-click. A bound
+   * Obsidian PDF view lands quietly on the Annotation Mark of a card the click
+   * adds.
    *
    * @see apps/obsidian/docs/adr/0061-the-annotation-view-owns-its-card-selection.md
    */
-  onSelectAnnotation(annot: AnnotationRecord): void;
+  onSelectAnnotation(annot: AnnotationRecord, gesture: CardClick): void;
   /**
    * A click on the empty list: an open card editor closes, or, with none
    * open, the Card Selection clears.
@@ -90,8 +93,8 @@ export interface AnnotActions {
     automatic?: boolean,
   ): void;
   /**
-   * Start one card's comment editing. An open tag editor first ends its
-   * session.
+   * Start one card's comment editing. A card not selected alone is first
+   * selected alone, and an open tag editor first ends its session.
    */
   onOpenComment(annot: AnnotationRecord): void;
   onEditComment(annot: AnnotationRecord, comment: string): void;
@@ -102,8 +105,9 @@ export interface AnnotActions {
    */
   onDiscardComment(annot: AnnotationRecord): void;
   /**
-   * Start or rejoin one card's tag editing session. An open comment editor is
-   * first saved and closed.
+   * Start or rejoin one card's tag editing session. A card not selected alone
+   * is first selected alone, and an open comment editor is first saved and
+   * closed.
    *
    * @returns whether a session stands, which it does only while editing is
    *   available or a draft is already held.
@@ -217,6 +221,12 @@ export interface AnnotActionDeps {
   onSelectAnnotation: AnnotActions["onSelectAnnotation"];
   onClearSelection: AnnotActions["onClearSelection"];
   /**
+   * Select this card alone, as a click does, unless it already is: an edit
+   * control's press does this before its editor opens, so an editor never
+   * opens on a card in a group.
+   */
+  selectAlone: (annot: AnnotationRecord) => void;
+  /**
    * Save and close the open card editors: an editor opens only once the other
    * has closed, as the Mark Popup opens one at a time.
    */
@@ -248,6 +258,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     deps.annotations.editComment(annot.key, comment);
   };
   const onOpenComment = (annot: AnnotationRecord): void => {
+    deps.selectAlone(annot);
     deps.closeEditors();
     deps.annotations.editComment(annot.key);
   };
@@ -263,6 +274,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     report(deps.annotations.submitComment(annot.key, { automatic }));
   };
   const onOpenTags = (annot: AnnotationRecord): boolean => {
+    deps.selectAlone(annot);
     deps.closeEditors();
     return deps.annotations.editTags(annot.key) !== null;
   };

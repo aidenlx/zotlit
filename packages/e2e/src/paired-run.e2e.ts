@@ -4935,12 +4935,19 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
          * A press and release the window's own input delivers at the centre
          * of what `target` names, so the focus moves as a researcher's click
          * moves it.
+         *
+         * @param modifiers the keys held through the click, as Electron names
+         *   them: `shift`, `meta`, `control`.
          */
-        async function trustedClick(target: string): Promise<void> {
+        async function trustedClick(
+          target: string,
+          modifiers: readonly string[] = [],
+        ): Promise<void> {
+          const held = JSON.stringify(modifiers);
           expect(
             await obEval(
               vaultId!,
-              `(function(){const rect=(${target}).getBoundingClientRect();const zoom=require('electron').webFrame.getZoomFactor();const x=Math.round((rect.left+rect.width/2)*zoom),y=Math.round((rect.top+rect.height/2)*zoom);const contents=require('@electron/remote').getCurrentWebContents();contents.sendInputEvent({type:'mouseDown',x,y,button:'left',clickCount:1});contents.sendInputEvent({type:'mouseUp',x,y,button:'left',clickCount:1});return 'clicked';})()`,
+              `(function(){const rect=(${target}).getBoundingClientRect();const zoom=require('electron').webFrame.getZoomFactor();const x=Math.round((rect.left+rect.width/2)*zoom),y=Math.round((rect.top+rect.height/2)*zoom);const contents=require('@electron/remote').getCurrentWebContents();contents.sendInputEvent({type:'mouseDown',x,y,button:'left',clickCount:1,modifiers:${held}});contents.sendInputEvent({type:'mouseUp',x,y,button:'left',clickCount:1,modifiers:${held}});return 'clicked';})()`,
             ),
           ).toBe("clicked");
         }
@@ -5093,6 +5100,212 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             await obEval(
               vaultId!,
               `(function(){if(${search})${toggleSearch};return true;})()`,
+            );
+          }
+        }, 120000);
+
+        it("toggles a card for a Cmd/Ctrl-click on its comment text, and opens no editor", async () => {
+          await raiseWindow(vaultId!);
+          const mod = await obEval(
+            vaultId!,
+            "process.platform==='darwin'?'meta':'control'",
+          );
+          const baseline = await annotationKeys();
+          /** Two commented highlights this test makes for itself. */
+          const drafts = [1, 2].map((n) => ({
+            type: "highlight",
+            color: "#a28ae5",
+            comment: `Comment click ${n}`,
+            text: "Identify Your Message",
+            pageLabel: "1",
+            sortIndex: `00000|000100|0010${n}`,
+            position: {
+              pageIndex: 0,
+              rects: [[100, 560 - n * 30, 300, 580 - n * 30]],
+            },
+          }));
+          const made = await obJson<string[]>(
+            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const keys=[];for(const draft of ${JSON.stringify(drafts)}){const outcome=await repository.createAnnotation(${JSON.stringify(attachment.key)},draft);keys.push(outcome.annotationKey);}return JSON.stringify(keys);})()`,
+          );
+          try {
+            expect(made).toHaveLength(2);
+            const [first, second] = made as [string, string];
+            /** A card's rendered comment, scrolled into the list's view. */
+            const comment = (key: string) =>
+              `(function(){const el=${cardOf(key)}.querySelector('.zt-annot-comment');el.scrollIntoView({block:'center'});return el;})()`;
+            const editorOpen = () =>
+              obEval(
+                vaultId!,
+                `String(!!${annotView}?.containerEl.querySelector('.zt-annot-card .cm-content'))`,
+              );
+            await clickCard(first);
+            await expect.poll(shown, poll).toMatchObject({ cards: [first] });
+
+            // Cmd/Ctrl-click on the comment text adds the card, as a click
+            // on its excerpt does.
+            await trustedClick(comment(second), [mod]);
+            await expect
+              .poll(async () => (await shown()).cards.toSorted(), poll)
+              .toEqual([first, second].toSorted());
+            expect(await editorOpen()).toBe("false");
+
+            // Again, and it leaves.
+            await trustedClick(comment(second), [mod]);
+            await expect.poll(shown, poll).toMatchObject({ cards: [first] });
+            expect(await editorOpen()).toBe("false");
+          } finally {
+            await eraseAnnotations(rdp, await madeSince(baseline));
+          }
+        }, 120000);
+
+        it("adds a card for Cmd/Ctrl-click, takes a range for Shift-click and every card for Cmd/Ctrl+A, and lands only on an added card", async () => {
+          await raiseWindow(vaultId!);
+          /** An underline and a highlight on page 1, and an image on page 2. */
+          const [underline, highlight, image] = [
+            "K3JRFLFQ",
+            markKey,
+            "FDRFQ7C2",
+          ] as const;
+          const mod = await obEval(
+            vaultId!,
+            "process.platform==='darwin'?'meta':'control'",
+          );
+          /** A card's excerpt, scrolled into the list's view: the card's own click. */
+          const excerpt = (key: string) =>
+            `(function(){const card=${cardOf(key)};const el=card.querySelector('blockquote')??card;el.scrollIntoView({block:'center'});return el;})()`;
+          /** What `shown` answers, in a stable order for either surface. */
+          const sorted = async () => {
+            const { cards, marks, popup } = await shown();
+            return { cards: cards.toSorted(), marks: marks.toSorted(), popup };
+          };
+          const page = () =>
+            obEval(
+              vaultId!,
+              `String(${pdfView}.viewer.child.pdfViewer.pdfViewer.currentPageNumber)`,
+            );
+          const toTop = () =>
+            obEval(
+              vaultId!,
+              `(function(){${pdfView}.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;return 'top';})()`,
+            );
+
+          await trustedClick(excerpt(underline));
+          await expect
+            .poll(sorted, poll)
+            .toEqual({ cards: [underline], marks: [underline], popup: false });
+
+          // Cmd/Ctrl-click adds a card: the PDF paints both marks, with no popup.
+          await trustedClick(excerpt(highlight), [mod]);
+          await expect.poll(sorted, poll).toEqual({
+            cards: [underline, highlight].toSorted(),
+            marks: [underline, highlight].toSorted(),
+            popup: false,
+          });
+
+          // Shift-click takes the range from the card the Cmd/Ctrl-click
+          // anchored, and drops the card outside it.
+          await trustedClick(excerpt(cardKey), ["shift"]);
+          await expect.poll(sorted, poll).toEqual({
+            cards: [cardKey, highlight].toSorted(),
+            marks: [cardKey, highlight].toSorted(),
+            popup: false,
+          });
+
+          // Cmd/Ctrl+A takes every card the list shows.
+          const every = JSON.parse(
+            await obEval(
+              vaultId!,
+              `JSON.stringify([...${annotView}.containerEl.querySelectorAll('.zt-annot-card')].map((card)=>card.dataset.zoteroAnnotationKey).sort())`,
+            ),
+          ) as string[];
+          expect(
+            await obEval(
+              vaultId!,
+              `(function(){const contents=require('@electron/remote').getCurrentWebContents();contents.sendInputEvent({type:'keyDown',keyCode:'A',modifiers:['${mod}']});contents.sendInputEvent({type:'keyUp',keyCode:'A',modifiers:['${mod}']});return 'pressed';})()`,
+            ),
+          ).toBe("pressed");
+          await expect
+            .poll(async () => (await sorted()).cards, poll)
+            .toEqual(every);
+
+          // A Cmd/Ctrl-click that adds a card on page 2 lands the PDF there.
+          await trustedClick(excerpt(underline));
+          await expect
+            .poll(sorted, poll)
+            .toEqual({ cards: [underline], marks: [underline], popup: false });
+          await toTop();
+          await expect.poll(page, poll).toBe("1");
+          await trustedClick(excerpt(image), [mod]);
+          await expect.poll(page, poll).toBe("2");
+          expect((await sorted()).cards).toEqual([underline, image].toSorted());
+
+          // Removing it only repaints: the PDF stays where it was put.
+          await toTop();
+          await expect.poll(page, poll).toBe("1");
+          await trustedClick(excerpt(image), [mod]);
+          await expect
+            .poll(sorted, poll)
+            .toEqual({ cards: [underline], marks: [underline], popup: false });
+          expect(await page()).toBe("1");
+
+          // Removing the last card keeps its anchor through the PDF's echo, so
+          // a Shift-click still measures from it.
+          await trustedClick(excerpt(underline), [mod]);
+          await expect
+            .poll(sorted, poll)
+            .toEqual({ cards: [], marks: [], popup: false });
+          await trustedClick(excerpt(cardKey), ["shift"]);
+          await expect.poll(sorted, poll).toEqual({
+            cards: [underline, cardKey].toSorted(),
+            marks: [underline, cardKey].toSorted(),
+            popup: false,
+          });
+        }, 120000);
+
+        it("selects both cards of a Zotero Reader selection of two annotations", async () => {
+          /** Selects these Annotations in Zotero's own Reader, as its sidebar does. */
+          const selectInZotero = (keys: readonly string[]) =>
+            rdp.json<string[]>(`(() => {
+              const reader = Zotero.Reader._readers.find(
+                (candidate) => candidate.itemID === ${ATTACHMENT_ITEM}.id,
+              );
+              // The Reader is the one the Companion reports as active.
+              Zotero_Tabs.select(reader.tabID);
+              reader._internalReader.setSelectedAnnotations(
+                Components.utils.cloneInto(${JSON.stringify(keys)}, reader._iframeWindow),
+              );
+              return [...reader._internalReader._state.selectedAnnotationIDs];
+            })()`);
+          const cards = () =>
+            obJson<{ mode: string; cards: string[] }>(
+              `(function(){const view=${annotView};return JSON.stringify({mode:view.snapshot.followMode,cards:[...view.containerEl.querySelectorAll('.zt-annot-card[data-selected]')].map((card)=>card.dataset.zoteroAnnotationKey)});})()`,
+            );
+
+          await obEval(
+            vaultId!,
+            "app.commands.executeCommandById('zotlit:annot-view-follow-zotero-reader');true",
+          );
+          try {
+            expect(await selectInZotero([markKey, cardKey])).toEqual([
+              markKey,
+              cardKey,
+            ]);
+            // Both cards, in list order, whichever order Zotero holds them in.
+            await expect.poll(cards, poll).toEqual({
+              mode: "zotero-reader",
+              cards: [cardKey, markKey],
+            });
+
+            // A Zotero Reader clear clears the Card Selection too.
+            await selectInZotero([]);
+            await expect
+              .poll(cards, poll)
+              .toEqual({ mode: "zotero-reader", cards: [] });
+          } finally {
+            await selectInZotero([]);
+            await obEval(
+              vaultId!,
+              "app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');true",
             );
           }
         }, 120000);

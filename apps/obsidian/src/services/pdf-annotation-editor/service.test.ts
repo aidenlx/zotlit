@@ -915,6 +915,95 @@ it("paints the mark a consumer selected, and drops one the read retired", async 
   expect(binding.session.selected).toEqual([]);
 });
 
+it("paints a group a consumer selected, with no popup, and walks it down to one mark", async () => {
+  // Below the other two, so reading order runs underline, highlight, this.
+  const lower = annotation("LWR23456", "highlight", {
+    pageIndex: 0,
+    rects: [[67.011, 500.5, 211.485, 510.2]],
+  });
+  const reader = pdfReader();
+  const view = pdfView("attachments/rougier-2014.pdf", reader);
+  const { app } = workspace([{ view }]);
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations: annotationReads([HIGHLIGHT, UNDERLINE, lower]),
+    capabilityGestures: capabilityGestures(),
+    ...standingDeps(),
+  });
+  await service.ready;
+  const binding = service.bindings[0]!;
+  await binding.refreshed;
+  reader.renderFirstPage();
+  await binding.probed;
+  const popup = () => document.querySelector(".zt-pdf-mark-popup");
+  const handles = () =>
+    reader.page.div.querySelectorAll(".zt-pdf-annotation-handle").length;
+  const walk = (key: string) =>
+    view.containerEl.dispatchEvent(
+      new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+    );
+
+  // What the Annotation View sends for a Cmd/Ctrl-click that adds a card.
+  binding.session.setSelectedAnnotations(["PUPR5FG5", "LWR23456"]);
+  expect(new Set(selectedKeys(reader.page))).toEqual(
+    new Set(["PUPR5FG5", "LWR23456"]),
+  );
+  expect(binding.session.selected).toEqual(["PUPR5FG5", "LWR23456"]);
+  expect(popup()).toBeNull();
+  expect(handles()).toBe(0);
+
+  // ↓ walks from the group's first mark in reading order, the highlight.
+  walk("ArrowDown");
+  expect(new Set(selectedKeys(reader.page))).toEqual(new Set(["LWR23456"]));
+  expect(binding.session.selected).toEqual(["LWR23456"]);
+  // One mark again, which carries its Mark Handles.
+  expect(handles()).toBeGreaterThan(0);
+
+  binding.session.setSelectedAnnotations(["PUPR5FG5", "LWR23456"]);
+  expect(popup()).toBeNull();
+  // ↑ walks back from that first mark, to the underline before it.
+  walk("ArrowUp");
+  expect(binding.session.selected).toEqual(["K3JRFLFQ"]);
+  popup()?.remove();
+});
+
+it("keeps a selected group through a landing on one of its marks", async () => {
+  const reader = pdfReader();
+  const view = pdfView("attachments/rougier-2014.pdf", reader);
+  const { app } = workspace([{ view }]);
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations: annotationReads([HIGHLIGHT, UNDERLINE]),
+    capabilityGestures: capabilityGestures(),
+    ...standingDeps(),
+  });
+  await service.ready;
+  const binding = service.bindings[0]!;
+  await binding.refreshed;
+  reader.renderFirstPage();
+  await binding.probed;
+
+  // What the Annotation View sends for a Cmd/Ctrl-click that adds a card.
+  binding.session.setSelectedAnnotations(["PUPR5FG5", "K3JRFLFQ"]);
+  binding.session.navigateToAnnotation("K3JRFLFQ");
+  await binding.refreshed;
+
+  expect(binding.session.selected).toEqual(["PUPR5FG5", "K3JRFLFQ"]);
+  expect(new Set(selectedKeys(reader.page))).toEqual(
+    new Set(["PUPR5FG5", "K3JRFLFQ"]),
+  );
+
+  // A landing on a mark outside the group still selects that mark alone.
+  binding.session.setSelectedAnnotations(["PUPR5FG5"]);
+  binding.session.navigateToAnnotation("K3JRFLFQ");
+  await binding.refreshed;
+  expect(binding.session.selected).toEqual(["K3JRFLFQ"]);
+});
+
 it("lands on the mark a card click names, on a page Obsidian moves to first", async () => {
   const reader = pdfReader();
   const view = pdfView("attachments/rougier-2014.pdf", reader);

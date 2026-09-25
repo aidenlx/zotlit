@@ -251,7 +251,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       this.#landing = null;
       this.#landingAsk++;
       this.#cancelScroll();
-      this.#selection?.select(annotationKeys[0] ?? null, { popup: false });
+      this.#selection?.selectMarks(annotationKeys);
     },
   });
   /** Every listener and node this binding added for this view. */
@@ -1028,10 +1028,17 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       : this.#marks;
   }
 
-  /** Whether the selected mark carries its Mark Handles. */
+  /**
+   * Whether the selected mark carries its Mark Handles: a mark selected alone
+   * does, and a group does not.
+   */
   #handles(): boolean {
     const state = this.#surfaceState?.getState();
-    return state !== undefined && editingLive(state.capability);
+    return (
+      state !== undefined &&
+      editingLive(state.capability) &&
+      selectSelectedKey(state) !== null
+    );
   }
 
   /**
@@ -1354,7 +1361,11 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     const landing = this.#landing;
     if (!landing) return;
     this.#landing = null;
-    this.#selection?.select(landing.annotationKey, { popup: false });
+    // A mark of a group, such as a card a Cmd/Ctrl-click added, stays in the
+    // group: the Landing only scrolls to it.
+    const selected = this.#selection?.selected;
+    if (!(selected && selected.size > 1 && selected.has(landing.annotationKey)))
+      this.#selection?.select(landing.annotationKey, { popup: false });
     this.#scrollToMark(landing);
   }
 

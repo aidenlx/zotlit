@@ -1,3 +1,4 @@
+import { Keymap } from "obsidian";
 import {
   useContext,
   useEffect,
@@ -24,6 +25,7 @@ import {
 } from "@/lib/utils";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import type { ExcerptImage } from "@/services/excerpt-image/format";
+import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
 
 import { AnnotActionsContext } from "./actions";
 import type { AnnotActions } from "./actions";
@@ -45,6 +47,7 @@ import {
   ConflictPanelSlot,
   HeldDraftSlot,
 } from "./comment-parts";
+import { selectsCards } from "./comment-sheet";
 import type {
   CommentDraftActions,
   CommentSheet,
@@ -133,6 +136,14 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
   const selected = useAnnotStore((s) =>
     s.cardSelection.selected.includes(annot.key),
   );
+  /**
+   * A card selected alone opens its full text and brings up its verbs; one
+   * selected with others stays compact and shows the selected highlight only.
+   */
+  const alone = useAnnotStore(
+    ({ cardSelection: { selected } }) =>
+      selected.length === 1 && selected[0] === annot.key,
+  );
   const editing = useAnnotStore((s) => s.editingCommentKey === annot.key);
   const controls = useCardControls(annot);
   const endSession = useRef<EndTagSession | null>(null);
@@ -159,6 +170,7 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
       data-annot-color={annot.color ?? undefined}
       data-zotero-annotation-key={annot.key}
       data-selected={selected ? "" : undefined}
+      data-alone={alone ? "" : undefined}
       role="row"
       aria-selected={selected}
       // A card takes focus from a click and holds it, which is what the
@@ -167,6 +179,14 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
       // list of hundreds of cards would otherwise be that many stops on the
       // way past it.
       tabIndex={tabStop ? 0 : -1}
+      // Shift-click takes a range of cards, not a run of the page's text; a
+      // text field keeps its own Shift-click.
+      onMouseDown={(e) => {
+        if (!e.shiftKey || inTextEntry(e.target)) return;
+        // A control keeps its press, and the focus it takes.
+        if ((e.target as Element).closest('button, a, [role="button"]')) return;
+        e.preventDefault();
+      }}
       onClick={(e) => {
         // A control inside the card already answered this click; the card's
         // selection is not it, and the control keeps the focus.
@@ -174,7 +194,14 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
         // The list is already where the user clicked, so the focus moves
         // without scrolling it.
         e.currentTarget.focus({ preventScroll: true });
-        actions.onSelectAnnotation(annot);
+        actions.onSelectAnnotation(
+          annot,
+          e.shiftKey
+            ? "range"
+            : Keymap.isModifier(e.nativeEvent, "Mod")
+              ? "toggle"
+              : "click",
+        );
       }}
     >
       {/* A grid row holds its content in a cell; the card's parts stack in it. */}
@@ -216,7 +243,7 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
 
         <ConflictSlot annot={annot} />
 
-        <ExcerptBlock annot={annot} collapsed={collapsed} />
+        <ExcerptBlock annot={annot} collapsed={collapsed && !alone} />
 
         <CommentSlot
           annot={annot}
@@ -292,7 +319,7 @@ function cardHeldTagsActions(
  *
  * The three editing verbs — colour, comment and tags — rest dimmed and come
  * up to full on hover, while focus is inside the card so the keyboard reaches
- * them, and while the card is selected. The overflow control never dims: it is
+ * them, and while the card is selected alone. The overflow control never dims: it is
  * the only route to copying, revealing and deleting.
  *
  * @see apps/obsidian/src/services/pdf-annotation-editor/mark-popup.ts
@@ -339,7 +366,7 @@ function CardActionBar({
       {/* 70% is the floor the resting state can dim to and still read: at it
           the icon carries 3.26:1 against the header, and WCAG 1.4.11 asks 3:1
           of a control. 40% measured 1.84:1. */}
-      <div className="zt:flex zt:items-center zt:opacity-70 zt:group-focus-within:opacity-100 zt:group-hover:opacity-100 zt:group-data-selected:opacity-100 zt:motion-safe:transition-opacity">
+      <div className="zt:flex zt:items-center zt:opacity-70 zt:group-focus-within:opacity-100 zt:group-hover:opacity-100 zt:group-data-alone:opacity-100 zt:motion-safe:transition-opacity">
         <IconButton
           icon="palette"
           className={BLOCKED_VERB_DIM}
@@ -512,7 +539,12 @@ function TagRow({
       className="zt:flex zt:flex-wrap zt:gap-1 zt:data-editable:cursor-text"
       data-editable={onOpen ? "" : undefined}
       onClick={(e) => {
-        if (!onOpen || e.target !== e.currentTarget) return;
+        if (
+          !onOpen ||
+          e.target !== e.currentTarget ||
+          selectsCards(e.nativeEvent, "card")
+        )
+          return;
         claimClick(e);
         onOpen();
       }}
@@ -604,7 +636,16 @@ function HeldDraftPanel({
         setEditing(annot.key);
       }}
       // The panel is the draft's own surface; the card's selection is not it.
-      onClick={claimClick}
+      // A Shift or Cmd/Ctrl click off its verbs is the card's own gesture.
+      onClick={(e) => {
+        const target = e.target as Node;
+        if (
+          selectsCards(e.nativeEvent, "card") &&
+          !(target.instanceOf(Element) && target.closest("button"))
+        )
+          return;
+        claimClick(e);
+      }}
     />
   );
 }

@@ -75,7 +75,11 @@ import { AnnotView } from "./AnnotView";
 import { cardControls } from "./card-controls";
 import type { CardControls } from "./card-controls";
 import { NO_SELECTION, nextCardSelection, sameKeys } from "./card-selection";
-import type { CardSelection, SelectionChange } from "./card-selection";
+import type {
+  CardClick,
+  CardSelection,
+  SelectionChange,
+} from "./card-selection";
 import { createCommentRenderer } from "./comment-render";
 import { createDragInsertHandler, createInsertHandler } from "./drag-insert";
 import { sanitizeSavedFilter } from "./filter";
@@ -207,6 +211,12 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * loaded. The selection itself is read from the reader when it applies.
    */
   #readerPending = false;
+  /**
+   * The keys this view is sending to the bound Obsidian PDF view, while the
+   * send runs. The reader reports them straight back, and that echo is the
+   * view's own change: it leaves the anchor and the focus where they are.
+   */
+  #pushing: readonly string[] | null = null;
   /** What the attachment choice and the saved filter are remembered against. */
   #memoryKey: string | null = null;
   #itemKey: string | null = null;
@@ -416,9 +426,10 @@ export class AnnotationView extends ItemView implements HistorySurface {
       onUnpin: () => this.#unpin(),
       onEnableLiveUpdates: () => this.#enableLiveUpdates(),
       onAllowEditing: () => this.#deps.allowEditing(),
-      onSelectAnnotation: (annot) =>
-        this.#changeFromView({ kind: "click", key: annot.key }, annot.key),
+      onSelectAnnotation: (annot, gesture) =>
+        this.#clickFromView({ kind: gesture, key: annot.key }),
       onClearSelection: () => void this.#clearFromView(),
+      selectAlone: (annot) => this.#selectAloneFromView(annot.key),
       closeEditors: () => void this.#closeEditors(),
       onDragStart: drag,
       insertAnnotation: (annotation) => {
@@ -540,7 +551,23 @@ export class AnnotationView extends ItemView implements HistorySurface {
         if (this.#moveFromView(step)) return false;
       });
       this.register(() => move[Symbol.dispose]());
+      // Shift extends the selection from the anchor instead.
+      const extend = registerKeymap(this.scope, ["Shift"], key, (event) => {
+        if (!this.#onCardList(event.target)) return;
+        if (this.#extendFromView(step)) return false;
+      });
+      this.register(() => extend[Symbol.dispose]());
     }
+
+    // Cmd/Ctrl+A selects every card the list shows, from anywhere in the
+    // view. One typed into a field goes on to the field, which selects its own
+    // text.
+    const all = registerKeymap(this.scope, ["Mod"], "A", (event) => {
+      if (inTextEntry(event.target)) return;
+      this.#changeFromView({ kind: "all" });
+      return false;
+    });
+    this.register(() => all[Symbol.dispose]());
 
     // The platform's undo and redo keys, which a card answers with the
     // Annotation History of the Attachment this view shows.
@@ -598,7 +625,30 @@ export class AnnotationView extends ItemView implements HistorySurface {
     this.register(
       this.#store.subscribe(
         (s) => visibleOrder(s),
-        () => this.#setSelection({ kind: "prune" }),
+        () => {
+          // A list that is loading shows nothing yet, and hides nothing.
+          if (this.#store.getState().annotations === null) return;
+          const { selection, changed } = this.#setSelection({ kind: "prune" });
+          // The bound Obsidian PDF view drops the marks the list now hides,
+          // so its keys never act on a card the list does not show. A reader
+          // selection still waiting is the reader's own, and stays. A second
+          // view bound to the same PDF takes the pruned selection through
+          // that reader, as two such views share one selection.
+          const session = this.#boundPdfSession();
+          const push =
+            changed &&
+            !this.#readerPending &&
+            session !== null &&
+            !sameKeys(session.selected, selection.selected);
+          if (changed)
+            logger.debug("A prune dropped hidden cards from the selection", {
+              selected: selection.selected.length,
+              pushed: push,
+              readerPending: this.#readerPending,
+              bound: session !== null,
+            });
+          if (push && session) this.#pushToPdf(session, selection.selected);
+        },
         { equalityFn: sameKeys },
       ),
     );
@@ -1207,6 +1257,8 @@ export class AnnotationView extends ItemView implements HistorySurface {
     this.#readerPending = false;
     const reader = this.#boundReader;
     if (!reader) return;
+    if (this.#pushing !== null && sameKeys(reader.selected, this.#pushing))
+      return;
     const state = this.#store.getState();
     const keys = reader.selected;
     if (editorOpen(state)) {
@@ -1247,9 +1299,19 @@ export class AnnotationView extends ItemView implements HistorySurface {
     const session = this.#boundPdfSession();
     if (!session) return selection;
     if (!sameKeys(session.selected, selection.selected))
-      session.setSelectedAnnotations(selection.selected);
+      this.#pushToPdf(session, selection.selected);
     if (landOn !== undefined) session.navigateToAnnotation(landOn);
     return selection;
+  }
+
+  /** Sends the Card Selection to the bound Obsidian PDF view. */
+  #pushToPdf(session: ReaderSession, keys: readonly string[]): void {
+    this.#pushing = keys;
+    try {
+      session.setSelectedAnnotations(keys);
+    } finally {
+      this.#pushing = null;
+    }
   }
 
   /**
@@ -1270,22 +1332,69 @@ export class AnnotationView extends ItemView implements HistorySurface {
   }
 
   /**
-   * A key moves the Card Selection to one card. The card takes the focus and
-   * comes into view, and a bound Obsidian PDF view lands quietly on its mark,
-   * as a click does.
+   * A click on a card: alone, or with Cmd/Ctrl or Shift held. A bound
+   * Obsidian PDF view lands quietly on the mark of a card that a plain click
+   * or a Cmd/Ctrl-click adds; a card that leaves, and a range, only repaint.
+   */
+  #clickFromView(change: Extract<SelectionChange, { kind: CardClick }>): void {
+    const adds =
+      change.kind === "click" ||
+      (change.kind === "toggle" &&
+        !this.#store.getState().cardSelection.selected.includes(change.key));
+    this.#changeFromView(change, adds ? change.key : undefined);
+  }
+
+  /**
+   * A card's edit control was pressed: a card not selected alone is first
+   * selected alone, as a click selects it, so an editor never opens on a card
+   * in a group.
+   */
+  #selectAloneFromView(key: string): void {
+    const { selected } = this.#store.getState().cardSelection;
+    if (selected.length === 1 && selected[0] === key) return;
+    this.#clickFromView({ kind: "click", key });
+  }
+
+  /**
+   * A key moves the Card Selection to one card, and a bound Obsidian PDF view
+   * lands quietly on its mark, as a click does.
    *
    * @returns whether the selection moved; at either end of the list it stays.
    */
   #moveFromView(step: 1 | -1): boolean {
-    const current = this.#store.getState().cardSelection;
-    const next = this.#changeFromView({ kind: "move", step });
-    const [key] = next.selected;
-    if (next === current || key === undefined) return false;
+    const key = this.#stepFromView({ kind: "move", step });
+    if (key === null) return false;
     this.#boundPdfSession()?.navigateToAnnotation(key);
+    return true;
+  }
+
+  /**
+   * Shift and a key extend the Card Selection by one card; the PDF only
+   * repaints.
+   *
+   * @returns whether the selection moved; at either end of the list it stays.
+   */
+  #extendFromView(step: 1 | -1): boolean {
+    return this.#stepFromView({ kind: "extend", step }) !== null;
+  }
+
+  /**
+   * One keyboard step of the Card Selection. The card it ends on takes the
+   * focus and comes into view.
+   *
+   * @returns the card it ends on, or `null` where the selection stayed.
+   */
+  #stepFromView(
+    change: Extract<SelectionChange, { kind: "move" | "extend" }>,
+  ): string | null {
+    const current = this.#store.getState().cardSelection;
+    const next = this.#changeFromView(change);
+    const key = next.focus;
+    if (next === current || key === null) return null;
     const card = this.#cardElement(key);
     card?.focus({ preventScroll: true });
     card?.scrollIntoView({ block: "nearest" });
-    return true;
+    return key;
   }
 
   /**

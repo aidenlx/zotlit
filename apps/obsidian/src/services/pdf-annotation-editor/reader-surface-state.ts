@@ -163,6 +163,17 @@ export type Floating =
       adjust?: Adjustment;
     }
   | {
+      /**
+       * Several selected Annotations, as the Annotation View's Card Selection
+       * set them. A group has no Mark Popup and no Mark Handles.
+       *
+       * @see apps/obsidian/docs/adr/0061-the-annotation-view-owns-its-card-selection.md
+       */
+      kind: "group";
+      /** The selected Annotations, two or more, by Indexed Key. */
+      keys: readonly string[];
+    }
+  | {
       kind: "create";
       /** The settled selection, placed on the page's characters. */
       captured: SelectedText;
@@ -356,20 +367,63 @@ export function selectMark(
 ): void {
   store.setState(({ floating }) => {
     if (key === null) return { floating: NONE };
-    const held = stack?.includes(key) ? stack : [key];
     const same = floating.kind === "selected" && floating.key === key;
     return {
-      floating: {
-        kind: "selected",
-        key,
-        stack: held,
-        index: held.indexOf(key),
+      floating: selectedMark(key, stack, {
         quiet,
         commenting: commenting || (same && floating.commenting),
         tagging: !commenting && same && floating.tagging,
-      },
+      }),
     };
   });
+}
+
+/** The floating surface of one selected mark, its editors as given. */
+function selectedMark(
+  key: string,
+  stack: readonly string[] | undefined,
+  state: { quiet: boolean; commenting: boolean; tagging: boolean },
+): Extract<Floating, { kind: "selected" }> {
+  const held = stack?.includes(key) ? stack : [key];
+  return {
+    kind: "selected",
+    key,
+    stack: held,
+    index: held.indexOf(key),
+    ...state,
+  };
+}
+
+/**
+ * Takes two or more Annotations as one selection, which draws no popup and no
+ * handles.
+ */
+export function selectGroup(
+  store: ReaderSurfaceStore,
+  keys: readonly string[],
+): void {
+  store.setState({ floating: { kind: "group", keys: [...keys] } });
+}
+
+/** A floating surface the Mark Popup never hangs over. */
+export type PopuplessFloating = Extract<
+  Floating,
+  { kind: "none" | "capture" | "text-draft" | "group" }
+>;
+
+/**
+ * Whether nothing floats that the Mark Popup hangs over: nothing, an image
+ * capture, a Text Draft, or a group.
+ */
+export function drawsNoPopup(
+  floating: Floating,
+): floating is PopuplessFloating {
+  return (
+    floating.kind === "none" ||
+    floating.kind === "capture" ||
+    floating.kind === "text-draft" ||
+    floating.kind === "group"
+  );
 }
 
 export function clearFloating(store: ReaderSurfaceStore): void {
@@ -660,13 +714,7 @@ export function setCommenting(
   commenting: boolean,
 ): void {
   const { floating } = store.getState();
-  if (
-    floating.kind === "none" ||
-    floating.kind === "capture" ||
-    floating.kind === "text-draft" ||
-    floating.commenting === commenting
-  )
-    return;
+  if (drawsNoPopup(floating) || floating.commenting === commenting) return;
   store.setState({
     floating:
       floating.kind === "selected"
@@ -816,6 +864,21 @@ function heldBy(
 ): Floating {
   if (floating.kind === "selected")
     return records.some(({ key }) => key === floating.key) ? floating : NONE;
+  if (floating.kind === "group") {
+    const keys = floating.keys.filter((key) =>
+      records.some((record) => record.key === key),
+    );
+    if (keys.length === floating.keys.length) return floating;
+    if (keys.length > 1) return { kind: "group", keys };
+    const [key] = keys;
+    return key === undefined
+      ? NONE
+      : selectedMark(key, undefined, {
+          quiet: true,
+          commenting: false,
+          tagging: false,
+        });
+  }
   if (floating.kind !== "text-draft" || floating.phase !== "saving")
     return floating;
   const identity = textIdentity(textDraftPosition(floating), {
@@ -1106,6 +1169,17 @@ export function selectSelectedKey({
   floating,
 }: ReaderSurfaceState): string | null {
   return floating.kind === "selected" ? floating.key : null;
+}
+
+/**
+ * The Indexed Keys of every selected Annotation: the one selected mark, or a
+ * group. Empty while none is selected.
+ */
+export function selectSelectedKeys({
+  floating,
+}: ReaderSurfaceState): readonly string[] {
+  if (floating.kind === "selected") return [floating.key];
+  return floating.kind === "group" ? floating.keys : [];
 }
 
 /** The Geometry Edit on the selected mark, or `null` while none stands. */

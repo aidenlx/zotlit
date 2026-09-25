@@ -53,6 +53,7 @@ import {
   shownComment,
   tagEditorControls,
 } from "@/views/annot-view/card-controls";
+import { sameKeys } from "@/views/annot-view/card-selection";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
 import type {
   CommentDraftActions,
@@ -115,8 +116,10 @@ import {
   selectSelectedRowInput,
   selectFloatingHead,
   selectMark,
+  selectGroup,
   selectSelectedDraft,
   selectSelectedKey,
+  selectSelectedKeys,
   selectSelectedTagDraft,
   recordColorUse,
   setCommenting,
@@ -306,10 +309,9 @@ export class MarkSelection implements Disposable {
     this.#deps = deps;
   }
 
-  /** The Indexed Keys the overlay draws as selected. */
+  /** The Indexed Keys the overlay draws as selected: one mark, or a group. */
   get selected(): ReadonlySet<string> {
-    const key = this.#selectedKey();
-    return new Set(key === null ? [] : [key]);
+    return new Set(this.#selectedKeys());
   }
 
   /**
@@ -428,7 +430,7 @@ export class MarkSelection implements Disposable {
     this.#surfaces.use(
       registerDomEvent(containerEl.doc, "selectionchange", () => {
         if (
-          this.#selectedKey() !== null &&
+          this.#selectedKeys().length > 0 &&
           !selectionCollapsed(this.#deps.containerEl)
         )
           this.#apply(null);
@@ -437,10 +439,14 @@ export class MarkSelection implements Disposable {
     );
     const state = this.#deps.surfaceState;
     this.#surfaces.defer(
-      state.subscribe(selectSelectedKey, (key) => {
-        this.#deps.repaint();
-        this.#deps.report(key === null ? [] : [key]);
-      }),
+      state.subscribe(
+        selectSelectedKeys,
+        (keys) => {
+          this.#deps.repaint();
+          this.#deps.report(keys);
+        },
+        { equalityFn: sameKeys },
+      ),
     );
     // The editor goes with the episode it was opened for: a closed editor, a
     // stepped or dropped selection, and a hidden or conflicting draft alike.
@@ -481,11 +487,27 @@ export class MarkSelection implements Disposable {
     this.#apply(annotationKey, null, { popup, commenting });
   }
 
+  /**
+   * Take these Annotations as the selection, from the Annotation View's Card
+   * Selection. The reader takes it quietly: one mark opens no Mark Popup, and
+   * several are a group, painted with no popup and no Mark Handles.
+   */
+  selectMarks(annotationKeys: readonly string[]): void {
+    if (annotationKeys.length < 2) {
+      this.select(annotationKeys[0] ?? null, { popup: false });
+      return;
+    }
+    this.#submitAndCloseCommentEditor();
+    this.#at = null;
+    selectGroup(this.#deps.surfaceState, annotationKeys);
+  }
+
   [Symbol.dispose](): void {
     this.#submitAndCloseCommentEditor();
     this.#endTagSession();
     this.#surfaces.dispose();
-    if (this.#selectedKey() !== null) selectMark(this.#deps.surfaceState, null);
+    if (this.#selectedKeys().length > 0)
+      selectMark(this.#deps.surfaceState, null);
   }
 
   #apply(
@@ -539,7 +561,7 @@ export class MarkSelection implements Disposable {
       case "ignore":
         return;
       case "deselect":
-        if (this.#selectedKey() !== null) this.#apply(null);
+        if (this.#selectedKeys().length > 0) this.#apply(null);
         return;
       case "select":
         if (page) {
@@ -559,10 +581,10 @@ export class MarkSelection implements Disposable {
    * after. An open tag editor closes alone, as Escape inside it does, though
    * focus stands on a chip's remove button or a verb beside it.
    *
-   * @returns whether a mark was selected to step back from.
+   * @returns whether a mark, or a group, was selected to step back from.
    */
   escape(): boolean {
-    if (this.#selectedKey() === null) return false;
+    if (this.#selectedKeys().length === 0) return false;
     if (selectFloatingHead(this.#state()).tagging && this.#endTags(false))
       return true;
     if (this.#dragging) this.#cancelDrag();
@@ -579,9 +601,12 @@ export class MarkSelection implements Disposable {
     const walk =
       event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : null;
     if (walk !== null) {
+      // A group reduces to one mark, walking from its first in reading order.
+      const order = readingOrder(this.#deps.records());
+      const selected = this.#selectedKeys();
       const next = stepReadingOrder(
-        readingOrder(this.#deps.records()),
-        this.#selectedKey(),
+        order,
+        order.find((key) => selected.includes(key)) ?? null,
         walk,
       );
       if (next === null) return;
@@ -973,7 +998,7 @@ export class MarkSelection implements Disposable {
    * inside the reader, so it is never one of these.
    */
   #outsidePress(event: PointerEvent): void {
-    if (this.#selectedKey() === null) return;
+    if (this.#selectedKeys().length === 0) return;
     const target = event.target as Node | null;
     if (this.#deps.containerEl.contains(target)) return;
     if (this.#deps.popup.contains(target)) return;
@@ -1362,6 +1387,10 @@ export class MarkSelection implements Disposable {
 
   #selectedKey(): string | null {
     return selectSelectedKey(this.#state());
+  }
+
+  #selectedKeys(): readonly string[] {
+    return selectSelectedKeys(this.#state());
   }
 
   #record(): AnnotationRecord | null {

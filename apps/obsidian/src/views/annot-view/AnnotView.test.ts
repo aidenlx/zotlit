@@ -171,7 +171,11 @@ describe("the card list", () => {
   it("follows the Card Selection with aria-selected and moves the tab stop to its anchor", async () => {
     const { host, select } = await mountList();
 
-    await select({ selected: ["BBBB2222"], anchor: "BBBB2222" });
+    await select({
+      selected: ["BBBB2222"],
+      anchor: "BBBB2222",
+      focus: "BBBB2222",
+    });
     expect(rows(host)).toEqual([
       { key: "AAAA1111", selected: "false", tabbable: false },
       { key: "BBBB2222", selected: "true", tabbable: true },
@@ -179,7 +183,11 @@ describe("the card list", () => {
     ]);
     expect(tabOrder(host)).toEqual(onlyRow(host, "BBBB2222"));
 
-    await select({ selected: ["AAAA1111", "CCCC3333"], anchor: "CCCC3333" });
+    await select({
+      selected: ["AAAA1111", "CCCC3333"],
+      anchor: "CCCC3333",
+      focus: "CCCC3333",
+    });
     expect(rows(host)).toEqual([
       { key: "AAAA1111", selected: "true", tabbable: false },
       { key: "BBBB2222", selected: "false", tabbable: false },
@@ -214,11 +222,16 @@ describe("the card list", () => {
 
     // The search hides the anchor; the rest of the group stays selected, and
     // the tab stop goes to it.
-    await select({ selected: ["AAAA1111", "CCCC3333"], anchor: "AAAA1111" });
+    await select({
+      selected: ["AAAA1111", "CCCC3333"],
+      anchor: "AAAA1111",
+      focus: "AAAA1111",
+    });
     await act(() => store.setState({ filterQuery: "shared" }));
     expect(store.getState().cardSelection).toEqual({
       selected: ["CCCC3333"],
       anchor: "AAAA1111",
+      focus: "AAAA1111",
     });
     expect(rows(host)).toEqual([
       { key: "BBBB2222", selected: "false", tabbable: false },
@@ -229,7 +242,11 @@ describe("the card list", () => {
     // The search hides every Selected Card; the first row it leaves is the
     // tab stop.
     await act(() => store.setState({ filterQuery: "" }));
-    await select({ selected: ["AAAA1111"], anchor: "AAAA1111" });
+    await select({
+      selected: ["AAAA1111"],
+      anchor: "AAAA1111",
+      focus: "AAAA1111",
+    });
     await act(() => store.setState({ filterQuery: "shared" }));
     expect(store.getState().cardSelection.selected).toEqual([]);
     expect(rows(host)).toEqual([
