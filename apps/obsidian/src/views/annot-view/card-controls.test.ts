@@ -19,6 +19,8 @@ import {
   editingBlockedReason,
   heldCommentDraft,
   heldTagDraft,
+  shownComment,
+  shownTagNames,
 } from "./card-controls";
 import type { CardBlock, CardControls } from "./card-controls";
 
@@ -553,5 +555,49 @@ describe("the held tags panel", () => {
         primary: false,
       },
     ]);
+  });
+});
+
+describe("what a surface draws of an Annotation", () => {
+  const record = { comment: "Saved note", tags: ["review", "figure"] };
+  const tags: TagDraft = {
+    annotationKey: "PUPR5FG5",
+    attachmentKey: "RGRPDF24",
+    serverID: "fixture",
+    baseline: ["review"],
+    names: ["review", "nlp"],
+    state: { kind: "editing" },
+  };
+  const comment: CommentDraft = {
+    annotationKey: "PUPR5FG5",
+    attachmentKey: "RGRPDF24",
+    serverID: "fixture",
+    baseline: "",
+    text: "Typed note",
+    state: { kind: "editing" },
+  };
+
+  it("draws a draft's own value while it is edited, held, or failed", () => {
+    expect(shownTagNames(record, tags)).toEqual(["review", "nlp"]);
+    expect(shownComment(record, comment)).toBe("Typed note");
+    const failure = { kind: "unreachable" } as const;
+    expect(
+      shownTagNames(record, { ...tags, state: { kind: "failed", failure } }),
+    ).toEqual(["review", "nlp"]);
+  });
+
+  it("draws the record once a draft is saving, since it holds the proposal", () => {
+    expect(
+      shownTagNames(record, { ...tags, state: { kind: "pending" } }),
+    ).toEqual(["review", "figure"]);
+    expect(
+      shownComment(record, { ...comment, state: { kind: "pending" } }),
+    ).toBe("Saved note");
+  });
+
+  it("draws the record with no draft, and an empty comment for none", () => {
+    expect(shownTagNames(record, null)).toEqual(["review", "figure"]);
+    expect(shownComment(record, null)).toBe("Saved note");
+    expect(shownComment({ comment: null }, null)).toBe("");
   });
 });

@@ -11,6 +11,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
 import type {
+  AnnotationRecord,
   CommentDraft,
   TagDraft,
 } from "@/services/annotation-repository/service";
@@ -261,6 +262,36 @@ export function tagEditorControls(
     hint = failedSaveReason(capability, draft.state.failure, now);
   else if (!available) hint = capabilityBlock(capability, now)?.reason ?? null;
   return { readOnly: !available, hint };
+}
+
+/**
+ * The tag names every surface draws for one Annotation: a draft's own while it
+ * is edited, held, or failed, so the card and the Mark Popup show the same
+ * unsaved change. A saving draft's names are the record's Pending Proposal, so
+ * the record is drawn from the moment the save is asked for.
+ *
+ * @see apps/obsidian/docs/adr/0064-surfaces-draw-pending-proposals-from-query-core-mutation-variables.md
+ */
+export function shownTagNames(
+  record: Pick<AnnotationRecord, "tags">,
+  draft: TagDraft | null,
+): readonly string[] {
+  return draft && draft.state.kind !== "pending" ? draft.names : record.tags;
+}
+
+/**
+ * The comment text both comment editors open on, on the rule of
+ * {@link shownTagNames}. The rendered comment under a closed editor draws the
+ * record: a comment draft saves itself within a second of the last keystroke,
+ * and its Pending Proposal is the record from then on.
+ */
+export function shownComment(
+  record: Pick<AnnotationRecord, "comment">,
+  draft: CommentDraft | null,
+): string {
+  return draft && draft.state.kind !== "pending"
+    ? draft.text
+    : (record.comment ?? "");
 }
 
 /** One verb the held-draft panel offers. */

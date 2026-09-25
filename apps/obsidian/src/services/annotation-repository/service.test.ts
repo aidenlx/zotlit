@@ -622,6 +622,93 @@ it("names comment drafts by Zotero database as well as Annotation key", async ()
   expect(repository.commentDraftFor("PUPR5FG5")?.text).toBe("First database");
 });
 
+it("announces a write and a draft on one Annotation through one signal", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository } = await writable(stack, zotero.answers);
+  const seen: { mutation: string; comment: string | null }[] = [];
+  stack.defer(
+    repository.on("annotation-changed", (key) => {
+      const state = repository.annotationState(key);
+      seen.push({
+        mutation: state.mutation.kind,
+        comment: state.commentDraft?.text ?? null,
+      });
+    }),
+  );
+  const release = zotero.holdWrites();
+
+  const saving = repository.patchColor("PUPR5FG5", "#ff6666");
+  repository.editComment("PUPR5FG5", "Worth citing");
+  release();
+  await saving;
+
+  expect(seen[0]).toEqual({ mutation: "pending", comment: null });
+  expect(seen).toContainEqual({ mutation: "pending", comment: "Worth citing" });
+  expect(seen.at(-1)).toEqual({ mutation: "idle", comment: "Worth citing" });
+});
+
+it("announces every Annotation a complete read finds gone, with a draft or without", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository } = await writable(stack, zotero.answers);
+  repository.editComment("K3JRFLFQ", "Worth citing");
+  const announced: string[] = [];
+  stack.defer(
+    repository.on("annotation-changed", (key) => {
+      if (repository.annotationState(key).gone) announced.push(key);
+    }),
+  );
+
+  zotero.eraseInZotero("PUPR5FG5");
+  zotero.eraseInZotero("K3JRFLFQ");
+  await repository.refresh("RGRPDF24");
+
+  // A surface re-reads the whole state on each announcement, so one may come
+  // more than once.
+  expect(new Set(announced)).toEqual(new Set(["K3JRFLFQ", "PUPR5FG5"]));
+  expect(repository.annotationState("K3JRFLFQ")).toMatchObject({
+    gone: true,
+    commentDraft: null,
+  });
+  expect(repository.annotationState("FDRFQ7C2").gone).toBe(false);
+
+  zotero.restoreInZotero("PUPR5FG5");
+  await repository.refresh("RGRPDF24");
+  expect(repository.annotationState("PUPR5FG5").gone).toBe(false);
+});
+
+it("says a database switch hid an Annotation's drafts", async () => {
+  await using stack = new AsyncDisposableStack();
+  let serverID = SERVER_ID;
+  let answering = true;
+  const { repository, client, dbEvents, serverEvents } = await writable(stack, {
+    root: () =>
+      answering ? rootOk({ "Zotero-Server-ID": serverID }) : unreachable(),
+    children: () => annotationPage(ROUGIER_ANNOTATIONS, { serverID }),
+  });
+  repository.editComment("PUPR5FG5", "First database");
+  repository.editTags("PUPR5FG5", ["figure"]);
+  expect(repository.annotationState("PUPR5FG5").hidden).toBe(false);
+
+  answering = false;
+  const lost = nextChange(repository);
+  freshnessSignal(serverEvents);
+  await lost;
+  serverID = "Zzzz11119999";
+  client.$client.exec(
+    `update settings set value = '${serverID}' where setting = 'localAPI' and key = 'serverID'`,
+  );
+  dbEvents.emit("changed");
+  await repository.read("RGRPDF24");
+
+  expect(repository.annotationState("PUPR5FG5")).toMatchObject({
+    commentDraft: null,
+    tagDraft: null,
+    hidden: true,
+  });
+});
+
 it("hides an old database draft and cancels its save schedule", async () => {
   await using stack = new AsyncDisposableStack();
   let serverID = SERVER_ID;
@@ -641,7 +728,11 @@ it("hides an old database draft and cancels its save schedule", async () => {
     repository.editComment("PUPR5FG5", "First database");
     await vi.advanceTimersByTimeAsync(500);
     const hidden = new Promise<string>((resolve) => {
-      stack.defer(repository.on("comment-draft-hidden", resolve));
+      stack.defer(
+        repository.on("annotation-changed", (key) => {
+          if (repository.annotationState(key).hidden) resolve(key);
+        }),
+      );
     });
 
     answering = false;
@@ -1611,7 +1702,11 @@ it("discards a draft only when its own source confirms deletion", async () => {
   });
   repository.editComment("PUPR5FG5", "Unsaved");
   const deleted = new Promise<string>((resolve) => {
-    stack.defer(repository.on("annotation-deleted", resolve));
+    stack.defer(
+      repository.on("annotation-changed", (key) => {
+        if (repository.annotationState(key).gone) resolve(key);
+      }),
+    );
   });
   records = records.filter(({ key }) => key !== "PUPR5FG5");
 
@@ -1633,7 +1728,11 @@ it("discards a queued draft when the verified database confirms deletion after A
     const sent = requests.length;
     repository.editComment("PUPR5FG5", "Never recreate this annotation");
     const deleted = new Promise<string>((resolve) => {
-      stack.defer(repository.on("annotation-deleted", resolve));
+      stack.defer(
+        repository.on("annotation-changed", (key) => {
+          if (repository.annotationState(key).gone) resolve(key);
+        }),
+      );
     });
 
     answering = false;
@@ -2251,7 +2350,7 @@ it("shows a write in flight as pending, and draws its Pending Proposal at once",
   });
   const states: string[] = [];
   stack.defer(
-    repository.on("mutation-changed", (key) => {
+    repository.on("annotation-changed", (key) => {
       states.push(repository.mutationFor(key).kind);
     }),
   );
@@ -2293,7 +2392,7 @@ it("stays pending from the first write to the last of a queue on one Annotation"
   const { repository } = await writable(stack, zotero.answers);
   const states: string[] = [];
   stack.defer(
-    repository.on("mutation-changed", (key) => {
+    repository.on("annotation-changed", (key) => {
       states.push(repository.mutationFor(key).kind);
     }),
   );
@@ -3281,9 +3380,8 @@ it("draws nothing while an automatic comment save is in flight", async () => {
     repository.editComment("PUPR5FG5", "typed");
     const resting = drawn();
     const frames: unknown[] = [];
-    stack.defer(repository.on("mutation-changed", () => frames.push(drawn())));
     stack.defer(
-      repository.on("comment-draft-changed", () => frames.push(drawn())),
+      repository.on("annotation-changed", () => frames.push(drawn())),
     );
 
     await vi.advanceTimersByTimeAsync(1_000);
@@ -4776,7 +4874,7 @@ it("shares one tag draft and preserves it across unrelated refresh changes", asy
   const { repository } = await writable(stack, zotero.answers);
   const announced: string[] = [];
   stack.defer(
-    repository.on("comment-draft-changed", (key) => announced.push(key)),
+    repository.on("annotation-changed", (key) => announced.push(key)),
   );
 
   // The Mark Popup starts the session; the card opens onto the same draft.
@@ -4839,7 +4937,7 @@ it("keeps the verbs live and the draft saving until the read-back lands", async 
   // closes onto the new chips rather than the old ones.
   let tagsWhenClosed: readonly string[] | undefined;
   stack.defer(
-    repository.on("comment-draft-changed", () => {
+    repository.on("annotation-changed", () => {
       if (repository.tagDraftFor("PUPR5FG5")) return;
       tagsWhenClosed = repository
         .peek("RGRPDF24")
@@ -4866,7 +4964,11 @@ it("hides an old database's tag draft when the database switches", async () => {
   );
   repository.editTags("PUPR5FG5", ["figure"]);
   const hidden = new Promise<string>((resolve) => {
-    stack.defer(repository.on("comment-draft-hidden", resolve));
+    stack.defer(
+      repository.on("annotation-changed", (key) => {
+        if (repository.annotationState(key).hidden) resolve(key);
+      }),
+    );
   });
 
   // With the Local API gone, the draft is found by the database it was made
@@ -5030,12 +5132,16 @@ it("discards a tag draft when deletion is confirmed in Zotero", async () => {
   });
   repository.editTags("PUPR5FG5", ["figure"]);
   const deleted: string[] = [];
-  stack.defer(repository.on("annotation-deleted", (key) => deleted.push(key)));
+  stack.defer(
+    repository.on("annotation-changed", (key) => {
+      if (repository.annotationState(key).gone) deleted.push(key);
+    }),
+  );
   records = records.filter(({ key }) => key !== "PUPR5FG5");
 
   await repository.refresh("RGRPDF24");
 
-  expect(deleted).toEqual(["PUPR5FG5"]);
+  expect(new Set(deleted)).toEqual(new Set(["PUPR5FG5"]));
   expect(repository.tagDraftFor("PUPR5FG5")).toBeNull();
   // The editor unmounting on the deleted card sends nothing.
   expect(await repository.submitTags("PUPR5FG5", { automatic: true })).toEqual({

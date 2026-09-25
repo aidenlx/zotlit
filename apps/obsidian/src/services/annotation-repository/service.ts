@@ -274,6 +274,26 @@ export interface TagDraft {
   held?: boolean;
 }
 
+/**
+ * Everything the repository holds about one Annotation beside its record, as
+ * one snapshot: a surface re-reads it whole on `annotation-changed`.
+ */
+export interface AnnotationState {
+  /** What a write left on it; `pending` while one stands. */
+  mutation: MutationState;
+  /** Its comment draft in the active Zotero database. */
+  commentDraft: CommentDraft | null;
+  /** Its tag draft in the active Zotero database. */
+  tagDraft: TagDraft | null;
+  /**
+   * A draft on it stands in another Zotero database, which hides it here: a
+   * surface closes the editor that drew it, with nothing to save.
+   */
+  hidden: boolean;
+  /** A complete read confirmed it no longer exists. */
+  gone: boolean;
+}
+
 type CommentWriteDecision =
   | { kind: "drop" }
   | { kind: "retain" }
@@ -359,19 +379,15 @@ export interface AnnotationRepositoryEvents {
    */
   "capability-changed": () => void;
   /**
-   * What a write left on one Annotation moved. A consumer re-reads
-   * {@link AnnotationRepository.mutationFor} and redraws that card's verbs; no
-   * record set is affected, because a write in flight draws nothing.
+   * Something the repository holds about one Annotation beside its record
+   * moved: what a write left on it, its Annotation Draft, whether a database
+   * switch hid that draft, or whether it is gone. A consumer re-reads the whole
+   * {@link AnnotationRepository.annotationState} at once; the record itself
+   * moves with `annotations-changed`.
    *
    * @param annotationKey the Annotation's Indexed Key.
    */
-  "mutation-changed": (annotationKey: string) => void;
-  /** One shared Annotation Draft moved: its comment or its tags. */
-  "comment-draft-changed": (annotationKey: string) => void;
-  /** A database switch hid a draft that belongs to the previous database. */
-  "comment-draft-hidden": (annotationKey: string) => void;
-  /** A complete read confirmed that an Annotation no longer exists. */
-  "annotation-deleted": (annotationKey: string, attachmentKey: string) => void;
+  "annotation-changed": (annotationKey: string) => void;
   /**
    * One Attachment's Annotation History opened, closed, or moved. A consumer
    * that draws whether an undo or a redo stands re-reads
@@ -580,6 +596,13 @@ export class AnnotationRepository extends Service<void> {
   readonly #outcomes = new Map<string, MutationState>();
   /** The pending state each write in the mutation cache shows while it stands. */
   readonly #pendingStates = new WeakMap<AnnotationMutation, MutationState>();
+  /** Every Annotation a complete read confirmed gone, by Indexed Key. */
+  readonly #gone = new Set<string>();
+  /**
+   * The keys the last complete read of each Attachment answered, by the
+   * database it came from, which the next one is compared against.
+   */
+  readonly #completeKeys = new Map<string, ReadonlySet<string>>();
   readonly #commentDrafts = new Map<string, CommentDraft>();
   readonly #commentDraftSources = new Map<string, string>();
   readonly #commentSaves = new Map<string, CommentSave>();
@@ -798,6 +821,31 @@ export class AnnotationRepository extends Service<void> {
     );
   }
 
+  /**
+   * Everything the repository holds about one Annotation beside its record.
+   *
+   * @param annotationKey the Annotation's Indexed Key.
+   */
+  annotationState(annotationKey: string): AnnotationState {
+    const commentDraft = this.commentDraftFor(annotationKey);
+    const tagDraft = this.tagDraftFor(annotationKey);
+    const shown = new Set<CommentDraft | TagDraft>(
+      [commentDraft, tagDraft].filter((draft) => draft !== null),
+    );
+    return {
+      mutation: this.mutationFor(annotationKey),
+      commentDraft,
+      tagDraft,
+      hidden: [
+        ...this.#commentDrafts.values(),
+        ...this.#tagDrafts.values(),
+      ].some(
+        (draft) => draft.annotationKey === annotationKey && !shown.has(draft),
+      ),
+      gone: this.#gone.has(annotationKey),
+    };
+  }
+
   /** The active Zotero database's shared draft for one Annotation. */
   commentDraftFor(annotationKey: string): CommentDraft | null {
     const source = this.#localApi.demandSource();
@@ -846,7 +894,7 @@ export class AnnotationRepository extends Service<void> {
         };
     this.#commentDrafts.set(id, draft);
     this.#commentDraftSources.set(annotationKey, draft.serverID);
-    this.#emitter.emit("comment-draft-changed", annotationKey);
+    this.#emitter.emit("annotation-changed", annotationKey);
     if (text !== undefined && draft.state.kind !== "conflict") {
       this.#scheduleCommentSave(draft);
     }
@@ -1056,7 +1104,7 @@ export class AnnotationRepository extends Service<void> {
         commentDraftID(current.serverID, annotationKey),
         decision.draft,
       );
-      this.#emitter.emit("comment-draft-changed", annotationKey);
+      this.#emitter.emit("annotation-changed", annotationKey);
       // Text typed while the save was away, even behind a Save comment
       // pressed on a held draft, whose success ends the hold, is sent now.
       if (outcome.kind === "idle" && decision.draft.state.kind === "editing") {
@@ -1546,7 +1594,7 @@ export class AnnotationRepository extends Service<void> {
             continue;
           this.#cancelCommentSave(draft.annotationKey, draft.serverID);
           this.#commentDrafts.set(id, { ...draft, manualSave: true });
-          this.#emitter.emit("comment-draft-changed", draft.annotationKey);
+          this.#emitter.emit("annotation-changed", draft.annotationKey);
         }
         // A tag draft has no timer or queued save to cancel, unlike a comment
         // draft, so one already held needs no second event.
@@ -1670,7 +1718,7 @@ export class AnnotationRepository extends Service<void> {
     if (proposal) {
       this.#emitter.emit("annotations-changed", proposal.attachmentKey);
     }
-    this.#emitter.emit("mutation-changed", annotationKey);
+    this.#emitter.emit("annotation-changed", annotationKey);
     // A write that settles lets its proposal go: confirmed, the list already
     // holds the same value; refused, the confirmed value is drawn again. What
     // it left on the Annotation is announced in the same turn.
@@ -1678,7 +1726,7 @@ export class AnnotationRepository extends Service<void> {
       if (proposal) {
         this.#emitter.emit("annotations-changed", proposal.attachmentKey);
       }
-      this.#emitter.emit("mutation-changed", annotationKey);
+      this.#emitter.emit("annotation-changed", annotationKey);
     };
     void operation.then(settled, settled);
     return await this.#counted(held?.attachmentKey, operation);
@@ -2749,7 +2797,7 @@ export class AnnotationRepository extends Service<void> {
   /** Records the outcome one Annotation is left with, and announces it. */
   #settle(annotationKey: string, state: MutationState): MutationState {
     this.#leave(annotationKey, state);
-    this.#emitter.emit("mutation-changed", annotationKey);
+    this.#emitter.emit("annotation-changed", annotationKey);
     return state;
   }
 
@@ -2776,7 +2824,7 @@ export class AnnotationRepository extends Service<void> {
       },
     );
     this.#commentDraftSources.set(draft.annotationKey, draft.serverID);
-    this.#emitter.emit("comment-draft-changed", draft.annotationKey);
+    this.#emitter.emit("annotation-changed", draft.annotationKey);
   }
 
   #dropCommentDraft(annotationKey: string, serverID?: string): void {
@@ -2791,7 +2839,7 @@ export class AnnotationRepository extends Service<void> {
       this.#commentDraftSources.delete(annotationKey);
     }
     this.#cancelCommentSave(annotationKey, activeServerID);
-    this.#emitter.emit("comment-draft-changed", annotationKey);
+    this.#emitter.emit("annotation-changed", annotationKey);
   }
 
   #setTagDraft(draft: TagDraft): void {
@@ -2800,7 +2848,7 @@ export class AnnotationRepository extends Service<void> {
       draft,
     );
     this.#tagDraftSources.set(draft.annotationKey, draft.serverID);
-    this.#emitter.emit("comment-draft-changed", draft.annotationKey);
+    this.#emitter.emit("annotation-changed", draft.annotationKey);
   }
 
   #dropTagDraft({ serverID, annotationKey }: TagDraft): void {
@@ -2809,7 +2857,7 @@ export class AnnotationRepository extends Service<void> {
     if (this.#tagDraftSources.get(annotationKey) === serverID) {
       this.#tagDraftSources.delete(annotationKey);
     }
-    this.#emitter.emit("comment-draft-changed", annotationKey);
+    this.#emitter.emit("annotation-changed", annotationKey);
   }
 
   #commentSave(id: string): CommentSave {
@@ -2876,8 +2924,27 @@ export class AnnotationRepository extends Service<void> {
     annotations: readonly AnnotationRecord[],
   ): void {
     const records = new Map(annotations.map((record) => [record.key, record]));
+    const completeID = commentDraftID(serverID, attachmentKey);
+    const before = this.#completeKeys.get(completeID);
+    this.#completeKeys.set(completeID, new Set(records.keys()));
+    // Gone is what the last complete read showed, or a draft stands on, and
+    // this one no longer answers.
+    const gone = new Set(
+      [
+        ...(before ?? []),
+        ...[...this.#commentDrafts.values(), ...this.#tagDrafts.values()]
+          .filter(
+            (draft) =>
+              draft.serverID === serverID &&
+              draft.attachmentKey === attachmentKey,
+          )
+          .map((draft) => draft.annotationKey),
+      ].filter((key) => !records.has(key)),
+    );
+    for (const key of records.keys()) this.#gone.delete(key);
+    for (const key of gone) this.#gone.add(key);
     // Deletion confirmed in Zotero discards the tag draft with the comment
-    // draft, and announces the deletion once for the two.
+    // draft; the gone Annotation is announced below.
     for (const draft of this.#tagDrafts.values()) {
       if (
         draft.serverID !== serverID ||
@@ -2886,16 +2953,6 @@ export class AnnotationRepository extends Service<void> {
       )
         continue;
       this.#dropTagDraft(draft);
-      if (
-        this.#commentDrafts.has(commentDraftID(serverID, draft.annotationKey))
-      )
-        continue;
-      this.#settle(draft.annotationKey, IDLE);
-      this.#emitter.emit(
-        "annotation-deleted",
-        draft.annotationKey,
-        attachmentKey,
-      );
     }
     for (const draft of this.#commentDrafts.values()) {
       if (
@@ -2907,12 +2964,6 @@ export class AnnotationRepository extends Service<void> {
       const record = records.get(draft.annotationKey);
       if (!record) {
         this.#dropCommentDraft(draft.annotationKey, serverID);
-        this.#settle(draft.annotationKey, IDLE);
-        this.#emitter.emit(
-          "annotation-deleted",
-          draft.annotationKey,
-          attachmentKey,
-        );
         continue;
       }
       const fresh = record.comment ?? "";
@@ -2928,7 +2979,7 @@ export class AnnotationRepository extends Service<void> {
             commentDraftID(serverID, draft.annotationKey),
             { ...draft, baseline: fresh },
           );
-          this.#emitter.emit("comment-draft-changed", draft.annotationKey);
+          this.#emitter.emit("annotation-changed", draft.annotationKey);
         }
         continue;
       }
@@ -2944,7 +2995,7 @@ export class AnnotationRepository extends Service<void> {
           text: fresh,
           state: { kind: "editing" },
         });
-        this.#emitter.emit("comment-draft-changed", draft.annotationKey);
+        this.#emitter.emit("annotation-changed", draft.annotationKey);
         continue;
       }
       const conflict: MutationState = {
@@ -2959,8 +3010,14 @@ export class AnnotationRepository extends Service<void> {
           state: { kind: "conflict", fresh },
         },
       );
-      this.#emitter.emit("comment-draft-changed", draft.annotationKey);
+      this.#emitter.emit("annotation-changed", draft.annotationKey);
       this.#emitter.emit("write-conflict", draft.annotationKey, attachmentKey);
+    }
+    // What a write left on an Annotation goes with it, and every surface
+    // still drawing it hears that it is gone, with a draft or without.
+    for (const key of gone) {
+      this.#outcomes.delete(key);
+      this.#emitter.emit("annotation-changed", key);
     }
   }
 
@@ -3062,7 +3119,7 @@ export class AnnotationRepository extends Service<void> {
         ) {
           this.#commentDraftSources.delete(draft.annotationKey);
           this.#cancelCommentSave(draft.annotationKey, draft.serverID);
-          this.#emitter.emit("comment-draft-hidden", draft.annotationKey);
+          this.#emitter.emit("annotation-changed", draft.annotationKey);
         }
       }
       for (const draft of this.#tagDrafts.values()) {
@@ -3072,13 +3129,13 @@ export class AnnotationRepository extends Service<void> {
           this.#tagDraftSources.get(draft.annotationKey) === draft.serverID
         ) {
           this.#tagDraftSources.delete(draft.annotationKey);
-          this.#emitter.emit("comment-draft-hidden", draft.annotationKey);
+          this.#emitter.emit("annotation-changed", draft.annotationKey);
         }
       }
       for (const { key } of this.#publishedLists.get(attachmentKey)
         ?.annotations ?? []) {
         if (this.#outcomes.delete(key)) {
-          this.#emitter.emit("mutation-changed", key);
+          this.#emitter.emit("annotation-changed", key);
         }
       }
       this.#confirmedWrites.delete(attachmentKey);

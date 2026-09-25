@@ -49,6 +49,7 @@ import {
   editingLive,
   heldCommentDraft,
   heldTagDraft,
+  shownComment,
   tagEditorControls,
 } from "@/views/annot-view/card-controls";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
@@ -1234,7 +1235,7 @@ export class MarkSelection implements Disposable {
       {
         app: this.#deps.app,
         surface: "popup",
-        value: draft.text,
+        value: shownComment(annotation, draft),
         onChange: (text) =>
           this.#deps.annotations.editComment(annotation.key, text),
         onSubmit: () => this.#submitCommentEditor(annotation),

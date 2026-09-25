@@ -16,6 +16,7 @@ import type {
   AnnotationRecord,
   TagDraft,
 } from "@/services/annotation-repository/service";
+import { shownTagNames } from "@/views/annot-view/card-controls";
 import type { HeldTags } from "@/views/annot-view/card-controls";
 import type { HeldDraftActions } from "@/views/annot-view/comment-sheet";
 import { tagChipVariants } from "@/views/annot-view/tag-chip";
@@ -72,21 +73,9 @@ export function tagSectionShows({
   TagSectionProps,
   "annotation" | "draft" | "tagging" | "held"
 >): boolean {
-  return tagging || held !== null || sessionNames(annotation, draft).length > 0;
-}
-
-/**
- * The names the section draws: a session's own, while one stands unsaved on
- * either surface, so the card and the popup show the same unsaved change. A
- * saving session's names are the record's Pending Proposal.
- */
-function sessionNames(
-  annotation: AnnotationRecord,
-  draft: TagDraft | null,
-): readonly string[] {
-  return draft && draft.state.kind !== "pending"
-    ? draft.names
-    : annotation.tags;
+  return (
+    tagging || held !== null || shownTagNames(annotation, draft).length > 0
+  );
 }
 
 /**
@@ -189,7 +178,7 @@ function TagSection({
   if (tagging && !readOnly) {
     return (
       <TagEditor
-        names={sessionNames(annotation, draft)}
+        names={shownTagNames(annotation, draft)}
         auto={auto}
         hint={hint}
         libraryNames={libraryNames}
@@ -213,7 +202,7 @@ function TagSection({
   }
   return (
     <div className="zt:flex zt:flex-wrap zt:gap-1">
-      {sessionNames(annotation, draft).map((tag) => (
+      {shownTagNames(annotation, draft).map((tag) => (
         <span
           key={tag}
           className={tagChipVariants({
