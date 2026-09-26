@@ -118,8 +118,11 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
   const api = baseUrl!;
   let serverID = "";
   let authorizationFixture: { secret: string; rdp: ZoteroRdp } | undefined;
+  let m: typeof import("@obsidian-messages");
 
   beforeAll(async () => {
+    // The dev build generates this facade; unreachable runs never load it.
+    m = await import("@obsidian-messages");
     serverID = await readServerID(api);
     authorizationFixture = {
       // The vault half of the seeded Write Authorization. Each tier that
@@ -3869,7 +3872,16 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
          */
         async function dragEnd(
           handle: { x: number; y: number },
-          { word, at }: { word: string; at: number },
+          {
+            word,
+            at,
+            from = seedText,
+          }: {
+            word: string;
+            at: number;
+            /** The quoted text Zotero holds before the drag. */
+            from?: string;
+          },
         ): Promise<string> {
           const pressed = await obJson<{ grip: string; to: number[] }>(
             `(function(){${FIRE}${wordRect}const box=wordRect(${JSON.stringify(word)});const x=box.left+box.width*${at},y=box.top+box.height/2;const node=fire('pointerdown',${handle.x},${handle.y});const container=${pdfView}.containerEl;fire('pointermove',(${handle.x}+x)/2,(${handle.y}+y)/2,container);fire('pointermove',x,y,container);window.__ztTo=[x,y];return JSON.stringify({grip:node.dataset.ztGrip,to:[x,y]});})()`,
@@ -3882,7 +3894,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await waitFor(
               async () =>
-                (await highlight.stored()).data.annotationText !== seedText,
+                (await highlight.stored()).data.annotationText !== from,
             ),
           ).toBe(true);
           // Read once Zotero's open Reader has taken the write and saved
@@ -4006,6 +4018,50 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             await obEvalUntil(
               vaultId!,
               cardQuotes("(text)=>text.trimEnd().endsWith('just a few.')"),
+              { expected: "true" },
+            ),
+          ).toBe(true);
+        }, 120000);
+
+        it("takes the text of the new range over a Text Edit, as Zotero's reader does", async () => {
+          // A Text Edit through the verb the card's editor saves with.
+          const typed = "Corrected by hand";
+          await obEval(
+            vaultId!,
+            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;repository.editQuotedText(${JSON.stringify(highlightKey)},${JSON.stringify(typed)});await repository.submitQuotedText(${JSON.stringify(highlightKey)});return true;})()`,
+          );
+          expect(
+            await waitFor(
+              async () =>
+                (await highlight.stored()).data.annotationText === typed,
+            ),
+          ).toBe(true);
+          await highlight.settled();
+
+          const handle = await selectHighlight();
+          await dragEnd(handle, {
+            word: "Furthermore,",
+            at: 0.99,
+            from: typed,
+          });
+
+          // Zotero holds the text of the new range: the typed text is gone.
+          const extended = `${seedText} Furthermore,`;
+          expect(
+            await waitFor(
+              async () =>
+                (await highlight.stored()).data.annotationText === extended,
+            ),
+          ).toBe(true);
+          expect(
+            await waitFor(
+              async () => (await highlight.held())?.text === extended,
+            ),
+          ).toBe(true);
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              cardQuotes("(text)=>text.includes('just a few. Furthermore,')"),
               { expected: "true" },
             ),
           ).toBe(true);
@@ -5215,7 +5271,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 "(function(){require('@electron/remote').getCurrentWebContents().insertText(' Checked.');return true;})()",
               );
               await trustedClick(
-                `[...${cardOf(cardKey)}.querySelectorAll('button')].find((button)=>button.textContent==='Done')`,
+                `[...${cardOf(cardKey)}.querySelectorAll('button')].find((button)=>button.textContent===${JSON.stringify(m.annot_view_editor_done())})`,
               );
 
               const corrected = `${highlight.seed.annotationText} Checked.`;
@@ -5363,6 +5419,99 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             expect((await highlight.stored()).data.annotationText).toBe(
               inZotero,
             );
+          }, 120000);
+
+          it("puts a whole Text Edit session back for one press of the undo key, and redoes it", async () => {
+            await raiseWindow(vaultId!);
+            const seedText = highlight.seed.annotationText!;
+            const storedText = async () =>
+              (await highlight.stored()).data.annotationText;
+            /** Typed where the caret stands, as the window's input types. */
+            const type = (text: string) =>
+              obEval(
+                vaultId!,
+                `(function(){require('@electron/remote').getCurrentWebContents().insertText(${JSON.stringify(text)});return true;})()`,
+              );
+
+            await clickCard(cardKey);
+            expect(
+              await obEvalUntil(vaultId!, `String(!!${editText})`, {
+                expected: "true",
+              }),
+            ).toBe(true);
+            await trustedClick(editText);
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `String(!!${editor}?.contains(document.activeElement))`,
+                { expected: "true" },
+              ),
+            ).toBe(true);
+
+            /**
+             * Settles once ZotLit holds no write on the Annotation and no
+             * draft waiting on one: the last save is confirmed and read back.
+             */
+            const saveSettled = async () =>
+              expect(
+                await obEvalUntil(
+                  vaultId!,
+                  `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;const draft=repository.quotedTextDraftFor(${JSON.stringify(cardKey)});return String(repository.mutationFor(${JSON.stringify(cardKey)}).kind==='idle'&&draft?.state.kind!=='pending');})()`,
+                  { expected: "true" },
+                ),
+              ).toBe(true);
+
+            // Two saves in one session: the first run's autosave lands and is
+            // read back before the second run is typed, and Done saves that.
+            await type(" Checked.");
+            expect(
+              await waitFor(
+                async () => (await storedText()) === `${seedText} Checked.`,
+              ),
+            ).toBe(true);
+            await saveSettled();
+            await type(" Twice.");
+            await trustedClick(
+              `[...${cardOf(cardKey)}.querySelectorAll('button')].find((button)=>button.textContent===${JSON.stringify(m.annot_view_editor_done())})`,
+            );
+            const corrected = `${seedText} Checked. Twice.`;
+            expect(
+              await waitFor(async () => (await storedText()) === corrected),
+            ).toBe(true);
+            // ZotLit holds no write and no draft on the Annotation, which is
+            // when an undo key is taken rather than turned away.
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(repository.mutationFor(${JSON.stringify(cardKey)}).kind==='idle'&&!repository.quotedTextDraftFor(${JSON.stringify(cardKey)}));})()`,
+                { expected: "true" },
+              ),
+            ).toBe(true);
+
+            expect(await undoKey()).toEqual({ handled: true });
+            await stepSettled();
+            // The session went back whole, to the text from before it began,
+            // with its range and Sort Index as seeded.
+            expect(
+              await waitFor(async () => (await storedText()) === seedText),
+            ).toBe(true);
+            expect((await highlight.stored()).data).toMatchObject({
+              annotationPosition: highlight.seed.annotationPosition,
+              annotationSortIndex: highlight.seed.annotationSortIndex,
+            });
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `String(${cardOf(cardKey)}?.querySelector('blockquote')?.textContent===${JSON.stringify(seedText)})`,
+                { expected: "true" },
+              ),
+            ).toBe(true);
+
+            expect(await redoKey()).toEqual({ handled: true });
+            await stepSettled();
+            expect(
+              await waitFor(async () => (await storedText()) === corrected),
+            ).toBe(true);
           }, 120000);
 
           it("rests Edit text dimmed while editing is not live, and its press says why", async () => {
@@ -6087,7 +6236,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const doneComment = "Saved by pop-out card Done";
         await obEval(
           vaultId!,
-          `(function(){const editor=(${card}).querySelector('.cm-content');editor.focus();editor.doc.execCommand('selectAll');editor.doc.execCommand('insertText',false,${JSON.stringify(doneComment)});[...(${card}).querySelectorAll('button')].find((button)=>button.textContent==='Done').click();return true;})()`,
+          `(function(){const editor=(${card}).querySelector('.cm-content');editor.focus();editor.doc.execCommand('selectAll');editor.doc.execCommand('insertText',false,${JSON.stringify(doneComment)});[...(${card}).querySelectorAll('button')].find((button)=>button.textContent===${JSON.stringify(m.annot_view_editor_done())}).click();return true;})()`,
         );
         expect(
           await waitFor(

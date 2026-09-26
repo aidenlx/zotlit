@@ -38,14 +38,16 @@ export type HistoryDirection = "undo" | "redo";
  * different kinds never merge, so a colour pick made after a comment session is
  * a step of its own. `existence` is a create and a delete alike: undoing one
  * leaves the other, so the two are one kind read in opposite directions.
- * `tags` is one tag editing session.
+ * `tags` is one tag editing session, and `text` is one Text Edit session on the
+ * Quoted Text.
  */
 export type HistoryEditKind =
   | "color"
   | "comment"
   | "existence"
   | "geometry"
-  | "tags";
+  | "tags"
+  | "text";
 
 /**
  * Everything a restore writes back for one Annotation, which is everything a
@@ -93,6 +95,8 @@ export interface HistoryFields {
   color?: string;
   comment?: string;
   geometry?: GeometryEdit;
+  /** The Quoted Text a Text Edit changed. */
+  text?: string;
   /**
    * Whether Zotero holds the Annotation at all, and what it holds for it:
    * `null` says Zotero holds no such Annotation, which is what a create's
@@ -239,9 +243,10 @@ export function historyFieldsOf(
       // back, so there is nothing for one confirmed record to answer here.
       return null;
     case "comment":
-      // Zotero stores a cleared comment as no comment, so the empty string is
-      // what an Annotation carrying none is written back as.
-      return { comment: record.comment ?? "" };
+    case "text":
+      // Zotero stores a cleared comment or Quoted Text as no value, so the
+      // empty string is what an Annotation carrying none is written back as.
+      return { [kind]: record[kind] ?? "" };
     case "geometry": {
       const position = writablePosition(record.position);
       if (!position) return null;
@@ -270,6 +275,19 @@ export function stillHolds(
 }
 
 /**
+ * The check of one text field: equal text is a match, and Zotero's cleared
+ * value is the empty string.
+ */
+function textHolds(
+  field: "comment" | "text",
+): (fields: HistoryFields, record: HistoryRecord) => boolean {
+  return (fields, record) => {
+    const held = fields[field];
+    return held === undefined || resolvesSilently(field, held, record[field]);
+  };
+}
+
+/**
  * How each field a History Step can carry is compared with the record Zotero
  * holds now. One entry per field of {@link HistoryFields}, so a field added
  * there is checked or the compiler names it. A field the step does not carry
@@ -284,14 +302,13 @@ const FIELD_CHECKS: {
   color: (fields, record) =>
     fields.color === undefined ||
     resolvesSilently("color", fields.color, record.color),
-  comment: (fields, record) =>
-    fields.comment === undefined ||
-    resolvesSilently("comment", fields.comment, record.comment),
+  comment: textHolds("comment"),
   content: (fields, record) =>
     fields.content === undefined || sameContent(fields.content, record),
   geometry: (fields, record) =>
     fields.geometry === undefined ||
     sameStoredGeometry(fields.geometry, record),
+  text: textHolds("text"),
 };
 
 /**
@@ -311,10 +328,13 @@ export function stillHeldAfterConflict(
         resolvesSilently("color", fields.color, conflict.fresh)
       );
     case "comment":
+    case "text": {
+      const held = fields[conflict.write];
       return (
-        fields.comment !== undefined &&
-        resolvesSilently("comment", fields.comment, conflict.fresh)
+        held !== undefined &&
+        resolvesSilently(conflict.write, held, conflict.fresh)
       );
+    }
     case "geometry":
       return (
         fields.geometry !== undefined &&
@@ -527,7 +547,7 @@ export class AnnotationHistory {
 
   /**
    * Move a step on the stack an undo takes from to `next`, or take it out
-   * again where `next` is `null`: one comment editing session shapes a single
+   * again where `next` is `null`: one comment or Text Edit session shapes a single
    * step over every save it makes, and a session that settles on the text it
    * began with leaves none. A step that stack no longer holds is left alone.
    */

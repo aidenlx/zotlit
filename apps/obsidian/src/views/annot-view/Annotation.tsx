@@ -804,9 +804,10 @@ function useFieldEditing(annot: AnnotationRecord, field: TextEditingField) {
   // The text saved is the draft's, which each keystroke keeps current, a save
   // in flight included: a press on the control blurs the editor first, and
   // that blur's save leaves the draft pending before the press closes it.
-  const saveAndClose = (): void => {
+  // The editor's own close passes the text its sheet holds.
+  const saveAndClose = (typed: string = text): void => {
     target.close();
-    spec.save(actions)(annot, text, true);
+    spec.save(actions)(annot, typed, true);
   };
   return {
     open,
@@ -858,8 +859,10 @@ function FieldEditor({
   const app = useObsidianApp();
   const sheet = useRef<EditorSheet | null>(null);
 
+  /** What the editor holds now, or the draft's text before it mounts. */
+  const editorText = (): string => sheet.current?.text() ?? text;
   /** Blur: the same automatic submit, with the editor left open. */
-  const saveOnLeave = (): void => spec.save(actions)(annot, text, true);
+  const saveOnLeave = (): void => spec.save(actions)(annot, editorText(), true);
   const store = (): void => {
     if (sheet.current) spec.save(actions)(annot, sheet.current.text());
   };
@@ -878,8 +881,8 @@ function FieldEditor({
       onChange={(value) => spec.edit(actions)(annot, value)}
       onSubmit={store}
       onSave={store}
-      onCancel={saveAndClose}
-      onDone={saveAndClose}
+      onCancel={() => saveAndClose(editorText())}
+      onDone={() => saveAndClose(editorText())}
       onLeave={saveOnLeave}
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e: KeyboardEvent<HTMLDivElement>) => e.stopPropagation()}

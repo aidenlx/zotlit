@@ -3512,12 +3512,16 @@ function zoteroHolding(annotationKey: string) {
         }
         const key = keyOf(request);
         const stored = held.get(key);
-        const { annotationColor, annotationComment } = JSON.parse(
-          request.body ?? "{}",
-        ) as { annotationColor?: string; annotationComment?: string };
+        const { annotationColor, annotationComment, annotationText } =
+          JSON.parse(request.body ?? "{}") as {
+            annotationColor?: string;
+            annotationComment?: string;
+            annotationText?: string;
+          };
         const patched =
           typeof annotationColor === "string" ||
-          typeof annotationComment === "string";
+          typeof annotationComment === "string" ||
+          typeof annotationText === "string";
         if (stored && patched) {
           held.set(key, {
             ...stored,
@@ -3526,6 +3530,9 @@ function zoteroHolding(annotationKey: string) {
             }),
             ...(typeof annotationComment === "string" && {
               comment: annotationComment,
+            }),
+            ...(typeof annotationText === "string" && {
+              text: annotationText,
             }),
             version: stored.version + 1,
           });
@@ -4704,6 +4711,70 @@ it("makes one step of a comment session, however many times it saved", async () 
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("makes one step of a Text Edit session, and undo writes back the earlier text alone", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const zotero = zoteroHolding("PUPR5FG5");
+    const original = zotero.held!.text;
+    const { repository, requests } = await writable(stack, zotero.answers);
+    repository.openHistory("RGRPDF24");
+
+    repository.editQuotedText("PUPR5FG5", "Identify");
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(zotero.held?.text).toBe("Identify");
+    repository.editQuotedText("PUPR5FG5", "Identify your message");
+    await repository.submitQuotedText("PUPR5FG5");
+    expect(zotero.held?.text).toBe("Identify your message");
+
+    const sent = requests.length;
+    expect(await repository.undo("RGRPDF24")).toEqual({
+      kind: "stepped",
+      annotationKey: "PUPR5FG5",
+    });
+    // The whole session went back in one press, to the text it began with,
+    // through a patch of the text alone.
+    expect(zotero.held?.text).toBe(original);
+    expect(repository.canUndo("RGRPDF24")).toBe(false);
+    const [patch] = requests
+      .slice(sent)
+      .filter(({ method }) => method === "PATCH");
+    expect(Object.keys(JSON.parse(patch!.body ?? "{}")).sort()).toEqual([
+      "annotationText",
+      "version",
+    ]);
+
+    expect(await repository.redo("RGRPDF24")).toMatchObject({
+      kind: "stepped",
+    });
+    expect(zotero.held?.text).toBe("Identify your message");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("keeps a Text Edit session and a comment session after it as two steps", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const original = zotero.held!.text;
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+
+  repository.editQuotedText("PUPR5FG5", "Identify your message");
+  await repository.submitQuotedText("PUPR5FG5");
+  repository.editComment("PUPR5FG5", "Worth citing");
+  await repository.submitComment("PUPR5FG5");
+
+  // The comment session went back alone, and the text stayed.
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held?.comment).toBe("");
+  expect(zotero.held?.text).toBe("Identify your message");
+
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held?.text).toBe(original);
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
 });
 
 it("starts a new step where the comment moved in Zotero between two saves", async () => {
