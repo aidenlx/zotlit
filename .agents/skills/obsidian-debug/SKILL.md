@@ -39,8 +39,14 @@ pnpm --filter @zotlit/obsidian build:dev
 
 Editing the Fixture Spec or its committed vault-page assets changes the next
 Fixture build, not the open Development Vault. Use the live `open` command
-before you look for those changes. Use the live `remove` command when you tear
-the vault down.
+before you look for those changes.
+
+## Teardown
+
+When the check is done, close what the check opened, in this order:
+
+1. `pnpm fixture stop` — closes a Paired Zotero that `pnpm fixture open` left running.
+2. `packages/scripts/scripts/obsidian-vault.ts remove --purge` — removes the Development Vault.
 
 ## Commands
 

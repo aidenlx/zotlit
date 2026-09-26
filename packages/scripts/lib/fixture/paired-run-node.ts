@@ -10,6 +10,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import type {
   DevelopmentSession,
+  LivePairedZotero,
   PairedRunPorts,
   PairedRunReady,
 } from "./paired-run.ts";
@@ -41,12 +42,6 @@ const ZOTERO_READY_EVENT = "paired-zotero-ready";
 const ZOTERO_QUIT_TIMEOUT_MS = 20_000;
 const ZOTERO_KILL_TIMEOUT_MS = 5_000;
 const ZOTERO_EXIT_POLL_INTERVAL_MS = 250;
-
-/** A Zotero process that holds the Fixture database open. */
-export interface LivePairedZotero {
-  command: string;
-  pid: number;
-}
 
 export function createNodePairedRunPorts({
   workspaceRoot,
@@ -95,7 +90,8 @@ export function createNodePairedRunPorts({
       // The report may not outlive the process it names, whether or not one
       // was found: a Paired Zotero that already exited leaves its report here.
       await clearPairedRunState(layout);
-      if (live.length === 0) return;
+      if (live.length === 0) return [];
+      const closed = live;
 
       console.log(`Closing the live Paired Zotero: ${describeLive(live)}`);
       // SIGTERM lets Zotero close its database. SIGKILL is the fallback for an
@@ -113,7 +109,7 @@ export function createNodePairedRunPorts({
           }
         }
         live = await waitForFixtureRelease(findLive, timeoutMs);
-        if (live.length === 0) return;
+        if (live.length === 0) return closed;
       }
 
       throw new Error(
@@ -293,7 +289,7 @@ async function waitForFixtureRelease(
   return live;
 }
 
-function describeLive(processes: readonly LivePairedZotero[]): string {
+export function describeLive(processes: readonly LivePairedZotero[]): string {
   return processes
     .map(({ command, pid }) => `${command} (pid ${pid})`)
     .join(", ");

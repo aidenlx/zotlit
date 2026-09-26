@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Builds, re-scopes, and discards the Fixture.
+// Builds, re-scopes, stops, and discards the Fixture.
 
 import { access } from "node:fs/promises";
 import { join } from "node:path";
@@ -34,7 +34,10 @@ import {
 import { renderGuide } from "#fixture/guide";
 import { startMockLocalBridge } from "#fixture/local-bridge-server";
 import { runPairedRun } from "#fixture/paired-run";
-import { createNodePairedRunPorts } from "#fixture/paired-run-node";
+import {
+  createNodePairedRunPorts,
+  describeLive,
+} from "#fixture/paired-run-node";
 import {
   harvestPristineTemplate,
   PRISTINE_STYLES_PATH,
@@ -366,10 +369,26 @@ const cli = yargs(hideBin(process.argv))
     },
   )
   .command(
-    "discard",
-    "delete the whole Fixture",
+    "stop",
+    "close the Paired Zotero that holds this Fixture, and wait until it releases the database",
     () => {},
     async () => {
+      const closed = await pairedRunPorts.stopLivePairedZotero();
+      console.log(
+        closed.length === 0
+          ? "No Paired Zotero holds this Fixture."
+          : `Closed the Paired Zotero: ${describeLive(closed)}`,
+      );
+    },
+  )
+  .command(
+    "discard",
+    "close the Paired Zotero that holds this Fixture, then delete the whole Fixture",
+    () => {},
+    async () => {
+      // Deleting the root under a live Zotero leaves it running on a profile
+      // that no longer exists, where no later stop can find it.
+      await pairedRunPorts.stopLivePairedZotero();
       await discardFixture(layout);
       console.log(`Deleted ${layout.root}`);
     },
