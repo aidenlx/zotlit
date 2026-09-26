@@ -536,7 +536,26 @@ describe("the header's menu", () => {
 
     expect(rows(groups[2]!)).toStrictEqual([
       ["Choose attachment…", "choose-attachment"],
+      ["Open PDF", "open-pdf"],
     ]);
+  });
+
+  it("opens the only attachment, with no choice to offer", () => {
+    const groups = headerMenu(
+      state({ attachments: [ATTACHMENTS[0]!], capability: WRITABLE }),
+      NOW,
+    );
+
+    expect(rows(groups[2]!)).toStrictEqual([["Open PDF", "open-pdf"]]);
+  });
+
+  it("offers no PDF to open while an Obsidian PDF view shows it", () => {
+    const groups = headerMenu(
+      state({ attachmentLock: "obsidian-pdf", capability: WRITABLE }),
+      NOW,
+    );
+
+    expect(groups.flatMap(rows)).not.toContainEqual(["Open PDF", "open-pdf"]);
   });
 
   it("names the attachment a reader holds, and who holds it", () => {
@@ -554,6 +573,11 @@ describe("the header's menu", () => {
       {
         label: "The Zotero reader chooses this attachment",
         report: true,
+      },
+      {
+        label: "Open PDF",
+        icon: "file-text",
+        action: { kind: "open-pdf" },
       },
     ]);
   });
@@ -640,7 +664,7 @@ describe("the header's menu", () => {
       expect(groups.flatMap(rows).map(([label]) => label)).not.toContain(
         "Allow editing",
       );
-      expect(groups).toHaveLength(2);
+      expect(rows(groups.at(-1)!)).toStrictEqual([["Open PDF", "open-pdf"]]);
     }
   });
 

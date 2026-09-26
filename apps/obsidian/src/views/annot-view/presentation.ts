@@ -412,6 +412,7 @@ function readerClosed(
 export type HeaderMenuAction =
   | { kind: "follow"; follow: FollowMenuAction }
   | { kind: "choose-attachment" }
+  | { kind: "open-pdf" }
   | { kind: "allow-editing" };
 
 /** One row of the header menu, in the shape both renderers read. */
@@ -500,9 +501,26 @@ function followGroups(state: HeaderMenuState): HeaderMenuEntry[][] {
 /**
  * The Attachment choice, where there is one to make or one to report: the
  * suggester while the choice is the user's, and the name plus the reason while
- * a reader holds it. Nothing where the pane has nothing to say.
+ * a reader holds it. Then the Attachment on screen opens in Obsidian's own PDF
+ * view, except where an Obsidian PDF view already shows it. Nothing where the
+ * pane has nothing to say.
  */
 function attachmentGroup(state: HeaderState): HeaderMenuEntry[] {
+  const rows = attachmentChoiceRows(state);
+  if (
+    selectActiveAttachment(state) !== null &&
+    state.attachmentLock !== "obsidian-pdf"
+  ) {
+    rows.push({
+      label: m.command_open_pdf_name(),
+      icon: "file-text",
+      action: { kind: "open-pdf" },
+    });
+  }
+  return rows;
+}
+
+function attachmentChoiceRows(state: HeaderState): HeaderMenuEntry[] {
   const line = attachmentLine(state);
   switch (line.kind) {
     case "hidden":

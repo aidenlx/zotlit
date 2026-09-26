@@ -59,6 +59,8 @@ export interface AnnotActions {
   onHeaderMenu(evt: MouseEvent<HTMLElement>): void;
   /** Choose another Attachment of the Item on screen, in a suggester. */
   onChooseAttachment(): void;
+  /** Open the Attachment on screen in Obsidian's own PDF view. */
+  onOpenPdf(): void;
   /** Ask Zotero for write authorization, from the header menu. */
   onAllowEditing(): void;
   /**
@@ -281,6 +283,7 @@ export interface AnnotActionDeps {
   renderComment: CommentRenderer;
   onSetFollowMode: AnnotActions["onSetFollowMode"];
   onAllowEditing: AnnotActions["onAllowEditing"];
+  onOpenPdf: AnnotActions["onOpenPdf"];
   onPinCurrentItem: AnnotActions["onPinCurrentItem"];
   onPinItem: AnnotActions["onPinItem"];
   onUnpin: AnnotActions["onUnpin"];
@@ -726,12 +729,14 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
             onPinItem: deps.onPinItem,
             onUnpin: deps.onUnpin,
             onChooseAttachment,
+            onOpenPdf: deps.onOpenPdf,
             onAllowEditing: deps.onAllowEditing,
           },
         }),
       );
     },
     onChooseAttachment,
+    onOpenPdf: deps.onOpenPdf,
     onAllowEditing: deps.onAllowEditing,
     onBlockedPress,
     onColorMenu(evt, annot) {
@@ -778,6 +783,7 @@ export const NOOP_ACTIONS: AnnotActions = {
   onCardMenu: () => {},
   onHeaderMenu: () => {},
   onChooseAttachment: () => {},
+  onOpenPdf: () => {},
   onAllowEditing: () => {},
   onBlockedPress: () => {},
   onColorMenu: () => null,
