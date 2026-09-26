@@ -14,6 +14,7 @@ import {
   obEvalUntil,
   obJson,
   waitFor,
+  WINDOW_DOCUMENTS,
 } from "./obsidian-cli.ts";
 import type { ZoteroRdp } from "./paired-zotero.ts";
 import {
@@ -70,6 +71,8 @@ interface HeldAnnotation {
  *   asks nothing;
  * - the Mark Popup dims colour, tags and delete with the Lock Reason as
  *   tooltip, and draws no Mark Handles;
+ * - in an Annotation View moved to a pop-out window, the card shows the lock,
+ *   its colour is dimmed, and a press gives the Lock Reason;
  * - Zotero keeps the Annotation unchanged.
  *
  * Every write refused here is a lock refusal only while the Attachment is
@@ -179,6 +182,23 @@ export async function verifyExternalAnnotationLock({
     "app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view";
   const card = `${annotView}?.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(annotationKey)}]')`;
   const reason = m.annot_view_lock_external();
+  /** Selects the card alone, in whichever window its view stands. */
+  const selectCardAlone = async () => {
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(function(){const card=${card};if(!card)return 'no card';if(!card.hasAttribute('data-alone'))card.click();return String(card.hasAttribute('data-alone'));})()`,
+        { expected: "true" },
+      ),
+      "the card is not selected alone",
+    ).toBe(true);
+  };
+  /** Whether the node that takes a verb's press is dimmed, or `absent`. */
+  const dimmed = (node: string) =>
+    obEval(
+      vaultId,
+      `(function(){const node=${node};return node?String(node.hasAttribute('data-blocked')):'absent';})()`,
+    );
 
   // The card quotes the text Zotero took from the page, and shows the lock
   // with the Lock Reason as its name.
@@ -201,13 +221,7 @@ export async function verifyExternalAnnotationLock({
   });
 
   // ── The card selected alone ───────────────────────────────────────────────
-  expect(
-    await obEvalUntil(
-      vaultId,
-      `(function(){const card=${card};if(!card)return 'no card';if(!card.hasAttribute('data-alone'))card.click();return String(card.hasAttribute('data-alone'));})()`,
-      { expected: "true" },
-    ),
-  ).toBe(true);
+  await selectCardAlone();
 
   const buttonByLabel = (label: string) =>
     `(${card}).querySelector('[role=button][aria-label=${JSON.stringify(label)}]')`;
@@ -218,15 +232,9 @@ export async function verifyExternalAnnotationLock({
     colour: buttonByLabel(m.annot_view_card_color()),
     tags: buttonByLabel(m.annot_view_card_add_tags()),
   };
-  const noticeShown = `[...document.querySelectorAll('.notice')].filter((node)=>node.textContent.includes(${JSON.stringify(reason)}))`;
+  const noticeShown = `${WINDOW_DOCUMENTS}.flatMap((doc)=>[...doc.querySelectorAll('.notice')]).filter((node)=>node.textContent.includes(${JSON.stringify(reason)}))`;
   for (const [verb, node] of Object.entries(cardVerbs)) {
-    expect(
-      await obEval(
-        vaultId,
-        `(function(){const node=${node};return node?String(node.hasAttribute('data-blocked')):'absent';})()`,
-      ),
-      `${verb} is not dimmed`,
-    ).toBe("true");
+    expect(await dimmed(node), `${verb} is not dimmed`).toBe("true");
     await clearNotices(vaultId);
     await obEval(vaultId, `((${node}).click(),true)`);
     // The press says the Lock Reason, and offers nothing to press: a lock
@@ -361,6 +369,54 @@ export async function verifyExternalAnnotationLock({
       notices: 0,
     });
   }
+
+  // ── The Annotation View in a pop-out window ───────────────────────────────
+  // The view keeps the Attachment it shows, and moves to a window of its own.
+  expect(
+    await obEval(
+      vaultId,
+      "(function(){const leaf=app.workspace.getLeavesOfType('zotero-annotation-view')[0];if(!leaf)return false;leaf.view.gestures.onPinCurrentItem();app.workspace.moveLeafToPopout(leaf);return true;})()",
+    ),
+  ).toBe("true");
+  cleanup.defer(async () => {
+    await obEval(
+      vaultId,
+      "(function(){for(const leaf of app.workspace.getLeavesOfType('zotero-annotation-view'))if(leaf.view.containerEl.win!==window)leaf.detach();return true;})()",
+    );
+  });
+  expect(
+    await obEvalUntil(
+      vaultId,
+      `(function(){const card=${card};return String(!!card&&card.win!==window&&!!card.querySelector('.zt-annot-lock'));})()`,
+      { expected: "true" },
+    ),
+    "the pop-out Annotation View shows no locked card",
+  ).toBe(true);
+  expect(
+    await obJson<string>(
+      vaultId,
+      `JSON.stringify((${card}).querySelector('.zt-annot-lock').getAttribute('aria-label'))`,
+    ),
+  ).toBe(m.annot_view_lock_label({ reason }));
+  await selectCardAlone();
+  expect(
+    await dimmed(cardVerbs.colour),
+    "colour is not dimmed in the pop-out window",
+  ).toBe("true");
+  await clearNotices(vaultId);
+  await obEval(vaultId, `((${cardVerbs.colour}).click(),true)`);
+  expect(
+    await obEvalUntil(vaultId, `String(${noticeShown}.length)`, {
+      expected: "1",
+    }),
+    "a press on colour in the pop-out window gives no Lock Reason",
+  ).toBe(true);
+  expect(
+    await obJson<{ buttons: number; menus: number }>(
+      vaultId,
+      `JSON.stringify({buttons:${noticeShown}[0].querySelectorAll('button').length,menus:${WINDOW_DOCUMENTS}.reduce((count,doc)=>count+doc.querySelectorAll('.menu').length,0)})`,
+    ),
+  ).toEqual({ buttons: 0, menus: 0 });
 
   // ── Zotero ────────────────────────────────────────────────────────────────
   expect(await readHeldAnnotation()).toEqual(imported);

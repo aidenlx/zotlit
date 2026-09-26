@@ -70,11 +70,21 @@ export async function obJson<T>(vaultId: string, code: string): Promise<T> {
   return JSON.parse(await obEval(vaultId, code)) as T;
 }
 
-/** Takes every notice off screen, so the next one is the caller's own. */
+/**
+ * The document of every window of the vault, the main window first, as an
+ * eval expression: a notice goes to the window Obsidian counts as active.
+ */
+export const WINDOW_DOCUMENTS =
+  "(()=>{const docs=new Set([document]);app.workspace.iterateAllLeaves((leaf)=>docs.add(leaf.view.containerEl.doc));return [...docs];})()";
+
+/**
+ * Takes every notice off screen in every window, so the next one is the
+ * caller's own.
+ */
 export async function clearNotices(vaultId: string): Promise<void> {
   await obEval(
     vaultId,
-    "(function(){for(const node of document.querySelectorAll('.notice'))node.remove();return true;})()",
+    `(function(){for(const doc of ${WINDOW_DOCUMENTS})for(const node of doc.querySelectorAll('.notice'))node.remove();return true;})()`,
   );
 }
 

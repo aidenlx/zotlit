@@ -127,6 +127,19 @@ describe("the notice of one undo or redo press", () => {
     expect(historyOutcomeNotice({ kind: "blocked" }, NOW)).toBeNull();
   });
 
+  it("says the user is now the creator after a restore of another user's Annotations", () => {
+    expect(
+      historyOutcomeNotice(
+        {
+          kind: "stepped",
+          annotationKey: "MADE2345",
+          restoredAsCreator: { count: 2 },
+        },
+        NOW,
+      ),
+    ).toBe(m.annot_history_restored_new_creator({ count: 2 }));
+  });
+
   it("gives no notice for a step it took", () => {
     expect(
       historyOutcomeNotice({ kind: "stepped", annotationKey: "PUPR5FG5" }, NOW),

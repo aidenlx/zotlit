@@ -45,6 +45,7 @@ import {
   AnnotationHistory,
   contentOf,
   historyFieldsOf,
+  isRestore,
   opposite,
   sameContent,
   stillHeldAfterConflict,
@@ -61,7 +62,7 @@ import type {
   TagHistoryStep,
 } from "./history";
 import { firstLockRefusal, lockOf } from "./lock";
-import type { AnnotationLock, LockedVerb } from "./lock";
+import type { AnnotationLock, LockedVerb, LockReason } from "./lock";
 import {
   resolvesSilently,
   sameStoredGeometry,
@@ -558,7 +559,15 @@ type ConfirmedWrite =
       write: "color" | "geometry" | "tags" | TextField;
     }
   | { kind: "created"; record: AnnotationRecord }
-  | { kind: "deleted"; annotationKey: string };
+  | {
+      kind: "deleted";
+      annotationKey: string;
+      /**
+       * The Lock Reason the Annotation stood under when its delete was sent,
+       * which a restore does not give back; absent where it had no lock.
+       */
+      lock?: LockReason;
+    };
 
 /** One write of a group that landed, held until the whole group settles. */
 interface GroupWrite {
@@ -604,6 +613,7 @@ function historyChangeOf(
             annotationKey: applied.annotationKey,
             before: { content },
             after: { content: null },
+            ...(applied.lock && { lock: applied.lock }),
           },
         }
       : null;
@@ -2150,6 +2160,11 @@ export class AnnotationRepository extends Service<void> {
       });
     }
 
+    // The lock is read before the write goes out: a database read after it
+    // no longer holds a deleted Annotation, and so no longer its lock.
+    const lock = this.#locks
+      .get(held.attachmentKey)
+      ?.get(annotationKey)?.reason;
     const library = libraryPath(parsed);
     const { path, method, headers, body } = command.request(
       { library, key: parsed.key, version },
@@ -2213,6 +2228,7 @@ export class AnnotationRepository extends Service<void> {
     const applied = await this.#applyWrite(held, annotationKey, {
       write: command.write,
       settle: command.settle ?? "re-read",
+      lock,
     });
     if ("failure" in applied) {
       await this.refresh(held.attachmentKey);
@@ -2610,7 +2626,22 @@ export class AnnotationRepository extends Service<void> {
 
     history.push(opposite(direction), { ...step, changes: left });
     if (removed) return { kind: "removed", ...removed };
-    return { kind: "stepped", annotationKey: left[0]!.annotationKey };
+    // Zotero restores another user's Annotation with the current user as its
+    // creator, so the lock it stood under does not come back with it.
+    const count = step.changes.filter(
+      (change) => isRestore(change) && change.lock === "another-user",
+    ).length;
+    logger.debug("An existence step was taken", {
+      attachmentKey,
+      direction,
+      restored: step.changes.filter(isRestore).length,
+      restoredAsCreator: count,
+    });
+    return {
+      kind: "stepped",
+      annotationKey: left[0]!.annotationKey,
+      ...(count > 0 && { restoredAsCreator: { count } }),
+    };
   }
 
   /**
@@ -3160,7 +3191,13 @@ export class AnnotationRepository extends Service<void> {
     {
       write,
       settle,
-    }: { write: ConflictedWrite | "tags"; settle: "re-read" | "drop" },
+      lock,
+    }: {
+      write: ConflictedWrite | "tags";
+      settle: "re-read" | "drop";
+      /** The Lock Reason the Annotation stood under when the write was sent. */
+      lock: LockReason | undefined;
+    },
   ): Promise<{ value: ConfirmedWrite } | { failure: LocalApiFailure }> {
     const { queryKey, attachmentKey } = held;
     if (settle === "drop") {
@@ -3170,7 +3207,9 @@ export class AnnotationRepository extends Service<void> {
           (record) => record.key !== annotationKey,
         ),
       }));
-      return { value: { kind: "deleted", annotationKey } };
+      return {
+        value: { kind: "deleted", annotationKey, ...(lock && { lock }) },
+      };
     }
     const fresh = await this.#localApi.readAnnotation(
       annotationKey,

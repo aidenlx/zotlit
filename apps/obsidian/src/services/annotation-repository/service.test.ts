@@ -6784,9 +6784,10 @@ it("sends a group delete over another user's Annotations, and one undo puts them
   ]);
 
   // Zotero restores each under a new key, with the current user as creator,
-  // and the database copy ZotLit reads holds them so.
+  // and the database copy ZotLit reads holds them so. The undo says so.
   expect(await repository.undo(GROUP_ATTACHMENT)).toMatchObject({
     kind: "stepped",
+    restoredAsCreator: { count: 2 },
   });
   client.$client.exec(
     `insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
@@ -6805,6 +6806,79 @@ it("sends a group delete over another user's Annotations, and one undo puts them
   dbEvents.emit("changed");
   const restored = groupLocks(await repository.refresh(GROUP_ATTACHMENT));
   expect([restored.MADE2345, restored.MADE2346]).toEqual([null, null]);
+});
+
+/**
+ * The repository over a group library that Zotero answers writes for, with
+ * the Annotation History of its Attachment open.
+ */
+async function groupHistory(stack: AsyncDisposableStack) {
+  const zotero = zoteroLibrary(
+    ROUGIER_ANNOTATIONS.map((annotation) => ({
+      ...annotation,
+      groupID: GROUP_ID,
+    })),
+  );
+  const { repository } = await setup(stack, zotero.answers, {
+    key: REMEMBERED_KEY,
+    group: SYNCED,
+  });
+  await repository.read(GROUP_ATTACHMENT);
+  await vi.waitFor(async () =>
+    expect((await repository.read(GROUP_ATTACHMENT))?.source.kind).toBe(
+      "zotero-local-api",
+    ),
+  );
+  repository.openHistory(GROUP_ATTACHMENT);
+  return repository;
+}
+
+it("counts only another user's Annotations as restored with the user as creator", async () => {
+  await using stack = new AsyncDisposableStack();
+  const repository = await groupHistory(stack);
+
+  expect(
+    await repository.deleteAnnotations([
+      inGroup("PUPR5FG5"),
+      inGroup("K3JRFLFQ"),
+      inGroup("FDRFQ7C2"),
+    ]),
+  ).toEqual([{ kind: "idle" }, { kind: "idle" }, { kind: "idle" }]);
+
+  expect(await repository.undo(GROUP_ATTACHMENT)).toMatchObject({
+    kind: "stepped",
+    restoredAsCreator: { count: 1 },
+  });
+});
+
+it("says nothing of the creator on the undo of a delete of the user's own group Annotation", async () => {
+  await using stack = new AsyncDisposableStack();
+  const repository = await groupHistory(stack);
+
+  expect(await repository.deleteAnnotation(inGroup("K3JRFLFQ"))).toEqual({
+    kind: "idle",
+  });
+
+  expect(await repository.undo(GROUP_ATTACHMENT)).toEqual({
+    kind: "stepped",
+    annotationKey: inGroup("MADE2345"),
+  });
+});
+
+it("says nothing of the creator on the undo of a delete in the Personal Library", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+
+  expect(await repository.deleteAnnotation("HRK7BG32")).toEqual({
+    kind: "idle",
+  });
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "stepped",
+    annotationKey: "MADE2345",
+  });
 });
 
 it("dims the edits of another user's Annotation and leaves its delete, and none of the user's own", async () => {

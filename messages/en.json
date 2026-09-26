@@ -2479,6 +2479,16 @@
   "annot_view_write_reason_conflict": "This annotation changed in Zotero since ZotLit read it. Refresh data and try again.",
   "annot_view_write_reason_unknown_outcome": "ZotLit did not learn whether Zotero saved the edit. Refresh data to see what Zotero holds.",
   "annot_history_changed_in_zotero": "This annotation changed in Zotero, so ZotLit left it as it is.",
+  "annot_history_restored_new_creator": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "Restored an annotation that another member created. Zotero now lists you as its creator, so you can edit it.",
+        "countPlural=*": "Restored {count} annotations that other members created. Zotero now lists you as their creator, so you can edit them."
+      }
+    }
+  ],
   "annot_view_conflict_title": "Changed in Zotero",
   "annot_view_conflict_fresh": "In Zotero",
   "annot_view_conflict_attempted": "Your edit",

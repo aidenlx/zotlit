@@ -42,12 +42,13 @@ export interface AnnotationHistoryActionDeps {
  * The notice one press of undo or redo raises, which every History Surface
  * renders the same way: a step Zotero moved under says so, a write that did
  * not land says why, and a lock gives its Lock Reason alone, with nothing to
- * allow.
+ * allow. A restore of another user's Annotation says that Zotero now lists
+ * the user as its creator, so the edits it allows again come as no surprise.
  *
  * @param now the instant a cooldown's remaining seconds are measured from.
  * @returns the notice text, or `null` for an outcome with no notice of its
- *   own: a step taken, and a block of the Editing Capability, whose notice
- *   the capability's own seam raises.
+ *   own: any other step taken, and a block of the Editing Capability, whose
+ *   notice the capability's own seam raises.
  */
 export function historyOutcomeNotice(
   outcome: HistoryOutcome,
@@ -61,6 +62,11 @@ export function historyOutcomeNotice(
     case "locked":
       return lockReasonText(outcome.reason);
     case "stepped":
+      return outcome.restoredAsCreator
+        ? m.annot_history_restored_new_creator({
+            count: outcome.restoredAsCreator.count,
+          })
+        : null;
     case "removed":
     case "blocked":
     case "idle":
