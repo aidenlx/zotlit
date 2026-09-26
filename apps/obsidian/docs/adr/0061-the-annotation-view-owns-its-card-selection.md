@@ -25,7 +25,7 @@ Accepted 2026-09-25. A card selected with others stays compact, but it still sho
 
 ## Amendment: a blur saves the card comment editor and keeps it open
 
-Accepted 2026-09-25. A blur saves the card's comment editor and keeps it open, as Ctrl/Cmd+Enter does; Escape or a view gesture that changes the Card Selection saves and closes it, and a reader selection change waits until then. The card's tag editor still closes on blur, as [ADR 0063](0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md) decides.
+Accepted 2026-09-25. A blur saves the card's comment editor and keeps it open, as Ctrl/Cmd+Enter does; Escape or a view gesture that changes the Card Selection saves and closes it, and a reader selection change waits until then. The card's tag editor follows the same rule: a blur ends the tag editing session with its one write and keeps the editor open for the next session, as the amendment to [ADR 0063](0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md) decides.
 
 ## Amendment: the card list is a grid of rows
 

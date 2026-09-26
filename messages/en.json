@@ -298,6 +298,7 @@
   "settings_zotero_editing_saved": "Permission saved on this device",
   "annot_view_comment_draft": "Unsaved comment",
   "annot_view_comment_save": "Save comment",
+  "annot_view_editor_done": "Done",
   "annot_view_comment_discard": "Discard",
   "annot_view_comment_unconfirmed": "Save not confirmed. Reconnect to Zotero to check.",
   "annot_view_tags_draft": "Unsaved tags",

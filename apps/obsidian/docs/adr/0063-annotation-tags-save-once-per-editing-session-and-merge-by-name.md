@@ -27,3 +27,7 @@ The tag draft follows ADR 0048's comment rules for authorization and failure, as
 - The creation Mark Popup has no tag verb. The popup reopens on the new mark, where tags can be added. Tags in the create request can come later without a change to this model.
 - Tag names are suggested from the tags of the Annotation's Library.
 - The Template Workbench's chip input now uses the same shared tags input. It ignores an exact duplicate, and it trims a suggestion that it accepts.
+
+## Amendment: on the card, a blur saves the tag session and keeps the editor open
+
+Accepted 2026-09-26 ([#1237](https://github.com/aidenlx/zotlit/issues/1237)). On the Annotation Card, a blur ends the tag editing session with its one write, and the typed text is added first. The tag editor stays open, as the card's comment editor does on blur ([ADR 0061](0061-the-annotation-view-owns-its-card-selection.md)). While the save is in flight, the tag field keeps the caret but is read-only, and a blur starts no second save. The next change starts a new session, which is its own History Step. Escape, a second press on the tag control, or a view gesture that changes the Card Selection ends the session and closes the editor. The Mark Popup keeps the session ends above: there, a blur ends the session and closes the editor.

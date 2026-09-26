@@ -48,6 +48,7 @@ import {
   IDLE,
   writeFailureMessage,
 } from "@/services/annotation-repository/write";
+import type { MutationState } from "@/services/annotation-repository/write";
 import type { DatabaseService } from "@/services/database/service";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import { savedExcerptRequest } from "@/services/excerpt-image/request";
@@ -93,11 +94,12 @@ import {
   AnnotStoreProvider,
   createAnnotStore,
   editorOpen,
+  isEditing,
   INITIAL_FILTER_STATE,
   toggledTags,
   visibleOrder,
 } from "./store";
-import type { AnnotState, FollowMode } from "./store";
+import type { AnnotState, EditingField, FollowMode } from "./store";
 import {
   DEFAULT_FOLLOW_MODE,
   parseAnnotViewState,
@@ -769,11 +771,9 @@ export class AnnotationView extends ItemView implements HistorySurface {
           tagDrafts,
           ...(ended && this.#heldList(ended.attachmentKey)),
           ...(now.gone &&
-            state.editingCommentKey === annotationKey && {
-              editingCommentKey: null,
+            state.editing?.annotationKey === annotationKey && {
+              editing: null,
             }),
-          ...(now.gone &&
-            state.editingTagsKey === annotationKey && { editingTagsKey: null }),
         });
       }),
     );
@@ -784,7 +784,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
 
   protected override async onClose(): Promise<void> {
     this.#closed = true;
-    this.#submitOpenComment();
+    this.#submitOpenEditor();
     this.#loadDisposables?.[Symbol.dispose]();
     this.#loadDisposables = null;
     this.#leafSession?.();
@@ -1487,34 +1487,46 @@ export class AnnotationView extends ItemView implements HistorySurface {
   }
 
   /**
-   * Saves and closes the open card editors. The tag editor saves its session
-   * as it unmounts; the comment editor's text is already the draft, which
-   * this submits as its own close would.
+   * Saves and closes the open field editor.
    *
    * @returns whether one was open.
    */
   #closeEditors(): boolean {
     if (!editorOpen(this.#store.getState())) return false;
-    this.#submitOpenComment();
-    this.#store.setState({ editingCommentKey: null, editingTagsKey: null });
+    this.#submitOpenEditor();
+    this.#store.setState({ editing: null });
     return true;
   }
 
   /**
-   * Submits the open comment editor's text, as its own close would, and says
+   * How the view saves each field's open editor as it closes it. A text
+   * field's text is already its draft, which this submits as the editor's own
+   * close would; `null` for the tag editor, which saves its session as it
+   * unmounts.
+   */
+  readonly #submitOnClose: Record<
+    EditingField,
+    ((annotationKey: string) => Promise<MutationState>) | null
+  > = {
+    comment: (key) =>
+      this.#deps.annotations.submitComment(key, { automatic: true }),
+    tags: null,
+  };
+
+  /**
+   * Submits the open field editor's draft, as its own close would, and says
    * why in a notice where the write did not land.
    */
-  #submitOpenComment(): void {
-    const { editingCommentKey } = this.#store.getState();
-    if (editingCommentKey === null) return;
-    void this.#deps.annotations
-      .submitComment(editingCommentKey, { automatic: true })
-      .then((outcome) => {
-        if (outcome.kind === "failed")
-          new BaseNotice(
-            writeFailureMessage(outcome.failure, Temporal.Now.instant()),
-          );
-      });
+  #submitOpenEditor(): void {
+    const { editing } = this.#store.getState();
+    const submit = editing && this.#submitOnClose[editing.field];
+    if (!submit) return;
+    void submit(editing.annotationKey).then((outcome) => {
+      if (outcome.kind === "failed")
+        new BaseNotice(
+          writeFailureMessage(outcome.failure, Temporal.Now.instant()),
+        );
+    });
   }
 
   // #endregion
@@ -1558,11 +1570,11 @@ export class AnnotationView extends ItemView implements HistorySurface {
     if (held !== true) return;
     this.#changeFromView({ kind: "click", key: annotationKey });
     this.#scrollToCard([annotationKey]);
-    if (!comment || this.#store.getState().editingCommentKey === annotationKey)
+    if (!comment || isEditing(this.#store.getState(), annotationKey, "comment"))
       return;
     // One editor at a time: an open tag editor saves and closes first.
     this.#closeEditors();
-    this.#store.setState({ editingCommentKey: annotationKey });
+    this.#store.setState({ editing: { annotationKey, field: "comment" } });
   }
 
   /**
@@ -1658,9 +1670,8 @@ export class AnnotationView extends ItemView implements HistorySurface {
       annotationSource: null,
       annotationSourceScope: null,
       commentDrafts: new Map(),
-      editingCommentKey: null,
       tagDrafts: new Map(),
-      editingTagsKey: null,
+      editing: null,
     });
     this.#itemKey = null;
     this.#memoryKey = null;

@@ -14,6 +14,7 @@ import type {
   AnnotationRecord,
   CommentDraft,
   TagDraft,
+  TextFieldDraft,
 } from "@/services/annotation-repository/service";
 import {
   noTagChange,
@@ -211,10 +212,14 @@ export function capabilityBlock(
   };
 }
 
-/** Shared comment feedback for the Annotation View and PDF reader. */
-export function commentEditorControls(
+/**
+ * The status line under a text field's editor, and whether the editor takes a
+ * write: one rule for every text field's draft, on the Annotation View and in
+ * the PDF reader alike. Its lines name no field.
+ */
+export function fieldEditorControls(
   capability: EditingCapability,
-  draft: CommentDraft | null,
+  draft: TextFieldDraft | null,
   now: Temporal.Instant,
 ) {
   const available = editingLive(capability);
@@ -231,7 +236,7 @@ export function commentEditorControls(
   // The capability's own sentence, which names the state and the gesture that
   // ends it. A line of its own here could only restate it more vaguely.
   else if (!available) hint = capabilityBlock(capability, now)?.reason ?? null;
-  // A draft waiting on a manual save says so with its Save comment button.
+  // A draft waiting on a manual save says so with its Save button.
   // A sentence restating the button is one line the card does not need.
   return {
     readOnly: !available,
@@ -363,7 +368,7 @@ export function heldCommentDraft(
   if (draft.state.kind === "pending" || draft.state.kind === "conflict")
     return null;
   if (draft.text === draft.baseline) return null;
-  const { hint, manual, saveDisabled } = commentEditorControls(
+  const { hint, manual, saveDisabled } = fieldEditorControls(
     capability,
     draft,
     now,

@@ -1,5 +1,5 @@
 // The comment controls as Preact components, for the Annotation Card and the
-// Mark Popup alike: the rendered comment, the comment sheet, the held-draft
+// Mark Popup alike: the rendered comment, the editor sheet, the held-draft
 // panel and the Write Conflict panel. Each draws through the vanilla builder in
 // `comment-sheet.ts` and redraws only when what it shows changes, so a render
 // of the surface around it never drops a click between its press and its
@@ -17,22 +17,22 @@ import type { CommentRenderer } from "./comment-render";
 import {
   commentViewClass,
   opensCommentEditor,
-  renderCommentSheet,
+  renderEditorSheet,
   renderConflictPanel,
   renderHeldDraftPanel,
 } from "./comment-sheet";
 import type {
   CommentDraftActions,
-  CommentSheet,
-  CommentSheetProps,
-  CommentSheetStatus,
+  EditorSheet,
+  EditorSheetProps,
+  EditorSheetStatus,
   CommentSurface,
 } from "./comment-sheet";
 
 type DivProps = Omit<HTMLAttributes<HTMLDivElement>, "children">;
 
 /**
- * The rendered comment: its text stands where the comment sheet's editor will
+ * The rendered comment: its text stands where the editor sheet's editor will
  * put it, and a click on it opens that sheet. The Markdown renders again only
  * when the comment does.
  */
@@ -70,33 +70,34 @@ export function CommentView({
   );
 }
 
-export interface CommentSheetSlotProps
+export interface EditorSheetSlotProps
   extends
-    Omit<CommentSheetProps, "app" | "surface">,
+    Omit<EditorSheetProps, "app" | "surface">,
     Omit<DivProps, "onChange" | "onSubmit"> {
   app: App;
   surface: CommentSurface;
   /**
-   * The comment taken into the open editor as it changes, keeping the caret;
+   * The field's text taken into the open editor as it changes, keeping the caret;
    * `undefined` leaves the editor's text alone.
    */
   text?: string;
-  status: CommentSheetStatus;
+  status: EditorSheetStatus;
   /** Holds the sheet while it stands, for an owner that reads its text. */
-  sheetRef?: RefObject<CommentSheet | null>;
+  sheetRef?: RefObject<EditorSheet | null>;
 }
 
 /**
- * The comment sheet, built once as the slot mounts and torn down as it
- * unmounts, opening on `value`. Its callbacks read the latest render's values,
- * and a change of text or status is taken into the sheet as it stands, so the
- * caret stays.
+ * The editor sheet, built once as the slot mounts and torn down as it
+ * unmounts, opening on `value` with the wording of `field`. Its callbacks read
+ * the latest render's values, and a change of text or status is taken into the
+ * sheet as it stands, so the caret stays.
  *
- * @see {@link renderCommentSheet}
+ * @see {@link renderEditorSheet}
  */
-export function CommentSheetSlot({
+export function EditorSheetSlot({
   app,
   surface,
+  field,
   value,
   text,
   status,
@@ -105,29 +106,34 @@ export function CommentSheetSlot({
   onSubmit,
   onSave,
   onCancel,
+  onDone,
   onLeave,
   within,
   ...rest
-}: CommentSheetSlotProps) {
+}: EditorSheetSlotProps) {
   const latest = useRef({
+    field,
     value,
     status,
     onChange,
     onSubmit,
     onSave,
     onCancel,
+    onDone,
     onLeave,
   });
   latest.current = {
+    field,
     value,
     status,
     onChange,
     onSubmit,
     onSave,
     onCancel,
+    onDone,
     onLeave,
   };
-  const sheet = useRef<CommentSheet | null>(null);
+  const sheet = useRef<EditorSheet | null>(null);
   const saves = onSave !== undefined;
   const leaves = onLeave !== undefined;
 
@@ -140,16 +146,18 @@ export function CommentSheetSlot({
       if (sheetRef?.current === gone) sheetRef.current = null;
       if (!el) return;
       const at = latest.current;
-      sheet.current = renderCommentSheet(
+      sheet.current = renderEditorSheet(
         el,
         {
           app,
           surface,
+          field: at.field,
           value: at.value,
           onChange: (value) => latest.current.onChange?.(value),
           onSubmit: () => latest.current.onSubmit(),
           onSave: saves ? () => latest.current.onSave?.() : undefined,
           onCancel: () => latest.current.onCancel(),
+          onDone: () => latest.current.onDone(),
           onLeave: leaves ? () => latest.current.onLeave?.() : undefined,
           within,
         },

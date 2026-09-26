@@ -32,7 +32,7 @@ import type { AnnotActions } from "./actions";
 import {
   cardControls,
   commentIcon,
-  commentEditorControls,
+  fieldEditorControls,
   editingLive,
   heldCommentDraft,
   heldTagDraft,
@@ -42,15 +42,15 @@ import {
 } from "./card-controls";
 import type { CardControl, CardControls, HeldDraft } from "./card-controls";
 import {
-  CommentSheetSlot,
+  EditorSheetSlot,
   CommentView,
   ConflictPanelSlot,
   HeldDraftSlot,
 } from "./comment-parts";
-import { selectsCards } from "./comment-sheet";
+import { commentField, selectsCards } from "./comment-sheet";
 import type {
   CommentDraftActions,
-  CommentSheet,
+  EditorSheet,
   HeldDraftActions,
 } from "./comment-sheet";
 import {
@@ -62,10 +62,10 @@ import type {
   ExcerptImageTarget,
 } from "./excerpt-image-state";
 import {
+  isEditing,
   useAnnotStore,
+  useEditingTarget,
   useMutation,
-  useSetEditingComment,
-  useSetEditingTags,
   useToggleSelectedTag,
 } from "./store";
 import { tagChipVariants } from "./tag-chip";
@@ -144,7 +144,7 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
     ({ cardSelection: { selected } }) =>
       selected.length === 1 && selected[0] === annot.key,
   );
-  const editing = useAnnotStore((s) => s.editingCommentKey === annot.key);
+  const editing = useAnnotStore((s) => isEditing(s, annot.key, "comment"));
   const controls = useCardControls(annot);
   const endSession = useRef<EndTagSession | null>(null);
 
@@ -346,7 +346,7 @@ function CardActionBar({
   endSession: RefObject<EndTagSession | null>;
 }) {
   const actions = useContext(AnnotActionsContext);
-  const setEditing = useSetEditingComment();
+  const comment = useEditingTarget(annot.key, "comment");
   const hasComment = annot.comment !== null;
   const tags = useTagSession(annot);
 
@@ -393,8 +393,8 @@ function CardActionBar({
           disabled={controls.comment.disabled}
           data-blocked={controls.comment.blocked ? "" : undefined}
           onClick={press(controls.comment, () => {
-            if (editing) setEditing(null);
-            else if (actions.onOpenComment(annot)) setEditing(annot.key);
+            if (editing) comment.close();
+            else if (actions.onOpenComment(annot)) comment.open();
           })}
           {...tooltipAttrs(controls.comment.tooltip)}
         />
@@ -427,26 +427,31 @@ function CardActionBar({
 
 /**
  * One card's tag editing session, as the toggle and the tag row read it. The
- * editor is open while the user holds it open; it closes onto the session's
- * Pending Proposal, which the record carries until Zotero answers.
+ * editor is open while the user holds it open. A blur saves the session and
+ * keeps the editor open for the next one; Escape, the toggle and a view
+ * gesture close it. Each save shows as the session's Pending Proposal, which
+ * the record carries until Zotero answers.
  *
  * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
  */
 function useTagSession(annot: AnnotationRecord) {
   const actions = useContext(AnnotActionsContext);
-  const setEditing = useSetEditingTags();
-  const editing = useAnnotStore((s) => s.editingTagsKey === annot.key);
+  const target = useEditingTarget(annot.key, "tags");
+  const editing = useAnnotStore((s) => isEditing(s, annot.key, "tags"));
   const draft = useAnnotStore((s) => s.tagDrafts.get(annot.key) ?? null);
+  const save = (): void => actions.onSaveTags(annot, { automatic: true });
   return {
     draft,
     open: editing,
     start: (): void => {
-      if (actions.onOpenTags(annot)) setEditing(annot.key);
+      if (actions.onOpenTags(annot)) target.open();
     },
     close: (): void => {
-      setEditing(null);
-      actions.onSaveTags(annot, { automatic: true });
+      target.close();
+      save();
     },
+    /** Focus left the editor: the session saves, and the editor stays open. */
+    leave: save,
   };
 }
 
@@ -488,6 +493,8 @@ function TagSlot({
           libraryNames={() => actions.libraryTagNames(annot)}
           onChange={(names) => actions.onEditTags(annot, names)}
           onClose={session.close}
+          onLeave={session.leave}
+          saving={draft?.state.kind === "pending"}
           endSession={endSession}
         />
       </div>
@@ -603,14 +610,14 @@ function HeldDraftPanel({
   held: HeldDraft;
 }) {
   const actions = useContext(AnnotActionsContext);
-  const setEditing = useSetEditingComment();
+  const editing = useEditingTarget(annot.key, "comment");
   return (
     <HeldDraftSlot
       held={held}
       surface="card"
       actions={cardDraftActions(actions, annot, held.text)}
       onOpen={() => {
-        if (actions.onOpenComment(annot)) setEditing(annot.key);
+        if (actions.onOpenComment(annot)) editing.open();
       }}
       // The panel is the draft's own surface; the card's selection is not it.
       // A Shift or Cmd/Ctrl click off its verbs is the card's own gesture.
@@ -636,7 +643,7 @@ function Comment({
   editable: boolean;
 }) {
   const actions = useContext(AnnotActionsContext);
-  const setEditing = useSetEditingComment();
+  const editing = useEditingTarget(annot.key, "comment");
   return (
     <CommentView
       surface="card"
@@ -644,7 +651,7 @@ function Comment({
       html={annot.comment ?? ""}
       editable={editable}
       onOpen={() => {
-        if (actions.onOpenComment(annot)) setEditing(annot.key);
+        if (actions.onOpenComment(annot)) editing.open();
       }}
     />
   );
@@ -653,7 +660,7 @@ function Comment({
 /**
  * The comment editor, in the slot the rendered comment stood in, with the
  * caret at the end of what is already there. It is the shared comment sheet;
- * see {@link CommentSheetSlot}.
+ * see {@link EditorSheetSlot}.
  *
  * Escape stores the text and closes the editor. Blur and Ctrl/Command+Enter
  * store it and keep the editor open: a click in the PDF beside the card, or a
@@ -663,7 +670,7 @@ function Comment({
  */
 function CommentEditor({ annot }: { annot: AnnotationRecord }) {
   const actions = useContext(AnnotActionsContext);
-  const setEditing = useSetEditingComment();
+  const editing = useEditingTarget(annot.key, "comment");
   const text = useAnnotStore((state) =>
     shownComment(annot, state.commentDrafts.get(annot.key) ?? null),
   );
@@ -671,19 +678,19 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
   const draft = useAnnotStore(
     (state) => state.commentDrafts.get(annot.key) ?? null,
   );
-  const controls = commentEditorControls(
+  const controls = fieldEditorControls(
     capability,
     draft,
     Temporal.Now.instant(),
   );
   const app = useObsidianApp();
-  const sheet = useRef<CommentSheet | null>(null);
+  const sheet = useRef<EditorSheet | null>(null);
 
   // Every close asks for the submit, including one that changed nothing: the
   // request is what drops a draft holding only what Zotero already has, so
   // clicking the card out of an untouched editor leaves no held text behind.
   const save = (): void => {
-    setEditing(null);
+    editing.close();
     actions.onSaveComment(annot, text, true);
   };
   /** Blur: the same automatic submit, with the editor left open. */
@@ -695,9 +702,10 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
   return (
     // Placing the caret is not the card's selection, and its keys are the
     // editor's own.
-    <CommentSheetSlot
+    <EditorSheetSlot
       app={app}
       surface="card"
+      field={commentField()}
       value={text}
       text={text}
       status={controls}
@@ -706,6 +714,7 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
       onSubmit={store}
       onSave={store}
       onCancel={save}
+      onDone={save}
       onLeave={saveOnLeave}
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e: KeyboardEvent<HTMLDivElement>) => e.stopPropagation()}

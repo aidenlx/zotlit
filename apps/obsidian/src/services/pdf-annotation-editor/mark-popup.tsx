@@ -37,12 +37,12 @@ import {
 } from "@/views/annot-view/card-controls";
 import type { HeldDraft } from "@/views/annot-view/card-controls";
 import {
-  CommentSheetSlot,
+  EditorSheetSlot,
   CommentView,
   ConflictPanelSlot,
   HeldDraftSlot,
 } from "@/views/annot-view/comment-parts";
-import type { CommentSheetSlotProps } from "@/views/annot-view/comment-parts";
+import type { EditorSheetSlotProps } from "@/views/annot-view/comment-parts";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
 import { commentFrameClass } from "@/views/annot-view/comment-sheet";
 import type { CommentDraftActions } from "@/views/annot-view/comment-sheet";
@@ -348,7 +348,7 @@ export function PopupColumn({
 /** What stands in the comment's place under the selected-mode row. */
 export type SelectedPopupComment =
   /** The comment sheet, open on the shared draft. */
-  | { kind: "sheet"; sheet: Omit<CommentSheetSlotProps, "app" | "surface"> }
+  | { kind: "sheet"; sheet: Omit<EditorSheetSlotProps, "app" | "surface"> }
   /** A held comment draft, in the stored comment's place. */
   | {
       kind: "held";
@@ -399,7 +399,7 @@ export function SelectedMarkPopup({
     <AppContext value={app}>
       <PopupColumn row={<MarkPopupVerbs row={row} activate={activate} />}>
         {comment?.kind === "sheet" && (
-          <CommentSheetSlot app={app} surface="popup" {...comment.sheet} />
+          <EditorSheetSlot app={app} surface="popup" {...comment.sheet} />
         )}
         {comment?.kind === "held" && (
           <HeldDraftSlot

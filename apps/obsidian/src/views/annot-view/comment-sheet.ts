@@ -1,6 +1,7 @@
 // The comment controls every surface that edits an Annotation's comment draws:
-// the comment sheet (the editor, its status line and its Save button), the
-// held-draft panel, and the Write Conflict panel.
+// the editor sheet (the field editor, its status line, its Save button and
+// Done), the held-draft panel, and the Write Conflict panel. The editor sheet
+// takes the wording of the field it edits, so other text fields use it too.
 //
 // Vanilla builders, which the Preact wrappers in `comment-parts.tsx` mount on
 // the Annotation Card and the reader's Mark Popup alike. What differs between
@@ -14,13 +15,13 @@ import { themeHook } from "@/lib/theme-hooks";
 
 import type { ConflictPanel, ConflictVerb } from "./card-conflict";
 import type {
-  commentEditorControls,
+  fieldEditorControls,
   HeldDraft,
   HeldDraftAction,
   HeldTags,
 } from "./card-controls";
-import { createCommentEditor } from "./comment-editor";
-import type { CommentEditor } from "./comment-editor";
+import { createFieldEditor } from "./field-editor";
+import type { FieldEditor, FieldEditorWording } from "./field-editor";
 import { tagChipVariants } from "./tag-chip";
 
 /** Where the controls stand: an Annotation Card, or the reader's Mark Popup. */
@@ -154,28 +155,51 @@ export function commentFrameClass(surface: CommentSurface): string {
   return `${look.viewFrame} ${look.inset}`.trim();
 }
 
+/**
+ * What the editor sheet says about the field it edits: the editor's own
+ * wording, and the Save button's. The status line's wording names no field;
+ * it comes from {@link fieldEditorControls}.
+ */
+export interface EditorField extends FieldEditorWording {
+  /** The Save button, shown while the save is manual. */
+  save: string;
+}
+
+/** The comment, as the editor sheet names it. */
+export function commentField(): EditorField {
+  return {
+    placeholder: m.annot_view_card_comment_placeholder(),
+    label: m.annot_view_card_edit_comment(),
+    save: m.annot_view_comment_save(),
+  };
+}
+
 /** What the sheet says under its editor, and whether it takes a write. */
-export type CommentSheetStatus = Pick<
-  ReturnType<typeof commentEditorControls>,
+export type EditorSheetStatus = Pick<
+  ReturnType<typeof fieldEditorControls>,
   "hint" | "manual" | "readOnly" | "saveDisabled"
 >;
 
-export interface CommentSheetProps {
+export interface EditorSheetProps {
   app: App;
   surface: CommentSurface;
+  /** The field the sheet edits: its placeholder, name and Save wording. */
+  field: EditorField;
   /** What the editor opens with. */
   value: string;
-  /** Every change the user makes, as the whole comment. */
+  /** Every change the user makes, as the whole field. */
   onChange?: (text: string) => void;
-  /** Ctrl/Command+Enter: store the comment and keep editing. */
+  /** Ctrl/Command+Enter: store the field and keep editing. */
   onSubmit: () => void;
   /** The Save button, shown while the save is manual. */
   onSave?: () => void;
   /** Escape. */
   onCancel: () => void;
+  /** The Done button: store the field and close the editor. */
+  onDone: () => void;
   /**
    * Focus left the sheet while the save is automatic and the editor takes a
-   * write: store the comment. The surface decides whether the sheet closes
+   * write: store the field. The surface decides whether the sheet closes
    * with it. Absent where leaving saves nothing.
    */
   onLeave?: () => void;
@@ -183,64 +207,76 @@ export interface CommentSheetProps {
   within?: HTMLElement;
 }
 
-export interface CommentSheet extends Disposable {
-  readonly editor: CommentEditor;
-  /** The comment as it stands in the editor. */
+export interface EditorSheet extends Disposable {
+  readonly editor: FieldEditor;
+  /** The field as it stands in the editor. */
   text(): string;
   /** Redraws the status line, the Save button and the editor's read-only state. */
-  update(status: CommentSheetStatus): void;
+  update(status: EditorSheetStatus): void;
 }
 
 /**
- * The comment sheet: the comment editor, then a status line and, while the
- * save is manual, a Save button. The status row takes no room in the quiet
- * case, so the editor ends at its text. The editor takes the caret at the end.
+ * The editor sheet: the field editor, then a footer row with the status line,
+ * a Save button while the save is manual, and Done, which saves and closes.
+ * The editor takes the caret at the end.
  *
  * @param sheet the element the sheet is drawn into, replacing what it held.
- * @see {@link createCommentEditor}
+ * @see {@link createFieldEditor}
  */
-export function renderCommentSheet(
+export function renderEditorSheet(
   sheet: HTMLElement,
   {
     app,
     surface,
+    field,
     value,
     onChange,
     onSubmit,
     onSave,
     onCancel,
+    onDone,
     onLeave,
     within = sheet,
-  }: CommentSheetProps,
-  status: CommentSheetStatus,
-): CommentSheet {
+  }: EditorSheetProps,
+  status: EditorSheetStatus,
+): EditorSheet {
   const look = SURFACE[surface];
   sheet.empty();
   sheet.addClasses(`${look.sheet} ${look.inset}`.split(" ").filter(Boolean));
-  const field = sheet.createDiv({ cls: `${FIELD} ${look.field}` });
+  const frame = sheet.createDiv({ cls: `${FIELD} ${look.field}` });
   const footer = sheet.createDiv({
-    cls: "zt:flex zt:flex-wrap zt:items-center zt:gap-2",
+    cls: `zt:flex zt:flex-wrap zt:items-center zt:gap-2 ${look.footer}`,
   });
   // The live region stays mounted and shown through the quiet case, so a
-  // status it announces is a change inside it rather than a new node; the
-  // row's air belongs to what it holds, so an empty row takes none.
+  // status it announces is a change inside it rather than a new node.
   const hint = footer.createSpan({
-    // The hint keeps a readable measure and puts the button on a line of its
-    // own where the two do not fit side by side.
-    cls: "zt:min-w-0 zt:grow zt:basis-[12em] zt:text-xs zt:text-pretty zt:text-muted-foreground",
+    // The hint keeps a readable measure and puts the buttons on a line of
+    // their own where they do not fit side by side. An empty hint takes no
+    // measure, so Done stands at the row's end beside it.
+    cls: "zt:min-w-0 zt:grow zt:basis-[12em] zt:empty:basis-0 zt:text-xs zt:text-pretty zt:text-muted-foreground",
     attr: { role: "status" },
   });
   const save = footer.createEl("button", {
-    text: m.annot_view_comment_save(),
+    text: field.save,
     attr: { type: "button" },
   });
   if (onSave) save.addEventListener("click", onSave);
+  // Done keeps the caret in the editor through its press, so the press is
+  // what saves and closes rather than the blur before it.
+  const done = footer.createEl("button", {
+    cls: "mod-cta",
+    text: m.annot_view_editor_done(),
+    attr: { type: "button" },
+  });
+  done.addEventListener("mousedown", (event) => event.preventDefault());
+  done.addEventListener("click", onDone);
   let current = status;
   // Tearing the editor down takes its focus away, which is no user leaving.
   let disposed = false;
-  const editor = createCommentEditor({
+  const editor = createFieldEditor({
     app,
-    parent: field,
+    parent: frame,
+    wording: field,
     text: value,
     readOnly: status.readOnly,
     onChange: (text) => onChange?.(text),
@@ -251,13 +287,12 @@ export function renderCommentSheet(
       if (!current.manual && !current.readOnly) onLeave?.();
     },
   });
-  const update = (next: CommentSheetStatus): void => {
+  const update = (next: EditorSheetStatus): void => {
     current = next;
     editor.setReadOnly(next.readOnly);
     hint.textContent = next.hint ?? "";
     save.toggle(next.manual && onSave !== undefined);
     save.disabled = next.saveDisabled;
-    footer.toggleClass(look.footer, next.hint !== null || next.manual);
   };
   update(status);
   const { view } = editor;

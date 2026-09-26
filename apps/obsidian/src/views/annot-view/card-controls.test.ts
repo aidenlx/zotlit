@@ -15,7 +15,7 @@ import {
   capabilityBlock,
   commentIcon,
   commentLabel,
-  commentEditorControls,
+  fieldEditorControls,
   editingBlockedReason,
   groupControl,
   heldCommentDraft,
@@ -190,14 +190,14 @@ it("says a comment is saving only where the user pressed to save it", () => {
     state: { kind: "pending" },
   } as const;
 
-  expect(commentEditorControls({ kind: "writable" }, draft, NOW)).toEqual({
+  expect(fieldEditorControls({ kind: "writable" }, draft, NOW)).toEqual({
     readOnly: false,
     saveDisabled: false,
     manual: false,
     hint: null,
   });
   expect(
-    commentEditorControls(
+    fieldEditorControls(
       { kind: "writable" },
       { ...draft, manualSave: true },
       NOW,
@@ -310,7 +310,7 @@ it("shows the current save outcome and preserves a manual recovery action", () =
     state: { kind: "editing" },
   };
   expect(
-    commentEditorControls(
+    fieldEditorControls(
       { kind: "authorization-required" },
       { ...draft, manualSave: true, state: { kind: "pending" } },
       NOW,
@@ -322,7 +322,7 @@ it("shows the current save outcome and preserves a manual recovery action", () =
     hint: m.annot_view_card_saving(),
   });
   expect(
-    commentEditorControls(
+    fieldEditorControls(
       { kind: "writable" },
       {
         ...draft,
@@ -338,7 +338,7 @@ it("shows the current save outcome and preserves a manual recovery action", () =
     hint: m.annot_view_comment_unconfirmed(),
   });
   expect(
-    commentEditorControls(
+    fieldEditorControls(
       { kind: "read-only", reason: "zotero-unavailable" },
       { ...draft, manualSave: true },
       NOW,
@@ -354,7 +354,7 @@ it("shows the current save outcome and preserves a manual recovery action", () =
   });
   // A draft waiting on a manual save states nothing: its button does.
   expect(
-    commentEditorControls(
+    fieldEditorControls(
       { kind: "writable" },
       { ...draft, manualSave: true },
       NOW,
@@ -367,7 +367,7 @@ it("shows the current save outcome and preserves a manual recovery action", () =
   });
   // A refused write answers in the capability's own words.
   expect(
-    commentEditorControls(
+    fieldEditorControls(
       { kind: "authorization-required" },
       {
         ...draft,

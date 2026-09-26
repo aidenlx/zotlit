@@ -4575,6 +4575,78 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
               await expect.poll(storedTags, poll).toEqual(edited);
             }, 120000);
+
+            it("saves a card session on a blur, keeps the editor open for the next, and records one step for each", async () => {
+              const first = "e2e-blur-first";
+              const second = "e2e-blur-second";
+              /** Settles when no tag write or draft stands on the Annotation. */
+              const tagsSettled = () =>
+                obEvalUntil(
+                  vaultId!,
+                  `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(repository.mutationFor(${JSON.stringify(historyKey)}).kind==='idle'&&!repository.tagDraftFor(${JSON.stringify(historyKey)}));})()`,
+                  { expected: "true" },
+                );
+              const before = spelledTags([...seededTags, autoTag]);
+
+              expect(await press(toggle)).toBe(true);
+              expect(await editorOpen()).toBe(true);
+              await type(first, { enter: true });
+              await expect.poll(editorChips, poll).toContain(first);
+              // Focus leaves the field for the view around the card. The
+              // event is sent rather than the focus moved: a window without
+              // the system focus sends no focus events.
+              await obEval(
+                vaultId!,
+                `(function(){(${card}).querySelector('.zt-annot-tag-input').dispatchEvent(new FocusEvent('focusout',{bubbles:true,relatedTarget:null}));return true;})()`,
+              );
+              const once = spelledTags([
+                ...seededTags,
+                autoTag,
+                { tag: first },
+              ]);
+              await expect.poll(storedTags, poll).toEqual(once);
+              expect(await tagsSettled()).toBe(true);
+              // The editor stayed open through the save.
+              expect(
+                await obEval(
+                  vaultId!,
+                  `String(!!(${card})?.querySelector('.zt-annot-tag-input'))`,
+                ),
+              ).toBe("true");
+
+              // The next change starts a new session, which Escape ends and
+              // saves as it closes the editor.
+              await type(second, { enter: true });
+              await expect.poll(editorChips, poll).toContain(second);
+              await obEval(
+                vaultId!,
+                `(function(){(${card}).querySelector('.zt-annot-tag-input').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+              );
+              const twice = spelledTags([
+                ...seededTags,
+                autoTag,
+                { tag: first },
+                { tag: second },
+              ]);
+              await expect.poll(storedTags, poll).toEqual(twice);
+              expect(
+                await obEvalUntil(
+                  vaultId!,
+                  `String(!(${card})?.querySelector('.zt-annot-tag-input'))`,
+                  { expected: "true" },
+                ),
+              ).toBe(true);
+              expect(await tagsSettled()).toBe(true);
+
+              // One History Step for each session: the first undo takes back
+              // the second name alone, the next one the first.
+              expect(await undoKey()).toEqual({ handled: true });
+              await stepSettled();
+              await expect.poll(storedTags, poll).toEqual(once);
+              expect(await undoKey()).toEqual({ handled: true });
+              await stepSettled();
+              await expect.poll(storedTags, poll).toEqual(before);
+            }, 120000);
           });
         });
 
@@ -5676,6 +5748,26 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             `String(!!(${card})?.querySelector('.cm-content'))`,
           ),
         ).toBe("true");
+
+        // Done saves what was typed and closes the editor.
+        const doneComment = "Saved by pop-out card Done";
+        await obEval(
+          vaultId!,
+          `(function(){const editor=(${card}).querySelector('.cm-content');editor.focus();editor.doc.execCommand('selectAll');editor.doc.execCommand('insertText',false,${JSON.stringify(doneComment)});[...(${card}).querySelectorAll('button')].find((button)=>button.textContent==='Done').click();return true;})()`,
+        );
+        expect(
+          await waitFor(
+            async () =>
+              (await readAnnotationState(api, serverID, createdKey)).comment ===
+              doneComment,
+          ),
+        ).toBe(true);
+        expect(
+          await obEval(
+            vaultId!,
+            `String(!!(${card})?.querySelector('.cm-content'))`,
+          ),
+        ).toBe("false");
         await obEval(
           vaultId!,
           `(function(){const leaf=app.workspace.getLeavesOfType('zotero-annotation-view')[0];leaf.detach();app.commands.executeCommandById('zotlit:open-annot-view');app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');return true;})()`,

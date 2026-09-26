@@ -1496,6 +1496,7 @@
   "settings_zotero_editing_saved": "授权已保存在此设备上",
   "annot_view_comment_draft": "未保存的评论",
   "annot_view_comment_save": "保存评论",
+  "annot_view_editor_done": "完成",
   "annot_view_comment_discard": "放弃",
   "annot_view_comment_unconfirmed": "尚未确认保存结果。请重新连接 Zotero 以检查。",
   "annot_view_tags_draft": "未保存的标签",

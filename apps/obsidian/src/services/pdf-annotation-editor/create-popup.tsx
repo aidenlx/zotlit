@@ -17,8 +17,8 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { MutationState } from "@/services/annotation-repository/write";
 import { editingBlockedReason } from "@/views/annot-view/card-controls";
-import { CommentSheetSlot } from "@/views/annot-view/comment-parts";
-import type { CommentSheetSlotProps } from "@/views/annot-view/comment-parts";
+import { EditorSheetSlot } from "@/views/annot-view/comment-parts";
+import type { EditorSheetSlotProps } from "@/views/annot-view/comment-parts";
 
 import { MarkPopupControl, PopupColumn } from "./mark-popup";
 import { selectionToolOf } from "./tools";
@@ -160,7 +160,7 @@ export interface CreateMarkPopupProps {
   controls: readonly CreatePopupControl[];
   activate: CreatePopupActivate;
   /** The comment sheet under the row, while it stands open. */
-  sheet: Omit<CommentSheetSlotProps, "app" | "surface"> | null;
+  sheet: Omit<EditorSheetSlotProps, "app" | "surface"> | null;
 }
 
 /** The popup in create mode: the row, and the comment sheet while it is open. */
@@ -181,7 +181,7 @@ export function CreateMarkPopup({
           />
         ))}
       >
-        {sheet && <CommentSheetSlot app={app} surface="popup" {...sheet} />}
+        {sheet && <EditorSheetSlot app={app} surface="popup" {...sheet} />}
       </PopupColumn>
     </AppContext>
   );

@@ -3,7 +3,6 @@
 // gesture (ADR 0061), and a plain click there opens the editor. The Mark
 // Popup selects one mark, so the same click on its comment opens its editor.
 import { Keymap } from "obsidian";
-import type { App } from "obsidian";
 import { act } from "preact/test-utils";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -13,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppContext } from "@/lib/app-context";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
+import { editorApp } from "./__fixtures__/editor-app";
 import { AnnotActionsContext } from "./actions";
 import type { AnnotActions } from "./actions";
 import { Annotation } from "./Annotation";
@@ -56,7 +56,7 @@ async function mount(element: ReturnType<typeof createElement>) {
   document.body.append(host);
   root = createRoot(host);
   await act(() =>
-    root?.render(createElement(AppContext, { value: {} as App }, element)),
+    root?.render(createElement(AppContext, { value: editorApp() }, element)),
   );
   return host;
 }
@@ -98,8 +98,16 @@ async function mountCard({
   const onSelectAnnotation = vi.fn();
   const onOpenComment = vi.fn(() => opens);
   const onOpenTags = vi.fn(() => true);
+  const onSaveTags = vi.fn();
+  const onSaveComment = vi.fn();
   const actions = new Proxy(
-    { onSelectAnnotation, onOpenComment, onOpenTags } as Partial<AnnotActions>,
+    {
+      onSelectAnnotation,
+      onOpenComment,
+      onOpenTags,
+      onSaveTags,
+      onSaveComment,
+    } as Partial<AnnotActions>,
     {
       get: (target, name: keyof AnnotActions) =>
         target[name] ??
@@ -130,7 +138,15 @@ async function mountCard({
       ),
     ),
   );
-  return { host, store, onSelectAnnotation, onOpenComment, onOpenTags };
+  return {
+    host,
+    store,
+    onSelectAnnotation,
+    onOpenComment,
+    onOpenTags,
+    onSaveTags,
+    onSaveComment,
+  };
 }
 
 /** A click as the browser delivers it, with these keys held. */
@@ -210,8 +226,105 @@ it("opens the card's comment editor only where a draft starts", async () => {
   for (const opens of [false, true]) {
     const { host, store } = await mountCard({ opens });
     await click(host.querySelector(".zt-annot-comment")!);
-    expect(store.getState().editingCommentKey).toBe(opens ? CARD.key : null);
+    expect(store.getState().editing).toEqual(
+      opens ? { annotationKey: CARD.key, field: "comment" } : null,
+    );
     await act(() => root?.unmount());
     host.remove();
   }
+});
+
+/** The tag toggle in the card's action bar, the one way into the tag editor. */
+function tagToggle(host: HTMLElement): Element {
+  const toggle = [...host.querySelectorAll(".clickable-icon")].find((el) =>
+    el.querySelector("svg.lucide-tag"),
+  );
+  if (!toggle) throw new Error("The card draws no tag toggle");
+  return toggle;
+}
+
+describe("the card's tag editor", () => {
+  it("saves its session on a blur and stays open, and Escape saves and closes it", async () => {
+    const { host, store, onSaveTags } = await mountCard();
+    await click(tagToggle(host));
+    const input = host.querySelector<HTMLInputElement>(".zt-annot-tag-input")!;
+
+    await act(() => {
+      input.dispatchEvent(
+        new FocusEvent("focusout", { bubbles: true, relatedTarget: null }),
+      );
+    });
+    expect(onSaveTags.mock.calls).toEqual([[CARD, { automatic: true }]]);
+    expect(store.getState().editing).toEqual({
+      annotationKey: CARD.key,
+      field: "tags",
+    });
+
+    await act(() => {
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+    expect(onSaveTags).toHaveBeenCalledTimes(2);
+    expect(store.getState().editing).toBeNull();
+  });
+
+  it("starts no second save from a blur while the last one is in flight", async () => {
+    const { host, store, onSaveTags } = await mountCard();
+    await click(tagToggle(host));
+    await act(() => {
+      store.setState({
+        tagDrafts: new Map([
+          [
+            CARD.key,
+            {
+              annotationKey: CARD.key,
+              attachmentKey: CARD.parentKey,
+              serverID: "fixture",
+              baseline: [],
+              names: CARD.tags,
+              state: { kind: "pending" },
+            },
+          ],
+        ]),
+      });
+    });
+    const input = host.querySelector<HTMLInputElement>(".zt-annot-tag-input")!;
+
+    await act(() => {
+      input.dispatchEvent(
+        new FocusEvent("focusout", { bubbles: true, relatedTarget: null }),
+      );
+    });
+
+    expect(onSaveTags).not.toHaveBeenCalled();
+  });
+
+  it("leaves the comment editor that replaced it open as it goes", async () => {
+    const { host, store, onSaveTags } = await mountCard();
+    await click(tagToggle(host));
+
+    await click(host.querySelector(".zt-annot-comment")!);
+
+    // The tag editor ended its session as it unmounted.
+    expect(onSaveTags).toHaveBeenCalledOnce();
+    expect(store.getState().editing).toEqual({
+      annotationKey: CARD.key,
+      field: "comment",
+    });
+  });
+});
+
+it("saves the card's comment and closes its editor on Done", async () => {
+  const { host, store, onSaveComment } = await mountCard();
+  await click(host.querySelector(".zt-annot-comment")!);
+  const done = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "Done",
+  )!;
+
+  await click(done);
+
+  expect(onSaveComment.mock.calls).toEqual([[CARD, CARD.comment, true]]);
+  expect(store.getState().editing).toBeNull();
+  expect(host.querySelector(".cm-content")).toBeNull();
 });

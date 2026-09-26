@@ -47,12 +47,13 @@ import type {
   TextPosition,
 } from "@/services/annotation-repository/write";
 import {
-  commentEditorControls,
+  fieldEditorControls,
   editingLive,
 } from "@/views/annot-view/card-controls";
+import { commentField } from "@/views/annot-view/comment-sheet";
 import type {
-  CommentSheet,
-  CommentSheetStatus,
+  EditorSheet,
+  EditorSheetStatus,
 } from "@/views/annot-view/comment-sheet";
 
 import { inTextEntry, isEditGesture } from "./capability-affordance";
@@ -318,7 +319,7 @@ export class MarkCreation implements CreationGestures, Disposable {
   readonly #deps;
   readonly #surfaces = new DisposableStack();
   /** The comment sheet, whose editor holds the comment until the save. */
-  readonly #sheet: RefObject<CommentSheet | null> = { current: null };
+  readonly #sheet: RefObject<EditorSheet | null> = { current: null };
   /**
    * Whether a selection, note, text or image create is waiting on Zotero, the
    * armed tool's among them, so a drag released meanwhile makes nothing. An
@@ -784,6 +785,11 @@ export class MarkCreation implements CreationGestures, Disposable {
   popupView(): ReactNode | undefined {
     const input = selectCreateRowInput(this.#state());
     if (!input) return undefined;
+    // Done and Ctrl/Command+Enter both create the mark with the comment.
+    const commit = (): void => {
+      const tool = selectionToolOf(this.#state().armed);
+      this.#commit(tool, this.#state().colors[tool]);
+    };
     return createElement(CreateMarkPopup, {
       app: this.#deps.app,
       controls: createPopupRow(input),
@@ -791,12 +797,11 @@ export class MarkCreation implements CreationGestures, Disposable {
       sheet: input.commenting
         ? {
             sheetRef: this.#sheet,
+            field: commentField(),
             value: "",
             status: sheetStatus(input.capability, input.now),
-            onSubmit: () => {
-              const tool = selectionToolOf(this.#state().armed);
-              this.#commit(tool, this.#state().colors[tool]);
-            },
+            onSubmit: commit,
+            onDone: commit,
             onCancel: () => setCommenting(this.#deps.surfaceState, false),
           }
         : null,
@@ -1382,8 +1387,8 @@ export class MarkCreation implements CreationGestures, Disposable {
 function sheetStatus(
   capability: EditingCapability,
   now: Temporal.Instant,
-): CommentSheetStatus {
-  const controls = commentEditorControls(capability, null, now);
+): EditorSheetStatus {
+  const controls = fieldEditorControls(capability, null, now);
   return {
     ...controls,
     manual: false,

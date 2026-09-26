@@ -3,7 +3,8 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
-import { createCommentEditor } from "@/views/annot-view/comment-editor";
+import { commentField } from "@/views/annot-view/comment-sheet";
+import { createFieldEditor } from "@/views/annot-view/field-editor";
 
 import { annotation, pageView, readerOverZotero } from "./__fixtures__";
 import { historyVerbOf } from "./reader-keymap";
@@ -151,9 +152,10 @@ it("leaves the history keys to a text field they were typed into", async () => {
 it("leaves the history keys to the comment editor holding focus", async () => {
   await using h = await setup(false);
   const parent = h.containerEl.appendChild(document.createElement("div"));
-  using editor = createCommentEditor({
+  using editor = createFieldEditor({
     app: editorApp(),
     parent,
+    wording: commentField(),
     text: "Worth citing",
     readOnly: false,
     onChange: vi.fn(),

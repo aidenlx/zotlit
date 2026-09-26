@@ -44,7 +44,7 @@ import type {
 } from "@/services/annotation-repository/write";
 import type { ReaderSessionHost } from "@/services/reader-session/session";
 import {
-  commentEditorControls,
+  fieldEditorControls,
   editingBlockedReason,
   editingLive,
   heldCommentDraft,
@@ -60,9 +60,10 @@ import {
   recolor,
 } from "@/views/annot-view/card-verbs";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
+import { commentField } from "@/views/annot-view/comment-sheet";
 import type {
   CommentDraftActions,
-  CommentSheet,
+  EditorSheet,
   HeldDraftActions,
 } from "@/views/annot-view/comment-sheet";
 import type { EndTagSession } from "@/views/annot-view/tag-editor";
@@ -289,7 +290,7 @@ export class MarkSelection implements Disposable {
    */
   #at: Pick<MarkSelectionPoint, "pageIndex" | "point"> | null = null;
   /** The popup's comment editor, while it stands. */
-  readonly #sheet: RefObject<CommentSheet | null> = { current: null };
+  readonly #sheet: RefObject<EditorSheet | null> = { current: null };
   /** The popup's tag section, while it stands. */
   readonly #tagSection: RefObject<HTMLDivElement | null> = { current: null };
   /** The open tag editor's own end of its session. */
@@ -1254,6 +1255,7 @@ export class MarkSelection implements Disposable {
       kind: "sheet",
       sheet: {
         sheetRef: this.#sheet,
+        field: commentField(),
         value: shownComment(annotation, draft),
         text: standing?.text,
         status: this.#commentControls(annotation),
@@ -1262,6 +1264,7 @@ export class MarkSelection implements Disposable {
         onSubmit: () => this.#submitCommentEditor(annotation),
         onSave: () => this.#submitCommentEditor(annotation),
         onCancel: close,
+        onDone: close,
         onLeave: close,
         // The row's own verbs stand beside the editor, so reaching one is not
         // leaving it.
@@ -1271,7 +1274,7 @@ export class MarkSelection implements Disposable {
   }
 
   #commentControls(annotation: AnnotationRecord) {
-    return commentEditorControls(
+    return fieldEditorControls(
       this.#capability(),
       this.#deps.annotations.commentDraftFor(annotation.key),
       this.#state().capabilityAt,

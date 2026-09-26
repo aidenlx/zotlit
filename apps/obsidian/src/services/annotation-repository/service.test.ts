@@ -34,7 +34,7 @@ import type {
 import type { WireTag } from "@/services/zotero-local-api/wire";
 import {
   cardControls,
-  commentEditorControls,
+  fieldEditorControls,
   editingBlockedReason,
 } from "@/views/annot-view/card-controls";
 
@@ -1297,7 +1297,7 @@ it("retains a paused draft until an explicit save after authorization returns", 
     const saving = repository.submitComment("PUPR5FG5");
     // The save the user pressed is the one the editor says it waits on.
     expect(
-      commentEditorControls(
+      fieldEditorControls(
         repository.capabilityFor("RGRPDF24"),
         repository.commentDraftFor("PUPR5FG5"),
         NOW,
@@ -3359,7 +3359,7 @@ it("draws nothing while an automatic comment save is in flight", async () => {
     const drawn = () => {
       const capability = repository.capabilityFor("RGRPDF24");
       const mutation = repository.mutationFor("PUPR5FG5");
-      const editor = commentEditorControls(
+      const editor = fieldEditorControls(
         capability,
         repository.commentDraftFor("PUPR5FG5"),
         NOW,
