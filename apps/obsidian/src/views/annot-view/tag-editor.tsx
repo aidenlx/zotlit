@@ -285,44 +285,37 @@ function TagField({
  * The tags the user holds that Zotero has not taken, in the tag row's place,
  * with the verbs that end them; see {@link renderHeldTagsPanel}. The card and
  * the Mark Popup both draw it.
- *
- * @param onOpen a click on the chips opens the tag editor; absent while
- *   editing is unavailable.
  */
 export function HeldTagsPanel({
   held,
   surface,
   actions,
-  onOpen,
 }: {
   held: HeldTags;
   surface: CommentSurface;
   actions: HeldDraftActions;
-  onOpen?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   // The panel outlives renders; its verbs read this render's callbacks.
-  const latest = useRef({ actions, onOpen });
-  latest.current = { actions, onOpen };
+  const latest = useRef(actions);
+  latest.current = actions;
   // A redraw between press and release would drop the click, so the panel
   // redraws only when what it shows changes, compared by value: both
   // surfaces build a fresh `held` on every render.
   const shown = useRef(held);
   if (!sameHeldTags(shown.current, held)) shown.current = held;
   const stable = shown.current;
-  const openable = onOpen !== undefined;
   useLayoutEffect(() => {
     if (!ref.current) return;
     renderHeldTagsPanel(ref.current, stable, {
       surface,
       actions: {
-        save: () => latest.current.actions.save(),
-        allowEditing: () => latest.current.actions.allowEditing(),
-        discard: () => latest.current.actions.discard(),
+        save: () => latest.current.save(),
+        allowEditing: () => latest.current.allowEditing(),
+        discard: () => latest.current.discard(),
       },
-      onOpen: openable ? () => latest.current.onOpen?.() : undefined,
     });
-  }, [stable, surface, openable]);
+  }, [stable, surface]);
   return <div ref={ref} />;
 }
 
