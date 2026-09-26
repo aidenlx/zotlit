@@ -256,7 +256,7 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
 
         <ConflictSlot annot={annot} />
 
-        <ExcerptBlock annot={annot} collapsed={collapsed && !alone} />
+        <ExcerptBlock annot={annot} collapsed={collapsed} alone={alone} />
 
         <CommentSlot
           annot={annot}
@@ -762,9 +762,12 @@ function ExcerptText({ text }: { text: string }) {
 function ExcerptBlock({
   annot,
   collapsed,
+  alone,
 }: {
   annot: AnnotationRecord;
   collapsed: boolean;
+  /** Selected alone: the text opens in full; the image keeps its list size. */
+  alone: boolean;
 }) {
   const name = annot.type;
 
@@ -792,7 +795,7 @@ function ExcerptBlock({
       className={cn(
         "zt:border-s-2 zt:ps-2 zt:text-pretty",
         annot.color ? "zt:border-(--zt-annot-color)" : "zt:border-border",
-        collapsed && !isImage && "zt:line-clamp-3",
+        collapsed && !alone && !isImage && "zt:line-clamp-3",
       )}
     >
       {content}
