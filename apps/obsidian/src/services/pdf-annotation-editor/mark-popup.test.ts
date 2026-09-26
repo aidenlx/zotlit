@@ -11,6 +11,7 @@ import type { EditingCapability } from "@/services/annotation-repository/capabil
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import { IDLE } from "@/services/annotation-repository/write";
 import type { MutationState } from "@/services/annotation-repository/write";
+import { capabilityBlocks } from "@/views/annot-view/card-controls";
 
 import { annotation } from "./__fixtures__";
 import { MarkPopup, markPopupRow, MarkPopupVerbs } from "./mark-popup";
@@ -37,7 +38,7 @@ function row(
 ): MarkPopupRow {
   return markPopupRow({
     annotation: overrides.annotation ?? HIGHLIGHT,
-    capability: overrides.capability ?? { kind: "writable" },
+    blocks: capabilityBlocks(overrides.capability ?? { kind: "writable" }, NOW),
     mutation: overrides.mutation ?? IDLE,
     stack: overrides.stack ?? { index: 0, total: 1 },
     tagging: overrides.tagging ?? false,

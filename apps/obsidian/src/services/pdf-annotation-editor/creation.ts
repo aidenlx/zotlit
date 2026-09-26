@@ -47,6 +47,7 @@ import type {
   TextPosition,
 } from "@/services/annotation-repository/write";
 import {
+  capabilityBlock,
   fieldEditorControls,
   editingLive,
   textFieldWording,
@@ -1394,7 +1395,11 @@ function sheetStatus(
   capability: EditingCapability,
   now: Temporal.Instant,
 ): EditorSheetStatus {
-  const controls = fieldEditorControls(capability, null, now);
+  const controls = fieldEditorControls(
+    capabilityBlock(capability, now),
+    null,
+    now,
+  );
   return {
     ...controls,
     manual: false,

@@ -1084,9 +1084,9 @@ export class MarkSelection implements Disposable {
   ): MarkPopupTagSectionProps | null {
     const { annotation, tagging } = input;
     const draft = selectSelectedTagDraft(this.#state());
-    const capability = this.#capability();
-    const { readOnly, hint } = tagEditorControls(capability, draft, input.now);
-    const held = heldTagDraft(capability, draft, input.now);
+    const block = input.blocks.tags;
+    const { readOnly, hint } = tagEditorControls(block, draft, input.now);
+    const held = heldTagDraft(block, draft, input.now);
     if (!tagSectionShows({ annotation, draft, tagging, held })) return null;
     const { annotations, surfaceState } = this.#deps;
     return {
@@ -1165,7 +1165,7 @@ export class MarkSelection implements Disposable {
   ): SelectedPopupComment {
     const { annotation } = input;
     const sheet = input.commenting
-      ? this.#commentEditorSlot(content, annotation)
+      ? this.#commentEditorSlot(content, input)
       : null;
     if (sheet) return sheet;
     const entry = controlEntry(control, (at) =>
@@ -1178,7 +1178,7 @@ export class MarkSelection implements Disposable {
     const held = heldTextDraft(
       "comment",
       this.#deps.annotations.textDraftFor("comment", annotation.key),
-      { capability: this.#capability(), now: input.now },
+      { block: input.blocks.comment, now: input.now },
     );
     if (held) {
       return {
@@ -1230,7 +1230,7 @@ export class MarkSelection implements Disposable {
         attempted: draft.text,
         fresh: draft.state.fresh,
       },
-      live: editingLive(this.#capability()),
+      live: input.blocks.comment === null,
       actions: this.#draftActions(annotation),
     };
   }
@@ -1270,8 +1270,9 @@ export class MarkSelection implements Disposable {
    */
   #commentEditorSlot(
     content: HTMLElement,
-    annotation: AnnotationRecord,
+    input: SelectedRowInput,
   ): SelectedPopupComment | null {
+    const { annotation } = input;
     const standing = selectSelectedDraft(this.#state());
     const draft =
       standing ??
@@ -1298,7 +1299,7 @@ export class MarkSelection implements Disposable {
         field: textFieldWording("comment"),
         value: shownComment(annotation, draft),
         text: standing?.text,
-        status: this.#commentControls(annotation),
+        status: this.#commentControls(input),
         onChange: (text) =>
           this.#deps.annotations.editTextField("comment", annotation.key, text),
         onSubmit: () => this.#submitCommentEditor(annotation),
@@ -1313,11 +1314,11 @@ export class MarkSelection implements Disposable {
     };
   }
 
-  #commentControls(annotation: AnnotationRecord) {
+  #commentControls({ annotation, blocks, now }: SelectedRowInput) {
     return fieldEditorControls(
-      this.#capability(),
+      blocks.comment,
       this.#deps.annotations.textDraftFor("comment", annotation.key),
-      this.#state().capabilityAt,
+      now,
     );
   }
 

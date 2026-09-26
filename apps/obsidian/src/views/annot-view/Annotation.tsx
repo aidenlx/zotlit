@@ -35,9 +35,10 @@ import { inTextEntry } from "@/services/pdf-annotation-editor/capability-afforda
 import { AnnotActionsContext } from "./actions";
 import type { AnnotActions } from "./actions";
 import {
+  annotationBlocks,
   cardControls,
+  conflictBlock,
   fieldEditorControls,
-  editingLive,
   heldTagDraft,
   heldTextDraft,
   hasQuotedText,
@@ -47,7 +48,12 @@ import {
   tagEditorControls,
   textFieldWording,
 } from "./card-controls";
-import type { CardControl, CardControls, HeldDraft } from "./card-controls";
+import type {
+  CardControl,
+  CardControls,
+  HeldDraft,
+  VerbBlocks,
+} from "./card-controls";
 import {
   CommentView,
   ConflictPanelSlot,
@@ -142,16 +148,32 @@ function useCardControls(annot: AnnotationRecord, alone: boolean): CardOffer {
   const { type } = annot;
   return useMemo(() => {
     const controls = cardControls({
-      capability,
+      // A card's tooltip is read at the moment it is drawn; the ticking
+      // countdown belongs to the toolbar affordance, not to every card.
+      blocks: annotationBlocks({
+        annotation: annot,
+        capability,
+        now: Temporal.Now.instant(),
+      }),
       mutation,
       hasTags,
       type,
-      // A card's tooltip is read at the moment it is drawn; the ticking
-      // countdown belongs to the toolbar affordance, not to every card.
-      now: Temporal.Now.instant(),
     });
     return alone ? controls : { ...controls, comment: null, text: null };
-  }, [capability, mutation, hasTags, type, alone]);
+  }, [annot, capability, mutation, hasTags, type, alone]);
+}
+
+/**
+ * What stands in the way of each verb on this card, read at the moment it is
+ * drawn.
+ */
+function useVerbBlocks(annot: AnnotationRecord): VerbBlocks {
+  const capability = useAnnotStore((state) => state.capability);
+  return annotationBlocks({
+    annotation: annot,
+    capability,
+    now: Temporal.Now.instant(),
+  });
 }
 
 /** One row of the card list's grid, its content in one cell. */
@@ -314,7 +336,7 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
 function ConflictSlot({ annot }: { annot: AnnotationRecord }) {
   const actions = useContext(AnnotActionsContext);
   const mutation = useMutation(annot.key);
-  const live = useAnnotStore((state) => editingLive(state.capability));
+  const blocks = useVerbBlocks(annot);
   const drafted = useAnnotStore(
     (state) =>
       mutation.kind === "conflict" &&
@@ -326,7 +348,7 @@ function ConflictSlot({ annot }: { annot: AnnotationRecord }) {
   return (
     <ConflictPanelSlot
       conflict={mutation.conflict}
-      live={live}
+      live={conflictBlock(blocks, mutation.conflict.write) === null}
       surface="card"
       actions={{
         // The standing conflict's own write, sent again or left.
@@ -503,13 +525,13 @@ function TagSlot({
   const actions = useContext(AnnotActionsContext);
   const session = useTagSession(annot);
   const auto = useMemo(() => autoTags(annot), [annot]);
-  const capability = useAnnotStore((s) => s.capability);
+  const block = useVerbBlocks(annot).tags;
   const { draft } = session;
   const now = Temporal.Now.instant();
-  const editor = tagEditorControls(capability, draft, now);
+  const editor = tagEditorControls(block, draft, now);
   // A fresh value on each render: the held panel compares it by value
   // before it draws again.
-  const held = heldTagDraft(capability, draft, now);
+  const held = heldTagDraft(block, draft, now);
   // Editing that becomes unavailable closes the editor, which holds the
   // draft for Save tags.
   if (session.open && !editor.readOnly) {
@@ -672,12 +694,11 @@ function useFieldDraftPanel(
         text: draft.text,
       };
     }
-    const held = heldTextDraft(field, draft, {
-      capability,
-      now: Temporal.Now.instant(),
-    });
+    const now = Temporal.Now.instant();
+    const blocks = annotationBlocks({ annotation: annot, capability, now });
+    const held = heldTextDraft(field, draft, { block: blocks[field], now });
     return held && { kind: "held", held };
-  }, [field, capability, draft]);
+  }, [annot, field, capability, draft]);
 }
 
 /**
@@ -704,13 +725,13 @@ function FieldDraftPanel({
   entry?: CommentEntry;
 }) {
   const actions = useContext(AnnotActionsContext);
-  const live = useAnnotStore((state) => editingLive(state.capability));
+  const blocks = useVerbBlocks(annot);
   const surface = FIELD_SURFACE[field];
   if (panel.kind === "conflict") {
     return (
       <ConflictPanelSlot
         conflict={panel.conflict}
-        live={live}
+        live={conflictBlock(blocks, panel.conflict.write) === null}
         surface={surface}
         actions={fieldDraftActions(actions, annot, {
           field,
@@ -807,13 +828,9 @@ function FieldEditor({
 }) {
   const actions = useContext(AnnotActionsContext);
   const { text, saveAndClose } = useFieldEditing(annot, field);
-  const capability = useAnnotStore((state) => state.capability);
+  const block = useVerbBlocks(annot)[field];
   const draft = useAnnotStore((state) => fieldDraft(state, field, annot.key));
-  const controls = fieldEditorControls(
-    capability,
-    draft,
-    Temporal.Now.instant(),
-  );
+  const controls = fieldEditorControls(block, draft, Temporal.Now.instant());
   const app = useObsidianApp();
   const sheet = useRef<EditorSheet | null>(null);
   // Read as the editor mounts; the sheet places the caret once.

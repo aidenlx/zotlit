@@ -24,6 +24,7 @@ import {
   writeFailureMessage,
 } from "@/services/annotation-repository/write";
 import type {
+  ConflictedWrite,
   MutationState,
   WriteFailure,
 } from "@/services/annotation-repository/write";
@@ -61,16 +62,14 @@ export interface CardControl {
 
 /** What the card's editing controls read. */
 export interface CardControlsInput {
-  /** The Editing Capability of the Attachment this card belongs to. */
-  capability: EditingCapability;
+  /** What stands in the way of each verb; see {@link annotationBlocks}. */
+  blocks: VerbBlocks;
   /** What the last write left on this Annotation. */
   mutation: MutationState;
   /** Whether the Annotation already carries a tag. */
   hasTags: boolean;
   /** The Annotation's type, which decides whether it has a Quoted Text. */
   type: ResolvedAnnotationTypeName;
-  /** The instant a cooldown's remaining seconds are measured from. */
-  now: Temporal.Instant;
 }
 
 /**
@@ -95,6 +94,60 @@ export interface CardControls {
   delete: CardControl;
 }
 
+/** One editing verb of an Annotation Card. */
+export type CardVerb = keyof CardControls;
+
+/**
+ * What stands in the way of each editing verb, or `null` where the verb acts.
+ * Each verb has its own gate, so one verb can act while another is refused.
+ */
+export type VerbBlocks = Readonly<Record<CardVerb, CardBlock | null>>;
+
+/**
+ * Each verb's block under one Editing Capability. The capability is the
+ * Attachment's, so it gives every verb the same block.
+ */
+export function capabilityBlocks(
+  capability: EditingCapability,
+  now: Temporal.Instant,
+): VerbBlocks {
+  const block = capabilityBlock(capability, now);
+  return {
+    color: block,
+    comment: block,
+    tags: block,
+    text: block,
+    delete: block,
+  };
+}
+
+/**
+ * Each verb's block on one Annotation: the one seam every surface reads its
+ * verbs' blocks from, the card, the view's menus and the Mark Popup alike.
+ * The Editing Capability's block comes first.
+ */
+export function annotationBlocks({
+  capability,
+  now,
+}: {
+  annotation: AnnotationRecord;
+  capability: EditingCapability;
+  now: Temporal.Instant;
+}): VerbBlocks {
+  return capabilityBlocks(capability, now);
+}
+
+/**
+ * The block of the verb a Write Conflict stands on. A Geometry Edit changes
+ * the mark itself, so it has the colour's gate.
+ */
+export function conflictBlock(
+  blocks: VerbBlocks,
+  write: ConflictedWrite,
+): CardBlock | null {
+  return blocks[write === "geometry" ? "color" : write];
+}
+
 /**
  * Editing tools are available only after explicit authorization.
  */
@@ -115,34 +168,36 @@ export function editingLive(capability: EditingCapability): boolean {
  * capability, so the user can try again.
  */
 export function cardControls({
-  capability,
+  blocks,
   mutation,
   hasTags,
   type,
-  now,
 }: CardControlsInput): CardControls {
   const pending = gestureInFlight(mutation);
-  const blocked = pending ? null : capabilityBlock(capability, now);
-  const control = (label: string): CardControl => {
+  const control = (verb: CardVerb, label: string): CardControl => {
     if (pending)
       return {
         disabled: true,
         blocked: null,
         tooltip: m.annot_view_card_saving(),
       };
+    const blocked = blocks[verb];
     if (blocked === null)
       return { disabled: false, blocked: null, tooltip: label };
     // The verb keeps its own name: the notice states the reason on a press.
     return { disabled: false, blocked, tooltip: label };
   };
   return {
-    color: control(m.annot_view_card_color()),
-    comment: control(m.annot_view_card_comment_label()),
+    color: control("color", m.annot_view_card_color()),
+    comment: control("comment", m.annot_view_card_comment_label()),
     tags: control(
+      "tags",
       hasTags ? m.annot_view_card_edit_tags() : m.annot_view_card_add_tags(),
     ),
-    delete: control(m.annot_view_menu_delete()),
-    text: hasQuotedText(type) ? control(m.annot_view_menu_edit_text()) : null,
+    delete: control("delete", m.annot_view_menu_delete()),
+    text: hasQuotedText(type)
+      ? control("text", m.annot_view_menu_edit_text())
+      : null,
   };
 }
 
@@ -170,9 +225,8 @@ export function hasQuotedText(type: ResolvedAnnotationTypeName): boolean {
 
 /**
  * One verb over a group of cards, from each card's own control: refused while
- * a write is in flight on any of them, and blocked for the same reason one
- * card is. The Editing Capability is the Attachment's, so every card of the
- * group states the one same block.
+ * a write is in flight on any of them, and blocked while any card's control is
+ * blocked, with the block of the first such card.
  */
 export function groupControl(
   controls: readonly CardControl[],
@@ -244,11 +298,11 @@ export function capabilityBlock(
  * the PDF reader alike. Its lines name no field.
  */
 export function fieldEditorControls(
-  capability: EditingCapability,
+  block: CardBlock | null,
   draft: TextFieldDraft | null,
   now: Temporal.Instant,
 ) {
-  const available = editingLive(capability);
+  const available = block === null;
   const manual = !!draft?.manualSave;
   // Automatic saving states nothing, in flight or at rest: the quiet case is
   // the normal one, and a line that comes and goes under the editor with every
@@ -258,10 +312,10 @@ export function fieldEditorControls(
   let hint: string | null = null;
   if (pending) hint = m.annot_view_card_saving();
   else if (draft?.state.kind === "failed")
-    hint = failedSaveReason(capability, draft.state.failure, now);
-  // The capability's own sentence, which names the state and the gesture that
+    hint = failedSaveReason(block, draft.state.failure, now);
+  // The block's own sentence, which names the state and the gesture that
   // ends it. A line of its own here could only restate it more vaguely.
-  else if (!available) hint = capabilityBlock(capability, now)?.reason ?? null;
+  else if (block) hint = block.reason;
   // A draft waiting on a manual save says so with its Save button.
   // A sentence restating the button is one line the card does not need.
   return {
@@ -277,17 +331,14 @@ export function fieldEditorControls(
  * reason line a held draft carries.
  */
 function failedSaveReason(
-  capability: EditingCapability,
+  block: CardBlock | null,
   failure: WriteFailure,
   now: Temporal.Instant,
 ): string {
   // A refused write and a refused editor are one state, so they say one
-  // thing: the capability's own sentence, as the blocked case says it.
+  // thing: the block's own sentence, as the blocked case says it.
   if (failure.kind === "unauthorized")
-    return (
-      capabilityBlock(capability, now)?.reason ??
-      writeFailureMessage(failure, now)
-    );
+    return block?.reason ?? writeFailureMessage(failure, now);
   if (failure.kind === "unknown-outcome" || failure.kind === "unreachable")
     return m.annot_view_comment_unconfirmed();
   return writeFailureMessage(failure, now);
@@ -301,16 +352,15 @@ function failedSaveReason(
  * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
  */
 export function tagEditorControls(
-  capability: EditingCapability,
+  block: CardBlock | null,
   draft: TagDraft | null,
   now: Temporal.Instant,
 ): { readOnly: boolean; hint: string | null } {
-  const available = editingLive(capability);
   let hint: string | null = null;
   if (draft?.state.kind === "failed")
-    hint = failedSaveReason(capability, draft.state.failure, now);
-  else if (!available) hint = capabilityBlock(capability, now)?.reason ?? null;
-  return { readOnly: !available, hint };
+    hint = failedSaveReason(block, draft.state.failure, now);
+  else if (block) hint = block.reason;
+  return { readOnly: block !== null, hint };
 }
 
 /**
@@ -433,18 +483,13 @@ export function textFieldWording(field: TextField): TextFieldWording {
 export function heldTextDraft(
   field: TextField,
   draft: TextFieldDraft | null,
-  { capability, now }: { capability: EditingCapability; now: Temporal.Instant },
+  { block, now }: { block: CardBlock | null; now: Temporal.Instant },
 ): HeldDraft | null {
   if (!draft) return null;
   if (draft.state.kind === "pending" || draft.state.kind === "conflict")
     return null;
   if (draft.text === draft.baseline) return null;
-  const { hint, manual, saveDisabled } = fieldEditorControls(
-    capability,
-    draft,
-    now,
-  );
-  const block = capabilityBlock(capability, now);
+  const { hint, manual, saveDisabled } = fieldEditorControls(block, draft, now);
   // An automatic save is already on its way, so the card waits for it rather
   // than asking the user to do what the plugin is about to do.
   if (!manual && !saveDisabled) return null;
@@ -476,24 +521,22 @@ export interface HeldTags {
  * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
  */
 export function heldTagDraft(
-  capability: EditingCapability,
+  block: CardBlock | null,
   draft: TagDraft | null,
   now: Temporal.Instant,
 ): HeldTags | null {
   if (!draft?.held || draft.state.kind === "pending") return null;
   if (noTagChange(tagChange(draft.baseline, draft.names))) return null;
-  const available = editingLive(capability);
-  const block = capabilityBlock(capability, now);
   return {
     names: draft.names,
     reason:
       block?.reason ??
       (draft.state.kind === "failed"
-        ? failedSaveReason(capability, draft.state.failure, now)
+        ? failedSaveReason(block, draft.state.failure, now)
         : null),
     actions: heldDraftActions(block, {
       save: m.annot_view_tags_save(),
-      saveDisabled: !available,
+      saveDisabled: block !== null,
     }),
   };
 }

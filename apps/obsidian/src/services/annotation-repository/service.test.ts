@@ -33,6 +33,8 @@ import type {
 } from "@/services/zotero-local-api/__fixtures__";
 import type { WireTag } from "@/services/zotero-local-api/wire";
 import {
+  capabilityBlock,
+  capabilityBlocks,
   cardControls,
   fieldEditorControls,
   editingBlockedReason,
@@ -1382,7 +1384,7 @@ it("retains a paused draft until an explicit save after authorization returns", 
     // The save the user pressed is the one the editor says it waits on.
     expect(
       fieldEditorControls(
-        repository.capabilityFor("RGRPDF24"),
+        capabilityBlock(repository.capabilityFor("RGRPDF24"), NOW),
         repository.textDraftFor("comment", "PUPR5FG5"),
         NOW,
       ).hint,
@@ -3452,17 +3454,16 @@ it("draws nothing while an automatic comment save is in flight", async () => {
       const capability = repository.capabilityFor("RGRPDF24");
       const mutation = repository.mutationFor("PUPR5FG5");
       const editor = fieldEditorControls(
-        capability,
+        capabilityBlock(capability, NOW),
         repository.textDraftFor("comment", "PUPR5FG5"),
         NOW,
       );
       return {
         verbs: cardControls({
-          capability,
+          blocks: capabilityBlocks(capability, NOW),
           mutation,
           hasTags: false,
           type: "highlight",
-          now: NOW,
         }),
         blocked: editingBlockedReason(capability, mutation, NOW),
         hint: editor.hint,
@@ -5563,11 +5564,10 @@ it("keeps the verbs live and the draft saving until the read-back lands", async 
   const mutation = repository.mutationFor("PUPR5FG5");
   expect(mutation).toEqual({ kind: "pending", write: "tags", session: true });
   const verbs = cardControls({
-    capability: repository.capabilityFor("RGRPDF24"),
+    blocks: capabilityBlocks(repository.capabilityFor("RGRPDF24"), NOW),
     mutation,
     hasTags: true,
     type: "highlight",
-    now: NOW,
   });
   expect([verbs.color, verbs.comment, verbs.delete]).toMatchObject([
     { disabled: false },
@@ -5959,11 +5959,10 @@ it("stands the verbs down while a tag undo is in flight, as a gesture's write", 
   const mutation = repository.mutationFor("PUPR5FG5");
   expect(mutation).toEqual({ kind: "pending", write: "tags" });
   const verbs = cardControls({
-    capability: repository.capabilityFor("RGRPDF24"),
+    blocks: capabilityBlocks(repository.capabilityFor("RGRPDF24"), NOW),
     mutation,
     hasTags: true,
     type: "highlight",
-    now: NOW,
   });
   expect([verbs.color, verbs.comment, verbs.tags, verbs.delete]).toMatchObject([
     { disabled: true },

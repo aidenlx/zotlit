@@ -32,6 +32,7 @@ import type {
   MutationState,
   TextPosition,
 } from "@/services/annotation-repository/write";
+import { annotationBlocks } from "@/views/annot-view/card-controls";
 
 import { createPopupRow } from "./create-popup";
 import type { CreatePopupControl, CreatePopupRowInput } from "./create-popup";
@@ -1233,7 +1234,7 @@ export function selectSelectedRowInput({
   if (!annotation) return null;
   return {
     annotation,
-    capability,
+    blocks: annotationBlocks({ annotation, capability, now: capabilityAt }),
     mutation: mutations.get(floating.key) ?? IDLE,
     stack: { index: floating.index, total: floating.stack.length },
     commenting: floating.commenting,

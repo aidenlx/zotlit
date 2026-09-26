@@ -79,7 +79,7 @@ import { openTemplateDataExplorer } from "@/views/template-data-explorer/registe
 import { AnnotActionsContext, createAnnotActions } from "./actions";
 import type { AnnotActions } from "./actions";
 import { AnnotView } from "./AnnotView";
-import { cardControls } from "./card-controls";
+import { annotationBlocks, cardControls } from "./card-controls";
 import type { CardControls } from "./card-controls";
 import { NO_SELECTION, nextCardSelection, sameKeys } from "./card-selection";
 import type {
@@ -1284,11 +1284,14 @@ export class AnnotationView extends ItemView implements HistorySurface {
     const state = this.#store.getState();
     const { capability, mutations } = state;
     return cardControls({
-      capability,
+      blocks: annotationBlocks({
+        annotation: annot,
+        capability,
+        now: Temporal.Now.instant(),
+      }),
       mutation: mutations.get(annot.key) ?? IDLE,
       hasTags: annot.tags.length > 0,
       type: annot.type,
-      now: Temporal.Now.instant(),
     });
   }
 
