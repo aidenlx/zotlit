@@ -106,9 +106,9 @@ it("keeps a verb the capability blocks pressable, so its press reaches the reaso
     // Not disabled: the press is what raises the notice holding the reason.
     expect(states(controls)).toEqual([false, false, false]);
     expect(blocks(controls)).toEqual([
-      { reason, action },
-      { reason, action },
-      { reason, action },
+      { reason, action, source: "capability" },
+      { reason, action, source: "capability" },
+      { reason, action, source: "capability" },
     ]);
     // The verb keeps its own name; the notice is what states the reason.
     expect(tooltips(controls)).toEqual(
@@ -121,15 +121,21 @@ it("offers Allow editing to the one capability a gesture can change", () => {
   expect(capabilityBlock({ kind: "authorization-required" }, NOW)).toEqual({
     reason: m.capability_authorization_required_detail(),
     action: "allow-editing",
+    source: "capability",
   });
   expect(capabilityBlock({ kind: "authorizing" }, NOW)).toEqual({
     reason: m.capability_authorizing_detail(),
     action: null,
+    source: "capability",
   });
   // A label stands in where the table has no detail sentence.
   expect(
     capabilityBlock({ kind: "read-only", reason: "probing" }, NOW),
-  ).toEqual({ reason: m.capability_probing(), action: null });
+  ).toEqual({
+    reason: m.capability_probing(),
+    action: null,
+    source: "capability",
+  });
   expect(capabilityBlock({ kind: "writable" }, NOW)).toBeNull();
 });
 
@@ -231,9 +237,9 @@ it("leaves a settled write's verbs to the capability, so the user can try again"
     expect(
       blocks(controlsOf({ kind: "read-only", reason: "probing" }, mutation)),
     ).toEqual([
-      { reason: m.capability_probing(), action: null },
-      { reason: m.capability_probing(), action: null },
-      { reason: m.capability_probing(), action: null },
+      { reason: m.capability_probing(), action: null, source: "capability" },
+      { reason: m.capability_probing(), action: null, source: "capability" },
+      { reason: m.capability_probing(), action: null, source: "capability" },
     ]);
   }
 });
@@ -265,6 +271,7 @@ it("gives the tag toggle the comment toggle's enabled state and blocked reason",
         reason: copy.detail ?? copy.label,
         action:
           capability.kind === "authorization-required" ? "allow-editing" : null,
+        source: "capability",
       },
       tooltip: m.annot_view_card_add_tags(),
     });
@@ -326,6 +333,7 @@ describe("Edit quoted text", () => {
             capability.kind === "authorization-required"
               ? "allow-editing"
               : null,
+          source: "capability",
         },
         tooltip: m.annot_view_menu_edit_text(),
       });

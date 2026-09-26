@@ -16,6 +16,7 @@ import { IconButton } from "@/components/obsidian/icon-button";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import { useSanitizedHtml } from "@/lib/sanitize-html";
+import { themeHook } from "@/lib/theme-hooks";
 import {
   activatable,
   claimClick,
@@ -23,6 +24,8 @@ import {
   cn,
   tooltipAttrs,
 } from "@/lib/utils";
+import { lockReasonText } from "@/services/annotation-repository/lock";
+import type { AnnotationLock } from "@/services/annotation-repository/lock";
 import type {
   AnnotationRecord,
   TextField,
@@ -292,6 +295,7 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
               actions.onDragStart(e, annot);
             }}
           />
+          {annot.lock && <LockMark lock={annot.lock} />}
           <CardActionBar
             annot={annot}
             controls={controls}
@@ -317,6 +321,30 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
         <TagSlot annot={annot} endSession={endSession} />
       </div>
     </div>
+  );
+}
+
+/**
+ * The lock on a Locked Annotation, beside its page chip, so the lock is seen
+ * before a verb is tried. The Lock Reason is its tooltip and its accessible
+ * name; the verbs the lock refuses rest dimmed in the action bar.
+ *
+ * @see apps/obsidian/docs/adr/0066-annotation-locks-come-from-the-zotero-database.md
+ */
+function LockMark({ lock }: { lock: AnnotationLock }) {
+  return (
+    <span
+      role="img"
+      className={cn(
+        themeHook.annotLock,
+        "zt:flex zt:shrink-0 zt:items-center zt:text-muted-foreground",
+      )}
+      {...tooltipAttrs(
+        m.annot_view_lock_label({ reason: lockReasonText(lock.reason) }),
+      )}
+    >
+      <Icon name="lock" size={12} />
+    </span>
   );
 }
 
@@ -348,7 +376,7 @@ function ConflictSlot({ annot }: { annot: AnnotationRecord }) {
   return (
     <ConflictPanelSlot
       conflict={mutation.conflict}
-      live={conflictBlock(blocks, mutation.conflict.write) === null}
+      block={conflictBlock(blocks, mutation.conflict.write)}
       surface="card"
       actions={{
         // The standing conflict's own write, sent again or left.
@@ -731,7 +759,7 @@ function FieldDraftPanel({
     return (
       <ConflictPanelSlot
         conflict={panel.conflict}
-        live={conflictBlock(blocks, panel.conflict.write) === null}
+        block={conflictBlock(blocks, panel.conflict.write)}
         surface={surface}
         actions={fieldDraftActions(actions, annot, {
           field,

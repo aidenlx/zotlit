@@ -29,7 +29,11 @@ const COMMENTED = {
 };
 
 const LIVE: CardControl = { disabled: false, blocked: null, tooltip: "" };
-const NOT_RUNNING = { reason: "Zotero is not running.", action: null };
+const NOT_RUNNING = {
+  reason: "Zotero is not running.",
+  action: null,
+  source: "capability",
+} as const;
 const BLOCKED: CardControl = { ...LIVE, blocked: NOT_RUNNING };
 
 /**

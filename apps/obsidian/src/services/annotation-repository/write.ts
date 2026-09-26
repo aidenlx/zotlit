@@ -16,10 +16,12 @@ import type { WireTag } from "@/services/zotero-local-api/wire";
 import { capabilityOfFailure } from "./capability";
 import type { EditingCapability } from "./capability";
 import { editingCapabilityCopy } from "./capability-copy";
+import { lockReasonText } from "./lock";
+import type { LockReason } from "./lock";
 
 /**
  * Why a write did not land, beside every failure Zotero itself can answer.
- * The three extra members are refusals: none ever left ZotLit.
+ * The four extra members are refusals: none ever left ZotLit.
  */
 export type WriteFailure =
   | LocalApiFailure
@@ -39,7 +41,15 @@ export type WriteFailure =
    *
    * @see https://github.com/aidenlx/zotlit/issues/1139 — "Zotero Local API contract"
    */
-  | { kind: "position-too-large" };
+  | { kind: "position-too-large" }
+  /**
+   * The Annotation is locked against this verb, as Zotero's reader locks it,
+   * so the write is refused before any request. The Editing Capability does
+   * not move.
+   *
+   * @see apps/obsidian/docs/adr/0066-annotation-locks-come-from-the-zotero-database.md
+   */
+  | { kind: "locked"; reason: LockReason };
 
 /**
  * The Annotation fields typed as text in a field editor: the comment and the
@@ -621,6 +631,8 @@ export function writeFailureMessage(
   failure: WriteFailure,
   now: Temporal.Instant,
 ): string {
+  // A lock is no failure of the save: it says its own reason alone.
+  if (failure.kind === "locked") return lockReasonText(failure.reason);
   return m.annot_view_write_failed({
     reason: writeFailureReason(failure, now),
   });
@@ -653,6 +665,8 @@ export function writeFailureReason(
       return m.annot_view_write_reason_conflict();
     case "unknown-outcome":
       return m.annot_view_write_reason_unknown_outcome();
+    case "locked":
+      return lockReasonText(failure.reason);
     default:
       return blockedReason(
         capabilityOfFailure(failure, () => now),

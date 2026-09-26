@@ -33,16 +33,20 @@ import type {
 } from "@/services/zotero-local-api/__fixtures__";
 import type { WireTag } from "@/services/zotero-local-api/wire";
 import {
+  annotationBlocks,
   capabilityBlock,
   capabilityBlocks,
   cardControls,
   fieldEditorControls,
   editingBlockedReason,
+  heldTagDraft,
+  heldTextDraft,
 } from "@/views/annot-view/card-controls";
 
 import {
   afterWrite,
   FIXTURE_ROWS,
+  markExternal,
   NOW,
   nextChange,
   REMEMBERED_KEY,
@@ -53,7 +57,7 @@ import {
 } from "./__fixtures__";
 import { JOIN_WINDOW_MS } from "./history";
 import type { AnnotationRepository } from "./service";
-import type { AnnotationList } from "./service";
+import type { AnnotationList, AnnotationRecord } from "./service";
 import type { GeometryEdit } from "./write";
 
 /** Every Annotation of `RGRPDF24`, in the reading order its sort indexes give. */
@@ -106,6 +110,7 @@ it("reads every type the Fixture carries on one attachment, in Zotero's reading 
       rects: [[398.804, 685.107, 560.804, 702.107]],
     },
     version: 0,
+    lock: null,
     templateMetadata: {
       dateAdded: "2026-08-23T16:18:18Z",
       dateModified: "2026-08-23T16:19:07Z",
@@ -6013,6 +6018,382 @@ it("does nothing while a tag session is open on the Annotation the top step touc
   expect(await repository.submitTags("PUPR5FG5")).toEqual({ kind: "idle" });
   expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
   expect(zotero.tags).toEqual(["review", { tag: "nlp", type: 1 }, "todo"]);
+});
+
+// #endregion
+
+// #region annotation locks
+
+// What can go wrong with a Locked Annotation, seen from outside the repository
+// (ADR 0066):
+// - the Local API sends no lock facts, so a list it answers carries no lock;
+// - a fact the database does not hold, or cannot give, locks an Annotation;
+// - a lock Zotero adds after a Local API list was read never reaches it;
+// - a refused verb still sends a request, draws a Pending Proposal, or ends a
+//   Write Conflict that stands;
+// - a comment, Quoted Text or tag draft open when the lock appears still saves;
+// - the card offers a verb the lock refuses, or the lock's block hides the
+//   Editing Capability's own reason.
+
+const LOCKED = {
+  kind: "failed",
+  failure: { kind: "locked", reason: "external" },
+} as const;
+
+/** The block every verb of an External Annotation meets on its card. */
+const EXTERNAL_BLOCK = {
+  reason: m.annot_view_lock_external(),
+  action: null,
+  source: "lock",
+} as const;
+
+/** Each Annotation's lock, by key. */
+function locksOf(list: AnnotationList | null) {
+  return Object.fromEntries(
+    list?.annotations.map(({ key, lock }) => [key, lock]) ?? [],
+  );
+}
+
+/** Every Fixture Annotation unlocked, but those `external` names. */
+function expectedLocks(...external: string[]) {
+  return Object.fromEntries(
+    READING_ORDER.map(([key]) => [
+      key,
+      external.includes(key!) ? { reason: "external" } : null,
+    ]),
+  );
+}
+
+function recordOf(
+  repository: AnnotationRepository,
+  key: string,
+): AnnotationRecord {
+  const record = repository
+    .peek("RGRPDF24")
+    ?.value.annotations.find((annotation) => annotation.key === key);
+  if (!record) throw new Error(`No record ${key}`);
+  return record;
+}
+
+/**
+ * Zotero imports one Annotation from the PDF file while ZotLit reads through
+ * the Local API: the database changes, and the next list is the Local API's
+ * again, with the lock on it.
+ */
+async function importFromPdf(
+  harness: Awaited<ReturnType<typeof writable>>,
+  key: string,
+): Promise<void> {
+  markExternal(harness.client, key);
+  harness.dbEvents.emit("changed");
+  await vi.waitFor(async () => {
+    const list = await harness.repository.read("RGRPDF24");
+    expect(list?.source.kind).toBe("zotero-local-api");
+    expect(locksOf(list)[key]).toEqual({ reason: "external" });
+  });
+}
+
+it("locks an External Annotation under the Zotero DB source", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await setup(stack, undefined, {
+    external: ["PUPR5FG5"],
+  });
+
+  const list = await repository.read("RGRPDF24");
+
+  expect(list?.source).toEqual(DATABASE_SOURCE);
+  expect(locksOf(list)).toEqual(expectedLocks("PUPR5FG5"));
+});
+
+it("locks an External Annotation under the Local API source, from the Zotero database", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await writable(stack, {}, { external: ["PUPR5FG5"] });
+
+  const list = await repository.read("RGRPDF24");
+
+  expect(list?.source).toEqual({
+    kind: "zotero-local-api",
+    serverID: SERVER_ID,
+  });
+  expect(locksOf(list)).toEqual(expectedLocks("PUPR5FG5"));
+});
+
+it("locks nothing the Zotero database holds no fact for", async () => {
+  await using stack = new AsyncDisposableStack();
+  // Zotero holds an Annotation the database copy ZotLit reads does not have yet.
+  const unread = {
+    ...afterWrite("PUPR5FG5", {}),
+    key: "UNREAD23",
+    sortIndex: "00000|002050|00170",
+  };
+  const { repository, acquireRead } = await writable(
+    stack,
+    { children: () => annotationPage([...ROUGIER_ANNOTATIONS, unread]) },
+    { external: ["PUPR5FG5"] },
+  );
+
+  const read = locksOf(await repository.read("RGRPDF24"));
+  expect(read.UNREAD23).toBeNull();
+  expect(read.PUPR5FG5).toEqual({ reason: "external" });
+
+  // The database cannot be read, and the list still can.
+  acquireRead.mockRejectedValue(new Error("database is locked"));
+  const refreshed = await repository.refresh("RGRPDF24");
+  expect(refreshed?.source.kind).toBe("zotero-local-api");
+  expect(Object.values(locksOf(refreshed)).every((lock) => lock === null)).toBe(
+    true,
+  );
+});
+
+it("locks an Annotation Zotero imports from the PDF file while the Local API is the source", async () => {
+  await using stack = new AsyncDisposableStack();
+  const harness = await writable(stack);
+  expect(locksOf(await harness.repository.read("RGRPDF24"))).toEqual(
+    expectedLocks(),
+  );
+
+  await importFromPdf(harness, "PUPR5FG5");
+
+  expect(locksOf(harness.repository.peek("RGRPDF24")?.value ?? null)).toEqual(
+    expectedLocks("PUPR5FG5"),
+  );
+});
+
+it("refuses every verb on an External Annotation before any request", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, requests } = await writable(
+    stack,
+    {},
+    { external: ["PUPR5FG5"] },
+  );
+  const sent = requests.length;
+  const drawn: string[] = [];
+  stack.defer(repository.on("annotations-changed", (key) => drawn.push(key)));
+
+  const outcomes = [
+    await repository.patchColor("PUPR5FG5", "#ff6666"),
+    await repository.patchComment("PUPR5FG5", "Worth citing"),
+    await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5"), "pointer"),
+    await repository.deleteAnnotation("PUPR5FG5"),
+  ];
+
+  expect(outcomes).toEqual([LOCKED, LOCKED, LOCKED, LOCKED]);
+  // No draft starts, so no autosave and no Done can send one.
+  expect(repository.editTextField("comment", "PUPR5FG5", "typed")).toBeNull();
+  expect(repository.editTextField("text", "PUPR5FG5")).toBeNull();
+  expect(repository.editTags("PUPR5FG5", ["review"])).toBeNull();
+  expect(requests.slice(sent)).toEqual([]);
+  // No Pending Proposal was drawn, and no outcome stands on the card.
+  expect(drawn).toEqual([]);
+  expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
+});
+
+it("holds the drafts open when the lock appears, and sends none of them", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const harness = await writable(stack);
+    const { repository, requests } = harness;
+    repository.editTextField("comment", "PUPR5FG5", "typed before the import");
+    repository.editTextField("text", "PUPR5FG5", "Identify your message");
+    repository.editTags("PUPR5FG5", ["review"]);
+    const sent = requests.length;
+
+    await importFromPdf(harness, "PUPR5FG5");
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    // Done on either text field, and Apply again, send nothing.
+    expect(await repository.submitTextField("comment", "PUPR5FG5")).toEqual(
+      LOCKED,
+    );
+    expect(await repository.submitTextField("text", "PUPR5FG5")).toEqual(
+      LOCKED,
+    );
+    expect(await repository.retryTextDraft("comment", "PUPR5FG5")).toEqual(
+      LOCKED,
+    );
+    expect(await repository.submitTags("PUPR5FG5")).toEqual(LOCKED);
+    // A keystroke is not taken.
+    repository.editTextField("comment", "PUPR5FG5", "typed after the import");
+    expect(
+      requests.slice(sent).filter(({ method }) => method !== "GET"),
+    ).toEqual([]);
+
+    // The editor is read-only and says why; the held text keeps Discard alone.
+    const blocks = annotationBlocks({
+      annotation: recordOf(repository, "PUPR5FG5"),
+      capability: repository.capabilityFor("RGRPDF24"),
+      now: NOW,
+    });
+    const comment = repository.textDraftFor("comment", "PUPR5FG5");
+    expect(comment?.text).toBe("typed before the import");
+    expect(fieldEditorControls(blocks.comment, comment, NOW)).toMatchObject({
+      readOnly: true,
+      hint: m.annot_view_lock_external(),
+    });
+    const held = heldTextDraft(
+      "text",
+      repository.textDraftFor("text", "PUPR5FG5"),
+      {
+        block: blocks.text,
+        now: NOW,
+      },
+    );
+    expect(held).toMatchObject({
+      text: "Identify your message",
+      reason: m.annot_view_lock_external(),
+    });
+    expect(held?.actions.map(({ kind }) => kind)).toEqual(["discard"]);
+    const tags = heldTagDraft(
+      blocks.tags,
+      repository.tagDraftFor("PUPR5FG5"),
+      NOW,
+    );
+    expect(tags).toMatchObject({
+      names: ["review"],
+      reason: m.annot_view_lock_external(),
+    });
+    expect(tags?.actions.map(({ kind }) => kind)).toEqual(["discard"]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("keeps a Write Conflict that stands when the lock appears, and sends no Apply again", async () => {
+  await using stack = new AsyncDisposableStack();
+  const harness = await writable(stack, {
+    write: () => staleVersion(),
+    item: () => annotationItem(afterWrite("PUPR5FG5", { color: "#5fb236" })),
+  });
+  const { repository, requests } = harness;
+  const conflict = await repository.patchColor("PUPR5FG5", "#ff6666");
+  expect(conflict.kind).toBe("conflict");
+
+  await importFromPdf(harness, "PUPR5FG5");
+  const sent = requests.length;
+
+  expect(await repository.retryWrite("PUPR5FG5")).toEqual(LOCKED);
+  expect(repository.mutationFor("PUPR5FG5")).toEqual(conflict);
+  expect(requests.slice(sent).filter(({ method }) => method !== "GET")).toEqual(
+    [],
+  );
+});
+
+it("draws a lock the database moved while the list it gave is not published", async () => {
+  await using stack = new AsyncDisposableStack();
+  let answering = true;
+  const { repository, client, serverEvents, dbEvents } = await writable(stack, {
+    root: () => (answering ? rootOk() : unreachable()),
+    write: () => writeAccepted(38),
+    item: () => annotationItem(afterWrite("PUPR5FG5", { color: "#ff6666" })),
+  });
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+  answering = false;
+  const lost = nextChange(repository);
+  freshnessSignal(serverEvents);
+  await lost;
+
+  // The database is behind the colour Zotero confirmed, so the Local API
+  // list stays published over each list the database gives.
+  markExternal(client, "K3JRFLFQ");
+  dbEvents.emit("changed");
+
+  await vi.waitFor(async () => {
+    const held = await repository.read("RGRPDF24");
+    expect(held?.source.kind).toBe("zotero-local-api");
+    expect(colorOf(held, "PUPR5FG5")).toBe("#ff6666");
+    expect(locksOf(held)).toEqual(expectedLocks("K3JRFLFQ"));
+  });
+});
+
+it("keeps the History Steps of an Annotation the lock refuses where they stand", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const harness = await writable(stack, zotero.answers);
+  const { repository, requests } = harness;
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("K3JRFLFQ", "#5fb236");
+  await repository.patchColor("K3JRFLFQ", "#2ea8e5");
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+
+  await importFromPdf(harness, "K3JRFLFQ");
+  const sent = requests.length;
+
+  expect(await repository.undo("RGRPDF24")).toEqual({ kind: "blocked" });
+  expect(await repository.redo("RGRPDF24")).toEqual({ kind: "blocked" });
+  expect(repository.canUndo("RGRPDF24")).toBe(true);
+  expect(repository.canRedo("RGRPDF24")).toBe(true);
+  expect(zotero.at("K3JRFLFQ")?.color).toBe("#5fb236");
+  expect(requests.slice(sent).filter(({ method }) => method !== "GET")).toEqual(
+    [],
+  );
+});
+
+it("dims every verb of an External Annotation with the Lock Reason, and none of its neighbour's", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await writable(stack, {}, { external: ["PUPR5FG5"] });
+  const controls = (key: string) => {
+    const annotation = recordOf(repository, key);
+    return cardControls({
+      blocks: annotationBlocks({
+        annotation,
+        capability: repository.capabilityFor("RGRPDF24"),
+        now: NOW,
+      }),
+      mutation: repository.mutationFor(key),
+      hasTags: annotation.tags.length > 0,
+      type: annotation.type,
+    });
+  };
+
+  const locked = { disabled: false, blocked: EXTERNAL_BLOCK };
+  expect(controls("PUPR5FG5")).toMatchObject({
+    color: locked,
+    comment: locked,
+    tags: locked,
+    text: locked,
+    delete: locked,
+  });
+  const free = { disabled: false, blocked: null };
+  expect(controls("K3JRFLFQ")).toMatchObject({
+    color: free,
+    comment: free,
+    tags: free,
+    text: free,
+    delete: free,
+  });
+});
+
+it("gives the Editing Capability's reason where it refuses an External Annotation too", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, requests } = await writable(
+    stack,
+    {},
+    { key: undefined, external: ["PUPR5FG5"] },
+  );
+  const sent = requests.length;
+  const capability = repository.capabilityFor("RGRPDF24");
+
+  const blocks = annotationBlocks({
+    annotation: recordOf(repository, "PUPR5FG5"),
+    capability,
+    now: NOW,
+  });
+
+  const allow = capabilityBlock(capability, NOW);
+  expect(allow?.action).toBe("allow-editing");
+  expect(blocks).toEqual({
+    color: allow,
+    comment: allow,
+    tags: allow,
+    text: allow,
+    delete: allow,
+  });
+  expect(await repository.patchColor("PUPR5FG5", "#ff6666")).toEqual({
+    kind: "failed",
+    failure: { kind: "unauthorized" },
+  });
+  expect(requests.slice(sent)).toEqual([]);
 });
 
 // #endregion

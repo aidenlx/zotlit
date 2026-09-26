@@ -59,6 +59,8 @@ import type {
   HistoryStep,
   TagHistoryStep,
 } from "./history";
+import { lockOf, lockRefuses } from "./lock";
+import type { AnnotationLock, LockedVerb } from "./lock";
 import {
   resolvesSilently,
   sameStoredGeometry,
@@ -101,6 +103,7 @@ import type {
 } from "./write";
 
 export type { EditingCapability } from "./capability";
+export type { AnnotationLock, LockReason } from "./lock";
 export type {
   HistoryDirection,
   HistoryEditKind,
@@ -203,6 +206,16 @@ export interface AnnotationRecord {
    * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
    */
   version: number | null;
+  /**
+   * The lock Zotero's reader puts on this Annotation, or `null` where it has
+   * none. Both sources read it from the Zotero database, since the Local API
+   * sends no lock facts, and every list the repository answers carries the
+   * locks the database last gave; an Annotation the database does not hold
+   * yet has none.
+   *
+   * @see apps/obsidian/docs/adr/0066-annotation-locks-come-from-the-zotero-database.md
+   */
+  lock: AnnotationLock | null;
   /** Source facts used by annotation templates; absent facts stay unknown. */
   templateMetadata?: {
     dateAdded: string | null;
@@ -780,6 +793,25 @@ export class AnnotationRepository extends Service<void> {
   readonly #refreshes = new Map<string, Promise<AnnotationList | null>>();
   /** Verified database identity and revision for each Attachment read. */
   readonly #databaseSources = new Map<string, DatabaseAnnotationSource>();
+  /**
+   * The lock of each Annotation, by Attachment and then by Indexed Key, as the
+   * last read of the Zotero database gave it: the one source of truth every
+   * published list takes its locks from and every write is refused by. It is
+   * kept apart from the lists, so a lock the database moved stands even where
+   * a list is not published again.
+   *
+   * @see apps/obsidian/docs/adr/0066-annotation-locks-come-from-the-zotero-database.md
+   */
+  readonly #locks = new Map<string, ReadonlyMap<string, AnnotationLock>>();
+  /**
+   * Each list with {@link #locks} joined onto it, beside the locks it was
+   * joined with, so a list drawn again under the same locks keeps its
+   * identity and a surface that compares by identity does not redraw.
+   */
+  readonly #lockedLists = new WeakMap<
+    AnnotationList,
+    { locks: ReadonlyMap<string, AnnotationLock>; list: AnnotationList }
+  >();
   /** Last accepted database namespace, retained while a refresh is pending. */
   readonly #databaseServerIDs = new Map<string, string | null>();
   /** The whole collection currently published to both surfaces. */
@@ -845,7 +877,7 @@ export class AnnotationRepository extends Service<void> {
       );
       this.#reconcilePublishedDrafts(queryKey, attachmentKey, candidate);
       await this.#announceReadPixels(superseded, candidate);
-      return this.#withProposals(attachmentKey, candidate);
+      return this.#drawn(attachmentKey, candidate);
     }
     const published = this.#publishedLists.get(attachmentKey);
     if (
@@ -1033,6 +1065,8 @@ export class AnnotationRepository extends Service<void> {
       standing?.attachmentKey ?? held!.attachmentKey,
     );
     if (capability.kind !== "writable") return standing ?? null;
+    // A lock takes no keystroke either: a draft already standing is held.
+    if (this.#lockRefusal(annotationKey, field)) return standing ?? null;
     const baseline =
       standing?.baseline ?? TEXT_FIELD_SPECS[field].valueOf(held!.record) ?? "";
     const draft = standing
@@ -1101,6 +1135,9 @@ export class AnnotationRepository extends Service<void> {
           failure: this.#writeBlocked(draft.attachmentKey)!,
         });
     }
+    // A lock refuses the draft before it turns pending, queued or not.
+    const locked = this.#lockRefusal(annotationKey, field);
+    if (locked) return Promise.resolve({ kind: "failed", failure: locked });
     const submittedText = draft.text;
     this.#setDraft(field, { ...draft, state: { kind: "pending" } });
     return this.#sendText(field, draft, { submittedText, automatic });
@@ -1194,6 +1231,9 @@ export class AnnotationRepository extends Service<void> {
     );
     const saving = this.#savingText(field, annotationKey);
     if (saving) return this.#answerOf(saving);
+    // The draft and its Write Conflict stay as they stand.
+    const locked = this.#lockRefusal(annotationKey, field);
+    if (locked) return Promise.resolve({ kind: "failed", failure: locked });
     return this.#resendText(field, annotationKey, draft);
   }
 
@@ -1312,8 +1352,10 @@ export class AnnotationRepository extends Service<void> {
     // While editing is unavailable no session starts, but a standing one
     // still takes its editor's last names: the editor closing as editing goes
     // adds the text still typed, which the held draft keeps for Save tags.
-    if (capability.kind !== "writable" && (!standing || names === undefined))
-      return standing;
+    const refused =
+      capability.kind !== "writable" ||
+      !!this.#lockRefusal(annotationKey, "tags");
+    if (refused && (!standing || names === undefined)) return standing;
     const draft: TagDraft = standing
       ? {
           ...standing,
@@ -1371,7 +1413,9 @@ export class AnnotationRepository extends Service<void> {
       this.#setDraft("tags", { ...draft, manualSave: true, held: true });
       return IDLE;
     }
-    const blocked = this.#writeBlocked(draft.attachmentKey);
+    const blocked =
+      this.#writeBlocked(draft.attachmentKey) ??
+      this.#lockRefusal(annotationKey, "tags");
     if (blocked) {
       this.#setDraft("tags", {
         ...draft,
@@ -1867,7 +1911,12 @@ export class AnnotationRepository extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    stack.defer(this.#db.on("changed", () => this.#dropDatabasePartition()));
+    stack.defer(
+      this.#db.on("changed", () => {
+        this.#dropDatabasePartition();
+        void this.#refreshLocks();
+      }),
+    );
     stack.defer(this.#localApi.on("changed", () => this.#sourceMoved()));
     stack.defer(
       this.#localApi.on("capability-changed", () => {
@@ -1965,6 +2014,10 @@ export class AnnotationRepository extends Service<void> {
       gather?: GroupWrites;
     },
   ): Promise<MutationState> {
+    // A lock refuses the write before it is built, so no Pending Proposal is
+    // drawn and a Write Conflict standing on the Annotation stays.
+    const locked = this.#lockRefusal(annotationKey, command.write);
+    if (locked) return { kind: "failed", failure: locked };
     const expectedServerID = this.#localApi.demandSource()?.serverID ?? null;
     const generation = this.#commandGeneration;
     const held = this.#holding(annotationKey);
@@ -2201,6 +2254,15 @@ export class AnnotationRepository extends Service<void> {
     // An undo is a write, so it needs the Editing Capability like any other,
     // and the existing notice says why it did not run.
     if (this.#writeBlocked(attachmentKey)) return { kind: "blocked" };
+    // A lock on an Annotation the step writes refuses it before it is taken,
+    // so the step stays where it stands.
+    const verb = step.kind === "existence" ? "delete" : step.kind;
+    if (
+      step.changes.some(({ annotationKey }) =>
+        this.#lockRefusal(annotationKey, verb),
+      )
+    )
+      return { kind: "blocked" };
 
     this.#steppingAttachments.add(attachmentKey);
     try {
@@ -2914,6 +2976,28 @@ export class AnnotationRepository extends Service<void> {
     );
   }
 
+  /**
+   * The `locked` failure one verb meets on an Annotation, or `null` where its
+   * lock allows the verb. The Editing Capability keeps priority: where it
+   * refuses the write too, this answers `null`, and the write meets the
+   * capability's own refusal, whose reason can carry an action.
+   */
+  #lockRefusal(annotationKey: string, verb: LockedVerb): WriteFailure | null {
+    for (const [attachmentKey, locks] of this.#locks) {
+      const lock = locks.get(annotationKey);
+      if (!lock) continue;
+      if (!lockRefuses(lock, verb) || this.#writeBlocked(attachmentKey))
+        return null;
+      logger.debug("A lock refused a write", {
+        annotationKey,
+        verb,
+        reason: lock.reason,
+      });
+      return { kind: "locked", reason: lock.reason };
+    }
+    return null;
+  }
+
   #writeBlocked(attachmentKey: string): WriteFailure | null {
     const capability = this.#capability(attachmentKey);
     switch (capability.kind) {
@@ -3475,15 +3559,81 @@ export class AnnotationRepository extends Service<void> {
     attachmentKey: string,
     signal: AbortSignal,
   ): Promise<AnnotationList> {
-    const result = await this.#localApi.listAnnotations(attachmentKey, signal);
+    const [result] = await Promise.all([
+      this.#localApi.listAnnotations(attachmentKey, signal),
+      this.#readLocks(attachmentKey),
+    ]);
     if ("failure" in result) throw new LocalApiReadFailed(result.failure);
     return { source, annotations: result.value.map(fromLocalApi) };
+  }
+
+  /**
+   * Read the locks of one Attachment's Annotations from the Zotero database
+   * into {@link #locks}, beside a Zotero Local API list, whose item JSON
+   * carries no lock facts. The list itself stays wholly the Local API's (ADR
+   * 0034). A database that cannot be read gives no lock.
+   *
+   * @returns whether any lock of the Attachment moved.
+   * @see apps/obsidian/docs/adr/0066-annotation-locks-come-from-the-zotero-database.md
+   */
+  async #readLocks(attachmentKey: string): Promise<boolean> {
+    let annotations: readonly AnnotationRecord[] = [];
+    try {
+      using lease = await this.#db.acquireRead();
+      annotations = readAttachmentAnnotations(lease.client, attachmentKey);
+    } catch (error) {
+      logger.debug("No lock facts could be read from the Zotero database", {
+        attachmentKey,
+        error,
+      });
+    }
+    return this.#keepLocks(attachmentKey, annotations);
+  }
+
+  /**
+   * Keep the locks one database read gave an Attachment's Annotations.
+   *
+   * @returns whether any of them moved.
+   */
+  #keepLocks(
+    attachmentKey: string,
+    annotations: readonly AnnotationRecord[],
+  ): boolean {
+    const locks = new Map(
+      annotations.flatMap(({ key, lock }) =>
+        lock ? [[key, lock] as const] : [],
+      ),
+    );
+    const held = this.#locks.get(attachmentKey) ?? new Map();
+    this.#locks.set(attachmentKey, locks);
+    return (
+      held.size !== locks.size ||
+      [...locks].some(([key, lock]) => held.get(key)?.reason !== lock.reason)
+    );
+  }
+
+  /**
+   * A refreshed Zotero database may lock an Annotation a Zotero Local API list
+   * holds — Zotero imported it from the PDF file since the list was read — or
+   * unlock one. The list is not read again from Zotero: only the locks move,
+   * and each Attachment whose locks moved is announced, so its surfaces draw
+   * the list again with the new locks.
+   */
+  async #refreshLocks(): Promise<void> {
+    for (const attachmentKey of this.#locks.keys()) {
+      if (!(await this.#readLocks(attachmentKey))) continue;
+      logger.debug("A database refresh moved the locks of an Attachment", {
+        attachmentKey,
+      });
+      this.#emitter.emit("annotations-changed", attachmentKey);
+    }
   }
 
   async #readFromDatabase(attachmentKey: string): Promise<AnnotationList> {
     using lease = await this.#db.acquireRead();
     const annotations = readAttachmentAnnotations(lease.client, attachmentKey);
     const source = databaseAnnotationSource(lease.client, attachmentKey);
+    this.#keepLocks(attachmentKey, annotations);
     logger.debug("Annotations read from the Zotero database", {
       attachmentKey,
       annotations: annotations.length,
@@ -3620,7 +3770,7 @@ export class AnnotationRepository extends Service<void> {
   /** The published list as surfaces draw it: with every Pending Proposal. */
   #published(attachmentKey: string): Held<AnnotationList> | null {
     const confirmed = this.#publishedLists.get(attachmentKey);
-    const value = confirmed && this.#withProposals(attachmentKey, confirmed);
+    const value = confirmed && this.#drawn(attachmentKey, confirmed);
     return value
       ? {
           value,
@@ -3664,6 +3814,31 @@ export class AnnotationRepository extends Service<void> {
    * A proposal is drawn only over the list of the Zotero database it was sent
    * to. The list itself is answered while nothing is proposed.
    */
+  #drawn(attachmentKey: string, list: AnnotationList): AnnotationList {
+    return this.#withProposals(
+      attachmentKey,
+      this.#withLocks(attachmentKey, list),
+    );
+  }
+
+  /** One list with the locks the Zotero database last gave its Annotations. */
+  #withLocks(attachmentKey: string, list: AnnotationList): AnnotationList {
+    const locks = this.#locks.get(attachmentKey);
+    if (!locks) return list;
+    const joined = this.#lockedLists.get(list);
+    if (joined?.locks === locks) return joined.list;
+    let moved = false;
+    const annotations = list.annotations.map((record) => {
+      const lock = locks.get(record.key) ?? null;
+      if (record.lock?.reason === lock?.reason) return record;
+      moved = true;
+      return { ...record, lock };
+    });
+    const drawn = moved ? { ...list, annotations } : list;
+    this.#lockedLists.set(list, { locks, list: drawn });
+    return drawn;
+  }
+
   #withProposals(attachmentKey: string, list: AnnotationList): AnnotationList {
     if (list.source.kind !== "zotero-local-api") return list;
     const { serverID } = list.source;
@@ -4014,6 +4189,7 @@ function toRecord(
     tagDetails: annotation.tagDetails,
     position: parseAnnotationPosition(annotation.position, contentType),
     version: annotation.version,
+    lock: lockOf(annotation),
     templateMetadata: {
       dateAdded: annotation.dateAdded.toString(),
       dateModified: annotation.dateModified.toString(),
@@ -4029,7 +4205,11 @@ function templateTags(tags: readonly AnnotationTag[] | undefined) {
   return tags?.map(({ name, type }) => ({ name, type: tagTypeToName(type) }));
 }
 
-/** The Sort Index comes across: it orders the list, and a restore sends it back. */
+/**
+ * The Sort Index comes across: it orders the list, and a restore sends it back.
+ * The Local API sends no lock facts, so the record carries no lock; a list read
+ * puts the database's lock on it.
+ */
 function fromLocalApi({
   key,
   type,
@@ -4061,6 +4241,7 @@ function fromLocalApi({
     tagDetails,
     position,
     version,
+    lock: null,
     templateMetadata: {
       dateAdded,
       dateModified: dateModified ?? null,

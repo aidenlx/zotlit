@@ -109,9 +109,11 @@ export async function writable(
     key?: string;
     writeToken?: () => string;
     repositoryNow?: () => Temporal.Instant;
+    /** The Annotations Zotero imported from the PDF file, by key. */
+    external?: readonly string[];
   } = {},
 ) {
-  const { writeToken, repositoryNow } = options;
+  const { writeToken, repositoryNow, external } = options;
   // Named as `undefined` means "no Remembered Authorization", which is not the
   // same as leaving it out.
   const key = "key" in options ? options.key : REMEMBERED_KEY;
@@ -122,7 +124,7 @@ export async function writable(
       item: () => annotationItem(afterWrite("PUPR5FG5", { color: "#ff6666" })),
       ...answers,
     },
-    { key, writeToken, repositoryNow },
+    { key, writeToken, repositoryNow, external },
   );
   await switchToLocalApi(harness.repository);
   await harness.repository.read("RGRPDF24");
@@ -165,14 +167,22 @@ export async function setup(
     repositoryNow?: () => Temporal.Instant;
     /** What this device's persisted Excerpt Images were made from, by Annotation. */
     persistedExcerpt?: AnnotationRepositoryDeps["persistedExcerpt"];
+    /** The Annotations Zotero imported from the PDF file, by key. */
+    external?: readonly string[];
   } = {},
 ) {
-  const { writeToken, repositoryNow, persistedExcerpt, ...clientOptions } =
-    options;
+  const {
+    writeToken,
+    repositoryNow,
+    persistedExcerpt,
+    external = [],
+    ...clientOptions
+  } = options;
   const client = createClient(":memory:");
   stack.defer(() => client.$client.close());
   createFixtureSchema(client.$client);
   client.$client.exec(FIXTURE_ROWS);
+  for (const key of external) markExternal(client, key);
   client.$client.exec(
     `insert into version (schema, version) values ('userdata', 129), ('compatibility', 9);
      insert into libraries (libraryID, type, version, clientVersion) values (1, 'user', 0, 37);
@@ -224,6 +234,21 @@ export async function setup(
     serverEvents,
     prefEvents,
   };
+}
+
+/**
+ * Zotero imports one Annotation from the PDF file, as an External Annotation.
+ * A database refresh is what tells the repository.
+ */
+export function markExternal(
+  client: ReturnType<typeof createClient>,
+  key: string,
+): void {
+  client.$client
+    .prepare(
+      "update itemAnnotations set isExternal = 1 where itemID = (select itemID from items where key = ?)",
+    )
+    .run(key);
 }
 
 /** The next `annotations-changed` the repository emits, as a completion signal. */

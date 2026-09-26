@@ -11,6 +11,10 @@ import type { ResolvedAnnotationTypeName } from "@zotlit/db";
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
+import {
+  lockReasonText,
+  lockRefuses,
+} from "@/services/annotation-repository/lock";
 import type {
   AnnotationRecord,
   TagDraft,
@@ -32,14 +36,24 @@ import type {
 import type { FieldEditorWording } from "./field-editor";
 
 /**
- * Why a verb cannot act while the Editing Capability stands in its way, and the
- * one gesture that could change that — what the capability notice states.
+ * Why a verb cannot act while the Editing Capability or the Annotation's lock
+ * stands in its way, and the one gesture that could change that — what the
+ * notice of a press states.
  */
 export interface CardBlock {
   /** The capability's own sentence: its detail, or its label where it has none. */
   reason: string;
-  /** The gesture the notice offers, or `null` where nothing the user does helps. */
+  /**
+   * The gesture the notice offers, or `null` where nothing the user does
+   * helps — a lock among them.
+   */
   action: "allow-editing" | null;
+  /**
+   * What stands in the way. A lock is one no gesture in ZotLit ends, so a
+   * panel offers no verb that writes; under the Editing Capability it rests
+   * the verb dimmed until the capability returns.
+   */
+  source: "capability" | "lock";
 }
 
 /** One editing control: whether it runs, and what its tooltip says. */
@@ -124,17 +138,37 @@ export function capabilityBlocks(
 /**
  * Each verb's block on one Annotation: the one seam every surface reads its
  * verbs' blocks from, the card, the view's menus and the Mark Popup alike.
- * The Editing Capability's block comes first.
+ * The Editing Capability's block comes first, since its reason can carry an
+ * action and speaks for the whole Attachment; a verb it allows meets the
+ * Annotation's lock, whose block states the Lock Reason and has no action.
+ *
+ * @see apps/obsidian/docs/adr/0066-annotation-locks-come-from-the-zotero-database.md
  */
 export function annotationBlocks({
+  annotation: { lock },
   capability,
   now,
 }: {
-  annotation: AnnotationRecord;
+  annotation: Pick<AnnotationRecord, "lock">;
   capability: EditingCapability;
   now: Temporal.Instant;
 }): VerbBlocks {
-  return capabilityBlocks(capability, now);
+  const blocks = capabilityBlocks(capability, now);
+  if (lock === null) return blocks;
+  const locked: CardBlock = {
+    reason: lockReasonText(lock.reason),
+    action: null,
+    source: "lock",
+  };
+  const block = (verb: CardVerb): CardBlock | null =>
+    blocks[verb] ?? (lockRefuses(lock, verb) ? locked : null);
+  return {
+    color: block("color"),
+    comment: block("comment"),
+    tags: block("tags"),
+    text: block("text"),
+    delete: block("delete"),
+  };
 }
 
 /**
@@ -289,6 +323,7 @@ export function capabilityBlock(
     reason: copy.detail ?? copy.label,
     action:
       capability.kind === "authorization-required" ? "allow-editing" : null,
+    source: "capability",
   };
 }
 
@@ -337,7 +372,7 @@ function failedSaveReason(
 ): string {
   // A refused write and a refused editor are one state, so they say one
   // thing: the block's own sentence, as the blocked case says it.
-  if (failure.kind === "unauthorized")
+  if (failure.kind === "unauthorized" || failure.kind === "locked")
     return block?.reason ?? writeFailureMessage(failure, now);
   if (failure.kind === "unknown-outcome" || failure.kind === "unreachable")
     return m.annot_view_comment_unconfirmed();
@@ -585,20 +620,24 @@ function sameHeldActions(
 
 /**
  * The held-draft panel's verbs. Save wears the accent while it can act; where
- * it cannot, the grant that ends the refusal does.
+ * it cannot, the grant that ends the refusal does. A lock leaves Discard
+ * alone: no save of the draft can land.
  */
 function heldDraftActions(
   block: CardBlock | null,
   { save, saveDisabled }: { save: string; saveDisabled: boolean },
 ): HeldDraftAction[] {
-  const actions: HeldDraftAction[] = [
-    {
-      kind: "save",
-      label: save,
-      enabled: !saveDisabled,
-      primary: !saveDisabled,
-    },
-  ];
+  const actions: HeldDraftAction[] =
+    block?.source === "lock"
+      ? []
+      : [
+          {
+            kind: "save",
+            label: save,
+            enabled: !saveDisabled,
+            primary: !saveDisabled,
+          },
+        ];
   if (block?.action === "allow-editing") {
     actions.push({
       kind: "allow-editing",

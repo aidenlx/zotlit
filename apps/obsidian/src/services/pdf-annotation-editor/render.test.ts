@@ -595,6 +595,7 @@ it("drops an annotation whose position is not a PDF position", () => {
         "application/epub+zip",
       ),
       version: null,
+      lock: null,
     },
   ]);
 

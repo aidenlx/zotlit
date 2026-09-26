@@ -283,6 +283,7 @@ export function annotation(
       "application/pdf",
     ),
     version: null,
+    lock: null,
   };
 }
 

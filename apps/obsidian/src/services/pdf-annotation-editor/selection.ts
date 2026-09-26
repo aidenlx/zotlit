@@ -1230,7 +1230,7 @@ export class MarkSelection implements Disposable {
         attempted: draft.text,
         fresh: draft.state.fresh,
       },
-      live: input.blocks.comment === null,
+      block: input.blocks.comment,
       actions: this.#draftActions(annotation),
     };
   }

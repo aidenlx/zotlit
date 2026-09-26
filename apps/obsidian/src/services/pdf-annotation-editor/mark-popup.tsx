@@ -32,6 +32,7 @@ import type {
 } from "@/services/annotation-repository/write";
 import { cardControls } from "@/views/annot-view/card-controls";
 import type {
+  CardBlock,
   CardControl,
   HeldDraft,
   VerbBlocks,
@@ -365,7 +366,8 @@ export interface SelectedMarkPopupProps {
   /** A Write Conflict on the comment, while its draft stands. */
   conflict: {
     conflict: WriteConflict;
-    live: boolean;
+    /** What stands in the way of the comment, or `null` while it acts. */
+    block: CardBlock | null;
     actions: TextDraftActions;
   } | null;
   /** The tag section, while it stands. */
