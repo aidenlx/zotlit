@@ -1,3 +1,4 @@
+import { Keymap } from "obsidian";
 import {
   useContext,
   useEffect,
@@ -24,6 +25,7 @@ import {
 } from "@/lib/utils";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import type { ExcerptImage } from "@/services/excerpt-image/format";
+import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
 
 import { AnnotActionsContext } from "./actions";
 import type { AnnotActions } from "./actions";
@@ -45,6 +47,7 @@ import {
   ConflictPanelSlot,
   HeldDraftSlot,
 } from "./comment-parts";
+import { selectsCards } from "./comment-sheet";
 import type {
   CommentDraftActions,
   CommentSheet,
@@ -95,6 +98,11 @@ interface AnnotationProps {
   collapsed: boolean;
 }
 
+interface AnnotationCardProps extends AnnotationProps {
+  /** Whether this card is the card list's one tab stop. */
+  tabStop: boolean;
+}
+
 /**
  * Each control state is a fresh object, and the store is read through
  * `useSyncExternalStore`, which compares snapshots by identity — so it is built
@@ -122,10 +130,19 @@ function useCardControls(annot: AnnotationRecord): CardControls {
   );
 }
 
-export function Annotation({ annot, collapsed }: AnnotationProps) {
+/** One row of the card list's grid, its content in one cell. */
+export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
   const actions = useContext(AnnotActionsContext);
   const selected = useAnnotStore((s) =>
-    s.selectedAnnotationKeys.includes(annot.key),
+    s.cardSelection.selected.includes(annot.key),
+  );
+  /**
+   * A card selected alone opens its full text and brings up its verbs; one
+   * selected with others stays compact and shows the selected highlight only.
+   */
+  const alone = useAnnotStore(
+    ({ cardSelection: { selected } }) =>
+      selected.length === 1 && selected[0] === annot.key,
   );
   const editing = useAnnotStore((s) => s.editingCommentKey === annot.key);
   const controls = useCardControls(annot);
@@ -133,7 +150,7 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
 
   return (
     <div
-      className="zt-annot-card zt:group zt:flex zt:flex-col zt:gap-1.5 zt:overflow-hidden zt:rounded-(--bases-kanban-card-radius) zt:bg-(--bases-kanban-card-background) zt:px-3 zt:py-2 zt:text-xs zt:leading-(--line-height-tight) zt:shadow-(--bases-kanban-card-shadow) zt:data-selected:bg-primary/10 zt:data-selected:ring-1 zt:data-selected:ring-primary zt:motion-safe:transition-colors"
+      className="zt-annot-card zt:group zt:overflow-hidden zt:rounded-(--bases-kanban-card-radius) zt:bg-(--bases-kanban-card-background) zt:px-3 zt:py-2 zt:text-xs zt:leading-(--line-height-tight) zt:shadow-(--bases-kanban-card-shadow) zt:data-selected:bg-primary/10 zt:data-selected:ring-1 zt:data-selected:ring-primary zt:motion-safe:transition-colors"
       // The card is the surface Obsidian draws for a Bases card: its fill, its
       // radius and its hairline-and-drop shadow are read from the same theme
       // variables, so a theme that restyles Bases cards restyles these. Inside,
@@ -153,12 +170,28 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
       data-annot-color={annot.color ?? undefined}
       data-zotero-annotation-key={annot.key}
       data-selected={selected ? "" : undefined}
+      data-alone={alone ? "" : undefined}
+      role="row"
+      aria-selected={selected}
       // A card takes focus from a click and holds it, which is what the
       // Annotation History keys read to know the card is the surface the key
-      // belongs to. It stays out of the tab sequence: a list of hundreds of
-      // cards would otherwise be that many stops on the way past it, and each
-      // card's own controls are the stops that do something.
-      tabIndex={-1}
+      // belongs to. The list is one tab stop, and ↑ and ↓ move from there: a
+      // list of hundreds of cards would otherwise be that many stops on the
+      // way past it.
+      tabIndex={tabStop ? 0 : -1}
+      // Shift-click takes a range of cards, not a run of the page's text; a
+      // text field keeps its own Shift-click.
+      onMouseDown={(e) => {
+        if (!e.shiftKey || inTextEntry(e.target)) return;
+        // A control keeps its press, and the focus it takes.
+        const target = e.target as Node;
+        if (
+          target.instanceOf(Element) &&
+          target.closest('button, a, [role="button"]')
+        )
+          return;
+        e.preventDefault();
+      }}
       onClick={(e) => {
         // A control inside the card already answered this click; the card's
         // selection is not it, and the control keeps the focus.
@@ -166,51 +199,77 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
         // The list is already where the user clicked, so the focus moves
         // without scrolling it.
         e.currentTarget.focus({ preventScroll: true });
-        actions.onSelectAnnotation(annot);
+        actions.onSelectAnnotation(
+          annot,
+          e.shiftKey
+            ? "range"
+            : Keymap.isModifier(e.nativeEvent, "Mod")
+              ? "toggle"
+              : "click",
+        );
+      }}
+      // A right-click opens the "…" menu at the pointer. A text field keeps
+      // its own menu.
+      onContextMenu={(e) => {
+        if (inTextEntry(e.target)) return;
+        e.preventDefault();
+        e.currentTarget.focus({ preventScroll: true });
+        actions.onCardMenu(e, annot);
       }}
     >
-      {/* One 22px box metric for every member of the row, so the chip and the
-          verbs sit on one line rather than two: the card's `clickable-icon`
-          is the one Obsidian draws in a property row, a 14px glyph in 4px of
-          padding, set in `style.css`. The end control pulls back by that
-          padding, which lands its glyph on the card's text edge instead of
-          4px inside it. */}
-      <div className="zt:flex zt:items-center zt:gap-1">
-        <PageChip
-          type={annot.type}
-          page={annot.pageLabel}
-          color={annot.color}
-          backlink={actions.getBacklink(annot)}
-          onDragStart={(e) => {
-            // The ghost under the pointer is the whole card, held where the
-            // pointer took it, rather than the chip alone.
-            const card = e.currentTarget.closest(".zt-annot-card");
-            if (card?.instanceOf(HTMLElement)) {
-              const rect = card.getBoundingClientRect();
-              e.dataTransfer.setDragImage(
-                card,
-                e.clientX - rect.left,
-                e.clientY - rect.top,
-              );
-            }
-            actions.onDragStart(e, annot);
-          }}
-        />
-        <CardActionBar
+      {/* A grid row holds its content in a cell; the card's parts stack in it. */}
+      <div role="gridcell" className="zt:flex zt:flex-col zt:gap-1.5">
+        {/* One 22px box metric for every member of the row, so the chip and the
+            verbs sit on one line rather than two: the card's `clickable-icon`
+            is the one Obsidian draws in a property row, a 14px glyph in 4px of
+            padding, set in `style.css`. The end control pulls back by that
+            padding, which lands its glyph on the card's text edge instead of
+            4px inside it. */}
+        <div className="zt:flex zt:items-center zt:gap-1">
+          <PageChip
+            type={annot.type}
+            page={annot.pageLabel}
+            color={annot.color}
+            backlink={actions.getBacklink(annot)}
+            onDragStart={(e) => {
+              // The ghost under the pointer is the whole card, held where the
+              // pointer took it, rather than the chip alone.
+              const card = e.currentTarget.closest(".zt-annot-card");
+              if (card?.instanceOf(HTMLElement)) {
+                const rect = card.getBoundingClientRect();
+                e.dataTransfer.setDragImage(
+                  card,
+                  e.clientX - rect.left,
+                  e.clientY - rect.top,
+                );
+              }
+              actions.onDragStart(e, annot);
+            }}
+          />
+          <CardActionBar
+            annot={annot}
+            controls={controls}
+            editing={editing}
+            endSession={endSession}
+          />
+        </div>
+
+        <ConflictSlot annot={annot} />
+
+        <ExcerptBlock annot={annot} collapsed={collapsed && !alone} />
+
+        <CommentSlot
           annot={annot}
-          controls={controls}
           editing={editing}
+          control={controls.comment}
+        />
+
+        <TagSlot
+          annot={annot}
+          control={controls.tags}
           endSession={endSession}
         />
       </div>
-
-      <ConflictSlot annot={annot} />
-
-      <ExcerptBlock annot={annot} collapsed={collapsed} />
-
-      <CommentSlot annot={annot} editing={editing} control={controls.comment} />
-
-      <TagSlot annot={annot} control={controls.tags} endSession={endSession} />
     </div>
   );
 }
@@ -273,7 +332,7 @@ function cardHeldTagsActions(
  *
  * The three editing verbs — colour, comment and tags — rest dimmed and come
  * up to full on hover, while focus is inside the card so the keyboard reaches
- * them, and while the card is selected. The overflow control never dims: it is
+ * them, and while the card is selected alone. The overflow control never dims: it is
  * the only route to copying, revealing and deleting.
  *
  * @see apps/obsidian/src/services/pdf-annotation-editor/mark-popup.ts
@@ -320,7 +379,7 @@ function CardActionBar({
       {/* 70% is the floor the resting state can dim to and still read: at it
           the icon carries 3.26:1 against the header, and WCAG 1.4.11 asks 3:1
           of a control. 40% measured 1.84:1. */}
-      <div className="zt:flex zt:items-center zt:opacity-70 zt:group-focus-within:opacity-100 zt:group-hover:opacity-100 zt:group-data-selected:opacity-100 zt:motion-safe:transition-opacity">
+      <div className="zt:flex zt:items-center zt:opacity-70 zt:group-focus-within:opacity-100 zt:group-hover:opacity-100 zt:group-data-alone:opacity-100 zt:motion-safe:transition-opacity">
         <IconButton
           icon="palette"
           className={BLOCKED_VERB_DIM}
@@ -338,8 +397,8 @@ function CardActionBar({
           disabled={controls.comment.disabled}
           data-blocked={controls.comment.blocked ? "" : undefined}
           onClick={press(controls.comment, () => {
-            if (!editing) actions.onOpenComment(annot);
-            setEditing(editing ? null : annot.key);
+            if (editing) setEditing(null);
+            else if (actions.onOpenComment(annot)) setEditing(annot.key);
           })}
           {...tooltipAttrs(controls.comment.tooltip)}
         />
@@ -493,7 +552,12 @@ function TagRow({
       className="zt:flex zt:flex-wrap zt:gap-1 zt:data-editable:cursor-text"
       data-editable={onOpen ? "" : undefined}
       onClick={(e) => {
-        if (!onOpen || e.target !== e.currentTarget) return;
+        if (
+          !onOpen ||
+          e.target !== e.currentTarget ||
+          selectsCards(e.nativeEvent, "card")
+        )
+          return;
         claimClick(e);
         onOpen();
       }}
@@ -581,11 +645,19 @@ function HeldDraftPanel({
       surface="card"
       actions={cardDraftActions(actions, annot, held.text)}
       onOpen={() => {
-        actions.onOpenComment(annot);
-        setEditing(annot.key);
+        if (actions.onOpenComment(annot)) setEditing(annot.key);
       }}
       // The panel is the draft's own surface; the card's selection is not it.
-      onClick={claimClick}
+      // A Shift or Cmd/Ctrl click off its verbs is the card's own gesture.
+      onClick={(e) => {
+        const target = e.target as Node;
+        if (
+          selectsCards(e.nativeEvent, "card") &&
+          !(target.instanceOf(Element) && target.closest("button"))
+        )
+          return;
+        claimClick(e);
+      }}
     />
   );
 }
@@ -607,8 +679,7 @@ function Comment({
       html={annot.comment ?? ""}
       editable={editable}
       onOpen={() => {
-        actions.onOpenComment(annot);
-        setEditing(annot.key);
+        if (actions.onOpenComment(annot)) setEditing(annot.key);
       }}
     />
   );
@@ -619,8 +690,11 @@ function Comment({
  * caret at the end of what is already there. It is the shared comment sheet;
  * see {@link CommentSheetSlot}.
  *
- * Escape and blur store the text and close the editor. Ctrl/Command+Enter
- * stores it and keeps the editor open.
+ * Escape stores the text and closes the editor. Blur and Ctrl/Command+Enter
+ * store it and keep the editor open: a click in the PDF beside the card, or a
+ * menu that takes the focus, is not the end of the edit, and a reader change
+ * waits for the editor to close. A view gesture that changes the Card
+ * Selection closes it as well.
  */
 function CommentEditor({ annot }: { annot: AnnotationRecord }) {
   const actions = useContext(AnnotActionsContext);
@@ -647,6 +721,8 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
     setEditing(null);
     actions.onSaveComment(annot, text, true);
   };
+  /** Blur: the same automatic submit, with the editor left open. */
+  const saveOnLeave = (): void => actions.onSaveComment(annot, text, true);
   const store = (): void => {
     if (sheet.current) actions.onSaveComment(annot, sheet.current.text());
   };
@@ -665,7 +741,7 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
       onSubmit={store}
       onSave={store}
       onCancel={save}
-      onLeave={save}
+      onLeave={saveOnLeave}
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e: KeyboardEvent<HTMLDivElement>) => e.stopPropagation()}
     />

@@ -1,5 +1,6 @@
 import type { IconName } from "obsidian";
 import {
+  useCallback,
   useContext,
   useId,
   useLayoutEffect,
@@ -15,6 +16,7 @@ import * as m from "@/lib/i18n/generated/messages";
 
 import { AnnotActionsContext } from "./actions";
 import { Annotation } from "./Annotation";
+import { moveOrigin } from "./card-selection";
 import { filterAnnotations, isFilterActive } from "./filter";
 import { FilterBar } from "./FilterBar";
 import { annotViewBody, headerShape } from "./presentation";
@@ -30,6 +32,7 @@ import {
   useSetFilterQuery,
   useToggleSearchOpen,
 } from "./store";
+import { confineTabOrder } from "./tab-order";
 
 /**
  * Each shape `presentation.ts` derives is a fresh object, and the store is read
@@ -325,14 +328,29 @@ function SearchRow({
 }
 
 function AnnotList({ collapsed }: { collapsed: boolean }) {
+  const actions = useContext(AnnotActionsContext);
   const annotations = useAnnotStore((s) => s.annotations);
   const clearFilters = useClearFilters();
+  const gridRef = useRef<HTMLDivElement>(null);
+  const labelId = useId();
 
   const filter = useAnnotFilter();
   const filtered = useMemo(
     () => (annotations ? filterAnnotations(annotations, filter) : []),
     [annotations, filter],
   );
+  const visible = useMemo(() => filtered.map(({ key }) => key), [filtered]);
+  /** The list's one tab stop: the card a move steps from, else the first. */
+  const tabStop = useAnnotStore(
+    (s) => moveOrigin(s.cardSelection, visible) ?? visible[0] ?? null,
+  );
+  const tabOrder = useRef<Disposable | null>(null);
+  /** Only the tab stop's controls stay in the Tab order. */
+  const mountGrid = useCallback((grid: HTMLDivElement | null) => {
+    gridRef.current = grid;
+    tabOrder.current?.[Symbol.dispose]();
+    tabOrder.current = grid ? confineTabOrder(grid) : null;
+  }, []);
 
   if (isFilterActive(filter) && filtered.length === 0) {
     return (
@@ -349,10 +367,40 @@ function AnnotList({ collapsed }: { collapsed: boolean }) {
     // The tracks answer to the scroll box's own width through the container
     // query on it, and `items-start` keeps each card the height of its own
     // content rather than its row's.
-    <div className="annots-container zt:@container zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:py-3">
-      <div className="zt:grid zt:grid-cols-1 zt:items-start zt:gap-2 zt:@2xl:grid-cols-2 zt:@5xl:grid-cols-3">
+    //
+    // A click on the list's empty space, around or between the cards, closes
+    // an open card editor or clears the Card Selection.
+    <div
+      className="annots-container zt:@container zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:py-3"
+      onClick={(e) => {
+        if (e.target !== e.currentTarget && e.target !== gridRef.current)
+          return;
+        actions.onClearSelection();
+      }}
+    >
+      {/* The grid's name, held apart from the cards: an `aria-label` on the
+          grid would reach the pointer too, and Obsidian would draw it as a
+          hover tooltip over the whole list.
+          @see apps/obsidian/policies/tooltips.md */}
+      <span id={labelId} className="zt:sr-only">
+        {m.annot_view_name()}
+      </span>
+      {/* To assistive technology the cards are one column of rows, in list
+          order, however many tracks the layout draws them in. */}
+      <div
+        ref={mountGrid}
+        className="zt:grid zt:grid-cols-1 zt:items-start zt:gap-2 zt:@2xl:grid-cols-2 zt:@5xl:grid-cols-3"
+        role="grid"
+        aria-multiselectable="true"
+        aria-labelledby={labelId}
+      >
         {filtered.map((annot) => (
-          <Annotation key={annot.key} annot={annot} collapsed={collapsed} />
+          <Annotation
+            key={annot.key}
+            annot={annot}
+            collapsed={collapsed}
+            tabStop={annot.key === tabStop}
+          />
         ))}
       </div>
     </div>

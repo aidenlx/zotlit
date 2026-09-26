@@ -7,6 +7,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { RangeAdjustment, SelectedText } from "@zotlit/pdf-structure";
 
 import { AbortError } from "@/lib/abort-error";
+import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
+import * as confirmation from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
@@ -466,6 +468,117 @@ it("takes the selection a card sends through the Reader Session", async () => {
   expect([...h.selection.selected]).toEqual(["PARA7777"]);
   expect(h.reported).toEqual([["PARA7777"]]);
   expect(h.popup()?.staticPos).toEqual({ x: 300, y: 192 });
+});
+
+it("takes a group the Card Selection sends with no popup, and Escape clears it", async () => {
+  await using h = await setup();
+  click(h.page.div, ON_WORD);
+  expect(h.popup()).not.toBeNull();
+
+  h.selection.selectMarks(["PARA7777", "WRDS2222"]);
+  expect([...h.selection.selected]).toEqual(["PARA7777", "WRDS2222"]);
+  expect(h.reported.at(-1)).toEqual(["PARA7777", "WRDS2222"]);
+  expect(h.popup()).toBeNull();
+
+  key(h, "Escape");
+  expect(h.selection.selected.size).toBe(0);
+  expect(h.reported.at(-1)).toEqual([]);
+});
+
+it("recolours every mark of a group for a colour key, in one gesture", async () => {
+  await using h = await setup();
+  h.selection.selectMarks(["PARA7777", "WRDS2222"]);
+
+  key(h, "3");
+
+  const color = ANNOTATION_COLORS[2]!.toLowerCase();
+  await vi.waitFor(() => expect(h.zotero.at("PARA7777")?.color).toBe(color));
+  await vi.waitFor(() => expect(h.zotero.at("WRDS2222")?.color).toBe(color));
+  expect(h.writes().map(({ method, key }) => ({ method, key }))).toEqual([
+    { method: "PATCH", key: "PARA7777" },
+    { method: "PATCH", key: "WRDS2222" },
+  ]);
+});
+
+it("copies the text of every selected mark for Ctrl+C, by the Annotation View's rule", async () => {
+  await using h = await setup([
+    { ...PARAGRAPH, text: "Scientific visualization" },
+    { ...WORD, comment: "Check <b>this</b>" },
+  ]);
+  const write = vi
+    .spyOn(navigator.clipboard, "writeText")
+    .mockResolvedValue(undefined);
+  h.selection.selectMarks(["PARA7777", "WRDS2222"]);
+
+  const event = h.key({ key: "c", ctrlKey: true });
+
+  expect(event.defaultPrevented).toBe(true);
+  expect(write).toHaveBeenCalledExactlyOnceWith(
+    "Scientific visualization\n\nCheck this",
+  );
+});
+
+it("leaves Ctrl+C to a text selection in the PDF", async () => {
+  await using h = await setup([
+    { ...PARAGRAPH, text: "Scientific visualization" },
+  ]);
+  const write = vi
+    .spyOn(navigator.clipboard, "writeText")
+    .mockResolvedValue(undefined);
+  h.selection.selectMarks(["PARA7777"]);
+  vi.mocked(window.getSelection).mockReturnValue({
+    isCollapsed: false,
+    anchorNode: h.page.div,
+  } as unknown as Selection);
+
+  const event = h.key({ key: "c", ctrlKey: true });
+
+  expect(event.defaultPrevented).toBe(false);
+  expect(write).not.toHaveBeenCalled();
+});
+
+it("deletes every mark of a group for Delete, after one confirmation that counts them", async () => {
+  await using h = await setup();
+  using ask = vi.spyOn(confirmation, "confirm").mockResolvedValue(true);
+  h.selection.selectMarks(["PARA7777", "WRDS2222"]);
+
+  key(h, "Delete");
+
+  await vi.waitFor(() => expect(h.zotero.at("PARA7777")).toBeNull());
+  await vi.waitFor(() => expect(h.zotero.at("WRDS2222")).toBeNull());
+  expect(h.writes()).toEqual([
+    { method: "DELETE", key: "PARA7777", body: null },
+    { method: "DELETE", key: "WRDS2222", body: null },
+  ]);
+  expect(ask).toHaveBeenCalledOnce();
+  expect(ask.mock.calls[0]?.[0].title).toBe(
+    m.annot_view_delete_group_confirm_title({ count: 2 }),
+  );
+});
+
+it("keeps the marks of a group the last read still holds", async () => {
+  await using h = await setup();
+  h.selection.selectMarks(["PARA7777", "WRDS2222"]);
+
+  h.zotero.eraseInZotero("WRDS2222");
+  await h.repository.refresh("RGRPDF24");
+
+  await vi.waitFor(() =>
+    expect([...h.selection.selected]).toEqual(["PARA7777"]),
+  );
+  expect(h.reported.at(-1)).toEqual(["PARA7777"]);
+  // One mark left is a quiet selection: no popup opens over it.
+  expect(h.popup()).toBeNull();
+});
+
+it("reduces a group to one mark with the arrow keys", async () => {
+  await using h = await setup();
+  h.selection.selectMarks(["WRDS2222", "PARA7777"]);
+
+  // The walk starts from the group's first mark in reading order.
+  key(h, "ArrowDown");
+  expect([...h.selection.selected]).toEqual(["WRDS2222"]);
+  expect(h.navigated).toEqual(["WRDS2222"]);
 });
 
 it("walks reading order with the arrow keys, and brings the reader along", async () => {

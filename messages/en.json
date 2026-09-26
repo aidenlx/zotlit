@@ -2445,6 +2445,27 @@
   "annot_view_delete_confirm_title": "Delete annotation?",
   "annot_view_delete_confirm_content": "Zotero deletes this annotation. ZotLit can undo the delete while the PDF is still open in Obsidian. The restored annotation comes back under a new Zotero key, so links to the old key stop working.",
   "annot_view_delete_confirm_action": "Delete",
+  "annot_view_menu_delete_group": [
+    {
+      "declarations": ["input count", "local category = count: plural"],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "Delete 1 annotation",
+        "category=*": "Delete {count} annotations"
+      }
+    }
+  ],
+  "annot_view_delete_group_confirm_title": [
+    {
+      "declarations": ["input count", "local category = count: plural"],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "Delete 1 annotation?",
+        "category=*": "Delete {count} annotations?"
+      }
+    }
+  ],
+  "annot_view_delete_group_confirm_content": "Zotero deletes these annotations. ZotLit can undo the delete while the PDF is still open in Obsidian, and one undo restores all of them. The restored annotations come back under new Zotero keys, so links to the old keys stop working.",
   "annot_view_write_failed": "The edit was not saved. {reason}",
   "annot_view_write_reason_db_source": "ZotLit reads these annotations from the Zotero database, which it cannot edit.",
   "annot_view_write_reason_unknown_annotation": "ZotLit no longer holds this annotation. Refresh data and try again.",

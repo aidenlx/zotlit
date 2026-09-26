@@ -39,10 +39,10 @@ describe("the recent colours", () => {
 });
 
 describe("the colour menu", () => {
-  function build(color: string | null) {
+  function build(...colors: (string | null)[]) {
     const onSelect = vi.fn();
     const menu = new Menu();
-    buildColorMenu(menu as never, { color, onSelect });
+    buildColorMenu(menu as never, { colors, onSelect });
     return { menu, onSelect };
   }
 
@@ -67,6 +67,19 @@ describe("the colour menu", () => {
 
     expect(menu.items.filter((item) => item.checked)).toHaveLength(1);
     expect(menu.items[0]!.checked).toBe(true);
+  });
+
+  it("checks the swatch every Annotation of a group carries", () => {
+    const { menu } = build("#ffd400", "#FFD400");
+
+    expect(menu.items.filter((item) => item.checked)).toHaveLength(1);
+    expect(menu.items[0]!.checked).toBe(true);
+  });
+
+  it("checks no swatch for a group of mixed colours", () => {
+    const { menu } = build("#ffd400", "#ff6666");
+
+    expect(menu.items.filter((item) => item.checked)).toHaveLength(0);
   });
 
   it("recolours from the entry", () => {

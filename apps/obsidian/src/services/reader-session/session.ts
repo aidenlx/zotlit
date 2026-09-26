@@ -44,13 +44,13 @@ export interface ReaderSession {
   /** Indexed Keys of the Annotations selected in the reader. */
   readonly selected: readonly string[];
   /**
-   * Bring the reader to this Annotation. Called when a card is activated
-   * (aidenlx/zotlit#1148); the Annotation View reads the other direction today.
+   * Bring the reader to this Annotation. Called when a card is clicked; an
+   * Obsidian PDF view answers with a quiet Mark Landing.
    */
   navigateToAnnotation(annotationKey: string): void;
   /**
-   * Ask the reader to select these Annotations, and nothing else. Called from
-   * the card and the Mark Popup's stepper (aidenlx/zotlit#1148).
+   * Ask the reader to select these Annotations, and nothing else, to keep it
+   * in step with the Annotation View's Card Selection (ADR 0061).
    */
   setSelectedAnnotations(annotationKeys: readonly string[]): void;
   /**

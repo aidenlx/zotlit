@@ -46,6 +46,7 @@ import type { CommentSheetSlotProps } from "@/views/annot-view/comment-parts";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
 import { commentFrameClass } from "@/views/annot-view/comment-sheet";
 import type { CommentDraftActions } from "@/views/annot-view/comment-sheet";
+import { copiedText } from "@/views/annot-view/copied-text";
 
 import type { Point } from "./hit-test";
 import { MarkPopupTagSection } from "./mark-popup-tags";
@@ -184,7 +185,7 @@ export function markPopupRow({
         id: "copy",
         icon: "copy",
         tooltip: m.annot_view_menu_copy_text(),
-        disabled: annotation.text === null,
+        disabled: copiedText([annotation]) === "",
         pressed: null,
       },
       editing("delete", "trash-2", m.annot_view_menu_delete()),
