@@ -13,9 +13,10 @@ import type {
   EditingCapability,
   MutationState,
   TagDraft,
+  TextField,
   TextFieldDraft,
 } from "@/services/annotation-repository/service";
-import { IDLE } from "@/services/annotation-repository/write";
+import { byTextField, IDLE } from "@/services/annotation-repository/write";
 
 import { NO_SELECTION } from "./card-selection";
 import type { CardSelection } from "./card-selection";
@@ -37,24 +38,21 @@ export type FollowMode = "active-tab" | "zotero-reader" | "pinned";
  */
 export type AttachmentLock = "obsidian-pdf" | "zotero-reader" | null;
 
-/** A field of an Annotation that a card edits in place. */
-export type EditingField = "comment" | "tags" | "text";
-
-/** A field a card edits in the field editor: the comment or the Quoted Text. */
-export type TextEditingField = Exclude<EditingField, "tags">;
-
-/** Every {@link TextEditingField}. */
-export const TEXT_EDITING_FIELDS: readonly TextEditingField[] = [
-  "text",
-  "comment",
-];
+/**
+ * A field of an Annotation that a card edits in place: a text field in the
+ * field editor, or the tags in the tag editor.
+ */
+export type EditingField = TextField | "tags";
 
 /** One map of shared drafts per text field, each by Indexed Key. */
 export type FieldDrafts = Readonly<
-  Record<TextEditingField, ReadonlyMap<string, TextFieldDraft>>
+  Record<TextField, ReadonlyMap<string, TextFieldDraft>>
 >;
 
-const NO_FIELD_DRAFTS: FieldDrafts = { comment: new Map(), text: new Map() };
+/** A {@link FieldDrafts} that holds no draft. */
+export function noFieldDrafts(): FieldDrafts {
+  return byTextField(() => new Map());
+}
 
 /**
  * The Annotation View's one editing target: an Annotation and the field its
@@ -163,7 +161,7 @@ export function createAnnotStore() {
         // Nothing has probed Zotero yet, which is exactly what "probing" says.
         capability: { kind: "read-only", reason: "probing" },
         mutations: new Map(),
-        fieldDrafts: NO_FIELD_DRAFTS,
+        fieldDrafts: noFieldDrafts(),
         tagDrafts: new Map(),
         editing: null,
         cardSelection: NO_SELECTION,
@@ -204,7 +202,7 @@ export function editorOpen(state: Pick<AnnotState, "editing">): boolean {
 /** One text field's shared draft of one Annotation, while this view observes one. */
 export function fieldDraft(
   state: Pick<AnnotState, "fieldDrafts">,
-  field: TextEditingField,
+  field: TextField,
   annotationKey: string,
 ): TextFieldDraft | null {
   return state.fieldDrafts[field].get(annotationKey) ?? null;

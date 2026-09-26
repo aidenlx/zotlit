@@ -349,21 +349,20 @@ export function annotationReads(
     annotationState: vi.fn(
       (): AnnotationState => ({
         mutation: IDLE,
-        commentDraft: null,
-        textDraft: null,
+        textDrafts: { comment: null, text: null },
         tagDraft: null,
         hidden: false,
         gone: false,
       }),
     ),
-    commentDraftFor: vi.fn(() => null),
-    editComment: vi.fn(() => null),
-    submitComment: vi.fn(() => Promise.resolve(IDLE)),
+    textDraftFor: vi.fn(() => null),
+    editTextField: vi.fn(() => null),
+    submitTextField: vi.fn(() => Promise.resolve(IDLE)),
     editTags: vi.fn(() => null),
     submitTags: vi.fn(() => Promise.resolve(IDLE)),
-    discardCommentDraft: vi.fn(),
+    discardTextDraft: vi.fn(),
     discardTagDraft: vi.fn(),
-    retryCommentDraft: vi.fn(() => Promise.resolve(IDLE)),
+    retryTextDraft: vi.fn(() => Promise.resolve(IDLE)),
     patchColor: vi.fn(() => Promise.resolve(IDLE)),
     patchColors: vi.fn((keys: readonly string[]) =>
       Promise.resolve(keys.map(() => IDLE)),
@@ -425,9 +424,9 @@ export function capabilityGestures() {
   };
 }
 
-/** The one gesture the Mark Popup hands to its UI seam. */
+/** The gestures the Mark Popup hands to its UI seam. */
 export function markGestures() {
-  return { revealAnnotation: vi.fn() };
+  return { revealAnnotation: vi.fn(), blockedPress: vi.fn() };
 }
 
 /**
@@ -621,6 +620,7 @@ export function readerSurfaces({
   const listening = listenAnnotationEvents(store, annotations);
   const gestures = {
     revealAnnotation: vi.fn(),
+    blockedPress: vi.fn(),
     reportBlockedGesture: vi.fn(),
     allowEditing: vi.fn(),
   };

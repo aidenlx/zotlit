@@ -449,6 +449,21 @@ it("opens the comment sheet on c, and saves it with the create", async () => {
   expect(open.drafts.map(({ comment }) => comment)).toEqual(["worth quoting"]);
 });
 
+it("saves the comment with the create from the sheet's Done", async () => {
+  await using open = await reader();
+  await open.selectText();
+
+  open.press("c");
+  const editor = commentView(open.popup()!)!;
+  editor.dispatch({ changes: { from: 0, insert: "worth quoting" } });
+  [...open.popup()!.querySelectorAll("button")]
+    .find((button) => button.textContent === m.annot_view_editor_done())!
+    .click();
+  await open.creation.created;
+
+  expect(open.drafts.map(({ comment }) => comment)).toEqual(["worth quoting"]);
+});
+
 it("arms a tool with h and u while no selection is waiting", async () => {
   await using open = await reader();
   open.creation.mountToolbar(open.slot);

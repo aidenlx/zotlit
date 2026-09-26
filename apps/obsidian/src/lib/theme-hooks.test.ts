@@ -13,9 +13,13 @@ it("promises the Annotation View hooks by literal name", () => {
   expect({
     conflict: themeHook.annotConflict,
     draft: themeHook.annotDraft,
+    commentPencil: themeHook.annotCommentPencil,
+    addComment: themeHook.annotAddComment,
   }).toEqual({
     conflict: "zt-annot-conflict",
     draft: "zt-annot-draft",
+    commentPencil: "zt-annot-comment-pencil",
+    addComment: "zt-annot-add-comment",
   });
 });
 

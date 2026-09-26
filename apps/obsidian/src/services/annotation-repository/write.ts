@@ -41,13 +41,32 @@ export type WriteFailure =
    */
   | { kind: "position-too-large" };
 
+/**
+ * The Annotation fields typed as text in a field editor: the comment and the
+ * Quoted Text. Each one drafts, saves, conflicts, and records its History Step
+ * on the same rules, so a field added here reaches every one of them.
+ */
+export const TEXT_FIELDS = ["comment", "text"] as const;
+
+/** One of the {@link TEXT_FIELDS}, which also names its write. */
+export type TextField = (typeof TEXT_FIELDS)[number];
+
+/** Whether a write, or a field, is one of the {@link TEXT_FIELDS}. */
+export function isTextField(write: string): write is TextField {
+  return (TEXT_FIELDS as readonly string[]).includes(write);
+}
+
+/** One value per text field, each built by `build`. */
+export function byTextField<V>(
+  build: (field: TextField) => V,
+): Record<TextField, V> {
+  return Object.fromEntries(
+    TEXT_FIELDS.map((field) => [field, build(field)]),
+  ) as Record<TextField, V>;
+}
+
 /** Which editing verb a Write Conflict stands on. */
-export type ConflictedWrite =
-  | "color"
-  | "comment"
-  | "delete"
-  | "geometry"
-  | "text";
+export type ConflictedWrite = "color" | "delete" | "geometry" | TextField;
 
 /**
  * Zotero's copy of one Annotation moved between the read a write stamped its

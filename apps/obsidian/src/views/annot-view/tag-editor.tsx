@@ -21,8 +21,8 @@ import type { AnnotationRecord } from "@/services/annotation-repository/service"
 
 import { sameHeldTags } from "./card-controls";
 import type { HeldTags } from "./card-controls";
-import { renderHeldTagsPanel } from "./comment-sheet";
-import type { CommentSurface, HeldDraftActions } from "./comment-sheet";
+import { renderHeldTagsPanel } from "./editor-sheet";
+import type { EditorSurface, HeldDraftActions } from "./editor-sheet";
 import { tagChipVariants } from "./tag-chip";
 
 /**
@@ -339,7 +339,7 @@ export function HeldTagsPanel({
   actions,
 }: {
   held: HeldTags;
-  surface: CommentSurface;
+  surface: EditorSurface;
   actions: HeldDraftActions;
 }) {
   const ref = useRef<HTMLDivElement>(null);

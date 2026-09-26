@@ -1,7 +1,7 @@
-// The comment controls every surface that edits an Annotation's comment draws:
+// The controls every surface that edits an Annotation's text fields draws:
 // the editor sheet (the field editor, its status line, its Save button and
-// Done), the held-draft panel, and the Write Conflict panel. The editor sheet
-// takes the wording of the field it edits, so other text fields use it too.
+// Done), the held-draft panel, and the Write Conflict panel. Each takes the
+// wording of the field it stands for: the comment or the Quoted Text.
 //
 // Vanilla builders, which the Preact wrappers in `comment-parts.tsx` mount on
 // the Annotation Card and the reader's Mark Popup alike. What differs between
@@ -24,8 +24,11 @@ import { createFieldEditor } from "./field-editor";
 import type { FieldEditor, FieldEditorWording } from "./field-editor";
 import { tagChipVariants } from "./tag-chip";
 
-/** Where the controls stand: an Annotation Card, or the reader's Mark Popup. */
-export type CommentSurface = "card" | "excerpt" | "popup";
+/**
+ * Where the controls stand: an Annotation Card's comment, its Excerpt Block,
+ * or the reader's Mark Popup.
+ */
+export type EditorSurface = "card" | "excerpt" | "popup";
 
 /**
  * Obsidian's own text field — its fill, resting border and focus ring — drawn
@@ -51,7 +54,7 @@ const POPUP_WIDTH = "zt:w-0 zt:min-w-[max(100%,12em)]";
  * opening the editor over the rendered comment moves nothing.
  */
 const SURFACE: Record<
-  CommentSurface,
+  EditorSurface,
   {
     sheet: string;
     inset: string;
@@ -107,7 +110,7 @@ const SURFACE: Record<
  * the scoped Tailwind preflight. `zt-annot-comment` is the hook the view
  * stylesheet compacts them through.
  */
-export function commentViewClass(surface: CommentSurface): string {
+export function commentViewClass(surface: EditorSurface): string {
   return `markdown-rendered zt-annot-comment zt:overflow-x-auto zt:break-words zt:text-foreground zt:select-text ${SURFACE[surface].view}`;
 }
 
@@ -115,7 +118,7 @@ export function commentViewClass(surface: CommentSurface): string {
  * The classes of the element a surface stands the rendered comment in: the
  * popup's inset and width, where the card takes none.
  */
-export function commentFrameClass(surface: CommentSurface): string {
+export function commentFrameClass(surface: EditorSurface): string {
   const look = SURFACE[surface];
   return `${look.viewFrame} ${look.inset}`.trim();
 }
@@ -130,24 +133,6 @@ export interface EditorField extends FieldEditorWording {
   save: string;
 }
 
-/** The comment, as the editor sheet names it. */
-export function commentField(): EditorField {
-  return {
-    placeholder: m.annot_view_card_comment_placeholder(),
-    label: m.annot_view_card_edit_comment(),
-    save: m.annot_view_comment_save(),
-  };
-}
-
-/** The Quoted Text, as the field editor names it. */
-export function quotedTextField(): EditorField {
-  return {
-    placeholder: m.annot_view_card_text_placeholder(),
-    label: m.annot_view_card_text_label(),
-    save: m.annot_view_text_save(),
-  };
-}
-
 /** What the sheet says under its editor, and whether it takes a write. */
 export type EditorSheetStatus = Pick<
   ReturnType<typeof fieldEditorControls>,
@@ -156,7 +141,7 @@ export type EditorSheetStatus = Pick<
 
 export interface EditorSheetProps {
   app: App;
-  surface: CommentSurface;
+  surface: EditorSurface;
   /** The field the sheet edits: its placeholder, name and Save wording. */
   field: EditorField;
   /** What the editor opens with. */
@@ -322,7 +307,7 @@ function panel(
     hook,
     icon,
     title,
-  }: { surface: CommentSurface; hook: string; icon: string; title: string },
+  }: { surface: EditorSurface; hook: string; icon: string; title: string },
 ): HTMLElement {
   parent.empty();
   const look = SURFACE[surface];
@@ -400,7 +385,7 @@ export function renderHeldDraftPanel(
     surface,
     actions,
   }: {
-    surface: CommentSurface;
+    surface: EditorSurface;
     actions: HeldDraftActions;
   },
 ): void {
@@ -431,7 +416,7 @@ export function renderHeldTagsPanel(
     surface,
     actions,
   }: {
-    surface: CommentSurface;
+    surface: EditorSurface;
     actions: HeldDraftActions;
   },
 ): void {
@@ -497,7 +482,7 @@ export function renderConflictPanel(
     live,
     actions,
   }: {
-    surface: CommentSurface;
+    surface: EditorSurface;
     /** Whether the Editing Capability takes a write right now. */
     live: boolean;
     actions: ConflictActions;

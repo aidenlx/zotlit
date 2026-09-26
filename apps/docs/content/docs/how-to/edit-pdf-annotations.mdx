@@ -117,6 +117,21 @@ You can also select an annotation card, then select <UiLabel name={m.annot_view_
 
 If ZotLit detects that the comment changed in Zotero, it shows <UiLabel name={m.annot_view_conflict_title()} /> with both versions. Select <UiLabel name={m.annot_view_conflict_use_comment()} /> to save your draft over the Zotero comment, or <UiLabel name={m.annot_view_conflict_keep_zotero_comment()} /> to discard your draft.
 
+## Edit the quoted text
+
+The quoted text of a highlight or underline is the text of the PDF that it marks. Edit it when PDF text extraction got the text wrong, for example with ligatures, split hyphenated words, or wrong symbols. Editing must be enabled; see [Before you edit](#before-you-edit). You edit the quoted text in the annotation view only. The popup in the PDF has no control for it.
+
+1. In the annotation view, select the highlight or underline card, and no other card.
+2. In the card header, select <UiLabel name={m.annot_view_card_edit_text()} />. The editor opens in the place of the quoted text, with the cursor at the end. A click on the quoted text only selects the card.
+3. Correct the text. Press `Enter` to add a line break. Bold, italic, subscript, and superscript use the same keyboard shortcuts as in the comment editor.
+4. Press `Escape`, select <UiLabel name={m.annot_view_editor_done()} />, or select <UiLabel name={m.annot_view_card_edit_text()} /> again to save and close the editor.
+
+The quoted text saves as a comment does: after one second without typing, or after ten seconds of continuous typing. `Ctrl+Enter` (Windows) or `Command+Enter` (macOS) saves and keeps the editor open. A click outside the card, for example in the PDF, also saves and keeps the editor open. You can save an empty quoted text. The card then shows <UiLabel name={m.annot_view_card_no_text()} />.
+
+The change replaces only the text. The annotation keeps its position and its place in the annotation list order, and Zotero shows the new text. One editing session is one undo step; see [Undo and redo a change](#undo-and-redo-a-change).
+
+If the quoted text changed in Zotero while you edited it, the card shows <UiLabel name={m.annot_view_conflict_title()} /> with both versions. Select <UiLabel name={m.annot_view_conflict_use_text()} /> to save your text over the Zotero text, or <UiLabel name={m.annot_view_conflict_keep_zotero_text()} /> to discard your text. If a save fails, the card keeps your text. Select <UiLabel name={m.annot_view_text_save()} /> to try again.
+
 ## Change a color
 
 1. Select the annotation mark in the PDF.

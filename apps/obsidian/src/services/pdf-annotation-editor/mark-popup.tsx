@@ -46,9 +46,9 @@ import type {
   EditorSheetSlotProps,
 } from "@/views/annot-view/comment-parts";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
-import { commentFrameClass } from "@/views/annot-view/comment-sheet";
-import type { TextDraftActions } from "@/views/annot-view/comment-sheet";
 import { copiedText } from "@/views/annot-view/copied-text";
+import { commentFrameClass } from "@/views/annot-view/editor-sheet";
+import type { TextDraftActions } from "@/views/annot-view/editor-sheet";
 
 import type { Point } from "./hit-test";
 import { MarkPopupTagSection } from "./mark-popup-tags";
@@ -146,19 +146,14 @@ export function markPopupRow({
   tagging,
   now,
 }: MarkPopupRowInput): MarkPopupRow {
-  // The popup stands on one selected mark, as a card selected alone does,
-  // which is the card that offers the comment pencil.
   const { comment, ...controls } = cardControls({
     capability,
     mutation,
     hasComment: annotation.comment !== null,
     hasTags: annotation.tags.length > 0,
     type: annotation.type,
-    alone: true,
     now,
   });
-  if (!comment)
-    throw new Error("A card selected alone offers no comment pencil");
   const editing = (
     id: MarkPopupVerbId,
     icon: IconName,

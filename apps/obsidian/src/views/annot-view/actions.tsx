@@ -15,6 +15,7 @@ import type {
   AnnotationRecord,
   AnnotationRepository,
   MutationState,
+  TextField,
 } from "@/services/annotation-repository/service";
 import { writeFailureMessage } from "@/services/annotation-repository/write";
 import type {
@@ -37,7 +38,7 @@ import { copiedText } from "./copied-text";
 import type { ExcerptImageTarget } from "./excerpt-image-state";
 import { buildHeaderMenu } from "./menus";
 import { attachmentLine, headerMenu } from "./presentation";
-import type { AnnotState, FollowMode, TextEditingField } from "./store";
+import type { AnnotState, FollowMode } from "./store";
 
 export interface AnnotActions {
   /**
@@ -105,36 +106,34 @@ export interface AnnotActions {
    * open, the Card Selection clears.
    */
   onClearSelection(): void;
-  /** Store what the card's comment editor holds, from the gesture that closed it. */
-  onSaveComment(
+  /**
+   * Start one card's editing of a text field: a comment edit, or a Text Edit
+   * on the Quoted Text. A card not selected alone is first selected alone,
+   * and an open editor is first saved and closed.
+   *
+   * @returns whether a draft stands, which is when the editor opens.
+   */
+  onOpenField(annot: AnnotationRecord, field: TextField): boolean;
+  /** Take one change of a card's text field editor into the field's draft. */
+  onEditField(annot: AnnotationRecord, field: TextField, text: string): void;
+  /**
+   * Store what a card's text field editor holds, from the gesture that
+   * saved or closed it.
+   *
+   * @param save.automatic whether the editor asks by itself, as on blur or
+   *   close, rather than on the user's explicit save.
+   */
+  onSaveField(
     annot: AnnotationRecord,
-    comment: string,
-    automatic?: boolean,
+    field: TextField,
+    save: { text: string; automatic?: boolean },
   ): void;
-  /**
-   * Start one card's comment editing. A card not selected alone is first
-   * selected alone, and an open tag editor first ends its session.
-   *
-   * @returns whether a draft stands, which is when the editor opens.
-   */
-  onOpenComment(annot: AnnotationRecord): boolean;
-  onEditComment(annot: AnnotationRecord, comment: string): void;
-  /**
-   * Start one card's Text Edit. A card not selected alone is first selected
-   * alone, and an open editor is first saved and closed.
-   *
-   * @returns whether a draft stands, which is when the editor opens.
-   */
-  onOpenText(annot: AnnotationRecord): boolean;
-  onEditText(annot: AnnotationRecord, text: string): void;
-  /** Store what the card's Quoted Text editor holds, from the gesture that closed it. */
-  onSaveText(annot: AnnotationRecord, text: string, automatic?: boolean): void;
   /**
    * Drop one text field's held draft Zotero never took, from the card's
    * "Discard". Zotero's own value stands as it is, so the card behind the
    * panel already shows what the discard leaves.
    */
-  onDiscardDraft(annot: AnnotationRecord, field: TextEditingField): void;
+  onDiscardDraft(annot: AnnotationRecord, field: TextField): void;
   /**
    * Start or rejoin one card's tag editing session. A card not selected alone
    * is first selected alone, and an open comment editor is first saved and
@@ -186,14 +185,14 @@ export interface AnnotActions {
    * @param field the text field whose draft stands in the conflict; left
    *   out, the write the Annotation's standing conflict names.
    */
-  onApplyAgain(annot: AnnotationRecord, field?: TextEditingField): void;
+  onApplyAgain(annot: AnnotationRecord, field?: TextField): void;
   /**
    * Leave Zotero's copy as it stands, from the conflicted card's "Discard".
    *
    * @param field the text field whose draft stands in the conflict; left
    *   out, the write the Annotation's standing conflict names.
    */
-  onDiscardConflict(annot: AnnotationRecord, field?: TextEditingField): void;
+  onDiscardConflict(annot: AnnotationRecord, field?: TextField): void;
   /**
    * Open one card's demand on its Annotation's live Excerpt Image. The card
    * states what it paints and releases the demand as it goes.
@@ -222,20 +221,16 @@ export interface AnnotActionDeps {
     AnnotationRepository,
     | "deleteAnnotation"
     | "deleteAnnotations"
-    | "discardCommentDraft"
+    | "discardTextDraft"
     | "discardConflict"
-    | "discardQuotedTextDraft"
     | "discardTagDraft"
     | "patchColor"
     | "patchColors"
-    | "editComment"
-    | "editQuotedText"
+    | "editTextField"
     | "editTags"
-    | "retryCommentDraft"
-    | "retryQuotedTextDraft"
+    | "retryTextDraft"
     | "retryWrite"
-    | "submitComment"
-    | "submitQuotedText"
+    | "submitTextField"
     | "submitTags"
   >;
   /** The clock a failure notice reads a cooldown's remaining seconds against. */
@@ -300,22 +295,6 @@ export interface AnnotActionDeps {
   closeEditors: () => void;
   onExploreAnnotation: (annotationKey: string) => void;
 }
-
-/**
- * The repository verbs that end each text field's Annotation Draft: "Apply
- * again" on its Write Conflict, and "Discard" on the conflict or the held
- * draft. A field added here reaches every action that ends a draft.
- */
-const FIELD_DRAFT_VERBS = {
-  comment: { retry: "retryCommentDraft", discard: "discardCommentDraft" },
-  text: { retry: "retryQuotedTextDraft", discard: "discardQuotedTextDraft" },
-} as const satisfies Record<
-  TextEditingField,
-  {
-    retry: keyof AnnotActionDeps["annotations"];
-    discard: keyof AnnotActionDeps["annotations"];
-  }
->;
 
 export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   const now = deps.now ?? (() => Temporal.Now.instant());
@@ -404,42 +383,28 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
         .onClick(() => copyText(annots));
     });
   };
-  const onEditComment = (annot: AnnotationRecord, comment: string): void => {
-    deps.annotations.editComment(annot.key, comment);
-  };
-  const onOpenComment = (annot: AnnotationRecord): boolean => {
+  const onOpenField = (annot: AnnotationRecord, field: TextField): boolean => {
     deps.selectAlone(annot);
     deps.closeEditors();
-    return deps.annotations.editComment(annot.key) !== null;
+    return deps.annotations.editTextField(field, annot.key) !== null;
   };
-  const onSaveComment = (
+  const onEditField = (
     annot: AnnotationRecord,
-    comment: string,
-    automatic = false,
-  ): void => {
-    deps.annotations.editComment(annot.key, comment);
-    report(deps.annotations.submitComment(annot.key, { automatic }));
-  };
-  const onOpenText = (annot: AnnotationRecord): boolean => {
-    deps.selectAlone(annot);
-    deps.closeEditors();
-    return deps.annotations.editQuotedText(annot.key) !== null;
-  };
-  const onEditText = (annot: AnnotationRecord, text: string): void => {
-    deps.annotations.editQuotedText(annot.key, text);
-  };
-  const onSaveText = (
-    annot: AnnotationRecord,
+    field: TextField,
     text: string,
-    automatic = false,
   ): void => {
-    deps.annotations.editQuotedText(annot.key, text);
-    report(deps.annotations.submitQuotedText(annot.key, { automatic }));
+    deps.annotations.editTextField(field, annot.key, text);
   };
-  const onDiscardDraft = (
+  const onSaveField = (
     annot: AnnotationRecord,
-    field: TextEditingField,
-  ): void => deps.annotations[FIELD_DRAFT_VERBS[field].discard](annot.key);
+    field: TextField,
+    { text, automatic = false }: { text: string; automatic?: boolean },
+  ): void => {
+    deps.annotations.editTextField(field, annot.key, text);
+    report(deps.annotations.submitTextField(field, annot.key, { automatic }));
+  };
+  const onDiscardDraft = (annot: AnnotationRecord, field: TextField): void =>
+    deps.annotations.discardTextDraft(field, annot.key);
   const onOpenTags = (annot: AnnotationRecord): boolean => {
     deps.selectAlone(annot);
     deps.closeEditors();
@@ -470,21 +435,18 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
       annotationKeys: annots.map(({ key }) => key),
       now,
     });
-  const onApplyAgain = (
-    annot: AnnotationRecord,
-    field?: TextEditingField,
-  ): void =>
+  const onApplyAgain = (annot: AnnotationRecord, field?: TextField): void =>
     report(
       field
-        ? deps.annotations[FIELD_DRAFT_VERBS[field].retry](annot.key)
+        ? deps.annotations.retryTextDraft(field, annot.key)
         : deps.annotations.retryWrite(annot.key),
     );
   const onDiscardConflict = (
     annot: AnnotationRecord,
-    field?: TextEditingField,
+    field?: TextField,
   ): void =>
     field
-      ? deps.annotations[FIELD_DRAFT_VERBS[field].discard](annot.key)
+      ? deps.annotations.discardTextDraft(field, annot.key)
       : deps.annotations.discardConflict(annot.key);
   // Every key on a record is an Indexed Key, so the library it names travels
   // with it: the Zotero URI and the cache path both want the bare key beside
@@ -685,18 +647,15 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     getBacklink,
     openExcerptImage: () => deps.excerptDisplay.open(),
     excerptImageRequest: deps.excerptImageRequest,
-    onSaveComment,
     onOpenTags,
     onEditTags,
     onSaveTags,
     onDiscardTags,
     libraryTagNames: deps.libraryTagNames,
-    onOpenComment,
-    onEditComment,
+    onOpenField,
+    onEditField,
+    onSaveField,
     onDiscardDraft,
-    onOpenText,
-    onEditText,
-    onSaveText,
     onApplyAgain,
     onDiscardConflict,
     onDeleteSelection() {
@@ -791,13 +750,10 @@ const NOOP_ACTIONS: AnnotActions = {
   onEnableLiveUpdates: () => {},
   onSelectAnnotation: () => {},
   onClearSelection: () => {},
-  onSaveComment: () => {},
   onDiscardDraft: () => {},
-  onOpenComment: () => false,
-  onEditComment: () => {},
-  onOpenText: () => false,
-  onEditText: () => {},
-  onSaveText: () => {},
+  onOpenField: () => false,
+  onEditField: () => {},
+  onSaveField: () => {},
   onOpenTags: () => false,
   onEditTags: () => {},
   onSaveTags: () => {},

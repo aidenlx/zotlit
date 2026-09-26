@@ -6,7 +6,7 @@ import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   AnnotationRecord,
-  CommentDraft,
+  TextFieldDraft,
 } from "@/services/annotation-repository/service";
 import { IDLE, writePosition } from "@/services/annotation-repository/write";
 
@@ -226,8 +226,8 @@ function reader() {
 /** One Annotation's comment draft, as the repository holds it. */
 function draft(
   annotationKey: string,
-  state: CommentDraft["state"] = { kind: "editing" },
-): CommentDraft {
+  state: TextFieldDraft["state"] = { kind: "editing" },
+): TextFieldDraft {
   return {
     annotationKey,
     attachmentKey: "RGRPDF24",
@@ -429,7 +429,7 @@ it("takes a read's records with the drafts and write states that stood before it
   const { repository, zotero } = await repositoryOver(stack, [PARAGRAPH, WORD]);
   zotero.holdWrites();
   void repository.patchColor("PARA7777", "#ff6666");
-  repository.editComment("WRDS2222", "worth quoting");
+  repository.editTextField("comment", "WRDS2222", "worth quoting");
 
   ingestAnnotations(store, [PARAGRAPH, WORD], repository);
 
@@ -449,7 +449,7 @@ it("takes a write's state and a comment draft as the repository announces them",
   const release = zotero.holdWrites();
 
   const saving = repository.patchColor("PARA7777", "#ff6666");
-  repository.editComment("WRDS2222", "worth quoting");
+  repository.editTextField("comment", "WRDS2222", "worth quoting");
   expect(store.getState().mutations.get("PARA7777")).toEqual({
     kind: "pending",
     write: "color",
@@ -469,7 +469,7 @@ it("drops the selected mark Zotero erased while it held a draft", async () => {
   selectMark(store, "WRDS2222");
   const { repository, zotero } = await repositoryOver(stack, [PARAGRAPH, WORD]);
   using _listening = listenAnnotationEvents(store, repository);
-  repository.editComment("WRDS2222", "worth quoting");
+  repository.editTextField("comment", "WRDS2222", "worth quoting");
 
   zotero.eraseInZotero("WRDS2222");
   await repository.refresh("RGRPDF24");
@@ -487,7 +487,7 @@ it("takes no announcement once disposed", async () => {
   const listening = listenAnnotationEvents(store, repository);
 
   listening[Symbol.dispose]();
-  repository.editComment("WRDS2222", "worth quoting");
+  repository.editTextField("comment", "WRDS2222", "worth quoting");
 
   expect(store.getState().commentDrafts.has("WRDS2222")).toBe(false);
 });
@@ -607,7 +607,7 @@ it("closes the editors when a database switch hides their drafts", async () => {
   const zotero = await repositoryOver(stack, [PARAGRAPH, WORD]);
   const { repository } = zotero;
   using _listening = listenAnnotationEvents(store, repository);
-  repository.editComment("WRDS2222", "worth quoting");
+  repository.editTextField("comment", "WRDS2222", "worth quoting");
   setCommenting(store, true);
   repository.editTags("WRDS2222", ["to read"]);
   setTagging(store, true);

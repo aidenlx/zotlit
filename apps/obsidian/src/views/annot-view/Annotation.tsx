@@ -25,8 +25,10 @@ import {
 } from "@/lib/utils";
 import type {
   AnnotationRecord,
+  TextField,
   WriteConflict,
 } from "@/services/annotation-repository/service";
+import { isTextField } from "@/services/annotation-repository/write";
 import type { ExcerptImage } from "@/services/excerpt-image/format";
 import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
 
@@ -36,13 +38,13 @@ import {
   cardControls,
   fieldEditorControls,
   editingLive,
-  heldCommentDraft,
-  heldQuotedTextDraft,
   heldTagDraft,
+  heldTextDraft,
   hasQuotedText,
   shownText,
   shownTagNames,
   tagEditorControls,
+  textFieldWording,
 } from "./card-controls";
 import type { CardControl, CardControls, HeldDraft } from "./card-controls";
 import {
@@ -54,14 +56,12 @@ import {
   controlPencil,
   HeldDraftSlot,
 } from "./comment-parts";
-import { commentField, quotedTextField } from "./comment-sheet";
 import type {
-  CommentSurface,
-  EditorField,
+  EditorSurface,
   EditorSheet,
   HeldDraftActions,
   TextDraftActions,
-} from "./comment-sheet";
+} from "./editor-sheet";
 import {
   excerptImageOwnership,
   excerptImageTarget,
@@ -79,7 +79,6 @@ import {
   useMutation,
   useToggleSelectedTag,
 } from "./store";
-import type { TextEditingField } from "./store";
 import { tagChipVariants } from "./tag-chip";
 import { autoTags, HeldTagsPanel, TagEditor } from "./tag-editor";
 import type { EndTagSession } from "./tag-editor";
@@ -116,36 +115,41 @@ interface AnnotationCardProps extends AnnotationProps {
 }
 
 /**
+ * The controls one card offers. The comment pencil and "Edit text" stand only
+ * on a card selected alone, so the other cards in the list stay compact (ADR
+ * 0060).
+ */
+interface CardOffer extends Omit<CardControls, "comment"> {
+  /** The comment pencil, or `null` where the card does not offer it. */
+  comment: CardControl | null;
+}
+
+/**
  * Each control state is a fresh object, and the store is read through
  * `useSyncExternalStore`, which compares snapshots by identity — so it is built
  * from the slices it depends on and held while those are unchanged.
  *
  * @see https://github.com/aidenlx/zotlit/issues/1146
  */
-function useCardControls(
-  annot: AnnotationRecord,
-  alone: boolean,
-): CardControls {
+function useCardControls(annot: AnnotationRecord, alone: boolean): CardOffer {
   const capability = useAnnotStore((s) => s.capability);
   const mutation = useMutation(annot.key);
   const hasComment = annot.comment !== null;
   const hasTags = annot.tags.length > 0;
   const { type } = annot;
-  return useMemo(
-    () =>
-      cardControls({
-        capability,
-        mutation,
-        hasComment,
-        hasTags,
-        type,
-        alone,
-        // A card's tooltip is read at the moment it is drawn; the ticking
-        // countdown belongs to the toolbar affordance, not to every card.
-        now: Temporal.Now.instant(),
-      }),
-    [capability, mutation, hasComment, hasTags, type, alone],
-  );
+  return useMemo(() => {
+    const controls = cardControls({
+      capability,
+      mutation,
+      hasComment,
+      hasTags,
+      type,
+      // A card's tooltip is read at the moment it is drawn; the ticking
+      // countdown belongs to the toolbar affordance, not to every card.
+      now: Temporal.Now.instant(),
+    });
+    return alone ? controls : { ...controls, comment: null, text: null };
+  }, [capability, mutation, hasComment, hasTags, type, alone]);
 }
 
 /** One row of the card list's grid, its content in one cell. */
@@ -307,9 +311,9 @@ function ConflictSlot({ annot }: { annot: AnnotationRecord }) {
   const drafted = useAnnotStore(
     (state) =>
       mutation.kind === "conflict" &&
-      mutation.conflict.write in CARD_FIELDS &&
-      fieldDraft(state, mutation.conflict.write as TextEditingField, annot.key)
-        ?.state.kind === "conflict",
+      isTextField(mutation.conflict.write) &&
+      fieldDraft(state, mutation.conflict.write, annot.key)?.state.kind ===
+        "conflict",
   );
   if (mutation.kind !== "conflict" || drafted) return null;
   return (
@@ -335,10 +339,10 @@ function ConflictSlot({ annot }: { annot: AnnotationRecord }) {
 function fieldDraftActions(
   actions: AnnotActions,
   annot: AnnotationRecord,
-  { field, text }: { field: TextEditingField; text: string },
+  { field, text }: { field: TextField; text: string },
 ): TextDraftActions {
   return {
-    save: () => CARD_FIELDS[field].save(actions)(annot, text),
+    save: () => actions.onSaveField(annot, field, { text }),
     allowEditing: () => actions.onAllowEditing(),
     discard: () => actions.onDiscardDraft(annot, field),
     applyAgain: () => actions.onApplyAgain(annot, field),
@@ -377,7 +381,7 @@ function CardActionBar({
   endSession,
 }: {
   annot: AnnotationRecord;
-  controls: CardControls;
+  controls: CardOffer;
   /** Ends the open tag session through its editor, typed text and all. */
   endSession: RefObject<EndTagSession | null>;
 }) {
@@ -657,7 +661,7 @@ type FieldDraftPanelState =
  */
 function useFieldDraftPanel(
   annot: AnnotationRecord,
-  field: TextEditingField,
+  field: TextField,
 ): FieldDraftPanelState | null {
   const draft = useAnnotStore((state) => fieldDraft(state, field, annot.key));
   const capability = useAnnotStore((state) => state.capability);
@@ -675,11 +679,10 @@ function useFieldDraftPanel(
         text: draft.text,
       };
     }
-    const held = CARD_FIELDS[field].held(
+    const held = heldTextDraft(field, draft, {
       capability,
-      draft,
-      Temporal.Now.instant(),
-    );
+      now: Temporal.Now.instant(),
+    });
     return held && { kind: "held", held };
   }, [field, capability, draft]);
 }
@@ -701,12 +704,12 @@ function FieldDraftPanel({
   panel,
 }: {
   annot: AnnotationRecord;
-  field: TextEditingField;
+  field: TextField;
   panel: FieldDraftPanelState;
 }) {
   const actions = useContext(AnnotActionsContext);
   const live = useAnnotStore((state) => editingLive(state.capability));
-  const surface = CARD_FIELDS[field].surface;
+  const surface = FIELD_SURFACE[field];
   if (panel.kind === "conflict") {
     return (
       <ConflictPanelSlot
@@ -733,58 +736,19 @@ function FieldDraftPanel({
 }
 
 /**
- * What the card reads and calls for each text field: its editor's wording,
- * the confirmed value the editor opens on, the actions that edit and save its
- * draft, and where and how its held draft is announced.
+ * Where each text field's editor and panels stand on the card: the comment
+ * under the excerpt, and the Quoted Text inside the Excerpt Block, beside the
+ * colour rule.
  */
-const CARD_FIELDS: Record<
-  TextEditingField,
-  {
-    wording: () => EditorField;
-    confirmed: (annot: AnnotationRecord) => string | null;
-    /** The action that starts the field's draft, or refuses to. */
-    open: (actions: AnnotActions) => AnnotActions["onOpenComment"];
-    /** The action that takes each change into the field's draft. */
-    edit: (actions: AnnotActions) => AnnotActions["onEditComment"];
-    /** The action that stores the field's text, automatically or on request. */
-    save: (actions: AnnotActions) => AnnotActions["onSaveComment"];
-    /** What the card announces about the field's held draft. */
-    held: typeof heldCommentDraft;
-    /** Where the field's panels stand on the card. */
-    surface: CommentSurface;
-  }
-> = {
-  comment: {
-    wording: commentField,
-    confirmed: (annot) => annot.comment,
-    open: (actions) => (annot) => actions.onOpenComment(annot),
-    edit: (actions) => actions.onEditComment,
-    save: (actions) => actions.onSaveComment,
-    held: heldCommentDraft,
-    surface: "card",
-  },
-  text: {
-    wording: quotedTextField,
-    confirmed: (annot) => annot.text,
-    open: (actions) => (annot) => actions.onOpenText(annot),
-    edit: (actions) => actions.onEditText,
-    save: (actions) => actions.onSaveText,
-    held: heldQuotedTextDraft,
-    // Inside the Excerpt Block, beside the colour rule.
-    surface: "excerpt",
-  },
+const FIELD_SURFACE: Record<TextField, EditorSurface> = {
+  comment: "card",
+  text: "excerpt",
 };
 
 /** The text one field's editor opens on: its draft's, or the confirmed value. */
-function useShownText(
-  annot: AnnotationRecord,
-  field: TextEditingField,
-): string {
+function useShownText(annot: AnnotationRecord, field: TextField): string {
   return useAnnotStore((state) =>
-    shownText(
-      CARD_FIELDS[field].confirmed(annot),
-      fieldDraft(state, field, annot.key),
-    ),
+    shownText(annot[field], fieldDraft(state, field, annot.key)),
   );
 }
 
@@ -792,12 +756,11 @@ function useShownText(
  * One text field's editor as its control reads it: whether it is open, the
  * one save that closes it, and what a press on the control does.
  */
-function useFieldEditing(annot: AnnotationRecord, field: TextEditingField) {
+function useFieldEditing(annot: AnnotationRecord, field: TextField) {
   const actions = useContext(AnnotActionsContext);
   const target = useEditingTarget(annot.key, field);
   const open = useAnnotStore((s) => isEditing(s, annot.key, field));
   const text = useShownText(annot, field);
-  const spec = CARD_FIELDS[field];
   // Every close asks for the submit, including one that changed nothing: the
   // request is what drops a draft holding only what Zotero already has, so
   // clicking the card out of an untouched editor leaves no held text behind.
@@ -807,7 +770,7 @@ function useFieldEditing(annot: AnnotationRecord, field: TextEditingField) {
   // The editor's own close passes the text its sheet holds.
   const saveAndClose = (typed: string = text): void => {
     target.close();
-    spec.save(actions)(annot, typed, true);
+    actions.onSaveField(annot, field, { text: typed, automatic: true });
   };
   return {
     open,
@@ -822,7 +785,7 @@ function useFieldEditing(annot: AnnotationRecord, field: TextEditingField) {
     press: (control: CardControl): void => {
       if (open) saveAndClose();
       else if (control.blocked) actions.onBlockedPress(control.blocked);
-      else if (spec.open(actions)(annot)) target.open();
+      else if (actions.onOpenField(annot, field)) target.open();
     },
   };
 }
@@ -844,11 +807,10 @@ function FieldEditor({
   field,
 }: {
   annot: AnnotationRecord;
-  field: TextEditingField;
+  field: TextField;
 }) {
   const actions = useContext(AnnotActionsContext);
   const { text, saveAndClose } = useFieldEditing(annot, field);
-  const spec = CARD_FIELDS[field];
   const capability = useAnnotStore((state) => state.capability);
   const draft = useAnnotStore((state) => fieldDraft(state, field, annot.key));
   const controls = fieldEditorControls(
@@ -862,9 +824,11 @@ function FieldEditor({
   /** What the editor holds now, or the draft's text before it mounts. */
   const editorText = (): string => sheet.current?.text() ?? text;
   /** Blur: the same automatic submit, with the editor left open. */
-  const saveOnLeave = (): void => spec.save(actions)(annot, editorText(), true);
+  const saveOnLeave = (): void =>
+    actions.onSaveField(annot, field, { text: editorText(), automatic: true });
   const store = (): void => {
-    if (sheet.current) spec.save(actions)(annot, sheet.current.text());
+    if (sheet.current)
+      actions.onSaveField(annot, field, { text: sheet.current.text() });
   };
 
   return (
@@ -873,12 +837,12 @@ function FieldEditor({
     <EditorSheetSlot
       app={app}
       surface="card"
-      field={spec.wording()}
+      field={textFieldWording(field)}
       value={text}
       text={text}
       status={controls}
       sheetRef={sheet}
-      onChange={(value) => spec.edit(actions)(annot, value)}
+      onChange={(value) => actions.onEditField(annot, field, value)}
       onSubmit={store}
       onSave={store}
       onCancel={() => saveAndClose(editorText())}

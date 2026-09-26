@@ -12,8 +12,10 @@ import * as confirmation from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
-import { libraryReadOnly } from "@/services/zotero-local-api/__fixtures__";
-import * as cardVerbs from "@/views/annot-view/card-verbs";
+import {
+  libraryReadOnly,
+  staleVersionPatch,
+} from "@/services/zotero-local-api/__fixtures__";
 
 import {
   annotation,
@@ -669,9 +671,7 @@ it("hands the reveal verb to the Annotation Card", async () => {
 
   popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='reveal']")!.click();
 
-  expect(h.gestures.revealAnnotation).toHaveBeenCalledWith("WRDS2222", {
-    comment: false,
-  });
+  expect(h.gestures.revealAnnotation).toHaveBeenCalledWith("WRDS2222");
 });
 
 it("deletes from the popup's own verb", async () => {
@@ -776,7 +776,7 @@ it("takes a draft typed in the Annotation View into the open editor, keeping the
     selection: { anchor: 2 },
   });
 
-  h.repository.editComment("WRDS2222", "worth quoting");
+  h.repository.editTextField("comment", "WRDS2222", "worth quoting");
 
   expect(commentView(popup.hoverEl)).toBe(editor);
   expect(editor.state.doc.toString()).toBe("worth quoting");
@@ -823,11 +823,11 @@ it("keeps the row as it stands while a comment write is in flight", async () => 
         el.getAttribute("aria-disabled"),
       ],
     );
-  h.repository.editComment("WRDS2222", "<p>worth citing</p>");
+  h.repository.editTextField("comment", "WRDS2222", "<p>worth citing</p>");
   const drawn = verbs();
   const release = h.zotero.holdWrites();
 
-  const saving = h.repository.submitComment("WRDS2222");
+  const saving = h.repository.submitTextField("comment", "WRDS2222");
   await reread(h);
   expect(h.store.getState().mutations.get("WRDS2222")).toEqual({
     kind: "pending",
@@ -963,9 +963,6 @@ it("draws the comment read-only while a write is pending on it", async () => {
 });
 
 it("keeps a blocked pencil in the tab order, and spends its press on the reason", async () => {
-  const notice = vi
-    .spyOn(cardVerbs, "blockedNotice")
-    .mockImplementation(() => {});
   await using h = await setup([PARAGRAPH, COMMENTED], {
     kind: "authorization-required",
   });
@@ -978,12 +975,9 @@ it("keeps a blocked pencil in the tab order, and spends its press on the reason"
 
   expect(h.store.getState().floating).toMatchObject({ commenting: false });
   expect(commentView(popup.hoverEl)).toBeNull();
-  expect(notice).toHaveBeenCalledOnce();
-  const [block, allowEditing] = notice.mock.calls[0]!;
-  expect(block.action).toBe("allow-editing");
-  allowEditing();
-  expect(h.gestures.allowEditing).toHaveBeenCalledOnce();
-  notice.mockRestore();
+  expect(h.gestures.blockedPress).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ action: "allow-editing" }),
+  );
 });
 
 it('adds a comment from the "Add a comment…" line, and saves and closes on a second press', async () => {
@@ -1008,10 +1002,51 @@ it('adds a comment from the "Add a comment…" line, and saves and closes on a s
   );
 });
 
+it("keeps the comment's Write Conflict through a later conflict on the Quoted Text", async () => {
+  await using h = await setup([PARAGRAPH, COMMENTED]);
+  h.zotero.changeInZotero("WRDS2222", { comment: "<p>theirs</p>" });
+  h.zotero.answerNextWrite(() => staleVersionPatch());
+  h.repository.editTextField("comment", "WRDS2222", "<p>mine</p>");
+  await h.repository.submitTextField("comment", "WRDS2222");
+  h.selection.select("WRDS2222");
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  const conflict = () => popup.hoverEl.querySelector(".zt-annot-conflict");
+  expect(conflict()).not.toBeNull();
+
+  // A Text Edit meets a conflict of its own after it, so the Annotation's
+  // latest outcome is the Quoted Text's.
+  h.zotero.changeInZotero("WRDS2222", { text: "theirs" });
+  h.zotero.answerNextWrite(() => staleVersionPatch());
+  h.repository.editTextField("text", "WRDS2222", "mine");
+  await h.repository.submitTextField("text", "WRDS2222");
+  expect(h.repository.mutationFor("WRDS2222")).toMatchObject({
+    conflict: { write: "text" },
+  });
+
+  expect(conflict()).not.toBeNull();
+});
+
+it("saves and closes the comment editor from its Done", async () => {
+  await using h = await setup([PARAGRAPH, COMMENTED]);
+  h.selection.select("PARA7777");
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  commentPencil(popup.hoverEl)!.click();
+  commentView(popup.hoverEl)!.dispatch({
+    changes: { from: 0, insert: "done note" },
+  });
+
+  [...popup.hoverEl.querySelectorAll("button")]
+    .find((button) => button.textContent === m.annot_view_editor_done())!
+    .click();
+
+  expect(commentView(popup.hoverEl)).toBeNull();
+  expect(h.store.getState().floating).toMatchObject({ commenting: false });
+  await vi.waitFor(() =>
+    expect(h.zotero.at("PARA7777")?.comment).toBe("done note"),
+  );
+});
+
 it("closes the open editor from its pencil after editing became blocked", async () => {
-  const notice = vi
-    .spyOn(cardVerbs, "blockedNotice")
-    .mockImplementation(() => {});
   await using h = await setup([PARAGRAPH, COMMENTED]);
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
@@ -1023,8 +1058,7 @@ it("closes the open editor from its pencil after editing became blocked", async 
 
   expect(commentView(popup.hoverEl)).toBeNull();
   expect(h.store.getState().floating).toMatchObject({ commenting: false });
-  expect(notice).not.toHaveBeenCalled();
-  notice.mockRestore();
+  expect(h.gestures.blockedPress).not.toHaveBeenCalled();
 });
 
 it("selects a landed mark without a popup, and opens one for the next selection", async () => {
@@ -1158,8 +1192,8 @@ it("binds the held tags panel to Save tags and Discard, and keeps it through a r
   // A comment write in flight refreshes the popup, and the held panel it
   // draws again is the same, so a click between press and release lands.
   const release = h.zotero.holdWrites();
-  h.repository.editComment("WRDS2222", "worth quoting");
-  const commenting = h.repository.submitComment("WRDS2222");
+  h.repository.editTextField("comment", "WRDS2222", "worth quoting");
+  const commenting = h.repository.submitTextField("comment", "WRDS2222");
   await reread(h);
   expect(h.store.getState().mutations.get("WRDS2222")).toEqual({
     kind: "pending",

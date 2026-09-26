@@ -4028,7 +4028,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const typed = "Corrected by hand";
           await obEval(
             vaultId!,
-            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;repository.editQuotedText(${JSON.stringify(highlightKey)},${JSON.stringify(typed)});await repository.submitQuotedText(${JSON.stringify(highlightKey)});return true;})()`,
+            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;repository.editTextField('text',${JSON.stringify(highlightKey)},${JSON.stringify(typed)});await repository.submitTextField('text',${JSON.stringify(highlightKey)});return true;})()`,
           );
           expect(
             await waitFor(
@@ -4149,7 +4149,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obEvalUntil(
               vaultId!,
-              `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(repository.mutationFor(${JSON.stringify(historyKey)}).kind==='idle'&&!repository.commentDraftFor(${JSON.stringify(historyKey)}));})()`,
+              `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(repository.mutationFor(${JSON.stringify(historyKey)}).kind==='idle'&&!repository.textDraftFor('comment',${JSON.stringify(historyKey)}));})()`,
               { expected: "true" },
             ),
           ).toBe(true);
@@ -4493,7 +4493,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // in one turn. The stored comment drawn for one frame between the
           // closed editor and the new text is the flicker this guards.
           const shown = await obJson<{ popup: string[]; card: string[] }>(
-            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const key=${JSON.stringify(historyKey)};const slot=(root)=>{if(root?.querySelector('.cm-content'))return 'editor';const view=root?.querySelector('.zt-annot-comment');return view?'view:'+view.textContent:'none';};const roots={popup:()=>document.querySelector('.zt-pdf-mark-popup'),card:()=>app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(key)+']')).find(Boolean)};const shown={popup:[slot(roots.popup())],card:[slot(roots.card())]};const record=()=>{for(const name of ['popup','card']){const state=slot(roots[name]());if(state!==shown[name].at(-1))shown[name].push(state);}};const observer=new MutationObserver(record);observer.observe(document.body,{subtree:true,childList:true,characterData:true});${POPUP_EDITOR}.dispatchEvent(new FocusEvent('blur',{relatedTarget:null}));const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));for(let waited=0;waited<10000&&!(repository.mutationFor(key).kind==='idle'&&!repository.commentDraftFor(key));waited+=50)await sleep(50);await sleep(300);observer.disconnect();record();return JSON.stringify(shown);})()`,
+            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const key=${JSON.stringify(historyKey)};const slot=(root)=>{if(root?.querySelector('.cm-content'))return 'editor';const view=root?.querySelector('.zt-annot-comment');return view?'view:'+view.textContent:'none';};const roots={popup:()=>document.querySelector('.zt-pdf-mark-popup'),card:()=>app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(key)+']')).find(Boolean)};const shown={popup:[slot(roots.popup())],card:[slot(roots.card())]};const record=()=>{for(const name of ['popup','card']){const state=slot(roots[name]());if(state!==shown[name].at(-1))shown[name].push(state);}};const observer=new MutationObserver(record);observer.observe(document.body,{subtree:true,childList:true,characterData:true});${POPUP_EDITOR}.dispatchEvent(new FocusEvent('blur',{relatedTarget:null}));const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));for(let waited=0;waited<10000&&!(repository.mutationFor(key).kind==='idle'&&!repository.textDraftFor('comment',key));waited+=50)await sleep(50);await sleep(300);observer.disconnect();record();return JSON.stringify(shown);})()`,
           );
           expect(shown.popup).toEqual(["editor", `view:${after}`]);
           // The card may show the stored comment up to the blur; from there it
@@ -4839,7 +4839,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             expect(
               await obEvalUntil(
                 vaultId!,
-                `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(!${POPUP_EDITOR}&&repository.mutationFor(${JSON.stringify(noteKey)}).kind==='idle'&&!repository.commentDraftFor(${JSON.stringify(noteKey)}));})()`,
+                `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(!${POPUP_EDITOR}&&repository.mutationFor(${JSON.stringify(noteKey)}).kind==='idle'&&!repository.textDraftFor('comment',${JSON.stringify(noteKey)}));})()`,
                 { expected: "true" },
               ),
             ).toBe(true);
@@ -5028,7 +5028,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             .toMatchObject({ cards: [markKey], marks: [markKey] });
         }, 120000);
 
-        it("keeps one editor open on a card: its comment editor or its tag editor, from the card or the Mark Popup", async () => {
+        it("keeps one editor open on a card: its comment editor or its tag editor", async () => {
           await raiseWindow(vaultId!);
           await clickCard(cardKey);
           await expect
@@ -5058,20 +5058,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
           // The comment pencil ends the tag session first.
           await trustedClick(pencil);
-          await expect
-            .poll(editors, poll)
-            .toEqual({ comment: true, tags: false });
-
-          // The Mark Popup's way to the card's comment editor ends the tag
-          // session first as well.
-          await trustedClick(toggle("tag"));
-          await expect
-            .poll(editors, poll)
-            .toEqual({ comment: false, tags: true });
-          await obEval(
-            vaultId!,
-            `(function(){${annotView}.revealAnnotation(${JSON.stringify(cardKey)},{comment:true});return true;})()`,
-          );
           await expect
             .poll(editors, poll)
             .toEqual({ comment: true, tags: false });
@@ -5146,7 +5132,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             // writes against the version Zotero ends on.
             await obEvalUntil(
               vaultId!,
-              `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(repository.mutationFor(${JSON.stringify(cardKey)}).kind==='idle'&&!repository.commentDraftFor(${JSON.stringify(cardKey)}));})()`,
+              `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(repository.mutationFor(${JSON.stringify(cardKey)}).kind==='idle'&&!repository.textDraftFor('comment',${JSON.stringify(cardKey)}));})()`,
               { expected: "true" },
             );
             await restoreAnnotationComment(api, {
@@ -5322,7 +5308,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               await restoreWriteOutcomeProbe(vaultId!);
               await obEval(
                 vaultId!,
-                `(${repository}.discardQuotedTextDraft(${JSON.stringify(cardKey)}),true)`,
+                `(${repository}.discardTextDraft('text',${JSON.stringify(cardKey)}),true)`,
               );
             });
             // The draft's save waits at the seam until Zotero has moved, so
@@ -5375,7 +5361,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             expect(
               await obEvalUntil(
                 vaultId!,
-                `String(${repository}.quotedTextDraftFor(${JSON.stringify(cardKey)})?.state.kind)`,
+                `String(${repository}.textDraftFor('text',${JSON.stringify(cardKey)})?.state.kind)`,
                 { expected: "conflict" },
               ),
             ).toBe(true);
@@ -5392,7 +5378,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   expected: JSON.stringify({
                     zotero: true,
                     mine: true,
-                    verbs: ["Apply again", "Discard"],
+                    verbs: ["Use my text", "Keep Zotero's text"],
                   }),
                 },
               ),
@@ -5407,7 +5393,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               `(${conflict}.scrollIntoView({block:'center'}),true)`,
             );
             await trustedClick(
-              `[...${conflict}.querySelectorAll('button')].find((button)=>button.textContent==='Discard')`,
+              `[...${conflict}.querySelectorAll('button')].find((button)=>button.textContent==="Keep Zotero's text")`,
             );
             expect(
               await obEvalUntil(
@@ -5456,7 +5442,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               expect(
                 await obEvalUntil(
                   vaultId!,
-                  `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;const draft=repository.quotedTextDraftFor(${JSON.stringify(cardKey)});return String(repository.mutationFor(${JSON.stringify(cardKey)}).kind==='idle'&&draft?.state.kind!=='pending');})()`,
+                  `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;const draft=repository.textDraftFor('text',${JSON.stringify(cardKey)});return String(repository.mutationFor(${JSON.stringify(cardKey)}).kind==='idle'&&draft?.state.kind!=='pending');})()`,
                   { expected: "true" },
                 ),
               ).toBe(true);
@@ -5483,7 +5469,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             expect(
               await obEvalUntil(
                 vaultId!,
-                `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(repository.mutationFor(${JSON.stringify(cardKey)}).kind==='idle'&&!repository.quotedTextDraftFor(${JSON.stringify(cardKey)}));})()`,
+                `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(repository.mutationFor(${JSON.stringify(cardKey)}).kind==='idle'&&!repository.textDraftFor('text',${JSON.stringify(cardKey)}));})()`,
                 { expected: "true" },
               ),
             ).toBe(true);
@@ -6423,7 +6409,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             if (${String(pending === "unsent draft")}) {
               const schedule=window.setTimeout;
               window.setTimeout=function(...args){timers++;return schedule.apply(this,args)};
-              try { draft=repository.editComment(${JSON.stringify(createdKey)},'Unsent comment discarded on reload')?.text??null; }
+              try { draft=repository.editTextField('comment',${JSON.stringify(createdKey)},'Unsent comment discarded on reload')?.text??null; }
               finally { window.setTimeout=schedule; }
             }
             const probe=window.__zotlitWriteOutcomeProbe;
@@ -6470,7 +6456,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obEvalUntil(
               vaultId!,
-              `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();const list=await repository.read(${JSON.stringify(attachment.key)});const record=list?.annotations.find(annotation=>annotation.key===${JSON.stringify(createdKey)});return JSON.stringify({color:record?.color,comment:record?.comment,draft:repository.commentDraftFor(${JSON.stringify(createdKey)}),mutation:repository.mutationFor(${JSON.stringify(createdKey)})});})()`,
+              `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();const list=await repository.read(${JSON.stringify(attachment.key)});const record=list?.annotations.find(annotation=>annotation.key===${JSON.stringify(createdKey)});return JSON.stringify({color:record?.color,comment:record?.comment,draft:repository.textDraftFor('comment',${JSON.stringify(createdKey)}),mutation:repository.mutationFor(${JSON.stringify(createdKey)})});})()`,
               {
                 expected: JSON.stringify({
                   color: stored.color,
@@ -6487,7 +6473,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           await obEval(vaultId!, "delete window.__zotlitReloadProbe;true");
           expect(
             await obJson(
-              `JSON.stringify((()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;return {draft:repository.commentDraftFor(${JSON.stringify(createdKey)}),mutation:repository.mutationFor(${JSON.stringify(createdKey)})}})())`,
+              `JSON.stringify((()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;return {draft:repository.textDraftFor('comment',${JSON.stringify(createdKey)}),mutation:repository.mutationFor(${JSON.stringify(createdKey)})}})())`,
             ),
           ).toEqual({ draft: null, mutation: { kind: "idle" } });
           expect(await annotationState(api, serverID, createdKey)).toEqual(

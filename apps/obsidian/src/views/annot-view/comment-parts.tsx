@@ -2,7 +2,7 @@
 // Mark Popup alike: the rendered comment, the comment pencil in its gutter,
 // the "Add comment…" line, the editor sheet, the held-draft panel and the
 // Write Conflict panel. Each draws through the vanilla builder in
-// `comment-sheet.ts` and redraws only when what it shows changes, so a render
+// `editor-sheet.ts` and redraws only when what it shows changes, so a render
 // of the surface around it never drops a click between its press and its
 // release.
 import type { App } from "obsidian";
@@ -11,6 +11,7 @@ import type { HTMLAttributes, ReactNode, RefObject } from "react";
 
 import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
+import { themeHook } from "@/lib/theme-hooks";
 import { claimClick, cn, tooltipAttrs } from "@/lib/utils";
 import type { WriteConflict } from "@/services/annotation-repository/write";
 
@@ -23,15 +24,15 @@ import {
   renderEditorSheet,
   renderConflictPanel,
   renderHeldDraftPanel,
-} from "./comment-sheet";
+} from "./editor-sheet";
 import type {
   ConflictActions,
   HeldDraftActions,
   EditorSheet,
   EditorSheetProps,
   EditorSheetStatus,
-  CommentSurface,
-} from "./comment-sheet";
+  EditorSurface,
+} from "./editor-sheet";
 
 type DivProps = Omit<HTMLAttributes<HTMLDivElement>, "children">;
 
@@ -46,7 +47,7 @@ export function CommentView({
   render,
   html,
 }: {
-  surface: CommentSurface;
+  surface: EditorSurface;
   render: CommentRenderer;
   html: string;
 }) {
@@ -119,7 +120,10 @@ export function CommentGutter({
           // The 22px box sits on the first line without growing it, and
           // pulls back by its padding so the glyph lands on the text edge, as
           // the header's end control does.
-          className="zt-annot-comment-pencil zt:-my-1 zt:-me-1 zt:shrink-0 zt:data-blocked:opacity-50"
+          className={cn(
+            themeHook.annotCommentPencil,
+            "zt:-my-1 zt:-me-1 zt:shrink-0 zt:data-blocked:opacity-50",
+          )}
           active={pencil.active}
           disabled={pencil.disabled}
           data-blocked={pencil.blocked ? "" : undefined}
@@ -161,7 +165,9 @@ export function AddCommentLine({
       // on every side, so the words sit on the text edge and the line is as
       // tall as a line of comment.
       className={cn(
-        "zt-annot-comment-pencil zt-annot-add-comment zt:-m-1 zt:w-auto zt:flex-row-reverse zt:text-xs zt:data-blocked:opacity-50",
+        themeHook.annotCommentPencil,
+        themeHook.annotAddComment,
+        "zt:-m-1 zt:w-auto zt:flex-row-reverse zt:text-xs zt:data-blocked:opacity-50",
         className,
       )}
       disabled={pencil.disabled}
@@ -185,7 +191,7 @@ export interface EditorSheetSlotProps
     Omit<EditorSheetProps, "app" | "surface">,
     Omit<DivProps, "onChange" | "onSubmit"> {
   app: App;
-  surface: CommentSurface;
+  surface: EditorSurface;
   /**
    * The field's text taken into the open editor as it changes, keeping the caret;
    * `undefined` leaves the editor's text alone.
@@ -304,7 +310,7 @@ export function HeldDraftSlot({
   ...rest
 }: {
   held: HeldDraft;
-  surface: CommentSurface;
+  surface: EditorSurface;
   actions: HeldDraftActions;
 } & DivProps) {
   const ref = useRef<HTMLDivElement>(null);
@@ -338,7 +344,7 @@ export function ConflictPanelSlot({
   conflict: WriteConflict;
   /** Whether the Editing Capability takes a write right now. */
   live: boolean;
-  surface: CommentSurface;
+  surface: EditorSurface;
   actions: ConflictActions;
 }) {
   const ref = useRef<HTMLDivElement>(null);

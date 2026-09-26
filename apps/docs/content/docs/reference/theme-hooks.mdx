@@ -192,16 +192,20 @@ These class names, data attribute values, and default styles are ZotLit's public
 
 The Annotation View lists a Zotero attachment's Annotations beside the reader, with its own toolbar. Its menus are Obsidian's own, which a theme reaches through `menu`. Its tag filter and its color filter are Choosers, which a theme reaches through `zt-chooser` and `zt-chooser-trigger`.
 
-| Class                | Marks                                                                                                  |
-| -------------------- | ------------------------------------------------------------------------------------------------------ |
-| `zt-annot-conflict`  | The panel an Annotation Card shows while a Write Conflict stands on it.                                |
-| `zt-annot-draft`     | The panel an Annotation Card or the Mark Popup shows over a comment or tags that Zotero has not saved. |
-| `zt-chooser`         | The Chooser popup the tag filter or the color filter opens.                                            |
-| `zt-chooser-trigger` | The control that Chooser popup hangs under.                                                            |
+| Class                     | Marks                                                                                                               |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `zt-annot-conflict`       | The panel an Annotation Card shows while a Write Conflict stands on it.                                             |
+| `zt-annot-draft`          | The panel an Annotation Card or the Mark Popup shows over a comment, Quoted Text or tags that Zotero has not saved. |
+| `zt-annot-comment-pencil` | The comment pencil beside the comment, on a card selected alone and in the Mark Popup.                              |
+| `zt-annot-add-comment`    | The line that adds a comment, on a card selected alone or in the Mark Popup, in place of a missing comment.         |
+| `zt-chooser`              | The Chooser popup the tag filter or the color filter opens.                                                         |
+| `zt-chooser-trigger`      | The control that Chooser popup hangs under.                                                                         |
 
 `zt-annot-conflict` appears on a card whose last edit met a newer value in Zotero, or whose create Zotero never answered for. It names what happened, shows the two values, and offers the verbs that settle it.
 
-`zt-annot-draft` appears where an edit waits for **Save comment** or **Save tags**, such as after a failed save or after editing stopped while the edit was open. It shows the unsaved comment or tags, says why they wait, and offers the verbs that save or discard them.
+`zt-annot-draft` appears where an edit waits for **Save comment**, **Save text** or **Save tags**, such as after a failed save or after editing stopped while the edit was open. It shows the unsaved comment, Quoted Text or tags, says why they wait, and offers the verbs that save or discard them.
+
+`zt-annot-comment-pencil` appears beside the comment of the card you select alone, and nowhere on other cards. It is the one control that opens the comment editor, and it carries `is-active` while that editor is open. On a card with no comment, the <UiLabel name={m.annot_view_card_comment_placeholder()} /> line stands in the comment's place. That line is itself the comment pencil, so it carries `zt-annot-add-comment` and `zt-annot-comment-pencil` together. The Mark Popup uses the same two classes, see [Mark Popup and comment sheet](#pdf-mark-popup).
 
 `zt-chooser` marks the anchored popover a filtering multi-select opens. It is a native popover rather than an Obsidian menu, so `:popover-open` matches it while it stands and `menu` never reaches it. It takes its chrome from `--menu-background`, `--menu-border-color`, `--menu-border-width`, `--menu-corner-shape`, `--menu-padding`, `--menu-radius`, and `--menu-shadow`, so a theme that retints menus reaches it through those.
 

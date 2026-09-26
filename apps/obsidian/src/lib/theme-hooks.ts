@@ -126,10 +126,23 @@ export const themeHook = {
   /** The panel an Annotation Card shows while a Write Conflict stands on it. */
   annotConflict: "zt-annot-conflict",
   /**
-   * The panel an Annotation Card or the Mark Popup shows over a comment or
-   * tag draft Zotero has not taken.
+   * The panel an Annotation Card or the Mark Popup shows over a comment,
+   * Quoted Text or tag draft Zotero has not taken.
    */
   annotDraft: "zt-annot-draft",
+  /**
+   * The comment pencil beside the comment, on an Annotation Card selected
+   * alone and in the Mark Popup over a selected mark: the one control that
+   * opens the comment editor. It carries Obsidian's own `is-active` while
+   * that editor is open.
+   */
+  annotCommentPencil: "zt-annot-comment-pencil",
+  /**
+   * The "Add a comment…" line in the comment's place on an Annotation with
+   * no comment, on the same two surfaces. The whole line is the comment
+   * pencil, so it also carries {@link themeHook.annotCommentPencil}.
+   */
+  annotAddComment: "zt-annot-add-comment",
   /**
    * The Chooser popup: the anchored popover a filtering multi-select opens,
    * such as the Annotation View's tag filter. It is no Obsidian menu, so a

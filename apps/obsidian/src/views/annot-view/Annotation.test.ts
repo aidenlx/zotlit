@@ -140,25 +140,21 @@ async function mountCard({
     },
   });
   const onSelectAnnotation = vi.fn();
-  const onOpenComment = vi.fn(() => opens);
+  const onOpenField = vi.fn(() => opens);
   const onOpenTags = vi.fn(() => true);
   const onSaveTags = vi.fn();
-  const onSaveComment = vi.fn();
+  const onSaveField = vi.fn();
   const onBlockedPress = vi.fn();
-  const onOpenText = vi.fn(() => opens);
-  const onSaveText = vi.fn();
   const onApplyAgain = vi.fn();
   const onDiscardConflict = vi.fn();
   const actions = new Proxy(
     {
       onSelectAnnotation,
-      onOpenComment,
+      onOpenField,
       onOpenTags,
       onSaveTags,
-      onSaveComment,
+      onSaveField,
       onBlockedPress,
-      onOpenText,
-      onSaveText,
       onApplyAgain,
       onDiscardConflict,
     } as Partial<AnnotActions>,
@@ -196,13 +192,11 @@ async function mountCard({
     host,
     store,
     onSelectAnnotation,
-    onOpenComment,
+    onOpenField,
     onOpenTags,
     onSaveTags,
-    onSaveComment,
+    onSaveField,
     onBlockedPress,
-    onOpenText,
-    onSaveText,
     onApplyAgain,
     onDiscardConflict,
   };
@@ -226,8 +220,7 @@ function pencil(host: HTMLElement): HTMLElement | undefined {
 
 describe("a click on a card's comment", () => {
   it("selects the card, toggles it or takes a range, and opens no editor", async () => {
-    const { host, store, onSelectAnnotation, onOpenComment } =
-      await mountCard();
+    const { host, store, onSelectAnnotation, onOpenField } = await mountCard();
     const comment = host.querySelector(".zt-annot-comment")!;
 
     await click(comment);
@@ -238,12 +231,12 @@ describe("a click on a card's comment", () => {
       [CARD, "toggle"],
       [CARD, "range"],
     ]);
-    expect(onOpenComment).not.toHaveBeenCalled();
+    expect(onOpenField).not.toHaveBeenCalled();
     expect(store.getState().editing).toBeNull();
   });
 
   it("selects the card from the held text, and opens no editor", async () => {
-    const { host, onSelectAnnotation, onOpenComment } = await mountCard({
+    const { host, onSelectAnnotation, onOpenField } = await mountCard({
       held: true,
     });
     const text = [...host.querySelectorAll("div")].find(
@@ -256,15 +249,16 @@ describe("a click on a card's comment", () => {
       [CARD, "click"],
       [CARD, "toggle"],
     ]);
-    expect(onOpenComment).not.toHaveBeenCalled();
+    expect(onOpenField).not.toHaveBeenCalled();
   });
 });
 
 describe("the comment pencil", () => {
-  it("stands only on a card selected alone", async () => {
+  it("stands only on a card selected alone, as Edit text does", async () => {
     for (const selected of [[], [CARD.key, "BBBB2222"]]) {
       const { host } = await mountCard({ selected });
       expect(pencil(host)).toBeUndefined();
+      expect(() => editText(host)).toThrow();
       // The tag toggle stays on a card selected with others.
       expect(() => tagToggle(host)).not.toThrow();
       await act(() => root?.unmount());
@@ -272,6 +266,7 @@ describe("the comment pencil", () => {
     }
     const { host } = await mountCard();
     expect(pencil(host)).toBeDefined();
+    expect(() => editText(host)).not.toThrow();
   });
 
   it("comes up beside the same comment nodes, so a text selection on them survives", async () => {
@@ -301,15 +296,18 @@ describe("the comment pencil", () => {
   });
 
   it("saves and closes the open editor on a second press", async () => {
-    const { host, store, onSaveComment } = await mountCard();
+    const { host, store, onSaveField } = await mountCard();
     await click(pencil(host)!);
     await click(pencil(host)!);
     expect(store.getState().editing).toBeNull();
-    expect(onSaveComment).toHaveBeenCalledWith(CARD, CARD.comment, true);
+    expect(onSaveField).toHaveBeenCalledWith(CARD, "comment", {
+      text: CARD.comment,
+      automatic: true,
+    });
   });
 
   it("saves and closes an open editor whose capability turned blocked, and raises no notice", async () => {
-    const { host, store, onSaveComment, onBlockedPress } = await mountCard();
+    const { host, store, onSaveField, onBlockedPress } = await mountCard();
     await click(pencil(host)!);
     await act(() =>
       store.setState({ capability: { kind: "authorization-required" } }),
@@ -317,19 +315,22 @@ describe("the comment pencil", () => {
 
     await click(pencil(host)!);
     expect(store.getState().editing).toBeNull();
-    expect(onSaveComment).toHaveBeenCalledWith(CARD, CARD.comment, true);
+    expect(onSaveField).toHaveBeenCalledWith(CARD, "comment", {
+      text: CARD.comment,
+      automatic: true,
+    });
     expect(onBlockedPress).not.toHaveBeenCalled();
   });
 
   it("stays pressable where editing is blocked, and its press raises the reason", async () => {
-    const { host, store, onBlockedPress, onOpenComment } = await mountCard({
+    const { host, store, onBlockedPress, onOpenField } = await mountCard({
       capability: { kind: "authorization-required" },
     });
     await click(pencil(host)!);
     expect(onBlockedPress).toHaveBeenCalledWith(
       expect.objectContaining({ action: "allow-editing" }),
     );
-    expect(onOpenComment).not.toHaveBeenCalled();
+    expect(onOpenField).not.toHaveBeenCalled();
     expect(store.getState().editing).toBeNull();
   });
 
@@ -441,7 +442,7 @@ describe("the card's tag editor", () => {
 });
 
 it("saves the card's comment and closes its editor on Done", async () => {
-  const { host, store, onSaveComment } = await mountCard();
+  const { host, store, onSaveField } = await mountCard();
   await click(pencil(host)!);
   const done = [...host.querySelectorAll("button")].find(
     (button) => button.textContent === "Done",
@@ -449,7 +450,9 @@ it("saves the card's comment and closes its editor on Done", async () => {
 
   await click(done);
 
-  expect(onSaveComment.mock.calls).toEqual([[CARD, CARD.comment, true]]);
+  expect(onSaveField.mock.calls).toEqual([
+    [CARD, "comment", { text: CARD.comment, automatic: true }],
+  ]);
   expect(store.getState().editing).toBeNull();
   expect(host.querySelector(".cm-content")).toBeNull();
 });
@@ -491,7 +494,7 @@ describe("a text field's draft on the card", () => {
     expect(inComment!.closest("blockquote")).toBeNull();
     expect(inComment!.textContent).toContain("Zotero's comment");
 
-    await click(button(inExcerpt!, m.annot_view_conflict_apply_again()));
+    await click(button(inExcerpt!, m.annot_view_conflict_use_text()));
     await click(
       button(inComment!, m.annot_view_conflict_keep_zotero_comment()),
     );
@@ -535,7 +538,7 @@ describe("a text field's draft on the card", () => {
   });
 
   it("keeps the typed text when the control closes the editor while the blur's save is in flight", async () => {
-    const { host, store, onSaveText } = await mountCard();
+    const { host, store, onSaveField } = await mountCard();
     await click(editText(host));
     // The press blurred the editor, whose save left the draft pending.
     await act(() =>
@@ -561,6 +564,8 @@ describe("a text field's draft on the card", () => {
 
     await click(editText(host));
     expect(store.getState().editing).toBeNull();
-    expect(onSaveText.mock.calls).toEqual([[CARD, "alpha, typed", true]]);
+    expect(onSaveField.mock.calls).toEqual([
+      [CARD, "text", { text: "alpha, typed", automatic: true }],
+    ]);
   });
 });

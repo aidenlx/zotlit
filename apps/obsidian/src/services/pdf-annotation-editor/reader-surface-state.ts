@@ -17,7 +17,7 @@ import type { CapabilityAffordance } from "@/services/annotation-repository/capa
 import type {
   AnnotationRecord,
   AnnotationRepository,
-  CommentDraft,
+  TextFieldDraft,
   AnnotationState,
   TagDraft,
 } from "@/services/annotation-repository/service";
@@ -240,7 +240,7 @@ export interface ReaderSurfaceState {
    */
   mutations: ReadonlyMap<string, MutationState>;
   /** The shared comment drafts, by Indexed Key. */
-  commentDrafts: ReadonlyMap<string, CommentDraft>;
+  commentDrafts: ReadonlyMap<string, TextFieldDraft>;
   /** The shared tag drafts, by Indexed Key. */
   tagDrafts: ReadonlyMap<string, TagDraft>;
 }
@@ -986,12 +986,12 @@ function ingestAnnotationState(
     const { commentDrafts, tagDrafts } = store.getState();
     const comment = commentDrafts.get(key);
     const tags = tagDrafts.get(key);
-    if (comment && hidden(comment, state.commentDraft))
+    if (comment && hidden(comment, state.textDrafts.comment))
       hideCommentDraft(store, key);
     if (tags && hidden(tags, state.tagDraft)) hideTagDraft(store, key);
   }
   ingestMutation(store, key, state.mutation);
-  ingestCommentDraft(store, key, state.commentDraft);
+  ingestCommentDraft(store, key, state.textDrafts.comment);
   ingestTagDraft(store, key, state.tagDraft);
 }
 
@@ -1020,7 +1020,7 @@ export function ingestMutation(
 export function ingestCommentDraft(
   store: ReaderSurfaceStore,
   key: string,
-  draft: CommentDraft | null,
+  draft: TextFieldDraft | null,
 ): void {
   const { commentDrafts, floating } = store.getState();
   if (sameFlat(commentDrafts.get(key) ?? null, draft)) return;
@@ -1193,7 +1193,7 @@ export function selectAdjust({
 export function selectSelectedDraft({
   floating,
   commentDrafts,
-}: ReaderSurfaceState): CommentDraft | null {
+}: ReaderSurfaceState): TextFieldDraft | null {
   return floating.kind === "selected"
     ? (commentDrafts.get(floating.key) ?? null)
     : null;
@@ -1250,7 +1250,7 @@ export interface SelectedRowHead {
   stackTotal: number;
   /** Held by identity: the store keeps the object while it means the same. */
   mutation: MutationState;
-  draft: CommentDraft | null;
+  draft: TextFieldDraft | null;
   /** The stored comment the popup renders under its row. */
   comment: string | null;
   /** Held by identity, as {@link SelectedRowHead.draft} is. */

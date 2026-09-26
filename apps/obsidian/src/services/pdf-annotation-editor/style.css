@@ -269,7 +269,10 @@
    comment…" line, a held draft or the sheet, with the comment pencil's
    gutter. The slot alone decides its width, so the popup keeps its size as
    the editor opens and closes; what stands in it fills it rather than
-   holding the sheet's own minimum. */
+   holding the sheet's own minimum.
+   A stylesheet rule, because it is a descendant selector over DOM another
+   owner renders: the vanilla builders in editor-sheet.ts draw the sheet and
+   the held-draft panel, and set their own width, which the slot takes back. */
 .zt-pdf-comment-slot {
   inline-size: 0;
   min-inline-size: max(100%, 14em);

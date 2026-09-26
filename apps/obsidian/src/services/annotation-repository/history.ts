@@ -17,6 +17,7 @@ import type {
   AnnotationTag,
   GeometryEdit,
   TagChange,
+  TextField,
   WriteConflict,
   WriteFailure,
 } from "./write";
@@ -279,7 +280,7 @@ export function stillHolds(
  * value is the empty string.
  */
 function textHolds(
-  field: "comment" | "text",
+  field: TextField,
 ): (fields: HistoryFields, record: HistoryRecord) => boolean {
   return (fields, record) => {
     const held = fields[field];

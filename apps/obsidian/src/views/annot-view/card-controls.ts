@@ -13,11 +13,12 @@ import type { EditingCapability } from "@/services/annotation-repository/capabil
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
 import type {
   AnnotationRecord,
-  CommentDraft,
   TagDraft,
+  TextField,
   TextFieldDraft,
 } from "@/services/annotation-repository/service";
 import {
+  isTextField,
   noTagChange,
   tagChange,
   writeFailureMessage,
@@ -26,6 +27,8 @@ import type {
   MutationState,
   WriteFailure,
 } from "@/services/annotation-repository/write";
+
+import type { FieldEditorWording } from "./field-editor";
 
 /**
  * Why a verb cannot act while the Editing Capability stands in its way, and the
@@ -68,11 +71,6 @@ export interface CardControlsInput {
   hasTags: boolean;
   /** The Annotation's type, which decides whether it has a Quoted Text. */
   type: ResolvedAnnotationTypeName;
-  /**
-   * Whether the card is selected alone, the one state that offers "Edit text"
-   * and the comment pencil (ADR 0060).
-   */
-  alone: boolean;
   /** The instant a cooldown's remaining seconds are measured from. */
   now: Temporal.Instant;
 }
@@ -84,16 +82,16 @@ export interface CardControlsInput {
 export interface CardControls {
   color: CardControl;
   /**
-   * The comment pencil, or `null` where the card does not offer it: a card
-   * that is not selected alone stays compact.
+   * The comment pencil. A card offers it only while selected alone (ADR
+   * 0060); the Mark Popup always does.
    */
-  comment: CardControl | null;
+  comment: CardControl;
   /** The tag toggle, which follows the comment pencil's rules. */
   tags: CardControl;
   /**
    * "Edit text", which opens the editor on the Quoted Text; `null` where the
-   * card offers none. Only a highlight or underline has a Quoted Text, and
-   * only a card selected alone offers it.
+   * Annotation has none to edit. Only a highlight or underline has a Quoted
+   * Text, and a card offers it only while selected alone (ADR 0060).
    */
   text: CardControl | null;
   delete: CardControl;
@@ -124,7 +122,6 @@ export function cardControls({
   hasComment,
   hasTags,
   type,
-  alone,
   now,
 }: CardControlsInput): CardControls {
   const pending = gestureInFlight(mutation);
@@ -143,15 +140,12 @@ export function cardControls({
   };
   return {
     color: control(m.annot_view_card_color()),
-    comment: alone ? control(commentLabel(hasComment)) : null,
+    comment: control(commentLabel(hasComment)),
     tags: control(
       hasTags ? m.annot_view_card_edit_tags() : m.annot_view_card_add_tags(),
     ),
     delete: control(m.annot_view_menu_delete()),
-    text:
-      alone && hasQuotedText(type)
-        ? control(m.annot_view_card_edit_text())
-        : null,
+    text: hasQuotedText(type) ? control(m.annot_view_card_edit_text()) : null,
   };
 }
 
@@ -214,8 +208,7 @@ export function editingBlockedReason(
 function gestureInFlight(mutation: MutationState): boolean {
   return (
     mutation.kind === "pending" &&
-    mutation.write !== "comment" &&
-    mutation.write !== "text" &&
+    !isTextField(mutation.write) &&
     !mutation.session
   );
 }
@@ -334,7 +327,7 @@ export function shownTagNames(
  */
 export function shownComment(
   record: Pick<AnnotationRecord, "comment">,
-  draft: CommentDraft | null,
+  draft: TextFieldDraft | null,
 ): string {
   return shownText(record.comment, draft);
 }
@@ -389,8 +382,39 @@ export interface HeldDraft {
 }
 
 /**
- * What the card announces about one held comment draft, or `null` where it
- * announces nothing.
+ * What each text field's controls say: its editor's placeholder and name, its
+ * Save button, and its held draft's title. One entry per text field.
+ */
+export interface TextFieldWording extends FieldEditorWording {
+  /** The Save button of the editor and of the held draft. */
+  save: string;
+  /** The held draft's title, which names the field the text is for. */
+  draft: string;
+}
+
+const TEXT_FIELD_WORDING: Record<TextField, () => TextFieldWording> = {
+  comment: () => ({
+    placeholder: m.annot_view_card_comment_placeholder(),
+    label: m.annot_view_card_edit_comment(),
+    save: m.annot_view_comment_save(),
+    draft: m.annot_view_comment_draft(),
+  }),
+  text: () => ({
+    placeholder: m.annot_view_card_text_placeholder(),
+    label: m.annot_view_card_text_label(),
+    save: m.annot_view_text_save(),
+    draft: m.annot_view_text_draft(),
+  }),
+};
+
+/** What one text field's controls say, in the active language. */
+export function textFieldWording(field: TextField): TextFieldWording {
+  return TEXT_FIELD_WORDING[field]();
+}
+
+/**
+ * What a surface announces about one text field's held draft, or `null`
+ * where it announces nothing.
  *
  * Three states stay quiet, because none of them asks the user for anything.
  * A draft matching Zotero holds nothing. A write in flight settles by itself,
@@ -399,38 +423,10 @@ export interface HeldDraft {
  *
  * @see apps/obsidian/policies/ui-seams.md
  */
-export function heldCommentDraft(
-  capability: EditingCapability,
-  draft: CommentDraft | null,
-  now: Temporal.Instant,
-): HeldDraft | null {
-  return heldTextDraft(capability, draft, {
-    now,
-    title: m.annot_view_comment_draft(),
-    save: m.annot_view_comment_save(),
-  });
-}
-
-/**
- * What the card announces about one held Quoted Text draft, or `null` where
- * it announces nothing, on the rule of {@link heldCommentDraft}.
- */
-export function heldQuotedTextDraft(
-  capability: EditingCapability,
+export function heldTextDraft(
+  field: TextField,
   draft: TextFieldDraft | null,
-  now: Temporal.Instant,
-): HeldDraft | null {
-  return heldTextDraft(capability, draft, {
-    now,
-    title: m.annot_view_text_draft(),
-    save: m.annot_view_text_save(),
-  });
-}
-
-function heldTextDraft(
-  capability: EditingCapability,
-  draft: TextFieldDraft | null,
-  { now, title, save }: { now: Temporal.Instant; title: string; save: string },
+  { capability, now }: { capability: EditingCapability; now: Temporal.Instant },
 ): HeldDraft | null {
   if (!draft) return null;
   if (draft.state.kind === "pending" || draft.state.kind === "conflict")
@@ -445,6 +441,7 @@ function heldTextDraft(
   // An automatic save is already on its way, so the card waits for it rather
   // than asking the user to do what the plugin is about to do.
   if (!manual && !saveDisabled) return null;
+  const { draft: title, save } = textFieldWording(field);
   return {
     title,
     text: draft.text,

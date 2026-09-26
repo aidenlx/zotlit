@@ -296,7 +296,7 @@ describe("opening a card editor", () => {
       selectAlone: () => calls.push("select alone"),
       closeEditors: () => calls.push("close editors"),
       annotations: {
-        editComment: () => (calls.push("open comment"), draft),
+        editTextField: (field: string) => (calls.push(`open ${field}`), draft),
         editTags: () => (calls.push("open tags"), draft),
       },
     } as unknown as AnnotActionDeps;
@@ -306,7 +306,7 @@ describe("opening a card editor", () => {
   it("saves and closes the open editor before the other opens", () => {
     const { actions, calls } = opening({});
     actions.onOpenTags(FIRST);
-    actions.onOpenComment(FIRST);
+    actions.onOpenField(FIRST, "comment");
     expect(calls).toEqual([
       "select alone",
       "close editors",
@@ -318,8 +318,8 @@ describe("opening a card editor", () => {
   });
 
   it("opens the comment editor only where a draft starts", () => {
-    expect(opening({}).actions.onOpenComment(FIRST)).toBe(true);
-    expect(opening(null).actions.onOpenComment(FIRST)).toBe(false);
+    expect(opening({}).actions.onOpenField(FIRST, "comment")).toBe(true);
+    expect(opening(null).actions.onOpenField(FIRST, "text")).toBe(false);
   });
 });
 
@@ -330,17 +330,18 @@ describe("the verbs that end a text field's draft", () => {
    */
   function verbs() {
     const calls: string[] = [];
-    const call = (name: string) => () => {
-      calls.push(name);
-      return Promise.resolve({ kind: "idle" as const });
-    };
+    const call =
+      (name: string) =>
+      (...args: string[]) => {
+        // A field's verb names its field first; a write's verb takes the key.
+        calls.push(args.length > 1 ? `${name} ${args[0]} draft` : name);
+        return Promise.resolve({ kind: "idle" as const });
+      };
     const deps = {
       annotations: {
-        retryCommentDraft: call("retry comment draft"),
-        retryQuotedTextDraft: call("retry text draft"),
+        retryTextDraft: call("retry"),
         retryWrite: call("retry write"),
-        discardCommentDraft: call("discard comment draft"),
-        discardQuotedTextDraft: call("discard text draft"),
+        discardTextDraft: call("discard"),
         discardConflict: call("discard conflict"),
       },
     } as unknown as AnnotActionDeps;

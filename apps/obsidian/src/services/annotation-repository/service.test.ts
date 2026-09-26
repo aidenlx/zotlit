@@ -391,7 +391,7 @@ it("keeps the marks under the Zotero DB source when Zotero closes mid-session", 
   );
   await switchToLocalApi(repository);
   const live = await repository.read("RGRPDF24");
-  repository.editComment("PUPR5FG5", "Visible while offline");
+  repository.editTextField("comment", "PUPR5FG5", "Visible while offline");
 
   answering = false;
   const announced = nextChange(repository);
@@ -409,11 +409,11 @@ it("keeps the marks under the Zotero DB source when Zotero closes mid-session", 
   expect(fallback?.annotations.map(({ key, type }) => [key, type])).toEqual(
     READING_ORDER,
   );
-  expect(repository.commentDraftFor("PUPR5FG5")?.text).toBe(
+  expect(repository.textDraftFor("comment", "PUPR5FG5")?.text).toBe(
     "Visible while offline",
   );
-  repository.editComment("PUPR5FG5", "Still typing offline");
-  expect(repository.commentDraftFor("PUPR5FG5")?.text).toBe(
+  repository.editTextField("comment", "PUPR5FG5", "Still typing offline");
+  expect(repository.textDraftFor("comment", "PUPR5FG5")?.text).toBe(
     "Visible while offline",
   );
 });
@@ -607,19 +607,21 @@ it("names comment drafts by Zotero database as well as Annotation key", async ()
   );
   await switchToLocalApi(repository);
   await repository.read("RGRPDF24");
-  repository.editComment("PUPR5FG5", "First database");
+  repository.editTextField("comment", "PUPR5FG5", "First database");
 
   serverID = "Zzzz11119999";
   prefEvents.emit("resolved-changed");
   await repository.probe();
   await repository.read("RGRPDF24");
-  expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+  expect(repository.textDraftFor("comment", "PUPR5FG5")).toBeNull();
 
   serverID = SERVER_ID;
   prefEvents.emit("resolved-changed");
   await repository.probe();
   await repository.read("RGRPDF24");
-  expect(repository.commentDraftFor("PUPR5FG5")?.text).toBe("First database");
+  expect(repository.textDraftFor("comment", "PUPR5FG5")?.text).toBe(
+    "First database",
+  );
 });
 
 it("announces a write and a draft on one Annotation through one signal", async () => {
@@ -632,14 +634,14 @@ it("announces a write and a draft on one Annotation through one signal", async (
       const state = repository.annotationState(key);
       seen.push({
         mutation: state.mutation.kind,
-        comment: state.commentDraft?.text ?? null,
+        comment: state.textDrafts.comment?.text ?? null,
       });
     }),
   );
   const release = zotero.holdWrites();
 
   const saving = repository.patchColor("PUPR5FG5", "#ff6666");
-  repository.editComment("PUPR5FG5", "Worth citing");
+  repository.editTextField("comment", "PUPR5FG5", "Worth citing");
   release();
   await saving;
 
@@ -652,7 +654,7 @@ it("announces every Annotation a complete read finds gone, with a draft or witho
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroLibrary();
   const { repository } = await writable(stack, zotero.answers);
-  repository.editComment("K3JRFLFQ", "Worth citing");
+  repository.editTextField("comment", "K3JRFLFQ", "Worth citing");
   const announced: string[] = [];
   stack.defer(
     repository.on("annotation-changed", (key) => {
@@ -669,7 +671,7 @@ it("announces every Annotation a complete read finds gone, with a draft or witho
   expect(new Set(announced)).toEqual(new Set(["K3JRFLFQ", "PUPR5FG5"]));
   expect(repository.annotationState("K3JRFLFQ")).toMatchObject({
     gone: true,
-    commentDraft: null,
+    textDrafts: { comment: null, text: null },
   });
   expect(repository.annotationState("FDRFQ7C2").gone).toBe(false);
 
@@ -687,7 +689,7 @@ it("says a database switch hid an Annotation's drafts", async () => {
       answering ? rootOk({ "Zotero-Server-ID": serverID }) : unreachable(),
     children: () => annotationPage(ROUGIER_ANNOTATIONS, { serverID }),
   });
-  repository.editComment("PUPR5FG5", "First database");
+  repository.editTextField("comment", "PUPR5FG5", "First database");
   repository.editTags("PUPR5FG5", ["figure"]);
   expect(repository.annotationState("PUPR5FG5").hidden).toBe(false);
 
@@ -703,7 +705,7 @@ it("says a database switch hid an Annotation's drafts", async () => {
   await repository.read("RGRPDF24");
 
   expect(repository.annotationState("PUPR5FG5")).toMatchObject({
-    commentDraft: null,
+    textDrafts: { comment: null, text: null },
     tagDraft: null,
     hidden: true,
   });
@@ -725,7 +727,7 @@ it("hides an old database draft and cancels its save schedule", async () => {
     );
   vi.useFakeTimers();
   try {
-    repository.editComment("PUPR5FG5", "First database");
+    repository.editTextField("comment", "PUPR5FG5", "First database");
     await vi.advanceTimersByTimeAsync(500);
     const hidden = new Promise<string>((resolve) => {
       stack.defer(
@@ -751,7 +753,7 @@ it("hides an old database draft and cancels its save schedule", async () => {
     prefEvents.emit("resolved-changed");
     await repository.probe();
     await repository.read("RGRPDF24");
-    repository.editComment("PUPR5FG5", "Second database");
+    repository.editTextField("comment", "PUPR5FG5", "Second database");
     const sent = requests.length;
 
     await vi.advanceTimersByTimeAsync(500);
@@ -868,7 +870,7 @@ it("hides an offline draft after a different database is accepted", async () => 
   const { repository, client, dbEvents, serverEvents } = await writable(stack, {
     root: () => (answering ? rootOk() : unreachable()),
   });
-  repository.editComment("PUPR5FG5", "First database");
+  repository.editTextField("comment", "PUPR5FG5", "First database");
   answering = false;
   const unavailable = nextChange(repository);
   freshnessSignal(serverEvents);
@@ -880,7 +882,7 @@ it("hides an offline draft after a different database is accepted", async () => 
   dbEvents.emit("changed");
   await repository.read("RGRPDF24");
 
-  expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+  expect(repository.textDraftFor("comment", "PUPR5FG5")).toBeNull();
 });
 
 it("cancels the read in flight when the partition it fills is dropped", async () => {
@@ -984,7 +986,7 @@ it("ignores a cancelled empty read when reconciling a shared draft", async () =>
   );
   await switchToLocalApi(repository);
   await repository.read("RGRPDF24");
-  repository.editComment("PUPR5FG5", "Keep this draft");
+  repository.editTextField("comment", "PUPR5FG5", "Keep this draft");
 
   deferNext = true;
   queryClient.invalidate([
@@ -1004,7 +1006,9 @@ it("ignores a cancelled empty read when reconciling a shared draft", async () =>
   obsolete.resolve(annotationPage([]));
 
   expect((await reading)?.annotations).toHaveLength(7);
-  expect(repository.commentDraftFor("PUPR5FG5")?.text).toBe("Keep this draft");
+  expect(repository.textDraftFor("comment", "PUPR5FG5")?.text).toBe(
+    "Keep this draft",
+  );
 });
 
 it("answers the Editing Capability the Annotation Source leaves", async () => {
@@ -1127,7 +1131,7 @@ it("autosaves after one idle second and caps a continuous editing burst", async 
     });
     const sent = requests.length;
 
-    repository.editComment("PUPR5FG5", "idle");
+    repository.editTextField("comment", "PUPR5FG5", "idle");
     await vi.advanceTimersByTimeAsync(999);
     expect(
       requests.slice(sent).filter(({ method }) => method === "PATCH"),
@@ -1137,10 +1141,10 @@ it("autosaves after one idle second and caps a continuous editing burst", async 
       requests.slice(sent).filter(({ method }) => method === "PATCH"),
     ).toHaveLength(1);
 
-    repository.editComment("PUPR5FG5", "burst 0");
+    repository.editTextField("comment", "PUPR5FG5", "burst 0");
     for (let step = 1; step <= 11; step += 1) {
       await vi.advanceTimersByTimeAsync(900);
-      repository.editComment("PUPR5FG5", `burst ${step}`);
+      repository.editTextField("comment", "PUPR5FG5", `burst ${step}`);
     }
     expect(
       requests.slice(sent).filter(({ method }) => method === "PATCH"),
@@ -1154,7 +1158,7 @@ it("autosaves after one idle second and caps a continuous editing burst", async 
         .map(({ body }) => JSON.parse(body ?? "{}").annotationComment),
     ).toEqual(["idle", "burst 11"]);
 
-    repository.editComment("PUPR5FG5", "next burst");
+    repository.editTextField("comment", "PUPR5FG5", "next burst");
     await vi.advanceTimersByTimeAsync(1_000);
     expect(
       requests
@@ -1189,7 +1193,7 @@ it("autosaves a Quoted Text draft on the idle and burst timers, with the text al
         .filter(({ method }) => method === "PATCH")
         .map(({ body }) => JSON.parse(body ?? "{}"));
 
-    repository.editQuotedText("PUPR5FG5", "Identify your message");
+    repository.editTextField("text", "PUPR5FG5", "Identify your message");
     await vi.advanceTimersByTimeAsync(999);
     expect(patches()).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(1);
@@ -1198,10 +1202,10 @@ it("autosaves a Quoted Text draft on the idle and burst timers, with the text al
       { version: 11, annotationText: "Identify your message" },
     ]);
 
-    repository.editQuotedText("PUPR5FG5", "burst 0");
+    repository.editTextField("text", "PUPR5FG5", "burst 0");
     for (let step = 1; step <= 11; step += 1) {
       await vi.advanceTimersByTimeAsync(900);
-      repository.editQuotedText("PUPR5FG5", `burst ${step}`);
+      repository.editTextField("text", "PUPR5FG5", `burst ${step}`);
     }
     expect(patches()).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(100);
@@ -1228,8 +1232,8 @@ it("saves an emptied Quoted Text draft as a clear", async () => {
   });
   const sent = requests.length;
 
-  repository.editQuotedText("PUPR5FG5", "");
-  await repository.submitQuotedText("PUPR5FG5");
+  repository.editTextField("text", "PUPR5FG5", "");
+  await repository.submitTextField("text", "PUPR5FG5");
 
   const [patch] = requests
     .slice(sent)
@@ -1238,7 +1242,7 @@ it("saves an emptied Quoted Text draft as a clear", async () => {
     version: 11,
     annotationText: "",
   });
-  expect(repository.quotedTextDraftFor("PUPR5FG5")).toBeNull();
+  expect(repository.textDraftFor("text", "PUPR5FG5")).toBeNull();
 });
 
 it("serializes writes and saves only the latest input after a slow response", async () => {
@@ -1268,17 +1272,17 @@ it("serializes writes and saves only the latest input after a slow response", as
       },
     });
 
-    repository.editComment("PUPR5FG5", "first");
+    repository.editTextField("comment", "PUPR5FG5", "first");
     await vi.advanceTimersByTimeAsync(1_000);
-    repository.editComment("PUPR5FG5", "second");
-    repository.editComment("PUPR5FG5", "latest");
+    repository.editTextField("comment", "PUPR5FG5", "second");
+    repository.editTextField("comment", "PUPR5FG5", "latest");
     await vi.advanceTimersByTimeAsync(10_000);
     expect(submitted).toEqual(["first"]);
 
     answerFirst(writeAccepted());
     await vi.waitFor(() => expect(submitted).toEqual(["first", "latest"]));
     await vi.waitFor(() =>
-      expect(repository.commentDraftFor("PUPR5FG5")).toBeNull(),
+      expect(repository.textDraftFor("comment", "PUPR5FG5")).toBeNull(),
     );
   } finally {
     vi.useRealTimers();
@@ -1307,14 +1311,14 @@ it("queues a return to the old baseline while a newer value is saving", async ()
         ),
     });
 
-    repository.editComment("PUPR5FG5", "temporary");
+    repository.editTextField("comment", "PUPR5FG5", "temporary");
     await vi.advanceTimersByTimeAsync(1_000);
-    repository.editComment("PUPR5FG5", "");
+    repository.editTextField("comment", "PUPR5FG5", "");
     first.resolve(writeAccepted());
 
     await vi.waitFor(() => expect(submitted).toEqual(["temporary", ""]));
     await vi.waitFor(() =>
-      expect(repository.commentDraftFor("PUPR5FG5")).toBeNull(),
+      expect(repository.textDraftFor("comment", "PUPR5FG5")).toBeNull(),
     );
   } finally {
     vi.useRealTimers();
@@ -1330,17 +1334,21 @@ it("keeps a failed autosave for explicit editing without replaying it", async ()
     });
     const sent = requests.length;
 
-    repository.editComment("PUPR5FG5", "keep me");
+    repository.editTextField("comment", "PUPR5FG5", "keep me");
     await vi.advanceTimersByTimeAsync(1_000);
     await vi.waitFor(() =>
-      expect(repository.commentDraftFor("PUPR5FG5")?.state.kind).toBe("failed"),
+      expect(repository.textDraftFor("comment", "PUPR5FG5")?.state.kind).toBe(
+        "failed",
+      ),
     );
     await vi.advanceTimersByTimeAsync(30_000);
 
     expect(
       requests.slice(sent).filter(({ method }) => method === "PATCH"),
     ).toHaveLength(1);
-    expect(repository.commentDraftFor("PUPR5FG5")?.text).toBe("keep me");
+    expect(repository.textDraftFor("comment", "PUPR5FG5")?.text).toBe(
+      "keep me",
+    );
   } finally {
     vi.useRealTimers();
   }
@@ -1357,23 +1365,25 @@ it("retains a paused draft until an explicit save after authorization returns", 
           afterWrite("PUPR5FG5", { comment: "Keep these words", version: 20 }),
         ),
     });
-    repository.editComment("PUPR5FG5", "Keep these words");
+    repository.editTextField("comment", "PUPR5FG5", "Keep these words");
     await localApi.forgetAuthorization();
-    repository.editComment("PUPR5FG5", "Blocked typing");
-    expect(repository.commentDraftFor("PUPR5FG5")?.text).toBe(
+    repository.editTextField("comment", "PUPR5FG5", "Blocked typing");
+    expect(repository.textDraftFor("comment", "PUPR5FG5")?.text).toBe(
       "Keep these words",
     );
     await localApi.authorize();
     const sent = requests.length;
     await vi.advanceTimersByTimeAsync(30_000);
-    await repository.submitComment("PUPR5FG5", { automatic: true });
+    await repository.submitTextField("comment", "PUPR5FG5", {
+      automatic: true,
+    });
     expect(requests.slice(sent)).toEqual([]);
-    const saving = repository.submitComment("PUPR5FG5");
+    const saving = repository.submitTextField("comment", "PUPR5FG5");
     // The save the user pressed is the one the editor says it waits on.
     expect(
       fieldEditorControls(
         repository.capabilityFor("RGRPDF24"),
-        repository.commentDraftFor("PUPR5FG5"),
+        repository.textDraftFor("comment", "PUPR5FG5"),
         NOW,
       ).hint,
     ).toBe(m.annot_view_card_saving());
@@ -1407,13 +1417,13 @@ it("saves text typed during a held draft's save once that save lands", async () 
           }),
         ),
     });
-    repository.editComment("PUPR5FG5", "Held words");
+    repository.editTextField("comment", "PUPR5FG5", "Held words");
     await localApi.forgetAuthorization();
     await localApi.authorize();
 
-    const saving = repository.submitComment("PUPR5FG5");
+    const saving = repository.submitTextField("comment", "PUPR5FG5");
     await vi.waitFor(() => expect(submitted).toEqual(["Held words"]));
-    repository.editComment("PUPR5FG5", "Held words, and more");
+    repository.editTextField("comment", "PUPR5FG5", "Held words, and more");
     first.resolve(writeAccepted());
     expect(await saving).toEqual({ kind: "idle" });
 
@@ -1421,7 +1431,7 @@ it("saves text typed during a held draft's save once that save lands", async () 
       expect(submitted).toEqual(["Held words", "Held words, and more"]),
     );
     await vi.waitFor(() =>
-      expect(repository.commentDraftFor("PUPR5FG5")).toBeNull(),
+      expect(repository.textDraftFor("comment", "PUPR5FG5")).toBeNull(),
     );
   } finally {
     vi.useRealTimers();
@@ -1435,15 +1445,17 @@ it("requires explicit recovery after a lost save response even when refresh reco
     const { repository, requests } = await writable(stack, {
       write: () => unreachable(),
     });
-    repository.editComment("PUPR5FG5", "Unconfirmed comment");
-    await repository.submitComment("PUPR5FG5");
+    repository.editTextField("comment", "PUPR5FG5", "Unconfirmed comment");
+    await repository.submitTextField("comment", "PUPR5FG5");
     expect(repository.capabilityFor("RGRPDF24").kind).toBe("writable");
     const sent = requests.length;
-    repository.editComment("PUPR5FG5", "Review before retry");
+    repository.editTextField("comment", "PUPR5FG5", "Review before retry");
     await vi.advanceTimersByTimeAsync(30_000);
-    await repository.submitComment("PUPR5FG5", { automatic: true });
+    await repository.submitTextField("comment", "PUPR5FG5", {
+      automatic: true,
+    });
     expect(requests.slice(sent)).toEqual([]);
-    expect(repository.commentDraftFor("PUPR5FG5")?.text).toBe(
+    expect(repository.textDraftFor("comment", "PUPR5FG5")?.text).toBe(
       "Review before retry",
     );
   } finally {
@@ -1457,7 +1469,7 @@ it("cancels a scheduled comment when deletion is confirmed", async () => {
     await using stack = new AsyncDisposableStack();
     const { repository, requests } = await writable(stack);
     const sent = requests.length;
-    repository.editComment("PUPR5FG5", "never submit");
+    repository.editTextField("comment", "PUPR5FG5", "never submit");
 
     await repository.deleteAnnotation("PUPR5FG5");
     await vi.advanceTimersByTimeAsync(20_000);
@@ -1467,7 +1479,7 @@ it("cancels a scheduled comment when deletion is confirmed", async () => {
         .slice(sent)
         .filter(({ method }) => method === "PATCH" || method === "DELETE"),
     ).toMatchObject([{ method: "DELETE" }]);
-    expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+    expect(repository.textDraftFor("comment", "PUPR5FG5")).toBeNull();
   } finally {
     vi.useRealTimers();
   }
@@ -1479,7 +1491,7 @@ it("discards scheduled session work when the repository unloads", async () => {
     await using stack = new AsyncDisposableStack();
     const { repository, requests } = await writable(stack);
     const sent = requests.length;
-    repository.editComment("PUPR5FG5", "session only");
+    repository.editTextField("comment", "PUPR5FG5", "session only");
 
     await repository[Symbol.asyncDispose]();
     await vi.advanceTimersByTimeAsync(20_000);
@@ -1499,8 +1511,8 @@ it("shares one comment draft and preserves it across unrelated refresh changes",
     children: () => annotationPage(records),
   });
 
-  const started = repository.editComment("PUPR5FG5", "My draft");
-  repository.editComment("PUPR5FG5");
+  const started = repository.editTextField("comment", "PUPR5FG5", "My draft");
+  repository.editTextField("comment", "PUPR5FG5");
   records = records.map((record) =>
     record.key === "PUPR5FG5"
       ? { ...record, color: "#ff6666", version: 20 }
@@ -1509,7 +1521,7 @@ it("shares one comment draft and preserves it across unrelated refresh changes",
   await repository.refresh("RGRPDF24");
 
   expect(started?.serverID).toBe(SERVER_ID);
-  expect(repository.commentDraftFor("PUPR5FG5")).toMatchObject({
+  expect(repository.textDraftFor("comment", "PUPR5FG5")).toMatchObject({
     baseline: "",
     text: "My draft",
     state: { kind: "editing" },
@@ -1525,7 +1537,7 @@ it("requires a choice when Zotero changes a drafted comment", async () => {
   const { repository, requests } = await writable(stack, {
     children: () => annotationPage(records),
   });
-  repository.editComment("PUPR5FG5", "My draft");
+  repository.editTextField("comment", "PUPR5FG5", "My draft");
   records = records.map((record) =>
     record.key === "PUPR5FG5"
       ? { ...record, comment: "Zotero draft", version: 20 }
@@ -1535,9 +1547,9 @@ it("requires a choice when Zotero changes a drafted comment", async () => {
   await repository.refresh("RGRPDF24");
   const sent = requests.length;
 
-  await repository.submitComment("PUPR5FG5");
+  await repository.submitTextField("comment", "PUPR5FG5");
 
-  expect(repository.commentDraftFor("PUPR5FG5")).toMatchObject({
+  expect(repository.textDraftFor("comment", "PUPR5FG5")).toMatchObject({
     baseline: "",
     text: "My draft",
     state: { kind: "conflict", fresh: "Zotero draft" },
@@ -1561,7 +1573,7 @@ it("requires a choice when the verified database changes a draft after API loss"
   const { repository, client, dbEvents, serverEvents } = await writable(stack, {
     root: () => (answering ? rootOk() : unreachable()),
   });
-  repository.editComment("PUPR5FG5", "My offline draft");
+  repository.editTextField("comment", "PUPR5FG5", "My offline draft");
 
   answering = false;
   const lost = nextChange(repository);
@@ -1581,7 +1593,7 @@ it("requires a choice when the verified database changes a draft after API loss"
     database: { serverID: SERVER_ID },
     libraryRevision: 38,
   });
-  expect(repository.commentDraftFor("PUPR5FG5")).toMatchObject({
+  expect(repository.textDraftFor("comment", "PUPR5FG5")).toMatchObject({
     baseline: "",
     text: "My offline draft",
     state: { kind: "conflict", fresh: "Changed in Zotero" },
@@ -1606,24 +1618,24 @@ it("applies the chosen draft against the fresh version and comment field only", 
         afterWrite("PUPR5FG5", { comment: "My latest draft", version: 21 }),
       ),
   });
-  repository.editComment("PUPR5FG5", "My draft");
+  repository.editTextField("comment", "PUPR5FG5", "My draft");
   records = records.map((record) =>
     record.key === "PUPR5FG5"
       ? { ...record, comment: "Zotero draft", version: 20 }
       : record,
   );
   await repository.refresh("RGRPDF24");
-  repository.editComment("PUPR5FG5", "My latest draft");
+  repository.editTextField("comment", "PUPR5FG5", "My latest draft");
   const sent = requests.length;
 
-  const outcome = await repository.retryCommentDraft("PUPR5FG5");
+  const outcome = await repository.retryTextDraft("comment", "PUPR5FG5");
 
   expect(outcome).toEqual({ kind: "idle" });
   expect(JSON.parse(requests[sent]!.body ?? "")).toEqual({
     version: 20,
     annotationComment: "My latest draft",
   });
-  expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+  expect(repository.textDraftFor("comment", "PUPR5FG5")).toBeNull();
 });
 
 it("keeps newer typing when a reviewed comment retry succeeds", async () => {
@@ -1638,7 +1650,7 @@ it("keeps newer typing when a reviewed comment retry succeeds", async () => {
         afterWrite("PUPR5FG5", { comment: "reviewed draft", version: 21 }),
       ),
   });
-  repository.editComment("PUPR5FG5", "reviewed draft");
+  repository.editTextField("comment", "PUPR5FG5", "reviewed draft");
   records = records.map((record) =>
     record.key === "PUPR5FG5"
       ? { ...record, comment: "Zotero draft", version: 20 }
@@ -1647,19 +1659,19 @@ it("keeps newer typing when a reviewed comment retry succeeds", async () => {
   await repository.refresh("RGRPDF24");
 
   const sent = requests.length;
-  const retrying = repository.retryCommentDraft("PUPR5FG5");
+  const retrying = repository.retryTextDraft("comment", "PUPR5FG5");
   // A submit of the same text joins the retry rather than sending again.
-  const duplicate = repository.submitComment("PUPR5FG5");
-  repository.editComment("PUPR5FG5", "typed during retry");
+  const duplicate = repository.submitTextField("comment", "PUPR5FG5");
+  repository.editTextField("comment", "PUPR5FG5", "typed during retry");
   accepted.resolve(writeAccepted());
   expect(await duplicate).toEqual(await retrying);
 
-  expect(repository.commentDraftFor("PUPR5FG5")).toMatchObject({
+  expect(repository.textDraftFor("comment", "PUPR5FG5")).toMatchObject({
     baseline: "reviewed draft",
     text: "typed during retry",
     state: { kind: "pending" },
   });
-  await repository.submitComment("PUPR5FG5");
+  await repository.submitTextField("comment", "PUPR5FG5");
   const writes = requests
     .slice(sent)
     .filter(({ method }) => method === "PATCH");
@@ -1683,7 +1695,7 @@ it("requires another choice when the cached comment moved after review", async (
         }),
       ),
   });
-  repository.editComment("PUPR5FG5", "My draft");
+  repository.editTextField("comment", "PUPR5FG5", "My draft");
   records = records.map((record) =>
     record.key === "PUPR5FG5"
       ? { ...record, comment: "Zotero draft", version: 20 }
@@ -1693,7 +1705,7 @@ it("requires another choice when the cached comment moved after review", async (
   await repository.patchColor("PUPR5FG5", "#ff6666");
   const sent = requests.length;
 
-  const outcome = await repository.retryCommentDraft("PUPR5FG5");
+  const outcome = await repository.retryTextDraft("comment", "PUPR5FG5");
 
   expect(outcome).toEqual({
     kind: "conflict",
@@ -1723,7 +1735,7 @@ it("keeps the reviewed choice through an unrelated version change", async () => 
         }),
       ),
   });
-  repository.editComment("PUPR5FG5", "My draft");
+  repository.editTextField("comment", "PUPR5FG5", "My draft");
   records = records.map((record) =>
     record.key === "PUPR5FG5"
       ? { ...record, comment: "Zotero draft", version: 20 }
@@ -1732,7 +1744,7 @@ it("keeps the reviewed choice through an unrelated version change", async () => 
   await repository.refresh("RGRPDF24");
   const sent = requests.length;
 
-  const outcome = await repository.retryCommentDraft("PUPR5FG5");
+  const outcome = await repository.retryTextDraft("comment", "PUPR5FG5");
 
   expect(outcome).toEqual({ kind: "idle" });
   expect(
@@ -1752,7 +1764,7 @@ it("settles an equal remote comment without another write", async () => {
   const { repository, requests } = await writable(stack, {
     children: () => annotationPage(records),
   });
-  repository.editComment("PUPR5FG5", "Same words");
+  repository.editTextField("comment", "PUPR5FG5", "Same words");
   const sent = requests.length;
   records = records.map((record) =>
     record.key === "PUPR5FG5"
@@ -1762,7 +1774,7 @@ it("settles an equal remote comment without another write", async () => {
 
   await repository.refresh("RGRPDF24");
 
-  expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+  expect(repository.textDraftFor("comment", "PUPR5FG5")).toBeNull();
   expect(
     requests.slice(sent).filter(({ method }) => method === "PATCH"),
   ).toEqual([]);
@@ -1774,7 +1786,7 @@ it("discards a draft only when its own source confirms deletion", async () => {
   const { repository } = await writable(stack, {
     children: () => annotationPage(records),
   });
-  repository.editComment("PUPR5FG5", "Unsaved");
+  repository.editTextField("comment", "PUPR5FG5", "Unsaved");
   const deleted = new Promise<string>((resolve) => {
     stack.defer(
       repository.on("annotation-changed", (key) => {
@@ -1787,7 +1799,7 @@ it("discards a draft only when its own source confirms deletion", async () => {
   await repository.refresh("RGRPDF24");
 
   expect(await deleted).toBe("PUPR5FG5");
-  expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+  expect(repository.textDraftFor("comment", "PUPR5FG5")).toBeNull();
 });
 
 it("discards a queued draft when the verified database confirms deletion after API loss", async () => {
@@ -1800,7 +1812,11 @@ it("discards a queued draft when the verified database confirms deletion after A
         root: () => (answering ? rootOk() : unreachable()),
       });
     const sent = requests.length;
-    repository.editComment("PUPR5FG5", "Never recreate this annotation");
+    repository.editTextField(
+      "comment",
+      "PUPR5FG5",
+      "Never recreate this annotation",
+    );
     const deleted = new Promise<string>((resolve) => {
       stack.defer(
         repository.on("annotation-changed", (key) => {
@@ -1830,7 +1846,7 @@ it("discards a queued draft when the verified database confirms deletion after A
       libraryRevision: 38,
     });
     expect(list?.annotations.map(({ key }) => key)).not.toContain("PUPR5FG5");
-    expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+    expect(repository.textDraftFor("comment", "PUPR5FG5")).toBeNull();
     expect(
       requests.slice(sent).filter(({ method }) => method === "PATCH"),
     ).toEqual([]);
@@ -1846,12 +1862,12 @@ it("keeps a draft when the replacement read fails", async () => {
     children: () =>
       available ? annotationPage(ROUGIER_ANNOTATIONS) : unreachable(),
   });
-  repository.editComment("PUPR5FG5", "Unsaved");
+  repository.editTextField("comment", "PUPR5FG5", "Unsaved");
   available = false;
 
   await repository.refresh("RGRPDF24");
 
-  expect(repository.commentDraftFor("PUPR5FG5")?.text).toBe("Unsaved");
+  expect(repository.textDraftFor("comment", "PUPR5FG5")?.text).toBe("Unsaved");
 });
 
 it("recolours an ink annotation like any other", async () => {
@@ -2505,8 +2521,10 @@ it("draws a submitted comment at once, through a refresh, until Zotero confirms 
   const before = commentOf(repository.peek("RGRPDF24")?.value ?? null);
 
   // The editor closing on blur submits what it holds.
-  repository.editComment("PUPR5FG5", "Blurred words");
-  const saving = repository.submitComment("PUPR5FG5", { automatic: true });
+  repository.editTextField("comment", "PUPR5FG5", "Blurred words");
+  const saving = repository.submitTextField("comment", "PUPR5FG5", {
+    automatic: true,
+  });
 
   expect(drawn).toEqual(["Blurred words"]);
   // A read that lands while the write is away answers the old comment, and
@@ -2548,21 +2566,21 @@ it("draws the newest comment asked for behind a save in flight, and sends only t
       .peek("RGRPDF24")
       ?.value.annotations.find(({ key }) => key === "PUPR5FG5")?.comment;
 
-  repository.editComment("PUPR5FG5", "first");
-  const saved = repository.submitComment("PUPR5FG5");
+  repository.editTextField("comment", "PUPR5FG5", "first");
+  const saved = repository.submitTextField("comment", "PUPR5FG5");
   await vi.waitFor(() => expect(sent).toEqual(["first"]));
   // Two more submits while the first is away: the later text replaces the
   // earlier one, on screen at once and in what Zotero is sent next.
-  repository.editComment("PUPR5FG5", "second");
-  void repository.submitComment("PUPR5FG5");
-  repository.editComment("PUPR5FG5", "third");
-  void repository.submitComment("PUPR5FG5");
+  repository.editTextField("comment", "PUPR5FG5", "second");
+  void repository.submitTextField("comment", "PUPR5FG5");
+  repository.editTextField("comment", "PUPR5FG5", "third");
+  void repository.submitTextField("comment", "PUPR5FG5");
   expect(drawn()).toBe("third");
 
   first.resolve(writeAccepted());
   await saved;
   await vi.waitFor(() =>
-    expect(repository.commentDraftFor("PUPR5FG5")).toBeNull(),
+    expect(repository.textDraftFor("comment", "PUPR5FG5")).toBeNull(),
   );
   expect(sent).toEqual(["first", "third"]);
   expect(drawn()).toBe("third");
@@ -2584,11 +2602,11 @@ it("sends a comment asked for behind a save while the window is hidden", async (
     },
   });
 
-  repository.editComment("PUPR5FG5", "first");
-  void repository.submitComment("PUPR5FG5");
+  repository.editTextField("comment", "PUPR5FG5", "first");
+  void repository.submitTextField("comment", "PUPR5FG5");
   await vi.waitFor(() => expect(sent).toEqual(["first"]));
-  repository.editComment("PUPR5FG5", "second");
-  const queued = repository.submitComment("PUPR5FG5");
+  repository.editTextField("comment", "PUPR5FG5", "second");
+  const queued = repository.submitTextField("comment", "PUPR5FG5");
   first.resolve(writeAccepted());
 
   await expect(queued).resolves.toMatchObject({ kind: "idle" });
@@ -2606,11 +2624,11 @@ it("holds a comment asked for behind a save that fails, for Save comment", async
     },
   });
 
-  repository.editComment("PUPR5FG5", "first");
-  const saved = repository.submitComment("PUPR5FG5");
+  repository.editTextField("comment", "PUPR5FG5", "first");
+  const saved = repository.submitTextField("comment", "PUPR5FG5");
   await vi.waitFor(() => expect(sent).toEqual(["first"]));
-  repository.editComment("PUPR5FG5", "second");
-  const queued = repository.submitComment("PUPR5FG5");
+  repository.editTextField("comment", "PUPR5FG5", "second");
+  const queued = repository.submitTextField("comment", "PUPR5FG5");
 
   first.reject(new AbortError("reader closed"));
   await saved;
@@ -2619,7 +2637,7 @@ it("holds a comment asked for behind a save that fails, for Save comment", async
   // The failure holds the draft with its newest text, and nothing more goes
   // to Zotero until the researcher saves again.
   expect(sent).toEqual(["first"]);
-  expect(repository.commentDraftFor("PUPR5FG5")).toMatchObject({
+  expect(repository.textDraftFor("comment", "PUPR5FG5")).toMatchObject({
     text: "second",
     manualSave: true,
     state: { kind: "failed" },
@@ -3399,15 +3417,15 @@ it("drops a comment draft holding what Zotero already has", async () => {
   // Opening the editor starts a draft before any typing. Closing it asks for
   // the submit, and an untouched draft leaves nothing behind for a card to
   // announce as unsaved.
-  expect(repository.editComment("PUPR5FG5")).not.toBeNull();
-  await repository.submitComment("PUPR5FG5", { automatic: true });
-  expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+  expect(repository.editTextField("comment", "PUPR5FG5")).not.toBeNull();
+  await repository.submitTextField("comment", "PUPR5FG5", { automatic: true });
+  expect(repository.textDraftFor("comment", "PUPR5FG5")).toBeNull();
 
   // Typing and undoing it back to Zotero's own text says the same thing.
-  repository.editComment("PUPR5FG5", "Second thoughts");
-  repository.editComment("PUPR5FG5", "");
-  await repository.submitComment("PUPR5FG5", { automatic: true });
-  expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+  repository.editTextField("comment", "PUPR5FG5", "Second thoughts");
+  repository.editTextField("comment", "PUPR5FG5", "");
+  await repository.submitTextField("comment", "PUPR5FG5", { automatic: true });
+  expect(repository.textDraftFor("comment", "PUPR5FG5")).toBeNull();
 
   // Neither close wrote to Zotero.
   expect(
@@ -3435,7 +3453,7 @@ it("draws nothing while an automatic comment save is in flight", async () => {
       const mutation = repository.mutationFor("PUPR5FG5");
       const editor = fieldEditorControls(
         capability,
-        repository.commentDraftFor("PUPR5FG5"),
+        repository.textDraftFor("comment", "PUPR5FG5"),
         NOW,
       );
       return {
@@ -3445,7 +3463,6 @@ it("draws nothing while an automatic comment save is in flight", async () => {
           hasComment: true,
           hasTags: false,
           type: "highlight",
-          alone: true,
           now: NOW,
         }),
         blocked: editingBlockedReason(capability, mutation, NOW),
@@ -3453,7 +3470,7 @@ it("draws nothing while an automatic comment save is in flight", async () => {
         saveDisabled: editor.saveDisabled,
       };
     };
-    repository.editComment("PUPR5FG5", "typed");
+    repository.editTextField("comment", "PUPR5FG5", "typed");
     const resting = drawn();
     const frames: unknown[] = [];
     stack.defer(
@@ -3464,7 +3481,7 @@ it("draws nothing while an automatic comment save is in flight", async () => {
     frames.push(drawn());
     answer.resolve(writeAccepted());
     await vi.waitFor(() =>
-      expect(repository.commentDraftFor("PUPR5FG5")).toBeNull(),
+      expect(repository.textDraftFor("comment", "PUPR5FG5")).toBeNull(),
     );
 
     expect(frames.length).toBeGreaterThan(1);
@@ -4685,14 +4702,14 @@ it("makes one step of a comment session, however many times it saved", async () 
 
     // The Mark Popup types, and an Annotation Card carries the editing on
     // through the very same verb: the hand-off between them is one session.
-    repository.editComment("PUPR5FG5", "Worth");
+    repository.editTextField("comment", "PUPR5FG5", "Worth");
     await vi.advanceTimersByTimeAsync(1_000);
     expect(zotero.held?.comment).toBe("Worth");
-    repository.editComment("PUPR5FG5", "Worth citing");
+    repository.editTextField("comment", "PUPR5FG5", "Worth citing");
     await vi.advanceTimersByTimeAsync(1_000);
     expect(zotero.held?.comment).toBe("Worth citing");
-    repository.editComment("PUPR5FG5", "Worth citing twice");
-    await repository.submitComment("PUPR5FG5");
+    repository.editTextField("comment", "PUPR5FG5", "Worth citing twice");
+    await repository.submitTextField("comment", "PUPR5FG5");
     expect(zotero.held?.comment).toBe("Worth citing twice");
 
     expect(await repository.undo("RGRPDF24")).toEqual({
@@ -4722,11 +4739,11 @@ it("makes one step of a Text Edit session, and undo writes back the earlier text
     const { repository, requests } = await writable(stack, zotero.answers);
     repository.openHistory("RGRPDF24");
 
-    repository.editQuotedText("PUPR5FG5", "Identify");
+    repository.editTextField("text", "PUPR5FG5", "Identify");
     await vi.advanceTimersByTimeAsync(1_000);
     expect(zotero.held?.text).toBe("Identify");
-    repository.editQuotedText("PUPR5FG5", "Identify your message");
-    await repository.submitQuotedText("PUPR5FG5");
+    repository.editTextField("text", "PUPR5FG5", "Identify your message");
+    await repository.submitTextField("text", "PUPR5FG5");
     expect(zotero.held?.text).toBe("Identify your message");
 
     const sent = requests.length;
@@ -4762,10 +4779,10 @@ it("keeps a Text Edit session and a comment session after it as two steps", asyn
   const { repository } = await writable(stack, zotero.answers);
   repository.openHistory("RGRPDF24");
 
-  repository.editQuotedText("PUPR5FG5", "Identify your message");
-  await repository.submitQuotedText("PUPR5FG5");
-  repository.editComment("PUPR5FG5", "Worth citing");
-  await repository.submitComment("PUPR5FG5");
+  repository.editTextField("text", "PUPR5FG5", "Identify your message");
+  await repository.submitTextField("text", "PUPR5FG5");
+  repository.editTextField("comment", "PUPR5FG5", "Worth citing");
+  await repository.submitTextField("comment", "PUPR5FG5");
 
   // The comment session went back alone, and the text stayed.
   expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
@@ -4785,7 +4802,7 @@ it("starts a new step where the comment moved in Zotero between two saves", asyn
     const { repository } = await writable(stack, zotero.answers);
     repository.openHistory("RGRPDF24");
 
-    repository.editComment("PUPR5FG5", "Worth citing");
+    repository.editTextField("comment", "PUPR5FG5", "Worth citing");
     await vi.advanceTimersByTimeAsync(1_000);
     expect(zotero.held?.comment).toBe("Worth citing");
 
@@ -4793,11 +4810,11 @@ it("starts a new step where the comment moved in Zotero between two saves", asyn
     // the card offers "Apply again" against the value Zotero holds now.
     zotero.changeInZotero({ comment: "Cited by Perez" });
     zotero.refuseNextWrite();
-    repository.editComment("PUPR5FG5", "Worth citing twice");
+    repository.editTextField("comment", "PUPR5FG5", "Worth citing twice");
     await vi.advanceTimersByTimeAsync(1_000);
-    await repository.retryCommentDraft("PUPR5FG5");
+    await repository.retryTextDraft("comment", "PUPR5FG5");
     expect(zotero.held?.comment).toBe("Worth citing twice");
-    repository.discardCommentDraft("PUPR5FG5");
+    repository.discardTextDraft("comment", "PUPR5FG5");
 
     // The write that landed was stamped off the Zotero-side text, so it
     // starts a step of its own: one press puts that text back rather than
@@ -4828,8 +4845,8 @@ it("records no step for a comment draft discarded before it saved", async () => 
     const { repository } = await writable(stack, zotero.answers);
     repository.openHistory("RGRPDF24");
 
-    repository.editComment("PUPR5FG5", "Never saved");
-    repository.discardCommentDraft("PUPR5FG5");
+    repository.editTextField("comment", "PUPR5FG5", "Never saved");
+    repository.discardTextDraft("comment", "PUPR5FG5");
     await vi.advanceTimersByTimeAsync(10_000);
 
     expect(repository.canUndo("RGRPDF24")).toBe(false);
@@ -4849,12 +4866,12 @@ it("records no step where a comment session settles on its starting text", async
     const { repository } = await writable(stack, zotero.answers);
     repository.openHistory("RGRPDF24");
 
-    repository.editComment("HRK7BG32", `${seeded} and slow`);
+    repository.editTextField("comment", "HRK7BG32", `${seeded} and slow`);
     await vi.advanceTimersByTimeAsync(1_000);
     expect(zotero.held?.comment).toBe(`${seeded} and slow`);
 
     // The researcher typed the ending away again before leaving the editor.
-    repository.editComment("HRK7BG32", seeded);
+    repository.editTextField("comment", "HRK7BG32", seeded);
     await vi.advanceTimersByTimeAsync(1_000);
     expect(zotero.held?.comment).toBe(seeded);
 
@@ -4874,13 +4891,13 @@ it("does nothing while the Annotation the top step touches is being edited", asy
     const { repository } = await writable(stack, zotero.answers);
     repository.openHistory("RGRPDF24");
 
-    repository.editComment("PUPR5FG5", "Half typed");
+    repository.editTextField("comment", "PUPR5FG5", "Half typed");
     await vi.advanceTimersByTimeAsync(1_000);
     expect(zotero.held?.comment).toBe("Half typed");
 
     // The comment editor is open again on the same Annotation, with nothing
     // typed into it yet, so the keys belong to the editor holding it.
-    repository.editComment("PUPR5FG5");
+    repository.editTextField("comment", "PUPR5FG5");
     expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
     expect(zotero.held?.comment).toBe("Half typed");
     // The menu row and the palette entry read this, so neither is drawn for a
@@ -4888,7 +4905,7 @@ it("does nothing while the Annotation the top step touches is being edited", asy
     expect(repository.canUndo("RGRPDF24")).toBe(false);
 
     // The editor closed, keeping what Zotero holds.
-    repository.discardCommentDraft("PUPR5FG5");
+    repository.discardTextDraft("comment", "PUPR5FG5");
     expect(repository.canUndo("RGRPDF24")).toBe(true);
 
     expect(await repository.undo("RGRPDF24")).toEqual({
@@ -4912,7 +4929,7 @@ it("does nothing while an autosave on the Attachment is still due", async () => 
 
     // Another Annotation of the same Attachment is being typed into, and its
     // save is armed: the undo waits for it rather than stepping past it.
-    repository.editComment("HRK7BG32", "Still typing");
+    repository.editTextField("comment", "HRK7BG32", "Still typing");
 
     expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
     expect(zotero.held?.color).toBe("#ff6666");
@@ -4931,9 +4948,9 @@ it("discards the redo steps when a comment session moves its own step", async ()
     repository.openHistory("RGRPDF24");
 
     // A comment session on one Annotation, then a colour pick on another.
-    repository.editComment("PUPR5FG5", "Worth citing");
+    repository.editTextField("comment", "PUPR5FG5", "Worth citing");
     await vi.advanceTimersByTimeAsync(1_000);
-    repository.discardCommentDraft("PUPR5FG5");
+    repository.discardTextDraft("comment", "PUPR5FG5");
     await repository.patchColor("HRK7BG32", "#ff6666");
     await repository.undo("RGRPDF24");
     const seededColor = zotero.heldOf("HRK7BG32")!.color;
@@ -4943,9 +4960,9 @@ it("discards the redo steps when a comment session moves its own step", async ()
     // session left rather than pushing a new one, and a moved step is a newly
     // confirmed edit like any other: the undone colour pick is not offered
     // again.
-    repository.editComment("PUPR5FG5", "Worth citing twice");
+    repository.editTextField("comment", "PUPR5FG5", "Worth citing twice");
     await vi.advanceTimersByTimeAsync(1_000);
-    repository.discardCommentDraft("PUPR5FG5");
+    repository.discardTextDraft("comment", "PUPR5FG5");
 
     expect(repository.canRedo("RGRPDF24")).toBe(false);
     expect(await repository.redo("RGRPDF24")).toEqual({ kind: "idle" });
@@ -4963,9 +4980,9 @@ it("records a colour pick after a comment session as a step of its own", async (
     const { repository } = await writable(stack, zotero.answers);
     repository.openHistory("RGRPDF24");
 
-    repository.editComment("PUPR5FG5", "Noted");
+    repository.editTextField("comment", "PUPR5FG5", "Noted");
     await vi.advanceTimersByTimeAsync(1_000);
-    await repository.submitComment("PUPR5FG5");
+    await repository.submitTextField("comment", "PUPR5FG5");
     await repository.patchColor("PUPR5FG5", "#ff6666");
 
     expect(await repository.undo("RGRPDF24")).toMatchObject({
@@ -5013,7 +5030,7 @@ it("records an autosave that lands while a step runs beside it", async () => {
     await away.promise;
     // Another Annotation's comment session saves while the undo's own write is
     // still away.
-    repository.editComment("HRK7BG32", "Typed meanwhile");
+    repository.editTextField("comment", "HRK7BG32", "Typed meanwhile");
     await vi.advanceTimersByTimeAsync(1_000);
     gate.resolve();
     expect(await undone).toMatchObject({ kind: "stepped" });
@@ -5021,7 +5038,7 @@ it("records an autosave that lands while a step runs beside it", async () => {
 
     // The session's own step stands beside the undo rather than being lost to
     // it, so the editor's comment can be stepped back in its turn.
-    await repository.submitComment("HRK7BG32");
+    await repository.submitTextField("comment", "HRK7BG32");
     expect(zotero.heldOf("HRK7BG32")?.comment).toBe("Typed meanwhile");
     expect(await repository.undo("RGRPDF24")).toEqual({
       kind: "stepped",
@@ -5296,13 +5313,13 @@ it("saves, conflicts, and discards a comment draft and a tag draft on one Annota
     stack.defer(repository.on("write-conflict", () => (conflicts += 1)));
 
     // Both editors are open on one Annotation; the tag session ends first.
-    repository.editComment("PUPR5FG5", "Worth citing");
+    repository.editTextField("comment", "PUPR5FG5", "Worth citing");
     repository.editTags("PUPR5FG5", ["review", "figure"]);
     await repository.submitTags("PUPR5FG5");
 
     expect(zotero.tags).toEqual(["review", "figure"]);
     expect(zotero.comment).toBeUndefined();
-    expect(repository.commentDraftFor("PUPR5FG5")).toMatchObject({
+    expect(repository.textDraftFor("comment", "PUPR5FG5")).toMatchObject({
       text: "Worth citing",
       state: { kind: "editing" },
     });
@@ -5313,7 +5330,7 @@ it("saves, conflicts, and discards a comment draft and a tag draft on one Annota
 
     expect(zotero.comment).toBe("Worth citing");
     expect(zotero.tags).toEqual(["review", "figure"]);
-    expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+    expect(repository.textDraftFor("comment", "PUPR5FG5")).toBeNull();
     expect(repository.tagDraftFor("PUPR5FG5")).toMatchObject({
       baseline: ["review", "figure"],
       names: ["review", "figure", "todo"],
@@ -5322,7 +5339,7 @@ it("saves, conflicts, and discards a comment draft and a tag draft on one Annota
 
     // Zotero moves the comment under typed text: only the comment conflicts,
     // and the tag session still saves.
-    repository.editComment("PUPR5FG5", "Worth citing twice");
+    repository.editTextField("comment", "PUPR5FG5", "Worth citing twice");
     zotero.changeInZotero({ comment: "From Zotero" });
     await repository.refresh("RGRPDF24");
     expect(conflicts).toBe(1);
@@ -5330,7 +5347,7 @@ it("saves, conflicts, and discards a comment draft and a tag draft on one Annota
 
     expect(zotero.tags).toEqual(["review", "figure", "todo"]);
     expect(zotero.comment).toBe("From Zotero");
-    expect(repository.commentDraftFor("PUPR5FG5")).toMatchObject({
+    expect(repository.textDraftFor("comment", "PUPR5FG5")).toMatchObject({
       text: "Worth citing twice",
       state: { kind: "conflict", fresh: "From Zotero" },
     });
@@ -5347,12 +5364,12 @@ it("saves, conflicts, and discards a comment draft and a tag draft on one Annota
     // Discarding one field's draft leaves the other's.
     repository.editTags("PUPR5FG5", ["review"]);
     repository.discardTagDraft("PUPR5FG5");
-    expect(repository.commentDraftFor("PUPR5FG5")).toMatchObject({
+    expect(repository.textDraftFor("comment", "PUPR5FG5")).toMatchObject({
       text: "Worth citing twice",
     });
     repository.editTags("PUPR5FG5", ["review"]);
-    repository.discardCommentDraft("PUPR5FG5");
-    expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+    repository.discardTextDraft("comment", "PUPR5FG5");
+    expect(repository.textDraftFor("comment", "PUPR5FG5")).toBeNull();
     expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
     expect(repository.tagDraftFor("PUPR5FG5")).toMatchObject({
       names: ["review"],
@@ -5374,7 +5391,7 @@ it("requires a choice when Zotero changes a drafted Quoted Text, and ends it by 
     requests.slice(from).filter(({ method }) => method === "PATCH");
 
   // A Geometry Edit in Zotero's reader rewrites the text under typed text.
-  repository.editQuotedText("PUPR5FG5", "My correction");
+  repository.editTextField("text", "PUPR5FG5", "My correction");
   zotero.changeInZotero({ text: "Text of the new range" });
   let sent = requests.length;
   await repository.refresh("RGRPDF24");
@@ -5389,29 +5406,29 @@ it("requires a choice when Zotero changes a drafted Quoted Text, and ends it by 
     },
   });
   // The conflict holds the draft: a submit sends nothing.
-  await repository.submitQuotedText("PUPR5FG5");
+  await repository.submitTextField("text", "PUPR5FG5");
   expect(patches(sent)).toEqual([]);
 
   // Apply again sends the text alone against the version Zotero holds now.
-  await repository.retryQuotedTextDraft("PUPR5FG5");
+  await repository.retryTextDraft("text", "PUPR5FG5");
   expect(patches(sent).map(({ body }) => JSON.parse(body ?? ""))).toEqual([
     { version: 12, annotationText: "My correction" },
   ]);
   expect(zotero.text).toBe("My correction");
-  expect(repository.quotedTextDraftFor("PUPR5FG5")).toBeNull();
+  expect(repository.textDraftFor("text", "PUPR5FG5")).toBeNull();
   expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
 
   // Discard keeps Zotero's text and sends nothing.
-  repository.editQuotedText("PUPR5FG5", "Another correction");
+  repository.editTextField("text", "PUPR5FG5", "Another correction");
   zotero.changeInZotero({ text: "Edited in Zotero's sidebar" });
   await repository.refresh("RGRPDF24");
   expect(conflicts).toBe(2);
   sent = requests.length;
-  repository.discardQuotedTextDraft("PUPR5FG5");
+  repository.discardTextDraft("text", "PUPR5FG5");
 
   expect(patches(sent)).toEqual([]);
   expect(zotero.text).toBe("Edited in Zotero's sidebar");
-  expect(repository.quotedTextDraftFor("PUPR5FG5")).toBeNull();
+  expect(repository.textDraftFor("text", "PUPR5FG5")).toBeNull();
   expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
 });
 
@@ -5426,8 +5443,8 @@ it("draws a pending Text Edit as its Pending Proposal, and the confirmed text ag
   const confirmed = drawn();
 
   const release = zotero.holdWrites();
-  repository.editQuotedText("PUPR5FG5", "Fixed ligature");
-  const saving = repository.submitQuotedText("PUPR5FG5");
+  repository.editTextField("text", "PUPR5FG5", "Fixed ligature");
+  const saving = repository.submitTextField("text", "PUPR5FG5");
   expect(drawn()).toBe("Fixed ligature");
 
   // Zotero's sidebar moves the text while the write waits, so Zotero refuses
@@ -5450,15 +5467,15 @@ it("settles a Quoted Text draft that Zotero already holds with no conflict", asy
   const { repository, requests } = await writable(stack, zotero.answers);
   let conflicts = 0;
   stack.defer(repository.on("write-conflict", () => (conflicts += 1)));
-  repository.editQuotedText("PUPR5FG5", "Same words");
+  repository.editTextField("text", "PUPR5FG5", "Same words");
   zotero.changeInZotero({ text: "Same words" });
   const sent = requests.length;
 
   await repository.refresh("RGRPDF24");
-  await repository.submitQuotedText("PUPR5FG5");
+  await repository.submitTextField("text", "PUPR5FG5");
 
   expect(conflicts).toBe(0);
-  expect(repository.quotedTextDraftFor("PUPR5FG5")).toBeNull();
+  expect(repository.textDraftFor("text", "PUPR5FG5")).toBeNull();
   expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
   expect(
     requests.slice(sent).filter(({ method }) => method === "PATCH"),
@@ -5479,13 +5496,13 @@ it("saves and conflicts a comment draft and a Quoted Text draft on one Annotatio
   };
 
   // A text save leaves the comment draft unsent.
-  repository.editComment("PUPR5FG5", "Worth citing");
-  repository.editQuotedText("PUPR5FG5", "Fixed ligature");
-  await repository.submitQuotedText("PUPR5FG5");
+  repository.editTextField("comment", "PUPR5FG5", "Worth citing");
+  repository.editTextField("text", "PUPR5FG5", "Fixed ligature");
+  await repository.submitTextField("text", "PUPR5FG5");
 
   expect(zotero.text).toBe("Fixed ligature");
   expect(zotero.comment).toBeUndefined();
-  expect(repository.commentDraftFor("PUPR5FG5")).toMatchObject({
+  expect(repository.textDraftFor("comment", "PUPR5FG5")).toMatchObject({
     text: "Worth citing",
     state: { kind: "editing" },
   });
@@ -5494,30 +5511,30 @@ it("saves and conflicts a comment draft and a Quoted Text draft on one Annotatio
   // still lands beside the conflict and leaves it standing.
   zotero.changeInZotero({ comment: "From Zotero" });
   await repository.refresh("RGRPDF24");
-  repository.editQuotedText("PUPR5FG5", "Fixed ligature twice");
-  await repository.submitQuotedText("PUPR5FG5");
+  repository.editTextField("text", "PUPR5FG5", "Fixed ligature twice");
+  await repository.submitTextField("text", "PUPR5FG5");
 
   expect(zotero.text).toBe("Fixed ligature twice");
-  expect(repository.quotedTextDraftFor("PUPR5FG5")).toBeNull();
+  expect(repository.textDraftFor("text", "PUPR5FG5")).toBeNull();
   expect(repository.mutationFor("PUPR5FG5")).toEqual(commentConflict);
 
   // Zotero moves the text too: both conflicts stand, and ending the text's
   // leaves the comment's for the card to offer next.
-  repository.editQuotedText("PUPR5FG5", "Third fix");
+  repository.editTextField("text", "PUPR5FG5", "Third fix");
   zotero.changeInZotero({ text: "Changed range" });
   await repository.refresh("RGRPDF24");
-  expect(repository.quotedTextDraftFor("PUPR5FG5")).toMatchObject({
+  expect(repository.textDraftFor("text", "PUPR5FG5")).toMatchObject({
     state: { kind: "conflict", fresh: "Changed range" },
   });
-  repository.discardQuotedTextDraft("PUPR5FG5");
+  repository.discardTextDraft("text", "PUPR5FG5");
 
   expect(repository.mutationFor("PUPR5FG5")).toEqual(commentConflict);
-  expect(repository.commentDraftFor("PUPR5FG5")).toMatchObject({
+  expect(repository.textDraftFor("comment", "PUPR5FG5")).toMatchObject({
     text: "Worth citing",
     state: { kind: "conflict", fresh: "From Zotero" },
   });
 
-  await repository.retryCommentDraft("PUPR5FG5");
+  await repository.retryTextDraft("comment", "PUPR5FG5");
   expect(zotero.comment).toBe("Worth citing");
   expect(zotero.text).toBe("Changed range");
   expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
@@ -5552,7 +5569,6 @@ it("keeps the verbs live and the draft saving until the read-back lands", async 
     hasComment: false,
     hasTags: true,
     type: "highlight",
-    alone: true,
     now: NOW,
   });
   expect([verbs.color, verbs.comment, verbs.delete]).toMatchObject([
@@ -5780,12 +5796,12 @@ it("discards a tag draft when deletion is confirmed in Zotero", async () => {
 it("discards the tag draft with the comment draft when the Annotation is deleted", async () => {
   await using stack = new AsyncDisposableStack();
   const { repository } = await writable(stack);
-  repository.editComment("PUPR5FG5", "Unsaved");
+  repository.editTextField("comment", "PUPR5FG5", "Unsaved");
   repository.editTags("PUPR5FG5", ["figure"]);
 
   await repository.deleteAnnotation("PUPR5FG5");
 
-  expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+  expect(repository.textDraftFor("comment", "PUPR5FG5")).toBeNull();
   expect(repository.tagDraftFor("PUPR5FG5")).toBeNull();
 });
 
@@ -5950,7 +5966,6 @@ it("stands the verbs down while a tag undo is in flight, as a gesture's write", 
     hasComment: false,
     hasTags: true,
     type: "highlight",
-    alone: true,
     now: NOW,
   });
   expect([verbs.color, verbs.comment, verbs.tags, verbs.delete]).toMatchObject([

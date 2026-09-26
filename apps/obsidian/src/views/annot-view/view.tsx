@@ -43,13 +43,12 @@ import type {
   AnnotationRepository,
   AnnotationSource,
   HistoryDirection,
-  TextFieldDraft,
 } from "@/services/annotation-repository/service";
 import {
+  byTextField,
   IDLE,
   writeFailureMessage,
 } from "@/services/annotation-repository/write";
-import type { MutationState } from "@/services/annotation-repository/write";
 import type { DatabaseService } from "@/services/database/service";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import { savedExcerptRequest } from "@/services/excerpt-image/request";
@@ -95,20 +94,13 @@ import {
   AnnotStoreProvider,
   createAnnotStore,
   editorOpen,
-  isEditing,
   INITIAL_FILTER_STATE,
+  noFieldDrafts,
   selectedAlone,
-  TEXT_EDITING_FIELDS,
   toggledTags,
   visibleOrder,
 } from "./store";
-import type {
-  AnnotState,
-  EditingField,
-  FieldDrafts,
-  FollowMode,
-  TextEditingField,
-} from "./store";
+import type { AnnotState, FollowMode } from "./store";
 import {
   DEFAULT_FOLLOW_MODE,
   parseAnnotViewState,
@@ -172,29 +164,24 @@ export interface AnnotViewDeps {
     | "annotationState"
     | "capability"
     | "capabilityFor"
-    | "commentDraftFor"
+    | "textDraftFor"
     | "deleteAnnotation"
     | "deleteAnnotations"
-    | "discardCommentDraft"
-    | "discardQuotedTextDraft"
+    | "discardTextDraft"
     | "discardTagDraft"
     | "discardConflict"
     | "on"
     | "patchColor"
     | "patchColors"
-    | "editComment"
-    | "editQuotedText"
+    | "editTextField"
     | "editTags"
     | "peek"
     | "read"
     | "redo"
     | "refresh"
     | "retryWrite"
-    | "quotedTextDraftFor"
-    | "retryCommentDraft"
-    | "retryQuotedTextDraft"
-    | "submitComment"
-    | "submitQuotedText"
+    | "retryTextDraft"
+    | "submitTextField"
     | "submitTags"
     | "tagDraftFor"
     | "undo"
@@ -771,9 +758,9 @@ export class AnnotationView extends ItemView implements HistorySurface {
         const now = this.#deps.annotations.annotationState(annotationKey);
         const mutations = new Map(state.mutations);
         mutations.set(annotationKey, now.mutation);
-        const fieldDrafts = this.#fieldDrafts((field) => {
+        const fieldDrafts = byTextField((field) => {
           const drafts = new Map(state.fieldDrafts[field]);
-          const draft = this.#draftFor[field](annotationKey);
+          const draft = now.textDrafts[field];
           if (draft) drafts.set(annotationKey, draft);
           else drafts.delete(annotationKey);
           return drafts;
@@ -1177,11 +1164,14 @@ export class AnnotationView extends ItemView implements HistorySurface {
           sourceScope !== this.#deps.zoteroPref.dataDir
         )
           return;
-        const fieldDrafts = this.#fieldDrafts(
+        const fieldDrafts = byTextField(
           (field) =>
             new Map(
               list.annotations.flatMap((annotation) => {
-                const draft = this.#draftFor[field](annotation.key);
+                const draft = this.#deps.annotations.textDraftFor(
+                  field,
+                  annotation.key,
+                );
                 return draft ? [[annotation.key, draft] as const] : [];
               }),
             ),
@@ -1266,7 +1256,6 @@ export class AnnotationView extends ItemView implements HistorySurface {
       hasComment: annot.comment !== null,
       hasTags: annot.tags.length > 0,
       type: annot.type,
-      alone: selectedAlone(state, annot.key),
       now: Temporal.Now.instant(),
     });
   }
@@ -1518,50 +1507,22 @@ export class AnnotationView extends ItemView implements HistorySurface {
     return true;
   }
 
-  /** How the view reads each text field's shared draft of one Annotation. */
-  readonly #draftFor: Record<
-    TextEditingField,
-    (annotationKey: string) => TextFieldDraft | null
-  > = {
-    comment: (key) => this.#deps.annotations.commentDraftFor(key),
-    text: (key) => this.#deps.annotations.quotedTextDraftFor(key),
-  };
-
-  /** One map of drafts per text field, each built by `build`. */
-  #fieldDrafts(
-    build: (field: TextEditingField) => ReadonlyMap<string, TextFieldDraft>,
-  ): FieldDrafts {
-    return Object.fromEntries(
-      TEXT_EDITING_FIELDS.map((field) => [field, build(field)]),
-    ) as Record<TextEditingField, ReadonlyMap<string, TextFieldDraft>>;
-  }
-
-  /**
-   * How the view saves each field's open editor as it closes it. A text
-   * field's text is already its draft, which this submits as the editor's own
-   * close would; `null` for the tag editor, which saves its session as it
-   * unmounts.
-   */
-  readonly #submitOnClose: Record<
-    EditingField,
-    ((annotationKey: string) => Promise<MutationState>) | null
-  > = {
-    comment: (key) =>
-      this.#deps.annotations.submitComment(key, { automatic: true }),
-    text: (key) =>
-      this.#deps.annotations.submitQuotedText(key, { automatic: true }),
-    tags: null,
-  };
-
   /**
    * Submits the open field editor's draft, as its own close would, and says
    * why in a notice where the write did not land.
    */
   #submitOpenEditor(): void {
     const { editing } = this.#store.getState();
-    const submit = editing && this.#submitOnClose[editing.field];
-    if (!submit) return;
-    void submit(editing.annotationKey).then((outcome) => {
+    // The tag editor saves its session as it unmounts. A text field's text is
+    // already its draft, which this submits as the editor's own close would.
+    if (!editing || editing.field === "tags") return;
+    const { annotations } = this.#deps;
+    const submitting = annotations.submitTextField(
+      editing.field,
+      editing.annotationKey,
+      { automatic: true },
+    );
+    void submitting.then((outcome) => {
       if (outcome.kind === "failed")
         new BaseNotice(
           writeFailureMessage(outcome.failure, Temporal.Now.instant()),
@@ -1596,25 +1557,15 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * left alone: the Follow Mode is the user's, and a reveal is not one of the
    * gestures that changes it.
    *
-   * @param comment whether the card's comment editor takes the caret, which is
-   *   the popup's answer to anything that needs typing.
    * @see apps/obsidian/docs/adr/0041-the-annotation-view-changes-its-follow-mode-only-on-a-user-gesture.md
    */
-  revealAnnotation(
-    annotationKey: string,
-    { comment }: { comment: boolean },
-  ): void {
+  revealAnnotation(annotationKey: string): void {
     const held = this.#store
       .getState()
       .annotations?.some((record) => record.key === annotationKey);
     if (held !== true) return;
     this.#changeFromView({ kind: "click", key: annotationKey });
     this.#scrollToCard([annotationKey]);
-    if (!comment || isEditing(this.#store.getState(), annotationKey, "comment"))
-      return;
-    // One editor at a time: an open tag editor saves and closes first.
-    this.#closeEditors();
-    this.#store.setState({ editing: { annotationKey, field: "comment" } });
   }
 
   /**
@@ -1709,7 +1660,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
       annotations: null,
       annotationSource: null,
       annotationSourceScope: null,
-      fieldDrafts: this.#fieldDrafts(() => new Map()),
+      fieldDrafts: noFieldDrafts(),
       tagDrafts: new Map(),
       editing: null,
     });

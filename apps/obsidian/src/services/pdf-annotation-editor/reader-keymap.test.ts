@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
-import { commentField } from "@/views/annot-view/comment-sheet";
+import { textFieldWording } from "@/views/annot-view/card-controls";
 import { createFieldEditor } from "@/views/annot-view/field-editor";
 
 import { annotation, pageView, readerOverZotero } from "./__fixtures__";
@@ -155,7 +155,7 @@ it("leaves the history keys to the comment editor holding focus", async () => {
   using editor = createFieldEditor({
     app: editorApp(),
     parent,
-    wording: commentField(),
+    wording: textFieldWording("comment"),
     text: "Worth citing",
     readOnly: false,
     onChange: vi.fn(),

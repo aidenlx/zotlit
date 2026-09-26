@@ -49,12 +49,12 @@ import type {
 import {
   fieldEditorControls,
   editingLive,
+  textFieldWording,
 } from "@/views/annot-view/card-controls";
-import { commentField } from "@/views/annot-view/comment-sheet";
 import type {
   EditorSheet,
   EditorSheetStatus,
-} from "@/views/annot-view/comment-sheet";
+} from "@/views/annot-view/editor-sheet";
 
 import { inTextEntry, isEditGesture } from "./capability-affordance";
 import { CreateMarkPopup, createPopupRow } from "./create-popup";
@@ -797,7 +797,7 @@ export class MarkCreation implements CreationGestures, Disposable {
       sheet: input.commenting
         ? {
             sheetRef: this.#sheet,
-            field: commentField(),
+            field: textFieldWording("comment"),
             value: "",
             status: sheetStatus(input.capability, input.now),
             onSubmit: commit,

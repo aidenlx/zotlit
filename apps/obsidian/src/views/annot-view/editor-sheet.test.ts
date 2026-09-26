@@ -1,13 +1,18 @@
 // @vitest-environment happy-dom
 import { expect, it, vi } from "vitest";
 
+import * as m from "@/lib/i18n/generated/messages";
+import type { TextField } from "@/services/annotation-repository/service";
+import { TEXT_FIELDS } from "@/services/annotation-repository/write";
+
 import { editorApp, pressSubmit } from "./__fixtures__/editor-app";
-import { commentField, renderEditorSheet } from "./comment-sheet";
+import { textFieldWording } from "./card-controls";
+import { renderEditorSheet } from "./editor-sheet";
 import type {
   EditorSheetProps,
   EditorSheetStatus,
-  CommentSurface,
-} from "./comment-sheet";
+  EditorSurface,
+} from "./editor-sheet";
 
 const AUTOMATIC: EditorSheetStatus = {
   hint: null,
@@ -28,7 +33,7 @@ function sheet(
     {
       app,
       surface: "popup",
-      field: commentField(),
+      field: textFieldWording("comment"),
       value: "",
       onSubmit: vi.fn(),
       onCancel: vi.fn(),
@@ -68,37 +73,62 @@ function button(el: HTMLElement, label: string): HTMLButtonElement {
   return found;
 }
 
-it("still submits on Mod+Enter and steps back on Escape beside Done", () => {
-  const onSubmit = vi.fn();
-  const onCancel = vi.fn();
-  const onDone = vi.fn();
-  using mounted = sheet({ onSubmit, onCancel, onDone });
+it.each(TEXT_FIELDS)(
+  "still submits on Mod+Enter and steps back on Escape beside Done, for the %s",
+  (field: TextField) => {
+    const onSubmit = vi.fn();
+    const onCancel = vi.fn();
+    const onDone = vi.fn();
+    using mounted = sheet({
+      field: textFieldWording(field),
+      onSubmit,
+      onCancel,
+      onDone,
+    });
 
-  pressSubmit(mounted.app);
-  mounted.sheet.editor.view.contentDOM.dispatchEvent(
-    new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
-  );
+    pressSubmit(mounted.app);
+    mounted.sheet.editor.view.contentDOM.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    );
 
-  expect(onSubmit).toHaveBeenCalledOnce();
-  expect(onCancel).toHaveBeenCalledOnce();
-  expect(onDone).not.toHaveBeenCalled();
-});
+    expect(onSubmit).toHaveBeenCalledOnce();
+    expect(onCancel).toHaveBeenCalledOnce();
+    expect(onDone).not.toHaveBeenCalled();
+  },
+);
 
-it("names the field it edits in its placeholder, its accessible name and its Save button", () => {
-  using mounted = sheet({
-    field: {
-      placeholder: "Add the quoted text…",
-      label: "Edit quoted text",
-      save: "Save text",
-    },
-  });
+it.each(TEXT_FIELDS)(
+  "hands a Done click to Done alone, for the %s",
+  (field: TextField) => {
+    const onSubmit = vi.fn();
+    const onCancel = vi.fn();
+    const onDone = vi.fn();
+    using mounted = sheet({
+      field: textFieldWording(field),
+      onSubmit,
+      onCancel,
+      onDone,
+    });
+
+    button(mounted.el, m.annot_view_editor_done()).click();
+
+    expect(onDone).toHaveBeenCalledOnce();
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+  },
+);
+
+it("names the Quoted Text in its placeholder, its accessible name and its Save button", () => {
+  using mounted = sheet({ field: textFieldWording("text") });
   const { contentDOM, dom } = mounted.sheet.editor.view;
 
-  expect(contentDOM.getAttribute("aria-label")).toBe("Edit quoted text");
-  expect(dom.querySelector(".cm-placeholder")?.textContent).toBe(
-    "Add the quoted text…",
+  expect(contentDOM.getAttribute("aria-label")).toBe(
+    m.annot_view_card_text_label(),
   );
-  expect(button(mounted.el, "Save text")).toBeDefined();
+  expect(dom.querySelector(".cm-placeholder")?.textContent).toBe(
+    m.annot_view_card_text_placeholder(),
+  );
+  expect(button(mounted.el, m.annot_view_text_save())).toBeDefined();
 });
 
 it("steps back on Escape", () => {
@@ -142,7 +172,7 @@ it("opens the sheet on the comment already typed", () => {
 it.each([
   ["popup", true],
   ["card", false],
-] satisfies [CommentSurface, boolean][])(
+] satisfies [EditorSurface, boolean][])(
   "promises the comment sheet's theme hook by its literal name on the %s",
   (surface, hooked) => {
     // The name itself is the public surface, so the literal is the test.
