@@ -725,6 +725,63 @@ it("keeps the row as it stands while a comment write is in flight", async () => 
   await saving;
 });
 
+// A browser clicks the node that took both the press and the release, so a
+// verb redrawn between the two would lose the click.
+it("keeps a pressed verb under the pointer through a write on its mark", async () => {
+  await using h = await setup();
+  click(h.page.div, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  const reveal = () =>
+    popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='reveal']");
+  const pressed = reveal();
+  const release = h.zotero.holdWrites();
+
+  const recolouring = h.repository.patchColor("WRDS2222", "#5fb236");
+  await reread(h);
+  expect(h.store.getState().mutations.get("WRDS2222")?.kind).toBe("pending");
+
+  expect(reveal()).toBe(pressed);
+  release();
+  await recolouring;
+});
+
+it("keeps the keyboard on a verb through a write on its mark", async () => {
+  await using h = await setup();
+  click(h.page.div, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  const reveal = () =>
+    popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='reveal']");
+  reveal()!.focus();
+  const release = h.zotero.holdWrites();
+
+  const recolouring = h.repository.patchColor("WRDS2222", "#5fb236");
+  await reread(h);
+
+  expect(popup.hoverEl.ownerDocument.activeElement).toBe(reveal());
+  release();
+  await recolouring;
+});
+
+// Obsidian drops a menu whose trigger leaves the document.
+it("keeps the colour menu's trigger in the popup through a write on its mark", async () => {
+  await using h = await setup();
+  click(h.page.div, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='color']")!.click();
+  const menu = Menu.instances.at(-1)!;
+  const release = h.zotero.holdWrites();
+
+  const recolouring = h.repository.patchColor("WRDS2222", "#5fb236");
+  await reread(h);
+
+  expect(menu.parentEl?.isConnected).toBe(true);
+  expect(menu.parentEl).toBe(
+    popup.hoverEl.querySelector("[data-zt-verb='color']"),
+  );
+  release();
+  await recolouring;
+});
+
 const COMMENTED = { ...WORD, comment: "<p>worth quoting</p>" };
 
 /** The rendered comment under the popup's row, or `null` while none stands. */

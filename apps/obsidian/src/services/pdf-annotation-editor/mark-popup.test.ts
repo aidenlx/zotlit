@@ -1,5 +1,8 @@
 // @vitest-environment happy-dom
 import type { HoverParent } from "obsidian";
+import { createElement } from "react";
+import { createRoot } from "react-dom/client";
+import type { Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -10,7 +13,7 @@ import { IDLE } from "@/services/annotation-repository/write";
 import type { MutationState } from "@/services/annotation-repository/write";
 
 import { annotation } from "./__fixtures__";
-import { MarkPopup, markPopupRow, renderMarkPopupRow } from "./mark-popup";
+import { MarkPopup, markPopupRow, MarkPopupVerbs } from "./mark-popup";
 import type { MarkPopupControlId, MarkPopupRow } from "./mark-popup";
 
 const NOW = Temporal.Instant.from("2026-09-17T10:00:00Z");
@@ -135,12 +138,27 @@ describe("markPopupRow", () => {
   });
 });
 
-describe("renderMarkPopupRow", () => {
+describe("MarkPopupVerbs", () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) root.unmount();
+  });
+
   function draw(built: MarkPopupRow) {
     const node = document.createElement("div");
+    const root = createRoot(node);
+    roots.push(root);
     const pressed: MarkPopupControlId[] = [];
-    renderMarkPopupRow(node, built, (id) => pressed.push(id));
-    return { node, pressed };
+    const render = (next: MarkPopupRow) =>
+      root.render(
+        createElement(MarkPopupVerbs, {
+          row: next,
+          activate: (id) => pressed.push(id),
+        }),
+      );
+    render(built);
+    return { node, pressed, render };
   }
 
   function controls(node: HTMLElement): (string | undefined)[] {
@@ -166,15 +184,17 @@ describe("renderMarkPopupRow", () => {
   });
 
   it("replaces what the row held, so a redraw leaves no second row", () => {
-    const { node } = draw(row());
-    renderMarkPopupRow(node, row({ stack: { index: 0, total: 2 } }), () => {});
+    const { node, render } = draw(row());
+    render(row({ stack: { index: 0, total: 2 } }));
     expect(controls(node)).toHaveLength(7);
   });
 
   it("gives the palette the Annotation's own colour", () => {
     const { node } = draw(row());
     expect(
-      node.querySelector<HTMLElement>("[data-zt-verb='color']")?.style.color,
+      node
+        .querySelector<HTMLElement>("[data-zt-verb='color']")
+        ?.style.getPropertyValue("--zt-verb-color"),
     ).toBe("#2ea8e5");
   });
 
@@ -207,10 +227,9 @@ function openPopup(anchor = { x: 120, y: 240 }) {
   const popup = new MarkPopup({
     parent,
     anchor,
-    render: (content) => {
-      content.empty();
+    render: () => {
       drawn.push(label);
-      content.createSpan({ text: label });
+      return createElement("span", null, label);
     },
   });
   return {

@@ -927,12 +927,11 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       variants: {
         selected: {
           anchor: () => selection.anchor(),
-          render: (content) => selection.renderPopup(content),
-          release: () => selection.releasePopup(),
+          render: (content) => selection.popupView(content),
         },
         create: {
           anchor: () => creation.anchor(),
-          render: (content) => creation.renderPopup(content),
+          render: () => creation.popupView(),
           unanchored: () => creation.unanchored(),
         },
       },

@@ -7,6 +7,8 @@
 //
 // @see apps/obsidian/docs/adr/0056-reader-surface-state-is-one-vanilla-store-per-pdf-view.md
 import type { HoverParent } from "obsidian";
+import { createElement, Fragment } from "react";
+import type { ReactNode } from "react";
 
 import { getLogger } from "@/lib/log";
 import { hasActiveMenu } from "@/lib/menu";
@@ -14,7 +16,6 @@ import { hasActiveMenu } from "@/lib/menu";
 import type { Point } from "./hit-test";
 import { MarkPopup } from "./mark-popup";
 import {
-  sameFlat,
   sameFlatList,
   selectCreateRow,
   selectFloatingHead,
@@ -22,7 +23,6 @@ import {
 } from "./reader-surface-state";
 import type {
   Floating,
-  FloatingHead,
   ReaderSurfaceState,
   ReaderSurfaceStore,
 } from "./reader-surface-state";
@@ -38,16 +38,12 @@ export interface MarkPopupVariant {
    */
   anchor: () => Point | null;
   /**
-   * Fills the popup's content. A rebuild hands it an empty element; a refresh
-   * hands it the content as it last left it, to patch in place.
+   * What the popup shows, as a Preact element; `undefined` leaves what it
+   * shows as it stands.
+   *
+   * @param content the popup's content element, which focus may move within.
    */
-  render: (content: HTMLElement) => void;
-  /**
-   * Runs as the content this variant last filled goes: before a rebuild
-   * empties it, and as the popup hides. What the variant mounted in it, such
-   * as a Preact root, is let go here.
-   */
-  release?: () => void;
+  render: (content: HTMLElement) => ReactNode | undefined;
   /**
    * Runs once the anchor reads `null` and the popup has hidden, for a variant
    * that cannot outlive its place on screen.
@@ -72,21 +68,15 @@ export interface MarkPopupHostDeps {
 /**
  * Opens the popup for a floating variant with an anchor, and hides it for
  * none, an image capture, a Text Draft, a quiet selection, a selection whose grip is held
- * and not yet saving, or an anchor of `null`. A change of variant kind, of
- * selected key, of commenting, or of tagging rebuilds the row; any other change to what
- * floats or to its row refreshes it, which is what keeps an editor alive.
- *
- * A rebuild releases what the variant mounted in the content, such as the tag
- * section's Preact root, before it empties it; a hide releases it too. A
- * refresh keeps that root: the variant renders it again, in place while an
- * editor is open, or moved into the new column the refresh builds.
+ * and not yet saving, or an anchor of `null`. Any change to what floats or to
+ * its row renders the popup again; a change of variant kind or of selected key
+ * mounts its content anew, and any other change is a diff in place, which is
+ * what keeps an editor alive.
  */
 export class MarkPopupHost implements Disposable {
   readonly #deps;
   readonly #unsubscribe;
   #popup: MarkPopup | null = null;
-  /** The head the popup's row was last built for. */
-  #built: FloatingHead | null = null;
 
   constructor(deps: MarkPopupHostDeps) {
     this.#deps = deps;
@@ -142,11 +132,9 @@ export class MarkPopupHost implements Disposable {
       ? this.#popup && "hide"
       : !this.#popup
         ? "open"
-        : !refresh
-          ? null
-          : sameFlat(this.#built, head)
-            ? "refresh"
-            : "rebuild";
+        : refresh
+          ? "refresh"
+          : null;
     if (action)
       logger.debug("Mark Popup placed", {
         action,
@@ -166,22 +154,19 @@ export class MarkPopupHost implements Disposable {
       this.#popup.retarget(anchor);
       return;
     }
-    const popup = new MarkPopup({
+    const popup: MarkPopup = new MarkPopup({
       parent: this.#deps.parent,
       anchor,
       render: (content) => this.#render(content),
-    });
-    popup.register(() => {
-      if (this.#popup !== popup) return;
-      const built = this.#built;
-      this.#popup = null;
-      this.#built = null;
-      this.#release(built);
+      onHide: () => {
+        if (this.#popup === popup) this.#popup = null;
+      },
     });
     this.#popup = popup;
   }
 
-  #render(content: HTMLElement): void {
+  /** The variant's content, keyed by what it floats for. */
+  #render(content: HTMLElement): ReactNode | undefined {
     const state = this.#deps.store.getState();
     const { floating } = state;
     if (
@@ -189,36 +174,22 @@ export class MarkPopupHost implements Disposable {
       floating.kind === "capture" ||
       floating.kind === "text-draft"
     )
-      return;
-    const head = selectFloatingHead(state);
-    const built = this.#built;
-    if (!sameFlat(built, head)) {
-      this.#built = head;
-      this.#release(built);
-      content.empty();
-    }
-    this.#deps.variants[floating.kind].render(content);
+      return undefined;
+    const view = this.#deps.variants[floating.kind].render(content);
+    if (view === undefined) return undefined;
+    const { kind, key } = selectFloatingHead(state);
+    return createElement(Fragment, { key: `${kind}:${key}` }, view);
   }
 
   /**
-   * The fields are cleared before the release: letting go of the content can
+   * The field is cleared before the popup hides: unmounting its content can
    * end an editor's session, and the store change that follows must find no
    * popup to refresh.
    */
   #hide(): void {
     const popup = this.#popup;
-    const built = this.#built;
     this.#popup = null;
-    this.#built = null;
-    this.#release(built);
     popup?.hide();
-  }
-
-  /** Lets the variant the content was built for go of what it holds. */
-  #release(built: FloatingHead | null): void {
-    const kind = built?.kind;
-    if (kind === "selected" || kind === "create")
-      this.#deps.variants[kind].release?.();
   }
 }
 

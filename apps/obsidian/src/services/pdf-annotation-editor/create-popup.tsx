@@ -1,22 +1,26 @@
-// The Mark Popup in create mode: the row a settled text selection offers.
+// The Mark Popup in create mode: the row a settled text selection offers, and
+// the comment sheet under it.
 //
 // The popup itself is the same one a selected mark hangs under — this module
-// supplies its row and nothing else.
+// supplies its content and nothing else.
 //
 // @see https://github.com/aidenlx/zotlit/issues/1150
-import type { IconName } from "obsidian";
+import type { App, IconName } from "obsidian";
 
 import {
   ANNOTATION_COLORS,
   annotationColorLabel,
   isColor,
 } from "@/lib/annotation-colors";
+import { AppContext } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { MutationState } from "@/services/annotation-repository/write";
 import { editingBlockedReason } from "@/views/annot-view/card-controls";
+import { CommentSheetSlot } from "@/views/annot-view/comment-parts";
+import type { CommentSheetSlotProps } from "@/views/annot-view/comment-parts";
 
-import { markPopupControl } from "./mark-popup";
+import { MarkPopupControl, PopupColumn } from "./mark-popup";
 import { selectionToolOf } from "./tools";
 import type { AnnotationTool, MarkTool, SelectionTool } from "./tools";
 
@@ -151,16 +155,34 @@ export type CreatePopupActivate = (
   node: HTMLElement,
 ) => void;
 
-/** Draws the create-mode row into the popup's content element. */
-export function renderCreatePopupRow(
-  row: HTMLElement,
-  controls: readonly CreatePopupControl[],
-  activate: CreatePopupActivate,
-): void {
-  row.empty();
-  for (const control of controls) {
-    markPopupControl(row, control, (pressed) =>
-      activate(control.action, pressed),
-    );
-  }
+export interface CreateMarkPopupProps {
+  app: App;
+  controls: readonly CreatePopupControl[];
+  activate: CreatePopupActivate;
+  /** The comment sheet under the row, while it stands open. */
+  sheet: Omit<CommentSheetSlotProps, "app" | "surface"> | null;
+}
+
+/** The popup in create mode: the row, and the comment sheet while it is open. */
+export function CreateMarkPopup({
+  app,
+  controls,
+  activate,
+  sheet,
+}: CreateMarkPopupProps) {
+  return (
+    <AppContext value={app}>
+      <PopupColumn
+        row={controls.map((control) => (
+          <MarkPopupControl
+            key={control.id}
+            {...control}
+            onActivate={(node) => activate(control.action, node)}
+          />
+        ))}
+      >
+        {sheet && <CommentSheetSlot app={app} surface="popup" {...sheet} />}
+      </PopupColumn>
+    </AppContext>
+  );
 }

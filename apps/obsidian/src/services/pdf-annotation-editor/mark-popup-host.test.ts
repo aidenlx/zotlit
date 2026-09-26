@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import type { HoverParent } from "obsidian";
+import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import type { SelectedText } from "@zotlit/pdf-structure";
@@ -22,6 +23,10 @@ const WORD = annotation("WORD2222", "highlight", {
   pageIndex: 0,
   rects: [[200, 610, 240, 630]],
 });
+const LINE = annotation("LINE3333", "highlight", {
+  pageIndex: 0,
+  rects: [[100, 600, 500, 640]],
+});
 const CAPTURED: SelectedText = {
   pageIndex: 0,
   rects: [[58.054, 601.98, 211.489, 610.112]],
@@ -30,8 +35,7 @@ const CAPTURED: SelectedText = {
 
 /**
  * One variant as its owner hands it to the host: an anchor the test moves, and
- * a renderer that builds one labelled node into an empty content element and
- * counts every call.
+ * a renderer that answers one labelled node and counts every call.
  */
 function variant(label: string, at: Point | null) {
   let anchor = at;
@@ -45,7 +49,7 @@ function variant(label: string, at: Point | null) {
     anchor: () => anchor,
     render: (content: HTMLElement) => {
       renders.push(content);
-      if (!content.firstChild) content.createSpan({ text: label });
+      return createElement("span", null, label);
     },
   };
 }
@@ -56,7 +60,7 @@ function host() {
     capability: { kind: "writable" },
     now: NOW,
   });
-  ingestRecords(store, [WORD]);
+  ingestRecords(store, [WORD, LINE]);
   const parent: HoverParent = { hoverPopover: null };
   const selected = variant("selected row", { x: 220, y: 182 });
   const create = variant("create row", { x: 100, y: 300 });
@@ -155,14 +159,15 @@ it("moves on a sync without drawing the row again", () => {
   expect(h.selected.renders).toHaveLength(renders);
 });
 
-it("rebuilds the row when the editor opens, and refreshes it for a draft", () => {
+// A node that stays is what keeps an open editor's caret and a press that
+// spans the render.
+it("keeps the content's nodes through the editor and a draft, and mounts it anew for another mark", () => {
   using h = host();
   selectMark(h.store, "WORD2222");
   const row = h.popup()!.hoverEl.querySelector("span");
 
   setCommenting(h.store, true);
-  const rebuilt = h.popup()!.hoverEl.querySelector("span");
-  expect(rebuilt).not.toBe(row);
+  expect(h.popup()!.hoverEl.querySelector("span")).toBe(row);
 
   const renders = h.selected.renders.length;
   ingestCommentDraft(h.store, "WORD2222", {
@@ -174,7 +179,10 @@ it("rebuilds the row when the editor opens, and refreshes it for a draft", () =>
     state: { kind: "editing" },
   });
   expect(h.selected.renders).toHaveLength(renders + 1);
-  expect(h.popup()!.hoverEl.querySelector("span")).toBe(rebuilt);
+  expect(h.popup()!.hoverEl.querySelector("span")).toBe(row);
+
+  selectMark(h.store, "LINE3333");
+  expect(h.popup()!.hoverEl.querySelector("span")).not.toBe(row);
 });
 
 it("closes the popup once nothing floats, and with its own disposal", () => {

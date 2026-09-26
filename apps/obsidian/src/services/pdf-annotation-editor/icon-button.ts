@@ -1,6 +1,6 @@
-// The one icon button every reader surface is built from: the Creation
-// Toolbar's tools, the Mark Popup's verbs, and the Editing Capability
-// affordance.
+// The one icon button the reader's vanilla surfaces are built from: the
+// Creation Toolbar's tools and the Editing Capability affordance. The Mark
+// Popup draws the same button in Preact.
 //
 // Obsidian's `clickable-icon` is a div, so the button's role, its keyboard
 // activation, and the blocked state that keeps its seat are ZotLit's to state —
@@ -18,8 +18,6 @@ export interface IconButtonSpec {
   icon: IconName;
   /** Obsidian renders this as the tooltip and as the accessible name. */
   tooltip: string;
-  /** Classes beside Obsidian's own `clickable-icon` — a theme hook, layout. */
-  cls?: readonly string[];
   /**
    * The button's colour, through the element's own style rather than an
    * attribute on the icon's SVG, where a stylesheet's rules would be out of
@@ -49,7 +47,7 @@ export function renderIconButton(
   activate: (node: HTMLElement) => void,
 ): HTMLElement {
   const node = parent.createDiv({
-    cls: ["clickable-icon", ...(spec.cls ?? [])],
+    cls: "clickable-icon",
     attr: { role: "button", tabindex: "0" },
   });
   updateIconButton(node, spec);

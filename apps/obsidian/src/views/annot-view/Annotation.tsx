@@ -1,8 +1,6 @@
 import {
-  useCallback,
   useContext,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -29,7 +27,6 @@ import type { ExcerptImage } from "@/services/excerpt-image/format";
 
 import { AnnotActionsContext } from "./actions";
 import type { AnnotActions } from "./actions";
-import { conflictPanel } from "./card-conflict";
 import {
   cardControls,
   commentIcon,
@@ -43,12 +40,11 @@ import {
 } from "./card-controls";
 import type { CardControl, CardControls, HeldDraft } from "./card-controls";
 import {
-  commentViewClass,
-  opensCommentEditor,
-  renderCommentSheet,
-  renderConflictPanel,
-  renderHeldDraftPanel,
-} from "./comment-sheet";
+  CommentSheetSlot,
+  CommentView,
+  ConflictPanelSlot,
+  HeldDraftSlot,
+} from "./comment-parts";
 import type {
   CommentDraftActions,
   CommentSheet,
@@ -231,22 +227,15 @@ function ConflictSlot({ annot }: { annot: AnnotationRecord }) {
   const actions = useContext(AnnotActionsContext);
   const mutation = useMutation(annot.key);
   const live = useAnnotStore((state) => editingLive(state.capability));
-  const ref = useRef<HTMLDivElement>(null);
-  const panel = useMemo(
-    () =>
-      mutation.kind === "conflict" ? conflictPanel(mutation.conflict) : null,
-    [mutation],
+  if (mutation.kind !== "conflict") return null;
+  return (
+    <ConflictPanelSlot
+      conflict={mutation.conflict}
+      live={live}
+      surface="card"
+      actions={cardDraftActions(actions, annot, annot.comment ?? "")}
+    />
   );
-  useLayoutEffect(() => {
-    if (!ref.current || !panel) return;
-    renderConflictPanel(ref.current, panel, {
-      surface: "card",
-      live,
-      actions: cardDraftActions(actions, annot, annot.comment ?? ""),
-    });
-  }, [panel, live, actions, annot]);
-  if (!panel) return null;
-  return <div ref={ref} />;
 }
 
 /** The panels' verbs, bound to the Annotation View's own actions. */
@@ -586,28 +575,22 @@ function HeldDraftPanel({
 }) {
   const actions = useContext(AnnotActionsContext);
   const setEditing = useSetEditingComment();
-  const ref = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    if (!ref.current) return;
-    renderHeldDraftPanel(ref.current, held, {
-      surface: "card",
-      actions: cardDraftActions(actions, annot, held.text),
-      onOpen: () => {
+  return (
+    <HeldDraftSlot
+      held={held}
+      surface="card"
+      actions={cardDraftActions(actions, annot, held.text)}
+      onOpen={() => {
         actions.onOpenComment(annot);
         setEditing(annot.key);
-      },
-    });
-    // A redraw between press and release would drop the click, so the panel
-    // redraws only when what it shows changes.
-  }, [held, actions, annot, setEditing]);
-  // The panel is the draft's own surface; the card's selection is not it.
-  return <div ref={ref} onClick={claimClick} />;
+      }}
+      // The panel is the draft's own surface; the card's selection is not it.
+      onClick={claimClick}
+    />
+  );
 }
 
-/**
- * The rendered comment, from the pieces the Mark Popup's own comment view
- * shares; see {@link commentViewClass}.
- */
+/** The rendered comment, as the Mark Popup draws it; see {@link CommentView}. */
 function Comment({
   annot,
   editable,
@@ -617,19 +600,13 @@ function Comment({
 }) {
   const actions = useContext(AnnotActionsContext);
   const setEditing = useSetEditingComment();
-  const html = annot.comment ?? "";
-  const ref = useCallback(
-    (el: HTMLDivElement) => actions.renderComment(el, html),
-    [actions, html],
-  );
   return (
-    <div
-      ref={ref}
-      className={commentViewClass("card", editable)}
-      onClick={(e) => {
-        if (!editable || !opensCommentEditor(e)) return;
-        // Opening the editor is a verb; the card's own click is not that.
-        e.stopPropagation();
+    <CommentView
+      surface="card"
+      render={actions.renderComment}
+      html={annot.comment ?? ""}
+      editable={editable}
+      onOpen={() => {
         actions.onOpenComment(annot);
         setEditing(annot.key);
       }}
@@ -640,7 +617,7 @@ function Comment({
 /**
  * The comment editor, in the slot the rendered comment stood in, with the
  * caret at the end of what is already there. It is the shared comment sheet;
- * see {@link renderCommentSheet}.
+ * see {@link CommentSheetSlot}.
  *
  * Escape and blur store the text and close the editor. Ctrl/Command+Enter
  * stores it and keeps the editor open.
@@ -660,8 +637,6 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
     draft,
     Temporal.Now.instant(),
   );
-  const annotRef = useRef(annot);
-  annotRef.current = annot;
   const app = useObsidianApp();
   const sheet = useRef<CommentSheet | null>(null);
 
@@ -672,51 +647,25 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
     setEditing(null);
     actions.onSaveComment(annot, text, true);
   };
-  // The sheet outlives renders; its callbacks read this render's values.
-  const latest = useRef({ text, controls, save });
-  latest.current = { text, controls, save };
-
-  const mount = useCallback(
-    (el: HTMLDivElement | null) => {
-      sheet.current?.[Symbol.dispose]();
-      sheet.current = null;
-      if (!el) return;
-      const store = (): void => {
-        if (sheet.current)
-          actions.onSaveComment(annotRef.current, sheet.current.text());
-      };
-      sheet.current = renderCommentSheet(
-        el,
-        {
-          app,
-          surface: "card",
-          value: latest.current.text,
-          onChange: (value) => actions.onEditComment(annotRef.current, value),
-          onSubmit: store,
-          onSave: store,
-          onCancel: () => latest.current.save(),
-          onLeave: () => latest.current.save(),
-        },
-        latest.current.controls,
-      );
-    },
-    [actions, app],
-  );
-
-  useLayoutEffect(() => {
-    sheet.current?.editor.setText(text);
-  }, [text]);
-
-  const { readOnly, hint, manual, saveDisabled } = controls;
-  useLayoutEffect(() => {
-    sheet.current?.update({ readOnly, hint, manual, saveDisabled });
-  }, [readOnly, hint, manual, saveDisabled]);
+  const store = (): void => {
+    if (sheet.current) actions.onSaveComment(annot, sheet.current.text());
+  };
 
   return (
     // Placing the caret is not the card's selection, and its keys are the
     // editor's own.
-    <div
-      ref={mount}
+    <CommentSheetSlot
+      app={app}
+      surface="card"
+      value={text}
+      text={text}
+      status={controls}
+      sheetRef={sheet}
+      onChange={(value) => actions.onEditComment(annot, value)}
+      onSubmit={store}
+      onSave={store}
+      onCancel={save}
+      onLeave={save}
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e: KeyboardEvent<HTMLDivElement>) => e.stopPropagation()}
     />

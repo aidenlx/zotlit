@@ -99,7 +99,7 @@ export function TagEditor({
           if (target.dataset.slot === "tags-input-input") return;
           event.preventDefault();
         }}
-        className="zt:flex zt:flex-wrap zt:items-center zt:gap-1 zt:rounded-sm zt:p-0.5 zt:ring-1 zt:ring-border zt:focus-within:ring-border-focus"
+        className="zt:flex zt:flex-wrap zt:items-center zt:gap-1 zt:rounded-sm zt:p-0.5 zt:text-xs zt:ring-1 zt:ring-border zt:focus-within:ring-border-focus"
       >
         {names.map((name) => (
           <TagsInput.Item

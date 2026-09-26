@@ -415,9 +415,27 @@ export function sameHeldTags(a: HeldTags, b: HeldTags): boolean {
     a.reason === b.reason &&
     a.names.length === b.names.length &&
     a.names.every((name, i) => name === b.names[i]) &&
-    a.actions.length === b.actions.length &&
-    a.actions.every((action, i) => {
-      const other = b.actions[i]!;
+    sameHeldActions(a.actions, b.actions)
+  );
+}
+
+/** {@link sameHeldTags}, for a held comment panel. */
+export function sameHeldDraft(a: HeldDraft, b: HeldDraft): boolean {
+  return (
+    a.text === b.text &&
+    a.reason === b.reason &&
+    sameHeldActions(a.actions, b.actions)
+  );
+}
+
+function sameHeldActions(
+  a: readonly HeldDraftAction[],
+  b: readonly HeldDraftAction[],
+): boolean {
+  return (
+    a.length === b.length &&
+    a.every((action, i) => {
+      const other = b[i]!;
       return (
         action.kind === other.kind &&
         action.label === other.label &&
