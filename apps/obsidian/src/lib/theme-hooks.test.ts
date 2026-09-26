@@ -14,10 +14,12 @@ it("promises the Annotation View hooks by literal name", () => {
     conflict: themeHook.annotConflict,
     draft: themeHook.annotDraft,
     commentField: themeHook.annotCommentField,
+    lock: themeHook.annotLock,
   }).toEqual({
     conflict: "zt-annot-conflict",
     draft: "zt-annot-draft",
     commentField: "zt-annot-comment-field",
+    lock: "zt-annot-lock",
   });
 });
 

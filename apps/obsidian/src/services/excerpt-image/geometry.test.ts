@@ -21,6 +21,7 @@ const ink: AnnotationRecord = {
   sortIndex: "00000|000000|00000",
   tags: [],
   version: null,
+  lock: null,
   position: {
     kind: "pdf-ink",
     pageIndex: 0,

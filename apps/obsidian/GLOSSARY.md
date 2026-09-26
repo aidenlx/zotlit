@@ -340,6 +340,16 @@ _Avoid_: fallback (that is the switch, not the source), primary/secondary source
 Whether edits to an Attachment's Annotations can be committed to Zotero at present, including any authorization required. It is separate from whether the Annotations can be read.
 _Avoid_: degraded state (names the feeling, not the reason), fallback state, write mode, read-only mode (one of its values, not the whole)
 
+**Locked Annotation**:
+An Annotation that Zotero's own reader does not let the user edit, whatever the Editing Capability: an External Annotation, or one another user created in a group library. Its Lock Reason decides which verbs it refuses; a verb acts only when both the Editing Capability and the lock allow it.
+_Avoid_: read-only annotation (read-only is an Editing Capability value), protected annotation
+
+**Lock Reason**:
+Why an Annotation is locked. `external` — imported from the PDF file, so every edit and delete is refused. `another-user` — created by another member of a group library, so every edit is refused but delete is allowed, as in Zotero.
+
+**External Annotation**:
+An Annotation that Zotero imported from the PDF file itself rather than one made in Zotero. It is not synced, and a re-import from the file rebuilds it.
+
 **Follow Mode**:
 The one rule an Annotation View instance uses to choose the Attachment it shows: Active Tab (the Item of the active Literature Note, or the Attachment of the active Obsidian PDF view), Zotero Reader (the Attachment of the Reader Session the Zotero Reader has in front), or Pinned (one Item the user chose, with the attachment choice remembered). Chosen and changed by the user alone; a source that cannot answer shows its reason in place.
 _Avoid_: follow target, link mode, linked item (the old name of Pinned), auto-follow

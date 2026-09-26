@@ -12,6 +12,7 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { withRecentColor } from "@/lib/annotation-colors";
 import {
+  markExternal,
   nextChange,
   writable,
   zoteroLibrary,
@@ -283,6 +284,7 @@ export function annotation(
       "application/pdf",
     ),
     version: null,
+    lock: null,
   };
 }
 
@@ -796,16 +798,25 @@ export function wireOf(record: AnnotationRecord): WireAnnotation {
 export async function repositoryOver(
   stack: AsyncDisposableStack,
   records: readonly AnnotationRecord[],
+  { external }: { external?: readonly string[] } = {},
 ) {
   const zotero = zoteroLibrary(records.map(wireOf));
   const { repository, requests, client, dbEvents, serverEvents } =
-    await writable(stack, zotero.answers);
+    await writable(stack, zotero.answers, { external });
   const list = await repository.read("RGRPDF24");
   return {
     repository,
     zotero,
     requests,
     list,
+    /**
+     * Zotero imports one Annotation from the PDF file, and a database refresh
+     * tells the repository, which locks it.
+     */
+    importFromPdf(key: string): void {
+      markExternal(client, key);
+      dbEvents.emit("changed");
+    },
     /**
      * Zotero quits, and the device's database turns out to be another one:
      * the switch that hides every draft made against the first.
@@ -832,9 +843,17 @@ export async function repositoryOver(
  */
 export async function readerOverZotero(
   stack: AsyncDisposableStack,
-  options: Omit<ReaderSurfacesOptions, "annotations">,
+  {
+    external,
+    ...options
+  }: Omit<ReaderSurfacesOptions, "annotations"> & {
+    /** The Annotations Zotero imported from the PDF file, by key. */
+    external?: readonly string[];
+  },
 ) {
-  const zoteroSide = await repositoryOver(stack, options.records);
+  const zoteroSide = await repositoryOver(stack, options.records, {
+    external,
+  });
   const { repository, list } = zoteroSide;
   const reader = stack.use(
     readerSurfaces({

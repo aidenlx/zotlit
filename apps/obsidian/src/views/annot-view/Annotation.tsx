@@ -16,6 +16,7 @@ import { IconButton } from "@/components/obsidian/icon-button";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import { useSanitizedHtml } from "@/lib/sanitize-html";
+import { themeHook } from "@/lib/theme-hooks";
 import {
   activatable,
   claimClick,
@@ -23,6 +24,9 @@ import {
   cn,
   tooltipAttrs,
 } from "@/lib/utils";
+import type { EditingCapability } from "@/services/annotation-repository/capability";
+import type { AnnotationLock } from "@/services/annotation-repository/lock";
+import { lockReasonText } from "@/services/annotation-repository/lock-copy";
 import type {
   AnnotationRecord,
   TextField,
@@ -35,9 +39,10 @@ import { inTextEntry } from "@/services/pdf-annotation-editor/capability-afforda
 import { AnnotActionsContext } from "./actions";
 import type { AnnotActions } from "./actions";
 import {
+  annotationBlocks,
   cardControls,
+  conflictBlock,
   fieldEditorControls,
-  editingLive,
   heldTagDraft,
   heldTextDraft,
   hasQuotedText,
@@ -47,7 +52,12 @@ import {
   tagEditorControls,
   textFieldWording,
 } from "./card-controls";
-import type { CardControl, CardControls, HeldDraft } from "./card-controls";
+import type {
+  CardControl,
+  CardControls,
+  HeldDraft,
+  VerbBlocks,
+} from "./card-controls";
 import {
   CommentView,
   ConflictPanelSlot,
@@ -142,16 +152,38 @@ function useCardControls(annot: AnnotationRecord, alone: boolean): CardOffer {
   const { type } = annot;
   return useMemo(() => {
     const controls = cardControls({
-      capability,
+      blocks: blocksNow(annot, capability),
       mutation,
       hasTags,
       type,
-      // A card's tooltip is read at the moment it is drawn; the ticking
-      // countdown belongs to the toolbar affordance, not to every card.
-      now: Temporal.Now.instant(),
     });
     return alone ? controls : { ...controls, comment: null, text: null };
-  }, [capability, mutation, hasTags, type, alone]);
+  }, [annot, capability, mutation, hasTags, type, alone]);
+}
+
+/**
+ * What stands in the way of each verb on one card, read at the moment it is
+ * drawn: a card's tooltip and a menu entry are read then, and the ticking
+ * countdown belongs to the toolbar affordance, not to every card.
+ *
+ * @param now the instant a cooldown is read at, where the caller reads it
+ *   too.
+ */
+export function blocksNow(
+  annot: AnnotationRecord,
+  capability: EditingCapability,
+  now: Temporal.Instant = Temporal.Now.instant(),
+): VerbBlocks {
+  return annotationBlocks({ annotation: annot, capability, now });
+}
+
+/**
+ * What stands in the way of each verb on this card, read at the moment it is
+ * drawn.
+ */
+function useVerbBlocks(annot: AnnotationRecord): VerbBlocks {
+  const capability = useAnnotStore((state) => state.capability);
+  return blocksNow(annot, capability);
 }
 
 /** One row of the card list's grid, its content in one cell. */
@@ -270,6 +302,7 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
               actions.onDragStart(e, annot);
             }}
           />
+          {annot.lock && <LockMark lock={annot.lock} />}
           <CardActionBar
             annot={annot}
             controls={controls}
@@ -299,6 +332,30 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
 }
 
 /**
+ * The lock on a Locked Annotation, beside its page chip, so the lock is seen
+ * before a verb is tried. The Lock Reason is its tooltip and its accessible
+ * name; the verbs the lock refuses rest dimmed in the action bar.
+ *
+ * @see apps/obsidian/docs/adr/0067-annotation-locks-come-from-the-zotero-database.md
+ */
+function LockMark({ lock }: { lock: AnnotationLock }) {
+  return (
+    <span
+      role="img"
+      className={cn(
+        themeHook.annotLock,
+        "zt:flex zt:shrink-0 zt:items-center zt:text-muted-foreground",
+      )}
+      {...tooltipAttrs(
+        m.annot_view_lock_label({ reason: lockReasonText(lock.reason) }),
+      )}
+    >
+      <Icon name="lock" size={12} />
+    </span>
+  );
+}
+
+/**
  * Zotero's copy of this Annotation moved under the user's write, so the card
  * puts the fresh Zotero value beside what the user asked for and offers the
  * two verbs that end it. The write's Pending Proposal went with the conflict,
@@ -314,7 +371,7 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
 function ConflictSlot({ annot }: { annot: AnnotationRecord }) {
   const actions = useContext(AnnotActionsContext);
   const mutation = useMutation(annot.key);
-  const live = useAnnotStore((state) => editingLive(state.capability));
+  const blocks = useVerbBlocks(annot);
   const drafted = useAnnotStore(
     (state) =>
       mutation.kind === "conflict" &&
@@ -326,7 +383,7 @@ function ConflictSlot({ annot }: { annot: AnnotationRecord }) {
   return (
     <ConflictPanelSlot
       conflict={mutation.conflict}
-      live={live}
+      block={conflictBlock(blocks, mutation.conflict.write)}
       surface="card"
       actions={{
         // The standing conflict's own write, sent again or left.
@@ -503,13 +560,13 @@ function TagSlot({
   const actions = useContext(AnnotActionsContext);
   const session = useTagSession(annot);
   const auto = useMemo(() => autoTags(annot), [annot]);
-  const capability = useAnnotStore((s) => s.capability);
+  const block = useVerbBlocks(annot).tags;
   const { draft } = session;
   const now = Temporal.Now.instant();
-  const editor = tagEditorControls(capability, draft, now);
+  const editor = tagEditorControls(block, draft, now);
   // A fresh value on each render: the held panel compares it by value
   // before it draws again.
-  const held = heldTagDraft(capability, draft, now);
+  const held = heldTagDraft(block, draft, now);
   // Editing that becomes unavailable closes the editor, which holds the
   // draft for Save tags.
   if (session.open && !editor.readOnly) {
@@ -672,12 +729,11 @@ function useFieldDraftPanel(
         text: draft.text,
       };
     }
-    const held = heldTextDraft(field, draft, {
-      capability,
-      now: Temporal.Now.instant(),
-    });
+    const now = Temporal.Now.instant();
+    const blocks = blocksNow(annot, capability, now);
+    const held = heldTextDraft(field, draft, { block: blocks[field], now });
     return held && { kind: "held", held };
-  }, [field, capability, draft]);
+  }, [annot, field, capability, draft]);
 }
 
 /**
@@ -704,13 +760,13 @@ function FieldDraftPanel({
   entry?: CommentEntry;
 }) {
   const actions = useContext(AnnotActionsContext);
-  const live = useAnnotStore((state) => editingLive(state.capability));
+  const blocks = useVerbBlocks(annot);
   const surface = FIELD_SURFACE[field];
   if (panel.kind === "conflict") {
     return (
       <ConflictPanelSlot
         conflict={panel.conflict}
-        live={live}
+        block={conflictBlock(blocks, panel.conflict.write)}
         surface={surface}
         actions={fieldDraftActions(actions, annot, {
           field,
@@ -807,13 +863,9 @@ function FieldEditor({
 }) {
   const actions = useContext(AnnotActionsContext);
   const { text, saveAndClose } = useFieldEditing(annot, field);
-  const capability = useAnnotStore((state) => state.capability);
+  const block = useVerbBlocks(annot)[field];
   const draft = useAnnotStore((state) => fieldDraft(state, field, annot.key));
-  const controls = fieldEditorControls(
-    capability,
-    draft,
-    Temporal.Now.instant(),
-  );
+  const controls = fieldEditorControls(block, draft, Temporal.Now.instant());
   const app = useObsidianApp();
   const sheet = useRef<EditorSheet | null>(null);
   // Read as the editor mounts; the sheet places the caret once.

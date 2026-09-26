@@ -99,6 +99,12 @@ export interface Annotation {
   position: AnnotationPositionRaw;
   authorName: string | null;
   isExternal: boolean;
+  /**
+   * The Zotero user who created this Annotation in a group library
+   * (`groupItems.createdByUserID`), or `null` where the database names none:
+   * every personal-library Annotation, and a group item with no creator.
+   */
+  createdByUserID: number | null;
   parentItemID: number;
   parentKey: string;
 }

@@ -27,6 +27,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { themeAttribute } from "@/lib/theme-hooks";
+import { historyOutcomeNotice } from "@/services/annotation-repository/actions";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { CapabilityAffordance } from "@/services/annotation-repository/capability-copy";
@@ -36,7 +37,6 @@ import type {
   AnnotationRepository,
   HistoryDirection,
 } from "@/services/annotation-repository/service";
-import { writeFailureMessage } from "@/services/annotation-repository/write";
 import type {
   AttachmentResolution,
   AttachmentResolver,
@@ -72,6 +72,7 @@ import {
   selectAdjust,
   selectCapabilityAffordance,
   selectCapture,
+  selectMarkHandles,
   selectSelectedKey,
   selectTextDraft,
 } from "./reader-surface-state";
@@ -1033,17 +1034,10 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       : this.#marks;
   }
 
-  /**
-   * Whether the selected mark carries its Mark Handles: a mark selected alone
-   * does, and a group does not.
-   */
+  /** Whether the selected mark carries its Mark Handles. */
   #handles(): boolean {
     const state = this.#surfaceState?.getState();
-    return (
-      state !== undefined &&
-      editingLive(state.capability) &&
-      selectSelectedKey(state) !== null
-    );
+    return state !== undefined && selectMarkHandles(state);
   }
 
   /**
@@ -1232,20 +1226,19 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
         : this.#annotations.redo(attachmentKey);
     const answered = stepping.then((outcome) => {
       if (this.#surfaces.disposed) return;
+      const notice = historyOutcomeNotice(outcome, this.#now());
+      if (notice !== null) new BaseNotice(notice);
       switch (outcome.kind) {
         case "stepped":
           return this.#landOn(outcome.annotationKey);
         case "removed":
           return this.#landOnPage(outcome.pageIndex);
-        case "changed":
-          new BaseNotice(m.annot_history_changed_in_zotero());
-          return;
-        case "failed":
-          new BaseNotice(writeFailureMessage(outcome.failure, this.#now()));
-          return;
         case "blocked":
           this.#editGesture();
           return;
+        case "changed":
+        case "failed":
+        case "locked":
         case "idle":
           return;
       }

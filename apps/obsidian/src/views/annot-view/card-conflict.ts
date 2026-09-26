@@ -12,6 +12,9 @@ import type {
 } from "@/services/annotation-repository/service";
 import { isTextField } from "@/services/annotation-repository/write";
 
+import { noRetryLands } from "./card-controls";
+import type { CardBlock } from "./card-controls";
+
 /** One value of a Write Conflict, under the label that says whose it is. */
 export interface ConflictValue {
   label: string;
@@ -71,9 +74,26 @@ const TEXT_FIELD_VERBS: Record<
  * A delete shows the fresh card itself rather than two values, and asks
  * "Delete anyway" once against what the user can now see.
  *
+ * A lock on the conflict's verb leaves "Discard" alone: no second write can
+ * land.
+ *
+ * @param block what stands in the way of the conflict's verb.
  * @see https://github.com/aidenlx/zotlit/issues/1139 — "Editing Capability and degraded states"
  */
-export function conflictPanel(conflict: WriteConflict): ConflictPanel {
+export function conflictPanel(
+  conflict: WriteConflict,
+  block: CardBlock | null = null,
+): ConflictPanel {
+  const panel = verbPanel(conflict);
+  return noRetryLands(block)
+    ? {
+        ...panel,
+        actions: panel.actions.filter(({ kind }) => kind === "discard"),
+      }
+    : panel;
+}
+
+function verbPanel(conflict: WriteConflict): ConflictPanel {
   const verbs = isTextField(conflict.write)
     ? TEXT_FIELD_VERBS[conflict.write]()
     : null;

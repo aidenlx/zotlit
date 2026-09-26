@@ -14,6 +14,7 @@ import { capabilityReason } from "@/services/annotation-repository/capability";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityAffordance } from "@/services/annotation-repository/capability-copy";
 import type { CapabilityAffordance } from "@/services/annotation-repository/capability-copy";
+import { lockBlock } from "@/services/annotation-repository/lock";
 import type {
   AnnotationRecord,
   AnnotationRepository,
@@ -32,6 +33,10 @@ import type {
   MutationState,
   TextPosition,
 } from "@/services/annotation-repository/write";
+import {
+  annotationBlocks,
+  editingLive,
+} from "@/views/annot-view/card-controls";
 
 import { createPopupRow } from "./create-popup";
 import type { CreatePopupControl, CreatePopupRowInput } from "./create-popup";
@@ -1172,6 +1177,18 @@ export function selectSelectedKey({
 }
 
 /**
+ * Whether the selected mark carries its Mark Handles: a mark selected alone
+ * does while editing is live, and a group does not. A Locked Annotation
+ * carries none, since its lock refuses the Geometry Edit they begin.
+ */
+export function selectMarkHandles(state: ReaderSurfaceState): boolean {
+  const key = selectSelectedKey(state);
+  if (key === null || !editingLive(state.capability)) return false;
+  const record = state.records.find((annotation) => annotation.key === key);
+  return lockBlock(record?.lock ?? null, "geometry") === null;
+}
+
+/**
  * The Indexed Keys of every selected Annotation: the one selected mark, or a
  * group. Empty while none is selected.
  */
@@ -1233,7 +1250,7 @@ export function selectSelectedRowInput({
   if (!annotation) return null;
   return {
     annotation,
-    capability,
+    blocks: annotationBlocks({ annotation, capability, now: capabilityAt }),
     mutation: mutations.get(floating.key) ?? IDLE,
     stack: { index: floating.index, total: floating.stack.length },
     commenting: floating.commenting,

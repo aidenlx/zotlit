@@ -6,6 +6,7 @@ import type {
   ResolvedAnnotationTypeName,
 } from "@zotlit/db";
 
+import type { LockReason } from "./lock";
 import {
   resolvesSilently,
   sameStoredGeometry,
@@ -126,6 +127,19 @@ export interface HistoryChange {
   before: HistoryFields;
   /** What Zotero confirmed after the edit, which an undo checks against. */
   after: HistoryFields;
+  /**
+   * The Lock Reason a deleted Annotation stood under. A restore comes back
+   * with the current user as its creator, so it does not keep the lock.
+   */
+  lock?: LockReason;
+}
+
+/**
+ * Whether taking this change creates its Annotation again: Zotero held content
+ * for it before the edit, and holds none after.
+ */
+export function isRestore(change: HistoryChange): boolean {
+  return !!change.before.content && change.after.content === null;
 }
 
 /**
@@ -353,8 +367,17 @@ export function stillHeldAfterConflict(
 export type HistoryOutcome =
   /** No step stood, or a guard met the press; nothing was written. */
   | { kind: "idle" }
-  /** The step was written. */
-  | { kind: "stepped"; annotationKey: string }
+  /**
+   * The step was written. `restoredAsCreator` is set where it restored
+   * Annotations another user created: Zotero restores every Annotation with
+   * the current user as its creator, so those are no longer locked. `count`
+   * counts only those Annotations.
+   */
+  | {
+      kind: "stepped";
+      annotationKey: string;
+      restoredAsCreator?: { count: number };
+    }
   /**
    * The step was written and it took its Annotations off the Attachment, so
    * there is nothing left to select. The reader clears its selection and comes
@@ -370,7 +393,12 @@ export type HistoryOutcome =
   /** The write did not land. The step was dropped and the list refreshed. */
   | { kind: "failed"; failure: WriteFailure }
   /** Editing is not allowed right now, so nothing was tried. */
-  | { kind: "blocked" };
+  | { kind: "blocked" }
+  /**
+   * A lock on an Annotation the step changes refuses it, so nothing was tried
+   * and the step stays.
+   */
+  | { kind: "locked"; reason: LockReason };
 
 /**
  * Whether a newly confirmed edit continues the run of nudges that stands on the

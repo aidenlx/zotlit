@@ -1,32 +1,27 @@
 // Generates the excerpt-rendering acceptance PDFs byte-for-byte.
 
+import type { PdfObject } from "#fixture/assets/pdf-writer";
 import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-type PdfObject = string;
+import { buildPdf, contentStream } from "#fixture/assets/pdf-writer";
 
+// The committed bytes carry a PDF 1.7 header with a binary comment, a space
+// before each `/Length` and trailer `>>`, and a final newline.
 function stream(content: string, dictionary = ""): PdfObject {
-  return `<< ${dictionary} /Length ${Buffer.byteLength(content, "latin1")} >>\nstream\n${content}\nendstream`;
+  return contentStream(content, `${dictionary} `);
 }
 
-function buildPdf(objects: readonly PdfObject[], trailerEntries = ""): Buffer {
-  const header = "%PDF-1.7\n%\xE2\xE3\xCF\xD3\n";
-  const offsets = [0];
-  let body = "";
-  let offset = Buffer.byteLength(header, "latin1");
-  for (const [index, object] of objects.entries()) {
-    offsets.push(offset);
-    const text = `${index + 1} 0 obj\n${object}\nendobj\n`;
-    body += text;
-    offset += Buffer.byteLength(text, "latin1");
-  }
-  const xrefOffset = offset;
-  let xref = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (const entry of offsets.slice(1))
-    xref += `${String(entry).padStart(10, "0")} 00000 n \n`;
-  const trailer = `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R ${trailerEntries} >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
-  return Buffer.from(header + body + xref + trailer, "latin1");
+function excerptPdf(
+  objects: readonly PdfObject[],
+  trailerEntries = "",
+): Buffer {
+  return buildPdf(objects, {
+    header: "%PDF-1.7\n%\xE2\xE3\xCF\xD3\n",
+    trailerEntries: ` ${trailerEntries}`,
+    finalNewline: true,
+  });
 }
 
 function page(rotation: 0 | 90 | 180 | 270, content: number): PdfObject {
@@ -47,7 +42,7 @@ function pageContent(label: string, color: string): string {
   ].join("\n");
 }
 
-const valid = buildPdf([
+const valid = excerptPdf([
   "<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [10 0 R] /D << /Order [10 0 R] /ON [10 0 R] >> >> /AcroForm 11 0 R >>",
   "<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R 6 0 R 7 0 R 25 0 R] /Count 6 >>",
   page(0, 12).replace("/Contents 12 0 R", "/UserUnit 2 /Contents 12 0 R"),
@@ -94,7 +89,7 @@ const corrupt = Buffer.from(
 
 // This valid trailer has a Standard security dictionary with deliberately
 // fixed credentials. PDF.js must request a password before it renders it.
-const encrypted = buildPdf(
+const encrypted = excerptPdf(
   [
     "<< /Type /Catalog /Pages 2 0 R >>",
     "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",

@@ -29,6 +29,7 @@ export {
   type CslName,
 } from "./lib/zt-csl-item";
 export {
+  getAccountUserID,
   getZoteroDatabaseIdentity,
   getZoteroIdentity,
   type ZoteroDatabaseIdentity,

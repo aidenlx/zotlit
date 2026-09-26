@@ -2,7 +2,9 @@ import { createMockPlugin } from "@mock/obsidian";
 import type { Command } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { addAnnotationHistoryActions } from "./actions";
+import * as m from "@/lib/i18n/generated/messages";
+
+import { addAnnotationHistoryActions, historyOutcomeNotice } from "./actions";
 import type { HistorySurface } from "./actions";
 import type { HistoryDirection } from "./history";
 
@@ -105,5 +107,43 @@ describe("the Annotation History commands", () => {
       false,
     );
     expect(none.canRedo).not.toHaveBeenCalled();
+  });
+});
+
+// What can go wrong with the notice of one undo or redo press:
+// - a step a lock refused gives the capability copy, or no notice at all;
+// - a block of the Editing Capability gets a second notice beside the one its
+//   own seam raises.
+describe("the notice of one undo or redo press", () => {
+  const NOW = Temporal.Instant.from("2026-09-26T12:00:00Z");
+
+  it("gives the Lock Reason alone for a step a lock refused", () => {
+    expect(
+      historyOutcomeNotice({ kind: "locked", reason: "external" }, NOW),
+    ).toBe(m.annot_view_lock_external());
+  });
+
+  it("leaves a block of the Editing Capability to its own seam", () => {
+    expect(historyOutcomeNotice({ kind: "blocked" }, NOW)).toBeNull();
+  });
+
+  it("says the user is now the creator after a restore of another user's Annotations", () => {
+    expect(
+      historyOutcomeNotice(
+        {
+          kind: "stepped",
+          annotationKey: "MADE2345",
+          restoredAsCreator: { count: 2 },
+        },
+        NOW,
+      ),
+    ).toBe(m.annot_history_restored_new_creator({ count: 2 }));
+  });
+
+  it("gives no notice for a step it took", () => {
+    expect(
+      historyOutcomeNotice({ kind: "stepped", annotationKey: "PUPR5FG5" }, NOW),
+    ).toBeNull();
+    expect(historyOutcomeNotice({ kind: "idle" }, NOW)).toBeNull();
   });
 });

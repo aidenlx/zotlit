@@ -4,8 +4,10 @@ import type { Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 
-import type { HistoryDirection } from "./history";
+import type { HistoryDirection, HistoryOutcome } from "./history";
+import { lockReasonText } from "./lock-copy";
 import type { AnnotationRepository } from "./service";
+import { writeFailureMessage } from "./write";
 
 /** Both ways a step is taken, in the order they are offered. */
 export const HISTORY_DIRECTIONS: readonly HistoryDirection[] = ["undo", "redo"];
@@ -34,6 +36,42 @@ export interface AnnotationHistoryActionDeps {
    * reading that decides whether the palette carries the commands at all.
    */
   activeSurface: () => HistorySurface | null;
+}
+
+/**
+ * The notice one press of undo or redo raises, which every History Surface
+ * renders the same way: a step Zotero moved under says so, a write that did
+ * not land says why, and a lock gives its Lock Reason alone, with nothing to
+ * allow. A restore of another user's Annotation says that Zotero now lists
+ * the user as its creator, so the edits it allows again come as no surprise.
+ *
+ * @param now the instant a cooldown's remaining seconds are measured from.
+ * @returns the notice text, or `null` for an outcome with no notice of its
+ *   own: any other step taken, and a block of the Editing Capability, whose
+ *   notice the capability's own seam raises.
+ */
+export function historyOutcomeNotice(
+  outcome: HistoryOutcome,
+  now: Temporal.Instant,
+): string | null {
+  switch (outcome.kind) {
+    case "changed":
+      return m.annot_history_changed_in_zotero();
+    case "failed":
+      return writeFailureMessage(outcome.failure, now);
+    case "locked":
+      return lockReasonText(outcome.reason);
+    case "stepped":
+      return outcome.restoredAsCreator
+        ? m.annot_history_restored_new_creator({
+            count: outcome.restoredAsCreator.count,
+          })
+        : null;
+    case "removed":
+    case "blocked":
+    case "idle":
+      return null;
+  }
 }
 
 /** The name one direction carries wherever it is offered. */

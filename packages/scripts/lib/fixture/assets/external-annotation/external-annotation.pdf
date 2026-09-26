@@ -1,0 +1,46 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R /Annots [6 0 R] >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Length 181 >>
+stream
+BT
+/F1 12 Tf
+1 0 0 1 72 700 Tm
+(Another PDF reader highlighted this sentence.) Tj
+ET
+BT
+/F1 12 Tf
+1 0 0 1 72 660 Tm
+(Zotero imports that highlight as an external annotation.) Tj
+ET
+
+endstream
+endobj
+6 0 obj
+<< /Type /Annot /Subtype /Highlight /F 4 /P 3 0 R /Rect [68 695 540 712] /QuadPoints [68 712 540 712 68 695 540 695] /C [1 0.831 0] /Contents (Noted in another PDF reader.) /M (D:20250101120000Z) >>
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000257 00000 n 
+0000000356 00000 n 
+0000000588 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R >>
+startxref
+802
+%%EOF

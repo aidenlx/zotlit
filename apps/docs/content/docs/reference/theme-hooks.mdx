@@ -197,6 +197,7 @@ The Annotation View lists a Zotero attachment's Annotations beside the reader, w
 | `zt-annot-conflict`      | The panel an Annotation Card shows while a Write Conflict stands on it.                                             |
 | `zt-annot-draft`         | The panel an Annotation Card or the Mark Popup shows over a comment, Quoted Text or tags that Zotero has not saved. |
 | `zt-annot-comment-field` | The comment as a field you can select to edit, on a card selected alone and in the Mark Popup.                      |
+| `zt-annot-lock`          | The lock icon in the header of a card whose annotation is locked.                                                   |
 | `zt-chooser`             | The Chooser popup the tag filter or the color filter opens.                                                         |
 | `zt-chooser-trigger`     | The control that Chooser popup hangs under.                                                                         |
 
@@ -205,6 +206,8 @@ The Annotation View lists a Zotero attachment's Annotations beside the reader, w
 `zt-annot-draft` appears where an edit waits for **Save comment**, **Save text** or **Save tags**, such as after a failed save or after editing stopped while the edit was open. It shows the unsaved comment, Quoted Text or tags, says why they wait, and offers the verbs that save or discard them.
 
 `zt-annot-comment-field` marks the comment of the card you select alone, and nowhere on other cards. Selecting it opens the comment editor in its place. On a card with no comment, it shows <UiLabel name={m.annot_view_card_comment_placeholder()} />. It carries `data-blocked` while ZotLit cannot edit the Annotation. The Mark Popup uses the same class, see [Mark Popup and comment sheet](#pdf-mark-popup).
+
+`zt-annot-lock` appears in the card header of an annotation that Zotero's reader does not let you change, such as one that Zotero imported from the PDF file. Its tooltip and its accessible name give the reason. The card's controls for the changes that the lock refuses are dimmed.
 
 `zt-chooser` marks the anchored popover a filtering multi-select opens. It is a native popover rather than an Obsidian menu, so `:popover-open` matches it while it stands and `menu` never reaches it. It takes its chrome from `--menu-background`, `--menu-border-color`, `--menu-border-width`, `--menu-corner-shape`, `--menu-padding`, `--menu-radius`, and `--menu-shadow`, so a theme that retints menus reaches it through those.
 

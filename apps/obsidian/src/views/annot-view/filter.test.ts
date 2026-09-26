@@ -27,6 +27,7 @@ function makeAnnot(
     tags: [],
     position: { kind: "unknown", raw: null },
     version: null,
+    lock: null,
     ...overrides,
   };
 }

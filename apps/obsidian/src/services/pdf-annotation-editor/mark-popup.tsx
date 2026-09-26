@@ -25,14 +25,18 @@ import * as m from "@/lib/i18n/generated/messages";
 import { PopoutAwareHoverPopover } from "@/lib/popout-aware-hover-popover";
 import { themeHook } from "@/lib/theme-hooks";
 import { cn, tooltipAttrs } from "@/lib/utils";
-import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import type {
   MutationState,
   WriteConflict,
 } from "@/services/annotation-repository/write";
 import { cardControls } from "@/views/annot-view/card-controls";
-import type { CardControl, HeldDraft } from "@/views/annot-view/card-controls";
+import type {
+  CardBlock,
+  CardControl,
+  HeldDraft,
+  VerbBlocks,
+} from "@/views/annot-view/card-controls";
 import {
   CommentView,
   ConflictPanelSlot,
@@ -113,8 +117,8 @@ export interface MarkPopupRow {
 
 export interface MarkPopupRowInput {
   annotation: AnnotationRecord;
-  /** What this Attachment's Annotations may be edited to right now. */
-  capability: EditingCapability;
+  /** What stands in the way of each verb on this Annotation right now. */
+  blocks: VerbBlocks;
   /** What the last write left on this Annotation. */
   mutation: MutationState;
   stack: MarkStack;
@@ -138,18 +142,16 @@ export interface MarkPopupRowInput {
  */
 export function markPopupRow({
   annotation,
-  capability,
+  blocks,
   mutation,
   stack,
   tagging,
-  now,
 }: MarkPopupRowInput): MarkPopupRow {
   const { comment, ...controls } = cardControls({
-    capability,
+    blocks,
     mutation,
     hasTags: annotation.tags.length > 0,
     type: annotation.type,
-    now,
   });
   const editing = (
     id: MarkPopupVerbId,
@@ -364,7 +366,8 @@ export interface SelectedMarkPopupProps {
   /** A Write Conflict on the comment, while its draft stands. */
   conflict: {
     conflict: WriteConflict;
-    live: boolean;
+    /** What stands in the way of the comment, or `null` while it acts. */
+    block: CardBlock | null;
     actions: TextDraftActions;
   } | null;
   /** The tag section, while it stands. */

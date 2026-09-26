@@ -38,6 +38,7 @@ import { itemSummary } from "@/lib/item-summary";
 import type { ItemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
+import { historyOutcomeNotice } from "@/services/annotation-repository/actions";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type {
   AnnotationRecord,
@@ -78,6 +79,7 @@ import { openTemplateDataExplorer } from "@/views/template-data-explorer/registe
 
 import { AnnotActionsContext, createAnnotActions } from "./actions";
 import type { AnnotActions } from "./actions";
+import { blocksNow } from "./Annotation";
 import { AnnotView } from "./AnnotView";
 import { cardControls } from "./card-controls";
 import type { CardControls } from "./card-controls";
@@ -356,6 +358,8 @@ export class AnnotationView extends ItemView implements HistorySurface {
       // The view can close while the step is away, and a closed view neither
       // scrolls nor speaks.
       if (this.#closed) return;
+      const notice = historyOutcomeNotice(outcome, Temporal.Now.instant());
+      if (notice !== null) new BaseNotice(notice);
       switch (outcome.kind) {
         case "stepped":
           return this.#scrollToCard([outcome.annotationKey]);
@@ -364,17 +368,12 @@ export class AnnotationView extends ItemView implements HistorySurface {
           // has no card left to bring into view. The reader that holds the
           // PDF lands on the page they sat on.
           return;
-        case "changed":
-          new BaseNotice(m.annot_history_changed_in_zotero());
-          return;
-        case "failed":
-          new BaseNotice(
-            writeFailureMessage(outcome.failure, Temporal.Now.instant()),
-          );
-          return;
         case "blocked":
           this.#deps.reportBlockedGesture(attachmentKey);
           return;
+        case "changed":
+        case "failed":
+        case "locked":
         case "idle":
           return;
         default:
@@ -1284,11 +1283,10 @@ export class AnnotationView extends ItemView implements HistorySurface {
     const state = this.#store.getState();
     const { capability, mutations } = state;
     return cardControls({
-      capability,
+      blocks: blocksNow(annot, capability),
       mutation: mutations.get(annot.key) ?? IDLE,
       hasTags: annot.tags.length > 0,
       type: annot.type,
-      now: Temporal.Now.instant(),
     });
   }
 

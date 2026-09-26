@@ -26,6 +26,7 @@ import {
 import { ANNOTATIONS, ATTACHMENTS } from "@zotlit/scripts/fixture";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
+import { verifyExternalAnnotationLock } from "./annotation-lock.ts";
 import { keepRendering } from "./background-throttling.ts";
 import { verifySavedEditDisplay } from "./excerpt-acceptance.ts";
 import { verifyExcerptRefresh } from "./excerpt-refresh.ts";
@@ -33,7 +34,14 @@ import {
   verifyExcerptRendering,
   verifyZoteroExcerptParity,
 } from "./excerpt-rendering.ts";
-import { cli, obEval, obEvalUntil, waitFor } from "./obsidian-cli.ts";
+import {
+  clearNotices,
+  cli,
+  obEval,
+  obEvalUntil,
+  obJson,
+  waitFor,
+} from "./obsidian-cli.ts";
 import { openPairedEnvironment } from "./paired-environment.ts";
 import {
   authorizationCount,
@@ -64,6 +72,7 @@ import {
   disarmTool,
   expectEditorKeepsSelections,
   FIRE,
+  openPdfWithAnnotationView,
   pageContainerOf,
   pdfViewOf,
   POPUP_EDITOR,
@@ -107,10 +116,6 @@ afterAll(async () => {
 }, 120000);
 const vaultId = environment?.vaultId ?? null;
 
-function obJson<T>(code: string): Promise<T> {
-  return obEval(vaultId!, code).then((reply) => JSON.parse(reply) as T);
-}
-
 const baseUrl = environment?.baseUrl ?? null;
 const debuggerPort = environment?.debuggerPort ?? null;
 
@@ -128,6 +133,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       // The vault half of the seeded Write Authorization. Each tier that
       // clears Zotero's keys puts a new key into it afterward.
       secret: await obJson<string>(
+        vaultId!,
         `JSON.stringify(app.secretStorage.getSecret('zotlit-zotero-write-authorization'))`,
       ),
       rdp: await openZoteroRdp(debuggerPort!),
@@ -753,23 +759,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       let createdKey = "";
       let readerTabID = "";
       let pdfDigestBefore = "";
-      let workspaceLayout = "";
       let cleanup: AsyncDisposableStack;
 
       beforeAll(async () => {
         cleanup = new AsyncDisposableStack();
         rdp = cleanup.use(await openZoteroRdp(debuggerPort!));
         await prepareAuthorizationFixture();
-        workspaceLayout = await obEval(
-          vaultId!,
-          "JSON.stringify(app.workspace.getLayout())",
-        );
-        cleanup.defer(async () => {
-          await obEval(
-            vaultId!,
-            `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(workspaceLayout)}));return true;})()`,
-          );
-        });
         // The PDF is a `vault`-rooted linked file, so it is only readable where
         // the run's vault stands — which is exactly this block's gate.
         pdfDigestBefore = await digestAttachmentPdf();
@@ -787,17 +782,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           await closeZoteroReader(rdp, readerTabID);
         });
 
-        await obEval(
-          vaultId!,
-          `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(attachmentPath)});await app.workspace.getLeaf('tab').openFile(file);return true;})()`,
-        );
-        expect(
-          await obEvalUntil(
-            vaultId!,
-            `String(!!app.plugins.plugins.zotlit.services.pdfAnnotationEditor.sessionForPath(${JSON.stringify(attachmentPath)}))`,
-            { expected: "true" },
-          ),
-        ).toBe(true);
+        await openPdfWithAnnotationView(vaultId!, { attachmentPath, cleanup });
 
         // Two setup preconditions, asserted here so a mis-prepared environment
         // says so instead of timing out later. The Attachment must resolve to
@@ -810,6 +795,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           kind: string;
           attachmentKey?: string;
         }>(
+          vaultId!,
           `(function(){var s=app.plugins.plugins.zotlit.services;return JSON.stringify(s.attachmentResolver.resolve(app.vault.adapter.getFullPath(${JSON.stringify(attachmentPath)})));})()`,
         );
         expect(
@@ -823,15 +809,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ),
           "Live Updates is not listening; a Zotero-side edit cannot reach Obsidian",
         ).toBe("true");
-
-        await obEval(
-          vaultId!,
-          "app.commands.executeCommandById('zotlit:open-annot-view');true",
-        );
-        await obEval(
-          vaultId!,
-          "app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');true",
-        );
 
         // The Annotation Source must be the Local API before any write: a
         // database-backed list refuses writes before it sends anything.
@@ -923,6 +900,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             );
             if (drifted) {
               const apiKey = await obJson<string>(
+                vaultId!,
                 "JSON.stringify(JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key)",
               );
               const restored = await zoteroFetch(api, path, {
@@ -949,6 +927,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       /** Presses one key with modifiers on the reader, as Obsidian delivers it. */
       const pressKey = (key: string, modifiers: Record<string, boolean>) =>
         obJson<{ prevented: boolean }>(
+          vaultId!,
           `(function(){const event=new KeyboardEvent('keydown',{key:${JSON.stringify(key)},...${JSON.stringify(modifiers)},bubbles:true,cancelable:true});${pdfView}.containerEl.dispatchEvent(event);return JSON.stringify({prevented:event.defaultPrevented});})()`,
         );
 
@@ -969,6 +948,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         },
       ) =>
         obJson<{ handled: boolean }>(
+          vaultId!,
           `(function(){const event=new KeyboardEvent('keydown',{key:${JSON.stringify(key)},...${JSON.stringify(modifiers)},bubbles:true,cancelable:true});const names=[];if(event.ctrlKey)names.push('Ctrl');if(event.metaKey)names.push('Meta');if(event.altKey)names.push('Alt');if(event.shiftKey)names.push('Shift');const context={modifiers:names.sort().join(','),key:event.key,vkey:'Key'+event.key.toUpperCase()};const handled=${pdfView}.scope.handleKey(event,context)===false;return JSON.stringify({handled});})()`,
         );
 
@@ -1021,6 +1001,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
       it("creates an Annotation that reaches Zotero, the page overlay and the card", async () => {
         const created = await obJson<{ kind: string; annotationKey?: string }>(
+          vaultId!,
           `(async()=>{const outcome=await app.plugins.plugins.zotlit.services.annotationRepository.createAnnotation(${JSON.stringify(attachment.key)},${JSON.stringify(
             {
               type: "highlight",
@@ -1098,6 +1079,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         // edit all three surfaces can show.
         const edited = "#a28ae5";
         const state = await obJson<{ kind: string }>(
+          vaultId!,
           `(async()=>{const state=await app.plugins.plugins.zotlit.services.annotationRepository.patchColor(${JSON.stringify(createdKey)},${JSON.stringify(edited)});return JSON.stringify(state);})()`,
         );
         expect(state.kind).toBe("idle");
@@ -1205,6 +1187,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         // The old, empty row drawn between the closed editor and the new chip
         // is the flicker this guards.
         const shown = await obJson<string[]>(
+          vaultId!,
           `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const key=${JSON.stringify(createdKey)};const card=()=>app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(key)+']')).find(Boolean);const row=()=>card()?.querySelector('.zt-annot-tag-input')?'editor':'chips:'+[...(card()?.querySelectorAll('[aria-pressed]')??[])].map((chip)=>chip.textContent).join('|');const shown=[row()];const record=()=>{const state=row();if(state!==shown.at(-1))shown.push(state);};const observer=new MutationObserver(record);observer.observe(document.body,{subtree:true,childList:true,characterData:true});card().querySelector(${JSON.stringify(toggle)}).click();const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));for(let waited=0;waited<10000&&!(repository.mutationFor(key).kind==='idle'&&!repository.tagDraftFor(key));waited+=50)await sleep(50);await sleep(300);observer.disconnect();record();return JSON.stringify(shown);})()`,
         );
         expect(shown).toEqual(["editor", `chips:${added}`]);
@@ -1231,6 +1214,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         /** The read-only chips under the comment, by name, while no editor is open. */
         const popupTags = () =>
           obJson<string[] | null>(
+            vaultId!,
             `JSON.stringify((${section})?.querySelector('.zt-annot-tag-input')?null:[...((${section})?.querySelectorAll(':scope > div > span')??[])].map(chip=>chip.textContent).sort())`,
           );
         const storedTags = () => annotationTags(api, serverID, createdKey);
@@ -1316,6 +1300,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           [x2, y2]: readonly [number, number],
         ) =>
           obJson<{ preview: string | null }>(
+            vaultId!,
             `(function(){${FIRE}${clientOf}const from=clientOf(${x1},${y1}),to=clientOf(${x2},${y2});const container=${pdfView}.containerEl;const node=fire('pointerdown',from.x,from.y);fire('pointermove',(from.x+to.x)/2,(from.y+to.y)/2,container);fire('pointermove',to.x,to.y,container);const preview=container.querySelector('.zt-pdf-capture-rect')?.getAttribute('opacity')??null;fire('pointerup',to.x,to.y,container);fire('click',to.x,to.y,node);return JSON.stringify({preview});})()`,
           );
 
@@ -2601,6 +2586,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           await raiseWindow(vaultId!);
           const before = await heldAnnotationKeys(rdp, ATTACHMENT_ITEM);
           const apiKey = await obJson<string>(
+            vaultId!,
             "JSON.stringify(JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key)",
           );
           // Written straight through the Local API, so the page draws a text
@@ -2680,6 +2666,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           state: { kind: string };
           announced: string[];
         }>(
+          vaultId!,
           `(async()=>{const s=app.plugins.plugins.zotlit.services;const binding=s.pdfAnnotationEditor.bindings.find(b=>b.filePath===${JSON.stringify(attachmentPath)});const announced=[];const off=s.annotationRepository.on('excerpt-pixels-changed',(record)=>announced.push(record.key));try{const position=${JSON.stringify(edited)};const sortIndex=await binding.sortIndex(position);const state=await s.annotationRepository.patchGeometry(${JSON.stringify(imageKey)},{position,sortIndex},'pointer');return JSON.stringify({sortIndex,state,announced});}finally{off();}})()`,
         );
         expect(outcome.state.kind).toBe("idle");
@@ -2828,6 +2815,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             }),
           ).toBe(true);
           const key = await obJson<string>(
+            vaultId!,
             "JSON.stringify(JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key)",
           );
           try {
@@ -2866,6 +2854,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             y: handle.y + 30 * handle.perY,
           };
           const pressed = await obJson<{ grip: string; popup: boolean }>(
+            vaultId!,
             `(function(){${FIRE}const node=fire('pointerdown',${handle.x},${handle.y});const container=${pdfView}.containerEl;fire('pointermove',${(handle.x + to.x) / 2},${(handle.y + to.y) / 2},container);fire('pointermove',${to.x},${to.y},container);return JSON.stringify({grip:node.dataset.ztGrip,popup:!!document.querySelector('.zt-pdf-mark-popup')});})()`,
           );
           // The press landed on the drawn handle, and the popup stood aside.
@@ -3066,6 +3055,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             y: before.y + 30 * before.perY,
           };
           const outcome = await obJson<{ width: string; body: boolean }>(
+            vaultId!,
             `(function(){${FIRE}const width=${imageMark}.getAttribute('width');const node=fire('pointerdown',${before.x},${before.y});const container=${pdfView}.containerEl;fire('pointermove',${to.x},${to.y},container);fire('pointerup',${to.x},${to.y},container);return JSON.stringify({width:String(Number(${imageMark}.getAttribute('width'))===Number(width)),body:node.dataset?.ztGrip==='body'});})()`,
           );
           expect(outcome).toEqual({ width: "true", body: false });
@@ -3158,6 +3148,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const to = { x: handle.x + 20 * handle.perX, y: handle.y };
           const attempted = [48.75, 395.509, 590, 743.723];
           const pressed = await obJson<{ grip: string }>(
+            vaultId!,
             `(function(){${FIRE}const node=fire('pointerdown',${handle.x},${handle.y});fire('pointermove',${to.x},${to.y},${pdfView}.containerEl);return JSON.stringify({grip:node.dataset.ztGrip});})()`,
           );
           expect(pressed).toEqual({ grip: "br" });
@@ -3886,6 +3877,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           },
         ): Promise<string> {
           const pressed = await obJson<{ grip: string; to: number[] }>(
+            vaultId!,
             `(function(){${FIRE}${wordRect}const box=wordRect(${JSON.stringify(word)});const x=box.left+box.width*${at},y=box.top+box.height/2;const node=fire('pointerdown',${handle.x},${handle.y});const container=${pdfView}.containerEl;fire('pointermove',(${handle.x}+x)/2,(${handle.y}+y)/2,container);fire('pointermove',x,y,container);window.__ztTo=[x,y];return JSON.stringify({grip:node.dataset.ztGrip,to:[x,y]});})()`,
           );
           expect(pressed.grip).toBe("end");
@@ -4085,6 +4077,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         it("extends the quote by one character for Shift+ArrowRight", async () => {
           await selectHighlight();
           const prevented = await obJson<boolean>(
+            vaultId!,
             `(function(){const event=new KeyboardEvent('keydown',{key:'ArrowRight',shiftKey:true,bubbles:true,cancelable:true});${pdfView}.containerEl.dispatchEvent(event);return JSON.stringify(event.defaultPrevented);})()`,
           );
           expect(prevented).toBe(true);
@@ -4165,13 +4158,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { expected: "true" },
           );
 
-        /** Takes every notice off screen, so the next one is this test's own. */
-        const clearNotices = () =>
-          obEval(
-            vaultId!,
-            "(function(){for(const node of document.querySelectorAll('.notice'))node.remove();return true;})()",
-          );
-
         /** One field, written in Zotero itself, and read back into ZotLit. */
         async function saveInZotero(
           field: "annotationColor" | "annotationComment",
@@ -4230,7 +4216,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // A history ends with the last view of its Attachment, so a reopened
           // view is what gives each test an empty one.
           await reopenPdfView(vaultId!, attachmentPath);
-          await clearNotices();
+          await clearNotices(vaultId!);
         });
 
         afterEach(async () => {
@@ -4282,7 +4268,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
           const inZotero = "#5fb236";
           await saveInZotero("annotationColor", inZotero);
-          await clearNotices();
+          await clearNotices(vaultId!);
 
           expect(await undoKey()).toEqual({ handled: true });
           await stepSettled();
@@ -4462,6 +4448,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             scoped: boolean;
             typed: string;
           }>(
+            vaultId!,
             `(function(){const editor=${POPUP_EDITOR};editor.focus();document.execCommand('selectAll');document.execCommand('insertText',false,'Typed once and twice');const typed=editor.textContent;const make=()=>new KeyboardEvent('keydown',{key:'z',${platformKey}:true,bubbles:true,cancelable:true});const probe=make();Object.defineProperty(probe,'target',{value:editor});const names=[];if(probe.ctrlKey)names.push('Ctrl');if(probe.metaKey)names.push('Meta');const context={modifiers:names.sort().join(','),key:probe.key,vkey:'KeyZ'};const scoped=${pdfView}.scope.handleKey(probe,context)===false;editor.dispatchEvent(make());return JSON.stringify({scoped,typed});})()`,
           );
           expect(typed).toBe("Typed once and twice");
@@ -4497,6 +4484,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // in one turn. The stored comment drawn for one frame between the
           // closed editor and the new text is the flicker this guards.
           const shown = await obJson<{ popup: string[]; card: string[] }>(
+            vaultId!,
             `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const key=${JSON.stringify(historyKey)};const slot=(root)=>{if(root?.querySelector('.cm-content'))return 'editor';const view=root?.querySelector('.zt-annot-comment');return view?'view:'+view.textContent:'none';};const roots={popup:()=>document.querySelector('.zt-pdf-mark-popup'),card:()=>app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(key)+']')).find(Boolean)};const shown={popup:[slot(roots.popup())],card:[slot(roots.card())]};const record=()=>{for(const name of ['popup','card']){const state=slot(roots[name]());if(state!==shown[name].at(-1))shown[name].push(state);}};const observer=new MutationObserver(record);observer.observe(document.body,{subtree:true,childList:true,characterData:true});${POPUP_EDITOR}.dispatchEvent(new FocusEvent('blur',{relatedTarget:null}));const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));for(let waited=0;waited<10000&&!(repository.mutationFor(key).kind==='idle'&&!repository.textDraftFor('comment',key));waited+=50)await sleep(50);await sleep(300);observer.disconnect();record();return JSON.stringify(shown);})()`,
           );
           expect(shown.popup).toEqual(["editor", `view:${after}`]);
@@ -4559,6 +4547,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             },
           ) =>
             obJson<{ handled: boolean }>(
+              vaultId!,
               `(function(){const card=${card};if(!card)return JSON.stringify({handled:false});const view=app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view).find((candidate)=>candidate.containerEl.contains(card));if(!view)return JSON.stringify({handled:false});card.focus();const event=new KeyboardEvent('keydown',{key:${JSON.stringify(key)},...${JSON.stringify(modifiers)},bubbles:true,cancelable:true});Object.defineProperty(event,'target',{value:card});const names=[];if(event.ctrlKey)names.push('Ctrl');if(event.metaKey)names.push('Meta');if(event.altKey)names.push('Alt');if(event.shiftKey)names.push('Shift');const context={modifiers:names.sort().join(','),key:event.key,vkey:'Key'+event.key.toUpperCase()};const handled=view.scope.handleKey(event,context)===false;return JSON.stringify({handled});})()`,
             );
 
@@ -4754,11 +4743,13 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
           const createDraft = () =>
             obJson<{ kind: string; annotationKey?: string }>(
+              vaultId!,
               `(async()=>{const outcome=await app.plugins.plugins.zotlit.services.annotationRepository.createAnnotation(${JSON.stringify(attachment.key)},${JSON.stringify(draft)});return JSON.stringify(outcome);})()`,
             );
 
           const eraseThrough = (annotationKey: string) =>
             obJson<{ kind: string }>(
+              vaultId!,
               `(async()=>{const state=await app.plugins.plugins.zotlit.services.annotationRepository.deleteAnnotation(${JSON.stringify(annotationKey)});return JSON.stringify(state);})()`,
             );
 
@@ -4927,6 +4918,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
          */
         const shown = () =>
           obJson<{ cards: string[]; marks: string[]; popup: boolean }>(
+            vaultId!,
             `(function(){const cards=[...(${annotView}?.containerEl.querySelectorAll('.zt-annot-card[data-selected]')??[])].map((card)=>card.dataset.zoteroAnnotationKey);const marks=[...new Set([...${pdfView}.containerEl.querySelectorAll('.zt-pdf-annotation-mark.is-selected')].map((mark)=>mark.dataset.zoteroAnnotationKey))];return JSON.stringify({cards,marks,popup:!!document.querySelector('.zt-pdf-mark-popup')});})()`,
           );
 
@@ -4986,6 +4978,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             // keymap hands to that view's Scope.
             expect(
               await obJson<{ prevented: boolean }>(
+                vaultId!,
                 `(function(){const leaf=app.workspace.getLeavesOfType('zotero-annotation-view')[0];app.workspace.setActiveLeaf(leaf,{focus:true});const card=${cardOf(cardKey)};card.focus();const event=new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true,cancelable:true});card.dispatchEvent(event);return JSON.stringify({prevented:event.defaultPrevented});})()`,
               ),
             ).toEqual({ prevented: true });
@@ -5049,6 +5042,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           /** Which of the card's two editors stand. */
           const editors = () =>
             obJson<{ comment: boolean; tags: boolean }>(
+              vaultId!,
               `JSON.stringify({comment:!!${card}?.querySelector('.cm-content'),tags:!!${card}?.querySelector('[data-slot=tags-input]')})`,
             );
 
@@ -5091,6 +5085,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const typed = "Saved through the comment field";
           /** The remembered write key the vault holds, for the restore. */
           const key = await obJson<string>(
+            vaultId!,
             "JSON.stringify(JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key)",
           );
           expect(await command("zotlit:annot-view-pin-current-item")).toBe(
@@ -5325,6 +5320,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             const repository =
               "app.plugins.plugins.zotlit.services.annotationRepository";
             const apiKey = await obJson<string>(
+              vaultId!,
               "JSON.stringify(JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key)",
             );
             const path = `users/0/items/${cardKey}`;
@@ -5519,10 +5515,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           it("keeps Edit quoted text enabled while editing is not live, and choosing it says why", async () => {
             await raiseWindow(vaultId!);
             await whileEditingNotLive(async () => {
-              await obEval(
-                vaultId!,
-                "(function(){for(const node of document.querySelectorAll('.notice'))node.remove();return true;})()",
-              );
+              await clearNotices(vaultId!);
               await clickCard(cardKey);
               // The card has read the blocked capability: its comment field
               // says so.
@@ -5670,6 +5663,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             },
           }));
           const made = await obJson<string[]>(
+            vaultId!,
             `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const keys=[];for(const draft of ${JSON.stringify(drafts)}){const outcome=await repository.createAnnotation(${JSON.stringify(attachment.key)},draft);keys.push(outcome.annotationKey);}return JSON.stringify(keys);})()`,
           );
           try {
@@ -5746,6 +5740,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
            */
           const rangeOf = async (from: string, to: string) => {
             const rows = await obJson<string[]>(
+              vaultId!,
               `JSON.stringify([...${annotView}.containerEl.querySelectorAll('[role="grid"] > [role="row"]')].map((row)=>row.dataset.zoteroAnnotationKey))`,
             );
             const [a, b] = [rows.indexOf(from), rows.indexOf(to)].toSorted(
@@ -5846,6 +5841,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             },
           }));
           const made = await obJson<string[]>(
+            vaultId!,
             `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const keys=[];for(const draft of ${JSON.stringify(drafts)}){const outcome=await repository.createAnnotation(${JSON.stringify(attachment.key)},draft);keys.push(outcome.annotationKey);}return JSON.stringify(keys);})()`,
           );
           try {
@@ -5870,6 +5866,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             // keymap hands to that view's Scope.
             expect(
               await obJson<{ prevented: boolean }>(
+                vaultId!,
                 `(function(){const leaf=app.workspace.getLeavesOfType('zotero-annotation-view')[0];app.workspace.setActiveLeaf(leaf,{focus:true});const card=${cardOf(second)};card.focus();const event=new KeyboardEvent('keydown',{key:'Delete',code:'Delete',bubbles:true,cancelable:true});card.dispatchEvent(event);return JSON.stringify({prevented:event.defaultPrevented});})()`,
               ),
             ).toEqual({ prevented: true });
@@ -5975,6 +5972,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             },
           }));
           const made = await obJson<string[]>(
+            vaultId!,
             `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const keys=[];for(const draft of ${JSON.stringify(drafts)}){const outcome=await repository.createAnnotation(${JSON.stringify(attachment.key)},draft);keys.push(outcome.annotationKey);}return JSON.stringify(keys);})()`,
           );
           try {
@@ -6080,6 +6078,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             // palette's third swatch, green.
             expect(
               await obJson<{ handled: boolean }>(
+                vaultId!,
                 `(function(){const card=${cardOf(made[1])};card.focus();const event=new KeyboardEvent('keydown',{key:'3',bubbles:true,cancelable:true});Object.defineProperty(event,'target',{value:card});const handled=${annotView}.scope.handleKey(event,{modifiers:'',key:'3',vkey:'Digit3'})===false;return JSON.stringify({handled});})()`,
               ),
             ).toEqual({ handled: true });
@@ -6098,6 +6097,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             // Cmd/Ctrl+C on the focused card, through the view's own Scope.
             expect(
               await obJson<{ handled: boolean }>(
+                vaultId!,
                 `(function(){const card=${cardOf(made[1])};card.focus();const event=new KeyboardEvent('keydown',{key:'c',${platformKey}:true,bubbles:true,cancelable:true});Object.defineProperty(event,'target',{value:card});const handled=${annotView}.scope.handleKey(event,{modifiers:${JSON.stringify(platformKey === "metaKey" ? "Meta" : "Ctrl")},key:'c',vkey:'KeyC'})===false;return JSON.stringify({handled});})()`,
               ),
             ).toEqual({ handled: true });
@@ -6127,6 +6127,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             })()`);
           const cards = () =>
             obJson<{ mode: string; cards: string[] }>(
+              vaultId!,
               `(function(){const view=${annotView};return JSON.stringify({mode:view.snapshot.followMode,cards:[...view.containerEl.querySelectorAll('.zt-annot-card[data-selected]')].map((card)=>card.dataset.zoteroAnnotationKey)});})()`,
             );
 
@@ -6349,6 +6350,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           kind: string;
           failure?: { kind: string };
         }>(
+          vaultId!,
           `(async()=>{const state=await app.plugins.plugins.zotlit.services.annotationRepository.patchColor(${JSON.stringify(createdKey)},${JSON.stringify(committed)});return JSON.stringify(state);})()`,
         );
         expect(state).toEqual({
@@ -6418,7 +6420,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             timers: number;
             calls: number;
             outcome: unknown;
-          }>(`(()=>{
+          }>(
+            vaultId!,
+            `(()=>{
             const repository=app.plugins.plugins.zotlit.services.annotationRepository;
             let draft=null;
             let timers=0;
@@ -6444,7 +6448,8 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               }
             })();
             return JSON.stringify({draft,timers,calls,outcome});
-          })()`);
+          })()`,
+          );
           expect(unloading).toEqual(
             pending === "unsent draft"
               ? {
@@ -6489,6 +6494,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           await obEval(vaultId!, "delete window.__zotlitReloadProbe;true");
           expect(
             await obJson(
+              vaultId!,
               `JSON.stringify((()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;return {draft:repository.textDraftFor('comment',${JSON.stringify(createdKey)}),mutation:repository.mutationFor(${JSON.stringify(createdKey)})}})())`,
             ),
           ).toEqual({ draft: null, mutation: { kind: "idle" } });
@@ -6622,6 +6628,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           live: boolean;
           assets: string[];
         }>(
+          vaultId!,
           `(async()=>{const services=app.plugins.plugins.zotlit.services;await services.noteIndex.whenIndexed();const literature=services.noteIndex.getNotesByItemKey('RUGIER24')[0];const imported=services.noteIndex.getImportedNoteByNoteKey('NNNNAAAA')[0];if(!literature||!imported)throw new Error('Managed acceptance notes missing');return JSON.stringify({literature:literature.path,imported:imported.path,live:services.settings.current['note.default-profile'].bindings['note.import-annotations-as-template'],assets:app.vault.getFiles().filter(file=>file.name.startsWith('zotlit-excerpt-')).map(file=>file.path)});})()`,
         );
         const originalLiterature = await readFile(
@@ -6633,6 +6640,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           "utf8",
         );
         const originalInk = await obJson<{ color: string }>(
+          vaultId!,
           `(async()=>{const list=await app.plugins.plugins.zotlit.services.annotationRepository.read('RGRPDF24');const annotation=list?.annotations.find(value=>value.key==='TYY6Z6ZF');if(!annotation)throw new Error('Ink annotation missing');return JSON.stringify({color:annotation.color});})()`,
         );
         await using restore = new AsyncDisposableStack();
@@ -6655,6 +6663,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           literature: { diagnostic: unknown };
           imported: unknown;
         }>(
+          vaultId!,
           `(async()=>{const services=app.plugins.plugins.zotlit.services;services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':true});const literature=app.vault.getFileByPath(${JSON.stringify(notePaths.literature)});const imported=app.vault.getFileByPath(${JSON.stringify(notePaths.imported)});if(!literature||!imported)throw new Error('Managed acceptance notes missing');const legacyUrl=require('url').pathToFileURL(${JSON.stringify(legacySource)}).href;await app.vault.modify(literature,(await app.vault.read(literature))+${JSON.stringify("\n\n![Legacy excerpt](")}+legacyUrl+${JSON.stringify(")\n")});const literatureResult=await services.noteFeature.updateNote(literature,{indexedKey:'RUGIER24',scope:'full'});const importedResult=await services.batchImport.reimportNoteByKey('NNNNAAAA',imported);return JSON.stringify({legacyUrl,literature:{diagnostic:literatureResult.diagnostic??null},imported:importedResult});})()`,
         );
         expect(prepared.literature).toEqual({ diagnostic: null });
@@ -6691,6 +6700,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const changedColor = "#d12f2f";
         expect(
           await obJson<{ kind: string }>(
+            vaultId!,
             `(async()=>JSON.stringify(await app.plugins.plugins.zotlit.services.annotationRepository.patchColor('TYY6Z6ZF',${JSON.stringify(changedColor)})))()`,
           ),
         ).toMatchObject({ kind: "idle" });
@@ -6707,6 +6717,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         );
         expect(
           await obJson<unknown>(
+            vaultId!,
             `(async()=>{const services=app.plugins.plugins.zotlit.services;const file=app.vault.getFileByPath(${JSON.stringify(notePaths.imported)});if(!file)throw new Error('Imported Note missing');return JSON.stringify(await services.batchImport.reimportNoteByKey('NNNNAAAA',file));})()`,
           ),
         ).toEqual({ outcome: "overwritten" });
@@ -6825,6 +6836,14 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       });
     },
   );
+
+  describe.skipIf(!debuggerPort || !vaultId)("an External Annotation", () => {
+    it("is locked on its card and in the reader, and Zotero keeps it unchanged", async () => {
+      await prepareAuthorizationFixture();
+      using rdp = await openZoteroRdp(debuggerPort!);
+      await verifyExternalAnnotationLock({ vaultId: vaultId!, rdp, m });
+    }, 180000);
+  });
 });
 
 /**
@@ -7112,6 +7131,7 @@ function visibleAnnotationColors(
   annotationKey: string,
 ): Promise<{ card: string | null; mark: string | null }> {
   return obJson(
+    vaultId,
     `(() => {
       const card = app.workspace.getLeavesOfType('zotero-annotation-view')
         .map((leaf) => leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(annotationKey)}]'))
@@ -7462,6 +7482,7 @@ function cardTagEditor(annotationKey: string) {
     /** The names the card draws while no session is open. */
     cardTags: () =>
       obJson<string[]>(
+        vaultId!,
         `JSON.stringify([...((${card})?.querySelectorAll('[aria-pressed]')??[])].map(chip=>chip.textContent))`,
       ),
   };
@@ -7484,6 +7505,7 @@ function tagEditorIn(root: string) {
     /** The names the open editor draws as chips. */
     editorChips: () =>
       obJson<string[]>(
+        vaultId!,
         `JSON.stringify([...((${root})?.querySelectorAll('[data-slot=tags-input-item-text]')??[])].map(chip=>chip.textContent))`,
       ),
     /** Text typed into the tag field; `enter` presses Enter after it. */

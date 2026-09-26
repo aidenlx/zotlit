@@ -589,9 +589,9 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   /**
    * The menu for two or more Selected Cards: the verbs that act on every one
    * of them. The single-card entries — backlink, key, citation, insert,
-   * explore — name one Annotation and are left out. The colour entry is
-   * dimmed for the same reasons as the delete entry; copying never changes
-   * Zotero, so it is always there.
+   * explore — name one Annotation and are left out. The colour entry opens
+   * a submenu rather than taking a press, so a write in flight and a block
+   * both dim it; copying never changes Zotero, so it is always there.
    */
   const fillGroupMenu = (
     menu: Menu,
@@ -639,10 +639,9 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
 
   /**
    * The delete entry, for one card or a group. Every entry here is a verb. A
-   * blocked write shows as a dimmed entry and says why once, in the header
-   * menu's capability row and in the notice a card verb raises, rather than in
-   * a label under each menu it blocks. A menu row is dimmed by either reason:
-   * the notice is reached from a card verb, and a menu cannot raise one.
+   * write in flight dims it. A blocked delete leaves it enabled, as "Edit
+   * quoted text" is: its press is spent on the notice that says why, the Lock
+   * Reason or the Editing Capability's own, as a card verb's press is.
    */
   const addDeleteItem = (
     menu: Menu,
@@ -658,8 +657,8 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
         )
         .setIcon("trash-2")
         .setWarning(true)
-        .setDisabled(control.disabled || control.blocked !== null)
-        .onClick(() => void deleteCards(annots));
+        .setDisabled(control.disabled)
+        .onClick(() => press("delete", annots, () => void deleteCards(annots)));
     });
   };
 
