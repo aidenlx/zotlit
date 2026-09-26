@@ -289,7 +289,7 @@ The Annotation Cards an Annotation View has selected — none, one, or several; 
 _Avoid_: selected annotations (the reader's are selected Annotation Marks), multi-selection (as a separate thing), primary card
 
 **Selected Card**:
-An Annotation Card in the Card Selection. A card selected alone opens its full text and offers its edit controls. A card selected with others stays compact but still shows its comment and tag controls; a press on one first selects that card alone.
+An Annotation Card in the Card Selection. A card selected alone opens its full text and offers its edit controls. A card selected with others stays compact but still shows its tag control; a press on it first selects that card alone. Only on a card selected alone is the comment an editable field: a click on an unselected card selects it and edits nothing.
 _Avoid_: focused card, active card, primary card
 
 **Excerpt Block**:
@@ -349,7 +349,7 @@ The painted region of one Annotation on a page of Obsidian's PDF reader. Paint, 
 _Avoid_: overlay element, highlight box, mark widget
 
 **Mark Popup**:
-The one popover the reader shows for the selected Annotation Mark or a fresh text selection, holding the verbs for that Annotation: colour, comment, tags, copy, delete, reveal, and the stepper through overlapping marks. Opened and closed by the selection alone, never by hover — except a Mark Landing, which selects without summoning it.
+The one popover the reader shows for the selected Annotation Mark or a fresh text selection, holding the verbs for that Annotation: colour, tags, copy, delete, reveal, and the stepper through overlapping marks. Under the row stands the comment as an editable field, as on a card selected alone. Opened and closed by the selection alone, never by hover — except a Mark Landing, which selects without summoning it.
 _Avoid_: selection toolbar, floating toolbar, annotation popover, hover popover (the primitive, not the surface)
 
 **Mark Handle**:
@@ -389,7 +389,7 @@ The shared unsaved comment, Quoted Text, or tags of one Annotation, one draft pe
 _Avoid_: pending write (the draft has not been submitted), cached comment
 
 **Pending Proposal**:
-The value a submitted write intends for one field of an Annotation — comment, colour, tags, or position — drawn by every surface in place of the confirmed value until the write settles. An Annotation Draft becomes one when it is submitted; a refused, conflicted, or lost write leaves the confirmed value drawn again.
+The value a submitted write intends for one field of an Annotation — comment, Quoted Text, colour, tags, or position — drawn by every surface in place of the confirmed value until the write settles. An Annotation Draft becomes one when it is submitted; a refused, conflicted, or lost write leaves the confirmed value drawn again.
 _Avoid_: optimistic value, provisional value, Annotation Draft (not yet submitted)
 
 **Write Conflict**:

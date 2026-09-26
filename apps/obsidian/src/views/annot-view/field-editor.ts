@@ -1,6 +1,7 @@
-// The CodeMirror editor an Annotation Card edits its comment in.
+// The CodeMirror field editor an Annotation Card edits its comment in, and any
+// other rich-text field Zotero stores with the same inline tags.
 //
-// The document is the comment exactly as Zotero stores it, tags included, so
+// The document is the field exactly as Zotero stores it, tags included, so
 // saving sends back what was typed and nothing is converted on the way. What
 // the editor draws is Zotero's rendering: each pair's text in its format, and
 // the tags themselves hidden until the selection touches the pair, the way
@@ -34,15 +35,29 @@ import type { CommentEdit, CommentFormat } from "./comment-format";
 
 const logger = getLogger(["views", "annot-view"]);
 
-export interface CommentEditorOptions {
+/**
+ * What an editor says about the Annotation field it edits. Everything else —
+ * the inline formats, the keys, the paste conversion and the context menu —
+ * is the same for every field.
+ */
+export interface FieldEditorWording {
+  /** What the empty editor shows. */
+  placeholder: string;
+  /** The editor's accessible name, which names the field. */
+  label: string;
+}
+
+export interface FieldEditorOptions {
   app: App;
   parent: HTMLElement;
+  /** The field the editor edits, for its placeholder and accessible name. */
+  wording: FieldEditorWording;
   text: string;
   readOnly: boolean;
-  /** Every change the user makes, as the whole comment. */
+  /** Every change the user makes, as the whole field. */
   onChange: (text: string) => void;
   onEscape: () => void;
-  /** Mod+Enter: store the comment and keep editing. */
+  /** Mod+Enter: store the field and keep editing. */
   onSubmit: () => void;
   /**
    * Focus left the editor for somewhere other than its own context menu.
@@ -52,17 +67,20 @@ export interface CommentEditorOptions {
   onBlur: (next: Node | null) => void;
 }
 
-export interface CommentEditor extends Disposable {
+export interface FieldEditor extends Disposable {
   readonly view: EditorView;
   /** Show text that changed outside this editor, keeping the caret near where it was. */
   setText(text: string): void;
   setReadOnly(readOnly: boolean): void;
 }
 
+/** Names one editor's text apart from another's, for `aria-labelledby`. */
+let labelSerial = 0;
+
 /** Marks a transaction that brings outside text in, which is not a user edit. */
 const external = Annotation.define<boolean>();
 
-export function createCommentEditor(opts: CommentEditorOptions): CommentEditor {
+export function createFieldEditor(opts: FieldEditorOptions): FieldEditor {
   const readOnly = new Compartment();
   // The context menu takes focus from the editor while it stands; that blur is
   // not the user leaving.
@@ -73,6 +91,14 @@ export function createCommentEditor(opts: CommentEditorOptions): CommentEditor {
     scope = null;
   };
 
+  // The field's name, beside the editor rather than on it: an `aria-label`
+  // would hang a tooltip over the text being written.
+  // @see apps/obsidian/policies/tooltips.md
+  const label = opts.parent.createSpan({
+    cls: "zt:sr-only",
+    text: opts.wording.label,
+    attr: { id: `zt-field-editor-label-${++labelSerial}` },
+  });
   const view = new EditorView({
     parent: opts.parent,
     state: EditorState.create({
@@ -92,10 +118,8 @@ export function createCommentEditor(opts: CommentEditorOptions): CommentEditor {
           ...defaultKeymap,
         ]),
         EditorView.lineWrapping,
-        placeholder(m.annot_view_card_comment_placeholder()),
-        EditorView.contentAttributes.of({
-          "aria-label": m.annot_view_card_edit_comment(),
-        }),
+        placeholder(opts.wording.placeholder),
+        EditorView.contentAttributes.of({ "aria-labelledby": label.id }),
         commentDecorations,
         commentTheme,
         EditorView.updateListener.of((update) => {
@@ -167,6 +191,7 @@ export function createCommentEditor(opts: CommentEditorOptions): CommentEditor {
     [Symbol.dispose]() {
       releaseKeys();
       view.destroy();
+      label.remove();
     },
   };
 }

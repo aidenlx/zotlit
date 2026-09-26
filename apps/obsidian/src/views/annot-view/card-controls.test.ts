@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import type { ResolvedAnnotationTypeName } from "@zotlit/db";
+
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
 import type {
-  CommentDraft,
+  TextFieldDraft,
   TagDraft,
 } from "@/services/annotation-repository/service";
 import type { MutationState } from "@/services/annotation-repository/write";
@@ -13,17 +15,19 @@ import { IDLE } from "@/services/annotation-repository/write";
 import {
   cardControls,
   capabilityBlock,
-  commentIcon,
-  commentLabel,
-  commentEditorControls,
+  fieldEditorControls,
   editingBlockedReason,
   groupControl,
-  heldCommentDraft,
+  heldTextDraft,
   heldTagDraft,
   shownComment,
   shownTagNames,
 } from "./card-controls";
-import type { CardBlock, CardControls } from "./card-controls";
+import type {
+  CardBlock,
+  CardControls,
+  CardControlsInput,
+} from "./card-controls";
 
 const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
 
@@ -48,15 +52,17 @@ const BLOCKED: EditingCapability[] = [
   ).map((reason): EditingCapability => ({ kind: "read-only", reason })),
 ];
 
+/** The controls of a highlight's card, which offers every one of them. */
 function controlsOf(
   capability: EditingCapability,
   mutation: MutationState = { kind: "idle" },
+  card: Pick<CardControlsInput, "type"> = { type: "highlight" },
 ): CardControls {
   return cardControls({
     capability,
     mutation,
-    hasComment: false,
     hasTags: false,
+    ...card,
     now: NOW,
   });
 }
@@ -190,14 +196,14 @@ it("says a comment is saving only where the user pressed to save it", () => {
     state: { kind: "pending" },
   } as const;
 
-  expect(commentEditorControls({ kind: "writable" }, draft, NOW)).toEqual({
+  expect(fieldEditorControls({ kind: "writable" }, draft, NOW)).toEqual({
     readOnly: false,
     saveDisabled: false,
     manual: false,
     hint: null,
   });
   expect(
-    commentEditorControls(
+    fieldEditorControls(
       { kind: "writable" },
       { ...draft, manualSave: true },
       NOW,
@@ -230,12 +236,16 @@ it("leaves a settled write's verbs to the capability, so the user can try again"
   }
 });
 
-it("names the comment verb for what pressing it would do", () => {
-  expect(commentLabel(true)).not.toBe(commentLabel(false));
-  expect(commentIcon(true)).not.toBe(commentIcon(false));
-  expect(controlsOf({ kind: "writable" }).comment.tooltip).toBe(
-    commentLabel(false),
-  );
+it("dims the comment field with each capability's reason", () => {
+  for (const capability of [LIVE, ...BLOCKED]) {
+    // The field is pressable and carries the block the notice states, as
+    // every other verb does.
+    expect(controlsOf(capability).comment).toEqual({
+      disabled: false,
+      blocked: capabilityBlock(capability, NOW),
+      tooltip: m.annot_view_card_comment_label(),
+    });
+  }
 });
 
 it("gives the tag toggle the comment toggle's enabled state and blocked reason", () => {
@@ -286,13 +296,55 @@ it("stands every verb down while a tag undo or redo is in flight", () => {
   );
 });
 
+describe("Edit quoted text", () => {
+  it("is offered for a highlight or underline, and for no other type", () => {
+    const offered = (type: ResolvedAnnotationTypeName) =>
+      controlsOf(LIVE, IDLE, { type }).text !== null;
+
+    expect(offered("highlight")).toBe(true);
+    expect(offered("underline")).toBe(true);
+    for (const type of ["note", "text", "image", "ink"] as const) {
+      expect(offered(type)).toBe(false);
+    }
+    expect(controlsOf(LIVE, IDLE, { type: "highlight" }).text).toEqual({
+      disabled: false,
+      blocked: null,
+      tooltip: m.annot_view_menu_edit_text(),
+    });
+  });
+
+  it("rests dimmed with the capability's reason for each blocked Editing Capability", () => {
+    for (const capability of BLOCKED) {
+      const copy = editingCapabilityCopy(capability, NOW);
+      expect(controlsOf(capability, IDLE, { type: "underline" }).text).toEqual({
+        disabled: false,
+        blocked: {
+          reason: copy.detail ?? copy.label,
+          action:
+            capability.kind === "authorization-required"
+              ? "allow-editing"
+              : null,
+        },
+        tooltip: m.annot_view_menu_edit_text(),
+      });
+    }
+  });
+
+  it("stays live through its own autosave", () => {
+    const card = { type: "highlight" } as const;
+    expect(controlsOf(LIVE, { kind: "pending", write: "text" }, card)).toEqual(
+      controlsOf(LIVE, IDLE, card),
+    );
+  });
+});
+
 it("names the tag toggle for what pressing it would do", () => {
   const tooltip = (hasTags: boolean) =>
     cardControls({
       capability: { kind: "writable" },
       mutation: IDLE,
-      hasComment: false,
       hasTags,
+      type: "highlight",
       now: NOW,
     }).tags.tooltip;
 
@@ -301,7 +353,7 @@ it("names the tag toggle for what pressing it would do", () => {
 });
 
 it("shows the current save outcome and preserves a manual recovery action", () => {
-  const draft: CommentDraft = {
+  const draft: TextFieldDraft = {
     annotationKey: "PUPR5FG5",
     attachmentKey: "RGRPDF24",
     serverID: "fixture",
@@ -310,7 +362,7 @@ it("shows the current save outcome and preserves a manual recovery action", () =
     state: { kind: "editing" },
   };
   expect(
-    commentEditorControls(
+    fieldEditorControls(
       { kind: "authorization-required" },
       { ...draft, manualSave: true, state: { kind: "pending" } },
       NOW,
@@ -322,7 +374,7 @@ it("shows the current save outcome and preserves a manual recovery action", () =
     hint: m.annot_view_card_saving(),
   });
   expect(
-    commentEditorControls(
+    fieldEditorControls(
       { kind: "writable" },
       {
         ...draft,
@@ -338,7 +390,7 @@ it("shows the current save outcome and preserves a manual recovery action", () =
     hint: m.annot_view_comment_unconfirmed(),
   });
   expect(
-    commentEditorControls(
+    fieldEditorControls(
       { kind: "read-only", reason: "zotero-unavailable" },
       { ...draft, manualSave: true },
       NOW,
@@ -354,7 +406,7 @@ it("shows the current save outcome and preserves a manual recovery action", () =
   });
   // A draft waiting on a manual save states nothing: its button does.
   expect(
-    commentEditorControls(
+    fieldEditorControls(
       { kind: "writable" },
       { ...draft, manualSave: true },
       NOW,
@@ -367,7 +419,7 @@ it("shows the current save outcome and preserves a manual recovery action", () =
   });
   // A refused write answers in the capability's own words.
   expect(
-    commentEditorControls(
+    fieldEditorControls(
       { kind: "authorization-required" },
       {
         ...draft,
@@ -379,7 +431,7 @@ it("shows the current save outcome and preserves a manual recovery action", () =
 });
 
 describe("the held-draft panel", () => {
-  const draft: CommentDraft = {
+  const draft: TextFieldDraft = {
     annotationKey: "PUPR5FG5",
     attachmentKey: "RGRPDF24",
     serverID: "fixture",
@@ -387,42 +439,57 @@ describe("the held-draft panel", () => {
     text: "Research note",
     state: { kind: "editing" },
   };
-  const kinds = (capability: EditingCapability, held: CommentDraft) =>
-    heldCommentDraft(capability, held, NOW)?.actions.map(
-      (action) => action.kind,
-    ) ?? null;
+  const kinds = (capability: EditingCapability, held: TextFieldDraft) =>
+    heldTextDraft("comment", held, {
+      capability: capability,
+      now: NOW,
+    })?.actions.map((action) => action.kind) ?? null;
 
   it("stays quiet where nothing is asked of the user", () => {
-    expect(heldCommentDraft({ kind: "writable" }, null, NOW)).toBeNull();
+    expect(
+      heldTextDraft("comment", null, {
+        capability: { kind: "writable" },
+        now: NOW,
+      }),
+    ).toBeNull();
     // An editor opened and closed without typing holds what Zotero already has.
     expect(
-      heldCommentDraft({ kind: "writable" }, { ...draft, text: "" }, NOW),
+      heldTextDraft(
+        "comment",
+        { ...draft, text: "" },
+        { capability: { kind: "writable" }, now: NOW },
+      ),
     ).toBeNull();
     // A write settles by itself, and the Conflict panel owns its own two verbs.
     expect(
-      heldCommentDraft(
-        { kind: "writable" },
+      heldTextDraft(
+        "comment",
         { ...draft, state: { kind: "pending" } },
-        NOW,
+        { capability: { kind: "writable" }, now: NOW },
       ),
     ).toBeNull();
     expect(
-      heldCommentDraft(
-        { kind: "writable" },
+      heldTextDraft(
+        "comment",
         { ...draft, state: { kind: "conflict", fresh: "In Zotero" } },
-        NOW,
+        { capability: { kind: "writable" }, now: NOW },
       ),
     ).toBeNull();
     // An automatic save is already on its way.
-    expect(heldCommentDraft({ kind: "writable" }, draft, NOW)).toBeNull();
+    expect(
+      heldTextDraft("comment", draft, {
+        capability: { kind: "writable" },
+        now: NOW,
+      }),
+    ).toBeNull();
   });
 
   it("gives the accent to the way out, and never to Discard", () => {
     const accent = (capability: EditingCapability) =>
-      heldCommentDraft(
-        capability,
+      heldTextDraft(
+        "comment",
         { ...draft, manualSave: true },
-        NOW,
+        { capability: capability, now: NOW },
       )?.actions.find((action) => action.primary)?.kind ?? null;
     expect(accent({ kind: "writable" })).toBe("save");
     // Saving is refused, so the grant that ends the refusal takes the accent.
@@ -446,12 +513,31 @@ describe("the held-draft panel", () => {
     ).toEqual(["save", "discard"]);
   });
 
+  it("names the field a held draft is for", () => {
+    const held = { ...draft, manualSave: true };
+    const comment = heldTextDraft("comment", held, {
+      capability: { kind: "writable" },
+      now: NOW,
+    });
+    const text = heldTextDraft("text", held, {
+      capability: { kind: "writable" },
+      now: NOW,
+    });
+    expect([comment?.title, comment?.actions[0]?.label]).toEqual([
+      m.annot_view_comment_draft(),
+      m.annot_view_comment_save(),
+    ]);
+    expect([text?.title, text?.actions[0]?.label]).toEqual([
+      m.annot_view_text_draft(),
+      m.annot_view_text_save(),
+    ]);
+  });
+
   it("offers Discard where nothing else can act, and states why", () => {
-    const held = heldCommentDraft(
-      { kind: "read-only", reason: "zotero-unavailable" },
-      draft,
-      NOW,
-    );
+    const held = heldTextDraft("comment", draft, {
+      capability: { kind: "read-only", reason: "zotero-unavailable" },
+      now: NOW,
+    });
     expect(held?.text).toBe("Research note");
     // The capability's own sentence, not the editor's generic paused line.
     expect(held?.reason).toBe(
@@ -569,7 +655,7 @@ describe("what a surface draws of an Annotation", () => {
     names: ["review", "nlp"],
     state: { kind: "editing" },
   };
-  const comment: CommentDraft = {
+  const comment: TextFieldDraft = {
     annotationKey: "PUPR5FG5",
     attachmentKey: "RGRPDF24",
     serverID: "fixture",
@@ -587,13 +673,16 @@ describe("what a surface draws of an Annotation", () => {
     ).toEqual(["review", "nlp"]);
   });
 
-  it("draws the record once a draft is saving, since it holds the proposal", () => {
+  it("draws the record once a tag draft is saving, since it holds the proposal", () => {
     expect(
       shownTagNames(record, { ...tags, state: { kind: "pending" } }),
     ).toEqual(["review", "figure"]);
+  });
+
+  it("keeps a text draft's own value while it saves, so a submit sends what was typed", () => {
     expect(
       shownComment(record, { ...comment, state: { kind: "pending" } }),
-    ).toBe("Saved note");
+    ).toBe("Typed note");
   });
 
   it("draws the record with no draft, and an empty comment for none", () => {

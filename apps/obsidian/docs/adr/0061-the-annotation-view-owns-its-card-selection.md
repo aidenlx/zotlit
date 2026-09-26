@@ -19,13 +19,13 @@ Under the mirror, a card could be selected only while an Obsidian PDF view was b
 - Pinned and a Literature Note tab bind no reader. Two views bound to the same Obsidian PDF view share a selection through that reader.
 - Multi-selection uses Zotero's gestures: Cmd/Ctrl-click toggles a card, Shift-click takes a range in list order, and Cmd/Ctrl+A takes every visible card. Keys go through the view's `Scope`.
 
-## Amendment: a card in a group keeps its comment and tag controls
+## Amendment: a card in a group keeps its tag control
 
-Accepted 2026-09-25. A card selected with others stays compact, but it still shows its comment and tag controls. A press on one of them first selects that card alone, then opens its editor, so an editor never opens on a card in a group.
+Accepted 2026-09-25, revised 2026-09-26 by [#1241](https://github.com/aidenlx/zotlit/issues/1241). A card selected with others stays compact, but it still shows its tag control. A press on it first selects that card alone, then opens its editor, so an editor never opens on a card in a group. Only on a card selected alone is the comment an editable field ([ADR 0066](0066-the-comment-is-an-editable-field-on-a-card-selected-alone-and-in-the-mark-popup.md)).
 
 ## Amendment: a blur saves the card comment editor and keeps it open
 
-Accepted 2026-09-25. A blur saves the card's comment editor and keeps it open, as Ctrl/Cmd+Enter does; Escape or a view gesture that changes the Card Selection saves and closes it, and a reader selection change waits until then. The card's tag editor still closes on blur, as [ADR 0063](0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md) decides.
+Accepted 2026-09-25. A blur saves the card's comment editor and keeps it open, as Ctrl/Cmd+Enter does; Escape or a view gesture that changes the Card Selection saves and closes it, and a reader selection change waits until then. The card's tag editor follows the same rule: a blur ends the tag editing session with its one write and keeps the editor open for the next session, as the amendment to [ADR 0063](0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md) decides.
 
 ## Amendment: the card list is a grid of rows
 

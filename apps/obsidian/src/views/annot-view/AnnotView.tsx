@@ -15,7 +15,7 @@ import { SearchInput } from "@/components/obsidian/search-input";
 import * as m from "@/lib/i18n/generated/messages";
 
 import { AnnotActionsContext } from "./actions";
-import { Annotation } from "./Annotation";
+import { Annotation, FIELD_SHEET_SELECTOR } from "./Annotation";
 import { moveOrigin } from "./card-selection";
 import { filterAnnotations, isFilterActive } from "./filter";
 import { FilterBar } from "./FilterBar";
@@ -33,6 +33,20 @@ import {
   useToggleSearchOpen,
 } from "./store";
 import { confineTabOrder } from "./tab-order";
+
+/**
+ * Whether an event landed in the open text field's sheet. `instanceOf` rather
+ * than `instanceof`: the view runs in pop-out windows.
+ *
+ * @see apps/obsidian/policies/popout-windows.md
+ */
+function inFieldSheet(target: EventTarget | null): boolean {
+  const node = target as Node | null;
+  return (
+    node?.instanceOf(Element) === true &&
+    node.closest(FIELD_SHEET_SELECTOR) !== null
+  );
+}
 
 /**
  * Each shape `presentation.ts` derives is a fresh object, and the store is read
@@ -104,9 +118,36 @@ export function AnnotView() {
   const searchButtonRef = useRef<HTMLDivElement>(null);
 
   const hasItem = body.kind === "list" || body.kind === "loading";
+  const actions = useContext(AnnotActionsContext);
+  const editingText = useAnnotStore(
+    (s) => s.editing !== null && s.editing.field !== "tags",
+  );
+  /** Whether the press the next click ends began in the open field. */
+  const pressInField = useRef(false);
 
   return (
-    <div className="zt:@container zt:flex zt:h-full zt:flex-col zt:overflow-hidden">
+    // A click in the view away from an open text field ends the edit, as
+    // Escape does, before the click reaches what it landed on (ADR 0066). A
+    // drag that selected text in the field and let go outside it is still in
+    // the field. The empty list's own click closes the editor before it
+    // clears anything, so that click is left to it.
+    <div
+      className="zt:@container zt:flex zt:h-full zt:flex-col zt:overflow-hidden"
+      onPointerDownCapture={(e) => {
+        pressInField.current = inFieldSheet(e.target);
+      }}
+      onClickCapture={(e) => {
+        if (!editingText || pressInField.current || inFieldSheet(e.target))
+          return;
+        const target = e.target as Node;
+        if (
+          target.instanceOf(Element) &&
+          target.matches('.annots-container, [role="grid"]')
+        )
+          return;
+        actions.onCloseEditors();
+      }}
+    >
       <AnnotHeader />
       {hasItem && (
         <FilterBar

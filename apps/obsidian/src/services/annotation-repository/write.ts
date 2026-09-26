@@ -41,8 +41,32 @@ export type WriteFailure =
    */
   | { kind: "position-too-large" };
 
-/** Which of the four editing verbs a Write Conflict stands on. */
-export type ConflictedWrite = "color" | "comment" | "delete" | "geometry";
+/**
+ * The Annotation fields typed as text in a field editor: the comment and the
+ * Quoted Text. Each one drafts, saves, conflicts, and records its History Step
+ * on the same rules, so a field added here reaches every one of them.
+ */
+export const TEXT_FIELDS = ["comment", "text"] as const;
+
+/** One of the {@link TEXT_FIELDS}, which also names its write. */
+export type TextField = (typeof TEXT_FIELDS)[number];
+
+/** Whether a write, or a field, is one of the {@link TEXT_FIELDS}. */
+export function isTextField(write: string): write is TextField {
+  return (TEXT_FIELDS as readonly string[]).includes(write);
+}
+
+/** One value per text field, each built by `build`. */
+export function byTextField<V>(
+  build: (field: TextField) => V,
+): Record<TextField, V> {
+  return Object.fromEntries(
+    TEXT_FIELDS.map((field) => [field, build(field)]),
+  ) as Record<TextField, V>;
+}
+
+/** Which editing verb a Write Conflict stands on. */
+export type ConflictedWrite = "color" | "delete" | "geometry" | TextField;
 
 /**
  * Zotero's copy of one Annotation moved between the read a write stamped its
@@ -77,7 +101,7 @@ export type WriteConflict =
     };
 
 /**
- * Which write is in flight: one of the four editing verbs, a create, or one
+ * Which write is in flight: one of the editing verbs, a create, or one
  * tag editing session's save. A tag save never stands in a Write Conflict: its
  * names merge into the tags Zotero holds.
  *
@@ -162,6 +186,16 @@ export function commentPatch(
   comment: string,
 ): WriteRequest {
   return patch(target, { annotationComment: comment });
+}
+
+/**
+ * A Text Edit: the Quoted Text of a highlight or underline, and nothing else.
+ * The position and the Sort Index stay out of the body, so the Annotation
+ * keeps its range and its place in the reading order. An empty string clears
+ * the text, which Zotero stores as no value.
+ */
+export function textPatch(target: WriteTarget, text: string): WriteRequest {
+  return patch(target, { annotationText: text });
 }
 
 /** One Annotation Tag as Zotero stores it: a name and the tag's type. */

@@ -449,6 +449,23 @@ it("opens the comment sheet on c, and saves it with the create", async () => {
   expect(open.drafts.map(({ comment }) => comment)).toEqual(["worth quoting"]);
 });
 
+it("saves the comment with the create from the sheet's commit, named for the mark", async () => {
+  await using open = await reader();
+  await open.selectText();
+
+  open.press("c");
+  const editor = commentView(open.popup()!)!;
+  editor.dispatch({ changes: { from: 0, insert: "worth quoting" } });
+  const commit = open
+    .popup()!
+    .querySelector<HTMLButtonElement>("button.mod-cta")!;
+  expect(commit.textContent).toBe(m.pdf_toolbar_highlight());
+  commit.click();
+  await open.creation.created;
+
+  expect(open.drafts.map(({ comment }) => comment)).toEqual(["worth quoting"]);
+});
+
 it("arms a tool with h and u while no selection is waiting", async () => {
   await using open = await reader();
   open.creation.mountToolbar(open.slot);

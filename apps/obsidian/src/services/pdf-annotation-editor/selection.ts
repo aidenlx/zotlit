@@ -44,14 +44,16 @@ import type {
 } from "@/services/annotation-repository/write";
 import type { ReaderSessionHost } from "@/services/reader-session/session";
 import {
-  commentEditorControls,
-  editingBlockedReason,
+  fieldEditorControls,
   editingLive,
-  heldCommentDraft,
   heldTagDraft,
+  heldTextDraft,
+  pressControl,
   shownComment,
   tagEditorControls,
+  textFieldWording,
 } from "@/views/annot-view/card-controls";
+import type { CardBlock, CardControl } from "@/views/annot-view/card-controls";
 import { sameKeys } from "@/views/annot-view/card-selection";
 import {
   confirmDelete,
@@ -59,12 +61,14 @@ import {
   copyText,
   recolor,
 } from "@/views/annot-view/card-verbs";
+import { controlEntry } from "@/views/annot-view/comment-parts";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
 import type {
-  CommentDraftActions,
-  CommentSheet,
+  CaretPoint,
+  TextDraftActions,
+  EditorSheet,
   HeldDraftActions,
-} from "@/views/annot-view/comment-sheet";
+} from "@/views/annot-view/editor-sheet";
 import type { EndTagSession } from "@/views/annot-view/tag-editor";
 
 import { inTextEntry, isEditGesture } from "./capability-affordance";
@@ -134,6 +138,7 @@ import {
 import type {
   ReaderSurfaceState,
   ReaderSurfaceStore,
+  SelectedRowInput,
 } from "./reader-surface-state";
 import { readingOrder, stepReadingOrder } from "./reading-order";
 import {
@@ -162,18 +167,18 @@ const logger = getLogger("pdf-annotation-editor");
 /** What the selection reads and writes one Annotation through. */
 export type AnnotationEdits = Pick<
   AnnotationRepository,
-  | "commentDraftFor"
+  | "textDraftFor"
   | "deleteAnnotation"
   | "deleteAnnotations"
-  | "discardCommentDraft"
+  | "discardTextDraft"
   | "discardTagDraft"
-  | "editComment"
+  | "editTextField"
   | "editTags"
   | "patchColor"
   | "patchColors"
   | "patchGeometry"
-  | "retryCommentDraft"
-  | "submitComment"
+  | "retryTextDraft"
+  | "submitTextField"
   | "submitTags"
 >;
 
@@ -193,19 +198,21 @@ export interface SelectOptions {
  */
 export interface MarkGestures {
   /**
-   * Bring this Annotation's card forward in the Annotation View, with the caret
-   * in its comment editor when the comment verb asked for it — anything that
-   * needs typing is the card's, and the popup only points at it.
+   * Bring this Annotation's card forward in the Annotation View. The popup
+   * edits the comment in place, so the card's editors stay as they are.
    */
-  revealAnnotation: (
-    annotationKey: string,
-    options: { comment: boolean },
-  ) => void;
+  revealAnnotation: (annotationKey: string) => void;
   /**
    * An edit gesture met a block on this Attachment. The seam probes Zotero and
    * says why, once per reason per capability episode.
    */
   reportBlockedGesture: () => void;
+  /**
+   * A press on a control the Editing Capability blocks, such as the comment
+   * field: the seam says why on every press, and offers the gesture that
+   * ends the block where there is one, as the card's own blocked press does.
+   */
+  blockedPress: (block: CardBlock) => void;
   /**
    * Open the "Zotero editing" settings row, whose Allow editing asks Zotero,
    * from the held-draft panel's "Allow editing".
@@ -289,7 +296,9 @@ export class MarkSelection implements Disposable {
    */
   #at: Pick<MarkSelectionPoint, "pageIndex" | "point"> | null = null;
   /** The popup's comment editor, while it stands. */
-  readonly #sheet: RefObject<CommentSheet | null> = { current: null };
+  readonly #sheet: RefObject<EditorSheet | null> = { current: null };
+  /** Where the click that opened the comment editor landed, until it mounts. */
+  #caretAt: CaretPoint | undefined;
   /** The popup's tag section, while it stands. */
   readonly #tagSection: RefObject<HTMLDivElement | null> = { current: null };
   /** The open tag editor's own end of its session. */
@@ -1054,11 +1063,12 @@ export class MarkSelection implements Disposable {
     const input = selectSelectedRowInput(this.#state());
     if (!input) return undefined;
     const { annotation } = input;
+    const row = markPopupRow(input);
     return createElement(SelectedMarkPopup, {
       app: this.#deps.app,
-      row: markPopupRow(input),
+      row,
       activate: (id, node) => this.#activate(id, node, annotation),
-      comment: this.#commentSlot(content, input),
+      comment: this.#commentSlot(content, input, row.comment),
       conflict: this.#conflictSlot(input),
       tags: this.#tagSlot(content, input),
     });
@@ -1144,72 +1154,99 @@ export class MarkSelection implements Disposable {
   }
 
   /**
-   * What stands in the comment's place: the open editor, a held draft, or the
-   * stored comment. The open editor is where the draft stands, so neither
-   * panel repeats it.
+   * What stands in the comment's place: the open editor, a held draft, or
+   * the comment field, resting on the stored comment or on "Add a comment…".
+   * The open editor is where the draft stands, so neither panel repeats it.
    */
   #commentSlot(
     content: HTMLElement,
-    input: MarkPopupRowInput,
-  ): SelectedPopupComment | null {
+    input: SelectedRowInput,
+    control: CardControl,
+  ): SelectedPopupComment {
     const { annotation } = input;
-    if (input.commenting) return this.#commentEditorSlot(content, annotation);
+    const sheet = input.commenting
+      ? this.#commentEditorSlot(content, annotation)
+      : null;
+    if (sheet) return sheet;
+    const entry = controlEntry(control, (at) =>
+      this.#pressComment(annotation, control, at),
+    );
     // The popup announces a held draft on the same rule the card does, and
     // carries the same verbs: the two surfaces reach one shared draft, so a
     // decision offered on one is offered on the other. Like the card, it
     // shows the held draft in the stored comment's place.
-    const held = heldCommentDraft(
-      this.#capability(),
-      this.#deps.annotations.commentDraftFor(annotation.key),
-      input.now,
+    const held = heldTextDraft(
+      "comment",
+      this.#deps.annotations.textDraftFor("comment", annotation.key),
+      { capability: this.#capability(), now: input.now },
     );
     if (held) {
       return {
         kind: "held",
         held,
         actions: this.#draftActions(annotation),
-        onOpen: () => this.#toggleComment(annotation),
+        entry,
       };
     }
-    if (annotation.comment === null) return null;
     return {
       kind: "view",
       html: annotation.comment,
-      editable:
-        editingBlockedReason(input.capability, input.mutation, input.now) ===
-        null,
       render: this.#deps.renderComment,
-      onOpen: () => this.#toggleComment(annotation),
+      entry,
     };
   }
 
-  /** A Write Conflict on the comment, while its draft stands and no editor is open. */
-  #conflictSlot(input: MarkPopupRowInput): SelectedMarkPopupProps["conflict"] {
-    const { annotation, mutation } = input;
-    if (
-      input.commenting ||
-      mutation.kind !== "conflict" ||
-      mutation.conflict.write !== "comment" ||
-      !this.#deps.annotations.commentDraftFor(annotation.key)
-    )
-      return null;
+  /**
+   * A press on the resting comment, on the card's own rule: a write in flight
+   * refuses it, a blocked capability spends it on the notice that states the
+   * reason, and otherwise it opens the editor.
+   */
+  #pressComment(
+    annotation: AnnotationRecord,
+    control: CardControl,
+    caretAt?: CaretPoint,
+  ): void {
+    pressControl(control, {
+      act: () => this.#openComment(annotation, caretAt),
+      onBlocked: (block) => this.#deps.gestures.blockedPress(block),
+    });
+  }
+
+  /**
+   * A Write Conflict on the comment, while no editor is open. It is read from
+   * the comment draft alone, as the card reads it, so a later write on
+   * another field leaves it standing.
+   */
+  #conflictSlot(input: SelectedRowInput): SelectedMarkPopupProps["conflict"] {
+    const { annotation } = input;
+    const draft = this.#deps.annotations.textDraftFor(
+      "comment",
+      annotation.key,
+    );
+    if (input.commenting || draft?.state.kind !== "conflict") return null;
     return {
-      conflict: mutation.conflict,
+      conflict: {
+        write: "comment",
+        attempted: draft.text,
+        fresh: draft.state.fresh,
+      },
       live: editingLive(this.#capability()),
       actions: this.#draftActions(annotation),
     };
   }
 
   /** The panels' verbs, bound to the repository's own writes. */
-  #draftActions(annotation: AnnotationRecord): CommentDraftActions {
+  #draftActions(annotation: AnnotationRecord): TextDraftActions {
     const { annotations, gestures } = this.#deps;
-    const discard = () => annotations.discardCommentDraft(annotation.key);
+    const discard = () =>
+      annotations.discardTextDraft("comment", annotation.key);
     return {
-      save: () => this.#write(annotations.submitComment(annotation.key)),
+      save: () =>
+        this.#write(annotations.submitTextField("comment", annotation.key)),
       allowEditing: () => gestures.allowEditing(),
       discard,
       applyAgain: () =>
-        this.#write(annotations.retryCommentDraft(annotation.key)),
+        this.#write(annotations.retryTextDraft("comment", annotation.key)),
       discardConflict: discard,
     };
   }
@@ -1240,7 +1277,7 @@ export class MarkSelection implements Disposable {
       standing ??
       (this.#sheet.current
         ? null
-        : this.#deps.annotations.editComment(annotation.key));
+        : this.#deps.annotations.editTextField("comment", annotation.key));
     if (!draft && !this.#sheet.current) {
       // Closed in the state too, so a later refresh does not try again.
       setCommenting(this.#deps.surfaceState, false);
@@ -1250,15 +1287,20 @@ export class MarkSelection implements Disposable {
       this.#submitCommentEditor(annotation, true);
       setCommenting(this.#deps.surfaceState, false);
     };
+    // The sheet places the caret once, as it mounts; a later mount opens at
+    // the end.
+    const caretAt = this.#caretAt;
+    this.#caretAt = undefined;
     return {
       kind: "sheet",
       sheet: {
         sheetRef: this.#sheet,
+        field: textFieldWording("comment"),
         value: shownComment(annotation, draft),
         text: standing?.text,
         status: this.#commentControls(annotation),
         onChange: (text) =>
-          this.#deps.annotations.editComment(annotation.key, text),
+          this.#deps.annotations.editTextField("comment", annotation.key, text),
         onSubmit: () => this.#submitCommentEditor(annotation),
         onSave: () => this.#submitCommentEditor(annotation),
         onCancel: close,
@@ -1266,14 +1308,15 @@ export class MarkSelection implements Disposable {
         // The row's own verbs stand beside the editor, so reaching one is not
         // leaving it.
         within: content,
+        caretAt,
       },
     };
   }
 
   #commentControls(annotation: AnnotationRecord) {
-    return commentEditorControls(
+    return fieldEditorControls(
       this.#capability(),
-      this.#deps.annotations.commentDraftFor(annotation.key),
+      this.#deps.annotations.textDraftFor("comment", annotation.key),
       this.#state().capabilityAt,
     );
   }
@@ -1281,9 +1324,15 @@ export class MarkSelection implements Disposable {
   #submitCommentEditor(annotation: AnnotationRecord, automatic = false): void {
     const editor = this.#sheet.current;
     if (!editor) return;
-    this.#deps.annotations.editComment(annotation.key, editor.text());
+    this.#deps.annotations.editTextField(
+      "comment",
+      annotation.key,
+      editor.text(),
+    );
     this.#write(
-      this.#deps.annotations.submitComment(annotation.key, { automatic }),
+      this.#deps.annotations.submitTextField("comment", annotation.key, {
+        automatic,
+      }),
     );
   }
 
@@ -1318,9 +1367,6 @@ export class MarkSelection implements Disposable {
           node,
         );
         return;
-      case "comment":
-        this.#toggleComment(annotation);
-        return;
       case "tags":
         this.#toggleTags(annotation);
         return;
@@ -1331,7 +1377,7 @@ export class MarkSelection implements Disposable {
         this.#erase([annotation.key]);
         return;
       case "reveal":
-        gestures.revealAnnotation(annotation.key, { comment: false });
+        gestures.revealAnnotation(annotation.key);
         return;
       case "stack":
         this.#step();
@@ -1339,14 +1385,11 @@ export class MarkSelection implements Disposable {
     }
   }
 
-  /** The comment verb is a toggle: pressed again, it stores and closes. */
-  #toggleComment(annotation: AnnotationRecord): void {
-    if (this.#sheet.current) {
-      this.#submitCommentEditor(annotation, true);
-      setCommenting(this.#deps.surfaceState, false);
-    } else if (this.#deps.annotations.editComment(annotation.key)) {
+  /** Opens the comment editor where a draft starts. */
+  #openComment(annotation: AnnotationRecord, caretAt?: CaretPoint): void {
+    this.#caretAt = caretAt;
+    if (this.#deps.annotations.editTextField("comment", annotation.key))
       setCommenting(this.#deps.surfaceState, true);
-    }
   }
 
   /**

@@ -6,7 +6,11 @@
 // @see https://github.com/aidenlx/zotlit/issues/1151
 import { annotationColorLabel } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
-import type { WriteConflict } from "@/services/annotation-repository/service";
+import type {
+  TextField,
+  WriteConflict,
+} from "@/services/annotation-repository/service";
+import { isTextField } from "@/services/annotation-repository/write";
 
 /** One value of a Write Conflict, under the label that says whose it is. */
 export interface ConflictValue {
@@ -41,6 +45,24 @@ export interface ConflictPanel {
 }
 
 /**
+ * The two verbs of a text field's Write Conflict, named for the field: the
+ * user's text, or the text Zotero holds.
+ */
+const TEXT_FIELD_VERBS: Record<
+  TextField,
+  () => { applyAgain: string; discard: string }
+> = {
+  comment: () => ({
+    applyAgain: m.annot_view_conflict_use_comment(),
+    discard: m.annot_view_conflict_keep_zotero_comment(),
+  }),
+  text: () => ({
+    applyAgain: m.annot_view_conflict_use_text(),
+    discard: m.annot_view_conflict_keep_zotero_text(),
+  }),
+};
+
+/**
  * One Write Conflict as the card puts it: the fresh Zotero value beside the
  * user's input, and the two verbs that end it. Neither edit is lost silently —
  * "Apply again" sends the user's value against the copy Zotero holds now, and
@@ -52,12 +74,12 @@ export interface ConflictPanel {
  * @see https://github.com/aidenlx/zotlit/issues/1139 — "Editing Capability and degraded states"
  */
 export function conflictPanel(conflict: WriteConflict): ConflictPanel {
+  const verbs = isTextField(conflict.write)
+    ? TEXT_FIELD_VERBS[conflict.write]()
+    : null;
   const discard: ConflictAction = {
     kind: "discard",
-    label:
-      conflict.write === "comment"
-        ? m.annot_view_conflict_keep_zotero_comment()
-        : m.annot_view_conflict_discard(),
+    label: verbs?.discard ?? m.annot_view_conflict_discard(),
   };
   if (conflict.write === "delete") {
     return {
@@ -118,10 +140,7 @@ export function conflictPanel(conflict: WriteConflict): ConflictPanel {
     actions: [
       {
         kind: "apply-again",
-        label:
-          conflict.write === "comment"
-            ? m.annot_view_conflict_use_comment()
-            : m.annot_view_conflict_apply_again(),
+        label: verbs?.applyAgain ?? m.annot_view_conflict_apply_again(),
       },
       discard,
     ],

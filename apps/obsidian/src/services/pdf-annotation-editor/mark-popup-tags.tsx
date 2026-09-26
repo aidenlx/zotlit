@@ -12,7 +12,7 @@ import type {
 } from "@/services/annotation-repository/service";
 import { shownTagNames } from "@/views/annot-view/card-controls";
 import type { HeldTags } from "@/views/annot-view/card-controls";
-import type { HeldDraftActions } from "@/views/annot-view/comment-sheet";
+import type { HeldDraftActions } from "@/views/annot-view/editor-sheet";
 import { tagChipVariants } from "@/views/annot-view/tag-chip";
 import {
   autoTags,

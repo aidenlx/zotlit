@@ -42,19 +42,16 @@ export function registerAnnotView(
 
 /**
  * Opens the Annotation View and brings one Annotation's card forward — the Mark
- * Popup's comment and reveal verbs, which hand anything that needs typing to
- * the card.
+ * Popup's reveal verb, and a notice's reveal.
  *
- * @param comment whether the card's comment editor takes the caret.
  * @see https://github.com/aidenlx/zotlit/issues/1148
  */
 export async function revealAnnotationInView(
   plugin: AnnotViewPlugin,
   annotationKey: string,
-  { comment }: { comment: boolean },
 ): Promise<void> {
   await activateAnnotView(plugin.app);
-  targetView(plugin.app)?.revealAnnotation(annotationKey, { comment });
+  targetView(plugin.app)?.revealAnnotation(annotationKey);
 }
 
 /**

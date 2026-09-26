@@ -6,6 +6,7 @@ import {
   createProfileCreator,
   createProfileImporter,
 } from "@/setting-tab/profiles";
+import { blockedNotice } from "@/views/annot-view/card-verbs";
 import {
   annotationCardShown,
   revealAnnotationInView,
@@ -230,9 +231,7 @@ export function buildServices(
           cardShown: (annotationKey) =>
             annotationCardShown(plugin.app, annotationKey),
           revealAnnotation: (annotationKey) =>
-            void revealAnnotationInView(plugin, annotationKey, {
-              comment: false,
-            }),
+            void revealAnnotationInView(plugin, annotationKey),
         }),
     })
     .use({
@@ -258,8 +257,15 @@ export function buildServices(
             allowEditing: () => void capabilityNotices.showEditingCapability(),
           },
           markGestures: {
-            revealAnnotation: (annotationKey, options) =>
-              void revealAnnotationInView(plugin, annotationKey, options),
+            revealAnnotation: (annotationKey) =>
+              void revealAnnotationInView(plugin, annotationKey),
+            // The notice renders here, at the seam, as the card's own
+            // blocked press renders it.
+            blockedPress: (block) =>
+              blockedNotice(
+                block,
+                () => void capabilityNotices.showEditingCapability(),
+              ),
           },
         });
         return reader;
