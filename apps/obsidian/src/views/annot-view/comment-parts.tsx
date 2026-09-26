@@ -139,7 +139,9 @@ export function CommentView({
           if (disabled || !clickEdits(e)) return;
           // Placing the caret is not the surface's own click.
           claimClick(e);
-          onPress({ x: e.clientX, y: e.clientY });
+          // A click with no pointer behind it, from assistive technology or a
+          // script, has no point to put the caret at.
+          onPress(e.detail > 0 ? { x: e.clientX, y: e.clientY } : undefined);
         }}
         onFocus={(e) => {
           // Reaching the field from the keyboard is reaching into it; a press

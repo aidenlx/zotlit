@@ -931,7 +931,12 @@ it("puts the caret where the click on the comment landed, and at the end from th
     .mockReturnValue(5);
 
   commentField(popup.hoverEl)!.dispatchEvent(
-    new MouseEvent("click", { bubbles: true, clientX: 12, clientY: 34 }),
+    new MouseEvent("click", {
+      bubbles: true,
+      clientX: 12,
+      clientY: 34,
+      detail: 1,
+    }),
   );
   expect(posAtCoords).toHaveBeenCalledWith({ x: 12, y: 34 });
   expect(commentView(popup.hoverEl)!.state.selection.main.head).toBe(5);

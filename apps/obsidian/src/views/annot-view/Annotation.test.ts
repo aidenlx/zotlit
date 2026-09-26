@@ -322,7 +322,7 @@ describe("the comment field", () => {
   it("opens the comment editor from a click only where a draft starts, and is not the card's click", async () => {
     for (const opens of [false, true]) {
       const { host, store, onSelectAnnotation } = await mountCard({ opens });
-      await click(field(host)!, { clientX: 12, clientY: 34 });
+      await click(field(host)!, { clientX: 12, clientY: 34, detail: 1 });
       // The caret goes where the click landed.
       expect(store.getState().editing).toEqual(
         opens
@@ -337,6 +337,15 @@ describe("the comment field", () => {
       await act(() => root?.unmount());
       host.remove();
     }
+  });
+
+  it("opens the editor at the end from a click with no pointer behind it", async () => {
+    const { host, store } = await mountCard();
+    await click(field(host)!, { detail: 0 });
+    expect(store.getState().editing).toEqual({
+      annotationKey: CARD.key,
+      field: "comment",
+    });
   });
 
   it("opens the editor from Enter, for the keyboard", async () => {

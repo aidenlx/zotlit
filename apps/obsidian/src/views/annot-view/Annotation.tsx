@@ -981,9 +981,10 @@ function EditTextButton({
     // The reveal is the wrapper's, so the button's own dim for a blocked
     // capability composes with it. It floats at the first line's end, pulled
     // up and out by the button's padding so the glyph sits on that line and
-    // the lines under it keep their width. The keyboard reveal leaves out an
-    // open comment editor, whose text always matches `:focus-visible`.
-    <span className="zt:float-end zt:ms-1 zt:-me-1 zt:-mt-1 zt:-mb-2 zt:opacity-0 zt:group-hover/quote:opacity-100 zt:group-has-[:focus-visible:not(.cm-content)]:opacity-100 zt:motion-safe:transition-opacity zt:pointer-coarse:opacity-100">
+    // the lines under it keep their width. The keyboard reveals it on the card
+    // and on any control in it, but not in an open comment editor, whose text
+    // always matches `:focus-visible`.
+    <span className="zt:float-end zt:ms-1 zt:-me-1 zt:-mt-1 zt:-mb-2 zt:opacity-0 zt:group-hover/quote:opacity-100 zt:group-focus-visible:opacity-100 zt:group-has-[:focus-visible:not(.cm-content)]:opacity-100 zt:motion-safe:transition-opacity zt:pointer-coarse:opacity-100">
       <IconButton
         icon="pencil"
         className={BLOCKED_VERB_DIM}
