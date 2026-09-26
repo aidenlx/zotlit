@@ -6,6 +6,7 @@ import type {
   ResolvedAnnotationTypeName,
 } from "@zotlit/db";
 
+import type { LockReason } from "./lock";
 import {
   resolvesSilently,
   sameStoredGeometry,
@@ -370,7 +371,12 @@ export type HistoryOutcome =
   /** The write did not land. The step was dropped and the list refreshed. */
   | { kind: "failed"; failure: WriteFailure }
   /** Editing is not allowed right now, so nothing was tried. */
-  | { kind: "blocked" };
+  | { kind: "blocked" }
+  /**
+   * A lock on an Annotation the step changes refuses it, so nothing was tried
+   * and the step stays.
+   */
+  | { kind: "locked"; reason: LockReason };
 
 /**
  * Whether a newly confirmed edit continues the run of nudges that stands on the

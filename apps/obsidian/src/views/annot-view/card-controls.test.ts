@@ -6,6 +6,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
 import type {
+  AnnotationRecord,
   TextFieldDraft,
   TagDraft,
 } from "@/services/annotation-repository/service";
@@ -13,6 +14,7 @@ import type { MutationState } from "@/services/annotation-repository/write";
 import { IDLE } from "@/services/annotation-repository/write";
 
 import {
+  annotationBlocks,
   cardControls,
   capabilityBlock,
   capabilityBlocks,
@@ -721,6 +723,40 @@ describe("a verb over a group of cards", () => {
         blocked: one.blocked,
       });
     }
+  });
+
+  it("names the Lock Reason of the first card whose lock refuses the verb", () => {
+    const card = (lock: AnnotationRecord["lock"]) =>
+      cardControls({
+        blocks: annotationBlocks({
+          annotation: { lock },
+          capability: LIVE,
+          now: NOW,
+        }),
+        mutation: IDLE,
+        hasTags: false,
+        type: "highlight",
+      });
+    const cards = [
+      card(null),
+      card({ reason: "another-user" }),
+      card({ reason: "external" }),
+    ];
+    const lockBlock = (reason: string) => ({
+      reason,
+      action: null,
+      source: "lock",
+    });
+
+    expect(groupControl(cards.map(({ color }) => color))).toEqual({
+      disabled: false,
+      blocked: lockBlock(m.annot_view_lock_another_user()),
+    });
+    // Another user's Annotation allows the delete, so the External one names it.
+    expect(groupControl(cards.map((controls) => controls.delete))).toEqual({
+      disabled: false,
+      blocked: lockBlock(m.annot_view_lock_external()),
+    });
   });
 
   it("is refused while a write is in flight on any card of it", () => {

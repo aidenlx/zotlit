@@ -1825,6 +1825,25 @@ it("refuses every edit key on a Locked Annotation with the Lock Reason, on every
   expect(h.gestures.reportBlockedGesture).not.toHaveBeenCalled();
 });
 
+it("refuses a group Delete or colour key with one Locked Annotation before the confirmation, with its Lock Reason", async () => {
+  await using h = await setup([PARAGRAPH, LOCKED_WORD], undefined, {
+    external: ["PUPR5FG5"],
+  });
+  using ask = vi.spyOn(confirmation, "confirm").mockResolvedValue(true);
+  h.selection.selectMarks(["PARA7777", "PUPR5FG5"]);
+
+  key(h, "Delete");
+  key(h, "3");
+  await settled(h, "PUPR5FG5");
+
+  expect(ask).not.toHaveBeenCalled();
+  expect(h.writes()).toEqual([]);
+  expect(h.gestures.blockedPress.mock.calls).toEqual([
+    [{ reason: LOCK_REASON, action: null, source: "lock" }],
+    [{ reason: LOCK_REASON, action: null, source: "lock" }],
+  ]);
+});
+
 it("answers an edit key on a Locked Annotation with the Editing Capability's block first", async () => {
   await using h = await lockedSelected(LOCKED_FIGURE, ON_FIGURE, {
     kind: "read-only",

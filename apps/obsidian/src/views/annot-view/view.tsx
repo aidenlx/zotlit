@@ -38,6 +38,7 @@ import { itemSummary } from "@/lib/item-summary";
 import type { ItemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
+import { historyOutcomeNotice } from "@/services/annotation-repository/actions";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type {
   AnnotationRecord,
@@ -356,6 +357,8 @@ export class AnnotationView extends ItemView implements HistorySurface {
       // The view can close while the step is away, and a closed view neither
       // scrolls nor speaks.
       if (this.#closed) return;
+      const notice = historyOutcomeNotice(outcome, Temporal.Now.instant());
+      if (notice !== null) new BaseNotice(notice);
       switch (outcome.kind) {
         case "stepped":
           return this.#scrollToCard([outcome.annotationKey]);
@@ -364,17 +367,12 @@ export class AnnotationView extends ItemView implements HistorySurface {
           // has no card left to bring into view. The reader that holds the
           // PDF lands on the page they sat on.
           return;
-        case "changed":
-          new BaseNotice(m.annot_history_changed_in_zotero());
-          return;
-        case "failed":
-          new BaseNotice(
-            writeFailureMessage(outcome.failure, Temporal.Now.instant()),
-          );
-          return;
         case "blocked":
           this.#deps.reportBlockedGesture(attachmentKey);
           return;
+        case "changed":
+        case "failed":
+        case "locked":
         case "idle":
           return;
         default:

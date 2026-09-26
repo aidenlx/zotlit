@@ -575,6 +575,9 @@ interface GroupWrite {
  */
 type GroupKind = Extract<FieldHistoryStep["kind"], "existence" | "color">;
 
+/** The write failure a lock gives, with its Lock Reason. */
+type LockedFailure = Extract<WriteFailure, { kind: "locked" }>;
+
 /** Where the writes of one group put what they landed. */
 interface GroupWrites {
   /** The one kind of step every write of the group joins. */
@@ -1597,7 +1600,8 @@ export class AnnotationRepository extends Service<void> {
    * Selection. Each Annotation goes out as a request of its own and keeps its
    * own outcome, a Write Conflict included. The recolours that land are one
    * History Step, so one undo puts every colour back; a recolour that did not
-   * land is not in it.
+   * land is not in it. A lock on one Annotation refuses the whole group, so
+   * none goes out.
    *
    * @param annotationKeys Indexed Keys, in the order the step names them.
    * @param color the swatch to store, in any case; the write sends lower case.
@@ -1732,7 +1736,8 @@ export class AnnotationRepository extends Service<void> {
    * Selection. Each Annotation goes out as a request of its own and keeps its
    * own outcome, a Write Conflict included. The deletes that land are one
    * History Step, so one undo puts all of them back; a delete that did not
-   * land is not in it.
+   * land is not in it. A lock on one Annotation refuses the whole group, so
+   * none goes out and no draft of the group is ended.
    *
    * @param annotationKeys Indexed Keys, in the order the step names them.
    * @returns one outcome per key, in the order of `annotationKeys`.
@@ -1754,6 +1759,11 @@ export class AnnotationRepository extends Service<void> {
    * A write that threw is an outcome ZotLit never learned, so the other
    * Annotations keep theirs.
    *
+   * Every lock is read before any write starts. Where one refuses the verb,
+   * nothing is sent: the first refused Annotation answers its `locked`
+   * failure, so the notice names its Lock Reason once, and every other
+   * Annotation answers `idle`.
+   *
    * @param kind the one kind of step every write of the group joins.
    * @param write one Annotation's write, which puts what it landed in `gather`.
    * @returns one outcome per key, in the order of `annotationKeys`.
@@ -1766,6 +1776,15 @@ export class AnnotationRepository extends Service<void> {
       gather: GroupWrites,
     ) => Promise<MutationState>,
   ): Promise<MutationState[]> {
+    // A group verb is all or nothing, as in Zotero's reader: one Annotation
+    // the lock refuses keeps every write of the group from going out.
+    const locked = this.#firstLockRefusal(annotationKeys, kind);
+    if (locked)
+      return annotationKeys.map((key) =>
+        key === locked.annotationKey
+          ? { kind: "failed", failure: locked.failure }
+          : IDLE,
+      );
     const gather: GroupWrites = { kind, writes: [] };
     const settled = await Promise.allSettled(
       annotationKeys.map((key) => write(key, gather)),
@@ -2256,14 +2275,12 @@ export class AnnotationRepository extends Service<void> {
     // and the existing notice says why it did not run.
     if (this.#writeBlocked(attachmentKey)) return { kind: "blocked" };
     // A lock on an Annotation the step writes refuses it before it is taken,
-    // so the step stays where it stands.
-    const verb = step.kind === "existence" ? "delete" : step.kind;
-    if (
-      step.changes.some(({ annotationKey }) =>
-        this.#lockRefusal(annotationKey, verb),
-      )
-    )
-      return { kind: "blocked" };
+    // so the step stays where it stands, and the press names the Lock Reason.
+    const locked = this.#firstLockRefusal(
+      step.changes.map(({ annotationKey }) => annotationKey),
+      step.kind,
+    );
+    if (locked) return { kind: "locked", reason: locked.failure.reason };
 
     this.#steppingAttachments.add(attachmentKey);
     try {
@@ -2978,12 +2995,16 @@ export class AnnotationRepository extends Service<void> {
   }
 
   /**
-   * The `locked` failure one verb meets on an Annotation, or `null` where its
-   * lock allows the verb. The Editing Capability keeps priority: where it
-   * refuses the write too, this answers `null`, and the write meets the
-   * capability's own refusal, whose reason can carry an action.
+   * The `locked` failure one verb meets on an Annotation. The Editing
+   * Capability keeps priority: where it refuses the write too, this answers
+   * `null`, and the write meets the capability's own refusal, whose reason can
+   * carry an action.
+   *
+   * @param annotationKey the Annotation's Indexed Key.
+   * @returns the failure with the Lock Reason, or `null` where the lock allows
+   *   the verb.
    */
-  #lockRefusal(annotationKey: string, verb: LockedVerb): WriteFailure | null {
+  #lockRefusal(annotationKey: string, verb: LockedVerb): LockedFailure | null {
     for (const [attachmentKey, locks] of this.#locks) {
       const lock = locks.get(annotationKey);
       if (!lock) continue;
@@ -2995,6 +3016,27 @@ export class AnnotationRepository extends Service<void> {
         reason: lock.reason,
       });
       return { kind: "locked", reason: lock.reason };
+    }
+    return null;
+  }
+
+  /**
+   * The first lock that refuses a write of `kind` over these Annotations: the
+   * writes of a group verb, and the Annotations one History Step changes.
+   *
+   * @param annotationKeys Indexed Keys, in the order the first is picked from.
+   * @param kind the kind of step the writes make; `existence` is a delete.
+   * @returns the first refused Annotation with its `locked` failure, or `null`
+   *   where every lock allows the write.
+   */
+  #firstLockRefusal(
+    annotationKeys: readonly string[],
+    kind: HistoryStep["kind"],
+  ): { annotationKey: string; failure: LockedFailure } | null {
+    const verb: LockedVerb = kind === "existence" ? "delete" : kind;
+    for (const annotationKey of annotationKeys) {
+      const failure = this.#lockRefusal(annotationKey, verb);
+      if (failure) return { annotationKey, failure };
     }
     return null;
   }

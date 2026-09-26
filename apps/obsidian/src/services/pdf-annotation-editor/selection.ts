@@ -1489,16 +1489,25 @@ export class MarkSelection implements Disposable {
   }
 
   /**
-   * The block the lock puts on a keystroke's verb over the mark selected
-   * alone, or `null` where it acts. A press it refuses is spent on the notice
-   * that gives the Lock Reason, on every press.
+   * The block the lock puts on a keystroke's verb over the selected marks, or
+   * `null` where it acts. A group verb is all or nothing, so the first mark
+   * whose lock refuses the verb stops the press before a group delete asks
+   * its confirmation. A press it refuses is spent on the notice that gives
+   * that mark's Lock Reason, on every press.
+   *
+   * @param selected Indexed Keys, in the order the first is picked from.
    */
   #lockOn(
     selected: readonly string[],
     verb: Extract<LockedVerb, "color" | "delete">,
   ): CardBlock | null {
-    if (selected.length !== 1) return null;
-    return lockBlock(this.#record()?.lock ?? null, verb);
+    const records = this.#deps.records();
+    for (const key of selected) {
+      const record = records.find((candidate) => candidate.key === key);
+      const block = lockBlock(record?.lock ?? null, verb);
+      if (block) return block;
+    }
+    return null;
   }
 
   #capability(): EditingCapability {

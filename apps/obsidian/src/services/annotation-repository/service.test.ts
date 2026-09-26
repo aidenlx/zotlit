@@ -6036,12 +6036,20 @@ it("does nothing while a tag session is open on the Annotation the top step touc
 //   Write Conflict that stands;
 // - a comment, Quoted Text or tag draft open when the lock appears still saves;
 // - the card offers a verb the lock refuses, or the lock's block hides the
-//   Editing Capability's own reason.
+//   Editing Capability's own reason;
+// - a group verb with one Locked Annotation writes the others, or ends their
+//   drafts, and leaves a partial result;
+// - an undo or redo takes a step that writes a Locked Annotation, drops it, or
+//   answers with no Lock Reason, so the notice gives the capability copy;
+// - a refused step drops out of canUndo/canRedo, so the command disappears.
 
 const LOCKED = {
   kind: "failed",
   failure: { kind: "locked", reason: "external" },
 } as const;
+
+/** What an undo or redo answers where a lock refuses its History Step. */
+const LOCKED_STEP = { kind: "locked", reason: "external" } as const;
 
 /** The block every verb of an External Annotation meets on its card. */
 const EXTERNAL_BLOCK = {
@@ -6322,14 +6330,103 @@ it("keeps the History Steps of an Annotation the lock refuses where they stand",
   await importFromPdf(harness, "K3JRFLFQ");
   const sent = requests.length;
 
-  expect(await repository.undo("RGRPDF24")).toEqual({ kind: "blocked" });
-  expect(await repository.redo("RGRPDF24")).toEqual({ kind: "blocked" });
+  expect(await repository.undo("RGRPDF24")).toEqual(LOCKED_STEP);
+  expect(await repository.redo("RGRPDF24")).toEqual(LOCKED_STEP);
   expect(repository.canUndo("RGRPDF24")).toBe(true);
   expect(repository.canRedo("RGRPDF24")).toBe(true);
   expect(zotero.at("K3JRFLFQ")?.color).toBe("#5fb236");
   expect(requests.slice(sent).filter(({ method }) => method !== "GET")).toEqual(
     [],
   );
+});
+
+it("refuses the Text Edit step of an External Annotation with the Lock Reason, and the step stays", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const zotero = zoteroHolding("PUPR5FG5");
+    const harness = await writable(stack, zotero.answers);
+    const { repository, requests } = harness;
+    repository.openHistory("RGRPDF24");
+    // A comment step below, and the Text Edit step undone onto the redo side.
+    repository.editTextField("comment", "PUPR5FG5", "Worth citing");
+    await repository.submitTextField("comment", "PUPR5FG5");
+    const original = zotero.held?.text;
+    repository.editTextField("text", "PUPR5FG5", "Identify your message");
+    await repository.submitTextField("text", "PUPR5FG5");
+    expect(await repository.undo("RGRPDF24")).toMatchObject({
+      kind: "stepped",
+    });
+    expect(zotero.held?.text).toBe(original);
+    // A comment draft open when the lock appears is held, and hides the step.
+    repository.editTextField("comment", "PUPR5FG5", "typed before the import");
+
+    await importFromPdf(harness, "PUPR5FG5");
+    const sent = requests.length;
+
+    expect(repository.canUndo("RGRPDF24")).toBe(false);
+    expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
+    repository.discardTextDraft("comment", "PUPR5FG5");
+    expect(repository.canUndo("RGRPDF24")).toBe(true);
+    expect(await repository.undo("RGRPDF24")).toEqual(LOCKED_STEP);
+    expect(await repository.redo("RGRPDF24")).toEqual(LOCKED_STEP);
+    expect(repository.canUndo("RGRPDF24")).toBe(true);
+    expect(repository.canRedo("RGRPDF24")).toBe(true);
+    expect(zotero.held?.comment).toBe("Worth citing");
+    expect(zotero.held?.text).toBe(original);
+    expect(
+      requests.slice(sent).filter(({ method }) => method !== "GET"),
+    ).toEqual([]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("refuses a group recolour with one External Annotation whole, and sends nothing", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository, requests } = await writable(stack, zotero.answers, {
+    external: ["K3JRFLFQ"],
+  });
+  repository.openHistory("RGRPDF24");
+  const keys = ["PUPR5FG5", "K3JRFLFQ", "C94NJNYG"];
+  const before = keys.map((key) => zotero.at(key)?.color);
+  const sent = requests.length;
+
+  expect(await repository.patchColors(keys, "#5fb236")).toEqual([
+    { kind: "idle" },
+    LOCKED,
+    { kind: "idle" },
+  ]);
+  expect(requests.slice(sent)).toEqual([]);
+  expect(keys.map((key) => zotero.at(key)?.color)).toEqual(before);
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
+it("refuses a group delete with one External Annotation whole, and keeps the drafts of the others", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const zotero = zoteroLibrary();
+    const { repository, requests } = await writable(stack, zotero.answers, {
+      external: ["K3JRFLFQ"],
+    });
+    repository.openHistory("RGRPDF24");
+    repository.editTextField("comment", "HRK7BG32", "Worth citing");
+    const sent = requests.length;
+
+    expect(
+      await repository.deleteAnnotations(["HRK7BG32", "K3JRFLFQ"]),
+    ).toEqual([{ kind: "idle" }, LOCKED]);
+    expect(requests.slice(sent)).toEqual([]);
+    expect(zotero.at("HRK7BG32")).not.toBeNull();
+    expect(zotero.at("K3JRFLFQ")).not.toBeNull();
+    expect(repository.textDraftFor("comment", "HRK7BG32")?.text).toBe(
+      "Worth citing",
+    );
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("dims every verb of an External Annotation with the Lock Reason, and none of its neighbour's", async () => {
@@ -6638,6 +6735,51 @@ it("refuses the held drafts of an Annotation once the account's first sync names
   expect(requests.slice(sent).filter(({ method }) => method !== "GET")).toEqual(
     [],
   );
+});
+
+it("sends a group delete over another user's Annotations, and one undo puts them back unlocked", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary(
+    ROUGIER_ANNOTATIONS.map((annotation) => ({
+      ...annotation,
+      groupID: GROUP_ID,
+    })),
+  );
+  const { repository, requests } = await setup(stack, zotero.answers, {
+    key: REMEMBERED_KEY,
+    group: SYNCED,
+  });
+  await repository.read(GROUP_ATTACHMENT);
+  await vi.waitFor(async () =>
+    expect((await repository.read(GROUP_ATTACHMENT))?.source.kind).toBe(
+      "zotero-local-api",
+    ),
+  );
+  repository.openHistory(GROUP_ATTACHMENT);
+  const sent = requests.length;
+
+  expect(
+    await repository.deleteAnnotations([
+      inGroup("PUPR5FG5"),
+      inGroup("C94NJNYG"),
+    ]),
+  ).toEqual([{ kind: "idle" }, { kind: "idle" }]);
+  expect(
+    requests
+      .slice(sent)
+      .filter(({ method }) => method === "DELETE")
+      .map(({ url }) => url.pathname),
+  ).toEqual([
+    `/api/groups/${GROUP_ID}/items/PUPR5FG5`,
+    `/api/groups/${GROUP_ID}/items/C94NJNYG`,
+  ]);
+
+  // Zotero restores each under a new key, with the current user as creator.
+  expect(await repository.undo(GROUP_ATTACHMENT)).toMatchObject({
+    kind: "stepped",
+  });
+  const restored = groupLocks(await repository.refresh(GROUP_ATTACHMENT));
+  expect([restored.MADE2345, restored.MADE2346]).toEqual([null, null]);
 });
 
 it("dims the edits of another user's Annotation and leaves its delete, and none of the user's own", async () => {

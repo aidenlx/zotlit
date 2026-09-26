@@ -360,8 +360,11 @@ export function zoteroLibrary(
     }[];
     const key = generated[made++];
     if (!body || key === undefined) return createRefused();
+    // A create in a group library lands there: `/api/groups/<id>/items`.
+    const [, , library, groupID] = request.url.pathname.split("/");
     const record: WireAnnotation = {
       key,
+      ...(library === "groups" && { groupID: Number(groupID) }),
       version: 60 + made,
       type: body.annotationType,
       ...(body.annotationText !== undefined && { text: body.annotationText }),
