@@ -113,7 +113,7 @@ export function createNodePairedRunPorts({
       }
 
       throw new Error(
-        `the Fixture database stays open by ${describeLive(live)}. Close Paired Zotero before starting a new Paired Run.`,
+        `the Fixture database stays open by ${describeLive(live)}, which neither SIGTERM nor SIGKILL closed. Close that process, then run the command again.`,
       );
     },
 
