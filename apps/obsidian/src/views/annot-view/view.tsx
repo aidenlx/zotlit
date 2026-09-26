@@ -28,6 +28,7 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import { AppContext } from "@/lib/app-context";
+import { openAttachments } from "@/lib/attachment-open";
 import {
   registerKeymap,
   registerMigratingWindowEvent,
@@ -49,6 +50,10 @@ import {
   IDLE,
   writeFailureMessage,
 } from "@/services/annotation-repository/write";
+import {
+  createPdfReader,
+  toObsidianOpenable,
+} from "@/services/attachment-open/actions";
 import type { DatabaseService } from "@/services/database/service";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import { savedExcerptRequest } from "@/services/excerpt-image/request";
@@ -96,6 +101,7 @@ import {
   editorOpen,
   INITIAL_FILTER_STATE,
   noFieldDrafts,
+  selectActiveAttachment,
   selectedAlone,
   toggledTags,
   visibleOrder,
@@ -451,6 +457,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
       onUnpin: () => this.#unpin(),
       onEnableLiveUpdates: () => this.#enableLiveUpdates(),
       onAllowEditing: () => this.#deps.allowEditing(),
+      onOpenPdf: () => this.#openPdf(),
       onSelectAnnotation: (annot, gesture) =>
         this.#clickFromView({ kind: gesture, key: annot.key }),
       onClearSelection: () => void this.#clearFromView(),
@@ -831,6 +838,30 @@ export class AnnotationView extends ItemView implements HistorySurface {
       this.#saveAttachmentSelection(pinnable, selectedAttachmentKey);
     }
     this.#pin(pinnable);
+  }
+
+  /**
+   * Open the Attachment on screen in Obsidian's own PDF view. A non-PDF
+   * Attachment or a missing file is answered by the reader's own notice.
+   */
+  #openPdf(): void {
+    const active = selectActiveAttachment(this.#store.getState());
+    if (!active || this.#deps.db.state !== "ready") return;
+    const resolved = resolveIndexedKeyLibrary(
+      this.#deps.db.client,
+      active.indexedKey,
+    );
+    const attachment = resolved
+      ? getAttachmentByKey(
+          this.#deps.db.client,
+          resolved.key,
+          resolved.libraryID,
+        )
+      : null;
+    openAttachments(
+      attachment ? toObsidianOpenable([attachment], this.#deps) : [],
+      { reader: createPdfReader(this.#deps), app: this.#deps.app },
+    );
   }
 
   #pickItemToPin(): void {

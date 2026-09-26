@@ -17,6 +17,7 @@ export type HeaderMenuGestures = Pick<
   AnnotActions,
   | "onAllowEditing"
   | "onChooseAttachment"
+  | "onOpenPdf"
   | "onPinCurrentItem"
   | "onPinItem"
   | "onSetFollowMode"
@@ -66,6 +67,9 @@ function runHeaderAction(
       return;
     case "choose-attachment":
       actions.onChooseAttachment();
+      return;
+    case "open-pdf":
+      actions.onOpenPdf();
       return;
     case "allow-editing":
       actions.onAllowEditing();
