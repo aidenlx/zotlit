@@ -2496,6 +2496,7 @@
   "pdf_mark_popup_next_in_stack": "Next mark here ({position} of {total})",
   "annot_view_write_reason_position_too_large": "This selection is too large for Zotero to store as one annotation.",
   "annot_view_lock_external": "Zotero imported this annotation from the PDF file, so it cannot be changed.",
+  "annot_view_lock_another_user": "Another member of this group created this annotation, so it cannot be changed. You can still delete it.",
   "annot_view_lock_label": "Locked. {reason}",
   "pdf_toolbar_tools": "Annotation tool",
   "pdf_toolbar_highlight": "Highlight",

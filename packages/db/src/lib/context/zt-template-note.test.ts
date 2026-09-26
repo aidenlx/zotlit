@@ -72,6 +72,7 @@ function makeAnnotation(overrides: Partial<Annotation>): Annotation {
     position: { pageIndex: 0, rects: [] },
     authorName: null,
     isExternal: false,
+    createdByUserID: null,
     parentItemID: 10,
     parentKey: "ATCH0001",
     ...overrides,

@@ -91,6 +91,43 @@ describe("getAnnotationsByParent", () => {
   });
 });
 
+describe("getAnnotationsByParent creator", () => {
+  it("reads the creator of a group item, and none where the database names none", () => {
+    sqlite.exec(`
+      insert into libraries (libraryID, type) values (2, 'group');
+      insert into groups (groupID, libraryID) values (4711, 2);
+      update items set libraryID = 2;
+      insert into users (userID, name) values (7, 'me'), (9, 'colleague');
+      insert into groupItems (itemID, createdByUserID)
+        values (9060, 7), (9061, 9), (9063, null);
+    `);
+    const creators = () =>
+      Object.fromEntries(
+        getAnnotationsByParent(db, 9058).map(({ key, createdByUserID }) => [
+          key,
+          createdByUserID,
+        ]),
+      );
+
+    const expected = {
+      JDJKX3N6: 7,
+      V78IHLM9: 9,
+      "463QFRLZ": null,
+      "6P4FSYIT": null,
+      DZJSSBPX: null,
+      DBKE89L9: null,
+    };
+    expect(creators()).toEqual(expected);
+
+    // A database without local client revisions reads the same creators.
+    sqlite.exec(`
+      update version set version = 125 where schema = 'userdata';
+      alter table items drop column clientVersion;
+    `);
+    expect(creators()).toEqual(expected);
+  });
+});
+
 describe("getAnnotationsByParent tags", () => {
   it("returns the annotation's tags by name, in Zotero's own order", () => {
     const result = getAnnotationsByParent(db, 9058);

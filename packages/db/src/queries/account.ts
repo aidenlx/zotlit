@@ -44,6 +44,14 @@ const identityQuery = defineQuery<void>()((db) =>
   }),
 );
 
+const userIDQuery = defineQuery<void>()((db) =>
+  db.query.settings.findMany({
+    columns: { value: true },
+    where: { setting: "account", key: "userID" },
+    limit: 1,
+  }),
+);
+
 const localApiIdentityQuery = defineQuery<void>()((db) =>
   db.query.settings.findMany({
     columns: { value: true },
@@ -65,9 +73,9 @@ export function getZoteroIdentity(db: NodeDatabaseClient): ZoteroUserIdentity {
     const value = rows.find((row) => row.key === key)?.value;
     return typeof value === "string" && value !== "" ? value : null;
   };
-  const rawUserID = rows.find((row) => row.key === "userID")?.value;
-  const userID = typeof rawUserID === "number" ? rawUserID : Number(rawUserID);
-  const resolvedUserID = Number.isInteger(userID) && userID > 0 ? userID : null;
+  const resolvedUserID = parseUserID(
+    rows.find((row) => row.key === "userID")?.value,
+  );
   const localUserKey = text("localUserKey");
   if (resolvedUserID == null && localUserKey == null)
     logger.warn(
@@ -78,6 +86,21 @@ export function getZoteroIdentity(db: NodeDatabaseClient): ZoteroUserIdentity {
     localUserKey,
     username: text("username"),
   };
+}
+
+/**
+ * The signed-in account's numeric user ID, or `null` until the account syncs.
+ * A quiet read for a per-list caller: it logs nothing for a database that
+ * never synced, where {@link getZoteroIdentity} warns.
+ */
+export function getAccountUserID(db: NodeDatabaseClient): number | null {
+  return parseUserID(userIDQuery.prepared(db).all()[0]?.value);
+}
+
+/** Zotero stores `userID` as a positive integer and may hold it as text. */
+function parseUserID(raw: unknown): number | null {
+  const userID = typeof raw === "number" ? raw : Number(raw);
+  return Number.isInteger(userID) && userID > 0 ? userID : null;
 }
 
 /** Identity needed to bind a verified database snapshot to a Local API session. */

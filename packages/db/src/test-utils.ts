@@ -37,6 +37,15 @@ const FIXTURE_DDL = `
     description text not null default '',
     version integer not null default 0
   );
+  create table users (
+    userID integer primary key,
+    name text not null default ''
+  );
+  create table groupItems (
+    itemID integer primary key,
+    createdByUserID integer,
+    lastModifiedByUserID integer
+  );
   create table itemTypes (
     itemTypeID integer primary key,
     typeName text,

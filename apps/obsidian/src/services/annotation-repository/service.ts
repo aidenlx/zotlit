@@ -3,6 +3,7 @@ import type { Mutation, QueryFunction, QueryKey } from "@tanstack/query-core";
 
 import {
   annotationTypeToName,
+  getAccountUserID,
   getAnnotationsByParent,
   getAttachmentByKey,
   getLibraries,
@@ -4143,8 +4144,10 @@ function readAttachmentAnnotations(
     return [];
   }
   const contentType = attachment.contentType ?? "";
+  // Read with each list, so an account's first sync moves the locks too.
+  const userID = getAccountUserID(client);
   return getAnnotationsByParent(client, attachment.itemID).map((annotation) =>
-    toRecord(annotation, { attachmentKey, contentType }),
+    toRecord(annotation, { attachmentKey, contentType, userID }),
   );
 }
 
@@ -4174,7 +4177,8 @@ function toRecord(
   {
     attachmentKey,
     contentType,
-  }: { attachmentKey: string; contentType: string },
+    userID,
+  }: { attachmentKey: string; contentType: string; userID: number | null },
 ): AnnotationRecord {
   return {
     key: annotation.indexedKey,
@@ -4189,7 +4193,7 @@ function toRecord(
     tagDetails: annotation.tagDetails,
     position: parseAnnotationPosition(annotation.position, contentType),
     version: annotation.version,
-    lock: lockOf(annotation),
+    lock: lockOf(annotation, userID),
     templateMetadata: {
       dateAdded: annotation.dateAdded.toString(),
       dateModified: annotation.dateModified.toString(),

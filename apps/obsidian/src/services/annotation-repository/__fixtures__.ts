@@ -169,6 +169,8 @@ export async function setup(
     persistedExcerpt?: AnnotationRepositoryDeps["persistedExcerpt"];
     /** The Annotations Zotero imported from the PDF file, by key. */
     external?: readonly string[];
+    /** The Fixture's rows in a group library, not the personal library. */
+    group?: GroupLibrary;
   } = {},
 ) {
   const {
@@ -176,6 +178,7 @@ export async function setup(
     repositoryNow,
     persistedExcerpt,
     external = [],
+    group,
     ...clientOptions
   } = options;
   const client = createClient(":memory:");
@@ -189,6 +192,7 @@ export async function setup(
      update items set version = 0, clientVersion = 29 where itemID = 48;
      insert into settings (setting, key, value) values ('localAPI', 'serverID', '${SERVER_ID}');`,
   );
+  if (group) moveToGroup(client, group);
 
   const dbEvents = createNanoEvents<DatabaseEvents>();
   const acquireRead = vi.fn(() =>
@@ -249,6 +253,55 @@ export function markExternal(
       "update itemAnnotations set isExternal = 1 where itemID = (select itemID from items where key = ?)",
     )
     .run(key);
+}
+
+/** The group library the Fixture's rows move into, as the Zotero database holds it. */
+export const GROUP_ID = 4711;
+
+/** The Fixture's Attachment, by its Indexed Key in {@link GROUP_ID}. */
+export const GROUP_ATTACHMENT = `RGRPDF24g${GROUP_ID}`;
+
+/** Who created what in a group library, and who the database says is signed in. */
+export interface GroupLibrary {
+  /**
+   * The creator of each Annotation, by bare key. A key left out has no
+   * `groupItems` row; a `null` has one with no creator.
+   */
+  createdBy: Readonly<Record<string, number | null>>;
+  /** The account user ID of the database identity; left out, the account never synced. */
+  userID?: number;
+}
+
+/**
+ * Move the Fixture's PDF item, Attachment and Annotations into a group
+ * library, with the creators Zotero keeps for a group item.
+ */
+function moveToGroup(
+  client: ReturnType<typeof createClient>,
+  { createdBy, userID }: GroupLibrary,
+): void {
+  const db = client.$client;
+  db.exec(
+    `insert into libraries (libraryID, type, version, clientVersion) values (2, 'group', 0, 37);
+     insert into groups (groupID, libraryID) values (${GROUP_ID}, 2);
+     update items set libraryID = 2 where itemID between 46 and 56;`,
+  );
+  const users = new Set(
+    [...Object.values(createdBy), userID].filter((id) => id != null),
+  );
+  for (const id of users)
+    db.prepare("insert into users (userID, name) values (?, ?)").run(
+      id,
+      `user-${id}`,
+    );
+  for (const [key, creator] of Object.entries(createdBy))
+    db.prepare(
+      "insert into groupItems (itemID, createdByUserID) values ((select itemID from items where key = ?), ?)",
+    ).run(key, creator);
+  if (userID !== undefined)
+    db.prepare(
+      "insert into settings (setting, key, value) values ('account', 'userID', ?)",
+    ).run(userID);
 }
 
 /** The next `annotations-changed` the repository emits, as a completion signal. */

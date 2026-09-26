@@ -46,6 +46,8 @@ import {
 import {
   afterWrite,
   FIXTURE_ROWS,
+  GROUP_ATTACHMENT,
+  GROUP_ID,
   markExternal,
   NOW,
   nextChange,
@@ -55,9 +57,10 @@ import {
   writable,
   zoteroLibrary,
 } from "./__fixtures__";
+import type { GroupLibrary } from "./__fixtures__";
 import { JOIN_WINDOW_MS } from "./history";
 import type { AnnotationRepository } from "./service";
-import type { AnnotationList, AnnotationRecord } from "./service";
+import type { AnnotationList, AnnotationRecord, LockReason } from "./service";
 import type { GeometryEdit } from "./write";
 
 /** Every Annotation of `RGRPDF24`, in the reading order its sort indexes give. */
@@ -6054,13 +6057,13 @@ function locksOf(list: AnnotationList | null) {
   );
 }
 
-/** Every Fixture Annotation unlocked, but those `external` names. */
-function expectedLocks(...external: string[]) {
+/** Every Fixture Annotation unlocked, but those `locked` names, by bare key. */
+function expectedLocks(locked: Readonly<Record<string, LockReason>> = {}) {
   return Object.fromEntries(
-    READING_ORDER.map(([key]) => [
-      key,
-      external.includes(key!) ? { reason: "external" } : null,
-    ]),
+    READING_ORDER.map(([key]) => {
+      const reason = locked[key!];
+      return [key, reason ? { reason } : null];
+    }),
   );
 }
 
@@ -6102,7 +6105,7 @@ it("locks an External Annotation under the Zotero DB source", async () => {
   const list = await repository.read("RGRPDF24");
 
   expect(list?.source).toEqual(DATABASE_SOURCE);
-  expect(locksOf(list)).toEqual(expectedLocks("PUPR5FG5"));
+  expect(locksOf(list)).toEqual(expectedLocks({ PUPR5FG5: "external" }));
 });
 
 it("locks an External Annotation under the Local API source, from the Zotero database", async () => {
@@ -6115,7 +6118,7 @@ it("locks an External Annotation under the Local API source, from the Zotero dat
     kind: "zotero-local-api",
     serverID: SERVER_ID,
   });
-  expect(locksOf(list)).toEqual(expectedLocks("PUPR5FG5"));
+  expect(locksOf(list)).toEqual(expectedLocks({ PUPR5FG5: "external" }));
 });
 
 it("locks nothing the Zotero database holds no fact for", async () => {
@@ -6155,7 +6158,7 @@ it("locks an Annotation Zotero imports from the PDF file while the Local API is 
   await importFromPdf(harness, "PUPR5FG5");
 
   expect(locksOf(harness.repository.peek("RGRPDF24")?.value ?? null)).toEqual(
-    expectedLocks("PUPR5FG5"),
+    expectedLocks({ PUPR5FG5: "external" }),
   );
 });
 
@@ -6302,7 +6305,7 @@ it("draws a lock the database moved while the list it gave is not published", as
     const held = await repository.read("RGRPDF24");
     expect(held?.source.kind).toBe("zotero-local-api");
     expect(colorOf(held, "PUPR5FG5")).toBe("#ff6666");
-    expect(locksOf(held)).toEqual(expectedLocks("K3JRFLFQ"));
+    expect(locksOf(held)).toEqual(expectedLocks({ K3JRFLFQ: "external" }));
   });
 });
 
@@ -6394,6 +6397,285 @@ it("gives the Editing Capability's reason where it refuses an External Annotatio
     failure: { kind: "unauthorized" },
   });
   expect(requests.slice(sent)).toEqual([]);
+});
+
+// #endregion
+
+// #region another user's annotations
+
+/** The account user ID the database identity names. */
+const ME = 7;
+/** Another member of the group library. */
+const COLLEAGUE = 9;
+
+/**
+ * Who created each Fixture Annotation in the group library. HRK7BG32 has a
+ * group item with no creator, TYY6Z6ZF one whose creator is `0`, and
+ * 4PE492KU no group item at all.
+ */
+const CREATED_BY = {
+  PUPR5FG5: COLLEAGUE,
+  C94NJNYG: COLLEAGUE,
+  K3JRFLFQ: ME,
+  FDRFQ7C2: ME,
+  HRK7BG32: null,
+  TYY6Z6ZF: 0,
+} as const;
+
+/** The locks of the Annotations {@link COLLEAGUE} created. */
+const BY_COLLEAGUE = {
+  PUPR5FG5: "another-user",
+  C94NJNYG: "another-user",
+} as const;
+
+const SYNCED: GroupLibrary = { createdBy: CREATED_BY, userID: ME };
+
+const ANOTHER_USER_LOCKED = {
+  kind: "failed",
+  failure: { kind: "locked", reason: "another-user" },
+} as const;
+
+/** The block every edit of another user's Annotation meets on its card. */
+const ANOTHER_USER_BLOCK = {
+  reason: m.annot_view_lock_another_user(),
+  action: null,
+  source: "lock",
+} as const;
+
+/** One Fixture Annotation by its Indexed Key in the group library. */
+function inGroup(key: string): string {
+  return `${key}g${GROUP_ID}`;
+}
+
+/** Each Annotation's lock, by bare key. */
+function groupLocks(list: AnnotationList | null) {
+  return Object.fromEntries(
+    list?.annotations.map(({ key, lock }) => [
+      key.replace(`g${GROUP_ID}`, ""),
+      lock,
+    ]) ?? [],
+  );
+}
+
+/**
+ * The repository over a Zotero Local API session with a Write Authorization,
+ * with the Fixture's Annotations read from a group library.
+ */
+async function groupWritable(
+  stack: AsyncDisposableStack,
+  group: GroupLibrary = SYNCED,
+) {
+  const harness = await setup(
+    stack,
+    {
+      children: () =>
+        annotationPage(
+          ROUGIER_ANNOTATIONS.map((annotation) => ({
+            ...annotation,
+            groupID: GROUP_ID,
+          })),
+        ),
+    },
+    { key: REMEMBERED_KEY, group },
+  );
+  const announced = nextChange(harness.repository);
+  await harness.repository.read(GROUP_ATTACHMENT);
+  await announced;
+  expect((await harness.repository.read(GROUP_ATTACHMENT))?.source.kind).toBe(
+    "zotero-local-api",
+  );
+  return harness;
+}
+
+it("locks another user's Annotation in a group library under the Zotero DB source", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await setup(stack, undefined, { group: SYNCED });
+
+  const list = await repository.read(GROUP_ATTACHMENT);
+
+  expect(list?.source.kind).toBe("zotero-db");
+  expect(groupLocks(list)).toEqual(expectedLocks(BY_COLLEAGUE));
+});
+
+it("locks another user's Annotation under the Local API source, from the Zotero database", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await groupWritable(stack);
+
+  const list = await repository.read(GROUP_ATTACHMENT);
+
+  expect(groupLocks(list)).toEqual(expectedLocks(BY_COLLEAGUE));
+});
+
+it("locks nothing where the group item names no creator: no row, null, or 0", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await setup(stack, undefined, { group: SYNCED });
+
+  const locks = groupLocks(await repository.read(GROUP_ATTACHMENT));
+
+  expect([locks["4PE492KU"], locks.HRK7BG32, locks.TYY6Z6ZF]).toEqual([
+    null,
+    null,
+    null,
+  ]);
+  expect(locks.PUPR5FG5).toEqual({ reason: "another-user" });
+});
+
+it("locks nothing by creator for an Annotation the Zotero database does not hold yet", async () => {
+  await using stack = new AsyncDisposableStack();
+  const unread = {
+    ...afterWrite("PUPR5FG5", {}),
+    key: "UNREAD23",
+    sortIndex: "00000|002050|00170",
+  };
+  const { repository } = await setup(
+    stack,
+    {
+      children: () =>
+        annotationPage(
+          [...ROUGIER_ANNOTATIONS, unread].map((annotation) => ({
+            ...annotation,
+            groupID: GROUP_ID,
+          })),
+        ),
+    },
+    { key: REMEMBERED_KEY, group: SYNCED },
+  );
+  const announced = nextChange(repository);
+  await repository.read(GROUP_ATTACHMENT);
+  await announced;
+
+  const list = await repository.read(GROUP_ATTACHMENT);
+
+  expect(list?.source.kind).toBe("zotero-local-api");
+  expect(groupLocks(list)).toEqual({
+    ...expectedLocks(BY_COLLEAGUE),
+    UNREAD23: null,
+  });
+});
+
+it("locks nothing where the database names no account user ID", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await setup(stack, undefined, {
+    group: { createdBy: CREATED_BY },
+  });
+
+  expect(groupLocks(await repository.read(GROUP_ATTACHMENT))).toEqual(
+    expectedLocks(),
+  );
+});
+
+it("locks nothing by creator where the database cannot be read", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, acquireRead } = await groupWritable(stack);
+
+  acquireRead.mockRejectedValue(new Error("database is locked"));
+  const refreshed = await repository.refresh(GROUP_ATTACHMENT);
+
+  expect(refreshed?.source.kind).toBe("zotero-local-api");
+  expect(groupLocks(refreshed)).toEqual(expectedLocks());
+});
+
+it("refuses every edit of another user's Annotation before any request, and sends its delete", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, requests } = await groupWritable(stack);
+  const key = inGroup("PUPR5FG5");
+  const sent = requests.length;
+
+  const outcomes = [
+    await repository.patchColor(key, "#ff6666"),
+    await repository.patchComment(key, "Worth citing"),
+    await repository.patchGeometry(key, moved("PUPR5FG5"), "pointer"),
+  ];
+
+  expect(outcomes).toEqual([
+    ANOTHER_USER_LOCKED,
+    ANOTHER_USER_LOCKED,
+    ANOTHER_USER_LOCKED,
+  ]);
+  // No draft starts, so no autosave and no Done can send one.
+  expect(repository.editTextField("comment", key, "typed")).toBeNull();
+  expect(repository.editTextField("text", key)).toBeNull();
+  expect(repository.editTags(key, ["review"])).toBeNull();
+  expect(requests.slice(sent)).toEqual([]);
+
+  expect(await repository.deleteAnnotation(key)).toEqual({ kind: "idle" });
+  const [erase] = requests.slice(sent);
+  expect([erase?.method, erase?.url.pathname]).toEqual([
+    "DELETE",
+    `/api/groups/${GROUP_ID}/items/PUPR5FG5`,
+  ]);
+});
+
+it("refuses the held drafts of an Annotation once the account's first sync names another creator", async () => {
+  await using stack = new AsyncDisposableStack();
+  const harness = await groupWritable(stack, { createdBy: CREATED_BY });
+  const { repository, requests, client, dbEvents } = harness;
+  const key = inGroup("PUPR5FG5");
+  repository.editTextField("comment", key, "typed before the sync");
+  repository.editTextField("text", key, "Identify your message");
+  repository.editTags(key, ["review"]);
+  const sent = requests.length;
+
+  client.$client.exec(
+    `insert into settings (setting, key, value) values ('account', 'userID', ${ME});`,
+  );
+  dbEvents.emit("changed");
+  await vi.waitFor(async () => {
+    const list = await repository.read(GROUP_ATTACHMENT);
+    expect(groupLocks(list).PUPR5FG5).toEqual({ reason: "another-user" });
+  });
+
+  expect(await repository.submitTextField("comment", key)).toEqual(
+    ANOTHER_USER_LOCKED,
+  );
+  expect(await repository.submitTextField("text", key)).toEqual(
+    ANOTHER_USER_LOCKED,
+  );
+  expect(await repository.retryTextDraft("comment", key)).toEqual(
+    ANOTHER_USER_LOCKED,
+  );
+  expect(await repository.submitTags(key)).toEqual(ANOTHER_USER_LOCKED);
+  expect(requests.slice(sent).filter(({ method }) => method !== "GET")).toEqual(
+    [],
+  );
+});
+
+it("dims the edits of another user's Annotation and leaves its delete, and none of the user's own", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await groupWritable(stack);
+  const controls = (key: string) => {
+    const annotation = repository
+      .peek(GROUP_ATTACHMENT)
+      ?.value.annotations.find((record) => record.key === inGroup(key));
+    if (!annotation) throw new Error(`No record ${key}`);
+    return cardControls({
+      blocks: annotationBlocks({
+        annotation,
+        capability: repository.capabilityFor(GROUP_ATTACHMENT),
+        now: NOW,
+      }),
+      mutation: repository.mutationFor(annotation.key),
+      hasTags: annotation.tags.length > 0,
+      type: annotation.type,
+    });
+  };
+
+  const locked = { disabled: false, blocked: ANOTHER_USER_BLOCK };
+  const free = { disabled: false, blocked: null };
+  expect(controls("PUPR5FG5")).toMatchObject({
+    color: locked,
+    comment: locked,
+    tags: locked,
+    text: locked,
+    delete: free,
+  });
+  expect(controls("K3JRFLFQ")).toMatchObject({
+    color: free,
+    comment: free,
+    tags: free,
+    text: free,
+    delete: free,
+  });
 });
 
 // #endregion
