@@ -66,7 +66,9 @@ export async function openPairedEnvironment(
   if (!vaultId) throw new Error(`no vault id for ${vaultPath}`);
 
   // Zotero reads `httpServer.port` at startup, from the profile built above.
-  stack.defer(() => ports.stopLivePairedZotero());
+  stack.defer(async () => {
+    await ports.stopLivePairedZotero();
+  });
   const { debuggerPort } = await ports.openPairedZotero();
   if (debuggerPort === undefined)
     throw new Error("Paired Zotero reported no debugging port");

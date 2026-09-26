@@ -41,13 +41,21 @@ export interface PairedRunReady {
   localApi: boolean;
 }
 
+/** A Zotero process that holds the Fixture database open. */
+export interface LivePairedZotero {
+  command: string;
+  pid: number;
+}
+
 export interface PairedRunPorts {
   assertObsidianHost(): Promise<void>;
   /**
    * Close a Paired Zotero that still holds this Fixture, so the rebuild that
    * follows starts on a Fixture root no process keeps open.
+   *
+   * @returns the processes it closed, empty where none held the Fixture.
    */
-  stopLivePairedZotero(): Promise<void>;
+  stopLivePairedZotero(): Promise<readonly LivePairedZotero[]>;
   /** A port that is free right now, for this run's Live Updates channel. */
   allocateLiveUpdatePort(): Promise<number>;
   /** A port that is free right now, for this run's Zotero HTTP server. */

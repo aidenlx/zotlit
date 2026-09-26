@@ -25,7 +25,8 @@ below), run from the repo root.
 4. **Stop** — once the question is answered, stop a Paired Run you started. Send SIGINT to
    the whole process group of `pnpm fixture dev`, as `Ctrl-C` does:
    `kill -INT -- -<pgid>`. SIGINT to the inner `fixture.ts` process alone leaves the run and
-   its Zotero up. Leave a reused run up. Done when `zotero-rdp.ts 'Zotero.version'` reports
+   its Zotero up. Close a Paired Zotero that `pnpm fixture open` started with
+   `pnpm fixture stop`. Leave a reused run up. Done when `zotero-rdp.ts 'Zotero.version'` reports
    no live Paired Run.
 
 ## Gotchas
