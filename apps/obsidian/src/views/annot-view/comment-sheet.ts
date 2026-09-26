@@ -6,7 +6,7 @@
 // the Annotation Card and the reader's Mark Popup alike. What differs between
 // the two is the surface's spacing and corners, never which controls stand or
 // what they do.
-import { setIcon } from "obsidian";
+import { Keymap, setIcon } from "obsidian";
 import type { App } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -113,13 +113,32 @@ export function commentViewClass(
 }
 
 /**
+ * Whether a click on this surface is the card's own selection gesture: Shift
+ * takes a range and Cmd/Ctrl toggles the card, so an edit area on the card
+ * leaves that click to the card. The Mark Popup selects one mark, so no click
+ * on it is that gesture.
+ *
+ * @see apps/obsidian/docs/adr/0061-the-annotation-view-owns-its-card-selection.md
+ */
+export function selectsCards(
+  event: MouseEvent,
+  surface: CommentSurface,
+): boolean {
+  return (
+    surface === "card" && (event.shiftKey || Keymap.isModifier(event, "Mod"))
+  );
+}
+
+/**
  * Whether a click on the rendered comment asks for its editor. A link keeps
- * its own click, and a click that ends a text selection is the user copying
- * rather than asking to edit.
+ * its own click, a click that ends a text selection is the user copying
+ * rather than asking to edit, and the card's selection gesture is the card's.
  */
 export function opensCommentEditor(
-  event: Pick<MouseEvent, "target" | "currentTarget">,
+  event: MouseEvent,
+  surface: CommentSurface,
 ): boolean {
+  if (selectsCards(event, surface)) return false;
   const target = event.target as Node | null;
   if (target?.instanceOf(HTMLElement) && target.closest("a")) return false;
   const el = event.currentTarget as HTMLElement;
@@ -156,7 +175,8 @@ export interface CommentSheetProps {
   onCancel: () => void;
   /**
    * Focus left the sheet while the save is automatic and the editor takes a
-   * write: store the comment and close. Absent where leaving saves nothing.
+   * write: store the comment. The surface decides whether the sheet closes
+   * with it. Absent where leaving saves nothing.
    */
   onLeave?: () => void;
   /** What focus may move within without leaving; the sheet itself by default. */
@@ -382,8 +402,12 @@ export function renderHeldDraftPanel(
     cls: "zt:cursor-text zt:break-words zt:whitespace-pre-wrap zt:select-text",
     text: held.text,
   });
-  text.addEventListener("click", () => {
-    if (text.win.getSelection()?.isCollapsed === false) return;
+  text.addEventListener("click", (event) => {
+    if (
+      selectsCards(event, surface) ||
+      text.win.getSelection()?.isCollapsed === false
+    )
+      return;
     onOpen();
   });
   heldReasonAndVerbs(box, held, actions);

@@ -137,6 +137,14 @@ export function clearFormatting(
 }
 
 /**
+ * The comment as plain text: every tag pair Zotero renders leaves only its
+ * content, and a tag with no match stays text, as the card shows it.
+ */
+export function commentPlainText(text: string): string {
+  return unwrap(text, parseComment(text), 0).text;
+}
+
+/**
  * Pasted HTML as a comment: the four formats survive, `strong` and `em` read
  * as `b` and `i`, line breaks and block edges turn into `\n`, and every other
  * element leaves only its text. A format pair holding only whitespace is

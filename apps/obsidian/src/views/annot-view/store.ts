@@ -17,6 +17,9 @@ import type {
 } from "@/services/annotation-repository/service";
 import { IDLE } from "@/services/annotation-repository/write";
 
+import { NO_SELECTION } from "./card-selection";
+import type { CardSelection } from "./card-selection";
+import { filterAnnotations } from "./filter";
 import type { AnnotFilter } from "./filter";
 
 /**
@@ -65,8 +68,11 @@ export interface AnnotState {
    * none is. A draft still saving keeps its editor open after this clears.
    */
   editingTagsKey: string | null;
-  /** Indexed Keys of the Annotations selected in the reader the view follows. */
-  selectedAnnotationKeys: readonly string[];
+  /**
+   * The cards this view holds selected, in every Follow Mode. The bound reader
+   * is kept in step with it; nothing persists it.
+   */
+  cardSelection: CardSelection;
   /**
    * Indexed Key of the Item on screen; `null` for a standalone Attachment and
    * while nothing resolves. An Attachment can stand without one.
@@ -137,7 +143,7 @@ export function createAnnotStore() {
         editingCommentKey: null,
         tagDrafts: new Map(),
         editingTagsKey: null,
-        selectedAnnotationKeys: [],
+        cardSelection: NO_SELECTION,
         itemKey: null,
         itemDisplay: null,
         groupID: null,
@@ -162,6 +168,16 @@ export function selectActiveAttachment(
     s.attachments.find((a) => a.indexedKey === s.selectedAttachmentKey) ??
     s.attachments[0]!
   );
+}
+
+/**
+ * Whether a card's comment or tag editor is open. A tag draft still saving
+ * after its editor closed does not count: `editingTagsKey` is already clear.
+ */
+export function editorOpen(
+  state: Pick<AnnotState, "editingCommentKey" | "editingTagsKey">,
+): boolean {
+  return state.editingCommentKey !== null || state.editingTagsKey !== null;
 }
 
 const AnnotStoreContext = createContext<AnnotStore | null>(null);
@@ -259,12 +275,67 @@ export function useSetSelectedColors(): (colors: string[]) => void {
   );
 }
 
-/** Assembles the {@link AnnotFilter} from the store's query/colors/tags slices. */
+type FilterSlices = Pick<
+  AnnotState,
+  "filterQuery" | "selectedColors" | "selectedTags"
+>;
+
+/** The one place the store's search and filter slices become an {@link AnnotFilter}. */
+function filterOf(s: FilterSlices): AnnotFilter {
+  return {
+    query: s.filterQuery,
+    colors: s.selectedColors,
+    tags: s.selectedTags,
+  };
+}
+
+/**
+ * The last order worked out over each list, and the filter slices it was
+ * worked out under. Keyed on the list itself, so each view keeps its own.
+ */
+const orders = new WeakMap<
+  readonly AnnotationRecord[],
+  { slices: FilterSlices; order: readonly string[] }
+>();
+
+/**
+ * The Indexed Keys the list shows, in the order it shows them — the list the
+ * Card Selection's transitions read, filtered as {@link useAnnotFilter}
+ * filters the cards on screen. The view's subscription reads it on every
+ * store update, so it filters again only when the list or a filter slice
+ * changes.
+ */
+export function visibleOrder(
+  s: FilterSlices & Pick<AnnotState, "annotations">,
+): readonly string[] {
+  if (s.annotations === null) return [];
+  const held = orders.get(s.annotations);
+  if (
+    held?.slices.filterQuery === s.filterQuery &&
+    held.slices.selectedColors === s.selectedColors &&
+    held.slices.selectedTags === s.selectedTags
+  )
+    return held.order;
+  const { filterQuery, selectedColors, selectedTags } = s;
+  const order = filterAnnotations(s.annotations, filterOf(s)).map(
+    ({ key }) => key,
+  );
+  orders.set(s.annotations, {
+    slices: { filterQuery, selectedColors, selectedTags },
+    order,
+  });
+  return order;
+}
+
+/** The {@link AnnotFilter} on screen, held while its slices are unchanged. */
 export function useAnnotFilter(): AnnotFilter {
-  const query = useAnnotStore((s) => s.filterQuery);
-  const colors = useAnnotStore((s) => s.selectedColors);
-  const tags = useAnnotStore((s) => s.selectedTags);
-  return useMemo(() => ({ query, colors, tags }), [query, colors, tags]);
+  const filterQuery = useAnnotStore((s) => s.filterQuery);
+  const selectedColors = useAnnotStore((s) => s.selectedColors);
+  const selectedTags = useAnnotStore((s) => s.selectedTags);
+  return useMemo(
+    () => filterOf({ filterQuery, selectedColors, selectedTags }),
+    [filterQuery, selectedColors, selectedTags],
+  );
 }
 
 /**

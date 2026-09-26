@@ -130,6 +130,24 @@ export function cardControls({
   };
 }
 
+/**
+ * One verb over a group of cards, from each card's own control: refused while
+ * a write is in flight on any of them, and blocked for the same reason one
+ * card is. The Editing Capability is the Attachment's, so every card of the
+ * group states the one same block.
+ */
+export function groupControl(
+  controls: readonly CardControl[],
+): Pick<CardControl, "disabled" | "blocked"> {
+  const disabled = controls.some((control) => control.disabled);
+  return {
+    disabled,
+    blocked: disabled
+      ? null
+      : (controls.find((control) => control.blocked)?.blocked ?? null),
+  };
+}
+
 /** "Add comment" for a card with none, "Edit comment" for one that has one. */
 export function commentLabel(hasComment: boolean): string {
   return hasComment

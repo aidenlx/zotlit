@@ -87,7 +87,7 @@ export function colorMenu(
   onPick: (hex: string) => void,
 ): Menu {
   const menu = new Menu();
-  buildColorMenu(menu, { color: current, onSelect: onPick });
+  buildColorMenu(menu, { colors: [current], onSelect: onPick });
   return menu;
 }
 

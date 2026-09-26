@@ -28,7 +28,6 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
-import * as toast from "@/lib/toast";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   AnnotationRecord,
@@ -53,6 +52,13 @@ import {
   shownComment,
   tagEditorControls,
 } from "@/views/annot-view/card-controls";
+import { sameKeys } from "@/views/annot-view/card-selection";
+import {
+  confirmDelete,
+  erase,
+  copyText,
+  recolor,
+} from "@/views/annot-view/card-verbs";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
 import type {
   CommentDraftActions,
@@ -115,8 +121,10 @@ import {
   selectSelectedRowInput,
   selectFloatingHead,
   selectMark,
+  selectGroup,
   selectSelectedDraft,
   selectSelectedKey,
+  selectSelectedKeys,
   selectSelectedTagDraft,
   recordColorUse,
   setCommenting,
@@ -156,11 +164,13 @@ export type AnnotationEdits = Pick<
   AnnotationRepository,
   | "commentDraftFor"
   | "deleteAnnotation"
+  | "deleteAnnotations"
   | "discardCommentDraft"
   | "discardTagDraft"
   | "editComment"
   | "editTags"
   | "patchColor"
+  | "patchColors"
   | "patchGeometry"
   | "retryCommentDraft"
   | "submitComment"
@@ -306,10 +316,9 @@ export class MarkSelection implements Disposable {
     this.#deps = deps;
   }
 
-  /** The Indexed Keys the overlay draws as selected. */
+  /** The Indexed Keys the overlay draws as selected: one mark, or a group. */
   get selected(): ReadonlySet<string> {
-    const key = this.#selectedKey();
-    return new Set(key === null ? [] : [key]);
+    return new Set(this.#selectedKeys());
   }
 
   /**
@@ -428,7 +437,7 @@ export class MarkSelection implements Disposable {
     this.#surfaces.use(
       registerDomEvent(containerEl.doc, "selectionchange", () => {
         if (
-          this.#selectedKey() !== null &&
+          this.#selectedKeys().length > 0 &&
           !selectionCollapsed(this.#deps.containerEl)
         )
           this.#apply(null);
@@ -437,10 +446,14 @@ export class MarkSelection implements Disposable {
     );
     const state = this.#deps.surfaceState;
     this.#surfaces.defer(
-      state.subscribe(selectSelectedKey, (key) => {
-        this.#deps.repaint();
-        this.#deps.report(key === null ? [] : [key]);
-      }),
+      state.subscribe(
+        selectSelectedKeys,
+        (keys) => {
+          this.#deps.repaint();
+          this.#deps.report(keys);
+        },
+        { equalityFn: sameKeys },
+      ),
     );
     // The editor goes with the episode it was opened for: a closed editor, a
     // stepped or dropped selection, and a hidden or conflicting draft alike.
@@ -463,8 +476,9 @@ export class MarkSelection implements Disposable {
   }
 
   /**
-   * Take this Annotation as the selection, from a surface outside the reader —
-   * a click on its card in the Annotation View.
+   * Take this Annotation as the selection, from outside a mark click: a Mark
+   * Landing, a mark just created, or {@link selectMarks} with one mark. The
+   * Annotation View's cards enter through {@link selectMarks}.
    *
    * @param options.popup whether the Mark Popup opens over the selection.
    *   A Mark Landing passes `false`: the user followed a link to read a
@@ -481,11 +495,27 @@ export class MarkSelection implements Disposable {
     this.#apply(annotationKey, null, { popup, commenting });
   }
 
+  /**
+   * Take these Annotations as the selection, from the Annotation View's Card
+   * Selection. The reader takes it quietly: one mark opens no Mark Popup, and
+   * several are a group, painted with no popup and no Mark Handles.
+   */
+  selectMarks(annotationKeys: readonly string[]): void {
+    if (annotationKeys.length < 2) {
+      this.select(annotationKeys[0] ?? null, { popup: false });
+      return;
+    }
+    this.#submitAndCloseCommentEditor();
+    this.#at = null;
+    selectGroup(this.#deps.surfaceState, annotationKeys);
+  }
+
   [Symbol.dispose](): void {
     this.#submitAndCloseCommentEditor();
     this.#endTagSession();
     this.#surfaces.dispose();
-    if (this.#selectedKey() !== null) selectMark(this.#deps.surfaceState, null);
+    if (this.#selectedKeys().length > 0)
+      selectMark(this.#deps.surfaceState, null);
   }
 
   #apply(
@@ -539,7 +569,7 @@ export class MarkSelection implements Disposable {
       case "ignore":
         return;
       case "deselect":
-        if (this.#selectedKey() !== null) this.#apply(null);
+        if (this.#selectedKeys().length > 0) this.#apply(null);
         return;
       case "select":
         if (page) {
@@ -559,15 +589,31 @@ export class MarkSelection implements Disposable {
    * after. An open tag editor closes alone, as Escape inside it does, though
    * focus stands on a chip's remove button or a verb beside it.
    *
-   * @returns whether a mark was selected to step back from.
+   * @returns whether a mark, or a group, was selected to step back from.
    */
   escape(): boolean {
-    if (this.#selectedKey() === null) return false;
+    if (this.#selectedKeys().length === 0) return false;
     if (selectFloatingHead(this.#state()).tagging && this.#endTags(false))
       return true;
     if (this.#dragging) this.#cancelDrag();
     else this.#apply(null);
     return true;
+  }
+
+  /**
+   * Cmd/Ctrl+C on the selected mark or group: its text, by the Annotation
+   * View's rule. A text selection in the PDF is the platform's to copy.
+   *
+   * @returns whether the selection had text to copy.
+   */
+  copy(): boolean {
+    const selected = this.#selectedKeys();
+    if (selected.length === 0 || !selectionCollapsed(this.#deps.containerEl))
+      return false;
+    const records = new Map(
+      this.#deps.records().map((record) => [record.key, record]),
+    );
+    return copyText(selected.flatMap((key) => records.get(key) ?? []));
   }
 
   #key(event: KeyboardEvent): void {
@@ -579,9 +625,12 @@ export class MarkSelection implements Disposable {
     const walk =
       event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : null;
     if (walk !== null) {
+      // A group reduces to one mark, walking from its first in reading order.
+      const order = readingOrder(this.#deps.records());
+      const selected = this.#selectedKeys();
       const next = stepReadingOrder(
-        readingOrder(this.#deps.records()),
-        this.#selectedKey(),
+        order,
+        order.find((key) => selected.includes(key)) ?? null,
         walk,
       );
       if (next === null) return;
@@ -590,10 +639,27 @@ export class MarkSelection implements Disposable {
       this.#deps.navigate(next);
       return;
     }
-    const key = this.#selectedKey();
-    if (key === null) return;
+    // The Mac keyboards that print "delete" on the backspace key send
+    // `Backspace`, so both reach the same verb. It erases every selected mark.
+    // A delete of one mark keeps its behaviour in the PDF: it asks nothing. A
+    // group asks once and names its count, as the Annotation View does.
+    if (event.key === "Delete" || event.key === "Backspace") {
+      const selected = this.#selectedKeys();
+      if (selected.length === 0) return;
+      event.preventDefault();
+      if (!this.#live()) this.#deps.gestures.reportBlockedGesture();
+      else if (selected.length === 1) this.#erase(selected);
+      else
+        void confirmDelete(this.#deps.app, this.#deps.annotations, {
+          annotationKeys: selected,
+          now: () => this.#deps.now(),
+        });
+      return;
+    }
+    const selected = this.#selectedKeys();
+    if (selected.length === 0) return;
     // `1`–`8` are the palette's own order, so the key and the swatch can never
-    // name different colours.
+    // name different colours. It recolours every selected mark.
     const swatch = ANNOTATION_COLORS[Number(event.key) - 1];
     if (swatch !== undefined) {
       // A colour key is one of the shared edit keymap's keys, so whether this
@@ -604,16 +670,10 @@ export class MarkSelection implements Disposable {
       // listener, which hears every key of the shared edit keymap.
       if (this.#live()) {
         event.preventDefault();
-        this.#recolor(key, swatch);
+        this.#recolor(selected, swatch);
       }
       return;
     }
-    // The Mac keyboards that print "delete" on the backspace key send
-    // `Backspace`, so both reach the same verb.
-    if (event.key !== "Delete" && event.key !== "Backspace") return;
-    event.preventDefault();
-    if (this.#live()) this.#write(this.#deps.annotations.deleteAnnotation(key));
-    else this.#deps.gestures.reportBlockedGesture();
   }
 
   /**
@@ -973,7 +1033,7 @@ export class MarkSelection implements Disposable {
    * inside the reader, so it is never one of these.
    */
   #outsidePress(event: PointerEvent): void {
-    if (this.#selectedKey() === null) return;
+    if (this.#selectedKeys().length === 0) return;
     const target = event.target as Node | null;
     if (this.#deps.containerEl.contains(target)) return;
     if (this.#deps.popup.contains(target)) return;
@@ -1249,12 +1309,12 @@ export class MarkSelection implements Disposable {
     node: HTMLElement,
     annotation: AnnotationRecord,
   ): void {
-    const { annotations, gestures } = this.#deps;
+    const { gestures } = this.#deps;
     switch (id) {
       case "color":
         showMenuAtButton(
           colorMenu(annotation.color, (hex) =>
-            this.#recolor(annotation.key, hex),
+            this.#recolor([annotation.key], hex),
           ),
           node,
         );
@@ -1266,14 +1326,10 @@ export class MarkSelection implements Disposable {
         this.#toggleTags(annotation);
         return;
       case "copy":
-        if (annotation.text === null) return;
-        void toast.promise(navigator.clipboard.writeText(annotation.text), {
-          success: m.annot_view_copied_text(),
-          error: m.annot_view_copy_failed(),
-        });
+        copyText([annotation]);
         return;
       case "delete":
-        this.#write(annotations.deleteAnnotation(annotation.key));
+        this.#erase([annotation.key]);
         return;
       case "reveal":
         gestures.revealAnnotation(annotation.key, { comment: false });
@@ -1317,9 +1373,28 @@ export class MarkSelection implements Disposable {
     if (!this.#endTags()) setTagging(this.#deps.surfaceState, false);
   }
 
-  #recolor(key: string, color: string): void {
+  /**
+   * Recolour one mark, or a group as one History Step, as the Annotation View
+   * does.
+   */
+  #recolor(annotationKeys: readonly string[], color: string): void {
     recordColorUse(this.#deps.surfaceState, this.#deps.colors, color);
-    this.#write(this.#deps.annotations.patchColor(key, color));
+    void recolor(this.#deps.annotations, {
+      annotationKeys,
+      color,
+      now: () => this.#deps.now(),
+    });
+  }
+
+  /**
+   * Erase these marks with no confirmation, through the verb the Annotation
+   * View's delete settles through.
+   */
+  #erase(annotationKeys: readonly string[]): void {
+    void erase(this.#deps.annotations, {
+      annotationKeys,
+      now: () => this.#deps.now(),
+    });
   }
 
   /** Forward through the stack under the last click, wrapping at its end. */
@@ -1362,6 +1437,10 @@ export class MarkSelection implements Disposable {
 
   #selectedKey(): string | null {
     return selectSelectedKey(this.#state());
+  }
+
+  #selectedKeys(): readonly string[] {
+    return selectSelectedKeys(this.#state());
   }
 
   #record(): AnnotationRecord | null {

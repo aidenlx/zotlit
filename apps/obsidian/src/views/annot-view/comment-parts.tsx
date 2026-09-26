@@ -60,7 +60,8 @@ export function CommentView({
       ref={ref}
       className={commentViewClass(surface, editable)}
       onClick={(event) => {
-        if (!editable || !opensCommentEditor(event)) return;
+        if (!editable || !opensCommentEditor(event.nativeEvent, surface))
+          return;
         // Opening the editor is a verb; the surface's own click is not that.
         event.stopPropagation();
         onOpen();

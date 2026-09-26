@@ -289,7 +289,7 @@ The Annotation Cards an Annotation View has selected — none, one, or several; 
 _Avoid_: selected annotations (the reader's are selected Annotation Marks), multi-selection (as a separate thing), primary card
 
 **Selected Card**:
-An Annotation Card in the Card Selection. A card selected alone opens its full text and offers its edit controls; a card selected with others offers neither.
+An Annotation Card in the Card Selection. A card selected alone opens its full text and offers its edit controls. A card selected with others stays compact but still shows its comment and tag controls; a press on one first selects that card alone.
 _Avoid_: focused card, active card, primary card
 
 **Excerpt Block**:

@@ -91,8 +91,12 @@ export function withRecentColor(
 }
 
 export interface ColorMenuInput {
-  /** The colour in hand, in whatever case it was stored; that entry shows checked. */
-  color: string | null;
+  /**
+   * The colours in hand, one for each Annotation the menu recolours, in
+   * whatever case each was stored. An entry shows checked only where every one
+   * of them is that colour, so a mixed group checks none.
+   */
+  colors: readonly (string | null)[];
   onSelect: (hex: string) => void;
 }
 
@@ -107,13 +111,15 @@ export interface ColorMenuInput {
  */
 export function buildColorMenu(
   menu: Menu,
-  { color, onSelect }: ColorMenuInput,
+  { colors, onSelect }: ColorMenuInput,
 ): void {
   for (const hex of ANNOTATION_COLORS) {
     menu.addItem((item) =>
       item
         .setTitle(swatchTitle(hex))
-        .setChecked(isColor(color, hex))
+        .setChecked(
+          colors.length > 0 && colors.every((color) => isColor(color, hex)),
+        )
         .onClick(() => onSelect(hex)),
     );
   }

@@ -553,6 +553,28 @@ export function eraseRequest(target: WriteTarget): WriteRequest {
 }
 
 /**
+ * The notices a group write raises: one for each distinct reason among the
+ * Annotations that did not land, so ten deletes refused for one reason say it
+ * once. A conflict is no failure here: its card shows it.
+ *
+ * @param now the instant a cooldown's remaining seconds are measured from.
+ */
+export function groupFailureMessages(
+  outcomes: readonly MutationState[],
+  now: Temporal.Instant,
+): string[] {
+  return [
+    ...new Set(
+      outcomes.flatMap((outcome) =>
+        outcome.kind === "failed"
+          ? [writeFailureMessage(outcome.failure, now)]
+          : [],
+      ),
+    ),
+  ];
+}
+
+/**
  * One notice for a write that did not land, in the same words the Editing
  * Capability affordance uses wherever a failure has a capability behind it.
  * The outcomes no capability describes — a source that cannot be written to,

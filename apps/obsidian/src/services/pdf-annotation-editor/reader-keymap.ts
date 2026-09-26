@@ -91,6 +91,11 @@ export interface ReaderKeymapVerbs {
   undo: () => void;
   /** One step forward through it again. */
   redo: () => void;
+  /**
+   * Copy the text of the selected marks, for `Mod`+`C`. Returns whether it
+   * acted; one that did not leaves the key to the platform's own copy.
+   */
+  copy: () => boolean;
 }
 
 /**
@@ -129,6 +134,12 @@ export function mountReaderKeymap(
       return false;
     });
   }
+  // The platform key, named outright as the history chords name it. A copy
+  // that finds nothing to copy leaves the key to the platform's own copy.
+  scope.register([platform.isMacOS ? "Meta" : "Ctrl"], "C", (event) => {
+    if (inTextEntry(event.target)) return;
+    if (verbs.copy()) return false;
+  });
   view.scope = scope;
   return () => {
     if (view.scope === scope) view.scope = own;

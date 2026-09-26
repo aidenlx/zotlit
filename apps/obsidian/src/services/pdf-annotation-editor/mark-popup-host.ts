@@ -17,12 +17,14 @@ import type { Point } from "./hit-test";
 import { MarkPopup } from "./mark-popup";
 import {
   sameFlatList,
+  drawsNoPopup,
   selectCreateRow,
   selectFloatingHead,
   selectSelectedRow,
 } from "./reader-surface-state";
 import type {
   Floating,
+  PopuplessFloating,
   ReaderSurfaceState,
   ReaderSurfaceStore,
 } from "./reader-surface-state";
@@ -56,18 +58,18 @@ export interface MarkPopupHostDeps {
   parent: HoverParent;
   store: ReaderSurfaceStore;
   /**
-   * What each floating kind draws, and where it hangs. An image capture and a
-   * Text Draft have no popup.
+   * What each floating kind draws, and where it hangs. An image capture, a
+   * Text Draft and a group have no popup.
    */
   variants: Record<
-    Exclude<Floating["kind"], "none" | "capture" | "text-draft">,
+    Exclude<Floating["kind"], PopuplessFloating["kind"]>,
     MarkPopupVariant
   >;
 }
 
 /**
  * Opens the popup for a floating variant with an anchor, and hides it for
- * none, an image capture, a Text Draft, a quiet selection, a selection whose grip is held
+ * none, an image capture, a Text Draft, a group, a quiet selection, a selection whose grip is held
  * and not yet saving, or an anchor of `null`. Any change to what floats or to
  * its row renders the popup again; a change of variant kind or of selected key
  * mounts its content anew, and any other change is a diff in place, which is
@@ -117,9 +119,7 @@ export class MarkPopupHost implements Disposable {
     // A press on a grip hides the popup, so it never covers the edge being
     // placed; the release hangs it again from the mark as it then stands.
     const variant =
-      floating.kind === "none" ||
-      floating.kind === "capture" ||
-      floating.kind === "text-draft" ||
+      drawsNoPopup(floating) ||
       (floating.kind === "selected" &&
         (floating.quiet ||
           (floating.adjust !== undefined &&
@@ -169,12 +169,7 @@ export class MarkPopupHost implements Disposable {
   #render(content: HTMLElement): ReactNode | undefined {
     const state = this.#deps.store.getState();
     const { floating } = state;
-    if (
-      floating.kind === "none" ||
-      floating.kind === "capture" ||
-      floating.kind === "text-draft"
-    )
-      return undefined;
+    if (drawsNoPopup(floating)) return undefined;
     const view = this.#deps.variants[floating.kind].render(content);
     if (view === undefined) return undefined;
     const { kind, key } = selectFloatingHead(state);

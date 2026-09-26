@@ -364,8 +364,14 @@ export function annotationReads(
     discardTagDraft: vi.fn(),
     retryCommentDraft: vi.fn(() => Promise.resolve(IDLE)),
     patchColor: vi.fn(() => Promise.resolve(IDLE)),
+    patchColors: vi.fn((keys: readonly string[]) =>
+      Promise.resolve(keys.map(() => IDLE)),
+    ),
     patchGeometry: vi.fn(() => Promise.resolve(IDLE)),
     deleteAnnotation: vi.fn(() => Promise.resolve(IDLE)),
+    deleteAnnotations: vi.fn((keys: readonly string[]) =>
+      Promise.resolve(keys.map(() => IDLE)),
+    ),
     createAnnotation: vi.fn(() =>
       Promise.resolve({ kind: "created" as const, annotationKey: "MADE2345" }),
     ),
@@ -696,6 +702,7 @@ export function readerSurfaces({
       escape: () => selection.escape() || creation.escape(),
       undo: () => stepped.push("undo"),
       redo: () => stepped.push("redo"),
+      copy: () => selection.copy(),
     },
     { isMacOS },
   );
