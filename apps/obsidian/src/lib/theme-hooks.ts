@@ -115,7 +115,7 @@ export const themeHook = {
   /**
    * The Mark Popup, on Obsidian's own hover popover, in both of its modes.
    * Each control inside it carries `data-zt-verb` — `color`, `comment`,
-   * `copy`, `delete`, `reveal`, and `stack` for the stepper through
+   * `tags`, `copy`, `delete`, `reveal`, and `stack` for the stepper through
    * overlapping marks when a mark is selected; `highlight`, `underline`,
    * the four most recently used of `color-1` to `color-8`, `comment` and
    * `copy` when a fresh text selection is waiting to be created.

@@ -135,7 +135,8 @@
 }
 
 /* A chip's remove button sits inside the chip's own line, so it drops the
-   4px the card gives every `clickable-icon`; that padding is unlayered. */
-.zt-annot-card .zt-annot-tag-remove.clickable-icon {
+   padding Obsidian and the card give every `clickable-icon`, on the card and
+   in the Mark Popup alike; that padding is unlayered. */
+.zt-annot-tag-remove.clickable-icon {
   padding: 0;
 }

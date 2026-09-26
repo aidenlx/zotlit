@@ -266,6 +266,9 @@ export function zoteroLibrary(
   let running = true;
   const keyOf = ({ url }: ZoteroRequest): string =>
     url.pathname.split("/").at(-1) ?? "";
+  // Zotero writes a type for an automatic tag only.
+  const storedTags = (tags: Required<WireTag>[]) =>
+    tags.map(({ tag, type }) => (type === 0 ? tag : { tag, type }));
   const create = (request: ZoteroRequest): Response => {
     const [body] = JSON.parse(request.body ?? "[]") as {
       annotationType: string;
@@ -275,6 +278,7 @@ export function zoteroLibrary(
       annotationPageLabel: string;
       annotationSortIndex: string;
       annotationPosition: string;
+      tags?: Required<WireTag>[];
     }[];
     const key = generated[made++];
     if (!body || key === undefined) return createRefused();
@@ -288,6 +292,7 @@ export function zoteroLibrary(
       pageLabel: body.annotationPageLabel,
       sortIndex: body.annotationSortIndex,
       position: JSON.parse(body.annotationPosition),
+      ...(body.tags !== undefined && { tags: storedTags(body.tags) }),
     };
     held.set(key, record);
     return createAccepted(record);
@@ -319,12 +324,7 @@ export function zoteroLibrary(
           sortIndex: body.annotationSortIndex,
         }),
         ...(body.annotationText !== undefined && { text: body.annotationText }),
-        // Zotero writes a type for an automatic tag only.
-        ...(body.tags !== undefined && {
-          tags: body.tags.map(({ tag, type }) =>
-            type === 0 ? tag : { tag, type },
-          ),
-        }),
+        ...(body.tags !== undefined && { tags: storedTags(body.tags) }),
         version: entry.version + 1,
       });
     }

@@ -1,5 +1,7 @@
 # Reader Surface State is one vanilla store per PDF view
 
+The Mark Popup's renderer is superseded by [ADR 0065](0065-the-mark-popup-is-one-preact-root-on-obsidians-popover.md): it is one Preact root that the Mark Popup Host renders from this store. The store stays vanilla, and the Creation Toolbar stays vanilla DOM.
+
 The surfaces ZotLit puts inside Obsidian's PDF reader draw from one Reader Surface State per bound PDF view: a zustand vanilla store with `subscribeWithSelector`, created by the binding and disposed with it. It holds plain data: the armed tool, mark visibility, every tool's colour, the Editing Capability, and the clock a cooldown is read against. The renderers stay vanilla DOM on Obsidian's primitives, and [ADR 0042](0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md) stays in force: the store is state, not a rendering framework, and no Preact root enters the reader.
 
 A press on a Creation Toolbar button moved focus into the PDF view, the focus refresh probed Zotero, and the probe announced a capability change. The Creation Toolbar, Mark Creation, Mark Selection, and the binding each heard that announcement on their own subscription, and each redrew in full. The node under the pointer was gone before the pointer came up, so the click never fired.

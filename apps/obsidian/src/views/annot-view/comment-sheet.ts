@@ -2,12 +2,10 @@
 // the comment sheet (the editor, its status line and its Save button), the
 // held-draft panel, and the Write Conflict panel.
 //
-// Vanilla DOM, because the PDF reader's surfaces import no Preact; the
-// Annotation Card mounts the same nodes. What differs between the card and
-// the reader's Mark Popup is the surface's spacing and corners, never which
-// controls stand or what they do.
-//
-// @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
+// Vanilla builders, which the Preact wrappers in `comment-parts.tsx` mount on
+// the Annotation Card and the reader's Mark Popup alike. What differs between
+// the two is the surface's spacing and corners, never which controls stand or
+// what they do.
 import { setIcon } from "obsidian";
 import type { App } from "obsidian";
 
@@ -128,43 +126,13 @@ export function opensCommentEditor(
   return el.win.getSelection()?.isCollapsed !== false;
 }
 
-export interface CommentViewProps {
-  surface: CommentSurface;
-  /** Renders the stored HTML into an element; returns what undoes it. */
-  render: (el: HTMLElement, html: string) => () => void;
-  html: string;
-  /** Whether a click opens the editor, or the comment is read-only here. */
-  editable: boolean;
-  /** Opens the comment sheet in the view's place. */
-  onOpen: () => void;
-}
-
 /**
- * The rendered comment for a vanilla surface, the Annotation Card's `Comment`
- * drawn from the same pieces: its text stands where the comment sheet's
- * editor will put it, and a click on it opens that sheet.
- *
- * @param frame the element the view is drawn into, replacing what it held.
- * @returns what tears the rendered Markdown down.
+ * The classes of the element a surface stands the rendered comment in: the
+ * popup's inset and width, where the card takes none.
  */
-export function renderCommentView(
-  frame: HTMLElement,
-  { surface, render, html, editable, onOpen }: CommentViewProps,
-): () => void {
+export function commentFrameClass(surface: CommentSurface): string {
   const look = SURFACE[surface];
-  frame.empty();
-  frame.addClasses(
-    `${look.viewFrame} ${look.inset}`.split(" ").filter(Boolean),
-  );
-  const view = frame.createDiv({ cls: commentViewClass(surface, editable) });
-  if (editable) {
-    view.addEventListener("click", (event) => {
-      if (!opensCommentEditor(event)) return;
-      event.stopPropagation();
-      onOpen();
-    });
-  }
-  return render(view, html);
+  return `${look.viewFrame} ${look.inset}`.trim();
 }
 
 /** What the sheet says under its editor, and whether it takes a write. */
@@ -237,7 +205,9 @@ export function renderCommentSheet(
   // status it announces is a change inside it rather than a new node; the
   // row's air belongs to what it holds, so an empty row takes none.
   const hint = footer.createSpan({
-    cls: "zt:min-w-0 zt:flex-1 zt:text-xs zt:text-pretty zt:text-muted-foreground",
+    // The hint keeps a readable measure and puts the button on a line of its
+    // own where the two do not fit side by side.
+    cls: "zt:min-w-0 zt:grow zt:basis-[12em] zt:text-xs zt:text-pretty zt:text-muted-foreground",
     attr: { role: "status" },
   });
   const save = footer.createEl("button", {

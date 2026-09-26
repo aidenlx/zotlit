@@ -11,7 +11,7 @@ import {
   sameStoredGeometry,
   storedPosition,
 } from "./reconcile";
-import { writablePosition, writePosition } from "./write";
+import { annotationTags, writablePosition, writePosition } from "./write";
 import type {
   AnnotationDraft,
   AnnotationTag,
@@ -62,6 +62,10 @@ export type HistoryContent = Omit<AnnotationDraft, "parentKey">;
 export interface HistoryRestorable extends HistoryRecord {
   /** Zotero's printed-page label, which a create sends back with the rest. */
   pageLabel: string | null;
+  /** The tags by name, which a create sends back with the rest. */
+  tags: readonly string[];
+  /** The same tags with their types; absent where every tag is manual. */
+  tagDetails?: readonly AnnotationTag[];
 }
 
 /**
@@ -177,6 +181,7 @@ export function contentOf(record: HistoryRestorable): HistoryContent | null {
     pageLabel: record.pageLabel ?? "",
     sortIndex: record.sortIndex,
     position,
+    tags: annotationTags(record),
   };
 }
 

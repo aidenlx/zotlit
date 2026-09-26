@@ -1,5 +1,5 @@
 import type { IconName } from "obsidian";
-import type { HTMLAttributes, Ref } from "react";
+import type { HTMLAttributes, ReactNode, Ref } from "react";
 import type { VariantProps } from "tailwind-variants";
 
 import { tv } from "@/lib/tw";
@@ -11,6 +11,7 @@ const iconButton = tv({
   variants: {
     active: { true: "is-active" },
     warning: { true: "mod-warning" },
+    blocked: { true: "is-disabled" },
   },
 });
 
@@ -22,6 +23,18 @@ export interface IconButtonProps
     IconButtonVariants {
   icon: IconName;
   disabled?: boolean;
+  /**
+   * A toggle's state, announced as `aria-pressed` and drawn as `is-active`;
+   * `undefined` for a button that is not a toggle.
+   */
+  pressed?: boolean;
+  /**
+   * A control that cannot run right now keeps its seat and its place in the
+   * tab order, carries its reason in its tooltip, and takes no press.
+   */
+  blocked?: boolean;
+  /** What the button shows after its icon, such as a count. */
+  children?: ReactNode;
   ref?: Ref<HTMLDivElement>;
 }
 
@@ -31,27 +44,37 @@ export function IconButton({
   active,
   warning,
   disabled,
+  pressed,
+  blocked,
   className,
   onClick,
   onKeyDown,
+  children,
   ref,
   ...rest
 }: IconButtonProps) {
+  const inert = disabled || blocked;
   return (
     <div
       ref={ref}
       role="button"
       tabIndex={disabled ? -1 : 0}
-      aria-disabled={disabled || undefined}
+      aria-disabled={inert || undefined}
+      aria-pressed={pressed}
       {...rest}
-      className={iconButton({ active, warning, className })}
+      className={iconButton({
+        active: active ?? pressed,
+        warning,
+        blocked,
+        className,
+      })}
       onClick={(e) => {
-        if (disabled) return;
+        if (inert) return;
         onClick?.(e);
       }}
       onKeyDown={(e) => {
         onKeyDown?.(e);
-        if (e.defaultPrevented || disabled) return;
+        if (e.defaultPrevented || inert) return;
         if (e.key === " " || e.key === "Enter") {
           e.preventDefault();
           e.currentTarget.click();
@@ -59,6 +82,7 @@ export function IconButton({
       }}
     >
       <Icon name={icon} />
+      {children}
     </div>
   );
 }

@@ -9,9 +9,12 @@
 // its own gesture says what the selection becomes.
 //
 // @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
+// @see apps/obsidian/docs/adr/0065-the-mark-popup-is-one-preact-root-on-obsidians-popover.md
 // @see https://github.com/aidenlx/zotlit/issues/1148
 import type { App } from "obsidian";
 import { Keymap } from "obsidian";
+import { createElement } from "react";
+import type { ReactNode, RefObject } from "react";
 
 import type {
   PdfPosition,
@@ -30,7 +33,6 @@ import type { EditingCapability } from "@/services/annotation-repository/capabil
 import type {
   AnnotationRecord,
   AnnotationRepository,
-  CommentDraft,
   GeometryInput,
 } from "@/services/annotation-repository/service";
 import {
@@ -42,7 +44,6 @@ import type {
   WriteFailure,
 } from "@/services/annotation-repository/write";
 import type { ReaderSessionHost } from "@/services/reader-session/session";
-import { conflictPanel } from "@/views/annot-view/card-conflict";
 import {
   commentEditorControls,
   editingBlockedReason,
@@ -53,17 +54,12 @@ import {
   tagEditorControls,
 } from "@/views/annot-view/card-controls";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
-import {
-  renderCommentSheet,
-  renderCommentView,
-  renderConflictPanel,
-  renderHeldDraftPanel,
-} from "@/views/annot-view/comment-sheet";
 import type {
   CommentDraftActions,
   CommentSheet,
   HeldDraftActions,
 } from "@/views/annot-view/comment-sheet";
+import type { EndTagSession } from "@/views/annot-view/tag-editor";
 
 import { inTextEntry, isEditGesture } from "./capability-affordance";
 import type { CreationGestures } from "./creation";
@@ -99,10 +95,16 @@ import {
   resolveMarkClick,
 } from "./hit-test";
 import type { HitPage, MarkSelectionPoint, PageBox, Point } from "./hit-test";
-import { markPopupRow, popupColumn, renderMarkPopupRow } from "./mark-popup";
-import type { MarkPopupControlId, MarkPopupRowInput } from "./mark-popup";
+import { markPopupRow, SelectedMarkPopup } from "./mark-popup";
+import type {
+  MarkPopupControlId,
+  MarkPopupRowInput,
+  SelectedMarkPopupProps,
+  SelectedPopupComment,
+} from "./mark-popup";
 import type { MarkPopupHost } from "./mark-popup-host";
-import { MarkPopupTags, tagSectionShows } from "./mark-popup-tags";
+import { tagSectionShows } from "./mark-popup-tags";
+import type { MarkPopupTagSectionProps } from "./mark-popup-tags";
 import {
   beginAdjust,
   cancelAdjust,
@@ -276,22 +278,14 @@ export class MarkSelection implements Disposable {
    * from; `null` for a selection no click made.
    */
   #at: Pick<MarkSelectionPoint, "pageIndex" | "point"> | null = null;
-  /** The row of verbs the popup last built; `null` until one is. */
-  #row: HTMLElement | null = null;
-  #commentEditor: CommentSheet | null = null;
-  /**
-   * The rendered comment under the row, kept across refreshes while what it
-   * shows stands, so a refresh does not render the Markdown again.
-   */
-  #commentView: {
-    frame: HTMLElement;
-    key: string;
-    html: string;
-    editable: boolean;
-    dispose: () => void;
-  } | null = null;
-  /** The popup's tag section, while it stands in the popup's content. */
-  #tags: MarkPopupTags | null = null;
+  /** The popup's comment editor, while it stands. */
+  readonly #sheet: RefObject<CommentSheet | null> = { current: null };
+  /** The popup's tag section, while it stands. */
+  readonly #tagSection: RefObject<HTMLDivElement | null> = { current: null };
+  /** The open tag editor's own end of its session. */
+  readonly #endSession: RefObject<EndTagSession | null> = { current: null };
+  /** The tag editor's suggestion popup while it shows, outside the popup. */
+  readonly #suggest: RefObject<HTMLElement | null> = { current: null };
   #pressedAt: Point | null = null;
   /** The pointer a Geometry Edit holds, and where it last stood. */
   #dragging: { pointerId: number; client: Point } | null = null;
@@ -457,18 +451,14 @@ export class MarkSelection implements Disposable {
         (head, previous) => {
           const { kind, commenting } = head;
           if (kind !== "selected" || !commenting) this.#closeCommentEditor();
-          if (kind !== "selected" || commenting) this.#closeCommentView();
           if (!previous.tagging || previous.key === null) return;
           if (head.tagging && head.key === previous.key) return;
           // The editor adds the text still typed before the save reads it.
-          this.#tags?.end();
+          this.#endTags();
           this.#submitTags(previous.key);
         },
         { equalityFn: sameFlat },
       ),
-    );
-    this.#surfaces.defer(
-      state.subscribe(selectSelectedDraft, (draft) => this.#patchEditor(draft)),
     );
   }
 
@@ -493,9 +483,7 @@ export class MarkSelection implements Disposable {
 
   [Symbol.dispose](): void {
     this.#submitAndCloseCommentEditor();
-    this.#closeCommentView();
     this.#endTagSession();
-    this.releasePopup();
     this.#surfaces.dispose();
     if (this.#selectedKey() !== null) selectMark(this.#deps.surfaceState, null);
   }
@@ -575,7 +563,7 @@ export class MarkSelection implements Disposable {
    */
   escape(): boolean {
     if (this.#selectedKey() === null) return false;
-    if (selectFloatingHead(this.#state()).tagging && this.#tags?.end(false))
+    if (selectFloatingHead(this.#state()).tagging && this.#endTags(false))
       return true;
     if (this.#dragging) this.#cancelDrag();
     else this.#apply(null);
@@ -990,68 +978,51 @@ export class MarkSelection implements Disposable {
     if (this.#deps.containerEl.contains(target)) return;
     if (this.#deps.popup.contains(target)) return;
     // The tag editor's suggestion popup hangs outside the Mark Popup.
-    if (this.#tags?.contains(target)) return;
+    if (this.#tagsContain(target)) return;
     if (this.#deps.selectionSurfaces.onSelectionSurface(target)) return;
     this.#apply(null);
   }
 
   /**
-   * The popup's content in selected mode, for the popup host: the row, with the
-   * comment editor under it while it is open. The editor is built into an
-   * empty content element only; a refresh redraws the row and patches the
-   * editor's controls, leaving its caret alone.
+   * The popup's content in selected mode, for the popup host: the row, then
+   * the comment in one of its states, a Write Conflict, and the tag section.
+   *
+   * @param content the popup's content element, which focus may move within
+   *   without leaving an editor.
    */
-  renderPopup(content: HTMLElement): void {
+  popupView(content: HTMLElement): ReactNode | undefined {
     const input = selectSelectedRowInput(this.#state());
-    if (!input) return;
-    const editing =
-      (input.commenting && this.#commentEditor !== null) ||
-      (input.tagging && this.#tags !== null);
-    const built = this.#row?.parentElement;
-    if (content.firstChild && editing && this.#row && built) {
-      this.#renderVerbs(this.#row, input);
-      this.#updateCommentControls();
-      this.#renderTags(content, built, input);
-      return;
-    }
-    this.#closeCommentEditor();
-    const column = this.#renderRow(content, input);
-    if (input.commenting) this.#renderCommentEditor(column, input);
-    this.#renderTags(content, column, input);
-  }
-
-  /**
-   * The popup's content goes, for a rebuild or a hide: the tag section's
-   * Preact root is unmounted with it.
-   */
-  releasePopup(): void {
-    this.#dropTags();
+    if (!input) return undefined;
+    const { annotation } = input;
+    return createElement(SelectedMarkPopup, {
+      app: this.#deps.app,
+      row: markPopupRow(input),
+      activate: (id, node) => this.#activate(id, node, annotation),
+      comment: this.#commentSlot(content, input),
+      conflict: this.#conflictSlot(input),
+      tags: this.#tagSlot(content, input),
+    });
   }
 
   /**
    * The tag section under the comment: the tags read-only, or the tag editor
-   * in their place. It is mounted into the column as it appears, moved into
-   * each new column a refresh builds, and rendered again in place. A section
-   * already in the column stays where it is, so the field keeps its focus.
+   * in their place, while it stands.
    */
-  #renderTags(
+  #tagSlot(
     content: HTMLElement,
-    column: HTMLElement,
     input: MarkPopupRowInput,
-  ): void {
+  ): MarkPopupTagSectionProps | null {
     const { annotation, tagging } = input;
     const draft = selectSelectedTagDraft(this.#state());
     const capability = this.#capability();
     const { readOnly, hint } = tagEditorControls(capability, draft, input.now);
     const held = heldTagDraft(capability, draft, input.now);
-    const shows = tagSectionShows({ annotation, draft, tagging, held });
-    if (this.#tags && (!shows || this.#tags.key !== annotation.key))
-      this.#dropTags();
-    if (!shows) return;
-    this.#tags ??= new MarkPopupTags(column, this.#deps.app, annotation.key);
-    this.#tags.moveTo(column);
+    if (!tagSectionShows({ annotation, draft, tagging, held })) return null;
     const { annotations, surfaceState } = this.#deps;
-    this.#tags.render({
+    return {
+      sectionRef: this.#tagSection,
+      endSession: this.#endSession,
+      suggestRef: this.#suggest,
       annotation,
       draft,
       tagging,
@@ -1075,18 +1046,32 @@ export class MarkSelection implements Disposable {
       },
       onClose: () => setTagging(surfaceState, false),
       within: content,
-    });
+    };
   }
 
   /**
-   * The tag section goes, and its Preact root is unmounted. Unmounting ends
-   * an open editor's session, which can rebuild the popup and drop the
-   * section again before this returns, so the field is cleared first.
+   * Whether a node belongs to the tag section: one inside it, or inside the
+   * editor's suggestion popup, which hangs outside it.
    */
-  #dropTags(): void {
-    const tags = this.#tags;
-    this.#tags = null;
-    tags?.[Symbol.dispose]();
+  #tagsContain(node: Node | null): boolean {
+    return (
+      (this.#tagSection.current?.contains(node) ?? false) ||
+      (this.#suggest.current?.contains(node) ?? false)
+    );
+  }
+
+  /**
+   * Ends the open tag editor's session as the editor itself would; nothing
+   * while no editor is open.
+   *
+   * @param withText whether the text still typed is added first, as focus
+   *   leaving adds it; Escape leaves it out.
+   * @returns whether an editor was open to end.
+   */
+  #endTags(withText = true): boolean {
+    const end = this.#endSession.current;
+    end?.(withText);
+    return end !== null;
   }
 
   /**
@@ -1099,20 +1084,17 @@ export class MarkSelection implements Disposable {
     );
   }
 
-  #renderVerbs(row: HTMLElement, input: MarkPopupRowInput): void {
-    renderMarkPopupRow(row, markPopupRow(input), (id, node) =>
-      this.#activate(id, node, input.annotation),
-    );
-  }
-
-  /** @returns the column the row stands in, which the editor joins. */
-  #renderRow(content: HTMLElement, input: MarkPopupRowInput): HTMLElement {
-    const { annotation, mutation } = input;
-    const { column, row } = popupColumn(content);
-    this.#row = row;
-    this.#renderVerbs(row, input);
-    // The open editor is where the draft stands, so neither panel repeats it.
-    if (input.commenting) return column;
+  /**
+   * What stands in the comment's place: the open editor, a held draft, or the
+   * stored comment. The open editor is where the draft stands, so neither
+   * panel repeats it.
+   */
+  #commentSlot(
+    content: HTMLElement,
+    input: MarkPopupRowInput,
+  ): SelectedPopupComment | null {
+    const { annotation } = input;
+    if (input.commenting) return this.#commentEditorSlot(content, annotation);
     // The popup announces a held draft on the same rule the card does, and
     // carries the same verbs: the two surfaces reach one shared draft, so a
     // decision offered on one is offered on the other. Like the card, it
@@ -1123,72 +1105,40 @@ export class MarkSelection implements Disposable {
       input.now,
     );
     if (held) {
-      this.#closeCommentView();
-      renderHeldDraftPanel(column.createDiv(), held, {
-        surface: "popup",
+      return {
+        kind: "held",
+        held,
         actions: this.#draftActions(annotation),
         onOpen: () => this.#toggleComment(annotation),
-      });
-    } else {
-      this.#renderCommentView(column, input);
+      };
     }
-    if (
-      mutation.kind === "conflict" &&
-      mutation.conflict.write === "comment" &&
-      this.#deps.annotations.commentDraftFor(annotation.key)
-    ) {
-      renderConflictPanel(
-        column.createDiv(),
-        conflictPanel(mutation.conflict),
-        {
-          surface: "popup",
-          live: editingLive(this.#capability()),
-          actions: this.#draftActions(annotation),
-        },
-      );
-    }
-    return column;
-  }
-
-  /**
-   * The stored comment under the row, which a click opens the editor on, as
-   * the card's does. The frame is moved into the new column when a refresh
-   * leaves the comment and its editability as they were.
-   */
-  #renderCommentView(column: HTMLElement, input: MarkPopupRowInput): void {
-    const { annotation } = input;
-    const html = annotation.comment;
-    if (html === null) {
-      this.#closeCommentView();
-      return;
-    }
-    const editable =
-      editingBlockedReason(input.capability, input.mutation, input.now) ===
-      null;
-    const kept = this.#commentView;
-    if (
-      kept?.key === annotation.key &&
-      kept.html === html &&
-      kept.editable === editable
-    ) {
-      column.append(kept.frame);
-      return;
-    }
-    this.#closeCommentView();
-    const frame = column.createDiv();
-    const dispose = renderCommentView(frame, {
-      surface: "popup",
+    if (annotation.comment === null) return null;
+    return {
+      kind: "view",
+      html: annotation.comment,
+      editable:
+        editingBlockedReason(input.capability, input.mutation, input.now) ===
+        null,
       render: this.#deps.renderComment,
-      html,
-      editable,
       onOpen: () => this.#toggleComment(annotation),
-    });
-    this.#commentView = { frame, key: annotation.key, html, editable, dispose };
+    };
   }
 
-  #closeCommentView(): void {
-    this.#commentView?.dispose();
-    this.#commentView = null;
+  /** A Write Conflict on the comment, while its draft stands and no editor is open. */
+  #conflictSlot(input: MarkPopupRowInput): SelectedMarkPopupProps["conflict"] {
+    const { annotation, mutation } = input;
+    if (
+      input.commenting ||
+      mutation.kind !== "conflict" ||
+      mutation.conflict.write !== "comment" ||
+      !this.#deps.annotations.commentDraftFor(annotation.key)
+    )
+      return null;
+    return {
+      conflict: mutation.conflict,
+      live: editingLive(this.#capability()),
+      actions: this.#draftActions(annotation),
+    };
   }
 
   /** The panels' verbs, bound to the repository's own writes. */
@@ -1216,26 +1166,38 @@ export class MarkSelection implements Disposable {
     };
   }
 
-  #renderCommentEditor(column: HTMLElement, input: MarkPopupRowInput): void {
-    const { annotation } = input;
+  /**
+   * The comment editor, opened on the shared draft, which it takes in as the
+   * draft changes so the Annotation View and the popup edit one draft. The
+   * draft is started as the editor opens; an open editor stays through a
+   * draft that settles.
+   */
+  #commentEditorSlot(
+    content: HTMLElement,
+    annotation: AnnotationRecord,
+  ): SelectedPopupComment | null {
+    const standing = selectSelectedDraft(this.#state());
     const draft =
-      selectSelectedDraft(this.#state()) ??
-      this.#deps.annotations.editComment(annotation.key);
-    if (!draft) {
+      standing ??
+      (this.#sheet.current
+        ? null
+        : this.#deps.annotations.editComment(annotation.key));
+    if (!draft && !this.#sheet.current) {
       // Closed in the state too, so a later refresh does not try again.
       setCommenting(this.#deps.surfaceState, false);
-      return;
+      return null;
     }
     const close = (): void => {
       this.#submitCommentEditor(annotation, true);
       setCommenting(this.#deps.surfaceState, false);
     };
-    this.#commentEditor = renderCommentSheet(
-      column.createDiv(),
-      {
-        app: this.#deps.app,
-        surface: "popup",
+    return {
+      kind: "sheet",
+      sheet: {
+        sheetRef: this.#sheet,
         value: shownComment(annotation, draft),
+        text: standing?.text,
+        status: this.#commentControls(annotation),
         onChange: (text) =>
           this.#deps.annotations.editComment(annotation.key, text),
         onSubmit: () => this.#submitCommentEditor(annotation),
@@ -1244,10 +1206,9 @@ export class MarkSelection implements Disposable {
         onLeave: close,
         // The row's own verbs stand beside the editor, so reaching one is not
         // leaving it.
-        within: column,
+        within: content,
       },
-      this.#commentControls(annotation),
-    );
+    };
   }
 
   #commentControls(annotation: AnnotationRecord) {
@@ -1258,14 +1219,8 @@ export class MarkSelection implements Disposable {
     );
   }
 
-  #updateCommentControls(): void {
-    const annotation = this.#record();
-    if (!annotation) return;
-    this.#commentEditor?.update(this.#commentControls(annotation));
-  }
-
   #submitCommentEditor(annotation: AnnotationRecord, automatic = false): void {
-    const editor = this.#commentEditor;
+    const editor = this.#sheet.current;
     if (!editor) return;
     this.#deps.annotations.editComment(annotation.key, editor.text());
     this.#write(
@@ -1275,26 +1230,18 @@ export class MarkSelection implements Disposable {
 
   #submitAndCloseCommentEditor(): void {
     const annotation = this.#record();
-    if (annotation && this.#commentEditor) {
+    if (annotation && this.#sheet.current) {
       this.#submitCommentEditor(annotation, true);
     }
     this.#closeCommentEditor();
   }
 
-  #closeCommentEditor(): void {
-    this.#commentEditor?.[Symbol.dispose]();
-    this.#commentEditor = null;
-  }
-
   /**
-   * Takes the shared draft into the open editor, keeping the caret, so the
-   * Annotation View and the popup edit one draft.
+   * Lets go of the open editor, which leaves with the popup's next render; a
+   * store that reaches it before then finds no editor to read.
    */
-  #patchEditor(draft: CommentDraft | null): void {
-    const editor = this.#commentEditor;
-    if (!editor) return;
-    this.#updateCommentControls();
-    if (draft) editor.editor.setText(draft.text);
+  #closeCommentEditor(): void {
+    this.#sheet.current = null;
   }
 
   #activate(
@@ -1339,7 +1286,7 @@ export class MarkSelection implements Disposable {
 
   /** The comment verb is a toggle: pressed again, it stores and closes. */
   #toggleComment(annotation: AnnotationRecord): void {
-    if (this.#commentEditor) {
+    if (this.#sheet.current) {
       this.#submitCommentEditor(annotation, true);
       setCommenting(this.#deps.surfaceState, false);
     } else if (this.#deps.annotations.editComment(annotation.key)) {
@@ -1367,7 +1314,7 @@ export class MarkSelection implements Disposable {
    * the typed text first; a popup that stands hidden has no editor to end.
    */
   #endTagSession(): void {
-    if (!this.#tags?.end()) setTagging(this.#deps.surfaceState, false);
+    if (!this.#endTags()) setTagging(this.#deps.surfaceState, false);
   }
 
   #recolor(key: string, color: string): void {

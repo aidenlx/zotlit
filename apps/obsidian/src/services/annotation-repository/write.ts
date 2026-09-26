@@ -178,6 +178,17 @@ export interface AnnotationTag {
 /** The type Zotero stores for a tag the user adds by hand. */
 export const MANUAL_TAG_TYPE = 0 satisfies TagType;
 
+/** A record's tags with their types; a record without types holds manual tags. */
+export function annotationTags(record: {
+  tags: readonly string[];
+  tagDetails?: readonly AnnotationTag[];
+}): readonly AnnotationTag[] {
+  return (
+    record.tagDetails ??
+    record.tags.map((name) => ({ name, type: MANUAL_TAG_TYPE }))
+  );
+}
+
 /**
  * What one change to an Annotation's tags added and removed. A tag editing
  * session names its tags by name; a History Step holds them with their types.
@@ -380,6 +391,8 @@ export interface AnnotationDraft {
   /** Computed from the **unrounded** position, as Zotero's reader does. */
   sortIndex: string;
   position: WritablePosition;
+  /** The tags a restore puts back; a fresh Annotation carries none. */
+  tags?: readonly AnnotationTag[];
 }
 
 /** One create request with Zotero's write token as a transport detail. */
@@ -436,6 +449,9 @@ export function createRequest(
         annotationPageLabel: draft.pageLabel,
         annotationSortIndex: draft.sortIndex,
         annotationPosition: writePosition(draft.position),
+        ...(draft.tags?.length && {
+          tags: draft.tags.map(({ name, type }) => ({ tag: name, type })),
+        }),
       },
     ]),
   };

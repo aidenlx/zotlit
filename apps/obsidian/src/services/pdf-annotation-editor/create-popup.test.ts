@@ -1,5 +1,8 @@
 // @vitest-environment happy-dom
-import { expect, it, vi } from "vitest";
+import { createElement } from "react";
+import { createRoot } from "react-dom/client";
+import type { Root } from "react-dom/client";
+import { afterEach, expect, it, vi } from "vitest";
 
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -7,8 +10,12 @@ import { editingCapabilityCopy } from "@/services/annotation-repository/capabili
 import { IDLE } from "@/services/annotation-repository/write";
 import type { MutationState } from "@/services/annotation-repository/write";
 
-import { createPopupRow, renderCreatePopupRow } from "./create-popup";
-import type { CreatePopupAction, CreatePopupControl } from "./create-popup";
+import { CreateMarkPopup, createPopupRow } from "./create-popup";
+import type {
+  CreatePopupActivate,
+  CreatePopupAction,
+  CreatePopupControl,
+} from "./create-popup";
 import { resolveToolColors } from "./tools";
 import type { MarkTool } from "./tools";
 
@@ -127,10 +134,34 @@ it("keeps only copying available before authorization", () => {
   ).toEqual(["copy"]);
 });
 
-it("draws the row and runs each control's own action", () => {
+const roots: Root[] = [];
+
+afterEach(() => {
+  for (const root of roots.splice(0)) root.unmount();
+});
+
+/** The create-mode popup drawn into a detached element, with no sheet. */
+function draw(
+  controls: readonly CreatePopupControl[],
+  activate: CreatePopupActivate,
+): HTMLElement {
   const content = document.createElement("div");
+  const root = createRoot(content);
+  roots.push(root);
+  root.render(
+    createElement(CreateMarkPopup, {
+      app: {} as never,
+      controls,
+      activate,
+      sheet: null,
+    }),
+  );
+  return content;
+}
+
+it("draws the row and runs each control's own action", () => {
   const pressed: CreatePopupAction[] = [];
-  renderCreatePopupRow(content, row(), (action) => pressed.push(action));
+  const content = draw(row(), (action) => pressed.push(action));
 
   content.querySelector<HTMLElement>('[data-zt-verb="underline"]')!.click();
   content.querySelector<HTMLElement>('[data-zt-verb="color-3"]')!.click();
@@ -143,23 +174,22 @@ it("draws the row and runs each control's own action", () => {
   ]);
 });
 
-it("wears each swatch's colour on the node itself, not on the icon's SVG", () => {
-  const content = document.createElement("div");
-  renderCreatePopupRow(content, row(), vi.fn());
+it("wears each swatch's colour through the node's own style, not an attribute on the icon's SVG", () => {
+  const content = draw(row(), vi.fn());
 
   const swatch = content.querySelector<HTMLElement>(
     '[data-zt-verb="color-4"]',
   )!;
 
-  expect(swatch.style.color).toBe(ANNOTATION_COLORS[3]);
+  expect(swatch.style.getPropertyValue("--zt-verb-color")).toBe(
+    ANNOTATION_COLORS[3],
+  );
   expect(swatch.querySelector("svg")?.getAttribute("fill")).toBeNull();
 });
 
-it("gives a blocked control no listener", () => {
-  const content = document.createElement("div");
+it("takes no press on a blocked control", () => {
   const pressed: CreatePopupAction[] = [];
-  renderCreatePopupRow(
-    content,
+  const content = draw(
     row({ capability: { kind: "read-only", reason: "zotero-unavailable" } }),
     (action) => pressed.push(action),
   );

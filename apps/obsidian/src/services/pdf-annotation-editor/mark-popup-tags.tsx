@@ -1,17 +1,11 @@
 // The Mark Popup's tag section: the Annotation Tags read-only under the
-// comment, or the inline tag editor in their place. It is the one Preact root
-// inside the PDF reader; the row, the comment view, and the comment sheet
-// around it stay vanilla DOM.
+// comment, or the inline tag editor in their place.
 //
-// @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
 // @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
-import type { App } from "obsidian";
 import { useMemo } from "react";
 import type { RefObject } from "react";
-import { createRoot } from "react-dom/client";
-import type { Root } from "react-dom/client";
 
-import { AppContext } from "@/lib/app-context";
+import { cn } from "@/lib/utils";
 import type {
   AnnotationRecord,
   TagDraft,
@@ -78,82 +72,40 @@ export function tagSectionShows({
   );
 }
 
-/**
- * One Preact root in its own element under the popup column. It is mounted
- * when the section appears and unmounted when the popup rebuilds its content
- * or hides; between the two, a refresh renders it again in place.
- */
-export class MarkPopupTags implements Disposable {
-  /** The element the root renders into, moved into each new column. */
-  readonly el: HTMLElement;
-  /** The Annotation the section was mounted for. */
-  readonly key: string;
-  readonly #app: App;
-  readonly #root: Root;
+export interface MarkPopupTagSectionProps extends TagSectionProps {
+  /** The section's own element, which a press inside belongs to. */
+  sectionRef: RefObject<HTMLDivElement | null>;
   /** The open editor's own end of its session. */
-  readonly #endSession: RefObject<EndTagSession | null> = { current: null };
+  endSession: RefObject<EndTagSession | null>;
   /** The editor's suggestion popup while it shows, outside the popup. */
-  readonly #suggest: RefObject<HTMLElement | null> = { current: null };
+  suggestRef: RefObject<HTMLElement | null>;
+}
 
-  constructor(column: HTMLElement, app: App, key: string) {
-    // The inset and width every block under the row takes, so the chips share
-    // the comment's edge and wrap at the row's width. A block above already
-    // leaves its own inset, so the section draws up to it and reads as part of
-    // the Annotation's content; straight under the row, it keeps the column gap.
-    this.el = column.createDiv({
-      cls: "zt:w-0 zt:min-w-[max(100%,12em)] zt:px-1.5 zt:pb-1.5 zt:not-nth-2:-mt-1",
-      attr: { "data-zt-section": "tags" },
-    });
-    this.key = key;
-    this.#app = app;
-    this.#root = createRoot(this.el);
-  }
-
-  render(props: TagSectionProps): void {
-    this.#root.render(
-      <AppContext value={this.#app}>
-        <TagSection
-          {...props}
-          endSession={this.#endSession}
-          suggestRef={this.#suggest}
-        />
-      </AppContext>,
-    );
-  }
-
-  /** Moves the section into a new column, where a refresh built the row. */
-  moveTo(column: HTMLElement): void {
-    if (this.el.parentElement !== column) column.append(this.el);
-  }
-
-  /**
-   * Whether a node belongs to the section: one inside it, or inside the
-   * editor's suggestion popup, which hangs outside it.
-   */
-  contains(node: Node | null): boolean {
-    return (
-      this.el.contains(node) || (this.#suggest.current?.contains(node) ?? false)
-    );
-  }
-
-  /**
-   * Ends the open editor's session as the editor itself would; nothing while
-   * no editor is open.
-   *
-   * @param withText whether the text still typed is added first, as focus
-   *   leaving adds it; Escape leaves it out.
-   * @returns whether an editor was open to end.
-   */
-  end(withText = true): boolean {
-    const end = this.#endSession.current;
-    end?.(withText);
-    return end !== null;
-  }
-
-  [Symbol.dispose](): void {
-    this.#root.unmount();
-    this.el.remove();
-  }
+/**
+ * The tag section in its own element under the popup column. It takes the
+ * inset and width of every block under the row, so the chips share the
+ * comment's edge and wrap at the row's width; a held panel takes its own, as
+ * the held comment does. A block above already leaves its own inset, so the
+ * section draws up to it and reads as part of the Annotation's content;
+ * straight under the row, it keeps the column gap.
+ */
+export function MarkPopupTagSection({
+  sectionRef,
+  ...props
+}: MarkPopupTagSectionProps) {
+  const panel = props.held !== null && !(props.tagging && !props.readOnly);
+  return (
+    <div
+      ref={sectionRef}
+      className={cn(
+        !panel && "zt:w-0 zt:min-w-[max(100%,12em)] zt:px-1.5 zt:pb-1.5",
+        "zt:not-nth-2:-mt-1",
+      )}
+      data-zt-section="tags"
+    >
+      <TagSection {...props} />
+    </div>
+  );
 }
 
 function TagSection({

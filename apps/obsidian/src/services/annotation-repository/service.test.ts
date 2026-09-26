@@ -3895,6 +3895,27 @@ it("puts a deleted Annotation back under a new key, with what it held", async ()
   expect(zotero.at("MADE2345")).toBeNull();
 });
 
+it("puts a deleted Annotation's tags back with it, each of its own type", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary(
+    ROUGIER_ANNOTATIONS.map((entry) =>
+      entry.key === "HRK7BG32"
+        ? { ...entry, tags: ["figure", { tag: "from-pdf", type: 1 }] }
+        : entry,
+    ),
+  );
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+
+  await repository.deleteAnnotation("HRK7BG32");
+  await repository.undo("RGRPDF24");
+
+  expect(zotero.at("MADE2345")?.tags).toEqual([
+    "figure",
+    { tag: "from-pdf", type: 1 },
+  ]);
+});
+
 it("answers for the new key in every step of both stacks after a restore", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroLibrary();

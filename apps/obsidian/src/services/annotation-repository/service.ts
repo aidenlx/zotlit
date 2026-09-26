@@ -65,13 +65,13 @@ import {
   storedPosition,
 } from "./reconcile";
 import {
+  annotationTags,
   colorPatch,
   commentPatch,
   createRequest,
   eraseRequest,
   geometryPatch,
   IDLE,
-  MANUAL_TAG_TYPE,
   MAX_POSITION_LENGTH,
   mergeTags,
   newWriteToken,
@@ -3535,13 +3535,6 @@ function proposedGeometry(
 /** A merged tag list as the record Zotero answers after the write holds it. */
 function proposedTags(tags: readonly AnnotationTag[]): ProposedFields {
   return { tags: tags.map(({ name }) => name), tagDetails: tags };
-}
-
-function annotationTags(record: AnnotationRecord): readonly AnnotationTag[] {
-  return (
-    record.tagDetails ??
-    record.tags.map((name) => ({ name, type: MANUAL_TAG_TYPE }))
-  );
 }
 
 /**

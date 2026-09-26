@@ -21,6 +21,8 @@
 // @see https://github.com/aidenlx/zotlit/issues/1215
 import { Platform } from "obsidian";
 import type { App } from "obsidian";
+import { createElement } from "react";
+import type { ReactNode, RefObject } from "react";
 
 import type { PdfTextStructure, SelectedText } from "@zotlit/pdf-structure";
 
@@ -48,14 +50,13 @@ import {
   commentEditorControls,
   editingLive,
 } from "@/views/annot-view/card-controls";
-import { renderCommentSheet } from "@/views/annot-view/comment-sheet";
 import type {
   CommentSheet,
   CommentSheetStatus,
 } from "@/views/annot-view/comment-sheet";
 
 import { inTextEntry, isEditGesture } from "./capability-affordance";
-import { createPopupRow, renderCreatePopupRow } from "./create-popup";
+import { CreateMarkPopup, createPopupRow } from "./create-popup";
 import type { CreatePopupAction } from "./create-popup";
 import {
   removeCreationToolbar,
@@ -70,7 +71,6 @@ import type { PdfPoint, PdfRect } from "./geometry-edit";
 import { CLICK_SLOP, distance } from "./hit-test";
 import type { Point } from "./hit-test";
 import { InkStroke } from "./ink-stroke";
-import { popupColumn } from "./mark-popup";
 import type { MarkPopupHost } from "./mark-popup-host";
 import {
   appendPendingStroke,
@@ -317,10 +317,8 @@ export interface MarkCreationDeps {
 export class MarkCreation implements CreationGestures, Disposable {
   readonly #deps;
   readonly #surfaces = new DisposableStack();
-  /** The create-mode row the popup last built; `null` until one is. */
-  #row: HTMLElement | null = null;
   /** The comment sheet, whose editor holds the comment until the save. */
-  #sheet: CommentSheet | null = null;
+  readonly #sheet: RefObject<CommentSheet | null> = { current: null };
   /**
    * Whether a selection, note, text or image create is waiting on Zotero, the
    * armed tool's among them, so a drag released meanwhile makes nothing. An
@@ -780,41 +778,29 @@ export class MarkCreation implements CreationGestures, Disposable {
   }
 
   /**
-   * The popup's row in create mode, for the popup host. Into an empty content
-   * element it builds the row and, while commenting, the sheet; into the one it
-   * built it redraws the row and leaves the sheet and its text standing.
+   * The popup's content in create mode, for the popup host: the row and,
+   * while commenting, the sheet, whose text stands through every render.
    */
-  renderPopup(content: HTMLElement): void {
+  popupView(): ReactNode | undefined {
     const input = selectCreateRowInput(this.#state());
-    if (!input) return;
-    const status = sheetStatus(input.capability, input.now);
-    let built = false;
-    if (!content.firstChild || !this.#row) {
-      built = true;
-      this.#dropSheet();
-      const { column, row } = popupColumn(content);
-      this.#row = row;
-      this.#sheet = input.commenting
-        ? renderCommentSheet(
-            column.createDiv(),
-            {
-              app: this.#deps.app,
-              surface: "popup",
-              value: "",
-              onSubmit: () => {
-                const tool = selectionToolOf(this.#state().armed);
-                this.#commit(tool, this.#state().colors[tool]);
-              },
-              onCancel: () => setCommenting(this.#deps.surfaceState, false),
+    if (!input) return undefined;
+    return createElement(CreateMarkPopup, {
+      app: this.#deps.app,
+      controls: createPopupRow(input),
+      activate: (action) => this.#activate(action),
+      sheet: input.commenting
+        ? {
+            sheetRef: this.#sheet,
+            value: "",
+            status: sheetStatus(input.capability, input.now),
+            onSubmit: () => {
+              const tool = selectionToolOf(this.#state().armed);
+              this.#commit(tool, this.#state().colors[tool]);
             },
-            status,
-          )
-        : null;
-    }
-    renderCreatePopupRow(this.#row, createPopupRow(input), (action) =>
-      this.#activate(action),
-    );
-    if (!built) this.#sheet?.update(status);
+            onCancel: () => setCommenting(this.#deps.surfaceState, false),
+          }
+        : null,
+    });
   }
 
   #activate(action: CreatePopupAction): void {
@@ -866,7 +852,7 @@ export class MarkCreation implements CreationGestures, Disposable {
     this.#creating = this.#create({
       type,
       color,
-      comment: floating.commenting ? (this.#sheet?.text() ?? "") : "",
+      comment: floating.commenting ? (this.#sheet.current?.text() ?? "") : "",
       ...selectionDraft(floating.captured),
     });
   }
@@ -1282,15 +1268,17 @@ export class MarkCreation implements CreationGestures, Disposable {
 
   /** The gesture is over: the popup, the sheet, and the selection all go. */
   #clear(): void {
-    this.#row = null;
     this.#dropSheet();
     if (this.#floating().kind === "create")
       clearFloating(this.#deps.surfaceState);
   }
 
+  /**
+   * Lets go of the sheet, which leaves with the popup's next render; a commit
+   * that reaches it before then reads no comment.
+   */
   #dropSheet(): void {
-    this.#sheet?.[Symbol.dispose]();
-    this.#sheet = null;
+    this.#sheet.current = null;
   }
 
   /** Drops the window selection, as Zotero's reader does once a mark is made. */
