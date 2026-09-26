@@ -2423,6 +2423,7 @@
   "annot_view_card_text_placeholder": "Add the quoted text…",
   "annot_view_card_no_text": "No quoted text",
   "annot_view_text_save": "Save text",
+  "annot_view_text_draft": "Unsaved text",
   "comment_editor_format": "Format",
   "comment_editor_bold": "Bold",
   "comment_editor_italic": "Italic",

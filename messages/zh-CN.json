@@ -2281,6 +2281,7 @@
   "annot_view_card_text_placeholder": "添加引用文本…",
   "annot_view_card_no_text": "无引用文本",
   "annot_view_text_save": "保存文本",
+  "annot_view_text_draft": "未保存的文本",
   "comment_editor_format": "格式",
   "comment_editor_bold": "粗体",
   "comment_editor_italic": "斜体",

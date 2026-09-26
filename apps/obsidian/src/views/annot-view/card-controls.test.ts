@@ -19,6 +19,7 @@ import {
   editingBlockedReason,
   groupControl,
   heldCommentDraft,
+  heldQuotedTextDraft,
   heldTagDraft,
   shownComment,
   shownTagNames,
@@ -527,6 +528,20 @@ describe("the held-draft panel", () => {
     ).toEqual(["save", "discard"]);
   });
 
+  it("names the field a held draft is for", () => {
+    const held = { ...draft, manualSave: true };
+    const comment = heldCommentDraft({ kind: "writable" }, held, NOW);
+    const text = heldQuotedTextDraft({ kind: "writable" }, held, NOW);
+    expect([comment?.title, comment?.actions[0]?.label]).toEqual([
+      m.annot_view_comment_draft(),
+      m.annot_view_comment_save(),
+    ]);
+    expect([text?.title, text?.actions[0]?.label]).toEqual([
+      m.annot_view_text_draft(),
+      m.annot_view_text_save(),
+    ]);
+  });
+
   it("offers Discard where nothing else can act, and states why", () => {
     const held = heldCommentDraft(
       { kind: "read-only", reason: "zotero-unavailable" },
@@ -668,13 +683,16 @@ describe("what a surface draws of an Annotation", () => {
     ).toEqual(["review", "nlp"]);
   });
 
-  it("draws the record once a draft is saving, since it holds the proposal", () => {
+  it("draws the record once a tag draft is saving, since it holds the proposal", () => {
     expect(
       shownTagNames(record, { ...tags, state: { kind: "pending" } }),
     ).toEqual(["review", "figure"]);
+  });
+
+  it("keeps a text draft's own value while it saves, so a submit sends what was typed", () => {
     expect(
       shownComment(record, { ...comment, state: { kind: "pending" } }),
-    ).toBe("Saved note");
+    ).toBe("Typed note");
   });
 
   it("draws the record with no draft, and an empty comment for none", () => {

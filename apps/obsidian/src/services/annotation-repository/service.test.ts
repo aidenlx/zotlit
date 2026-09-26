@@ -4996,8 +4996,9 @@ function zoteroTagging(
           version: number;
           tags?: SentTag[];
           annotationComment?: string;
+          annotationText?: string;
         };
-        const { tags: sent, annotationComment } = body;
+        const { tags: sent, annotationComment, annotationText } = body;
         if (sent) patches.push({ version: body.version, tags: sent });
         if (hold) await hold;
         if (body.version !== stored.version) return staleVersionPatch();
@@ -5012,6 +5013,7 @@ function zoteroTagging(
           ...(annotationComment !== undefined && {
             comment: annotationComment,
           }),
+          ...(annotationText !== undefined && { text: annotationText }),
           version: stored.version + 1,
         };
         return writeAccepted();
@@ -5025,6 +5027,9 @@ function zoteroTagging(
     },
     get comment() {
       return stored.comment;
+    },
+    get text() {
+      return stored.text;
     },
     /** An edit made in Zotero itself, beside ZotLit. */
     changeInZotero(patch: Partial<WireAnnotation>): void {
@@ -5286,6 +5291,165 @@ it("saves, conflicts, and discards a comment draft and a tag draft on one Annota
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("requires a choice when Zotero changes a drafted Quoted Text, and ends it by Apply again or Discard", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
+  const { repository, requests } = await writable(stack, zotero.answers);
+  let conflicts = 0;
+  stack.defer(repository.on("write-conflict", () => (conflicts += 1)));
+  const patches = (from: number) =>
+    requests.slice(from).filter(({ method }) => method === "PATCH");
+
+  // A Geometry Edit in Zotero's reader rewrites the text under typed text.
+  repository.editQuotedText("PUPR5FG5", "My correction");
+  zotero.changeInZotero({ text: "Text of the new range" });
+  let sent = requests.length;
+  await repository.refresh("RGRPDF24");
+
+  expect(conflicts).toBe(1);
+  expect(repository.mutationFor("PUPR5FG5")).toEqual({
+    kind: "conflict",
+    conflict: {
+      write: "text",
+      attempted: "My correction",
+      fresh: "Text of the new range",
+    },
+  });
+  // The conflict holds the draft: a submit sends nothing.
+  await repository.submitQuotedText("PUPR5FG5");
+  expect(patches(sent)).toEqual([]);
+
+  // Apply again sends the text alone against the version Zotero holds now.
+  await repository.retryQuotedTextDraft("PUPR5FG5");
+  expect(patches(sent).map(({ body }) => JSON.parse(body ?? ""))).toEqual([
+    { version: 12, annotationText: "My correction" },
+  ]);
+  expect(zotero.text).toBe("My correction");
+  expect(repository.quotedTextDraftFor("PUPR5FG5")).toBeNull();
+  expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
+
+  // Discard keeps Zotero's text and sends nothing.
+  repository.editQuotedText("PUPR5FG5", "Another correction");
+  zotero.changeInZotero({ text: "Edited in Zotero's sidebar" });
+  await repository.refresh("RGRPDF24");
+  expect(conflicts).toBe(2);
+  sent = requests.length;
+  repository.discardQuotedTextDraft("PUPR5FG5");
+
+  expect(patches(sent)).toEqual([]);
+  expect(zotero.text).toBe("Edited in Zotero's sidebar");
+  expect(repository.quotedTextDraftFor("PUPR5FG5")).toBeNull();
+  expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
+});
+
+it("draws a pending Text Edit as its Pending Proposal, and the confirmed text again once Zotero refuses it", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
+  const { repository } = await writable(stack, zotero.answers);
+  const drawn = () =>
+    repository
+      .peek("RGRPDF24")
+      ?.value.annotations.find(({ key }) => key === "PUPR5FG5")?.text;
+  const confirmed = drawn();
+
+  const release = zotero.holdWrites();
+  repository.editQuotedText("PUPR5FG5", "Fixed ligature");
+  const saving = repository.submitQuotedText("PUPR5FG5");
+  expect(drawn()).toBe("Fixed ligature");
+
+  // Zotero's sidebar moves the text while the write waits, so Zotero refuses
+  // it against the version it was stamped with.
+  zotero.changeInZotero({ text: "Edited in Zotero" });
+  release();
+  expect(await saving).toMatchObject({
+    kind: "conflict",
+    conflict: { write: "text" },
+  });
+  // The proposal went with the refused write: the list draws its confirmed
+  // text again, and the conflict carries Zotero's new one.
+  expect(confirmed).toBe("Identify Your Message");
+  expect(drawn()).toBe(confirmed);
+});
+
+it("settles a Quoted Text draft that Zotero already holds with no conflict", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
+  const { repository, requests } = await writable(stack, zotero.answers);
+  let conflicts = 0;
+  stack.defer(repository.on("write-conflict", () => (conflicts += 1)));
+  repository.editQuotedText("PUPR5FG5", "Same words");
+  zotero.changeInZotero({ text: "Same words" });
+  const sent = requests.length;
+
+  await repository.refresh("RGRPDF24");
+  await repository.submitQuotedText("PUPR5FG5");
+
+  expect(conflicts).toBe(0);
+  expect(repository.quotedTextDraftFor("PUPR5FG5")).toBeNull();
+  expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
+  expect(
+    requests.slice(sent).filter(({ method }) => method === "PATCH"),
+  ).toEqual([]);
+});
+
+it("saves and conflicts a comment draft and a Quoted Text draft on one Annotation apart", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
+  const { repository } = await writable(stack, zotero.answers);
+  const commentConflict = {
+    kind: "conflict",
+    conflict: {
+      write: "comment",
+      attempted: "Worth citing",
+      fresh: "From Zotero",
+    },
+  };
+
+  // A text save leaves the comment draft unsent.
+  repository.editComment("PUPR5FG5", "Worth citing");
+  repository.editQuotedText("PUPR5FG5", "Fixed ligature");
+  await repository.submitQuotedText("PUPR5FG5");
+
+  expect(zotero.text).toBe("Fixed ligature");
+  expect(zotero.comment).toBeUndefined();
+  expect(repository.commentDraftFor("PUPR5FG5")).toMatchObject({
+    text: "Worth citing",
+    state: { kind: "editing" },
+  });
+
+  // Zotero moves the comment: only the comment conflicts, and a text save
+  // still lands beside the conflict and leaves it standing.
+  zotero.changeInZotero({ comment: "From Zotero" });
+  await repository.refresh("RGRPDF24");
+  repository.editQuotedText("PUPR5FG5", "Fixed ligature twice");
+  await repository.submitQuotedText("PUPR5FG5");
+
+  expect(zotero.text).toBe("Fixed ligature twice");
+  expect(repository.quotedTextDraftFor("PUPR5FG5")).toBeNull();
+  expect(repository.mutationFor("PUPR5FG5")).toEqual(commentConflict);
+
+  // Zotero moves the text too: both conflicts stand, and ending the text's
+  // leaves the comment's for the card to offer next.
+  repository.editQuotedText("PUPR5FG5", "Third fix");
+  zotero.changeInZotero({ text: "Changed range" });
+  await repository.refresh("RGRPDF24");
+  expect(repository.quotedTextDraftFor("PUPR5FG5")).toMatchObject({
+    state: { kind: "conflict", fresh: "Changed range" },
+  });
+  repository.discardQuotedTextDraft("PUPR5FG5");
+
+  expect(repository.mutationFor("PUPR5FG5")).toEqual(commentConflict);
+  expect(repository.commentDraftFor("PUPR5FG5")).toMatchObject({
+    text: "Worth citing",
+    state: { kind: "conflict", fresh: "From Zotero" },
+  });
+
+  await repository.retryCommentDraft("PUPR5FG5");
+  expect(zotero.comment).toBe("Worth citing");
+  expect(zotero.text).toBe("Changed range");
+  expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
 });
 
 it("keeps the verbs live and the draft saving until the read-back lands", async () => {

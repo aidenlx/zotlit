@@ -25,7 +25,7 @@ import type { FieldEditor, FieldEditorWording } from "./field-editor";
 import { tagChipVariants } from "./tag-chip";
 
 /** Where the controls stand: an Annotation Card, or the reader's Mark Popup. */
-export type CommentSurface = "card" | "popup";
+export type CommentSurface = "card" | "excerpt" | "popup";
 
 /**
  * Obsidian's own text field — its fill, resting border and focus ring — drawn
@@ -73,6 +73,17 @@ const SURFACE: Record<
     viewFrame: "",
     footer: "zt:mt-2",
     panel: "zt:-mx-3 zt:px-3 zt:py-1.5",
+  },
+  // The card's Excerpt Block, beside the colour rule: a panel fills from the
+  // rule to the card's end edge, so the rule still marks the excerpt it holds.
+  excerpt: {
+    sheet: "",
+    inset: "",
+    field: `zt:-mx-1.5 zt:-my-1 zt:rounded-(--input-radius) zt:px-1.5 zt:py-1 zt:text-xs ${FIELD_ENTER}`,
+    view: "zt:text-xs",
+    viewFrame: "",
+    footer: "zt:mt-2",
+    panel: "zt:-ms-2 zt:-me-3 zt:ps-2 zt:pe-3 zt:py-1.5",
   },
   // The popover's padding is the row's, which leaves a field or a panel under
   // it close to the border, so what stands under the row keeps its own inset.
@@ -273,12 +284,12 @@ export function renderEditorSheet(
 }
 
 /**
- * What a held-draft panel's verbs run, for a held comment and held tags
- * alike. Each surface binds them to its own write path; which press runs
+ * What a held-draft panel's verbs run, for a held comment, held Quoted Text
+ * and held tags alike. Each surface binds them to its own write path; which press runs
  * which is decided here, once.
  */
 export interface HeldDraftActions {
-  /** Store the held draft in Zotero: Save comment, or Save tags. */
+  /** Store the held draft in Zotero: Save comment, Save text, or Save tags. */
   save: () => void;
   /** Ask Zotero for editing again. */
   allowEditing: () => void;
@@ -287,16 +298,21 @@ export interface HeldDraftActions {
 }
 
 /**
- * What the held comment and Write Conflict panels' verbs run. Each surface
- * binds them to its own write path; which press runs which is decided here,
- * once.
+ * What a Write Conflict panel's verbs run. Each surface binds them to its own
+ * write path; which press runs which is decided here, once.
  */
-export interface CommentDraftActions extends HeldDraftActions {
+export interface ConflictActions {
   /** Send the conflicting write again, or delete anyway. */
   applyAgain: () => void;
   /** Drop the conflicting write and keep what Zotero holds. */
   discardConflict: () => void;
 }
+
+/**
+ * Every verb that ends one text field's draft: the held panel's and its Write
+ * Conflict panel's, for a comment or a Quoted Text.
+ */
+export interface TextDraftActions extends HeldDraftActions, ConflictActions {}
 
 /** A panel's surface: the popover token, with a header icon beside its title. */
 function panel(
@@ -360,7 +376,7 @@ const HELD_DRAFT_VERB: Record<HeldDraftAction["kind"], keyof HeldDraftActions> =
     discard: "discard",
   };
 
-const CONFLICT_VERB: Record<ConflictVerb, keyof CommentDraftActions> = {
+const CONFLICT_VERB: Record<ConflictVerb, keyof ConflictActions> = {
   "apply-again": "applyAgain",
   "delete-anyway": "applyAgain",
   discard: "discardConflict",
@@ -372,8 +388,8 @@ const CONFLICT_VERB: Record<ConflictVerb, keyof CommentDraftActions> = {
  * of state — local text waiting on the user — and it carries its verbs for the
  * same reason: a surface that only says "unsaved" leaves nowhere to go.
  *
- * The held text is for reading and copying: the comment pencil beside it is
- * what opens the editor on it (ADR 0060).
+ * The held text is for reading and copying: the field's own control, the
+ * comment pencil or Edit text, is what opens the editor on it (ADR 0060).
  *
  * @see https://github.com/aidenlx/zotlit/issues/1145
  */
@@ -385,14 +401,14 @@ export function renderHeldDraftPanel(
     actions,
   }: {
     surface: CommentSurface;
-    actions: CommentDraftActions;
+    actions: HeldDraftActions;
   },
 ): void {
   const box = panel(parent, {
     surface,
     hook: themeHook.annotDraft,
     icon: "pencil-line",
-    title: m.annot_view_comment_draft(),
+    title: held.title,
   });
   box.createDiv({
     cls: "zt:break-words zt:whitespace-pre-wrap zt:select-text",
@@ -484,7 +500,7 @@ export function renderConflictPanel(
     surface: CommentSurface;
     /** Whether the Editing Capability takes a write right now. */
     live: boolean;
-    actions: CommentDraftActions;
+    actions: ConflictActions;
   },
 ): void {
   const box = panel(parent, {

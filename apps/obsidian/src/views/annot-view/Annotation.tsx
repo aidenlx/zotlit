@@ -23,7 +23,10 @@ import {
   cn,
   tooltipAttrs,
 } from "@/lib/utils";
-import type { AnnotationRecord } from "@/services/annotation-repository/service";
+import type {
+  AnnotationRecord,
+  WriteConflict,
+} from "@/services/annotation-repository/service";
 import type { ExcerptImage } from "@/services/excerpt-image/format";
 import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
 
@@ -34,6 +37,7 @@ import {
   fieldEditorControls,
   editingLive,
   heldCommentDraft,
+  heldQuotedTextDraft,
   heldTagDraft,
   hasQuotedText,
   shownText,
@@ -52,10 +56,11 @@ import {
 } from "./comment-parts";
 import { commentField, quotedTextField } from "./comment-sheet";
 import type {
-  CommentDraftActions,
+  CommentSurface,
   EditorField,
   EditorSheet,
   HeldDraftActions,
+  TextDraftActions,
 } from "./comment-sheet";
 import {
   excerptImageOwnership,
@@ -288,35 +293,56 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
  * two verbs that end it. The write's Pending Proposal went with the conflict,
  * so the card around this panel shows what Zotero holds.
  *
+ * This slot holds the conflict of a write with no draft behind it: a colour,
+ * a delete, a Geometry Edit, or a text write sent without a draft. A text
+ * field's draft in conflict stands in its own field's slot instead; see
+ * {@link FieldDraftPanel}.
+ *
  * @see https://github.com/aidenlx/zotlit/issues/1151
  */
 function ConflictSlot({ annot }: { annot: AnnotationRecord }) {
   const actions = useContext(AnnotActionsContext);
   const mutation = useMutation(annot.key);
   const live = useAnnotStore((state) => editingLive(state.capability));
-  if (mutation.kind !== "conflict") return null;
+  const drafted = useAnnotStore(
+    (state) =>
+      mutation.kind === "conflict" &&
+      mutation.conflict.write in CARD_FIELDS &&
+      fieldDraft(state, mutation.conflict.write as TextEditingField, annot.key)
+        ?.state.kind === "conflict",
+  );
+  if (mutation.kind !== "conflict" || drafted) return null;
   return (
     <ConflictPanelSlot
       conflict={mutation.conflict}
       live={live}
       surface="card"
-      actions={cardDraftActions(actions, annot, annot.comment ?? "")}
+      actions={{
+        // The standing conflict's own write, sent again or left.
+        applyAgain: () => actions.onApplyAgain(annot),
+        discardConflict: () => actions.onDiscardConflict(annot),
+      }}
     />
   );
 }
 
-/** The panels' verbs, bound to the Annotation View's own actions. */
-function cardDraftActions(
+/**
+ * Every verb that ends one text field's draft on the card, bound to the
+ * Annotation View's own actions.
+ *
+ * @param text what Save stores: the held draft's text.
+ */
+function fieldDraftActions(
   actions: AnnotActions,
   annot: AnnotationRecord,
-  text: string,
-): CommentDraftActions {
+  { field, text }: { field: TextEditingField; text: string },
+): TextDraftActions {
   return {
-    save: () => actions.onSaveComment(annot, text),
+    save: () => CARD_FIELDS[field].save(actions)(annot, text),
     allowEditing: () => actions.onAllowEditing(),
-    discard: () => actions.onDiscardComment(annot),
-    applyAgain: () => actions.onApplyAgain(annot),
-    discardConflict: () => actions.onDiscardConflict(annot),
+    discard: () => actions.onDiscardDraft(annot, field),
+    applyAgain: () => actions.onApplyAgain(annot, field),
+    discardConflict: () => actions.onDiscardConflict(annot, field),
   };
 }
 
@@ -587,35 +613,23 @@ function CommentSlot({
 }) {
   const actions = useContext(AnnotActionsContext);
   const editing = useFieldEditing(annot, "comment");
-  const draft = useAnnotStore((state) =>
-    fieldDraft(state, "comment", annot.key),
-  );
-  const capability = useAnnotStore((state) => state.capability);
-  // Held by identity while the draft and the capability stand, so the panel
-  // redraws on a change and not on every render of the card.
-  const held = useMemo(
-    () => heldCommentDraft(capability, draft, Temporal.Now.instant()),
-    [capability, draft],
-  );
+  const panel = useFieldDraftPanel(annot, "comment");
   const pencil =
     control &&
     controlPencil(control, {
       active: open,
       onPress: () => editing.press(control),
     });
-  // No comment, no editor and no held text: the line that adds one, or
-  // nothing on a card that does not offer the pencil.
-  if (!open && !held && annot.comment === null)
+  // No comment, no editor and no draft to answer: the line that adds one,
+  // or nothing on a card that does not offer the pencil.
+  if (!open && !panel && annot.comment === null)
     return pencil && <AddCommentLine pencil={pencil} />;
   return (
     <CommentGutter pencil={pencil}>
       {open ? (
         <FieldEditor annot={annot} field="comment" />
-      ) : held ? (
-        // A draft the plugin still resolves by itself draws nothing of its
-        // own: the card keeps showing what Zotero holds until the write lands
-        // or the draft turns into something the user must answer.
-        <HeldDraftPanel annot={annot} held={held} />
+      ) : panel ? (
+        <FieldDraftPanel annot={annot} field="comment" panel={panel} />
       ) : (
         <CommentView
           surface="card"
@@ -627,36 +641,101 @@ function CommentSlot({
   );
 }
 
+/** What one text field's draft asks the user to answer on the card. */
+type FieldDraftPanelState =
+  | { kind: "conflict"; conflict: WriteConflict; text: string }
+  | { kind: "held"; held: HeldDraft };
+
 /**
- * The text the user holds that Zotero has not taken, with the verbs that end
- * it. It wears the Write Conflict panel's surface because it is the same kind
- * of state — local text waiting on the user — and it carries its verbs for the
- * same reason: a card that only says "unsaved" leaves nowhere to go. Its verbs
- * keep their own clicks; a click on its text is the card's.
+ * The panel one text field's draft needs, read from that field's own draft
+ * alone: its Write Conflict, its held text, or `null`. A write in flight on
+ * another field, or another field's conflict, leaves it as it is.
+ *
+ * A draft the plugin still resolves by itself asks nothing: the card keeps
+ * showing what Zotero holds until the write lands or the draft turns into
+ * something the user must answer.
+ */
+function useFieldDraftPanel(
+  annot: AnnotationRecord,
+  field: TextEditingField,
+): FieldDraftPanelState | null {
+  const draft = useAnnotStore((state) => fieldDraft(state, field, annot.key));
+  const capability = useAnnotStore((state) => state.capability);
+  // Held by identity while the draft and the capability stand, so a panel
+  // redraws on a change and not on every render of the card.
+  return useMemo(() => {
+    if (draft?.state.kind === "conflict") {
+      return {
+        kind: "conflict",
+        conflict: {
+          write: field,
+          attempted: draft.text,
+          fresh: draft.state.fresh,
+        },
+        text: draft.text,
+      };
+    }
+    const held = CARD_FIELDS[field].held(
+      capability,
+      draft,
+      Temporal.Now.instant(),
+    );
+    return held && { kind: "held", held };
+  }, [field, capability, draft]);
+}
+
+/**
+ * The text the user holds that Zotero has not taken, or its Write Conflict,
+ * with the verbs that end it. The held panel wears the Write Conflict panel's
+ * surface because it is the same kind of state — local text waiting on the
+ * user — and it carries its verbs for the same reason: a card that only says
+ * "unsaved" leaves nowhere to go. Its verbs keep their own clicks; a click on
+ * its text is the card's, and the field's own control opens the editor again.
  *
  * @see https://github.com/aidenlx/zotlit/issues/1145
+ * @see https://github.com/aidenlx/zotlit/issues/1151
  */
-function HeldDraftPanel({
+function FieldDraftPanel({
   annot,
-  held,
+  field,
+  panel,
 }: {
   annot: AnnotationRecord;
-  held: HeldDraft;
+  field: TextEditingField;
+  panel: FieldDraftPanelState;
 }) {
   const actions = useContext(AnnotActionsContext);
+  const live = useAnnotStore((state) => editingLive(state.capability));
+  const surface = CARD_FIELDS[field].surface;
+  if (panel.kind === "conflict") {
+    return (
+      <ConflictPanelSlot
+        conflict={panel.conflict}
+        live={live}
+        surface={surface}
+        actions={fieldDraftActions(actions, annot, {
+          field,
+          text: panel.text,
+        })}
+      />
+    );
+  }
   return (
     <HeldDraftSlot
-      held={held}
-      surface="card"
-      actions={cardDraftActions(actions, annot, held.text)}
+      held={panel.held}
+      surface={surface}
+      actions={fieldDraftActions(actions, annot, {
+        field,
+        text: panel.held.text,
+      })}
     />
   );
 }
 
 /**
- * What the card's field editor reads and calls for each text field: its
- * wording, the confirmed value it opens on, and the actions that edit and
- * save its draft.
+ * What the card reads and calls for each text field: its editor's wording,
+ * the confirmed value the editor opens on, the actions that edit and save its
+ * draft, and where and how its held draft is announced.
  */
 const CARD_FIELDS: Record<
   TextEditingField,
@@ -669,6 +748,10 @@ const CARD_FIELDS: Record<
     edit: (actions: AnnotActions) => AnnotActions["onEditComment"];
     /** The action that stores the field's text, automatically or on request. */
     save: (actions: AnnotActions) => AnnotActions["onSaveComment"];
+    /** What the card announces about the field's held draft. */
+    held: typeof heldCommentDraft;
+    /** Where the field's panels stand on the card. */
+    surface: CommentSurface;
   }
 > = {
   comment: {
@@ -677,6 +760,8 @@ const CARD_FIELDS: Record<
     open: (actions) => (annot) => actions.onOpenComment(annot),
     edit: (actions) => actions.onEditComment,
     save: (actions) => actions.onSaveComment,
+    held: heldCommentDraft,
+    surface: "card",
   },
   text: {
     wording: quotedTextField,
@@ -684,6 +769,9 @@ const CARD_FIELDS: Record<
     open: (actions) => (annot) => actions.onOpenText(annot),
     edit: (actions) => actions.onEditText,
     save: (actions) => actions.onSaveText,
+    held: heldQuotedTextDraft,
+    // Inside the Excerpt Block, beside the colour rule.
+    surface: "excerpt",
   },
 };
 
@@ -713,6 +801,9 @@ function useFieldEditing(annot: AnnotationRecord, field: TextEditingField) {
   // Every close asks for the submit, including one that changed nothing: the
   // request is what drops a draft holding only what Zotero already has, so
   // clicking the card out of an untouched editor leaves no held text behind.
+  // The text saved is the draft's, which each keystroke keeps current, a save
+  // in flight included: a press on the control blurs the editor first, and
+  // that blur's save leaves the draft pending before the press closes it.
   const saveAndClose = (): void => {
     target.close();
     spec.save(actions)(annot, text, true);
@@ -819,6 +910,7 @@ function ExcerptBlock({
 }) {
   const name = annot.type;
   const editing = useAnnotStore((s) => isEditing(s, annot.key, "text"));
+  const panel = useFieldDraftPanel(annot, "text");
   const isImage = name === "image" || name === "ink";
 
   // A note or free text quotes nothing: its text, where it has one, stands in
@@ -830,6 +922,10 @@ function ExcerptBlock({
     content = <ExcerptImage annot={annot} collapsed={collapsed} />;
   } else if (editing) {
     content = <FieldEditor annot={annot} field="text" />;
+  } else if (panel) {
+    // Held text or its Write Conflict stands in the text's place on every
+    // card, selected or not, until the user answers it.
+    content = <FieldDraftPanel annot={annot} field="text" panel={panel} />;
   } else if (annot.text) {
     content = <ExcerptText text={annot.text} />;
   } else if (hasQuotedText(name)) {
@@ -854,7 +950,12 @@ function ExcerptBlock({
       className={cn(
         "zt:border-s-2 zt:ps-2 zt:text-pretty",
         annot.color ? "zt:border-(--zt-annot-color)" : "zt:border-border",
-        collapsed && !alone && !isImage && !editing && "zt:line-clamp-3",
+        collapsed &&
+          !alone &&
+          !isImage &&
+          !editing &&
+          !panel &&
+          "zt:line-clamp-3",
       )}
     >
       {content}

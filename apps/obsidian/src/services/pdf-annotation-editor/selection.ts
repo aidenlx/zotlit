@@ -63,7 +63,7 @@ import type { CommentPencil } from "@/views/annot-view/comment-parts";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
 import { commentField } from "@/views/annot-view/comment-sheet";
 import type {
-  CommentDraftActions,
+  TextDraftActions,
   EditorSheet,
   HeldDraftActions,
 } from "@/views/annot-view/comment-sheet";
@@ -1219,7 +1219,7 @@ export class MarkSelection implements Disposable {
   }
 
   /** The panels' verbs, bound to the repository's own writes. */
-  #draftActions(annotation: AnnotationRecord): CommentDraftActions {
+  #draftActions(annotation: AnnotationRecord): TextDraftActions {
     const { annotations, gestures } = this.#deps;
     const discard = () => annotations.discardCommentDraft(annotation.key);
     return {

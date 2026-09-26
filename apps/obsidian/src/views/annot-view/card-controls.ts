@@ -334,10 +334,8 @@ export function shownTagNames(
 }
 
 /**
- * The comment text both comment editors open on, on the rule of
- * {@link shownTagNames}. The rendered comment under a closed editor draws the
- * record: a comment draft saves itself within a second of the last keystroke,
- * and its Pending Proposal is the record from then on.
+ * The comment text both comment editors open on and submit; see
+ * {@link shownText}.
  */
 export function shownComment(
   record: Pick<AnnotationRecord, "comment">,
@@ -347,8 +345,11 @@ export function shownComment(
 }
 
 /**
- * The text a field editor opens on, for any text field, on the rule of
- * {@link shownComment}.
+ * The text a field editor opens on and submits, for any text field: the
+ * draft's own text while a draft stands, a save in flight included, since
+ * text typed behind that save is newer than what the save carries. The
+ * rendered value under a closed editor draws the record instead, which holds
+ * the save's Pending Proposal.
  *
  * @param confirmed the field's value on the record.
  */
@@ -356,9 +357,7 @@ export function shownText(
   confirmed: string | null,
   draft: TextFieldDraft | null,
 ): string {
-  return draft && draft.state.kind !== "pending"
-    ? draft.text
-    : (confirmed ?? "");
+  return draft ? draft.text : (confirmed ?? "");
 }
 
 /** One verb the held-draft panel offers. */
@@ -385,7 +384,9 @@ export interface HeldDraftAction {
  * quiet case is the normal one.
  */
 export interface HeldDraft {
-  /** The user's text, which the panel shows in place of Zotero's comment. */
+  /** The panel's title, which names the field the text is for. */
+  title: string;
+  /** The user's text, which the panel shows in place of Zotero's value. */
   text: string;
   /** Why the text is still held, or `null` where the state speaks for itself. */
   reason: string | null;
@@ -408,6 +409,34 @@ export function heldCommentDraft(
   draft: CommentDraft | null,
   now: Temporal.Instant,
 ): HeldDraft | null {
+  return heldTextDraft(capability, draft, {
+    now,
+    title: m.annot_view_comment_draft(),
+    save: m.annot_view_comment_save(),
+  });
+}
+
+/**
+ * What the card announces about one held Quoted Text draft, or `null` where
+ * it announces nothing, on the rule of {@link heldCommentDraft}.
+ */
+export function heldQuotedTextDraft(
+  capability: EditingCapability,
+  draft: TextFieldDraft | null,
+  now: Temporal.Instant,
+): HeldDraft | null {
+  return heldTextDraft(capability, draft, {
+    now,
+    title: m.annot_view_text_draft(),
+    save: m.annot_view_text_save(),
+  });
+}
+
+function heldTextDraft(
+  capability: EditingCapability,
+  draft: TextFieldDraft | null,
+  { now, title, save }: { now: Temporal.Instant; title: string; save: string },
+): HeldDraft | null {
   if (!draft) return null;
   if (draft.state.kind === "pending" || draft.state.kind === "conflict")
     return null;
@@ -422,12 +451,10 @@ export function heldCommentDraft(
   // than asking the user to do what the plugin is about to do.
   if (!manual && !saveDisabled) return null;
   return {
+    title,
     text: draft.text,
     reason: block?.reason ?? hint,
-    actions: heldDraftActions(block, {
-      save: m.annot_view_comment_save(),
-      saveDisabled,
-    }),
+    actions: heldDraftActions(block, { save, saveDisabled }),
   };
 }
 
@@ -486,9 +513,10 @@ export function sameHeldTags(a: HeldTags, b: HeldTags): boolean {
   );
 }
 
-/** {@link sameHeldTags}, for a held comment panel. */
+/** {@link sameHeldTags}, for a held text panel: a comment or a Quoted Text. */
 export function sameHeldDraft(a: HeldDraft, b: HeldDraft): boolean {
   return (
+    a.title === b.title &&
     a.text === b.text &&
     a.reason === b.reason &&
     sameHeldActions(a.actions, b.actions)

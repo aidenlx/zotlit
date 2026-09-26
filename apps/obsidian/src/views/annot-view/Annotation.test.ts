@@ -12,7 +12,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppContext } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
-import type { AnnotationRecord } from "@/services/annotation-repository/service";
+import type {
+  AnnotationRecord,
+  MutationState,
+  TextFieldDraft,
+} from "@/services/annotation-repository/service";
 
 import { editorApp } from "./__fixtures__/editor-app";
 import { AnnotActionsContext } from "./actions";
@@ -72,6 +76,8 @@ async function mountCard({
   comment = CARD.comment,
   selected = [CARD.key],
   capability = { kind: "writable" },
+  drafts = {},
+  mutation,
 }: {
   held?: boolean;
   /** Whether the repository starts a comment draft for the editor to open on. */
@@ -80,13 +86,37 @@ async function mountCard({
   /** The Card Selection: this card alone by default. */
   selected?: string[];
   capability?: EditingCapability;
+  /** Each text field's draft beside the held comment, by the state it is in. */
+  drafts?: Partial<
+    Record<
+      "comment" | "text",
+      Pick<TextFieldDraft, "text" | "state"> & {
+        manualSave?: boolean;
+      }
+    >
+  >;
+  /** What a write left on the Annotation. */
+  mutation?: MutationState;
 } = {}) {
+  const draftOf = (
+    draft: Pick<TextFieldDraft, "text" | "state"> & { manualSave?: boolean },
+  ): [string, TextFieldDraft] => [
+    CARD.key,
+    {
+      annotationKey: CARD.key,
+      attachmentKey: CARD.parentKey,
+      serverID: "fixture",
+      baseline: "",
+      ...draft,
+    },
+  ];
   const store = createAnnotStore();
   store.setState({
     capability,
     cardSelection: { selected, anchor: null, focus: null },
+    ...(mutation && { mutations: new Map([[CARD.key, mutation]]) }),
     fieldDrafts: {
-      text: new Map(),
+      text: new Map(drafts.text ? [draftOf(drafts.text)] : []),
       comment: new Map(
         held
           ? [
@@ -103,7 +133,9 @@ async function mountCard({
                 },
               ],
             ]
-          : [],
+          : drafts.comment
+            ? [draftOf(drafts.comment)]
+            : [],
       ),
     },
   });
@@ -113,6 +145,10 @@ async function mountCard({
   const onSaveTags = vi.fn();
   const onSaveComment = vi.fn();
   const onBlockedPress = vi.fn();
+  const onOpenText = vi.fn(() => opens);
+  const onSaveText = vi.fn();
+  const onApplyAgain = vi.fn();
+  const onDiscardConflict = vi.fn();
   const actions = new Proxy(
     {
       onSelectAnnotation,
@@ -121,6 +157,10 @@ async function mountCard({
       onSaveTags,
       onSaveComment,
       onBlockedPress,
+      onOpenText,
+      onSaveText,
+      onApplyAgain,
+      onDiscardConflict,
     } as Partial<AnnotActions>,
     {
       get: (target, name: keyof AnnotActions) =>
@@ -161,6 +201,10 @@ async function mountCard({
     onSaveTags,
     onSaveComment,
     onBlockedPress,
+    onOpenText,
+    onSaveText,
+    onApplyAgain,
+    onDiscardConflict,
   };
 }
 
@@ -408,4 +452,115 @@ it("saves the card's comment and closes its editor on Done", async () => {
   expect(onSaveComment.mock.calls).toEqual([[CARD, CARD.comment, true]]);
   expect(store.getState().editing).toBeNull();
   expect(host.querySelector(".cm-content")).toBeNull();
+});
+
+/** The card's Edit text control. */
+function editText(host: HTMLElement): Element {
+  const control = [...host.querySelectorAll(".clickable-icon")].find((el) =>
+    el.querySelector("svg.lucide-text-cursor-input"),
+  );
+  if (!control) throw new Error("The card draws no Edit text control");
+  return control;
+}
+
+/** One panel's button, by its label. */
+function button(panel: Element, label: string): Element {
+  return [...panel.querySelectorAll("button")].find(
+    (node) => node.textContent === label,
+  )!;
+}
+
+describe("a text field's draft on the card", () => {
+  const conflict = (fresh: string) => ({ kind: "conflict" as const, fresh });
+
+  it("shows a comment conflict and a Quoted Text conflict at once, each in its field's place, through a write in flight", async () => {
+    const { host, onApplyAgain, onDiscardConflict } = await mountCard({
+      selected: [],
+      drafts: {
+        comment: { text: "My comment", state: conflict("Zotero's comment") },
+        text: { text: "My text", state: conflict("Zotero's text") },
+      },
+      // A save of another field in flight hides neither.
+      mutation: { kind: "pending", write: "tags", session: true },
+    });
+    const panels = [...host.querySelectorAll(".zt-annot-conflict")];
+    expect(panels).toHaveLength(2);
+    const [inExcerpt, inComment] = panels;
+    expect(inExcerpt!.closest("blockquote")).not.toBeNull();
+    expect(inExcerpt!.textContent).toContain("Zotero's text");
+    expect(inComment!.closest("blockquote")).toBeNull();
+    expect(inComment!.textContent).toContain("Zotero's comment");
+
+    await click(button(inExcerpt!, m.annot_view_conflict_apply_again()));
+    await click(
+      button(inComment!, m.annot_view_conflict_keep_zotero_comment()),
+    );
+    expect(onApplyAgain.mock.calls).toEqual([[CARD, "text"]]);
+    expect(onDiscardConflict.mock.calls).toEqual([[CARD, "comment"]]);
+  });
+
+  it("holds Quoted Text in the Excerpt Block beside the colour rule, and Edit text continues it", async () => {
+    const held = {
+      text: "alpha, corrected",
+      state: { kind: "editing" as const },
+      manualSave: true,
+    };
+    const { host, store, onSelectAnnotation } = await mountCard({
+      selected: [],
+      drafts: { text: held },
+    });
+    const panel = host.querySelector("blockquote .zt-annot-draft");
+    expect(panel?.textContent).toContain(m.annot_view_text_draft());
+    const text = [...panel!.querySelectorAll("div")].find(
+      (el) => el.textContent === held.text,
+    )!;
+    await click(text);
+    expect(onSelectAnnotation.mock.calls).toEqual([[CARD, "click"]]);
+    expect(store.getState().editing).toBeNull();
+
+    await act(() =>
+      store.setState({
+        cardSelection: { selected: [CARD.key], anchor: null, focus: null },
+      }),
+    );
+    await click(editText(host));
+    expect(store.getState().editing).toEqual({
+      annotationKey: CARD.key,
+      field: "text",
+    });
+    expect(host.querySelector("blockquote .cm-content")?.textContent).toBe(
+      held.text,
+    );
+    expect(host.querySelector(".zt-annot-draft")).toBeNull();
+  });
+
+  it("keeps the typed text when the control closes the editor while the blur's save is in flight", async () => {
+    const { host, store, onSaveText } = await mountCard();
+    await click(editText(host));
+    // The press blurred the editor, whose save left the draft pending.
+    await act(() =>
+      store.setState({
+        fieldDrafts: {
+          ...store.getState().fieldDrafts,
+          text: new Map([
+            [
+              CARD.key,
+              {
+                annotationKey: CARD.key,
+                attachmentKey: CARD.parentKey,
+                serverID: "fixture",
+                baseline: CARD.text!,
+                text: "alpha, typed",
+                state: { kind: "pending" },
+              },
+            ],
+          ]),
+        },
+      }),
+    );
+
+    await click(editText(host));
+    expect(store.getState().editing).toBeNull();
+    expect(onSaveText.mock.calls).toEqual([[CARD, "alpha, typed", true]]);
+  });
 });

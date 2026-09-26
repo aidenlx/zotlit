@@ -25,7 +25,8 @@ import {
   renderHeldDraftPanel,
 } from "./comment-sheet";
 import type {
-  CommentDraftActions,
+  ConflictActions,
+  HeldDraftActions,
   EditorSheet,
   EditorSheetProps,
   EditorSheetStatus,
@@ -294,7 +295,7 @@ export function HeldDraftSlot({
 }: {
   held: HeldDraft;
   surface: CommentSurface;
-  actions: CommentDraftActions;
+  actions: HeldDraftActions;
 } & DivProps) {
   const ref = useRef<HTMLDivElement>(null);
   const latest = useRef(actions);
@@ -306,7 +307,7 @@ export function HeldDraftSlot({
     if (!ref.current) return;
     renderHeldDraftPanel(ref.current, stable, {
       surface,
-      actions: boundDraftActions(latest),
+      actions: boundHeldActions(latest),
     });
   }, [stable, surface]);
   return <div ref={ref} {...rest} />;
@@ -328,7 +329,7 @@ export function ConflictPanelSlot({
   /** Whether the Editing Capability takes a write right now. */
   live: boolean;
   surface: CommentSurface;
-  actions: CommentDraftActions;
+  actions: ConflictActions;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const latest = useRef(actions);
@@ -339,20 +340,28 @@ export function ConflictPanelSlot({
     renderConflictPanel(ref.current, panel, {
       surface,
       live,
-      actions: boundDraftActions(latest),
+      actions: boundConflictActions(latest),
     });
   }, [panel, live, surface]);
   return <div ref={ref} />;
 }
 
-/** The panels' verbs, each reading the latest render's actions. */
-function boundDraftActions(
-  latest: RefObject<CommentDraftActions>,
-): CommentDraftActions {
+/** The held panel's verbs, each reading the latest render's actions. */
+function boundHeldActions(
+  latest: RefObject<HeldDraftActions>,
+): HeldDraftActions {
   return {
     save: () => latest.current.save(),
     allowEditing: () => latest.current.allowEditing(),
     discard: () => latest.current.discard(),
+  };
+}
+
+/** The conflict panel's verbs, each reading the latest render's actions. */
+function boundConflictActions(
+  latest: RefObject<ConflictActions>,
+): ConflictActions {
+  return {
     applyAgain: () => latest.current.applyAgain(),
     discardConflict: () => latest.current.discardConflict(),
   };

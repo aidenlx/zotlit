@@ -322,3 +322,53 @@ describe("opening a card editor", () => {
     expect(opening(null).actions.onOpenComment(FIRST)).toBe(false);
   });
 });
+
+describe("the verbs that end a text field's draft", () => {
+  /**
+   * The actions over one card, recording which repository verb each press
+   * reaches.
+   */
+  function verbs() {
+    const calls: string[] = [];
+    const call = (name: string) => () => {
+      calls.push(name);
+      return Promise.resolve({ kind: "idle" as const });
+    };
+    const deps = {
+      annotations: {
+        retryCommentDraft: call("retry comment draft"),
+        retryQuotedTextDraft: call("retry text draft"),
+        retryWrite: call("retry write"),
+        discardCommentDraft: call("discard comment draft"),
+        discardQuotedTextDraft: call("discard text draft"),
+        discardConflict: call("discard conflict"),
+      },
+    } as unknown as AnnotActionDeps;
+    return { actions: createAnnotActions(deps), calls };
+  }
+
+  it("end the named field's draft, and leave the other field's", () => {
+    const { actions, calls } = verbs();
+    actions.onApplyAgain(FIRST, "text");
+    actions.onDiscardConflict(FIRST, "text");
+    actions.onDiscardDraft(FIRST, "text");
+    actions.onApplyAgain(FIRST, "comment");
+    actions.onDiscardConflict(FIRST, "comment");
+    actions.onDiscardDraft(FIRST, "comment");
+    expect(calls).toEqual([
+      "retry text draft",
+      "discard text draft",
+      "discard text draft",
+      "retry comment draft",
+      "discard comment draft",
+      "discard comment draft",
+    ]);
+  });
+
+  it("end a conflict with no draft behind it through the write itself", () => {
+    const { actions, calls } = verbs();
+    actions.onApplyAgain(FIRST);
+    actions.onDiscardConflict(FIRST);
+    expect(calls).toEqual(["retry write", "discard conflict"]);
+  });
+});

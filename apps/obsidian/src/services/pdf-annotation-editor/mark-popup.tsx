@@ -49,7 +49,7 @@ import type {
 } from "@/views/annot-view/comment-parts";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
 import { commentFrameClass } from "@/views/annot-view/comment-sheet";
-import type { CommentDraftActions } from "@/views/annot-view/comment-sheet";
+import type { TextDraftActions } from "@/views/annot-view/comment-sheet";
 import { copiedText } from "@/views/annot-view/copied-text";
 
 import type { Point } from "./hit-test";
@@ -357,7 +357,7 @@ export type SelectedPopupComment =
   | {
       kind: "held";
       held: HeldDraft;
-      actions: CommentDraftActions;
+      actions: TextDraftActions;
       /** The comment pencil beside it, the way back into its editor. */
       pencil: CommentPencil;
     }
@@ -380,7 +380,7 @@ export interface SelectedMarkPopupProps {
   conflict: {
     conflict: WriteConflict;
     live: boolean;
-    actions: CommentDraftActions;
+    actions: TextDraftActions;
   } | null;
   /** The tag section, while it stands. */
   tags: MarkPopupTagSectionProps | null;

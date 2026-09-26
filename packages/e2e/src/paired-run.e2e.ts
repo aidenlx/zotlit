@@ -5224,6 +5224,124 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             }
           }, 120000);
 
+          it("shows a Write Conflict on the Quoted Text in its Excerpt Block once another card is selected, and Discard keeps Zotero's text", async () => {
+            await raiseWindow(vaultId!);
+            const conflict = `${cardOf(cardKey)}?.querySelector('blockquote .zt-annot-conflict')`;
+            const inZotero = `${highlight.seed.annotationText} (edited in Zotero)`;
+            const typed = `${highlight.seed.annotationText} Mine.`;
+            const repository =
+              "app.plugins.plugins.zotlit.services.annotationRepository";
+            const apiKey = await obJson<string>(
+              "JSON.stringify(JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key)",
+            );
+            const path = `users/0/items/${cardKey}`;
+
+            await using cleanup = new AsyncDisposableStack();
+            cleanup.defer(async () => {
+              // Every exit lets the held write go and leaves no text draft or
+              // conflict behind; afterEach puts Zotero's text back.
+              await restoreWriteOutcomeProbe(vaultId!);
+              await obEval(
+                vaultId!,
+                `(${repository}.discardQuotedTextDraft(${JSON.stringify(cardKey)}),true)`,
+              );
+            });
+            // The draft's save waits at the seam until Zotero has moved, so
+            // Zotero refuses it whenever the save starts.
+            await installHeldWriteProbe(vaultId!);
+
+            await clickCard(cardKey);
+            expect(
+              await obEvalUntil(vaultId!, `String(!!${editText})`, {
+                expected: "true",
+              }),
+            ).toBe(true);
+            await trustedClick(editText);
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `String(!!${editor}?.contains(document.activeElement))`,
+                { expected: "true" },
+              ),
+            ).toBe(true);
+            await obEval(
+              vaultId!,
+              "(function(){require('@electron/remote').getCurrentWebContents().insertText(' Mine.');return true;})()",
+            );
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                "String(window.__zotlitWriteOutcomeProbe.reached)",
+                { expected: "true" },
+              ),
+            ).toBe(true);
+
+            // Zotero's sidebar changes the text while the save waits.
+            const { version } = await highlight.stored();
+            const edited = await zoteroFetch(api, path, {
+              method: "PATCH",
+              headers: {
+                "Zotero-Server-ID": serverID,
+                "Zotero-API-Key": apiKey,
+                "Content-Type": "application/json",
+                "If-Unmodified-Since-Version": String(version),
+              },
+              body: JSON.stringify({ annotationText: inZotero }),
+            });
+            expect(edited.status).toBe(204);
+            await obEval(
+              vaultId!,
+              "(window.__zotlitWriteOutcomeProbe.release(),true)",
+            );
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `String(${repository}.quotedTextDraftFor(${JSON.stringify(cardKey)})?.state.kind)`,
+                { expected: "conflict" },
+              ),
+            ).toBe(true);
+
+            // Another card takes the selection; the conflicted card keeps its
+            // panel in the Excerpt Block, with both texts and the two verbs.
+            await clickCard(markKey);
+            await expect.poll(shown, poll).toMatchObject({ cards: [markKey] });
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `(function(){const panel=${conflict};if(!panel||panel.getBoundingClientRect().width===0)return 'none';return JSON.stringify({zotero:panel.textContent.includes(${JSON.stringify(inZotero)}),mine:panel.textContent.includes(${JSON.stringify(typed)}),verbs:[...panel.querySelectorAll('button')].map((node)=>node.textContent)});})()`,
+                {
+                  expected: JSON.stringify({
+                    zotero: true,
+                    mine: true,
+                    verbs: ["Apply again", "Discard"],
+                  }),
+                },
+              ),
+            ).toBe(true);
+            expect((await highlight.stored()).data.annotationText).toBe(
+              inZotero,
+            );
+
+            // The press lands where the panel stands on screen.
+            await obEval(
+              vaultId!,
+              `(${conflict}.scrollIntoView({block:'center'}),true)`,
+            );
+            await trustedClick(
+              `[...${conflict}.querySelectorAll('button')].find((button)=>button.textContent==='Discard')`,
+            );
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `String(!${conflict}&&${cardOf(cardKey)}.querySelector('blockquote').textContent===${JSON.stringify(inZotero)})`,
+                { expected: "true" },
+              ),
+            ).toBe(true);
+            expect((await highlight.stored()).data.annotationText).toBe(
+              inZotero,
+            );
+          }, 120000);
+
           it("rests Edit text dimmed while editing is not live, and its press says why", async () => {
             await raiseWindow(vaultId!);
             await whileEditingNotLive(async () => {
@@ -6750,6 +6868,38 @@ async function installClosingPaneProbe(
       probe.pending = services.annotationRepository
         .patchColor(${JSON.stringify(annotationKey)}, ${JSON.stringify(color)})
         .then((outcome) => { probe.outcome = outcome; });
+      return true;
+    })()`,
+  );
+}
+
+/**
+ * Hold every write on its way to Zotero until `release`, so a test orders what
+ * Zotero holds before the write reaches it. `reached` turns true as the first
+ * write arrives at the seam. {@link restoreWriteOutcomeProbe} lets it go.
+ */
+async function installHeldWriteProbe(vaultId: string): Promise<void> {
+  await obEval(
+    vaultId,
+    `(() => {
+      const services = app.plugins.plugins.zotlit.services;
+      const api = services.zoteroLocalApi;
+      const gate = Promise.withResolvers();
+      const probe = {
+        api,
+        authorizedSend: api.authorizedSend.bind(api),
+        listAnnotations: api.listAnnotations.bind(api),
+        calls: 0,
+        reached: false,
+        release: gate.resolve,
+      };
+      window.__zotlitWriteOutcomeProbe = probe;
+      api.authorizedSend = async (...args) => {
+        probe.calls += 1;
+        probe.reached = true;
+        await gate.promise;
+        return await probe.authorizedSend(...args);
+      };
       return true;
     })()`,
   );

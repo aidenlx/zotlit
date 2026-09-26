@@ -37,7 +37,7 @@ import { copiedText } from "./copied-text";
 import type { ExcerptImageTarget } from "./excerpt-image-state";
 import { buildHeaderMenu } from "./menus";
 import { attachmentLine, headerMenu } from "./presentation";
-import type { AnnotState, FollowMode } from "./store";
+import type { AnnotState, FollowMode, TextEditingField } from "./store";
 
 export interface AnnotActions {
   /**
@@ -130,11 +130,11 @@ export interface AnnotActions {
   /** Store what the card's Quoted Text editor holds, from the gesture that closed it. */
   onSaveText(annot: AnnotationRecord, text: string, automatic?: boolean): void;
   /**
-   * Drop held text Zotero never took, from the card's "Discard". Zotero's own
-   * comment stands as it is, so the card behind the panel already shows what
-   * the discard leaves.
+   * Drop one text field's held draft Zotero never took, from the card's
+   * "Discard". Zotero's own value stands as it is, so the card behind the
+   * panel already shows what the discard leaves.
    */
-  onDiscardComment(annot: AnnotationRecord): void;
+  onDiscardDraft(annot: AnnotationRecord, field: TextEditingField): void;
   /**
    * Start or rejoin one card's tag editing session. A card not selected alone
    * is first selected alone, and an open comment editor is first saved and
@@ -182,10 +182,18 @@ export interface AnnotActions {
   /**
    * Send a conflicted write again, against the value Zotero holds now — the
    * card's "Apply again", and its "Delete anyway".
+   *
+   * @param field the text field whose draft stands in the conflict; left
+   *   out, the write the Annotation's standing conflict names.
    */
-  onApplyAgain(annot: AnnotationRecord): void;
-  /** Leave Zotero's copy as it stands, from the conflicted card's "Discard". */
-  onDiscardConflict(annot: AnnotationRecord): void;
+  onApplyAgain(annot: AnnotationRecord, field?: TextEditingField): void;
+  /**
+   * Leave Zotero's copy as it stands, from the conflicted card's "Discard".
+   *
+   * @param field the text field whose draft stands in the conflict; left
+   *   out, the write the Annotation's standing conflict names.
+   */
+  onDiscardConflict(annot: AnnotationRecord, field?: TextEditingField): void;
   /**
    * Open one card's demand on its Annotation's live Excerpt Image. The card
    * states what it paints and releases the demand as it goes.
@@ -216,14 +224,15 @@ export interface AnnotActionDeps {
     | "deleteAnnotations"
     | "discardCommentDraft"
     | "discardConflict"
+    | "discardQuotedTextDraft"
     | "discardTagDraft"
     | "patchColor"
     | "patchColors"
     | "editComment"
-    | "commentDraftFor"
     | "editQuotedText"
     | "editTags"
     | "retryCommentDraft"
+    | "retryQuotedTextDraft"
     | "retryWrite"
     | "submitComment"
     | "submitQuotedText"
@@ -291,6 +300,22 @@ export interface AnnotActionDeps {
   closeEditors: () => void;
   onExploreAnnotation: (annotationKey: string) => void;
 }
+
+/**
+ * The repository verbs that end each text field's Annotation Draft: "Apply
+ * again" on its Write Conflict, and "Discard" on the conflict or the held
+ * draft. A field added here reaches every action that ends a draft.
+ */
+const FIELD_DRAFT_VERBS = {
+  comment: { retry: "retryCommentDraft", discard: "discardCommentDraft" },
+  text: { retry: "retryQuotedTextDraft", discard: "discardQuotedTextDraft" },
+} as const satisfies Record<
+  TextEditingField,
+  {
+    retry: keyof AnnotActionDeps["annotations"];
+    discard: keyof AnnotActionDeps["annotations"];
+  }
+>;
 
 export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   const now = deps.now ?? (() => Temporal.Now.instant());
@@ -387,9 +412,6 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     deps.closeEditors();
     return deps.annotations.editComment(annot.key) !== null;
   };
-  const onDiscardComment = (annot: AnnotationRecord): void => {
-    deps.annotations.discardCommentDraft(annot.key);
-  };
   const onSaveComment = (
     annot: AnnotationRecord,
     comment: string,
@@ -414,6 +436,10 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     deps.annotations.editQuotedText(annot.key, text);
     report(deps.annotations.submitQuotedText(annot.key, { automatic }));
   };
+  const onDiscardDraft = (
+    annot: AnnotationRecord,
+    field: TextEditingField,
+  ): void => deps.annotations[FIELD_DRAFT_VERBS[field].discard](annot.key);
   const onOpenTags = (annot: AnnotationRecord): boolean => {
     deps.selectAlone(annot);
     deps.closeEditors();
@@ -444,28 +470,22 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
       annotationKeys: annots.map(({ key }) => key),
       now,
     });
-  const commentConflict = (annotationKey: string): boolean => {
-    const mutation = deps.getState().mutations.get(annotationKey);
-    return (
-      mutation?.kind === "conflict" && mutation.conflict.write === "comment"
-    );
-  };
-  const onApplyAgain = (annot: AnnotationRecord): void =>
+  const onApplyAgain = (
+    annot: AnnotationRecord,
+    field?: TextEditingField,
+  ): void =>
     report(
-      commentConflict(annot.key) && deps.annotations.commentDraftFor(annot.key)
-        ? deps.annotations.retryCommentDraft(annot.key)
+      field
+        ? deps.annotations[FIELD_DRAFT_VERBS[field].retry](annot.key)
         : deps.annotations.retryWrite(annot.key),
     );
-  const onDiscardConflict = (annot: AnnotationRecord): void => {
-    if (
-      commentConflict(annot.key) &&
-      deps.annotations.commentDraftFor(annot.key)
-    ) {
-      deps.annotations.discardCommentDraft(annot.key);
-    } else {
-      deps.annotations.discardConflict(annot.key);
-    }
-  };
+  const onDiscardConflict = (
+    annot: AnnotationRecord,
+    field?: TextEditingField,
+  ): void =>
+    field
+      ? deps.annotations[FIELD_DRAFT_VERBS[field].discard](annot.key)
+      : deps.annotations.discardConflict(annot.key);
   // Every key on a record is an Indexed Key, so the library it names travels
   // with it: the Zotero URI and the cache path both want the bare key beside
   // the group the key already carries.
@@ -688,7 +708,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     libraryTagNames: deps.libraryTagNames,
     onOpenComment,
     onEditComment,
-    onDiscardComment,
+    onDiscardDraft,
     onOpenText,
     onEditText,
     onSaveText,
@@ -787,7 +807,7 @@ const NOOP_ACTIONS: AnnotActions = {
   onSelectAnnotation: () => {},
   onClearSelection: () => {},
   onSaveComment: () => {},
-  onDiscardComment: () => {},
+  onDiscardDraft: () => {},
   onOpenComment: () => false,
   onEditComment: () => {},
   onOpenText: () => false,

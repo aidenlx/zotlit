@@ -389,7 +389,7 @@ The shared unsaved comment, Quoted Text, or tags of one Annotation, one draft pe
 _Avoid_: pending write (the draft has not been submitted), cached comment
 
 **Pending Proposal**:
-The value a submitted write intends for one field of an Annotation — comment, colour, tags, or position — drawn by every surface in place of the confirmed value until the write settles. An Annotation Draft becomes one when it is submitted; a refused, conflicted, or lost write leaves the confirmed value drawn again.
+The value a submitted write intends for one field of an Annotation — comment, Quoted Text, colour, tags, or position — drawn by every surface in place of the confirmed value until the write settles. An Annotation Draft becomes one when it is submitted; a refused, conflicted, or lost write leaves the confirmed value drawn again.
 _Avoid_: optimistic value, provisional value, Annotation Draft (not yet submitted)
 
 **Write Conflict**:
