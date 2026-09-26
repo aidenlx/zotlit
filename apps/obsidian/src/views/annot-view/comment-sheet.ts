@@ -174,6 +174,15 @@ export function commentField(): EditorField {
   };
 }
 
+/** The Quoted Text, as the field editor names it. */
+export function quotedTextField(): EditorField {
+  return {
+    placeholder: m.annot_view_card_text_placeholder(),
+    label: m.annot_view_card_text_label(),
+    save: m.annot_view_text_save(),
+  };
+}
+
 /** What the sheet says under its editor, and whether it takes a write. */
 export type EditorSheetStatus = Pick<
   ReturnType<typeof fieldEditorControls>,

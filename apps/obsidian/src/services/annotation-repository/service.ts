@@ -78,6 +78,7 @@ import {
   noTagChange,
   tagChange,
   tagsPatch,
+  textPatch,
   wireColor,
   writePosition,
 } from "./write";
@@ -244,6 +245,9 @@ export interface TextFieldDraft {
 /** The comment field of one Annotation Draft. */
 export type CommentDraft = TextFieldDraft;
 
+/** The Quoted Text field of one Annotation Draft. */
+export type QuotedTextDraft = TextFieldDraft;
+
 export type TagDraftState =
   | { kind: "editing" }
   | { kind: "pending" }
@@ -300,6 +304,14 @@ const TEXT_FIELDS = {
     // Zotero stores an empty comment as no value.
     propose: (value) => ({ comment: value === "" ? null : value }),
   },
+  // The Quoted Text of a highlight or underline. A Text Edit sends the text
+  // alone: the position and the Sort Index stay as they are.
+  text: {
+    valueOf: (record) => record.text,
+    request: textPatch,
+    // Zotero stores an empty Quoted Text as no value.
+    propose: (value) => ({ text: value === "" ? null : value }),
+  },
 } satisfies Partial<Record<ConflictedWrite, TextFieldSpec>>;
 
 type TextField = keyof typeof TEXT_FIELDS;
@@ -341,6 +353,8 @@ export interface AnnotationState {
   mutation: MutationState;
   /** Its comment draft in the active Zotero database. */
   commentDraft: CommentDraft | null;
+  /** Its Quoted Text draft in the active Zotero database. */
+  textDraft: QuotedTextDraft | null;
   /** Its tag draft in the active Zotero database. */
   tagDraft: TagDraft | null;
   /**
@@ -534,7 +548,7 @@ type ConfirmedWrite =
   | {
       kind: "record";
       record: AnnotationRecord;
-      write: "color" | "comment" | "geometry" | "tags";
+      write: "color" | "comment" | "geometry" | "tags" | "text";
     }
   | { kind: "created"; record: AnnotationRecord }
   | { kind: "deleted"; annotationKey: string };
@@ -565,7 +579,9 @@ interface GroupWrites {
  * What one confirmed write changed, as the History Step that puts it back
  * names it: a delete the whole Annotation, a patch of one field that field's
  * value. A comment and a tag session are recorded by rules of their own, and
- * have no change here.
+ * have no change here. A Text Edit records no step yet.
+ *
+ * @see https://github.com/aidenlx/zotlit/issues/1240
  */
 function historyChangeOf(
   before: AnnotationRecord,
@@ -587,7 +603,8 @@ function historyChangeOf(
   if (
     applied.kind !== "record" ||
     applied.write === "comment" ||
-    applied.write === "tags"
+    applied.write === "tags" ||
+    applied.write === "text"
   )
     return null;
   const was = historyFieldsOf(applied.write, before);
@@ -959,13 +976,15 @@ export class AnnotationRepository extends Service<void> {
    */
   annotationState(annotationKey: string): AnnotationState {
     const commentDraft = this.commentDraftFor(annotationKey);
+    const textDraft = this.quotedTextDraftFor(annotationKey);
     const tagDraft = this.tagDraftFor(annotationKey);
     const shown = new Set<TextFieldDraft | TagDraft>(
-      [commentDraft, tagDraft].filter((draft) => draft !== null),
+      [commentDraft, textDraft, tagDraft].filter((draft) => draft !== null),
     );
     return {
       mutation: this.mutationFor(annotationKey),
       commentDraft,
+      textDraft,
       tagDraft,
       hidden: this.#draftsOn(annotationKey).some((draft) => !shown.has(draft)),
       gone: this.#gone.has(annotationKey),
@@ -998,6 +1017,34 @@ export class AnnotationRepository extends Service<void> {
   /** Apply the shared comment draft again against the reviewed fresh record. */
   retryCommentDraft(annotationKey: string): Promise<MutationState> {
     return this.#retryTextDraft("comment", annotationKey);
+  }
+
+  /** The active Zotero database's shared Quoted Text draft for one Annotation. */
+  quotedTextDraftFor(annotationKey: string): QuotedTextDraft | null {
+    return this.#draftFor("text", annotationKey);
+  }
+
+  /** Start or update one shared Quoted Text draft: a Text Edit. */
+  editQuotedText(annotationKey: string, text?: string): QuotedTextDraft | null {
+    return this.#editText("text", annotationKey, text);
+  }
+
+  /** Submit the current shared Quoted Text draft once. */
+  submitQuotedText(
+    annotationKey: string,
+    options?: { automatic?: boolean },
+  ): Promise<MutationState> {
+    return this.#submitText("text", annotationKey, options);
+  }
+
+  /** Keep Zotero's reviewed Quoted Text and discard the local draft. */
+  discardQuotedTextDraft(annotationKey: string): void {
+    this.#discardTextDraft("text", annotationKey);
+  }
+
+  /** Apply the shared Quoted Text draft again against the reviewed fresh record. */
+  retryQuotedTextDraft(annotationKey: string): Promise<MutationState> {
+    return this.#retryTextDraft("text", annotationKey);
   }
 
   /** The active Zotero database's shared draft of one field of an Annotation. */
@@ -1762,6 +1809,10 @@ export class AnnotationRepository extends Service<void> {
         return await this.patchColor(annotationKey, conflict.attempted ?? "");
       case "comment":
         return await this.patchComment(annotationKey, conflict.attempted ?? "");
+      case "text":
+        return await this.#writeText("text", annotationKey, {
+          value: conflict.attempted ?? "",
+        });
       case "delete":
         return await this.deleteAnnotation(annotationKey);
       case "geometry":
@@ -3886,6 +3937,8 @@ function freshValueOf(
       return record.color;
     case "comment":
       return record.comment;
+    case "text":
+      return record.text;
     // A delete names no value, so there is nothing to put beside the user's
     // input; the fresh card itself is what "Delete anyway" is asked against.
     case "delete":

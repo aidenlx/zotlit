@@ -350,6 +350,7 @@ export function annotationReads(
       (): AnnotationState => ({
         mutation: IDLE,
         commentDraft: null,
+        textDraft: null,
         tagDraft: null,
         hidden: false,
         gone: false,

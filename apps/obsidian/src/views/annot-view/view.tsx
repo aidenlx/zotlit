@@ -43,6 +43,7 @@ import type {
   AnnotationRepository,
   AnnotationSource,
   HistoryDirection,
+  TextFieldDraft,
 } from "@/services/annotation-repository/service";
 import {
   IDLE,
@@ -96,10 +97,18 @@ import {
   editorOpen,
   isEditing,
   INITIAL_FILTER_STATE,
+  selectedAlone,
+  TEXT_EDITING_FIELDS,
   toggledTags,
   visibleOrder,
 } from "./store";
-import type { AnnotState, EditingField, FollowMode } from "./store";
+import type {
+  AnnotState,
+  EditingField,
+  FieldDrafts,
+  FollowMode,
+  TextEditingField,
+} from "./store";
 import {
   DEFAULT_FOLLOW_MODE,
   parseAnnotViewState,
@@ -173,14 +182,17 @@ export interface AnnotViewDeps {
     | "patchColor"
     | "patchColors"
     | "editComment"
+    | "editQuotedText"
     | "editTags"
     | "peek"
     | "read"
     | "redo"
     | "refresh"
     | "retryWrite"
+    | "quotedTextDraftFor"
     | "retryCommentDraft"
     | "submitComment"
+    | "submitQuotedText"
     | "submitTags"
     | "tagDraftFor"
     | "undo"
@@ -757,17 +769,20 @@ export class AnnotationView extends ItemView implements HistorySurface {
         const now = this.#deps.annotations.annotationState(annotationKey);
         const mutations = new Map(state.mutations);
         mutations.set(annotationKey, now.mutation);
-        const commentDrafts = new Map(state.commentDrafts);
-        if (now.commentDraft)
-          commentDrafts.set(annotationKey, now.commentDraft);
-        else commentDrafts.delete(annotationKey);
+        const fieldDrafts = this.#fieldDrafts((field) => {
+          const drafts = new Map(state.fieldDrafts[field]);
+          const draft = this.#draftFor[field](annotationKey);
+          if (draft) drafts.set(annotationKey, draft);
+          else drafts.delete(annotationKey);
+          return drafts;
+        });
         const tagDrafts = new Map(state.tagDrafts);
         const ended = now.tagDraft ? undefined : tagDrafts.get(annotationKey);
         if (now.tagDraft) tagDrafts.set(annotationKey, now.tagDraft);
         else tagDrafts.delete(annotationKey);
         this.#store.setState({
           mutations,
-          commentDrafts,
+          fieldDrafts,
           tagDrafts,
           ...(ended && this.#heldList(ended.attachmentKey)),
           ...(now.gone &&
@@ -1160,13 +1175,14 @@ export class AnnotationView extends ItemView implements HistorySurface {
           sourceScope !== this.#deps.zoteroPref.dataDir
         )
           return;
-        const commentDrafts = new Map(
-          list.annotations.flatMap((annotation) => {
-            const draft = this.#deps.annotations.commentDraftFor(
-              annotation.key,
-            );
-            return draft ? [[annotation.key, draft] as const] : [];
-          }),
+        const fieldDrafts = this.#fieldDrafts(
+          (field) =>
+            new Map(
+              list.annotations.flatMap((annotation) => {
+                const draft = this.#draftFor[field](annotation.key);
+                return draft ? [[annotation.key, draft] as const] : [];
+              }),
+            ),
         );
         const tagDrafts = new Map(
           list.annotations.flatMap((annotation) => {
@@ -1178,7 +1194,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
           annotations: list.annotations,
           annotationSource: list.source,
           annotationSourceScope: sourceScope,
-          commentDrafts,
+          fieldDrafts,
           tagDrafts,
         });
         if (!restoreFilter || memoryKey === null) return;
@@ -1240,12 +1256,15 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * is built outside React and so reads the store itself.
    */
   #cardControls(annot: AnnotationRecord): CardControls {
-    const { capability, mutations } = this.#store.getState();
+    const state = this.#store.getState();
+    const { capability, mutations } = state;
     return cardControls({
       capability,
       mutation: mutations.get(annot.key) ?? IDLE,
       hasComment: annot.comment !== null,
       hasTags: annot.tags.length > 0,
+      type: annot.type,
+      alone: selectedAlone(state, annot.key),
       now: Temporal.Now.instant(),
     });
   }
@@ -1423,8 +1442,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * in a group.
    */
   #selectAloneFromView(key: string): void {
-    const { selected } = this.#store.getState().cardSelection;
-    if (selected.length === 1 && selected[0] === key) return;
+    if (selectedAlone(this.#store.getState(), key)) return;
     this.#clickFromView({ kind: "click", key });
   }
 
@@ -1498,6 +1516,24 @@ export class AnnotationView extends ItemView implements HistorySurface {
     return true;
   }
 
+  /** How the view reads each text field's shared draft of one Annotation. */
+  readonly #draftFor: Record<
+    TextEditingField,
+    (annotationKey: string) => TextFieldDraft | null
+  > = {
+    comment: (key) => this.#deps.annotations.commentDraftFor(key),
+    text: (key) => this.#deps.annotations.quotedTextDraftFor(key),
+  };
+
+  /** One map of drafts per text field, each built by `build`. */
+  #fieldDrafts(
+    build: (field: TextEditingField) => ReadonlyMap<string, TextFieldDraft>,
+  ): FieldDrafts {
+    return Object.fromEntries(
+      TEXT_EDITING_FIELDS.map((field) => [field, build(field)]),
+    ) as Record<TextEditingField, ReadonlyMap<string, TextFieldDraft>>;
+  }
+
   /**
    * How the view saves each field's open editor as it closes it. A text
    * field's text is already its draft, which this submits as the editor's own
@@ -1510,6 +1546,8 @@ export class AnnotationView extends ItemView implements HistorySurface {
   > = {
     comment: (key) =>
       this.#deps.annotations.submitComment(key, { automatic: true }),
+    text: (key) =>
+      this.#deps.annotations.submitQuotedText(key, { automatic: true }),
     tags: null,
   };
 
@@ -1669,7 +1707,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
       annotations: null,
       annotationSource: null,
       annotationSourceScope: null,
-      commentDrafts: new Map(),
+      fieldDrafts: this.#fieldDrafts(() => new Map()),
       tagDrafts: new Map(),
       editing: null,
     });

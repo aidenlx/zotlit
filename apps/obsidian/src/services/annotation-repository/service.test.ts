@@ -1167,6 +1167,80 @@ it("autosaves after one idle second and caps a continuous editing burst", async 
   }
 });
 
+it("autosaves a Quoted Text draft on the idle and burst timers, with the text alone", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    let saved = "";
+    let version = 20;
+    const { repository, requests } = await writable(stack, {
+      write: (request) => {
+        saved = String(JSON.parse(request.body ?? "{}").annotationText);
+        version += 1;
+        return writeAccepted();
+      },
+      item: () =>
+        annotationItem(afterWrite("PUPR5FG5", { text: saved, version })),
+    });
+    const sent = requests.length;
+    const patches = () =>
+      requests
+        .slice(sent)
+        .filter(({ method }) => method === "PATCH")
+        .map(({ body }) => JSON.parse(body ?? "{}"));
+
+    repository.editQuotedText("PUPR5FG5", "Identify your message");
+    await vi.advanceTimersByTimeAsync(999);
+    expect(patches()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    // The version precondition and the text: no position, no Sort Index.
+    expect(patches()).toEqual([
+      { version: 11, annotationText: "Identify your message" },
+    ]);
+
+    repository.editQuotedText("PUPR5FG5", "burst 0");
+    for (let step = 1; step <= 11; step += 1) {
+      await vi.advanceTimersByTimeAsync(900);
+      repository.editQuotedText("PUPR5FG5", `burst ${step}`);
+    }
+    expect(patches()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(patches().map(({ annotationText }) => annotationText)).toEqual([
+      "Identify your message",
+      "burst 11",
+    ]);
+    expect(
+      patches().every(
+        (body) => Object.keys(body).sort().join() === "annotationText,version",
+      ),
+    ).toBe(true);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("saves an emptied Quoted Text draft as a clear", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, requests } = await writable(stack, {
+    item: () =>
+      annotationItem(afterWrite("PUPR5FG5", { text: "", version: 12 })),
+  });
+  const sent = requests.length;
+
+  repository.editQuotedText("PUPR5FG5", "");
+  await repository.submitQuotedText("PUPR5FG5");
+
+  const [patch] = requests
+    .slice(sent)
+    .filter(({ method }) => method === "PATCH");
+  expect(JSON.parse(patch!.body ?? "")).toEqual({
+    version: 11,
+    annotationText: "",
+  });
+  expect(repository.quotedTextDraftFor("PUPR5FG5")).toBeNull();
+});
+
 it("serializes writes and saves only the latest input after a slow response", async () => {
   vi.useFakeTimers();
   try {
@@ -3370,6 +3444,8 @@ it("draws nothing while an automatic comment save is in flight", async () => {
           mutation,
           hasComment: true,
           hasTags: false,
+          type: "highlight",
+          alone: false,
           now: NOW,
         }),
         blocked: editingBlockedReason(capability, mutation, NOW),
@@ -5240,6 +5316,8 @@ it("keeps the verbs live and the draft saving until the read-back lands", async 
     mutation,
     hasComment: false,
     hasTags: true,
+    type: "highlight",
+    alone: false,
     now: NOW,
   });
   expect([verbs.color, verbs.comment, verbs.delete]).toMatchObject([
@@ -5636,6 +5714,8 @@ it("stands the verbs down while a tag undo is in flight, as a gesture's write", 
     mutation,
     hasComment: false,
     hasTags: true,
+    type: "highlight",
+    alone: false,
     now: NOW,
   });
   expect([verbs.color, verbs.comment, verbs.tags, verbs.delete]).toMatchObject([

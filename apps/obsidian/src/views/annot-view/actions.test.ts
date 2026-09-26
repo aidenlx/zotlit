@@ -56,6 +56,7 @@ function setup(
     comment: control,
     tags: control,
     delete: control,
+    text: null,
   };
   const deps = {
     app: { workspace: { activeEditor: null } },

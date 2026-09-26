@@ -120,6 +120,16 @@ export interface AnnotActions {
   onOpenComment(annot: AnnotationRecord): boolean;
   onEditComment(annot: AnnotationRecord, comment: string): void;
   /**
+   * Start one card's Text Edit. A card not selected alone is first selected
+   * alone, and an open editor is first saved and closed.
+   *
+   * @returns whether a draft stands, which is when the editor opens.
+   */
+  onOpenText(annot: AnnotationRecord): boolean;
+  onEditText(annot: AnnotationRecord, text: string): void;
+  /** Store what the card's Quoted Text editor holds, from the gesture that closed it. */
+  onSaveText(annot: AnnotationRecord, text: string, automatic?: boolean): void;
+  /**
    * Drop held text Zotero never took, from the card's "Discard". Zotero's own
    * comment stands as it is, so the card behind the panel already shows what
    * the discard leaves.
@@ -211,10 +221,12 @@ export interface AnnotActionDeps {
     | "patchColors"
     | "editComment"
     | "commentDraftFor"
+    | "editQuotedText"
     | "editTags"
     | "retryCommentDraft"
     | "retryWrite"
     | "submitComment"
+    | "submitQuotedText"
     | "submitTags"
   >;
   /** The clock a failure notice reads a cooldown's remaining seconds against. */
@@ -385,6 +397,22 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   ): void => {
     deps.annotations.editComment(annot.key, comment);
     report(deps.annotations.submitComment(annot.key, { automatic }));
+  };
+  const onOpenText = (annot: AnnotationRecord): boolean => {
+    deps.selectAlone(annot);
+    deps.closeEditors();
+    return deps.annotations.editQuotedText(annot.key) !== null;
+  };
+  const onEditText = (annot: AnnotationRecord, text: string): void => {
+    deps.annotations.editQuotedText(annot.key, text);
+  };
+  const onSaveText = (
+    annot: AnnotationRecord,
+    text: string,
+    automatic = false,
+  ): void => {
+    deps.annotations.editQuotedText(annot.key, text);
+    report(deps.annotations.submitQuotedText(annot.key, { automatic }));
   };
   const onOpenTags = (annot: AnnotationRecord): boolean => {
     deps.selectAlone(annot);
@@ -661,6 +689,9 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     onOpenComment,
     onEditComment,
     onDiscardComment,
+    onOpenText,
+    onEditText,
+    onSaveText,
     onApplyAgain,
     onDiscardConflict,
     onDeleteSelection() {
@@ -759,6 +790,9 @@ const NOOP_ACTIONS: AnnotActions = {
   onDiscardComment: () => {},
   onOpenComment: () => false,
   onEditComment: () => {},
+  onOpenText: () => false,
+  onEditText: () => {},
+  onSaveText: () => {},
   onOpenTags: () => false,
   onEditTags: () => {},
   onSaveTags: () => {},

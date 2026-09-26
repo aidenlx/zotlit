@@ -23,7 +23,11 @@ import {
   shownComment,
   shownTagNames,
 } from "./card-controls";
-import type { CardBlock, CardControls } from "./card-controls";
+import type {
+  CardBlock,
+  CardControls,
+  CardControlsInput,
+} from "./card-controls";
 
 const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
 
@@ -51,12 +55,17 @@ const BLOCKED: EditingCapability[] = [
 function controlsOf(
   capability: EditingCapability,
   mutation: MutationState = { kind: "idle" },
+  card: Pick<CardControlsInput, "type" | "alone"> = {
+    type: "highlight",
+    alone: false,
+  },
 ): CardControls {
   return cardControls({
     capability,
     mutation,
     hasComment: false,
     hasTags: false,
+    ...card,
     now: NOW,
   });
 }
@@ -286,6 +295,54 @@ it("stands every verb down while a tag undo or redo is in flight", () => {
   );
 });
 
+describe("Edit text", () => {
+  it("is offered for a highlight or underline card selected alone, and for no other", () => {
+    const offered = (card: Pick<CardControlsInput, "type" | "alone">) =>
+      controlsOf(LIVE, IDLE, card).text !== null;
+
+    expect(offered({ type: "highlight", alone: true })).toBe(true);
+    expect(offered({ type: "underline", alone: true })).toBe(true);
+    // A card in a group, or one not selected, stays compact.
+    expect(offered({ type: "highlight", alone: false })).toBe(false);
+    for (const type of ["note", "text", "image", "ink"] as const) {
+      expect(offered({ type, alone: true })).toBe(false);
+    }
+    expect(
+      controlsOf(LIVE, IDLE, { type: "highlight", alone: true }).text,
+    ).toEqual({
+      disabled: false,
+      blocked: null,
+      tooltip: m.annot_view_card_edit_text(),
+    });
+  });
+
+  it("rests dimmed with the capability's reason for each blocked Editing Capability", () => {
+    for (const capability of BLOCKED) {
+      const copy = editingCapabilityCopy(capability, NOW);
+      expect(
+        controlsOf(capability, IDLE, { type: "underline", alone: true }).text,
+      ).toEqual({
+        disabled: false,
+        blocked: {
+          reason: copy.detail ?? copy.label,
+          action:
+            capability.kind === "authorization-required"
+              ? "allow-editing"
+              : null,
+        },
+        tooltip: m.annot_view_card_edit_text(),
+      });
+    }
+  });
+
+  it("stays live through its own autosave", () => {
+    const card = { type: "highlight", alone: true } as const;
+    expect(controlsOf(LIVE, { kind: "pending", write: "text" }, card)).toEqual(
+      controlsOf(LIVE, IDLE, card),
+    );
+  });
+});
+
 it("names the tag toggle for what pressing it would do", () => {
   const tooltip = (hasTags: boolean) =>
     cardControls({
@@ -293,6 +350,8 @@ it("names the tag toggle for what pressing it would do", () => {
       mutation: IDLE,
       hasComment: false,
       hasTags,
+      type: "highlight",
+      alone: false,
       now: NOW,
     }).tags.tooltip;
 

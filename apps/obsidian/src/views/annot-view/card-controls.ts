@@ -7,6 +7,8 @@
 // @see https://github.com/aidenlx/zotlit/issues/1145
 import type { IconName } from "obsidian";
 
+import type { ResolvedAnnotationTypeName } from "@zotlit/db";
+
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
@@ -65,6 +67,10 @@ export interface CardControlsInput {
   hasComment: boolean;
   /** Whether the Annotation already carries a tag. */
   hasTags: boolean;
+  /** The Annotation's type, which decides whether it has a Quoted Text. */
+  type: ResolvedAnnotationTypeName;
+  /** Whether the card is selected alone, the one card that offers "Edit text". */
+  alone: boolean;
   /** The instant a cooldown's remaining seconds are measured from. */
   now: Temporal.Instant;
 }
@@ -78,6 +84,12 @@ export interface CardControls {
   comment: CardControl;
   /** The tag toggle, which follows the comment toggle's rules. */
   tags: CardControl;
+  /**
+   * "Edit text", which opens the editor on the Quoted Text; `null` where the
+   * card offers none. Only a highlight or underline has a Quoted Text, and
+   * only a card selected alone offers it.
+   */
+  text: CardControl | null;
   delete: CardControl;
 }
 
@@ -105,6 +117,8 @@ export function cardControls({
   mutation,
   hasComment,
   hasTags,
+  type,
+  alone,
   now,
 }: CardControlsInput): CardControls {
   const pending = gestureInFlight(mutation);
@@ -128,7 +142,16 @@ export function cardControls({
       hasTags ? m.annot_view_card_edit_tags() : m.annot_view_card_add_tags(),
     ),
     delete: control(m.annot_view_menu_delete()),
+    text:
+      alone && hasQuotedText(type)
+        ? control(m.annot_view_card_edit_text())
+        : null,
   };
+}
+
+/** Whether Zotero stores a Quoted Text for this type of Annotation. */
+export function hasQuotedText(type: ResolvedAnnotationTypeName): boolean {
+  return type === "highlight" || type === "underline";
 }
 
 /**
@@ -180,8 +203,8 @@ export function editingBlockedReason(
 }
 
 /**
- * Whether a write in flight stands the verbs down. A comment write does not:
- * its text is already drawn by the editor, and a verb pressed meanwhile queues
+ * Whether a write in flight stands the verbs down. A comment or Quoted Text
+ * write does not: its text is already drawn by the editor, and a verb pressed meanwhile queues
  * behind it, so disabling the row would only flicker it on every autosave. A
  * tag editing session's own save does not either: the tag editor shows it as
  * saving. A tag undo or redo is a gesture's write, and does.
@@ -190,6 +213,7 @@ function gestureInFlight(mutation: MutationState): boolean {
   return (
     mutation.kind === "pending" &&
     mutation.write !== "comment" &&
+    mutation.write !== "text" &&
     !mutation.session
   );
 }
@@ -312,9 +336,22 @@ export function shownComment(
   record: Pick<AnnotationRecord, "comment">,
   draft: CommentDraft | null,
 ): string {
+  return shownText(record.comment, draft);
+}
+
+/**
+ * The text a field editor opens on, for any text field, on the rule of
+ * {@link shownComment}.
+ *
+ * @param confirmed the field's value on the record.
+ */
+export function shownText(
+  confirmed: string | null,
+  draft: TextFieldDraft | null,
+): string {
   return draft && draft.state.kind !== "pending"
     ? draft.text
-    : (record.comment ?? "");
+    : (confirmed ?? "");
 }
 
 /** One verb the held-draft panel offers. */

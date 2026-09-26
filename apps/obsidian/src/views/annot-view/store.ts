@@ -10,10 +10,10 @@ import type { ItemSummary } from "@/lib/item-summary";
 import type {
   AnnotationRecord,
   AnnotationSource,
-  CommentDraft,
   EditingCapability,
   MutationState,
   TagDraft,
+  TextFieldDraft,
 } from "@/services/annotation-repository/service";
 import { IDLE } from "@/services/annotation-repository/write";
 
@@ -38,7 +38,23 @@ export type FollowMode = "active-tab" | "zotero-reader" | "pinned";
 export type AttachmentLock = "obsidian-pdf" | "zotero-reader" | null;
 
 /** A field of an Annotation that a card edits in place. */
-export type EditingField = "comment" | "tags";
+export type EditingField = "comment" | "tags" | "text";
+
+/** A field a card edits in the field editor: the comment or the Quoted Text. */
+export type TextEditingField = Exclude<EditingField, "tags">;
+
+/** Every {@link TextEditingField}. */
+export const TEXT_EDITING_FIELDS: readonly TextEditingField[] = [
+  "text",
+  "comment",
+];
+
+/** One map of shared drafts per text field, each by Indexed Key. */
+export type FieldDrafts = Readonly<
+  Record<TextEditingField, ReadonlyMap<string, TextFieldDraft>>
+>;
+
+const NO_FIELD_DRAFTS: FieldDrafts = { comment: new Map(), text: new Map() };
 
 /**
  * The Annotation View's one editing target: an Annotation and the field its
@@ -66,8 +82,8 @@ export interface AnnotState {
    * entry is idle, so the map holds only the few this session has edited.
    */
   mutations: ReadonlyMap<string, MutationState>;
-  /** Shared comment drafts currently observed by this view. */
-  commentDrafts: ReadonlyMap<string, CommentDraft>;
+  /** Shared comment and Quoted Text drafts currently observed by this view. */
+  fieldDrafts: FieldDrafts;
   /** Shared tag drafts currently observed by this view. */
   tagDrafts: ReadonlyMap<string, TagDraft>;
   /**
@@ -147,7 +163,7 @@ export function createAnnotStore() {
         // Nothing has probed Zotero yet, which is exactly what "probing" says.
         capability: { kind: "read-only", reason: "probing" },
         mutations: new Map(),
-        commentDrafts: new Map(),
+        fieldDrafts: NO_FIELD_DRAFTS,
         tagDrafts: new Map(),
         editing: null,
         cardSelection: NO_SELECTION,
@@ -183,6 +199,27 @@ export function selectActiveAttachment(
  */
 export function editorOpen(state: Pick<AnnotState, "editing">): boolean {
   return state.editing !== null;
+}
+
+/** One text field's shared draft of one Annotation, while this view observes one. */
+export function fieldDraft(
+  state: Pick<AnnotState, "fieldDrafts">,
+  field: TextEditingField,
+  annotationKey: string,
+): TextFieldDraft | null {
+  return state.fieldDrafts[field].get(annotationKey) ?? null;
+}
+
+/**
+ * Whether a card is selected alone: the one card that opens its full text and
+ * offers its edit controls.
+ */
+export function selectedAlone(
+  state: Pick<AnnotState, "cardSelection">,
+  annotationKey: string,
+): boolean {
+  const { selected } = state.cardSelection;
+  return selected.length === 1 && selected[0] === annotationKey;
 }
 
 /** Whether one Annotation's field is the editing target. */

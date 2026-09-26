@@ -5081,6 +5081,112 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(await obEval(vaultId!, `String(!!${editor})`)).toBe("false");
         }, 120000);
 
+        describe("a Text Edit", () => {
+          const highlight = seededMark(cardKey, { image: false });
+          const editText = `${cardOf(cardKey)}?.querySelector('.clickable-icon:has(svg.lucide-text-cursor-input)')`;
+          const editor = `${cardOf(cardKey)}?.querySelector('blockquote .cm-content')`;
+
+          afterEach(highlight.restore);
+
+          it("saves a correction typed after Edit text in Pinned mode, with its range and Sort Index kept", async () => {
+            await raiseWindow(vaultId!);
+            expect(await command("zotlit:annot-view-pin-current-item")).toBe(
+              "pinned",
+            );
+            try {
+              // A card not selected alone offers no Edit text.
+              expect(await obEval(vaultId!, `String(!!${editText})`)).toBe(
+                "false",
+              );
+              await clickCard(cardKey);
+              expect(
+                await obEvalUntil(vaultId!, `String(!!${editText})`, {
+                  expected: "true",
+                }),
+              ).toBe(true);
+
+              await trustedClick(editText);
+              // The editor opens in the Excerpt Block with the caret in it.
+              expect(
+                await obEvalUntil(
+                  vaultId!,
+                  `String(!!${editor}?.contains(document.activeElement))`,
+                  { expected: "true" },
+                ),
+              ).toBe(true);
+              // Typed where the caret stands: at the end of the text.
+              await obEval(
+                vaultId!,
+                "(function(){require('@electron/remote').getCurrentWebContents().insertText(' Checked.');return true;})()",
+              );
+              await trustedClick(
+                `[...${cardOf(cardKey)}.querySelectorAll('button')].find((button)=>button.textContent==='Done')`,
+              );
+
+              const corrected = `${highlight.seed.annotationText} Checked.`;
+              expect(
+                await waitFor(
+                  async () =>
+                    (await highlight.stored()).data.annotationText ===
+                    corrected,
+                ),
+              ).toBe(true);
+              expect((await highlight.stored()).data).toMatchObject({
+                annotationPosition: highlight.seed.annotationPosition,
+                annotationSortIndex: highlight.seed.annotationSortIndex,
+              });
+              // Done closed the editor, and the card quotes the correction.
+              expect(
+                await obEvalUntil(
+                  vaultId!,
+                  `String(!${editor}&&${cardOf(cardKey)}.querySelector('blockquote').textContent===${JSON.stringify(corrected)})`,
+                  { expected: "true" },
+                ),
+              ).toBe(true);
+            } finally {
+              await command("zotlit:annot-view-unpin");
+              await obEval(
+                vaultId!,
+                `(function(){app.workspace.setActiveLeaf(${pdfView}.leaf,{focus:true});return true;})()`,
+              );
+            }
+          }, 120000);
+
+          it("rests Edit text dimmed while editing is not live, and its press says why", async () => {
+            await raiseWindow(vaultId!);
+            await whileEditingNotLive(async () => {
+              await obEval(
+                vaultId!,
+                "(function(){for(const node of document.querySelectorAll('.notice'))node.remove();return true;})()",
+              );
+              await clickCard(cardKey);
+              expect(
+                await obEvalUntil(
+                  vaultId!,
+                  `String(${editText}?.hasAttribute('data-blocked'))`,
+                  { expected: "true" },
+                ),
+              ).toBe(true);
+              expect(
+                await obEval(vaultId!, `getComputedStyle(${editText}).opacity`),
+              ).toBe("0.5");
+
+              await trustedClick(editText);
+              expect(
+                await obEvalUntil(
+                  vaultId!,
+                  `String([...document.querySelectorAll('.zt-notice')].some((node)=>node.textContent.includes(${JSON.stringify("Allow other applications on this computer to communicate with Zotero")})))`,
+                  { expected: "true" },
+                ),
+              ).toBe(true);
+              // The press opened no editor.
+              expect(await obEval(vaultId!, `String(!!${editor})`)).toBe(
+                "false",
+              );
+            });
+          }, 120000);
+        });
+
         /** A key the window's own input delivers to whatever holds the focus. */
         async function press(keyCode: string): Promise<void> {
           expect(

@@ -76,24 +76,27 @@ async function mountCard({
   const store = createAnnotStore();
   store.setState({
     capability: { kind: "writable" },
-    commentDrafts: new Map(
-      held
-        ? [
-            [
-              CARD.key,
-              {
-                annotationKey: CARD.key,
-                attachmentKey: CARD.parentKey,
-                serverID: "fixture",
-                baseline: "",
-                text: "Held text",
-                state: { kind: "editing" },
-                manualSave: true,
-              },
-            ],
-          ]
-        : [],
-    ),
+    fieldDrafts: {
+      text: new Map(),
+      comment: new Map(
+        held
+          ? [
+              [
+                CARD.key,
+                {
+                  annotationKey: CARD.key,
+                  attachmentKey: CARD.parentKey,
+                  serverID: "fixture",
+                  baseline: "",
+                  text: "Held text",
+                  state: { kind: "editing" },
+                  manualSave: true,
+                },
+              ],
+            ]
+          : [],
+      ),
+    },
   });
   const onSelectAnnotation = vi.fn();
   const onOpenComment = vi.fn(() => opens);
