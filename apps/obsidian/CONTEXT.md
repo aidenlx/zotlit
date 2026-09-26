@@ -349,7 +349,7 @@ The painted region of one Annotation on a page of Obsidian's PDF reader. Paint, 
 _Avoid_: overlay element, highlight box, mark widget
 
 **Mark Popup**:
-The one popover the reader shows for the selected Annotation Mark or a fresh text selection, holding the verbs for that Annotation: colour, comment, tags, copy, delete, reveal, and the stepper through overlapping marks. Opened and closed by the selection alone, never by hover — except a Mark Landing, which selects without summoning it.
+The one popover the reader shows for the selected Annotation Mark or a fresh text selection, holding the verbs for that Annotation: colour, tags, copy, delete, reveal, and the stepper through overlapping marks. Under the row stands the comment, with the comment pencil that opens its editor, as on the Annotation Card. Opened and closed by the selection alone, never by hover — except a Mark Landing, which selects without summoning it.
 _Avoid_: selection toolbar, floating toolbar, annotation popover, hover popover (the primitive, not the surface)
 
 **Mark Handle**:

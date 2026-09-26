@@ -13,6 +13,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import { libraryReadOnly } from "@/services/zotero-local-api/__fixtures__";
+import * as cardVerbs from "@/views/annot-view/card-verbs";
 
 import {
   annotation,
@@ -687,7 +688,7 @@ it("closes a comment editor when a database switch hides its draft", async () =>
   await using h = await setup();
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
-  popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='comment']")!.click();
+  commentPencil(popup.hoverEl)!.click();
   expect(commentView(popup.hoverEl)).not.toBeNull();
 
   await h.switchDatabase();
@@ -701,7 +702,7 @@ it("keeps a comment editor open when an ordinary draft settles", async () => {
   await using h = await setup();
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
-  popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='comment']")!.click();
+  commentPencil(popup.hoverEl)!.click();
   const editor = commentView(popup.hoverEl)!;
   editor.dispatch({
     changes: { from: 0, insert: "worth quoting" },
@@ -753,7 +754,7 @@ it("stands the selection down at once when its Annotation is deleted", async () 
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
   // A comment draft stands on the mark, so the repository announces the
   // deletion itself.
-  popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='comment']")!.click();
+  commentPencil(popup.hoverEl)!.click();
   expect(h.store.getState().commentDrafts.has("WRDS2222")).toBe(true);
 
   h.zotero.eraseInZotero("WRDS2222");
@@ -768,7 +769,7 @@ it("takes a draft typed in the Annotation View into the open editor, keeping the
   await using h = await setup();
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
-  popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='comment']")!.click();
+  commentPencil(popup.hoverEl)!.click();
   const editor = commentView(popup.hoverEl)!;
   editor.dispatch({
     changes: { from: 0, insert: "worth" },
@@ -911,7 +912,13 @@ it("shows the stored comment under the row, and none for a mark without one", as
 
   h.selection.select("PARA7777");
   expect(commentText(popup.hoverEl)).toBeNull();
+  expect(addCommentLine(popup.hoverEl)).not.toBeNull();
 });
+
+/** The "Add comment…" line under the popup's row, or `null` while none stands. */
+function addCommentLine(root: HTMLElement): HTMLElement | null {
+  return root.querySelector<HTMLElement>(".zt-annot-add-comment");
+}
 
 /** The comment pencil beside the popup's comment, or `null` while none stands. */
 function commentPencil(root: HTMLElement): HTMLElement | null {
@@ -955,17 +962,69 @@ it("draws the comment read-only while a write is pending on it", async () => {
   await settled(h, "WRDS2222");
 });
 
-it("shows a blocked comment without opening its editor", async () => {
+it("keeps a blocked pencil in the tab order, and spends its press on the reason", async () => {
+  const notice = vi
+    .spyOn(cardVerbs, "blockedNotice")
+    .mockImplementation(() => {});
   await using h = await setup([PARAGRAPH, COMMENTED], {
     kind: "authorization-required",
   });
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  const pencil = commentPencil(popup.hoverEl)!;
+  expect(pencil.tabIndex).toBe(0);
 
-  commentPencil(popup.hoverEl)!.click();
+  pencil.click();
 
   expect(h.store.getState().floating).toMatchObject({ commenting: false });
   expect(commentView(popup.hoverEl)).toBeNull();
+  expect(notice).toHaveBeenCalledOnce();
+  const [block, allowEditing] = notice.mock.calls[0]!;
+  expect(block.action).toBe("allow-editing");
+  allowEditing();
+  expect(h.gestures.allowEditing).toHaveBeenCalledOnce();
+  notice.mockRestore();
+});
+
+it('adds a comment from the "Add a comment…" line, and saves and closes on a second press', async () => {
+  await using h = await setup([PARAGRAPH, COMMENTED]);
+  h.selection.select("PARA7777");
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  expect(popup.hoverEl.querySelector("[data-zt-verb='comment']")).toBeNull();
+  expect(addCommentLine(popup.hoverEl)).not.toBeNull();
+
+  commentPencil(popup.hoverEl)!.click();
+
+  const editor = commentView(popup.hoverEl)!;
+  expect(addCommentLine(popup.hoverEl)).toBeNull();
+  expect(commentPencil(popup.hoverEl)!.classList).toContain("is-active");
+  editor.dispatch({ changes: { from: 0, insert: "new note" } });
+
+  commentPencil(popup.hoverEl)!.click();
+
+  expect(commentView(popup.hoverEl)).toBeNull();
+  await vi.waitFor(() =>
+    expect(h.zotero.at("PARA7777")?.comment).toBe("new note"),
+  );
+});
+
+it("closes the open editor from its pencil after editing became blocked", async () => {
+  const notice = vi
+    .spyOn(cardVerbs, "blockedNotice")
+    .mockImplementation(() => {});
+  await using h = await setup([PARAGRAPH, COMMENTED]);
+  click(h.page.div, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  commentPencil(popup.hoverEl)!.click();
+  expect(commentView(popup.hoverEl)).not.toBeNull();
+
+  ingestCapability(h.store, { kind: "authorization-required" }, READER_NOW);
+  commentPencil(popup.hoverEl)!.click();
+
+  expect(commentView(popup.hoverEl)).toBeNull();
+  expect(h.store.getState().floating).toMatchObject({ commenting: false });
+  expect(notice).not.toHaveBeenCalled();
+  notice.mockRestore();
 });
 
 it("selects a landed mark without a popup, and opens one for the next selection", async () => {
@@ -1133,7 +1192,7 @@ it("binds the held tags panel to Save tags and Discard, and keeps it through a r
   expect(h.zotero.at("WRDS2222")?.tags).toEqual(["figure"]);
 });
 
-it("falls back to the row, and closes the editor, when no draft can be started", async () => {
+it("falls back to the pencil, and closes the editor, when no draft can be started", async () => {
   await using h = await setup();
   click(h.page.div, ON_WORD);
   // Zotero quits, and the repository learns it before the reader does.
@@ -1144,9 +1203,7 @@ it("falls back to the row, and closes the editor, when no draft can be started",
 
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
   expect(commentView(popup.hoverEl)).toBeNull();
-  expect(
-    popup.hoverEl.querySelector("[data-zt-verb='comment']"),
-  ).not.toBeNull();
+  expect(commentPencil(popup.hoverEl)).not.toBeNull();
   expect(h.store.getState().floating).toMatchObject({ commenting: false });
 });
 

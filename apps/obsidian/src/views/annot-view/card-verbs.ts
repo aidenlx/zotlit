@@ -18,6 +18,7 @@ import type {
 import { groupFailureMessages } from "@/services/annotation-repository/write";
 import type { MutationState } from "@/services/annotation-repository/write";
 
+import type { CardBlock } from "./card-controls";
 import { copiedText } from "./copied-text";
 
 const logger = getLogger(["views", "annot-view"]);
@@ -177,4 +178,31 @@ async function settleWrites(
   const messages = groupFailureMessages(outcomes, now());
   for (const message of messages) new BaseNotice(message);
   return messages;
+}
+
+/**
+ * The notice a press on a blocked control raises, on every press: the reason,
+ * and "Allow editing" where the block is one the user can end.
+ *
+ * @param onAllowEditing runs from the notice's "Allow editing".
+ */
+export function blockedNotice(
+  block: CardBlock,
+  onAllowEditing: () => void,
+): void {
+  if (block.action === null) {
+    new BaseNotice(block.reason);
+    return;
+  }
+  const notice = new BaseNotice(
+    BaseNotice.render((renderer) => {
+      renderer.setTitle(block.reason);
+      renderer.addAction((button) => {
+        button.setButtonText(m.capability_enable_editing()).onClick(() => {
+          notice.hide();
+          onAllowEditing();
+        });
+      });
+    }),
+  );
 }

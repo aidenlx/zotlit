@@ -5,7 +5,6 @@
 //
 // @see apps/obsidian/policies/ui-seams.md
 // @see https://github.com/aidenlx/zotlit/issues/1145
-import type { IconName } from "obsidian";
 
 import type { ResolvedAnnotationTypeName } from "@zotlit/db";
 
@@ -186,19 +185,15 @@ export function commentLabel(hasComment: boolean): string {
     : m.annot_view_card_add_comment();
 }
 
-/** The Mark Popup's comment verb icon, which says the same thing its label does. */
-export function commentIcon(hasComment: boolean): IconName {
-  return hasComment ? "message-square" : "message-square-plus";
-}
-
 /**
  * Why the editing verbs cannot run, or `null` while they can. A write in
  * flight outranks the capability: it is the nearer answer to "why can I not
  * press this".
  *
- * The Mark Popup's row reads the same rule, because its colour, comment and
- * delete are the same three writes reached from the PDF reader
- * (aidenlx/zotlit#1148).
+ * The creation popup and the Creation Toolbar read the same rule. The Mark
+ * Popup's selected row reads it through {@link cardControls}, because its
+ * colour, tags, delete and comment pencil are the card's writes reached from
+ * the PDF reader (aidenlx/zotlit#1148).
  */
 export function editingBlockedReason(
   capability: EditingCapability,

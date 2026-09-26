@@ -106,9 +106,10 @@ ZotLit remembers your color and width for other PDFs. A stroke keeps the color a
 ## Add or edit a comment
 
 1. Select the annotation mark in the PDF.
-2. In the popup, select <UiLabel name={m.annot_view_card_add_comment()} /> or <UiLabel name={m.annot_view_card_edit_comment()} />. The comment editor opens in the popup.
+2. In the popup, select the pencil beside the comment, <UiLabel name={m.annot_view_card_edit_comment()} />. If the annotation has no comment, select the <UiLabel name={m.annot_view_card_comment_placeholder()} /> line. The comment editor opens in the place of the comment. A click on the comment text does not open the editor.
 3. Enter the comment.
-4. Wait for the comment to save before you edit the annotation in Zotero.
+4. Select <UiLabel name={m.annot_view_editor_done()} />, or select the pencil again, to save and close the editor.
+5. Wait for the comment to save before you edit the annotation in Zotero.
 
 Comments request an automatic save after one second without typing. During continuous typing, ZotLit requests a save after ten seconds from the first unsaved change. Press `Ctrl+Enter` (Windows) or `Command+Enter` (macOS) to request a save and keep the editor open. Press `Escape` or move focus out of the editor to request a save and close it.
 

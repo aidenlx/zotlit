@@ -2803,9 +2803,19 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
         it("keeps the popup's comment editor open through a selection and a menu pick inside it", async () => {
           await selectImage();
+          // The seed carries no comment, so the popup offers the "Add
+          // comment…" line, whose pencil opens the editor; the row has no
+          // comment verb.
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(function(){const popup=document.querySelector('.zt-pdf-mark-popup');return String(!!popup?.querySelector('.zt-annot-add-comment')&&!popup.querySelector('[data-zt-verb="comment"]'));})()`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
           await obEval(
             vaultId!,
-            `(document.querySelector('.zt-pdf-mark-popup [data-zt-verb="comment"]').click(),true)`,
+            `(document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-pencil').click(),true)`,
           );
           expect(
             await obEvalUntil(vaultId!, `String(!!${POPUP_EDITOR})`, {
@@ -4305,11 +4315,14 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           (await storedAnnotation(api, serverID, historyKey))
             .annotationComment ?? "";
 
-        /** Opens the Mark Popup's comment editor on the selected Annotation. */
+        /**
+         * Opens the Mark Popup's comment editor on the selected Annotation,
+         * through the comment pencil beside the comment.
+         */
         async function openCommentEditor(): Promise<void> {
           await obEval(
             vaultId!,
-            `(document.querySelector('.zt-pdf-mark-popup [data-zt-verb="comment"]').click(),true)`,
+            `(document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-pencil').click(),true)`,
           );
           expect(
             await obEvalUntil(vaultId!, `String(!!${POPUP_EDITOR})`, {
@@ -4432,6 +4445,16 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(shown.card.at(-1)).toBe(`view:${after}`);
           expect(shown.card.length).toBeLessThanOrEqual(2);
           expect(await storedComment()).toBe(after);
+
+          // A click on the rendered comment leaves it as text. The click
+          // runs and renders in one task, so the frame after it shows what
+          // it did.
+          expect(
+            await obEval(
+              vaultId!,
+              `(async()=>{document.querySelector('.zt-pdf-mark-popup .zt-annot-comment').click();await new Promise((resolve)=>requestAnimationFrame(resolve));return String(!${POPUP_EDITOR}&&!!document.querySelector('.zt-pdf-mark-popup .zt-annot-comment'));})()`,
+            ),
+          ).toBe("true");
         }, 120000);
 
         describe("and the Annotation Card beside it", () => {

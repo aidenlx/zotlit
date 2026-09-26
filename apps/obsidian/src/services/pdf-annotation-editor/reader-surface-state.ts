@@ -1209,6 +1209,12 @@ export function selectSelectedTagDraft({
     : null;
 }
 
+/** What the selected-mode popup is drawn from: its row's input, and its editor. */
+export interface SelectedRowInput extends MarkPopupRowInput {
+  /** Whether the comment editor stands open under the comment pencil. */
+  commenting: boolean;
+}
+
 /**
  * What the selected-mode row is decided from, or `null` while no mark is
  * selected or its Annotation is not among the records. The copy is read
@@ -1221,7 +1227,7 @@ export function selectSelectedRowInput({
   mutations,
   capability,
   capabilityAt,
-}: ReaderSurfaceState): MarkPopupRowInput | null {
+}: ReaderSurfaceState): SelectedRowInput | null {
   if (floating.kind !== "selected") return null;
   const annotation = records.find(({ key }) => key === floating.key);
   if (!annotation) return null;

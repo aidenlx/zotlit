@@ -655,7 +655,6 @@ it("draws the selected row from the record, its mutation, and its stack", () => 
     ),
   ).toEqual([
     ["color", true],
-    ["comment", true],
     ["tags", true],
     ["copy", true],
     ["delete", true],

@@ -13,7 +13,6 @@ import { IDLE } from "@/services/annotation-repository/write";
 import {
   cardControls,
   capabilityBlock,
-  commentIcon,
   commentLabel,
   fieldEditorControls,
   editingBlockedReason,
@@ -243,7 +242,6 @@ it("leaves a settled write's verbs to the capability, so the user can try again"
 
 it("names the comment verb for what pressing it would do", () => {
   expect(commentLabel(true)).not.toBe(commentLabel(false));
-  expect(commentIcon(true)).not.toBe(commentIcon(false));
   expect(controlsOf({ kind: "writable" }).comment?.tooltip).toBe(
     commentLabel(false),
   );

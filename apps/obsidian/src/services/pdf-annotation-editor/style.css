@@ -265,6 +265,21 @@
   min-inline-size: max(100%, 12em);
 }
 
+/* The comment slot under the selected-mode row: the comment, the "Add a
+   comment…" line, a held draft or the sheet, with the comment pencil's
+   gutter. The slot alone decides its width, so the popup keeps its size as
+   the editor opens and closes; what stands in it fills it rather than
+   holding the sheet's own minimum. */
+.zt-pdf-comment-slot {
+  inline-size: 0;
+  min-inline-size: max(100%, 14em);
+}
+
+.zt-pdf-comment-slot :is(.zt-pdf-comment-sheet, .zt-annot-draft) {
+  inline-size: auto;
+  min-inline-size: 0;
+}
+
 /* The native toolbar uses one fixed row. Let our tools and permission status
    wrap within the reader when the pane cannot fit all toolbar groups. */
 .pdf-toolbar:has(> .pdf-toolbar-right > .zt-pdf-creation-toolbar) {

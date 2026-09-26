@@ -11,7 +11,7 @@ import type { HTMLAttributes, ReactNode, RefObject } from "react";
 
 import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
-import { claimClick, tooltipAttrs } from "@/lib/utils";
+import { claimClick, cn, tooltipAttrs } from "@/lib/utils";
 import type { WriteConflict } from "@/services/annotation-repository/write";
 
 import { conflictPanel } from "./card-conflict";
@@ -146,14 +146,24 @@ export function CommentGutter({
  * glyph standing in the gutter, so the words and the pencil take one press
  * and one stop in the Tab order.
  */
-export function AddCommentLine({ pencil }: { pencil: CommentPencil }) {
+export function AddCommentLine({
+  pencil,
+  className,
+}: {
+  pencil: CommentPencil;
+  /** The surface's own spacing, width and type size for the line. */
+  className?: string;
+}) {
   return (
     <IconButton
       icon="pencil"
       // The glyph comes last, at the gutter's place; the padding is taken back
       // on every side, so the words sit on the text edge and the line is as
       // tall as a line of comment.
-      className="zt-annot-comment-pencil zt-annot-add-comment zt:-m-1 zt:w-auto zt:flex-row-reverse zt:text-xs zt:data-blocked:opacity-50"
+      className={cn(
+        "zt-annot-comment-pencil zt-annot-add-comment zt:-m-1 zt:w-auto zt:flex-row-reverse zt:text-xs zt:data-blocked:opacity-50",
+        className,
+      )}
       disabled={pencil.disabled}
       data-blocked={pencil.blocked ? "" : undefined}
       onClick={(e) => {

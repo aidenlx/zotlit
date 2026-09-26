@@ -31,7 +31,7 @@ import { chooseAttachment } from "./attachment-suggester";
 import { groupControl } from "./card-controls";
 import type { CardBlock, CardControl, CardControls } from "./card-controls";
 import type { CardClick } from "./card-selection";
-import { confirmDelete, copyText, recolor } from "./card-verbs";
+import { blockedNotice, confirmDelete, copyText, recolor } from "./card-verbs";
 import type { CommentRenderer } from "./comment-render";
 import { copiedText } from "./copied-text";
 import type { ExcerptImageTarget } from "./excerpt-image-state";
@@ -501,23 +501,8 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     });
   };
 
-  const onBlockedPress = (block: CardBlock): void => {
-    if (block.action === null) {
-      new BaseNotice(block.reason);
-      return;
-    }
-    const notice = new BaseNotice(
-      BaseNotice.render((renderer) => {
-        renderer.setTitle(block.reason);
-        renderer.addAction((button) => {
-          button.setButtonText(m.capability_enable_editing()).onClick(() => {
-            notice.hide();
-            deps.onAllowEditing();
-          });
-        });
-      }),
-    );
-  };
+  const onBlockedPress = (block: CardBlock): void =>
+    blockedNotice(block, deps.onAllowEditing);
 
   /**
    * A menu opened from a control, anchored under the control itself — so it
