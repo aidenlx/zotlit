@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-// A Shift or Cmd/Ctrl click on a card's edit areas is the card's own selection
-// gesture (ADR 0061), and a plain click there opens the editor. The Mark
-// Popup selects one mark, so the same click on its comment opens its editor.
+// A click on a card's comment or held text is the card's own selection gesture
+// (ADR 0061), and the comment pencil alone opens the editor (ADR 0060). The
+// pencil stands only on a card selected alone.
 import { Keymap } from "obsidian";
 import { act } from "preact/test-utils";
 import { createElement } from "react";
@@ -10,13 +10,14 @@ import type { Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppContext } from "@/lib/app-context";
+import * as m from "@/lib/i18n/generated/messages";
+import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
 import { editorApp } from "./__fixtures__/editor-app";
 import { AnnotActionsContext } from "./actions";
 import type { AnnotActions } from "./actions";
 import { Annotation } from "./Annotation";
-import { CommentView } from "./comment-parts";
 import { AnnotStoreProvider, createAnnotStore } from "./store";
 
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
@@ -68,14 +69,22 @@ async function mount(element: ReturnType<typeof createElement>) {
 async function mountCard({
   held = false,
   opens = true,
+  comment = CARD.comment,
+  selected = [CARD.key],
+  capability = { kind: "writable" },
 }: {
   held?: boolean;
   /** Whether the repository starts a comment draft for the editor to open on. */
   opens?: boolean;
+  comment?: string | null;
+  /** The Card Selection: this card alone by default. */
+  selected?: string[];
+  capability?: EditingCapability;
 } = {}) {
   const store = createAnnotStore();
   store.setState({
-    capability: { kind: "writable" },
+    capability,
+    cardSelection: { selected, anchor: null, focus: null },
     fieldDrafts: {
       text: new Map(),
       comment: new Map(
@@ -103,6 +112,7 @@ async function mountCard({
   const onOpenTags = vi.fn(() => true);
   const onSaveTags = vi.fn();
   const onSaveComment = vi.fn();
+  const onBlockedPress = vi.fn();
   const actions = new Proxy(
     {
       onSelectAnnotation,
@@ -110,6 +120,7 @@ async function mountCard({
       onOpenTags,
       onSaveTags,
       onSaveComment,
+      onBlockedPress,
     } as Partial<AnnotActions>,
     {
       get: (target, name: keyof AnnotActions) =>
@@ -134,7 +145,7 @@ async function mountCard({
         AnnotActionsContext,
         { value: actions },
         createElement(Annotation, {
-          annot: CARD,
+          annot: { ...CARD, comment },
           collapsed: false,
           tabStop: true,
         }),
@@ -149,6 +160,7 @@ async function mountCard({
     onOpenTags,
     onSaveTags,
     onSaveComment,
+    onBlockedPress,
   };
 }
 
@@ -161,26 +173,32 @@ async function click(el: Element, keys: MouseEventInit = {}): Promise<void> {
   });
 }
 
-describe("a Shift or Cmd/Ctrl click on a card's edit areas", () => {
-  it("toggles the card or takes a range from its comment, and opens no editor", async () => {
-    const { host, onSelectAnnotation, onOpenComment } = await mountCard();
+/** The comment pencil beside the card's comment, or `undefined` for none. */
+function pencil(host: HTMLElement): HTMLElement | undefined {
+  return (
+    host.querySelector<HTMLElement>(".zt-annot-comment-pencil") ?? undefined
+  );
+}
+
+describe("a click on a card's comment", () => {
+  it("selects the card, toggles it or takes a range, and opens no editor", async () => {
+    const { host, store, onSelectAnnotation, onOpenComment } =
+      await mountCard();
     const comment = host.querySelector(".zt-annot-comment")!;
 
+    await click(comment);
     await click(comment, { metaKey: true });
     await click(comment, { shiftKey: true });
     expect(onSelectAnnotation.mock.calls).toEqual([
+      [CARD, "click"],
       [CARD, "toggle"],
       [CARD, "range"],
     ]);
     expect(onOpenComment).not.toHaveBeenCalled();
-
-    // A plain click opens the editor, and is not the card's selection.
-    await click(comment);
-    expect(onOpenComment).toHaveBeenCalledOnce();
-    expect(onSelectAnnotation).toHaveBeenCalledTimes(2);
+    expect(store.getState().editing).toBeNull();
   });
 
-  it("toggles the card from the held text, and opens no editor", async () => {
+  it("selects the card from the held text, and opens no editor", async () => {
     const { host, onSelectAnnotation, onOpenComment } = await mountCard({
       held: true,
     });
@@ -188,13 +206,102 @@ describe("a Shift or Cmd/Ctrl click on a card's edit areas", () => {
       (el) => el.textContent === "Held text",
     )!;
 
-    await click(text, { metaKey: true });
-    expect(onSelectAnnotation.mock.calls).toEqual([[CARD, "toggle"]]);
-    expect(onOpenComment).not.toHaveBeenCalled();
-
     await click(text);
-    expect(onOpenComment).toHaveBeenCalledOnce();
-    expect(onSelectAnnotation).toHaveBeenCalledOnce();
+    await click(text, { metaKey: true });
+    expect(onSelectAnnotation.mock.calls).toEqual([
+      [CARD, "click"],
+      [CARD, "toggle"],
+    ]);
+    expect(onOpenComment).not.toHaveBeenCalled();
+  });
+});
+
+describe("the comment pencil", () => {
+  it("stands only on a card selected alone", async () => {
+    for (const selected of [[], [CARD.key, "BBBB2222"]]) {
+      const { host } = await mountCard({ selected });
+      expect(pencil(host)).toBeUndefined();
+      // The tag toggle stays on a card selected with others.
+      expect(() => tagToggle(host)).not.toThrow();
+      await act(() => root?.unmount());
+      host.remove();
+    }
+    const { host } = await mountCard();
+    expect(pencil(host)).toBeDefined();
+  });
+
+  it("comes up beside the same comment nodes, so a text selection on them survives", async () => {
+    const { host, store } = await mountCard({ selected: [] });
+    const comment = host.querySelector(".zt-annot-comment");
+
+    await act(() =>
+      store.setState({
+        cardSelection: { selected: [CARD.key], anchor: null, focus: null },
+      }),
+    );
+    expect(pencil(host)).toBeDefined();
+    expect(host.querySelector(".zt-annot-comment")).toBe(comment);
+  });
+
+  it("opens the comment editor only where a draft starts, and is not the card's click", async () => {
+    for (const opens of [false, true]) {
+      const { host, store, onSelectAnnotation } = await mountCard({ opens });
+      await click(pencil(host)!);
+      expect(store.getState().editing).toEqual(
+        opens ? { annotationKey: CARD.key, field: "comment" } : null,
+      );
+      expect(onSelectAnnotation).not.toHaveBeenCalled();
+      await act(() => root?.unmount());
+      host.remove();
+    }
+  });
+
+  it("saves and closes the open editor on a second press", async () => {
+    const { host, store, onSaveComment } = await mountCard();
+    await click(pencil(host)!);
+    await click(pencil(host)!);
+    expect(store.getState().editing).toBeNull();
+    expect(onSaveComment).toHaveBeenCalledWith(CARD, CARD.comment, true);
+  });
+
+  it("saves and closes an open editor whose capability turned blocked, and raises no notice", async () => {
+    const { host, store, onSaveComment, onBlockedPress } = await mountCard();
+    await click(pencil(host)!);
+    await act(() =>
+      store.setState({ capability: { kind: "authorization-required" } }),
+    );
+
+    await click(pencil(host)!);
+    expect(store.getState().editing).toBeNull();
+    expect(onSaveComment).toHaveBeenCalledWith(CARD, CARD.comment, true);
+    expect(onBlockedPress).not.toHaveBeenCalled();
+  });
+
+  it("stays pressable where editing is blocked, and its press raises the reason", async () => {
+    const { host, store, onBlockedPress, onOpenComment } = await mountCard({
+      capability: { kind: "authorization-required" },
+    });
+    await click(pencil(host)!);
+    expect(onBlockedPress).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "allow-editing" }),
+    );
+    expect(onOpenComment).not.toHaveBeenCalled();
+    expect(store.getState().editing).toBeNull();
+  });
+
+  it("stands on an Add comment line for a card with no comment, which opens the editor too", async () => {
+    const { host, store } = await mountCard({ comment: null });
+    const line = host.querySelector(".zt-annot-add-comment")!;
+    expect(line.textContent).toBe(m.annot_view_card_comment_placeholder());
+    // One control, in the Tab order, that the keyboard reaches too.
+    expect(line.getAttribute("role")).toBe("button");
+    expect(pencil(host)).toBeDefined();
+
+    await click(line);
+    expect(store.getState().editing).toEqual({
+      annotationKey: CARD.key,
+      field: "comment",
+    });
   });
 });
 
@@ -206,35 +313,6 @@ it("selects the card from a click on the tag row's empty space, and opens no tag
   await click(row);
   expect(onSelectAnnotation).toHaveBeenCalledOnce();
   expect(onOpenTags).not.toHaveBeenCalled();
-});
-
-it("opens the Mark Popup's comment editor for a Shift or Cmd/Ctrl click", async () => {
-  const onOpen = vi.fn();
-  const host = await mount(
-    createElement(CommentView, {
-      surface: "popup",
-      render: () => () => {},
-      html: "A saved comment",
-      editable: true,
-      onOpen,
-    }),
-  );
-  const comment = host.querySelector(".zt-annot-comment")!;
-  await click(comment, { metaKey: true });
-  await click(comment, { shiftKey: true });
-  expect(onOpen).toHaveBeenCalledTimes(2);
-});
-
-it("opens the card's comment editor only where a draft starts", async () => {
-  for (const opens of [false, true]) {
-    const { host, store } = await mountCard({ opens });
-    await click(host.querySelector(".zt-annot-comment")!);
-    expect(store.getState().editing).toEqual(
-      opens ? { annotationKey: CARD.key, field: "comment" } : null,
-    );
-    await act(() => root?.unmount());
-    host.remove();
-  }
 });
 
 /** The tag toggle in the card's action bar, the one way into the tag editor. */
@@ -307,7 +385,7 @@ describe("the card's tag editor", () => {
     const { host, store, onSaveTags } = await mountCard();
     await click(tagToggle(host));
 
-    await click(host.querySelector(".zt-annot-comment")!);
+    await click(pencil(host)!);
 
     // The tag editor ended its session as it unmounted.
     expect(onSaveTags).toHaveBeenCalledOnce();
@@ -320,7 +398,7 @@ describe("the card's tag editor", () => {
 
 it("saves the card's comment and closes its editor on Done", async () => {
   const { host, store, onSaveComment } = await mountCard();
-  await click(host.querySelector(".zt-annot-comment")!);
+  await click(pencil(host)!);
   const done = [...host.querySelectorAll("button")].find(
     (button) => button.textContent === "Done",
   )!;

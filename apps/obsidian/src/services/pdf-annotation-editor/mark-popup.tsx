@@ -37,12 +37,16 @@ import {
 } from "@/views/annot-view/card-controls";
 import type { HeldDraft } from "@/views/annot-view/card-controls";
 import {
+  CommentGutter,
   EditorSheetSlot,
   CommentView,
   ConflictPanelSlot,
   HeldDraftSlot,
 } from "@/views/annot-view/comment-parts";
-import type { EditorSheetSlotProps } from "@/views/annot-view/comment-parts";
+import type {
+  CommentPencil,
+  EditorSheetSlotProps,
+} from "@/views/annot-view/comment-parts";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
 import { commentFrameClass } from "@/views/annot-view/comment-sheet";
 import type { CommentDraftActions } from "@/views/annot-view/comment-sheet";
@@ -354,15 +358,16 @@ export type SelectedPopupComment =
       kind: "held";
       held: HeldDraft;
       actions: CommentDraftActions;
-      onOpen: () => void;
+      /** The comment pencil beside it, the way back into its editor. */
+      pencil: CommentPencil;
     }
   /** The stored comment, rendered. */
   | {
       kind: "view";
       html: string;
-      editable: boolean;
       render: CommentRenderer;
-      onOpen: () => void;
+      /** The comment pencil beside it, which opens its editor. */
+      pencil: CommentPencil;
     };
 
 export interface SelectedMarkPopupProps {
@@ -402,23 +407,24 @@ export function SelectedMarkPopup({
           <EditorSheetSlot app={app} surface="popup" {...comment.sheet} />
         )}
         {comment?.kind === "held" && (
-          <HeldDraftSlot
-            held={comment.held}
-            surface="popup"
-            actions={comment.actions}
-            onOpen={comment.onOpen}
-          />
+          <CommentGutter pencil={comment.pencil}>
+            <HeldDraftSlot
+              held={comment.held}
+              surface="popup"
+              actions={comment.actions}
+            />
+          </CommentGutter>
         )}
         {comment?.kind === "view" && (
-          <div className={commentFrameClass("popup")}>
-            <CommentView
-              surface="popup"
-              render={comment.render}
-              html={comment.html}
-              editable={comment.editable}
-              onOpen={comment.onOpen}
-            />
-          </div>
+          <CommentGutter pencil={comment.pencil}>
+            <div className={commentFrameClass("popup")}>
+              <CommentView
+                surface="popup"
+                render={comment.render}
+                html={comment.html}
+              />
+            </div>
+          </CommentGutter>
         )}
         {conflict && <ConflictPanelSlot surface="popup" {...conflict} />}
         {tags && <MarkPopupTagSection {...tags} />}

@@ -31,7 +31,6 @@ import { AnnotActionsContext } from "./actions";
 import type { AnnotActions } from "./actions";
 import {
   cardControls,
-  commentIcon,
   fieldEditorControls,
   editingLive,
   heldCommentDraft,
@@ -43,12 +42,15 @@ import {
 } from "./card-controls";
 import type { CardControl, CardControls, HeldDraft } from "./card-controls";
 import {
+  AddCommentLine,
+  CommentGutter,
   EditorSheetSlot,
   CommentView,
   ConflictPanelSlot,
+  controlPencil,
   HeldDraftSlot,
 } from "./comment-parts";
-import { commentField, quotedTextField, selectsCards } from "./comment-sheet";
+import { commentField, quotedTextField } from "./comment-sheet";
 import type {
   CommentDraftActions,
   EditorField,
@@ -152,6 +154,9 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
    * selected with others stays compact and shows the selected highlight only.
    */
   const alone = useAnnotStore((s) => selectedAlone(s, annot.key));
+  // Read here, so the card redraws as one when the editing target moves to
+  // its comment: the tag editor leaves in the same pass as the comment editor
+  // comes, and its session ends once, before the new editor takes the focus.
   const editing = useAnnotStore((s) => isEditing(s, annot.key, "comment"));
   const controls = useCardControls(annot, alone);
   const endSession = useRef<EndTagSession | null>(null);
@@ -257,7 +262,6 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
           <CardActionBar
             annot={annot}
             controls={controls}
-            editing={editing}
             endSession={endSession}
           />
         </div>
@@ -332,10 +336,10 @@ function cardHeldTagsActions(
 /**
  * The card's verbs, as the same `clickable-icon` row the Mark Popup draws over
  * a selected mark, so a write reached from either surface wears the same
- * control.
+ * control. The comment's own control is the pencil beside it.
  *
- * The editing verbs — Edit text, colour, comment and tags — rest dimmed and come
- * up to full on hover, while focus is inside the card so the keyboard reaches
+ * The editing verbs — Edit text, colour and tags — rest dimmed and come up to
+ * full on hover, while focus is inside the card so the keyboard reaches
  * them, and while the card is selected alone. The overflow control never dims: it is
  * the only route to copying, revealing and deleting.
  *
@@ -344,22 +348,16 @@ function cardHeldTagsActions(
 function CardActionBar({
   annot,
   controls,
-  editing,
   endSession,
 }: {
   annot: AnnotationRecord;
   controls: CardControls;
-  editing: boolean;
   /** Ends the open tag session through its editor, typed text and all. */
   endSession: RefObject<EndTagSession | null>;
 }) {
   const actions = useContext(AnnotActionsContext);
-  const comment = useEditingTarget(annot.key, "comment");
-  const hasComment = annot.comment !== null;
   const tags = useTagSession(annot);
-  const text = useEditingTarget(annot.key, "text");
-  const editingText = useAnnotStore((s) => isEditing(s, annot.key, "text"));
-  const shownQuotedText = useShownText(annot, "text");
+  const text = useFieldEditing(annot, "text");
 
   /**
    * What one verb's press does. A verb the Editing Capability blocks keeps its
@@ -391,16 +389,10 @@ function CardActionBar({
           <IconButton
             icon="text-cursor-input"
             className={BLOCKED_VERB_DIM}
-            active={editingText}
+            active={text.open}
             disabled={controls.text.disabled}
             data-blocked={controls.text.blocked ? "" : undefined}
-            onClick={press(controls.text, () => {
-              if (editingText) {
-                // A second press saves and closes, as Done does.
-                text.close();
-                actions.onSaveText(annot, shownQuotedText, true);
-              } else if (actions.onOpenText(annot)) text.open();
-            })}
+            onClick={() => text.press(controls.text!)}
             {...tooltipAttrs(controls.text.tooltip)}
           />
         )}
@@ -413,18 +405,6 @@ function CardActionBar({
             actions.onColorMenu(evt, annot),
           )}
           {...tooltipAttrs(controls.color.tooltip)}
-        />
-        <IconButton
-          icon={commentIcon(hasComment)}
-          className={BLOCKED_VERB_DIM}
-          active={editing}
-          disabled={controls.comment.disabled}
-          data-blocked={controls.comment.blocked ? "" : undefined}
-          onClick={press(controls.comment, () => {
-            if (editing) comment.close();
-            else if (actions.onOpenComment(annot)) comment.open();
-          })}
-          {...tooltipAttrs(controls.comment.tooltip)}
         />
         <IconButton
           icon="tag"
@@ -586,18 +566,27 @@ function TagRow({ names }: { names: readonly string[] }) {
 }
 
 /**
- * The comment, rendered or being edited. The slot is the same either way, so
- * the card's height answers to the comment text and to nothing else.
+ * The comment, rendered or being edited, with the comment pencil in a gutter
+ * beside it on a card selected alone. The slot is the same either way, so the
+ * card's height answers to the comment text and to nothing else. A card
+ * selected alone with no comment shows the "Add comment…" line there.
+ *
+ * A click on the comment or on held text is the card's own: it selects the
+ * card, and the pencil alone opens the editor (ADR 0060).
  */
 function CommentSlot({
   annot,
-  editing,
+  editing: open,
   control,
 }: {
   annot: AnnotationRecord;
+  /** Whether the comment editor is open on this card. */
   editing: boolean;
-  control: CardControl;
+  /** The pencil's control, or `null` where the card does not offer it. */
+  control: CardControl | null;
 }) {
+  const actions = useContext(AnnotActionsContext);
+  const editing = useFieldEditing(annot, "comment");
   const draft = useAnnotStore((state) =>
     fieldDraft(state, "comment", annot.key),
   );
@@ -608,17 +597,33 @@ function CommentSlot({
     () => heldCommentDraft(capability, draft, Temporal.Now.instant()),
     [capability, draft],
   );
-  if (editing) return <FieldEditor annot={annot} field="comment" />;
-  // A draft the plugin still resolves by itself draws nothing of its own: the
-  // card keeps showing what Zotero holds until the write lands or the draft
-  // turns into something the user must answer.
-  if (held) return <HeldDraftPanel annot={annot} held={held} />;
-  if (annot.comment === null) return null;
+  const pencil =
+    control &&
+    controlPencil(control, {
+      active: open,
+      onPress: () => editing.press(control),
+    });
+  // No comment, no editor and no held text: the line that adds one, or
+  // nothing on a card that does not offer the pencil.
+  if (!open && !held && annot.comment === null)
+    return pencil && <AddCommentLine pencil={pencil} />;
   return (
-    <Comment
-      annot={annot}
-      editable={!control.disabled && control.blocked === null}
-    />
+    <CommentGutter pencil={pencil}>
+      {open ? (
+        <FieldEditor annot={annot} field="comment" />
+      ) : held ? (
+        // A draft the plugin still resolves by itself draws nothing of its
+        // own: the card keeps showing what Zotero holds until the write lands
+        // or the draft turns into something the user must answer.
+        <HeldDraftPanel annot={annot} held={held} />
+      ) : (
+        <CommentView
+          surface="card"
+          render={actions.renderComment}
+          html={annot.comment ?? ""}
+        />
+      )}
+    </CommentGutter>
   );
 }
 
@@ -626,7 +631,8 @@ function CommentSlot({
  * The text the user holds that Zotero has not taken, with the verbs that end
  * it. It wears the Write Conflict panel's surface because it is the same kind
  * of state — local text waiting on the user — and it carries its verbs for the
- * same reason: a card that only says "unsaved" leaves nowhere to go.
+ * same reason: a card that only says "unsaved" leaves nowhere to go. Its verbs
+ * keep their own clicks; a click on its text is the card's.
  *
  * @see https://github.com/aidenlx/zotlit/issues/1145
  */
@@ -638,49 +644,11 @@ function HeldDraftPanel({
   held: HeldDraft;
 }) {
   const actions = useContext(AnnotActionsContext);
-  const editing = useEditingTarget(annot.key, "comment");
   return (
     <HeldDraftSlot
       held={held}
       surface="card"
       actions={cardDraftActions(actions, annot, held.text)}
-      onOpen={() => {
-        if (actions.onOpenComment(annot)) editing.open();
-      }}
-      // The panel is the draft's own surface; the card's selection is not it.
-      // A Shift or Cmd/Ctrl click off its verbs is the card's own gesture.
-      onClick={(e) => {
-        const target = e.target as Node;
-        if (
-          selectsCards(e.nativeEvent, "card") &&
-          !(target.instanceOf(Element) && target.closest("button"))
-        )
-          return;
-        claimClick(e);
-      }}
-    />
-  );
-}
-
-/** The rendered comment, as the Mark Popup draws it; see {@link CommentView}. */
-function Comment({
-  annot,
-  editable,
-}: {
-  annot: AnnotationRecord;
-  editable: boolean;
-}) {
-  const actions = useContext(AnnotActionsContext);
-  const editing = useEditingTarget(annot.key, "comment");
-  return (
-    <CommentView
-      surface="card"
-      render={actions.renderComment}
-      html={annot.comment ?? ""}
-      editable={editable}
-      onOpen={() => {
-        if (actions.onOpenComment(annot)) editing.open();
-      }}
     />
   );
 }
@@ -695,6 +663,8 @@ const CARD_FIELDS: Record<
   {
     wording: () => EditorField;
     confirmed: (annot: AnnotationRecord) => string | null;
+    /** The action that starts the field's draft, or refuses to. */
+    open: (actions: AnnotActions) => AnnotActions["onOpenComment"];
     /** The action that takes each change into the field's draft. */
     edit: (actions: AnnotActions) => AnnotActions["onEditComment"];
     /** The action that stores the field's text, automatically or on request. */
@@ -704,12 +674,14 @@ const CARD_FIELDS: Record<
   comment: {
     wording: commentField,
     confirmed: (annot) => annot.comment,
+    open: (actions) => (annot) => actions.onOpenComment(annot),
     edit: (actions) => actions.onEditComment,
     save: (actions) => actions.onSaveComment,
   },
   text: {
     wording: quotedTextField,
     confirmed: (annot) => annot.text,
+    open: (actions) => (annot) => actions.onOpenText(annot),
     edit: (actions) => actions.onEditText,
     save: (actions) => actions.onSaveText,
   },
@@ -726,6 +698,41 @@ function useShownText(
       fieldDraft(state, field, annot.key),
     ),
   );
+}
+
+/**
+ * One text field's editor as its control reads it: whether it is open, the
+ * one save that closes it, and what a press on the control does.
+ */
+function useFieldEditing(annot: AnnotationRecord, field: TextEditingField) {
+  const actions = useContext(AnnotActionsContext);
+  const target = useEditingTarget(annot.key, field);
+  const open = useAnnotStore((s) => isEditing(s, annot.key, field));
+  const text = useShownText(annot, field);
+  const spec = CARD_FIELDS[field];
+  // Every close asks for the submit, including one that changed nothing: the
+  // request is what drops a draft holding only what Zotero already has, so
+  // clicking the card out of an untouched editor leaves no held text behind.
+  const saveAndClose = (): void => {
+    target.close();
+    spec.save(actions)(annot, text, true);
+  };
+  return {
+    open,
+    text,
+    saveAndClose,
+    /**
+     * The control's press. An open editor saves and closes, as Done does,
+     * even where the capability turned blocked meanwhile: the text is kept
+     * either way. A closed one opens, or spends the press on the notice that
+     * states why it cannot.
+     */
+    press: (control: CardControl): void => {
+      if (open) saveAndClose();
+      else if (control.blocked) actions.onBlockedPress(control.blocked);
+      else if (spec.open(actions)(annot)) target.open();
+    },
+  };
 }
 
 /**
@@ -748,9 +755,8 @@ function FieldEditor({
   field: TextEditingField;
 }) {
   const actions = useContext(AnnotActionsContext);
-  const editing = useEditingTarget(annot.key, field);
+  const { text, saveAndClose } = useFieldEditing(annot, field);
   const spec = CARD_FIELDS[field];
-  const text = useShownText(annot, field);
   const capability = useAnnotStore((state) => state.capability);
   const draft = useAnnotStore((state) => fieldDraft(state, field, annot.key));
   const controls = fieldEditorControls(
@@ -761,13 +767,6 @@ function FieldEditor({
   const app = useObsidianApp();
   const sheet = useRef<EditorSheet | null>(null);
 
-  // Every close asks for the submit, including one that changed nothing: the
-  // request is what drops a draft holding only what Zotero already has, so
-  // clicking the card out of an untouched editor leaves no held text behind.
-  const save = (): void => {
-    editing.close();
-    spec.save(actions)(annot, text, true);
-  };
   /** Blur: the same automatic submit, with the editor left open. */
   const saveOnLeave = (): void => spec.save(actions)(annot, text, true);
   const store = (): void => {
@@ -788,8 +787,8 @@ function FieldEditor({
       onChange={(value) => spec.edit(actions)(annot, value)}
       onSubmit={store}
       onSave={store}
-      onCancel={save}
-      onDone={save}
+      onCancel={saveAndClose}
+      onDone={saveAndClose}
       onLeave={saveOnLeave}
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e: KeyboardEvent<HTMLDivElement>) => e.stopPropagation()}

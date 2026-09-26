@@ -7,7 +7,7 @@
 // the Annotation Card and the reader's Mark Popup alike. What differs between
 // the two is the surface's spacing and corners, never which controls stand or
 // what they do.
-import { Keymap, setIcon } from "obsidian";
+import { setIcon } from "obsidian";
 import type { App } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -57,7 +57,6 @@ const SURFACE: Record<
     inset: string;
     field: string;
     view: string;
-    viewEditable: string;
     viewFrame: string;
     footer: string;
     panel: string;
@@ -71,7 +70,6 @@ const SURFACE: Record<
     inset: "",
     field: `zt:-mx-1.5 zt:-my-1 zt:rounded-(--input-radius) zt:px-1.5 zt:py-1 zt:text-xs ${FIELD_ENTER}`,
     view: "zt:text-xs",
-    viewEditable: "",
     viewFrame: "",
     footer: "zt:mt-2",
     panel: "zt:-mx-3 zt:px-3 zt:py-1.5",
@@ -86,8 +84,6 @@ const SURFACE: Record<
     inset: "zt:px-1.5 zt:pb-1.5",
     field: `zt:rounded-(--radius-s) ${POPUP_TEXT} ${FIELD_ENTER}`,
     view: `zt:rounded-(--radius-s) zt:bg-(--background-secondary) ${POPUP_TEXT}`,
-    viewEditable:
-      "zt:hover:bg-(--background-modifier-hover) zt:motion-safe:transition-[background-color] zt:duration-150",
     viewFrame: POPUP_WIDTH,
     footer: "zt:mt-1",
     panel: `${POPUP_WIDTH} zt:rounded-(--radius-s) zt:px-2 zt:py-1.5`,
@@ -100,50 +96,8 @@ const SURFACE: Record<
  * the scoped Tailwind preflight. `zt-annot-comment` is the hook the view
  * stylesheet compacts them through.
  */
-export function commentViewClass(
-  surface: CommentSurface,
-  editable: boolean,
-): string {
-  return [
-    "markdown-rendered zt-annot-comment zt:overflow-x-auto zt:break-words zt:text-foreground zt:select-text",
-    SURFACE[surface].view,
-    editable ? `zt:cursor-text ${SURFACE[surface].viewEditable}` : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
-
-/**
- * Whether a click on this surface is the card's own selection gesture: Shift
- * takes a range and Cmd/Ctrl toggles the card, so an edit area on the card
- * leaves that click to the card. The Mark Popup selects one mark, so no click
- * on it is that gesture.
- *
- * @see apps/obsidian/docs/adr/0061-the-annotation-view-owns-its-card-selection.md
- */
-export function selectsCards(
-  event: MouseEvent,
-  surface: CommentSurface,
-): boolean {
-  return (
-    surface === "card" && (event.shiftKey || Keymap.isModifier(event, "Mod"))
-  );
-}
-
-/**
- * Whether a click on the rendered comment asks for its editor. A link keeps
- * its own click, a click that ends a text selection is the user copying
- * rather than asking to edit, and the card's selection gesture is the card's.
- */
-export function opensCommentEditor(
-  event: MouseEvent,
-  surface: CommentSurface,
-): boolean {
-  if (selectsCards(event, surface)) return false;
-  const target = event.target as Node | null;
-  if (target?.instanceOf(HTMLElement) && target.closest("a")) return false;
-  const el = event.currentTarget as HTMLElement;
-  return el.win.getSelection()?.isCollapsed !== false;
+export function commentViewClass(surface: CommentSurface): string {
+  return `markdown-rendered zt-annot-comment zt:overflow-x-auto zt:break-words zt:text-foreground zt:select-text ${SURFACE[surface].view}`;
 }
 
 /**
@@ -418,9 +372,9 @@ const CONFLICT_VERB: Record<ConflictVerb, keyof CommentDraftActions> = {
  * of state — local text waiting on the user — and it carries its verbs for the
  * same reason: a surface that only says "unsaved" leaves nowhere to go.
  *
- * @param onOpen a click on the held text opens the editor, as a saved
- *   comment's does: the state that most needs editing is not one you cannot
- *   reach.
+ * The held text is for reading and copying: the comment pencil beside it is
+ * what opens the editor on it (ADR 0060).
+ *
  * @see https://github.com/aidenlx/zotlit/issues/1145
  */
 export function renderHeldDraftPanel(
@@ -429,11 +383,9 @@ export function renderHeldDraftPanel(
   {
     surface,
     actions,
-    onOpen,
   }: {
     surface: CommentSurface;
     actions: CommentDraftActions;
-    onOpen: () => void;
   },
 ): void {
   const box = panel(parent, {
@@ -442,17 +394,9 @@ export function renderHeldDraftPanel(
     icon: "pencil-line",
     title: m.annot_view_comment_draft(),
   });
-  const text = box.createDiv({
-    cls: "zt:cursor-text zt:break-words zt:whitespace-pre-wrap zt:select-text",
+  box.createDiv({
+    cls: "zt:break-words zt:whitespace-pre-wrap zt:select-text",
     text: held.text,
-  });
-  text.addEventListener("click", (event) => {
-    if (
-      selectsCards(event, surface) ||
-      text.win.getSelection()?.isCollapsed === false
-    )
-      return;
-    onOpen();
   });
   heldReasonAndVerbs(box, held, actions);
 }

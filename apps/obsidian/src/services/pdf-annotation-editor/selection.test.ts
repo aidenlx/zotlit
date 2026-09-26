@@ -913,12 +913,21 @@ it("shows the stored comment under the row, and none for a mark without one", as
   expect(commentText(popup.hoverEl)).toBeNull();
 });
 
-it("opens the comment editor in the comment's place on a click on it", async () => {
+/** The comment pencil beside the popup's comment, or `null` while none stands. */
+function commentPencil(root: HTMLElement): HTMLElement | null {
+  return root.querySelector<HTMLElement>(".zt-annot-comment-pencil");
+}
+
+it("opens the comment editor in the comment's place from its pencil, and not from a click on the text", async () => {
   await using h = await setup([PARAGRAPH, COMMENTED]);
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
 
   commentText(popup.hoverEl)!.click();
+  expect(h.store.getState().floating).toMatchObject({ commenting: false });
+  expect(commentView(popup.hoverEl)).toBeNull();
+
+  commentPencil(popup.hoverEl)!.click();
 
   expect(h.store.getState().floating).toMatchObject({ commenting: true });
   expect(commentView(popup.hoverEl)).not.toBeNull();
@@ -929,14 +938,16 @@ it("draws the comment read-only while a write is pending on it", async () => {
   await using h = await setup([PARAGRAPH, COMMENTED]);
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
-  expect(commentText(popup.hoverEl)?.classList).toContain("zt:cursor-text");
+  expect(commentPencil(popup.hoverEl)?.hasAttribute("aria-disabled")).toBe(
+    false,
+  );
   const release = h.zotero.holdWrites();
 
   key(h, "3");
 
   await vi.waitFor(() =>
-    expect(commentText(popup.hoverEl)?.classList).not.toContain(
-      "zt:cursor-text",
+    expect(commentPencil(popup.hoverEl)?.getAttribute("aria-disabled")).toBe(
+      "true",
     ),
   );
   expect(commentText(popup.hoverEl)?.textContent).toBe("<p>worth quoting</p>");
@@ -951,7 +962,7 @@ it("shows a blocked comment without opening its editor", async () => {
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
 
-  commentText(popup.hoverEl)!.click();
+  commentPencil(popup.hoverEl)!.click();
 
   expect(h.store.getState().floating).toMatchObject({ commenting: false });
   expect(commentView(popup.hoverEl)).toBeNull();

@@ -59,6 +59,7 @@ import {
   copyText,
   recolor,
 } from "@/views/annot-view/card-verbs";
+import type { CommentPencil } from "@/views/annot-view/comment-parts";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
 import { commentField } from "@/views/annot-view/comment-sheet";
 import type {
@@ -1169,18 +1170,34 @@ export class MarkSelection implements Disposable {
         kind: "held",
         held,
         actions: this.#draftActions(annotation),
-        onOpen: () => this.#toggleComment(annotation),
+        pencil: this.#commentPencil(input),
       };
     }
     if (annotation.comment === null) return null;
     return {
       kind: "view",
       html: annotation.comment,
-      editable:
-        editingBlockedReason(input.capability, input.mutation, input.now) ===
-        null,
       render: this.#deps.renderComment,
-      onOpen: () => this.#toggleComment(annotation),
+      pencil: this.#commentPencil(input),
+    };
+  }
+
+  /**
+   * The comment pencil beside the comment, on the rule the row's verbs
+   * follow: refused with the reason as its name while editing is blocked.
+   */
+  #commentPencil(input: MarkPopupRowInput): CommentPencil {
+    const blocked = editingBlockedReason(
+      input.capability,
+      input.mutation,
+      input.now,
+    );
+    return {
+      label: blocked ?? m.annot_view_card_edit_comment(),
+      disabled: blocked !== null,
+      blocked: false,
+      active: false,
+      onPress: () => this.#toggleComment(input.annotation),
     };
   }
 

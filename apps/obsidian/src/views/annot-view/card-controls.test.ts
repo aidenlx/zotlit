@@ -52,12 +52,13 @@ const BLOCKED: EditingCapability[] = [
   ).map((reason): EditingCapability => ({ kind: "read-only", reason })),
 ];
 
+/** The controls of a card selected alone, which offers every one of them. */
 function controlsOf(
   capability: EditingCapability,
   mutation: MutationState = { kind: "idle" },
   card: Pick<CardControlsInput, "type" | "alone"> = {
     type: "highlight",
-    alone: false,
+    alone: true,
   },
 ): CardControls {
   return cardControls({
@@ -71,19 +72,19 @@ function controlsOf(
 }
 
 function states(controls: CardControls): boolean[] {
-  return [controls.color, controls.comment, controls.delete].map(
+  return [controls.color, controls.comment!, controls.delete].map(
     ({ disabled }) => disabled,
   );
 }
 
 function tooltips(controls: CardControls): string[] {
-  return [controls.color, controls.comment, controls.delete].map(
+  return [controls.color, controls.comment!, controls.delete].map(
     ({ tooltip }) => tooltip,
   );
 }
 
 function blocks(controls: CardControls): (CardBlock | null)[] {
-  return [controls.color, controls.comment, controls.delete].map(
+  return [controls.color, controls.comment!, controls.delete].map(
     ({ blocked }) => blocked,
   );
 }
@@ -242,9 +243,30 @@ it("leaves a settled write's verbs to the capability, so the user can try again"
 it("names the comment verb for what pressing it would do", () => {
   expect(commentLabel(true)).not.toBe(commentLabel(false));
   expect(commentIcon(true)).not.toBe(commentIcon(false));
-  expect(controlsOf({ kind: "writable" }).comment.tooltip).toBe(
+  expect(controlsOf({ kind: "writable" }).comment?.tooltip).toBe(
     commentLabel(false),
   );
+});
+
+it("offers the comment pencil only on a card selected alone, dimmed with each capability's reason", () => {
+  for (const capability of [LIVE, ...BLOCKED]) {
+    const grouped = controlsOf(capability, IDLE, {
+      type: "highlight",
+      alone: false,
+    });
+    const alone = controlsOf(capability);
+    // A card selected with others, or not at all, stays compact: no pencil,
+    // while its tag toggle stays.
+    expect(grouped.comment).toBeNull();
+    expect(grouped.tags).toEqual(alone.tags);
+    // Selected alone, the pencil is pressable and carries the block the
+    // notice states, as every other verb does.
+    expect(alone.comment).toEqual({
+      disabled: false,
+      blocked: capabilityBlock(capability, NOW),
+      tooltip: commentLabel(false),
+    });
+  }
 });
 
 it("gives the tag toggle the comment toggle's enabled state and blocked reason", () => {
@@ -351,7 +373,7 @@ it("names the tag toggle for what pressing it would do", () => {
       hasComment: false,
       hasTags,
       type: "highlight",
-      alone: false,
+      alone: true,
       now: NOW,
     }).tags.tooltip;
 

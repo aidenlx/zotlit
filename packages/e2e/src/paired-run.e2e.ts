@@ -4958,13 +4958,15 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const card = cardOf(cardKey);
           const toggle = (icon: string) =>
             `${card}?.querySelector('.clickable-icon:has(svg.lucide-${icon})')`;
+          /** The comment pencil, which stands on a card selected alone. */
+          const pencil = `${card}?.querySelector('.zt-annot-comment-pencil')`;
           /** Which of the card's two editors stand. */
           const editors = () =>
             obJson<{ comment: boolean; tags: boolean }>(
               `JSON.stringify({comment:!!${card}?.querySelector('.cm-content'),tags:!!${card}?.querySelector('[data-slot=tags-input]')})`,
             );
 
-          await trustedClick(toggle("message-square-plus"));
+          await trustedClick(pencil);
           await expect
             .poll(editors, poll)
             .toEqual({ comment: true, tags: false });
@@ -4975,8 +4977,8 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             .poll(editors, poll)
             .toEqual({ comment: false, tags: true });
 
-          // The comment toggle ends the tag session first.
-          await trustedClick(toggle("message-square-plus"));
+          // The comment pencil ends the tag session first.
+          await trustedClick(pencil);
           await expect
             .poll(editors, poll)
             .toEqual({ comment: true, tags: false });
@@ -5005,6 +5007,76 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           await expect
             .poll(editors, poll)
             .toEqual({ comment: false, tags: false });
+        }, 120000);
+
+        it("saves a comment typed through the comment pencil of a card selected in Pinned mode", async () => {
+          await raiseWindow(vaultId!);
+          const card = cardOf(cardKey);
+          const pencil = `${card}?.querySelector('.zt-annot-comment-pencil')`;
+          const editor = `${card}?.querySelector('.cm-content')`;
+          const original =
+            (await readAnnotationState(api, serverID, cardKey)).comment ?? "";
+          const typed = "Saved through the comment pencil";
+          /** The remembered write key the vault holds, for the restore. */
+          const key = await obJson<string>(
+            "JSON.stringify(JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key)",
+          );
+          expect(await command("zotlit:annot-view-pin-current-item")).toBe(
+            "pinned",
+          );
+          try {
+            // A card that is not selected alone offers no pencil.
+            expect(await obEval(vaultId!, `String(!!${pencil})`)).toBe("false");
+            await clickCard(cardKey);
+            await expect.poll(shown, poll).toMatchObject({ cards: [cardKey] });
+
+            await trustedClick(pencil);
+            await expect
+              .poll(
+                () =>
+                  obEval(
+                    vaultId!,
+                    `String(!!${editor}?.contains(document.activeElement))`,
+                  ),
+                poll,
+              )
+              .toBe("true");
+            await obEval(
+              vaultId!,
+              `(function(){const editor=${editor};editor.doc.execCommand('selectAll');editor.doc.execCommand('insertText',false,${JSON.stringify(typed)});return true;})()`,
+            );
+            // Done, the footer's call-to-action, saves and closes.
+            await trustedClick(`${card}?.querySelector('button.mod-cta')`);
+            await expect
+              .poll(() => obEval(vaultId!, `String(!!${editor})`), poll)
+              .toBe("false");
+            expect(
+              await waitFor(
+                async () =>
+                  (await readAnnotationState(api, serverID, cardKey))
+                    .comment === typed,
+              ),
+            ).toBe(true);
+          } finally {
+            await command("zotlit:annot-view-unpin");
+            await obEval(
+              vaultId!,
+              `(function(){app.workspace.setActiveLeaf(${pdfView}.leaf,{focus:true});return true;})()`,
+            );
+            // Every write the edit asked for has landed, so the restore
+            // writes against the version Zotero ends on.
+            await obEvalUntil(
+              vaultId!,
+              `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(repository.mutationFor(${JSON.stringify(cardKey)}).kind==='idle'&&!repository.commentDraftFor(${JSON.stringify(cardKey)}));})()`,
+              { expected: "true" },
+            );
+            await restoreAnnotationComment(api, {
+              serverID,
+              key,
+              annotationKey: cardKey,
+              comment: original,
+            });
+          }
         }, 120000);
 
         /**
@@ -5038,7 +5110,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obEvalUntil(
               vaultId!,
-              `(function(){if(${editor})return 'open';${cardOf(cardKey)}?.querySelector('.clickable-icon:has(.lucide-message-square-plus)')?.click();return String(!!${editor}&&'open');})()`,
+              `(function(){if(${editor})return 'open';${cardOf(cardKey)}?.querySelector('.zt-annot-comment-pencil')?.click();return String(!!${editor}&&'open');})()`,
               { expected: "open" },
             ),
           ).toBe(true);
@@ -5286,7 +5358,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           }
         }, 120000);
 
-        it("toggles a card for a Cmd/Ctrl-click on its comment text, and opens no editor", async () => {
+        it("selects a card for a click on its comment text, toggles it for a Cmd/Ctrl-click, and opens no editor", async () => {
           await raiseWindow(vaultId!);
           const mod = await obEval(
             vaultId!,
@@ -5334,6 +5406,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             // Again, and it leaves.
             await trustedClick(comment(second), [mod]);
             await expect.poll(shown, poll).toMatchObject({ cards: [first] });
+            expect(await editorOpen()).toBe("false");
+
+            // A plain click on the comment text selects that card alone, and
+            // leaves the text as it is.
+            await trustedClick(comment(second));
+            await expect.poll(shown, poll).toMatchObject({ cards: [second] });
             expect(await editorOpen()).toBe("false");
           } finally {
             await eraseAnnotations(rdp, await madeSince(baseline));
@@ -5815,7 +5893,16 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `(function(){const comment=(${card})?.querySelector('.zt-annot-comment');if(!comment)return false;comment.click();return true;})()`,
+            `(function(){const card=(${card});if(!card)return false;card.click();return card.hasAttribute('data-alone');})()`,
+            { expected: "true" },
+          ),
+        ).toBe(true);
+        // The card selected alone offers the comment pencil, the one way into
+        // its editor.
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `(function(){const pencil=(${card})?.querySelector('.zt-annot-comment-pencil');if(!pencil)return false;pencil.click();return true;})()`,
             { expected: "true" },
           ),
         ).toBe(true);

@@ -3445,7 +3445,7 @@ it("draws nothing while an automatic comment save is in flight", async () => {
           hasComment: true,
           hasTags: false,
           type: "highlight",
-          alone: false,
+          alone: true,
           now: NOW,
         }),
         blocked: editingBlockedReason(capability, mutation, NOW),
@@ -5317,7 +5317,7 @@ it("keeps the verbs live and the draft saving until the read-back lands", async 
     hasComment: false,
     hasTags: true,
     type: "highlight",
-    alone: false,
+    alone: true,
     now: NOW,
   });
   expect([verbs.color, verbs.comment, verbs.delete]).toMatchObject([
@@ -5715,7 +5715,7 @@ it("stands the verbs down while a tag undo is in flight, as a gesture's write", 
     hasComment: false,
     hasTags: true,
     type: "highlight",
-    alone: false,
+    alone: true,
     now: NOW,
   });
   expect([verbs.color, verbs.comment, verbs.tags, verbs.delete]).toMatchObject([

@@ -19,9 +19,9 @@ Under the mirror, a card could be selected only while an Obsidian PDF view was b
 - Pinned and a Literature Note tab bind no reader. Two views bound to the same Obsidian PDF view share a selection through that reader.
 - Multi-selection uses Zotero's gestures: Cmd/Ctrl-click toggles a card, Shift-click takes a range in list order, and Cmd/Ctrl+A takes every visible card. Keys go through the view's `Scope`.
 
-## Amendment: a card in a group keeps its comment and tag controls
+## Amendment: a card in a group keeps its tag control
 
-Accepted 2026-09-25. A card selected with others stays compact, but it still shows its comment and tag controls. A press on one of them first selects that card alone, then opens its editor, so an editor never opens on a card in a group.
+Accepted 2026-09-25, revised 2026-09-26 by [#1241](https://github.com/aidenlx/zotlit/issues/1241). A card selected with others stays compact, but it still shows its tag control. A press on it first selects that card alone, then opens its editor, so an editor never opens on a card in a group. The comment pencil shows only on a card selected alone ([ADR 0060](0060-card-text-is-edited-only-through-explicit-controls.md)).
 
 ## Amendment: a blur saves the card comment editor and keeps it open
 

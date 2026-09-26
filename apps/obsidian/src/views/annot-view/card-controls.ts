@@ -1,5 +1,5 @@
-// What an Annotation Card's header controls may do, decided as data rather
-// than in a component: one rule read by the colour dot, the comment toggle, the
+// What an Annotation Card's editing controls may do, decided as data rather
+// than in a component: one rule read by the colour dot, the comment pencil, the
 // tag toggle and the delete verb, keyed by the Editing Capability and by what a
 // write left.
 //
@@ -39,7 +39,7 @@ export interface CardBlock {
   action: "allow-editing" | null;
 }
 
-/** One header control: whether it runs, and what its tooltip says. */
+/** One editing control: whether it runs, and what its tooltip says. */
 export interface CardControl {
   /**
    * Whether the press is refused outright, which only a write in flight is:
@@ -69,7 +69,10 @@ export interface CardControlsInput {
   hasTags: boolean;
   /** The Annotation's type, which decides whether it has a Quoted Text. */
   type: ResolvedAnnotationTypeName;
-  /** Whether the card is selected alone, the one card that offers "Edit text". */
+  /**
+   * Whether the card is selected alone, the one state that offers "Edit text"
+   * and the comment pencil (ADR 0060).
+   */
   alone: boolean;
   /** The instant a cooldown's remaining seconds are measured from. */
   now: Temporal.Instant;
@@ -81,8 +84,12 @@ export interface CardControlsInput {
  */
 export interface CardControls {
   color: CardControl;
-  comment: CardControl;
-  /** The tag toggle, which follows the comment toggle's rules. */
+  /**
+   * The comment pencil, or `null` where the card does not offer it: a card
+   * that is not selected alone stays compact.
+   */
+  comment: CardControl | null;
+  /** The tag toggle, which follows the comment pencil's rules. */
   tags: CardControl;
   /**
    * "Edit text", which opens the editor on the Quoted Text; `null` where the
@@ -137,7 +144,7 @@ export function cardControls({
   };
   return {
     color: control(m.annot_view_card_color()),
-    comment: control(commentLabel(hasComment)),
+    comment: alone ? control(commentLabel(hasComment)) : null,
     tags: control(
       hasTags ? m.annot_view_card_edit_tags() : m.annot_view_card_add_tags(),
     ),
@@ -179,7 +186,7 @@ export function commentLabel(hasComment: boolean): string {
     : m.annot_view_card_add_comment();
 }
 
-/** The comment toggle's icon, which says the same thing its label does. */
+/** The Mark Popup's comment verb icon, which says the same thing its label does. */
 export function commentIcon(hasComment: boolean): IconName {
   return hasComment ? "message-square" : "message-square-plus";
 }
