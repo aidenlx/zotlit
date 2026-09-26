@@ -1,6 +1,6 @@
 // The End-to-end Run suite — drives the plugin in a real desktop Obsidian
 // window against the Fixture, over the official Obsidian CLI. See
-// packages/e2e/AGENTS.md and packages/scripts/CONTEXT.md for vocabulary.
+// packages/e2e/AGENTS.md and packages/scripts/GLOSSARY.md for vocabulary.
 //
 // Skips cleanly (not fails) when no desktop Obsidian is reachable, decided
 // before test collection by the `describe.skipIf` below, so `vitest run` exits

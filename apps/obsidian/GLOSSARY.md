@@ -119,7 +119,7 @@ The value of a Profile Match: an explicit `and` / `or` tree, in the shape of an 
 _Avoid_: Rule Filter, filter (bare), query, search
 
 **Match condition**:
-One leaf of a Match tree: a Filter Expression restricted to the supported condition contract — Library tests, built-in Zotero item type tests, and list tests on the Item's Tags and Collection paths, which `&&`, `||`, `!`, and grouping may still combine inside the leaf. A Library is referenced as `personal` or `group:<groupID>` — the group ID is assigned by zotero.org and is the same for every member — and Tags and Collections by name, so the leaf reads the same in any vault; Library scope is an ordinary condition. The match editor writes the canonical expression for a labelled row and keeps an expression row as written; a leaf outside the contract makes the Profile Match unevaluable. The language itself is the Filter Expression context (`packages/filter-expression/CONTEXT.md`).
+One leaf of a Match tree: a Filter Expression restricted to the supported condition contract — Library tests, built-in Zotero item type tests, and list tests on the Item's Tags and Collection paths, which `&&`, `||`, `!`, and grouping may still combine inside the leaf. A Library is referenced as `personal` or `group:<groupID>` — the group ID is assigned by zotero.org and is the same for every member — and Tags and Collections by name, so the leaf reads the same in any vault; Library scope is an ordinary condition. The match editor writes the canonical expression for a labelled row and keeps an expression row as written; a leaf outside the contract makes the Profile Match unevaluable. The language itself is the Filter Expression context (`packages/filter-expression/GLOSSARY.md`).
 _Avoid_: Rule condition, Library scope (as a separate part), Collection key (as a reference), global membership function (`hasTag`, `inCollection`), filter (bare), query, search
 
 **List field**:
@@ -772,7 +772,7 @@ Plugin settings on disk written by ZotLit v1 — recognized by the absence of an
 
 Message, Message Input, Language Pack, Language Pack Lifecycle, and Locale
 Alias use the canonical definitions in
-[`@zotlit/obsidian-i18n`](../../packages/obsidian-i18n/CONTEXT.md).
+[`@zotlit/obsidian-i18n`](../../packages/obsidian-i18n/GLOSSARY.md).
 
 ZotLit configures English as its base locale, excludes `docs_` Messages from
 plugin artifacts, maps Obsidian's `zh` Locale Alias to `zh-CN`, and owns its

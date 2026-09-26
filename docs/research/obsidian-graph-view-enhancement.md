@@ -688,7 +688,7 @@ radius for a per-leaf need. Wrap the renderer callback instead.
 ### Recommendation for clicks
 
 Wrap `onNodeClick` and `onNodeRightClick` per renderer. On a Cited Work Node,
-run ZotLit's own action — `apps/obsidian/CONTEXT.md` states it as creating the
+run ZotLit's own action — `apps/obsidian/GLOSSARY.md` states it as creating the
 Literature Note — and never call through, so the note is created from ZotLit's
 template rather than as an empty `@smith2020.md`. Register one public
 `file-menu` listener filtered on `"graph-context-menu"` for extra Literature

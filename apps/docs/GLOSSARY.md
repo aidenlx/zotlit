@@ -1,6 +1,6 @@
 # ZotLit Documentation
 
-The end-user documentation sites: naming and framing rules for how product concepts are presented to users. Product-domain terms are defined in the [Obsidian Plugin context](../obsidian/CONTEXT.md); this context covers vocabulary that exists only in the docs.
+The end-user documentation sites: naming and framing rules for how product concepts are presented to users. Product-domain terms are defined in the [Obsidian Plugin context](../obsidian/GLOSSARY.md); this context covers vocabulary that exists only in the docs.
 
 ## Language
 

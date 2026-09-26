@@ -1,6 +1,6 @@
 # @zotlit/e2e
 
-The End-to-end Run suite — the plugin running in a real desktop Obsidian window, reading the Fixture's Zotero data directory from disk. See `packages/scripts/CONTEXT.md` for the glossary (Fixture, Fixture Vault, Scope Case, End-to-end Run).
+The End-to-end Run suite — the plugin running in a real desktop Obsidian window, reading the Fixture's Zotero data directory from disk. See `packages/scripts/GLOSSARY.md` for the glossary (Fixture, Fixture Vault, Scope Case, End-to-end Run).
 
 ## Commands
 
