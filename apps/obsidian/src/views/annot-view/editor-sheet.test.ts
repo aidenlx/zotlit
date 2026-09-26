@@ -37,7 +37,6 @@ function sheet(
       value: "",
       onSubmit: vi.fn(),
       onCancel: vi.fn(),
-      onDone: vi.fn(),
       ...props,
     },
     status,
@@ -74,52 +73,43 @@ function button(el: HTMLElement, label: string): HTMLButtonElement {
 }
 
 it.each(TEXT_FIELDS)(
-  "still submits on Mod+Enter and steps back on Escape beside Done, for the %s",
+  "offers no button while the save is automatic and quiet, for the %s",
   (field: TextField) => {
-    const onSubmit = vi.fn();
-    const onCancel = vi.fn();
-    const onDone = vi.fn();
-    using mounted = sheet({
-      field: textFieldWording(field),
-      onSubmit,
-      onCancel,
-      onDone,
-    });
+    // The field saves as the user types, and Escape or a click away ends
+    // it: a button would be one more way to say "stop" (ADR 0066).
+    using mounted = sheet({ field: textFieldWording(field), onSave: vi.fn() });
 
-    pressSubmit(mounted.app);
-    mounted.sheet.editor.view.contentDOM.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    const shown = [...mounted.el.querySelectorAll("button")].filter(
+      (b) => b.style.display !== "none",
     );
-
-    expect(onSubmit).toHaveBeenCalledOnce();
-    expect(onCancel).toHaveBeenCalledOnce();
-    expect(onDone).not.toHaveBeenCalled();
+    expect(shown).toEqual([]);
   },
 );
 
-it.each(TEXT_FIELDS)(
-  "hands a Done click to Done alone, for the %s",
-  (field: TextField) => {
-    const onSubmit = vi.fn();
-    const onCancel = vi.fn();
-    const onDone = vi.fn();
-    using mounted = sheet({
-      field: textFieldWording(field),
-      onSubmit,
-      onCancel,
-      onDone,
-    });
+it("hands a commit click to the commit alone, under the label it is given", () => {
+  const run = vi.fn();
+  const onSubmit = vi.fn();
+  const onCancel = vi.fn();
+  using mounted = sheet({
+    commit: { label: m.pdf_toolbar_highlight(), run },
+    onSubmit,
+    onCancel,
+  });
 
-    button(mounted.el, m.annot_view_editor_done()).click();
+  const commit = button(mounted.el, m.pdf_toolbar_highlight());
+  commit.click();
 
-    expect(onDone).toHaveBeenCalledOnce();
-    expect(onSubmit).not.toHaveBeenCalled();
-    expect(onCancel).not.toHaveBeenCalled();
-  },
-);
+  expect(commit.classList.contains("mod-cta")).toBe(true);
+  expect(run).toHaveBeenCalledOnce();
+  expect(onSubmit).not.toHaveBeenCalled();
+  expect(onCancel).not.toHaveBeenCalled();
+});
 
 it("names the Quoted Text in its placeholder, its accessible name and its Save button", () => {
-  using mounted = sheet({ field: textFieldWording("text") });
+  using mounted = sheet(
+    { field: textFieldWording("text"), onSave: vi.fn() },
+    { ...AUTOMATIC, manual: true },
+  );
   const { contentDOM, dom } = mounted.sheet.editor.view;
 
   expect(contentDOM.getAttribute("aria-label")).toBe(

@@ -34,15 +34,13 @@ import type {
 import { cardControls } from "@/views/annot-view/card-controls";
 import type { CardControl, HeldDraft } from "@/views/annot-view/card-controls";
 import {
-  AddCommentLine,
-  CommentGutter,
-  EditorSheetSlot,
   CommentView,
   ConflictPanelSlot,
+  EditorSheetSlot,
   HeldDraftSlot,
 } from "@/views/annot-view/comment-parts";
 import type {
-  CommentPencil,
+  CommentEntry,
   EditorSheetSlotProps,
 } from "@/views/annot-view/comment-parts";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
@@ -107,8 +105,8 @@ export interface MarkPopupRow {
   /** Absent while one mark alone sits under the point. */
   stepper: MarkPopupStepper | null;
   /**
-   * The comment pencil's control, decided as the card's is. The comment has
-   * no verb in the row: the pencil beside it opens its editor (ADR 0060).
+   * The comment field's control, decided as the card's is. The comment has
+   * no verb in the row: a click on the comment opens its editor (ADR 0066).
    */
   comment: CardControl;
 }
@@ -128,10 +126,10 @@ export interface MarkPopupRowInput {
 
 /**
  * The verbs of the selected-mode row, in the order they are drawn, and the
- * comment pencil's control.
+ * comment field's control.
  *
  * Copying and revealing never change Zotero, so neither ever stands down;
- * colour, tags, delete and the comment pencil follow the rule the Annotation
+ * colour, tags, delete and the comment field follow the rule the Annotation
  * Card's controls do, because they are the same writes reached from another
  * surface. A row verb carries the reason in its tooltip. The creation row has
  * no tag verb: the popup reopens on the new mark, where tags can be added.
@@ -149,7 +147,6 @@ export function markPopupRow({
   const { comment, ...controls } = cardControls({
     capability,
     mutation,
-    hasComment: annotation.comment !== null,
     hasTags: annotation.tags.length > 0,
     type: annotation.type,
     now,
@@ -336,21 +333,27 @@ export function PopupColumn({
 }
 
 /**
- * What stands in the comment's place under the selected-mode row, with the
- * comment pencil beside it: the one way into the comment editor, and, while
- * the editor is open, the way to save and close it.
+ * What stands in the comment's place under the selected-mode row. The comment
+ * is a field: a click on it, or on its held text, opens the editor there
+ * (ADR 0066).
  */
-export type SelectedPopupComment = { pencil: CommentPencil } &
+export type SelectedPopupComment =
   /** The comment sheet, open on the shared draft. */
-  (
-    | { kind: "sheet"; sheet: Omit<EditorSheetSlotProps, "app" | "surface"> }
-    /** A held comment draft, in the stored comment's place. */
-    | { kind: "held"; held: HeldDraft; actions: TextDraftActions }
-    /** The stored comment, rendered. */
-    | { kind: "view"; html: string; render: CommentRenderer }
-    /** No comment: the "Add comment…" line. */
-    | { kind: "add" }
-  );
+  | { kind: "sheet"; sheet: Omit<EditorSheetSlotProps, "app" | "surface"> }
+  /** A held comment draft, in the stored comment's place. */
+  | {
+      kind: "held";
+      held: HeldDraft;
+      actions: TextDraftActions;
+      onOpen: () => void;
+    }
+  /** The stored comment, or the "Add a comment…" placeholder where none. */
+  | {
+      kind: "view";
+      html: string | null;
+      render: CommentRenderer;
+      entry: CommentEntry;
+    };
 
 export interface SelectedMarkPopupProps {
   app: App;
@@ -369,17 +372,6 @@ export interface SelectedMarkPopupProps {
 }
 
 /**
- * The "Add a comment…" line in the comment slot, whose width it fills as the
- * comment and its gutter do: the words where the sheet's inset and the field's
- * padding put the editor's text, at the field's type size, and the glyph where
- * the gutter's pencil stands. Obsidian declares the `clickable-icon`'s padding
- * and alignment unlayered, where no utility reaches them, so the words and the
- * glyph take their place through their own boxes.
- */
-const ADD_COMMENT_LINE =
-  "zt:m-0 zt:-mt-1 zt:-me-1 zt:[&>svg]:self-start zt:[&>span]:ps-1.5 zt:[&>span]:pt-1 zt:[&>span]:pb-1.5 zt:[&>span]:text-sm";
-
-/**
  * The popup in selected mode: the row, the comment in one of its states, a
  * Write Conflict, and the tag section, in that order. Each part keeps its seat
  * in the column, so a change to one leaves the others' nodes, and an open
@@ -396,24 +388,10 @@ export function SelectedMarkPopup({
   return (
     <AppContext value={app}>
       <PopupColumn row={<MarkPopupVerbs row={row} activate={activate} />}>
-        {/* The comment slot owns the width of the comment and its gutter in
-            every state (style.css). Its end padding keeps the pencil as far
-            from the popup's border as the comment's well is on the other
-            side. */}
-        <div className="zt-pdf-comment-slot zt:pe-1">
-          {comment.kind === "add" ? (
-            <AddCommentLine
-              pencil={comment.pencil}
-              className={ADD_COMMENT_LINE}
-            />
-          ) : (
-            // One gutter whatever the comment shows, so the pencil keeps its
-            // node, and the focus a key press left on it, as the editor opens
-            // and closes.
-            <CommentGutter pencil={comment.pencil}>
-              <PopupCommentBody app={app} comment={comment} />
-            </CommentGutter>
-          )}
+        {/* The comment slot owns the width of the comment in every state
+            (style.css), so the popup keeps its size as the editor opens. */}
+        <div className="zt-pdf-comment-slot">
+          <PopupCommentBody app={app} comment={comment} />
         </div>
         {conflict && <ConflictPanelSlot surface="popup" {...conflict} />}
         {tags && <MarkPopupTagSection {...tags} />}
@@ -428,7 +406,7 @@ function PopupCommentBody({
   comment,
 }: {
   app: App;
-  comment: Exclude<SelectedPopupComment, { kind: "add" }>;
+  comment: SelectedPopupComment;
 }) {
   switch (comment.kind) {
     case "sheet":
@@ -439,6 +417,7 @@ function PopupCommentBody({
           held={comment.held}
           surface="popup"
           actions={comment.actions}
+          onOpen={comment.onOpen}
         />
       );
     case "view":
@@ -449,6 +428,7 @@ function PopupCommentBody({
             surface="popup"
             render={comment.render}
             html={comment.html}
+            entry={comment.entry}
           />
         </div>
       );

@@ -456,6 +456,8 @@ export class AnnotationView extends ItemView implements HistorySurface {
       onClearSelection: () => void this.#clearFromView(),
       selectAlone: (annot) => this.#selectAloneFromView(annot.key),
       closeEditors: () => void this.#closeEditors(),
+      openEditor: (annot, field) =>
+        this.#store.setState({ editing: { annotationKey: annot.key, field } }),
       onDragStart: drag,
       insertAnnotation: (annotation) => {
         void insert(annotation);
@@ -1253,7 +1255,6 @@ export class AnnotationView extends ItemView implements HistorySurface {
     return cardControls({
       capability,
       mutation: mutations.get(annot.key) ?? IDLE,
-      hasComment: annot.comment !== null,
       hasTags: annot.tags.length > 0,
       type: annot.type,
       now: Temporal.Now.instant(),

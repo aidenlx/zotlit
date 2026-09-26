@@ -23,3 +23,5 @@ The Mark Popup stays Obsidian's `HoverPopover` on the plugin's popout-aware base
 ## Amendment: the selected-mode row has no comment verb
 
 Accepted 2026-09-26 ([#1242](https://github.com/aidenlx/zotlit/issues/1242)). The comment pencil beside the popup's comment, or the "Add a comment…" line on an Annotation with no comment, is the one way into the popup's comment editor, as on the Annotation Card ([ADR 0060](0060-card-text-is-edited-only-through-explicit-controls.md)). So the selected-mode row no longer carries `data-zt-verb="comment"`; the pencil carries `zt-annot-comment-pencil`, and the line also `zt-annot-add-comment`. The creation row keeps its `data-zt-verb="comment"`. Every other theme hook above keeps its name and place.
+
+Amended by [ADR 0066](0066-the-comment-is-an-editable-field-on-a-card-selected-alone-and-in-the-mark-popup.md): the comment is an editable field in the popup, so the pencil, the "Add a comment…" line and their theme hooks are gone. The selected-mode row still has no comment verb.

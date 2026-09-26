@@ -21,7 +21,7 @@ Under the mirror, a card could be selected only while an Obsidian PDF view was b
 
 ## Amendment: a card in a group keeps its tag control
 
-Accepted 2026-09-25, revised 2026-09-26 by [#1241](https://github.com/aidenlx/zotlit/issues/1241). A card selected with others stays compact, but it still shows its tag control. A press on it first selects that card alone, then opens its editor, so an editor never opens on a card in a group. The comment pencil shows only on a card selected alone ([ADR 0060](0060-card-text-is-edited-only-through-explicit-controls.md)).
+Accepted 2026-09-25, revised 2026-09-26 by [#1241](https://github.com/aidenlx/zotlit/issues/1241). A card selected with others stays compact, but it still shows its tag control. A press on it first selects that card alone, then opens its editor, so an editor never opens on a card in a group. Only on a card selected alone is the comment an editable field ([ADR 0066](0066-the-comment-is-an-editable-field-on-a-card-selected-alone-and-in-the-mark-popup.md)).
 
 ## Amendment: a blur saves the card comment editor and keeps it open
 

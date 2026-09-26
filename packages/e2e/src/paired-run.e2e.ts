@@ -2806,19 +2806,21 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
         it("keeps the popup's comment editor open through a selection and a menu pick inside it", async () => {
           await selectImage();
-          // The seed carries no comment, so the popup offers the "Add
-          // comment…" line, whose pencil opens the editor; the row has no
-          // comment verb.
+          // The seed carries no comment, so the popup's comment field shows
+          // its placeholder, and a click on it opens the editor; the row has
+          // no comment verb.
           expect(
             await obEvalUntil(
               vaultId!,
-              `(function(){const popup=document.querySelector('.zt-pdf-mark-popup');return String(!!popup?.querySelector('.zt-annot-add-comment')&&!popup.querySelector('[data-zt-verb="comment"]'));})()`,
+              `(function(){const popup=document.querySelector('.zt-pdf-mark-popup');return String(popup?.querySelector('.zt-annot-comment-field')?.textContent===${JSON.stringify(m.annot_view_card_comment_placeholder())}&&!popup.querySelector('[data-zt-verb="comment"]'));})()`,
               { expected: "true" },
             ),
           ).toBe(true);
+          // A press collapses the page's selection before its click, and a
+          // click over selected text only reads.
           await obEval(
             vaultId!,
-            `(document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-pencil').click(),true)`,
+            `(getSelection().removeAllRanges(),document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-field').click(),true)`,
           );
           expect(
             await obEvalUntil(vaultId!, `String(!!${POPUP_EDITOR})`, {
@@ -4373,12 +4375,14 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
         /**
          * Opens the Mark Popup's comment editor on the selected Annotation,
-         * through the comment pencil beside the comment.
+         * through a click on the comment field. A press collapses the page's
+         * selection before its click, and a click over selected text only
+         * reads.
          */
         async function openCommentEditor(): Promise<void> {
           await obEval(
             vaultId!,
-            `(document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-pencil').click(),true)`,
+            `(getSelection().removeAllRanges(),document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-field').click(),true)`,
           );
           expect(
             await obEvalUntil(vaultId!, `String(!!${POPUP_EDITOR})`, {
@@ -5037,15 +5041,15 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const card = cardOf(cardKey);
           const toggle = (icon: string) =>
             `${card}?.querySelector('.clickable-icon:has(svg.lucide-${icon})')`;
-          /** The comment pencil, which stands on a card selected alone. */
-          const pencil = `${card}?.querySelector('.zt-annot-comment-pencil')`;
+          /** The comment field, which stands on a card selected alone. */
+          const field = `${card}?.querySelector('.zt-annot-comment-field')`;
           /** Which of the card's two editors stand. */
           const editors = () =>
             obJson<{ comment: boolean; tags: boolean }>(
               `JSON.stringify({comment:!!${card}?.querySelector('.cm-content'),tags:!!${card}?.querySelector('[data-slot=tags-input]')})`,
             );
 
-          await trustedClick(pencil);
+          await trustedClick(field);
           await expect
             .poll(editors, poll)
             .toEqual({ comment: true, tags: false });
@@ -5056,8 +5060,8 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             .poll(editors, poll)
             .toEqual({ comment: false, tags: true });
 
-          // The comment pencil ends the tag session first.
-          await trustedClick(pencil);
+          // A click on the comment field ends the tag session first.
+          await trustedClick(field);
           await expect
             .poll(editors, poll)
             .toEqual({ comment: true, tags: false });
@@ -5074,14 +5078,14 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             .toEqual({ comment: false, tags: false });
         }, 120000);
 
-        it("saves a comment typed through the comment pencil of a card selected in Pinned mode", async () => {
+        it("saves a comment typed into the comment field of a card selected in Pinned mode", async () => {
           await raiseWindow(vaultId!);
           const card = cardOf(cardKey);
-          const pencil = `${card}?.querySelector('.zt-annot-comment-pencil')`;
+          const field = `${card}?.querySelector('.zt-annot-comment-field')`;
           const editor = `${card}?.querySelector('.cm-content')`;
           const original =
             (await readAnnotationState(api, serverID, cardKey)).comment ?? "";
-          const typed = "Saved through the comment pencil";
+          const typed = "Saved through the comment field";
           /** The remembered write key the vault holds, for the restore. */
           const key = await obJson<string>(
             "JSON.stringify(JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key)",
@@ -5090,12 +5094,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             "pinned",
           );
           try {
-            // A card that is not selected alone offers no pencil.
-            expect(await obEval(vaultId!, `String(!!${pencil})`)).toBe("false");
+            // A card that is not selected alone offers no comment field.
+            expect(await obEval(vaultId!, `String(!!${field})`)).toBe("false");
             await clickCard(cardKey);
             await expect.poll(shown, poll).toMatchObject({ cards: [cardKey] });
 
-            await trustedClick(pencil);
+            await trustedClick(field);
             await expect
               .poll(
                 () =>
@@ -5110,8 +5114,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               vaultId!,
               `(function(){const editor=${editor};editor.doc.execCommand('selectAll');editor.doc.execCommand('insertText',false,${JSON.stringify(typed)});return true;})()`,
             );
-            // Done, the footer's call-to-action, saves and closes.
-            await trustedClick(`${card}?.querySelector('button.mod-cta')`);
+            // A click on the card away from the field, on its Quoted Text,
+            // saves and closes.
+            await trustedClick(`${card}?.querySelector('blockquote')`);
             await expect
               .poll(() => obEval(vaultId!, `String(!!${editor})`), poll)
               .toBe("false");
@@ -5172,10 +5177,13 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             .poll(shown, poll)
             .toMatchObject({ cards: [cardKey], marks: [cardKey] });
           const editor = `${cardOf(cardKey)}?.querySelector('.cm-content')`;
+          // A click on the comment field opens the editor. A press collapses
+          // the page's selection before its click, and a click over selected
+          // text only reads.
           expect(
             await obEvalUntil(
               vaultId!,
-              `(function(){if(${editor})return 'open';${cardOf(cardKey)}?.querySelector('.zt-annot-comment-pencil')?.click();return String(!!${editor}&&'open');})()`,
+              `(function(){if(${editor})return 'open';getSelection().removeAllRanges();${cardOf(cardKey)}?.querySelector('.zt-annot-comment-field')?.click();return String(!!${editor}&&'open');})()`,
               { expected: "open" },
             ),
           ).toBe(true);
@@ -5220,29 +5228,48 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
         describe("a Text Edit", () => {
           const highlight = seededMark(cardKey, { image: false });
-          const editText = `${cardOf(cardKey)}?.querySelector('.clickable-icon:has(svg.lucide-text-cursor-input)')`;
           const editor = `${cardOf(cardKey)}?.querySelector('blockquote .cm-content')`;
+
+          /**
+           * Chooses "Edit quoted text", the first item of the card's "…"
+           * menu, once it stands there enabled.
+           */
+          async function chooseEditQuotedText(): Promise<void> {
+            const more = `${cardOf(cardKey)}?.querySelector('.clickable-icon:has(svg.lucide-more-horizontal)')`;
+            await obEval(
+              vaultId!,
+              `(${more}.scrollIntoView({block:'nearest'}),true)`,
+            );
+            await trustedClick(more);
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `(function(){const item=document.querySelector('.menu .menu-item');if(!item)return 'no menu';if(item.textContent.trim()!==${JSON.stringify(m.annot_view_menu_edit_text())}||item.classList.contains('is-disabled'))return 'not offered';item.click();return 'chosen';})()`,
+                { expected: "chosen" },
+              ),
+            ).toBe(true);
+          }
 
           afterEach(highlight.restore);
 
-          it("saves a correction typed after Edit text in Pinned mode, with its range and Sort Index kept", async () => {
+          it("saves a correction typed after Edit quoted text in Pinned mode, with its range and Sort Index kept", async () => {
             await raiseWindow(vaultId!);
             expect(await command("zotlit:annot-view-pin-current-item")).toBe(
               "pinned",
             );
             try {
-              // A card not selected alone offers no Edit text.
-              expect(await obEval(vaultId!, `String(!!${editText})`)).toBe(
-                "false",
-              );
-              await clickCard(cardKey);
+              // Chosen on a card that is not selected yet, the item selects
+              // the card alone.
               expect(
-                await obEvalUntil(vaultId!, `String(!!${editText})`, {
-                  expected: "true",
-                }),
-              ).toBe(true);
-
-              await trustedClick(editText);
+                await obEval(
+                  vaultId!,
+                  `String(!!${cardOf(cardKey)}?.hasAttribute('data-alone'))`,
+                ),
+              ).toBe("false");
+              await chooseEditQuotedText();
+              await expect
+                .poll(shown, poll)
+                .toMatchObject({ cards: [cardKey] });
               // The editor opens in the Excerpt Block with the caret in it.
               expect(
                 await obEvalUntil(
@@ -5256,9 +5283,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 vaultId!,
                 "(function(){require('@electron/remote').getCurrentWebContents().insertText(' Checked.');return true;})()",
               );
-              await trustedClick(
-                `[...${cardOf(cardKey)}.querySelectorAll('button')].find((button)=>button.textContent===${JSON.stringify(m.annot_view_editor_done())})`,
-              );
+              await press("Escape");
 
               const corrected = `${highlight.seed.annotationText} Checked.`;
               expect(
@@ -5272,7 +5297,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 annotationPosition: highlight.seed.annotationPosition,
                 annotationSortIndex: highlight.seed.annotationSortIndex,
               });
-              // Done closed the editor, and the card quotes the correction.
+              // Escape closed the editor, and the card quotes the correction.
               expect(
                 await obEvalUntil(
                   vaultId!,
@@ -5316,12 +5341,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             await installHeldWriteProbe(vaultId!);
 
             await clickCard(cardKey);
-            expect(
-              await obEvalUntil(vaultId!, `String(!!${editText})`, {
-                expected: "true",
-              }),
-            ).toBe(true);
-            await trustedClick(editText);
+            await chooseEditQuotedText();
             expect(
               await obEvalUntil(
                 vaultId!,
@@ -5420,12 +5440,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               );
 
             await clickCard(cardKey);
-            expect(
-              await obEvalUntil(vaultId!, `String(!!${editText})`, {
-                expected: "true",
-              }),
-            ).toBe(true);
-            await trustedClick(editText);
+            await chooseEditQuotedText();
             expect(
               await obEvalUntil(
                 vaultId!,
@@ -5448,7 +5463,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               ).toBe(true);
 
             // Two saves in one session: the first run's autosave lands and is
-            // read back before the second run is typed, and Done saves that.
+            // read back before the second run is typed, and Escape saves that.
             await type(" Checked.");
             expect(
               await waitFor(
@@ -5457,9 +5472,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             ).toBe(true);
             await saveSettled();
             await type(" Twice.");
-            await trustedClick(
-              `[...${cardOf(cardKey)}.querySelectorAll('button')].find((button)=>button.textContent===${JSON.stringify(m.annot_view_editor_done())})`,
-            );
+            await press("Escape");
             const corrected = `${seedText} Checked. Twice.`;
             expect(
               await waitFor(async () => (await storedText()) === corrected),
@@ -5500,7 +5513,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             ).toBe(true);
           }, 120000);
 
-          it("rests Edit text dimmed while editing is not live, and its press says why", async () => {
+          it("keeps Edit quoted text enabled while editing is not live, and choosing it says why", async () => {
             await raiseWindow(vaultId!);
             await whileEditingNotLive(async () => {
               await obEval(
@@ -5508,18 +5521,17 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 "(function(){for(const node of document.querySelectorAll('.notice'))node.remove();return true;})()",
               );
               await clickCard(cardKey);
+              // The card has read the blocked capability: its comment field
+              // says so.
               expect(
                 await obEvalUntil(
                   vaultId!,
-                  `String(${editText}?.hasAttribute('data-blocked'))`,
+                  `String(${cardOf(cardKey)}?.querySelector('.zt-annot-comment-field')?.hasAttribute('data-blocked'))`,
                   { expected: "true" },
                 ),
               ).toBe(true);
-              expect(
-                await obEval(vaultId!, `getComputedStyle(${editText}).opacity`),
-              ).toBe("0.5");
 
-              await trustedClick(editText);
+              await chooseEditQuotedText();
               expect(
                 await obEvalUntil(
                   vaultId!,
@@ -5527,7 +5539,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   { expected: "true" },
                 ),
               ).toBe(true);
-              // The press opened no editor.
+              // The choice opened no editor.
               expect(await obEval(vaultId!, `String(!!${editor})`)).toBe(
                 "false",
               );
@@ -6173,12 +6185,13 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { expected: "true" },
           ),
         ).toBe(true);
-        // The card selected alone offers the comment pencil, the one way into
-        // its editor.
+        // The card selected alone offers its comment as a field, and a click
+        // on it opens the editor. A press collapses the page's selection
+        // before its click, and a click over selected text only reads.
         expect(
           await obEvalUntil(
             vaultId!,
-            `(function(){const pencil=(${card})?.querySelector('.zt-annot-comment-pencil');if(!pencil)return false;pencil.click();return true;})()`,
+            `(function(){const field=(${card})?.querySelector('.zt-annot-comment-field');if(!field)return false;field.doc.getSelection().removeAllRanges();field.click();return true;})()`,
             { expected: "true" },
           ),
         ).toBe(true);
@@ -6218,17 +6231,17 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ),
         ).toBe("true");
 
-        // Done saves what was typed and closes the editor.
-        const doneComment = "Saved by pop-out card Done";
+        // Escape saves what was typed and closes the editor.
+        const escapeComment = "Saved by pop-out card Escape";
         await obEval(
           vaultId!,
-          `(function(){const editor=(${card}).querySelector('.cm-content');editor.focus();editor.doc.execCommand('selectAll');editor.doc.execCommand('insertText',false,${JSON.stringify(doneComment)});[...(${card}).querySelectorAll('button')].find((button)=>button.textContent===${JSON.stringify(m.annot_view_editor_done())}).click();return true;})()`,
+          `(function(){const editor=(${card}).querySelector('.cm-content');editor.focus();editor.doc.execCommand('selectAll');editor.doc.execCommand('insertText',false,${JSON.stringify(escapeComment)});editor.dispatchEvent(new editor.win.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
         );
         expect(
           await waitFor(
             async () =>
               (await readAnnotationState(api, serverID, createdKey)).comment ===
-              doneComment,
+              escapeComment,
           ),
         ).toBe(true);
         expect(

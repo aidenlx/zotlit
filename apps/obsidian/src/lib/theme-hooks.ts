@@ -131,18 +131,12 @@ export const themeHook = {
    */
   annotDraft: "zt-annot-draft",
   /**
-   * The comment pencil beside the comment, on an Annotation Card selected
-   * alone and in the Mark Popup over a selected mark: the one control that
-   * opens the comment editor. It carries Obsidian's own `is-active` while
-   * that editor is open.
+   * The comment as a field at rest, on an Annotation Card selected alone and
+   * in the Mark Popup over a selected mark: a click on it opens the comment
+   * editor in its place. It shows "Add a comment…" where there is no comment,
+   * and carries `data-blocked` while the Editing Capability refuses a write.
    */
-  annotCommentPencil: "zt-annot-comment-pencil",
-  /**
-   * The "Add a comment…" line in the comment's place on an Annotation with
-   * no comment, on the same two surfaces. The whole line is the comment
-   * pencil, so it also carries {@link themeHook.annotCommentPencil}.
-   */
-  annotAddComment: "zt-annot-add-comment",
+  annotCommentField: "zt-annot-comment-field",
   /**
    * The Chooser popup: the anchored popover a filtering multi-select opens,
    * such as the Annotation View's tag filter. It is no Obsidian menu, so a

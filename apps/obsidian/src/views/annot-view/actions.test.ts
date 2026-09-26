@@ -10,6 +10,7 @@ import { annotation } from "@/services/pdf-annotation-editor/__fixtures__";
 
 import { createAnnotActions } from "./actions";
 import type { AnnotActionDeps } from "./actions";
+import { hasQuotedText } from "./card-controls";
 import type { CardControl, CardControls } from "./card-controls";
 
 const FIRST = annotation("PUPR5FG5", "highlight", { pageIndex: 0, rects: [] });
@@ -41,7 +42,9 @@ function setup(
   control: CardControl = LIVE,
 ) {
   const selectAlone = vi.fn();
+  const openEditor = vi.fn();
   const annotations = {
+    editTextField: vi.fn(() => ({})),
     deleteAnnotation: vi.fn(async () => ({ kind: "idle" as const })),
     deleteAnnotations: vi.fn(async (keys: readonly string[]) =>
       keys.map(() => ({ kind: "idle" as const })),
@@ -56,19 +59,30 @@ function setup(
     comment: control,
     tags: control,
     delete: control,
-    text: null,
+    text: control,
   };
   const deps = {
     app: { workspace: { activeEditor: null } },
     annotations,
-    controls: () => controls,
+    // Only a highlight or underline has a Quoted Text, as `cardControls` rules.
+    controls: (annot: AnnotationRecord) => ({
+      ...controls,
+      text: hasQuotedText(annot.type) ? control : null,
+    }),
     selectedCards: () => selected,
     selectAlone,
+    closeEditors: () => {},
+    openEditor,
     resolveAnnotationID: () => null,
     onExploreAnnotation: () => {},
     insertAnnotation: () => {},
   } as unknown as AnnotActionDeps;
-  return { actions: createAnnotActions(deps), selectAlone, annotations };
+  return {
+    actions: createAnnotActions(deps),
+    selectAlone,
+    openEditor,
+    annotations,
+  };
 }
 
 /** The menu a right-click on this card opens. */
@@ -124,6 +138,40 @@ describe("the menu a card opens", () => {
     expect(selectAlone).toHaveBeenCalledExactlyOnceWith(OUTSIDE);
     expect(titles).toContain(m.annot_view_menu_copy_citation());
     expect(titles.at(-1)).toBe(m.annot_view_menu_delete());
+  });
+});
+
+describe("Edit quoted text", () => {
+  it("leads the menu of one highlight or underline card, and opens its Quoted Text editor", () => {
+    const { actions, openEditor, annotations } = setup([]);
+
+    const menu = openMenu(actions, QUOTED);
+    expect(menu.items[0]?.title).toBe(m.annot_view_menu_edit_text());
+    entry(menu, m.annot_view_menu_edit_text()).click();
+
+    expect(annotations.editTextField).toHaveBeenCalledWith("text", QUOTED.key);
+    expect(openEditor).toHaveBeenCalledExactlyOnceWith(QUOTED, "text");
+  });
+
+  it("is left out where the Annotation has no Quoted Text", () => {
+    const { actions } = setup([]);
+
+    expect(rightClick(actions, OUTSIDE)).not.toContain(
+      m.annot_view_menu_edit_text(),
+    );
+  });
+
+  it("stays enabled while editing is blocked, and its press opens no editor", () => {
+    const { actions, openEditor } = setup([], BLOCKED);
+
+    const item = entry(
+      openMenu(actions, QUOTED),
+      m.annot_view_menu_edit_text(),
+    );
+    expect(item.disabled).toBe(false);
+    item.click();
+
+    expect(openEditor).not.toHaveBeenCalled();
   });
 });
 

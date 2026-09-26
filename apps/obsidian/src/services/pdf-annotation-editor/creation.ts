@@ -785,10 +785,13 @@ export class MarkCreation implements CreationGestures, Disposable {
   popupView(): ReactNode | undefined {
     const input = selectCreateRowInput(this.#state());
     if (!input) return undefined;
-    // Done and Ctrl/Command+Enter both create the mark with the comment.
+    // The commit button and Ctrl/Command+Enter both create the mark with the
+    // comment. The button is named for the mark it creates, since creating is
+    // a commit the user must see (ADR 0066).
+    const tool = selectionToolOf(this.#state().armed);
     const commit = (): void => {
-      const tool = selectionToolOf(this.#state().armed);
-      this.#commit(tool, this.#state().colors[tool]);
+      const armed = selectionToolOf(this.#state().armed);
+      this.#commit(armed, this.#state().colors[armed]);
     };
     return createElement(CreateMarkPopup, {
       app: this.#deps.app,
@@ -801,7 +804,13 @@ export class MarkCreation implements CreationGestures, Disposable {
             value: "",
             status: sheetStatus(input.capability, input.now),
             onSubmit: commit,
-            onDone: commit,
+            commit: {
+              label:
+                tool === "underline"
+                  ? m.pdf_toolbar_underline()
+                  : m.pdf_toolbar_highlight(),
+              run: commit,
+            },
             onCancel: () => setCommenting(this.#deps.surfaceState, false),
           }
         : null,

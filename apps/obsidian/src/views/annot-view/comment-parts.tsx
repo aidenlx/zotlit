@@ -1,25 +1,25 @@
 // The comment controls as Preact components, for the Annotation Card and the
-// Mark Popup alike: the rendered comment, the comment pencil in its gutter,
-// the "Add comment…" line, the editor sheet, the held-draft panel and the
-// Write Conflict panel. Each draws through the vanilla builder in
+// Mark Popup alike: the rendered comment, the resting comment field that opens
+// the editor, the editor sheet, the held-draft panel and the Write Conflict
+// panel. Each draws through the vanilla builder in
 // `editor-sheet.ts` and redraws only when what it shows changes, so a render
 // of the surface around it never drops a click between its press and its
 // release.
 import type { App } from "obsidian";
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
-import type { HTMLAttributes, ReactNode, RefObject } from "react";
+import type { HTMLAttributes, RefObject } from "react";
 
-import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
-import { claimClick, cn, tooltipAttrs } from "@/lib/utils";
+import { claimClick, cn } from "@/lib/utils";
 import type { WriteConflict } from "@/services/annotation-repository/write";
 
 import { conflictPanel } from "./card-conflict";
 import { sameHeldDraft } from "./card-controls";
-import type { CardControl, HeldDraft } from "./card-controls";
+import type { HeldDraft } from "./card-controls";
 import type { CommentRenderer } from "./comment-render";
 import {
+  clickEdits,
   commentViewClass,
   renderEditorSheet,
   renderConflictPanel,
@@ -36,153 +36,108 @@ import type {
 
 type DivProps = Omit<HTMLAttributes<HTMLDivElement>, "children">;
 
+/** What the resting comment field does when the user reaches for it. */
+export interface CommentEntry {
+  /**
+   * A write in flight refuses the press outright; it ends by itself, so the
+   * field rests as text and says nothing more.
+   */
+  disabled: boolean;
+  /**
+   * The Editing Capability refuses a write: the comment rests as plain text,
+   * and a press spends itself on the notice that says why.
+   */
+  blocked: boolean;
+  /** Opens the editor, or raises the notice while blocked. */
+  onPress: () => void;
+}
+
 /**
- * The rendered comment: its text stands where the editor sheet's editor will
- * put it. A click on it is the surface's own and opens nothing, so the text
- * stays free to read, select and copy; the comment pencil opens the editor
- * (ADR 0060). The Markdown renders again only when the comment does.
+ * The rendered comment, in the place the editor sheet's editor puts its text.
+ * With an `entry` — on a card selected alone, and in the Mark Popup — it is
+ * the comment field at rest: it shows "Add a comment…" where there is no
+ * comment, and a click, Enter, or reaching it with Tab opens the editor in
+ * its place. A click that selected text or followed a link stays a read
+ * (ADR 0066).
+ *
+ * One element with an entry or without it, so a text selection made on the
+ * comment survives the card becoming selected alone under it. The Markdown
+ * renders again only when the comment does.
+ *
+ * @see apps/obsidian/docs/adr/0066-the-comment-is-an-editable-field-on-a-card-selected-alone-and-in-the-mark-popup.md
  */
 export function CommentView({
   surface,
   render,
   html,
+  entry = null,
 }: {
   surface: EditorSurface;
   render: CommentRenderer;
-  html: string;
+  /**
+   * The stored comment, or `null` where there is none, which only a field
+   * shows, as its placeholder.
+   */
+  html: string | null;
+  entry?: CommentEntry | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    if (!ref.current) return;
+    if (!ref.current || html === null) return;
     return render(ref.current, html);
   }, [render, html]);
-  return <div ref={ref} className={commentViewClass(surface)} />;
-}
-
-/** The comment pencil: its name, its state, and what its press runs. */
-export interface CommentPencil {
-  /** The accessible name, which Obsidian also shows as the tooltip. */
-  label: string;
-  /** The press is refused outright, as while a write is in flight. */
-  disabled: boolean;
-  /**
-   * The Editing Capability stands in the way: the pencil rests dimmed and
-   * keeps its press, which the surface spends on the reason.
-   */
-  blocked: boolean;
-  /** The editor is open on the comment. */
-  active: boolean;
-  onPress: () => void;
-}
-
-/**
- * The comment pencil for one editing control: its name, its refusal and its
- * dim come from the control, so a surface that decides its verbs through
- * {@link CardControl} states nothing twice.
- */
-export function controlPencil(
-  control: CardControl,
-  { active, onPress }: Pick<CommentPencil, "active" | "onPress">,
-): CommentPencil {
-  return {
-    label: control.tooltip,
-    disabled: control.disabled,
-    blocked: control.blocked !== null,
-    active,
-    onPress,
-  };
-}
-
-/**
- * The comment, and the gutter beside it that holds the comment pencil. The
- * gutter stands while a pencil is offered, the editor open or not, so the text
- * wraps to one width through the edit and the pencil never covers it. With no
- * pencil the comment takes the whole width.
- *
- * @see apps/obsidian/docs/adr/0060-card-text-is-edited-only-through-explicit-controls.md
- */
-export function CommentGutter({
-  pencil,
-  children,
-}: {
-  pencil: CommentPencil | null;
-  children: ReactNode;
-}) {
-  // One element tree with the pencil or without it: the comment keeps its
-  // nodes as its card becomes selected alone, and a text selection the press
-  // started with them. The gap keeps the open field's ring off the pencil.
+  const empty = html === null;
+  if (!entry) {
+    return (
+      <div
+        key="comment"
+        ref={ref}
+        className={commentViewClass(surface, false)}
+      />
+    );
+  }
+  const { disabled, blocked, onPress } = entry;
+  const editable = !disabled && !blocked;
   return (
-    <div className="zt:flex zt:items-start zt:gap-2">
-      <div className="zt:min-w-0 zt:flex-1">{children}</div>
-      {pencil && (
-        <IconButton
-          icon="pencil"
-          // The 22px box sits on the first line without growing it, and
-          // pulls back by its padding so the glyph lands on the text edge, as
-          // the header's end control does.
-          className={cn(
-            themeHook.annotCommentPencil,
-            "zt:-my-1 zt:-me-1 zt:shrink-0 zt:data-blocked:opacity-50",
-          )}
-          active={pencil.active}
-          disabled={pencil.disabled}
-          data-blocked={pencil.blocked ? "" : undefined}
-          // An open editor keeps the focus through this press, so the press
-          // itself is what closes it rather than the blur before it.
-          onMouseDown={(e) => {
-            if (pencil.active) e.preventDefault();
-          }}
-          onClick={(e) => {
-            // The pencil is a verb; the surface's own click is not that.
-            claimClick(e);
-            pencil.onPress();
-          }}
-          {...tooltipAttrs(pencil.label)}
-        />
-      )}
-    </div>
-  );
-}
-
-/**
- * The "Add a comment…" line an Annotation with no comment shows in the
- * comment's place. The whole line is the comment pencil: one control, its
- * glyph standing in the gutter, so the words and the pencil take one press
- * and one stop in the Tab order.
- */
-export function AddCommentLine({
-  pencil,
-  className,
-}: {
-  pencil: CommentPencil;
-  /** The surface's own spacing, width and type size for the line. */
-  className?: string;
-}) {
-  return (
-    <IconButton
-      icon="pencil"
-      // The glyph comes last, at the gutter's place; the padding is taken back
-      // on every side, so the words sit on the text edge and the line is as
-      // tall as a line of comment.
+    <div
+      // Keyed by what it draws, so the renderer's nodes and the placeholder
+      // never share one element.
+      key={empty ? "empty" : "comment"}
+      ref={ref}
+      role="textbox"
+      aria-multiline
+      aria-label={m.annot_view_card_comment_label()}
+      aria-placeholder={m.annot_view_card_comment_placeholder()}
+      aria-readonly={blocked || undefined}
+      aria-disabled={disabled || undefined}
+      tabIndex={0}
       className={cn(
-        themeHook.annotCommentPencil,
-        themeHook.annotAddComment,
-        "zt:-m-1 zt:w-auto zt:flex-row-reverse zt:text-xs zt:data-blocked:opacity-50",
-        className,
+        themeHook.annotCommentField,
+        commentViewClass(surface, editable),
+        empty && "zt:text-faint",
+        empty && !editable && "zt:opacity-60",
       )}
-      disabled={pencil.disabled}
-      data-blocked={pencil.blocked ? "" : undefined}
+      data-blocked={blocked ? "" : undefined}
       onClick={(e) => {
-        // The pencil is a verb; the surface's own click is not that.
+        if (disabled || !clickEdits(e)) return;
+        // Placing the caret is not the surface's own click.
         claimClick(e);
-        pencil.onPress();
+        onPress();
       }}
-      {...tooltipAttrs(pencil.label)}
+      onFocus={(e) => {
+        // Reaching the field from the keyboard is reaching into it; a press
+        // focuses it too, and its click is what opens the editor then.
+        if (editable && e.currentTarget.matches(":focus-visible")) onPress();
+      }}
+      onKeyDown={(e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (!disabled) onPress();
+      }}
     >
-      <span className="zt:flex-1 zt:text-start">
-        {m.annot_view_card_comment_placeholder()}
-      </span>
-    </IconButton>
+      {empty ? m.annot_view_card_comment_placeholder() : null}
+    </div>
   );
 }
 
@@ -222,7 +177,7 @@ export function EditorSheetSlot({
   onSubmit,
   onSave,
   onCancel,
-  onDone,
+  commit,
   onLeave,
   within,
   ...rest
@@ -235,7 +190,7 @@ export function EditorSheetSlot({
     onSubmit,
     onSave,
     onCancel,
-    onDone,
+    commit,
     onLeave,
   });
   latest.current = {
@@ -246,12 +201,13 @@ export function EditorSheetSlot({
     onSubmit,
     onSave,
     onCancel,
-    onDone,
+    commit,
     onLeave,
   };
   const sheet = useRef<EditorSheet | null>(null);
   const saves = onSave !== undefined;
   const leaves = onLeave !== undefined;
+  const commitLabel = commit?.label;
 
   const mount = useCallback(
     (el: HTMLDivElement | null) => {
@@ -273,7 +229,13 @@ export function EditorSheetSlot({
           onSubmit: () => latest.current.onSubmit(),
           onSave: saves ? () => latest.current.onSave?.() : undefined,
           onCancel: () => latest.current.onCancel(),
-          onDone: () => latest.current.onDone(),
+          commit:
+            commitLabel === undefined
+              ? undefined
+              : {
+                  label: commitLabel,
+                  run: () => latest.current.commit?.run(),
+                },
           onLeave: leaves ? () => latest.current.onLeave?.() : undefined,
           within,
         },
@@ -281,7 +243,7 @@ export function EditorSheetSlot({
       );
       if (sheetRef) sheetRef.current = sheet.current;
     },
-    [app, surface, saves, leaves, within, sheetRef],
+    [app, surface, saves, leaves, commitLabel, within, sheetRef],
   );
 
   useLayoutEffect(() => {
@@ -307,15 +269,21 @@ export function HeldDraftSlot({
   held,
   surface,
   actions,
+  onOpen,
   ...rest
 }: {
   held: HeldDraft;
   surface: EditorSurface;
   actions: HeldDraftActions;
+  /** Opens the editor on the held text; absent where a click only reads. */
+  onOpen?: () => void;
 } & DivProps) {
   const ref = useRef<HTMLDivElement>(null);
   const latest = useRef(actions);
   latest.current = actions;
+  const latestOpen = useRef(onOpen);
+  latestOpen.current = onOpen;
+  const opens = onOpen !== undefined;
   const shown = useRef(held);
   if (!sameHeldDraft(shown.current, held)) shown.current = held;
   const stable = shown.current;
@@ -324,8 +292,9 @@ export function HeldDraftSlot({
     renderHeldDraftPanel(ref.current, stable, {
       surface,
       actions: boundHeldActions(latest),
+      open: opens ? () => latestOpen.current?.() : undefined,
     });
-  }, [stable, surface]);
+  }, [stable, surface, opens]);
   return <div ref={ref} {...rest} />;
 }
 

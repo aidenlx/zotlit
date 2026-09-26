@@ -48,12 +48,9 @@ import {
 } from "./card-controls";
 import type { CardControl, CardControls, HeldDraft } from "./card-controls";
 import {
-  AddCommentLine,
-  CommentGutter,
-  EditorSheetSlot,
   CommentView,
   ConflictPanelSlot,
-  controlPencil,
+  EditorSheetSlot,
   HeldDraftSlot,
 } from "./comment-parts";
 import type {
@@ -115,13 +112,15 @@ interface AnnotationCardProps extends AnnotationProps {
 }
 
 /**
- * The controls one card offers. The comment pencil and "Edit text" stand only
- * on a card selected alone, so the other cards in the list stay compact (ADR
- * 0060).
+ * The controls one card offers. Only a card selected alone opens an editor on
+ * its comment or its Quoted Text, so the other cards in the list stay compact
+ * (ADR 0066).
  */
-interface CardOffer extends Omit<CardControls, "comment"> {
-  /** The comment pencil, or `null` where the card does not offer it. */
+interface CardOffer extends Omit<CardControls, "comment" | "text"> {
+  /** The comment field's control, or `null` where the card does not offer it. */
   comment: CardControl | null;
+  /** The Quoted Text's control, or `null` where the card does not offer it. */
+  text: CardControl | null;
 }
 
 /**
@@ -134,14 +133,12 @@ interface CardOffer extends Omit<CardControls, "comment"> {
 function useCardControls(annot: AnnotationRecord, alone: boolean): CardOffer {
   const capability = useAnnotStore((s) => s.capability);
   const mutation = useMutation(annot.key);
-  const hasComment = annot.comment !== null;
   const hasTags = annot.tags.length > 0;
   const { type } = annot;
   return useMemo(() => {
     const controls = cardControls({
       capability,
       mutation,
-      hasComment,
       hasTags,
       type,
       // A card's tooltip is read at the moment it is drawn; the ticking
@@ -149,7 +146,7 @@ function useCardControls(annot: AnnotationRecord, alone: boolean): CardOffer {
       now: Temporal.Now.instant(),
     });
     return alone ? controls : { ...controls, comment: null, text: null };
-  }, [capability, mutation, hasComment, hasTags, type, alone]);
+  }, [capability, mutation, hasTags, type, alone]);
 }
 
 /** One row of the card list's grid, its content in one cell. */
@@ -167,6 +164,10 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
   // its comment: the tag editor leaves in the same pass as the comment editor
   // comes, and its session ends once, before the new editor takes the focus.
   const editing = useAnnotStore((s) => isEditing(s, annot.key, "comment"));
+  /** A text field's editor is open on this card. */
+  const editingText = useAnnotStore(
+    (s) => s.editing?.annotationKey === annot.key && s.editing.field !== "tags",
+  );
   const controls = useCardControls(annot, alone);
   const endSession = useRef<EndTagSession | null>(null);
 
@@ -218,6 +219,10 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
         // A control inside the card already answered this click; the card's
         // selection is not it, and the control keeps the focus.
         if (clickClaimed(e)) return;
+        // A click on the card away from its open field ends the edit, as
+        // Escape does: the field stops its own clicks, so this one landed
+        // elsewhere (ADR 0066).
+        if (editingText) actions.onCloseEditors();
         // The list is already where the user clicked, so the focus moves
         // without scrolling it.
         e.currentTarget.focus({ preventScroll: true });
@@ -277,7 +282,12 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
 
         <ConflictSlot annot={annot} />
 
-        <ExcerptBlock annot={annot} collapsed={collapsed} alone={alone} />
+        <ExcerptBlock
+          annot={annot}
+          collapsed={collapsed}
+          alone={alone}
+          control={controls.text}
+        />
 
         <CommentSlot
           annot={annot}
@@ -366,9 +376,10 @@ function cardHeldTagsActions(
 /**
  * The card's verbs, as the same `clickable-icon` row the Mark Popup draws over
  * a selected mark, so a write reached from either surface wears the same
- * control. The comment's own control is the pencil beside it.
+ * control. The comment is its own field, and "Edit quoted text" stands in the
+ * card's menus, where an uncommon verb is looked for (ADR 0066).
  *
- * The editing verbs — Edit text, colour and tags — rest dimmed and come up to
+ * The editing verbs — colour and tags — rest dimmed and come up to
  * full on hover, while focus is inside the card so the keyboard reaches
  * them, and while the card is selected alone. The overflow control never dims: it is
  * the only route to copying, revealing and deleting.
@@ -387,7 +398,6 @@ function CardActionBar({
 }) {
   const actions = useContext(AnnotActionsContext);
   const tags = useTagSession(annot);
-  const text = useFieldEditing(annot, "text");
 
   /**
    * What one verb's press does. A verb the Editing Capability blocks keeps its
@@ -415,17 +425,6 @@ function CardActionBar({
           the icon carries 3.26:1 against the header, and WCAG 1.4.11 asks 3:1
           of a control. 40% measured 1.84:1. */}
       <div className="zt:flex zt:items-center zt:opacity-70 zt:group-focus-within:opacity-100 zt:group-hover:opacity-100 zt:group-data-alone:opacity-100 zt:motion-safe:transition-opacity">
-        {controls.text && (
-          <IconButton
-            icon="text-cursor-input"
-            className={BLOCKED_VERB_DIM}
-            active={text.open}
-            disabled={controls.text.disabled}
-            data-blocked={controls.text.blocked ? "" : undefined}
-            onClick={() => text.press(controls.text!)}
-            {...tooltipAttrs(controls.text.tooltip)}
-          />
-        )}
         <IconButton
           icon="palette"
           className={BLOCKED_VERB_DIM}
@@ -596,13 +595,11 @@ function TagRow({ names }: { names: readonly string[] }) {
 }
 
 /**
- * The comment, rendered or being edited, with the comment pencil in a gutter
- * beside it on a card selected alone. The slot is the same either way, so the
- * card's height answers to the comment text and to nothing else. A card
- * selected alone with no comment shows the "Add comment…" line there.
- *
- * A click on the comment or on held text is the card's own: it selects the
- * card, and the pencil alone opens the editor (ADR 0060).
+ * The comment, rendered or being edited, in one place, so the card's height
+ * answers to the comment text and to nothing else. On a card selected alone
+ * the comment is a field: a click on it, or on its held text, opens the
+ * editor, and with no comment the field shows "Add a comment…". On any other
+ * card a click on the comment is the card's own, and selects it (ADR 0066).
  */
 function CommentSlot({
   annot,
@@ -612,36 +609,40 @@ function CommentSlot({
   annot: AnnotationRecord;
   /** Whether the comment editor is open on this card. */
   editing: boolean;
-  /** The pencil's control, or `null` where the card does not offer it. */
+  /** The comment's control, or `null` where the card does not offer it. */
   control: CardControl | null;
 }) {
   const actions = useContext(AnnotActionsContext);
   const editing = useFieldEditing(annot, "comment");
   const panel = useFieldDraftPanel(annot, "comment");
-  const pencil =
-    control &&
-    controlPencil(control, {
-      active: open,
-      onPress: () => editing.press(control),
-    });
-  // No comment, no editor and no draft to answer: the line that adds one,
-  // or nothing on a card that does not offer the pencil.
-  if (!open && !panel && annot.comment === null)
-    return pencil && <AddCommentLine pencil={pencil} />;
+  const press = control && (() => editing.press(control));
+  if (open) return <FieldEditor annot={annot} field="comment" />;
+  if (panel)
+    return (
+      <FieldDraftPanel
+        annot={annot}
+        field="comment"
+        panel={panel}
+        onOpen={press ?? undefined}
+      />
+    );
+  // A card that does not offer the field shows the comment it has, and
+  // nothing where it has none.
+  if (!control && annot.comment === null) return null;
   return (
-    <CommentGutter pencil={pencil}>
-      {open ? (
-        <FieldEditor annot={annot} field="comment" />
-      ) : panel ? (
-        <FieldDraftPanel annot={annot} field="comment" panel={panel} />
-      ) : (
-        <CommentView
-          surface="card"
-          render={actions.renderComment}
-          html={annot.comment ?? ""}
-        />
-      )}
-    </CommentGutter>
+    <CommentView
+      surface="card"
+      render={actions.renderComment}
+      html={annot.comment}
+      entry={
+        control &&
+        press && {
+          disabled: control.disabled,
+          blocked: control.blocked !== null,
+          onPress: press,
+        }
+      }
+    />
   );
 }
 
@@ -702,10 +703,13 @@ function FieldDraftPanel({
   annot,
   field,
   panel,
+  onOpen,
 }: {
   annot: AnnotationRecord;
   field: TextField;
   panel: FieldDraftPanelState;
+  /** Opens the editor on the held text; absent where the card does not offer it. */
+  onOpen?: () => void;
 }) {
   const actions = useContext(AnnotActionsContext);
   const live = useAnnotStore((state) => editingLive(state.capability));
@@ -731,6 +735,7 @@ function FieldDraftPanel({
         field,
         text: panel.held.text,
       })}
+      onOpen={onOpen}
     />
   );
 }
@@ -753,38 +758,32 @@ function useShownText(annot: AnnotationRecord, field: TextField): string {
 }
 
 /**
- * One text field's editor as its control reads it: whether it is open, the
- * one save that closes it, and what a press on the control does.
+ * One text field's editor as its field reads it: the text it opens on, the
+ * one save that closes it, and what a press on the field at rest does.
  */
 function useFieldEditing(annot: AnnotationRecord, field: TextField) {
   const actions = useContext(AnnotActionsContext);
   const target = useEditingTarget(annot.key, field);
-  const open = useAnnotStore((s) => isEditing(s, annot.key, field));
   const text = useShownText(annot, field);
   // Every close asks for the submit, including one that changed nothing: the
   // request is what drops a draft holding only what Zotero already has, so
-  // clicking the card out of an untouched editor leaves no held text behind.
-  // The text saved is the draft's, which each keystroke keeps current, a save
-  // in flight included: a press on the control blurs the editor first, and
-  // that blur's save leaves the draft pending before the press closes it.
-  // The editor's own close passes the text its sheet holds.
-  const saveAndClose = (typed: string = text): void => {
+  // closing an untouched editor leaves no held text behind. The editor's own
+  // close passes the text its sheet holds.
+  const saveAndClose = (typed: string): void => {
     target.close();
     actions.onSaveField(annot, field, { text: typed, automatic: true });
   };
   return {
-    open,
     text,
     saveAndClose,
     /**
-     * The control's press. An open editor saves and closes, as Done does,
-     * even where the capability turned blocked meanwhile: the text is kept
-     * either way. A closed one opens, or spends the press on the notice that
-     * states why it cannot.
+     * A press on the field at rest: it opens the editor, is refused while a
+     * write is in flight, or spends the press on the notice that states why
+     * it cannot.
      */
     press: (control: CardControl): void => {
-      if (open) saveAndClose();
-      else if (control.blocked) actions.onBlockedPress(control.blocked);
+      if (control.disabled) return;
+      if (control.blocked) actions.onBlockedPress(control.blocked);
       else if (actions.onOpenField(annot, field)) target.open();
     },
   };
@@ -796,11 +795,11 @@ function useFieldEditing(annot: AnnotationRecord, field: TextField) {
  * Quoted Text in the Excerpt Block beside the colour rule. It is the shared
  * editor sheet; see {@link EditorSheetSlot}.
  *
- * Escape and Done store the text and close the editor. Blur and
- * Ctrl/Command+Enter store it and keep the editor open: a click in the PDF
- * beside the card, or a menu that takes the focus, is not the end of the
- * edit, and a reader change waits for the editor to close. A view gesture
- * that changes the Card Selection closes it as well.
+ * Escape, and a click on the card away from the field, store the text and
+ * close the editor. Blur and Ctrl/Command+Enter store it and keep the editor
+ * open: a click in the PDF beside the card, or a menu that takes the focus,
+ * is not the end of the edit, and a reader change waits for the editor to
+ * close. A view gesture that changes the Card Selection closes it as well.
  */
 function FieldEditor({
   annot,
@@ -823,9 +822,13 @@ function FieldEditor({
 
   /** What the editor holds now, or the draft's text before it mounts. */
   const editorText = (): string => sheet.current?.text() ?? text;
+  /** Set once Escape saved: the focus that leaves with the close saves nothing more. */
+  const closing = useRef(false);
   /** Blur: the same automatic submit, with the editor left open. */
-  const saveOnLeave = (): void =>
+  const saveOnLeave = (): void => {
+    if (closing.current) return;
     actions.onSaveField(annot, field, { text: editorText(), automatic: true });
+  };
   const store = (): void => {
     if (sheet.current)
       actions.onSaveField(annot, field, { text: sheet.current.text() });
@@ -845,8 +848,15 @@ function FieldEditor({
       onChange={(value) => actions.onEditField(annot, field, value)}
       onSubmit={store}
       onSave={store}
-      onCancel={() => saveAndClose(editorText())}
-      onDone={() => saveAndClose(editorText())}
+      onCancel={() => {
+        // The keyboard stays on the card the edit ended on, rather than
+        // falling back to the page with the editor that held it.
+        const card =
+          sheet.current?.editor.view.dom.closest<HTMLElement>(".zt-annot-card");
+        closing.current = true;
+        saveAndClose(editorText());
+        card?.focus({ preventScroll: true });
+      }}
       onLeave={saveOnLeave}
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e: KeyboardEvent<HTMLDivElement>) => e.stopPropagation()}
@@ -869,14 +879,18 @@ function ExcerptBlock({
   annot,
   collapsed,
   alone,
+  control,
 }: {
   annot: AnnotationRecord;
   collapsed: boolean;
   /** Selected alone: the text opens in full; the image keeps its list size. */
   alone: boolean;
+  /** The Quoted Text's control, or `null` where the card does not offer it. */
+  control: CardControl | null;
 }) {
   const name = annot.type;
   const editing = useAnnotStore((s) => isEditing(s, annot.key, "text"));
+  const text = useFieldEditing(annot, "text");
   const panel = useFieldDraftPanel(annot, "text");
   const isImage = name === "image" || name === "ink";
 
@@ -892,7 +906,14 @@ function ExcerptBlock({
   } else if (panel) {
     // Held text or its Write Conflict stands in the text's place on every
     // card, selected or not, until the user answers it.
-    content = <FieldDraftPanel annot={annot} field="text" panel={panel} />;
+    content = (
+      <FieldDraftPanel
+        annot={annot}
+        field="text"
+        panel={panel}
+        onOpen={control ? () => text.press(control) : undefined}
+      />
+    );
   } else if (annot.text) {
     content = <ExcerptText text={annot.text} />;
   } else if (hasQuotedText(name)) {

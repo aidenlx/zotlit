@@ -65,14 +65,8 @@ describe("markPopupRow", () => {
     ]);
   });
 
-  it("names the comment pencil for what pressing it would do, and wears the Annotation's colour", () => {
-    const commented = { ...HIGHLIGHT, comment: "a note of my own" };
-    expect(row({ annotation: commented }).comment).toEqual({
-      disabled: false,
-      blocked: null,
-      tooltip: m.annot_view_card_edit_comment(),
-    });
-    expect(row().comment.tooltip).toBe(m.annot_view_card_add_comment());
+  it("offers the comment field live, and wears the Annotation's colour", () => {
+    expect(row().comment).toMatchObject({ disabled: false, blocked: null });
     expect(row().color).toBe("#2ea8e5");
   });
 
@@ -112,8 +106,8 @@ describe("markPopupRow", () => {
       delete: [true, reason],
       reveal: [false, "Reveal in the annotation view"],
     });
-    // The pencil keeps its press and rests dimmed, as on the card: its press
-    // states the reason.
+    // The comment field keeps its press and rests as text, as on the card:
+    // its press states the reason.
     expect(built.comment).toMatchObject({
       disabled: false,
       blocked: { reason },

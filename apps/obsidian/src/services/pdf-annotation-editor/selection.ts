@@ -60,8 +60,6 @@ import {
   copyText,
   recolor,
 } from "@/views/annot-view/card-verbs";
-import { controlPencil } from "@/views/annot-view/comment-parts";
-import type { CommentPencil } from "@/views/annot-view/comment-parts";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
 import type {
   TextDraftActions,
@@ -208,7 +206,7 @@ export interface MarkGestures {
   reportBlockedGesture: () => void;
   /**
    * A press on a control the Editing Capability blocks, such as the comment
-   * pencil: the seam says why on every press, and offers the gesture that
+   * field: the seam says why on every press, and offers the gesture that
    * ends the block where there is one, as the card's own blocked press does.
    */
   blockedPress: (block: CardBlock) => void;
@@ -1151,10 +1149,9 @@ export class MarkSelection implements Disposable {
   }
 
   /**
-   * What stands in the comment's place: the open editor, a held draft, the
-   * stored comment, or the "Add comment…" line, with the comment pencil
-   * beside it. The open editor is where the draft stands, so neither panel
-   * repeats it.
+   * What stands in the comment's place: the open editor, a held draft, or
+   * the comment field, resting on the stored comment or on "Add a comment…".
+   * The open editor is where the draft stands, so neither panel repeats it.
    */
   #commentSlot(
     content: HTMLElement,
@@ -1163,14 +1160,10 @@ export class MarkSelection implements Disposable {
   ): SelectedPopupComment {
     const { annotation } = input;
     const sheet = input.commenting
-      ? this.#commentEditorSlot(
-          content,
-          annotation,
-          this.#commentPencil(input, control, true),
-        )
+      ? this.#commentEditorSlot(content, annotation)
       : null;
     if (sheet) return sheet;
-    const pencil = this.#commentPencil(input, control, false);
+    const open = (): void => this.#pressComment(annotation, control);
     // The popup announces a held draft on the same rule the card does, and
     // carries the same verbs: the two surfaces reach one shared draft, so a
     // decision offered on one is offered on the other. Like the card, it
@@ -1185,37 +1178,30 @@ export class MarkSelection implements Disposable {
         kind: "held",
         held,
         actions: this.#draftActions(annotation),
-        pencil,
+        onOpen: open,
       };
     }
-    if (annotation.comment === null) return { kind: "add", pencil };
     return {
       kind: "view",
       html: annotation.comment,
       render: this.#deps.renderComment,
-      pencil,
+      entry: {
+        disabled: control.disabled,
+        blocked: control.blocked !== null,
+        onPress: open,
+      },
     };
   }
 
   /**
-   * The comment pencil, on the card's own rule. While the editor is open the
-   * pencil is pressed, and a press saves and closes it, whatever the Editing
-   * Capability now says. Otherwise a pencil the capability blocks rests dimmed
-   * and spends its press on the notice that states the reason.
+   * A press on the resting comment, on the card's own rule: a write in flight
+   * refuses it, a blocked capability spends it on the notice that states the
+   * reason, and otherwise it opens the editor.
    */
-  #commentPencil(
-    input: SelectedRowInput,
-    control: CardControl,
-    active: boolean,
-  ): CommentPencil {
-    return controlPencil(control, {
-      active,
-      onPress: () => {
-        if (!active && control.blocked)
-          this.#deps.gestures.blockedPress(control.blocked);
-        else this.#toggleComment(input.annotation);
-      },
-    });
+  #pressComment(annotation: AnnotationRecord, control: CardControl): void {
+    if (control.disabled) return;
+    if (control.blocked) this.#deps.gestures.blockedPress(control.blocked);
+    else this.#openComment(annotation);
   }
 
   /**
@@ -1277,7 +1263,6 @@ export class MarkSelection implements Disposable {
   #commentEditorSlot(
     content: HTMLElement,
     annotation: AnnotationRecord,
-    pencil: CommentPencil,
   ): SelectedPopupComment | null {
     const standing = selectSelectedDraft(this.#state());
     const draft =
@@ -1296,7 +1281,6 @@ export class MarkSelection implements Disposable {
     };
     return {
       kind: "sheet",
-      pencil,
       sheet: {
         sheetRef: this.#sheet,
         field: textFieldWording("comment"),
@@ -1308,7 +1292,6 @@ export class MarkSelection implements Disposable {
         onSubmit: () => this.#submitCommentEditor(annotation),
         onSave: () => this.#submitCommentEditor(annotation),
         onCancel: close,
-        onDone: close,
         onLeave: close,
         // The row's own verbs stand beside the editor, so reaching one is not
         // leaving it.
@@ -1389,16 +1372,10 @@ export class MarkSelection implements Disposable {
     }
   }
 
-  /** The comment pencil is a toggle: pressed again, it stores and closes. */
-  #toggleComment(annotation: AnnotationRecord): void {
-    if (this.#sheet.current) {
-      this.#submitCommentEditor(annotation, true);
-      setCommenting(this.#deps.surfaceState, false);
-    } else if (
-      this.#deps.annotations.editTextField("comment", annotation.key)
-    ) {
+  /** Opens the comment editor where a draft starts. */
+  #openComment(annotation: AnnotationRecord): void {
+    if (this.#deps.annotations.editTextField("comment", annotation.key))
       setCommenting(this.#deps.surfaceState, true);
-    }
   }
 
   /**

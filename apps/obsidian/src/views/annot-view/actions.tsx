@@ -107,6 +107,11 @@ export interface AnnotActions {
    */
   onClearSelection(): void;
   /**
+   * Save and close the open card editor: a click on its card away from the
+   * field ends the edit, as Escape does.
+   */
+  onCloseEditors(): void;
+  /**
    * Start one card's editing of a text field: a comment edit, or a Text Edit
    * on the Quoted Text. A card not selected alone is first selected alone,
    * and an open editor is first saved and closed.
@@ -293,6 +298,11 @@ export interface AnnotActionDeps {
    * has closed, as the Mark Popup opens one at a time.
    */
   closeEditors: () => void;
+  /**
+   * Make one card's field the editing target, as its own control does: the
+   * route a menu entry takes to an editor.
+   */
+  openEditor: (annot: AnnotationRecord, field: TextField) => void;
   onExploreAnnotation: (annotationKey: string) => void;
 }
 
@@ -493,6 +503,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   };
 
   const fillCardMenu = (menu: Menu, annot: AnnotationRecord): void => {
+    addEditTextItem(menu, annot);
     const backlink = getBacklink(annot);
     if (backlink) {
       menu.addItem((item) => {
@@ -597,6 +608,29 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   };
 
   /**
+   * "Edit quoted text", on one highlight or underline card: the Quoted Text
+   * is corrected rarely, so its verb stands where "Edit…" is looked for rather
+   * than in the header (ADR 0066). Unlike the delete entry, a blocked capability
+   * leaves it enabled: it opens an editor, as the comment field does, and
+   * spends its press on the notice that says why, as the field's press does.
+   */
+  const addEditTextItem = (menu: Menu, annot: AnnotationRecord): void => {
+    const control = deps.controls(annot).text;
+    if (!control) return;
+    menu.addItem((item) => {
+      item
+        .setTitle(m.annot_view_menu_edit_text())
+        .setIcon("text-cursor-input")
+        .setDisabled(control.disabled)
+        .onClick(() => {
+          if (control.blocked) onBlockedPress(control.blocked);
+          else if (onOpenField(annot, "text")) deps.openEditor(annot, "text");
+        });
+    });
+    menu.addSeparator();
+  };
+
+  /**
    * The delete entry, for one card or a group. Every entry here is a verb. A
    * blocked write shows as a dimmed entry and says why once, in the header
    * menu's capability row and in the notice a card verb raises, rather than in
@@ -653,6 +687,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     onDiscardTags,
     libraryTagNames: deps.libraryTagNames,
     onOpenField,
+    onCloseEditors: () => deps.closeEditors(),
     onEditField,
     onSaveField,
     onDiscardDraft,
@@ -752,6 +787,7 @@ const NOOP_ACTIONS: AnnotActions = {
   onClearSelection: () => {},
   onDiscardDraft: () => {},
   onOpenField: () => false,
+  onCloseEditors: () => {},
   onEditField: () => {},
   onSaveField: () => {},
   onOpenTags: () => false,

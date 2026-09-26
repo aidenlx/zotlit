@@ -3460,7 +3460,6 @@ it("draws nothing while an automatic comment save is in flight", async () => {
         verbs: cardControls({
           capability,
           mutation,
-          hasComment: true,
           hasTags: false,
           type: "highlight",
           now: NOW,
@@ -5566,7 +5565,6 @@ it("keeps the verbs live and the draft saving until the read-back lands", async 
   const verbs = cardControls({
     capability: repository.capabilityFor("RGRPDF24"),
     mutation,
-    hasComment: false,
     hasTags: true,
     type: "highlight",
     now: NOW,
@@ -5963,7 +5961,6 @@ it("stands the verbs down while a tag undo is in flight, as a gesture's write", 
   const verbs = cardControls({
     capability: repository.capabilityFor("RGRPDF24"),
     mutation,
-    hasComment: false,
     hasTags: true,
     type: "highlight",
     now: NOW,

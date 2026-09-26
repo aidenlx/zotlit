@@ -1,6 +1,6 @@
 // What an Annotation Card's editing controls may do, decided as data rather
-// than in a component: one rule read by the colour dot, the comment pencil, the
-// tag toggle and the delete verb, keyed by the Editing Capability and by what a
+// than in a component: one rule read by the colour dot, the comment field,
+// "Edit quoted text", the tag toggle and the delete verb, keyed by the Editing Capability and by what a
 // write left.
 //
 // @see apps/obsidian/policies/ui-seams.md
@@ -65,8 +65,6 @@ export interface CardControlsInput {
   capability: EditingCapability;
   /** What the last write left on this Annotation. */
   mutation: MutationState;
-  /** Whether the Annotation already carries a comment. */
-  hasComment: boolean;
   /** Whether the Annotation already carries a tag. */
   hasTags: boolean;
   /** The Annotation's type, which decides whether it has a Quoted Text. */
@@ -82,16 +80,16 @@ export interface CardControlsInput {
 export interface CardControls {
   color: CardControl;
   /**
-   * The comment pencil. A card offers it only while selected alone (ADR
-   * 0060); the Mark Popup always does.
+   * The comment field. A card offers it only while selected alone (ADR
+   * 0066); the Mark Popup always does.
    */
   comment: CardControl;
-  /** The tag toggle, which follows the comment pencil's rules. */
+  /** The tag toggle, which follows the comment field's rules. */
   tags: CardControl;
   /**
-   * "Edit text", which opens the editor on the Quoted Text; `null` where the
-   * Annotation has none to edit. Only a highlight or underline has a Quoted
-   * Text, and a card offers it only while selected alone (ADR 0060).
+   * "Edit quoted text", which opens the editor on the Quoted Text; `null`
+   * where the Annotation has none to edit. Only a highlight or underline has
+   * a Quoted Text, and a card offers it only while selected alone (ADR 0066).
    */
   text: CardControl | null;
   delete: CardControl;
@@ -119,7 +117,6 @@ export function editingLive(capability: EditingCapability): boolean {
 export function cardControls({
   capability,
   mutation,
-  hasComment,
   hasTags,
   type,
   now,
@@ -140,12 +137,12 @@ export function cardControls({
   };
   return {
     color: control(m.annot_view_card_color()),
-    comment: control(commentLabel(hasComment)),
+    comment: control(m.annot_view_card_comment_label()),
     tags: control(
       hasTags ? m.annot_view_card_edit_tags() : m.annot_view_card_add_tags(),
     ),
     delete: control(m.annot_view_menu_delete()),
-    text: hasQuotedText(type) ? control(m.annot_view_card_edit_text()) : null,
+    text: hasQuotedText(type) ? control(m.annot_view_menu_edit_text()) : null,
   };
 }
 
@@ -172,13 +169,6 @@ export function groupControl(
   };
 }
 
-/** "Add comment" for a card with none, "Edit comment" for one that has one. */
-export function commentLabel(hasComment: boolean): string {
-  return hasComment
-    ? m.annot_view_card_edit_comment()
-    : m.annot_view_card_add_comment();
-}
-
 /**
  * Why the editing verbs cannot run, or `null` while they can. A write in
  * flight outranks the capability: it is the nearer answer to "why can I not
@@ -186,7 +176,7 @@ export function commentLabel(hasComment: boolean): string {
  *
  * The creation popup and the Creation Toolbar read the same rule. The Mark
  * Popup's selected row reads it through {@link cardControls}, because its
- * colour, tags, delete and comment pencil are the card's writes reached from
+ * colour, tags, delete and comment field are the card's writes reached from
  * the PDF reader (aidenlx/zotlit#1148).
  */
 export function editingBlockedReason(
@@ -395,7 +385,7 @@ export interface TextFieldWording extends FieldEditorWording {
 const TEXT_FIELD_WORDING: Record<TextField, () => TextFieldWording> = {
   comment: () => ({
     placeholder: m.annot_view_card_comment_placeholder(),
-    label: m.annot_view_card_edit_comment(),
+    label: m.annot_view_card_comment_label(),
     save: m.annot_view_comment_save(),
     draft: m.annot_view_comment_draft(),
   }),

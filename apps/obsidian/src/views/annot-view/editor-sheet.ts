@@ -1,6 +1,6 @@
 // The controls every surface that edits an Annotation's text fields draws:
-// the editor sheet (the field editor, its status line, its Save button and
-// Done), the held-draft panel, and the Write Conflict panel. Each takes the
+// the editor sheet (the field editor, its status line and its Save button),
+// the held-draft panel, and the Write Conflict panel. Each takes the
 // wording of the field it stands for: the comment or the Quoted Text.
 //
 // Vanilla builders, which the Preact wrappers in `comment-parts.tsx` mount on
@@ -12,6 +12,7 @@ import type { App } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
+import { claimClick } from "@/lib/utils";
 
 import type { ConflictPanel, ConflictVerb } from "./card-conflict";
 import type {
@@ -31,18 +32,34 @@ import { tagChipVariants } from "./tag-chip";
 export type EditorSurface = "card" | "excerpt" | "popup";
 
 /**
- * Obsidian's own text field — its fill, resting border and focus ring — drawn
- * as rings so neither changes the layout.
+ * The open field: a quiet tint under the text, with no ring, as Zotero's own
+ * comment field is. The caret and the tint are what say the text is being
+ * edited; a ring and a button more would only say it again (ADR 0066).
  */
 const FIELD =
-  "zt-annot-comment-editor zt:bg-(--background-modifier-form-field) zt:text-foreground zt:ring-1 zt:ring-(--background-modifier-border) zt:focus-within:ring-2 zt:focus-within:ring-(--background-modifier-border-focus)";
+  "zt-annot-comment-editor zt:bg-(--background-modifier-hover) zt:text-foreground";
 
-/** The field fades in around text that stays where it stood. */
+/** The tint fades in under text that stays where it stood. */
 const FIELD_ENTER =
-  "zt:motion-safe:transition-[box-shadow,background-color] zt:starting:bg-transparent zt:starting:ring-transparent";
+  "zt:motion-safe:transition-[background-color] zt:motion-safe:duration-150 zt:starting:bg-transparent";
+
+/**
+ * The resting comment where a click opens its editor: the open field's tint
+ * under the pointer, and the text cursor, so the comment says it takes typing
+ * before it does.
+ */
+const EDITABLE =
+  "zt:cursor-text zt:hover:bg-(--background-modifier-hover) zt:motion-safe:transition-[background-color] zt:motion-safe:duration-150";
 
 /** Where the popup's comment text stands, read or edited. */
 const POPUP_TEXT = "zt:px-1.5 zt:py-1 zt:text-sm";
+
+/**
+ * The card's field box: its inset taken back out of the margin on every side,
+ * so the text keeps the place the rendered text held.
+ */
+const CARD_BOX =
+  "zt:-mx-1.5 zt:-my-1 zt:rounded-(--input-radius) zt:px-1.5 zt:py-1";
 
 /** The popup's panels and its rendered comment take the row's width, as the sheet does. */
 const POPUP_WIDTH = "zt:w-0 zt:min-w-[max(100%,12em)]";
@@ -50,8 +67,9 @@ const POPUP_WIDTH = "zt:w-0 zt:min-w-[max(100%,12em)]";
 /**
  * Each surface's own spacing, corners and width, its sheet's theme hook, and
  * the inset the element a sheet or a panel is drawn into takes from the
- * surface's border. `field` and `view` put the comment's text in one place, so
- * opening the editor over the rendered comment moves nothing.
+ * surface's border. `field` and `view` share one box, so the resting tint, the
+ * open field's tint and the text all stand in one place, and opening the
+ * editor over the rendered comment moves nothing.
  */
 const SURFACE: Record<
   EditorSurface,
@@ -61,20 +79,16 @@ const SURFACE: Record<
     field: string;
     view: string;
     viewFrame: string;
-    footer: string;
     panel: string;
   }
 > = {
-  // The field's inset is taken back out of the margin on every side, so the
-  // text keeps the place the rendered comment held. A panel runs to the
-  // card's edges.
+  // A panel runs to the card's edges.
   card: {
     sheet: "",
     inset: "",
-    field: `zt:-mx-1.5 zt:-my-1 zt:rounded-(--input-radius) zt:px-1.5 zt:py-1 zt:text-xs ${FIELD_ENTER}`,
-    view: "zt:text-xs",
+    field: `${CARD_BOX} zt:text-xs ${FIELD_ENTER}`,
+    view: `${CARD_BOX} zt:text-xs`,
     viewFrame: "",
-    footer: "zt:mt-2",
     panel: "zt:-mx-3 zt:px-3 zt:py-1.5",
   },
   // The card's Excerpt Block, beside the colour rule: a panel fills from the
@@ -82,24 +96,21 @@ const SURFACE: Record<
   excerpt: {
     sheet: "",
     inset: "",
-    field: `zt:-mx-1.5 zt:-my-1 zt:rounded-(--input-radius) zt:px-1.5 zt:py-1 zt:text-xs ${FIELD_ENTER}`,
-    view: "zt:text-xs",
+    field: `${CARD_BOX} zt:text-xs ${FIELD_ENTER}`,
+    view: `${CARD_BOX} zt:text-xs`,
     viewFrame: "",
-    footer: "zt:mt-2",
     panel: "zt:-ms-2 zt:-me-3 zt:ps-2 zt:pe-3 zt:py-1.5",
   },
   // The popover's padding is the row's, which leaves a field or a panel under
   // it close to the border, so what stands under the row keeps its own inset.
-  // The rendered comment is the field at rest: a recessed well with the
-  // field's box and corners, so it reads as content apart from the verbs, and
-  // opening the editor turns the well into the field without moving the text.
+  // The rendered comment is plain text in the field's box and corners, so
+  // opening the editor tints that box without moving the text.
   popup: {
     sheet: themeHook.pdfCommentSheet,
     inset: "zt:px-1.5 zt:pb-1.5",
     field: `zt:rounded-(--radius-s) ${POPUP_TEXT} ${FIELD_ENTER}`,
-    view: `zt:rounded-(--radius-s) zt:bg-(--background-secondary) ${POPUP_TEXT}`,
+    view: `zt:rounded-(--radius-s) ${POPUP_TEXT}`,
     viewFrame: POPUP_WIDTH,
-    footer: "zt:mt-1",
     panel: `${POPUP_WIDTH} zt:rounded-(--radius-s) zt:px-2 zt:py-1.5`,
   },
 };
@@ -110,8 +121,11 @@ const SURFACE: Record<
  * the scoped Tailwind preflight. `zt-annot-comment` is the hook the view
  * stylesheet compacts them through.
  */
-export function commentViewClass(surface: EditorSurface): string {
-  return `markdown-rendered zt-annot-comment zt:overflow-x-auto zt:break-words zt:text-foreground zt:select-text ${SURFACE[surface].view}`;
+export function commentViewClass(
+  surface: EditorSurface,
+  editable = false,
+): string {
+  return `markdown-rendered zt-annot-comment zt:overflow-x-auto zt:break-words zt:text-foreground zt:select-text ${SURFACE[surface].view}${editable ? ` ${EDITABLE}` : ""}`;
 }
 
 /**
@@ -154,8 +168,11 @@ export interface EditorSheetProps {
   onSave?: () => void;
   /** Escape. */
   onCancel: () => void;
-  /** The Done button: store the field and close the editor. */
-  onDone: () => void;
+  /**
+   * The one call-to-action a sheet may carry: a creation's commit, named for
+   * what it creates. An edit carries none, since it saves as the user types.
+   */
+  commit?: SheetCommit;
   /**
    * Focus left the sheet while the save is automatic and the editor takes a
    * write: store the field. The surface decides whether the sheet closes
@@ -164,6 +181,12 @@ export interface EditorSheetProps {
   onLeave?: () => void;
   /** What focus may move within without leaving; the sheet itself by default. */
   within?: HTMLElement;
+}
+
+/** A sheet's call-to-action: its label and what its press runs. */
+export interface SheetCommit {
+  label: string;
+  run: () => void;
 }
 
 export interface EditorSheet extends Disposable {
@@ -176,8 +199,9 @@ export interface EditorSheet extends Disposable {
 
 /**
  * The editor sheet: the field editor, then a footer row with the status line,
- * a Save button while the save is manual, and Done, which saves and closes.
- * The editor takes the caret at the end.
+ * a Save button while the save is manual, and the commit a creation carries.
+ * The footer takes no room while it has nothing to show. The editor takes the
+ * caret at the end.
  *
  * @param sheet the element the sheet is drawn into, replacing what it held.
  * @see {@link createFieldEditor}
@@ -193,7 +217,7 @@ export function renderEditorSheet(
     onSubmit,
     onSave,
     onCancel,
-    onDone,
+    commit,
     onLeave,
     within = sheet,
   }: EditorSheetProps,
@@ -204,14 +228,14 @@ export function renderEditorSheet(
   sheet.addClasses(`${look.sheet} ${look.inset}`.split(" ").filter(Boolean));
   const frame = sheet.createDiv({ cls: `${FIELD} ${look.field}` });
   const footer = sheet.createDiv({
-    cls: `zt:flex zt:flex-wrap zt:items-center zt:gap-2 ${look.footer}`,
+    cls: "zt:flex zt:flex-wrap zt:items-center zt:gap-2",
   });
   // The live region stays mounted and shown through the quiet case, so a
   // status it announces is a change inside it rather than a new node.
   const hint = footer.createSpan({
     // The hint keeps a readable measure and puts the buttons on a line of
     // their own where they do not fit side by side. An empty hint takes no
-    // measure, so Done stands at the row's end beside it.
+    // measure, so a button stands at the row's end beside it.
     cls: "zt:min-w-0 zt:grow zt:basis-[12em] zt:empty:basis-0 zt:text-xs zt:text-pretty zt:text-muted-foreground",
     attr: { role: "status" },
   });
@@ -220,15 +244,17 @@ export function renderEditorSheet(
     attr: { type: "button" },
   });
   if (onSave) save.addEventListener("click", onSave);
-  // Done keeps the caret in the editor through its press, so the press is
-  // what saves and closes rather than the blur before it.
-  const done = footer.createEl("button", {
-    cls: "mod-cta",
-    text: m.annot_view_editor_done(),
-    attr: { type: "button" },
-  });
-  done.addEventListener("mousedown", (event) => event.preventDefault());
-  done.addEventListener("click", onDone);
+  if (commit) {
+    // The commit keeps the caret in the editor through its press, so the
+    // press is what commits rather than the blur before it.
+    const button = footer.createEl("button", {
+      cls: "mod-cta",
+      text: commit.label,
+      attr: { type: "button" },
+    });
+    button.addEventListener("mousedown", (event) => event.preventDefault());
+    button.addEventListener("click", commit.run);
+  }
   let current = status;
   // Tearing the editor down takes its focus away, which is no user leaving.
   let disposed = false;
@@ -250,8 +276,15 @@ export function renderEditorSheet(
     current = next;
     editor.setReadOnly(next.readOnly);
     hint.textContent = next.hint ?? "";
-    save.toggle(next.manual && onSave !== undefined);
+    const saves = next.manual && onSave !== undefined;
+    save.toggle(saves);
     save.disabled = next.saveDisabled;
+    // The footer stands off the field only while it shows something; the
+    // empty live region stays mounted, so what it announces is a change.
+    footer.toggleClass(
+      "zt:mt-1.5",
+      Boolean(next.hint) || saves || commit !== undefined,
+    );
   };
   update(status);
   const { view } = editor;
@@ -266,6 +299,28 @@ export function renderEditorSheet(
       editor[Symbol.dispose]();
     },
   };
+}
+
+/**
+ * Whether a click on resting text is a request to edit it. A click that
+ * followed a link, or that ended a drag which selected text in the resting
+ * text, is reading: the editor would take the selection away before it could
+ * be copied. A selection elsewhere, such as in the PDF, is not this one's.
+ */
+export function clickEdits(
+  event: Pick<MouseEvent, "target" | "currentTarget">,
+): boolean {
+  const target = event.target as Node | null;
+  const field = event.currentTarget as Node | null;
+  if (!target || !field) return false;
+  const element = target.instanceOf(Element) ? target : target.parentElement;
+  if (element?.closest("a")) return false;
+  // Read through the node's own document: a popout's nodes are not this one's.
+  const selection = field.doc.getSelection();
+  if (!selection || selection.isCollapsed) return true;
+  return !(
+    field.contains(selection.anchorNode) || field.contains(selection.focusNode)
+  );
 }
 
 /**
@@ -373,8 +428,9 @@ const CONFLICT_VERB: Record<ConflictVerb, keyof ConflictActions> = {
  * of state — local text waiting on the user — and it carries its verbs for the
  * same reason: a surface that only says "unsaved" leaves nowhere to go.
  *
- * The held text is for reading and copying: the field's own control, the
- * comment pencil or Edit text, is what opens the editor on it (ADR 0060).
+ * Where `open` is given, a click on the held text opens the editor on it, as
+ * a click on the resting comment does (ADR 0066); otherwise the held text is
+ * for reading and copying.
  *
  * @see https://github.com/aidenlx/zotlit/issues/1145
  */
@@ -384,9 +440,12 @@ export function renderHeldDraftPanel(
   {
     surface,
     actions,
+    open,
   }: {
     surface: EditorSurface;
     actions: HeldDraftActions;
+    /** Opens the editor on the held text; absent where a click only reads. */
+    open?: () => void;
   },
 ): void {
   const box = panel(parent, {
@@ -395,10 +454,18 @@ export function renderHeldDraftPanel(
     icon: "pencil-line",
     title: held.title,
   });
-  box.createDiv({
-    cls: "zt:break-words zt:whitespace-pre-wrap zt:select-text",
+  const text = box.createDiv({
+    cls: `zt:break-words zt:whitespace-pre-wrap zt:select-text${open ? ` zt:-mx-1 zt:rounded-(--radius-s) zt:px-1 ${EDITABLE}` : ""}`,
     text: held.text,
   });
+  if (open) {
+    text.addEventListener("click", (event) => {
+      if (!clickEdits(event)) return;
+      // The surface's own click is not this one.
+      claimClick({ nativeEvent: event });
+      open();
+    });
+  }
   heldReasonAndVerbs(box, held, actions);
 }
 

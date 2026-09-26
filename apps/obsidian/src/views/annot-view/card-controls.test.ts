@@ -15,7 +15,6 @@ import { IDLE } from "@/services/annotation-repository/write";
 import {
   cardControls,
   capabilityBlock,
-  commentLabel,
   fieldEditorControls,
   editingBlockedReason,
   groupControl,
@@ -62,7 +61,6 @@ function controlsOf(
   return cardControls({
     capability,
     mutation,
-    hasComment: false,
     hasTags: false,
     ...card,
     now: NOW,
@@ -238,21 +236,14 @@ it("leaves a settled write's verbs to the capability, so the user can try again"
   }
 });
 
-it("names the comment verb for what pressing it would do", () => {
-  expect(commentLabel(true)).not.toBe(commentLabel(false));
-  expect(controlsOf({ kind: "writable" }).comment.tooltip).toBe(
-    commentLabel(false),
-  );
-});
-
-it("dims the comment pencil with each capability's reason", () => {
+it("dims the comment field with each capability's reason", () => {
   for (const capability of [LIVE, ...BLOCKED]) {
-    // The pencil is pressable and carries the block the notice states, as
+    // The field is pressable and carries the block the notice states, as
     // every other verb does.
     expect(controlsOf(capability).comment).toEqual({
       disabled: false,
       blocked: capabilityBlock(capability, NOW),
-      tooltip: commentLabel(false),
+      tooltip: m.annot_view_card_comment_label(),
     });
   }
 });
@@ -305,7 +296,7 @@ it("stands every verb down while a tag undo or redo is in flight", () => {
   );
 });
 
-describe("Edit text", () => {
+describe("Edit quoted text", () => {
   it("is offered for a highlight or underline, and for no other type", () => {
     const offered = (type: ResolvedAnnotationTypeName) =>
       controlsOf(LIVE, IDLE, { type }).text !== null;
@@ -318,7 +309,7 @@ describe("Edit text", () => {
     expect(controlsOf(LIVE, IDLE, { type: "highlight" }).text).toEqual({
       disabled: false,
       blocked: null,
-      tooltip: m.annot_view_card_edit_text(),
+      tooltip: m.annot_view_menu_edit_text(),
     });
   });
 
@@ -334,7 +325,7 @@ describe("Edit text", () => {
               ? "allow-editing"
               : null,
         },
-        tooltip: m.annot_view_card_edit_text(),
+        tooltip: m.annot_view_menu_edit_text(),
       });
     }
   });
@@ -352,7 +343,6 @@ it("names the tag toggle for what pressing it would do", () => {
     cardControls({
       capability: { kind: "writable" },
       mutation: IDLE,
-      hasComment: false,
       hasTags,
       type: "highlight",
       now: NOW,
