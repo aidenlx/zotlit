@@ -18,6 +18,7 @@ import {
 import type { ZoteroRdp } from "./paired-zotero.ts";
 import {
   FIRE,
+  openPdfWithAnnotationView,
   pdfViewOf,
   raiseWindow,
   reopenPdfView,
@@ -161,36 +162,8 @@ export async function verifyExternalAnnotationLock({
   });
 
   // ── The PDF and its card in Obsidian ──────────────────────────────────────
-  const layout = await obEval(
-    vaultId,
-    "JSON.stringify(app.workspace.getLayout())",
-  );
-  cleanup.defer(async () => {
-    await obEval(
-      vaultId,
-      `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
-    );
-  });
   await raiseWindow(vaultId);
-  await obEval(
-    vaultId,
-    `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(attachmentPath)});await app.workspace.getLeaf('tab').openFile(file);return true;})()`,
-  );
-  expect(
-    await obEvalUntil(
-      vaultId,
-      `String(!!app.plugins.plugins.zotlit.services.pdfAnnotationEditor.sessionForPath(${JSON.stringify(attachmentPath)}))`,
-      { expected: "true" },
-    ),
-  ).toBe(true);
-  await obEval(
-    vaultId,
-    "app.commands.executeCommandById('zotlit:open-annot-view');true",
-  );
-  await obEval(
-    vaultId,
-    "app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');true",
-  );
+  await openPdfWithAnnotationView(vaultId, { attachmentPath, cleanup });
   // The lock is the only thing in the way: the Attachment is writable, so a
   // press that says the Lock Reason says it for the lock alone.
   expect(

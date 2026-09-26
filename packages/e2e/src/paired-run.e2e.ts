@@ -72,6 +72,7 @@ import {
   disarmTool,
   expectEditorKeepsSelections,
   FIRE,
+  openPdfWithAnnotationView,
   pageContainerOf,
   pdfViewOf,
   POPUP_EDITOR,
@@ -758,23 +759,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       let createdKey = "";
       let readerTabID = "";
       let pdfDigestBefore = "";
-      let workspaceLayout = "";
       let cleanup: AsyncDisposableStack;
 
       beforeAll(async () => {
         cleanup = new AsyncDisposableStack();
         rdp = cleanup.use(await openZoteroRdp(debuggerPort!));
         await prepareAuthorizationFixture();
-        workspaceLayout = await obEval(
-          vaultId!,
-          "JSON.stringify(app.workspace.getLayout())",
-        );
-        cleanup.defer(async () => {
-          await obEval(
-            vaultId!,
-            `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(workspaceLayout)}));return true;})()`,
-          );
-        });
         // The PDF is a `vault`-rooted linked file, so it is only readable where
         // the run's vault stands — which is exactly this block's gate.
         pdfDigestBefore = await digestAttachmentPdf();
@@ -792,17 +782,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           await closeZoteroReader(rdp, readerTabID);
         });
 
-        await obEval(
-          vaultId!,
-          `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(attachmentPath)});await app.workspace.getLeaf('tab').openFile(file);return true;})()`,
-        );
-        expect(
-          await obEvalUntil(
-            vaultId!,
-            `String(!!app.plugins.plugins.zotlit.services.pdfAnnotationEditor.sessionForPath(${JSON.stringify(attachmentPath)}))`,
-            { expected: "true" },
-          ),
-        ).toBe(true);
+        await openPdfWithAnnotationView(vaultId!, { attachmentPath, cleanup });
 
         // Two setup preconditions, asserted here so a mis-prepared environment
         // says so instead of timing out later. The Attachment must resolve to
@@ -829,15 +809,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ),
           "Live Updates is not listening; a Zotero-side edit cannot reach Obsidian",
         ).toBe("true");
-
-        await obEval(
-          vaultId!,
-          "app.commands.executeCommandById('zotlit:open-annot-view');true",
-        );
-        await obEval(
-          vaultId!,
-          "app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');true",
-        );
 
         // The Annotation Source must be the Local API before any write: a
         // database-backed list refuses writes before it sends anything.
