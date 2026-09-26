@@ -29,7 +29,7 @@ import type { NoteFeature } from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
 
 import { chooseAttachment } from "./attachment-suggester";
-import { groupControl } from "./card-controls";
+import { groupControl, pressControl } from "./card-controls";
 import type { CardBlock, CardControl, CardControls } from "./card-controls";
 import type { CardClick } from "./card-selection";
 import { blockedNotice, confirmDelete, copyText, recolor } from "./card-verbs";
@@ -107,7 +107,7 @@ export interface AnnotActions {
    */
   onClearSelection(): void;
   /**
-   * Save and close the open card editor: a click on its card away from the
+   * Save and close the open card editor: a click in the view away from the
    * field ends the edit, as Escape does.
    */
   onCloseEditors(): void;
@@ -622,10 +622,14 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
         .setTitle(m.annot_view_menu_edit_text())
         .setIcon("text-cursor-input")
         .setDisabled(control.disabled)
-        .onClick(() => {
-          if (control.blocked) onBlockedPress(control.blocked);
-          else if (onOpenField(annot, "text")) deps.openEditor(annot, "text");
-        });
+        .onClick(() =>
+          pressControl(control, {
+            act: () => {
+              if (onOpenField(annot, "text")) deps.openEditor(annot, "text");
+            },
+            onBlocked: onBlockedPress,
+          }),
+        );
     });
     menu.addSeparator();
   };
@@ -769,7 +773,7 @@ const NOOP_DEMAND: ExcerptDisplayDemand = {
   snapshot: () => NOOP_DISPLAY,
 };
 
-const NOOP_ACTIONS: AnnotActions = {
+export const NOOP_ACTIONS: AnnotActions = {
   onMoreOptions: () => {},
   onCardMenu: () => {},
   onHeaderMenu: () => {},

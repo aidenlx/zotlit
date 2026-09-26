@@ -13,6 +13,9 @@ import { AppContext } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
+import { editorApp } from "./__fixtures__/editor-app";
+import { AnnotActionsContext, NOOP_ACTIONS } from "./actions";
+import type { AnnotActions } from "./actions";
 import { AnnotView } from "./AnnotView";
 import { NO_SELECTION, nextCardSelection, sameKeys } from "./card-selection";
 import type { CardSelection } from "./card-selection";
@@ -49,7 +52,10 @@ afterEach(async () => {
   document.body.replaceChildren();
 });
 
-async function mountList() {
+async function mountList({
+  app = {} as App,
+  actions = {},
+}: { app?: App; actions?: Partial<AnnotActions> } = {}) {
   const store = createAnnotStore();
   store.setState({
     attachments: [
@@ -76,11 +82,15 @@ async function mountList() {
     root?.render(
       createElement(
         AppContext,
-        { value: {} as App },
+        { value: app },
         createElement(
-          AnnotStoreProvider,
-          { value: store },
-          createElement(AnnotView),
+          AnnotActionsContext,
+          { value: { ...NOOP_ACTIONS, ...actions } },
+          createElement(
+            AnnotStoreProvider,
+            { value: store },
+            createElement(AnnotView),
+          ),
         ),
       ),
     ),
@@ -258,5 +268,44 @@ describe("the card list", () => {
       { key: "CCCC3333", selected: "false", tabbable: false },
     ]);
     expect(tabOrder(host)).toEqual(onlyRow(host, "BBBB2222"));
+  });
+});
+
+/** A press and its click on one element, as the browser delivers them. */
+async function press(
+  el: Element,
+  { release = el }: { release?: Element } = {},
+) {
+  await act(() => {
+    el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    release.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+}
+
+describe("an open text field in the view", () => {
+  it("closes from a click in the view away from it, and keeps its own clicks and drags", async () => {
+    const onCloseEditors = vi.fn();
+    const { host, store } = await mountList({
+      app: editorApp(),
+      actions: { onCloseEditors },
+    });
+    await act(() =>
+      store.setState({
+        cardSelection: { selected: [KEYS[0]!], anchor: null, focus: null },
+        editing: { annotationKey: KEYS[0]!, field: "comment" },
+      }),
+    );
+    const content = host.querySelector(".cm-content")!;
+    const [first, second] = cardGrid(host).querySelectorAll('[role="row"]');
+
+    await press(content);
+    // A drag that selected the field's text and let go on its card.
+    await press(content, { release: first! });
+    // The empty list's own click closes the editor before it clears anything.
+    await press(cardGrid(host));
+    expect(onCloseEditors).not.toHaveBeenCalled();
+
+    await press(second!.querySelector("blockquote")!);
+    expect(onCloseEditors).toHaveBeenCalledOnce();
   });
 });

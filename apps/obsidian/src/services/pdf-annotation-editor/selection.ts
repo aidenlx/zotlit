@@ -48,6 +48,7 @@ import {
   editingLive,
   heldTagDraft,
   heldTextDraft,
+  pressControl,
   shownComment,
   tagEditorControls,
   textFieldWording,
@@ -60,8 +61,10 @@ import {
   copyText,
   recolor,
 } from "@/views/annot-view/card-verbs";
+import { controlEntry } from "@/views/annot-view/comment-parts";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
 import type {
+  CaretPoint,
   TextDraftActions,
   EditorSheet,
   HeldDraftActions,
@@ -294,6 +297,8 @@ export class MarkSelection implements Disposable {
   #at: Pick<MarkSelectionPoint, "pageIndex" | "point"> | null = null;
   /** The popup's comment editor, while it stands. */
   readonly #sheet: RefObject<EditorSheet | null> = { current: null };
+  /** Where the click that opened the comment editor landed, until it mounts. */
+  #caretAt: CaretPoint | undefined;
   /** The popup's tag section, while it stands. */
   readonly #tagSection: RefObject<HTMLDivElement | null> = { current: null };
   /** The open tag editor's own end of its session. */
@@ -1163,7 +1168,9 @@ export class MarkSelection implements Disposable {
       ? this.#commentEditorSlot(content, annotation)
       : null;
     if (sheet) return sheet;
-    const open = (): void => this.#pressComment(annotation, control);
+    const entry = controlEntry(control, (at) =>
+      this.#pressComment(annotation, control, at),
+    );
     // The popup announces a held draft on the same rule the card does, and
     // carries the same verbs: the two surfaces reach one shared draft, so a
     // decision offered on one is offered on the other. Like the card, it
@@ -1178,18 +1185,14 @@ export class MarkSelection implements Disposable {
         kind: "held",
         held,
         actions: this.#draftActions(annotation),
-        onOpen: open,
+        entry,
       };
     }
     return {
       kind: "view",
       html: annotation.comment,
       render: this.#deps.renderComment,
-      entry: {
-        disabled: control.disabled,
-        blocked: control.blocked !== null,
-        onPress: open,
-      },
+      entry,
     };
   }
 
@@ -1198,10 +1201,15 @@ export class MarkSelection implements Disposable {
    * refuses it, a blocked capability spends it on the notice that states the
    * reason, and otherwise it opens the editor.
    */
-  #pressComment(annotation: AnnotationRecord, control: CardControl): void {
-    if (control.disabled) return;
-    if (control.blocked) this.#deps.gestures.blockedPress(control.blocked);
-    else this.#openComment(annotation);
+  #pressComment(
+    annotation: AnnotationRecord,
+    control: CardControl,
+    caretAt?: CaretPoint,
+  ): void {
+    pressControl(control, {
+      act: () => this.#openComment(annotation, caretAt),
+      onBlocked: (block) => this.#deps.gestures.blockedPress(block),
+    });
   }
 
   /**
@@ -1279,6 +1287,10 @@ export class MarkSelection implements Disposable {
       this.#submitCommentEditor(annotation, true);
       setCommenting(this.#deps.surfaceState, false);
     };
+    // The sheet places the caret once, as it mounts; a later mount opens at
+    // the end.
+    const caretAt = this.#caretAt;
+    this.#caretAt = undefined;
     return {
       kind: "sheet",
       sheet: {
@@ -1296,6 +1308,7 @@ export class MarkSelection implements Disposable {
         // The row's own verbs stand beside the editor, so reaching one is not
         // leaving it.
         within: content,
+        caretAt,
       },
     };
   }
@@ -1373,7 +1386,8 @@ export class MarkSelection implements Disposable {
   }
 
   /** Opens the comment editor where a draft starts. */
-  #openComment(annotation: AnnotationRecord): void {
+  #openComment(annotation: AnnotationRecord, caretAt?: CaretPoint): void {
+    this.#caretAt = caretAt;
     if (this.#deps.annotations.editTextField("comment", annotation.key))
       setCommenting(this.#deps.surfaceState, true);
   }

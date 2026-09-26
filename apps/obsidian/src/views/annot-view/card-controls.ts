@@ -1,7 +1,7 @@
 // What an Annotation Card's editing controls may do, decided as data rather
 // than in a component: one rule read by the colour dot, the comment field,
-// "Edit quoted text", the tag toggle and the delete verb, keyed by the Editing Capability and by what a
-// write left.
+// "Edit quoted text", the tag toggle and the delete verb, keyed by the
+// Editing Capability and by what a write left.
 //
 // @see apps/obsidian/policies/ui-seams.md
 // @see https://github.com/aidenlx/zotlit/issues/1145
@@ -144,6 +144,23 @@ export function cardControls({
     delete: control(m.annot_view_menu_delete()),
     text: hasQuotedText(type) ? control(m.annot_view_menu_edit_text()) : null,
   };
+}
+
+/**
+ * A press on an editing control that opens an editor: refused while a write
+ * is in flight, spent on the notice that states the block while the Editing
+ * Capability stands in the way, and otherwise the control's own `act`.
+ */
+export function pressControl(
+  control: CardControl,
+  {
+    act,
+    onBlocked,
+  }: { act: () => void; onBlocked: (block: CardBlock) => void },
+): void {
+  if (control.disabled) return;
+  if (control.blocked) onBlocked(control.blocked);
+  else act();
 }
 
 /** Whether Zotero stores a Quoted Text for this type of Annotation. */

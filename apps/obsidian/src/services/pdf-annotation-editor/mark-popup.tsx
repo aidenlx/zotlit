@@ -345,7 +345,7 @@ export type SelectedPopupComment =
       kind: "held";
       held: HeldDraft;
       actions: TextDraftActions;
-      onOpen: () => void;
+      entry: CommentEntry;
     }
   /** The stored comment, or the "Add a comment…" placeholder where none. */
   | {
@@ -417,7 +417,7 @@ function PopupCommentBody({
           held={comment.held}
           surface="popup"
           actions={comment.actions}
-          onOpen={comment.onOpen}
+          entry={comment.entry}
         />
       );
     case "view":

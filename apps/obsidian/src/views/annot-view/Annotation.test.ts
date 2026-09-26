@@ -221,6 +221,25 @@ function field(host: HTMLElement): HTMLElement | undefined {
   );
 }
 
+/** The name a screen reader gives the element, from the labels it points at. */
+function accessibleName(el: HTMLElement): string | null {
+  const ids = el.getAttribute("aria-labelledby");
+  if (ids === null) return el.getAttribute("aria-label");
+  return ids
+    .split(" ")
+    .map((id) => el.ownerDocument.getElementById(id)?.textContent ?? "")
+    .join(" ");
+}
+
+/** "Edit quoted text" on the quote, or `undefined` where the card offers none. */
+function editTextButton(host: HTMLElement): HTMLElement | undefined {
+  return (
+    [...host.querySelectorAll<HTMLElement>("blockquote [aria-label]")].find(
+      (el) => el.getAttribute("aria-label") === m.annot_view_menu_edit_text(),
+    ) ?? undefined
+  );
+}
+
 /** A key pressed in an element, as the browser delivers it. */
 async function press(el: Element, key: string): Promise<void> {
   await act(() => {
@@ -281,11 +300,11 @@ describe("the comment field", () => {
       host.remove();
     }
     const { host } = await mountCard();
-    expect(field(host)?.getAttribute("aria-label")).toBe(
+    expect(accessibleName(field(host)!)).toBe(
       m.annot_view_card_comment_label(),
     );
-    // "Edit quoted text" stands in the card's menus instead.
-    expect(host.querySelector("svg.lucide-text-cursor-input")).toBeNull();
+    // A label Obsidian would show as a tooltip over the comment's text.
+    expect(field(host)!.hasAttribute("aria-label")).toBe(false);
   });
 
   it("comes up on the same comment nodes, so a text selection on them survives", async () => {
@@ -303,9 +322,16 @@ describe("the comment field", () => {
   it("opens the comment editor from a click only where a draft starts, and is not the card's click", async () => {
     for (const opens of [false, true]) {
       const { host, store, onSelectAnnotation } = await mountCard({ opens });
-      await click(field(host)!);
+      await click(field(host)!, { clientX: 12, clientY: 34 });
+      // The caret goes where the click landed.
       expect(store.getState().editing).toEqual(
-        opens ? { annotationKey: CARD.key, field: "comment" } : null,
+        opens
+          ? {
+              annotationKey: CARD.key,
+              field: "comment",
+              caretAt: { x: 12, y: 34 },
+            }
+          : null,
       );
       expect(onSelectAnnotation).not.toHaveBeenCalled();
       await act(() => root?.unmount());
@@ -358,7 +384,7 @@ describe("the comment field", () => {
     );
 
     await click(field(host)!);
-    expect(store.getState().editing).toEqual({
+    expect(store.getState().editing).toMatchObject({
       annotationKey: CARD.key,
       field: "comment",
     });
@@ -378,17 +404,6 @@ describe("the comment field", () => {
     expect(host.querySelector(".cm-content")).toBeNull();
     // The keyboard stays on the card.
     expect(document.activeElement).toBe(host.querySelector(".zt-annot-card"));
-  });
-
-  it("closes from a click on the card away from the field, and keeps its own clicks", async () => {
-    const { host, onCloseEditors } = await mountCard();
-    await click(field(host)!);
-
-    await click(host.querySelector(".cm-content")!);
-    expect(onCloseEditors).not.toHaveBeenCalled();
-
-    await click(host.querySelector("blockquote")!);
-    expect(onCloseEditors).toHaveBeenCalledOnce();
   });
 });
 
@@ -410,6 +425,52 @@ function tagToggle(host: HTMLElement): Element {
   if (!toggle) throw new Error("The card draws no tag toggle");
   return toggle;
 }
+
+describe("Edit quoted text on the quote", () => {
+  it("stands only on a card selected alone that has a Quoted Text", async () => {
+    for (const selected of [[], [CARD.key, "BBBB2222"]]) {
+      const { host } = await mountCard({ selected });
+      expect(editTextButton(host)).toBeUndefined();
+      await act(() => root?.unmount());
+      host.remove();
+    }
+    const { host } = await mountCard();
+    expect(editTextButton(host)).toBeDefined();
+  });
+
+  it("opens the Quoted Text's editor, and is not the card's click", async () => {
+    const { host, store, onSelectAnnotation, onOpenField } = await mountCard();
+    await click(editTextButton(host)!);
+    expect(onOpenField).toHaveBeenCalledWith(
+      expect.objectContaining({ key: CARD.key }),
+      "text",
+    );
+    expect(store.getState().editing).toEqual({
+      annotationKey: CARD.key,
+      field: "text",
+    });
+    expect(onSelectAnnotation).not.toHaveBeenCalled();
+    // The open editor stands in the quote's place, with no second way in.
+    expect(editTextButton(host)).toBeUndefined();
+  });
+
+  it("raises the reason where editing is blocked, and opens nothing", async () => {
+    const { host, store, onBlockedPress, onOpenField } = await mountCard({
+      capability: { kind: "authorization-required" },
+    });
+    await click(editTextButton(host)!);
+    expect(onBlockedPress).toHaveBeenCalledOnce();
+    expect(onOpenField).not.toHaveBeenCalled();
+    expect(store.getState().editing).toBeNull();
+  });
+
+  it("keeps a click on the quote itself a read", async () => {
+    const { host, store, onOpenField } = await mountCard();
+    await click(host.querySelector("blockquote")!);
+    expect(onOpenField).not.toHaveBeenCalled();
+    expect(store.getState().editing).toBeNull();
+  });
+});
 
 describe("the card's tag editor", () => {
   it("saves its session on a blur and stays open, and Escape saves and closes it", async () => {
@@ -476,7 +537,7 @@ describe("the card's tag editor", () => {
 
     // The tag editor ended its session as it unmounted.
     expect(onSaveTags).toHaveBeenCalledOnce();
-    expect(store.getState().editing).toEqual({
+    expect(store.getState().editing).toMatchObject({
       annotationKey: CARD.key,
       field: "comment",
     });

@@ -74,6 +74,9 @@ export interface FieldEditor extends Disposable {
   setReadOnly(readOnly: boolean): void;
 }
 
+/** Names one editor's text apart from another's, for `aria-labelledby`. */
+let labelSerial = 0;
+
 /** Marks a transaction that brings outside text in, which is not a user edit. */
 const external = Annotation.define<boolean>();
 
@@ -88,6 +91,14 @@ export function createFieldEditor(opts: FieldEditorOptions): FieldEditor {
     scope = null;
   };
 
+  // The field's name, beside the editor rather than on it: an `aria-label`
+  // would hang a tooltip over the text being written.
+  // @see apps/obsidian/policies/tooltips.md
+  const label = opts.parent.createSpan({
+    cls: "zt:sr-only",
+    text: opts.wording.label,
+    attr: { id: `zt-field-editor-label-${++labelSerial}` },
+  });
   const view = new EditorView({
     parent: opts.parent,
     state: EditorState.create({
@@ -108,7 +119,7 @@ export function createFieldEditor(opts: FieldEditorOptions): FieldEditor {
         ]),
         EditorView.lineWrapping,
         placeholder(opts.wording.placeholder),
-        EditorView.contentAttributes.of({ "aria-label": opts.wording.label }),
+        EditorView.contentAttributes.of({ "aria-labelledby": label.id }),
         commentDecorations,
         commentTheme,
         EditorView.updateListener.of((update) => {
@@ -180,6 +191,7 @@ export function createFieldEditor(opts: FieldEditorOptions): FieldEditor {
     [Symbol.dispose]() {
       releaseKeys();
       view.destroy();
+      label.remove();
     },
   };
 }

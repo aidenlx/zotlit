@@ -6,7 +6,7 @@
 // of the surface around it never drops a click between its press and its
 // release.
 import type { App } from "obsidian";
-import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useId, useLayoutEffect, useMemo, useRef } from "react";
 import type { HTMLAttributes, RefObject } from "react";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -16,7 +16,7 @@ import type { WriteConflict } from "@/services/annotation-repository/write";
 
 import { conflictPanel } from "./card-conflict";
 import { sameHeldDraft } from "./card-controls";
-import type { HeldDraft } from "./card-controls";
+import type { CardControl, HeldDraft } from "./card-controls";
 import type { CommentRenderer } from "./comment-render";
 import {
   clickEdits,
@@ -26,6 +26,7 @@ import {
   renderHeldDraftPanel,
 } from "./editor-sheet";
 import type {
+  CommentEntry,
   ConflictActions,
   HeldDraftActions,
   EditorSheet,
@@ -36,20 +37,22 @@ import type {
 
 type DivProps = Omit<HTMLAttributes<HTMLDivElement>, "children">;
 
-/** What the resting comment field does when the user reaches for it. */
-export interface CommentEntry {
-  /**
-   * A write in flight refuses the press outright; it ends by itself, so the
-   * field rests as text and says nothing more.
-   */
-  disabled: boolean;
-  /**
-   * The Editing Capability refuses a write: the comment rests as plain text,
-   * and a press spends itself on the notice that says why.
-   */
-  blocked: boolean;
-  /** Opens the editor, or raises the notice while blocked. */
-  onPress: () => void;
+export type { CommentEntry } from "./editor-sheet";
+
+/**
+ * The comment field's entry for one editing control: its refusal and its
+ * block come from the control, so a surface that decides its verbs through
+ * {@link CardControl} states nothing twice.
+ */
+export function controlEntry(
+  control: CardControl,
+  onPress: CommentEntry["onPress"],
+): CommentEntry {
+  return {
+    disabled: control.disabled,
+    blocked: control.blocked !== null,
+    onPress,
+  };
 }
 
 /**
@@ -62,7 +65,9 @@ export interface CommentEntry {
  *
  * One element with an entry or without it, so a text selection made on the
  * comment survives the card becoming selected alone under it. The Markdown
- * renders again only when the comment does.
+ * renders again only when the comment does. The field is named by a hidden
+ * label rather than `aria-label`, which Obsidian would show as a tooltip over
+ * the text.
  *
  * @see apps/obsidian/docs/adr/0066-the-comment-is-an-editable-field-on-a-card-selected-alone-and-in-the-mark-popup.md
  */
@@ -70,7 +75,7 @@ export function CommentView({
   surface,
   render,
   html,
-  entry = null,
+  entry,
 }: {
   surface: EditorSurface;
   render: CommentRenderer;
@@ -79,65 +84,78 @@ export function CommentView({
    * shows, as its placeholder.
    */
   html: string | null;
-  entry?: CommentEntry | null;
+  entry?: CommentEntry;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const labelId = useId();
   useLayoutEffect(() => {
     if (!ref.current || html === null) return;
     return render(ref.current, html);
   }, [render, html]);
   const empty = html === null;
+  // The label stands in every state, so the comment's element keeps its seat.
+  const label = (
+    <span key="label" id={labelId} hidden>
+      {m.annot_view_card_comment_label()}
+    </span>
+  );
   if (!entry) {
     return (
-      <div
-        key="comment"
-        ref={ref}
-        className={commentViewClass(surface, false)}
-      />
+      <>
+        {label}
+        <div
+          key="comment"
+          ref={ref}
+          className={commentViewClass(surface, false)}
+        />
+      </>
     );
   }
   const { disabled, blocked, onPress } = entry;
   const editable = !disabled && !blocked;
   return (
-    <div
-      // Keyed by what it draws, so the renderer's nodes and the placeholder
-      // never share one element.
-      key={empty ? "empty" : "comment"}
-      ref={ref}
-      role="textbox"
-      aria-multiline
-      aria-label={m.annot_view_card_comment_label()}
-      aria-placeholder={m.annot_view_card_comment_placeholder()}
-      aria-readonly={blocked || undefined}
-      aria-disabled={disabled || undefined}
-      tabIndex={0}
-      className={cn(
-        themeHook.annotCommentField,
-        commentViewClass(surface, editable),
-        empty && "zt:text-faint",
-        empty && !editable && "zt:opacity-60",
-      )}
-      data-blocked={blocked ? "" : undefined}
-      onClick={(e) => {
-        if (disabled || !clickEdits(e)) return;
-        // Placing the caret is not the surface's own click.
-        claimClick(e);
-        onPress();
-      }}
-      onFocus={(e) => {
-        // Reaching the field from the keyboard is reaching into it; a press
-        // focuses it too, and its click is what opens the editor then.
-        if (editable && e.currentTarget.matches(":focus-visible")) onPress();
-      }}
-      onKeyDown={(e) => {
-        if (e.key !== "Enter" && e.key !== " ") return;
-        e.preventDefault();
-        e.stopPropagation();
-        if (!disabled) onPress();
-      }}
-    >
-      {empty ? m.annot_view_card_comment_placeholder() : null}
-    </div>
+    <>
+      {label}
+      <div
+        // Keyed by what it draws, so the renderer's nodes and the placeholder
+        // never share one element.
+        key={empty ? "empty" : "comment"}
+        ref={ref}
+        role="textbox"
+        aria-multiline
+        aria-labelledby={labelId}
+        aria-placeholder={m.annot_view_card_comment_placeholder()}
+        aria-readonly={blocked || undefined}
+        aria-disabled={disabled || undefined}
+        tabIndex={0}
+        className={cn(
+          themeHook.annotCommentField,
+          commentViewClass(surface, editable),
+          empty && "zt:text-faint",
+          empty && !editable && "zt:opacity-60",
+        )}
+        data-blocked={blocked ? "" : undefined}
+        onClick={(e) => {
+          if (disabled || !clickEdits(e)) return;
+          // Placing the caret is not the surface's own click.
+          claimClick(e);
+          onPress({ x: e.clientX, y: e.clientY });
+        }}
+        onFocus={(e) => {
+          // Reaching the field from the keyboard is reaching into it; a press
+          // focuses it too, and its click is what opens the editor then.
+          if (editable && e.currentTarget.matches(":focus-visible")) onPress();
+        }}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter" && e.key !== " ") return;
+          e.preventDefault();
+          e.stopPropagation();
+          if (!disabled) onPress();
+        }}
+      >
+        {empty ? m.annot_view_card_comment_placeholder() : null}
+      </div>
+    </>
   );
 }
 
@@ -180,6 +198,7 @@ export function EditorSheetSlot({
   commit,
   onLeave,
   within,
+  caretAt,
   ...rest
 }: EditorSheetSlotProps) {
   const latest = useRef({
@@ -192,6 +211,7 @@ export function EditorSheetSlot({
     onCancel,
     commit,
     onLeave,
+    caretAt,
   });
   latest.current = {
     field,
@@ -203,6 +223,7 @@ export function EditorSheetSlot({
     onCancel,
     commit,
     onLeave,
+    caretAt,
   };
   const sheet = useRef<EditorSheet | null>(null);
   const saves = onSave !== undefined;
@@ -238,6 +259,7 @@ export function EditorSheetSlot({
                 },
           onLeave: leaves ? () => latest.current.onLeave?.() : undefined,
           within,
+          caretAt: at.caretAt,
         },
         at.status,
       );
@@ -269,21 +291,23 @@ export function HeldDraftSlot({
   held,
   surface,
   actions,
-  onOpen,
+  entry,
   ...rest
 }: {
   held: HeldDraft;
   surface: EditorSurface;
   actions: HeldDraftActions;
-  /** Opens the editor on the held text; absent where a click only reads. */
-  onOpen?: () => void;
+  /** What a click on the held text does; absent where a click only reads. */
+  entry?: CommentEntry;
 } & DivProps) {
   const ref = useRef<HTMLDivElement>(null);
   const latest = useRef(actions);
   latest.current = actions;
-  const latestOpen = useRef(onOpen);
-  latestOpen.current = onOpen;
-  const opens = onOpen !== undefined;
+  const latestPress = useRef(entry?.onPress);
+  latestPress.current = entry?.onPress;
+  const opens = entry !== undefined;
+  const disabled = entry?.disabled ?? false;
+  const blocked = entry?.blocked ?? false;
   const shown = useRef(held);
   if (!sameHeldDraft(shown.current, held)) shown.current = held;
   const stable = shown.current;
@@ -292,9 +316,11 @@ export function HeldDraftSlot({
     renderHeldDraftPanel(ref.current, stable, {
       surface,
       actions: boundHeldActions(latest),
-      open: opens ? () => latestOpen.current?.() : undefined,
+      entry: opens
+        ? { disabled, blocked, onPress: () => latestPress.current?.() }
+        : undefined,
     });
-  }, [stable, surface, opens]);
+  }, [stable, surface, opens, disabled, blocked]);
   return <div ref={ref} {...rest} />;
 }
 

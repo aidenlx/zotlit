@@ -33,11 +33,14 @@ export type EditorSurface = "card" | "excerpt" | "popup";
 
 /**
  * The open field: a quiet tint under the text, with no ring, as Zotero's own
- * comment field is. The caret and the tint are what say the text is being
- * edited; a ring and a button more would only say it again (ADR 0066).
+ * comment field is, and an accent hairline at its start edge. The tint alone
+ * is the resting field's hover too, and too faint against the surface to
+ * mark the focus; the hairline is what tells the open field from the one
+ * under the pointer. It is drawn over the field's padding, so the text keeps
+ * its place (ADR 0066).
  */
 const FIELD =
-  "zt-annot-comment-editor zt:bg-(--background-modifier-hover) zt:text-foreground";
+  "zt-annot-comment-editor zt:relative zt:bg-(--background-modifier-hover) zt:text-foreground zt:before:pointer-events-none zt:before:absolute zt:before:inset-y-1 zt:before:start-0 zt:before:w-px zt:before:bg-(--interactive-accent)";
 
 /** The tint fades in under text that stays where it stood. */
 const FIELD_ENTER =
@@ -181,6 +184,36 @@ export interface EditorSheetProps {
   onLeave?: () => void;
   /** What focus may move within without leaving; the sheet itself by default. */
   within?: HTMLElement;
+  /**
+   * Where the click that opened the editor landed, over the text the editor
+   * now stands on; the caret goes to the end where it is absent.
+   */
+  caretAt?: CaretPoint;
+}
+
+/** Where in the viewport a click that opens an editor landed. */
+export interface CaretPoint {
+  x: number;
+  y: number;
+}
+
+/** What a resting field, or its held text, does when the user reaches for it. */
+export interface CommentEntry {
+  /**
+   * A write in flight refuses the press outright; it ends by itself, so the
+   * field rests as text and says nothing more.
+   */
+  disabled: boolean;
+  /**
+   * The Editing Capability refuses a write: the field rests as plain text,
+   * and a press spends itself on the notice that says why.
+   */
+  blocked: boolean;
+  /**
+   * Opens the editor, or raises the notice while blocked. A click on the
+   * rendered comment passes where it landed, so the caret goes there.
+   */
+  onPress: (at?: CaretPoint) => void;
 }
 
 /** A sheet's call-to-action: its label and what its press runs. */
@@ -201,7 +234,7 @@ export interface EditorSheet extends Disposable {
  * The editor sheet: the field editor, then a footer row with the status line,
  * a Save button while the save is manual, and the commit a creation carries.
  * The footer takes no room while it has nothing to show. The editor takes the
- * caret at the end.
+ * caret where the opening click landed, and otherwise at the end.
  *
  * @param sheet the element the sheet is drawn into, replacing what it held.
  * @see {@link createFieldEditor}
@@ -220,6 +253,7 @@ export function renderEditorSheet(
     commit,
     onLeave,
     within = sheet,
+    caretAt,
   }: EditorSheetProps,
   status: EditorSheetStatus,
 ): EditorSheet {
@@ -289,7 +323,10 @@ export function renderEditorSheet(
   update(status);
   const { view } = editor;
   view.focus();
-  view.dispatch({ selection: { anchor: view.state.doc.length } });
+  // The editor opens on the box the rendered text stood in, so the point the
+  // click landed on is over the same words.
+  const clicked = caretAt ? view.posAtCoords(caretAt) : null;
+  view.dispatch({ selection: { anchor: clicked ?? view.state.doc.length } });
   return {
     editor,
     text: () => view.state.doc.toString(),
@@ -428,9 +465,10 @@ const CONFLICT_VERB: Record<ConflictVerb, keyof ConflictActions> = {
  * of state — local text waiting on the user — and it carries its verbs for the
  * same reason: a surface that only says "unsaved" leaves nowhere to go.
  *
- * Where `open` is given, a click on the held text opens the editor on it, as
- * a click on the resting comment does (ADR 0066); otherwise the held text is
- * for reading and copying.
+ * Where an `entry` is given, a click on the held text opens the editor on it,
+ * as a click on the resting comment does, and raises the notice while the
+ * edit is blocked (ADR 0066); otherwise the held text is for reading and
+ * copying.
  *
  * @see https://github.com/aidenlx/zotlit/issues/1145
  */
@@ -440,12 +478,12 @@ export function renderHeldDraftPanel(
   {
     surface,
     actions,
-    open,
+    entry,
   }: {
     surface: EditorSurface;
     actions: HeldDraftActions;
-    /** Opens the editor on the held text; absent where a click only reads. */
-    open?: () => void;
+    /** What a click on the held text does; absent where a click only reads. */
+    entry?: CommentEntry;
   },
 ): void {
   const box = panel(parent, {
@@ -455,15 +493,17 @@ export function renderHeldDraftPanel(
     title: held.title,
   });
   const text = box.createDiv({
-    cls: `zt:break-words zt:whitespace-pre-wrap zt:select-text${open ? ` zt:-mx-1 zt:rounded-(--radius-s) zt:px-1 ${EDITABLE}` : ""}`,
+    cls: `zt:break-words zt:whitespace-pre-wrap zt:select-text${entry ? " zt:-mx-1 zt:rounded-(--radius-s) zt:px-1" : ""}${entry && !entry.disabled && !entry.blocked ? ` ${EDITABLE}` : ""}`,
     text: held.text,
   });
-  if (open) {
+  if (entry) {
     text.addEventListener("click", (event) => {
-      if (!clickEdits(event)) return;
+      if (entry.disabled || !clickEdits(event)) return;
       // The surface's own click is not this one.
       claimClick({ nativeEvent: event });
-      open();
+      // The panel does not stand where the editor opens, so the caret goes to
+      // the end rather than under the click.
+      entry.onPress();
     });
   }
   heldReasonAndVerbs(box, held, actions);

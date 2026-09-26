@@ -406,14 +406,14 @@ Two remembered choices per item change shape in this release and fall back silen
 
 **Steps:**
 
-1. Measure that card's height, then click its rendered comment text.
-2. Read the editor's value, `selectionStart`, `selectionEnd`, and whether it holds focus. Measure the card again.
+1. Measure that card's height, then click between two letters of its rendered comment text.
+2. Read the editor's text, its caret offset, and whether it holds focus. Measure the card again.
 3. Press `Escape` and re-read the card.
 4. Click the comment again, type a word, and press `Cmd`/`Ctrl` + `Enter`.
 
-**Expected:** step 2 answers the stored comment with both caret offsets equal to its length, and the textarea holds focus. The two heights differ only by what the editor's own text needs; the header and the excerpt do not move. Step 3 leaves Zotero's text standing. Step 4 stores the edit, and the new text appears once Zotero answers.
+**Expected:** step 2 answers the stored comment with the caret between the two letters you clicked, and the editor holds focus. The two heights differ only by what the editor's own text needs; the header and the excerpt do not move. Step 3 leaves Zotero's text standing. Step 4 stores the edit, and the new text appears once Zotero answers.
 
-**If the caret is at position 0:** the value reached the element after the ref that places the caret ran.
+**If the caret is at the end:** the click's point did not reach the editor as it opened.
 
 ## The write path
 
@@ -427,12 +427,12 @@ Every check in this group needs a Write Authorization. Grant one from **Settings
 
 **Steps:**
 
-1. With Zotero closed, select a highlight card alone. Read the `aria-disabled`, `aria-label`, and `data-blocked` of its colour dot and comment field. Click each, then open the card's overflow menu and select **Edit quoted text**.
+1. With Zotero closed, select a highlight card alone. Read the `aria-disabled`, the name, and `data-blocked` of its colour dot, its comment field, and the pencil on its quote. Click each, then open the card's overflow menu and select **Edit quoted text**.
 2. Select an Annotation Mark in the reader and read each popup verb's `aria-disabled` and `aria-label`, and the `data-blocked` of the popup's comment field. Click the field. Press `Delete`.
 3. Start Zotero with the Local API on and grant no authorization. Repeat steps 1 and 2. On the notice that the colour dot raises in the repeated step 1, select **Allow editing**, and answer Zotero's dialog with **Deny**.
 4. Select **Allow editing** again and answer **Always Allow**. Repeat steps 1 and 2.
 
-**Expected:** with Zotero closed, the card's colour dot and comment field carry `data-blocked`. The colour dot rests dimmed. The comment field shows as plain text, with no hover fill, and it is dimmed only when it has no comment. They have no `aria-disabled`, and each keeps its own name in `aria-label`. A click writes nothing and opens no menu and no editor. It raises a notice that reads "Check that Zotero is open, then check the connection in ZotLit settings." and has no button. The overflow menu's first row, **Edit quoted text**, stays enabled. When you select it, it raises the same notice and opens no editor. The overflow menu's **Delete annotation** row is disabled. In the reader, the colour and delete verbs read `aria-disabled="true"`, and each carries that same sentence as its `aria-label`. The popup's comment field rests as plain text, as the card's does, and a click on it raises the card's notice and opens no editor. `Delete` in the reader raises the same capability notice a blocked `h` does, once. Copy and reveal stay live, and the excerpt text stays selectable, in every state.
+**Expected:** with Zotero closed, the card's colour dot, comment field, and quote pencil carry `data-blocked`. The colour dot rests dimmed, and the pencil is dimmed when it shows. The comment field shows as plain text, with no hover fill, and it is dimmed only when it has no comment. They have no `aria-disabled`, and each keeps its own name: the colour dot and the pencil in `aria-label`, the comment field through `aria-labelledby`. A click writes nothing and opens no menu and no editor. It raises a notice that reads "Check that Zotero is open, then check the connection in ZotLit settings." and has no button. The overflow menu's first row, **Edit quoted text**, stays enabled. When you select it, it raises the same notice and opens no editor. The overflow menu's **Delete annotation** row is disabled. In the reader, the colour and delete verbs read `aria-disabled="true"`, and each carries that same sentence as its `aria-label`. The popup's comment field rests as plain text, as the card's does, and a click on it raises the card's notice and opens no editor. `Delete` in the reader raises the same capability notice a blocked `h` does, once. Copy and reveal stay live, and the excerpt text stays selectable, in every state.
 
 Under authorization required, the verbs are blocked in the same way, with the sentence "Select Allow editing in the annotation view or ZotLit settings." No verb and no key opens Zotero's dialog. A click on a blocked card verb raises a notice with that sentence as its title and one button, **Allow editing**. That button opens Zotero's dialog directly, with no settings row in between. After **Deny**, nothing is written and the verbs stay blocked. When writable, the write goes straight through.
 

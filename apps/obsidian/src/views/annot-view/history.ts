@@ -8,7 +8,7 @@ import { inTextEntry } from "@/services/pdf-annotation-editor/capability-afforda
 import { historyVerbOf } from "@/services/pdf-annotation-editor/reader-keymap";
 
 /** The Annotation Card, as the card's own DOM names it. */
-const CARD_SELECTOR = ".zt-annot-card";
+export const CARD_SELECTOR = ".zt-annot-card";
 
 /**
  * Whether a keystroke landed on an Annotation Card — the card itself, or one

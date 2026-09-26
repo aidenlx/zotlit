@@ -112,9 +112,13 @@ it("names the Quoted Text in its placeholder, its accessible name and its Save b
   );
   const { contentDOM, dom } = mounted.sheet.editor.view;
 
-  expect(contentDOM.getAttribute("aria-label")).toBe(
-    m.annot_view_card_text_label(),
-  );
+  expect(
+    contentDOM.ownerDocument.getElementById(
+      contentDOM.getAttribute("aria-labelledby") ?? "",
+    )?.textContent,
+  ).toBe(m.annot_view_card_text_label());
+  // A label Obsidian would show as a tooltip over the text being written.
+  expect(contentDOM.hasAttribute("aria-label")).toBe(false);
   expect(dom.querySelector(".cm-placeholder")?.textContent).toBe(
     m.annot_view_card_text_placeholder(),
   );

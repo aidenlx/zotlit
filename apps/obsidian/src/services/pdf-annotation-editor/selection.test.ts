@@ -921,6 +921,31 @@ it("shows the stored comment under the row, and none for a mark without one", as
   );
 });
 
+it("puts the caret where the click on the comment landed, and at the end from the keyboard", async () => {
+  await using h = await setup([PARAGRAPH, COMMENTED]);
+  click(h.page.div, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  // The DOM here lays nothing out, so the point maps to a position by hand.
+  const posAtCoords = vi
+    .spyOn(EditorView.prototype, "posAtCoords")
+    .mockReturnValue(5);
+
+  commentField(popup.hoverEl)!.dispatchEvent(
+    new MouseEvent("click", { bubbles: true, clientX: 12, clientY: 34 }),
+  );
+  expect(posAtCoords).toHaveBeenCalledWith({ x: 12, y: 34 });
+  expect(commentView(popup.hoverEl)!.state.selection.main.head).toBe(5);
+
+  commentView(popup.hoverEl)!.contentDOM.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+  );
+  commentField(popup.hoverEl)!.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+  );
+  const editor = commentView(popup.hoverEl)!;
+  expect(editor.state.selection.main.head).toBe(editor.state.doc.length);
+});
+
 it("opens the comment editor in the comment's place from a click on the comment", async () => {
   await using h = await setup([PARAGRAPH, COMMENTED]);
   click(h.page.div, ON_WORD);

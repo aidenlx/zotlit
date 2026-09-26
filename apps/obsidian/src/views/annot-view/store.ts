@@ -20,6 +20,7 @@ import { byTextField, IDLE } from "@/services/annotation-repository/write";
 
 import { NO_SELECTION } from "./card-selection";
 import type { CardSelection } from "./card-selection";
+import type { CaretPoint } from "./editor-sheet";
 import { filterAnnotations } from "./filter";
 import type { AnnotFilter } from "./filter";
 
@@ -61,6 +62,8 @@ export function noFieldDrafts(): FieldDrafts {
 export interface EditingTarget {
   annotationKey: string;
   field: EditingField;
+  /** Where the click that opened a text field's editor landed, for its caret. */
+  caretAt?: CaretPoint;
 }
 
 export interface AnnotState {
@@ -264,10 +267,15 @@ export function useMutation(annotationKey: string): MutationState {
 export function useEditingTarget(
   annotationKey: string,
   field: EditingField,
-): { open: () => void; close: () => void } {
+): { open: (caretAt?: CaretPoint) => void; close: () => void } {
   const store = useAnnotStoreApi();
   return {
-    open: () => store.setState({ editing: { annotationKey, field } }),
+    open: (caretAt) =>
+      store.setState({
+        editing: caretAt
+          ? { annotationKey, field, caretAt }
+          : { annotationKey, field },
+      }),
     close: () => {
       if (isEditing(store.getState(), annotationKey, field))
         store.setState({ editing: null });

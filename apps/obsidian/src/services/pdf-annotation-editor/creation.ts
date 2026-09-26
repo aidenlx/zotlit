@@ -789,10 +789,7 @@ export class MarkCreation implements CreationGestures, Disposable {
     // comment. The button is named for the mark it creates, since creating is
     // a commit the user must see (ADR 0066).
     const tool = selectionToolOf(this.#state().armed);
-    const commit = (): void => {
-      const armed = selectionToolOf(this.#state().armed);
-      this.#commit(armed, this.#state().colors[armed]);
-    };
+    const commit = (): void => this.#commit(tool, this.#state().colors[tool]);
     return createElement(CreateMarkPopup, {
       app: this.#deps.app,
       controls: createPopupRow(input),
