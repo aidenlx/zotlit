@@ -167,11 +167,20 @@ Before you start, install Obsidian 1.13.4 or later. Start Obsidian, enable **Set
 
    This command keeps the Obsidian and Zotero watchers running after readiness. Press `Ctrl-C` to stop both watchers and Paired Zotero. The Development Vault stays open in Obsidian. If a watcher or Paired Zotero stops unexpectedly, the command stops the remaining processes and exits with an error.
 
+3. When the check is done, close Paired Zotero and remove the Development Vault:
+
+   ```sh
+   pnpm fixture stop
+   packages/scripts/scripts/obsidian-vault.ts remove --purge
+   ```
+
+   `pnpm fixture open` exits and leaves Paired Zotero running, so close it yourself. The stop command closes the Zotero that holds this Fixture's database open, with or without a Paired Run report. It waits for that instance to release the database, clears the Paired Run report, and names the process it closed, or says that none held the Fixture.
+
 Each Paired Run takes two free TCP ports. It writes the Live Updates port into the Development Vault as `server.port`, and into the Fixture profile as `extensions.zotlit.notify-url`. It writes the Zotero HTTP port into the Fixture profile as `extensions.zotero.httpServer.port`. Zotero uses that HTTP server for Better BibTeX and for the Zotero Local API, which `--local-api` opens. The ready report names both ports. A Paired Run therefore stays clear of the default Live Updates port `9091` and Zotero HTTP port `23119` used by other profiles.
 
 The Scope Case defaults to `all`. You can use `available`, `partial`, or `unavailable` instead. Each command uses the per-worktree Development Vault and keeps files that exist only there. Add `--purge` to restore the exact generated seed. Add `--vault-case <id>` to open the Development Vault of a different [Vault Case](#vault-cases).
 
-Both commands close an existing Paired Zotero on this Fixture before they rebuild it, then start a fresh instance. Each waits for the old instance to release the database and reports the process it closed. Both commands also support `ZOTERO_APP` as described in [Run the Paired Zotero](#run-the-paired-zotero).
+The open and dev commands close an existing Paired Zotero on this Fixture before they rebuild it, then start a fresh instance. Each waits for the old instance to release the database and reports the process it closed. Both commands also support `ZOTERO_APP` as described in [Run the Paired Zotero](#run-the-paired-zotero).
 
 These commands prepare the environment and report readiness. Run the manual smoke-test checklist separately. The [release checklist](release-checklist.md) holds the manual checks that a release still needs.
 
@@ -415,7 +424,7 @@ pnpm fixture zotero
 
 The override must contain `Contents/MacOS/zotero` on macOS or `zotero.exe` on Windows. Unset `ZOTERO_APP` to use the managed application.
 
-A Paired Zotero session can change the generated database. Close Paired Zotero and run `pnpm fixture` to reset the complete Fixture to the Fixture Spec. This reset behavior is part of [ADR 0022](adr/0022-fixture-database-copies-a-committed-pristine-template.md).
+A Paired Zotero session can change the generated database. Close Paired Zotero with `pnpm fixture stop` and run `pnpm fixture` to reset the complete Fixture to the Fixture Spec. This reset behavior is part of [ADR 0022](adr/0022-fixture-database-copies-a-committed-pristine-template.md).
 
 ## Regenerate the pristine Zotero template
 
@@ -549,5 +558,7 @@ Discard the complete generated tree:
 ```sh
 pnpm fixture discard
 ```
+
+The discard command first closes the Paired Zotero that holds this Fixture, as `pnpm fixture stop` does, so no Zotero stays open on a deleted profile.
 
 To change semantic content, edit `packages/scripts/lib/fixture/spec.ts` and rebuild. The generator tests in `packages/scripts/lib/fixture/build.test.ts` guard the Fixture Spec properties. A build stops when a Citation Key listed in the Spec's `SEEDED_CITATION_KEYS` resolves differently from its declaration, so declare the new resolution with the Item edit, and list a key there as you seed a page that cites it.

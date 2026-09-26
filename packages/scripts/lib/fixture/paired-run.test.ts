@@ -17,7 +17,7 @@ import { runPairedRun } from "./paired-run.ts";
 function testPorts(overrides: Partial<PairedRunPorts> = {}): PairedRunPorts {
   return {
     assertObsidianHost: async () => {},
-    stopLivePairedZotero: async () => {},
+    stopLivePairedZotero: async () => [],
     allocateLiveUpdatePort: async () => 51_234,
     allocateZoteroHttpPort: async () => 52_234,
     prepareDevelopmentVault: async () => ({
@@ -88,6 +88,7 @@ describe("Paired Run", () => {
     const ports = testPorts({
       stopLivePairedZotero: async () => {
         calls.push("stop");
+        return [];
       },
       prepareDevelopmentVault: async () => {
         calls.push("prepare");

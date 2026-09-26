@@ -252,6 +252,20 @@ Either command closes a Paired Zotero that still holds this Fixture, then
 rebuilds and starts a fresh one. It waits for that instance to release the
 database, and reports the process it closed.
 
+The open command leaves Paired Zotero running after it exits. Close it when
+the check is done:
+
+  pnpm fixture stop
+
+The stop command closes the Zotero that holds this Fixture's database open,
+with or without a Paired Run report. It waits for that instance to release the
+database, forgets the report, and names the process it closed, or says that
+none held the Fixture. The discard command runs the same stop before it
+deletes the Fixture, so no Zotero stays on a deleted profile. Remove the
+Development Vault separately:
+
+  packages/scripts/scripts/obsidian-vault.ts remove --purge
+
 The Fixture profile grants obsidian:// standing permission through
 network.protocol-handler.external.obsidian, so a ZotLit backlink reaches the
 vault without Zotero's confirmation dialog.
