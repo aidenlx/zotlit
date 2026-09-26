@@ -1090,7 +1090,6 @@ export class MarkSelection implements Disposable {
       hint,
       held,
       heldActions: this.#heldTagsActions(annotation),
-      onOpen: readOnly ? undefined : () => this.#toggleTags(annotation),
       libraryNames: () => this.#deps.libraryTagNames(annotation.key),
       onChange: (names) => {
         // A change that lands once no session stands and its draft is gone —

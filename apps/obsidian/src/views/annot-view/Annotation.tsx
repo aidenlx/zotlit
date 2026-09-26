@@ -264,11 +264,7 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
           control={controls.comment}
         />
 
-        <TagSlot
-          annot={annot}
-          control={controls.tags}
-          endSession={endSession}
-        />
+        <TagSlot annot={annot} endSession={endSession} />
       </div>
     </div>
   );
@@ -455,17 +451,14 @@ function useTagSession(annot: AnnotationRecord) {
 }
 
 /**
- * The tag row, or the tag editor in its place. A click on the row's empty
- * space opens the editor where the tag control would, as a click on the
- * comment opens the comment editor.
+ * The tag row, or the tag editor in its place. The tag control in the action
+ * bar alone opens the editor, as the Mark Popup's tag verb does.
  */
 function TagSlot({
   annot,
-  control,
   endSession,
 }: {
   annot: AnnotationRecord;
-  control: CardControl;
   endSession: RefObject<EndTagSession | null>;
 }) {
   const actions = useContext(AnnotActionsContext);
@@ -478,7 +471,6 @@ function TagSlot({
   // A fresh value on each render: the held panel compares it by value
   // before it draws again.
   const held = heldTagDraft(capability, draft, now);
-  const editable = !control.disabled && control.blocked === null;
   // Editing that becomes unavailable closes the editor, which holds the
   // draft for Save tags.
   if (session.open && !editor.readOnly) {
@@ -509,17 +501,11 @@ function TagSlot({
           held={held}
           surface="card"
           actions={cardHeldTagsActions(actions, annot)}
-          onOpen={editable ? session.start : undefined}
         />
       </div>
     );
   }
-  return (
-    <TagRow
-      names={shownTagNames(annot, draft)}
-      onOpen={editable ? session.start : undefined}
-    />
-  );
+  return <TagRow names={shownTagNames(annot, draft)} />;
 }
 
 /**
@@ -533,35 +519,14 @@ function TagSlot({
  *
  * @param names the names the row draws: a tag draft's while one stands, and
  *   the Annotation's own otherwise. The filter reads the Annotation's own.
- * @param onOpen opens the tag editor from a click on the row's empty space;
- *   absent while editing is unavailable.
  */
-function TagRow({
-  names,
-  onOpen,
-}: {
-  names: readonly string[];
-  onOpen?: () => void;
-}) {
+function TagRow({ names }: { names: readonly string[] }) {
   const selectedTags = useAnnotStore((s) => s.selectedTags);
   const toggleTag = useToggleSelectedTag();
   if (names.length === 0) return null;
 
   return (
-    <div
-      className="zt:flex zt:flex-wrap zt:gap-1 zt:data-editable:cursor-text"
-      data-editable={onOpen ? "" : undefined}
-      onClick={(e) => {
-        if (
-          !onOpen ||
-          e.target !== e.currentTarget ||
-          selectsCards(e.nativeEvent, "card")
-        )
-          return;
-        claimClick(e);
-        onOpen();
-      }}
-    >
+    <div className="zt:flex zt:flex-wrap zt:gap-1">
       {names.map((tag) => {
         const selected = selectedTags.includes(tag);
         return (

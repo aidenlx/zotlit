@@ -1129,12 +1129,11 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       }, 120000);
 
       it("adds and removes tags on the card, and Zotero holds the list", async () => {
-        // The card's own gestures: the tag toggle and a click on the tag row's
-        // empty space open the editor, Enter adds the typed name, a chip's
-        // remove button drops it, and the toggle's second press ends the
-        // session with its one write. The session ends through the toggle
-        // rather than through a blur: a window without the system focus sends
-        // no focus events.
+        // The card's own gestures: the tag toggle opens the editor, Enter adds
+        // the typed name, a chip's remove button drops it, and the toggle's
+        // second press ends the session with its one write. The session ends
+        // through the toggle rather than through a blur: a window without the
+        // system focus sends no focus events.
         const {
           press,
           toggle,
@@ -1169,7 +1168,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           .poll(async () => (await cardTags()).toSorted(), poll)
           .toEqual([dropped, kept]);
 
-        expect(await press("[data-editable]")).toBe(true);
+        expect(await press(toggle)).toBe(true);
         expect(await editorOpen()).toBe(true);
         expect(await remove(dropped)).toBe("removed");
         await expect.poll(editorChips, poll).toEqual([kept]);
@@ -6831,10 +6830,9 @@ async function setAnnotationTags(
 
 /**
  * One Annotation Card's tag gestures, through the card's own controls: the tag
- * toggle and a click on the tag row's empty space open the editor, Enter adds
- * the typed name, a chip's remove button drops it, and the toggle's second
- * press ends the session. A window without the system focus sends no focus
- * events, so no blur ends a session here.
+ * toggle opens the editor, Enter adds the typed name, a chip's remove button
+ * drops it, and the toggle's second press ends the session. A window without
+ * the system focus sends no focus events, so no blur ends a session here.
  *
  * @param annotationKey the Annotation whose card, in whichever Annotation View
  *   holds it, the gestures act on.

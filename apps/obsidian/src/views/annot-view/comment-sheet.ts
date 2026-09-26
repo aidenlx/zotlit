@@ -418,8 +418,6 @@ export function renderHeldDraftPanel(
  * them: the held comment panel, with the draft's tag chips in place of its
  * text.
  *
- * @param onOpen a click on the chips opens the tag editor; absent while
- *   editing is unavailable.
  * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
  */
 export function renderHeldTagsPanel(
@@ -428,11 +426,9 @@ export function renderHeldTagsPanel(
   {
     surface,
     actions,
-    onOpen,
   }: {
     surface: CommentSurface;
     actions: HeldDraftActions;
-    onOpen?: () => void;
   },
 ): void {
   const box = panel(parent, {
@@ -441,9 +437,7 @@ export function renderHeldTagsPanel(
     icon: "tags",
     title: m.annot_view_tags_draft(),
   });
-  const chips = box.createDiv({
-    cls: `zt:flex zt:flex-wrap zt:gap-1 ${onOpen ? "zt:cursor-text" : ""}`,
-  });
+  const chips = box.createDiv({ cls: "zt:flex zt:flex-wrap zt:gap-1" });
   for (const name of held.names) {
     chips
       .createSpan({
@@ -456,7 +450,6 @@ export function renderHeldTagsPanel(
       })
       .createSpan({ cls: "zt:block zt:truncate", text: name });
   }
-  if (onOpen) chips.addEventListener("click", onOpen);
   heldReasonAndVerbs(box, held, actions);
 }
 

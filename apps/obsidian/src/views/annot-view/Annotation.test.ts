@@ -177,19 +177,16 @@ describe("a Shift or Cmd/Ctrl click on a card's edit areas", () => {
     expect(onOpenComment).toHaveBeenCalledOnce();
     expect(onSelectAnnotation).toHaveBeenCalledOnce();
   });
+});
 
-  it("takes a range from the tag row's empty space, and opens no tag editor", async () => {
-    const { host, onSelectAnnotation, onOpenTags } = await mountCard();
-    const row = host.querySelector("[data-editable]")!;
+it("selects the card from a click on the tag row's empty space, and opens no tag editor", async () => {
+  const { host, onSelectAnnotation, onOpenTags } = await mountCard();
+  // The tag toggle alone opens the editor, as the Mark Popup's tag verb does.
+  const row = host.querySelector("[aria-pressed]")!.parentElement!;
 
-    await click(row, { shiftKey: true });
-    expect(onSelectAnnotation.mock.calls).toEqual([[CARD, "range"]]);
-    expect(onOpenTags).not.toHaveBeenCalled();
-
-    await click(row);
-    expect(onOpenTags).toHaveBeenCalledOnce();
-    expect(onSelectAnnotation).toHaveBeenCalledOnce();
-  });
+  await click(row);
+  expect(onSelectAnnotation).toHaveBeenCalledOnce();
+  expect(onOpenTags).not.toHaveBeenCalled();
 });
 
 it("opens the Mark Popup's comment editor for a Shift or Cmd/Ctrl click", async () => {

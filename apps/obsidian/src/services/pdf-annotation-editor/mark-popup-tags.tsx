@@ -40,8 +40,6 @@ export interface TagSectionProps {
   /** The held tag draft the section shows in the chips' place, if any. */
   held: HeldTags | null;
   heldActions: HeldDraftActions;
-  /** Opens the tag editor from the held chips; absent while editing is unavailable. */
-  onOpen?: () => void;
   libraryNames: () => readonly string[];
   onChange: (names: readonly string[]) => void;
   /**
@@ -116,7 +114,6 @@ function TagSection({
   hint,
   held,
   heldActions,
-  onOpen,
   libraryNames,
   onChange,
   onClose,
@@ -143,14 +140,7 @@ function TagSection({
     );
   }
   if (held) {
-    return (
-      <HeldTagsPanel
-        held={held}
-        surface="popup"
-        actions={heldActions}
-        onOpen={onOpen}
-      />
-    );
+    return <HeldTagsPanel held={held} surface="popup" actions={heldActions} />;
   }
   return (
     <div className="zt:flex zt:flex-wrap zt:gap-1">
