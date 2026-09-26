@@ -15,6 +15,7 @@ import type {
   AnnotationRecord,
   AnnotationRepository,
   MutationState,
+  TextField,
 } from "@/services/annotation-repository/service";
 import { writeFailureMessage } from "@/services/annotation-repository/write";
 import type {
@@ -28,10 +29,10 @@ import type { NoteFeature } from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
 
 import { chooseAttachment } from "./attachment-suggester";
-import { groupControl } from "./card-controls";
+import { groupControl, pressControl } from "./card-controls";
 import type { CardBlock, CardControl, CardControls } from "./card-controls";
 import type { CardClick } from "./card-selection";
-import { confirmDelete, copyText, recolor } from "./card-verbs";
+import { blockedNotice, confirmDelete, copyText, recolor } from "./card-verbs";
 import type { CommentRenderer } from "./comment-render";
 import { copiedText } from "./copied-text";
 import type { ExcerptImageTarget } from "./excerpt-image-state";
@@ -105,26 +106,39 @@ export interface AnnotActions {
    * open, the Card Selection clears.
    */
   onClearSelection(): void;
-  /** Store what the card's comment editor holds, from the gesture that closed it. */
-  onSaveComment(
-    annot: AnnotationRecord,
-    comment: string,
-    automatic?: boolean,
-  ): void;
   /**
-   * Start one card's comment editing. A card not selected alone is first
-   * selected alone, and an open tag editor first ends its session.
+   * Save and close the open card editor: a click in the view away from the
+   * field ends the edit, as Escape does.
+   */
+  onCloseEditors(): void;
+  /**
+   * Start one card's editing of a text field: a comment edit, or a Text Edit
+   * on the Quoted Text. A card not selected alone is first selected alone,
+   * and an open editor is first saved and closed.
    *
    * @returns whether a draft stands, which is when the editor opens.
    */
-  onOpenComment(annot: AnnotationRecord): boolean;
-  onEditComment(annot: AnnotationRecord, comment: string): void;
+  onOpenField(annot: AnnotationRecord, field: TextField): boolean;
+  /** Take one change of a card's text field editor into the field's draft. */
+  onEditField(annot: AnnotationRecord, field: TextField, text: string): void;
   /**
-   * Drop held text Zotero never took, from the card's "Discard". Zotero's own
-   * comment stands as it is, so the card behind the panel already shows what
-   * the discard leaves.
+   * Store what a card's text field editor holds, from the gesture that
+   * saved or closed it.
+   *
+   * @param save.automatic whether the editor asks by itself, as on blur or
+   *   close, rather than on the user's explicit save.
    */
-  onDiscardComment(annot: AnnotationRecord): void;
+  onSaveField(
+    annot: AnnotationRecord,
+    field: TextField,
+    save: { text: string; automatic?: boolean },
+  ): void;
+  /**
+   * Drop one text field's held draft Zotero never took, from the card's
+   * "Discard". Zotero's own value stands as it is, so the card behind the
+   * panel already shows what the discard leaves.
+   */
+  onDiscardDraft(annot: AnnotationRecord, field: TextField): void;
   /**
    * Start or rejoin one card's tag editing session. A card not selected alone
    * is first selected alone, and an open comment editor is first saved and
@@ -172,10 +186,18 @@ export interface AnnotActions {
   /**
    * Send a conflicted write again, against the value Zotero holds now — the
    * card's "Apply again", and its "Delete anyway".
+   *
+   * @param field the text field whose draft stands in the conflict; left
+   *   out, the write the Annotation's standing conflict names.
    */
-  onApplyAgain(annot: AnnotationRecord): void;
-  /** Leave Zotero's copy as it stands, from the conflicted card's "Discard". */
-  onDiscardConflict(annot: AnnotationRecord): void;
+  onApplyAgain(annot: AnnotationRecord, field?: TextField): void;
+  /**
+   * Leave Zotero's copy as it stands, from the conflicted card's "Discard".
+   *
+   * @param field the text field whose draft stands in the conflict; left
+   *   out, the write the Annotation's standing conflict names.
+   */
+  onDiscardConflict(annot: AnnotationRecord, field?: TextField): void;
   /**
    * Open one card's demand on its Annotation's live Excerpt Image. The card
    * states what it paints and releases the demand as it goes.
@@ -204,17 +226,16 @@ export interface AnnotActionDeps {
     AnnotationRepository,
     | "deleteAnnotation"
     | "deleteAnnotations"
-    | "discardCommentDraft"
+    | "discardTextDraft"
     | "discardConflict"
     | "discardTagDraft"
     | "patchColor"
     | "patchColors"
-    | "editComment"
-    | "commentDraftFor"
+    | "editTextField"
     | "editTags"
-    | "retryCommentDraft"
+    | "retryTextDraft"
     | "retryWrite"
-    | "submitComment"
+    | "submitTextField"
     | "submitTags"
   >;
   /** The clock a failure notice reads a cooldown's remaining seconds against. */
@@ -277,6 +298,11 @@ export interface AnnotActionDeps {
    * has closed, as the Mark Popup opens one at a time.
    */
   closeEditors: () => void;
+  /**
+   * Make one card's field the editing target, as its own control does: the
+   * route a menu entry takes to an editor.
+   */
+  openEditor: (annot: AnnotationRecord, field: TextField) => void;
   onExploreAnnotation: (annotationKey: string) => void;
 }
 
@@ -367,25 +393,28 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
         .onClick(() => copyText(annots));
     });
   };
-  const onEditComment = (annot: AnnotationRecord, comment: string): void => {
-    deps.annotations.editComment(annot.key, comment);
-  };
-  const onOpenComment = (annot: AnnotationRecord): boolean => {
+  const onOpenField = (annot: AnnotationRecord, field: TextField): boolean => {
     deps.selectAlone(annot);
     deps.closeEditors();
-    return deps.annotations.editComment(annot.key) !== null;
+    return deps.annotations.editTextField(field, annot.key) !== null;
   };
-  const onDiscardComment = (annot: AnnotationRecord): void => {
-    deps.annotations.discardCommentDraft(annot.key);
-  };
-  const onSaveComment = (
+  const onEditField = (
     annot: AnnotationRecord,
-    comment: string,
-    automatic = false,
+    field: TextField,
+    text: string,
   ): void => {
-    deps.annotations.editComment(annot.key, comment);
-    report(deps.annotations.submitComment(annot.key, { automatic }));
+    deps.annotations.editTextField(field, annot.key, text);
   };
+  const onSaveField = (
+    annot: AnnotationRecord,
+    field: TextField,
+    { text, automatic = false }: { text: string; automatic?: boolean },
+  ): void => {
+    deps.annotations.editTextField(field, annot.key, text);
+    report(deps.annotations.submitTextField(field, annot.key, { automatic }));
+  };
+  const onDiscardDraft = (annot: AnnotationRecord, field: TextField): void =>
+    deps.annotations.discardTextDraft(field, annot.key);
   const onOpenTags = (annot: AnnotationRecord): boolean => {
     deps.selectAlone(annot);
     deps.closeEditors();
@@ -416,28 +445,19 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
       annotationKeys: annots.map(({ key }) => key),
       now,
     });
-  const commentConflict = (annotationKey: string): boolean => {
-    const mutation = deps.getState().mutations.get(annotationKey);
-    return (
-      mutation?.kind === "conflict" && mutation.conflict.write === "comment"
-    );
-  };
-  const onApplyAgain = (annot: AnnotationRecord): void =>
+  const onApplyAgain = (annot: AnnotationRecord, field?: TextField): void =>
     report(
-      commentConflict(annot.key) && deps.annotations.commentDraftFor(annot.key)
-        ? deps.annotations.retryCommentDraft(annot.key)
+      field
+        ? deps.annotations.retryTextDraft(field, annot.key)
         : deps.annotations.retryWrite(annot.key),
     );
-  const onDiscardConflict = (annot: AnnotationRecord): void => {
-    if (
-      commentConflict(annot.key) &&
-      deps.annotations.commentDraftFor(annot.key)
-    ) {
-      deps.annotations.discardCommentDraft(annot.key);
-    } else {
-      deps.annotations.discardConflict(annot.key);
-    }
-  };
+  const onDiscardConflict = (
+    annot: AnnotationRecord,
+    field?: TextField,
+  ): void =>
+    field
+      ? deps.annotations.discardTextDraft(field, annot.key)
+      : deps.annotations.discardConflict(annot.key);
   // Every key on a record is an Indexed Key, so the library it names travels
   // with it: the Zotero URI and the cache path both want the bare key beside
   // the group the key already carries.
@@ -453,23 +473,8 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     });
   };
 
-  const onBlockedPress = (block: CardBlock): void => {
-    if (block.action === null) {
-      new BaseNotice(block.reason);
-      return;
-    }
-    const notice = new BaseNotice(
-      BaseNotice.render((renderer) => {
-        renderer.setTitle(block.reason);
-        renderer.addAction((button) => {
-          button.setButtonText(m.capability_enable_editing()).onClick(() => {
-            notice.hide();
-            deps.onAllowEditing();
-          });
-        });
-      }),
-    );
-  };
+  const onBlockedPress = (block: CardBlock): void =>
+    blockedNotice(block, deps.onAllowEditing);
 
   /**
    * A menu opened from a control, anchored under the control itself — so it
@@ -498,6 +503,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   };
 
   const fillCardMenu = (menu: Menu, annot: AnnotationRecord): void => {
+    addEditTextItem(menu, annot);
     const backlink = getBacklink(annot);
     if (backlink) {
       menu.addItem((item) => {
@@ -602,6 +608,33 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   };
 
   /**
+   * "Edit quoted text", on one highlight or underline card: the Quoted Text
+   * is corrected rarely, so its verb stands where "Edit…" is looked for rather
+   * than in the header (ADR 0066). Unlike the delete entry, a blocked capability
+   * leaves it enabled: it opens an editor, as the comment field does, and
+   * spends its press on the notice that says why, as the field's press does.
+   */
+  const addEditTextItem = (menu: Menu, annot: AnnotationRecord): void => {
+    const control = deps.controls(annot).text;
+    if (!control) return;
+    menu.addItem((item) => {
+      item
+        .setTitle(m.annot_view_menu_edit_text())
+        .setIcon("text-cursor-input")
+        .setDisabled(control.disabled)
+        .onClick(() =>
+          pressControl(control, {
+            act: () => {
+              if (onOpenField(annot, "text")) deps.openEditor(annot, "text");
+            },
+            onBlocked: onBlockedPress,
+          }),
+        );
+    });
+    menu.addSeparator();
+  };
+
+  /**
    * The delete entry, for one card or a group. Every entry here is a verb. A
    * blocked write shows as a dimmed entry and says why once, in the header
    * menu's capability row and in the notice a card verb raises, rather than in
@@ -652,15 +685,16 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     getBacklink,
     openExcerptImage: () => deps.excerptDisplay.open(),
     excerptImageRequest: deps.excerptImageRequest,
-    onSaveComment,
     onOpenTags,
     onEditTags,
     onSaveTags,
     onDiscardTags,
     libraryTagNames: deps.libraryTagNames,
-    onOpenComment,
-    onEditComment,
-    onDiscardComment,
+    onOpenField,
+    onCloseEditors: () => deps.closeEditors(),
+    onEditField,
+    onSaveField,
+    onDiscardDraft,
     onApplyAgain,
     onDiscardConflict,
     onDeleteSelection() {
@@ -739,7 +773,7 @@ const NOOP_DEMAND: ExcerptDisplayDemand = {
   snapshot: () => NOOP_DISPLAY,
 };
 
-const NOOP_ACTIONS: AnnotActions = {
+export const NOOP_ACTIONS: AnnotActions = {
   onMoreOptions: () => {},
   onCardMenu: () => {},
   onHeaderMenu: () => {},
@@ -755,10 +789,11 @@ const NOOP_ACTIONS: AnnotActions = {
   onEnableLiveUpdates: () => {},
   onSelectAnnotation: () => {},
   onClearSelection: () => {},
-  onSaveComment: () => {},
-  onDiscardComment: () => {},
-  onOpenComment: () => false,
-  onEditComment: () => {},
+  onDiscardDraft: () => {},
+  onOpenField: () => false,
+  onCloseEditors: () => {},
+  onEditField: () => {},
+  onSaveField: () => {},
   onOpenTags: () => false,
   onEditTags: () => {},
   onSaveTags: () => {},

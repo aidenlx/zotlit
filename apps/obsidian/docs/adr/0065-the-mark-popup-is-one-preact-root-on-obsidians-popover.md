@@ -19,3 +19,7 @@ The Mark Popup stays Obsidian's `HoverPopover` on the plugin's popout-aware base
 - The comment sheet and the tag editor are owned by their components. The controller keeps ref handles for the calls it makes: reading the sheet's text, ending the tag session, and testing whether a press belongs to the tag section or its suggestion popup. Owners still end a session before the host renders; a render that a session's end sets off runs after the render in progress.
 - The theme hooks keep their names and places: `zt-pdf-mark-popup`, `data-zt-verb`, `zt-pdf-comment-sheet`, and `data-zt-section="tags"`.
 - The reader rule becomes: the Mark Popup is the one reader surface that imports Preact.
+
+## Amendment: the selected-mode row has no comment verb
+
+Accepted 2026-09-26 ([#1242](https://github.com/aidenlx/zotlit/issues/1242)), revised by [ADR 0066](0066-the-comment-is-an-editable-field-on-a-card-selected-alone-and-in-the-mark-popup.md). The comment under the popup's row is an editable field, as on an Annotation Card selected alone: a click on it, or on "Add a comment…" where there is none, is the one way into the popup's comment editor. So the selected-mode row no longer carries `data-zt-verb="comment"`; the field carries `zt-annot-comment-field`. The creation row keeps its `data-zt-verb="comment"`. Every other theme hook above keeps its name and place.

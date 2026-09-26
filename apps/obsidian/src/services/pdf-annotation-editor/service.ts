@@ -50,8 +50,11 @@ export interface PdfAnnotationEditorDeps {
   annotations: AnnotationReads;
   /** What the Editing Capability affordance and a blocked keystroke reach. */
   capabilityGestures: CapabilityGestures;
-  /** What the Mark Popup's reveal and comment verbs reach in the sidebar. */
-  markGestures: Pick<MarkGestures, "revealAnnotation">;
+  /**
+   * What the Mark Popup's reveal verb reaches in the sidebar, and the notice a
+   * blocked control's press raises.
+   */
+  markGestures: Pick<MarkGestures, "blockedPress" | "revealAnnotation">;
   /** The Literature Notes a rendered comment's links resolve against. */
   noteIndex: CommentNotes;
   /** The tag names of an Annotation's Library, which the tag editor suggests. */

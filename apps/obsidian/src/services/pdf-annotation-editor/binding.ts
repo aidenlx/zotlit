@@ -138,13 +138,13 @@ export type AnnotationReads = Pick<
   | "capability"
   | "capabilityFor"
   | "closeHistory"
-  | "commentDraftFor"
+  | "textDraftFor"
   | "createAnnotation"
   | "deleteAnnotation"
   | "deleteAnnotations"
-  | "discardCommentDraft"
+  | "discardTextDraft"
   | "discardTagDraft"
-  | "editComment"
+  | "editTextField"
   | "editTags"
   | "on"
   | "openHistory"
@@ -156,8 +156,8 @@ export type AnnotationReads = Pick<
   | "read"
   | "redo"
   | "refresh"
-  | "retryCommentDraft"
-  | "submitComment"
+  | "retryTextDraft"
+  | "submitTextField"
   | "submitTags"
   | "undo"
 >;
@@ -196,10 +196,11 @@ export interface PdfViewBindingDeps {
   annotations: AnnotationReads;
   capabilityGestures: CapabilityGestures;
   /**
-   * The one gesture the Mark Popup reaches outside the reader's own surfaces;
-   * a block it meets is answered by the binding's own edit-gesture path.
+   * The gestures the Mark Popup reaches outside the reader's own surfaces:
+   * the reveal, and the notice a blocked control's press raises. A block a
+   * row verb meets is answered by the binding's own edit-gesture path.
    */
-  markGestures: Pick<MarkGestures, "revealAnnotation">;
+  markGestures: Pick<MarkGestures, "blockedPress" | "revealAnnotation">;
   /** Each annotation tool's own colour, which every open PDF view shares. */
   toolColors: ToolColorStore;
   /** The Literature Notes a rendered comment's links resolve against. */
@@ -846,8 +847,9 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       colors: this.#toolColors,
       surfaceState: state,
       gestures: {
-        revealAnnotation: (annotationKey, options) =>
-          this.#markGestures.revealAnnotation(annotationKey, options),
+        revealAnnotation: (annotationKey) =>
+          this.#markGestures.revealAnnotation(annotationKey),
+        blockedPress: (block) => this.#markGestures.blockedPress(block),
         reportBlockedGesture: () => this.#editGesture(),
         allowEditing: () => this.#gestures.allowEditing(),
       },

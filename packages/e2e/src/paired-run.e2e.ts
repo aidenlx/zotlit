@@ -118,8 +118,11 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
   const api = baseUrl!;
   let serverID = "";
   let authorizationFixture: { secret: string; rdp: ZoteroRdp } | undefined;
+  let m: typeof import("@obsidian-messages");
 
   beforeAll(async () => {
+    // The dev build generates this facade; unreachable runs never load it.
+    m = await import("@obsidian-messages");
     serverID = await readServerID(api);
     authorizationFixture = {
       // The vault half of the seeded Write Authorization. Each tier that
@@ -2803,9 +2806,21 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
         it("keeps the popup's comment editor open through a selection and a menu pick inside it", async () => {
           await selectImage();
+          // The seed carries no comment, so the popup's comment field shows
+          // its placeholder, and a click on it opens the editor; the row has
+          // no comment verb.
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(function(){const popup=document.querySelector('.zt-pdf-mark-popup');return String(popup?.querySelector('.zt-annot-comment-field')?.textContent===${JSON.stringify(m.annot_view_card_comment_placeholder())}&&!popup.querySelector('[data-zt-verb="comment"]'));})()`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+          // A press collapses the page's selection before its click, and a
+          // click over selected text only reads.
           await obEval(
             vaultId!,
-            `(document.querySelector('.zt-pdf-mark-popup [data-zt-verb="comment"]').click(),true)`,
+            `(getSelection().removeAllRanges(),document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-field').click(),true)`,
           );
           expect(
             await obEvalUntil(vaultId!, `String(!!${POPUP_EDITOR})`, {
@@ -3859,7 +3874,16 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
          */
         async function dragEnd(
           handle: { x: number; y: number },
-          { word, at }: { word: string; at: number },
+          {
+            word,
+            at,
+            from = seedText,
+          }: {
+            word: string;
+            at: number;
+            /** The quoted text Zotero holds before the drag. */
+            from?: string;
+          },
         ): Promise<string> {
           const pressed = await obJson<{ grip: string; to: number[] }>(
             `(function(){${FIRE}${wordRect}const box=wordRect(${JSON.stringify(word)});const x=box.left+box.width*${at},y=box.top+box.height/2;const node=fire('pointerdown',${handle.x},${handle.y});const container=${pdfView}.containerEl;fire('pointermove',(${handle.x}+x)/2,(${handle.y}+y)/2,container);fire('pointermove',x,y,container);window.__ztTo=[x,y];return JSON.stringify({grip:node.dataset.ztGrip,to:[x,y]});})()`,
@@ -3872,7 +3896,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await waitFor(
               async () =>
-                (await highlight.stored()).data.annotationText !== seedText,
+                (await highlight.stored()).data.annotationText !== from,
             ),
           ).toBe(true);
           // Read once Zotero's open Reader has taken the write and saved
@@ -4001,6 +4025,50 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ).toBe(true);
         }, 120000);
 
+        it("takes the text of the new range over a Text Edit, as Zotero's reader does", async () => {
+          // A Text Edit through the verb the card's editor saves with.
+          const typed = "Corrected by hand";
+          await obEval(
+            vaultId!,
+            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;repository.editTextField('text',${JSON.stringify(highlightKey)},${JSON.stringify(typed)});await repository.submitTextField('text',${JSON.stringify(highlightKey)});return true;})()`,
+          );
+          expect(
+            await waitFor(
+              async () =>
+                (await highlight.stored()).data.annotationText === typed,
+            ),
+          ).toBe(true);
+          await highlight.settled();
+
+          const handle = await selectHighlight();
+          await dragEnd(handle, {
+            word: "Furthermore,",
+            at: 0.99,
+            from: typed,
+          });
+
+          // Zotero holds the text of the new range: the typed text is gone.
+          const extended = `${seedText} Furthermore,`;
+          expect(
+            await waitFor(
+              async () =>
+                (await highlight.stored()).data.annotationText === extended,
+            ),
+          ).toBe(true);
+          expect(
+            await waitFor(
+              async () => (await highlight.held())?.text === extended,
+            ),
+          ).toBe(true);
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              cardQuotes("(text)=>text.includes('just a few. Furthermore,')"),
+              { expected: "true" },
+            ),
+          ).toBe(true);
+        }, 120000);
+
         it("keeps one character when the end is dragged back past the start", async () => {
           const handle = await selectHighlight();
           // "automatic." ends the line above the seed's first word, "There".
@@ -4083,7 +4151,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obEvalUntil(
               vaultId!,
-              `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(repository.mutationFor(${JSON.stringify(historyKey)}).kind==='idle'&&!repository.commentDraftFor(${JSON.stringify(historyKey)}));})()`,
+              `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(repository.mutationFor(${JSON.stringify(historyKey)}).kind==='idle'&&!repository.textDraftFor('comment',${JSON.stringify(historyKey)}));})()`,
               { expected: "true" },
             ),
           ).toBe(true);
@@ -4305,11 +4373,16 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           (await storedAnnotation(api, serverID, historyKey))
             .annotationComment ?? "";
 
-        /** Opens the Mark Popup's comment editor on the selected Annotation. */
+        /**
+         * Opens the Mark Popup's comment editor on the selected Annotation,
+         * through a click on the comment field. A press collapses the page's
+         * selection before its click, and a click over selected text only
+         * reads.
+         */
         async function openCommentEditor(): Promise<void> {
           await obEval(
             vaultId!,
-            `(document.querySelector('.zt-pdf-mark-popup [data-zt-verb="comment"]').click(),true)`,
+            `(getSelection().removeAllRanges(),document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-field').click(),true)`,
           );
           expect(
             await obEvalUntil(vaultId!, `String(!!${POPUP_EDITOR})`, {
@@ -4424,7 +4497,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // in one turn. The stored comment drawn for one frame between the
           // closed editor and the new text is the flicker this guards.
           const shown = await obJson<{ popup: string[]; card: string[] }>(
-            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const key=${JSON.stringify(historyKey)};const slot=(root)=>{if(root?.querySelector('.cm-content'))return 'editor';const view=root?.querySelector('.zt-annot-comment');return view?'view:'+view.textContent:'none';};const roots={popup:()=>document.querySelector('.zt-pdf-mark-popup'),card:()=>app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(key)+']')).find(Boolean)};const shown={popup:[slot(roots.popup())],card:[slot(roots.card())]};const record=()=>{for(const name of ['popup','card']){const state=slot(roots[name]());if(state!==shown[name].at(-1))shown[name].push(state);}};const observer=new MutationObserver(record);observer.observe(document.body,{subtree:true,childList:true,characterData:true});${POPUP_EDITOR}.dispatchEvent(new FocusEvent('blur',{relatedTarget:null}));const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));for(let waited=0;waited<10000&&!(repository.mutationFor(key).kind==='idle'&&!repository.commentDraftFor(key));waited+=50)await sleep(50);await sleep(300);observer.disconnect();record();return JSON.stringify(shown);})()`,
+            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const key=${JSON.stringify(historyKey)};const slot=(root)=>{if(root?.querySelector('.cm-content'))return 'editor';const view=root?.querySelector('.zt-annot-comment');return view?'view:'+view.textContent:'none';};const roots={popup:()=>document.querySelector('.zt-pdf-mark-popup'),card:()=>app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(key)+']')).find(Boolean)};const shown={popup:[slot(roots.popup())],card:[slot(roots.card())]};const record=()=>{for(const name of ['popup','card']){const state=slot(roots[name]());if(state!==shown[name].at(-1))shown[name].push(state);}};const observer=new MutationObserver(record);observer.observe(document.body,{subtree:true,childList:true,characterData:true});${POPUP_EDITOR}.dispatchEvent(new FocusEvent('blur',{relatedTarget:null}));const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));for(let waited=0;waited<10000&&!(repository.mutationFor(key).kind==='idle'&&!repository.textDraftFor('comment',key));waited+=50)await sleep(50);await sleep(300);observer.disconnect();record();return JSON.stringify(shown);})()`,
           );
           expect(shown.popup).toEqual(["editor", `view:${after}`]);
           // The card may show the stored comment up to the blur; from there it
@@ -4432,6 +4505,19 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(shown.card.at(-1)).toBe(`view:${after}`);
           expect(shown.card.length).toBeLessThanOrEqual(2);
           expect(await storedComment()).toBe(after);
+
+          // The comment is a field again once its editor closed: a click on
+          // it opens the editor, as on the card (ADR 0066). A press collapses
+          // the page's selection before its click, and a click over selected
+          // text stays a read. The click runs and renders in one task, so the
+          // frame after it shows what it did.
+          expect(
+            await obEval(
+              vaultId!,
+              `(async()=>{getSelection().removeAllRanges();document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-field').click();await new Promise((resolve)=>requestAnimationFrame(resolve));return String(!!${POPUP_EDITOR});})()`,
+            ),
+          ).toBe("true");
+          await closeCommentEditor();
         }, 120000);
 
         describe("and the Annotation Card beside it", () => {
@@ -4575,6 +4661,78 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
               await expect.poll(storedTags, poll).toEqual(edited);
             }, 120000);
+
+            it("saves a card session on a blur, keeps the editor open for the next, and records one step for each", async () => {
+              const first = "e2e-blur-first";
+              const second = "e2e-blur-second";
+              /** Settles when no tag write or draft stands on the Annotation. */
+              const tagsSettled = () =>
+                obEvalUntil(
+                  vaultId!,
+                  `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(repository.mutationFor(${JSON.stringify(historyKey)}).kind==='idle'&&!repository.tagDraftFor(${JSON.stringify(historyKey)}));})()`,
+                  { expected: "true" },
+                );
+              const before = spelledTags([...seededTags, autoTag]);
+
+              expect(await press(toggle)).toBe(true);
+              expect(await editorOpen()).toBe(true);
+              await type(first, { enter: true });
+              await expect.poll(editorChips, poll).toContain(first);
+              // Focus leaves the field for the view around the card. The
+              // event is sent rather than the focus moved: a window without
+              // the system focus sends no focus events.
+              await obEval(
+                vaultId!,
+                `(function(){(${card}).querySelector('.zt-annot-tag-input').dispatchEvent(new FocusEvent('focusout',{bubbles:true,relatedTarget:null}));return true;})()`,
+              );
+              const once = spelledTags([
+                ...seededTags,
+                autoTag,
+                { tag: first },
+              ]);
+              await expect.poll(storedTags, poll).toEqual(once);
+              expect(await tagsSettled()).toBe(true);
+              // The editor stayed open through the save.
+              expect(
+                await obEval(
+                  vaultId!,
+                  `String(!!(${card})?.querySelector('.zt-annot-tag-input'))`,
+                ),
+              ).toBe("true");
+
+              // The next change starts a new session, which Escape ends and
+              // saves as it closes the editor.
+              await type(second, { enter: true });
+              await expect.poll(editorChips, poll).toContain(second);
+              await obEval(
+                vaultId!,
+                `(function(){(${card}).querySelector('.zt-annot-tag-input').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+              );
+              const twice = spelledTags([
+                ...seededTags,
+                autoTag,
+                { tag: first },
+                { tag: second },
+              ]);
+              await expect.poll(storedTags, poll).toEqual(twice);
+              expect(
+                await obEvalUntil(
+                  vaultId!,
+                  `String(!(${card})?.querySelector('.zt-annot-tag-input'))`,
+                  { expected: "true" },
+                ),
+              ).toBe(true);
+              expect(await tagsSettled()).toBe(true);
+
+              // One History Step for each session: the first undo takes back
+              // the second name alone, the next one the first.
+              expect(await undoKey()).toEqual({ handled: true });
+              await stepSettled();
+              await expect.poll(storedTags, poll).toEqual(once);
+              expect(await undoKey()).toEqual({ handled: true });
+              await stepSettled();
+              await expect.poll(storedTags, poll).toEqual(before);
+            }, 120000);
           });
         });
 
@@ -4688,7 +4846,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             expect(
               await obEvalUntil(
                 vaultId!,
-                `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(!${POPUP_EDITOR}&&repository.mutationFor(${JSON.stringify(noteKey)}).kind==='idle'&&!repository.commentDraftFor(${JSON.stringify(noteKey)}));})()`,
+                `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(!${POPUP_EDITOR}&&repository.mutationFor(${JSON.stringify(noteKey)}).kind==='idle'&&!repository.textDraftFor('comment',${JSON.stringify(noteKey)}));})()`,
                 { expected: "true" },
               ),
             ).toBe(true);
@@ -4877,7 +5035,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             .toMatchObject({ cards: [markKey], marks: [markKey] });
         }, 120000);
 
-        it("keeps one editor open on a card: its comment editor or its tag editor, from the card or the Mark Popup", async () => {
+        it("keeps one editor open on a card: its comment editor or its tag editor", async () => {
           await raiseWindow(vaultId!);
           await clickCard(cardKey);
           await expect
@@ -4886,13 +5044,15 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const card = cardOf(cardKey);
           const toggle = (icon: string) =>
             `${card}?.querySelector('.clickable-icon:has(svg.lucide-${icon})')`;
+          /** The comment field, which stands on a card selected alone. */
+          const field = `${card}?.querySelector('.zt-annot-comment-field')`;
           /** Which of the card's two editors stand. */
           const editors = () =>
             obJson<{ comment: boolean; tags: boolean }>(
               `JSON.stringify({comment:!!${card}?.querySelector('.cm-content'),tags:!!${card}?.querySelector('[data-slot=tags-input]')})`,
             );
 
-          await trustedClick(toggle("message-square-plus"));
+          await trustedClick(field);
           await expect
             .poll(editors, poll)
             .toEqual({ comment: true, tags: false });
@@ -4903,22 +5063,8 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             .poll(editors, poll)
             .toEqual({ comment: false, tags: true });
 
-          // The comment toggle ends the tag session first.
-          await trustedClick(toggle("message-square-plus"));
-          await expect
-            .poll(editors, poll)
-            .toEqual({ comment: true, tags: false });
-
-          // The Mark Popup's way to the card's comment editor ends the tag
-          // session first as well.
-          await trustedClick(toggle("tag"));
-          await expect
-            .poll(editors, poll)
-            .toEqual({ comment: false, tags: true });
-          await obEval(
-            vaultId!,
-            `(function(){${annotView}.revealAnnotation(${JSON.stringify(cardKey)},{comment:true});return true;})()`,
-          );
+          // A click on the comment field ends the tag session first.
+          await trustedClick(field);
           await expect
             .poll(editors, poll)
             .toEqual({ comment: true, tags: false });
@@ -4933,6 +5079,77 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           await expect
             .poll(editors, poll)
             .toEqual({ comment: false, tags: false });
+        }, 120000);
+
+        it("saves a comment typed into the comment field of a card selected in Pinned mode", async () => {
+          await raiseWindow(vaultId!);
+          const card = cardOf(cardKey);
+          const field = `${card}?.querySelector('.zt-annot-comment-field')`;
+          const editor = `${card}?.querySelector('.cm-content')`;
+          const original =
+            (await readAnnotationState(api, serverID, cardKey)).comment ?? "";
+          const typed = "Saved through the comment field";
+          /** The remembered write key the vault holds, for the restore. */
+          const key = await obJson<string>(
+            "JSON.stringify(JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key)",
+          );
+          expect(await command("zotlit:annot-view-pin-current-item")).toBe(
+            "pinned",
+          );
+          try {
+            // A card that is not selected alone offers no comment field.
+            expect(await obEval(vaultId!, `String(!!${field})`)).toBe("false");
+            await clickCard(cardKey);
+            await expect.poll(shown, poll).toMatchObject({ cards: [cardKey] });
+
+            await trustedClick(field);
+            await expect
+              .poll(
+                () =>
+                  obEval(
+                    vaultId!,
+                    `String(!!${editor}?.contains(document.activeElement))`,
+                  ),
+                poll,
+              )
+              .toBe("true");
+            await obEval(
+              vaultId!,
+              `(function(){const editor=${editor};editor.doc.execCommand('selectAll');editor.doc.execCommand('insertText',false,${JSON.stringify(typed)});return true;})()`,
+            );
+            // A click on the card away from the field, on its Quoted Text,
+            // saves and closes.
+            await trustedClick(`${card}?.querySelector('blockquote')`);
+            await expect
+              .poll(() => obEval(vaultId!, `String(!!${editor})`), poll)
+              .toBe("false");
+            expect(
+              await waitFor(
+                async () =>
+                  (await readAnnotationState(api, serverID, cardKey))
+                    .comment === typed,
+              ),
+            ).toBe(true);
+          } finally {
+            await command("zotlit:annot-view-unpin");
+            await obEval(
+              vaultId!,
+              `(function(){app.workspace.setActiveLeaf(${pdfView}.leaf,{focus:true});return true;})()`,
+            );
+            // Every write the edit asked for has landed, so the restore
+            // writes against the version Zotero ends on.
+            await obEvalUntil(
+              vaultId!,
+              `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(repository.mutationFor(${JSON.stringify(cardKey)}).kind==='idle'&&!repository.textDraftFor('comment',${JSON.stringify(cardKey)}));})()`,
+              { expected: "true" },
+            );
+            await restoreAnnotationComment(api, {
+              serverID,
+              key,
+              annotationKey: cardKey,
+              comment: original,
+            });
+          }
         }, 120000);
 
         /**
@@ -4963,10 +5180,13 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             .poll(shown, poll)
             .toMatchObject({ cards: [cardKey], marks: [cardKey] });
           const editor = `${cardOf(cardKey)}?.querySelector('.cm-content')`;
+          // A click on the comment field opens the editor. A press collapses
+          // the page's selection before its click, and a click over selected
+          // text only reads.
           expect(
             await obEvalUntil(
               vaultId!,
-              `(function(){if(${editor})return 'open';${cardOf(cardKey)}?.querySelector('.clickable-icon:has(.lucide-message-square-plus)')?.click();return String(!!${editor}&&'open');})()`,
+              `(function(){if(${editor})return 'open';getSelection().removeAllRanges();${cardOf(cardKey)}?.querySelector('.zt-annot-comment-field')?.click();return String(!!${editor}&&'open');})()`,
               { expected: "open" },
             ),
           ).toBe(true);
@@ -5008,6 +5228,327 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             .toMatchObject({ cards: [markKey], marks: [markKey] });
           expect(await obEval(vaultId!, `String(!!${editor})`)).toBe("false");
         }, 120000);
+
+        describe("a Text Edit", () => {
+          const highlight = seededMark(cardKey, { image: false });
+          const editor = `${cardOf(cardKey)}?.querySelector('blockquote .cm-content')`;
+
+          /**
+           * Chooses "Edit quoted text", the first item of the card's "…"
+           * menu, once it stands there enabled.
+           */
+          async function chooseEditQuotedText(): Promise<void> {
+            const more = `${cardOf(cardKey)}?.querySelector('.clickable-icon:has(svg.lucide-more-horizontal)')`;
+            await obEval(
+              vaultId!,
+              `(${more}.scrollIntoView({block:'nearest'}),true)`,
+            );
+            await trustedClick(more);
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `(function(){const item=document.querySelector('.menu .menu-item');if(!item)return 'no menu';if(item.textContent.trim()!==${JSON.stringify(m.annot_view_menu_edit_text())}||item.classList.contains('is-disabled'))return 'not offered';item.click();return 'chosen';})()`,
+                { expected: "chosen" },
+              ),
+            ).toBe(true);
+          }
+
+          afterEach(highlight.restore);
+
+          it("saves a correction typed after Edit quoted text in Pinned mode, with its range and Sort Index kept", async () => {
+            await raiseWindow(vaultId!);
+            expect(await command("zotlit:annot-view-pin-current-item")).toBe(
+              "pinned",
+            );
+            try {
+              // Chosen on a card that is not selected yet, the item selects
+              // the card alone.
+              expect(
+                await obEval(
+                  vaultId!,
+                  `String(!!${cardOf(cardKey)}?.hasAttribute('data-alone'))`,
+                ),
+              ).toBe("false");
+              await chooseEditQuotedText();
+              await expect
+                .poll(shown, poll)
+                .toMatchObject({ cards: [cardKey] });
+              // The editor opens in the Excerpt Block with the caret in it.
+              expect(
+                await obEvalUntil(
+                  vaultId!,
+                  `String(!!${editor}?.contains(document.activeElement))`,
+                  { expected: "true" },
+                ),
+              ).toBe(true);
+              // Typed where the caret stands: at the end of the text.
+              await obEval(
+                vaultId!,
+                "(function(){require('@electron/remote').getCurrentWebContents().insertText(' Checked.');return true;})()",
+              );
+              await press("Escape");
+
+              const corrected = `${highlight.seed.annotationText} Checked.`;
+              expect(
+                await waitFor(
+                  async () =>
+                    (await highlight.stored()).data.annotationText ===
+                    corrected,
+                ),
+              ).toBe(true);
+              expect((await highlight.stored()).data).toMatchObject({
+                annotationPosition: highlight.seed.annotationPosition,
+                annotationSortIndex: highlight.seed.annotationSortIndex,
+              });
+              // Escape closed the editor, and the card quotes the correction.
+              expect(
+                await obEvalUntil(
+                  vaultId!,
+                  `String(!${editor}&&${cardOf(cardKey)}.querySelector('blockquote').textContent===${JSON.stringify(corrected)})`,
+                  { expected: "true" },
+                ),
+              ).toBe(true);
+            } finally {
+              await command("zotlit:annot-view-unpin");
+              await obEval(
+                vaultId!,
+                `(function(){app.workspace.setActiveLeaf(${pdfView}.leaf,{focus:true});return true;})()`,
+              );
+            }
+          }, 120000);
+
+          it("shows a Write Conflict on the Quoted Text in its Excerpt Block once another card is selected, and Discard keeps Zotero's text", async () => {
+            await raiseWindow(vaultId!);
+            const conflict = `${cardOf(cardKey)}?.querySelector('blockquote .zt-annot-conflict')`;
+            const inZotero = `${highlight.seed.annotationText} (edited in Zotero)`;
+            const typed = `${highlight.seed.annotationText} Mine.`;
+            const repository =
+              "app.plugins.plugins.zotlit.services.annotationRepository";
+            const apiKey = await obJson<string>(
+              "JSON.stringify(JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key)",
+            );
+            const path = `users/0/items/${cardKey}`;
+
+            await using cleanup = new AsyncDisposableStack();
+            cleanup.defer(async () => {
+              // Every exit lets the held write go and leaves no text draft or
+              // conflict behind; afterEach puts Zotero's text back.
+              await restoreWriteOutcomeProbe(vaultId!);
+              await obEval(
+                vaultId!,
+                `(${repository}.discardTextDraft('text',${JSON.stringify(cardKey)}),true)`,
+              );
+            });
+            // The draft's save waits at the seam until Zotero has moved, so
+            // Zotero refuses it whenever the save starts.
+            await installHeldWriteProbe(vaultId!);
+
+            await clickCard(cardKey);
+            await chooseEditQuotedText();
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `String(!!${editor}?.contains(document.activeElement))`,
+                { expected: "true" },
+              ),
+            ).toBe(true);
+            await obEval(
+              vaultId!,
+              "(function(){require('@electron/remote').getCurrentWebContents().insertText(' Mine.');return true;})()",
+            );
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                "String(window.__zotlitWriteOutcomeProbe.reached)",
+                { expected: "true" },
+              ),
+            ).toBe(true);
+
+            // Zotero's sidebar changes the text while the save waits.
+            const { version } = await highlight.stored();
+            const edited = await zoteroFetch(api, path, {
+              method: "PATCH",
+              headers: {
+                "Zotero-Server-ID": serverID,
+                "Zotero-API-Key": apiKey,
+                "Content-Type": "application/json",
+                "If-Unmodified-Since-Version": String(version),
+              },
+              body: JSON.stringify({ annotationText: inZotero }),
+            });
+            expect(edited.status).toBe(204);
+            await obEval(
+              vaultId!,
+              "(window.__zotlitWriteOutcomeProbe.release(),true)",
+            );
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `String(${repository}.textDraftFor('text',${JSON.stringify(cardKey)})?.state.kind)`,
+                { expected: "conflict" },
+              ),
+            ).toBe(true);
+
+            // Another card takes the selection; the conflicted card keeps its
+            // panel in the Excerpt Block, with both texts and the two verbs.
+            await clickCard(markKey);
+            await expect.poll(shown, poll).toMatchObject({ cards: [markKey] });
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `(function(){const panel=${conflict};if(!panel||panel.getBoundingClientRect().width===0)return 'none';return JSON.stringify({zotero:panel.textContent.includes(${JSON.stringify(inZotero)}),mine:panel.textContent.includes(${JSON.stringify(typed)}),verbs:[...panel.querySelectorAll('button')].map((node)=>node.textContent)});})()`,
+                {
+                  expected: JSON.stringify({
+                    zotero: true,
+                    mine: true,
+                    verbs: ["Use my text", "Keep Zotero's text"],
+                  }),
+                },
+              ),
+            ).toBe(true);
+            expect((await highlight.stored()).data.annotationText).toBe(
+              inZotero,
+            );
+
+            // The press lands where the panel stands on screen.
+            await obEval(
+              vaultId!,
+              `(${conflict}.scrollIntoView({block:'center'}),true)`,
+            );
+            await trustedClick(
+              `[...${conflict}.querySelectorAll('button')].find((button)=>button.textContent==="Keep Zotero's text")`,
+            );
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `String(!${conflict}&&${cardOf(cardKey)}.querySelector('blockquote').textContent===${JSON.stringify(inZotero)})`,
+                { expected: "true" },
+              ),
+            ).toBe(true);
+            expect((await highlight.stored()).data.annotationText).toBe(
+              inZotero,
+            );
+          }, 120000);
+
+          it("puts a whole Text Edit session back for one press of the undo key, and redoes it", async () => {
+            await raiseWindow(vaultId!);
+            const seedText = highlight.seed.annotationText!;
+            const storedText = async () =>
+              (await highlight.stored()).data.annotationText;
+            /** Typed where the caret stands, as the window's input types. */
+            const type = (text: string) =>
+              obEval(
+                vaultId!,
+                `(function(){require('@electron/remote').getCurrentWebContents().insertText(${JSON.stringify(text)});return true;})()`,
+              );
+
+            await clickCard(cardKey);
+            await chooseEditQuotedText();
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `String(!!${editor}?.contains(document.activeElement))`,
+                { expected: "true" },
+              ),
+            ).toBe(true);
+
+            /**
+             * Settles once ZotLit holds no write on the Annotation and no
+             * draft waiting on one: the last save is confirmed and read back.
+             */
+            const saveSettled = async () =>
+              expect(
+                await obEvalUntil(
+                  vaultId!,
+                  `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;const draft=repository.textDraftFor('text',${JSON.stringify(cardKey)});return String(repository.mutationFor(${JSON.stringify(cardKey)}).kind==='idle'&&draft?.state.kind!=='pending');})()`,
+                  { expected: "true" },
+                ),
+              ).toBe(true);
+
+            // Two saves in one session: the first run's autosave lands and is
+            // read back before the second run is typed, and Escape saves that.
+            await type(" Checked.");
+            expect(
+              await waitFor(
+                async () => (await storedText()) === `${seedText} Checked.`,
+              ),
+            ).toBe(true);
+            await saveSettled();
+            await type(" Twice.");
+            await press("Escape");
+            const corrected = `${seedText} Checked. Twice.`;
+            expect(
+              await waitFor(async () => (await storedText()) === corrected),
+            ).toBe(true);
+            // ZotLit holds no write and no draft on the Annotation, which is
+            // when an undo key is taken rather than turned away.
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(repository.mutationFor(${JSON.stringify(cardKey)}).kind==='idle'&&!repository.textDraftFor('text',${JSON.stringify(cardKey)}));})()`,
+                { expected: "true" },
+              ),
+            ).toBe(true);
+
+            expect(await undoKey()).toEqual({ handled: true });
+            await stepSettled();
+            // The session went back whole, to the text from before it began,
+            // with its range and Sort Index as seeded.
+            expect(
+              await waitFor(async () => (await storedText()) === seedText),
+            ).toBe(true);
+            expect((await highlight.stored()).data).toMatchObject({
+              annotationPosition: highlight.seed.annotationPosition,
+              annotationSortIndex: highlight.seed.annotationSortIndex,
+            });
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `String(${cardOf(cardKey)}?.querySelector('blockquote')?.textContent===${JSON.stringify(seedText)})`,
+                { expected: "true" },
+              ),
+            ).toBe(true);
+
+            expect(await redoKey()).toEqual({ handled: true });
+            await stepSettled();
+            expect(
+              await waitFor(async () => (await storedText()) === corrected),
+            ).toBe(true);
+          }, 120000);
+
+          it("keeps Edit quoted text enabled while editing is not live, and choosing it says why", async () => {
+            await raiseWindow(vaultId!);
+            await whileEditingNotLive(async () => {
+              await obEval(
+                vaultId!,
+                "(function(){for(const node of document.querySelectorAll('.notice'))node.remove();return true;})()",
+              );
+              await clickCard(cardKey);
+              // The card has read the blocked capability: its comment field
+              // says so.
+              expect(
+                await obEvalUntil(
+                  vaultId!,
+                  `String(${cardOf(cardKey)}?.querySelector('.zt-annot-comment-field')?.hasAttribute('data-blocked'))`,
+                  { expected: "true" },
+                ),
+              ).toBe(true);
+
+              await chooseEditQuotedText();
+              expect(
+                await obEvalUntil(
+                  vaultId!,
+                  `String([...document.querySelectorAll('.zt-notice')].some((node)=>node.textContent.includes(${JSON.stringify("Allow other applications on this computer to communicate with Zotero")})))`,
+                  { expected: "true" },
+                ),
+              ).toBe(true);
+              // The choice opened no editor.
+              expect(await obEval(vaultId!, `String(!!${editor})`)).toBe(
+                "false",
+              );
+            });
+          }, 120000);
+        });
 
         /** A key the window's own input delivers to whatever holds the focus. */
         async function press(keyCode: string): Promise<void> {
@@ -5108,7 +5649,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           }
         }, 120000);
 
-        it("toggles a card for a Cmd/Ctrl-click on its comment text, and opens no editor", async () => {
+        it("selects a card for a click on its comment text, toggles it for a Cmd/Ctrl-click, and opens no editor", async () => {
           await raiseWindow(vaultId!);
           const mod = await obEval(
             vaultId!,
@@ -5156,6 +5697,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             // Again, and it leaves.
             await trustedClick(comment(second), [mod]);
             await expect.poll(shown, poll).toMatchObject({ cards: [first] });
+            expect(await editorOpen()).toBe("false");
+
+            // A plain click on the comment text selects that card alone, and
+            // leaves the text as it is.
+            await trustedClick(comment(second));
+            await expect.poll(shown, poll).toMatchObject({ cards: [second] });
             expect(await editorOpen()).toBe("false");
           } finally {
             await eraseAnnotations(rdp, await madeSince(baseline));
@@ -5637,7 +6184,17 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `(function(){const comment=(${card})?.querySelector('.zt-annot-comment');if(!comment)return false;comment.click();return true;})()`,
+            `(function(){const card=(${card});if(!card)return false;card.click();return card.hasAttribute('data-alone');})()`,
+            { expected: "true" },
+          ),
+        ).toBe(true);
+        // The card selected alone offers its comment as a field, and a click
+        // on it opens the editor. A press collapses the page's selection
+        // before its click, and a click over selected text only reads.
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `(function(){const field=(${card})?.querySelector('.zt-annot-comment-field');if(!field)return false;field.doc.getSelection().removeAllRanges();field.click();return true;})()`,
             { expected: "true" },
           ),
         ).toBe(true);
@@ -5676,6 +6233,26 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             `String(!!(${card})?.querySelector('.cm-content'))`,
           ),
         ).toBe("true");
+
+        // Escape saves what was typed and closes the editor.
+        const escapeComment = "Saved by pop-out card Escape";
+        await obEval(
+          vaultId!,
+          `(function(){const editor=(${card}).querySelector('.cm-content');editor.focus();editor.doc.execCommand('selectAll');editor.doc.execCommand('insertText',false,${JSON.stringify(escapeComment)});editor.dispatchEvent(new editor.win.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+        );
+        expect(
+          await waitFor(
+            async () =>
+              (await readAnnotationState(api, serverID, createdKey)).comment ===
+              escapeComment,
+          ),
+        ).toBe(true);
+        expect(
+          await obEval(
+            vaultId!,
+            `String(!!(${card})?.querySelector('.cm-content'))`,
+          ),
+        ).toBe("false");
         await obEval(
           vaultId!,
           `(function(){const leaf=app.workspace.getLeavesOfType('zotero-annotation-view')[0];leaf.detach();app.commands.executeCommandById('zotlit:open-annot-view');app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');return true;})()`,
@@ -5848,7 +6425,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             if (${String(pending === "unsent draft")}) {
               const schedule=window.setTimeout;
               window.setTimeout=function(...args){timers++;return schedule.apply(this,args)};
-              try { draft=repository.editComment(${JSON.stringify(createdKey)},'Unsent comment discarded on reload')?.text??null; }
+              try { draft=repository.editTextField('comment',${JSON.stringify(createdKey)},'Unsent comment discarded on reload')?.text??null; }
               finally { window.setTimeout=schedule; }
             }
             const probe=window.__zotlitWriteOutcomeProbe;
@@ -5895,7 +6472,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obEvalUntil(
               vaultId!,
-              `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();const list=await repository.read(${JSON.stringify(attachment.key)});const record=list?.annotations.find(annotation=>annotation.key===${JSON.stringify(createdKey)});return JSON.stringify({color:record?.color,comment:record?.comment,draft:repository.commentDraftFor(${JSON.stringify(createdKey)}),mutation:repository.mutationFor(${JSON.stringify(createdKey)})});})()`,
+              `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();const list=await repository.read(${JSON.stringify(attachment.key)});const record=list?.annotations.find(annotation=>annotation.key===${JSON.stringify(createdKey)});return JSON.stringify({color:record?.color,comment:record?.comment,draft:repository.textDraftFor('comment',${JSON.stringify(createdKey)}),mutation:repository.mutationFor(${JSON.stringify(createdKey)})});})()`,
               {
                 expected: JSON.stringify({
                   color: stored.color,
@@ -5912,7 +6489,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           await obEval(vaultId!, "delete window.__zotlitReloadProbe;true");
           expect(
             await obJson(
-              `JSON.stringify((()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;return {draft:repository.commentDraftFor(${JSON.stringify(createdKey)}),mutation:repository.mutationFor(${JSON.stringify(createdKey)})}})())`,
+              `JSON.stringify((()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;return {draft:repository.textDraftFor('comment',${JSON.stringify(createdKey)}),mutation:repository.mutationFor(${JSON.stringify(createdKey)})}})())`,
             ),
           ).toEqual({ draft: null, mutation: { kind: "idle" } });
           expect(await annotationState(api, serverID, createdKey)).toEqual(
@@ -6465,6 +7042,38 @@ async function installClosingPaneProbe(
       probe.pending = services.annotationRepository
         .patchColor(${JSON.stringify(annotationKey)}, ${JSON.stringify(color)})
         .then((outcome) => { probe.outcome = outcome; });
+      return true;
+    })()`,
+  );
+}
+
+/**
+ * Hold every write on its way to Zotero until `release`, so a test orders what
+ * Zotero holds before the write reaches it. `reached` turns true as the first
+ * write arrives at the seam. {@link restoreWriteOutcomeProbe} lets it go.
+ */
+async function installHeldWriteProbe(vaultId: string): Promise<void> {
+  await obEval(
+    vaultId,
+    `(() => {
+      const services = app.plugins.plugins.zotlit.services;
+      const api = services.zoteroLocalApi;
+      const gate = Promise.withResolvers();
+      const probe = {
+        api,
+        authorizedSend: api.authorizedSend.bind(api),
+        listAnnotations: api.listAnnotations.bind(api),
+        calls: 0,
+        reached: false,
+        release: gate.resolve,
+      };
+      window.__zotlitWriteOutcomeProbe = probe;
+      api.authorizedSend = async (...args) => {
+        probe.calls += 1;
+        probe.reached = true;
+        await gate.promise;
+        return await probe.authorizedSend(...args);
+      };
       return true;
     })()`,
   );

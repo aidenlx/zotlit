@@ -256,13 +256,32 @@
 
 /* The comment sheet takes the row's width, so opening it leaves the popup as
    wide as its verbs; a narrow row still gives the editor room for a phrase.
-   The sheet adds nothing to the popup's own width, which the row sets. */
+   The sheet adds nothing to the popup's own width, which the row sets. Its
+   footer spaces itself off the field only while it shows something, so the
+   popup keeps its height as the editor opens. */
 :where(.zt-pdf-comment-sheet) {
   display: flex;
   flex-direction: column;
-  gap: var(--size-2-1);
   inline-size: 0;
   min-inline-size: max(100%, 12em);
+}
+
+/* The comment slot under the selected-mode row: the comment, the "Add a
+   comment…" line, a held draft or the sheet, with the comment pencil's
+   gutter. The slot alone decides its width, so the popup keeps its size as
+   the editor opens and closes; what stands in it fills it rather than
+   holding the sheet's own minimum.
+   A stylesheet rule, because it is a descendant selector over DOM another
+   owner renders: the vanilla builders in editor-sheet.ts draw the sheet and
+   the held-draft panel, and set their own width, which the slot takes back. */
+.zt-pdf-comment-slot {
+  inline-size: 0;
+  min-inline-size: max(100%, 14em);
+}
+
+.zt-pdf-comment-slot :is(.zt-pdf-comment-sheet, .zt-annot-draft) {
+  inline-size: auto;
+  min-inline-size: 0;
 }
 
 /* The native toolbar uses one fixed row. Let our tools and permission status

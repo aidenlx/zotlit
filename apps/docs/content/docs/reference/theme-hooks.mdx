@@ -158,7 +158,7 @@ While <UiLabel name={m.pdf_toolbar_ink()} /> is armed, the PDF view's container 
 
 `zt-pdf-mark-popup` is the popup that hangs over a selected Annotation Mark or a fresh text selection. Each control inside it carries `data-zt-verb`.
 
-Over a selected mark, the verbs are <UiLabel name={m.annot_view_card_color()} />, <UiLabel name={m.annot_view_card_add_comment()} /> or <UiLabel name={m.annot_view_card_edit_comment()} />, <UiLabel name={m.annot_view_card_add_tags()} /> or <UiLabel name={m.annot_view_card_edit_tags()} />, <UiLabel name={m.annot_view_menu_copy_text()} />, <UiLabel name={m.annot_view_menu_delete()} />, and <UiLabel name={m.pdf_mark_popup_reveal()} />, carrying `data-zt-verb` values `color`, `comment`, `tags`, `copy`, `delete`, and `reveal`. A stack of overlapping marks adds a stepper, `data-zt-verb="stack"`. Selecting <UiLabel name={m.annot_view_card_add_comment()} /> or <UiLabel name={m.annot_view_card_edit_comment()} /> opens `zt-pdf-comment-sheet` under the row, and the verb shows as pressed while the sheet is open.
+Over a selected mark, the verbs are <UiLabel name={m.annot_view_card_color()} />, <UiLabel name={m.annot_view_card_add_tags()} /> or <UiLabel name={m.annot_view_card_edit_tags()} />, <UiLabel name={m.annot_view_menu_copy_text()} />, <UiLabel name={m.annot_view_menu_delete()} />, and <UiLabel name={m.pdf_mark_popup_reveal()} />, carrying `data-zt-verb` values `color`, `tags`, `copy`, `delete`, and `reveal`. A stack of overlapping marks adds a stepper, `data-zt-verb="stack"`. Under the row, the comment is a field, `zt-annot-comment-field`. A mark with no comment shows <UiLabel name={m.annot_view_card_comment_placeholder()} /> there. Selecting the comment opens `zt-pdf-comment-sheet` in its place.
 
 Over a fresh text selection, the row instead offers <UiLabel name={m.pdf_toolbar_highlight()} /> and <UiLabel name={m.pdf_toolbar_underline()} /> (`data-zt-verb` `highlight` or `underline`), the four colors used most recently, by any tool, filled out from Zotero's palette in its own order (`data-zt-verb` `color-1` through `color-8`, by the color's place in that palette; each is a solid dot), <UiLabel name={m.annot_view_card_add_comment()} /> (`data-zt-verb="comment"`), and <UiLabel name={m.pdf_create_popup_copy()} /> (`data-zt-verb="copy"`). Selecting <UiLabel name={m.annot_view_card_add_comment()} /> opens `zt-pdf-comment-sheet` under the row.
 
@@ -192,16 +192,19 @@ These class names, data attribute values, and default styles are ZotLit's public
 
 The Annotation View lists a Zotero attachment's Annotations beside the reader, with its own toolbar. Its menus are Obsidian's own, which a theme reaches through `menu`. Its tag filter and its color filter are Choosers, which a theme reaches through `zt-chooser` and `zt-chooser-trigger`.
 
-| Class                | Marks                                                                                                  |
-| -------------------- | ------------------------------------------------------------------------------------------------------ |
-| `zt-annot-conflict`  | The panel an Annotation Card shows while a Write Conflict stands on it.                                |
-| `zt-annot-draft`     | The panel an Annotation Card or the Mark Popup shows over a comment or tags that Zotero has not saved. |
-| `zt-chooser`         | The Chooser popup the tag filter or the color filter opens.                                            |
-| `zt-chooser-trigger` | The control that Chooser popup hangs under.                                                            |
+| Class                    | Marks                                                                                                               |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `zt-annot-conflict`      | The panel an Annotation Card shows while a Write Conflict stands on it.                                             |
+| `zt-annot-draft`         | The panel an Annotation Card or the Mark Popup shows over a comment, Quoted Text or tags that Zotero has not saved. |
+| `zt-annot-comment-field` | The comment as a field you can select to edit, on a card selected alone and in the Mark Popup.                      |
+| `zt-chooser`             | The Chooser popup the tag filter or the color filter opens.                                                         |
+| `zt-chooser-trigger`     | The control that Chooser popup hangs under.                                                                         |
 
 `zt-annot-conflict` appears on a card whose last edit met a newer value in Zotero, or whose create Zotero never answered for. It names what happened, shows the two values, and offers the verbs that settle it.
 
-`zt-annot-draft` appears where an edit waits for **Save comment** or **Save tags**, such as after a failed save or after editing stopped while the edit was open. It shows the unsaved comment or tags, says why they wait, and offers the verbs that save or discard them.
+`zt-annot-draft` appears where an edit waits for **Save comment**, **Save text** or **Save tags**, such as after a failed save or after editing stopped while the edit was open. It shows the unsaved comment, Quoted Text or tags, says why they wait, and offers the verbs that save or discard them.
+
+`zt-annot-comment-field` marks the comment of the card you select alone, and nowhere on other cards. Selecting it opens the comment editor in its place. On a card with no comment, it shows <UiLabel name={m.annot_view_card_comment_placeholder()} />. It carries `data-blocked` while ZotLit cannot edit the Annotation. The Mark Popup uses the same class, see [Mark Popup and comment sheet](#pdf-mark-popup).
 
 `zt-chooser` marks the anchored popover a filtering multi-select opens. It is a native popover rather than an Obsidian menu, so `:popover-open` matches it while it stands and `menu` never reaches it. It takes its chrome from `--menu-background`, `--menu-border-color`, `--menu-border-width`, `--menu-corner-shape`, `--menu-padding`, `--menu-radius`, and `--menu-shadow`, so a theme that retints menus reaches it through those.
 

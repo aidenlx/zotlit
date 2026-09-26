@@ -31,22 +31,22 @@ import type {
   MutationState,
   WriteConflict,
 } from "@/services/annotation-repository/write";
+import { cardControls } from "@/views/annot-view/card-controls";
+import type { CardControl, HeldDraft } from "@/views/annot-view/card-controls";
 import {
-  commentIcon,
-  editingBlockedReason,
-} from "@/views/annot-view/card-controls";
-import type { HeldDraft } from "@/views/annot-view/card-controls";
-import {
-  CommentSheetSlot,
   CommentView,
   ConflictPanelSlot,
+  EditorSheetSlot,
   HeldDraftSlot,
 } from "@/views/annot-view/comment-parts";
-import type { CommentSheetSlotProps } from "@/views/annot-view/comment-parts";
+import type {
+  CommentEntry,
+  EditorSheetSlotProps,
+} from "@/views/annot-view/comment-parts";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
-import { commentFrameClass } from "@/views/annot-view/comment-sheet";
-import type { CommentDraftActions } from "@/views/annot-view/comment-sheet";
 import { copiedText } from "@/views/annot-view/copied-text";
+import { commentFrameClass } from "@/views/annot-view/editor-sheet";
+import type { TextDraftActions } from "@/views/annot-view/editor-sheet";
 
 import type { Point } from "./hit-test";
 import { MarkPopupTagSection } from "./mark-popup-tags";
@@ -56,15 +56,9 @@ import "./style.css";
 /** Layout only; Obsidian's `clickable-icon` owns the look of each verb. */
 const ROW_CLASSES = ["zt:flex", "zt:items-center", "zt:gap-0.5", "zt:p-1"];
 
-export type MarkPopupVerbId =
-  | "color"
-  | "comment"
-  | "tags"
-  | "copy"
-  | "delete"
-  | "reveal";
+export type MarkPopupVerbId = "color" | "tags" | "copy" | "delete" | "reveal";
 
-/** Every control the row can hold: the six verbs, and the stack stepper. */
+/** Every control the row can hold: the five verbs, and the stack stepper. */
 export type MarkPopupControlId = MarkPopupVerbId | "stack";
 
 /**
@@ -110,6 +104,11 @@ export interface MarkPopupRow {
   color: string | null;
   /** Absent while one mark alone sits under the point. */
   stepper: MarkPopupStepper | null;
+  /**
+   * The comment field's control, decided as the card's is. The comment has
+   * no verb in the row: a click on the comment opens its editor (ADR 0066).
+   */
+  comment: CardControl;
 }
 
 export interface MarkPopupRowInput {
@@ -119,8 +118,6 @@ export interface MarkPopupRowInput {
   /** What the last write left on this Annotation. */
   mutation: MutationState;
   stack: MarkStack;
-  /** Whether the comment editor stands open under the row. */
-  commenting: boolean;
   /** Whether the tag editor stands open in the tag section. */
   tagging: boolean;
   /** The instant a cooldown's remaining seconds are measured from. */
@@ -128,13 +125,14 @@ export interface MarkPopupRowInput {
 }
 
 /**
- * The verbs of the selected-mode row, in the order they are drawn.
+ * The verbs of the selected-mode row, in the order they are drawn, and the
+ * comment field's control.
  *
  * Copying and revealing never change Zotero, so neither ever stands down;
- * colour, comment, tags and delete follow the same rule the Annotation Card's
- * header does, because they are the same writes reached from another surface.
- * The creation row has no tag verb: the popup reopens on the new mark, where
- * tags can be added.
+ * colour, tags, delete and the comment field follow the rule the Annotation
+ * Card's controls do, because they are the same writes reached from another
+ * surface. A row verb carries the reason in its tooltip. The creation row has
+ * no tag verb: the popup reopens on the new mark, where tags can be added.
  *
  * @see https://github.com/aidenlx/zotlit/issues/1148
  */
@@ -143,44 +141,33 @@ export function markPopupRow({
   capability,
   mutation,
   stack,
-  commenting,
   tagging,
   now,
 }: MarkPopupRowInput): MarkPopupRow {
-  const blocked = editingBlockedReason(capability, mutation, now);
-  const hasComment = annotation.comment !== null;
-  const hasTags = annotation.tags.length > 0;
-  const editing = (id: MarkPopupVerbId, icon: IconName, label: string) => ({
+  const { comment, ...controls } = cardControls({
+    capability,
+    mutation,
+    hasTags: annotation.tags.length > 0,
+    type: annotation.type,
+    now,
+  });
+  const editing = (
+    id: MarkPopupVerbId,
+    icon: IconName,
+    { disabled, blocked, tooltip }: CardControl,
+  ) => ({
     id,
     icon,
-    tooltip: blocked ?? label,
-    disabled: blocked !== null,
+    tooltip: blocked?.reason ?? tooltip,
+    disabled: disabled || blocked !== null,
     pressed: null,
   });
   return {
     color: annotation.color,
+    comment,
     verbs: [
-      editing("color", "palette", m.annot_view_card_color()),
-      {
-        ...editing(
-          "comment",
-          commentIcon(hasComment),
-          hasComment
-            ? m.annot_view_card_edit_comment()
-            : m.annot_view_card_add_comment(),
-        ),
-        pressed: commenting,
-      },
-      {
-        ...editing(
-          "tags",
-          "tag",
-          hasTags
-            ? m.annot_view_card_edit_tags()
-            : m.annot_view_card_add_tags(),
-        ),
-        pressed: tagging,
-      },
+      editing("color", "palette", controls.color),
+      { ...editing("tags", "tag", controls.tags), pressed: tagging },
       {
         id: "copy",
         icon: "copy",
@@ -188,7 +175,7 @@ export function markPopupRow({
         disabled: copiedText([annotation]) === "",
         pressed: null,
       },
-      editing("delete", "trash-2", m.annot_view_menu_delete()),
+      editing("delete", "trash-2", controls.delete),
       {
         id: "reveal",
         icon: "panel-right-open",
@@ -345,37 +332,40 @@ export function PopupColumn({
   );
 }
 
-/** What stands in the comment's place under the selected-mode row. */
+/**
+ * What stands in the comment's place under the selected-mode row. The comment
+ * is a field: a click on it, or on its held text, opens the editor there
+ * (ADR 0066).
+ */
 export type SelectedPopupComment =
   /** The comment sheet, open on the shared draft. */
-  | { kind: "sheet"; sheet: Omit<CommentSheetSlotProps, "app" | "surface"> }
+  | { kind: "sheet"; sheet: Omit<EditorSheetSlotProps, "app" | "surface"> }
   /** A held comment draft, in the stored comment's place. */
   | {
       kind: "held";
       held: HeldDraft;
-      actions: CommentDraftActions;
-      onOpen: () => void;
+      actions: TextDraftActions;
+      entry: CommentEntry;
     }
-  /** The stored comment, rendered. */
+  /** The stored comment, or the "Add a comment…" placeholder where none. */
   | {
       kind: "view";
-      html: string;
-      editable: boolean;
+      html: string | null;
       render: CommentRenderer;
-      onOpen: () => void;
+      entry: CommentEntry;
     };
 
 export interface SelectedMarkPopupProps {
   app: App;
   row: MarkPopupRow;
   activate: MarkPopupActivate;
-  /** What stands under the row in the comment's place; `null` for nothing. */
-  comment: SelectedPopupComment | null;
+  /** What stands under the row in the comment's place. */
+  comment: SelectedPopupComment;
   /** A Write Conflict on the comment, while its draft stands. */
   conflict: {
     conflict: WriteConflict;
     live: boolean;
-    actions: CommentDraftActions;
+    actions: TextDraftActions;
   } | null;
   /** The tag section, while it stands. */
   tags: MarkPopupTagSectionProps | null;
@@ -398,33 +388,51 @@ export function SelectedMarkPopup({
   return (
     <AppContext value={app}>
       <PopupColumn row={<MarkPopupVerbs row={row} activate={activate} />}>
-        {comment?.kind === "sheet" && (
-          <CommentSheetSlot app={app} surface="popup" {...comment.sheet} />
-        )}
-        {comment?.kind === "held" && (
-          <HeldDraftSlot
-            held={comment.held}
-            surface="popup"
-            actions={comment.actions}
-            onOpen={comment.onOpen}
-          />
-        )}
-        {comment?.kind === "view" && (
-          <div className={commentFrameClass("popup")}>
-            <CommentView
-              surface="popup"
-              render={comment.render}
-              html={comment.html}
-              editable={comment.editable}
-              onOpen={comment.onOpen}
-            />
-          </div>
-        )}
+        {/* The comment slot owns the width of the comment in every state
+            (style.css), so the popup keeps its size as the editor opens. */}
+        <div className="zt-pdf-comment-slot">
+          <PopupCommentBody app={app} comment={comment} />
+        </div>
         {conflict && <ConflictPanelSlot surface="popup" {...conflict} />}
         {tags && <MarkPopupTagSection {...tags} />}
       </PopupColumn>
     </AppContext>
   );
+}
+
+/** The comment's own part inside its gutter, in whichever state it stands. */
+function PopupCommentBody({
+  app,
+  comment,
+}: {
+  app: App;
+  comment: SelectedPopupComment;
+}) {
+  switch (comment.kind) {
+    case "sheet":
+      return <EditorSheetSlot app={app} surface="popup" {...comment.sheet} />;
+    case "held":
+      return (
+        <HeldDraftSlot
+          held={comment.held}
+          surface="popup"
+          actions={comment.actions}
+          entry={comment.entry}
+        />
+      );
+    case "view":
+      return (
+        // The comment slot sets the width.
+        <div className={cn(commentFrameClass("popup"), "zt:w-auto zt:min-w-0")}>
+          <CommentView
+            surface="popup"
+            render={comment.render}
+            html={comment.html}
+            entry={comment.entry}
+          />
+        </div>
+      );
+  }
 }
 
 export interface MarkPopupDeps {

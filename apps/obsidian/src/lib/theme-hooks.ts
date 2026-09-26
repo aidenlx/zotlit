@@ -126,10 +126,17 @@ export const themeHook = {
   /** The panel an Annotation Card shows while a Write Conflict stands on it. */
   annotConflict: "zt-annot-conflict",
   /**
-   * The panel an Annotation Card or the Mark Popup shows over a comment or
-   * tag draft Zotero has not taken.
+   * The panel an Annotation Card or the Mark Popup shows over a comment,
+   * Quoted Text or tag draft Zotero has not taken.
    */
   annotDraft: "zt-annot-draft",
+  /**
+   * The comment as a field at rest, on an Annotation Card selected alone and
+   * in the Mark Popup over a selected mark: a click on it opens the comment
+   * editor in its place. It shows "Add a comment…" where there is no comment,
+   * and carries `data-blocked` while the Editing Capability refuses a write.
+   */
+  annotCommentField: "zt-annot-comment-field",
   /**
    * The Chooser popup: the anchored popover a filtering multi-select opens,
    * such as the Annotation View's tag filter. It is no Obsidian menu, so a

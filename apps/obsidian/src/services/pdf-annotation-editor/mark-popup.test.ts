@@ -40,7 +40,6 @@ function row(
     capability: overrides.capability ?? { kind: "writable" },
     mutation: overrides.mutation ?? IDLE,
     stack: overrides.stack ?? { index: 0, total: 1 },
-    commenting: false,
     tagging: overrides.tagging ?? false,
     now: NOW,
   });
@@ -56,10 +55,9 @@ function verbs(
 }
 
 describe("markPopupRow", () => {
-  it("draws one row of verbs: colour, comment, tags, copy, delete, reveal", () => {
+  it("draws one row of verbs: colour, tags, copy, delete, reveal", () => {
     expect(row().verbs.map(({ id, icon }) => [id, icon])).toEqual([
       ["color", "palette"],
-      ["comment", "message-square-plus"],
       ["tags", "tag"],
       ["copy", "copy"],
       ["delete", "trash-2"],
@@ -67,15 +65,8 @@ describe("markPopupRow", () => {
     ]);
   });
 
-  it("says which comment verb it is, and wears the Annotation's colour", () => {
-    const commented = { ...HIGHLIGHT, comment: "a note of my own" };
-    expect(row({ annotation: commented }).verbs[1]).toEqual({
-      id: "comment",
-      icon: "message-square",
-      pressed: false,
-      tooltip: "Edit comment",
-      disabled: false,
-    });
+  it("offers the comment field live, and wears the Annotation's colour", () => {
+    expect(row().comment).toMatchObject({ disabled: false, blocked: null });
     expect(row().color).toBe("#2ea8e5");
   });
 
@@ -110,11 +101,16 @@ describe("markPopupRow", () => {
     const reason = "You do not have write access to this library.";
     expect(verbs(built)).toEqual({
       color: [true, reason],
-      comment: [true, reason],
       tags: [true, reason],
       copy: [false, "Copy annotation text"],
       delete: [true, reason],
       reveal: [false, "Reveal in the annotation view"],
+    });
+    // The comment field keeps its press and rests as text, as on the card:
+    // its press states the reason.
+    expect(built.comment).toMatchObject({
+      disabled: false,
+      blocked: { reason },
     });
   });
 
@@ -122,6 +118,7 @@ describe("markPopupRow", () => {
     const built = row({ mutation: { kind: "pending", write: "color" } });
     expect(verbs(built).delete).toEqual([true, "Saving to Zotero…"]);
     expect(verbs(built).tags).toEqual([true, m.annot_view_card_saving()]);
+    expect(built.comment).toMatchObject({ disabled: true, blocked: null });
   });
 
   it("keeps copying off a mark that carries no text and no comment", () => {
@@ -176,7 +173,6 @@ describe("MarkPopupVerbs", () => {
     const { node } = draw(row({ stack: { index: 0, total: 2 } }));
     expect(controls(node)).toEqual([
       "color",
-      "comment",
       "tags",
       "copy",
       "delete",
@@ -191,7 +187,7 @@ describe("MarkPopupVerbs", () => {
   it("replaces what the row held, so a redraw leaves no second row", () => {
     const { node, render } = draw(row());
     render(row({ stack: { index: 0, total: 2 } }));
-    expect(controls(node)).toHaveLength(7);
+    expect(controls(node)).toHaveLength(6);
   });
 
   it("gives the palette the Annotation's own colour", () => {

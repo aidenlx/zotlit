@@ -1,21 +1,24 @@
-// What an Annotation Card's header controls may do, decided as data rather
-// than in a component: one rule read by the colour dot, the comment toggle, the
-// tag toggle and the delete verb, keyed by the Editing Capability and by what a
-// write left.
+// What an Annotation Card's editing controls may do, decided as data rather
+// than in a component: one rule read by the colour dot, the comment field,
+// "Edit quoted text", the tag toggle and the delete verb, keyed by the
+// Editing Capability and by what a write left.
 //
 // @see apps/obsidian/policies/ui-seams.md
 // @see https://github.com/aidenlx/zotlit/issues/1145
-import type { IconName } from "obsidian";
+
+import type { ResolvedAnnotationTypeName } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
 import type {
   AnnotationRecord,
-  CommentDraft,
   TagDraft,
+  TextField,
+  TextFieldDraft,
 } from "@/services/annotation-repository/service";
 import {
+  isTextField,
   noTagChange,
   tagChange,
   writeFailureMessage,
@@ -24,6 +27,8 @@ import type {
   MutationState,
   WriteFailure,
 } from "@/services/annotation-repository/write";
+
+import type { FieldEditorWording } from "./field-editor";
 
 /**
  * Why a verb cannot act while the Editing Capability stands in its way, and the
@@ -36,7 +41,7 @@ export interface CardBlock {
   action: "allow-editing" | null;
 }
 
-/** One header control: whether it runs, and what its tooltip says. */
+/** One editing control: whether it runs, and what its tooltip says. */
 export interface CardControl {
   /**
    * Whether the press is refused outright, which only a write in flight is:
@@ -60,10 +65,10 @@ export interface CardControlsInput {
   capability: EditingCapability;
   /** What the last write left on this Annotation. */
   mutation: MutationState;
-  /** Whether the Annotation already carries a comment. */
-  hasComment: boolean;
   /** Whether the Annotation already carries a tag. */
   hasTags: boolean;
+  /** The Annotation's type, which decides whether it has a Quoted Text. */
+  type: ResolvedAnnotationTypeName;
   /** The instant a cooldown's remaining seconds are measured from. */
   now: Temporal.Instant;
 }
@@ -74,9 +79,19 @@ export interface CardControlsInput {
  */
 export interface CardControls {
   color: CardControl;
+  /**
+   * The comment field. A card offers it only while selected alone (ADR
+   * 0066); the Mark Popup always does.
+   */
   comment: CardControl;
-  /** The tag toggle, which follows the comment toggle's rules. */
+  /** The tag toggle, which follows the comment field's rules. */
   tags: CardControl;
+  /**
+   * "Edit quoted text", which opens the editor on the Quoted Text; `null`
+   * where the Annotation has none to edit. Only a highlight or underline has
+   * a Quoted Text, and a card offers it only while selected alone (ADR 0066).
+   */
+  text: CardControl | null;
   delete: CardControl;
 }
 
@@ -102,8 +117,8 @@ export function editingLive(capability: EditingCapability): boolean {
 export function cardControls({
   capability,
   mutation,
-  hasComment,
   hasTags,
+  type,
   now,
 }: CardControlsInput): CardControls {
   const pending = gestureInFlight(mutation);
@@ -122,12 +137,35 @@ export function cardControls({
   };
   return {
     color: control(m.annot_view_card_color()),
-    comment: control(commentLabel(hasComment)),
+    comment: control(m.annot_view_card_comment_label()),
     tags: control(
       hasTags ? m.annot_view_card_edit_tags() : m.annot_view_card_add_tags(),
     ),
     delete: control(m.annot_view_menu_delete()),
+    text: hasQuotedText(type) ? control(m.annot_view_menu_edit_text()) : null,
   };
+}
+
+/**
+ * A press on an editing control that opens an editor: refused while a write
+ * is in flight, spent on the notice that states the block while the Editing
+ * Capability stands in the way, and otherwise the control's own `act`.
+ */
+export function pressControl(
+  control: CardControl,
+  {
+    act,
+    onBlocked,
+  }: { act: () => void; onBlocked: (block: CardBlock) => void },
+): void {
+  if (control.disabled) return;
+  if (control.blocked) onBlocked(control.blocked);
+  else act();
+}
+
+/** Whether Zotero stores a Quoted Text for this type of Annotation. */
+export function hasQuotedText(type: ResolvedAnnotationTypeName): boolean {
+  return type === "highlight" || type === "underline";
 }
 
 /**
@@ -148,26 +186,15 @@ export function groupControl(
   };
 }
 
-/** "Add comment" for a card with none, "Edit comment" for one that has one. */
-export function commentLabel(hasComment: boolean): string {
-  return hasComment
-    ? m.annot_view_card_edit_comment()
-    : m.annot_view_card_add_comment();
-}
-
-/** The comment toggle's icon, which says the same thing its label does. */
-export function commentIcon(hasComment: boolean): IconName {
-  return hasComment ? "message-square" : "message-square-plus";
-}
-
 /**
  * Why the editing verbs cannot run, or `null` while they can. A write in
  * flight outranks the capability: it is the nearer answer to "why can I not
  * press this".
  *
- * The Mark Popup's row reads the same rule, because its colour, comment and
- * delete are the same three writes reached from the PDF reader
- * (aidenlx/zotlit#1148).
+ * The creation popup and the Creation Toolbar read the same rule. The Mark
+ * Popup's selected row reads it through {@link cardControls}, because its
+ * colour, tags, delete and comment field are the card's writes reached from
+ * the PDF reader (aidenlx/zotlit#1148).
  */
 export function editingBlockedReason(
   capability: EditingCapability,
@@ -179,8 +206,8 @@ export function editingBlockedReason(
 }
 
 /**
- * Whether a write in flight stands the verbs down. A comment write does not:
- * its text is already drawn by the editor, and a verb pressed meanwhile queues
+ * Whether a write in flight stands the verbs down. A comment or Quoted Text
+ * write does not: its text is already drawn by the editor, and a verb pressed meanwhile queues
  * behind it, so disabling the row would only flicker it on every autosave. A
  * tag editing session's own save does not either: the tag editor shows it as
  * saving. A tag undo or redo is a gesture's write, and does.
@@ -188,7 +215,7 @@ export function editingBlockedReason(
 function gestureInFlight(mutation: MutationState): boolean {
   return (
     mutation.kind === "pending" &&
-    mutation.write !== "comment" &&
+    !isTextField(mutation.write) &&
     !mutation.session
   );
 }
@@ -211,10 +238,14 @@ export function capabilityBlock(
   };
 }
 
-/** Shared comment feedback for the Annotation View and PDF reader. */
-export function commentEditorControls(
+/**
+ * The status line under a text field's editor, and whether the editor takes a
+ * write: one rule for every text field's draft, on the Annotation View and in
+ * the PDF reader alike. Its lines name no field.
+ */
+export function fieldEditorControls(
   capability: EditingCapability,
-  draft: CommentDraft | null,
+  draft: TextFieldDraft | null,
   now: Temporal.Instant,
 ) {
   const available = editingLive(capability);
@@ -231,7 +262,7 @@ export function commentEditorControls(
   // The capability's own sentence, which names the state and the gesture that
   // ends it. A line of its own here could only restate it more vaguely.
   else if (!available) hint = capabilityBlock(capability, now)?.reason ?? null;
-  // A draft waiting on a manual save says so with its Save comment button.
+  // A draft waiting on a manual save says so with its Save button.
   // A sentence restating the button is one line the card does not need.
   return {
     readOnly: !available,
@@ -298,18 +329,30 @@ export function shownTagNames(
 }
 
 /**
- * The comment text both comment editors open on, on the rule of
- * {@link shownTagNames}. The rendered comment under a closed editor draws the
- * record: a comment draft saves itself within a second of the last keystroke,
- * and its Pending Proposal is the record from then on.
+ * The comment text both comment editors open on and submit; see
+ * {@link shownText}.
  */
 export function shownComment(
   record: Pick<AnnotationRecord, "comment">,
-  draft: CommentDraft | null,
+  draft: TextFieldDraft | null,
 ): string {
-  return draft && draft.state.kind !== "pending"
-    ? draft.text
-    : (record.comment ?? "");
+  return shownText(record.comment, draft);
+}
+
+/**
+ * The text a field editor opens on and submits, for any text field: the
+ * draft's own text while a draft stands, a save in flight included, since
+ * text typed behind that save is newer than what the save carries. The
+ * rendered value under a closed editor draws the record instead, which holds
+ * the save's Pending Proposal.
+ *
+ * @param confirmed the field's value on the record.
+ */
+export function shownText(
+  confirmed: string | null,
+  draft: TextFieldDraft | null,
+): string {
+  return draft ? draft.text : (confirmed ?? "");
 }
 
 /** One verb the held-draft panel offers. */
@@ -336,7 +379,9 @@ export interface HeldDraftAction {
  * quiet case is the normal one.
  */
 export interface HeldDraft {
-  /** The user's text, which the panel shows in place of Zotero's comment. */
+  /** The panel's title, which names the field the text is for. */
+  title: string;
+  /** The user's text, which the panel shows in place of Zotero's value. */
   text: string;
   /** Why the text is still held, or `null` where the state speaks for itself. */
   reason: string | null;
@@ -344,8 +389,39 @@ export interface HeldDraft {
 }
 
 /**
- * What the card announces about one held comment draft, or `null` where it
- * announces nothing.
+ * What each text field's controls say: its editor's placeholder and name, its
+ * Save button, and its held draft's title. One entry per text field.
+ */
+export interface TextFieldWording extends FieldEditorWording {
+  /** The Save button of the editor and of the held draft. */
+  save: string;
+  /** The held draft's title, which names the field the text is for. */
+  draft: string;
+}
+
+const TEXT_FIELD_WORDING: Record<TextField, () => TextFieldWording> = {
+  comment: () => ({
+    placeholder: m.annot_view_card_comment_placeholder(),
+    label: m.annot_view_card_comment_label(),
+    save: m.annot_view_comment_save(),
+    draft: m.annot_view_comment_draft(),
+  }),
+  text: () => ({
+    placeholder: m.annot_view_card_text_placeholder(),
+    label: m.annot_view_card_text_label(),
+    save: m.annot_view_text_save(),
+    draft: m.annot_view_text_draft(),
+  }),
+};
+
+/** What one text field's controls say, in the active language. */
+export function textFieldWording(field: TextField): TextFieldWording {
+  return TEXT_FIELD_WORDING[field]();
+}
+
+/**
+ * What a surface announces about one text field's held draft, or `null`
+ * where it announces nothing.
  *
  * Three states stay quiet, because none of them asks the user for anything.
  * A draft matching Zotero holds nothing. A write in flight settles by itself,
@@ -354,16 +430,16 @@ export interface HeldDraft {
  *
  * @see apps/obsidian/policies/ui-seams.md
  */
-export function heldCommentDraft(
-  capability: EditingCapability,
-  draft: CommentDraft | null,
-  now: Temporal.Instant,
+export function heldTextDraft(
+  field: TextField,
+  draft: TextFieldDraft | null,
+  { capability, now }: { capability: EditingCapability; now: Temporal.Instant },
 ): HeldDraft | null {
   if (!draft) return null;
   if (draft.state.kind === "pending" || draft.state.kind === "conflict")
     return null;
   if (draft.text === draft.baseline) return null;
-  const { hint, manual, saveDisabled } = commentEditorControls(
+  const { hint, manual, saveDisabled } = fieldEditorControls(
     capability,
     draft,
     now,
@@ -372,13 +448,12 @@ export function heldCommentDraft(
   // An automatic save is already on its way, so the card waits for it rather
   // than asking the user to do what the plugin is about to do.
   if (!manual && !saveDisabled) return null;
+  const { draft: title, save } = textFieldWording(field);
   return {
+    title,
     text: draft.text,
     reason: block?.reason ?? hint,
-    actions: heldDraftActions(block, {
-      save: m.annot_view_comment_save(),
-      saveDisabled,
-    }),
+    actions: heldDraftActions(block, { save, saveDisabled }),
   };
 }
 
@@ -437,9 +512,10 @@ export function sameHeldTags(a: HeldTags, b: HeldTags): boolean {
   );
 }
 
-/** {@link sameHeldTags}, for a held comment panel. */
+/** {@link sameHeldTags}, for a held text panel: a comment or a Quoted Text. */
 export function sameHeldDraft(a: HeldDraft, b: HeldDraft): boolean {
   return (
+    a.title === b.title &&
     a.text === b.text &&
     a.reason === b.reason &&
     sameHeldActions(a.actions, b.actions)

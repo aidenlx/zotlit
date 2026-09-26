@@ -10,15 +10,17 @@ import type { ItemSummary } from "@/lib/item-summary";
 import type {
   AnnotationRecord,
   AnnotationSource,
-  CommentDraft,
   EditingCapability,
   MutationState,
   TagDraft,
+  TextField,
+  TextFieldDraft,
 } from "@/services/annotation-repository/service";
-import { IDLE } from "@/services/annotation-repository/write";
+import { byTextField, IDLE } from "@/services/annotation-repository/write";
 
 import { NO_SELECTION } from "./card-selection";
 import type { CardSelection } from "./card-selection";
+import type { CaretPoint } from "./editor-sheet";
 import { filterAnnotations } from "./filter";
 import type { AnnotFilter } from "./filter";
 
@@ -37,6 +39,33 @@ export type FollowMode = "active-tab" | "zotero-reader" | "pinned";
  */
 export type AttachmentLock = "obsidian-pdf" | "zotero-reader" | null;
 
+/**
+ * A field of an Annotation that a card edits in place: a text field in the
+ * field editor, or the tags in the tag editor.
+ */
+export type EditingField = TextField | "tags";
+
+/** One map of shared drafts per text field, each by Indexed Key. */
+export type FieldDrafts = Readonly<
+  Record<TextField, ReadonlyMap<string, TextFieldDraft>>
+>;
+
+/** A {@link FieldDrafts} that holds no draft. */
+export function noFieldDrafts(): FieldDrafts {
+  return byTextField(() => new Map());
+}
+
+/**
+ * The Annotation View's one editing target: an Annotation and the field its
+ * card has open in an editor.
+ */
+export interface EditingTarget {
+  annotationKey: string;
+  field: EditingField;
+  /** Where the click that opened a text field's editor landed, for its caret. */
+  caretAt?: CaretPoint;
+}
+
 export interface AnnotState {
   attachments: AnnotViewAttachment[] | null;
   /** Indexed Key of the Attachment on screen. */
@@ -54,20 +83,16 @@ export interface AnnotState {
    * entry is idle, so the map holds only the few this session has edited.
    */
   mutations: ReadonlyMap<string, MutationState>;
-  /** Shared comment drafts currently observed by this view. */
-  commentDrafts: ReadonlyMap<string, CommentDraft>;
-  /**
-   * The Annotation whose comment is open in its card's editor; `null` while
-   * none is. One at a time: the editor takes the caret.
-   */
-  editingCommentKey: string | null;
+  /** Shared comment and Quoted Text drafts currently observed by this view. */
+  fieldDrafts: FieldDrafts;
   /** Shared tag drafts currently observed by this view. */
   tagDrafts: ReadonlyMap<string, TagDraft>;
   /**
-   * The Annotation whose tags are open in its card's editor; `null` while
-   * none is. A draft still saving keeps its editor open after this clears.
+   * The one field editor open in the view; `null` while none is. One at a
+   * time: the editor takes the caret, and opening another saves and closes
+   * it. A tag draft still saving outlives its editor.
    */
-  editingTagsKey: string | null;
+  editing: EditingTarget | null;
   /**
    * The cards this view holds selected, in every Follow Mode. The bound reader
    * is kept in step with it; nothing persists it.
@@ -139,10 +164,9 @@ export function createAnnotStore() {
         // Nothing has probed Zotero yet, which is exactly what "probing" says.
         capability: { kind: "read-only", reason: "probing" },
         mutations: new Map(),
-        commentDrafts: new Map(),
-        editingCommentKey: null,
+        fieldDrafts: noFieldDrafts(),
         tagDrafts: new Map(),
-        editingTagsKey: null,
+        editing: null,
         cardSelection: NO_SELECTION,
         itemKey: null,
         itemDisplay: null,
@@ -171,13 +195,44 @@ export function selectActiveAttachment(
 }
 
 /**
- * Whether a card's comment or tag editor is open. A tag draft still saving
- * after its editor closed does not count: `editingTagsKey` is already clear.
+ * Whether a card's field editor is open. A tag draft still saving after its
+ * editor closed does not count: the editing target is already clear.
  */
-export function editorOpen(
-  state: Pick<AnnotState, "editingCommentKey" | "editingTagsKey">,
+export function editorOpen(state: Pick<AnnotState, "editing">): boolean {
+  return state.editing !== null;
+}
+
+/** One text field's shared draft of one Annotation, while this view observes one. */
+export function fieldDraft(
+  state: Pick<AnnotState, "fieldDrafts">,
+  field: TextField,
+  annotationKey: string,
+): TextFieldDraft | null {
+  return state.fieldDrafts[field].get(annotationKey) ?? null;
+}
+
+/**
+ * Whether a card is selected alone: the one card that opens its full text and
+ * offers its edit controls.
+ */
+export function selectedAlone(
+  state: Pick<AnnotState, "cardSelection">,
+  annotationKey: string,
 ): boolean {
-  return state.editingCommentKey !== null || state.editingTagsKey !== null;
+  const { selected } = state.cardSelection;
+  return selected.length === 1 && selected[0] === annotationKey;
+}
+
+/** Whether one Annotation's field is the editing target. */
+export function isEditing(
+  state: Pick<AnnotState, "editing">,
+  annotationKey: string,
+  field: EditingField,
+): boolean {
+  return (
+    state.editing?.annotationKey === annotationKey &&
+    state.editing.field === field
+  );
 }
 
 const AnnotStoreContext = createContext<AnnotStore | null>(null);
@@ -204,16 +259,28 @@ export function useMutation(annotationKey: string): MutationState {
   return useAnnotStore((s) => s.mutations.get(annotationKey) ?? IDLE);
 }
 
-/** Opens one card's comment editor, or closes the one that is open. */
-export function useSetEditingComment(): (key: string | null) => void {
+/**
+ * One Annotation field's editor: `open` makes it the editing target, in place
+ * of any other, and `close` clears the target while it is still this one, so
+ * an editor that unmounts after another opened leaves that one open.
+ */
+export function useEditingTarget(
+  annotationKey: string,
+  field: EditingField,
+): { open: (caretAt?: CaretPoint) => void; close: () => void } {
   const store = useAnnotStoreApi();
-  return (key) => store.setState({ editingCommentKey: key });
-}
-
-/** Opens one card's tag editor, or closes the one that is open. */
-export function useSetEditingTags(): (key: string | null) => void {
-  const store = useAnnotStoreApi();
-  return (key) => store.setState({ editingTagsKey: key });
+  return {
+    open: (caretAt) =>
+      store.setState({
+        editing: caretAt
+          ? { annotationKey, field, caretAt }
+          : { annotationKey, field },
+      }),
+    close: () => {
+      if (isEditing(store.getState(), annotationKey, field))
+        store.setState({ editing: null });
+    },
+  };
 }
 
 /**

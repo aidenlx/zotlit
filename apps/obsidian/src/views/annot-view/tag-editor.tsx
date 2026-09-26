@@ -21,8 +21,8 @@ import type { AnnotationRecord } from "@/services/annotation-repository/service"
 
 import { sameHeldTags } from "./card-controls";
 import type { HeldTags } from "./card-controls";
-import { renderHeldTagsPanel } from "./comment-sheet";
-import type { CommentSurface, HeldDraftActions } from "./comment-sheet";
+import { renderHeldTagsPanel } from "./editor-sheet";
+import type { EditorSurface, HeldDraftActions } from "./editor-sheet";
 import { tagChipVariants } from "./tag-chip";
 
 /**
@@ -47,6 +47,18 @@ export interface TagEditorProps {
   /** The session ends, once: after this call the editor changes nothing. */
   onClose: () => void;
   /**
+   * Focus left the editor: the session ends with the typed text added, and
+   * the editor stays open for the next session. Absent, leaving ends the
+   * session through {@link onClose}.
+   */
+  onLeave?: () => void;
+  /**
+   * The last session's save is in flight: the field keeps the caret but is
+   * read-only until the save settles, as the draft takes no change, and a
+   * blur saves nothing more.
+   */
+  saving?: boolean;
+  /**
    * Where the editor puts its own end of the session, for a gesture outside
    * it, such as the card's tag toggle.
    */
@@ -70,7 +82,9 @@ export interface TagEditorProps {
  * typed name and a comma stays part of it. Focus leaving the editor, the
  * editor going away, or {@link TagEditorProps.endSession} ends the session with
  * the typed text added; Escape anywhere in the editor ends it without that
- * text. After the end, a change such as a late pick changes nothing.
+ * text. After the end, a change such as a late pick changes nothing. With
+ * {@link TagEditorProps.onLeave}, focus leaving ends the session and keeps the
+ * editor open, and the next change starts a new one.
  *
  * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
  */
@@ -81,6 +95,8 @@ export function TagEditor({
   libraryNames,
   onChange,
   onClose,
+  onLeave,
+  saving = false,
   endSession,
   within,
   suggestRef,
@@ -128,6 +144,7 @@ export function TagEditor({
             <TagsInput.ItemText className="zt:block zt:truncate" />
             <TagsInput.ItemRemove
               className="zt-annot-tag-remove clickable-icon"
+              disabled={saving}
               {...tooltipAttrs(m.annot_view_card_tag_remove({ name }))}
             >
               <Icon name="x" size={12} />
@@ -137,6 +154,8 @@ export function TagEditor({
         <TagField
           libraryNames={libraryNames}
           onClose={onClose}
+          onLeave={onLeave}
+          saving={saving}
           endSession={endSession}
           within={within}
           suggestRef={suggestRef}
@@ -161,12 +180,20 @@ export function TagEditor({
 function TagField({
   libraryNames,
   onClose,
+  onLeave,
+  saving,
   endSession,
   within,
   suggestRef,
 }: Pick<
   TagEditorProps,
-  "libraryNames" | "onClose" | "endSession" | "within" | "suggestRef"
+  | "libraryNames"
+  | "onClose"
+  | "onLeave"
+  | "saving"
+  | "endSession"
+  | "within"
+  | "suggestRef"
 >) {
   const app = useObsidianApp();
   const { value, add } = useTagsInput();
@@ -184,11 +211,22 @@ function TagField({
     value,
     add,
     onClose,
+    onLeave,
+    saving,
     libraryNames,
     within,
     suggestRef,
   });
-  latest.current = { value, add, onClose, libraryNames, within, suggestRef };
+  latest.current = {
+    value,
+    add,
+    onClose,
+    onLeave,
+    saving,
+    libraryNames,
+    within,
+    suggestRef,
+  };
 
   useLayoutEffect(() => {
     const input = inputRef.current;
@@ -197,13 +235,17 @@ function TagField({
     /**
      * Ends the session. `add` hands the names on at once, so the text still
      * typed is in the draft before the save reads it.
+     *
+     * @param close whether the editor closes with the session; otherwise it
+     *   stays open for the next one.
      */
-    const end = (withText: boolean): void => {
+    const end = (withText: boolean, close = true): void => {
       if (ended.current) return;
-      ended.current = true;
+      if (close) ended.current = true;
       suggest.current?.close();
       if (withText) latest.current.add(input.value);
-      latest.current.onClose();
+      if (close) latest.current.onClose();
+      else latest.current.onLeave?.();
     };
     const library = latest.current.libraryNames();
     suggest.current = new TagSuggest(app, input, {
@@ -220,11 +262,15 @@ function TagField({
       },
     });
     // Focus moving between the field and a remove button stays inside the
-    // session; focus leaving the editor ends it.
+    // session; focus leaving the editor ends it, and closes the editor unless
+    // the surface keeps it open for the next session.
     const leave = (event: FocusEvent) => {
-      const bound = latest.current.within ?? editor;
-      if (bound.contains(event.relatedTarget as Node | null)) return;
-      end(true);
+      const { within, onLeave, saving } = latest.current;
+      if ((within ?? editor).contains(event.relatedTarget as Node | null))
+        return;
+      // The save in flight is the last session's; leaving adds none.
+      if (onLeave && saving) return;
+      end(true, !onLeave);
     };
     // Escape closes the editor alone, never a surface around it, wherever in
     // the editor focus stands: the field or a chip's remove button. With the
@@ -271,6 +317,7 @@ function TagField({
         placeholder={m.annot_view_card_tag_placeholder()}
         aria-labelledby={labelId}
         autoComplete="off"
+        readOnly={saving}
         onKeyDown={onKeyDown}
         onBlur={(event) => {
           // A session that has ended takes no more text.
@@ -292,7 +339,7 @@ export function HeldTagsPanel({
   actions,
 }: {
   held: HeldTags;
-  surface: CommentSurface;
+  surface: EditorSurface;
   actions: HeldDraftActions;
 }) {
   const ref = useRef<HTMLDivElement>(null);

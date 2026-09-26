@@ -10,6 +10,7 @@ import { annotation } from "@/services/pdf-annotation-editor/__fixtures__";
 
 import { createAnnotActions } from "./actions";
 import type { AnnotActionDeps } from "./actions";
+import { hasQuotedText } from "./card-controls";
 import type { CardControl, CardControls } from "./card-controls";
 
 const FIRST = annotation("PUPR5FG5", "highlight", { pageIndex: 0, rects: [] });
@@ -41,7 +42,9 @@ function setup(
   control: CardControl = LIVE,
 ) {
   const selectAlone = vi.fn();
+  const openEditor = vi.fn();
   const annotations = {
+    editTextField: vi.fn(() => ({})),
     deleteAnnotation: vi.fn(async () => ({ kind: "idle" as const })),
     deleteAnnotations: vi.fn(async (keys: readonly string[]) =>
       keys.map(() => ({ kind: "idle" as const })),
@@ -56,18 +59,30 @@ function setup(
     comment: control,
     tags: control,
     delete: control,
+    text: control,
   };
   const deps = {
     app: { workspace: { activeEditor: null } },
     annotations,
-    controls: () => controls,
+    // Only a highlight or underline has a Quoted Text, as `cardControls` rules.
+    controls: (annot: AnnotationRecord) => ({
+      ...controls,
+      text: hasQuotedText(annot.type) ? control : null,
+    }),
     selectedCards: () => selected,
     selectAlone,
+    closeEditors: () => {},
+    openEditor,
     resolveAnnotationID: () => null,
     onExploreAnnotation: () => {},
     insertAnnotation: () => {},
   } as unknown as AnnotActionDeps;
-  return { actions: createAnnotActions(deps), selectAlone, annotations };
+  return {
+    actions: createAnnotActions(deps),
+    selectAlone,
+    openEditor,
+    annotations,
+  };
 }
 
 /** The menu a right-click on this card opens. */
@@ -123,6 +138,40 @@ describe("the menu a card opens", () => {
     expect(selectAlone).toHaveBeenCalledExactlyOnceWith(OUTSIDE);
     expect(titles).toContain(m.annot_view_menu_copy_citation());
     expect(titles.at(-1)).toBe(m.annot_view_menu_delete());
+  });
+});
+
+describe("Edit quoted text", () => {
+  it("leads the menu of one highlight or underline card, and opens its Quoted Text editor", () => {
+    const { actions, openEditor, annotations } = setup([]);
+
+    const menu = openMenu(actions, QUOTED);
+    expect(menu.items[0]?.title).toBe(m.annot_view_menu_edit_text());
+    entry(menu, m.annot_view_menu_edit_text()).click();
+
+    expect(annotations.editTextField).toHaveBeenCalledWith("text", QUOTED.key);
+    expect(openEditor).toHaveBeenCalledExactlyOnceWith(QUOTED, "text");
+  });
+
+  it("is left out where the Annotation has no Quoted Text", () => {
+    const { actions } = setup([]);
+
+    expect(rightClick(actions, OUTSIDE)).not.toContain(
+      m.annot_view_menu_edit_text(),
+    );
+  });
+
+  it("stays enabled while editing is blocked, and its press opens no editor", () => {
+    const { actions, openEditor } = setup([], BLOCKED);
+
+    const item = entry(
+      openMenu(actions, QUOTED),
+      m.annot_view_menu_edit_text(),
+    );
+    expect(item.disabled).toBe(false);
+    item.click();
+
+    expect(openEditor).not.toHaveBeenCalled();
   });
 });
 
@@ -295,7 +344,7 @@ describe("opening a card editor", () => {
       selectAlone: () => calls.push("select alone"),
       closeEditors: () => calls.push("close editors"),
       annotations: {
-        editComment: () => (calls.push("open comment"), draft),
+        editTextField: (field: string) => (calls.push(`open ${field}`), draft),
         editTags: () => (calls.push("open tags"), draft),
       },
     } as unknown as AnnotActionDeps;
@@ -305,7 +354,7 @@ describe("opening a card editor", () => {
   it("saves and closes the open editor before the other opens", () => {
     const { actions, calls } = opening({});
     actions.onOpenTags(FIRST);
-    actions.onOpenComment(FIRST);
+    actions.onOpenField(FIRST, "comment");
     expect(calls).toEqual([
       "select alone",
       "close editors",
@@ -317,7 +366,58 @@ describe("opening a card editor", () => {
   });
 
   it("opens the comment editor only where a draft starts", () => {
-    expect(opening({}).actions.onOpenComment(FIRST)).toBe(true);
-    expect(opening(null).actions.onOpenComment(FIRST)).toBe(false);
+    expect(opening({}).actions.onOpenField(FIRST, "comment")).toBe(true);
+    expect(opening(null).actions.onOpenField(FIRST, "text")).toBe(false);
+  });
+});
+
+describe("the verbs that end a text field's draft", () => {
+  /**
+   * The actions over one card, recording which repository verb each press
+   * reaches.
+   */
+  function verbs() {
+    const calls: string[] = [];
+    const call =
+      (name: string) =>
+      (...args: string[]) => {
+        // A field's verb names its field first; a write's verb takes the key.
+        calls.push(args.length > 1 ? `${name} ${args[0]} draft` : name);
+        return Promise.resolve({ kind: "idle" as const });
+      };
+    const deps = {
+      annotations: {
+        retryTextDraft: call("retry"),
+        retryWrite: call("retry write"),
+        discardTextDraft: call("discard"),
+        discardConflict: call("discard conflict"),
+      },
+    } as unknown as AnnotActionDeps;
+    return { actions: createAnnotActions(deps), calls };
+  }
+
+  it("end the named field's draft, and leave the other field's", () => {
+    const { actions, calls } = verbs();
+    actions.onApplyAgain(FIRST, "text");
+    actions.onDiscardConflict(FIRST, "text");
+    actions.onDiscardDraft(FIRST, "text");
+    actions.onApplyAgain(FIRST, "comment");
+    actions.onDiscardConflict(FIRST, "comment");
+    actions.onDiscardDraft(FIRST, "comment");
+    expect(calls).toEqual([
+      "retry text draft",
+      "discard text draft",
+      "discard text draft",
+      "retry comment draft",
+      "discard comment draft",
+      "discard comment draft",
+    ]);
+  });
+
+  it("end a conflict with no draft behind it through the write itself", () => {
+    const { actions, calls } = verbs();
+    actions.onApplyAgain(FIRST);
+    actions.onDiscardConflict(FIRST);
+    expect(calls).toEqual(["retry write", "discard conflict"]);
   });
 });
