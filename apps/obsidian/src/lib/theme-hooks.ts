@@ -138,6 +138,11 @@ export const themeHook = {
    */
   annotCommentField: "zt-annot-comment-field",
   /**
+   * The lock icon in a Locked Annotation's card header. Its `aria-label`, and
+   * so its tooltip, gives the Lock Reason.
+   */
+  annotLock: "zt-annot-lock",
+  /**
    * The Chooser popup: the anchored popover a filtering multi-select opens,
    * such as the Annotation View's tag filter. It is no Obsidian menu, so a
    * theme reaching `.menu` never reaches it; it takes the same look from the

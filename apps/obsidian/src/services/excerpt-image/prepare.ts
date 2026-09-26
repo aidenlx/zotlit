@@ -144,6 +144,7 @@ export function createExcerptPreparation(deps: {
                 tags: a.tags,
                 position,
                 version: a.version,
+                lock: null,
               },
               source: {
                 kind: "zotero-db",

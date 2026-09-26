@@ -65,6 +65,29 @@ export async function obEval(
   return parseReply(text);
 }
 
+/** {@link obEval}, with its reply parsed as JSON. */
+export async function obJson<T>(vaultId: string, code: string): Promise<T> {
+  return JSON.parse(await obEval(vaultId, code)) as T;
+}
+
+/**
+ * The document of every window of the vault, the main window first, as an
+ * eval expression: a notice goes to the window Obsidian counts as active.
+ */
+export const WINDOW_DOCUMENTS =
+  "(()=>{const docs=new Set([document]);app.workspace.iterateAllLeaves((leaf)=>docs.add(leaf.view.containerEl.doc));return [...docs];})()";
+
+/**
+ * Takes every notice off screen in every window, so the next one is the
+ * caller's own.
+ */
+export async function clearNotices(vaultId: string): Promise<void> {
+  await obEval(
+    vaultId,
+    `(function(){for(const doc of ${WINDOW_DOCUMENTS})for(const node of doc.querySelectorAll('.notice'))node.remove();return true;})()`,
+  );
+}
+
 /**
  * Dispatch a registered CLI command (not `eval`). Unlike `eval`'s JS return
  * value, a plugin's `registerCliHandler` reply prints as its own text with no

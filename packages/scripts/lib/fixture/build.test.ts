@@ -414,6 +414,13 @@ describe("the generated Zotero database", () => {
         title: "Frozen excerpt snapshot",
         url: null,
       },
+      {
+        key: "EXTPDF25",
+        path: join(layout.vaultDir, "attachments", "external-annotation.pdf"),
+        charsetID: null,
+        title: "External annotation PDF",
+        url: null,
+      },
     ]);
   });
 

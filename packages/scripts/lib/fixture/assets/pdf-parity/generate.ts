@@ -6,36 +6,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-/** One PDF object body, without the `N 0 obj` / `endobj` wrapper. */
-type PdfObject = string;
-
-function contentStream(content: string): PdfObject {
-  const length = Buffer.byteLength(content, "latin1");
-  return `<< /Length ${length} >>\nstream\n${content}\nendstream`;
-}
-
-/** Assembles a classic-xref, uncompressed PDF from object bodies in order. */
-function buildPdf(objects: readonly PdfObject[]): Buffer {
-  const header = "%PDF-1.4\n";
-  const offsets: number[] = [0];
-  let body = "";
-  let offset = Buffer.byteLength(header, "latin1");
-  objects.forEach((objectBody, index) => {
-    offsets.push(offset);
-    const objectText = `${index + 1} 0 obj\n${objectBody}\nendobj\n`;
-    body += objectText;
-    offset += Buffer.byteLength(objectText, "latin1");
-  });
-  const xrefOffset =
-    Buffer.byteLength(header, "latin1") + Buffer.byteLength(body, "latin1");
-  const entryCount = objects.length + 1;
-  let xref = `xref\n0 ${entryCount}\n0000000000 65535 f \n`;
-  for (let objectNumber = 1; objectNumber < entryCount; objectNumber++) {
-    xref += `${String(offsets[objectNumber]).padStart(10, "0")} 00000 n \n`;
-  }
-  const trailer = `trailer\n<< /Size ${entryCount} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
-  return Buffer.from(header + body + xref + trailer, "latin1");
-}
+import { buildPdf, contentStream } from "#fixture/assets/pdf-writer";
 
 const TIMES_ROMAN =
   "<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding /WinAnsiEncoding >>";

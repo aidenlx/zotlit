@@ -24,3 +24,19 @@ it("names a text field's two verbs for that field", () => {
     ["discard", m.annot_view_conflict_discard()],
   ]);
 });
+
+it("offers Discard alone where a lock refuses the conflict's verb", () => {
+  const lock = {
+    reason: m.annot_view_lock_external(),
+    action: null,
+    source: "lock",
+  } as const;
+  const kinds = (block: typeof lock | null) =>
+    conflictPanel(
+      { write: "delete", attempted: null, fresh: null },
+      block,
+    ).actions.map(({ kind }) => kind);
+
+  expect(kinds(null)).toEqual(["delete-anyway", "discard"]);
+  expect(kinds(lock)).toEqual(["discard"]);
+});

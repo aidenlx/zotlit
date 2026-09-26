@@ -2332,6 +2332,18 @@
   "pdf_mark_popup_reveal": "在标注视图中显示",
   "pdf_mark_popup_next_in_stack": "此处下一个标记（第 {position} 个，共 {total} 个）",
   "annot_view_write_reason_position_too_large": "所选内容过大，Zotero 无法将其存为一条标注。",
+  "annot_view_lock_external": "此标注由 Zotero 从 PDF 文件导入，因此无法更改。",
+  "annot_view_lock_another_user": "此标注由该群组的其他成员创建，因此无法更改。您仍可删除它。",
+  "annot_view_lock_label": "已锁定。{reason}",
+  "annot_history_restored_new_creator": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=*": "已恢复 {count} 条由其他成员创建的标注。Zotero 已将您列为创建者，现在可以编辑了。"
+      }
+    }
+  ],
   "pdf_toolbar_tools": "标注工具",
   "pdf_toolbar_highlight": "高亮",
   "pdf_toolbar_underline": "下划线",

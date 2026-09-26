@@ -32,6 +32,7 @@ const annotation: AnnotationRecord = {
   sortIndex: "00000|000000|00000",
   tags: [],
   version: null,
+  lock: null,
   position: { kind: "pdf-rects", pageIndex: 0, rects: [[10, 20, 80, 90]] },
 };
 

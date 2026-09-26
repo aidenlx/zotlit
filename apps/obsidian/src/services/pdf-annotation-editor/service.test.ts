@@ -915,6 +915,38 @@ it("paints the mark a consumer selected, and drops one the read retired", async 
   expect(binding.session.selected).toEqual([]);
 });
 
+it("draws the Mark Handles on a mark selected alone, and none on a Locked Annotation", async () => {
+  const locked = { ...HIGHLIGHT, lock: { reason: "external" as const } };
+  const reader = pdfReader();
+  const view = pdfView("attachments/rougier-2014.pdf", reader);
+  const { app } = workspace([{ view }]);
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations: annotationReads([locked, UNDERLINE]),
+    capabilityGestures: capabilityGestures(),
+    ...standingDeps(),
+  });
+  await service.ready;
+  const binding = service.bindings[0]!;
+  await binding.refreshed;
+  reader.renderFirstPage();
+  await binding.probed;
+  const grips = () =>
+    [...reader.page.div.querySelectorAll<SVGElement>("[data-zt-grip]")].map(
+      (grip) => grip.dataset.ztGrip,
+    );
+
+  binding.session.setSelectedAnnotations(["K3JRFLFQ"]);
+  expect(selectedKeys(reader.page)).toEqual(["K3JRFLFQ"]);
+  expect(grips()).toEqual(["start", "end"]);
+
+  binding.session.setSelectedAnnotations(["PUPR5FG5"]);
+  expect(selectedKeys(reader.page)).toEqual(["PUPR5FG5"]);
+  expect(grips()).toEqual([]);
+});
+
 it("paints a group a consumer selected, with no popup, and walks it down to one mark", async () => {
   // Below the other two, so reading order runs underline, highlight, this.
   const lower = annotation("LWR23456", "highlight", {

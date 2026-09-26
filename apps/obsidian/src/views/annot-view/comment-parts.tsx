@@ -16,7 +16,7 @@ import type { WriteConflict } from "@/services/annotation-repository/write";
 
 import { conflictPanel } from "./card-conflict";
 import { sameHeldDraft } from "./card-controls";
-import type { CardControl, HeldDraft } from "./card-controls";
+import type { CardBlock, CardControl, HeldDraft } from "./card-controls";
 import type { CommentRenderer } from "./comment-render";
 import {
   clickEdits,
@@ -334,20 +334,24 @@ export function HeldDraftSlot({
  */
 export function ConflictPanelSlot({
   conflict,
-  live,
+  block,
   surface,
   actions,
 }: {
   conflict: WriteConflict;
-  /** Whether the Editing Capability takes a write right now. */
-  live: boolean;
+  /** What stands in the way of the conflict's verb, or `null` while it acts. */
+  block: CardBlock | null;
   surface: EditorSurface;
   actions: ConflictActions;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const latest = useRef(actions);
   latest.current = actions;
-  const panel = useMemo(() => conflictPanel(conflict), [conflict]);
+  const panel = useMemo(
+    () => conflictPanel(conflict, block),
+    [conflict, block],
+  );
+  const live = block === null;
   useLayoutEffect(() => {
     if (!ref.current) return;
     renderConflictPanel(ref.current, panel, {

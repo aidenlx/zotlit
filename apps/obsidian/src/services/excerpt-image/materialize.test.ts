@@ -46,6 +46,7 @@ const request: ExcerptRequest = {
     sortIndex: "00000|000000|00000",
     tags: [],
     version: 1,
+    lock: null,
     position: { kind: "pdf-rects", pageIndex: 0, rects: [[0, 0, 10, 10]] },
   },
   source: {

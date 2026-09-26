@@ -23,6 +23,7 @@ const annotationFindOptions = {
           columns: { type: true },
           with: { tag: { columns: { name: true } } },
         },
+        groupItem: { columns: { createdByUserID: true } },
       },
     },
     parentAttachment: {
@@ -200,6 +201,7 @@ function toAnnotation(
     position: row.position,
     authorName: row.authorName,
     isExternal: row.isExternal,
+    createdByUserID: row.item.groupItem?.createdByUserID ?? null,
     parentItemID: row.parentItemID,
     parentKey: row.parentAttachment.item_itemID.key,
   };

@@ -1,7 +1,8 @@
-// The Obsidian half of a gesture on a PDF page in the Paired Run: the reader's
-// view as an eval expression, pointer events dispatched as the browser sends
-// them, the window raised so the page lays out, and the reads a Geometry Edit
-// test takes of the plugin around a gesture.
+// The Obsidian half of a gesture on a PDF page in the Paired Run: the PDF
+// opened with the Annotation View beside it, the reader's view as an eval
+// expression, pointer events dispatched as the browser sends them, the window
+// raised so the page lays out, and the reads a Geometry Edit test takes of the
+// plugin around a gesture.
 
 import { expect } from "vitest";
 
@@ -154,6 +155,57 @@ export async function reopenPdfView(
       `(async()=>{const leaf=${pdfViewOf(attachmentPath)}.leaf;const file=leaf.view.file;await leaf.setViewState({type:'empty'});await leaf.openFile(file);return 'reopened';})()`,
     ),
   ).toBe("reopened");
+}
+
+/**
+ * Opens the PDF `attachmentPath` in a new tab and waits for its binding, then
+ * opens the Annotation View and sets it to follow the active tab. The
+ * workspace layout goes back as it was found when `cleanup` disposes; the
+ * restore is on the stack before the tab opens, so a failed open puts it back
+ * too.
+ *
+ * @param attachmentPath the vault path of the PDF.
+ * @param cleanup the stack that restores the workspace layout.
+ */
+export async function openPdfWithAnnotationView(
+  vaultId: string,
+  {
+    attachmentPath,
+    cleanup,
+  }: {
+    attachmentPath: string;
+    cleanup: AsyncDisposableStack;
+  },
+): Promise<void> {
+  const layout = await obEval(
+    vaultId,
+    "JSON.stringify(app.workspace.getLayout())",
+  );
+  cleanup.defer(async () => {
+    await obEval(
+      vaultId,
+      `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+    );
+  });
+  await obEval(
+    vaultId,
+    `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(attachmentPath)});await app.workspace.getLeaf('tab').openFile(file);return true;})()`,
+  );
+  expect(
+    await obEvalUntil(
+      vaultId,
+      `String(!!app.plugins.plugins.zotlit.services.pdfAnnotationEditor.sessionForPath(${JSON.stringify(attachmentPath)}))`,
+      { expected: "true" },
+    ),
+  ).toBe(true);
+  await obEval(
+    vaultId,
+    "app.commands.executeCommandById('zotlit:open-annot-view');true",
+  );
+  await obEval(
+    vaultId,
+    "app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');true",
+  );
 }
 
 /**

@@ -6,6 +6,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
 import type {
+  AnnotationRecord,
   TextFieldDraft,
   TagDraft,
 } from "@/services/annotation-repository/service";
@@ -13,8 +14,10 @@ import type { MutationState } from "@/services/annotation-repository/write";
 import { IDLE } from "@/services/annotation-repository/write";
 
 import {
+  annotationBlocks,
   cardControls,
   capabilityBlock,
+  capabilityBlocks,
   fieldEditorControls,
   editingBlockedReason,
   groupControl,
@@ -59,11 +62,10 @@ function controlsOf(
   card: Pick<CardControlsInput, "type"> = { type: "highlight" },
 ): CardControls {
   return cardControls({
-    capability,
+    blocks: capabilityBlocks(capability, NOW),
     mutation,
     hasTags: false,
     ...card,
-    now: NOW,
   });
 }
 
@@ -106,9 +108,9 @@ it("keeps a verb the capability blocks pressable, so its press reaches the reaso
     // Not disabled: the press is what raises the notice holding the reason.
     expect(states(controls)).toEqual([false, false, false]);
     expect(blocks(controls)).toEqual([
-      { reason, action },
-      { reason, action },
-      { reason, action },
+      { reason, action, source: "capability" },
+      { reason, action, source: "capability" },
+      { reason, action, source: "capability" },
     ]);
     // The verb keeps its own name; the notice is what states the reason.
     expect(tooltips(controls)).toEqual(
@@ -121,15 +123,21 @@ it("offers Allow editing to the one capability a gesture can change", () => {
   expect(capabilityBlock({ kind: "authorization-required" }, NOW)).toEqual({
     reason: m.capability_authorization_required_detail(),
     action: "allow-editing",
+    source: "capability",
   });
   expect(capabilityBlock({ kind: "authorizing" }, NOW)).toEqual({
     reason: m.capability_authorizing_detail(),
     action: null,
+    source: "capability",
   });
   // A label stands in where the table has no detail sentence.
   expect(
     capabilityBlock({ kind: "read-only", reason: "probing" }, NOW),
-  ).toEqual({ reason: m.capability_probing(), action: null });
+  ).toEqual({
+    reason: m.capability_probing(),
+    action: null,
+    source: "capability",
+  });
   expect(capabilityBlock({ kind: "writable" }, NOW)).toBeNull();
 });
 
@@ -196,7 +204,9 @@ it("says a comment is saving only where the user pressed to save it", () => {
     state: { kind: "pending" },
   } as const;
 
-  expect(fieldEditorControls({ kind: "writable" }, draft, NOW)).toEqual({
+  expect(
+    fieldEditorControls(capabilityBlock({ kind: "writable" }, NOW), draft, NOW),
+  ).toEqual({
     readOnly: false,
     saveDisabled: false,
     manual: false,
@@ -204,7 +214,7 @@ it("says a comment is saving only where the user pressed to save it", () => {
   });
   expect(
     fieldEditorControls(
-      { kind: "writable" },
+      capabilityBlock({ kind: "writable" }, NOW),
       { ...draft, manualSave: true },
       NOW,
     ),
@@ -229,9 +239,9 @@ it("leaves a settled write's verbs to the capability, so the user can try again"
     expect(
       blocks(controlsOf({ kind: "read-only", reason: "probing" }, mutation)),
     ).toEqual([
-      { reason: m.capability_probing(), action: null },
-      { reason: m.capability_probing(), action: null },
-      { reason: m.capability_probing(), action: null },
+      { reason: m.capability_probing(), action: null, source: "capability" },
+      { reason: m.capability_probing(), action: null, source: "capability" },
+      { reason: m.capability_probing(), action: null, source: "capability" },
     ]);
   }
 });
@@ -263,6 +273,7 @@ it("gives the tag toggle the comment toggle's enabled state and blocked reason",
         reason: copy.detail ?? copy.label,
         action:
           capability.kind === "authorization-required" ? "allow-editing" : null,
+        source: "capability",
       },
       tooltip: m.annot_view_card_add_tags(),
     });
@@ -324,6 +335,7 @@ describe("Edit quoted text", () => {
             capability.kind === "authorization-required"
               ? "allow-editing"
               : null,
+          source: "capability",
         },
         tooltip: m.annot_view_menu_edit_text(),
       });
@@ -341,11 +353,10 @@ describe("Edit quoted text", () => {
 it("names the tag toggle for what pressing it would do", () => {
   const tooltip = (hasTags: boolean) =>
     cardControls({
-      capability: { kind: "writable" },
+      blocks: capabilityBlocks({ kind: "writable" }, NOW),
       mutation: IDLE,
       hasTags,
       type: "highlight",
-      now: NOW,
     }).tags.tooltip;
 
   expect(tooltip(false)).toBe(m.annot_view_card_add_tags());
@@ -363,7 +374,7 @@ it("shows the current save outcome and preserves a manual recovery action", () =
   };
   expect(
     fieldEditorControls(
-      { kind: "authorization-required" },
+      capabilityBlock({ kind: "authorization-required" }, NOW),
       { ...draft, manualSave: true, state: { kind: "pending" } },
       NOW,
     ),
@@ -375,7 +386,7 @@ it("shows the current save outcome and preserves a manual recovery action", () =
   });
   expect(
     fieldEditorControls(
-      { kind: "writable" },
+      capabilityBlock({ kind: "writable" }, NOW),
       {
         ...draft,
         manualSave: true,
@@ -391,7 +402,7 @@ it("shows the current save outcome and preserves a manual recovery action", () =
   });
   expect(
     fieldEditorControls(
-      { kind: "read-only", reason: "zotero-unavailable" },
+      capabilityBlock({ kind: "read-only", reason: "zotero-unavailable" }, NOW),
       { ...draft, manualSave: true },
       NOW,
     ),
@@ -407,7 +418,7 @@ it("shows the current save outcome and preserves a manual recovery action", () =
   // A draft waiting on a manual save states nothing: its button does.
   expect(
     fieldEditorControls(
-      { kind: "writable" },
+      capabilityBlock({ kind: "writable" }, NOW),
       { ...draft, manualSave: true },
       NOW,
     ),
@@ -420,7 +431,7 @@ it("shows the current save outcome and preserves a manual recovery action", () =
   // A refused write answers in the capability's own words.
   expect(
     fieldEditorControls(
-      { kind: "authorization-required" },
+      capabilityBlock({ kind: "authorization-required" }, NOW),
       {
         ...draft,
         state: { kind: "failed", failure: { kind: "unauthorized" } },
@@ -441,14 +452,14 @@ describe("the held-draft panel", () => {
   };
   const kinds = (capability: EditingCapability, held: TextFieldDraft) =>
     heldTextDraft("comment", held, {
-      capability: capability,
+      block: capabilityBlock(capability, NOW),
       now: NOW,
     })?.actions.map((action) => action.kind) ?? null;
 
   it("stays quiet where nothing is asked of the user", () => {
     expect(
       heldTextDraft("comment", null, {
-        capability: { kind: "writable" },
+        block: capabilityBlock({ kind: "writable" }, NOW),
         now: NOW,
       }),
     ).toBeNull();
@@ -457,7 +468,7 @@ describe("the held-draft panel", () => {
       heldTextDraft(
         "comment",
         { ...draft, text: "" },
-        { capability: { kind: "writable" }, now: NOW },
+        { block: capabilityBlock({ kind: "writable" }, NOW), now: NOW },
       ),
     ).toBeNull();
     // A write settles by itself, and the Conflict panel owns its own two verbs.
@@ -465,20 +476,20 @@ describe("the held-draft panel", () => {
       heldTextDraft(
         "comment",
         { ...draft, state: { kind: "pending" } },
-        { capability: { kind: "writable" }, now: NOW },
+        { block: capabilityBlock({ kind: "writable" }, NOW), now: NOW },
       ),
     ).toBeNull();
     expect(
       heldTextDraft(
         "comment",
         { ...draft, state: { kind: "conflict", fresh: "In Zotero" } },
-        { capability: { kind: "writable" }, now: NOW },
+        { block: capabilityBlock({ kind: "writable" }, NOW), now: NOW },
       ),
     ).toBeNull();
     // An automatic save is already on its way.
     expect(
       heldTextDraft("comment", draft, {
-        capability: { kind: "writable" },
+        block: capabilityBlock({ kind: "writable" }, NOW),
         now: NOW,
       }),
     ).toBeNull();
@@ -489,7 +500,7 @@ describe("the held-draft panel", () => {
       heldTextDraft(
         "comment",
         { ...draft, manualSave: true },
-        { capability: capability, now: NOW },
+        { block: capabilityBlock(capability, NOW), now: NOW },
       )?.actions.find((action) => action.primary)?.kind ?? null;
     expect(accent({ kind: "writable" })).toBe("save");
     // Saving is refused, so the grant that ends the refusal takes the accent.
@@ -516,11 +527,11 @@ describe("the held-draft panel", () => {
   it("names the field a held draft is for", () => {
     const held = { ...draft, manualSave: true };
     const comment = heldTextDraft("comment", held, {
-      capability: { kind: "writable" },
+      block: capabilityBlock({ kind: "writable" }, NOW),
       now: NOW,
     });
     const text = heldTextDraft("text", held, {
-      capability: { kind: "writable" },
+      block: capabilityBlock({ kind: "writable" }, NOW),
       now: NOW,
     });
     expect([comment?.title, comment?.actions[0]?.label]).toEqual([
@@ -535,7 +546,10 @@ describe("the held-draft panel", () => {
 
   it("offers Discard where nothing else can act, and states why", () => {
     const held = heldTextDraft("comment", draft, {
-      capability: { kind: "read-only", reason: "zotero-unavailable" },
+      block: capabilityBlock(
+        { kind: "read-only", reason: "zotero-unavailable" },
+        NOW,
+      ),
       now: NOW,
     });
     expect(held?.text).toBe("Research note");
@@ -579,14 +593,22 @@ describe("the held tags panel", () => {
   it("stays quiet while a session is open, a save is in flight, or nothing changed", () => {
     // A session open on either surface: Save tags there would cut it short.
     expect(
-      heldTagDraft({ kind: "writable" }, { ...draft, held: false }, NOW),
-    ).toBeNull();
-    expect(
-      heldTagDraft({ kind: "writable" }, { ...draft, names: ["review"] }, NOW),
+      heldTagDraft(
+        capabilityBlock({ kind: "writable" }, NOW),
+        { ...draft, held: false },
+        NOW,
+      ),
     ).toBeNull();
     expect(
       heldTagDraft(
-        { kind: "writable" },
+        capabilityBlock({ kind: "writable" }, NOW),
+        { ...draft, names: ["review"] },
+        NOW,
+      ),
+    ).toBeNull();
+    expect(
+      heldTagDraft(
+        capabilityBlock({ kind: "writable" }, NOW),
         { ...draft, state: { kind: "pending" } },
         NOW,
       ),
@@ -595,7 +617,7 @@ describe("the held tags panel", () => {
 
   it("states each hold with the comment's reason line and offers Save tags", () => {
     const reason = (capability: EditingCapability, held: TagDraft) =>
-      heldTagDraft(capability, held, NOW)?.reason;
+      heldTagDraft(capabilityBlock(capability, NOW), held, NOW)?.reason;
     expect(
       reason(
         { kind: "writable" },
@@ -613,7 +635,7 @@ describe("the held tags panel", () => {
       editingCapabilityCopy(unavailable, NOW).detail,
     );
     const refused = heldTagDraft(
-      { kind: "authorization-required" },
+      capabilityBlock({ kind: "authorization-required" }, NOW),
       {
         ...draft,
         state: { kind: "failed", failure: { kind: "unauthorized" } },
@@ -701,6 +723,40 @@ describe("a verb over a group of cards", () => {
         blocked: one.blocked,
       });
     }
+  });
+
+  it("names the Lock Reason of the first card whose lock refuses the verb", () => {
+    const card = (lock: AnnotationRecord["lock"]) =>
+      cardControls({
+        blocks: annotationBlocks({
+          annotation: { lock },
+          capability: LIVE,
+          now: NOW,
+        }),
+        mutation: IDLE,
+        hasTags: false,
+        type: "highlight",
+      });
+    const cards = [
+      card(null),
+      card({ reason: "another-user" }),
+      card({ reason: "external" }),
+    ];
+    const lockBlock = (reason: string) => ({
+      reason,
+      action: null,
+      source: "lock",
+    });
+
+    expect(groupControl(cards.map(({ color }) => color))).toEqual({
+      disabled: false,
+      blocked: lockBlock(m.annot_view_lock_another_user()),
+    });
+    // Another user's Annotation allows the delete, so the External one names it.
+    expect(groupControl(cards.map((controls) => controls.delete))).toEqual({
+      disabled: false,
+      blocked: lockBlock(m.annot_view_lock_external()),
+    });
   });
 
   it("is refused while a write is in flight on any card of it", () => {

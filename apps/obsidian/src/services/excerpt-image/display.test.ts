@@ -64,6 +64,7 @@ function annotation(color: string, key = "INK1"): AnnotationRecord {
     sortIndex: "00000|000000|00000",
     tags: [],
     version: 1,
+    lock: null,
     position: { kind: "pdf-ink", pageIndex: 0, width: 2, paths: [[20, 30]] },
   };
 }

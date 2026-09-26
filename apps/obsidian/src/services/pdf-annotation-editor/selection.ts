@@ -29,6 +29,14 @@ import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
+import {
+  firstLockRefusal,
+  lockBlock,
+} from "@/services/annotation-repository/lock";
+import type {
+  LockBlock,
+  LockedVerb,
+} from "@/services/annotation-repository/lock";
 import type {
   AnnotationRecord,
   AnnotationRepository,
@@ -125,6 +133,7 @@ import {
   selectSelectedRowInput,
   selectFloatingHead,
   selectMark,
+  selectMarkHandles,
   selectGroup,
   selectSelectedDraft,
   selectSelectedKey,
@@ -656,7 +665,12 @@ export class MarkSelection implements Disposable {
       const selected = this.#selectedKeys();
       if (selected.length === 0) return;
       event.preventDefault();
-      if (!this.#live()) this.#deps.gestures.reportBlockedGesture();
+      if (!this.#live()) {
+        this.#deps.gestures.reportBlockedGesture();
+        return;
+      }
+      const locked = this.#lockOn(selected, "delete");
+      if (locked) this.#deps.gestures.blockedPress(locked);
       else if (selected.length === 1) this.#erase(selected);
       else
         void confirmDelete(this.#deps.app, this.#deps.annotations, {
@@ -679,7 +693,9 @@ export class MarkSelection implements Disposable {
       // listener, which hears every key of the shared edit keymap.
       if (this.#live()) {
         event.preventDefault();
-        this.#recolor(selected, swatch);
+        const locked = this.#lockOn(selected, "color");
+        if (locked) this.#deps.gestures.blockedPress(locked);
+        else this.#recolor(selected, swatch);
       }
       return;
     }
@@ -707,9 +723,18 @@ export class MarkSelection implements Disposable {
       mod,
     });
     if (!edit) return false;
-    if (!this.#live() || this.#dragging || selectAdjust(this.#state()))
-      return true;
+    if (this.#dragging || selectAdjust(this.#state())) return true;
     event.preventDefault();
+    // The Editing Capability's block comes first, as it does for Delete.
+    if (!this.#live()) {
+      this.#deps.gestures.reportBlockedGesture();
+      return true;
+    }
+    const locked = lockBlock(record.lock, "geometry");
+    if (locked) {
+      this.#deps.gestures.blockedPress(locked);
+      return true;
+    }
     const store = this.#deps.surfaceState;
     const { position } = record;
     if (edit.kind === "range") {
@@ -765,6 +790,8 @@ export class MarkSelection implements Disposable {
     const record = this.#record();
     if (event.button !== 0 || !record || !this.#live()) return;
     const state = this.#state();
+    // A Locked Annotation has no Mark Handles, and its body moves by none.
+    if (!selectMarkHandles(state)) return;
     if (!state.marksVisible || selectAdjust(state)) return;
     if (!isEditablePosition(record.position)) return;
     const client = { x: event.clientX, y: event.clientY };
@@ -1031,8 +1058,11 @@ export class MarkSelection implements Disposable {
     );
     // The write's proposal is drawn from here on.
     end();
+    // A lock says its own reason alone, as it does on every other surface.
     this.#write(outcome, (failure, now) =>
-      m.pdf_adjust_failed({ reason: writeFailureReason(failure, now) }),
+      failure.kind === "locked"
+        ? writeFailureMessage(failure, now)
+        : m.pdf_adjust_failed({ reason: writeFailureReason(failure, now) }),
     );
   }
 
@@ -1084,9 +1114,9 @@ export class MarkSelection implements Disposable {
   ): MarkPopupTagSectionProps | null {
     const { annotation, tagging } = input;
     const draft = selectSelectedTagDraft(this.#state());
-    const capability = this.#capability();
-    const { readOnly, hint } = tagEditorControls(capability, draft, input.now);
-    const held = heldTagDraft(capability, draft, input.now);
+    const block = input.blocks.tags;
+    const { readOnly, hint } = tagEditorControls(block, draft, input.now);
+    const held = heldTagDraft(block, draft, input.now);
     if (!tagSectionShows({ annotation, draft, tagging, held })) return null;
     const { annotations, surfaceState } = this.#deps;
     return {
@@ -1165,7 +1195,7 @@ export class MarkSelection implements Disposable {
   ): SelectedPopupComment {
     const { annotation } = input;
     const sheet = input.commenting
-      ? this.#commentEditorSlot(content, annotation)
+      ? this.#commentEditorSlot(content, input)
       : null;
     if (sheet) return sheet;
     const entry = controlEntry(control, (at) =>
@@ -1178,7 +1208,7 @@ export class MarkSelection implements Disposable {
     const held = heldTextDraft(
       "comment",
       this.#deps.annotations.textDraftFor("comment", annotation.key),
-      { capability: this.#capability(), now: input.now },
+      { block: input.blocks.comment, now: input.now },
     );
     if (held) {
       return {
@@ -1230,7 +1260,7 @@ export class MarkSelection implements Disposable {
         attempted: draft.text,
         fresh: draft.state.fresh,
       },
-      live: editingLive(this.#capability()),
+      block: input.blocks.comment,
       actions: this.#draftActions(annotation),
     };
   }
@@ -1270,8 +1300,9 @@ export class MarkSelection implements Disposable {
    */
   #commentEditorSlot(
     content: HTMLElement,
-    annotation: AnnotationRecord,
+    input: SelectedRowInput,
   ): SelectedPopupComment | null {
+    const { annotation } = input;
     const standing = selectSelectedDraft(this.#state());
     const draft =
       standing ??
@@ -1298,7 +1329,7 @@ export class MarkSelection implements Disposable {
         field: textFieldWording("comment"),
         value: shownComment(annotation, draft),
         text: standing?.text,
-        status: this.#commentControls(annotation),
+        status: this.#commentControls(input),
         onChange: (text) =>
           this.#deps.annotations.editTextField("comment", annotation.key, text),
         onSubmit: () => this.#submitCommentEditor(annotation),
@@ -1313,11 +1344,11 @@ export class MarkSelection implements Disposable {
     };
   }
 
-  #commentControls(annotation: AnnotationRecord) {
+  #commentControls({ annotation, blocks, now }: SelectedRowInput) {
     return fieldEditorControls(
-      this.#capability(),
+      blocks.comment,
       this.#deps.annotations.textDraftFor("comment", annotation.key),
-      this.#state().capabilityAt,
+      now,
     );
   }
 
@@ -1467,6 +1498,30 @@ export class MarkSelection implements Disposable {
 
   #live(): boolean {
     return editingLive(this.#capability());
+  }
+
+  /**
+   * The block the lock puts on a keystroke's verb over the selected marks, or
+   * `null` where it acts. A group verb is all or nothing, so the first mark
+   * whose lock refuses the verb stops the press before a group delete asks
+   * its confirmation. A press it refuses is spent on the notice that gives
+   * that mark's Lock Reason, on every press.
+   *
+   * @param selected Indexed Keys, in the order the first is picked from.
+   */
+  #lockOn(
+    selected: readonly string[],
+    verb: Extract<LockedVerb, "color" | "delete">,
+  ): LockBlock | null {
+    const locks = new Map(
+      this.#deps.records().map(({ key, lock }) => [key, lock]),
+    );
+    const refused = firstLockRefusal(
+      selected,
+      verb,
+      (key) => locks.get(key) ?? null,
+    );
+    return refused && lockBlock(refused.lock, verb);
   }
 
   #capability(): EditingCapability {
