@@ -16,6 +16,10 @@ import {
   lockRefuses,
 } from "@/services/annotation-repository/lock";
 import type {
+  AnnotationLock,
+  LockedVerb,
+} from "@/services/annotation-repository/lock";
+import type {
   AnnotationRecord,
   TagDraft,
   TextField,
@@ -155,13 +159,8 @@ export function annotationBlocks({
 }): VerbBlocks {
   const blocks = capabilityBlocks(capability, now);
   if (lock === null) return blocks;
-  const locked: CardBlock = {
-    reason: lockReasonText(lock.reason),
-    action: null,
-    source: "lock",
-  };
   const block = (verb: CardVerb): CardBlock | null =>
-    blocks[verb] ?? (lockRefuses(lock, verb) ? locked : null);
+    blocks[verb] ?? lockBlock(lock, verb);
   return {
     color: block("color"),
     comment: block("comment"),
@@ -169,6 +168,19 @@ export function annotationBlocks({
     text: block("text"),
     delete: block("delete"),
   };
+}
+
+/**
+ * The block the Annotation's lock puts on one verb, or `null` where the lock
+ * allows it: the Lock Reason, with no action. It also answers the Geometry
+ * Edit, which has no card verb, for the reader's Mark Handles and keys.
+ */
+export function lockBlock(
+  lock: AnnotationLock | null,
+  verb: LockedVerb,
+): CardBlock | null {
+  if (lock === null || !lockRefuses(lock, verb)) return null;
+  return { reason: lockReasonText(lock.reason), action: null, source: "lock" };
 }
 
 /**

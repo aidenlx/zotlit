@@ -14,6 +14,7 @@ import { capabilityReason } from "@/services/annotation-repository/capability";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityAffordance } from "@/services/annotation-repository/capability-copy";
 import type { CapabilityAffordance } from "@/services/annotation-repository/capability-copy";
+import { lockRefuses } from "@/services/annotation-repository/lock";
 import type {
   AnnotationRecord,
   AnnotationRepository,
@@ -32,7 +33,10 @@ import type {
   MutationState,
   TextPosition,
 } from "@/services/annotation-repository/write";
-import { annotationBlocks } from "@/views/annot-view/card-controls";
+import {
+  annotationBlocks,
+  editingLive,
+} from "@/views/annot-view/card-controls";
 
 import { createPopupRow } from "./create-popup";
 import type { CreatePopupControl, CreatePopupRowInput } from "./create-popup";
@@ -1170,6 +1174,18 @@ export function selectSelectedKey({
   floating,
 }: ReaderSurfaceState): string | null {
   return floating.kind === "selected" ? floating.key : null;
+}
+
+/**
+ * Whether the selected mark carries its Mark Handles: a mark selected alone
+ * does while editing is live, and a group does not. A Locked Annotation
+ * carries none, since its lock refuses the Geometry Edit they begin.
+ */
+export function selectMarkHandles(state: ReaderSurfaceState): boolean {
+  const key = selectSelectedKey(state);
+  if (key === null || !editingLive(state.capability)) return false;
+  const record = state.records.find((annotation) => annotation.key === key);
+  return !lockRefuses(record?.lock ?? null, "geometry");
 }
 
 /**

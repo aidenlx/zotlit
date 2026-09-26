@@ -72,6 +72,7 @@ import {
   selectAdjust,
   selectCapabilityAffordance,
   selectCapture,
+  selectMarkHandles,
   selectSelectedKey,
   selectTextDraft,
 } from "./reader-surface-state";
@@ -1033,17 +1034,10 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       : this.#marks;
   }
 
-  /**
-   * Whether the selected mark carries its Mark Handles: a mark selected alone
-   * does, and a group does not.
-   */
+  /** Whether the selected mark carries its Mark Handles. */
   #handles(): boolean {
     const state = this.#surfaceState?.getState();
-    return (
-      state !== undefined &&
-      editingLive(state.capability) &&
-      selectSelectedKey(state) !== null
-    );
+    return state !== undefined && selectMarkHandles(state);
   }
 
   /**

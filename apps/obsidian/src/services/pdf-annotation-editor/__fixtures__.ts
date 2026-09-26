@@ -797,10 +797,11 @@ export function wireOf(record: AnnotationRecord): WireAnnotation {
 export async function repositoryOver(
   stack: AsyncDisposableStack,
   records: readonly AnnotationRecord[],
+  { external }: { external?: readonly string[] } = {},
 ) {
   const zotero = zoteroLibrary(records.map(wireOf));
   const { repository, requests, client, dbEvents, serverEvents } =
-    await writable(stack, zotero.answers);
+    await writable(stack, zotero.answers, { external });
   const list = await repository.read("RGRPDF24");
   return {
     repository,
@@ -833,9 +834,17 @@ export async function repositoryOver(
  */
 export async function readerOverZotero(
   stack: AsyncDisposableStack,
-  options: Omit<ReaderSurfacesOptions, "annotations">,
+  {
+    external,
+    ...options
+  }: Omit<ReaderSurfacesOptions, "annotations"> & {
+    /** The Annotations Zotero imported from the PDF file, by key. */
+    external?: readonly string[];
+  },
 ) {
-  const zoteroSide = await repositoryOver(stack, options.records);
+  const zoteroSide = await repositoryOver(stack, options.records, {
+    external,
+  });
   const { repository, list } = zoteroSide;
   const reader = stack.use(
     readerSurfaces({

@@ -29,6 +29,7 @@ import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
+import type { LockedVerb } from "@/services/annotation-repository/lock";
 import type {
   AnnotationRecord,
   AnnotationRepository,
@@ -48,6 +49,7 @@ import {
   editingLive,
   heldTagDraft,
   heldTextDraft,
+  lockBlock,
   pressControl,
   shownComment,
   tagEditorControls,
@@ -125,6 +127,7 @@ import {
   selectSelectedRowInput,
   selectFloatingHead,
   selectMark,
+  selectMarkHandles,
   selectGroup,
   selectSelectedDraft,
   selectSelectedKey,
@@ -656,7 +659,9 @@ export class MarkSelection implements Disposable {
       const selected = this.#selectedKeys();
       if (selected.length === 0) return;
       event.preventDefault();
+      const locked = this.#lockOn(selected, "delete");
       if (!this.#live()) this.#deps.gestures.reportBlockedGesture();
+      else if (locked) this.#deps.gestures.blockedPress(locked);
       else if (selected.length === 1) this.#erase(selected);
       else
         void confirmDelete(this.#deps.app, this.#deps.annotations, {
@@ -679,7 +684,9 @@ export class MarkSelection implements Disposable {
       // listener, which hears every key of the shared edit keymap.
       if (this.#live()) {
         event.preventDefault();
-        this.#recolor(selected, swatch);
+        const locked = this.#lockOn(selected, "color");
+        if (locked) this.#deps.gestures.blockedPress(locked);
+        else this.#recolor(selected, swatch);
       }
       return;
     }
@@ -707,9 +714,18 @@ export class MarkSelection implements Disposable {
       mod,
     });
     if (!edit) return false;
-    if (!this.#live() || this.#dragging || selectAdjust(this.#state()))
-      return true;
+    if (this.#dragging || selectAdjust(this.#state())) return true;
     event.preventDefault();
+    // The Editing Capability's block comes first, as it does for Delete.
+    if (!this.#live()) {
+      this.#deps.gestures.reportBlockedGesture();
+      return true;
+    }
+    const locked = lockBlock(record.lock, "geometry");
+    if (locked) {
+      this.#deps.gestures.blockedPress(locked);
+      return true;
+    }
     const store = this.#deps.surfaceState;
     const { position } = record;
     if (edit.kind === "range") {
@@ -765,6 +781,8 @@ export class MarkSelection implements Disposable {
     const record = this.#record();
     if (event.button !== 0 || !record || !this.#live()) return;
     const state = this.#state();
+    // A Locked Annotation has no Mark Handles, and its body moves by none.
+    if (!selectMarkHandles(state)) return;
     if (!state.marksVisible || selectAdjust(state)) return;
     if (!isEditablePosition(record.position)) return;
     const client = { x: event.clientX, y: event.clientY };
@@ -1468,6 +1486,19 @@ export class MarkSelection implements Disposable {
 
   #live(): boolean {
     return editingLive(this.#capability());
+  }
+
+  /**
+   * The block the lock puts on a keystroke's verb over the mark selected
+   * alone, or `null` where it acts. A press it refuses is spent on the notice
+   * that gives the Lock Reason, on every press.
+   */
+  #lockOn(
+    selected: readonly string[],
+    verb: Extract<LockedVerb, "color" | "delete">,
+  ): CardBlock | null {
+    if (selected.length !== 1) return null;
+    return lockBlock(this.#record()?.lock ?? null, verb);
   }
 
   #capability(): EditingCapability {

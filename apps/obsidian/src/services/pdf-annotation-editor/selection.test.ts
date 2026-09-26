@@ -25,7 +25,11 @@ import {
   viewport,
 } from "./__fixtures__";
 import type { readerSurfaces } from "./__fixtures__";
-import { ingestCapability, setCommenting } from "./reader-surface-state";
+import {
+  ingestCapability,
+  selectMarkHandles,
+  setCommenting,
+} from "./reader-surface-state";
 import type { OverlayPageView } from "./render";
 
 /**
@@ -73,6 +77,7 @@ function rect({
 async function setup(
   records: readonly AnnotationRecord[] = [PARAGRAPH, WORD],
   capability: EditingCapability = { kind: "writable" },
+  { external }: { external?: readonly string[] } = {},
 ) {
   vi.useFakeTimers();
   const stack = new AsyncDisposableStack();
@@ -104,6 +109,7 @@ async function setup(
     capability,
     sortIndex,
     adjustRange,
+    external,
   });
 
   return {
@@ -1650,7 +1656,7 @@ it("keeps walking the reading order with a plain arrow while an image is selecte
   expect([...h.selection.selected]).not.toEqual(["FIGR3333"]);
 });
 
-it("writes nothing for a Geometry Edit key while editing is not live", async () => {
+it("writes nothing for a Geometry Edit key while editing is not live, and says why", async () => {
   await using h = await figureSelected({
     kind: "read-only",
     reason: "library-read-only",
@@ -1662,6 +1668,7 @@ it("writes nothing for a Geometry Edit key while editing is not live", async () 
   await geometrySaved(h, "FIGR3333");
 
   expect(h.writes()).toEqual([]);
+  expect(h.gestures.reportBlockedGesture).toHaveBeenCalledTimes(3);
   expect(h.store.getState().floating).not.toHaveProperty("adjust");
   expect([...h.selection.selected]).toEqual(["FIGR3333"]);
 });
@@ -1706,4 +1713,141 @@ it("steps a highlight's end for Shift+ArrowDown, and writes nothing for a step t
   expect(h.writes()).toEqual([]);
   expect(h.store.getState().floating).not.toHaveProperty("adjust");
   expect([...h.selection.selected]).toEqual(["QUTE5555"]);
+});
+
+/**
+ * A Locked Annotation where the word lies: the key the repository fixture's
+ * database holds, marked there as imported from the PDF file, since a lock is
+ * read from the database alone. It carries a comment, so the popup shows the
+ * comment field.
+ */
+const LOCKED_WORD = {
+  ...WORD,
+  key: "PUPR5FG5",
+  comment: "<p>imported with the file</p>",
+};
+/** The same Locked Annotation, drawn as an image, so it has a body to move. */
+const LOCKED_FIGURE = { ...FIGURE, key: "PUPR5FG5" };
+const LOCK_REASON = m.annot_view_lock_external();
+
+async function lockedSelected(
+  record: AnnotationRecord,
+  at: { x: number; y: number },
+  capability?: EditingCapability,
+) {
+  const h = await setup([record], capability, { external: ["PUPR5FG5"] });
+  expect(h.store.getState().records[0]?.lock).toEqual({ reason: "external" });
+  click(h.page.div, at);
+  expect([...h.selection.selected]).toEqual(["PUPR5FG5"]);
+  return h;
+}
+
+it("dims the Mark Popup's colour, tag and delete verbs on a Locked Annotation, with the Lock Reason", async () => {
+  await using h = await lockedSelected(LOCKED_WORD, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+
+  const verbs = [
+    ...popup.hoverEl.querySelectorAll<HTMLElement>("[data-zt-verb]"),
+  ];
+  expect(
+    verbs.map((node) => ({
+      verb: node.dataset.ztVerb,
+      blocked: node.getAttribute("aria-disabled") === "true",
+      tooltip: node.getAttribute("aria-label"),
+    })),
+  ).toEqual([
+    { verb: "color", blocked: true, tooltip: LOCK_REASON },
+    { verb: "tags", blocked: true, tooltip: LOCK_REASON },
+    { verb: "copy", blocked: false, tooltip: expect.any(String) },
+    { verb: "delete", blocked: true, tooltip: LOCK_REASON },
+    { verb: "reveal", blocked: false, tooltip: expect.any(String) },
+  ]);
+
+  verbs.find((node) => node.dataset.ztVerb === "delete")!.click();
+  await settled(h, "PUPR5FG5");
+  expect(h.writes()).toEqual([]);
+});
+
+it("spends a press on a Locked Annotation's comment on the Lock Reason, with no action", async () => {
+  await using h = await lockedSelected(LOCKED_WORD, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  const field = commentField(popup.hoverEl)!;
+  expect(field.hasAttribute("data-blocked")).toBe(true);
+
+  field.click();
+  field.click();
+
+  expect(commentView(popup.hoverEl)).toBeNull();
+  expect(h.store.getState().floating).toMatchObject({ commenting: false });
+  expect(h.gestures.blockedPress.mock.calls).toEqual([
+    [{ reason: LOCK_REASON, action: null, source: "lock" }],
+    [{ reason: LOCK_REASON, action: null, source: "lock" }],
+  ]);
+});
+
+it("gives a Locked Annotation no Mark Handles, and moves it by no drag", async () => {
+  await using h = await lockedSelected(LOCKED_FIGURE, ON_FIGURE);
+  expect(selectMarkHandles(h.store.getState())).toBe(false);
+
+  // Where a handle would sit, and then the body: neither press takes a grip.
+  for (const [from, to] of [
+    [BOTTOM_RIGHT, { x: 340, y: 517 }],
+    [ON_FIGURE, { x: 240, y: 420 }],
+  ] as const) {
+    pointer(h.page.div, "pointerdown", from);
+    pointer(h.containerEl, "pointermove", to);
+    expect(h.store.getState().floating).not.toHaveProperty("adjust");
+    pointer(h.containerEl, "pointerup", to);
+  }
+  await geometrySaved(h, "PUPR5FG5");
+
+  expect(h.writes()).toEqual([]);
+  expect(h.store.getState().floating).not.toHaveProperty("adjust");
+});
+
+it("refuses every edit key on a Locked Annotation with the Lock Reason, on every press", async () => {
+  await using h = await lockedSelected(LOCKED_FIGURE, ON_FIGURE);
+
+  key(h, "3");
+  key(h, "Delete");
+  key(h, "Backspace");
+  chord(h, "ArrowRight", { shiftKey: true });
+  chord(h, "ArrowDown", { altKey: true });
+  await geometrySaved(h, "PUPR5FG5");
+
+  expect(h.writes()).toEqual([]);
+  expect(h.store.getState().floating).not.toHaveProperty("adjust");
+  expect(h.gestures.blockedPress.mock.calls).toEqual(
+    Array.from({ length: 5 }, () => [
+      { reason: LOCK_REASON, action: null, source: "lock" },
+    ]),
+  );
+  expect(h.gestures.reportBlockedGesture).not.toHaveBeenCalled();
+});
+
+it("answers an edit key on a Locked Annotation with the Editing Capability's block first", async () => {
+  await using h = await lockedSelected(LOCKED_FIGURE, ON_FIGURE, {
+    kind: "read-only",
+    reason: "library-read-only",
+  });
+
+  key(h, "Delete");
+  chord(h, "ArrowRight", { shiftKey: true });
+  chord(h, "ArrowDown", { altKey: true });
+  await geometrySaved(h, "PUPR5FG5");
+
+  expect(h.writes()).toEqual([]);
+  expect(h.gestures.reportBlockedGesture).toHaveBeenCalledTimes(3);
+  expect(h.gestures.blockedPress).not.toHaveBeenCalled();
+});
+
+it("keeps the tag editor closed for a press on a Locked Annotation's tag verb", async () => {
+  await using h = await lockedSelected(LOCKED_WORD, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+
+  popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='tags']")!.click();
+
+  expect(h.store.getState().floating).toMatchObject({ tagging: false });
+  expect(h.repository.tagDraftFor("PUPR5FG5")).toBeNull();
+  expect(h.writes()).toEqual([]);
 });
