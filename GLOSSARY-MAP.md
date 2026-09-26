@@ -2,14 +2,14 @@
 
 ## Contexts
 
-- [Zotero Data Model](./packages/db/CONTEXT.md) — Zotero's item hierarchy, identification, and query surface as modeled by `@zotlit/db`
-- [Filter Expression](./packages/filter-expression/CONTEXT.md) — the ZotLit-owned language of filter expressions
-- [Obsidian Plugin](./apps/obsidian/CONTEXT.md) — literature notes, imported notes, templates, citations, and the services that bridge Zotero data into the vault
-- [Obsidian i18n](./packages/obsidian-i18n/CONTEXT.md) — Messages, JSON Language Packs, their isolated runtime, and the headless Obsidian lifecycle
-- [ZotLit Protocol](./packages/protocol/CONTEXT.md) — the wire format between ZotLit Companion, the Zotero add-on, and the Obsidian plugin: permanent `obsidian://` URIs versus ephemeral version-gated HTTP requests
-- [ZotLit Documentation](./apps/docs/CONTEXT.md) — user-facing naming and framing rules for the docs site (zotlit.aidenlx.site)
-- [ZotLit Companion](./apps/zotero/CONTEXT.md) — the Zotero-side add-on: what it observes in Zotero, and how it keeps Zotero's database readable by the Obsidian plugin
-- [Fixture](./packages/scripts/CONTEXT.md) — the generated, disposable test environment (Zotero data + profile + vault) and its build vocabulary
+- [Zotero Data Model](./packages/db/GLOSSARY.md) — Zotero's item hierarchy, identification, and query surface as modeled by `@zotlit/db`
+- [Filter Expression](./packages/filter-expression/GLOSSARY.md) — the ZotLit-owned language of filter expressions
+- [Obsidian Plugin](./apps/obsidian/GLOSSARY.md) — literature notes, imported notes, templates, citations, and the services that bridge Zotero data into the vault
+- [Obsidian i18n](./packages/obsidian-i18n/GLOSSARY.md) — Messages, JSON Language Packs, their isolated runtime, and the headless Obsidian lifecycle
+- [ZotLit Protocol](./packages/protocol/GLOSSARY.md) — the wire format between ZotLit Companion, the Zotero add-on, and the Obsidian plugin: permanent `obsidian://` URIs versus ephemeral version-gated HTTP requests
+- [ZotLit Documentation](./apps/docs/GLOSSARY.md) — user-facing naming and framing rules for the docs site (zotlit.aidenlx.site)
+- [ZotLit Companion](./apps/zotero/GLOSSARY.md) — the Zotero-side add-on: what it observes in Zotero, and how it keeps Zotero's database readable by the Obsidian plugin
+- [Fixture](./packages/scripts/GLOSSARY.md) — the generated, disposable test environment (Zotero data + profile + vault) and its build vocabulary
 
 ## Relationships
 

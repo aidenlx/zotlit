@@ -8,7 +8,7 @@ Shared wire contracts for the Zotero companion and Obsidian plugin.
 **HTTP** wire format. Bump it when an HTTP body/header shape changes
 (`src/notify.ts` or the `*RequestSchema` bodies in `src/url.ts`). The
 `obsidian://zotlit/*` URL transport is unversioned and permanent, so a URL-only
-change never bumps it — see `CONTEXT.md`.
+change never bumps it — see `GLOSSARY.md`.
 
 After changing an HTTP wire shape:
 

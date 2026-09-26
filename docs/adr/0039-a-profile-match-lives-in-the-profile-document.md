@@ -30,4 +30,4 @@ status: accepted
 - `profile.selection-rules` leaves the settings schema without a migration; the rule list page, rule IDs, reordering, and per-rule diagnostics go with it. The rule editor is rehomed as the match editor on the Profile row.
 - Profile deletion no longer warns about rule references; the match dies with the file.
 - Spec [#971](https://github.com/aidenlx/zotlit/issues/971) and its child tickets are amended to this shape, and the settings reference page replaces the "Automatic profile selection" list with the per-Profile match row and drops "sharing or importing a Profile never carries them".
-- The `apps/obsidian/CONTEXT.md` terms Profile Selection Rule, Rule Filter, and Rule condition are replaced by Profile Match, Match tree, and Match condition.
+- The `apps/obsidian/GLOSSARY.md` terms Profile Selection Rule, Rule Filter, and Rule condition are replaced by Profile Match, Match tree, and Match condition.

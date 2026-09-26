@@ -23,7 +23,7 @@ For a stable Obsidian target, `release.ts` asks whether to run the docs scan bef
 
 ## Considered options
 
-- **Fully automatic, no review.** Derive `updated` straight from the diff with no human step. Rejected — a mechanical diff can't distinguish a typo fix from a feature change, and `CONTEXT.md`'s "wording corrections preserve this release history" rule depends on that distinction.
+- **Fully automatic, no review.** Derive `updated` straight from the diff with no human step. Rejected — a mechanical diff can't distinguish a typo fix from a feature change, and `GLOSSARY.md`'s "wording corrections preserve this release history" rule depends on that distinction.
 - **Mirror the version into `apps/docs/package.json#version`** instead of a dedicated file. Rejected — conflates two meanings under one already-meaningful field name (a private, unpublished package's own version vs. a copy of the Obsidian plugin's version) and creates a second source of truth with no built-in check against `apps/obsidian/package.json`.
 - **Write page metadata during `pnpm release`.** This combines review with version changes. This option was rejected. The separate command uses a clean committed baseline and validates the complete plan before one final confirmation.
 
