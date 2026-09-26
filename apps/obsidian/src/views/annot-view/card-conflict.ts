@@ -12,6 +12,7 @@ import type {
 } from "@/services/annotation-repository/service";
 import { isTextField } from "@/services/annotation-repository/write";
 
+import { noRetryLands } from "./card-controls";
 import type { CardBlock } from "./card-controls";
 
 /** One value of a Write Conflict, under the label that says whose it is. */
@@ -84,7 +85,7 @@ export function conflictPanel(
   block: CardBlock | null = null,
 ): ConflictPanel {
   const panel = verbPanel(conflict);
-  return block?.source === "lock"
+  return noRetryLands(block)
     ? {
         ...panel,
         actions: panel.actions.filter(({ kind }) => kind === "discard"),

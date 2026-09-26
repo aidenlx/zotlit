@@ -16,8 +16,8 @@ import type { WireTag } from "@/services/zotero-local-api/wire";
 import { capabilityOfFailure } from "./capability";
 import type { EditingCapability } from "./capability";
 import { editingCapabilityCopy } from "./capability-copy";
-import { lockReasonText } from "./lock";
 import type { LockReason } from "./lock";
+import { lockReasonText } from "./lock-copy";
 
 /**
  * Why a write did not land, beside every failure Zotero itself can answer.
@@ -47,7 +47,7 @@ export type WriteFailure =
    * so the write is refused before any request. The Editing Capability does
    * not move.
    *
-   * @see apps/obsidian/docs/adr/0066-annotation-locks-come-from-the-zotero-database.md
+   * @see apps/obsidian/docs/adr/0067-annotation-locks-come-from-the-zotero-database.md
    */
   | { kind: "locked"; reason: LockReason };
 

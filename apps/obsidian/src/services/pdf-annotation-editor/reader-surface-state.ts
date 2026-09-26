@@ -14,7 +14,7 @@ import { capabilityReason } from "@/services/annotation-repository/capability";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityAffordance } from "@/services/annotation-repository/capability-copy";
 import type { CapabilityAffordance } from "@/services/annotation-repository/capability-copy";
-import { lockRefuses } from "@/services/annotation-repository/lock";
+import { lockBlock } from "@/services/annotation-repository/lock";
 import type {
   AnnotationRecord,
   AnnotationRepository,
@@ -1185,7 +1185,7 @@ export function selectMarkHandles(state: ReaderSurfaceState): boolean {
   const key = selectSelectedKey(state);
   if (key === null || !editingLive(state.capability)) return false;
   const record = state.records.find((annotation) => annotation.key === key);
-  return !lockRefuses(record?.lock ?? null, "geometry");
+  return lockBlock(record?.lock ?? null, "geometry") === null;
 }
 
 /**

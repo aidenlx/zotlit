@@ -3,12 +3,13 @@
 // read from the Zotero database under either Annotation Source, and it stands
 // apart from the Editing Capability of its Attachment.
 //
-// @see apps/obsidian/docs/adr/0066-annotation-locks-come-from-the-zotero-database.md
+// @see apps/obsidian/docs/adr/0067-annotation-locks-come-from-the-zotero-database.md
 
 import type { Annotation } from "@zotlit/db";
 
-import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+
+import { lockReasonText } from "./lock-copy";
 
 const logger = getLogger("annotation-repository");
 
@@ -20,7 +21,6 @@ const logger = getLogger("annotation-repository");
  */
 export type LockReason = "external" | "another-user";
 
-/** The lock on one Annotation. */
 export interface AnnotationLock {
   reason: LockReason;
 }
@@ -50,6 +50,50 @@ export function lockRefuses(
     case "another-user":
       return verb !== "delete";
   }
+}
+
+/**
+ * What a lock puts in the way of one verb: the Lock Reason, and no action,
+ * since no gesture in ZotLit ends a lock.
+ */
+export interface LockBlock {
+  reason: string;
+  action: null;
+  source: "lock";
+}
+
+/**
+ * The block `lock` puts on `verb`, or `null` where the lock allows it: the one
+ * lock question every surface asks, the card's verbs, the reader's keys, and
+ * the Mark Handles of a Geometry Edit alike.
+ */
+export function lockBlock(
+  lock: AnnotationLock | null,
+  verb: LockedVerb,
+): LockBlock | null {
+  if (lock === null || !lockRefuses(lock, verb)) return null;
+  return { reason: lockReasonText(lock.reason), action: null, source: "lock" };
+}
+
+/**
+ * The first of these Annotations whose lock refuses `verb`. A group verb is
+ * all or nothing, as in Zotero's reader, so this one Annotation stops the
+ * whole group.
+ *
+ * @param annotationKeys Indexed Keys, in the order the first is picked from.
+ * @param lockOn the lock of one Annotation by its Indexed Key, or `null`
+ *   where none stands in the way.
+ */
+export function firstLockRefusal(
+  annotationKeys: Iterable<string>,
+  verb: LockedVerb,
+  lockOn: (annotationKey: string) => AnnotationLock | null,
+): { annotationKey: string; lock: AnnotationLock } | null {
+  for (const annotationKey of annotationKeys) {
+    const lock = lockOn(annotationKey);
+    if (lock && lockRefuses(lock, verb)) return { annotationKey, lock };
+  }
+  return null;
 }
 
 /**
@@ -83,14 +127,4 @@ export function lockOf(
     byAnotherUser,
   });
   return byAnotherUser ? { reason: "another-user" } : null;
-}
-
-/** The Lock Reason in one sentence: the tooltip, and the notice of a press. */
-export function lockReasonText(reason: LockReason): string {
-  switch (reason) {
-    case "external":
-      return m.annot_view_lock_external();
-    case "another-user":
-      return m.annot_view_lock_another_user();
-  }
 }

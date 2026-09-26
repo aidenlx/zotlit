@@ -24,8 +24,9 @@ import {
   cn,
   tooltipAttrs,
 } from "@/lib/utils";
-import { lockReasonText } from "@/services/annotation-repository/lock";
+import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { AnnotationLock } from "@/services/annotation-repository/lock";
+import { lockReasonText } from "@/services/annotation-repository/lock-copy";
 import type {
   AnnotationRecord,
   TextField,
@@ -151,13 +152,7 @@ function useCardControls(annot: AnnotationRecord, alone: boolean): CardOffer {
   const { type } = annot;
   return useMemo(() => {
     const controls = cardControls({
-      // A card's tooltip is read at the moment it is drawn; the ticking
-      // countdown belongs to the toolbar affordance, not to every card.
-      blocks: annotationBlocks({
-        annotation: annot,
-        capability,
-        now: Temporal.Now.instant(),
-      }),
+      blocks: blocksNow(annot, capability),
       mutation,
       hasTags,
       type,
@@ -167,16 +162,28 @@ function useCardControls(annot: AnnotationRecord, alone: boolean): CardOffer {
 }
 
 /**
+ * What stands in the way of each verb on one card, read at the moment it is
+ * drawn: a card's tooltip and a menu entry are read then, and the ticking
+ * countdown belongs to the toolbar affordance, not to every card.
+ *
+ * @param now the instant a cooldown is read at, where the caller reads it
+ *   too.
+ */
+export function blocksNow(
+  annot: AnnotationRecord,
+  capability: EditingCapability,
+  now: Temporal.Instant = Temporal.Now.instant(),
+): VerbBlocks {
+  return annotationBlocks({ annotation: annot, capability, now });
+}
+
+/**
  * What stands in the way of each verb on this card, read at the moment it is
  * drawn.
  */
 function useVerbBlocks(annot: AnnotationRecord): VerbBlocks {
   const capability = useAnnotStore((state) => state.capability);
-  return annotationBlocks({
-    annotation: annot,
-    capability,
-    now: Temporal.Now.instant(),
-  });
+  return blocksNow(annot, capability);
 }
 
 /** One row of the card list's grid, its content in one cell. */
@@ -329,7 +336,7 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
  * before a verb is tried. The Lock Reason is its tooltip and its accessible
  * name; the verbs the lock refuses rest dimmed in the action bar.
  *
- * @see apps/obsidian/docs/adr/0066-annotation-locks-come-from-the-zotero-database.md
+ * @see apps/obsidian/docs/adr/0067-annotation-locks-come-from-the-zotero-database.md
  */
 function LockMark({ lock }: { lock: AnnotationLock }) {
   return (
@@ -723,7 +730,7 @@ function useFieldDraftPanel(
       };
     }
     const now = Temporal.Now.instant();
-    const blocks = annotationBlocks({ annotation: annot, capability, now });
+    const blocks = blocksNow(annot, capability, now);
     const held = heldTextDraft(field, draft, { block: blocks[field], now });
     return held && { kind: "held", held };
   }, [annot, field, capability, draft]);

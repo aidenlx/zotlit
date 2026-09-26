@@ -6028,9 +6028,10 @@ it("does nothing while a tag session is open on the Annotation the top step touc
 // #region annotation locks
 
 // What can go wrong with a Locked Annotation, seen from outside the repository
-// (ADR 0066):
+// (ADR 0067):
 // - the Local API sends no lock facts, so a list it answers carries no lock;
 // - a fact the database does not hold, or cannot give, locks an Annotation;
+// - a read of the database that fails drops a lock an earlier read gave;
 // - a lock Zotero adds after a Local API list was read never reaches it;
 // - a refused verb still sends a request, draws a Pending Proposal, or ends a
 //   Write Conflict that stands;
@@ -6129,7 +6130,7 @@ it("locks an External Annotation under the Local API source, from the Zotero dat
   expect(locksOf(list)).toEqual(expectedLocks({ PUPR5FG5: "external" }));
 });
 
-it("locks nothing the Zotero database holds no fact for", async () => {
+it("locks nothing the Zotero database holds no fact for, and keeps a lock it cannot read again", async () => {
   await using stack = new AsyncDisposableStack();
   // Zotero holds an Annotation the database copy ZotLit reads does not have yet.
   const unread = {
@@ -6147,13 +6148,15 @@ it("locks nothing the Zotero database holds no fact for", async () => {
   expect(read.UNREAD23).toBeNull();
   expect(read.PUPR5FG5).toEqual({ reason: "external" });
 
-  // The database cannot be read, and the list still can.
+  // The database cannot be read, and the list still can. The lock the last
+  // read gave stands.
   acquireRead.mockRejectedValue(new Error("database is locked"));
   const refreshed = await repository.refresh("RGRPDF24");
   expect(refreshed?.source.kind).toBe("zotero-local-api");
-  expect(Object.values(locksOf(refreshed)).every((lock) => lock === null)).toBe(
-    true,
-  );
+  expect(locksOf(refreshed)).toEqual({
+    ...expectedLocks({ PUPR5FG5: "external" }),
+    UNREAD23: null,
+  });
 });
 
 it("locks an Annotation Zotero imports from the PDF file while the Local API is the source", async () => {
@@ -6661,15 +6664,20 @@ it("locks nothing where the database names no account user ID", async () => {
   );
 });
 
-it("locks nothing by creator where the database cannot be read", async () => {
+it("keeps the known creator locks where the database cannot be read again", async () => {
   await using stack = new AsyncDisposableStack();
-  const { repository, acquireRead } = await groupWritable(stack);
+  const { repository, requests, acquireRead } = await groupWritable(stack);
 
   acquireRead.mockRejectedValue(new Error("database is locked"));
   const refreshed = await repository.refresh(GROUP_ATTACHMENT);
 
   expect(refreshed?.source.kind).toBe("zotero-local-api");
-  expect(groupLocks(refreshed)).toEqual(expectedLocks());
+  expect(groupLocks(refreshed)).toEqual(expectedLocks(BY_COLLEAGUE));
+  const sent = requests.length;
+  expect(await repository.patchColor(inGroup("PUPR5FG5"), "#ff6666")).toEqual(
+    ANOTHER_USER_LOCKED,
+  );
+  expect(requests.slice(sent)).toEqual([]);
 });
 
 it("refuses every edit of another user's Annotation before any request, and sends its delete", async () => {
@@ -6745,10 +6753,11 @@ it("sends a group delete over another user's Annotations, and one undo puts them
       groupID: GROUP_ID,
     })),
   );
-  const { repository, requests } = await setup(stack, zotero.answers, {
-    key: REMEMBERED_KEY,
-    group: SYNCED,
-  });
+  const { repository, requests, client, dbEvents } = await setup(
+    stack,
+    zotero.answers,
+    { key: REMEMBERED_KEY, group: SYNCED },
+  );
   await repository.read(GROUP_ATTACHMENT);
   await vi.waitFor(async () =>
     expect((await repository.read(GROUP_ATTACHMENT))?.source.kind).toBe(
@@ -6774,10 +6783,26 @@ it("sends a group delete over another user's Annotations, and one undo puts them
     `/api/groups/${GROUP_ID}/items/C94NJNYG`,
   ]);
 
-  // Zotero restores each under a new key, with the current user as creator.
+  // Zotero restores each under a new key, with the current user as creator,
+  // and the database copy ZotLit reads holds them so.
   expect(await repository.undo(GROUP_ATTACHMENT)).toMatchObject({
     kind: "stepped",
   });
+  client.$client.exec(
+    `insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+       values (80, 4, '2026-09-26 12:00:00', '2026-09-26 12:00:00', 2, 'MADE2345'),
+              (81, 4, '2026-09-26 12:00:00', '2026-09-26 12:00:00', 2, 'MADE2346');
+     insert into itemAnnotations
+       (itemID, parentItemID, type, text, comment, color, pageLabel, sortIndex, position, isExternal)
+       select 80, parentItemID, type, text, comment, color, pageLabel, sortIndex, position, 0
+         from itemAnnotations where itemID = 48;
+     insert into itemAnnotations
+       (itemID, parentItemID, type, text, comment, color, pageLabel, sortIndex, position, isExternal)
+       select 81, parentItemID, type, text, comment, color, pageLabel, sortIndex, position, 0
+         from itemAnnotations where itemID = 52;
+     insert into groupItems (itemID, createdByUserID) values (80, ${ME}), (81, ${ME});`,
+  );
+  dbEvents.emit("changed");
   const restored = groupLocks(await repository.refresh(GROUP_ATTACHMENT));
   expect([restored.MADE2345, restored.MADE2346]).toEqual([null, null]);
 });

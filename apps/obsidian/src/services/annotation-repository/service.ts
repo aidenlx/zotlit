@@ -60,7 +60,7 @@ import type {
   HistoryStep,
   TagHistoryStep,
 } from "./history";
-import { lockOf, lockRefuses } from "./lock";
+import { firstLockRefusal, lockOf } from "./lock";
 import type { AnnotationLock, LockedVerb } from "./lock";
 import {
   resolvesSilently,
@@ -214,7 +214,7 @@ export interface AnnotationRecord {
    * locks the database last gave; an Annotation the database does not hold
    * yet has none.
    *
-   * @see apps/obsidian/docs/adr/0066-annotation-locks-come-from-the-zotero-database.md
+   * @see apps/obsidian/docs/adr/0067-annotation-locks-come-from-the-zotero-database.md
    */
   lock: AnnotationLock | null;
   /** Source facts used by annotation templates; absent facts stay unknown. */
@@ -804,7 +804,7 @@ export class AnnotationRepository extends Service<void> {
    * kept apart from the lists, so a lock the database moved stands even where
    * a list is not published again.
    *
-   * @see apps/obsidian/docs/adr/0066-annotation-locks-come-from-the-zotero-database.md
+   * @see apps/obsidian/docs/adr/0067-annotation-locks-come-from-the-zotero-database.md
    */
   readonly #locks = new Map<string, ReadonlyMap<string, AnnotationLock>>();
   /**
@@ -2995,48 +2995,53 @@ export class AnnotationRepository extends Service<void> {
   }
 
   /**
-   * The `locked` failure one verb meets on an Annotation. The Editing
-   * Capability keeps priority: where it refuses the write too, this answers
-   * `null`, and the write meets the capability's own refusal, whose reason can
-   * carry an action.
+   * The `locked` failure one verb meets on an Annotation; see
+   * {@link #firstLockRefusal}.
    *
    * @param annotationKey the Annotation's Indexed Key.
-   * @returns the failure with the Lock Reason, or `null` where the lock allows
-   *   the verb.
    */
   #lockRefusal(annotationKey: string, verb: LockedVerb): LockedFailure | null {
-    for (const [attachmentKey, locks] of this.#locks) {
-      const lock = locks.get(annotationKey);
-      if (!lock) continue;
-      if (!lockRefuses(lock, verb) || this.#writeBlocked(attachmentKey))
-        return null;
-      logger.debug("A lock refused a write", {
-        annotationKey,
-        verb,
-        reason: lock.reason,
-      });
-      return { kind: "locked", reason: lock.reason };
-    }
-    return null;
+    return this.#firstLockRefusal([annotationKey], verb)?.failure ?? null;
   }
 
   /**
-   * The first lock that refuses a write of `kind` over these Annotations: the
-   * writes of a group verb, and the Annotations one History Step changes.
+   * The first lock that refuses a write of `kind` over these Annotations: one
+   * write, the writes of a group verb, and the Annotations one History Step
+   * changes. The Editing Capability keeps priority: a lock on an Attachment
+   * whose capability refuses the write too stands aside, and the write meets
+   * the capability's own refusal, whose reason can carry an action.
    *
    * @param annotationKeys Indexed Keys, in the order the first is picked from.
-   * @param kind the kind of step the writes make; `existence` is a delete.
+   * @param kind the kind of write; a History Step's `existence` is a delete.
    * @returns the first refused Annotation with its `locked` failure, or `null`
    *   where every lock allows the write.
    */
   #firstLockRefusal(
     annotationKeys: readonly string[],
-    kind: HistoryStep["kind"],
+    kind: LockedVerb | HistoryStep["kind"],
   ): { annotationKey: string; failure: LockedFailure } | null {
     const verb: LockedVerb = kind === "existence" ? "delete" : kind;
-    for (const annotationKey of annotationKeys) {
-      const failure = this.#lockRefusal(annotationKey, verb);
-      if (failure) return { annotationKey, failure };
+    const refused = firstLockRefusal(annotationKeys, verb, (annotationKey) =>
+      this.#writeLock(annotationKey),
+    );
+    if (!refused) return null;
+    const { annotationKey, lock } = refused;
+    logger.debug("A lock refused a write", {
+      annotationKey,
+      verb,
+      reason: lock.reason,
+    });
+    return { annotationKey, failure: { kind: "locked", reason: lock.reason } };
+  }
+
+  /**
+   * The lock a write meets on one Annotation, or `null` where it has none or
+   * where the Editing Capability of its Attachment refuses the write first.
+   */
+  #writeLock(annotationKey: string): AnnotationLock | null {
+    for (const [attachmentKey, locks] of this.#locks) {
+      const lock = locks.get(annotationKey);
+      if (lock) return this.#writeBlocked(attachmentKey) ? null : lock;
     }
     return null;
   }
@@ -3614,13 +3619,14 @@ export class AnnotationRepository extends Service<void> {
    * Read the locks of one Attachment's Annotations from the Zotero database
    * into {@link #locks}, beside a Zotero Local API list, whose item JSON
    * carries no lock facts. The list itself stays wholly the Local API's (ADR
-   * 0034). A database that cannot be read gives no lock.
+   * 0034). A database that cannot be read keeps the locks the last read gave,
+   * so only an Attachment never read has no lock.
    *
    * @returns whether any lock of the Attachment moved.
-   * @see apps/obsidian/docs/adr/0066-annotation-locks-come-from-the-zotero-database.md
+   * @see apps/obsidian/docs/adr/0067-annotation-locks-come-from-the-zotero-database.md
    */
   async #readLocks(attachmentKey: string): Promise<boolean> {
-    let annotations: readonly AnnotationRecord[] = [];
+    let annotations: readonly AnnotationRecord[];
     try {
       using lease = await this.#db.acquireRead();
       annotations = readAttachmentAnnotations(lease.client, attachmentKey);
@@ -3629,6 +3635,7 @@ export class AnnotationRepository extends Service<void> {
         attachmentKey,
         error,
       });
+      return false;
     }
     return this.#keepLocks(attachmentKey, annotations);
   }
@@ -3664,6 +3671,10 @@ export class AnnotationRepository extends Service<void> {
    */
   async #refreshLocks(): Promise<void> {
     for (const attachmentKey of this.#locks.keys()) {
+      // The list of the Zotero DB source is read again whole, and that read
+      // keeps its locks.
+      if (this.#publishedLists.get(attachmentKey)?.source.kind === "zotero-db")
+        continue;
       if (!(await this.#readLocks(attachmentKey))) continue;
       logger.debug("A database refresh moved the locks of an Attachment", {
         attachmentKey,

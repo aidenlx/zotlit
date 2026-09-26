@@ -29,7 +29,14 @@ import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
-import type { LockedVerb } from "@/services/annotation-repository/lock";
+import {
+  firstLockRefusal,
+  lockBlock,
+} from "@/services/annotation-repository/lock";
+import type {
+  LockBlock,
+  LockedVerb,
+} from "@/services/annotation-repository/lock";
 import type {
   AnnotationRecord,
   AnnotationRepository,
@@ -49,7 +56,6 @@ import {
   editingLive,
   heldTagDraft,
   heldTextDraft,
-  lockBlock,
   pressControl,
   shownComment,
   tagEditorControls,
@@ -659,9 +665,12 @@ export class MarkSelection implements Disposable {
       const selected = this.#selectedKeys();
       if (selected.length === 0) return;
       event.preventDefault();
+      if (!this.#live()) {
+        this.#deps.gestures.reportBlockedGesture();
+        return;
+      }
       const locked = this.#lockOn(selected, "delete");
-      if (!this.#live()) this.#deps.gestures.reportBlockedGesture();
-      else if (locked) this.#deps.gestures.blockedPress(locked);
+      if (locked) this.#deps.gestures.blockedPress(locked);
       else if (selected.length === 1) this.#erase(selected);
       else
         void confirmDelete(this.#deps.app, this.#deps.annotations, {
@@ -1049,8 +1058,11 @@ export class MarkSelection implements Disposable {
     );
     // The write's proposal is drawn from here on.
     end();
+    // A lock says its own reason alone, as it does on every other surface.
     this.#write(outcome, (failure, now) =>
-      m.pdf_adjust_failed({ reason: writeFailureReason(failure, now) }),
+      failure.kind === "locked"
+        ? writeFailureMessage(failure, now)
+        : m.pdf_adjust_failed({ reason: writeFailureReason(failure, now) }),
     );
   }
 
@@ -1500,14 +1512,16 @@ export class MarkSelection implements Disposable {
   #lockOn(
     selected: readonly string[],
     verb: Extract<LockedVerb, "color" | "delete">,
-  ): CardBlock | null {
-    const records = this.#deps.records();
-    for (const key of selected) {
-      const record = records.find((candidate) => candidate.key === key);
-      const block = lockBlock(record?.lock ?? null, verb);
-      if (block) return block;
-    }
-    return null;
+  ): LockBlock | null {
+    const locks = new Map(
+      this.#deps.records().map(({ key, lock }) => [key, lock]),
+    );
+    const refused = firstLockRefusal(
+      selected,
+      verb,
+      (key) => locks.get(key) ?? null,
+    );
+    return refused && lockBlock(refused.lock, verb);
   }
 
   #capability(): EditingCapability {

@@ -35,6 +35,14 @@ const NOT_RUNNING = {
   source: "capability",
 } as const;
 const BLOCKED: CardControl = { ...LIVE, blocked: NOT_RUNNING };
+const LOCKED: CardControl = {
+  ...LIVE,
+  blocked: {
+    reason: m.annot_view_lock_external(),
+    action: null,
+    source: "lock",
+  },
+};
 
 /**
  * The actions over a Card Selection, with every other dependency inert. The
@@ -142,6 +150,19 @@ describe("the menu a card opens", () => {
     expect(selectAlone).toHaveBeenCalledExactlyOnceWith(OUTSIDE);
     expect(titles).toContain(m.annot_view_menu_copy_citation());
     expect(titles.at(-1)).toBe(m.annot_view_menu_delete());
+  });
+
+  it("keeps the press of a locked delete entry, and asks nothing and deletes nothing", () => {
+    using ask = vi.spyOn(confirmation, "confirm").mockResolvedValue(true);
+    const { actions, annotations } = setup([], LOCKED);
+
+    const item = entry(openMenu(actions, QUOTED), m.annot_view_menu_delete());
+    expect(item.disabled).toBe(false);
+    item.click();
+
+    expect(ask).not.toHaveBeenCalled();
+    expect(annotations.deleteAnnotations).not.toHaveBeenCalled();
+    expect(annotations.deleteAnnotation).not.toHaveBeenCalled();
   });
 });
 

@@ -12,6 +12,7 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { withRecentColor } from "@/lib/annotation-colors";
 import {
+  markExternal,
   nextChange,
   writable,
   zoteroLibrary,
@@ -808,6 +809,14 @@ export async function repositoryOver(
     zotero,
     requests,
     list,
+    /**
+     * Zotero imports one Annotation from the PDF file, and a database refresh
+     * tells the repository, which locks it.
+     */
+    importFromPdf(key: string): void {
+      markExternal(client, key);
+      dbEvents.emit("changed");
+    },
     /**
      * Zotero quits, and the device's database turns out to be another one:
      * the switch that hides every draft made against the first.

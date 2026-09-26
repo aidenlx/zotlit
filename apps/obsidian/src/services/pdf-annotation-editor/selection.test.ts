@@ -32,6 +32,21 @@ import {
 } from "./reader-surface-state";
 import type { OverlayPageView } from "./render";
 
+/** Every notice the reader shows, by its text. */
+const notices = vi.hoisted(() => ({ shown: [] as string[] }));
+vi.mock("@/lib/notice", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/notice")>();
+  return {
+    ...actual,
+    BaseNotice: class extends actual.BaseNotice {
+      constructor(message: string | DocumentFragment, duration?: number) {
+        super(message, duration);
+        if (typeof message === "string") notices.shown.push(message);
+      }
+    },
+  };
+});
+
 /**
  * Two marks on page one, the second inside the first, in PDF points. A US
  * Letter page is 792 points tall and PDF space counts up from its foot, so the
@@ -1823,6 +1838,25 @@ it("refuses every edit key on a Locked Annotation with the Lock Reason, on every
     ]),
   );
   expect(h.gestures.reportBlockedGesture).not.toHaveBeenCalled();
+});
+
+it("says the Lock Reason alone for a Geometry Edit the lock refuses on release", async () => {
+  await using h = await setup([LOCKED_FIGURE]);
+  click(h.page.div, ON_FIGURE);
+  notices.shown.length = 0;
+
+  pointer(h.page.div, "pointerdown", BOTTOM_RIGHT);
+  pointer(h.containerEl, "pointermove", { x: 340, y: 517 });
+  // Zotero imports the Annotation from the PDF file while the pointer is down.
+  h.importFromPdf("PUPR5FG5");
+  await vi.waitFor(() =>
+    expect(h.store.getState().records[0]?.lock).toEqual({ reason: "external" }),
+  );
+  pointer(h.containerEl, "pointerup", { x: 340, y: 517 });
+  await geometrySaved(h, "PUPR5FG5");
+
+  expect(h.writes()).toEqual([]);
+  expect(notices.shown).toEqual([LOCK_REASON]);
 });
 
 it("refuses a group Delete or colour key with one Locked Annotation before the confirmation, with its Lock Reason", async () => {

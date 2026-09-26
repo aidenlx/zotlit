@@ -5,7 +5,7 @@ import type { Plugin } from "obsidian";
 import * as m from "@/lib/i18n/generated/messages";
 
 import type { HistoryDirection, HistoryOutcome } from "./history";
-import { lockReasonText } from "./lock";
+import { lockReasonText } from "./lock-copy";
 import type { AnnotationRepository } from "./service";
 import { writeFailureMessage } from "./write";
 

@@ -8,7 +8,13 @@ import { expect } from "vitest";
 
 import { ATTACHMENTS } from "@zotlit/scripts/fixture";
 
-import { obEval, obEvalUntil, waitFor } from "./obsidian-cli.ts";
+import {
+  clearNotices,
+  obEval,
+  obEvalUntil,
+  obJson,
+  waitFor,
+} from "./obsidian-cli.ts";
 import type { ZoteroRdp } from "./paired-zotero.ts";
 import {
   FIRE,
@@ -59,7 +65,8 @@ interface HeldAnnotation {
  * - on the card selected alone, "Edit quoted text", the comment field, colour
  *   and tags are dimmed, and a press gives the Lock Reason with no Allow
  *   editing;
- * - the delete entry of the card menu is dimmed;
+ * - a press on the delete entry of the card menu gives the Lock Reason, and
+ *   asks nothing;
  * - the Mark Popup dims colour, tags and delete with the Lock Reason as
  *   tooltip, and draws no Mark Handles;
  * - Zotero keeps the Annotation unchanged.
@@ -77,8 +84,6 @@ export async function verifyExternalAnnotationLock({
   m: Messages;
 }): Promise<void> {
   await using cleanup = new AsyncDisposableStack();
-  const obJson = async <T>(code: string): Promise<T> =>
-    JSON.parse(await obEval(vaultId, code)) as T;
 
   // ── The import ────────────────────────────────────────────────────────────
   // The Fixture seeds no Annotation on this Attachment and leaves its PDF
@@ -214,6 +219,7 @@ export async function verifyExternalAnnotationLock({
   ).toBe(true);
   expect(
     await obJson<{ quote: string; lock: string | null }>(
+      vaultId,
       `(function(){const card=${card};return JSON.stringify({quote:card.querySelector('blockquote')?.textContent.trim()??'',lock:card.querySelector('.zt-annot-lock').getAttribute('aria-label')});})()`,
     ),
   ).toEqual({
@@ -248,10 +254,7 @@ export async function verifyExternalAnnotationLock({
       ),
       `${verb} is not dimmed`,
     ).toBe("true");
-    await obEval(
-      vaultId,
-      "(function(){for(const node of document.querySelectorAll('.notice'))node.remove();return true;})()",
-    );
+    await clearNotices(vaultId);
     await obEval(vaultId, `((${node}).click(),true)`);
     // The press says the Lock Reason, and offers nothing to press: a lock
     // is not lifted from here.
@@ -277,19 +280,33 @@ export async function verifyExternalAnnotationLock({
     ),
   ).toBe("false");
 
-  // The card menu dims its delete entry.
+  // A press on the card menu's delete entry gives the Lock Reason, and asks
+  // nothing.
+  await clearNotices(vaultId);
   await obEval(
     vaultId,
     `((${card}).querySelector('.clickable-icon:has(svg.lucide-more-horizontal)').click(),true)`,
   );
+  const deleteEntry = `[...document.querySelectorAll('.menu .menu-item')].find((node)=>node.textContent.trim()===${JSON.stringify(m.annot_view_menu_delete())})`;
   expect(
-    await obEvalUntil(
-      vaultId,
-      `(function(){const item=[...document.querySelectorAll('.menu .menu-item')].find((node)=>node.textContent.trim()===${JSON.stringify(m.annot_view_menu_delete())});return item?String(item.classList.contains('is-disabled')):'no entry';})()`,
-      { expected: "true" },
-    ),
-    "the card menu's delete entry is not dimmed",
+    await obEvalUntil(vaultId, `String(!!${deleteEntry})`, {
+      expected: "true",
+    }),
+    "the card menu has no delete entry",
   ).toBe(true);
+  await obEval(vaultId, `(${deleteEntry}.click(),true)`);
+  expect(
+    await obEvalUntil(vaultId, `String(${noticeShown}.length)`, {
+      expected: "1",
+    }),
+    "a press on the card menu's delete entry gives no Lock Reason",
+  ).toBe(true);
+  expect(
+    await obJson<{ buttons: number; modals: number }>(
+      vaultId,
+      `JSON.stringify({buttons:${noticeShown}[0].querySelectorAll('button').length,modals:document.querySelectorAll('.modal').length})`,
+    ),
+  ).toEqual({ buttons: 0, modals: 0 });
   await obEval(
     vaultId,
     "(function(){document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()",
@@ -331,6 +348,7 @@ export async function verifyExternalAnnotationLock({
   ).toBe(true);
   expect(
     await obJson<Record<string, { dimmed: boolean; tooltip: string | null }>>(
+      vaultId,
       `(function(){const popup=document.querySelector('.zt-pdf-mark-popup');const verbs={};for(const id of ['color','tags','delete']){const node=popup.querySelector('[data-zt-verb='+id+']');verbs[id]={dimmed:node?.getAttribute('aria-disabled')==='true',tooltip:node?.getAttribute('aria-label')??null};}return JSON.stringify(verbs);})()`,
     ),
   ).toEqual({
@@ -349,10 +367,7 @@ export async function verifyExternalAnnotationLock({
   // tag section and no confirmation, and it shows no notice, since its
   // tooltip already names the Lock Reason. The popup stays on the mark.
   for (const verb of ["color", "tags", "delete"]) {
-    await obEval(
-      vaultId,
-      "(function(){for(const node of document.querySelectorAll('.notice'))node.remove();return true;})()",
-    );
+    await clearNotices(vaultId);
     await obEval(
       vaultId,
       `(document.querySelector('.zt-pdf-mark-popup [data-zt-verb=${verb}]').click(),true)`,
@@ -361,6 +376,7 @@ export async function verifyExternalAnnotationLock({
     await settledGesture(vaultId, attachmentPath);
     expect(
       await obJson<Record<string, number | boolean>>(
+        vaultId,
         "JSON.stringify({popup:!!document.querySelector('.zt-pdf-mark-popup'),menus:document.querySelectorAll('.menu').length,modals:document.querySelectorAll('.modal').length,tagSection:!!document.querySelector('.zt-pdf-mark-popup input'),notices:document.querySelectorAll('.notice').length})",
       ),
       `a press on the popup's ${verb} verb ran`,

@@ -11,14 +11,7 @@ import type { ResolvedAnnotationTypeName } from "@zotlit/db";
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
-import {
-  lockReasonText,
-  lockRefuses,
-} from "@/services/annotation-repository/lock";
-import type {
-  AnnotationLock,
-  LockedVerb,
-} from "@/services/annotation-repository/lock";
+import { lockBlock } from "@/services/annotation-repository/lock";
 import type {
   AnnotationRecord,
   TagDraft,
@@ -112,7 +105,6 @@ export interface CardControls {
   delete: CardControl;
 }
 
-/** One editing verb of an Annotation Card. */
 export type CardVerb = keyof CardControls;
 
 /**
@@ -146,7 +138,7 @@ export function capabilityBlocks(
  * action and speaks for the whole Attachment; a verb it allows meets the
  * Annotation's lock, whose block states the Lock Reason and has no action.
  *
- * @see apps/obsidian/docs/adr/0066-annotation-locks-come-from-the-zotero-database.md
+ * @see apps/obsidian/docs/adr/0067-annotation-locks-come-from-the-zotero-database.md
  */
 export function annotationBlocks({
   annotation: { lock },
@@ -171,16 +163,11 @@ export function annotationBlocks({
 }
 
 /**
- * The block the Annotation's lock puts on one verb, or `null` where the lock
- * allows it: the Lock Reason, with no action. It also answers the Geometry
- * Edit, which has no card verb, for the reader's Mark Handles and keys.
+ * Whether no retry can land past this block: a lock, which no gesture in
+ * ZotLit ends. A held draft or a Write Conflict then offers Discard alone.
  */
-export function lockBlock(
-  lock: AnnotationLock | null,
-  verb: LockedVerb,
-): CardBlock | null {
-  if (lock === null || !lockRefuses(lock, verb)) return null;
-  return { reason: lockReasonText(lock.reason), action: null, source: "lock" };
+export function noRetryLands(block: CardBlock | null): boolean {
+  return block?.source === "lock";
 }
 
 /**
@@ -639,17 +626,16 @@ function heldDraftActions(
   block: CardBlock | null,
   { save, saveDisabled }: { save: string; saveDisabled: boolean },
 ): HeldDraftAction[] {
-  const actions: HeldDraftAction[] =
-    block?.source === "lock"
-      ? []
-      : [
-          {
-            kind: "save",
-            label: save,
-            enabled: !saveDisabled,
-            primary: !saveDisabled,
-          },
-        ];
+  const actions: HeldDraftAction[] = noRetryLands(block)
+    ? []
+    : [
+        {
+          kind: "save",
+          label: save,
+          enabled: !saveDisabled,
+          primary: !saveDisabled,
+        },
+      ];
   if (block?.action === "allow-editing") {
     actions.push({
       kind: "allow-editing",
