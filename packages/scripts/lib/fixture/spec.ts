@@ -970,6 +970,7 @@ export type FixtureAsset =
   | "excerpt-rendering/corrupt.pdf"
   | "excerpt-rendering/encrypted.pdf"
   | "excerpt-rendering/excerpt-rendering.pdf"
+  | "external-annotation/external-annotation.pdf"
   | "ioannidis-2005/ioannidis-2005.pdf"
   | "pdf-parity/pdf-parity-layout.pdf"
   | "pdf-parity/pdf-parity-scanned.pdf"
@@ -1393,6 +1394,23 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     url: null,
     sourceAsset: "rougier-2014/annotations/4PE492KU.png",
     dateModified: "2025-02-28 12:00:00",
+  },
+  {
+    // Its PDF embeds one highlight another PDF reader saved, and the Fixture
+    // seeds no Annotation here. A Paired Zotero that opens the PDF imports
+    // that highlight as an External Annotation, which Zotero keeps read-only.
+    itemID: 85,
+    libraryID: 1,
+    key: "EXTPDF25",
+    parentItemID: 57,
+    linkMode: "linked_file",
+    fileRoot: "vault",
+    contentType: "application/pdf",
+    title: "External annotation PDF",
+    path: "attachments/external-annotation.pdf",
+    url: null,
+    sourceAsset: "external-annotation/external-annotation.pdf",
+    dateModified: "2025-01-02 12:00:00",
   },
 ];
 

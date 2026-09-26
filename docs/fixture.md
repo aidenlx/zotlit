@@ -10,6 +10,8 @@ The Fixture Spec is the committed source of truth for the semantic content of th
 
 The Annotation View filter reads three annotated PDFs. `attachments/rougier-2014.pdf` is a linked file in the Fixture Vault, and its Annotations carry the Zotero tags `figure`, `methodology`, and `visualization`, which overlap across the Annotations. The "Research interfaces conference paper" carries one untagged Annotation in two forms: a PDF in Zotero storage, and the linked `attachments/research-interfaces.pdf` in the vault. The filter therefore has a tag vocabulary on the first PDF, and an empty tag vocabulary on the other two.
 
+`attachments/external-annotation.pdf` is a linked file in the Fixture Vault, on the preprint "A preprint whose Venue is its repository". The Fixture seeds no Annotation on it. Its PDF embeds one highlight that another PDF reader saved. When a Paired Zotero opens the PDF, Zotero imports that highlight as an External Annotation with a Quoted Text. Zotero and ZotLit keep an External Annotation read-only. The generator and its notes are in `packages/scripts/lib/fixture/assets/external-annotation/`.
+
 The [Fixture context glossary](../packages/scripts/GLOSSARY.md) defines the required terms for code and documentation.
 
 ## Build the Fixture

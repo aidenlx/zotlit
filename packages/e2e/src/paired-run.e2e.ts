@@ -26,6 +26,7 @@ import {
 import { ANNOTATIONS, ATTACHMENTS } from "@zotlit/scripts/fixture";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
+import { verifyExternalAnnotationLock } from "./annotation-lock.ts";
 import { keepRendering } from "./background-throttling.ts";
 import { verifySavedEditDisplay } from "./excerpt-acceptance.ts";
 import { verifyExcerptRefresh } from "./excerpt-refresh.ts";
@@ -6825,6 +6826,14 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       });
     },
   );
+
+  describe.skipIf(!debuggerPort || !vaultId)("an External Annotation", () => {
+    it("is locked on its card and in the reader, and Zotero keeps it unchanged", async () => {
+      await prepareAuthorizationFixture();
+      using rdp = await openZoteroRdp(debuggerPort!);
+      await verifyExternalAnnotationLock({ vaultId: vaultId!, rdp, m });
+    }, 180000);
+  });
 });
 
 /**
