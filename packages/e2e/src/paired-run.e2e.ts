@@ -4506,15 +4506,18 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(shown.card.length).toBeLessThanOrEqual(2);
           expect(await storedComment()).toBe(after);
 
-          // A click on the rendered comment leaves it as text. The click
-          // runs and renders in one task, so the frame after it shows what
-          // it did.
+          // The comment is a field again once its editor closed: a click on
+          // it opens the editor, as on the card (ADR 0066). A press collapses
+          // the page's selection before its click, and a click over selected
+          // text stays a read. The click runs and renders in one task, so the
+          // frame after it shows what it did.
           expect(
             await obEval(
               vaultId!,
-              `(async()=>{document.querySelector('.zt-pdf-mark-popup .zt-annot-comment').click();await new Promise((resolve)=>requestAnimationFrame(resolve));return String(!${POPUP_EDITOR}&&!!document.querySelector('.zt-pdf-mark-popup .zt-annot-comment'));})()`,
+              `(async()=>{getSelection().removeAllRanges();document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-field').click();await new Promise((resolve)=>requestAnimationFrame(resolve));return String(!!${POPUP_EDITOR});})()`,
             ),
           ).toBe("true");
+          await closeCommentEditor();
         }, 120000);
 
         describe("and the Annotation Card beside it", () => {
