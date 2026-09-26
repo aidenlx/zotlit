@@ -9,6 +9,10 @@
 # model (https://worktrunk.dev/hook/), so it cannot be used here.
 pre-start = "mise trust && mise run init {{ primary_worktree_path }}"
 
+# First close the Paired Zotero that holds this worktree's Fixture, so no Zotero
+# outlives the folder it runs on. Like the vault removal below, the stop is
+# non-fatal.
+#
 # Deinit submodules before `git worktree remove` runs so its untracked-file
 # check passes — otherwise removal demands `--force`, which the Claude Code
 # WorktreeRemove plugin path doesn't pass.
@@ -17,4 +21,4 @@ pre-start = "mise trust && mise run init {{ primary_worktree_path }}"
 # no dead entry once the folder goes. The script drives the running app when one
 # answers and edits obsidian.json directly when none does, so it never wakes a
 # shut Obsidian. A failing pre-remove aborts the removal, so it stays non-fatal.
-pre-remove = "git submodule deinit --force --all && { node packages/scripts/scripts/obsidian-vault.ts remove --purge || true; }"
+pre-remove = "{ node packages/scripts/scripts/fixture.ts stop || true; } && git submodule deinit --force --all && { node packages/scripts/scripts/obsidian-vault.ts remove --purge || true; }"
