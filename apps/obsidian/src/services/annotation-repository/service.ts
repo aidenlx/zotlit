@@ -125,8 +125,8 @@ const ZOTERO_DB = "zotero-db";
  */
 const ZOTERO_LOCAL_API = "zotero-local-api";
 
-const COMMENT_IDLE_SAVE_MS = 1_000;
-const COMMENT_BURST_SAVE_MS = 10_000;
+const TEXT_IDLE_SAVE_MS = 1_000;
+const TEXT_BURST_SAVE_MS = 10_000;
 
 /**
  * Where a whole record set came from. The source is atomic per Attachment: a
@@ -214,29 +214,35 @@ export interface AnnotationList {
   annotations: readonly AnnotationRecord[];
 }
 
-export type CommentDraftState =
+export type TextFieldDraftState =
   | { kind: "editing" }
   | { kind: "pending" }
   | { kind: "conflict"; fresh: string }
   | { kind: "failed"; failure: WriteFailure };
 
-/** One Annotation comment being edited in this plugin session. */
-export interface CommentDraft {
+/**
+ * One text field of an Annotation Draft, typed in this plugin session and
+ * autosaved on a typing pause.
+ */
+export interface TextFieldDraft {
   annotationKey: string;
   attachmentKey: string;
   /** Zotero database that supplied the record when editing began. */
   serverID: string;
-  /** Confirmed comment editing began from. */
+  /** Confirmed value editing began from. */
   baseline: string;
   /** Current shared input. */
   text: string;
-  state: CommentDraftState;
+  state: TextFieldDraftState;
   /**
    * The next save requires an explicit action: set after a failed or
    * unconfirmed write, or when editing is lost while this draft is open.
    */
   manualSave?: boolean;
 }
+
+/** The comment field of one Annotation Draft. */
+export type CommentDraft = TextFieldDraft;
 
 export type TagDraftState =
   | { kind: "editing" }
@@ -245,8 +251,7 @@ export type TagDraftState =
 
 /**
  * The tag field of one Annotation Draft: one tag editing session, shared by
- * every surface through the comment draft's key. It is saved once, when the
- * editor closes.
+ * every surface. It is saved once, when the editor closes.
  *
  * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
  */
@@ -275,6 +280,59 @@ export interface TagDraft {
 }
 
 /**
+ * How one text field reads from a record and writes to Zotero. The field's
+ * name is also the write's name, which its Write Conflict carries.
+ */
+interface TextFieldSpec {
+  valueOf: (record: AnnotationRecord) => string | null;
+  request: (target: WriteTarget, value: string) => WriteRequest;
+  propose: (value: string) => ProposedFields;
+}
+
+/**
+ * The draft fields typed as text and autosaved on a typing pause. A field
+ * added here is drafted, saved, reconciled, and conflicted like the comment.
+ */
+const TEXT_FIELDS = {
+  comment: {
+    valueOf: (record) => record.comment,
+    request: commentPatch,
+    // Zotero stores an empty comment as no value.
+    propose: (value) => ({ comment: value === "" ? null : value }),
+  },
+} satisfies Partial<Record<ConflictedWrite, TextFieldSpec>>;
+
+type TextField = keyof typeof TEXT_FIELDS;
+
+/**
+ * The fields an Annotation Draft stands on. Each Annotation has at most one
+ * draft per field, and each field's draft saves, conflicts, and is held on its
+ * own.
+ *
+ * @see apps/obsidian/docs/adr/0048-annotation-drafts-and-pending-writes-stay-in-memory.md
+ */
+type DraftFields = { [F in TextField]: TextFieldDraft } & { tags: TagDraft };
+
+type DraftField = keyof DraftFields;
+
+const TEXT_FIELD_NAMES = Object.keys(TEXT_FIELDS) as TextField[];
+
+const DRAFT_FIELDS: readonly DraftField[] = [...TEXT_FIELD_NAMES, "tags"];
+
+/** One map per field, keyed by string, with each field's own value type. */
+type FieldMaps<F extends string, V extends Record<F, unknown>> = {
+  [K in F]: Map<string, V[K]>;
+};
+
+function fieldMaps<F extends string, V extends Record<F, unknown>>(
+  fields: readonly F[],
+): FieldMaps<F, V> {
+  return Object.fromEntries(
+    fields.map((field) => [field, new Map()]),
+  ) as FieldMaps<F, V>;
+}
+
+/**
  * Everything the repository holds about one Annotation beside its record, as
  * one snapshot: a surface re-reads it whole on `annotation-changed`.
  */
@@ -294,20 +352,20 @@ export interface AnnotationState {
   gone: boolean;
 }
 
-type CommentWriteDecision =
+type TextWriteDecision =
   | { kind: "drop" }
   | { kind: "retain" }
-  | { kind: "update"; draft: CommentDraft };
+  | { kind: "update"; draft: TextFieldDraft };
 
-/** Decide what one completed comment request leaves in repository memory. */
-function commentDraftAfterWrite(
-  current: CommentDraft,
+/** Decide what one completed text field request leaves in repository memory. */
+function textDraftAfterWrite(
+  current: TextFieldDraft,
   submittedText: string,
   outcome: MutationState,
-): CommentWriteDecision {
+): TextWriteDecision {
   switch (outcome.kind) {
     case "idle":
-      return sameComment(current.text, submittedText)
+      return sameText(current.text, submittedText)
         ? { kind: "drop" }
         : {
             kind: "update",
@@ -320,7 +378,7 @@ function commentDraftAfterWrite(
             },
           };
     case "conflict": {
-      // A comment write conflicts over a comment; only a Geometry Edit's
+      // A text field's write conflicts over its text; only a Geometry Edit's
       // conflict carries no text to hold.
       const { conflict } = outcome;
       const fresh = conflict.write === "geometry" ? "" : (conflict.fresh ?? "");
@@ -469,6 +527,9 @@ type WriteAttempt =
   /** `session` marks a tag editing session's own save, not a tag undo or redo. */
   | { write: "tags"; session?: true };
 
+/** The write, and so the field, a standing outcome belongs to. */
+type OutcomeWrite = WriteAttempt["write"];
+
 type ConfirmedWrite =
   | {
       kind: "record";
@@ -539,7 +600,7 @@ function historyChangeOf(
     : null;
 }
 
-interface CommentSave {
+interface TextSave {
   idleTimer: ReturnType<typeof setTimeout> | null;
   burstTimer: ReturnType<typeof setTimeout> | null;
 }
@@ -650,11 +711,13 @@ export class AnnotationRepository extends Service<void> {
   readonly #lastCapability = new Map<string | null, string>();
   /**
    * The failure or conflict a settled write left standing on each Annotation,
-   * by Indexed Key, until the next write on it or a dismissal. A write in
-   * flight is read from the mutation cache instead, so an Annotation that is
-   * idle has no entry.
+   * by Indexed Key and then by the write's field, oldest first. A failure
+   * stands until the next write on the Annotation; a conflict stands until the
+   * next write of its own field or a dismissal, so a comment conflict and a
+   * later tag save stand side by side. A write in flight is read from the
+   * mutation cache instead, so an Annotation that is idle has no entry.
    */
-  readonly #outcomes = new Map<string, MutationState>();
+  readonly #outcomes = new Map<string, Map<OutcomeWrite, MutationState>>();
   /** The pending state each write in the mutation cache shows while it stands. */
   readonly #pendingStates = new WeakMap<AnnotationMutation, MutationState>();
   /** Every Annotation a complete read confirmed gone, by Indexed Key. */
@@ -664,12 +727,19 @@ export class AnnotationRepository extends Service<void> {
    * database it came from, which the next one is compared against.
    */
   readonly #completeKeys = new Map<string, ReadonlySet<string>>();
-  readonly #commentDrafts = new Map<string, CommentDraft>();
-  readonly #commentDraftSources = new Map<string, string>();
-  readonly #commentSaves = new Map<string, CommentSave>();
-  /** Tag drafts, under the comment draft's key. */
-  readonly #tagDrafts = new Map<string, TagDraft>();
-  readonly #tagDraftSources = new Map<string, string>();
+  /** Annotation Drafts, by field and then by Zotero database and Annotation. */
+  readonly #drafts = fieldMaps<DraftField, DraftFields>(DRAFT_FIELDS);
+  /**
+   * The Zotero database each field's draft of an Annotation stands in, by
+   * field and then by Indexed Key, read while no Local API source is active.
+   */
+  readonly #draftSources = fieldMaps<DraftField, Record<DraftField, string>>(
+    DRAFT_FIELDS,
+  );
+  /** Autosave timers, by text field and then by the draft's key. */
+  readonly #textSaves = fieldMaps<TextField, Record<TextField, TextSave>>(
+    TEXT_FIELD_NAMES,
+  );
   /** What each write on the mutation cache answers its callers. */
   readonly #operations = new WeakMap<
     AnnotationMutation,
@@ -869,7 +939,7 @@ export class AnnotationRepository extends Service<void> {
   /**
    * What a write left on one Annotation, for the card that draws its verbs:
    * `pending` from the moment a write is asked for until the last write queued
-   * on it settles, then the failure or conflict the last one left standing.
+   * on it settles, then the latest failure or conflict left standing.
    *
    * @param annotationKey the Annotation's Indexed Key.
    */
@@ -877,7 +947,7 @@ export class AnnotationRepository extends Service<void> {
     const [running] = this.#pendingWrites(annotationKey);
     return (
       (running && this.#pendingStates.get(running)) ??
-      this.#outcomes.get(annotationKey) ??
+      this.#standing(annotationKey) ??
       IDLE
     );
   }
@@ -890,48 +960,83 @@ export class AnnotationRepository extends Service<void> {
   annotationState(annotationKey: string): AnnotationState {
     const commentDraft = this.commentDraftFor(annotationKey);
     const tagDraft = this.tagDraftFor(annotationKey);
-    const shown = new Set<CommentDraft | TagDraft>(
+    const shown = new Set<TextFieldDraft | TagDraft>(
       [commentDraft, tagDraft].filter((draft) => draft !== null),
     );
     return {
       mutation: this.mutationFor(annotationKey),
       commentDraft,
       tagDraft,
-      hidden: [
-        ...this.#commentDrafts.values(),
-        ...this.#tagDrafts.values(),
-      ].some(
-        (draft) => draft.annotationKey === annotationKey && !shown.has(draft),
-      ),
+      hidden: this.#draftsOn(annotationKey).some((draft) => !shown.has(draft)),
       gone: this.#gone.has(annotationKey),
     };
   }
 
-  /** The active Zotero database's shared draft for one Annotation. */
+  /** The active Zotero database's shared comment draft for one Annotation. */
   commentDraftFor(annotationKey: string): CommentDraft | null {
-    const source = this.#localApi.demandSource();
-    const serverID =
-      source?.serverID ?? this.#commentDraftSources.get(annotationKey);
-    return serverID
-      ? (this.#commentDrafts.get(commentDraftID(serverID, annotationKey)) ??
-          null)
-      : null;
+    return this.#draftFor("comment", annotationKey);
   }
 
   /** Start or update one shared comment draft. */
   editComment(annotationKey: string, text?: string): CommentDraft | null {
-    const source = this.#localApi.demandSource();
+    return this.#editText("comment", annotationKey, text);
+  }
+
+  /** Submit the current shared comment draft once. */
+  submitComment(
+    annotationKey: string,
+    options?: { automatic?: boolean },
+  ): Promise<MutationState> {
+    return this.#submitText("comment", annotationKey, options);
+  }
+
+  /** Keep Zotero's reviewed comment and discard the local draft. */
+  discardCommentDraft(annotationKey: string): void {
+    this.#discardTextDraft("comment", annotationKey);
+  }
+
+  /** Apply the shared comment draft again against the reviewed fresh record. */
+  retryCommentDraft(annotationKey: string): Promise<MutationState> {
+    return this.#retryTextDraft("comment", annotationKey);
+  }
+
+  /** The active Zotero database's shared draft of one field of an Annotation. */
+  #draftFor<F extends DraftField>(
+    field: F,
+    annotationKey: string,
+  ): DraftFields[F] | null {
     const serverID =
-      source?.serverID ?? this.#commentDraftSources.get(annotationKey);
-    const id = serverID ? commentDraftID(serverID, annotationKey) : null;
-    const standing = id ? this.#commentDrafts.get(id) : undefined;
+      this.#localApi.demandSource()?.serverID ??
+      this.#draftSources[field].get(annotationKey);
+    return serverID
+      ? (this.#drafts[field].get(indexedID(serverID, annotationKey)) ?? null)
+      : null;
+  }
+
+  /** Every field's draft on one Annotation, in any Zotero database. */
+  #draftsOn(annotationKey: string): (TextFieldDraft | TagDraft)[] {
+    return Object.values(this.#drafts).flatMap((drafts) =>
+      [...drafts.values()].filter(
+        (draft) => draft.annotationKey === annotationKey,
+      ),
+    );
+  }
+
+  #editText(
+    field: TextField,
+    annotationKey: string,
+    text?: string,
+  ): TextFieldDraft | null {
+    const source = this.#localApi.demandSource();
+    const standing = this.#draftFor(field, annotationKey);
     const held = standing ? null : this.#holding(annotationKey);
-    if (!id || (!standing && (!source || !held))) return null;
+    if (!standing && (!source || !held)) return null;
     const capability = this.capabilityFor(
       standing?.attachmentKey ?? held!.attachmentKey,
     );
     if (capability.kind !== "writable") return standing ?? null;
-    const baseline = standing?.baseline ?? held!.record.comment ?? "";
+    const baseline =
+      standing?.baseline ?? TEXT_FIELDS[field].valueOf(held!.record) ?? "";
     const draft = standing
       ? {
           ...standing,
@@ -953,42 +1058,38 @@ export class AnnotationRepository extends Service<void> {
           text: text ?? baseline,
           state: { kind: "editing" } as const,
         };
-    this.#commentDrafts.set(id, draft);
-    this.#commentDraftSources.set(annotationKey, draft.serverID);
-    this.#emitter.emit("annotation-changed", annotationKey);
+    this.#setDraft(field, draft);
     if (text !== undefined && draft.state.kind !== "conflict") {
-      this.#scheduleCommentSave(draft);
+      this.#scheduleTextSave(field, draft);
     }
     return draft;
   }
 
-  /** Submit the current shared draft once. */
-  submitComment(
+  /** Submit one text field's current shared draft once. */
+  #submitText(
+    field: TextField,
     annotationKey: string,
     { automatic = false }: { automatic?: boolean } = {},
   ): Promise<MutationState> {
-    const draft = this.commentDraftFor(annotationKey);
+    const draft = this.#draftFor(field, annotationKey);
     if (!draft) return Promise.resolve(IDLE);
-    this.#clearCommentTimers(
-      this.#commentSave(commentDraftID(draft.serverID, annotationKey)),
+    this.#clearTextTimers(
+      this.#textSave(field, indexedID(draft.serverID, annotationKey)),
     );
     if (draft.state.kind === "conflict") {
       return Promise.resolve(this.mutationFor(annotationKey));
     }
-    const saving = this.#savingComment(annotationKey);
+    const saving = this.#savingText(field, annotationKey);
     // A draft holding what Zotero already has is not a draft: it is dropped
     // ahead of every other answer, so an editor the user opened and closed
     // without typing leaves nothing behind for a card to announce. Manual-save
     // mode does not hold it either — there is nothing there to save.
-    if (!saving && sameComment(draft.text, draft.baseline)) {
-      this.#dropCommentDraft(annotationKey);
+    if (!saving && sameText(draft.text, draft.baseline)) {
+      this.#dropDraft(field, draft);
       return Promise.resolve(IDLE);
     }
     // Text a save already carries needs no second one.
-    if (
-      saving &&
-      sameComment(saving.state.variables?.fields.comment ?? null, draft.text)
-    ) {
+    if (saving && sameText(proposedText(field, saving), draft.text)) {
       return this.#answerOf(saving);
     }
     // Text typed while a save is in flight queues behind it, even behind the
@@ -1003,31 +1104,34 @@ export class AnnotationRepository extends Service<void> {
         });
     }
     const submittedText = draft.text;
-    this.#setCommentDraft(draft, { kind: "pending" });
-    return this.#submitComment(annotationKey, draft, {
-      submittedText,
-      automatic,
-    });
+    this.#setDraft(field, { ...draft, state: { kind: "pending" } });
+    return this.#sendText(field, draft, { submittedText, automatic });
   }
 
-  async #submitComment(
-    annotationKey: string,
-    submitted: CommentDraft,
+  async #sendText(
+    field: TextField,
+    { annotationKey, serverID }: TextFieldDraft,
     { submittedText, automatic }: { submittedText: string; automatic: boolean },
   ): Promise<MutationState> {
-    const id = commentDraftID(submitted.serverID, annotationKey);
-    return await this.#writeComment(annotationKey, submittedText, {
+    const id = indexedID(serverID, annotationKey);
+    return await this.#writeText(field, annotationKey, {
+      value: submittedText,
       // The draft takes the save's outcome before the next write on the
       // Annotation starts, so a save queued behind a failed one is held.
       run: async (send, own) => {
-        if (this.#commentSuperseded(annotationKey, own, { id, automatic })) {
-          logger.debug("A queued comment save stood down", { annotationKey });
-          return { kind: "pending", write: "comment" };
+        if (
+          this.#textSuperseded(field, own, { annotationKey, id, automatic })
+        ) {
+          logger.debug("A queued text save stood down", {
+            annotationKey,
+            field,
+          });
+          return { kind: "pending", write: field };
         }
         const outcome = await send();
-        const current = this.#commentDrafts.get(id);
+        const current = this.#drafts[field].get(id);
         if (current && current.state.kind !== "conflict") {
-          this.#applyCommentWriteDecision({
+          this.#applyTextWriteDecision(field, {
             annotationKey,
             current,
             submittedText,
@@ -1041,17 +1145,21 @@ export class AnnotationRepository extends Service<void> {
   }
 
   /**
-   * Whether a comment save that waited its turn is no longer needed: a later
-   * comment save or a delete on the same Annotation replaces it, or its draft
-   * ended, met a conflict, or was held by a failed save while it waited. An
-   * automatic save also stands down where autosave is off.
+   * Whether a text save that waited its turn is no longer needed: a later
+   * save of the same field or a delete on the same Annotation replaces it, or
+   * its draft ended, met a conflict, or was held by a failed save while it
+   * waited. An automatic save also stands down where autosave is off.
    */
-  #commentSuperseded(
-    annotationKey: string,
+  #textSuperseded(
+    field: TextField,
     own: AnnotationMutation,
-    { id, automatic }: { id: string; automatic: boolean },
+    {
+      annotationKey,
+      id,
+      automatic,
+    }: { annotationKey: string; id: string; automatic: boolean },
   ): boolean {
-    const current = this.#commentDrafts.get(id);
+    const current = this.#drafts[field].get(id);
     if (
       !current ||
       current.state.kind === "conflict" ||
@@ -1063,68 +1171,73 @@ export class AnnotationRepository extends Service<void> {
     const writes = this.#pendingWrites(annotationKey);
     return writes.slice(writes.indexOf(own) + 1).some(({ options }) => {
       const write = options.mutationKey?.[2];
-      return write === "comment" || write === "delete";
+      return write === field || write === "delete";
     });
   }
 
-  /** Keep Zotero's reviewed comment and discard the local draft. */
-  discardCommentDraft(annotationKey: string): void {
-    this.#dropCommentDraft(annotationKey);
-    const mutation = this.#outcomes.get(annotationKey);
-    if (
-      mutation?.kind === "conflict" &&
-      mutation.conflict.write === "comment"
-    ) {
-      this.#settle(annotationKey, IDLE);
+  /** Keep Zotero's reviewed value of one text field and discard the draft. */
+  #discardTextDraft(field: TextField, annotationKey: string): void {
+    const draft = this.#draftFor(field, annotationKey);
+    if (draft) this.#dropDraft(field, draft);
+    if (this.#outcomes.get(annotationKey)?.get(field)?.kind === "conflict") {
+      this.#settle(annotationKey, field, IDLE);
     }
   }
 
-  /** Apply the shared draft again against the reviewed fresh record. */
-  retryCommentDraft(annotationKey: string): Promise<MutationState> {
-    const draft = this.commentDraftFor(annotationKey);
+  /** Apply one text field's shared draft again against the reviewed fresh record. */
+  #retryTextDraft(
+    field: TextField,
+    annotationKey: string,
+  ): Promise<MutationState> {
+    const draft = this.#draftFor(field, annotationKey);
     if (!draft) return Promise.resolve(IDLE);
-    this.#clearCommentTimers(
-      this.#commentSave(commentDraftID(draft.serverID, annotationKey)),
+    this.#clearTextTimers(
+      this.#textSave(field, indexedID(draft.serverID, annotationKey)),
     );
-    const saving = this.#savingComment(annotationKey);
+    const saving = this.#savingText(field, annotationKey);
     if (saving) return this.#answerOf(saving);
-    return this.#retryCommentDraft(annotationKey, draft);
+    return this.#resendText(field, annotationKey, draft);
   }
 
-  async #retryCommentDraft(
+  async #resendText(
+    field: TextField,
     annotationKey: string,
-    draft: CommentDraft,
+    draft: TextFieldDraft,
   ): Promise<MutationState> {
     const held = this.#holding(annotationKey);
     const reviewed =
       draft.state.kind === "conflict" ? draft.state.fresh : draft.baseline;
-    const fresh = held?.record.comment ?? "";
-    if (!held || !sameComment(fresh, reviewed)) {
+    const fresh = (held && TEXT_FIELDS[field].valueOf(held.record)) ?? "";
+    if (!held || !sameText(fresh, reviewed)) {
       const outcome: MutationState = {
         kind: "conflict",
-        conflict: { write: "comment", attempted: draft.text, fresh },
+        conflict: { write: field, attempted: draft.text, fresh },
       };
-      this.#settle(annotationKey, outcome);
-      this.#setCommentDraft(draft, { kind: "conflict", fresh });
+      this.#settle(annotationKey, field, outcome);
+      this.#setDraft(field, { ...draft, state: { kind: "conflict", fresh } });
       if (held) {
         this.#emitter.emit("write-conflict", annotationKey, held.attachmentKey);
       }
       return outcome;
     }
     const submittedText = draft.text;
-    const id = commentDraftID(draft.serverID, annotationKey);
-    this.#setCommentDraft(draft, { kind: "pending" });
-    let outcome = await this.patchComment(annotationKey, submittedText);
+    const id = indexedID(draft.serverID, annotationKey);
+    this.#setDraft(field, { ...draft, state: { kind: "pending" } });
+    let outcome = await this.#writeText(field, annotationKey, {
+      value: submittedText,
+    });
     if (
       outcome.kind === "conflict" &&
-      outcome.conflict.write === "comment" &&
-      sameComment(outcome.conflict.fresh, reviewed)
+      outcome.conflict.write === field &&
+      sameText(outcome.conflict.fresh, reviewed)
     ) {
-      outcome = await this.patchComment(annotationKey, submittedText);
+      outcome = await this.#writeText(field, annotationKey, {
+        value: submittedText,
+      });
     }
-    const current = this.#commentDrafts.get(id);
+    const current = this.#drafts[field].get(id);
     if (!current) return outcome;
-    this.#applyCommentWriteDecision({
+    this.#applyTextWriteDecision(field, {
       annotationKey,
       current,
       submittedText,
@@ -1133,22 +1246,25 @@ export class AnnotationRepository extends Service<void> {
     return outcome;
   }
 
-  #applyCommentWriteDecision({
-    annotationKey,
-    current,
-    submittedText,
-    outcome,
-    own,
-  }: {
-    annotationKey: string;
-    current: CommentDraft;
-    submittedText: string;
-    outcome: MutationState;
-    /** The write that answered, while it still counts as in flight. */
-    own?: AnnotationMutation;
-  }): void {
-    const decision = commentDraftAfterWrite(current, submittedText, outcome);
-    const later = this.#savingComment(annotationKey);
+  #applyTextWriteDecision(
+    field: TextField,
+    {
+      annotationKey,
+      current,
+      submittedText,
+      outcome,
+      own,
+    }: {
+      annotationKey: string;
+      current: TextFieldDraft;
+      submittedText: string;
+      outcome: MutationState;
+      /** The write that answered, while it still counts as in flight. */
+      own?: AnnotationMutation;
+    },
+  ): void {
+    const decision = textDraftAfterWrite(current, submittedText, outcome);
+    const later = this.#savingText(field, annotationKey);
     // A later save of the draft is still on its way.
     if (
       decision.kind === "update" &&
@@ -1159,29 +1275,24 @@ export class AnnotationRepository extends Service<void> {
       decision.draft = { ...decision.draft, state: { kind: "pending" } };
     }
     if (decision.kind === "drop") {
-      this.#dropCommentDraft(annotationKey, current.serverID);
+      this.#dropDraft(field, current);
     } else if (decision.kind === "update") {
-      this.#commentDrafts.set(
-        commentDraftID(current.serverID, annotationKey),
+      this.#drafts[field].set(
+        indexedID(current.serverID, annotationKey),
         decision.draft,
       );
       this.#emitter.emit("annotation-changed", annotationKey);
       // Text typed while the save was away, even behind a Save comment
       // pressed on a held draft, whose success ends the hold, is sent now.
       if (outcome.kind === "idle" && decision.draft.state.kind === "editing") {
-        void this.submitComment(annotationKey, { automatic: true });
+        void this.#submitText(field, annotationKey, { automatic: true });
       }
     }
   }
 
   /** The active Zotero database's shared tag draft for one Annotation. */
   tagDraftFor(annotationKey: string): TagDraft | null {
-    const serverID =
-      this.#localApi.demandSource()?.serverID ??
-      this.#tagDraftSources.get(annotationKey);
-    return serverID
-      ? (this.#tagDrafts.get(commentDraftID(serverID, annotationKey)) ?? null)
-      : null;
+    return this.#draftFor("tags", annotationKey);
   }
 
   /**
@@ -1222,7 +1333,7 @@ export class AnnotationRepository extends Service<void> {
           names: names ?? held!.record.tags,
           state: { kind: "editing" },
         };
-    this.#setTagDraft(draft);
+    this.#setDraft("tags", draft);
     return draft;
   }
 
@@ -1250,7 +1361,7 @@ export class AnnotationRepository extends Service<void> {
     if (draft.state.kind === "pending") return this.mutationFor(annotationKey);
     const change = tagChange(draft.baseline, draft.names);
     if (noTagChange(change)) {
-      this.#dropTagDraft(draft);
+      this.#dropDraft("tags", draft);
       return IDLE;
     }
     if (automatic && !this.#canAutosave(draft)) {
@@ -1259,12 +1370,12 @@ export class AnnotationRepository extends Service<void> {
         state: draft.state.kind,
         capability: this.capabilityFor(draft.attachmentKey).kind,
       });
-      this.#setTagDraft({ ...draft, manualSave: true, held: true });
+      this.#setDraft("tags", { ...draft, manualSave: true, held: true });
       return IDLE;
     }
     const blocked = this.#writeBlocked(draft.attachmentKey);
     if (blocked) {
-      this.#setTagDraft({
+      this.#setDraft("tags", {
         ...draft,
         manualSave: true,
         held: true,
@@ -1272,7 +1383,7 @@ export class AnnotationRepository extends Service<void> {
       });
       return { kind: "failed", failure: blocked };
     }
-    this.#setTagDraft({ ...draft, state: { kind: "pending" } });
+    this.#setDraft("tags", { ...draft, state: { kind: "pending" } });
     logger.debug("A tag editing session is saved", {
       annotationKey,
       added: change.added.length,
@@ -1286,19 +1397,19 @@ export class AnnotationRepository extends Service<void> {
       propose: (record) =>
         proposedTags(mergeTags(annotationTags(record), change)),
     });
-    const current = this.#tagDrafts.get(
-      commentDraftID(draft.serverID, annotationKey),
+    const current = this.#drafts.tags.get(
+      indexedID(draft.serverID, annotationKey),
     );
     if (!current) return outcome;
     if (outcome.kind === "failed") {
-      this.#setTagDraft({
+      this.#setDraft("tags", {
         ...current,
         manualSave: true,
         held: true,
         state: outcome,
       });
     } else {
-      this.#dropTagDraft(current);
+      this.#dropDraft("tags", current);
     }
     return outcome;
   }
@@ -1306,7 +1417,7 @@ export class AnnotationRepository extends Service<void> {
   /** Drop a held tag draft and keep the tags Zotero holds. */
   discardTagDraft(annotationKey: string): void {
     const draft = this.tagDraftFor(annotationKey);
-    if (draft && draft.state.kind !== "pending") this.#dropTagDraft(draft);
+    if (draft && draft.state.kind !== "pending") this.#dropDraft("tags", draft);
   }
 
   /**
@@ -1485,20 +1596,21 @@ export class AnnotationRepository extends Service<void> {
     annotationKey: string,
     comment: string,
   ): Promise<MutationState> {
-    return await this.#writeComment(annotationKey, comment);
+    return await this.#writeText("comment", annotationKey, { value: comment });
   }
 
-  async #writeComment(
+  /** Replace one text field of an Annotation. An empty string clears it. */
+  async #writeText(
+    field: TextField,
     annotationKey: string,
-    comment: string,
-    { run }: { run?: WriteTurn } = {},
+    { value, run }: { value: string; run?: WriteTurn },
   ): Promise<MutationState> {
+    const spec = TEXT_FIELDS[field];
     return await this.#command(annotationKey, {
-      write: "comment",
-      attempted: comment,
-      request: (target) => commentPatch(target, comment),
-      // Zotero stores an empty comment as no value.
-      propose: () => ({ comment: comment === "" ? null : comment }),
+      write: field,
+      attempted: value,
+      request: (target) => spec.request(target, value),
+      propose: () => spec.propose(value),
       run,
     });
   }
@@ -1523,7 +1635,7 @@ export class AnnotationRepository extends Service<void> {
       logger.debug("A Geometry Edit's position is longer than Zotero accepts", {
         annotationKey,
       });
-      return this.#settle(annotationKey, {
+      return this.#settle(annotationKey, "geometry", {
         kind: "failed",
         failure: { kind: "position-too-large" },
       });
@@ -1559,7 +1671,10 @@ export class AnnotationRepository extends Service<void> {
     annotationKey: string,
     gather?: GroupWrites,
   ): Promise<MutationState> {
-    this.#cancelCommentSave(annotationKey);
+    for (const field of TEXT_FIELD_NAMES) {
+      const draft = this.#draftFor(field, annotationKey);
+      if (draft) this.#cancelTextSave(field, draft);
+    }
     return await this.#command(annotationKey, {
       write: "delete",
       attempted: null,
@@ -1639,7 +1754,7 @@ export class AnnotationRepository extends Service<void> {
    *   another conflict where Zotero moved again.
    */
   async retryWrite(annotationKey: string): Promise<MutationState> {
-    const standing = this.#outcomes.get(annotationKey);
+    const standing = this.#standing(annotationKey);
     if (standing?.kind !== "conflict") return standing ?? IDLE;
     const { conflict } = standing;
     switch (conflict.write) {
@@ -1667,9 +1782,10 @@ export class AnnotationRepository extends Service<void> {
    * @param annotationKey the Annotation's Indexed Key.
    */
   discardConflict(annotationKey: string): void {
-    if (this.#outcomes.get(annotationKey)?.kind !== "conflict") return;
+    const standing = this.#standing(annotationKey);
+    if (standing?.kind !== "conflict") return;
     logger.debug("A write conflict was discarded", { annotationKey });
-    this.#settle(annotationKey, IDLE);
+    this.#settle(annotationKey, standing.conflict.write, IDLE);
   }
 
   /**
@@ -1754,27 +1870,30 @@ export class AnnotationRepository extends Service<void> {
     stack.defer(this.#localApi.on("changed", () => this.#sourceMoved()));
     stack.defer(
       this.#localApi.on("capability-changed", () => {
-        for (const [id, draft] of this.#commentDrafts) {
-          if (this.capabilityFor(draft.attachmentKey).kind === "writable")
-            continue;
-          this.#cancelCommentSave(draft.annotationKey, draft.serverID);
-          this.#commentDrafts.set(id, { ...draft, manualSave: true });
-          this.#emitter.emit("annotation-changed", draft.annotationKey);
+        for (const field of TEXT_FIELD_NAMES) {
+          const drafts = this.#drafts[field];
+          for (const [id, draft] of drafts) {
+            if (this.capabilityFor(draft.attachmentKey).kind === "writable")
+              continue;
+            this.#cancelTextSave(field, draft);
+            drafts.set(id, { ...draft, manualSave: true });
+            this.#emitter.emit("annotation-changed", draft.annotationKey);
+          }
         }
-        // A tag draft has no timer or queued save to cancel, unlike a comment
+        // A tag draft has no timer or queued save to cancel, unlike a text
         // draft, so one already held needs no second event.
-        for (const draft of this.#tagDrafts.values()) {
+        for (const draft of this.#drafts.tags.values()) {
           if (
             draft.manualSave ||
             this.capabilityFor(draft.attachmentKey).kind === "writable"
           )
             continue;
-          this.#setTagDraft({ ...draft, manualSave: true });
+          this.#setDraft("tags", { ...draft, manualSave: true });
         }
         this.#emitter.emit("capability-changed");
       }),
     );
-    stack.defer(() => this.#cancelAllCommentSaves());
+    stack.defer(() => this.#cancelAllTextSaves());
     stack.defer(() => {
       this.#commandGeneration += 1;
     });
@@ -1927,31 +2046,31 @@ export class AnnotationRepository extends Service<void> {
     const held = this.#holding(annotationKey);
     const parsed = parseIndexedKey(annotationKey);
     if (!held || !parsed) {
-      return this.#leave(annotationKey, {
+      return this.#leave(annotationKey, command.write, {
         kind: "failed",
         failure: { kind: "unknown-annotation" },
       });
     }
     if (!this.#compatibleApiSource(held.attachmentKey)) {
-      return this.#leave(annotationKey, {
+      return this.#leave(annotationKey, command.write, {
         kind: "failed",
         failure: { kind: "db-source" },
       });
     }
     const { version } = held.record;
     if (version === null) {
-      return this.#leave(annotationKey, {
+      return this.#leave(annotationKey, command.write, {
         kind: "failed",
         failure: { kind: "db-source" },
       });
     }
 
-    // The write takes over the Annotation: a failure or conflict it left
-    // before is over once this one runs.
-    this.#outcomes.delete(annotationKey);
+    // The write takes over its field: a failure on the Annotation, or a
+    // conflict of this field, is over once this one runs.
+    this.#takeOver(annotationKey, command.write);
     const blocked = this.#writeBlocked(held.attachmentKey);
     if (blocked) {
-      return this.#leave(annotationKey, {
+      return this.#leave(annotationKey, command.write, {
         kind: "failed",
         failure: blocked,
       });
@@ -1979,7 +2098,7 @@ export class AnnotationRepository extends Service<void> {
       ) {
         return { kind: "failed", failure: { kind: "server-changed" } };
       }
-      return this.#leave(annotationKey, {
+      return this.#leave(annotationKey, command.write, {
         kind: "failed",
         failure: { kind: "server-changed" },
       });
@@ -2008,7 +2127,7 @@ export class AnnotationRepository extends Service<void> {
           ? { kind: "failed", failure: reply.failure }
           : refused;
       if (state.kind === "failed") await this.refresh(held.attachmentKey);
-      this.#leave(annotationKey, state);
+      this.#leave(annotationKey, command.write, state);
       if (state.kind === "conflict") {
         this.#emitter.emit("write-conflict", annotationKey, held.attachmentKey);
       }
@@ -2023,15 +2142,13 @@ export class AnnotationRepository extends Service<void> {
     });
     if ("failure" in applied) {
       await this.refresh(held.attachmentKey);
-      return this.#leave(annotationKey, {
+      return this.#leave(annotationKey, command.write, {
         kind: "failed",
         failure: applied.failure,
       });
     }
     if (command.settle === "drop") {
-      this.#dropCommentDraft(annotationKey);
-      const tags = this.tagDraftFor(annotationKey);
-      if (tags) this.#dropTagDraft(tags);
+      this.#dropDrafts(annotationKey);
     }
     this.#publishQuery(held.attachmentKey, held.queryKey);
     if (applied.value.kind === "deleted") {
@@ -2056,7 +2173,7 @@ export class AnnotationRepository extends Service<void> {
     }
     this.#announcePixels(held.record, applied.value, source);
     this.#emitter.emit("annotations-changed", held.attachmentKey);
-    return this.#leave(annotationKey, IDLE);
+    return this.#leave(annotationKey, command.write, IDLE);
   }
 
   /**
@@ -2112,9 +2229,8 @@ export class AnnotationRepository extends Service<void> {
    * and a tag draft ends by its save or its discard before a step is taken.
    */
   #beingEdited(step: HistoryStep): boolean {
-    return step.changes.some(
-      ({ annotationKey }) =>
-        this.commentDraftFor(annotationKey) || this.tagDraftFor(annotationKey),
+    return step.changes.some(({ annotationKey }) =>
+      DRAFT_FIELDS.some((field) => this.#draftFor(field, annotationKey)),
     );
   }
 
@@ -2508,7 +2624,7 @@ export class AnnotationRepository extends Service<void> {
       // them moves the record the next write is stamped off: that session is
       // over, and a fresh step starts holding the foreign text, so one press
       // puts that back rather than the text the session began with.
-      sameComment(before.comment, top.changes[0]!.after.comment ?? null)
+      sameText(before.comment, top.changes[0]!.after.comment ?? null)
         ? top
         : null;
     // A step's own `before` never moves, so the session reads its starting
@@ -2516,7 +2632,7 @@ export class AnnotationRepository extends Service<void> {
     // save advanced.
     const origin = open?.changes[0]!.before.comment ?? before.comment ?? "";
     const after = record.comment ?? "";
-    const step: HistoryStep | null = sameComment(origin, after)
+    const step: HistoryStep | null = sameText(origin, after)
       ? null
       : {
           kind: "comment",
@@ -2664,13 +2780,15 @@ export class AnnotationRepository extends Service<void> {
    */
   #savePending(attachmentKey: string): boolean {
     if ((this.#writesInFlight.get(attachmentKey) ?? 0) > 0) return true;
-    for (const draft of this.#commentDrafts.values()) {
-      if (draft.attachmentKey !== attachmentKey) continue;
-      const save = this.#commentSaves.get(
-        commentDraftID(draft.serverID, draft.annotationKey),
-      );
-      if (!save) continue;
-      if (save.idleTimer !== null || save.burstTimer !== null) return true;
+    for (const field of TEXT_FIELD_NAMES) {
+      for (const draft of this.#drafts[field].values()) {
+        if (draft.attachmentKey !== attachmentKey) continue;
+        const save = this.#textSaves[field].get(
+          indexedID(draft.serverID, draft.annotationKey),
+        );
+        if (!save) continue;
+        if (save.idleTimer !== null || save.burstTimer !== null) return true;
+      }
     }
     return false;
   }
@@ -3013,126 +3131,148 @@ export class AnnotationRepository extends Service<void> {
     this.#emitter.emit("annotations-changed", attachmentKey);
   }
 
-  /** Records the outcome one Annotation is left with, and announces it. */
-  #settle(annotationKey: string, state: MutationState): MutationState {
-    this.#leave(annotationKey, state);
+  /** Records the outcome one field's write leaves, and announces it. */
+  #settle(
+    annotationKey: string,
+    write: OutcomeWrite,
+    state: MutationState,
+  ): MutationState {
+    this.#leave(annotationKey, write, state);
     this.#emitter.emit("annotation-changed", annotationKey);
     return state;
   }
 
   /**
-   * Records the outcome a running write leaves on its Annotation. The write's
-   * own settle announces it, once the mutation cache no longer holds it
-   * pending.
+   * Records the outcome a running write leaves on its Annotation, as the
+   * latest one. The write's own settle announces it, once the mutation cache
+   * no longer holds it pending.
    */
-  #leave(annotationKey: string, state: MutationState): MutationState {
+  #leave(
+    annotationKey: string,
+    write: OutcomeWrite,
+    state: MutationState,
+  ): MutationState {
+    const outcomes = this.#outcomes.get(annotationKey) ?? new Map();
+    outcomes.delete(write);
     if (state.kind === "failed" || state.kind === "conflict") {
-      this.#outcomes.set(annotationKey, state);
-    } else {
-      this.#outcomes.delete(annotationKey);
+      outcomes.set(write, state);
     }
+    this.#keepOutcomes(annotationKey, outcomes);
     return state;
   }
 
-  #setCommentDraft(draft: CommentDraft, state: CommentDraftState): void {
-    this.#commentDrafts.set(
-      commentDraftID(draft.serverID, draft.annotationKey),
-      {
-        ...draft,
-        state,
-      },
-    );
-    this.#commentDraftSources.set(draft.annotationKey, draft.serverID);
-    this.#emitter.emit("annotation-changed", draft.annotationKey);
+  /** Ends every failure on an Annotation, and the conflict of one field. */
+  #takeOver(annotationKey: string, write: OutcomeWrite): void {
+    const outcomes = this.#outcomes.get(annotationKey);
+    if (!outcomes) return;
+    for (const [field, state] of outcomes) {
+      if (field === write || state.kind === "failed") outcomes.delete(field);
+    }
+    this.#keepOutcomes(annotationKey, outcomes);
   }
 
-  #dropCommentDraft(annotationKey: string, serverID?: string): void {
-    const activeServerID = serverID ?? this.#localApi.demandSource()?.serverID;
-    if (
-      !activeServerID ||
-      !this.#commentDrafts.delete(commentDraftID(activeServerID, annotationKey))
-    ) {
-      return;
-    }
-    if (this.#commentDraftSources.get(annotationKey) === activeServerID) {
-      this.#commentDraftSources.delete(annotationKey);
-    }
-    this.#cancelCommentSave(annotationKey, activeServerID);
-    this.#emitter.emit("annotation-changed", annotationKey);
+  #keepOutcomes(
+    annotationKey: string,
+    outcomes: Map<OutcomeWrite, MutationState>,
+  ): void {
+    if (outcomes.size > 0) this.#outcomes.set(annotationKey, outcomes);
+    else this.#outcomes.delete(annotationKey);
   }
 
-  #setTagDraft(draft: TagDraft): void {
-    this.#tagDrafts.set(
-      commentDraftID(draft.serverID, draft.annotationKey),
+  /** The latest failure or conflict standing on an Annotation. */
+  #standing(annotationKey: string): MutationState | undefined {
+    const outcomes = this.#outcomes.get(annotationKey);
+    return outcomes && [...outcomes.values()].at(-1);
+  }
+
+  #setDraft<F extends DraftField>(field: F, draft: DraftFields[F]): void {
+    this.#drafts[field].set(
+      indexedID(draft.serverID, draft.annotationKey),
       draft,
     );
-    this.#tagDraftSources.set(draft.annotationKey, draft.serverID);
+    this.#draftSources[field].set(draft.annotationKey, draft.serverID);
     this.#emitter.emit("annotation-changed", draft.annotationKey);
   }
 
-  #dropTagDraft({ serverID, annotationKey }: TagDraft): void {
-    if (!this.#tagDrafts.delete(commentDraftID(serverID, annotationKey)))
-      return;
-    if (this.#tagDraftSources.get(annotationKey) === serverID) {
-      this.#tagDraftSources.delete(annotationKey);
+  /** Drop one field's draft of an Annotation, with its autosave. */
+  #dropDraft(field: DraftField, draft: TextFieldDraft | TagDraft): void {
+    const { serverID, annotationKey } = draft;
+    if (!this.#drafts[field].delete(indexedID(serverID, annotationKey))) return;
+    if (this.#draftSources[field].get(annotationKey) === serverID) {
+      this.#draftSources[field].delete(annotationKey);
     }
+    if (isTextField(field)) this.#cancelTextSave(field, draft);
     this.#emitter.emit("annotation-changed", annotationKey);
   }
 
-  #commentSave(id: string): CommentSave {
-    const standing = this.#commentSaves.get(id);
+  /** Drop every field's draft of an Annotation that {@link #draftFor} finds. */
+  #dropDrafts(annotationKey: string): void {
+    for (const field of DRAFT_FIELDS) {
+      const draft = this.#draftFor(field, annotationKey);
+      if (draft) this.#dropDraft(field, draft);
+    }
+  }
+
+  #textSave(field: TextField, id: string): TextSave {
+    const saves = this.#textSaves[field];
+    const standing = saves.get(id);
     if (standing) return standing;
-    const save: CommentSave = { idleTimer: null, burstTimer: null };
-    this.#commentSaves.set(id, save);
+    const save: TextSave = { idleTimer: null, burstTimer: null };
+    saves.set(id, save);
     return save;
   }
 
   #canAutosave(
-    draft: Pick<CommentDraft, "attachmentKey" | "manualSave">,
+    draft: Pick<TextFieldDraft, "attachmentKey" | "manualSave">,
   ): boolean {
     const capability = this.capabilityFor(draft.attachmentKey);
     return !draft.manualSave && capability.kind === "writable";
   }
 
-  #scheduleCommentSave(draft: CommentDraft): void {
-    const id = commentDraftID(draft.serverID, draft.annotationKey);
-    const save = this.#commentSave(id);
+  #scheduleTextSave(field: TextField, draft: TextFieldDraft): void {
+    const save = this.#textSave(
+      field,
+      indexedID(draft.serverID, draft.annotationKey),
+    );
     // Text typed behind a save in flight is sent once that save lands.
-    if (this.#savingComment(draft.annotationKey)) return;
+    if (this.#savingText(field, draft.annotationKey)) return;
     if (!this.#canAutosave(draft)) return;
-    if (sameComment(draft.text, draft.baseline)) return;
+    if (sameText(draft.text, draft.baseline)) return;
     if (save.idleTimer !== null) clearTimeout(save.idleTimer);
     save.idleTimer = setTimeout(() => {
       save.idleTimer = null;
-      void this.submitComment(draft.annotationKey, { automatic: true });
-    }, COMMENT_IDLE_SAVE_MS);
+      void this.#submitText(field, draft.annotationKey, { automatic: true });
+    }, TEXT_IDLE_SAVE_MS);
     save.burstTimer ??= setTimeout(() => {
       save.burstTimer = null;
-      void this.submitComment(draft.annotationKey, { automatic: true });
-    }, COMMENT_BURST_SAVE_MS);
+      void this.#submitText(field, draft.annotationKey, { automatic: true });
+    }, TEXT_BURST_SAVE_MS);
   }
 
-  #clearCommentTimers(save: CommentSave): void {
+  #clearTextTimers(save: TextSave): void {
     if (save.idleTimer !== null) clearTimeout(save.idleTimer);
     if (save.burstTimer !== null) clearTimeout(save.burstTimer);
     save.idleTimer = null;
     save.burstTimer = null;
   }
 
-  #cancelCommentSave(annotationKey: string, serverID?: string): void {
-    const activeServerID =
-      serverID ?? this.#commentDraftSources.get(annotationKey);
-    if (!activeServerID) return;
-    const id = commentDraftID(activeServerID, annotationKey);
-    const save = this.#commentSaves.get(id);
+  #cancelTextSave(
+    field: TextField,
+    {
+      serverID,
+      annotationKey,
+    }: Pick<TextFieldDraft, "serverID" | "annotationKey">,
+  ): void {
+    const id = indexedID(serverID, annotationKey);
+    const save = this.#textSaves[field].get(id);
     if (!save) return;
-    this.#clearCommentTimers(save);
-    this.#commentSaves.delete(id);
+    this.#clearTextTimers(save);
+    this.#textSaves[field].delete(id);
   }
 
-  #cancelAllCommentSaves(): void {
-    for (const save of this.#commentSaves.values()) {
-      this.#clearCommentTimers(save);
+  #cancelAllTextSaves(): void {
+    for (const saves of Object.values(this.#textSaves)) {
+      for (const save of saves.values()) this.#clearTextTimers(save);
     }
   }
 
@@ -3143,7 +3283,7 @@ export class AnnotationRepository extends Service<void> {
     annotations: readonly AnnotationRecord[],
   ): void {
     const records = new Map(annotations.map((record) => [record.key, record]));
-    const completeID = commentDraftID(serverID, attachmentKey);
+    const completeID = indexedID(serverID, attachmentKey);
     const before = this.#completeKeys.get(completeID);
     this.#completeKeys.set(completeID, new Set(records.keys()));
     // Gone is what the last complete read showed, or a draft stands on, and
@@ -3151,7 +3291,8 @@ export class AnnotationRepository extends Service<void> {
     const gone = new Set(
       [
         ...(before ?? []),
-        ...[...this.#commentDrafts.values(), ...this.#tagDrafts.values()]
+        ...Object.values(this.#drafts)
+          .flatMap((drafts) => [...drafts.values()])
           .filter(
             (draft) =>
               draft.serverID === serverID &&
@@ -3162,18 +3303,47 @@ export class AnnotationRepository extends Service<void> {
     );
     for (const key of records.keys()) this.#gone.delete(key);
     for (const key of gone) this.#gone.add(key);
-    // Deletion confirmed in Zotero discards the tag draft with the comment
-    // draft; the gone Annotation is announced below.
-    for (const draft of this.#tagDrafts.values()) {
+    // Deletion confirmed in Zotero discards the tag draft with the text
+    // drafts; the gone Annotation is announced below.
+    for (const draft of this.#drafts.tags.values()) {
       if (
         draft.serverID !== serverID ||
         draft.attachmentKey !== attachmentKey ||
         records.has(draft.annotationKey)
       )
         continue;
-      this.#dropTagDraft(draft);
+      this.#dropDraft("tags", draft);
     }
-    for (const draft of this.#commentDrafts.values()) {
+    for (const field of TEXT_FIELD_NAMES) {
+      this.#reconcileTextDrafts(field, { serverID, attachmentKey, records });
+    }
+    // What a write left on an Annotation goes with it, and every surface
+    // still drawing it hears that it is gone, with a draft or without.
+    for (const key of gone) {
+      this.#outcomes.delete(key);
+      this.#emitter.emit("annotation-changed", key);
+    }
+  }
+
+  /**
+   * Reconcile one text field's drafts in one Attachment against a complete
+   * read: a value Zotero already holds ends the draft, an untouched draft
+   * follows Zotero, and a changed value under typed text is a Write Conflict.
+   */
+  #reconcileTextDrafts(
+    field: TextField,
+    {
+      serverID,
+      attachmentKey,
+      records,
+    }: {
+      serverID: string;
+      attachmentKey: string;
+      records: ReadonlyMap<string, AnnotationRecord>;
+    },
+  ): void {
+    const drafts = this.#drafts[field];
+    for (const draft of drafts.values()) {
       if (
         draft.serverID !== serverID ||
         draft.attachmentKey !== attachmentKey
@@ -3182,33 +3352,33 @@ export class AnnotationRepository extends Service<void> {
       }
       const record = records.get(draft.annotationKey);
       if (!record) {
-        this.#dropCommentDraft(draft.annotationKey, serverID);
+        this.#dropDraft(field, draft);
         continue;
       }
-      const fresh = record.comment ?? "";
+      const fresh = TEXT_FIELDS[field].valueOf(record) ?? "";
       if (draft.state.kind === "pending") {
         if (
           this.#pendingWrites(draft.annotationKey).some(
-            ({ options, state }) =>
-              options.mutationKey?.[2] === "comment" &&
-              sameComment(fresh, state.variables?.fields.comment ?? null),
+            (mutation) =>
+              mutation.options.mutationKey?.[2] === field &&
+              sameText(fresh, proposedText(field, mutation)),
           )
         ) {
-          this.#commentDrafts.set(
-            commentDraftID(serverID, draft.annotationKey),
-            { ...draft, baseline: fresh },
-          );
+          drafts.set(indexedID(serverID, draft.annotationKey), {
+            ...draft,
+            baseline: fresh,
+          });
           this.#emitter.emit("annotation-changed", draft.annotationKey);
         }
         continue;
       }
-      if (sameComment(fresh, draft.text)) {
-        this.#dropCommentDraft(draft.annotationKey, serverID);
+      if (sameText(fresh, draft.text)) {
+        this.#dropDraft(field, draft);
         continue;
       }
-      if (sameComment(fresh, draft.baseline)) continue;
-      if (sameComment(draft.text, draft.baseline)) {
-        this.#commentDrafts.set(commentDraftID(serverID, draft.annotationKey), {
+      if (sameText(fresh, draft.baseline)) continue;
+      if (sameText(draft.text, draft.baseline)) {
+        drafts.set(indexedID(serverID, draft.annotationKey), {
           ...draft,
           baseline: fresh,
           text: fresh,
@@ -3219,24 +3389,15 @@ export class AnnotationRepository extends Service<void> {
       }
       const conflict: MutationState = {
         kind: "conflict",
-        conflict: { write: "comment", attempted: draft.text, fresh },
+        conflict: { write: field, attempted: draft.text, fresh },
       };
-      this.#settle(draft.annotationKey, conflict);
-      this.#commentDrafts.set(
-        commentDraftID(draft.serverID, draft.annotationKey),
-        {
-          ...draft,
-          state: { kind: "conflict", fresh },
-        },
-      );
+      this.#settle(draft.annotationKey, field, conflict);
+      drafts.set(indexedID(draft.serverID, draft.annotationKey), {
+        ...draft,
+        state: { kind: "conflict", fresh },
+      });
       this.#emitter.emit("annotation-changed", draft.annotationKey);
       this.#emitter.emit("write-conflict", draft.annotationKey, attachmentKey);
-    }
-    // What a write left on an Annotation goes with it, and every surface
-    // still drawing it hears that it is gone, with a draft or without.
-    for (const key of gone) {
-      this.#outcomes.delete(key);
-      this.#emitter.emit("annotation-changed", key);
     }
   }
 
@@ -3330,25 +3491,20 @@ export class AnnotationRepository extends Service<void> {
       previousServerID !== undefined &&
       previousServerID !== source.database.serverID
     ) {
-      for (const draft of this.#commentDrafts.values()) {
-        if (
-          draft.attachmentKey === attachmentKey &&
-          draft.serverID !== source.database.serverID &&
-          this.#commentDraftSources.get(draft.annotationKey) === draft.serverID
-        ) {
-          this.#commentDraftSources.delete(draft.annotationKey);
-          this.#cancelCommentSave(draft.annotationKey, draft.serverID);
-          this.#emitter.emit("annotation-changed", draft.annotationKey);
-        }
-      }
-      for (const draft of this.#tagDrafts.values()) {
-        if (
-          draft.attachmentKey === attachmentKey &&
-          draft.serverID !== source.database.serverID &&
-          this.#tagDraftSources.get(draft.annotationKey) === draft.serverID
-        ) {
-          this.#tagDraftSources.delete(draft.annotationKey);
-          this.#emitter.emit("annotation-changed", draft.annotationKey);
+      for (const field of DRAFT_FIELDS) {
+        const sources = this.#draftSources[field];
+        for (const draft of this.#drafts[field].values()) {
+          if (
+            draft.attachmentKey === attachmentKey &&
+            draft.serverID !== source.database.serverID &&
+            sources.get(draft.annotationKey) === draft.serverID
+          ) {
+            sources.delete(draft.annotationKey);
+            if (isTextField(field)) {
+              this.#cancelTextSave(field, draft);
+            }
+            this.#emitter.emit("annotation-changed", draft.annotationKey);
+          }
         }
       }
       for (const { key } of this.#publishedLists.get(attachmentKey)
@@ -3470,10 +3626,13 @@ export class AnnotationRepository extends Service<void> {
     }) as AnnotationMutation[];
   }
 
-  /** The latest comment write on one Annotation still in flight or waiting. */
-  #savingComment(annotationKey: string): AnnotationMutation | undefined {
+  /** The latest write of one text field still in flight or waiting. */
+  #savingText(
+    field: TextField,
+    annotationKey: string,
+  ): AnnotationMutation | undefined {
     return this.#pendingWrites(annotationKey).findLast(
-      ({ options }) => options.mutationKey?.[2] === "comment",
+      ({ options }) => options.mutationKey?.[2] === field,
     );
   }
 
@@ -3622,8 +3781,21 @@ function databaseSourcesEqual(
   );
 }
 
-function commentDraftID(serverID: string, annotationKey: string): string {
-  return `${serverID}\0${annotationKey}`;
+/** One Annotation's or Attachment's key within one Zotero database. */
+function indexedID(serverID: string, key: string): string {
+  return `${serverID}\0${key}`;
+}
+
+function isTextField(field: DraftField): field is TextField {
+  return field in TEXT_FIELDS;
+}
+
+/** The text one write in flight proposes for a text field. */
+function proposedText(
+  field: TextField,
+  mutation: AnnotationMutation,
+): string | null {
+  return mutation.state.variables?.fields[field] ?? null;
 }
 
 /** One list's canonical pixel fingerprints, by Indexed Key. */
@@ -3633,7 +3805,7 @@ function fingerprintMap(list: AnnotationList): ReadonlyMap<string, string> {
   );
 }
 
-function sameComment(a: string | null, b: string | null): boolean {
+function sameText(a: string | null, b: string | null): boolean {
   return (a ?? "") === (b ?? "");
 }
 

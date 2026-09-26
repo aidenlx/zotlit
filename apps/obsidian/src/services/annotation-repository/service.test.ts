@@ -4894,8 +4894,8 @@ it("records an autosave that lands while a step runs beside it", async () => {
 type SentTag = Required<WireTag>;
 
 /**
- * A Zotero holding one Annotation's tags. It keeps the whole list a tag `PATCH`
- * names and answers `412` to a body version it does not hold, as the paired
+ * A Zotero holding one Annotation's tags and comment. It keeps the whole list a
+ * tag `PATCH` names and answers `412` to a body version it does not hold, as the paired
  * probe recorded (aidenlx/zotlit#1231): what Zotero received and holds is the
  * oracle, never the draft.
  */
@@ -4918,17 +4918,24 @@ function zoteroTagging(
       write: async (request) => {
         const body = JSON.parse(request.body ?? "{}") as {
           version: number;
-          tags: SentTag[];
+          tags?: SentTag[];
+          annotationComment?: string;
         };
-        patches.push(body);
+        const { tags: sent, annotationComment } = body;
+        if (sent) patches.push({ version: body.version, tags: sent });
         if (hold) await hold;
         if (body.version !== stored.version) return staleVersionPatch();
         stored = {
           ...stored,
           // Zotero writes a type for an automatic tag only.
-          tags: body.tags.map(({ tag, type }) =>
-            type === 0 ? tag : { tag, type },
-          ),
+          ...(sent && {
+            tags: sent.map(({ tag, type }) =>
+              type === 0 ? tag : { tag, type },
+            ),
+          }),
+          ...(annotationComment !== undefined && {
+            comment: annotationComment,
+          }),
           version: stored.version + 1,
         };
         return writeAccepted();
@@ -4939,6 +4946,9 @@ function zoteroTagging(
     /** The tags Zotero holds, as the wire writes them. */
     get tags() {
       return stored.tags;
+    },
+    get comment() {
+      return stored.comment;
     },
     /** An edit made in Zotero itself, beside ZotLit. */
     changeInZotero(patch: Partial<WireAnnotation>): void {
@@ -5122,6 +5132,84 @@ it("shares one tag draft and preserves it across unrelated refresh changes", asy
   expect(colorOf(await repository.read("RGRPDF24"), "PUPR5FG5")).toBe(
     "#ff6666",
   );
+});
+
+it("saves, conflicts, and discards a comment draft and a tag draft on one Annotation apart", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
+    const { repository } = await writable(stack, zotero.answers);
+    let conflicts = 0;
+    stack.defer(repository.on("write-conflict", () => (conflicts += 1)));
+
+    // Both editors are open on one Annotation; the tag session ends first.
+    repository.editComment("PUPR5FG5", "Worth citing");
+    repository.editTags("PUPR5FG5", ["review", "figure"]);
+    await repository.submitTags("PUPR5FG5");
+
+    expect(zotero.tags).toEqual(["review", "figure"]);
+    expect(zotero.comment).toBeUndefined();
+    expect(repository.commentDraftFor("PUPR5FG5")).toMatchObject({
+      text: "Worth citing",
+      state: { kind: "editing" },
+    });
+
+    // The comment's idle save lands under an open tag session.
+    repository.editTags("PUPR5FG5", ["review", "figure", "todo"]);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(zotero.comment).toBe("Worth citing");
+    expect(zotero.tags).toEqual(["review", "figure"]);
+    expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+    expect(repository.tagDraftFor("PUPR5FG5")).toMatchObject({
+      baseline: ["review", "figure"],
+      names: ["review", "figure", "todo"],
+      state: { kind: "editing" },
+    });
+
+    // Zotero moves the comment under typed text: only the comment conflicts,
+    // and the tag session still saves.
+    repository.editComment("PUPR5FG5", "Worth citing twice");
+    zotero.changeInZotero({ comment: "From Zotero" });
+    await repository.refresh("RGRPDF24");
+    expect(conflicts).toBe(1);
+    await repository.submitTags("PUPR5FG5");
+
+    expect(zotero.tags).toEqual(["review", "figure", "todo"]);
+    expect(zotero.comment).toBe("From Zotero");
+    expect(repository.commentDraftFor("PUPR5FG5")).toMatchObject({
+      text: "Worth citing twice",
+      state: { kind: "conflict", fresh: "From Zotero" },
+    });
+    // The card still offers Apply again and Discard for the comment.
+    expect(repository.annotationState("PUPR5FG5").mutation).toEqual({
+      kind: "conflict",
+      conflict: {
+        write: "comment",
+        attempted: "Worth citing twice",
+        fresh: "From Zotero",
+      },
+    });
+
+    // Discarding one field's draft leaves the other's.
+    repository.editTags("PUPR5FG5", ["review"]);
+    repository.discardTagDraft("PUPR5FG5");
+    expect(repository.commentDraftFor("PUPR5FG5")).toMatchObject({
+      text: "Worth citing twice",
+    });
+    repository.editTags("PUPR5FG5", ["review"]);
+    repository.discardCommentDraft("PUPR5FG5");
+    expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+    expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
+    expect(repository.tagDraftFor("PUPR5FG5")).toMatchObject({
+      names: ["review"],
+    });
+    expect(zotero.comment).toBe("From Zotero");
+    expect(zotero.tags).toEqual(["review", "figure", "todo"]);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("keeps the verbs live and the draft saving until the read-back lands", async () => {
