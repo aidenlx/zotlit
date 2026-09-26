@@ -163,6 +163,7 @@ export class MarkPopupHost implements Disposable {
       },
     });
     this.#popup = popup;
+    popup.open();
   }
 
   /** The variant's content, keyed by what it floats for. */

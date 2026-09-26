@@ -225,19 +225,23 @@ function openPopup(anchor = { x: 120, y: 240 }) {
   vi.useFakeTimers();
   const parent: HoverParent = { hoverPopover: null };
   const drawn: string[] = [];
+  const connected: boolean[] = [];
   let label = "first";
   const popup = new MarkPopup({
     parent,
     anchor,
-    render: () => {
+    render: (content) => {
       drawn.push(label);
+      connected.push(content.isConnected);
       return createElement("span", null, label);
     },
   });
+  popup.open();
   return {
     parent,
     popup,
     drawn,
+    connected,
     retarget(next: { x: number; y: number }) {
       popup.retarget(next);
     },
@@ -289,6 +293,13 @@ describe("MarkPopup", () => {
 
     expect(open.popup.isFocused).toBe(true);
     expect(open.popup.hoverEl.isConnected).toBe(true);
+  });
+
+  // An editor the first render opens takes focus, which a node outside the
+  // document cannot (aidenlx/zotlit#1272).
+  it("draws its first content in the document", () => {
+    using open = openPopup();
+    expect(open.connected).toEqual([true]);
   });
 
   it("carries its content in a row of the plugin's own root", () => {

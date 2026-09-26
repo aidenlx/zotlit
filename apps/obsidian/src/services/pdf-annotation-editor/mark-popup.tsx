@@ -494,8 +494,19 @@ export class MarkPopup extends PopoutAwareHoverPopover {
       this.#mounted = false;
       this.#root.unmount();
     });
-    this.refresh();
+  }
+
+  /**
+   * Show the popup, then draw its first content, then centre it by that
+   * content's width. The popover joins the document before the first render,
+   * so an editor that render opens can take focus; its owner holds the popup
+   * before it opens, so a store change the first render makes refreshes this
+   * popup rather than opening another (aidenlx/zotlit#1272).
+   */
+  open(): void {
     this.showNow();
+    this.refresh();
+    if (this.#mounted) this.position();
   }
 
   /**

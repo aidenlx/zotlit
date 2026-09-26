@@ -185,6 +185,32 @@ it("keeps the content's nodes through the editor and a draft, and mounts it anew
   expect(h.popup()!.hoverEl.querySelector("span")).not.toBe(row);
 });
 
+// A comment editor takes its draft as it mounts, which changes the store from
+// inside the popup's first render (aidenlx/zotlit#1272).
+it("draws a store change its first render makes in the popup it opens", () => {
+  using h = host();
+  const connected: boolean[] = [];
+  h.selected.render = (content) => {
+    connected.push(content.isConnected);
+    if (connected.length === 1)
+      ingestCommentDraft(h.store, "WORD2222", {
+        annotationKey: "WORD2222",
+        attachmentKey: "RGRPDF24",
+        serverID: "test",
+        baseline: "",
+        text: "worth quoting",
+        state: { kind: "editing" },
+      });
+    return createElement("span", null, `draw ${connected.length}`);
+  };
+
+  selectMark(h.store, "WORD2222");
+
+  expect(connected).toEqual([true, true]);
+  expect(document.querySelectorAll(".popover")).toHaveLength(1);
+  expect(h.popup()?.hoverEl.textContent).toBe("draw 2");
+});
+
 it("closes the popup once nothing floats, and with its own disposal", () => {
   const h = host();
   selectMark(h.store, "WORD2222");
