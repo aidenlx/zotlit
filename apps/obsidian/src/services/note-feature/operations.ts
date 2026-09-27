@@ -51,6 +51,7 @@ import {
 import { getLogger } from "@/lib/log";
 import {
   DEFAULT_PROFILE,
+  parseProfileStamp,
   readProfileStamp,
   unknownProfileDiagnostic,
 } from "@/lib/profile-stamp";
@@ -181,13 +182,22 @@ export interface NoteKeyChangedDiagnostic {
   path: string;
 }
 
+/** The note's stamp stopped naming the Profile the update rendered under. */
+export interface NoteProfileChangedDiagnostic {
+  code: "literature-note-profile-changed";
+  hint: string;
+  indexedKey: string;
+  path: string;
+}
+
 export type NoteOperationDiagnostic =
   | UnknownProfileDiagnostic
   | NoteProfileConflictDiagnostic
   | MissingLiteratureNoteTemplateDiagnostic
   | LiteratureNoteTemplateConversionRequiredDiagnostic
   | ManagedFrontmatterRefusalDiagnostic
-  | NoteKeyChangedDiagnostic;
+  | NoteKeyChangedDiagnostic
+  | NoteProfileChangedDiagnostic;
 
 export type CreateNoteDiagnostic =
   | ExistingNoteDiagnostic
@@ -1838,29 +1848,35 @@ async function contextForIndexedKey(
 /**
  * Rewrite a Literature Note's live text in one {@link processLiveText}: apply
  * the prepared Managed Frontmatter with {@link spliceFrontMatter}, and transform
- * the body, so both land together or not at all. The note's Zotero key is read
- * from the text this write replaces: the metadata cache lags behind a recent
- * write to the note.
+ * the body, so both land together or not at all. The note's Zotero key and
+ * Profile stamp are read from the text this write replaces: the metadata cache
+ * that chose the Profile lags behind a recent write or an unsaved edit.
  *
- * @returns the refusal when the note no longer carries `itemKey`; the note is
- *   left untouched then.
+ * @returns the refusal when the note no longer carries `itemKey`, or its stamp
+ *   no longer names the Profile the update rendered under; the note is left
+ *   untouched then.
  */
 async function rewriteNote(
   ctx: OpsContext,
   file: TFile,
   input: ComposeFrontmatterInput & {
+    /** The Profile the update rendered under. */
+    profile: Pick<ResolvedProfile, "selector">;
     /** The caller's own session check, run just before the write. */
     beforeWrite?: () => void;
     body: (body: string) => string;
   },
-): Promise<NoteKeyChangedDiagnostic | undefined> {
-  let keyChanged = false;
+): Promise<
+  NoteKeyChangedDiagnostic | NoteProfileChangedDiagnostic | undefined
+> {
+  let changed: "key" | "profile" | undefined;
   await processLiveText(ctx.app, file, (content) => {
     const fm = parseFrontMatter(content);
-    if (fm[FIELD_ZOTERO_KEY] !== input.itemKey) {
-      keyChanged = true;
-      return content;
-    }
+    changed = undefined;
+    if (fm[FIELD_ZOTERO_KEY] !== input.itemKey) changed = "key";
+    else if (stampedSelector(fm) !== input.profile.selector)
+      changed = "profile";
+    if (changed) return content;
     input.beforeWrite?.();
     applyComposedFrontmatter(ctx, fm, input);
     // The Properties block and the body are rewritten apart, then joined.
@@ -1870,13 +1886,29 @@ async function rewriteNote(
       input.body(content.slice(contentStart))
     );
   });
-  if (!keyChanged) return undefined;
-  return {
-    code: "literature-note-key-changed",
-    hint: "The note's Zotero key changed while the update ran. Run the update again from the note.",
-    indexedKey: input.itemKey,
-    path: file.path,
-  };
+  if (changed === "key")
+    return {
+      code: "literature-note-key-changed",
+      hint: "The note's Zotero key changed while the update ran. Run the update again from the note.",
+      indexedKey: input.itemKey,
+      path: file.path,
+    };
+  if (changed === "profile")
+    return {
+      code: "literature-note-profile-changed",
+      hint: "The note's Profile stamp changed while the update ran. Run the update again from the note.",
+      indexedKey: input.itemKey,
+      path: file.path,
+    };
+  return undefined;
+}
+
+/** The Profile a note's Properties stamp: `default` when they carry no stamp. */
+function stampedSelector(
+  fm: Record<string, unknown>,
+): ProfileSelector | undefined {
+  const stamped = parseProfileStamp(fm[FIELD_LITERATURE_NOTE_PROFILE]);
+  return stamped === undefined ? DEFAULT_PROFILE : stamped.id;
 }
 
 function prepareFrontmatter(input: {

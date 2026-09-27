@@ -53,11 +53,13 @@ import {
 } from "./excerpt-acceptance.ts";
 import { verifyExcerptRendering } from "./excerpt-rendering.ts";
 import {
+  clearNotices,
   cli,
   cliCommand,
   obEval,
   obEvalUntil,
   waitFor,
+  WINDOW_DOCUMENTS,
 } from "./obsidian-cli.ts";
 import {
   clearVault,
@@ -1207,6 +1209,45 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       `app.metadataCache.getFileCache(app.vault.getAbstractFileByPath(${JSON.stringify(booksNotePath)})).frontmatter['zotero-key']`,
     );
     expect(await hasOneIndexedNote(vaultId, booksIndexedKey)).toBe(true);
+  });
+
+  it("refuses an update whose open note switched its Profile in unsaved text", async () => {
+    const original = await readFile(join(e2eVaultPath, booksNotePath), "utf-8");
+    const stampLine = `zotlit-profile: ${booksProfile.label} (${booksProfile.id})\n`;
+    expect(original).toContain(stampLine);
+    const edited = original.replace(stampLine, "");
+    await clearNotices(vaultId);
+    // The stamp leaves the editor's text only; the metadata cache still names
+    // Books when the update chooses its Profile, a moment later.
+    await obEval(
+      vaultId,
+      `(async function(){var file=app.vault.getAbstractFileByPath(${JSON.stringify(booksNotePath)});var leaf=app.workspace.getLeaf(false);await leaf.openFile(file,{state:{mode:'source',source:true}});leaf.view.editor.setValue(${JSON.stringify(edited)});return app.commands.executeCommandById('zotlit:update-note');})()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(${WINDOW_DOCUMENTS}.some(doc=>Array.from(doc.querySelectorAll('.notice')).some(notice=>notice.textContent.includes(${JSON.stringify(m.notice_literature_note_profile_changed())}))))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(
+      await obEval(
+        vaultId,
+        `String(app.workspace.getActiveFileView()?.getViewData()===${JSON.stringify(edited)})`,
+      ),
+    ).toBe("true");
+    // Put the stamp back, so the scenarios below find the note as it was.
+    await obEval(
+      vaultId,
+      `(async function(){var view=app.workspace.getActiveFileView();view.editor.setValue(${JSON.stringify(original)});await view.save();return true;})()`,
+    );
+    expect(
+      await waitFor(
+        async () =>
+          (await readFile(join(e2eVaultPath, booksNotePath), "utf-8")) ===
+          original,
+      ),
+    ).toBe(true);
   });
 
   // Covers both the "rendered literature note" and "batch operation"
