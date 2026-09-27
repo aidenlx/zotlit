@@ -22,13 +22,11 @@ import type { PreviewCitation } from "./citations";
 import type { NativeRenderResult } from "./render";
 
 const logger = getLogger(["note-preview", "markdown"]);
-const NO_MARKS: readonly RenderedRange[] = [];
 export function NativeMarkdown({
   app,
   markdown,
   surface = "note",
   result,
-  marks = NO_MARKS,
   properties = [],
   frontmatterBlock = null,
   showMarkdown = false,
@@ -39,6 +37,7 @@ export function NativeMarkdown({
   markdown: string;
   surface?: WorkbenchMarkdownProps["surface"];
   result: NativeRenderResult | null;
+  /** Source provenance from the shared result; native Markdown keeps its reading-view styling. */
   marks?: readonly RenderedRange[];
   properties?: readonly RenderedProperty[];
   /** The note's YAML block as the render wrote it; the Markdown view prints it above the body. */
@@ -84,38 +83,6 @@ export function NativeMarkdown({
         lifecycle,
       );
       if (disposed) return;
-      const ranges = marks.map((range) => ({
-        ...range,
-        className: "zt:bg-accent",
-      }));
-      // Native rendering keeps all source bytes. Prefix renders locate the
-      // visible range without inserting tokens into headings or callouts.
-      const text = visibleText(target);
-      for (const range of ranges) {
-        const offsets = [];
-        for (const end of [range.from, range.to]) {
-          const probe = createDiv();
-          probe.dataset["zotlitDraft"] = "";
-          await MarkdownRenderer.render(
-            app,
-            markdown.slice(0, end),
-            probe,
-            sourcePath,
-            lifecycle,
-          );
-          if (disposed) return;
-          const prefix = visibleText(probe);
-          let matched = 0;
-          while (matched < prefix.length && prefix[matched] === text[matched])
-            matched++;
-          offsets.push(matched);
-        }
-        markRange(target, {
-          from: offsets[0]!,
-          to: offsets[1]!,
-          className: range.className,
-        });
-      }
       let citations =
         surface === "annotation"
           ? (result?.annotationCitations ?? [])
@@ -158,7 +125,7 @@ export function NativeMarkdown({
       target.remove();
       footer.remove();
     };
-  }, [app, markdown, surface, result, marks, showMarkdown, onRendered]);
+  }, [app, markdown, surface, result, showMarkdown, onRendered]);
   const present = properties.filter(({ missing }) => !missing);
   const blank = markdown.trim() === "";
   if (showMarkdown) {
@@ -257,22 +224,6 @@ function compact(value: string): string {
 }
 function visibleText(element: HTMLElement): string {
   return compact(element.textContent ?? "");
-}
-function markRange(
-  target: HTMLElement,
-  { from, to, className }: { from: number; to: number; className: string },
-): void {
-  const walker = target.ownerDocument.createTreeWalker(
-    target,
-    NodeFilter.SHOW_TEXT,
-  );
-  let offset = 0;
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    const end = offset + compact(node.textContent ?? "").length;
-    if (offset < to && end > from)
-      node.parentElement?.classList.add(...className.split(" "));
-    offset = end;
-  }
 }
 /** Use the same replacements as saved notes, with this draft's formatted occurrences. */
 export function presentCitations(
