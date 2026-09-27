@@ -51,6 +51,8 @@ frontmatter:
 
 The <UiLabel name={m.workbench_properties_format()} /> control names the value members in the editor: <UiLabel name={m.workbench_properties_format_value()} /> writes an `expr`, <UiLabel name={m.workbench_properties_format_rule()} /> writes a `value`, and <UiLabel name={m.workbench_properties_format_text()} /> writes a `value` that holds the text as written. A `js` entry is edited in the <UiLabel name={m.workbench_advanced()} /> view.
 
+A `value` can be written in any YAML form, such as the block mapping under [Spread entries](#spread-entries). When you edit a `value` in the editor, the Workbench saves it as one line of JSON in the profile document. Other entries keep the form they were written in.
+
 ### Spread entries
 
 An entry with no `key` is a spread entry. Its `value` or `js` member evaluates to a mapping, and every produced key lands as a field at that entry's position, under the entry's one merge strategy.

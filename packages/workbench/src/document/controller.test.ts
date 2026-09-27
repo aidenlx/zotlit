@@ -621,21 +621,66 @@ describe("WorkbenchDocumentController and the Annotation Section", () => {
   });
 });
 
-it("keeps invalid JSON rule drafts in the document and points repair at the row", () => {
+it("points an unreadable rule draft at its row", () => {
   const source = HAND_WRITTEN.replace(
     "expr: zt.title",
-    'value: {"$eval":"zt.title",}',
+    'value: {"$eval":"zt.title"}',
   );
   const controller = new WorkbenchDocumentController(source);
-  expect(controller.source).toBe(source);
-  expect(controller.problems).toContainEqual(
-    expect.objectContaining({ code: "invalid-manifest", slice: "entry:1" }),
-  );
-  const comma = source.indexOf(",}");
-  controller.dispatch({ changes: { from: comma, to: comma + 1 } });
-  expect(controller.problems).toEqual([]);
+  const brace = source.indexOf('"}') + 1;
+  controller.dispatch({
+    changes: { from: brace, to: brace + 1 },
+    userEvent: "delete.backward",
+  });
+  expect(controller.problems).toEqual([
+    expect.objectContaining({
+      code: "invalid-manifest",
+      slice: "entry:1",
+      range: controller.sliceRange("entry:1"),
+    }),
+  ]);
   controller.undo();
-  expect(controller.source).toBe(source);
+  expect(controller.problems).toEqual([]);
+});
+
+it("keeps a broken manifest line outside the rules in Advanced", () => {
+  const source = HAND_WRITTEN.replace(
+    "expr: zt.title",
+    'value: {"$eval":"zt.title"}',
+  );
+  const controller = new WorkbenchDocumentController(source);
+  const key = source.indexOf("key: title") + "key: ".length;
+  controller.dispatch({ changes: { from: key, insert: "[" } });
+  expect(controller.problems).toEqual([
+    expect.objectContaining({ code: "invalid-manifest", slice: "advanced" }),
+  ]);
+});
+
+// A rule copied from the docs, a shared Profile, or an assistant is often YAML
+// rather than the one-line JSON the rule editor writes. The note renders it, so
+// the Workbench reads it too.
+it.each([
+  [
+    "a block mapping",
+    [
+      "value:",
+      '      "$map": { "$eval": "zt.authors" }',
+      '      "each(a)": "[[${a.fullName}]]"',
+    ].join("\n"),
+    { $map: { $eval: "zt.authors" }, "each(a)": "[[${a.fullName}]]" },
+  ],
+  ["plain text", "value: Unknown author", "Unknown author"],
+  ["single-quoted text", "value: 'Unknown author'", "Unknown author"],
+  ["a flow mapping", "value: {$eval: zt.title}", { $eval: "zt.title" }],
+  ["a trailing comma", 'value: {"$eval":"zt.title",}', { $eval: "zt.title" }],
+])("reads a rule written as %s without a problem", (_, rule, value) => {
+  const controller = new WorkbenchDocumentController(
+    HAND_WRITTEN.replace("expr: zt.title", rule),
+  );
+  expect(controller.document?.manifest.frontmatter?.[0]).toMatchObject({
+    value,
+  });
+  expect(controller.problems).toEqual([]);
 });
 
 describe("a plain Template Document", () => {

@@ -35,6 +35,12 @@ manifest. The property editor displays JSON with two-space indentation and
 writes compact JSON to that source. Offset maps connect completion, hover,
 selection, and replay to the formatted editor. Draft snapshots, including
 formatting-only changes, belong to the same document undo history.
+(Amended 2026-09-28: a hand-written `value` may use any YAML form the
+manifest parser reads, such as a block mapping or plain text. The Workbench
+reports a rule only when the manifest cannot read it. A rule in another YAML
+form shows as formatted JSON of the value its own text reads as, and its first
+edit stores that value as compact JSON, so comments inside that one rule do
+not survive the edit. Other entries keep their bytes.)
 The [JSON-e editor design](../research/json-e-editor-design.md) restores
 the JSON authoring syntax from the
 [#938 ruling](https://github.com/aidenlx/zotlit/issues/938#issuecomment-5468828547)

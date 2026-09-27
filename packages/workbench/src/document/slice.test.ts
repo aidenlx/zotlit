@@ -6,8 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { WorkbenchDocumentController } from "./controller";
 import type { WorkbenchSliceId } from "./controller";
-import { jsonLayout } from "./json-source";
-import { workbenchSlice } from "./slice";
+import { jsonSliceText, workbenchSlice } from "./slice";
 
 import { applyTemplateCompletion } from "#/language/completion";
 import { templatePairing } from "#/language/pairing";
@@ -39,9 +38,7 @@ function open(
 ): Slice {
   const view = new EditorView({
     state: EditorState.create({
-      doc: json
-        ? jsonLayout(controller.sliceText(id), true).text
-        : controller.sliceText(id),
+      doc: json ? jsonSliceText(controller, id) : controller.sliceText(id),
       extensions: [
         workbenchSlice(controller, id, json),
         ...(json ? [] : [templatePairing()]),
@@ -536,4 +533,133 @@ it("keeps grouped typing aligned across pretty and compact undo and redo", () =>
   );
   expect(rule.text()).toBe(original.replace("zt.title", "zt.titleAB"));
   expect(rule.view.state.selection.main.head).toBe(at + 2);
+});
+
+// A hand-written rule in YAML form, as the docs show a spread entry.
+const YAML_RULE_PROFILE = PROFILE.replace(
+  "language: liquid",
+  [
+    "language: liquid",
+    "frontmatter:",
+    "  - key: authors",
+    "    value:",
+    '      "$map": { "$eval": "zt.authors" }',
+    '      "each(a)": "[[${a.fullName}]]"',
+  ].join("\n"),
+);
+
+it("shows a YAML rule as JSON and stores the first edit as compact JSON", () => {
+  const controller = new WorkbenchDocumentController(YAML_RULE_PROFILE);
+  using rule = open(controller, "entry:1", true);
+  const shown = [
+    "{",
+    '  "$map": {',
+    '    "$eval": "zt.authors"',
+    "  },",
+    '  "each(a)": "[[${a.fullName}]]"',
+    "}",
+  ].join("\n");
+  expect(rule.text()).toBe(shown);
+
+  const at = shown.indexOf("zt.authors") + "zt.authors".length;
+  rule.view.dispatch({
+    changes: { from: at, insert: "X" },
+    selection: { anchor: at + 1 },
+    userEvent: "input.type",
+  });
+  expect(rule.text()).toBe(shown.replace("zt.authors", "zt.authorsX"));
+  expect(controller.sliceText("entry:1")).toBe(
+    '{"$map":{"$eval":"zt.authorsX"},"each(a)":"[[${a.fullName}]]"}',
+  );
+  expect(controller.document?.manifest.frontmatter?.[0]).toMatchObject({
+    value: { $map: { $eval: "zt.authorsX" }, "each(a)": "[[${a.fullName}]]" },
+  });
+  expect(controller.problems).toEqual([]);
+
+  controller.undo();
+  expect(controller.source).toBe(YAML_RULE_PROFILE);
+  expect(rule.text()).toBe(shown);
+});
+
+it("shows a YAML rule as JSON while another entry keeps the manifest invalid", () => {
+  const source = YAML_RULE_PROFILE.replace(
+    "language: liquid\nfrontmatter:\n",
+    "language: liquid\nfrontmatter:\n  - key: title\n    expr: zt.title\n    merge: bogus\n",
+  );
+  const controller = new WorkbenchDocumentController(source);
+  expect(controller.document).toBeNull();
+  using rule = open(controller, "entry:2", true);
+  const shown = [
+    "{",
+    '  "$map": {',
+    '    "$eval": "zt.authors"',
+    "  },",
+    '  "each(a)": "[[${a.fullName}]]"',
+    "}",
+  ].join("\n");
+  expect(rule.text()).toBe(shown);
+
+  const at = shown.indexOf("zt.authors") + "zt.authors".length;
+  rule.view.dispatch({
+    changes: { from: at, insert: "X" },
+    selection: { anchor: at + 1 },
+    userEvent: "input.type",
+  });
+  expect(controller.sliceText("entry:2")).toBe(
+    '{"$map":{"$eval":"zt.authorsX"},"each(a)":"[[${a.fullName}]]"}',
+  );
+  const bogus = controller.source.indexOf("bogus");
+  controller.dispatch({
+    changes: { from: bogus, to: bogus + "bogus".length, insert: "replace" },
+  });
+  expect(controller.problems).toEqual([]);
+  expect(controller.document?.manifest.frontmatter?.[1]).toMatchObject({
+    value: { $map: { $eval: "zt.authorsX" }, "each(a)": "[[${a.fullName}]]" },
+  });
+});
+
+it("replays a form edit into a focused YAML rule by the value it changes", () => {
+  const controller = new WorkbenchDocumentController(YAML_RULE_PROFILE);
+  using rule = open(controller, "entry:1", true);
+  rule.view.focus();
+  controller.setFocusedSlice("entry:1");
+  const from = controller.source.indexOf("zt.authors");
+  controller.dispatch({
+    changes: { from, to: from + "zt.authors".length, insert: "zt.editors" },
+    userEvent: "input.form",
+  });
+  expect(rule.text()).toBe(
+    [
+      "{",
+      '  "$map": {',
+      '    "$eval": "zt.editors"',
+      "  },",
+      '  "each(a)": "[[${a.fullName}]]"',
+      "}",
+    ].join("\n"),
+  );
+  expect(controller.document?.manifest.frontmatter?.[0]).toMatchObject({
+    value: { $map: { $eval: "zt.editors" }, "each(a)": "[[${a.fullName}]]" },
+  });
+});
+
+it("writes the first rule into an empty value as readable YAML", () => {
+  const source = JSON_PROFILE.replace('value: {"$eval":"zt.title"}', "value:");
+  const controller = new WorkbenchDocumentController(source);
+  using rule = open(controller, "entry:1", true);
+  expect(rule.text()).toBe("null");
+
+  rule.view.dispatch({
+    changes: {
+      from: 0,
+      to: rule.text().length,
+      insert: '{"$eval":"zt.title"}',
+    },
+    userEvent: "input.paste",
+  });
+  expect(controller.problems).toEqual([]);
+  expect(controller.source).toBe(JSON_PROFILE);
+  controller.undo();
+  expect(controller.source).toBe(source);
+  expect(rule.text()).toBe("null");
 });

@@ -312,10 +312,18 @@ async function failing(
   return preview;
 }
 
-/**
- * The clipboard the host copies through, as a list of what reached it. This
- * runtime supplies none, so the test defines one and takes it away after.
- */
+/** The fixture Profile still carrying the partials it was shared with. */
+const BUNDLED_SOURCE = PROFILE_SOURCE.replace(
+  "citationStyle: numeric",
+  [
+    "citationStyle: numeric",
+    "partials:",
+    "  - name: venue",
+    "    language: liquid",
+    "    source: Venue",
+  ].join("\n"),
+);
+
 /**
  * One report's fields, read once. A `Label: value` line carries one field; a
  * label alone opens a block that runs to the next blank line, so an engine
@@ -340,6 +348,10 @@ function reportFields(text: string): Record<string, string> {
   return fields;
 }
 
+/**
+ * The clipboard the host copies through, as a list of what reached it. This
+ * runtime supplies none, so the test defines one and takes it away after.
+ */
 function stubClipboard(): string[] {
   const writes: string[] = [];
   Object.defineProperty(navigator, "clipboard", {
@@ -1203,10 +1215,7 @@ Annotation`,
     vi.useFakeTimers();
     const preview = await failing(
       test,
-      PROFILE_SOURCE.replace("value: [review]", 'value: ["review"]').replace(
-        "{{ zt.text }}",
-        "{{ zt.text | bogus_filter }}",
-      ),
+      PROFILE_SOURCE.replace("{{ zt.text }}", "{{ zt.text | bogus_filter }}"),
     );
     await act(async () => test.editor.store.getState().setTab("annotation"));
 
@@ -1420,9 +1429,9 @@ Annotation`,
     await using test = await setup();
     vi.useFakeTimers();
     const source = PROFILE_SOURCE.replace(
-      "value: [review]",
-      'value: ["review"]',
-    ).replace("Personal space.", "See [@figures2014].");
+      "Personal space.",
+      "See [@figures2014].",
+    );
     await act(async () =>
       test.editor.store
         .getState()
@@ -1459,13 +1468,7 @@ Annotation`,
 
   it("copies the engine evidence from the failed attempt, and keeps it through a repair", async () => {
     const copied = stubClipboard();
-    // The fixture's own manifest carries a value the rows cannot parse, which
-    // would keep a document problem selected after the repair. This reader's
-    // template has only the failure under test.
-    const source = PROFILE_SOURCE.replace(
-      "value: [review]",
-      'value: ["review"]',
-    );
+    const source = PROFILE_SOURCE;
     await using test = await setup();
     vi.useFakeTimers();
     const preview = await failing(
@@ -1566,10 +1569,7 @@ Annotation`,
 
   it("names the Item a pinned preview read, not the one the editor moved to", async () => {
     const copied = stubClipboard();
-    const source = PROFILE_SOURCE.replace(
-      "value: [review]",
-      'value: ["review"]',
-    );
+    const source = PROFILE_SOURCE;
     await using test = await setup();
     vi.useFakeTimers();
     await act(async () =>
@@ -1615,10 +1615,7 @@ Annotation`,
     "selects and copies the occurrence requested by a second Preview through %s",
     async (action) => {
       const copied = stubClipboard();
-      const source = PROFILE_SOURCE.replace(
-        "value: [review]",
-        'value: ["review"]',
-      );
+      const source = PROFILE_SOURCE;
       const broken = source.replace(
         "Personal space.",
         '{% render "book-details" %}',
@@ -1676,9 +1673,9 @@ Annotation`,
     const copied = stubClipboard();
     await using test = await setup();
     vi.useFakeTimers();
-    // The fixture's own manifest carries a list value the rows cannot read,
-    // which is a validation problem with no render behind it at all.
-    await failing(test, PROFILE_SOURCE);
+    // A Profile that still carries the partials it was shared with is a
+    // document problem with no render behind it at all.
+    await failing(test, BUNDLED_SOURCE);
 
     const area = problemsArea(test.editor);
     await act(async () =>
@@ -1687,22 +1684,24 @@ Annotation`,
     const report = () =>
       area.querySelector<HTMLElement>('[data-part="problems-report"]')!
         .textContent!;
-    // Hand-derived: the value the parser refused is the second entry's, and
-    // it stands where the fixture spells it.
-    const at = PROFILE_SOURCE.indexOf("[review]");
+    // Hand-derived: the problem points at the manifest's partials list, which
+    // runs through its last line break.
+    const at = BUNDLED_SOURCE.indexOf("- name: venue");
+    const end =
+      BUNDLED_SOURCE.indexOf("source: Venue\n") + "source: Venue\n".length;
     // No error was ever thrown and no render ever ran for this one, and the
     // attempt's own context is captured whole, the same as a render's.
     expect(reportFields(report())).toMatchObject({
-      "Engine message": m.workbench_problem_invalid_manifest_field({
-        field: "frontmatter.1.value",
+      "Engine message": m.workbench_problem_bundled_partial({
+        names: "venue",
       }),
-      "Problem code": "invalid-manifest",
+      "Problem code": "bundled-partial",
       "Engine name": "unavailable",
-      "Reported location": `offset ${at}-${at + "[review]".length}`,
+      "Reported location": `offset ${at}-${end}`,
       "Engine location": "unavailable",
       "Calling template": "unavailable",
       "Repair target": "unavailable",
-      "Document section": "entry:2",
+      "Document section": "advanced",
       Stack: "unavailable",
       Attempt: "unavailable",
       "Snapshot revision": "unavailable",
@@ -1724,7 +1723,7 @@ Annotation`,
     // still describes the check that found it rather than the source now open.
     await act(async () =>
       test.editor.setViewData(
-        PROFILE_SOURCE.replace("Personal space.", "Edited."),
+        BUNDLED_SOURCE.replace("Personal space.", "Edited."),
         false,
       ),
     );
@@ -1763,9 +1762,9 @@ Annotation`,
     const copied = stubClipboard();
     await using test = await setup();
     vi.useFakeTimers();
-    // Two problems a reader can tell apart: the fixture's own manifest value
-    // the rows cannot read, and a call to a partial the vault does not hold.
-    const source = PROFILE_SOURCE.replace(
+    // Two problems a reader can tell apart: partials the Profile still carries
+    // in its manifest, and a call to a partial the vault does not hold.
+    const source = BUNDLED_SOURCE.replace(
       "Personal space.",
       `{% render "book-details" %}`,
     );
@@ -1787,7 +1786,7 @@ Annotation`,
       m.workbench_diagnostic_missing_partial_suggestion(),
     );
     expect(area.textContent).not.toContain(
-      m.workbench_problem_invalid_manifest_recovery(),
+      m.workbench_problem_bundled_partial_recovery(),
     );
     await act(async () =>
       problemsButton(test.editor, m.workbench_problems_copy()),
@@ -1798,11 +1797,9 @@ Annotation`,
     // Choosing the other problem reads that one, with its own captured
     // evidence, and asks for no navigation: the source stays where it is.
     const at = test.editor.store.getState().presentation.reveal;
-    await act(async () =>
-      chooseProblem(test.editor, m.workbench_tab_properties()),
-    );
+    await act(async () => chooseProblem(test.editor, m.workbench_advanced()));
     expect(area.textContent).toContain(
-      m.workbench_problem_invalid_manifest_recovery(),
+      m.workbench_problem_bundled_partial_recovery(),
     );
     expect(area.textContent).not.toContain(
       m.workbench_diagnostic_missing_partial_suggestion(),
@@ -1811,11 +1808,11 @@ Annotation`,
     await act(async () =>
       problemsButton(test.editor, m.workbench_problems_copy()),
     );
-    expect(copied.at(-1)).toContain("Problem code: invalid-manifest");
+    expect(copied.at(-1)).toContain("Problem code: bundled-partial");
 
     // Back to the partial, and a repair that resolves only that one.
     await act(async () => chooseProblem(test.editor, partial));
-    await act(async () => test.editor.setViewData(PROFILE_SOURCE, false));
+    await act(async () => test.editor.setViewData(BUNDLED_SOURCE, false));
     await advance();
     // The remaining problem keeps the area from reporting success, and the
     // reader is offered the next explanation rather than moved to it.
@@ -1827,7 +1824,7 @@ Annotation`,
     ).toBe(m.workbench_problems_count({ count: 1 }));
     expect(area.textContent).not.toContain(m.workbench_problems_none());
     expect(area.textContent).not.toContain(
-      m.workbench_problem_invalid_manifest_recovery(),
+      m.workbench_problem_bundled_partial_recovery(),
     );
     // The resolved problem keeps the report the reader inspected.
     await act(async () =>
@@ -1839,21 +1836,16 @@ Annotation`,
       problemsButton(test.editor, m.workbench_problems_next()),
     );
     expect(area.textContent).toContain(
-      m.workbench_problem_invalid_manifest_recovery(),
+      m.workbench_problem_bundled_partial_recovery(),
     );
 
     // The second repair leaves nothing, and the area keeps the space it had.
-    await act(async () =>
-      test.editor.setViewData(
-        PROFILE_SOURCE.replace("value: [review]", 'value: ["review"]'),
-        false,
-      ),
-    );
+    await act(async () => test.editor.setViewData(PROFILE_SOURCE, false));
     await advance();
     expect(area.isConnected).toBe(true);
     expect(area.textContent).toContain(m.workbench_problems_none());
     expect(area.textContent).not.toContain(
-      m.workbench_problem_invalid_manifest_recovery(),
+      m.workbench_problem_bundled_partial_recovery(),
     );
     expect(test.fixture.writes.create).not.toHaveBeenCalled();
     expect(test.fixture.writes.modify).not.toHaveBeenCalled();
@@ -1866,7 +1858,7 @@ Annotation`,
     // The count says what was found; it claims nothing about the rest.
     const preview = await failing(
       test,
-      PROFILE_SOURCE.replace("value: [review]", 'value: ["review"]').replace(
+      PROFILE_SOURCE.replace(
         "Personal space.",
         "{{ zt.title | bogus_one }} {{ zt.title | bogus_two }}",
       ),
