@@ -8,7 +8,7 @@ import {
   realpath,
   unlink,
 } from "node:fs/promises";
-import { basename, dirname, relative, isAbsolute, sep } from "node:path";
+import { basename, dirname, join, relative, isAbsolute, sep } from "node:path";
 import { FileSystemAdapter } from "obsidian";
 import type { App } from "obsidian";
 
@@ -253,7 +253,12 @@ export async function materializeExcerpt(options: {
     try {
       assertCurrent();
       await mkdir(dirname(destination), { recursive: true });
-      const temporary = `${destination}.${randomUUID()}.tmp`;
+      // A dot-file name keeps the temporary out of the vault index: the vault
+      // drops an indexed file only on a watcher event, which can be lost.
+      const temporary = join(
+        dirname(destination),
+        `.${basename(destination)}.${randomUUID()}.tmp`,
+      );
       // Publish only complete bytes, using an exclusive hard link to preserve every existing version.
       try {
         await using file = await open(temporary, "wx");
