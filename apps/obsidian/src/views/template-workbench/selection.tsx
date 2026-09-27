@@ -21,7 +21,9 @@ import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { itemSummary } from "@/lib/item-summary";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemSearchDeps } from "@/services/item-lookup/search-modal";
+import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 
+import type { NativeWorkbenchSuggesterRequest } from "./host";
 import {
   getSampleItem,
   getSampleItemType,
@@ -145,7 +147,8 @@ export async function chooseWorkbenchItem(
   const choices = [...SAMPLE_ITEM_CHOICES, ...recent];
   const retained =
     selected && !choices.some(({ id }) => id === selected.id) ? [selected] : [];
-  const id = await host.suggester({
+  const found = new Map<string, WorkbenchItemChoice>();
+  const request: NativeWorkbenchSuggesterRequest = {
     title: m.workbench_choose_item(),
     selected: selected?.id,
     groups: [
@@ -179,10 +182,25 @@ export async function chooseWorkbenchItem(
         })),
       },
     ],
-  });
+    searchItems: async (query) => {
+      const hits = await deps.lookup.search(query, { limit: DEFAULT_LIMIT });
+      return hits.flatMap(({ item }) => {
+        if (isChildItemFields(item.fields)) return [];
+        const choice = {
+          id: item.indexedKey,
+          title: itemSummary(item, item.fields).formatted,
+        };
+        found.set(choice.id, choice);
+        return [{ id: choice.id, label: choice.title }];
+      });
+    },
+  };
+  const id = await host.suggester(request);
   return id === "search-zotero"
     ? searchWorkbenchItem(deps)
-    : ([...retained, ...choices].find((item) => item.id === id) ?? null);
+    : ([...retained, ...choices].find((item) => item.id === id) ??
+        (id ? found.get(id) : null) ??
+        null);
 }
 
 export async function chooseWorkbenchAnnotation(

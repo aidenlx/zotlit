@@ -118,14 +118,23 @@ class MatchInputSuggest extends AbstractInputSuggest<WorkbenchSuggesterOption> {
   }
 }
 
-class EditorSuggester extends SuggestModal<
-  WorkbenchSuggesterOption & { group: string }
-> {
+/** The native item chooser adds ranked Zotero results to its fixed choices. */
+export interface NativeWorkbenchSuggesterRequest extends WorkbenchSuggesterRequest {
+  readonly searchItems?: (
+    query: string,
+  ) => Promise<readonly WorkbenchSuggesterOption[]>;
+}
+
+type NativeSuggestion = WorkbenchSuggesterOption & { group: string };
+
+class EditorSuggester extends SuggestModal<NativeSuggestion> {
+  #revision = 0;
+  #latest: NativeSuggestion[] | Promise<NativeSuggestion[]> = [];
   readonly #answer = Promise.withResolvers<string | null>();
   #picked = false;
   #search = prepareSimpleSearch("");
-  readonly #request: WorkbenchSuggesterRequest;
-  constructor(app: App, request: WorkbenchSuggesterRequest) {
+  readonly #request: NativeWorkbenchSuggesterRequest;
+  constructor(app: App, request: NativeWorkbenchSuggesterRequest) {
     super(app);
     this.setTitle(request.title);
     this.#request = request;
@@ -139,9 +148,12 @@ class EditorSuggester extends SuggestModal<
     if (empty && request.groups.every((group) => group.options.length === 0))
       this.emptyStateText = empty;
   }
-  override getSuggestions(query: string) {
+  override getSuggestions(
+    query: string,
+  ): NativeSuggestion[] | Promise<NativeSuggestion[]> {
+    const revision = ++this.#revision;
     this.#search = prepareSimpleSearch(query);
-    return this.#request.groups
+    const choices = this.#request.groups
       .flatMap((group) =>
         group.options.map((option) => ({ ...option, group: group.label })),
       )
@@ -151,6 +163,26 @@ class EditorSuggester extends SuggestModal<
             `${option.label} ${option.hint ?? ""} ${option.group}`,
           ) !== null,
       );
+    if (!query.trim() || !this.#request.searchItems)
+      return (this.#latest = choices);
+    this.#latest = this.#request
+      .searchItems(query)
+      .then((items): NativeSuggestion[] | Promise<NativeSuggestion[]> => {
+        if (revision !== this.#revision) return this.#latest;
+        const shown = new Set(choices.map(({ id }) => id));
+        return [
+          ...choices,
+          ...items
+            .filter(({ id }) => !shown.has(id))
+            .map((item) => ({ ...item, group: "" })),
+        ];
+      })
+      .catch(() => {
+        if (revision !== this.#revision) return this.#latest;
+        new BaseNotice(m.workbench_item_search_failed());
+        return choices;
+      });
+    return this.#latest;
   }
   /**
    * A row reads the way a citation row reads: the name in the title slot,
@@ -218,6 +250,8 @@ class EditorSuggester extends SuggestModal<
   override onClose(): void {
     super.onClose();
     if (!this.#picked) this.#answer.resolve(null);
+    this.#revision++;
+    this.#latest = [];
     this.#request.anchor?.focus();
   }
   choose(): Promise<string | null> {

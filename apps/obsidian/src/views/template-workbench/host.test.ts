@@ -13,6 +13,7 @@ import { AnnotationPointer } from "@zotlit/workbench/ui";
 import * as m from "@/lib/i18n/generated/messages";
 
 import { createTemplateWorkbenchHost } from "./host";
+import type { NativeWorkbenchSuggesterRequest } from "./host";
 
 function setup() {
   const memory = new Map<string, string | null>();
@@ -114,6 +115,30 @@ describe("Template Workbench host", () => {
       handle.close();
       await act(async () => modal.onClose());
     }
+  });
+
+  it("keeps the latest item search when an earlier query finishes last", async () => {
+    const { host } = setup();
+    using open = vi.spyOn(SuggestModal.prototype, "open");
+    const first = Promise.withResolvers<{ id: string; label: string }[]>();
+    const second = Promise.withResolvers<{ id: string; label: string }[]>();
+    const request: NativeWorkbenchSuggesterRequest = {
+      title: "Items",
+      groups: [],
+      searchItems: vi
+        .fn()
+        .mockReturnValueOnce(first.promise)
+        .mockReturnValueOnce(second.promise),
+    };
+    void host.suggester(request);
+    const modal = open.mock.contexts.at(-1)! as SuggestModal<unknown>;
+    const older = modal.getSuggestions("roug");
+    const newer = modal.getSuggestions("ioannidis");
+    second.resolve([]);
+    await newer;
+    first.resolve([{ id: "stale", label: "Rougier" }]);
+    await expect(older).resolves.toEqual([]);
+    modal.close();
   });
 
   it("settles SuggestModal cancellation and restores control focus", async () => {
