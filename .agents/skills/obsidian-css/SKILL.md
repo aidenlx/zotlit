@@ -9,7 +9,7 @@ Plugin UI should feel like part of Obsidian under whatever theme the user instal
 
 ## Tailwind-first
 
-Every style is a `zt:`-prefixed utility on the element that needs it; a stylesheet is the narrow exception [`policies/tailwind-first.md`](../../../apps/obsidian/policies/tailwind-first.md) admits.
+Use `zt:`-prefixed utilities on the styled element. Feature stylesheets sit beside their owning code when a utility cannot reach host-owned DOM or override host CSS.
 
 - **The `zt:` prefix is on every utility** — `zt:flex`, `zt:gap-2`, `zt:bg-background`, `zt:rounded-md` — and variants chain after it: `zt:hover:opacity-100`, `zt:@md:columns-2`. Tailwind v4's `prefix()` scopes the compiled selectors so they never collide with another plugin's output. The `@theme` variables in `src/zt-main.css` keep their authored names (no prefix).
 - **No token for an Obsidian variable** → reference it directly with the arbitrary-variable syntax — `zt:bg-(--modal-background)`, `zt:p-(--size-4-3)` — or extend `zt-main.css` following the existing pattern.
@@ -110,7 +110,7 @@ That same cascade means Obsidian's own unlayered bare-element rules survive insi
 - **React** — wrappers in `src/components/obsidian/` for anything needing modifier-class logic: `Button`, `IconButton`, `Toggle`, `Dropdown` (+ `DropdownItem`, `DropdownGroup`), `Slider`, `Color`, `Icon`, `SearchInput`. Read the source for each API.
 - **Bare in JSX** — `<input type="text/search/email/password/number/date/datetime-local">`, `<input type="checkbox">`, `<input type="radio">`, `<textarea>`. Obsidian's preflight styles these fully, so they take no wrapper. Reach for `AutosizeTextarea` from `react-textarea-autosize` when a textarea should grow with its content.
 - **Imperative DOM** (setting tabs, API-built modals) — `ButtonComponent`, `ToggleComponent`, `TextComponent`, `TextAreaComponent`, `DropdownComponent`, `ColorComponent`, `SliderComponent` from the `obsidian` module.
-- **Tooltips** are `aria-label`, spread through `tooltipAttrs` — [`policies/tooltips.md`](../../../apps/obsidian/policies/tooltips.md) is the rule.
+- **Tooltips** are `aria-label`, spread through `tooltipAttrs`; `apps/obsidian/src/lib/utils.ts` owns the helper.
 
 ## Verifying
 

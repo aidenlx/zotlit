@@ -28,9 +28,9 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Packa
 
 ## Content pipeline
 
-- **i18n copy:** Read [the i18n policy](policies/i18n.md) when adding web copy, rendering translated text, or changing message generation. It defines the Paraglide/Fumadocs boundary and plugin bundle isolation.
+- **i18n copy:** Site messages use `docs_*` keys in the root catalogs and the generated `@/paraglide/messages.js` facade. Run `/paraglide-i18n` for generation and runtime mechanics.
 - **Collections:** [`src/lib/collections.ts`](src/lib/collections.ts) owns discovery, lazy loading, and git dates. Read [`content.config.ts`](content.config.ts) for schemas and Markdown editions, and [`source.config.ts`](source.config.ts) for global MDX and syntax-highlighting options. Keep compile-time imports inside macro arguments so the transform removes them from app modules.
-- **Dates:** `publishedOn` in [`src/lib/shared.ts`](src/lib/shared.ts) normalizes every publication date to an ISO day, for both the collections and the build-time content scan; workerd lacks Temporal, so this schema, the reader-facing date helpers beside it — the two release-date formatters and the footer's copyright year — and the `Date` the `feed` library takes in [`src/routes/changelog/rss[.]xml.ts`](<src/routes/changelog/rss[.]xml.ts>) are a package-scoped exception to [the Temporal policy](../../policies/temporal-dates.md).
+- **Dates:** `publishedOn` in [`src/lib/shared.ts`](src/lib/shared.ts) normalizes every publication date to an ISO day, for both the collections and the build-time content scan; workerd lacks Temporal, so this schema, the reader-facing date helpers beside it — the two release-date formatters and the footer's copyright year — and the `Date` the `feed` library takes in [`src/routes/changelog/rss[.]xml.ts`](<src/routes/changelog/rss[.]xml.ts>) use native `Date` for this runtime.
 
 ## Routing
 
@@ -87,8 +87,6 @@ Content lives in `content/`; collections are defined in [`src/lib/collections.ts
 Read `/docs-writing` to scope content decisions, then delegate prose to the `docs-writer` agent.
 
 Custom MDX components (`src/components/`) are imported per-page in the `.mdx`, not registered in [`src/components/mdx.tsx`](src/components/mdx.tsx); wrap them in `not-prose` and style over `--color-fd-*` tokens (see [`src/components/action-link.tsx`](src/components/action-link.tsx)).
-
-**UI Labels:** When docs quote a command, setting, option, menu item, button, or tooltip, follow [`policies/ui-labels.md`](policies/ui-labels.md).
 
 Give any heading that is a deep-link target (linked from another page, a changelog entry, or an issue reply as `/path#anchor`) a stable custom anchor via fumadocs' `[#slug]` syntax, e.g. `## Section title [#bulk]`. The auto-generated slug tracks the heading text, so rewording it silently breaks inbound links; a short custom id does not. Reference: https://www.fumadocs.dev/docs/markdown#toc-settings
 

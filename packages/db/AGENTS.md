@@ -9,12 +9,6 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Packa
 - `pnpm --filter @zotlit/db dev` — tsdown watch.
 - `pnpm --filter @zotlit/db db:pull` — drizzle-kit pull.
 
-## Query authoring
-
-See [policies/query-authoring.md](policies/query-authoring.md) for query-builder preference, `defineQuery` wrapping, sync/async variants, and lookup patterns.
-
-See [policies/integer-domains.md](policies/integer-domains.md) for Zotero integer-domain conventions.
-
 ## Item fields
 
 Field naming follows type-specific names — `BookSectionFields.bookTitle`, not `publicationTitle`. Use `FIELD_ALIASES` from `@zotlit/zotero-types` for type-specific → base-field resolution.
@@ -41,11 +35,4 @@ The `zt` types plus their doc comments are the single source of truth for the te
 
 ## Logging
 
-Import `getLogger` directly from `@logtape/logtape` — libraries must stay app-agnostic.
-
-```ts
-import { getLogger } from "@logtape/logtape";
-const logger = getLogger(["zotlit", "db", "query"]);
-```
-
-Never call `configure()` here — that belongs to the consuming app.
+Logging uses `@logtape/logtape`; configuration belongs to the consuming app.
