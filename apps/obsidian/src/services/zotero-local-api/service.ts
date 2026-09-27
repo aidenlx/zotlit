@@ -633,11 +633,15 @@ export class ZoteroLocalApiClient extends Service<void> {
       return { kind: "unavailable", failure: { kind: "incompatible-zotero" } };
     }
     const serverID = reply.headers.get("zotero-server-id");
-    if (serverID === null || !isServerID(serverID)) {
-      return {
-        kind: "unavailable",
-        failure: invalid(`server id ${serverID ?? "absent"}`),
-      };
+    // Zotero 9 speaks API version 3 but serves reads only and sends no server
+    // id, which Zotero 10 added with writes — so an absent id is a Zotero too
+    // old to edit, not an answer ZotLit cannot read.
+    // @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/server/server_localAPI.js#L382-L391
+    if (serverID === null) {
+      return { kind: "unavailable", failure: { kind: "incompatible-zotero" } };
+    }
+    if (!isServerID(serverID)) {
+      return { kind: "unavailable", failure: invalid(`server id ${serverID}`) };
     }
     logger.debug("Zotero answered its local API", {
       serverID,

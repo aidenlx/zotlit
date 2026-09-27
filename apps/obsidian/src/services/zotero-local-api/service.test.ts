@@ -383,6 +383,26 @@ it("refuses a probe that answers no Zotero server id", async () => {
   });
 });
 
+it("reads a Zotero that sends no server id as too old to edit", async () => {
+  await using stack = new AsyncDisposableStack();
+  // Zotero 9 answers API version 3 on a read-only Local API with no server id.
+  const { client } = await setup(stack, {
+    root: () => {
+      const reply = rootOk();
+      reply.headers.delete("Zotero-Server-ID");
+      return reply;
+    },
+  });
+
+  await client.probe();
+
+  expect(client.demandSource()).toBeNull();
+  expect(client.state).toEqual({
+    kind: "unavailable",
+    failure: { kind: "incompatible-zotero" },
+  });
+});
+
 it.each([
   ["a connection nothing answers", unreachable, "unreachable"],
   ["the local API switched off", localApiDisabled, "local-api-disabled"],
