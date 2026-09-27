@@ -106,7 +106,7 @@ export interface PreparedProfileCreation {
   profile: ResolvedProfile;
   source: string;
   inherited: ("folder" | "citationStyle" | "look")[];
-  reason?: string;
+  constraint?: { kind: "no-difference" | "invalid-name"; message: string };
   create(): Promise<LiteratureNoteProfile>;
 }
 
@@ -358,17 +358,23 @@ export class ProfileService extends Service {
       )
         delete bindings[name];
     }
-    let reason =
+    let constraint: PreparedProfileCreation["constraint"] =
       !differs && Object.keys(bindings).length === 0
-        ? m.settings_profile_create_no_difference()
+        ? {
+            kind: "no-difference",
+            message: m.settings_profile_create_no_difference(),
+          }
         : undefined;
     try {
       this.#validateLabel(requestedLabel);
     } catch (error) {
-      if (requestedLabel || !reason)
-        reason = Error.isError(error)
-          ? error.message
-          : m.settings_profile_name_invalid();
+      if (requestedLabel || !constraint)
+        constraint = {
+          kind: "invalid-name",
+          message: Error.isError(error)
+            ? error.message
+            : m.settings_profile_name_invalid(),
+        };
     }
     const id = mintId() as ProfileId;
     const content = profileSource(source, { id, label, bindings });
@@ -409,10 +415,10 @@ export class ProfileService extends Service {
       profile,
       source: content,
       inherited,
-      reason,
+      constraint,
       create: () =>
         this.#mutate.add(() => {
-          if (reason) throw new Error(reason);
+          if (constraint) throw new Error(constraint.message);
           return this.#persist(label, id, content);
         }),
     };

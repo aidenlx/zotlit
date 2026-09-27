@@ -68,9 +68,10 @@ export class ProfileDestinationModal extends Modal {
     );
     const reason = note(controls, { status: true });
     let draft: PreparedProfileCreation | undefined;
+    let nameEdited = false;
     const footer = dialogFooter(this);
     const create = footerButton(footer, m.settings_profile_add(), async () => {
-      if (!draft || draft.reason || this.#saving) return;
+      if (!draft || draft.constraint || this.#saving) return;
       this.#saving = true;
       create.setDisabled(true);
       name.setDisabled(true);
@@ -111,8 +112,14 @@ export class ProfileDestinationModal extends Modal {
         });
         if (this.#closed || revision !== this.#revision) return;
         draft = prepared;
-        reason.set(prepared.reason ?? "", prepared.reason ? "error" : "muted");
-        create.setDisabled(!!prepared.reason || this.#saving);
+        const constraint = prepared.constraint;
+        reason.set(
+          constraint?.kind === "no-difference"
+            ? m.settings_profile_destination_choose_folder()
+            : (constraint?.message ?? ""),
+          constraint?.kind === "invalid-name" && nameEdited ? "error" : "muted",
+        );
+        create.setDisabled(!!constraint || this.#saving);
       } catch (error) {
         if (this.#closed || revision !== this.#revision) return;
         reason.set(
@@ -123,7 +130,10 @@ export class ProfileDestinationModal extends Modal {
         );
       }
     };
-    name.onChange(() => void update());
+    name.onChange(() => {
+      nameEdited = true;
+      void update();
+    });
     folder.onChange(() => void update());
     name.inputEl.focus();
     void update();

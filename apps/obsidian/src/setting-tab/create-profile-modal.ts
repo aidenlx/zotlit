@@ -163,6 +163,7 @@ export class CreateProfileModal extends Modal {
     const base = this.#deps.profile.resolveProfile("default")!;
     const { controls, preview: previewEl } = twoColumns(this.contentEl);
     let label = "";
+    let nameEdited = false;
     let look: ProfileSelector = "default";
     const bindings: ProfileBindings = {};
     let draft: PreparedProfileCreation | undefined;
@@ -170,6 +171,7 @@ export class CreateProfileModal extends Modal {
     new TextComponent(field(controls, m.settings_profile_name_name())).onChange(
       (value) => {
         label = value;
+        nameEdited = true;
         void update();
       },
     );
@@ -240,7 +242,7 @@ export class CreateProfileModal extends Modal {
         ? m.settings_profile_create_use()
         : m.settings_profile_add(),
       async () => {
-        if (!draft || !preview || draft.reason || this.#saving) return;
+        if (!draft || !preview || draft.constraint || this.#saving) return;
         this.#saving = true;
         button.setDisabled(true);
         const selectedDraft = draft;
@@ -306,9 +308,14 @@ export class CreateProfileModal extends Modal {
           panel.set(preview);
         }
         const problem =
-          prepared.reason ??
+          prepared.constraint?.message ??
           (!preview ? m.settings_profile_preview_unavailable() : undefined);
-        reason.set(problem ?? "");
+        reason.set(
+          problem ?? "",
+          prepared.constraint?.kind === "invalid-name" && nameEdited
+            ? "error"
+            : "muted",
+        );
         button.setDisabled(!!problem || this.#saving);
       } catch (error) {
         if (revision !== this.#revision || this.#closed) return;

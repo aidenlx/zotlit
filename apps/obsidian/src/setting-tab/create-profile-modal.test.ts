@@ -73,7 +73,7 @@ it("shows the preview while refusing a no-op and a colliding label, then enables
   f.prepareCreate.mockResolvedValueOnce({
     ...f.draft,
     inherited: ["folder", "citationStyle", "look"],
-    reason: "REFUSED_NO_DIFFERENCE",
+    constraint: { kind: "no-difference", message: "REFUSED_NO_DIFFERENCE" },
   });
   const modal = new CreateProfileModal(f.deps, {
     data: { note: {} as never, filename: {} },
@@ -90,7 +90,7 @@ it("shows the preview while refusing a no-op and a colliding label, then enables
   expect(modal.contentEl.textContent).toContain("Default look marker.");
   f.prepareCreate.mockResolvedValueOnce({
     ...f.draft,
-    reason: "REFUSED_INVALID_NAME",
+    constraint: { kind: "invalid-name", message: "REFUSED_INVALID_NAME" },
   });
   const text = (name: string) =>
     [...modal.contentEl.querySelectorAll<HTMLElement>("label")]
