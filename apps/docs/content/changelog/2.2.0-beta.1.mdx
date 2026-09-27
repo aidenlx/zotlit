@@ -1,0 +1,108 @@
+---
+version: "2.2.0-beta.1"
+companion: "2.2.0-beta.1"
+date: "2026-09-27"
+description: "Zotero PDF reading and annotation in Obsidian, multi-select in the annotation view, exports in the note's own style"
+---
+
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+This beta lets you read and annotate your Zotero PDFs in Obsidian, next to the note you are writing, and every mark you make is saved in Zotero.
+
+<Callout type="info" title="Version requirements">
+
+- **Obsidian 1.14.2 or later** to open Zotero PDFs, which stay outside your vault.
+- **Zotero 10 or later** to save annotation changes from Obsidian. With Zotero 9, you can read PDFs and their annotations, but you cannot edit them.
+
+</Callout>
+
+## Highlights
+
+### Read and annotate your Zotero PDFs in Obsidian
+
+![A paper open in Obsidian's PDF reader with its Zotero highlights and underlines, one highlight's popup showing its comment and tag, and the annotation view listing each annotation as a card](/img/changelog/pdf-reader-annotations.webp)
+
+A Zotero item's PDF now opens in an Obsidian tab beside the note you are writing, so you can read and mark up a paper without switching to Zotero. The PDF stays in Zotero's storage, outside your vault; opening it there needs Obsidian 1.14.2 or later. The highlights and notes you made in Zotero are already on the page, in their Zotero colors. With Zotero 10 or later, what you mark in Obsidian is saved to Zotero, so it syncs and shows in Zotero's reader like any other annotation.
+
+You can open a PDF from several places:
+
+- From a literature note, run <Command inline name={m.command_open_pdf_name()} />, or choose it from the note's tab menu.
+- In <Command inline name={m.command_open_lit_note_name()} />, press `Shift+Enter` on a result.
+- In Zotero, choose <UiLabel name={m["zotero.menu_item_open_pdf.label"]()} /> from an item's context menu, or <UiLabel name={m["zotero.menu_reader_page_open_pdf"]()} /> from the page menu of Zotero's reader. Both need the updated ZotLit Companion.
+- Click a file link in a note. The PDF opens on the right page, with the linked annotation selected.
+
+The <UiLabel name={m.annot_view_name()} /> view comes forward in the sidebar with the PDF. To keep your sidebar as it is, turn off <SettingsPath page={m.settings_page_reader()} setting={m.settings_reader_focus_annot_view_name()} />. To send file links to your system app again, turn off <UiLabel name={m.settings_reader_open_file_links_name()} /> on the same page. Only PDFs open in Obsidian; EPUBs and web snapshots stay in Zotero. [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian) lists every way in.
+
+![A thesis chapter note with an inserted annotation callout that links back to page 1 of the PDF, beside the PDF and the annotation view with the same annotation selected](/img/changelog/pdf-reader-insert-into-note.webp)
+
+The toolbar beside the page creates the same annotations as Zotero's reader: <UiLabel name={m.pdf_toolbar_highlight()} />, <UiLabel name={m.pdf_toolbar_underline()} />, <UiLabel name={m.pdf_toolbar_note()} />, <UiLabel name={m.pdf_toolbar_text()} /> for text typed onto the page, <UiLabel name={m.pdf_toolbar_image()} /> to capture a figure or table, and <UiLabel name={m.pdf_toolbar_ink()} /> for freehand strokes. Each tool keeps the color you last chose for it, in every PDF.
+
+Select a mark to change its color, comment, or tags. The comment editor takes bold, italic, subscript, and superscript, as in Zotero. When the PDF's text came out wrong, for example with broken ligatures, <UiLabel name={m.annot_view_menu_edit_text()} /> on the annotation's card corrects the quoted text. You can drag a mark to move or resize it, and delete an annotation after a confirmation. While the PDF is open, `Ctrl+Z` (Windows) or `Command+Z` (macOS) undoes your last annotation change, and redo applies it again. [Edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations) covers each tool and key.
+
+Reading needs no permission. Editing needs four things:
+
+- Zotero 10 or later. With Zotero 9, the PDF opens and shows its annotations, but changes cannot be saved from Obsidian, and ZotLit tells you to update Zotero.
+- Zotero is running on the same computer.
+- In Zotero, **Allow other applications on this computer to communicate with Zotero** is on, under Settings → Advanced. ZotLit tells you when it is off.
+- ZotLit has your permission, given once. Select <UiLabel name={m.capability_enable_editing()} /> in the annotation view, or <UiLabel name={m.settings_zotero_editing_enable()} /> on the <UiLabel name={m.settings_zotero_editing_name()} /> row under <SettingsPath page={m.settings_page_zotero()} setting={m.settings_zotero_connection_heading()} />. When Zotero asks, choose **Always Allow**. **Allow** alone leaves editing off.
+
+When an annotation changed in Zotero while you were editing it in Obsidian, the card shows <UiLabel name={m.annot_view_conflict_title()} /> with both versions, and you choose which one to keep. Annotations that Zotero will not let you change are locked in Obsidian too. Examples are annotations Zotero imported from the PDF file itself, and in a group library, annotations another member made. A lock icon on the card gives the reason.
+
+Edit a given annotation in one app at a time, and let each change save before you switch. A [known Zotero issue](https://github.com/aidenlx/zotlit/issues/1165) can make one edit silently overwrite the other when both apps change the same annotation.
+
+## Breaking Changes
+
+### Exports cite with the note's own style
+
+<Command inline name={m.command_pandoc_export_name()} /> and native Pandoc runs
+now format citations in the style the note uses in Obsidian. That is the note's
+own `zotlit-csl` property, the style of an imported note's profile, or your
+<UiLabel name={m.settings_citation_references_style_name()} />. The export
+dialog says where the style comes from, and the notice at the end names the
+style it used.
+
+The built-in export used to fall back to a bundled style when Zotero could not supply the one you chose. It now stops and tells you, so a document never comes out in a style you did not pick. Install the style in Zotero, or choose another one in the dialog.
+
+If you run Pandoc yourself with ZotLit's integration files, save them again from this version. The files from earlier versions no longer work with this release. See [Export a note with citations](/docs/how-to/export-note-with-citations) and [Export with native Pandoc](/docs/how-to/export-with-native-pandoc).
+
+## What's New
+
+### Annotation view
+
+- The view keeps the follow mode you choose, <UiLabel name={m.annot_view_mode_active_tab()} />, <UiLabel name={m.annot_view_mode_zotero_reader()} />, or <UiLabel name={m.annot_view_mode_pinned()} />, until you change it. When its source has nothing to show, the view says so in place.
+- Select several cards with `Ctrl`-click or `Command`-click, `Shift`-click, or `Ctrl+A` / `Command+A`. Then delete them, recolor them with the keys `1` to `8`, or copy their text together. One undo reverses the whole group.
+- <UiLabel name={m.annot_view_menu_insert()} /> in a card's menu inserts the
+  annotation at the cursor in your note, the same text a drag leaves, so you can
+  insert from the keyboard as well.
+- <UiLabel name={m.command_open_pdf_name()} /> in the view's menu opens the
+  attachment on screen in Obsidian.
+- <UiLabel name={m.annot_view_filter_tag_trigger()} /> and
+  <UiLabel name={m.annot_view_filter_color_trigger()} /> open as small popovers,
+  so the filters no longer push the list down.
+- Edit an annotation's tags on its card or in the PDF popup, then select <UiLabel name={m.annot_view_tags_save()} />.
+- Image and ink annotations show their picture on the card and insert into notes with both PDF readers closed. The picture updates after you edit the annotation. See [Excerpt images](/docs/concepts/excerpt-images).
+
+[Use the annotation view](/docs/how-to/use-annotation-view) has the full guide.
+
+### ZotLit Companion
+
+- <UiLabel name={m["zotero.prefs_pane_type"]()} />, in the
+  <UiLabel name={m["zotero.prefs_open_section"]()} /> section of the
+  <UiLabel name={m["zotero.prefs_pane_label"]()} /> pane in Zotero's settings,
+  chooses where notes opened from Zotero's menus appear:
+  <UiLabel name={m["zotero.prefs_pane_type_active.label"]()} />,
+  <UiLabel name={m["zotero.prefs_pane_type_tab.label"]()} />,
+  <UiLabel name={m["zotero.prefs_pane_type_split.label"]()} />, or
+  <UiLabel name={m["zotero.prefs_pane_type_window.label"]()} />.
+- `obsidian://zotlit/` links take the same choice as a `paneType` parameter: `tab`, `split`, or `window`. See [Where the link opens](/docs/reference/protocol-links#pane-type).
+
+## Bug Fixes
+
+- In Zotero, right-clicking a PDF attachment opened an empty ZotLit submenu. The submenu is now dimmed when none of its entries apply.
+- Converting 2.1 template files: when moving the old files to the trash failed, the conversion is still kept, and ZotLit names the files left behind and tries the cleanup again.
+- When ZotLit refuses a template conversion, it now names only the files you need to edit.
+- The reminder shown after you postpone the template conversion is shorter.
