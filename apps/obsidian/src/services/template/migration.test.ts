@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { citekeysToCiteTemplateData } from "@zotlit/db";
 import { LegacyTemplateConversionError } from "@zotlit/templates/facade";
 
+import { MockVault, PluginStub } from "@/lib/__fixtures__/obsidian-host";
 import { defaults } from "@/services/settings/schema";
 import { SettingsService } from "@/services/settings/service";
 
@@ -11,7 +12,6 @@ import { LiteratureNoteTemplateMigrationService } from "./migration";
 import type { LiteratureNoteTemplateMigrationOptions } from "./migration";
 import { TemplateService } from "./service";
 import type { LegacyTemplateDocuments } from "./service";
-import { MockVault, PluginStub } from "./test-vault";
 
 function makeHarness(options?: {
   pending?: boolean;

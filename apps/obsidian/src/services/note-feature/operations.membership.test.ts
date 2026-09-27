@@ -1,7 +1,7 @@
 // Creation preparation and registry behavior over Profile documents and relational Item rows.
 import type { TFile } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { stringify as stringifyYaml } from "yaml";
 
 import type { Item, NoteTemplateContext } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
@@ -200,12 +200,6 @@ async function harness(
   );
   const { app, vault, profile, template, settings } = fixture;
   const notesByKey = new Map<string, TFile[]>();
-  app.metadataCache.getFileCache = (file) => {
-    const text = vault.contents.get(file.path) ?? "";
-    return text.startsWith("---\n")
-      ? { frontmatter: parseYaml(text.split("---\n")[1]!) }
-      : null;
-  };
   const create = vault.create.bind(vault);
   vault.create = async (path, content) => {
     const file = await create(path, content);

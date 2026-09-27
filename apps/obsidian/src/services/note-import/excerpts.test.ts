@@ -8,9 +8,8 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { FileSystemAdapter, TFile, TFolder } from "obsidian";
-import type { App } from "obsidian";
+import { join } from "node:path";
+import type { App, TFile } from "obsidian";
 import Turndown from "turndown";
 import { expect, it, vi } from "vitest";
 
@@ -35,6 +34,7 @@ import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 
+import { diskImageHost } from "./__fixtures__/disk-image-host";
 import { createNoteImporter } from "./service";
 
 const paragraph = (key: string, image: string) =>
@@ -84,52 +84,11 @@ async function fixture(mode = "normal") {
   client.$client
     .prepare("update itemNotes set note=? where itemID=5")
     .run(html);
-  const files = new Map<string, TFile>();
-  const folders = new Map<string, TFolder>();
-  const register = (path: string) => {
-    const file = Object.assign(new TFile(), { path });
-    files.set(path, file);
-    return file;
-  };
+  const host = diskImageHost(vaultRoot);
   const app = {
+    ...host.app,
     loadLocalStorage: () => null,
     saveLocalStorage: () => {},
-    vault: {
-      adapter: Object.assign(Object.create(FileSystemAdapter.prototype), {
-        getFullPath: (path: string) => join(vaultRoot, path),
-        reconcileInternalFile: async (path: string) => {
-          register(path);
-        },
-      }),
-      getRoot: () => Object.assign(new TFolder(), { path: "" }),
-      getFileByPath: (path: string) => files.get(path) ?? null,
-      getAbstractFileByPath: (path: string) =>
-        files.get(path) ?? folders.get(path) ?? null,
-      createFolder: async (path: string) => {
-        await mkdir(join(vaultRoot, path), { recursive: true });
-        const folder = Object.assign(new TFolder(), { path });
-        folders.set(path, folder);
-        return folder;
-      },
-      create: async (path: string, content: string) => {
-        await mkdir(dirname(join(vaultRoot, path)), { recursive: true });
-        await writeFile(join(vaultRoot, path), content);
-        return register(path);
-      },
-      read: (file: TFile) => readFile(join(vaultRoot, file.path), "utf8"),
-      process: async (file: TFile, edit: (content: string) => string) => {
-        const content = edit(
-          await readFile(join(vaultRoot, file.path), "utf8"),
-        );
-        await writeFile(join(vaultRoot, file.path), content);
-        return content;
-      },
-    },
-    metadataCache: {
-      getFileCache: () => null,
-      getFirstLinkpathDest: (path: string) => files.get(path) ?? null,
-    },
-    workspace: { iterateAllLeaves: () => {} },
     fileManager: { generateMarkdownLink: (file: TFile) => `[[${file.path}]]` },
   } as unknown as App;
   const settings = {
@@ -223,6 +182,7 @@ async function fixture(mode = "normal") {
   const cleanup = stack.move();
   return {
     app,
+    host,
     vaultRoot,
     client,
     importer,
@@ -239,7 +199,7 @@ async function fixture(mode = "normal") {
         targetFile,
         reportExcerpts: (summary) => reports.push(summary),
       }),
-    note: () => [...files.values()].find((file) => file.path.endsWith(".md"))!,
+    note: () => host.vault.getMarkdownFiles()[0]!,
     images: () => readdir(join(vaultRoot, "Images")),
     [Symbol.asyncDispose]: () => cleanup[Symbol.asyncDispose](),
   };
@@ -268,7 +228,7 @@ it("refreshes live image and ink versions while preserving frozen snapshots and 
   await f.import(file);
   const updated = await f.app.vault.read(file);
   expect(updated).not.toBe(original);
-  expect(await readFile(join(f.vaultRoot, "Other.md"), "utf8")).toBe(original);
+  expect(f.host.text("Other.md")).toBe(original);
   expect(await f.images()).toHaveLength(5);
   for (const name of names)
     expect(await readFile(join(f.vaultRoot, "Images", name))).toEqual(

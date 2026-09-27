@@ -10,15 +10,12 @@ import { join } from "node:path";
 import {
   FileSystemAdapter,
   getFrontMatterInfo,
-  parseYaml,
   stringifyYaml,
-  TextFileView,
   TFile,
   TFolder,
 } from "obsidian";
-import type { App, FileManager, WorkspaceLeaf } from "obsidian";
+import type { App } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
-import type { Mock } from "vitest";
 
 import {
   citekeysToCiteTemplateData,
@@ -64,6 +61,8 @@ import {
 } from "@zotlit/templates/obsidian";
 import type { ItemFields } from "@zotlit/zotero-types";
 
+import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
+import type { ObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import {
   FIELD_CITATION_STYLE,
   FIELD_CITEKEY,
@@ -71,6 +70,7 @@ import {
   FIELD_ZOTERO_KEY,
 } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
+import { parseFrontMatter } from "@/lib/live-text";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type {
   AttachmentSource,
@@ -232,7 +232,7 @@ describe("Companion note target", () => {
         content: "Unchanged",
         frontmatter: { "zotlit-profile": "Missing (Rz9Wm4YfH6Kd)" },
       });
-      const file = makeFile("Paper.md");
+      const file = harness.file("Paper.md");
       harness.deps.noteIndex.getNotesByItemKey = () => [file];
       await expect(
         createNoteFeature(harness.deps).resolveCompanionNote("ABC12345", {
@@ -258,8 +258,8 @@ describe("Companion note target", () => {
       frontmatter: { "zotlit-profile": `Books (${books})` },
       settings: { profiles: [{ id: books, label: "Books" }] },
     });
-    const file = makeFile("Books/Paper.md");
-    const duplicate = makeFile("Other/Paper.md");
+    const file = harness.file("Books/Paper.md");
+    const duplicate = harness.file("Other/Paper.md");
     harness.deps.noteIndex.getNotesByItemKey = () => [file, duplicate];
     const feature = createNoteFeature(harness.deps);
     for (const profile of [undefined, books]) {
@@ -291,7 +291,7 @@ describe("Companion note target", () => {
         frontmatter: { "zotlit-profile": `Missing (${missing})` },
       });
       harness.deps.noteIndex.getNotesByItemKey = () =>
-        existing ? [makeFile("Paper.md")] : [];
+        existing ? [harness.file("Paper.md")] : [];
       await expect(
         createNoteFeature(harness.deps).resolveCompanionNote("ABC12345", {
           profile: missing,
@@ -321,7 +321,7 @@ describe("Companion note target", () => {
         ],
       },
     });
-    const file = makeFile("Books/Paper.md");
+    const file = harness.file("Books/Paper.md");
     harness.deps.noteIndex.getNotesByItemKey = () => [file];
     const feature = createNoteFeature(harness.deps);
 
@@ -443,18 +443,12 @@ describe("Profile source selection", () => {
     expect(app.vault.create).toHaveBeenCalledTimes(1);
     const file = createdFile(await preview.create());
     expect(file.path).toBe(preview.path);
-    expect(app.vault.contentByPath.get("Reading/Paper.md")).toBe("Occupied");
+    expect(app.vault.contents.get("Reading/Paper.md")).toBe("Occupied");
   });
 
   it("keeps the preview's random suffix and retries safely if another file takes that path", async () => {
     const { deps } = makeUpdateHarness({ content: "" });
     const app = makeApp();
-    const write = app.vault.create.getMockImplementation()!;
-    app.vault.create.mockImplementation(async (path, content) => {
-      if (app.vault.getAbstractFileByPath(path))
-        throw new Error("File already exists.");
-      return write(path, content);
-    });
     deps.app = app;
     deps.template = {
       ...makeTemplate(),
@@ -471,16 +465,14 @@ describe("Profile source selection", () => {
     expect(preview!.path).not.toBe("Literature/Root.md");
     const created = createdFile(await preview!.create());
     expect(created.path).toBe(preview!.path);
-    expect(app.vault.contentByPath.get("Literature/Root.md")).toBe("Occupied");
+    expect(app.vault.contents.get("Literature/Root.md")).toBe("Occupied");
 
     const otherItem = { ...makeCreateGateItem(), indexedKey: "PAPER234" };
     const [second] = await feature.prepareCreationProfiles(otherItem);
     await app.vault.create(second!.path!, "Arrived after preview");
     const otherCreated = createdFile(await second!.create());
     expect(otherCreated.path).not.toBe(second!.path);
-    expect(app.vault.contentByPath.get(second!.path!)).toBe(
-      "Arrived after preview",
-    );
+    expect(app.vault.contents.get(second!.path!)).toBe("Arrived after preview");
   });
 
   it("keeps usable Profiles available when another Profile's filename cannot render", async () => {
@@ -527,7 +519,9 @@ describe("Profile source selection", () => {
         ],
       },
     });
-    deps.app = makeApp();
+    const app = makeApp();
+    app.metadataCache.hold();
+    deps.app = app;
     const document = makeDocumentTemplate({ filename: "Shelf/Root" });
     deps.template = {
       ...makeTemplate(),
@@ -739,15 +733,17 @@ describe("createNote", () => {
           expect(leaseReleased).toBe(false);
           await mkdir(`${root}/Literature`, { recursive: true });
           await writeFile(`${root}/${path}`, content);
-          return makeFile(path);
+          return app.vault.createFile(path, content);
         },
       );
       Object.assign(app.vault, {
         adapter: Object.assign(Object.create(FileSystemAdapter.prototype), {
           getFullPath: (path: string) => `${root}/${path}`,
-          reconcileInternalFile: async () => {},
+          // Obsidian registers a published excerpt as a vault file.
+          reconcileInternalFile: async (path: string) => {
+            if (!app.vault.getFileByPath(path)) app.vault.addFile(path, "");
+          },
         }),
-        getFileByPath: (path: string) => makeFile(path),
       });
       deps.app = app;
       const fallbackService = cleanup.use(
@@ -957,7 +953,7 @@ describe("createNote", () => {
           "retain-write",
         ].includes(mode)
       ) {
-        const file = makeFile("Literature/Paper.md");
+        const file = app.host.file("Literature/Paper.md");
         const priorAssets = await readdir(`${root}/Images`);
         const properties = "---\nzotero-key: ROOT1234\n---\n";
         const body = `User introduction\n${formatManagedRegion(markdown)}\nUser conclusion`;
@@ -992,35 +988,10 @@ describe("createNote", () => {
             retainedAssets.push(newAsset.path.slice("Images/".length));
           }
         } else retainedAssets.push(...priorAssets);
-        Object.assign(app.vault, {
-          read: async () => current,
-          process: async (
-            _file: TFile,
-            transform: (content: string) => string,
-          ) => {
-            current = transform(current);
-            await writeFile(`${root}/${file.path}`, current);
-            return current;
-          },
-        });
+        app.vault.modifyFile(file.path, current);
+        // The host's metadata cache has no link resolution: each link
+        // resolves to a file at its own path.
         Object.assign(app.metadataCache, {
-          getFileCache: () => ({
-            [mode === "retain-link" ? "links" : "embeds"]: priorAssets.map(
-              (name) => {
-                const link = `Images/${name}`;
-                const syntax = `${mode === "retain-link" ? "" : "!"}[[${link}]]`;
-                const offset = original.indexOf(syntax);
-                return {
-                  link,
-                  original: syntax,
-                  position: {
-                    start: { offset },
-                    end: { offset: offset + syntax.length },
-                  },
-                };
-              },
-            ),
-          }),
           getFirstLinkpathDest: (path: string) => makeFile(path),
         });
         vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
@@ -1086,6 +1057,7 @@ describe("createNote", () => {
         leaseReleased = false;
         if (mode === "overwrite") await feature.overwriteNote(file, "ROOT1234");
         else await feature.updateNote(file, { indexedKey: "ROOT1234" });
+        current = app.host.text(file.path)!;
         expect(runs).toBe(2);
         expect(await readFile(otherNote, "utf8")).toBe(original);
         for (const name of priorAssets)
@@ -1198,7 +1170,7 @@ describe("createNote", () => {
 
     expect(file.path).toBe("Literature/Root.md");
     expect(update).not.toHaveBeenCalled();
-    expect(app.vault.contentByPath.get("Literature/Root.md")).toContain(
+    expect(app.vault.contents.get("Literature/Root.md")).toContain(
       [
         "root:Literature/Root.md|[[Literature/Root.md|Root alias]]",
         "A Related:Literature/A Related.md|[[Literature/A Related.md|A Related]]",
@@ -1344,41 +1316,21 @@ describe("createNote", () => {
       relatedItems: [],
     } as unknown as NoteTemplateContext);
 
-    const literature = new TFolder();
-    literature.path = "Literature";
-    const root = new TFolder();
-    root.path = "/";
-
     // A sibling already holds the base path on disk, but the path cache never
     // reflects it — the cache-lag race the suffix retry recovers from. Detection
     // rides on `create`'s rejection alone, not on a cache re-check.
-    const disk = new Set(["Literature/Root.md"]);
-    const create = vi.fn(async (path: string) => {
-      if (disk.has(path)) throw new Error("File already exists.");
-      disk.add(path);
-      return makeFile(path);
-    });
+    const app = makeApp({ "Literature/Root.md": "" });
+    const lookup = app.vault.getAbstractFileByPath.bind(app.vault);
+    vi.spyOn(app.vault, "getAbstractFileByPath").mockImplementation((path) =>
+      path === "Literature/Root.md" ? null : lookup(path),
+    );
+    const create = app.vault.create;
     const document = makeDocumentTemplate({
       filename: `Root${filenameSuffix()}`,
     });
 
     const deps: SyncRenderDeps = {
-      app: {
-        metadataCache: { getFileCache: () => null },
-        workspace: { iterateAllLeaves: () => {} },
-        vault: {
-          getAbstractFileByPath: (path) =>
-            path === "Literature" ? literature : null,
-          getRoot: () => root,
-          createFolder: vi.fn(),
-          create,
-          process: vi.fn(async () => ""),
-        },
-        fileManager: {
-          generateMarkdownLink: () => "",
-          renameFile: vi.fn(),
-        },
-      },
+      app,
       template: {
         ...makeTemplate(),
         getLiteratureNoteTemplate: () => document,
@@ -1663,6 +1615,7 @@ describe("createNote", () => {
     const item = makeCreateGateItem();
     vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
     const app = makeApp();
+    app.metadataCache.hold();
     const create = app.vault.create;
     const feature = createNoteFeature({
       app,
@@ -1702,9 +1655,13 @@ describe("createNote", () => {
     const item = makeCreateGateItem();
     vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
     const app = makeApp();
+    app.metadataCache.hold();
     const feature = createNoteFeature({
       app,
-      template: makeTemplate(),
+      template: {
+        ...makeTemplate(),
+        renderFilename: () => `Root${filenameSuffix()}`,
+      },
       db: makeDb(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
@@ -1729,9 +1686,10 @@ describe("createNote", () => {
     });
 
     const first = await feature.createNote(item);
-    vi.mocked(app.metadataCache.getFileCache).mockReturnValue({
-      frontmatter: {},
-    });
+    // The user removes the note's Properties, and its Zotero key with them,
+    // and the cache parses the note.
+    app.vault.modifyFile(createdFile(first).path, "Body");
+    app.metadataCache.settle();
     const second = await feature.createNote(item);
 
     expect(first.outcome).toBe("created");
@@ -1743,6 +1701,7 @@ describe("createNote", () => {
     const item = makeCreateGateItem();
     vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
     const app = makeApp();
+    app.metadataCache.hold();
     const template = makeTemplate();
     template.renderFilename = () => `Root${filenameSuffix()}`;
     const feature = createNoteFeature({
@@ -1918,10 +1877,10 @@ describe("createNote", () => {
     );
 
     expect(file.path).toBe("Books/Root.md");
-    expect(app.vault.contentByPath.get(file.path)).toContain(
+    expect(app.vault.contents.get(file.path)).toContain(
       `${FIELD_LITERATURE_NOTE_PROFILE}: Books (Bk3Qn7XvT2Lp)`,
     );
-    expect(app.vault.contentByPath.get(file.path)).toContain(
+    expect(app.vault.contents.get(file.path)).toContain(
       `${FIELD_CITATION_STYLE}: apa`,
     );
   });
@@ -2100,10 +2059,10 @@ describe("createNote", () => {
     );
 
     expect(file.path).toBe("Books/Book-Root.md");
-    expect(app.vault.contentByPath.get(file.path)).toContain(
+    expect(app.vault.contents.get(file.path)).toContain(
       `# Books layout\n\n${formatManagedRegion("BOOK BODY")}`,
     );
-    const content = app.vault.contentByPath.get(file.path)!;
+    const content = app.vault.contents.get(file.path)!;
     expect(content).toContain('"2": two');
     expect(content).toContain("__proto__: safe");
     expect(content).toContain('"1": one');
@@ -2290,11 +2249,10 @@ describe("createNote", () => {
   it("returns a Profile conflict when an explicit create disagrees with the existing stamp", async () => {
     const existingProfileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const requestedProfileId = "Rz9Wm4YfH6Kd" as ProfileId;
-    const existing = makeFile("Books/Root.md");
-    const app = makeApp();
-    app.metadataCache.getFileCache.mockReturnValue({
-      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: existingProfileId },
+    const app = makeApp({
+      "Books/Root.md": `---\n${FIELD_LITERATURE_NOTE_PROFILE}: ${existingProfileId}\n---\n`,
     });
+    const existing = app.host.file("Books/Root.md");
     const deps: SyncRenderDeps = {
       app,
       template: makeTemplate(),
@@ -2435,7 +2393,7 @@ describe("overwriteNote", () => {
     });
 
     const result = await createNoteFeature(harness.deps).overwriteNote(
-      makeFile("Books/Root.md"),
+      harness.file("Books/Root.md"),
       item.indexedKey,
     );
 
@@ -2471,7 +2429,7 @@ describe("overwriteNote", () => {
         : "") as typeof harness.deps.template.render;
 
     const result = await createNoteFeature(harness.deps).overwriteNote(
-      makeFile("Literature/Root.md"),
+      harness.file("Literature/Root.md"),
       item.indexedKey,
     );
 
@@ -2509,7 +2467,7 @@ describe("overwriteNote", () => {
       });
 
     const result = await createNoteFeature(harness.deps).overwriteNote(
-      makeFile("Books/Root.md"),
+      harness.file("Books/Root.md"),
       item.indexedKey,
     );
 
@@ -2540,110 +2498,49 @@ describe("overwriteNote", () => {
       updateContext({ indexedKey: "ROOT1234" }),
     );
 
-    const file = makeFile("Literature/Root.md");
-    const originalContent =
-      "---\r\nzotero-key: ROOT1234\r\n---\r\nOld body content";
-    let processedContent: string | undefined;
+    const harness = makeUpdateHarness({ content: "" });
+    harness.deps.template.render = ((name: string) =>
+      name === "note"
+        ? "New body content"
+        : "") as typeof harness.deps.template.render;
+    harness.host.vault.createFile(
+      "Literature/Root.md",
+      "---\r\nzotero-key: ROOT1234\r\n---\r\nOld body content",
+    );
+    const file = harness.file("Literature/Root.md");
 
-    const deps: SyncRenderDeps = {
-      app: {
-        metadataCache: { getFileCache: () => null },
-        workspace: { iterateAllLeaves: () => {} },
-        vault: {
-          getAbstractFileByPath: () => null,
-          getRoot: () => new TFolder(),
-          createFolder: vi.fn(),
-          create: vi.fn(),
-          process: vi.fn(async (_file: TFile, cb: (data: string) => string) => {
-            processedContent = cb(originalContent);
-            return processedContent;
-          }),
-        },
-        fileManager: {
-          generateMarkdownLink: () => "",
-          renameFile: vi.fn(),
-        },
-      },
-      template: {
-        ready: Promise.resolve(),
-        loaded: true,
-        frontmatterFields: [],
-        getLiteratureNoteTemplate: () => undefined,
-        renderProfileAnnotation: () => "",
-        renderCitation: () => "",
-        renderFilename: () => "",
-        render: () => "New body content",
-      },
-      db: makeDb(),
-      noteIndex: {
-        getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
-        whenIndexed: async () => {},
-        getNotesByItemKey: () => [],
-      },
-      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
-      settings: makeSettings(),
-      attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        prepare: async () => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
-          }),
-          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-        }),
-      },
-    };
+    await createNoteFeature(harness.deps).overwriteNote(file, item.indexedKey);
 
-    await createNoteFeature(deps).overwriteNote(file, item.indexedKey);
-
-    expect(processedContent).toBe(
+    expect(harness.host.text(file.path)).toBe(
       "---\r\nzotero-key: ROOT1234\n---\r\nNew body content",
     );
   });
 });
 
-/** A loaded editor on a note: its text is the view's `data`. */
-class NoteEditorView extends TextFileView {
-  override getViewData(): string {
-    return this.data;
-  }
-  override setViewData(data: string): void {
-    this.data = data;
-  }
-  override clear(): void {
-    this.data = "";
-  }
-  override getViewType(): string {
-    return "markdown";
-  }
-}
-
 /**
- * A note-update harness whose `vault.process` actually runs its callback
- * against the note held in memory, so a test can assert on the note's
- * rewritten body and frontmatter after an update — the seam `updateNote` /
- * `writeNoteUpdate` write through.
+ * A note-update harness over an in-memory host. `file` places the note — a
+ * Properties block stamped with its Zotero key, then `options.content` — so a
+ * test can assert on the rewritten body and frontmatter after an update.
  */
 interface UpdateHarness {
   deps: SyncRenderDeps;
+  host: ObsidianHost;
+  /**
+   * The note at `path`, placed on first use. The first path placed is the note
+   * `content` and `frontmatter` read.
+   */
+  file: (path: string) => TFile;
   /** Note body after the update (byte-identical to what was written). */
   content: () => string;
   frontmatter: () => Record<string, unknown>;
   /** The `content`-template render stub; assert it stays unqueued when no region exists. */
   renderContent: ReturnType<typeof vi.fn>;
+  /** The vault's `process`; a write through an open view leaves it uncalled. */
   processMock: ReturnType<
     typeof vi.fn<
       (file: TFile, update: (content: string) => string) => Promise<string>
     >
   >;
-  /** Open `file` in a loaded editor whose text is `edit(note)`; its save writes the note. */
-  openInEditor: (
-    file: TFile,
-    edit?: (text: string) => string,
-  ) => { view: TextFileView; save: ReturnType<typeof vi.fn> };
 }
 
 function makeUpdateHarness(options: {
@@ -2657,21 +2554,20 @@ function makeUpdateHarness(options: {
 }): UpdateHarness {
   // The note file as the vault holds it: a Properties block, stamped with its
   // Zotero key like any Literature Note, then `options.content` as the body.
-  let note = `---\n${stringifyYaml({
+  const text = `---\n${stringifyYaml({
     [FIELD_ZOTERO_KEY]: "ABC12345",
     ...options.frontmatter,
   })}---\n${options.content}`;
-  const properties = (): Record<string, unknown> =>
-    parseYaml(getFrontMatterInfo(note).frontmatter);
-  const views: TextFileView[] = [];
+  const host = createObsidianHost();
+  const processMock = vi.fn(host.vault.process.bind(host.vault));
+  host.vault.process = processMock;
+  let note: TFile | undefined;
+  const noteText = (): string => {
+    if (!note) throw new Error("No note placed");
+    return host.text(note.path)!;
+  };
   const renderContent = vi.fn(
     () => options.renderedRegion ?? formatManagedRegion("NEW BODY"),
-  );
-  const processMock = vi.fn(
-    async (_file: TFile, cb: (data: string) => string) => {
-      note = cb(note);
-      return note;
-    },
   );
 
   const template: SyncRenderDeps["template"] = {
@@ -2688,20 +2584,7 @@ function makeUpdateHarness(options: {
 
   const deps: SyncRenderDeps = {
     app: {
-      metadataCache: { getFileCache: () => ({ frontmatter: properties() }) },
-      workspace: {
-        iterateAllLeaves: (callback) => {
-          for (const view of views)
-            callback({ view } as unknown as WorkspaceLeaf);
-        },
-      },
-      vault: {
-        getAbstractFileByPath: () => null,
-        getRoot: () => new TFolder(),
-        createFolder: vi.fn(),
-        create: vi.fn(),
-        process: processMock,
-      },
+      ...host.app,
       fileManager: {
         generateMarkdownLink: () => "",
         renameFile: vi.fn(),
@@ -2733,24 +2616,18 @@ function makeUpdateHarness(options: {
 
   return {
     deps,
-    content: () => note.slice(getFrontMatterInfo(note).contentStart),
-    frontmatter: properties,
+    host,
+    file: (path) => {
+      const file =
+        host.vault.getFileByPath(path) ?? host.vault.createFile(path, text);
+      note ??= file;
+      return file;
+    },
+    content: () =>
+      noteText().slice(getFrontMatterInfo(noteText()).contentStart),
+    frontmatter: () => parseFrontMatter(noteText()),
     renderContent,
     processMock,
-    openInEditor: (file, edit = (text) => text) => {
-      const view = new NoteEditorView({ app: deps.app } as never);
-      view.file = file;
-      view.lastSavedData = note;
-      view.data = edit(note);
-      // `TextFileView.save` writes the view's text over the note.
-      const save = vi.fn(async () => {
-        note = view.getViewData();
-        view.lastSavedData = note;
-      });
-      view.save = save;
-      views.push(view);
-      return { view, save };
-    },
   };
 }
 
@@ -2819,7 +2696,7 @@ describe("updateNote", () => {
       const feature = createNoteFeature(harness.deps);
       const report = vi.fn();
       feature.on("excerpt-images-reported", report);
-      const file = makeFile("Literature/Test.md");
+      const file = harness.file("Literature/Test.md");
       const pending =
         operation === "update"
           ? feature.updateNote(file, { indexedKey: "ABC12345", scope: "full" })
@@ -2846,7 +2723,7 @@ describe("updateNote", () => {
         frontmatter: { title: "Replacement" },
       });
       stubIndexedKeyUpdate(updateContext());
-      const original = makeFile("Literature/Original.md");
+      const original = harness.file("Literature/Original.md");
       let currentFile = original;
       const preparation = Promise.withResolvers<void>();
       const started = Promise.withResolvers<void>();
@@ -2884,7 +2761,7 @@ describe("updateNote", () => {
     const unavailable = new Error("Originating note changed");
     await expect(
       createNoteFeature(harness.deps).updateNote(
-        makeFile("Literature/Original.md"),
+        harness.file("Literature/Original.md"),
         {
           indexedKey: "ABC12345",
           beforeWrite: () => {
@@ -2912,7 +2789,7 @@ describe("updateNote", () => {
       });
       stubIndexedKeyUpdate(updateContext());
       const result = await createNoteFeature(harness.deps).updateNote(
-        makeFile("Literature/Original.md"),
+        harness.file("Literature/Original.md"),
         { indexedKey: "ABC12345", scope },
       );
       expect(result).toEqual({
@@ -2945,7 +2822,7 @@ describe("updateNote", () => {
     });
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Books/Root.md"),
+      harness.file("Books/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -2974,7 +2851,7 @@ describe("updateNote", () => {
     });
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Books/Root.md"),
+      harness.file("Books/Root.md"),
       { indexedKey: "ABC12345", profile: requestedId },
     );
 
@@ -3014,7 +2891,7 @@ describe("updateNote", () => {
     });
 
     await createNoteFeature(harness.deps).updateNote(
-      makeFile("Books/Root.md"),
+      harness.file("Books/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -3045,7 +2922,7 @@ describe("updateNote", () => {
     });
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Books/Root.md"),
+      harness.file("Books/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -3085,7 +2962,7 @@ describe("updateNote", () => {
     });
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Books/Root.md"),
+      harness.file("Books/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -3108,7 +2985,7 @@ describe("updateNote", () => {
     });
 
     await createNoteFeature(harness.deps).updateNote(
-      makeFile("Books/Root.md"),
+      harness.file("Books/Root.md"),
       {
         indexedKey: "ABC12345",
       },
@@ -3129,7 +3006,7 @@ describe("updateNote", () => {
     });
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Literature/Root.md"),
+      harness.file("Literature/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -3157,7 +3034,7 @@ describe("updateNote", () => {
     });
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Literature/Root.md"),
+      harness.file("Literature/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -3182,7 +3059,7 @@ describe("updateNote", () => {
     });
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Literature/Root.md"),
+      harness.file("Literature/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -3215,7 +3092,7 @@ describe("updateNote", () => {
     });
 
     await createNoteFeature(harness.deps).updateNote(
-      makeFile("Books/Root.md"),
+      harness.file("Books/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -3243,7 +3120,7 @@ describe("updateNote", () => {
     harness.deps.noteImport.prepare = prepare;
 
     await createNoteFeature(harness.deps).updateNote(
-      makeFile("Books/Root.md"),
+      harness.file("Books/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -3279,7 +3156,7 @@ describe("updateNote", () => {
     harness.deps.template.getLiteratureNoteTemplate = () => document;
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Books/Root.md"),
+      harness.file("Books/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -3295,17 +3172,18 @@ describe("updateNote", () => {
   it.each([
     {
       what: "update",
-      run: (deps: SyncRenderDeps) =>
-        createNoteFeature(deps).updateNote(makeFile("Books/Root.md"), {
-          indexedKey: "ABC12345",
-        }),
+      run: (harness: UpdateHarness) =>
+        createNoteFeature(harness.deps).updateNote(
+          harness.file("Books/Root.md"),
+          { indexedKey: "ABC12345" },
+        ),
       render: "renderForUpdate" as const,
     },
     {
       what: "overwrite",
-      run: (deps: SyncRenderDeps) =>
-        createNoteFeature(deps).overwriteNote(
-          makeFile("Books/Root.md"),
+      run: (harness: UpdateHarness) =>
+        createNoteFeature(harness.deps).overwriteNote(
+          harness.file("Books/Root.md"),
           "ABC12345",
         ),
       render: "renderForCreate" as const,
@@ -3336,7 +3214,7 @@ describe("updateNote", () => {
       });
       harness.deps.template.getLiteratureNoteTemplate = () => document;
 
-      await expect(run(harness.deps)).rejects.toMatchObject({
+      await expect(run(harness)).rejects.toMatchObject({
         name: "MissingTemplateError",
         templateName: "venue-line",
       });
@@ -3385,7 +3263,7 @@ describe("updateNote", () => {
     harness.deps.template.getLiteratureNoteTemplate = () => document;
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Books/Root.md"),
+      harness.file("Books/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -3420,7 +3298,7 @@ describe("updateNote", () => {
       });
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Books/Root.md"),
+      harness.file("Books/Root.md"),
       { indexedKey: "ABC12345", scope: "metadata" },
     );
 
@@ -3463,7 +3341,7 @@ describe("updateNote", () => {
       });
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Books/Root.md"),
+      harness.file("Books/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -3520,7 +3398,7 @@ describe("updateNote", () => {
       });
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Books/Root.md"),
+      harness.file("Books/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -3593,7 +3471,7 @@ describe("updateNote", () => {
         });
 
       const result = await createNoteFeature(harness.deps).updateNote(
-        makeFile("Books/Root.md"),
+        harness.file("Books/Root.md"),
         { indexedKey: "ABC12345" },
       );
 
@@ -3625,7 +3503,7 @@ describe("updateNote", () => {
     harness.deps.template.getLiteratureNoteTemplate = () => document;
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Books/Root.md"),
+      harness.file("Books/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -3660,7 +3538,7 @@ describe("updateNote", () => {
     harness.deps.template.getLiteratureNoteTemplate = () => undefined;
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Books/Root.md"),
+      harness.file("Books/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -3685,7 +3563,7 @@ describe("updateNote", () => {
     });
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Literature/Root.md"),
+      harness.file("Literature/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -3710,7 +3588,7 @@ describe("updateNote", () => {
     });
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Literature/Root.md"),
+      harness.file("Literature/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -3751,7 +3629,7 @@ describe("updateNote", () => {
     });
 
     const result = await createNoteFeature(harness.deps).switchNoteProfile(
-      makeFile("Books/Root.md"),
+      harness.file("Books/Root.md"),
       { profile: newProfileId },
     );
 
@@ -3779,9 +3657,9 @@ describe("updateNote", () => {
         ],
       },
     });
-    const file = makeFile("Books/My chosen name.md");
+    const file = harness.file("Books/My chosen name.md");
     const rename = vi.fn(async (_file: TFile, path: string) => {
-      file.path = path;
+      harness.host.vault.renameFile(file.path, path);
     });
     harness.deps.app.fileManager.renameFile = rename;
     const feature = createNoteFeature(harness.deps);
@@ -3855,7 +3733,7 @@ describe("updateNote", () => {
     harness.deps.noteIndex.getImportedNoteByNoteKey = (key) =>
       key === "NOTE0001" ? [imported] : [];
     const plan = await createNoteFeature(harness.deps).prepareProfileSwitch(
-      makeFile("Books/My title.md"),
+      harness.file("Books/My title.md"),
     );
     expect(plan.current).toMatchObject({ selector: books, label: "Books" });
     expect(plan.importedNotes).toEqual([imported]);
@@ -3895,7 +3773,7 @@ describe("updateNote", () => {
         harness.deps.db.acquireRead = async () => {
           throw new Error("Database unavailable");
         };
-      const file = makeFile("Literature/Paper.md");
+      const file = harness.file("Literature/Paper.md");
       const feature = createNoteFeature(harness.deps);
       const plan = await feature.prepareProfileSwitch(file);
       expect(plan.importedNotes).toBeNull();
@@ -3916,10 +3794,6 @@ describe("updateNote", () => {
   it("re-stamps an opted-in Imported Note family after the Literature Note switch", async () => {
     const oldProfileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const newProfileId = "Rz9Wm4YfH6Kd" as ProfileId;
-    const imported = [
-      makeFile("Imported/First.md"),
-      makeFile("Imported/Second.md"),
-    ];
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
@@ -3931,8 +3805,13 @@ describe("updateNote", () => {
         ],
       },
     });
+    const file = harness.file("Books/Root.md");
+    const imported = [
+      harness.file("Imported/First.md"),
+      harness.file("Imported/Second.md"),
+    ];
     const result = await createNoteFeature(harness.deps).switchNoteProfile(
-      makeFile("Books/Root.md"),
+      file,
       {
         profile: newProfileId,
         importedNotes: imported,
@@ -3969,9 +3848,9 @@ describe("updateNote", () => {
     harness.deps.db.acquireRead = async () => {
       throw new Error("Recovery must not need a parent lookup");
     };
-    const file = makeFile("Imports/Child.md");
+    const file = harness.file("Imports/Child.md");
     harness.deps.app.fileManager.renameFile = async (_file, path) => {
-      file.path = path;
+      harness.host.vault.renameFile(file.path, path);
     };
     const feature = createNoteFeature(harness.deps);
     const plan = await feature.prepareProfileSwitch(file);
@@ -4003,7 +3882,7 @@ describe("updateNote", () => {
     });
 
     const result = await createNoteFeature(harness.deps).switchNoteProfile(
-      makeFile("Literature/Root.md"),
+      harness.file("Literature/Root.md"),
       {
         profile: newProfileId,
         importedNotes: [imported],
@@ -4019,14 +3898,10 @@ describe("updateNote", () => {
   it("restores all note stamps and the original path when one family write fails", async () => {
     const oldProfileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const newProfileId = "Rz9Wm4YfH6Kd" as ProfileId;
-    const literature = makeFile("Literature/Root.md");
-    const imported = [
-      makeFile("Imported/First.md"),
-      makeFile("Imported/Second.md"),
-    ];
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
+      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId },
       settings: {
         profiles: [
           { id: oldProfileId, label: "Books" },
@@ -4038,34 +3913,26 @@ describe("updateNote", () => {
         ],
       },
     });
-    const frontmatters = new Map<TFile, Record<string, unknown>>(
-      [literature, ...imported].map((file) => [
-        file,
-        { [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId },
-      ]),
-    );
-    harness.deps.app.metadataCache.getFileCache = (file) => ({
-      frontmatter: frontmatters.get(file),
-    });
+    const literature = harness.file("Literature/Root.md");
+    const imported = [
+      harness.file("Imported/First.md"),
+      harness.file("Imported/Second.md"),
+    ];
+    const { vault } = harness.host;
+    const properties = (file: TFile) =>
+      parseFrontMatter(vault.contents.get(file.path)!);
+    // The first write to the second Imported Note lands, then fails.
+    const write = vault.modifyFile.bind(vault);
     let failed = false;
-    // Each note as text: its Properties block over an empty body.
-    harness.deps.app.vault.process = vi.fn(async (file, edit) => {
-      const text = edit(`---\n${stringifyYaml(frontmatters.get(file))}---\n`);
-      frontmatters.set(
-        file,
-        parseYaml(getFrontMatterInfo(text).frontmatter) as Record<
-          string,
-          unknown
-        >,
-      );
-      if (file === imported[1] && !failed) {
+    vi.spyOn(vault, "modifyFile").mockImplementation((path, content) => {
+      write(path, content);
+      if (path === imported[1]!.path && !failed) {
         failed = true;
         throw new Error("frontmatter write failed");
       }
-      return text;
     });
     const rename = vi.fn(async (file: TFile, path: string) => {
-      file.path = path;
+      vault.renameFile(file.path, path);
     });
     harness.deps.app.fileManager.renameFile = rename;
 
@@ -4082,11 +3949,11 @@ describe("updateNote", () => {
       "Papers/Root.md",
       "Literature/Root.md",
     ]);
-    expect(frontmatters.get(literature)).toMatchObject({
+    expect(properties(literature)).toMatchObject({
       [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId,
     });
     for (const file of imported) {
-      expect(frontmatters.get(file)).toMatchObject({
+      expect(properties(file)).toMatchObject({
         [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId,
       });
     }
@@ -4112,7 +3979,7 @@ describe("updateNote", () => {
 
     await expect(
       createNoteFeature(harness.deps).switchNoteProfile(
-        makeFile("Books/Root.md"),
+        harness.file("Books/Root.md"),
         { profile: newProfileId, move: true },
       ),
     ).rejects.toThrow("destination exists");
@@ -4135,7 +4002,7 @@ describe("updateNote", () => {
     });
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Literature/Root.md"),
+      harness.file("Literature/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -4160,7 +4027,7 @@ describe("updateNote", () => {
     });
 
     await createNoteFeature(harness.deps).updateNote(
-      makeFile("Literature/Root.md"),
+      harness.file("Literature/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -4180,7 +4047,7 @@ describe("updateNote", () => {
     });
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Literature/Root.md"),
+      harness.file("Literature/Root.md"),
       { indexedKey: "ABC12345", scope: "metadata" },
     );
 
@@ -4211,10 +4078,10 @@ describe("updateNote", () => {
         { liquid: createLiquidEngine(), javascript: true },
       ).compiled,
     });
-    Object.assign(harness.deps.app.metadataCache, { getFileCache: () => null });
+    harness.host.metadataCache.hold();
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Literature/Root.md"),
+      harness.file("Literature/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -4230,11 +4097,10 @@ describe("updateNote", () => {
   it("writes an open note through its editor, keeping the unsaved text", async () => {
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
-    const file = makeFile("Literature/Root.md");
-    const { save } = harness.openInEditor(
-      file,
-      (text) => `${text}\nAn unsaved thought`,
-    );
+    const file = harness.file("Literature/Root.md");
+    const view = harness.host.openInEditor(file);
+    view.edit(`${view.getViewData()}\nAn unsaved thought`);
+    const save = vi.spyOn(view, "save");
 
     const result = await createNoteFeature(harness.deps).updateNote(file, {
       indexedKey: "ABC12345",
@@ -4251,10 +4117,10 @@ describe("updateNote", () => {
   it("refuses an open note whose editor text no longer carries the Zotero key", async () => {
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
-    const file = makeFile("Literature/Root.md");
-    const { view, save } = harness.openInEditor(file, (text) =>
-      text.replace("ABC12345", "OTHER234"),
-    );
+    const file = harness.file("Literature/Root.md");
+    const view = harness.host.openInEditor(file);
+    view.edit(view.getViewData().replace("ABC12345", "OTHER234"));
+    const save = vi.spyOn(view, "save");
     const edited = view.getViewData();
 
     const result = await createNoteFeature(harness.deps).updateNote(file, {
@@ -4292,7 +4158,7 @@ describe("updateNote", () => {
     });
 
     await createNoteFeature(harness.deps).updateNote(
-      makeFile("Literature/Root.md"),
+      harness.file("Literature/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -4326,7 +4192,7 @@ describe("updateNote", () => {
     const events: { itemKey: string; fields: string[] }[] = [];
     feature.on("frontmatter-eval-failed", (payload) => events.push(payload));
 
-    await feature.updateNote(makeFile("Literature/Root.md"), {
+    await feature.updateNote(harness.file("Literature/Root.md"), {
       indexedKey: "ABC12345",
     });
 
@@ -4341,7 +4207,7 @@ describe("updateNote", () => {
     const harness = makeUpdateHarness({ content: original });
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Literature/Root.md"),
+      harness.file("Literature/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -4359,7 +4225,7 @@ describe("updateNote", () => {
     const harness = makeUpdateHarness({ content: original });
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Literature/Root.md"),
+      harness.file("Literature/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -4376,7 +4242,7 @@ describe("updateNote", () => {
     const harness = makeUpdateHarness({ content: original });
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Literature/Root.md"),
+      harness.file("Literature/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -4396,7 +4262,7 @@ describe("updateNote", () => {
     });
 
     const result = await createNoteFeature(harness.deps).updateNote(
-      makeFile("Literature/Root.md"),
+      harness.file("Literature/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -4417,7 +4283,7 @@ describe("updateNote", () => {
     });
 
     await createNoteFeature(harness.deps).updateNote(
-      makeFile("Literature/Root.md"),
+      harness.file("Literature/Root.md"),
       { indexedKey: "ABC12345" },
     );
 
@@ -4431,7 +4297,7 @@ describe("updateNote", () => {
 
     await expect(
       createNoteFeature(harness.deps).updateNote(
-        makeFile("Literature/Root.md"),
+        harness.file("Literature/Root.md"),
         { indexedKey: "MISSING1" },
       ),
     ).rejects.toThrow("Zotero item not found: MISSING1");
@@ -4477,7 +4343,7 @@ describe("writeNoteUpdate", () => {
     });
 
     const result = await createNoteFeature(harness.deps).writeNoteUpdate(
-      makeFile("Literature/Root.md"),
+      harness.file("Literature/Root.md"),
       writeOptions(),
     );
 
@@ -4513,7 +4379,7 @@ describe("writeNoteUpdate", () => {
     };
 
     await createNoteFeature(harness.deps).writeNoteUpdate(
-      makeFile("Literature/Root.md"),
+      harness.file("Literature/Root.md"),
       writeOptions("full"),
     );
 
@@ -4547,7 +4413,7 @@ describe("writeNoteUpdate", () => {
     };
 
     await createNoteFeature(harness.deps).writeNoteUpdate(
-      makeFile("Literature/Root.md"),
+      harness.file("Literature/Root.md"),
       { ...writeOptions("full"), outcomes },
     );
 
@@ -4564,7 +4430,7 @@ describe("writeNoteUpdate", () => {
     const harness = makeUpdateHarness({ content: original });
 
     const result = await createNoteFeature(harness.deps).writeNoteUpdate(
-      makeFile("Literature/Root.md"),
+      harness.file("Literature/Root.md"),
       writeOptions("metadata"),
     );
 
@@ -4598,7 +4464,7 @@ describe("writeNoteUpdate", () => {
     );
 
     const result = await createNoteFeature(harness.deps).writeNoteUpdate(
-      makeFile("Books/Root.md"),
+      harness.file("Books/Root.md"),
       options,
     );
 
@@ -4634,7 +4500,7 @@ describe("writeNoteUpdate", () => {
     options.profile = requestedId;
 
     const result = await createNoteFeature(harness.deps).writeNoteUpdate(
-      makeFile("Books/Root.md"),
+      harness.file("Books/Root.md"),
       options,
     );
 
@@ -4664,7 +4530,7 @@ describe("writeNoteUpdate", () => {
     options.profile = requestedId;
 
     const result = await createNoteFeature(harness.deps).writeNoteUpdate(
-      makeFile("Books/Root.md"),
+      harness.file("Books/Root.md"),
       options,
     );
 
@@ -4875,11 +4741,10 @@ describe("renderAnnotation", () => {
     vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
       new Map([["ANN1", annData("Hensher2011", "62", "PARENT1")]]),
     );
-    const file = makeFile("Literature/Parent.md");
-    const app = makeApp();
-    app.metadataCache.getFileCache.mockReturnValue({
-      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
+    const app = makeApp({
+      "Literature/Parent.md": `---\n${FIELD_LITERATURE_NOTE_PROFILE}: ${profileId}\n---\n`,
     });
+    const file = app.host.file("Literature/Parent.md");
     const template = citationTemplate();
     template.renderProfileAnnotation = vi.fn(() => "PROFILE ANNOTATION");
     const deps = {
@@ -4951,13 +4816,10 @@ describe("renderAnnotation", () => {
     vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
       new Map([["ANN1", annData("Hensher2011", "62", "PARENT1")]]),
     );
-    const file = makeFile("Literature/Parent.md");
-    const app = makeApp();
-    app.metadataCache.getFileCache.mockReturnValue({
-      frontmatter: {
-        [FIELD_LITERATURE_NOTE_PROFILE]: "Deleted (Nn4Pp6Qq8Rr0)",
-      },
+    const app = makeApp({
+      "Literature/Parent.md": `---\n${FIELD_LITERATURE_NOTE_PROFILE}: Deleted (Nn4Pp6Qq8Rr0)\n---\n`,
     });
+    const file = app.host.file("Literature/Parent.md");
     const template = citationTemplate();
     template.renderProfileAnnotation = vi.fn(() => "PROFILE ANNOTATION");
     const deps = {
@@ -5362,34 +5224,16 @@ function seedRememberedProfile(
   Object.assign(settings.current!, { "note.last-used-profile": selector });
 }
 
-interface MockNoteApp {
-  metadataCache: {
-    getFileCache: Mock<() => { frontmatter?: Record<string, unknown> } | null>;
-  };
-  vault: {
-    contentByPath: Map<string, string>;
-    getAbstractFileByPath(path: string): TFile | TFolder | null;
-    getRoot(): TFolder;
-    createFolder(path: string): Promise<TFolder>;
-    create: Mock<(path: string, content: string) => Promise<TFile>>;
-    process(): Promise<string>;
-    read(file: TFile): Promise<string>;
-  };
-  fileManager: {
-    links: { path: string; sourcePath: string; alias: string | undefined }[];
-    generateMarkdownLink: FileManager["generateMarkdownLink"];
-    renameFile: FileManager["renameFile"];
-  };
-  workspace: { iterateAllLeaves(): void };
-}
-
-function makeApp(): MockNoteApp {
-  const root = new TFolder();
-  root.path = "/";
-  const literature = new TFolder();
-  literature.path = "Literature";
-  const contentByPath = new Map<string, string>();
-  const filesByPath = new Map<string, TFile>();
+/**
+ * The note feature's app over an in-memory host holding `files` (path to
+ * text): `vault.create` is a mock, and the file manager records each link it
+ * generates.
+ */
+function makeApp(files: Record<string, string> = {}) {
+  const host = createObsidianHost(files);
+  const vault = Object.assign(host.vault, {
+    create: vi.fn(host.vault.create.bind(host.vault)),
+  });
   const links: {
     path: string;
     sourcePath: string;
@@ -5397,24 +5241,9 @@ function makeApp(): MockNoteApp {
   }[] = [];
 
   return {
-    metadataCache: {
-      getFileCache: vi.fn(() => null),
-    },
-    vault: {
-      contentByPath,
-      read: async (file: TFile) => contentByPath.get(file.path) ?? "",
-      getAbstractFileByPath: (path: string) =>
-        path === "Literature" ? literature : (filesByPath.get(path) ?? null),
-      getRoot: () => root,
-      createFolder: vi.fn(),
-      create: vi.fn(async (path: string, content: string) => {
-        contentByPath.set(path, content);
-        const file = makeFile(path);
-        filesByPath.set(path, file);
-        return file;
-      }),
-      process: vi.fn(async () => ""),
-    },
+    ...host.app,
+    host,
+    vault,
     fileManager: {
       links,
       // oxlint-disable-next-line max-params
@@ -5429,7 +5258,6 @@ function makeApp(): MockNoteApp {
       },
       renameFile: vi.fn(),
     },
-    workspace: { iterateAllLeaves: () => {} },
   };
 }
 

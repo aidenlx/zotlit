@@ -8,7 +8,7 @@ import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { RenderedCitation } from "@/services/pandoc/engine";
 import { SettingsService } from "@/services/settings/service";
 import { TemplateService } from "@/services/template/service";
-import { MockVault, PluginStub } from "@/services/template/test-vault";
+import { MockVault, PluginStub } from "@/lib/__fixtures__/obsidian-host";
 import type { NativeRenderDeps } from "@/views/note-preview/render";
 
 export const PROFILE_SOURCE = `---

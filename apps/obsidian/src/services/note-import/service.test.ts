@@ -1,5 +1,5 @@
-import { TFile, TFolder } from "obsidian";
-import type { App } from "obsidian";
+import { stringifyYaml } from "obsidian";
+import type { App, TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -10,6 +10,7 @@ import {
   USER_LIBRARY_ID,
 } from "@zotlit/db";
 
+import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { renderAnnotations } from "@/lib/annotation-render";
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
@@ -80,10 +81,6 @@ vi.mock("./note-parser", () => ({
 // stub it so the bare reference resolves.
 vi.stubGlobal("TurndownService", class {});
 
-function makeFile(path: string): TFile {
-  return Object.assign(Object.create(TFile.prototype) as TFile, { path });
-}
-
 function makeNote(overrides: Partial<ReturnType<typeof baseNote>> = {}) {
   const base = baseNote({
     key: overrides.key,
@@ -109,37 +106,20 @@ function baseNote(overrides?: { key?: string; groupID?: number | null }) {
   };
 }
 
-interface AppStub {
-  app: ImportVaultApp;
-  create: ReturnType<typeof vi.fn>;
-  createFolder: ReturnType<typeof vi.fn>;
-  process: ReturnType<typeof vi.fn>;
-  processedContent: () => string;
-}
-
+/** A host holding a note at each path, carrying the given Properties. */
 function makeApp(
-  frontmatterByPath: Readonly<Record<string, Record<string, unknown>>> = {},
-): AppStub {
-  let processedContent = "";
-  const create = vi.fn(async (path: string) => makeFile(path));
-  const createFolder = vi.fn(async (path: string) => {
-    const folder = new TFolder();
-    folder.path = path;
-    return folder;
-  });
-  const process = vi.fn(async (_file: TFile, fn: (data: string) => string) => {
-    processedContent = fn("");
-    return processedContent;
-  });
-  const app = {
-    vault: {
-      getAbstractFileByPath: () => null,
-      getFileByPath: (path: string) => makeFile(path),
-      getRoot: () => new TFolder(),
-      create,
-      createFolder,
-      process,
-    },
+  propertiesByPath: Readonly<Record<string, Record<string, unknown>>> = {},
+) {
+  const host = createObsidianHost(
+    Object.fromEntries(
+      Object.entries(propertiesByPath).map(([path, properties]) => [
+        path,
+        noteText(properties),
+      ]),
+    ),
+  );
+  const app: ImportVaultApp = {
+    ...host.app,
     fileManager: {
       // Mirrors Obsidian's (file, sourcePath, subpath, alias) signature.
       generateMarkdownLink: (...args: unknown[]) => {
@@ -148,20 +128,21 @@ function makeApp(
         return `[[${file.path}|${alias ?? ""}]]`;
       },
     },
-    metadataCache: {
-      getFileCache: (file: TFile) => ({
-        frontmatter: frontmatterByPath[file.path] ?? {},
-      }),
-    },
-    workspace: { iterateAllLeaves: () => {} },
   };
   return {
     app,
-    create,
-    createFolder,
-    process,
-    processedContent: () => processedContent,
+    host,
+    create: vi.spyOn(host.vault, "create"),
+    createFolder: vi.spyOn(host.vault, "createFolder"),
+    process: vi.spyOn(host.vault, "process"),
   };
+}
+
+/** A note carrying `properties` over an empty body. */
+function noteText(properties: Record<string, unknown>): string {
+  return Object.keys(properties).length === 0
+    ? ""
+    : `---\n${stringifyYaml(properties)}---\n`;
 }
 
 /** Per-note attachment batch stub; `flush` records whether copies were committed. */
@@ -323,14 +304,18 @@ beforeEach(() => {
 
 describe("createNoteImporter", () => {
   it("skips when an existing note changes Profile after its import preview", async () => {
-    const target = makeFile("Imported/Existing.md");
-    const frontmatter = { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_A };
-    const { app, process } = makeApp({ [target.path]: frontmatter });
+    const { app, host, process } = makeApp({
+      "Imported/Existing.md": { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_A },
+    });
+    const target = host.file("Imported/Existing.md");
     const service = makeService(app, { existing: [target] });
     const prepared = await service.prepareExplicitImport(makeNote(), {
       client: {} as never,
     });
-    frontmatter[FIELD_LITERATURE_NOTE_PROFILE] = PROFILE_B;
+    host.vault.modifyFile(
+      target.path,
+      noteText({ [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_B }),
+    );
 
     await expect(
       prepared.import(makeNote(), {
@@ -380,7 +365,7 @@ describe("createNoteImporter", () => {
   it.each(["existing", "parent"] as const)(
     "skips a prepared orphan if a %s note appears before confirmation",
     async (source) => {
-      const { app, create, process } = makeApp();
+      const { app, host, create, process } = makeApp();
       const existing: TFile[] = [];
       const literatureNotes: TFile[] = [];
       vi.mocked(getItemsByID).mockReturnValue([
@@ -393,7 +378,7 @@ describe("createNoteImporter", () => {
         orphanProfile: PROFILE_A,
       });
       (source === "existing" ? existing : literatureNotes).push(
-        makeFile("Arrived.md"),
+        host.vault.createFile("Arrived.md", ""),
       );
 
       await expect(
@@ -410,10 +395,10 @@ describe("createNoteImporter", () => {
   it.each(["existing", "parent"] as const)(
     "keeps the %s Profile when an orphan choice is supplied",
     async (source) => {
-      const target = makeFile("History/Existing.md");
-      const { app, create, processedContent } = makeApp({
-        [target.path]: { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_B },
+      const { app, host, create } = makeApp({
+        "History/Existing.md": { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_B },
       });
+      const target = host.file("History/Existing.md");
       vi.mocked(getItemsByID).mockReturnValue([
         { indexedKey: "PARENT123" },
       ] as never);
@@ -437,7 +422,7 @@ describe("createNoteImporter", () => {
       if (source === "existing") {
         expect(prepared.path).toBe(target.path);
         expect(create).not.toHaveBeenCalled();
-        expect(processedContent()).toContain("History (Rz9Wm4YfH6Kd)");
+        expect(host.text(target.path)).toContain("History (Rz9Wm4YfH6Kd)");
       } else {
         expect(prepared.path.startsWith("History/Imported/Methods_")).toBe(
           true,
@@ -559,8 +544,10 @@ describe("createNoteImporter", () => {
   });
 
   it("links to an existing imported note by identity, queuing nothing", async () => {
-    const existing = makeFile("Imported/Old name_abc123.md");
-    const { app, create } = makeApp();
+    const { app, host, create } = makeApp({
+      "Imported/Old name_abc123.md": {},
+    });
+    const existing = host.file("Imported/Old name_abc123.md");
     const batch = await makeService(app, { existing: [existing] }).prepare(
       PREPARE,
     );
@@ -671,9 +658,11 @@ describe("createNoteImporter", () => {
   });
 
   it("throws NoteImportMintError when the minted path is already occupied", async () => {
-    const { app } = makeApp();
+    const { app, host } = makeApp({ "occupied.md": {} });
     // Any path the mint checks reports as occupied, forcing the hard collision.
-    app.vault.getAbstractFileByPath = () => makeFile("occupied.md");
+    vi.spyOn(host.vault, "getAbstractFileByPath").mockReturnValue(
+      host.file("occupied.md"),
+    );
     const batch = await makeService(app).prepare(PREPARE);
 
     expect(() => batch.resolveChildNote(makeNote())).toThrow(
@@ -836,8 +825,11 @@ describe("createNoteImporter", () => {
   });
 
   it("overwrites an existing note without creating the import folder", async () => {
-    const { app, create, createFolder, process } = makeApp();
-    const target = makeFile("Imported/Existing.md");
+    // Outside the import folder, so ensuring that folder would create it.
+    const { app, host, create, createFolder, process } = makeApp({
+      "Notes/Existing.md": {},
+    });
+    const target = host.file("Notes/Existing.md");
     const service = makeService(app);
 
     const outcome = await service.importNote(makeNote(), {
@@ -854,10 +846,10 @@ describe("createNoteImporter", () => {
   });
 
   it("follows and re-emits the existing stamp on whole-body overwrite", async () => {
-    const target = makeFile("Imported/Existing.md");
-    const { app, createFolder, processedContent } = makeApp({
-      [target.path]: { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_A },
+    const { app, host, createFolder } = makeApp({
+      "Imported/Existing.md": { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_A },
     });
+    const target = host.file("Imported/Existing.md");
     const service = makeService(app);
 
     await service.importNote(makeNote(), {
@@ -866,7 +858,7 @@ describe("createNoteImporter", () => {
       targetFile: target,
     });
 
-    expect(processedContent()).toContain(
+    expect(host.text(target.path)).toContain(
       `${FIELD_LITERATURE_NOTE_PROFILE}: Law (Bk3Qn7XvT2Lp)`,
     );
     expect(
@@ -876,12 +868,12 @@ describe("createNoteImporter", () => {
   });
 
   it("refreshes a stale hint to the Profile's current label on re-import", async () => {
-    const target = makeFile("Imported/Existing.md");
-    const { app, processedContent } = makeApp({
-      [target.path]: {
+    const { app, host } = makeApp({
+      "Imported/Existing.md": {
         [FIELD_LITERATURE_NOTE_PROFILE]: `Statutes (${PROFILE_A})`,
       },
     });
+    const target = host.file("Imported/Existing.md");
     const service = makeService(app);
 
     await service.importNote(makeNote(), {
@@ -890,14 +882,14 @@ describe("createNoteImporter", () => {
       targetFile: target,
     });
 
-    expect(processedContent()).toContain(
+    expect(host.text(target.path)).toContain(
       `${FIELD_LITERATURE_NOTE_PROFILE}: Law (Bk3Qn7XvT2Lp)`,
     );
   });
 
   it("treats a stampless overwrite as the default Profile", async () => {
-    const target = makeFile("Imported/Existing.md");
-    const { app, processedContent } = makeApp();
+    const { app, host } = makeApp({ "Imported/Existing.md": {} });
+    const target = host.file("Imported/Existing.md");
     const settings: Settings = {
       ...defaults,
       "note.default-profile": {
@@ -919,16 +911,16 @@ describe("createNoteImporter", () => {
     expect(
       vi.mocked(parseNote).mock.calls[0]![2].useColoredHighlightSyntax,
     ).toBe(true);
-    expect(processedContent()).not.toContain(FIELD_LITERATURE_NOTE_PROFILE);
+    expect(host.text(target.path)).not.toContain(FIELD_LITERATURE_NOTE_PROFILE);
   });
 
   it("converts one mixed batch under each Imported Note stamp", async () => {
-    const first = makeFile("Imported/First.md");
-    const second = makeFile("Imported/Second.md");
-    const { app } = makeApp({
-      [first.path]: { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_A },
-      [second.path]: { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_B },
+    const { app, host } = makeApp({
+      "Imported/First.md": { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_A },
+      "Imported/Second.md": { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_B },
     });
+    const first = host.file("Imported/First.md");
+    const second = host.file("Imported/Second.md");
     const service = makeService(app);
     const settings = profileSettings();
 
@@ -960,11 +952,11 @@ describe("createNoteImporter", () => {
   });
 
   it("refuses an unknown Imported Note stamp with a recovery diagnostic", async () => {
-    const target = makeFile("Imported/Unknown.md");
     const unknown = "Qt5Nb8ZcV3Jm";
-    const { app, process } = makeApp({
-      [target.path]: { [FIELD_LITERATURE_NOTE_PROFILE]: unknown },
+    const { app, host, process } = makeApp({
+      "Imported/Unknown.md": { [FIELD_LITERATURE_NOTE_PROFILE]: unknown },
     });
+    const target = host.file("Imported/Unknown.md");
     const service = makeService(app);
 
     await expect(
@@ -991,10 +983,10 @@ describe("createNoteImporter", () => {
   });
 
   it("keeps the parent Literature Note path and kind when a new child inherits an unavailable Profile", async () => {
-    const parent = makeFile("Literature/Parent.md");
-    const { app, create, process } = makeApp({
-      [parent.path]: { [FIELD_LITERATURE_NOTE_PROFILE]: "Missing" },
+    const { app, host, create, process } = makeApp({
+      "Literature/Parent.md": { [FIELD_LITERATURE_NOTE_PROFILE]: "Missing" },
     });
+    const parent = host.file("Literature/Parent.md");
     vi.mocked(getItemsByID).mockReturnValue([
       { indexedKey: "PARENT23" },
     ] as never);
@@ -1038,10 +1030,10 @@ describe("createNoteImporter", () => {
   });
 
   it("copies the parent Literature Note stamp on explicit attached-note creation", async () => {
-    const literatureNote = makeFile("Law/Parent.md");
-    const { app, create } = makeApp({
-      [literatureNote.path]: { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_A },
+    const { app, host, create } = makeApp({
+      "Law/Parent.md": { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_A },
     });
+    const literatureNote = host.file("Law/Parent.md");
     vi.mocked(getItemsByID).mockReturnValue([
       { indexedKey: "PARENT123" } as any,
     ]);

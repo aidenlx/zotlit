@@ -1,7 +1,8 @@
-import { getFrontMatterInfo, parseYaml, stringifyYaml } from "obsidian";
-import type { CachedMetadata, TFile } from "obsidian";
+import { stringifyYaml } from "obsidian";
+import type { CachedMetadata } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import * as m from "@/lib/i18n/generated/messages";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 
@@ -106,35 +107,33 @@ describe("the styles a note is offered", () => {
 describe("the update a confirmed choice writes", () => {
   /** One note as text: its Properties block over an empty body. */
   function noteProperties(properties: Record<string, unknown>) {
-    const note = { frontmatter: properties };
-    const process = vi.fn((_file: TFile, edit: (text: string) => string) => {
-      const text = edit(`---\n${stringifyYaml(note.frontmatter)}---\n`);
-      note.frontmatter = (parseYaml(getFrontMatterInfo(text).frontmatter) ??
-        {}) as Record<string, unknown>;
-      return Promise.resolve(text);
+    const host = createObsidianHost({
+      "Draft.md": `---\n${stringifyYaml(properties)}---\n`,
     });
-    return Object.assign(note, {
-      app: {
-        vault: { process },
-        workspace: { iterateAllLeaves: () => {} },
-      },
-    });
+    const file = host.file("Draft.md");
+    return {
+      app: host.app,
+      file,
+      process: vi.spyOn(host.vault, "process"),
+      /** The Properties the note carries now. */
+      frontmatter: () => host.metadataCache.getFileCache(file)?.frontmatter,
+    };
   }
 
   it("writes both properties in one pass over the note", async () => {
     const note = noteProperties({ title: "Draft" });
 
-    await applyCitationPresentation(note.app, {} as TFile, {
+    await applyCitationPresentation(note.app, note.file, {
       styleId: NOTE_STYLE_ID,
       language: "de-DE",
     });
 
-    expect(note.frontmatter).toEqual({
+    expect(note.frontmatter()).toEqual({
       title: "Draft",
       "zotlit-csl": NOTE_STYLE_ID,
       lang: "de-DE",
     });
-    expect(note.app.vault.process).toHaveBeenCalledTimes(1);
+    expect(note.process).toHaveBeenCalledTimes(1);
   });
 
   it("removes both properties for an inherited style and a reset language", async () => {
@@ -144,12 +143,12 @@ describe("the update a confirmed choice writes", () => {
       lang: "de-DE",
     });
 
-    await applyCitationPresentation(note.app, {} as TFile, {
+    await applyCitationPresentation(note.app, note.file, {
       styleId: null,
       language: null,
     });
 
-    expect(note.frontmatter).toEqual({ title: "Draft" });
-    expect(note.app.vault.process).toHaveBeenCalledTimes(1);
+    expect(note.frontmatter()).toEqual({ title: "Draft" });
+    expect(note.process).toHaveBeenCalledTimes(1);
   });
 });

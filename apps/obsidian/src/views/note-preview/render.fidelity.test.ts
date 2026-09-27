@@ -1,12 +1,12 @@
 // @vitest-environment happy-dom
 // What the Note Preview shows against what the real create path writes: one
-// fixture Item, one Profile source, the write captured through a fake vault.
-import type { TFile } from "obsidian";
+// fixture Item, one Profile source, the write captured through an in-memory vault.
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
 import { getItemsByKey } from "@zotlit/db";
 
+import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import type { SyncRenderDeps } from "@/services/note-feature/context";
 import { createNoteFeature } from "@/services/note-feature/operations";
 import type { CreateNoteResult } from "@/services/note-feature/operations";
@@ -40,7 +40,7 @@ zotlit-csl: numeric
 
 /**
  * The real create path over the preview fixture's database and templates, with
- * `vault.create` capturing the bytes a real vault would receive. The Profile
+ * an in-memory vault holding the bytes a real vault would receive. The Profile
  * entry is seeded from the same manifest the preview renders, exactly as the
  * registry seeds a saved Profile document.
  */
@@ -69,26 +69,16 @@ async function realCreate(
     },
     profiles: [entry],
   };
-  const captured: { path: string; content: string }[] = [];
+  const host = createObsidianHost();
   const deps = {
-    profile: profileReader(current, { getFileCache: () => null }),
+    profile: profileReader(current, host.metadataCache),
     app: {
-      vault: {
-        getAbstractFileByPath: () => null,
-        getRoot: () => ({ path: "/" }),
-        createFolder: async () => ({ path: LITERATURE_FOLDER }),
-        create: async (path: string, content: string) => {
-          captured.push({ path, content });
-          return { path } as TFile;
-        },
-        process: async () => "",
-      },
+      ...host.app,
       fileManager: {
         generateMarkdownLink: (target: { path: string }) =>
           `[[${target.path}]]`,
         renameFile: async () => undefined,
       },
-      metadataCache: { getFileCache: () => null },
     },
     template: {
       ready: Promise.resolve(),
@@ -150,7 +140,11 @@ async function realCreate(
   const result = await createNoteFeature(deps).createNote(item, {
     profile: entry.id,
   });
-  return { result, written: captured[0] };
+  const [file] = host.vault.getMarkdownFiles();
+  return {
+    result,
+    written: file && { path: file.path, content: host.text(file.path)! },
+  };
 }
 
 /** Split written note bytes the way a reader of the file would. */

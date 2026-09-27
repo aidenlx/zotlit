@@ -1,8 +1,6 @@
 // The write boundary, driven the way the page drives it: the Hono app in
 // process over a real Profile service and a fake vault.
 import { createHash } from "node:crypto";
-import { TextFileView } from "obsidian";
-import type { WorkspaceLeaf } from "obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { CONTRACT_VERSION } from "@zotlit/db";
@@ -129,37 +127,14 @@ async function harness(
   };
 }
 
-/** An editor view on the Books document holding `text`; its save writes the vault. */
-class DocumentEditorView extends TextFileView {
-  override getViewData(): string {
-    return this.data;
-  }
-  override setViewData(data: string): void {
-    this.data = data;
-  }
-  override clear(): void {
-    this.data = "";
-  }
-  override getViewType(): string {
-    return "markdown";
-  }
-}
-
+/** The Books document open in an editor holding `text`; its save writes the vault. */
 function openInEditor(
   bridge: Awaited<ReturnType<typeof harness>>,
   text: string,
 ) {
-  const view = new DocumentEditorView({ app: bridge.app } as never);
-  view.file = bridge.vault.getFileByPath(BOOKS_PATH);
-  view.lastSavedData = bridge.vault.contents.get(BOOKS_PATH)!;
-  view.data = text;
-  const save = vi.fn(async () => {
-    bridge.vault.modifyFile(BOOKS_PATH, view.data);
-    view.lastSavedData = view.data;
-  });
-  view.save = save;
-  bridge.app.workspace.iterateAllLeaves = (callback) =>
-    callback({ view } as unknown as WorkspaceLeaf);
+  const view = bridge.host.openInEditor(bridge.host.file(BOOKS_PATH));
+  view.edit(text);
+  const save = vi.spyOn(view, "save");
   return { view, save };
 }
 

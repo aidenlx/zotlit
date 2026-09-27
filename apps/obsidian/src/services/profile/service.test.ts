@@ -1,4 +1,4 @@
-import { getFrontMatterInfo, parseYaml, stringifyYaml } from "obsidian";
+import { stringifyYaml } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TemplateFacade } from "@zotlit/templates/facade";
@@ -34,16 +34,6 @@ ${bindings}
 /** A note's text: its Properties block over `body`. */
 function noteText(properties: Record<string, unknown>, body: string): string {
   return `---\n${stringifyYaml(properties)}---\n${body}`;
-}
-
-/** The Properties a note's text carries, as the metadata cache parses them. */
-function propertiesOf(
-  text: string | undefined,
-): Record<string, unknown> | undefined {
-  const info = getFrontMatterInfo(text ?? "");
-  return info.exists
-    ? (parseYaml(info.frontmatter) as Record<string, unknown>)
-    : undefined;
 }
 
 describe("ProfileService", () => {
@@ -392,22 +382,19 @@ describe("ProfileService", () => {
   });
 
   it("offers Replace with the held version and real note counts, then changes only that document", async () => {
+    const paper = noteText(
+      { "zotero-key": "PAPER234", "zotlit-profile": BOOKS },
+      "Paper",
+    );
+    const note = noteText(
+      { "zotero-note-key": "NTE23456", "zotlit-profile": BOOKS },
+      "Note",
+    );
     await using f = await harness({
       "templates/zotlit-profile.renamed.md": document(),
-      "Books/Paper.md": "Paper",
-      "Imports/Note.md": "Note",
+      "Books/Paper.md": paper,
+      "Imports/Note.md": note,
     });
-    using _cache = vi
-      .spyOn(f.app.metadataCache, "getFileCache")
-      .mockImplementation((file) => ({
-        frontmatter:
-          file.path === "Books/Paper.md"
-            ? { "zotero-key": "PAPER234", "zotlit-profile": BOOKS }
-            : file.path === "Imports/Note.md"
-              ? { "zotero-note-key": "NTE23456", "zotlit-profile": BOOKS }
-              : undefined,
-      }));
-    f.indexNotes();
     const source = document(BOOKS, "folder: New", "Books revised").replace(
       "version: 1.0.0",
       "version: 2.0.0",
@@ -427,8 +414,8 @@ describe("ProfileService", () => {
     await pending;
     expect(plan.path).toBe("templates/zotlit-profile.renamed.md");
     expect(f.vault.contents.get(plan.path)).toContain("version: 2.0.0");
-    expect(f.vault.contents.get("Books/Paper.md")).toBe("Paper");
-    expect(f.vault.contents.get("Imports/Note.md")).toBe("Note");
+    expect(f.vault.contents.get("Books/Paper.md")).toBe(paper);
+    expect(f.vault.contents.get("Imports/Note.md")).toBe(note);
   });
 
   it("preserves included folders, supports clearing a folder, and refuses reserved or excluded IDs", async () => {
@@ -879,12 +866,7 @@ describe("ProfileService", () => {
       ),
       "Scratch.md": noteText({ "zotlit-profile": BOOKS }, "Scratch"),
     });
-    const { profile, vault, app } = fixture;
-    // oxlint-disable-next-line unbound-method -- `vi.mocked` reads the spy without calling it.
-    vi.mocked(app.metadataCache.getFileCache).mockImplementation((file) => ({
-      frontmatter: propertiesOf(vault.contents.get(file.path)),
-    }));
-    fixture.indexNotes();
+    const { profile, vault } = fixture;
     const pending = profile.delete(BOOKS, "default");
     await vi.advanceTimersByTimeAsync(500);
     await pending;
@@ -903,17 +885,15 @@ describe("ProfileService", () => {
   it("keeps the document when a note cannot be re-stamped", async () => {
     await using fixture = await harness({
       "templates/zotlit-profile.books.md": document(),
-      "Paper.md": "Paper",
+      "Paper.md": noteText(
+        { "zotero-key": "PAPER234", "zotlit-profile": BOOKS },
+        "Paper",
+      ),
     });
-    const { profile, vault, app } = fixture;
-    // oxlint-disable-next-line unbound-method -- `vi.mocked` reads the spy without calling it.
-    vi.mocked(app.metadataCache.getFileCache).mockReturnValue({
-      frontmatter: { "zotero-key": "PAPER234", "zotlit-profile": BOOKS },
-    });
+    const { profile, vault } = fixture;
     using _write = vi
       .spyOn(vault, "process")
       .mockRejectedValue(new Error("Read-only note"));
-    fixture.indexNotes();
     await expect(profile.delete(BOOKS, "default")).rejects.toThrow(
       "Read-only note",
     );
@@ -942,11 +922,6 @@ describe("ProfileService", () => {
     const { profile, vault, app } = fixture;
     const literature = vault.getFileByPath("Books/My title.md")!;
     const imported = vault.getFileByPath("Imports/Child.md")!;
-    using _cache = vi
-      .spyOn(app.metadataCache, "getFileCache")
-      .mockImplementation((file) => ({
-        frontmatter: propertiesOf(vault.contents.get(file.path)),
-      }));
     const order: string[] = [];
     app.fileManager.renameFile = async (file, path) => {
       order.push(path);
@@ -958,7 +933,6 @@ describe("ProfileService", () => {
         order.push(file.path);
         vault.deleteFile(file.path);
       });
-    fixture.indexNotes();
     const plan = await profile.prepareDelete(BOOKS);
     expect(plan.literatureNotes).toEqual([literature]);
     expect(plan.importedNotes).toEqual([imported]);
@@ -1029,25 +1003,26 @@ describe("ProfileService", () => {
   });
 
   it("keeps the Profile document when a requested note move fails", async () => {
+    const note = noteText(
+      { "zotero-key": "PAPER234", "zotlit-profile": BOOKS },
+      "User text",
+    );
     await using fixture = await harness({
       "templates/zotlit-profile.books.md": document(),
-      "Books/Paper.md": "User text",
+      "Books/Paper.md": note,
     });
     const { profile, vault, app } = fixture;
-    using _cache = vi.spyOn(app.metadataCache, "getFileCache").mockReturnValue({
-      frontmatter: { "zotero-key": "PAPER234", "zotlit-profile": BOOKS },
-    });
     app.fileManager.renameFile = async () => {
       throw new Error("Destination occupied");
     };
-    fixture.indexNotes();
-    await expect(
-      profile.delete(BOOKS, "default", { move: true }),
-    ).rejects.toThrow("Destination occupied");
+    const pending = profile.delete(BOOKS, "default", { move: true });
+    const refused = expect(pending).rejects.toThrow("Destination occupied");
+    await vi.advanceTimersByTimeAsync(500);
+    await refused;
     expect(vault.contents.get("templates/zotlit-profile.books.md")).toBe(
       document(),
     );
-    expect(vault.contents.get("Books/Paper.md")).toBe("User text");
+    expect(vault.contents.get("Books/Paper.md")).toBe(note);
   });
 });
 
