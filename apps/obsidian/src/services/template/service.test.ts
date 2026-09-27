@@ -26,7 +26,12 @@ import { TemplateService } from "./service";
 import { MockVault, PluginStub } from "./test-vault";
 
 interface Harness {
-  app: App & { workspace: { updateOptions: ReturnType<typeof vi.fn> } };
+  app: App & {
+    workspace: {
+      updateOptions: ReturnType<typeof vi.fn>;
+      iterateAllLeaves: () => void;
+    };
+  };
   plugin: PluginStub;
   service: TemplateService;
   settings: SettingsService;
@@ -563,7 +568,7 @@ partials:
     const localStorage = new Map<string, unknown>();
     const app = {
       vault,
-      workspace: { updateOptions: vi.fn() },
+      workspace: { updateOptions: vi.fn(), iterateAllLeaves: () => {} },
       loadLocalStorage: (key: string) => localStorage.get(key) ?? null,
       saveLocalStorage: (key: string, data: unknown) => {
         if (data === null) localStorage.delete(key);
@@ -595,7 +600,7 @@ partials:
     const vault = new MockVault();
     const app = {
       vault,
-      workspace: { updateOptions: vi.fn() },
+      workspace: { updateOptions: vi.fn(), iterateAllLeaves: () => {} },
       loadLocalStorage: () => null,
       saveLocalStorage: () => {},
     } as unknown as Harness["app"];
@@ -2469,7 +2474,7 @@ async function makeHarness(options?: {
   }
   const app = {
     vault,
-    workspace: { updateOptions: vi.fn() },
+    workspace: { updateOptions: vi.fn(), iterateAllLeaves: () => {} },
     fileManager: {
       trashFile: async (file: { path: string }) => {
         vault.deleteFile(file.path);

@@ -134,6 +134,7 @@ async function fixture(
       getFileCache: () => null,
       getFirstLinkpathDest: (path: string) => files.get(path) ?? null,
     },
+    workspace: { iterateAllLeaves: () => {} },
     fileManager: {
       generateMarkdownLink: (file: TFile) => `![[${file.path}]]`,
     },

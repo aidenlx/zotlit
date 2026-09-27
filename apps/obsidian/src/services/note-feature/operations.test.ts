@@ -305,7 +305,6 @@ describe("Companion note target", () => {
         },
       });
       expect(harness.processMock).not.toHaveBeenCalled();
-      expect(harness.frontmatterMock).not.toHaveBeenCalled();
     },
   );
 
@@ -334,7 +333,6 @@ describe("Companion note target", () => {
       keptProfile: { selector: books, label: "Books" },
     });
     expect(harness.processMock).not.toHaveBeenCalled();
-    expect(harness.frontmatterMock).not.toHaveBeenCalled();
   });
 });
 
@@ -1378,7 +1376,6 @@ describe("createNote", () => {
         },
         fileManager: {
           generateMarkdownLink: () => "",
-          processFrontMatter: vi.fn(async () => {}),
           renameFile: vi.fn(),
         },
       },
@@ -2564,9 +2561,6 @@ describe("overwriteNote", () => {
         },
         fileManager: {
           generateMarkdownLink: () => "",
-          processFrontMatter: vi.fn(async (_file, cb) => {
-            cb({});
-          }),
           renameFile: vi.fn(),
         },
       },
@@ -2611,12 +2605,6 @@ describe("overwriteNote", () => {
   });
 });
 
-/**
- * A note-update harness whose `vault.process` and `fileManager.processFrontMatter`
- * actually run their callbacks against mutable in-memory state, so a test can
- * assert on the note's rewritten body and frontmatter after an update — the seam
- * `updateNote` / `writeNoteUpdate` write through.
- */
 /** A loaded editor on a note: its text is the view's `data`. */
 class NoteEditorView extends TextFileView {
   override getViewData(): string {
@@ -2633,6 +2621,12 @@ class NoteEditorView extends TextFileView {
   }
 }
 
+/**
+ * A note-update harness whose `vault.process` actually runs its callback
+ * against the note held in memory, so a test can assert on the note's
+ * rewritten body and frontmatter after an update — the seam `updateNote` /
+ * `writeNoteUpdate` write through.
+ */
 interface UpdateHarness {
   deps: SyncRenderDeps;
   /** Note body after the update (byte-identical to what was written). */
@@ -2645,7 +2639,6 @@ interface UpdateHarness {
       (file: TFile, update: (content: string) => string) => Promise<string>
     >
   >;
-  frontmatterMock: ReturnType<typeof vi.fn>;
   /** Open `file` in a loaded editor whose text is `edit(note)`; its save writes the note. */
   openInEditor: (
     file: TFile,
@@ -2680,15 +2673,6 @@ function makeUpdateHarness(options: {
       return note;
     },
   );
-  // `processFrontMatter`'s own splice, as Obsidian 1.14.2 performs it.
-  const frontmatterMock = vi.fn(
-    async (_file: TFile, cb: (fm: Record<string, unknown>) => void) => {
-      const info = getFrontMatterInfo(note);
-      const fm = properties();
-      cb(fm);
-      note = note.slice(0, info.from) + stringifyYaml(fm) + note.slice(info.to);
-    },
-  );
 
   const template: SyncRenderDeps["template"] = {
     ready: Promise.resolve(),
@@ -2720,7 +2704,6 @@ function makeUpdateHarness(options: {
       },
       fileManager: {
         generateMarkdownLink: () => "",
-        processFrontMatter: frontmatterMock,
         renameFile: vi.fn(),
       },
     },
@@ -2754,7 +2737,6 @@ function makeUpdateHarness(options: {
     frontmatter: properties,
     renderContent,
     processMock,
-    frontmatterMock,
     openInEditor: (file, edit = (text) => text) => {
       const view = new NoteEditorView({ app: deps.app } as never);
       view.file = file;
@@ -3781,7 +3763,6 @@ describe("updateNote", () => {
     expect(harness.content()).toBe(
       `My notes\n${formatManagedRegion("OLD")}\nMy conclusion`,
     );
-    expect(harness.processMock).not.toHaveBeenCalled();
   });
 
   it("moves the existing basename through the file manager only with consent", async () => {
@@ -3818,7 +3799,6 @@ describe("updateNote", () => {
     );
     expect(file.path).toBe("Research/Papers/My chosen name.md");
     expect(harness.content()).toBe("My notes");
-    expect(harness.processMock).not.toHaveBeenCalled();
   });
 
   it("lists the Imported Notes that belong to one Zotero item", async () => {
@@ -3893,7 +3873,7 @@ describe("updateNote", () => {
         path: "Research/Papers/My title.md",
       },
     ]);
-    expect(harness.frontmatterMock).not.toHaveBeenCalled();
+    expect(harness.processMock).not.toHaveBeenCalled();
   });
 
   it.each(["missing item", "unavailable database"])(
@@ -3960,7 +3940,7 @@ describe("updateNote", () => {
     );
 
     expect(result.diagnostic).toBeUndefined();
-    expect(harness.frontmatterMock.mock.calls.map(([file]) => file)).toEqual(
+    expect(harness.processMock.mock.calls.map(([file]) => file)).toEqual(
       expect.arrayContaining(imported),
     );
   });
@@ -4033,7 +4013,7 @@ describe("updateNote", () => {
     expect(result.diagnostic?.code).toBe(
       "literature-note-template-conversion-required",
     );
-    expect(harness.frontmatterMock).not.toHaveBeenCalled();
+    expect(harness.processMock).not.toHaveBeenCalled();
   });
 
   it("restores all note stamps and the original path when one family write fails", async () => {
@@ -4058,7 +4038,7 @@ describe("updateNote", () => {
         ],
       },
     });
-    const frontmatters = new Map(
+    const frontmatters = new Map<TFile, Record<string, unknown>>(
       [literature, ...imported].map((file) => [
         file,
         { [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId },
@@ -4068,15 +4048,22 @@ describe("updateNote", () => {
       frontmatter: frontmatters.get(file),
     });
     let failed = false;
-    harness.deps.app.fileManager.processFrontMatter = vi.fn(
-      async (file, callback) => {
-        callback(frontmatters.get(file)!);
-        if (file === imported[1] && !failed) {
-          failed = true;
-          throw new Error("frontmatter write failed");
-        }
-      },
-    );
+    // Each note as text: its Properties block over an empty body.
+    harness.deps.app.vault.process = vi.fn(async (file, edit) => {
+      const text = edit(`---\n${stringifyYaml(frontmatters.get(file))}---\n`);
+      frontmatters.set(
+        file,
+        parseYaml(getFrontMatterInfo(text).frontmatter) as Record<
+          string,
+          unknown
+        >,
+      );
+      if (file === imported[1] && !failed) {
+        failed = true;
+        throw new Error("frontmatter write failed");
+      }
+      return text;
+    });
     const rename = vi.fn(async (file: TFile, path: string) => {
       file.path = path;
     });
@@ -4133,7 +4120,7 @@ describe("updateNote", () => {
     expect(harness.frontmatter()[FIELD_LITERATURE_NOTE_PROFILE]).toBe(
       oldProfileId,
     );
-    expect(harness.frontmatterMock).not.toHaveBeenCalled();
+    expect(harness.processMock).not.toHaveBeenCalled();
   });
 
   it("preserves user content outside the managed region, replacing only the region body", async () => {
@@ -5391,7 +5378,6 @@ interface MockNoteApp {
   fileManager: {
     links: { path: string; sourcePath: string; alias: string | undefined }[];
     generateMarkdownLink: FileManager["generateMarkdownLink"];
-    processFrontMatter(): Promise<void>;
     renameFile: FileManager["renameFile"];
   };
   workspace: { iterateAllLeaves(): void };
@@ -5441,7 +5427,6 @@ function makeApp(): MockNoteApp {
         links.push({ path: file.path, sourcePath, alias });
         return alias ? `[[${file.path}|${alias}]]` : `[[${file.path}]]`;
       },
-      processFrontMatter: vi.fn(async () => {}),
       renameFile: vi.fn(),
     },
     workspace: { iterateAllLeaves: () => {} },

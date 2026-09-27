@@ -83,7 +83,7 @@ export async function setCitationPresentation(
   if (!choice) return;
 
   try {
-    await applyCitationPresentation(app.fileManager, file, choice);
+    await applyCitationPresentation(app, file, choice);
   } catch (error) {
     logger.error("The note's Citation Presentation could not be written", {
       error,

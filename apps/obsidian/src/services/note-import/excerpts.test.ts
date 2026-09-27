@@ -129,6 +129,7 @@ async function fixture(mode = "normal") {
       getFileCache: () => null,
       getFirstLinkpathDest: (path: string) => files.get(path) ?? null,
     },
+    workspace: { iterateAllLeaves: () => {} },
     fileManager: { generateMarkdownLink: (file: TFile) => `[[${file.path}]]` },
   } as unknown as App;
   const settings = {

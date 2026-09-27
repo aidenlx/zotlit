@@ -1,5 +1,5 @@
 import { basename, dirname, join } from "node:path/posix";
-import { getFrontMatterInfo, parseYaml, stringifyYaml } from "obsidian";
+import { getFrontMatterInfo } from "obsidian";
 import type { TFile } from "obsidian";
 
 import {
@@ -42,7 +42,12 @@ import {
   normalizeFolderPath,
 } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
-import { processLiveText } from "@/lib/live-text";
+import {
+  parseFrontMatter,
+  processLiveFrontMatter,
+  processLiveText,
+  spliceFrontMatter,
+} from "@/lib/live-text";
 import { getLogger } from "@/lib/log";
 import {
   DEFAULT_PROFILE,
@@ -1353,7 +1358,7 @@ async function stampNoteProfile(
   file: TFile,
   stamp: string | undefined,
 ): Promise<void> {
-  await ctx.app.fileManager.processFrontMatter(file, (fm) => {
+  await processLiveFrontMatter(ctx.app, file, (fm) => {
     if (stamp === undefined) delete fm[FIELD_LITERATURE_NOTE_PROFILE];
     else fm[FIELD_LITERATURE_NOTE_PROFILE] = stamp;
   });
@@ -1832,10 +1837,10 @@ async function contextForIndexedKey(
 
 /**
  * Rewrite a Literature Note's live text in one {@link processLiveText}: apply
- * the prepared Managed Frontmatter with the splice `processFrontMatter`
- * performs, and transform the body, so both land together or not at all. The
- * note's Zotero key is read from the text this write replaces: the metadata
- * cache lags behind a recent write to the note.
+ * the prepared Managed Frontmatter with {@link spliceFrontMatter}, and transform
+ * the body, so both land together or not at all. The note's Zotero key is read
+ * from the text this write replaces: the metadata cache lags behind a recent
+ * write to the note.
  *
  * @returns the refusal when the note no longer carries `itemKey`; the note is
  *   left untouched then.
@@ -1851,19 +1856,18 @@ async function rewriteNote(
 ): Promise<NoteKeyChangedDiagnostic | undefined> {
   let keyChanged = false;
   await processLiveText(ctx.app, file, (content) => {
-    const info = getFrontMatterInfo(content);
-    const fm = info.exists ? parseYaml(info.frontmatter) : undefined;
-    if (fm?.[FIELD_ZOTERO_KEY] !== input.itemKey) {
+    const fm = parseFrontMatter(content);
+    if (fm[FIELD_ZOTERO_KEY] !== input.itemKey) {
       keyChanged = true;
       return content;
     }
     input.beforeWrite?.();
     applyComposedFrontmatter(ctx, fm, input);
+    // The Properties block and the body are rewritten apart, then joined.
+    const { contentStart } = getFrontMatterInfo(content);
     return (
-      content.slice(0, info.from) +
-      stringifyYaml(fm) +
-      content.slice(info.to, info.contentStart) +
-      input.body(content.slice(info.contentStart))
+      spliceFrontMatter(content.slice(0, contentStart), fm) +
+      input.body(content.slice(contentStart))
     );
   });
   if (!keyChanged) return undefined;

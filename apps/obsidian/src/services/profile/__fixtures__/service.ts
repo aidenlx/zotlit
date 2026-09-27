@@ -23,7 +23,11 @@ export async function profileServiceFixture(
   const app = {
     vault,
     // The runtime-enable shape: layout is ready, so the index scans at once.
-    workspace: { updateOptions: vi.fn(), onLayoutReady: (cb: () => void) => cb() },
+    workspace: {
+      updateOptions: vi.fn(),
+      onLayoutReady: (cb: () => void) => cb(),
+      iterateAllLeaves: () => {},
+    },
     loadLocalStorage: () => null,
     metadataCache: {
       getFileCache: vi.fn(() => null),
@@ -35,7 +39,6 @@ export async function profileServiceFixture(
       onCleanCache: (callback: () => void) => callback(),
     },
     fileManager: {
-      processFrontMatter: vi.fn(),
       trashFile: async (file: { path: string }) => vault.deleteFile(file.path),
     },
   } as unknown as App;

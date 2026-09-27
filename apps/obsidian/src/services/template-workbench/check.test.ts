@@ -796,7 +796,6 @@ My conclusion.
         kind === "real" ? { "Notes/Paper.md": existing } : {},
       );
       const before = new Map(f.vault.contents);
-      const writes = vi.spyOn(f.app.fileManager, "processFrontMatter");
       const result = await f.check({
         mode: "update",
         key: "1:ABCD2345",
@@ -827,7 +826,6 @@ My conclusion.
         Object.keys(parse(result.outputs.frontmatter)).slice(0, 4),
       ).toEqual(["personal", "title", "zotlit-profile", "tags"]);
       expect(f.vault.contents).toEqual(before);
-      expect(writes).not.toHaveBeenCalled();
       const retained = await f.check({
         attempt: result.attempt,
         output: "body",

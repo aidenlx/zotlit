@@ -1,3 +1,4 @@
+import { getFrontMatterInfo, parseYaml, stringifyYaml } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TemplateFacade } from "@zotlit/templates/facade";
@@ -28,6 +29,21 @@ ${bindings}
 # {{ zt.title }}
 {% managed %}Managed{% endmanaged %}
 --- zotlit:annotation ---\nAnnotation`;
+}
+
+/** A note's text: its Properties block over `body`. */
+function noteText(properties: Record<string, unknown>, body: string): string {
+  return `---\n${stringifyYaml(properties)}---\n${body}`;
+}
+
+/** The Properties a note's text carries, as the metadata cache parses them. */
+function propertiesOf(
+  text: string | undefined,
+): Record<string, unknown> | undefined {
+  const info = getFrontMatterInfo(text ?? "");
+  return info.exists
+    ? (parseYaml(info.frontmatter) as Record<string, unknown>)
+    : undefined;
 }
 
 describe("ProfileService", () => {
@@ -214,7 +230,7 @@ describe("ProfileService", () => {
 
   it("imports one file with its incoming identity, metadata, and embedded partials, without touching notes", async () => {
     await using f = await harness();
-    using stamp = vi.spyOn(f.app.fileManager, "processFrontMatter");
+    using write = vi.spyOn(f.vault, "process");
     const source = document(
       BOOKS,
       "folder: Sender\nimportFolder: Sender notes\npartials:\n  - name: shared\n    language: liquid\n    source: Shared body",
@@ -259,7 +275,7 @@ describe("ProfileService", () => {
       "---\nlanguage: liquid\n---\nShared body",
     );
     expect(f.vault.contents.get(imported.path)).not.toContain("Shared body");
-    expect(stamp).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
   });
 
   it("skips a partial the vault already matches and replaces only the one approved", async () => {
@@ -381,7 +397,6 @@ describe("ProfileService", () => {
       "Books/Paper.md": "Paper",
       "Imports/Note.md": "Note",
     });
-    using stamp = vi.spyOn(f.app.fileManager, "processFrontMatter");
     using _cache = vi
       .spyOn(f.app.metadataCache, "getFileCache")
       .mockImplementation((file) => ({
@@ -414,7 +429,6 @@ describe("ProfileService", () => {
     expect(f.vault.contents.get(plan.path)).toContain("version: 2.0.0");
     expect(f.vault.contents.get("Books/Paper.md")).toBe("Paper");
     expect(f.vault.contents.get("Imports/Note.md")).toBe("Note");
-    expect(stamp).not.toHaveBeenCalled();
   });
 
   it("preserves included folders, supports clearing a folder, and refuses reserved or excluded IDs", async () => {
@@ -855,43 +869,34 @@ describe("ProfileService", () => {
   it("re-stamps Literature and Imported Notes before trashing the Profile document", async () => {
     await using fixture = await harness({
       "templates/zotlit-profile.books.md": document(),
-      "Books/Paper.md": "Paper",
-      "Imports/Note.md": "Note",
-      "Scratch.md": "Scratch",
+      "Books/Paper.md": noteText(
+        { "zotero-key": "PAPER234", "zotlit-profile": "Books (Bk3Qn7XvT2Lp)" },
+        "Paper",
+      ),
+      "Imports/Note.md": noteText(
+        { "zotero-note-key": "NTE23456", "zotlit-profile": BOOKS },
+        "Note",
+      ),
+      "Scratch.md": noteText({ "zotlit-profile": BOOKS }, "Scratch"),
     });
     const { profile, vault, app } = fixture;
-    const frontmatters: Record<string, Record<string, unknown>> = {
-      "Books/Paper.md": {
-        "zotero-key": "PAPER234",
-        "zotlit-profile": "Books (Bk3Qn7XvT2Lp)",
-      },
-      "Imports/Note.md": {
-        "zotero-note-key": "NTE23456",
-        "zotlit-profile": BOOKS,
-      },
-      "Scratch.md": { "zotlit-profile": BOOKS },
-    };
     // oxlint-disable-next-line unbound-method -- `vi.mocked` reads the spy without calling it.
     vi.mocked(app.metadataCache.getFileCache).mockImplementation((file) => ({
-      frontmatter: frontmatters[file.path],
+      frontmatter: propertiesOf(vault.contents.get(file.path)),
     }));
-    // oxlint-disable-next-line unbound-method -- `vi.mocked` reads the spy without calling it.
-    vi.mocked(app.fileManager.processFrontMatter).mockImplementation(
-      async (file, edit) => {
-        edit(frontmatters[file.path]!);
-      },
-    );
     fixture.indexNotes();
     const pending = profile.delete(BOOKS, "default");
     await vi.advanceTimersByTimeAsync(500);
     await pending;
-    expect(frontmatters["Books/Paper.md"]).toEqual({
-      "zotero-key": "PAPER234",
-    });
-    expect(frontmatters["Imports/Note.md"]).toEqual({
-      "zotero-note-key": "NTE23456",
-    });
-    expect(frontmatters["Scratch.md"]).toEqual({ "zotlit-profile": BOOKS });
+    expect(vault.contents.get("Books/Paper.md")).toBe(
+      noteText({ "zotero-key": "PAPER234" }, "Paper"),
+    );
+    expect(vault.contents.get("Imports/Note.md")).toBe(
+      noteText({ "zotero-note-key": "NTE23456" }, "Note"),
+    );
+    expect(vault.contents.get("Scratch.md")).toBe(
+      noteText({ "zotlit-profile": BOOKS }, "Scratch"),
+    );
     expect(vault.files.has("templates/zotlit-profile.books.md")).toBe(false);
   });
 
@@ -905,10 +910,9 @@ describe("ProfileService", () => {
     vi.mocked(app.metadataCache.getFileCache).mockReturnValue({
       frontmatter: { "zotero-key": "PAPER234", "zotlit-profile": BOOKS },
     });
-    // oxlint-disable-next-line unbound-method -- `vi.mocked` reads the spy without calling it.
-    vi.mocked(app.fileManager.processFrontMatter).mockRejectedValue(
-      new Error("Read-only note"),
-    );
+    using _write = vi
+      .spyOn(vault, "process")
+      .mockRejectedValue(new Error("Read-only note"));
     fixture.indexNotes();
     await expect(profile.delete(BOOKS, "default")).rejects.toThrow(
       "Read-only note",
@@ -926,22 +930,23 @@ describe("ProfileService", () => {
         "Papers",
       ),
       "templates/shared.liquid.md": "Shared partial",
-      "Books/My title.md": "My reading text",
-      "Imports/Child.md": "Imported text",
+      "Books/My title.md": noteText(
+        { "zotero-key": "PAPER234", "zotlit-profile": BOOKS },
+        "My reading text",
+      ),
+      "Imports/Child.md": noteText(
+        { "zotero-note-key": "NTE23456", "zotlit-profile": BOOKS },
+        "Imported text",
+      ),
     });
     const { profile, vault, app } = fixture;
     const literature = vault.getFileByPath("Books/My title.md")!;
     const imported = vault.getFileByPath("Imports/Child.md")!;
-    const frontmatters = new Map([
-      [literature, { "zotero-key": "PAPER234", "zotlit-profile": BOOKS }],
-      [imported, { "zotero-note-key": "NTE23456", "zotlit-profile": BOOKS }],
-    ]);
     using _cache = vi
       .spyOn(app.metadataCache, "getFileCache")
-      .mockImplementation((file) => ({ frontmatter: frontmatters.get(file) }));
-    using _write = vi
-      .spyOn(app.fileManager, "processFrontMatter")
-      .mockImplementation(async (file, edit) => edit(frontmatters.get(file)!));
+      .mockImplementation((file) => ({
+        frontmatter: propertiesOf(vault.contents.get(file.path)),
+      }));
     const order: string[] = [];
     app.fileManager.renameFile = async (file, path) => {
       order.push(path);
@@ -973,13 +978,21 @@ describe("ProfileService", () => {
       "Imported/Papers/Child.md",
       "templates/zotlit-profile.books.md",
     ]);
-    expect(frontmatters.get(literature)?.["zotlit-profile"]).toBe(
-      "Papers (Rz9Wm4YfH6Kd)",
+    expect(vault.contents.get("Papers/My title.md")).toBe(
+      noteText(
+        { "zotero-key": "PAPER234", "zotlit-profile": "Papers (Rz9Wm4YfH6Kd)" },
+        "My reading text",
+      ),
     );
-    expect(frontmatters.get(imported)?.["zotlit-profile"]).toBe(
-      "Papers (Rz9Wm4YfH6Kd)",
+    expect(vault.contents.get("Imported/Papers/Child.md")).toBe(
+      noteText(
+        {
+          "zotero-note-key": "NTE23456",
+          "zotlit-profile": "Papers (Rz9Wm4YfH6Kd)",
+        },
+        "Imported text",
+      ),
     );
-    expect(vault.contents.get("Papers/My title.md")).toBe("My reading text");
     expect(vault.contents.get("templates/shared.liquid.md")).toBe(
       "Shared partial",
     );

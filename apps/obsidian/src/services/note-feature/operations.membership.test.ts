@@ -216,15 +216,6 @@ async function harness(
     return file;
   };
   app.fileManager.generateMarkdownLink = () => "";
-  app.fileManager.processFrontMatter = async (file, update) => {
-    const data = app.metadataCache.getFileCache(file)?.frontmatter ?? {};
-    update(data);
-    const source = vault.contents.get(file.path)!;
-    vault.modifyFile(
-      file.path,
-      `---\n${stringifyYaml(data)}---\n${source.slice(source.indexOf("---\n", 4) + 4)}`,
-    );
-  };
   const deps: SyncRenderDeps = {
     app,
     db,

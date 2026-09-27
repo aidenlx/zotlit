@@ -29,6 +29,11 @@ import {
   normalizeFolderPath,
 } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
+import {
+  processLiveFrontMatter,
+  processLiveText,
+  readLiveText,
+} from "@/lib/live-text";
 import { getLogger } from "@/lib/log";
 import { profileRevision } from "@/lib/profile-revision";
 import {
@@ -433,17 +438,19 @@ export class ProfileService extends Service {
         throw new Error(
           m.settings_profile_source_missing({ document: profile.document }),
         );
-      return this.#deps.app.vault.cachedRead(file);
+      return readLiveText(this.#deps.app, file);
     }
     return this.getBuiltInSource();
   }
 
   /**
-   * Write `source` as this Profile's document, byte for byte, when the vault
-   * still holds the revision the caller read. A built-in Default whose document
-   * is still absent is created here — the eject — and the scan that follows the
-   * write is awaited, so a caller that gets `saved` sees the registry that
-   * carries it.
+   * Write `source` as this Profile's document, byte for byte, when its live
+   * text still has the revision the caller read. A built-in Default whose
+   * document is still absent is created here — the eject — and the scan that
+   * follows the write is awaited, so a caller that gets `saved` sees the
+   * registry that carries it. The one exception is an editor of the document
+   * whose own save is in progress: it writes `source` right after that save,
+   * and the registry follows once that write is scanned.
    *
    * @param expected The document the caller edited: `absent` for a Default that
    *   had none, otherwise the revision it loaded.
@@ -508,7 +515,7 @@ export class ProfileService extends Service {
     }
     if (expected.state === "absent") return await this.#documentExists(path);
     try {
-      await this.#deps.app.vault.process(file, (current) => {
+      await processLiveText(this.#deps.app, file, (current) => {
         if (profileRevision(current) !== expected.revision)
           throw new ProfileDocumentConflict(current);
         return source;
@@ -533,7 +540,7 @@ export class ProfileService extends Service {
       ...(file
         ? {
             currentRevision: profileRevision(
-              await this.#deps.app.vault.cachedRead(file),
+              await readLiveText(this.#deps.app, file),
             ),
           }
         : {}),
@@ -548,7 +555,7 @@ export class ProfileService extends Service {
       if (!profile) throw new Error(m.profile_import_changed());
       const file = this.#deps.app.vault.getFileByPath(profile.path);
       if (!file) throw new Error(m.profile_import_changed());
-      await this.#deps.app.vault.process(file, (source) => {
+      await processLiveText(this.#deps.app, file, (source) => {
         if (parseLiteratureNoteTemplate(source).manifest.id !== id)
           throw new Error(m.profile_import_changed());
         return updateLiteratureNoteTemplateMatch(source, match);
@@ -889,7 +896,7 @@ export class ProfileService extends Service {
           if (held) {
             const file = this.#deps.app.vault.getFileByPath(path);
             if (!file) throw new Error(m.profile_import_changed());
-            await this.#deps.app.vault.process(file, (currentSource) => {
+            await processLiveText(this.#deps.app, file, (currentSource) => {
               if (currentSource !== heldSource)
                 throw new Error(m.profile_import_changed());
               return importedContent;
@@ -1028,7 +1035,7 @@ export class ProfileService extends Service {
         await app.fileManager.renameFile(file, path);
         movedFiles++;
       }
-      await app.fileManager.processFrontMatter(file, (frontmatter) => {
+      await processLiveFrontMatter(app, file, (frontmatter) => {
         if (stamp === undefined)
           delete frontmatter[FIELD_LITERATURE_NOTE_PROFILE];
         else frontmatter[FIELD_LITERATURE_NOTE_PROFILE] = stamp;
