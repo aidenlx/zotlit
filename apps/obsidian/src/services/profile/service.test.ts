@@ -541,6 +541,20 @@ describe("ProfileService", () => {
     );
   });
 
+  it("reports creation constraints separately from saving", async () => {
+    await using fixture = await harness();
+    const unchanged = await fixture.profile.prepareCreate({ label: "" });
+    expect(unchanged.constraint?.kind).toBe("no-difference");
+    await expect(unchanged.create()).rejects.toThrow(
+      m.settings_profile_create_no_difference(),
+    );
+    const unnamed = await fixture.profile.prepareCreate({
+      label: "",
+      bindings: { folder: "Reading" },
+    });
+    expect(unnamed.constraint?.kind).toBe("invalid-name");
+  });
+
   it("prepares the effective Default look and writes only differing bindings with the previewed stamp", async () => {
     await using fixture = await harness({
       "templates/zotlit-profile.default.md": document("default").replace(
