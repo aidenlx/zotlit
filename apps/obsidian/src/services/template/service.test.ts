@@ -8,6 +8,7 @@ import {
 } from "@zotlit/templates/frontmatter";
 import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack";
 
+import { MockVault, PluginStub } from "@/lib/__fixtures__/obsidian-host";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { resolveProfile } from "@/services/profile/__fixtures__/reader";
@@ -23,7 +24,6 @@ import {
 import { InertTemplateError } from "./errors";
 import type { MissingPartialError } from "./errors";
 import { TemplateService } from "./service";
-import { MockVault, PluginStub } from "./test-vault";
 
 interface Harness {
   app: App & {

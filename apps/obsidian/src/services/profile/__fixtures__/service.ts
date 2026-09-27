@@ -1,10 +1,9 @@
 import type { App, Plugin } from "obsidian";
-import { vi } from "vitest";
 
 import { NoteIndex } from "@/services/note-index/service";
 import { SettingsService } from "@/services/settings/service";
 import { TemplateService } from "@/services/template/service";
-import { MockVault, PluginStub } from "@/services/template/test-vault";
+import { createObsidianHost, PluginStub } from "@/lib/__fixtures__/obsidian-host";
 
 import { LibraryScopeService } from "@/services/library-scope/service";
 import type { DatabaseService } from "@/services/database/service";
@@ -16,28 +15,11 @@ export async function profileServiceFixture(
   db?: DatabaseService,
 ) {
   await using stack = new AsyncDisposableStack();
-  const vault = new MockVault();
-  const metadataListeners = new Map<string, (...args: unknown[]) => void>();
-  for (const [path, source] of Object.entries(files))
-    vault.addFile(path, source);
+  const host = createObsidianHost(files);
+  const { vault } = host;
   const app = {
-    vault,
-    // The runtime-enable shape: layout is ready, so the index scans at once.
-    workspace: {
-      updateOptions: vi.fn(),
-      onLayoutReady: (cb: () => void) => cb(),
-      iterateAllLeaves: () => {},
-    },
+    ...host.app,
     loadLocalStorage: () => null,
-    metadataCache: {
-      getFileCache: vi.fn(() => null),
-      on: (name: string, callback: (...args: unknown[]) => void) => {
-        metadataListeners.set(name, callback);
-        return { e: { offref: () => metadataListeners.delete(name) } };
-      },
-      // A clean cache: the one-shot calls back at once.
-      onCleanCache: (callback: () => void) => callback(),
-    },
     fileManager: {
       trashFile: async (file: { path: string }) => vault.deleteFile(file.path),
     },
@@ -80,16 +62,9 @@ export async function profileServiceFixture(
     template,
     profile,
     libraryScope,
+    host,
     /** Re-indexes every note from the current `getFileCache` answers, the way `changed` events do. */
-    indexNotes: () => {
-      for (const file of vault.getMarkdownFiles()) {
-        metadataListeners.get("changed")!(
-          file,
-          "",
-          app.metadataCache.getFileCache(file),
-        );
-      }
-    },
+    indexNotes: () => host.metadataCache.announceAll(),
     [Symbol.asyncDispose]: () => cleanup.disposeAsync(),
   };
 }

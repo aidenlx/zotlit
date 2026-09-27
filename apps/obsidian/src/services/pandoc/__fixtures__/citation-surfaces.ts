@@ -21,7 +21,8 @@ import { act } from "preact/test-utils";
 import { vi } from "vitest";
 
 
-import { parseFrontMatter, spliceFrontMatter } from "@/lib/live-text";
+import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
+import { spliceFrontMatter } from "@/lib/live-text";
 import {
   createCitationIndexHarness,
   KEY_A,
@@ -512,26 +513,18 @@ export async function openCitationVault({
       await act(async () => undefined);
     },
     async setPresentation(choice) {
-      // The action's own update, over the properties both notes carry, so the
-      // surfaces follow the one metadata change a confirmed dialog makes.
-      await applyCitationPresentation(
-        {
-          // The draft as text: its Properties block over an empty body.
-          vault: {
-            process: (_file, edit) => {
-              const text = edit(spliceFrontMatter("", properties()));
-              const written = parseFrontMatter(text);
-              declared.style = written["zotlit-csl"];
-              declared.language = written["lang"];
-              writeProperties();
-              return Promise.resolve(text);
-            },
-          },
-          workspace: { iterateAllLeaves: () => {} },
-        },
-        harness.metadataCache.files.get(DRAFT)!,
-        choice,
-      );
+      // The action's own update, over the draft as text: its Properties block
+      // over an empty body. Both notes then carry the properties it wrote, so
+      // the surfaces follow the one metadata change a confirmed dialog makes.
+      const host = createObsidianHost({
+        [DRAFT]: spliceFrontMatter("", properties()),
+      });
+      await applyCitationPresentation(host.app, host.file(DRAFT), choice);
+      const written =
+        host.metadataCache.getFileCache(host.file(DRAFT))?.frontmatter ?? {};
+      declared.style = written["zotlit-csl"];
+      declared.language = written["lang"];
+      writeProperties();
       await act(async () => undefined);
     },
     async setSettings(next) {

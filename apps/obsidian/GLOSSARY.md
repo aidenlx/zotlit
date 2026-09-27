@@ -18,6 +18,10 @@ _Avoid_: child note (that's the Zotero-side source), mirror, note (ambiguous)
 A Child Note whose stored HTML has no usable Zotero note schema marker. Note Import preserves its general document structure and visible formatting without assigning Zotero-specific semantics to citations, annotation excerpts, or embedded attachments.
 _Avoid_: non-standard Zotero note, schema-less note
 
+**Live Text**:
+The text a vault note or document holds now: the text of the view that has it open, unsaved edits included, else the text on disk. ZotLit reads and rewrites a note through its Live Text, so an update never overwrites what the user is typing. Distinct from an Annotation's live text in Zotero, which an Annotation Card shows.
+_Avoid_: buffer, editor text, file content (the disk text only)
+
 **Managed Region**:
 The `%%zt-managed%%`-delimited portion of a Literature Note's body, re-rendered from the Managed Block (previously the `content` template) on every update. Content outside the markers is user-owned and preserved.
 _Avoid_: managed block, template region, synced region

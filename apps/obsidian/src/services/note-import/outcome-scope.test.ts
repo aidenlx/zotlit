@@ -8,9 +8,8 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { FileSystemAdapter, TFile, TFolder } from "obsidian";
-import type { App } from "obsidian";
+import { join } from "node:path";
+import type { App, TFile } from "obsidian";
 import Turndown from "turndown";
 import { expect, it, vi } from "vitest";
 
@@ -34,6 +33,7 @@ import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 
+import { diskImageHost } from "./__fixtures__/disk-image-host";
 import { createNoteImporter } from "./service";
 
 /** One paragraph naming the Shared Annotation both Child Notes quote. */
@@ -89,52 +89,11 @@ async function fixture(
   statement.run(childNoteHtml, 5);
   statement.run(childNoteHtml, 6);
 
-  const files = new Map<string, TFile>();
-  const folders = new Map<string, TFolder>();
-  const register = (path: string) => {
-    const file = Object.assign(new TFile(), { path });
-    files.set(path, file);
-    return file;
-  };
+  const host = diskImageHost(vaultRoot);
   const app = {
+    ...host.app,
     loadLocalStorage: () => null,
     saveLocalStorage: () => {},
-    vault: {
-      adapter: Object.assign(Object.create(FileSystemAdapter.prototype), {
-        getFullPath: (path: string) => join(vaultRoot, path),
-        reconcileInternalFile: async (path: string) => {
-          register(path);
-        },
-      }),
-      getRoot: () => Object.assign(new TFolder(), { path: "" }),
-      getFileByPath: (path: string) => files.get(path) ?? null,
-      getAbstractFileByPath: (path: string) =>
-        files.get(path) ?? folders.get(path) ?? null,
-      createFolder: async (path: string) => {
-        await mkdir(join(vaultRoot, path), { recursive: true });
-        const folder = Object.assign(new TFolder(), { path });
-        folders.set(path, folder);
-        return folder;
-      },
-      create: async (path: string, content: string) => {
-        await mkdir(dirname(join(vaultRoot, path)), { recursive: true });
-        await writeFile(join(vaultRoot, path), content);
-        return register(path);
-      },
-      read: (file: TFile) => readFile(join(vaultRoot, file.path), "utf8"),
-      process: async (file: TFile, edit: (content: string) => string) => {
-        const content = edit(
-          await readFile(join(vaultRoot, file.path), "utf8"),
-        );
-        await writeFile(join(vaultRoot, file.path), content);
-        return content;
-      },
-    },
-    metadataCache: {
-      getFileCache: () => null,
-      getFirstLinkpathDest: (path: string) => files.get(path) ?? null,
-    },
-    workspace: { iterateAllLeaves: () => {} },
     fileManager: {
       generateMarkdownLink: (file: TFile) => `![[${file.path}]]`,
     },
@@ -262,12 +221,12 @@ async function fixture(
     importNote,
     /** The imported-note files the run created, keyed by their note key. */
     notes: () =>
-      [...files.keys()]
-        .filter((path) => path.endsWith(".md"))
-        .sort()
-        .map((path) => path),
+      host.vault
+        .getMarkdownFiles()
+        .map((file) => file.path)
+        .sort(),
     imageNames: () => readdir(join(vaultRoot, "Images")),
-    content: (path: string) => readFile(join(vaultRoot, path), "utf8"),
+    content: (path: string) => host.text(path),
     [Symbol.asyncDispose]: () => cleanup[Symbol.asyncDispose](),
   };
 }
@@ -286,7 +245,7 @@ it("reuses one resolution across the notes of one initiating import batch", asyn
   const files = f.notes();
   expect(files).toHaveLength(2);
   for (const path of files) {
-    const markdown = await f.content(path);
+    const markdown = f.content(path);
     expect(markdown).toContain("Keep this prose.");
     expect(markdown).toContain(`![[Images/${asset}]]`);
     expect(markdown).not.toContain("Images/SNAP2345-snapshot.png");

@@ -1,14 +1,8 @@
-import {
-  getFrontMatterInfo,
-  Menu,
-  parseYaml,
-  stringifyYaml,
-  TFile,
-  TFolder,
-} from "@mock/obsidian";
+import { Menu, stringifyYaml, TFile, TFolder } from "@mock/obsidian";
 import type { App, Command, Plugin, TAbstractFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
@@ -51,7 +45,14 @@ interface VaultOptions {
 
 /** One vault the action runs in, opened on one Markdown note. */
 function openVault({ note, settings = {}, loading }: VaultOptions = {}) {
-  const file = markdownFile("draft.md");
+  // The note as text: its Properties block over an empty body.
+  const host = createObsidianHost({
+    "draft.md":
+      note && Object.keys(note).length > 0
+        ? `---\n${stringifyYaml(note)}---\n`
+        : "",
+  });
+  const file = host.file("draft.md");
   const vaultSettings = Promise.withResolvers<Settings>();
   const {
     ["citation.references-style"]: referencesStyle,
@@ -73,31 +74,19 @@ function openVault({ note, settings = {}, loading }: VaultOptions = {}) {
     },
   };
   if (!loading) vaultSettings.resolve(resolvedSettings);
-  const frontmatter = note ?? {};
   const writes: string[] = [];
+  host.vault.on("modify", (written) => writes.push((written as TFile).path));
   let command: Command | undefined;
   let fileMenu: FileMenuHandler | undefined;
 
   const app = {
+    ...host.app,
     workspace: {
+      ...host.workspace,
       getActiveFile: () => (note ? file : null),
-      iterateAllLeaves: () => {},
       on: (name: string, callback: FileMenuHandler) => {
         if (name === "file-menu") fileMenu = callback;
         return {};
-      },
-    },
-    metadataCache: { getFileCache: () => ({ frontmatter }) },
-    // The note as text: its Properties block over an empty body.
-    vault: {
-      process: (target: TFile, edit: (text: string) => string) => {
-        writes.push(target.path);
-        const text = edit(`---\n${stringifyYaml(frontmatter)}---\n`);
-        const written = (parseYaml(getFrontMatterInfo(text).frontmatter) ??
-          {}) as Record<string, unknown>;
-        for (const key of Object.keys(frontmatter)) delete frontmatter[key];
-        Object.assign(frontmatter, written);
-        return Promise.resolve(text);
       },
     },
   } as unknown as App;
@@ -124,7 +113,10 @@ function openVault({ note, settings = {}, loading }: VaultOptions = {}) {
   const onFileMenu = fileMenu;
   return {
     file,
-    frontmatter,
+    /** The properties the note carries now. */
+    get frontmatter() {
+      return host.metadataCache.getFileCache(file)?.frontmatter ?? {};
+    },
     /** Every note this run rewrote the properties of, newest last. */
     writes,
     /** The command palette entry, as the palette offers it. */
@@ -160,13 +152,6 @@ function openVault({ note, settings = {}, loading }: VaultOptions = {}) {
       return this.menu("more-options", target);
     },
   };
-}
-
-function markdownFile(path: string): TFile {
-  const file = new TFile();
-  file.path = path;
-  file.extension = "md";
-  return file;
 }
 
 function answer(choice: CitationPresentationChoice | null): void {
