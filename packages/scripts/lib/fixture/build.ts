@@ -36,7 +36,6 @@ import {
   ATTACHMENTS,
   BUILD_TIMESTAMP,
   CITATION_DOCUMENT_EDIT,
-  COLLECTIONS,
   createStressItems,
   DEFAULT_SCOPE_CASE,
   DEFAULT_VAULT_CASE,
@@ -561,7 +560,7 @@ function seedDatabase(
   ids: SchemaIDs,
   {
     layout,
-    data: { items, notes, attachments, annotations },
+    data: { items, notes, attachments, annotations, libraries, collections },
     linkedAttachmentVaultDir,
   }: {
     layout: FixtureLayout;
@@ -580,7 +579,7 @@ function seedDatabase(
     "insert into libraries (libraryID, type, editable, filesEditable) values (?, ?, ?, ?)" +
       " on conflict (libraryID) do update set type = excluded.type," +
       " editable = excluded.editable, filesEditable = excluded.filesEditable",
-    LIBRARIES.map((library) => [
+    libraries.map((library) => [
       library.libraryID,
       library.type,
       library.editable,
@@ -589,16 +588,14 @@ function seedDatabase(
   );
   insert(
     "insert into groups (groupID, libraryID, name, description, version) values (?, ?, ?, '', 0)",
-    LIBRARIES.filter((library) => library.groupID !== null).map((library) => [
-      library.groupID,
-      library.libraryID,
-      library.name,
-    ]),
+    libraries
+      .filter((library) => library.groupID !== null)
+      .map((library) => [library.groupID, library.libraryID, library.name]),
   );
 
   insert(
     "insert into collections (collectionID, collectionName, parentCollectionID, libraryID, key) values (?, ?, ?, ?, ?)",
-    COLLECTIONS.map((collection) => [
+    collections.map((collection) => [
       collection.collectionID,
       collection.name,
       collection.parentCollectionID ?? null,
@@ -955,7 +952,13 @@ function writePrefs(
   layout: FixtureLayout,
   options: BuildOptions,
 ): Promise<void> {
+  const scenario = findVaultCase(options.vaultCase ?? DEFAULT_VAULT_CASE);
   const lines = [
+    ...(scenario.locale
+      ? [
+          `user_pref("intl.locale.requested", ${JSON.stringify(scenario.locale)});`,
+        ]
+      : []),
     'user_pref("extensions.zotero.useDataDir", true);',
     `user_pref("extensions.zotero.dataDir", ${JSON.stringify(layout.dataDir)});`,
     ...QUIET_FIRST_RUN_PREFS,
@@ -1150,6 +1153,7 @@ async function writeVaultConfig(
     "command-palette": true,
     "editor-status": true,
     outline: true,
+    ...findVaultCase(options.vaultCase ?? DEFAULT_VAULT_CASE).corePlugins,
   });
   await writeJson(join(configDir, "workspace.json"), workspacePreset(options));
   await cp(

@@ -2183,6 +2183,34 @@ describe("a Vault Case", () => {
     ).toEqual(["IANNP5A2", "RUGIER24"]);
   });
 
+  it("builds the demo as a complete scholarly scenario with capture defaults", async () => {
+    const demo = await buildVaultCase("demo");
+    using sqlite = new DatabaseSync(demo.databasePath, { readOnly: true });
+    expect(
+      sqlite
+        .prepare(`select key from items where itemTypeID not in
+      (select itemTypeID from itemTypes where typeName in ('note','attachment','annotation')) order by key`)
+        .all()
+        .map(({ key }) => key),
+    ).toEqual(DEMO_ITEMS.map(({ key }) => key).sort());
+    expect(sqlite.prepare("pragma foreign_key_check").all()).toEqual([]);
+    expect(
+      sqlite.prepare("select collectionID from collections").all(),
+    ).toEqual([]);
+    expect(sqlite.prepare("select libraryID from groups").all()).toEqual([]);
+    expect(await readFile(join(demo.profileDir, "prefs.js"), "utf8")).toContain(
+      'user_pref("intl.locale.requested", "en-US");',
+    );
+    expect(
+      JSON.parse(
+        await readFile(
+          join(demo.vaultDir, ".obsidian/core-plugins.json"),
+          "utf8",
+        ),
+      ),
+    ).toHaveProperty("sync", false);
+  });
+
   it("leaves a fresh vault with ZotLit enabled and nothing else", async () => {
     const fresh = await buildVaultCase("fresh");
 

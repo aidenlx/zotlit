@@ -2436,6 +2436,9 @@ export interface FixtureVaultCase {
   id: "configured" | "fresh" | "upgrader" | "demo";
   /** One line for the maintainer choosing a case. */
   summary: string;
+  /** Stable language and core features for a capture scenario. */
+  locale?: string;
+  corePlugins?: Readonly<Record<string, boolean>>;
 }
 
 /**
@@ -2461,8 +2464,10 @@ export const VAULT_CASES: readonly FixtureVaultCase[] = [
   },
   {
     id: "demo",
+    locale: "en-US",
+    corePlugins: { sync: false },
     summary:
-      "A researcher's vault for screenshots and walkthroughs: the demo papers' PDFs, their Literature Notes, and the pages that cite them, with no test page and no test Item that repeats a demo paper's title.",
+      "A researcher's vault for screenshots and walkthroughs: the demo papers' PDFs, their Literature Notes, and the pages that cite them, with only the demo papers and their annotations, English Zotero UI, and Sync disabled.",
   },
 ];
 
@@ -2480,18 +2485,15 @@ export function findVaultCase(id: string): FixtureVaultCase {
 
 /** The Zotero rows one build writes. */
 export interface FixtureZoteroData {
+  libraries: readonly FixtureLibrary[];
+  collections: readonly FixtureCollection[];
   items: readonly FixtureItem[];
   notes: readonly FixtureNote[];
   attachments: readonly FixtureAttachment[];
   annotations: readonly FixtureAnnotation[];
 }
 
-/**
- * The Zotero rows a Vault Case's build writes. The demo case leaves out every
- * test Item whose title a demo Item repeats, with that Item's notes,
- * Attachments, and Annotations, so a title search finds each demo paper once.
- * Every other case writes all of `items`.
- */
+/** Select one complete data set, including the parents of every selected row. */
 export function vaultCaseZoteroData(
   vaultCaseId: string,
   items: readonly FixtureItem[],
@@ -2499,35 +2501,46 @@ export function vaultCaseZoteroData(
   if (findVaultCase(vaultCaseId).id !== "demo") {
     return {
       items,
+      libraries: LIBRARIES,
+      collections: COLLECTIONS,
       notes: NOTES,
       attachments: ATTACHMENTS,
       annotations: ANNOTATIONS,
     };
   }
-  const demoTitles = new Set(DEMO_ITEMS.map(({ title }) => title));
-  const dropped = new Set(
-    items
-      .filter(
-        (item) => !DEMO_ITEMS.includes(item) && demoTitles.has(item.title),
-      )
-      .map(({ itemID }) => itemID),
-  );
-  const keep = <T extends { itemID: number; parentItemID: number | null }>(
+  const selected = new Set(DEMO_ITEMS.map(({ itemID }) => itemID));
+  const demoItems = items.filter(({ itemID }) => selected.has(itemID));
+  const children = <T extends { itemID: number; parentItemID: number | null }>(
     rows: readonly T[],
   ): T[] =>
     rows.filter((row) => {
-      if (row.parentItemID !== null && dropped.has(row.parentItemID)) {
-        dropped.add(row.itemID);
-      }
-      return !dropped.has(row.itemID);
+      if (row.parentItemID === null || !selected.has(row.parentItemID))
+        return false;
+      selected.add(row.itemID);
+      return true;
     });
-  // Attachments first: a note or an Annotation can hang off one.
-  const attachments = keep(ATTACHMENTS);
+  const attachments = children(ATTACHMENTS);
+  const notes = children(NOTES);
+  const annotations = children(ANNOTATIONS);
+  const collectionIDs = new Set(
+    demoItems.flatMap((item) => item.collectionIDs),
+  );
+  for (const id of collectionIDs) {
+    const parent = COLLECTIONS.find(
+      (collection) => collection.collectionID === id,
+    )?.parentCollectionID;
+    if (parent != null) collectionIDs.add(parent);
+  }
+  const libraryIDs = new Set(demoItems.map((item) => item.libraryID));
   return {
-    items: items.filter(({ itemID }) => !dropped.has(itemID)),
+    items: demoItems,
     attachments,
-    notes: keep(NOTES),
-    annotations: keep(ANNOTATIONS),
+    notes,
+    annotations,
+    collections: COLLECTIONS.filter((collection) =>
+      collectionIDs.has(collection.collectionID),
+    ),
+    libraries: LIBRARIES.filter((library) => libraryIDs.has(library.libraryID)),
   };
 }
 
