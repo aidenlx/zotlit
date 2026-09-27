@@ -971,7 +971,7 @@ My conclusion.
 
   it("retains the selected baseline identity and recovery when reading its bytes fails", async () => {
     await using f = await fixture(SOURCE, { "Notes/Unreadable.md": existing });
-    vi.spyOn(f.app.vault, "read").mockRejectedValue(
+    vi.spyOn(f.app.vault, "cachedRead").mockRejectedValue(
       new Error("Permission denied"),
     );
     const result = await f.check({ mode: "update", key: "1:ABCD2345" });

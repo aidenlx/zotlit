@@ -46,6 +46,7 @@ import type {
 import { Icon } from "@/components/obsidian/icon";
 import { selectionControl } from "@/components/obsidian/selection-control";
 import * as m from "@/lib/i18n/generated/messages";
+import { readLiveText } from "@/lib/live-text";
 import { openSettingsTab } from "@/lib/open-settings";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { ProfileService } from "@/services/profile/service";
@@ -64,7 +65,6 @@ import {
   selectionViewTitle,
   updateSelectionTitle,
 } from "@/views/template-workbench/selection";
-import { currentProfileSource } from "@/views/template-workbench/source";
 import {
   templateWorkbenchButton,
   templateWorkbenchTheme,
@@ -928,9 +928,7 @@ export class NotePreviewView extends ItemView {
   async #readSource(file: TFile): Promise<void> {
     const generation = ++this.#sourceGeneration;
     try {
-      const source =
-        currentProfileSource(this.app, file) ??
-        (await this.app.vault.read(file));
+      const source = await readLiveText(this.app, file);
       if (file === this.#file && generation === this.#sourceGeneration)
         this.#session?.setSource(source);
     } catch (error) {

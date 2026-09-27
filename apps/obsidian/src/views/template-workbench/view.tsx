@@ -106,6 +106,7 @@ import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { itemSummary } from "@/lib/item-summary";
+import { loadedTextFileView } from "@/lib/live-text";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import type { ProfileSelector } from "@/lib/profile-stamp";
@@ -159,7 +160,6 @@ import {
   subscribeWorkbenchSelection,
 } from "./selection";
 import { getSampleItem } from "./selection-data";
-import { currentProfileSource } from "./source";
 import {
   originatingNoteNotice,
   templateWorkbenchButton,
@@ -991,7 +991,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     if (clear && this.file && !this.#clearing) {
       source =
         this.#pendingSource ??
-        currentProfileSource(this.app, this.file, this) ??
+        loadedTextFileView(this.app, this.file, this)?.getViewData() ??
         source;
       this.#pendingSource = null;
     }
@@ -1811,7 +1811,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           state: { ...this.getState(), defaultDraft: false, file: file.path },
           active: true,
         });
-        const source = currentProfileSource(this.app, file, this) ?? this.data;
+        const source =
+          loadedTextFileView(this.app, file, this)?.getViewData() ?? this.data;
         this.#bindingDraft = false;
         this.#defaultDraft = false;
         controller.setReadOnly(false);

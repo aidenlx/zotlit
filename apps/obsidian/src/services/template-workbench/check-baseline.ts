@@ -1,5 +1,6 @@
-// Select one read-only update input before resolving the Profile to check.
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
+// Select one read-only update input before resolving the Profile to check.
+import { readLiveText } from "@/lib/live-text";
 import { parseProfileStamp } from "@/lib/profile-stamp";
 import { previewBaseline } from "@/views/note-preview/baseline";
 
@@ -62,7 +63,7 @@ export async function selectCheckBaseline(
       path = selected.path;
       kind = "real";
       try {
-        source = await deps.app.vault.read(selected);
+        source = await readLiveText(deps.app, selected);
       } catch (error) {
         return failed(error);
       }
