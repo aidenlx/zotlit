@@ -2453,7 +2453,7 @@ function EditorContent({
           <div className={originatingNoteNotice.guidance}>
             <p className={originatingNoteNotice.scope}>
               {m.template_workbench_shared_template({
-                name: view.file?.basename ?? m.settings_profile_default_name(),
+                name: view.profileLabel ?? m.settings_profile_default_name(),
               })}
             </p>
             <p className={originatingNoteNotice.behavior}>
