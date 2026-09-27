@@ -10,7 +10,7 @@ import { m } from "@/paraglide/messages.js";
 
 ZotLit reads your library from the Zotero database. ZotLit Companion, the Zotero add-on, keeps recent changes available and connects Zotero actions to Obsidian. Live updates provide an optional third connection.
 
-ZotLit supports Zotero 9 or later and requires the Companion.
+ZotLit supports Zotero 9 or later and requires the Companion. To save annotation changes from Obsidian, you need Zotero 10 or later. With Zotero 9, you can read PDFs and their annotations, but you cannot edit them.
 
 ## Reading the Zotero database
 
@@ -59,7 +59,7 @@ ZotLit uses two transport mechanisms between Zotero and Obsidian. They serve dif
 
 ### Protocol links (no server required)
 
-When you right-click an item in Zotero and choose a ZotLit action (open note, update note, import), the Companion builds an `obsidian://zotlit/...` URL and opens it. Obsidian receives the URL and ZotLit handles the action.
+When you right-click an item in Zotero and choose a ZotLit action (open note, update note, import, open PDF), the Companion builds an `obsidian://zotlit/...` URL and opens it. Obsidian receives the URL and ZotLit handles the action.
 
 Protocol links work out of the box after you install ZotLit and the Companion. They carry a source identifier so ZotLit only processes links originating from the expected Zotero install.
 
@@ -88,6 +88,17 @@ Both sides carry a source identifier and a protocol version. The server discards
   default. Protocol links handle all context-menu actions without them. Enable
   live updates only when you want real-time push from Zotero.
 </Callout>
+
+## Saving annotation changes to Zotero
+
+The database connection only reads. When you edit an annotation in Obsidian, ZotLit sends the change to Zotero while Zotero is running. Zotero saves it like an annotation you made in its own reader, so the change syncs with your Zotero library.
+
+ZotLit sends these changes through Zotero's local API, a connection that Zotero provides for other applications on the same computer. Two things must be in place:
+
+- **In Zotero:** **Allow other applications on this computer to communicate with Zotero** is on, under Settings → Advanced.
+- **Your permission:** the first time you allow editing, Zotero shows a permission dialog. You choose **Always Allow** once. ZotLit saves this permission for the current vault on the current device only, so you give it once for each vault on each computer.
+
+This connection does not use protocol links or the ZotLit server. For the steps, see [Edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations).
 
 ## How the pieces fit together
 

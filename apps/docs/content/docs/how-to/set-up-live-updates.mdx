@@ -13,10 +13,10 @@ import { m } from "@/paraglide/messages.js";
 ZotLit Companion, the Zotero add-on, can push changes to Obsidian as you read and annotate in Zotero. The annotation view's reader-following mode and automatic database refreshes both depend on this optional connection.
 
 <Callout type="info" title="When you do not need this">
-  Basic Companion actions (opening items, updating notes, importing notes from
-  the Zotero context menu) work through protocol links with no server. You only
-  need live updates for real-time push (reader-following, instant database
-  refresh when Zotero data changes).
+  Basic Companion actions (opening items and their PDFs, updating notes,
+  importing notes from the Zotero context menu) work through protocol links with
+  no server. You only need live updates for real-time push (reader-following,
+  instant database refresh when Zotero data changes).
 </Callout>
 
 ## Enable the ZotLit server
@@ -65,7 +65,7 @@ ZotLit Companion, the Zotero add-on, can push changes to Obsidian as you read an
 
 ## Verify the connection
 
-After enabling both sides, open an item in the Zotero PDF reader with the annotation view open in Obsidian. If reader-following is active, the annotation view updates to show that item's annotations. If it does not update, check that both the port and hostname match between the ZotLit server settings and the Companion's Notify URL.
+After enabling both sides, open the annotation view in Obsidian and switch it to <UiLabel name={m.annot_view_mode_zotero_reader()} /> mode. The view starts in <UiLabel name={m.annot_view_mode_active_tab()} /> mode and keeps the mode you last chose. Then open an item in the Zotero PDF reader. The annotation view updates to show that item's annotations. If it does not update, check that both the port and hostname match between the ZotLit server settings and the Companion's Notify URL.
 
 ## Source ID filtering
 

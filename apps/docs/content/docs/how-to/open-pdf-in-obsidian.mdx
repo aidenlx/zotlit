@@ -5,12 +5,15 @@ description: "Open a Zotero PDF attachment in Obsidian's own PDF reader, from a 
 
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
 Read a Zotero item's PDF in an Obsidian tab instead of switching to Zotero.
 
 ZotLit opens the PDF in Obsidian's own PDF reader, whether the file sits inside your vault or in Zotero's storage folder. Only PDF attachments open this way; EPUBs, web snapshots, and other file types stay in Zotero.
+
+You need Obsidian 1.14.2 or later, which ZotLit 2.2 also requires.
 
 ## From a literature note
 
@@ -19,13 +22,17 @@ With the literature note open in Obsidian:
 - Open the command palette and run <Command inline name={m.command_open_pdf_name()} />.
 - Or right-click the note's tab and choose <UiLabel name={m.command_open_pdf_name()} /> from the **zotlit** section of the file menu.
 
+## From the annotation view
+
+Open the view's pane menu and choose <UiLabel name={m.command_open_pdf_name()} />. This opens the attachment the view shows. The menu leaves the entry out while the view follows that PDF's tab in Obsidian.
+
 ## From the quick switcher
 
 Run <Command inline name={m.command_open_lit_note_name()} />, search for the item, and press `Shift+Enter` on the result. The PDF opens without the literature note. See [Use the quick switcher](/docs/how-to/create-and-open-notes#quick-switcher) for every chord a result takes.
 
 ## From Zotero
 
-These entry points need ZotLit Companion, the Zotero add-on.
+These entry points need ZotLit Companion, the Zotero add-on, at the version released with ZotLit 2.2. [Install ZotLit Companion](/docs/install-companion) has the current version.
 
 - In the library, select one PDF attachment, or one item that has a PDF, and choose <UiLabel name={m["zotero.menu_item_open_pdf.label"]()} /> from the top-level context menu.
 - While reading a PDF in Zotero, right-click inside the page and choose <UiLabel name={m["zotero.menu_reader_page_open_pdf"]()} />. This opens the PDF you are reading.
@@ -44,7 +51,9 @@ When the item has one PDF, it opens straight away. When it has several, ZotLit a
 
 When the item has no PDF, ZotLit shows <UiLabel name={m.notice_no_pdf_attachment()} /> When the file is no longer on disk, it shows <UiLabel name={m.notice_pdf_file_missing()} /> In neither case does ZotLit open the file in Zotero instead.
 
-The annotation view follows the PDF tab you open this way, so the item's highlights appear beside it.
+The annotation view comes forward in the sidebar with the PDF, so the item's highlights appear beside it. While the view is in <UiLabel name={m.annot_view_mode_active_tab()} /> mode, it follows the PDF tab.
+
+To keep your sidebar as it is, turn off <SettingsPath page={m.settings_page_reader()} setting={m.settings_reader_focus_annot_view_name()} />. See [Settings](/docs/reference/settings#reader).
 
 ## See also
 

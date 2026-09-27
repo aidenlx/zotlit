@@ -59,8 +59,10 @@ import {
   UPGRADER_LEGACY_TEMPLATES,
   UPGRADER_PLUGIN_VERSION,
   UPGRADER_SETTINGS_VERSION,
+  vaultCaseZoteroData,
 } from "./spec.ts";
 import type {
+  FixtureAnnotation,
   FixtureAttachment,
   FixtureCreator,
   FixtureItem,
@@ -69,6 +71,7 @@ import type {
   FixtureNote,
   FixtureTemplateEdit,
   FixtureVaultCase,
+  FixtureZoteroData,
   PersistedLibraryScope,
 } from "./spec.ts";
 
@@ -211,19 +214,23 @@ export async function buildFixture(
       : [...ITEMS, ...createStressItems(options.stressItemCount)];
 
   assertSeededCitationKeys(items);
+  const data = vaultCaseZoteroData(
+    options.vaultCase ?? DEFAULT_VAULT_CASE,
+    items,
+  );
 
   await rm(layout.root, { recursive: true, force: true });
   await mkdir(layout.dataDir, { recursive: true });
   await mkdir(layout.profileDir, { recursive: true });
-  await writeDatabase(layout, items, options);
+  await writeDatabase(layout, data, options);
   // A Paired Zotero unpacks its bundled styles seconds after it starts, so the
   // build lays them down itself: every Fixture offers the same Citation and
   // References Style choices from the moment it exists, Zotero running or not.
   await writePristineStyles(layout.dataDir);
   await writeInstalledStyles(layout);
   const demo = options.vaultCase === "demo";
-  await writeAttachmentFiles(layout, demo);
-  await writeAnnotationCacheFiles(layout);
+  await writeAttachmentFiles(layout, data.attachments, demo);
+  await writeAnnotationCacheFiles(layout, data.annotations);
   await writePrefs(layout, options);
   await writeLocalApiAuthorizations(layout, options);
   await writeVault(layout, options);
@@ -305,9 +312,10 @@ function attachmentFilePath(
 
 async function writeAttachmentFiles(
   layout: FixtureLayout,
+  attachments: readonly FixtureAttachment[],
   demo: boolean,
 ): Promise<void> {
-  for (const attachment of ATTACHMENTS) {
+  for (const attachment of attachments) {
     if (attachment.sourceAsset === null) continue;
     // A vault holds the linked PDFs of its own case: the demo vault the demo
     // papers', every other vault the test Items'.
@@ -335,8 +343,11 @@ async function writeExcerptAcceptanceFiles(
     );
 }
 
-async function writeAnnotationCacheFiles(layout: FixtureLayout): Promise<void> {
-  for (const annotation of ANNOTATIONS) {
+async function writeAnnotationCacheFiles(
+  layout: FixtureLayout,
+  annotations: readonly FixtureAnnotation[],
+): Promise<void> {
+  for (const annotation of annotations) {
     if (annotation.cacheImageAsset === null) continue;
     const groupID = LIBRARIES.find(
       (library) => library.libraryID === annotation.libraryID,
@@ -377,7 +388,7 @@ async function writeInstalledStyles(layout: FixtureLayout): Promise<void> {
  */
 async function writeDatabase(
   layout: FixtureLayout,
-  items: readonly FixtureItem[],
+  data: FixtureZoteroData,
   options: BuildOptions,
 ): Promise<void> {
   await writePristineDatabase(layout.databasePath);
@@ -396,7 +407,7 @@ async function writeDatabase(
   try {
     seedDatabase(db, readSchemaIDs(db), {
       layout,
-      items,
+      data,
       linkedAttachmentVaultDir: options.linkedAttachmentVaultDir,
     });
     if (options.localApi) {
@@ -550,11 +561,11 @@ function seedDatabase(
   ids: SchemaIDs,
   {
     layout,
-    items,
+    data: { items, notes, attachments, annotations },
     linkedAttachmentVaultDir,
   }: {
     layout: FixtureLayout;
-    items: readonly FixtureItem[];
+    data: FixtureZoteroData;
     linkedAttachmentVaultDir?: string;
   },
 ): void {
@@ -619,18 +630,18 @@ function seedDatabase(
       " values (?, ?, ?, ?, ?, ?, ?)",
     [
       ...items.map((item) => itemRow(item, ids.itemTypes[item.itemType])),
-      ...NOTES.map((note) => itemRow(note, ids.itemTypes.note)),
-      ...ATTACHMENTS.map((attachment) =>
+      ...notes.map((note) => itemRow(note, ids.itemTypes.note)),
+      ...attachments.map((attachment) =>
         itemRow(attachment, ids.itemTypes.attachment),
       ),
-      ...ANNOTATIONS.map((annotation) =>
+      ...annotations.map((annotation) =>
         itemRow(annotation, ids.itemTypes.annotation),
       ),
     ],
   );
   insert(
     "insert into itemNotes (itemID, parentItemID, note, title) values (?, ?, ?, ?)",
-    NOTES.map((note) => [
+    notes.map((note) => [
       note.itemID,
       note.parentItemID,
       note.note,
@@ -639,7 +650,7 @@ function seedDatabase(
   );
   insert(
     "insert into itemAttachments (itemID, parentItemID, linkMode, contentType, charsetID, path) values (?, ?, ?, ?, ?, ?)",
-    ATTACHMENTS.map((attachment) => [
+    attachments.map((attachment) => [
       attachment.itemID,
       attachment.parentItemID,
       ATTACHMENT_LINK_MODES[attachment.linkMode],
@@ -654,7 +665,7 @@ function seedDatabase(
   insert(
     "insert into itemAnnotations (itemID, parentItemID, type, text, comment, color, pageLabel, sortIndex, position, isExternal)" +
       " values (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
-    ANNOTATIONS.map((annotation) => [
+    annotations.map((annotation) => [
       annotation.itemID,
       annotation.parentItemID,
       annotation.type,
@@ -667,7 +678,7 @@ function seedDatabase(
     ]),
   );
 
-  seedItemData(insert, ids, { items, attachments: ATTACHMENTS });
+  seedItemData(insert, ids, { items, attachments });
 
   // `creators` is keyed by name across the whole database, so two items by the
   // same person would share one row. Ids follow first use, which the Spec's own
@@ -701,7 +712,7 @@ function seedDatabase(
   );
 
   const tags = new Map<string, number>();
-  for (const tag of [...items, ...ANNOTATIONS].flatMap(
+  for (const tag of [...items, ...annotations].flatMap(
     (item) => item.tags ?? [],
   )) {
     if (!tags.has(tag.name)) tags.set(tag.name, tags.size + 1);
@@ -712,7 +723,7 @@ function seedDatabase(
   );
   insert(
     "insert into itemTags (itemID, tagID, type) values (?, ?, ?)",
-    [...items, ...ANNOTATIONS].flatMap((item) =>
+    [...items, ...annotations].flatMap((item) =>
       (item.tags ?? []).map((tag) => [
         item.itemID,
         tags.get(tag.name)!,
@@ -735,15 +746,14 @@ function seedDatabase(
 
   insert(
     "insert into deletedItems (itemID, dateDeleted) values (?, ?)",
-    NOTES.filter((note) => note.trashed).map((note) => [
-      note.itemID,
-      note.dateModified,
-    ]),
+    notes
+      .filter((note) => note.trashed)
+      .map((note) => [note.itemID, note.dateModified]),
   );
 
   insert(
     "insert into collectionItems (collectionID, itemID) values (?, ?)",
-    [...items, ...NOTES].flatMap((item) =>
+    [...items, ...notes].flatMap((item) =>
       item.collectionIDs.map((collectionID) => [collectionID, item.itemID]),
     ),
   );

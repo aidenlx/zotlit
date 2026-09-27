@@ -18,18 +18,18 @@ You will use the same citations and style for both Word documents. At the end, y
 
 You need:
 
-- Obsidian Desktop with ZotLit installed.
-- Zotero 8 or newer with ZotLit Companion, the Zotero add-on.
+- Obsidian Desktop 1.14.2 or newer with ZotLit installed.
+- Zotero 9 or newer with ZotLit Companion, the Zotero add-on.
 - [Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/) installed in Zotero.
 - Pandoc 3.1.1 or newer installed on your computer.
 
-Enable Obsidian's **Command line interface** and keep Obsidian open during the native run. The [native Pandoc guide](/docs/how-to/export-with-native-pandoc#requirements) lists the complete compatibility requirements.
+Enable Obsidian's **Command line interface**, which needs Obsidian installer 1.13.4 or newer. Keep Obsidian open during the native run. The [native Pandoc guide](/docs/how-to/export-with-native-pandoc#requirements) lists the complete compatibility requirements.
 
 <Steps>
   <Step>
     ### Prepare the sample items
 
-    In Zotero, select **My Library**, then select **Add Item by Identifier**. Add these two DOIs:
+    In Zotero, select **My Library**, then select **Add Item(s) by Identifier**. Add these two DOIs:
 
     | DOI                            | Item title                                     | Citation key                  |
     | ------------------------------ | ---------------------------------------------- | ----------------------------- |
@@ -50,21 +50,17 @@ Enable Obsidian's **Command line interface** and keep Obsidian open during the n
 
     Open <SettingsPath page={m.settings_page_citations()} />. Turn on <UiLabel name={m.settings_citation_pandoc_citations_name()} /> and <UiLabel name={m.settings_citation_wikilink_citations_name()} />.
 
+    ![The Citations settings page with Pandoc citations and Wikilink citations both turned on under Citation sources](/img/tutorial/pandoc-workflow-citation-sources.webp)
+
     Under <UiLabel name={m.settings_citation_references_heading()} />, install the <UiLabel name={m.settings_citation_engine_name()} />. This managed engine formats the <UiLabel name={m.references_view_name()} /> Sidebar and powers built-in export.
 
-    Select **APA Style 7th edition** as the <UiLabel name={m.settings_citation_references_style_name()} />. Its author-date output makes locators and author modes easy to compare.
+    Open <SettingsPath /> and select **APA Style 7th edition** as the <UiLabel name={m.settings_citation_references_style_name()} />. Its author-date output makes locators and author modes easy to compare.
 
   </Step>
   <Step>
     ### Create the worked note
 
-    Create a Markdown note named `Citation workflow check`. Run:
-
-    <Command name={m.command_set_citation_presentation_name()} />
-
-    Select **APA Style 7th edition** and set <UiLabel name={m.citation_presentation_language_name()} /> to `en-US`. Select <UiLabel name={m.citation_presentation_confirm()} /> so the native workflow uses this note's style too.
-
-    Paste this body into the note:
+    Create a Markdown note named `Citation workflow check`, and paste this body into it:
 
     ```md
     # Citation workflow check
@@ -86,6 +82,8 @@ Enable Obsidian's **Command line interface** and keep Obsidian open during the n
 
     Keep the semicolon and both Literature Note links on one line. Together they form one Citation Run.
 
+    The note has no citation style of its own, so it uses the APA style you selected in settings. Both exports use that same style.
+
   </Step>
   <Step>
     ### Review the note in Obsidian
@@ -106,6 +104,8 @@ Enable Obsidian's **Command line interface** and keep Obsidian open during the n
     - The literal citation renders as `(Nosek et al., 2015)`.
     - `Reading plan` remains an ordinary vault link.
 
+    ![The note Citation workflow check in Live Preview with its APA citations formatted, and the References Sidebar on the right listing the Ioannidis and Nosek et al. entries](/img/tutorial/pandoc-workflow-references-sidebar.webp)
+
   </Step>
   <Step>
     ### Export with ZotLit
@@ -116,7 +116,15 @@ Enable Obsidian's **Command line interface** and keep Obsidian open during the n
 
     <Command name={m.command_pandoc_export_name()} />
 
-    Keep <UiLabel name={m.pandoc_export_format_name()} /> set to <UiLabel name={m.pandoc_export_format_docx()} />, choose your `ZotLit Pandoc tutorial` folder, and select <UiLabel name={m.pandoc_export_confirm()} />. Open the resulting `.docx` file and repeat the checks from the <UiLabel name={m.references_view_name()} /> Sidebar.
+    Keep <UiLabel name={m.pandoc_export_format_name()} /> set to <UiLabel name={m.pandoc_export_format_docx()} />. <UiLabel name={m.pandoc_export_style_name()} /> shows **APA Style 7th edition**, and the line under it reads <UiLabel name={m.pandoc_export_style_from_vault()} /> This confirms that the export uses the style from your settings.
+
+    Under <UiLabel name={m.pandoc_export_destination_name()} />, select <UiLabel name={m.pandoc_export_destination_browse()} /> and save the file in your `ZotLit Pandoc tutorial` folder.
+
+    ![The Export with citations dialog set to Word document, with the citation style APA Style 7th edition, the line "Your vault settings set this style.", and a destination in the ZotLit Pandoc tutorial folder](/img/tutorial/pandoc-workflow-export-dialog.webp)
+
+    Select <UiLabel name={m.pandoc_export_confirm()} />. The notice that follows names the style it used, for example <UiLabel name={m.notice_pandoc_export_done({ file: "Citation workflow check.docx", style: "APA Style 7th edition" })} />
+
+    Open the resulting `.docx` file and repeat the checks from the <UiLabel name={m.references_view_name()} /> Sidebar.
 
     Built-in export uses Better BibTeX to fetch current bibliography data from Zotero.
 
@@ -124,9 +132,9 @@ Enable Obsidian's **Command line interface** and keep Obsidian open during the n
   <Step>
     ### Save the version-matched integration pair
 
-    Open <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_references_heading()} />. Under <UiLabel name={m.settings_citation_native_pandoc_heading()} />, find <UiLabel name={m.settings_citation_pandoc_files_name()} /> and select <UiLabel name={m.settings_citation_pandoc_files_save()} />.
+    Open <SettingsPath page={m.settings_page_citations()} />. Under <UiLabel name={m.settings_citation_native_pandoc_heading()} />, find <UiLabel name={m.settings_citation_pandoc_files_name()} /> and select <UiLabel name={m.settings_citation_pandoc_files_save()} />.
 
-    Choose your `ZotLit Pandoc tutorial` folder. ZotLit saves `zotlit-cite.lua` and `zotlit.yaml` there. The pair matches your installed ZotLit version; save a fresh pair after each ZotLit update.
+    Choose your `ZotLit Pandoc tutorial` folder. ZotLit saves `zotlit-cite.lua` and `zotlit.yaml` there. The pair matches your installed ZotLit version. Save a fresh pair after every ZotLit update. Files saved from a version before ZotLit 2.2.0 do not work with 2.2.0 or later.
 
   </Step>
   <Step>
@@ -152,6 +160,14 @@ Enable Obsidian's **Command line interface** and keep Obsidian open during the n
 
     Keep `--fail-if-warnings`. It stops the run when Pandoc cannot find a cited item in `references.json`.
 
+    Pandoc prints one ZotLit line that names the style and where it comes from:
+
+    ```text
+    ZotLit: citations use APA Style 7th edition (from your vault settings).
+    ```
+
+    This line is not a warning, so the run continues and writes the `.docx` file.
+
   </Step>
   <Step>
     ### Compare the Word documents
@@ -175,7 +191,7 @@ You now have one Markdown note that you can review in Obsidian and export throug
 | Built-in export succeeds, but native Pandoc warns that a citation is not found in the bibliography              | Add the missing item to the Better BibTeX export source, update `references.json`, and run the command again. |
 | Native output changes after a ZotLit update or the filter reports a contract mismatch                           | Save both integration files again and replace the old pair together.                                          |
 
-For native error-code definitions, open <UiLabel name={m.settings_citation_pandoc_guide_name()} /> under <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_references_heading()} />. The [Settings reference](/docs/reference/settings#native-pandoc) identifies the local guide and integration controls.
+For native error-code definitions, open <UiLabel name={m.settings_citation_pandoc_guide_name()} /> under <SettingsPath page={m.settings_page_citations()} />. The [Settings reference](/docs/reference/settings#native-pandoc) identifies the local guide and integration controls.
 
 ## Next steps
 

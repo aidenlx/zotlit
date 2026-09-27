@@ -2151,6 +2151,38 @@ describe("a Vault Case", () => {
     await expect(stat(demo.pluginDataPath)).resolves.toBeTruthy();
   });
 
+  it("gives each demo paper the only Item with its title in the demo library", async () => {
+    const demo = await buildVaultCase("demo");
+    using sqlite = new DatabaseSync(demo.databasePath, { readOnly: true });
+    const keysWithTitle = sqlite.prepare(
+      `select items.key from items
+         join itemData using (itemID)
+         join fields using (fieldID)
+         join itemDataValues using (valueID)
+       where fields.fieldName = 'title' and itemDataValues.value = ?
+       order by items.key`,
+    );
+
+    expect(
+      DEMO_ITEMS.map((item) => ({
+        title: item.title,
+        keys: keysWithTitle.all(item.title).map(({ key }) => key),
+      })),
+    ).toEqual(DEMO_ITEMS.map(({ title, key }) => ({ title, keys: [key] })));
+    // The test Items they would repeat stay in every other case's library.
+    using configured = new DatabaseSync(layout.databasePath, {
+      readOnly: true,
+    });
+    expect(
+      configured
+        .prepare(
+          "select key from items where key in ('RUGIER24', 'IANNP5A2') order by key",
+        )
+        .all()
+        .map(({ key }) => key),
+    ).toEqual(["IANNP5A2", "RUGIER24"]);
+  });
+
   it("leaves a fresh vault with ZotLit enabled and nothing else", async () => {
     const fresh = await buildVaultCase("fresh");
 
