@@ -372,7 +372,7 @@
   "command_annot_view_follow_active_tab_name": "Follow the active tab in Zotero annotations",
   "command_annot_view_follow_zotero_reader_name": "Follow the Zotero reader in Zotero annotations",
   "command_annot_view_pin_current_item_name": "Pin the current item in Zotero annotations",
-  "command_annot_view_pin_item_name": "Pin an item in Zotero annotations",
+  "command_annot_view_pin_item_name": "Choose an item to pin in Zotero annotations",
   "command_annot_view_unpin_name": "Unpin the item in Zotero annotations",
   "command_undo_annotation_change_name": "Undo annotation change",
   "command_redo_annotation_change_name": "Redo annotation change",

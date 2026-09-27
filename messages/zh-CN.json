@@ -1548,7 +1548,7 @@
   "command_annot_view_follow_active_tab_name": "在 Zotero 标注中跟随活动标签页",
   "command_annot_view_follow_zotero_reader_name": "在 Zotero 标注中跟随 Zotero 阅读器",
   "command_annot_view_pin_current_item_name": "在 Zotero 标注中固定当前条目",
-  "command_annot_view_pin_item_name": "在 Zotero 标注中固定条目",
+  "command_annot_view_pin_item_name": "选择要固定在 Zotero 标注中的条目",
   "command_annot_view_unpin_name": "在 Zotero 标注中取消固定条目",
   "annot_view_mode_active_tab": "活动标签页",
   "annot_view_mode_zotero_reader": "Zotero 阅读器",
