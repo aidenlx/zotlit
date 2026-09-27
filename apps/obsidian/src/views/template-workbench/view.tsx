@@ -2459,7 +2459,10 @@ function EditorContent({
           </div>
           <div className={originatingNoteNotice.action}>
             <span className={originatingNoteNotice.note}>
-              {view.originatingNote.basename}
+              <Icon name="file-text" aria-hidden="true" />
+              <span className={originatingNoteNotice["note-name"]}>
+                {view.originatingNote.basename}
+              </span>
             </span>
             <button
               className={originatingNoteNotice.button}
@@ -2470,9 +2473,28 @@ function EditorContent({
                 if (notice !== null) new BaseNotice(notice);
               }}
             >
-              {view.updatingNote
-                ? m.notice_updating_note()
-                : m.template_workbench_update_this_note()}
+              <span className={originatingNoteNotice.labels}>
+                <span
+                  className={
+                    view.updatingNote
+                      ? originatingNoteNotice["label-hidden"]
+                      : undefined
+                  }
+                  aria-hidden={view.updatingNote}
+                >
+                  {m.template_workbench_update_this_note()}
+                </span>
+                <span
+                  className={
+                    !view.updatingNote
+                      ? originatingNoteNotice["label-hidden"]
+                      : undefined
+                  }
+                  aria-hidden={!view.updatingNote}
+                >
+                  {m.notice_updating_note()}
+                </span>
+              </span>
             </button>
           </div>
         </div>
