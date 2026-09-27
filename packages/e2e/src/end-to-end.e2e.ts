@@ -31,6 +31,7 @@ import {
   ANNOTATIONS,
   ATTACHMENTS,
   COLLECTIONS,
+  DEMO_ITEMS,
   discardFixture,
   findScopeCase,
   getFixtureLayout,
@@ -1264,9 +1265,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // the citekey-created note is the one existing Books note. The three
     // remaining group items (8, 9, 10, 79) are created under Default, the batch's
     // fallback: the Books choice made in the citekey picker stayed with that
-    // operation.
+    // operation. The demo papers have no seeded note, so they are created
+    // under Default too.
     const defaultCount =
-      ITEMS.filter(({ libraryID }) => libraryID === 1).length + 1;
+      ITEMS.filter((item) => item.libraryID === 1 && !DEMO_ITEMS.includes(item))
+        .length + 1;
     const summary = await obEval(
       vaultId,
       "activeDocument.querySelector('.modal').textContent",
@@ -1280,7 +1283,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect((await notices.read()).join("\n")).toContain(updated);
     }
     const created = m.batch_profile_created({
-      count: 4,
+      count: 4 + DEMO_ITEMS.length,
       label: m.settings_profile_default_name(),
     });
     expect(summary).toContain(created);
