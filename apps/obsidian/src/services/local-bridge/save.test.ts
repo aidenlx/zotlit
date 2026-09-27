@@ -1,6 +1,8 @@
 // The write boundary, driven the way the page drives it: the Hono app in
 // process over a real Profile service and a fake vault.
-
+import { createHash } from "node:crypto";
+import { TextFileView } from "obsidian";
+import type { WorkspaceLeaf } from "obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { CONTRACT_VERSION } from "@zotlit/db";
@@ -127,6 +129,40 @@ async function harness(
   };
 }
 
+/** An editor view on the Books document holding `text`; its save writes the vault. */
+class DocumentEditorView extends TextFileView {
+  override getViewData(): string {
+    return this.data;
+  }
+  override setViewData(data: string): void {
+    this.data = data;
+  }
+  override clear(): void {
+    this.data = "";
+  }
+  override getViewType(): string {
+    return "markdown";
+  }
+}
+
+function openInEditor(
+  bridge: Awaited<ReturnType<typeof harness>>,
+  text: string,
+) {
+  const view = new DocumentEditorView({ app: bridge.app } as never);
+  view.file = bridge.vault.getFileByPath(BOOKS_PATH);
+  view.lastSavedData = bridge.vault.contents.get(BOOKS_PATH)!;
+  view.data = text;
+  const save = vi.fn(async () => {
+    bridge.vault.modifyFile(BOOKS_PATH, view.data);
+    view.lastSavedData = view.data;
+  });
+  view.save = save;
+  bridge.app.workspace.iterateAllLeaves = (callback) =>
+    callback({ view } as unknown as WorkspaceLeaf);
+  return { view, save };
+}
+
 it("writes the exact bytes of the draft and answers its revision", async () => {
   await using bridge = await harness();
 
@@ -184,6 +220,46 @@ it("refuses a stale revision with the one the vault holds, and writes nothing", 
   });
   expect(bridge.vault.contents.get(BOOKS_PATH)).toBe(BOOKS_SOURCE);
   expect(bridge.saved).toEqual([]);
+});
+
+it("refuses a Save the open editor's unsaved text has moved past, and writes nothing", async () => {
+  await using bridge = await harness();
+  const unsaved = `${BOOKS_SOURCE}Unsaved line\n`;
+  const editor = openInEditor(bridge, unsaved);
+
+  const res = await bridge.save({
+    reference: BOOKS_PROFILE,
+    expected: { state: "revision", revision: REVISION.books },
+    source: BOOKS_EDITED,
+  });
+
+  await expect(res.json()).resolves.toEqual({
+    state: "refused",
+    reason: "revision-conflict",
+    currentRevision: createHash("sha256").update(unsaved).digest("hex"),
+  });
+  expect(editor.view.getViewData()).toBe(unsaved);
+  expect(editor.save).not.toHaveBeenCalled();
+  expect(bridge.vault.contents.get(BOOKS_PATH)).toBe(BOOKS_SOURCE);
+});
+
+it("writes a Save of an open document through its editor", async () => {
+  await using bridge = await harness();
+  const editor = openInEditor(bridge, BOOKS_SOURCE);
+
+  const res = await bridge.save({
+    reference: BOOKS_PROFILE,
+    expected: { state: "revision", revision: REVISION.books },
+    source: BOOKS_EDITED,
+  });
+
+  await expect(res.json()).resolves.toEqual({
+    state: "saved",
+    revision: REVISION.booksEdited,
+  });
+  expect(editor.view.getViewData()).toBe(BOOKS_EDITED);
+  expect(editor.save).toHaveBeenCalledOnce();
+  expect(bridge.vault.contents.get(BOOKS_PATH)).toBe(BOOKS_EDITED);
 });
 
 it("ejects the built-in Default on its first Save and refuses a second creation", async () => {

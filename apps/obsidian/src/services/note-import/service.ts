@@ -1,6 +1,12 @@
 // Materializes a literature note's child Zotero notes into flat Markdown mirrors.
 import { normalizePath, stringifyYaml } from "obsidian";
-import type { FileManager, MetadataCache, TFile, Vault } from "obsidian";
+import type {
+  FileManager,
+  MetadataCache,
+  TFile,
+  Vault,
+  Workspace,
+} from "obsidian";
 import PQueue from "p-queue";
 
 import { getAnnotationsByKey, getItemsByID, getNoteByKey } from "@zotlit/db";
@@ -26,6 +32,7 @@ import {
   normalizeFolderPath,
 } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
+import { processLiveText } from "@/lib/live-text";
 import { getLogger } from "@/lib/log";
 import { syntheticFile } from "@/lib/markdown-link";
 import { DEFAULT_PROFILE, unknownProfileDiagnostic } from "@/lib/profile-stamp";
@@ -110,6 +117,7 @@ export type ImportVaultApp = {
   >;
   fileManager: Pick<FileManager, "generateMarkdownLink">;
   metadataCache: Pick<MetadataCache, "getFileCache">;
+  workspace: Pick<Workspace, "iterateAllLeaves">;
 };
 
 interface NoteImporterDeps {
@@ -648,7 +656,7 @@ async function writeNote(
       throw error;
     }
   } else {
-    await ctx.app.vault.process(mode.file, () => content);
+    await processLiveText(ctx.app, mode.file, () => content);
     outcome = "overwritten";
   }
 

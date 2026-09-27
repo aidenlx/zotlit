@@ -86,7 +86,6 @@ async function realCreate(
       fileManager: {
         generateMarkdownLink: (target: { path: string }) =>
           `[[${target.path}]]`,
-        processFrontMatter: async () => undefined,
         renameFile: async () => undefined,
       },
       metadataCache: { getFileCache: () => null },

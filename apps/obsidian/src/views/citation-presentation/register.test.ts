@@ -1,4 +1,11 @@
-import { Menu, TFile, TFolder } from "@mock/obsidian";
+import {
+  getFrontMatterInfo,
+  Menu,
+  parseYaml,
+  stringifyYaml,
+  TFile,
+  TFolder,
+} from "@mock/obsidian";
 import type { App, Command, Plugin, TAbstractFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -74,20 +81,23 @@ function openVault({ note, settings = {}, loading }: VaultOptions = {}) {
   const app = {
     workspace: {
       getActiveFile: () => (note ? file : null),
+      iterateAllLeaves: () => {},
       on: (name: string, callback: FileMenuHandler) => {
         if (name === "file-menu") fileMenu = callback;
         return {};
       },
     },
     metadataCache: { getFileCache: () => ({ frontmatter }) },
-    fileManager: {
-      processFrontMatter: (
-        target: TFile,
-        edit: (fm: Record<string, unknown>) => void,
-      ) => {
+    // The note as text: its Properties block over an empty body.
+    vault: {
+      process: (target: TFile, edit: (text: string) => string) => {
         writes.push(target.path);
-        edit(frontmatter);
-        return Promise.resolve();
+        const text = edit(`---\n${stringifyYaml(frontmatter)}---\n`);
+        const written = (parseYaml(getFrontMatterInfo(text).frontmatter) ??
+          {}) as Record<string, unknown>;
+        for (const key of Object.keys(frontmatter)) delete frontmatter[key];
+        Object.assign(frontmatter, written);
+        return Promise.resolve(text);
       },
     },
   } as unknown as App;

@@ -21,6 +21,7 @@ import { act } from "preact/test-utils";
 import { vi } from "vitest";
 
 
+import { parseFrontMatter, spliceFrontMatter } from "@/lib/live-text";
 import {
   createCitationIndexHarness,
   KEY_A,
@@ -515,14 +516,18 @@ export async function openCitationVault({
       // surfaces follow the one metadata change a confirmed dialog makes.
       await applyCitationPresentation(
         {
-          processFrontMatter: (_file, edit) => {
-            const written = properties();
-            edit(written);
-            declared.style = written["zotlit-csl"];
-            declared.language = written["lang"];
-            writeProperties();
-            return Promise.resolve();
+          // The draft as text: its Properties block over an empty body.
+          vault: {
+            process: (_file, edit) => {
+              const text = edit(spliceFrontMatter("", properties()));
+              const written = parseFrontMatter(text);
+              declared.style = written["zotlit-csl"];
+              declared.language = written["lang"];
+              writeProperties();
+              return Promise.resolve(text);
+            },
           },
+          workspace: { iterateAllLeaves: () => {} },
         },
         harness.metadataCache.files.get(DRAFT)!,
         choice,

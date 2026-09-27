@@ -153,6 +153,7 @@ function makeApp(
         frontmatter: frontmatterByPath[file.path] ?? {},
       }),
     },
+    workspace: { iterateAllLeaves: () => {} },
   };
   return {
     app,

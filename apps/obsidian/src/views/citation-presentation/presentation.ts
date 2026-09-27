@@ -1,12 +1,14 @@
 // What one note's Citation Presentation properties hold, the choices the dialog
 // offers over them, and the one property update a confirmed choice writes.
 
-import type { CachedMetadata, FileManager, TFile } from "obsidian";
+import type { CachedMetadata, TFile } from "obsidian";
 
 import { referencesStyleOptions, STYLE_DEFAULT } from "@/lib/citation-style";
 import type { ReferencesStyleOption } from "@/lib/citation-style";
 import { FIELD_CITATION_STYLE, FIELD_DOCUMENT_LANGUAGE } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
+import { processLiveFrontMatter } from "@/lib/live-text";
+import type { LiveTextApp } from "@/lib/live-text";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 
 /** Style-picker value of a note that names no style of its own. */
@@ -97,11 +99,11 @@ function vaultStyleLabel(
  * absence of the property, which is what a vault selection answers for.
  */
 export function applyCitationPresentation(
-  fileManager: Pick<FileManager, "processFrontMatter">,
+  app: LiveTextApp,
   file: TFile,
   { styleId, language }: CitationPresentationChoice,
 ): Promise<void> {
-  return fileManager.processFrontMatter(file, (frontmatter) => {
+  return processLiveFrontMatter(app, file, (frontmatter) => {
     if (styleId === null) delete frontmatter[FIELD_CITATION_STYLE];
     else frontmatter[FIELD_CITATION_STYLE] = styleId;
     if (language === null) delete frontmatter[FIELD_DOCUMENT_LANGUAGE];

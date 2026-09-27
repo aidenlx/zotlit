@@ -50,6 +50,7 @@ import { managedRegionTransform } from "@zotlit/templates/obsidian";
 import { RESERVED_KEYS } from "@/lib/constants";
 import { ensureFolder } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
+import { processLiveText } from "@/lib/live-text";
 import { getLogger } from "@/lib/log";
 import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
@@ -1298,7 +1299,7 @@ export class TemplateService extends Service<void> {
           ? null
           : this.#app.vault.getFileByPath(partialPath(folder, held));
       if (file) {
-        await this.#app.vault.process(file, () => step.document);
+        await processLiveText(this.#app, file, () => step.document);
         return true;
       }
     }
