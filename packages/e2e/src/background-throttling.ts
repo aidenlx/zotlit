@@ -8,8 +8,11 @@
 // so CodeMirror and the workspace never see an element take focus. CDP focus
 // emulation gives one window of the vault the focus it has while the developer
 // works in it: the main window first, then each window that `window.focus()`
-// raises, as the OS does for an active app. The run thus leaves the OS focus to
-// the developer and to runs in other worktrees.
+// raises, as the OS does for an active app. A popout opens with `showInactive`
+// in place of Obsidian's `show`, which would take the OS focus and put the
+// window in front, so a walk that needs a new popout active calls its
+// `window.focus()`. The run thus leaves the OS focus to the developer and to
+// runs in other worktrees.
 //
 // Both settings belong to a window's `webContents` and last until Obsidian
 // restarts. A popout is its own window that inherits nothing, so the vault's
@@ -22,9 +25,9 @@ const RESTORE = "__ztRestoreBackgroundThrottling";
 
 /**
  * Turns background throttling off for `vaultId`'s main window and every popout
- * it has or opens, and moves focus emulation to the window `window.focus()`
- * last raised, starting with the main window. Calling it again replaces the
- * earlier call's hooks.
+ * it has or opens, shows each popout it opens without the OS focus, and moves
+ * focus emulation to the window `window.focus()` last raised, starting with
+ * the main window. Calling it again replaces the earlier call's hooks.
  */
 export async function keepRendering(vaultId: string): Promise<void> {
   const reply = await obEval(
@@ -53,7 +56,7 @@ export async function keepRendering(vaultId: string): Promise<void> {
         win.focus=function(){void emulateFocus(win);return focus.call(this);};
       };
       const refs=[
-        app.workspace.on('window-open',(_workspaceWindow,win)=>{apply();followFocus(win);}),
+        app.workspace.on('window-open',(_workspaceWindow,win)=>{apply();followFocus(win);const shown=win.electronWindow;if(shown)shown.show=()=>shown.showInactive();}),
         app.workspace.on('window-close',(_workspaceWindow,win)=>{raised.delete(win);if(win===focusedWin)void emulateFocus(window);}),
       ];
       apply();
