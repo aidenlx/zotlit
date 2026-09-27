@@ -3,6 +3,7 @@ import { invertedEffects } from "@codemirror/commands";
 import { ChangeSet, StateEffect } from "@codemirror/state";
 import { applyEdits, createScanner, format, parse } from "jsonc-parser";
 import type { ParseError, Edit } from "jsonc-parser";
+import { parseDocument } from "yaml";
 
 // The library declares ambient const enums, which verbatimModuleSyntax cannot import.
 const tokenKind = { eof: 17, whitespace: 15, lineBreak: 14 };
@@ -59,12 +60,50 @@ export function jsonLayout(source: string, pretty: boolean) {
   };
 }
 
-/** Map a caret between two whitespace layouts of the same JSON token stream. */
+/**
+ * The JSON a rule editor shows for `source`, a `value` written `column`
+ * characters into its line. JSON keeps its own spelling. A rule in another
+ * YAML form shows the value it reads as, and the first edit stores that value
+ * as compact JSON.
+ */
+export function ruleDisplay(source: string, column: number): string {
+  if (!isJson(source)) {
+    const value = yamlValue(source, column);
+    if (value !== undefined) return JSON.stringify(value, null, 2);
+  }
+  return jsonLayout(source, true).text;
+}
+
+/**
+ * The value `source` reads as on its own, written `column` characters into its
+ * line, or `undefined` when YAML cannot read it.
+ */
+export function yamlValue(source: string, column: number): unknown {
+  // The indent the value sits at lets a block mapping read on its own.
+  const yaml = parseDocument(" ".repeat(column) + source, { uniqueKeys: true });
+  return yaml.errors.length > 0 ? undefined : yaml.toJS();
+}
+
+/** Whether `source` is JSON as the rule editor writes it. */
+export function isJson(source: string): boolean {
+  try {
+    JSON.parse(source);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Map a caret between two whitespace layouts of the same JSON token stream. A
+ * rule written in YAML is shown as JSON with other tokens, so its caret is
+ * kept inside the target text.
+ */
 export function jsonPosition(source: string, target: string, position: number) {
   const compact = jsonLayout(source, false);
   const expanded = jsonLayout(target, false);
   return expanded.changes.invertedDesc.mapPos(
-    compact.changes.mapPos(position, 1),
+    Math.min(compact.changes.mapPos(position, 1), expanded.text.length),
     1,
   );
 }

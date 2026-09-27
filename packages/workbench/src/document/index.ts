@@ -40,6 +40,6 @@ export type {
   NoteRegions,
   PartialRenderSite,
 } from "./regions";
-export { workbenchSlice } from "./slice";
+export { jsonSliceText, workbenchSlice } from "./slice";
 
 export { jsonLayout, jsonPosition } from "./json-source";

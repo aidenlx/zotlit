@@ -35,7 +35,7 @@ import {
 import { tagDescription } from "./tag-help";
 import { useParts, useEditorExtension } from "./theme";
 
-import { workbenchSlice, jsonLayout, jsonPosition } from "#/document/index";
+import { workbenchSlice, jsonSliceText, jsonPosition } from "#/document/index";
 import {
   liquidTemplate,
   etaLanguage,
@@ -245,7 +245,7 @@ export function SliceEditor({
       state: EditorState.create({
         doc:
           language === "json-e"
-            ? jsonLayout(controller.sliceText(slice), true).text
+            ? jsonSliceText(controller, slice)
             : controller.sliceText(slice),
         extensions: [
           EditorState.readOnly.of(readOnly),

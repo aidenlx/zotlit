@@ -38,7 +38,7 @@ import {
   updateLiteratureNotePackMetadata,
 } from "@zotlit/templates/literature-note-pack";
 
-import { jsonSliceHistory } from "./json-source";
+import { jsonSliceHistory, yamlValue } from "./json-source";
 import {
   managedEntryEdit,
   managedFrontmatterEntries,
@@ -901,9 +901,11 @@ export class WorkbenchDocumentController {
     } catch (error) {
       if (!(error instanceof LiteratureNoteTemplateError)) throw error;
       this.#document = null;
+      const entry = error.manifestPath ? null : this.#unreadableEntry(source);
       // A manifest field the parser can name beats the line its offset sits on,
       // which for a schema failure is the manifest's first line.
       const range =
+        entry?.range ??
         (error.manifestPath
           ? manifestNodeRange(source, error.manifestPath)
           : null) ??
@@ -915,7 +917,7 @@ export class WorkbenchDocumentController {
           ...(error.manifestPath
             ? { params: { field: error.manifestPath.join(".") } }
             : {}),
-          slice: this.#sliceFor(error),
+          slice: entry?.id ?? this.#sliceFor(error),
           ...(range ? { range } : {}),
         },
       ];
@@ -963,6 +965,24 @@ export class WorkbenchDocumentController {
         },
       ];
     }
+  }
+
+  /**
+   * The first row whose own text YAML cannot read. A draft typed into a row
+   * that stops the manifest parsing is repaired in that row, whose range the
+   * change set remapped.
+   */
+  #unreadableEntry(
+    source: string,
+  ): { id: WorkbenchSliceId; range: WorkbenchSliceRange } | null {
+    for (const [id, range] of this.#ranges) {
+      if (entryPosition(id) === null) continue;
+      const column =
+        range.from - (source.lastIndexOf("\n", range.from - 1) + 1);
+      if (yamlValue(source.slice(range.from, range.to), column) === undefined)
+        return { id, range };
+    }
+    return null;
   }
 
   /**
@@ -1093,21 +1113,6 @@ function webProblems(
       });
     }
   }
-  const entries = managedFrontmatterEntries(source);
-  if (entries.status === "rows")
-    for (const entry of entries.entries) {
-      if (entry.language !== "value") continue;
-      try {
-        JSON.parse(source.slice(entry.expression.from, entry.expression.to));
-      } catch {
-        problems.push({
-          code: "invalid-manifest",
-          params: { field: `frontmatter.${entry.position - 1}.value` },
-          slice: entrySlice(entry.position),
-          range: entry.expression,
-        });
-      }
-    }
   return problems;
 }
 

@@ -7,6 +7,7 @@ import {
   EditorSelection,
   ChangeSet,
   Prec,
+  Text,
   Transaction,
 } from "@codemirror/state";
 import type { ChangeSpec, Extension, StateEffect } from "@codemirror/state";
@@ -19,7 +20,13 @@ import type {
   WorkbenchSliceId,
   WorkbenchSliceRange,
 } from "./controller";
-import { jsonLayout, jsonPosition, jsonSliceEdit } from "./json-source";
+import {
+  isJson,
+  jsonLayout,
+  jsonPosition,
+  jsonSliceEdit,
+  ruleDisplay,
+} from "./json-source";
 
 import {
   addPair,
@@ -64,6 +71,23 @@ export function workbenchSlice(
   ];
 }
 
+/** The text a rule editor shows for `id`. */
+export function jsonSliceText(
+  controller: WorkbenchDocumentController,
+  id: WorkbenchSliceId,
+): string {
+  return ruleDisplay(controller.sliceText(id), sliceColumn(controller, id));
+}
+
+/** How far into its line the slice `id` starts. */
+function sliceColumn(
+  controller: WorkbenchDocumentController,
+  id: WorkbenchSliceId,
+): number {
+  const { from } = controller.sliceRange(id);
+  return from - (controller.source.lastIndexOf("\n", from - 1) + 1);
+}
+
 class SliceSync implements PluginValue {
   #range: WorkbenchSliceRange;
   #pushing = false;
@@ -93,6 +117,23 @@ class SliceSync implements PluginValue {
       replay: (changes, userEvent) => {
         const mapped: ChangeSpec[] = [];
         const source = controller.sliceText(id);
+        if (json && !isJson(source)) {
+          // A rule in another YAML form has no JSON tokens to map the edit
+          // onto, so the edit applies to its text and the editor shows the
+          // value that results.
+          const edited = ChangeSet.of(changes, source.length)
+            .apply(Text.of(source.split("\n")))
+            .toString();
+          this.view.dispatch({
+            changes: {
+              from: 0,
+              to: this.view.state.doc.length,
+              insert: ruleDisplay(edited, sliceColumn(controller, id)),
+            },
+            ...(userEvent === undefined ? {} : { userEvent }),
+          });
+          return;
+        }
         if (json) {
           ChangeSet.of(changes, source.length).iterChanges(
             // oxlint-disable-next-line max-params -- CM's iterChanges callback signature.
@@ -176,12 +217,20 @@ class SliceSync implements PluginValue {
         right--;
         end--;
       }
+      // An empty value starts right after its colon, and YAML reads a value
+      // there only after a space.
+      const gap =
+        source === "" &&
+        compact.text !== "" &&
+        !/\s/.test(this.controller.source[from - 1] ?? " ")
+          ? " "
+          : "";
       changes.length = 0;
       if (left !== right || left !== end)
         changes.push({
           from: from + left,
           to: from + right,
-          insert: compact.text.slice(left, end),
+          insert: gap + compact.text.slice(left, end),
         });
       effects.push(
         jsonSliceEdit.of({
@@ -193,8 +242,8 @@ class SliceSync implements PluginValue {
           after: { text: display, head },
         }),
       );
-      head = compact.changes.mapPos(head, 1);
-      grown = compact.text.length - source.length;
+      head = compact.changes.mapPos(head, 1) + gap.length;
+      grown = gap.length + compact.text.length - source.length;
     }
     head = Math.min(from + head, this.controller.state.doc.length + grown);
     const userEvent = transaction.annotation(Transaction.userEvent);
@@ -241,7 +290,8 @@ class SliceSync implements PluginValue {
         )?.value.after
       : undefined;
     const text =
-      draft?.text ?? (this.json ? jsonLayout(source, true).text : source);
+      draft?.text ??
+      (this.json ? jsonSliceText(this.controller, this.id) : source);
     if (text === this.view.state.doc.toString() && !draft) {
       if (!this.json && transaction.annotation(sliceEdit) !== this.id) {
         this.view.dispatch({
