@@ -220,6 +220,7 @@ export function createNoteNotice(result: CreateNoteResult): string {
     case "missing-literature-note-template":
     case "literature-note-template-conversion-required":
     case "managed-frontmatter-refused":
+    case "literature-note-key-changed":
       return noteOperationDiagnosticNotice(diagnostic);
   }
 }
@@ -246,6 +247,8 @@ export function noteOperationDiagnosticNotice(
           .map(({ message, hint }) => `${message} ${hint}`)
           .join(" "),
       });
+    case "literature-note-key-changed":
+      return m.notice_literature_note_key_changed();
   }
 }
 

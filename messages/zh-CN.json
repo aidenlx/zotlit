@@ -1482,6 +1482,7 @@
   "notice_no_pdf_attachment": "此条目没有 PDF 附件。",
   "notice_pdf_file_missing": "PDF 文件缺失。",
   "notice_literature_note_profile_kept": "已保留“{label}”。",
+  "notice_literature_note_key_changed": "此文献笔记的 Zotero 标识符在更新期间发生了变化。请再次更新该笔记。",
   "notice_literature_note_template_conversion_frontmatter_inert": "启用 JavaScript 模板，然后重试转换；受影响的托管 Frontmatter 字段：{fields}。",
   "notice_literature_note_template_conversion_frontmatter_evaluation": "修正以下托管 Frontmatter 字段，然后重试转换：{fields}。",
   "notice_literature_note_template_conversion_no_annotation": "请为 Zotero 条目添加一条标注，然后重试。",

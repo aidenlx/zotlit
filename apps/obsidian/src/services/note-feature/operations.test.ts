@@ -7,8 +7,16 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
-import { FileSystemAdapter, TFile, TFolder } from "obsidian";
-import type { App, FileManager } from "obsidian";
+import {
+  FileSystemAdapter,
+  getFrontMatterInfo,
+  parseYaml,
+  stringifyYaml,
+  TextFileView,
+  TFile,
+  TFolder,
+} from "obsidian";
+import type { App, FileManager, WorkspaceLeaf } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
@@ -953,10 +961,12 @@ describe("createNote", () => {
       ) {
         const file = makeFile("Literature/Paper.md");
         const priorAssets = await readdir(`${root}/Images`);
-        const original = `User introduction\n${formatManagedRegion(markdown)}\nUser conclusion`;
+        const properties = "---\nzotero-key: ROOT1234\n---\n";
+        const body = `User introduction\n${formatManagedRegion(markdown)}\nUser conclusion`;
+        const original = `${properties}${body}`;
         let current =
           mode === "retain-stale"
-            ? `New user paragraph before the cached offsets\n${original}`
+            ? `${properties}New user paragraph before the cached offsets\n${body}`
             : original;
         const otherNote = `${root}/Literature/Other.md`;
         await writeFile(otherNote, original);
@@ -1357,13 +1367,13 @@ describe("createNote", () => {
     const deps: SyncRenderDeps = {
       app: {
         metadataCache: { getFileCache: () => null },
+        workspace: { iterateAllLeaves: () => {} },
         vault: {
           getAbstractFileByPath: (path) =>
             path === "Literature" ? literature : null,
           getRoot: () => root,
           createFolder: vi.fn(),
           create,
-          read: async () => "",
           process: vi.fn(async () => ""),
         },
         fileManager: {
@@ -2419,6 +2429,7 @@ describe("overwriteNote", () => {
     const harness = makeUpdateHarness({
       content: "Old body content",
       frontmatter: {
+        [FIELD_ZOTERO_KEY]: "ROOT1234",
         [FIELD_LITERATURE_NOTE_PROFILE]: `Reading notes (${profileId})`,
       },
       settings: {
@@ -2435,6 +2446,40 @@ describe("overwriteNote", () => {
     expect(harness.frontmatter()).toMatchObject({
       [FIELD_LITERATURE_NOTE_PROFILE]: "Books (Bk3Qn7XvT2Lp)",
     });
+  });
+
+  it("writes the new body right after the Properties block, as create does", async () => {
+    const item = makeItem({
+      itemID: 1,
+      key: "ROOT1234",
+      indexedKey: "ROOT1234",
+      title: "Root",
+      citationKey: null,
+    });
+    vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
+      key: item.key,
+      libraryID: item.libraryID,
+    });
+    vi.mocked(getItemsByKey).mockReturnValue([item]);
+    vi.mocked(fetchNoteContext).mockReturnValue(
+      updateContext({ indexedKey: "ROOT1234" }),
+    );
+    const harness = makeUpdateHarness({
+      content: "\n\nOld body content",
+      frontmatter: { [FIELD_ZOTERO_KEY]: "ROOT1234" },
+    });
+    harness.deps.template.render = ((name: string) =>
+      name === "note"
+        ? "New body content"
+        : "") as typeof harness.deps.template.render;
+
+    const result = await createNoteFeature(harness.deps).overwriteNote(
+      makeFile("Literature/Root.md"),
+      item.indexedKey,
+    );
+
+    expect(result).toEqual({ bodyUpdated: true, duplicateRegionCount: 0 });
+    expect(harness.content()).toBe("New body content");
   });
 
   it("refuses before writing when a document field fails", async () => {
@@ -2476,16 +2521,12 @@ describe("overwriteNote", () => {
       failures: [{ field: "broken" }],
     });
     expect(harness.content()).toBe("Old body content");
-    expect(harness.frontmatterMock).not.toHaveBeenCalled();
     expect(harness.processMock).not.toHaveBeenCalled();
   });
 
-  it("preserves a CRLF frontmatter block instead of dropping it", async () => {
-    // Obsidian's `processFrontMatter` preserves a note's original `---`
-    // delimiter bytes, so a CRLF-authored note still has `\r\n` delimiters
-    // after `refreshFrontmatter` runs. Regression for FRONTMATTER_BLOCK
-    // requiring a bare `\n`, which made this prefix match fail and silently
-    // dropped the frontmatter on overwrite.
+  it("keeps a CRLF note's Properties block when it overwrites the body", async () => {
+    // Like `processFrontMatter`, the rewrite keeps the note's `---` delimiter
+    // bytes and writes the Properties between them with `stringifyYaml`.
     const item = makeItem({
       itemID: 1,
       key: "ROOT1234",
@@ -2498,9 +2539,9 @@ describe("overwriteNote", () => {
       libraryID: item.libraryID,
     });
     vi.mocked(getItemsByKey).mockReturnValue([item]);
-    vi.mocked(fetchNoteContext).mockReturnValue({
-      relatedItems: [],
-    } as unknown as NoteTemplateContext);
+    vi.mocked(fetchNoteContext).mockReturnValue(
+      updateContext({ indexedKey: "ROOT1234" }),
+    );
 
     const file = makeFile("Literature/Root.md");
     const originalContent =
@@ -2510,6 +2551,7 @@ describe("overwriteNote", () => {
     const deps: SyncRenderDeps = {
       app: {
         metadataCache: { getFileCache: () => null },
+        workspace: { iterateAllLeaves: () => {} },
         vault: {
           getAbstractFileByPath: () => null,
           getRoot: () => new TFolder(),
@@ -2519,7 +2561,6 @@ describe("overwriteNote", () => {
             processedContent = cb(originalContent);
             return processedContent;
           }),
-          read: async () => originalContent,
         },
         fileManager: {
           generateMarkdownLink: () => "",
@@ -2565,7 +2606,7 @@ describe("overwriteNote", () => {
     await createNoteFeature(deps).overwriteNote(file, item.indexedKey);
 
     expect(processedContent).toBe(
-      "---\r\nzotero-key: ROOT1234\r\n---\r\nNew body content",
+      "---\r\nzotero-key: ROOT1234\n---\r\nNew body content",
     );
   });
 });
@@ -2576,6 +2617,22 @@ describe("overwriteNote", () => {
  * assert on the note's rewritten body and frontmatter after an update — the seam
  * `updateNote` / `writeNoteUpdate` write through.
  */
+/** A loaded editor on a note: its text is the view's `data`. */
+class NoteEditorView extends TextFileView {
+  override getViewData(): string {
+    return this.data;
+  }
+  override setViewData(data: string): void {
+    this.data = data;
+  }
+  override clear(): void {
+    this.data = "";
+  }
+  override getViewType(): string {
+    return "markdown";
+  }
+}
+
 interface UpdateHarness {
   deps: SyncRenderDeps;
   /** Note body after the update (byte-identical to what was written). */
@@ -2589,6 +2646,11 @@ interface UpdateHarness {
     >
   >;
   frontmatterMock: ReturnType<typeof vi.fn>;
+  /** Open `file` in a loaded editor whose text is `edit(note)`; its save writes the note. */
+  openInEditor: (
+    file: TFile,
+    edit?: (text: string) => string,
+  ) => { view: TextFileView; save: ReturnType<typeof vi.fn> };
 }
 
 function makeUpdateHarness(options: {
@@ -2600,20 +2662,31 @@ function makeUpdateHarness(options: {
   frontmatterFields?: readonly CompiledFrontmatterField[];
   settings?: Partial<Settings> & Partial<ResolvedLiteratureNoteProfileBindings>;
 }): UpdateHarness {
-  let content = options.content;
-  const fm: Record<string, unknown> = { ...options.frontmatter };
+  // The note file as the vault holds it: a Properties block, stamped with its
+  // Zotero key like any Literature Note, then `options.content` as the body.
+  let note = `---\n${stringifyYaml({
+    [FIELD_ZOTERO_KEY]: "ABC12345",
+    ...options.frontmatter,
+  })}---\n${options.content}`;
+  const properties = (): Record<string, unknown> =>
+    parseYaml(getFrontMatterInfo(note).frontmatter);
+  const views: TextFileView[] = [];
   const renderContent = vi.fn(
     () => options.renderedRegion ?? formatManagedRegion("NEW BODY"),
   );
   const processMock = vi.fn(
     async (_file: TFile, cb: (data: string) => string) => {
-      content = cb(content);
-      return content;
+      note = cb(note);
+      return note;
     },
   );
+  // `processFrontMatter`'s own splice, as Obsidian 1.14.2 performs it.
   const frontmatterMock = vi.fn(
     async (_file: TFile, cb: (fm: Record<string, unknown>) => void) => {
+      const info = getFrontMatterInfo(note);
+      const fm = properties();
       cb(fm);
+      note = note.slice(0, info.from) + stringifyYaml(fm) + note.slice(info.to);
     },
   );
 
@@ -2631,14 +2704,19 @@ function makeUpdateHarness(options: {
 
   const deps: SyncRenderDeps = {
     app: {
-      metadataCache: { getFileCache: () => ({ frontmatter: fm }) },
+      metadataCache: { getFileCache: () => ({ frontmatter: properties() }) },
+      workspace: {
+        iterateAllLeaves: (callback) => {
+          for (const view of views)
+            callback({ view } as unknown as WorkspaceLeaf);
+        },
+      },
       vault: {
         getAbstractFileByPath: () => null,
         getRoot: () => new TFolder(),
         createFolder: vi.fn(),
         create: vi.fn(),
         process: processMock,
-        read: async () => content,
       },
       fileManager: {
         generateMarkdownLink: () => "",
@@ -2672,11 +2750,25 @@ function makeUpdateHarness(options: {
 
   return {
     deps,
-    content: () => content,
-    frontmatter: () => fm,
+    content: () => note.slice(getFrontMatterInfo(note).contentStart),
+    frontmatter: properties,
     renderContent,
     processMock,
     frontmatterMock,
+    openInEditor: (file, edit = (text) => text) => {
+      const view = new NoteEditorView({ app: deps.app } as never);
+      view.file = file;
+      view.lastSavedData = note;
+      view.data = edit(note);
+      // `TextFileView.save` writes the view's text over the note.
+      const save = vi.fn(async () => {
+        note = view.getViewData();
+        view.lastSavedData = note;
+      });
+      view.save = save;
+      views.push(view);
+      return { view, save };
+    },
   };
 }
 
@@ -2794,43 +2886,70 @@ describe("updateNote", () => {
       preparation.resolve();
       await refused;
       expect(harness.content()).toBe(replacementBody);
-      expect(harness.frontmatter()).toEqual({ title: "Replacement" });
+      expect(harness.frontmatter()).toEqual({
+        [FIELD_ZOTERO_KEY]: "ABC12345",
+        title: "Replacement",
+      });
     },
   );
 
-  it("checks the session again before a separate frontmatter write", async () => {
+  it("leaves both the Properties block and the body when the session refuses the write", async () => {
     const harness = makeUpdateHarness({
       content: formatManagedRegion("BODY"),
       frontmatter: { title: "Personal title" },
     });
     stubIndexedKeyUpdate(updateContext());
-    const bodyWritten = Promise.withResolvers<void>();
-    const continueUpdate = Promise.withResolvers<void>();
-    const originalProcess = harness.processMock.getMockImplementation()!;
-    harness.processMock.mockImplementationOnce(async (file, transform) => {
-      const result = await originalProcess(file, transform);
-      bodyWritten.resolve();
-      await continueUpdate.promise;
-      return result;
-    });
-    let available = true;
     const unavailable = new Error("Originating note changed");
-    const updating = createNoteFeature(harness.deps).updateNote(
-      makeFile("Literature/Original.md"),
-      {
-        indexedKey: "ABC12345",
-        beforeWrite: () => {
-          if (!available) throw unavailable;
+    await expect(
+      createNoteFeature(harness.deps).updateNote(
+        makeFile("Literature/Original.md"),
+        {
+          indexedKey: "ABC12345",
+          beforeWrite: () => {
+            throw unavailable;
+          },
         },
-      },
-    );
-    const refused = expect(updating).rejects.toBe(unavailable);
-    await bodyWritten.promise;
-    available = false;
-    continueUpdate.resolve();
-    await refused;
-    expect(harness.frontmatter()).toEqual({ title: "Personal title" });
+      ),
+    ).rejects.toBe(unavailable);
+    expect(harness.content()).toBe(formatManagedRegion("BODY"));
+    expect(harness.frontmatter()).toEqual({
+      [FIELD_ZOTERO_KEY]: "ABC12345",
+      title: "Personal title",
+    });
   });
+
+  it.each(["full", "metadata"] as const)(
+    "refuses a note that no longer carries the Zotero key (%s)",
+    async (scope) => {
+      const harness = makeUpdateHarness({
+        content: formatManagedRegion("BODY"),
+        frontmatter: {
+          [FIELD_ZOTERO_KEY]: "OTHER234",
+          title: "Personal title",
+        },
+      });
+      stubIndexedKeyUpdate(updateContext());
+      const result = await createNoteFeature(harness.deps).updateNote(
+        makeFile("Literature/Original.md"),
+        { indexedKey: "ABC12345", scope },
+      );
+      expect(result).toEqual({
+        bodyUpdated: false,
+        duplicateRegionCount: 0,
+        diagnostic: {
+          code: "literature-note-key-changed",
+          hint: expect.any(String),
+          indexedKey: "ABC12345",
+          path: "Literature/Original.md",
+        },
+      });
+      expect(harness.content()).toBe(formatManagedRegion("BODY"));
+      expect(harness.frontmatter()).toEqual({
+        [FIELD_ZOTERO_KEY]: "OTHER234",
+        title: "Personal title",
+      });
+    },
+  );
 
   it("gates a stamped added Profile while legacy conversion is pending", async () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
@@ -2859,7 +2978,6 @@ describe("updateNote", () => {
       },
     });
     expect(harness.processMock).not.toHaveBeenCalled();
-    expect(harness.frontmatterMock).not.toHaveBeenCalled();
   });
 
   it("reports a Profile conflict for a requested Profile against an unconfigured stamped id", async () => {
@@ -2891,7 +3009,6 @@ describe("updateNote", () => {
       },
     });
     expect(harness.processMock).not.toHaveBeenCalled();
-    expect(harness.frontmatterMock).not.toHaveBeenCalled();
   });
 
   it("follows the stamped Profile and refreshes its citation-style binding", async () => {
@@ -3046,7 +3163,6 @@ describe("updateNote", () => {
       },
     });
     expect(harness.processMock).not.toHaveBeenCalled();
-    expect(harness.frontmatterMock).not.toHaveBeenCalled();
   });
 
   it("refuses a stamp whose parenthesised id is malformed", async () => {
@@ -3247,10 +3363,10 @@ describe("updateNote", () => {
       // block nor the body may carry a render that never finished.
       expect(harness.content()).toBe(original);
       expect(harness.frontmatter()).toEqual({
+        [FIELD_ZOTERO_KEY]: "ABC12345",
         [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
         title: "Old title",
       });
-      expect(harness.frontmatterMock).not.toHaveBeenCalled();
     },
   );
 
@@ -3328,7 +3444,7 @@ describe("updateNote", () => {
 
     expect(result).toEqual({ bodyUpdated: false, duplicateRegionCount: 0 });
     expect(harness.content()).toBe(original);
-    expect(harness.processMock).not.toHaveBeenCalled();
+    expect(harness.processMock).toHaveBeenCalledOnce();
     expect(harness.frontmatter()).toMatchObject({
       title: "A Study",
       [FIELD_ZOTERO_KEY]: "ABC12345",
@@ -3385,10 +3501,10 @@ describe("updateNote", () => {
       ],
     });
     expect(harness.frontmatter()).toEqual({
+      [FIELD_ZOTERO_KEY]: "ABC12345",
       status: "reading",
       [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
     });
-    expect(harness.frontmatterMock).not.toHaveBeenCalled();
     expect(harness.processMock).not.toHaveBeenCalled();
   });
 
@@ -3457,10 +3573,10 @@ describe("updateNote", () => {
       ],
     });
     expect(harness.frontmatter()).toEqual({
+      [FIELD_ZOTERO_KEY]: "ABC12345",
       status: "reading",
       [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
     });
-    expect(harness.frontmatterMock).not.toHaveBeenCalled();
     expect(harness.processMock).not.toHaveBeenCalled();
   });
 
@@ -3535,7 +3651,7 @@ describe("updateNote", () => {
     expect(harness.frontmatter()).toMatchObject({
       [FIELD_ZOTERO_KEY]: "ABC12345",
     });
-    expect(harness.processMock).not.toHaveBeenCalled();
+    expect(harness.processMock).toHaveBeenCalledOnce();
     expect(document.renderForUpdate).not.toHaveBeenCalled();
     expect(result).toEqual({
       bodyUpdated: false,
@@ -3577,7 +3693,6 @@ describe("updateNote", () => {
       },
     });
     expect(harness.processMock).not.toHaveBeenCalled();
-    expect(harness.frontmatterMock).not.toHaveBeenCalled();
   });
 
   it("refuses an unknown Profile stamp without touching the note", async () => {
@@ -3604,7 +3719,6 @@ describe("updateNote", () => {
       },
     });
     expect(harness.processMock).not.toHaveBeenCalled();
-    expect(harness.frontmatterMock).not.toHaveBeenCalled();
   });
 
   it("refuses a note stamped with the selector text itself, never treating it as the default Profile", async () => {
@@ -3630,7 +3744,6 @@ describe("updateNote", () => {
       },
     });
     expect(harness.processMock).not.toHaveBeenCalled();
-    expect(harness.frontmatterMock).not.toHaveBeenCalled();
   });
 
   it("switches the stamp after consent and leaves managed content for the next update", async () => {
@@ -4085,14 +4198,86 @@ describe("updateNote", () => {
     );
 
     expect(harness.content()).toBe(original);
-    expect(harness.processMock).not.toHaveBeenCalled();
     expect(harness.renderContent).not.toHaveBeenCalled();
-    expect(harness.frontmatterMock).toHaveBeenCalledOnce();
+    expect(harness.processMock).toHaveBeenCalledOnce();
     expect(harness.frontmatter()).toEqual({
       status: "reading",
       [FIELD_ZOTERO_KEY]: "ABC12345",
     });
     expect(result).toEqual({ bodyUpdated: false, duplicateRegionCount: 0 });
+  });
+
+  it("writes the Properties with the body while the metadata cache has not parsed the note", async () => {
+    stubIndexedKeyUpdate(updateContext());
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: { title: "Old title" },
+      frontmatterFields: compileFrontmatterFields(
+        [
+          {
+            key: "title",
+            expr: "zt.title",
+            merge: "replace",
+            language: "liquid",
+          },
+        ],
+        { liquid: createLiquidEngine(), javascript: true },
+      ).compiled,
+    });
+    Object.assign(harness.deps.app.metadataCache, { getFileCache: () => null });
+
+    const result = await createNoteFeature(harness.deps).updateNote(
+      makeFile("Literature/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(result).toEqual({ bodyUpdated: true, duplicateRegionCount: 0 });
+    expect(harness.content()).toBe(formatManagedRegion("NEW BODY"));
+    expect(harness.frontmatter()).toMatchObject({
+      [FIELD_ZOTERO_KEY]: "ABC12345",
+      title: "A Study",
+    });
+    expect(harness.processMock).toHaveBeenCalledOnce();
+  });
+
+  it("writes an open note through its editor, keeping the unsaved text", async () => {
+    stubIndexedKeyUpdate(updateContext());
+    const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
+    const file = makeFile("Literature/Root.md");
+    const { save } = harness.openInEditor(
+      file,
+      (text) => `${text}\nAn unsaved thought`,
+    );
+
+    const result = await createNoteFeature(harness.deps).updateNote(file, {
+      indexedKey: "ABC12345",
+    });
+
+    expect(result).toEqual({ bodyUpdated: true, duplicateRegionCount: 0 });
+    expect(harness.content()).toBe(
+      `${formatManagedRegion("NEW BODY")}\nAn unsaved thought`,
+    );
+    expect(save).toHaveBeenCalledOnce();
+    expect(harness.processMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses an open note whose editor text no longer carries the Zotero key", async () => {
+    stubIndexedKeyUpdate(updateContext());
+    const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
+    const file = makeFile("Literature/Root.md");
+    const { view, save } = harness.openInEditor(file, (text) =>
+      text.replace("ABC12345", "OTHER234"),
+    );
+    const edited = view.getViewData();
+
+    const result = await createNoteFeature(harness.deps).updateNote(file, {
+      indexedKey: "ABC12345",
+    });
+
+    expect(result.diagnostic?.code).toBe("literature-note-key-changed");
+    expect(view.getViewData()).toBe(edited);
+    expect(save).not.toHaveBeenCalled();
+    expect(harness.content()).toBe(formatManagedRegion("OLD"));
   });
 
   it("re-evaluates managed frontmatter fields and preserves unmanaged user keys", async () => {
@@ -4103,7 +4288,7 @@ describe("updateNote", () => {
       content: formatManagedRegion("OLD"),
       frontmatter: {
         status: "reading",
-        [FIELD_ZOTERO_KEY]: "STALEKEY",
+        [FIELD_ZOTERO_KEY]: "ABC12345",
         title: "Old title",
       },
       frontmatterFields: compileFrontmatterFields(
@@ -4175,7 +4360,7 @@ describe("updateNote", () => {
 
     expect(harness.content()).toBe(original);
     expect(harness.renderContent).not.toHaveBeenCalled();
-    expect(harness.frontmatterMock).toHaveBeenCalledOnce();
+    expect(harness.processMock).toHaveBeenCalledOnce();
     expect(result).toEqual({ bodyUpdated: false, duplicateRegionCount: 0 });
   });
 
@@ -4264,7 +4449,6 @@ describe("updateNote", () => {
       ),
     ).rejects.toThrow("Zotero item not found: MISSING1");
     expect(harness.processMock).not.toHaveBeenCalled();
-    expect(harness.frontmatterMock).not.toHaveBeenCalled();
   });
 });
 
@@ -4398,8 +4582,7 @@ describe("writeNoteUpdate", () => {
     );
 
     expect(harness.content()).toBe(original);
-    expect(harness.processMock).not.toHaveBeenCalled();
-    expect(harness.frontmatterMock).toHaveBeenCalledOnce();
+    expect(harness.processMock).toHaveBeenCalledOnce();
     expect(result).toEqual({ bodyUpdated: false, duplicateRegionCount: 0 });
   });
 
@@ -4434,7 +4617,7 @@ describe("writeNoteUpdate", () => {
 
     expect(result).toEqual({ bodyUpdated: false, duplicateRegionCount: 0 });
     expect(harness.content()).toBe(original);
-    expect(harness.processMock).not.toHaveBeenCalled();
+    expect(harness.processMock).toHaveBeenCalledOnce();
     expect(harness.frontmatter()).toMatchObject({
       title: "A Study",
       [FIELD_ZOTERO_KEY]: "ABC12345",
@@ -4474,7 +4657,6 @@ describe("writeNoteUpdate", () => {
       requestedProfile: requestedId,
     });
     expect(harness.processMock).not.toHaveBeenCalled();
-    expect(harness.frontmatterMock).not.toHaveBeenCalled();
   });
 
   it("refuses an unknown stamp on the headless batch seam instead of reporting a conflict", async () => {
@@ -4505,7 +4687,6 @@ describe("writeNoteUpdate", () => {
       stamp: "legacy",
     });
     expect(harness.processMock).not.toHaveBeenCalled();
-    expect(harness.frontmatterMock).not.toHaveBeenCalled();
   });
 });
 
@@ -5213,6 +5394,7 @@ interface MockNoteApp {
     processFrontMatter(): Promise<void>;
     renameFile: FileManager["renameFile"];
   };
+  workspace: { iterateAllLeaves(): void };
 }
 
 function makeApp(): MockNoteApp {
@@ -5262,6 +5444,7 @@ function makeApp(): MockNoteApp {
       processFrontMatter: vi.fn(async () => {}),
       renameFile: vi.fn(),
     },
+    workspace: { iterateAllLeaves: () => {} },
   };
 }
 

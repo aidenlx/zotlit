@@ -610,18 +610,34 @@ export function parseYaml(source: string): unknown {
   return parseYamlSource(source);
 }
 
-/** Stand-in for Obsidian's Properties block scan: a leading `---` fence. */
+/**
+ * Obsidian 1.14.2's Properties block scan: an opening `---` line, then the
+ * first `---` that starts a line and ends one or the text. `to` is the start of
+ * that closing fence, so `frontmatter` keeps its last line break.
+ */
 export function getFrontMatterInfo(source: string): FrontMatterInfo {
-  const end = source.startsWith("---\n") ? source.indexOf("\n---\n", 4) : -1;
-  return end < 0
-    ? { exists: false, frontmatter: "", from: 0, to: 0, contentStart: 0 }
-    : {
-        exists: true,
-        frontmatter: source.slice(4, end),
-        from: 4,
-        to: end,
-        contentStart: end + 5,
-      };
+  const none = {
+    exists: false,
+    frontmatter: "",
+    from: 0,
+    to: 0,
+    contentStart: 0,
+  };
+  const from = /^---\r?\n/.exec(source)?.[0].length;
+  if (from === undefined) return none;
+  const close = /---(?:\r?\n|$)/g;
+  close.lastIndex = from;
+  let match = close.exec(source);
+  while (match && source.charAt(match.index - 1) !== "\n")
+    match = close.exec(source);
+  if (!match) return none;
+  return {
+    exists: true,
+    frontmatter: source.slice(from, match.index),
+    from,
+    to: match.index,
+    contentStart: close.lastIndex,
+  };
 }
 
 export abstract class EditorSuggest<T> {

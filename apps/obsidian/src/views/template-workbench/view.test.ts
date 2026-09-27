@@ -257,7 +257,7 @@ describe("TemplateWorkbenchView", () => {
     },
   );
 
-  it.each(["deleted", "replaced", "retargeted", "closed"])(
+  it.each(["deleted", "replaced", "closed"])(
     "refuses an origin that is %s while the template compiles",
     async (change) => {
       const h = originHarness();
@@ -266,10 +266,6 @@ describe("TemplateWorkbenchView", () => {
       const updating = h.view.updateOriginatingNote();
       await vi.waitFor(() => expect(h.waitUntilSettled).toHaveBeenCalledOnce());
       if (change === "closed") await h.view.close();
-      else if (change === "retargeted")
-        h.getFileCache.mockReturnValue({
-          frontmatter: { "zotero-key": "BBBBBBBB" },
-        });
       else
         h.getFileByPath.mockReturnValue(
           change === "deleted"
@@ -356,6 +352,38 @@ describe("TemplateWorkbenchView", () => {
     });
     expect(await h.view.updateOriginatingNote()).toEqual({
       outcome: "unavailable",
+      name: "Original",
+    });
+  });
+
+  it("sends the user back to Customize when the note's Zotero key changed", async () => {
+    const h = originHarness();
+    h.updateNote.mockResolvedValueOnce({
+      bodyUpdated: false,
+      duplicateRegionCount: 0,
+      diagnostic: {
+        code: "literature-note-key-changed",
+        hint: "",
+        indexedKey: "AAAAAAAA",
+        path: h.file.path,
+      },
+    });
+    const outcome = await h.view.updateOriginatingNote();
+    expect(outcome).toEqual({ outcome: "unavailable", name: "Original" });
+    expect(originatingNoteUpdateNotice(h.app, outcome)).toBe(
+      m.template_workbench_update_unavailable({ name: "Original" }),
+    );
+  });
+
+  it("updates while the note's metadata cache has not parsed its latest write", async () => {
+    const h = originHarness();
+    h.updateNote.mockImplementationOnce(async (_file, options) => {
+      h.getFileCache.mockReturnValue(null as never);
+      options.beforeWrite?.();
+      return { bodyUpdated: true, duplicateRegionCount: 0 };
+    });
+    expect(await h.view.updateOriginatingNote()).toMatchObject({
+      outcome: "updated",
       name: "Original",
     });
   });
