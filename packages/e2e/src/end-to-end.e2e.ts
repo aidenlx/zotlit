@@ -926,9 +926,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const note = await indexedNote(freshId, annotatedItem.itemID);
     expect(note.path).not.toBeNull();
     const personal = "\nMy own research question stays here.\n";
+    // Customize is offered only on a note whose metadata cache names a paper.
+    // Obsidian drops a note's cache when a write lands and restores it once
+    // the worker has parsed the new content, so the command waits for that
+    // `changed` event rather than racing the parse.
     await obEval(
       freshId,
-      `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(note.path)});await app.vault.append(file,${JSON.stringify(personal)});await app.workspace.getLeaf(false).openFile(file);return true;})()`,
+      `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(note.path)});const indexed=new Promise(resolve=>{const ref=app.metadataCache.on('changed',(changed,data)=>{if(changed!==file||!data.includes(${JSON.stringify(personal)}))return;app.metadataCache.offref(ref);resolve();});});await app.vault.append(file,${JSON.stringify(personal)});await indexed;await app.workspace.getLeaf(false).openFile(file);return true;})()`,
     );
     const before = await readFile(join(freshPath, note.path!), "utf-8");
     expect(before).toContain("[!note]");
