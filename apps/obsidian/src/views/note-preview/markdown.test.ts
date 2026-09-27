@@ -25,6 +25,42 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
+it("preserves native paragraph styling when the note supplies annotation ranges", async () => {
+  const markdown = "Quoted text\n\nComment";
+  renderer.render.mockImplementation(async (_app, text, target) => {
+    for (const paragraph of text.split("\n\n")) {
+      const element = document.createElement("p");
+      element.textContent = paragraph;
+      target.append(element);
+    }
+  });
+  const container = document.createElement("div");
+  document.body.append(container);
+  try {
+    await act(async () => {
+      render(
+        h(NativeMarkdown, {
+          app: { vault: { getConfig: () => false } } as unknown as App,
+          markdown,
+          marks: [{ from: 0, to: markdown.length }],
+          result: null,
+        }),
+        container,
+      );
+    });
+    await vi.waitFor(() =>
+      expect(
+        container.querySelector("[data-zotlit-preview-pending]"),
+      ).toBeNull(),
+    );
+    expect(
+      [...container.querySelectorAll("p")].map((p) => p.className),
+    ).toEqual(["", ""]);
+  } finally {
+    render(null, container);
+  }
+});
+
 it.each([
   ["note", "notes/current.md"],
   ["annotation", "notes/previous.md"],
