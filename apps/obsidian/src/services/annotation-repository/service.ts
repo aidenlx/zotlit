@@ -3985,19 +3985,21 @@ export class AnnotationRepository extends Service<void> {
     attachmentKey: string,
     expected: LocalApiSource,
   ): Promise<boolean> {
-    if (this.#sameApiSource(attachmentKey, expected)) return true;
-    if (this.#localApi.demandSource()?.serverID !== expected.serverID) {
-      return false;
+    while (this.#localApi.demandSource()?.serverID === expected.serverID) {
+      if (this.#sameApiSource(attachmentKey, expected)) return true;
+      const generation = this.#databaseGeneration;
+      const { source } = await this.#readFromDatabase(attachmentKey);
+      // A refresh can replace the snapshot while verification acquires it.
+      // Verify the current generation before deciding whether identity changed.
+      if (generation !== this.#databaseGeneration) continue;
+      const verified =
+        source.kind === "zotero-db" &&
+        source.database.serverID === expected.serverID &&
+        this.#localApi.demandSource()?.serverID === expected.serverID;
+      if (verified) this.#adoptDatabaseSource(attachmentKey, source);
+      return verified;
     }
-    const generation = this.#databaseGeneration;
-    const { source } = await this.#readFromDatabase(attachmentKey);
-    const verified =
-      generation === this.#databaseGeneration &&
-      source.kind === "zotero-db" &&
-      source.database.serverID === expected.serverID &&
-      this.#localApi.demandSource()?.serverID === expected.serverID;
-    if (verified) this.#adoptDatabaseSource(attachmentKey, source);
-    return verified;
+    return false;
   }
 
   #canPublish(

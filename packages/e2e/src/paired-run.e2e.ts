@@ -1122,7 +1122,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const {
           press,
           toggle,
-          editorOpen,
+          editorReady,
           cardTags,
           editorChips,
           type,
@@ -1136,7 +1136,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
         expect(await storedTags()).toStrictEqual([]);
         expect(await press(toggle)).toBe(true);
-        expect(await editorOpen()).toBe(true);
+        expect(await editorReady()).toBe(true);
         // Each chip is the signal that Enter added its name.
         await type(kept, { enter: true });
         await expect.poll(editorChips, poll).toEqual([kept]);
@@ -1154,7 +1154,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           .toEqual([dropped, kept]);
 
         expect(await press(toggle)).toBe(true);
-        expect(await editorOpen()).toBe(true);
+        expect(await editorReady()).toBe(true);
         expect(await remove(dropped)).toBe("removed");
         await expect.poll(editorChips, poll).toEqual([kept]);
         // The toggle ends the session with the text still in the field.
@@ -1170,7 +1170,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       }, 120000);
 
       it("shows the card's new tags from the moment its tag editor closes", async () => {
-        const { press, toggle, editorOpen, cardTags, editorChips, type } =
+        const { press, toggle, editorReady, cardTags, editorChips, type } =
           cardTagEditor(createdKey);
         const poll = { timeout: 10_000, interval: 250 };
         const added = "End-to-end Run tag drawn at once";
@@ -1178,7 +1178,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         await expect.poll(cardTags, poll).toEqual([]);
 
         expect(await press(toggle)).toBe(true);
-        expect(await editorOpen()).toBe(true);
+        expect(await editorReady()).toBe(true);
         await type(added, { enter: true });
         await expect.poll(editorChips, poll).toEqual([added]);
 
@@ -1204,7 +1204,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const mark = `${pdfView}?.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')`;
         const popup = "document.querySelector('.zt-pdf-mark-popup')";
         const section = `${popup}?.querySelector('[data-zt-section=tags]')`;
-        const { editorOpen, editorChips, type, remove } = tagEditorIn(section);
+        const { editorReady, editorChips, type, remove } = tagEditorIn(section);
         const pressVerb = () =>
           obEvalUntil(
             vaultId!,
@@ -1253,7 +1253,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         await expect.poll(popupTags, poll).toEqual([removed, kept].toSorted());
 
         expect(await pressVerb()).toBe(true);
-        expect(await editorOpen()).toBe(true);
+        expect(await editorReady()).toBe(true);
         // Each chip is the signal that the gesture landed.
         await type(added, { enter: true });
         await expect.poll(editorChips, poll).toContain(added);
@@ -4593,7 +4593,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             /** The name the session adds, which Zotero stores as manual. */
             const addedName = "e2e-card";
             const poll = { timeout: 10_000, interval: 250 };
-            const { press, toggle, editorOpen, editorChips, type, remove } =
+            const { press, toggle, editorReady, editorChips, type, remove } =
               cardTagEditor(historyKey);
             const storedTags = () => annotationTags(api, serverID, historyKey);
 
@@ -4625,7 +4625,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
             it("puts the tags a card session changed back for the undo key, and applies them again for redo", async () => {
               expect(await press(toggle)).toBe(true);
-              expect(await editorOpen()).toBe(true);
+              expect(await editorReady()).toBe(true);
               expect(await remove(autoTag.tag)).toBe("removed");
               await type(addedName, { enter: true });
               // The chip is the signal that Enter added the name.
@@ -4664,7 +4664,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               const before = spelledTags([...seededTags, autoTag]);
 
               expect(await press(toggle)).toBe(true);
-              expect(await editorOpen()).toBe(true);
+              expect(await editorReady()).toBe(true);
               await type(first, { enter: true });
               await expect.poll(editorChips, poll).toContain(first);
               // Focus leaves the field for the view around the card. The
@@ -5148,9 +5148,8 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         }, 120000);
 
         /**
-         * A press and release the window's own input delivers at the centre
-         * of what `target` names, so the focus moves as a researcher's click
-         * moves it.
+         * Scrolls the target into view, then presses and releases at its centre
+         * through the window's own input, so focus moves with the click.
          *
          * @param modifiers the keys held through the click, as Electron names
          *   them: `shift`, `meta`, `control`.
@@ -5163,7 +5162,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obEval(
               vaultId!,
-              `(function(){const rect=(${target}).getBoundingClientRect();const zoom=require('electron').webFrame.getZoomFactor();const x=Math.round((rect.left+rect.width/2)*zoom),y=Math.round((rect.top+rect.height/2)*zoom);const contents=require('@electron/remote').getCurrentWebContents();contents.sendInputEvent({type:'mouseDown',x,y,button:'left',clickCount:1,modifiers:${held}});contents.sendInputEvent({type:'mouseUp',x,y,button:'left',clickCount:1,modifiers:${held}});return 'clicked';})()`,
+              `(function(){const target=${target};target.scrollIntoView({block:"center",inline:"nearest",behavior:"instant"});const rect=target.getBoundingClientRect();const zoom=require('electron').webFrame.getZoomFactor();const x=Math.round((rect.left+rect.width/2)*zoom),y=Math.round((rect.top+rect.height/2)*zoom);const contents=require('@electron/remote').getCurrentWebContents();contents.sendInputEvent({type:'mouseDown',x,y,button:'left',clickCount:1,modifiers:${held}});contents.sendInputEvent({type:'mouseUp',x,y,button:'left',clickCount:1,modifiers:${held}});return 'clicked';})()`,
             ),
           ).toBe("clicked");
         }
@@ -7496,10 +7495,10 @@ function cardTagEditor(annotationKey: string) {
  */
 function tagEditorIn(root: string) {
   return {
-    editorOpen: () =>
+    editorReady: () =>
       obEvalUntil(
         vaultId!,
-        `String(!!(${root})?.querySelector('.zt-annot-tag-input'))`,
+        `String(!!(${root})?.querySelector('.zt-annot-tag-input:not([readonly])'))`,
         { expected: "true" },
       ),
     /** The names the open editor draws as chips. */

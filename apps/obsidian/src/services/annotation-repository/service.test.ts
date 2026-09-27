@@ -2893,6 +2893,57 @@ it("accepts a write completion after the same database refreshes", async () => {
   );
 });
 
+it.each(["patch", "create"] as const)(
+  "accepts a %s when the same database refreshes during verification",
+  async (operation) => {
+    await using stack = new AsyncDisposableStack();
+    const reply = Promise.withResolvers<Response>();
+    const sent = Promise.withResolvers<void>();
+    const verifying = Promise.withResolvers<void>();
+    const lease = Promise.withResolvers<{
+      client: NodeDatabaseClient;
+      [Symbol.dispose](): undefined;
+    }>();
+    const { repository, client, acquireRead, dbEvents } = await writable(
+      stack,
+      {
+        write: () => {
+          sent.resolve();
+          return reply.promise;
+        },
+        item: () =>
+          annotationItem(
+            afterWrite("PUPR5FG5", { color: "#5fb236", version: 20 }),
+          ),
+      },
+    );
+
+    const running =
+      operation === "patch"
+        ? repository.patchColor("PUPR5FG5", "#5fb236")
+        : repository.createAnnotation("RGRPDF24", DRAFT);
+    await sent.promise;
+    dbEvents.emit("changed");
+    acquireRead.mockImplementationOnce(() => {
+      verifying.resolve();
+      return lease.promise;
+    });
+    reply.resolve(
+      operation === "patch" ? writeAccepted(20) : createAccepted(MADE),
+    );
+    await verifying.promise;
+    dbEvents.emit("changed");
+    await repository.read("RGRPDF24");
+    lease.resolve({ client, [Symbol.dispose]: () => undefined });
+
+    await expect(running).resolves.toEqual(
+      operation === "patch"
+        ? { kind: "idle" }
+        : { kind: "created", annotationKey: "MADE2345" },
+    );
+  },
+);
+
 it("rejects verification from an old database generation", async () => {
   await using stack = new AsyncDisposableStack();
   const reply = Promise.withResolvers<Response>();
