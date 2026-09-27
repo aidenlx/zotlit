@@ -278,7 +278,7 @@ export interface AnnotActionDeps {
    * Put one Annotation into the active note, from the overflow menu — the same
    * Markdown the drag drops, on the route a keyboard reaches.
    */
-  insertAnnotation: (annot: AnnotationRecord) => void;
+  offerAnnotationInsert: () => ((annot: AnnotationRecord) => void) | null;
   /** Comment renderer built by the view (owns the app, component, source path). */
   renderComment: CommentRenderer;
   onSetFollowMode: AnnotActions["onSetFollowMode"];
@@ -562,14 +562,12 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     menu.addSeparator();
     // The keyboard's route to what a drag does.
     menu.addItem((item) => {
+      const insert = deps.offerAnnotationInsert();
       item
         .setTitle(m.annot_view_menu_insert())
         .setIcon("file-input")
-        .setDisabled(
-          !deps.app.workspace.activeEditor?.file ||
-            !deps.app.workspace.activeEditor.editor,
-        )
-        .onClick(() => deps.insertAnnotation(annot));
+        .setDisabled(!insert)
+        .onClick(() => insert?.(annot));
     });
 
     menu.addSeparator();

@@ -73,14 +73,28 @@ export async function verifyAnnotationInsert(
     ] as const) {
       await obEval(
         vaultId,
-        `(()=>{
+        `(async()=>{
         const s=${state};s.editor=s.leaf.view.editor;s.editor.setValue('before TARGET after');s.editor.setSelection({line:0,ch:7},{line:0,ch:13});
+        await app.workspace.revealLeaf(s.viewLeaf);await app.workspace.revealLeaf(s.leaf);s.leaf.getContainer().focus();
         app.workspace.setActiveLeaf(s.leaf,{focus:true});s.started=false;s.finished=0;s.error=null;
         s.services.settings.update({'attachment.import':${mode !== "disabled"}});
         s.gate=new Promise(resolve=>s.release=resolve);
         s.services.noteFeature.prepareAnnotationInsert=async options=>{s.started=true;s.options=options;await s.gate;try{return await s.original(options);}catch(e){s.error=String(e);throw e;}finally{s.finished++;}};
         const a=s.view.snapshot.annotations.find(a=>a.key==='${mode === "ink" ? "TYY6Z6ZF" : "FDRFQ7C2"}');
-        const button=s.view.contentEl.querySelector('button');s.view.gestures.onMoreOptions({currentTarget:button},a);
+        ${
+          mode === "success" && host === "main"
+            ? `
+        const button=s.view.contentEl.querySelector('.zt-annot-card[data-zotero-annotation-key="FDRFQ7C2"] [aria-label="More options"]');
+        if(!button)throw new Error('Annotation card menu missing');
+        button.scrollIntoView({block:'center'});await new Promise(resolve=>setTimeout(resolve,100));
+        const rect=button.getBoundingClientRect(),wc=s.view.contentEl.win.electronWindow.webContents;
+        const point={x:Math.round(rect.x+rect.width/2),y:Math.round(rect.y+rect.height/2)};
+        wc.sendInputEvent({type:'mouseMove',...point});wc.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});wc.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point});
+        await new Promise(resolve=>setTimeout(resolve,150));
+        if(app.workspace.activeEditor?.editor)throw new Error('Mouse did not move focus to the sidebar');
+        `
+            : `const button=s.view.contentEl.querySelector('button');s.view.gestures.onMoreOptions({currentTarget:button},a);`
+        }
         const menu=Array.from(s.view.contentEl.doc.querySelectorAll('.menu-item')).find(el=>el.textContent.trim()==='Insert into note');
         if(!menu||menu.classList.contains('is-disabled'))throw new Error('Insert menu unavailable');menu.click();return true;
       })()`,

@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { history, undo } from "@codemirror/commands";
+import { MarkdownView } from "obsidian";
 import type { App, Editor, EventRef, MarkdownFileInfo, TFile } from "obsidian";
 import type { DragEvent as ReactDragEvent } from "react";
 import { expect, it, vi } from "vitest";
@@ -39,7 +40,12 @@ function fixture() {
   } as MarkdownFileInfo;
   const listeners = new Set<() => void>();
   const workspace = {
-    activeEditor: info,
+    activeEditor: info as MarkdownFileInfo | null,
+    getMostRecentLeaf: () => ({
+      view: Object.assign(Object.create(MarkdownView.prototype), info, {
+        getMode: () => "source",
+      }),
+    }),
     on: (_event: string, cb: () => void) => {
       listeners.add(cb);
       return cb;
@@ -82,6 +88,30 @@ function fixture() {
 const result = (text: string): Result => ({
   text,
   summary: { zotero: 0, unchecked: 0, unavailable: 0 },
+});
+
+it("inserts at the note's selection after the annotation sidebar takes focus", async () => {
+  using f = fixture();
+  f.workspace.activeEditor = null;
+  const operation = f.insert(card);
+  expect(f.prepare).toHaveBeenCalledOnce();
+  f.pending[0]!.resolve(result("EXCERPT"));
+  await operation;
+  expect(f.cm.state.doc.toString()).toBe("one EXCERPT");
+  expect(f.notify).not.toHaveBeenCalled();
+});
+
+it("keeps a menu offer bound to its note if another tab becomes active", async () => {
+  using f = fixture();
+  const offered = f.insert.offer();
+  expect(offered).not.toBeNull();
+  f.workspace.activeEditor = {
+    file: { path: "Other.md" },
+    editor: {},
+  } as MarkdownFileInfo;
+  await offered!(card);
+  expect(f.prepare).not.toHaveBeenCalled();
+  expect(f.cm.state.doc.toString()).toBe("one two");
 });
 
 it("keeps the established text fallback for a Profile error", async () => {

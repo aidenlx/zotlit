@@ -74,7 +74,7 @@ function setup(
     text: control,
   };
   const deps = {
-    app: { workspace: { activeEditor: null } },
+    app: { workspace: { activeEditor: null, getMostRecentLeaf: () => null } },
     annotations,
     // Only a highlight or underline has a Quoted Text, as `cardControls` rules.
     controls: (annot: AnnotationRecord) => ({
@@ -87,7 +87,7 @@ function setup(
     openEditor,
     resolveAnnotationID: () => null,
     onExploreAnnotation: () => {},
-    insertAnnotation: () => {},
+    offerAnnotationInsert: () => null,
   } as unknown as AnnotActionDeps;
   return {
     actions: createAnnotActions(deps),
