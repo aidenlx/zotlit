@@ -25,7 +25,6 @@ or a direct edit. State the expected behavior and what the reviewer must check.
 - [Temporal dates](policies/temporal-dates.md)
 - [Test isolation](policies/test-isolation.md)
 - [Test timing](policies/test-timing.md)
-- [Testing strategy](policies/testing-strategy.md)
 - [UI testing](policies/ui-testing.md)
 - [Vocabulary](policies/vocabulary.md)
 

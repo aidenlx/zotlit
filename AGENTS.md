@@ -24,26 +24,27 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 
 ## Commands
 
-**Prefer turbo for `build` / `test` / `lint`.** Going through turbo resolves the workspace dependency graph and caches outputs, so repeat runs are near-instant. Those root scripts delegate to `turbo run` — run them from the repo root:
+Run these from the repo root. `build` / `test` / `lint` go through turbo, which builds workspace dependencies first and caches outputs. Scope a task to one package with `turbo run <task> --filter=@zotlit/obsidian`; for an inner loop that needs no dependency build (single-file Vitest, `db:pull`), call the package tool directly — see each package's `AGENTS.md`.
 
 | Command                           | What it does                                                                                                                |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm dev`                        | `turbo run dev` (persistent, no cache).                                                                                     |
-| `pnpm test`                       | `turbo run test` across packages that define a `test` script (typecheck + Vitest in each).                                  |
-| `pnpm lint` / `pnpm lint:fix`     | Root-level `oxlint` over the whole tree. Builds deps via turbo caching, then typechecks + lints in one pass. **A clean run verifies types — no separate `tsgo`/`turbo run typecheck` pass.** |
+| `pnpm test`                       | `turbo run test`: Vitest in each package that defines a `test` script.                                                      |
+| `pnpm lint` / `pnpm lint:fix`     | Type-aware `oxlint` over the whole tree after dependencies build. **A clean run is the typecheck.**                          |
 | `pnpm format` / `pnpm format:fix` | Root-level `oxfmt` over the whole tree, run directly. A full pass takes under a second.                                      |
-| `pnpm review` / `pnpm review:fix`  | Obsidian guideline scan of `apps/obsidian` (ESLint). Release-time only — `release.ts` gates on it and CI re-runs it on `release/**` PRs. Blocks on errors; warnings are reported. |
+| `pnpm review` / `pnpm review:fix` | Obsidian guideline scan of `apps/obsidian`, release-time only (see below).                                                  |
 | `pnpm quality[:fix]`              | Runs lint, then format.                                                                                                     |
 | `pnpm fixture`                    | Builds the Fixture — the disposable multi-Library test environment — under `.scratch/acceptance-fixture/`. See the [Fixture guide](docs/fixture.md); run `pnpm fixture --help` for live Fixture Spec details. |
 | `pnpm e2e`                        | Runs the End-to-end Run suite (`packages/e2e`) against a running desktop Obsidian; skips cleanly (not part of `pnpm test`/CI) when none is reachable. |
 
-**The End-to-end Run is the final gate, run once when the work is complete.** During development, iterate on typecheck and single test files, and prove a change end to end by walking it through the running app (`/obsidian-debug`); once that walkthrough passes, encode it as a test in `packages/e2e`, the repeatable artifact of that proof. A full pass takes about 5 minutes on this machine with system sleep prevented.
+oxlint and oxfmt own linting and formatting; `oxlint.config.ts` / `oxfmt.config.ts` at root and per package extend `@zotlit/config/oxlint` / `@zotlit/config/oxfmt`. ESLint serves `pnpm review` alone: it runs only the `obsidianmd/*` rules against the official Obsidian developer guidelines. `release.ts` gates on it and CI re-runs it on `release/**` PRs; errors block, warnings are reported. typescript-eslint needs TypeScript 6, so root `typescript` is aliased to `@typescript/typescript6` while workspace packages keep TypeScript 7 through the catalog. Keep `eslint.config.js` and that alias ([ADR 0020](docs/adr/0020-obsidian-guideline-review-runs-on-eslint-at-release.md)).
 
-Linter/formatter are **oxlint + oxfmt**, not ESLint/Prettier. Configs live at `oxlint.config.ts` / `oxfmt.config.ts` at root and per-package, extending `@zotlit/config/oxlint` and `@zotlit/config/oxfmt`.
+### Testing
 
-ESLint is present at the root for **one** purpose: `pnpm review` checks `apps/obsidian` against the official Obsidian developer guidelines via `eslint-plugin-obsidianmd`, before a release is cut. Only the `obsidianmd/*` rules are enabled — oxlint owns everything else. Root `typescript` is aliased to `@typescript/typescript6` because typescript-eslint cannot run on TypeScript 7; workspace packages keep TypeScript 7 via the catalog. Leave `eslint.config.js` and that alias in place. See [ADR 0020](docs/adr/0020-obsidian-guideline-review-runs-on-eslint-at-release.md).
-
-Scope a task to one package with a turbo filter so its deps still build first: `turbo run <task> --filter=@zotlit/obsidian`. For tight inner-loop iteration that doesn't need the dep graph (single-file Vitest, `db:pull`, etc.), call the package tool directly — see each package's `AGENTS.md`.
+- **E2E-first:** A test in `packages/e2e` is the primary proof that a feature works. During development, iterate on typecheck and single test files, and walk the change through the running app (`/obsidian-debug`). When the walkthrough passes, encode it as an e2e test — the repeatable artifact of that proof.
+- **Final gate:** Run the full End-to-end Run once, when the work is complete. A pass takes about 5 minutes on this machine with system sleep prevented.
+- **Failure-mode-first:** When an isolated test is justified, list every failure mode before writing the code; the test list drives the implementation.
+- **Earned regression tests:** A bug fix earns a regression test only for a real gap in the behavior tests. When an E2E path already reaches the failure, extend that path.
 
 ## Truth-first
 
@@ -67,7 +68,7 @@ Write reports to the user in ASD-STE100 Simplified Technical English.
 
 ## Surgical changes
 
-Every changed line traces to the user's request. Leave adjacent code, comments, and formatting as found. Remove only orphans YOUR changes created; mention pre-existing dead code, don't delete it.
+Every changed line traces to the user's request. Leave adjacent code, comments, and formatting as found. Remove only the orphans your own changes created; mention pre-existing dead code, don't delete it.
 
 ## i18n
 
