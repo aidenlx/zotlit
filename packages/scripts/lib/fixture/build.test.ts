@@ -47,6 +47,7 @@ import {
   buildFixture,
   COLLECTIONS,
   DEMO_ITEMS,
+  DEMO_PROFILE_DOCUMENT,
   EXCERPT_RENDERING_PDFS,
   EXCERPT_RENDERING_VAULT_DIR,
   FIXTURE_LOCAL_API_SERVER_ID,
@@ -2136,17 +2137,21 @@ describe("a Vault Case", () => {
     ]);
   });
 
-  it("gives the demo vault the demo papers and pages, and no test page", async () => {
+  it("gives the demo vault the demo papers, pages, and Profile, and no test page", async () => {
     const demo = await buildVaultCase("demo");
 
     expect(await readdir(demo.vaultDir)).toEqual([
       ".obsidian",
       "Papers",
       "Thesis",
+      "templates",
     ]);
     expect(await readdir(join(demo.vaultDir, "Papers"))).toEqual([
       "Ioannidis - 2005 - Why Most Published Research Findings Are False.pdf",
       "Rougier et al. - 2014 - Ten Simple Rules for Better Figures.pdf",
+    ]);
+    expect(await readdir(join(demo.vaultDir, "templates"))).toEqual([
+      DEMO_PROFILE_DOCUMENT.filename,
     ]);
     await expect(stat(demo.pluginDataPath)).resolves.toBeTruthy();
   });

@@ -2242,6 +2242,59 @@ Citation key: {{ zt.citationKey }}
   },
 ] as const;
 
+/** Id of the Demo Vault Case's Literature Note Profile, {@link DEMO_PROFILE_DOCUMENT}. */
+const DEMO_PROFILE_ID = "Rd9QmT4kLw2P";
+
+/**
+ * The Demo Vault Case's one Literature Note Profile document. It has no
+ * match, so the shipped default Profile still writes every new note. Its
+ * properties show JSON-e rules next to an expression: `year` evaluates one
+ * field, and one keyless rule chooses which properties a note gets: a book
+ * gets `publisher`, any other item gets `journal`. A property with a key
+ * writes only that key, so only a keyless rule can choose between names.
+ */
+export const DEMO_PROFILE_DOCUMENT = {
+  filename: "zotlit-profile.reading.md",
+  source: `---
+id: ${DEMO_PROFILE_ID}
+name: Reading notes
+version: 1.0.0
+author: ZotLit
+description: Adds the year, and the publisher of a book or the journal of an article
+contract: ${CONTRACT_VERSION}
+filename: '{{ zt.citationKey | default: zt.key }}{% suffix %}'
+frontmatter:
+  - key: title
+    expr: zt.title
+    merge: replace
+  - key: year
+    value: {"$eval":"zt.date.year"}
+    merge: replace
+  - value: {"$if":"zt.itemType == 'book'","then":{"publisher":{"$eval":"zt.publisher"}},"else":{"journal":{"$eval":"zt.publicationTitle"}}}
+---
+# {{ zt.title }}
+
+[Zotero]({{ zt.backlink }})
+
+{% managed %}
+{% if zt.annotations.size > 0 %}
+## Annotations
+
+{% for annotation in zt.annotations %}
+{% render_annotation annotation %}
+{% endfor %}
+{% endif %}
+{% endmanaged %}
+
+--- zotlit:annotation ---
+{% bq %}
+[!note] Page {{ zt.pageLabel }}
+
+{{ zt.text }}
+{% endbq %}
+`,
+} as const;
+
 const STRESS_ITEM_KEY_ALPHABET = "23456789ABCDEFGHIJKLMNPQRSTUVWXYZ";
 const STRESS_BUILD_SEED = 0x5eed_0000;
 
