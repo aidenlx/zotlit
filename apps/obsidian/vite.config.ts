@@ -142,10 +142,10 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
       pandocFilterVariants(),
       obsidianBuildPlugin(),
-      process.env.ANALYZE === "true" &&
+      Boolean(process.env.ANALYZE) &&
         unstableRolldownAdapter(
           analyzer({
-            analyzerMode: "static",
+            analyzerMode: process.env.ANALYZE === "json" ? "json" : "static",
             fileName: resolve(import.meta.dirname, "bundle-stats"),
             defaultSizes: "stat",
           }),
