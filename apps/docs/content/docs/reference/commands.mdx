@@ -260,6 +260,8 @@ Only PDF attachments are offered. An item with none shows <UiLabel name={m.notic
 | Quick switcher  | `Shift+Enter` on a result. See [Literature note quick switcher](#quick-switcher).                                                       |
 | Zotero          | Right-click a PDF attachment, or an item that has one > <UiLabel name={m["zotero.menu_item_open_pdf.label"]()} /> in the top-level menu |
 | Zotero reader   | Right-click inside the PDF you are reading > <UiLabel name={m["zotero.menu_reader_page_open_pdf"]()} />                                 |
+| Annotation view | Pane menu > <UiLabel name={m.command_open_pdf_name()} />. Absent when an Obsidian PDF view already shows the attachment.                |
+| File link       | Click a link to a PDF in your Zotero library, when <UiLabel name={m.settings_reader_open_file_links_name()} /> is on                    |
 
 ## Imported note actions
 
@@ -276,7 +278,7 @@ Re-imports a Zotero note that was previously imported. A confirmation modal appe
 
 <Command name={m.command_open_annot_view_name()} />
 
-Opens the annotation view in the right sidebar, showing annotations from the Zotero reader.
+Opens the annotation view in the right sidebar, or brings it forward when it is already open. The view keeps the follow mode you last chose. A new view starts in <UiLabel name={m.annot_view_mode_active_tab()} />.
 
 | Entry point     | Details                                                              |
 | --------------- | -------------------------------------------------------------------- |
@@ -299,6 +301,18 @@ These five change what the annotation view follows. Each acts on the open annota
 | --------------- | ----------------------------------------------------------- |
 | Command palette | Active with an annotation view open, where the mode applies |
 | Pane menu       | The same three switches, plus the item picker               |
+
+<Command name={m.command_undo_annotation_change_name()} />
+
+<Command name={m.command_redo_annotation_change_name()} />
+
+Undo takes back the last annotation change ZotLit saved to Zotero for the PDF you have open. Redo applies an undone change again. The command palette offers each one only where there is a step to take that way. See [Undo and redo a change](/docs/how-to/edit-pdf-annotations#undo-and-redo-a-change).
+
+| Entry point     | Details                                                                                              |
+| --------------- | ---------------------------------------------------------------------------------------------------- |
+| Command palette | Active in a PDF view of a Zotero attachment, or in the annotation view, when there is a step to take |
+| More options    | The PDF view's **More options** menu (⋮). Both entries appear, dimmed when there is no step to take. |
+| Hotkey          | None by default; assign one under **Settings > Hotkeys**                                             |
 
 ## Template data explorer
 

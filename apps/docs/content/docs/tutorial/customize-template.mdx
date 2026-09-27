@@ -27,15 +27,15 @@ The built-in annotation format uses `[!note]` as the Obsidian callout type. You 
   <Step>
     ### Open the Template Workbench View
 
-    Open the literature note in Obsidian. Run <Command name={m.command_customize_note_template_name()} />. If ZotLit asks where to edit, select <UiLabel name={m.modal_workbench_launch_native()} />, then <UiLabel name={m.modal_workbench_launch_open()} />.
+    Open the literature note in Obsidian. Run <Command name={m.command_customize_note_template_name()} />.
 
-    ZotLit opens the template document used by this note and selects its paper for the preview. Read the shared-template guidance above the editor: your edits change every note that uses this template when that note updates. Check that your note's name appears beside <UiLabel name={m.template_workbench_update_this_note()} />.
+    ZotLit opens the template document used by this note in a new window and selects its paper for the preview. Read the shared-template guidance above the editor: your edits change every note that uses this template when that note updates. Check that your note's name appears beside <UiLabel name={m.template_workbench_update_this_note()} />.
 
   </Step>
   <Step>
     ### Open the annotation format
 
-    Select the <UiLabel name={m.workbench_tab_annotation()} /> tab. The editor shows the format used for one annotation. Choose an annotation from your paper and find its highlighted text in the preview.
+    Select the <UiLabel name={m.workbench_tab_annotation()} /> tab. The editor shows the format used for one annotation. The preview shows one annotation from your paper under <UiLabel name={m.workbench_annotation_example()} />. To show a different one, select <UiLabel name={m.workbench_choose_annotation()} /> at the top of the editor.
 
     For a short explanation of the format, you can open <UiLabel name={m.workbench_help()} /> beside the annotation instructions.
 
@@ -47,6 +47,8 @@ The built-in annotation format uses `[!note]` as the Obsidian callout type. You 
 
     ZotLit saves the template document automatically. Check that the same annotation now appears in a quote callout in the preview. Your literature note keeps its previous content until you update it.
 
+    ![The Template Workbench window with the Annotation tab open. The callout line in the editor now uses the quote type, and the preview on the right shows the first highlight in a quote callout titled Page 1](/img/tutorial/customize-template-workbench-quote.webp)
+
   </Step>
   <Step>
     ### Update the literature note
@@ -54,6 +56,8 @@ The built-in annotation format uses `[!note]` as the Obsidian callout type. You 
     In the Workbench, select <UiLabel name={m.template_workbench_update_this_note()} /> beside your note's name. Wait for the notice that names the updated note, then open that note.
 
     Its annotations now use quote callouts. Your writing outside the managed region stays unchanged.
+
+    ![The note rougier2014 under its Annotations heading, where each highlight now shows in a quote callout with a quotation-mark icon and the title Page 1](/img/tutorial/customize-template-note-quote.webp)
 
   </Step>
 </Steps>
@@ -72,34 +76,36 @@ Template fields insert data from Zotero. You will add the annotation's `colorNam
   <Step>
     ### Insert the color field
 
-    Place the cursor after `{{ zt.pageLabel }}` in the callout title. Add a comma and a space, then type `{{` to open the template field list.
+    Place the cursor at the end of the callout title line, after `{% endif %}`. Add a comma and a space, then type `{{` to open the template field list. Until you pick a field, the Workbench reports a syntax problem. It clears once the field is in place.
 
-    Select <UiLabel name={m.workbench_field_color_name()} />. The line now contains:
+    Select `colorName`. The line now contains:
 
     ```liquid
-    [!quote] Page {{ zt.pageLabel }}, {{ zt.colorName }}
+    [!quote] Page {% if zt.pageLabel %}{{ zt | file_link: zt.pageLabel | default: zt.pageLabel }}{% endif %}, {{ zt.colorName }}
     ```
 
   </Step>
   <Step>
     ### Check the preview
 
-    The annotation preview shows the selected annotation's highlight color. Select a different example in the <UiLabel name={m.workbench_tab_annotation()} /> tab to check another annotation.
+    The preview title now ends with the annotation's highlight color, such as `Page 1, yellow`. Select <UiLabel name={m.workbench_choose_annotation()} /> and pick another annotation to check its color.
 
   </Step>
   <Step>
     ### Update the note again
 
-    Select <UiLabel name={m.template_workbench_update_this_note()} /> beside your note's name. After ZotLit reports the update, open the note. Each annotation callout title now includes its highlight color, such as `Page 12, yellow`.
+    Select <UiLabel name={m.template_workbench_update_this_note()} /> beside your note's name. After ZotLit reports the update, open the note. Each annotation callout title now includes its highlight color, such as `Page 1, yellow`.
+
+    ![The note rougier2014 with its quote callouts titled Page 1, yellow, then Page 1, green, then Page 1, purple](/img/tutorial/customize-template-note-color.webp)
 
   </Step>
 </Steps>
 
 ## Restore the built-in profile
 
-To remove these changes from the Default profile, open <SettingsPath />. Select <UiLabel name={m.settings_profile_document_restore()} /> on the <UiLabel name={m.settings_profile_document_name()} /> row.
+To remove these changes from the Default profile, open <SettingsPath />. Select <UiLabel name={m.settings_profile_document_restore()} /> on the <UiLabel name={m.settings_profile_document_name()} /> row, then confirm with <UiLabel name={m.settings_profile_document_restore_action()} />.
 
-ZotLit moves the custom profile document to Obsidian's configured trash. Update the literature note again to render it with the built-in profile.
+ZotLit moves the custom profile document to Obsidian's configured trash. Run <Command name={m.command_update_note_name()} /> from the literature note to render it with the built-in profile.
 
 ## What's next
 

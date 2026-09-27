@@ -71,11 +71,51 @@ When the item has more than one attachment, a picker under the toolbar names the
 
 A Zotero PDF tab and the Zotero reader each choose the attachment themselves, so the picker stands down while one of them does.
 
+To read the attachment on screen in Obsidian, select the mode button, then select <UiLabel name={m.command_open_pdf_name()} />. The same item is in the view's pane menu. It is not shown when an Obsidian PDF tab already shows that attachment.
+
+## Filter the list [#filter]
+
+The toolbar has two filters. Each opens as a small popover under its button.
+
+- <UiLabel name={m.annot_view_filter_tag_trigger()} />: lists the tags on the
+  annotations. Type in the search field to find a tag, then select one or more
+  tags.
+- <UiLabel name={m.annot_view_filter_color_trigger()} />: lists the colors of
+  the annotations. Select one or more colors.
+
+The list shows the annotations that have any of the selected tags and any of the selected colors. After you select a tag or a color, the button shows your choice. To clear it, open the popover and select <UiLabel name={m.annot_view_filter_tag_clear()} /> or <UiLabel name={m.annot_view_filter_color_clear()} />.
+
+## Select several cards [#select-several]
+
+Select a card to select it alone. To select more than one card:
+
+| Action                                                      | Result                                                         |
+| ----------------------------------------------------------- | -------------------------------------------------------------- |
+| `Ctrl`-click (Windows and Linux) or `Command`-click (macOS) | Adds a card to the selection, or removes it.                   |
+| `Shift`-click                                               | Selects all cards from the last card you selected to this one. |
+| `Ctrl+A` (Windows and Linux) or `Command+A` (macOS)         | Selects all cards that the list shows.                         |
+
+You can also press `Shift+Up` or `Shift+Down` to extend the selection one card at a time. Press `Escape` to clear the selection.
+
+With the cards selected, you can:
+
+- Delete them: press `Delete` or `Backspace`, then confirm. You can also right-click a selected card and select the delete item, which shows the number of cards.
+- Change their color: press a key from `1` to `8`. The keys follow the order of Zotero's color palette. You can also right-click a selected card and select <UiLabel name={m.annot_view_card_color()} />.
+- Copy their text: press `Ctrl+C` (Windows and Linux) or `Command+C` (macOS), or right-click a selected card and select <UiLabel name={m.annot_view_menu_copy_text()} />. ZotLit copies the quoted text of each card, or its comment when it has no quoted text, with a blank line between cards.
+
+Deleting and changing colors are edits, so editing must be enabled. One undo reverses the change on all the cards. See [How to edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations) for undo and for the other edits.
+
+## Locked annotations [#locked]
+
+A lock icon beside a card's page number marks an annotation that ZotLit cannot change. Point to the icon to see the reason. For example, Zotero imported the annotation from the PDF file, or another member of a group library created it. See [How to edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations) for what you can still do with a locked annotation.
+
 ## Pull annotations into a note
 
 1. Open the note where you want to insert the annotation.
 2. Drag an annotation row from the sidebar to the required editor position.
 3. Wait for the insertion to complete. Image and ink excerpts are prepared before their links are inserted.
+
+To insert without dragging, put the cursor in the note where you want the annotation. Then right-click the annotation card, or open its <UiLabel name={m.annot_view_more_tooltip()} /> menu, and select <UiLabel name={m.annot_view_menu_insert()} />. ZotLit inserts the same text that a drag inserts. The item is not available when no note editor is active.
 
 ZotLit uses the [profile](/docs/concepts/profiles) of the annotation item's literature note, or the Default profile when that item has no note. Edits made while you wait move the insertion position with the text. Press Escape to cancel a pending insertion. After insertion, one Undo removes the inserted content.
 
@@ -85,25 +125,35 @@ You can view and insert [excerpt images](/docs/concepts/excerpt-images) with bot
 
 ### Context menu actions
 
-Right-click an annotation row for additional options:
+Right-click an annotation row, or open its <UiLabel name={m.annot_view_more_tooltip()} /> menu, for additional options:
 
+- <UiLabel name={m.annot_view_menu_edit_text()} />: opens an editor for the
+  quoted text of a highlight or underline. See [Edit the quoted
+  text](/docs/how-to/edit-pdf-annotations#edit-the-quoted-text).
 - <UiLabel name={m.annot_view_menu_copy_backlink()} />: copies a link back to
   the annotation's location in the PDF.
-- <UiLabel name={m.annot_view_menu_copy_text()} />: copies the highlighted or
-  underlined text.
+- <UiLabel name={m.annot_view_menu_copy_text()} />: copies the quoted text, or
+  the comment when the annotation has no quoted text.
 - <UiLabel name={m.annot_view_menu_copy_citation()} />: copies a formatted
   citation for the annotation's parent item.
 - <UiLabel name={m.indexed_key_menu_copy_annotation()} />: copies the
   annotation's Zotero key.
+- <UiLabel name={m.annot_view_menu_insert()} />: inserts the annotation at the
+  cursor in the active note, as a drag does.
 - <UiLabel name={m.template_data_explorer_menu_explore()} />: opens the Template
   Data Explorer with the annotation's data.
+- <UiLabel name={m.annot_view_menu_delete()} />: deletes the annotation from
+  Zotero after you confirm. See [Delete an
+  annotation](/docs/how-to/edit-pdf-annotations#delete-an-annotation).
+
+When several cards are selected, the menu has only the items that act on all of them. See [Select several cards](#select-several).
 
 ## See also
 
 <Cards>
   <Card
     title="How to edit PDF annotations in Obsidian"
-    description="Create highlights and underlines, change comments and colors, or delete annotations."
+    description="Create every annotation type, edit colors, comments, tags, and quoted text, or delete annotations."
     href="/docs/how-to/edit-pdf-annotations"
   />
   <Card

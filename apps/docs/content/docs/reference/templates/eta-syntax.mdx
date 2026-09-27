@@ -339,6 +339,8 @@ linkHelper(alias?, subpath?)
 
 `zt.noteLink()` returns `null` when the literature note path is unresolvable (collision, recursive resolution, or template error). `zt.imgLink` is `null` for annotation types other than `image` and `ink`. An unavailable image uses the [excerpt fallback](/docs/concepts/excerpt-images#import-outcomes).
 
+While <SettingsPath page={m.settings_page_reader()} setting={m.settings_reader_open_file_links_name()} /> is on, which is the default, a file link to a PDF in your Zotero library [opens in Obsidian](/docs/how-to/open-pdf-in-obsidian). A `zt.fileLink()` link opens on the annotation's page, with the annotation selected.
+
 ## Template document naming [#template-document-naming]
 
 A template document sits directly inside the folder set by <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />. The scan is flat, and the filename prefix alone says what a document is: `zotlit-profile.<slug>.md` for a profile, `zotlit-citation.md` for the citation text, and `zotlit-partial.<name>.md` for one partial. See [Template document naming](/docs/reference/templates/syntax#template-document-naming) for the full rule and the reserved partial names.

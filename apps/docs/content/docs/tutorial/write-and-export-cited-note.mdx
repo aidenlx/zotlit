@@ -41,7 +41,9 @@ Complete the [ZotLit installation](/docs/install-zotlit). You also need ZotLit C
   <Step>
     ### Insert the citation
 
-    Open a Markdown note in Live Preview. Type `[@`, then type part of the item's title or citation key.
+    Open a Markdown note in Live Preview. Type `[@`, then type part of the item's title or citation key. A list of matching Zotero items opens below the cursor.
+
+    ![A thesis paragraph in Obsidian ending in "[@ten", with the suggestion list below showing "Ten Simple Rules for Better Figures" by Rougier et al. (2014)](/img/tutorial/write-and-export-insert-citation.webp)
 
     Select the item and press `Enter`. ZotLit inserts a citation such as:
 
@@ -61,11 +63,15 @@ Complete the [ZotLit installation](/docs/install-zotlit). You also need ZotLit C
 
     The <UiLabel name={m.references_view_name()} /> Sidebar shows the formatted bibliography entry for your citation.
 
+    ![The paragraph now ends in the formatted citation "(Rougier et al. 2014)", and the References Sidebar on the right lists the full bibliography entry for the paper](/img/tutorial/write-and-export-references-sidebar.webp)
+
   </Step>
   <Step>
     ### Preview the citation
 
     Hover over the formatted citation in Live Preview. The <UiLabel name={m.settings_citation_hover_action_popover()} /> shows the complete bibliography entry.
+
+    ![A popover below the citation "(Rougier et al. 2014)" showing the complete bibliography entry for Ten Simple Rules for Better Figures](/img/tutorial/write-and-export-citation-popover.webp)
 
     The default hover settings show this popover without a modifier key in Live Preview.
 
@@ -85,9 +91,13 @@ Complete the [ZotLit installation](/docs/install-zotlit). You also need ZotLit C
 
     <Command name={m.command_pandoc_export_name()} />
 
-    Leave <UiLabel name={m.pandoc_export_format_name()} /> set to <UiLabel name={m.pandoc_export_format_docx()} />. Choose a destination, then select <UiLabel name={m.pandoc_export_confirm()} />.
+    Leave <UiLabel name={m.pandoc_export_format_name()} /> set to <UiLabel name={m.pandoc_export_format_docx()} />. The <UiLabel name={m.pandoc_export_style_name()} /> row shows the style ZotLit will use. The line below it says where that style comes from. Leave the style as it is.
 
-    Open the resulting `.docx` file. It contains your formatted citation and a bibliography.
+    <UiLabel name={m.pandoc_export_destination_name()} /> starts next to your note. To save the document somewhere else, select <UiLabel name={m.pandoc_export_destination_browse()} />. Then select <UiLabel name={m.pandoc_export_confirm()} />.
+
+    ![The Export with citations dialog set to Word document, with the citation style Default (Chicago author-date) and the line "Your vault settings set this style."](/img/tutorial/write-and-export-export-dialog.webp)
+
+    When the export finishes, a notice names the file and the citation style it used. Open the resulting `.docx` file. It contains your formatted citation and a bibliography.
 
   </Step>
 </Steps>

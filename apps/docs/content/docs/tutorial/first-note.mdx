@@ -10,7 +10,7 @@ import { Command } from "@/components/command";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This tutorial walks you through creating your first literature note in Obsidian from a Zotero library item. By the end, you will have a Markdown note with the item's title, a link back to Zotero, and any annotations you have already made on the PDF.
+This tutorial walks you through creating your first literature note in Obsidian from a Zotero library item. By the end, you will have a Markdown note with the item's title, a link back to Zotero, and any annotations you have already made on the PDF. You will also open the paper itself beside the note, with your Zotero highlights on the page.
 
 <Callout type="info" title="Before you start">
   Complete both installation steps:
@@ -40,6 +40,8 @@ ZotLit finds your Zotero database automatically from your Zotero profile.
 
     Type to search for an item in your library. For this tutorial, choose an item that already has PDF annotations (highlights or notes you made in the Zotero PDF reader). That way you can see annotations appear in the finished note.
 
+    ![The quick switcher with "ten simple rules" typed and one result: Ten Simple Rules for Better Figures, Rougier et al. (2014), PLOS Computational Biology](/img/tutorial/first-note-quick-switcher.webp)
+
     Select the item and press `Enter`.
 
   </Step>
@@ -54,6 +56,8 @@ ZotLit finds your Zotero database automatically from your Zotero profile.
     - A link back to the item in Zotero
     - Links to any attached files
     - An **Annotations** section with your PDF highlights and notes (if the item had annotations)
+
+    ![The new note rougier2014 in the literatures folder, with the paper's title as a heading, Zotero and PDF links, and an Annotations section; the notice "Literature note created." shows in the corner](/img/tutorial/first-note-literature-note.webp)
 
     The note's filename is the item's citation key by default.
 
@@ -72,6 +76,39 @@ For more on how this works, see [Literature notes and the managed region](/docs/
 
 If you run the quick switcher again and select the same item, ZotLit opens the existing note instead of creating a duplicate.
 
+## Read the paper beside your note
+
+Now open the paper next to the note, so you can read it while you write. This needs Obsidian 1.14.2 or later, which ZotLit 2.2 already requires.
+
+<Steps>
+  <Step>
+    ### Make room for the paper
+
+    Right-click the note's tab and choose **Split right**. The note now shows twice, side by side.
+
+  </Step>
+  <Step>
+    ### Open the PDF
+
+    Click in the right-hand copy of the note. Then open the command palette and run:
+
+    <Command name={m.command_open_pdf_name()} />
+
+    The paper's PDF replaces the right-hand copy, so the note stays on the left and the paper sits on the right. ZotLit does not copy the file into your vault.
+
+  </Step>
+  <Step>
+    ### See your highlights
+
+    The highlights and notes you made in Zotero are already on the page, in the same colors. The <UiLabel name={m.annot_view_name()} /> view also opens in the right sidebar and lists each annotation as a card.
+
+    ![The literature note on the left, the paper's PDF on the right with colored Zotero highlights on the first page, and the annotation cards in the right sidebar](/img/tutorial/first-note-note-beside-pdf.webp)
+
+  </Step>
+</Steps>
+
+To learn every other way to open a PDF, see [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian).
+
 ## What's next
 
 Now that you have a literature note with annotations, the next lesson shows you how to change how those annotations look.
@@ -81,5 +118,10 @@ Now that you have a literature note with annotations, the next lesson shows you 
     title="Customize your annotations"
     description="Edit a template to change how callouts render, then update the note in place."
     href="/docs/tutorial/customize-template"
+  />
+  <Card
+    title="Open an item's PDF in Obsidian"
+    description="Every way to open a paper's PDF in Obsidian, and what you see when it opens."
+    href="/docs/how-to/open-pdf-in-obsidian"
   />
 </Cards>

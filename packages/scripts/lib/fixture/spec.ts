@@ -2462,7 +2462,7 @@ export const VAULT_CASES: readonly FixtureVaultCase[] = [
   {
     id: "demo",
     summary:
-      "A researcher's vault for screenshots and walkthroughs: the demo papers' PDFs, their Literature Notes, and the pages that cite them, with no test page.",
+      "A researcher's vault for screenshots and walkthroughs: the demo papers' PDFs, their Literature Notes, and the pages that cite them, with no test page and no test Item that repeats a demo paper's title.",
   },
 ];
 
@@ -2476,6 +2476,59 @@ export function findVaultCase(id: string): FixtureVaultCase {
     );
   }
   return found;
+}
+
+/** The Zotero rows one build writes. */
+export interface FixtureZoteroData {
+  items: readonly FixtureItem[];
+  notes: readonly FixtureNote[];
+  attachments: readonly FixtureAttachment[];
+  annotations: readonly FixtureAnnotation[];
+}
+
+/**
+ * The Zotero rows a Vault Case's build writes. The demo case leaves out every
+ * test Item whose title a demo Item repeats, with that Item's notes,
+ * Attachments, and Annotations, so a title search finds each demo paper once.
+ * Every other case writes all of `items`.
+ */
+export function vaultCaseZoteroData(
+  vaultCaseId: string,
+  items: readonly FixtureItem[],
+): FixtureZoteroData {
+  if (findVaultCase(vaultCaseId).id !== "demo") {
+    return {
+      items,
+      notes: NOTES,
+      attachments: ATTACHMENTS,
+      annotations: ANNOTATIONS,
+    };
+  }
+  const demoTitles = new Set(DEMO_ITEMS.map(({ title }) => title));
+  const dropped = new Set(
+    items
+      .filter(
+        (item) => !DEMO_ITEMS.includes(item) && demoTitles.has(item.title),
+      )
+      .map(({ itemID }) => itemID),
+  );
+  const keep = <T extends { itemID: number; parentItemID: number | null }>(
+    rows: readonly T[],
+  ): T[] =>
+    rows.filter((row) => {
+      if (row.parentItemID !== null && dropped.has(row.parentItemID)) {
+        dropped.add(row.itemID);
+      }
+      return !dropped.has(row.itemID);
+    });
+  // Attachments first: a note or an Annotation can hang off one.
+  const attachments = keep(ATTACHMENTS);
+  return {
+    items: items.filter(({ itemID }) => !dropped.has(itemID)),
+    attachments,
+    notes: keep(NOTES),
+    annotations: keep(ANNOTATIONS),
+  };
 }
 
 /** Settings version ZotLit v2.1.0 wrote, before Profiles absorbed the note bindings. */

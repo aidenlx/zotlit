@@ -10,15 +10,20 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Create highlights, underlines, note annotations, text annotations (text typed on the page), image annotations, and ink annotations (freehand strokes), change annotation colors and comments, adjust annotation positions, or delete annotations from Obsidian.
+Create highlights, underlines, note annotations, text annotations (text typed on the page), image annotations, and ink annotations (freehand strokes), change annotation colors, comments, and tags, adjust annotation positions, or delete annotations from Obsidian.
 
 ## Before you edit
 
-Keep Zotero running while you edit. ZotLit sends each change to Zotero and cannot edit annotations while Zotero is closed.
-
 Open the item's PDF in Obsidian. See [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian) for the available entry points.
 
-Before the first edit, give ZotLit permission to change annotations in Zotero. <UiLabel name={m.capability_enable_editing()} /> is in two places:
+Reading annotations needs no setup. Editing needs four things:
+
+1. Zotero 10 or later. With Zotero 9, the PDF opens and shows its annotations, but you cannot change them from Obsidian. ZotLit shows <UiLabel name={m.capability_incompatible_zotero()} /> and asks you to update Zotero.
+2. Zotero is running. ZotLit sends each change to Zotero and cannot edit annotations while Zotero is closed. Keep Zotero open while you edit.
+3. Zotero lets other applications connect to it. In Zotero, open Settings → Advanced and turn on **Allow other applications on this computer to communicate with Zotero**. When this option is off, ZotLit shows <UiLabel name={m.capability_local_api_disabled()} />.
+4. ZotLit has your permission to edit. You give it once, as described below.
+
+To give ZotLit permission to change annotations in Zotero, select <UiLabel name={m.capability_enable_editing()} />. It is in two places:
 
 - In the annotation view, select the mode button at the start of the view's toolbar, then select <UiLabel name={m.capability_enable_editing()} />.
 - In <SettingsPath page={m.settings_page_zotero()} setting={m.settings_zotero_connection_heading()} />, on the <UiLabel name={m.settings_zotero_editing_name()} /> row, select <UiLabel name={m.settings_zotero_editing_enable()} />.
@@ -33,6 +38,15 @@ While Zotero waits for your answer, the PDF reader toolbar shows <UiLabel name={
 You can keep both applications open. Make changes in one application at a time, wait for each change to save, then switch. This reduces the risk but does not guarantee that overlapping edits cannot occur.
 
 </Callout>
+
+## Locked annotations [#locked]
+
+Some annotations are read-only in Obsidian, as they are in Zotero's reader. Their card shows a lock icon beside the page number. Point to the icon to see the reason.
+
+- Zotero imported the annotation from the PDF file. You cannot change or delete it. Zotero imports it again when the file changes, so an edit would be lost.
+- In a group library, another member made the annotation. You cannot change it, but you can delete it.
+
+When you select several cards and one of them is locked, a change that the lock refuses applies to none of them.
 
 ## Create a highlight or underline
 
@@ -140,6 +154,21 @@ If the quoted text changed in Zotero while you edited it, the card shows <UiLabe
 
 The palette button on an annotation card provides the same colors.
 
+To recolor several annotations at once, select their cards in the annotation view, then press a key from `1` to `8`. The keys follow the order of the colors in the palette. One undo reverses the whole group. See [Use the annotation view](/docs/how-to/use-annotation-view#select-several) for how to select several cards.
+
+## Add or edit tags
+
+1. Select the annotation mark in the PDF.
+2. In the popup, select <UiLabel name={m.annot_view_card_add_tags()} />. If the annotation already has tags, the button is <UiLabel name={m.annot_view_card_edit_tags()} />.
+3. Type a tag name and press `Enter`. ZotLit suggests tag names from the item's library. To remove a tag, select the cross on it.
+4. Press `Escape` or select outside the popup. ZotLit saves the tags to Zotero.
+
+An annotation card has the same tag button. On a card, the tags save when you select elsewhere, and the editor stays open for more changes. To close it, press `Escape` or select the tag button again.
+
+`Escape` does not add a name that you typed but did not add with `Enter`. A comma is part of the tag name, because Zotero tag names can contain commas. You can also remove automatic tags, as in Zotero.
+
+If Zotero does not save the tags, or editing stops while you edit them, the card and the popup keep your tags under <UiLabel name={m.annot_view_tags_draft()} />. Select <UiLabel name={m.annot_view_tags_save()} /> to try again.
+
 ## Adjust an annotation's position
 
 You can move or resize image, ink, and text annotations, move note annotations, and move either end of a highlight or underline. Editing must be enabled. When it is not, a selected mark shows no handles and the keys below do nothing.
@@ -199,9 +228,11 @@ If Zotero refuses the change, the mark returns to its saved position, and a noti
 
 The annotation is deleted from Zotero. You can undo the deletion while the PDF is still open in Obsidian, but the restored annotation comes back under a new Zotero key. See [Undo and redo a change](#undo-and-redo-a-change).
 
+To delete several annotations at once, select their cards in the annotation view. Then press `Delete` or `Backspace`, or open the <UiLabel name={m.annot_view_more_tooltip()} /> menu of one of the selected cards and select the delete entry, for example <UiLabel name={m.annot_view_menu_delete_group({ count: 3 })} />. After you confirm, one undo restores the whole group. See [Use the annotation view](/docs/how-to/use-annotation-view#select-several) for how to select several cards.
+
 ## Undo and redo a change
 
-While a PDF is open in Obsidian, ZotLit remembers the annotation changes it saved to Zotero for that PDF: creations, deletions, colors, comments, and positions. Undo asks Zotero for the previous value, and redo asks for the change again. Both are ordinary edits, so Zotero must be running and editing must be enabled.
+While a PDF is open in Obsidian, ZotLit remembers the annotation changes it saved to Zotero for that PDF: creations, deletions, colors, comments, tags, quoted text, and positions. Undo asks Zotero for the previous value, and redo asks for the change again. Both are ordinary edits, so Zotero must be running and editing must be enabled.
 
 | Platform          | Undo        | Redo                       |
 | ----------------- | ----------- | -------------------------- |
@@ -214,7 +245,9 @@ The command palette carries <Command inline name={m.command_undo_annotation_chan
 
 ### What counts as one step
 
-Each creation, deletion, color change, and drag is one step. One ink stroke is one step, even where ZotLit saved a long stroke as more than one annotation.
+Each creation, deletion, color change, and drag is one step. A deletion or color change on several selected cards is also one step. One ink stroke is one step, even where ZotLit saved a long stroke as more than one annotation.
+
+Each save of tags is one step. Undo removes the tags that the save added and restores the tags that it removed. Tags that changed in Zotero since then stay as they are. One quoted-text editing session is also one step.
 
 The comment text you save on one annotation is also one step, however many times it saved while you typed, and undo takes it back to the comment you started from. A change to anything else ends that step, and so does a change to that comment in Zotero, so the next comment you type on the same annotation starts a new one. A comment you leave as you found it records no step.
 

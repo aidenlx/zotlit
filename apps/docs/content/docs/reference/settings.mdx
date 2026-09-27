@@ -35,13 +35,9 @@ Three of these rows are bindings: the two note folders and the citation and refe
 
 A vault whose 2.1 template files still wait for conversion keeps one reminder at the top of the page. The row is <UiLabel name={m.welcome_template_conversion_title()} /> and its one button is <UiLabel name={m.settings_template_conversion_reminder_action()} />, which opens the conversion in the Welcome view. Its description reads:
 
-> <UiLabel
->   name={m.welcome_template_conversion_body({
->     path: "templates/zotlit-profile.default.md",
->   })}
-> />
+> <UiLabel name={m.settings_template_conversion_reminder_desc()} />
 
-The path is `zotlit-profile.default.md` inside the folder set by <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />. See [Migrate from 2.1 templates](/docs/how-to/migrate-from-2.1-templates).
+See [Migrate from 2.1 templates](/docs/how-to/migrate-from-2.1-templates).
 
 ### Literature note folder [#literature-note-folder]
 
@@ -402,14 +398,15 @@ Open this page from <SettingsPath page={m.settings_page_zotero()} />. It holds t
 
 ### Connection [#connection]
 
-| Label                                                | Key                   | Control                                                     | Default                                           | Storage    |
-| ---------------------------------------------------- | --------------------- | ----------------------------------------------------------- | ------------------------------------------------- | ---------- |
-| <UiLabel name={m.settings_db_companion_name()} />    | None                  | <UiLabel name={m.settings_db_companion_install()} /> action | Not installed                                     | None       |
-| <UiLabel name={m.settings_db_stale_help_name()} />   | None                  | <UiLabel name={m.settings_db_stale_help_action()} /> action | None                                              | None       |
-| <UiLabel name={m.settings_db_profile_dir_name()} />  | (device-local)        | Profile picker                                              | <UiLabel name={m.settings_db_profile_auto()} />   | Per device |
-| <UiLabel name={m.settings_db_file_name()} />         | (read-only)           | Displays resolved `zotero.sqlite` path                      | None                                              | None       |
-| <UiLabel name={m.settings_db_read_mode_name()} />    | `zotero.read-mode`    | Dropdown                                                    | <UiLabel name={m.settings_db_read_mode_auto()} /> | Synced     |
-| <UiLabel name={m.settings_db_auto_refresh_name()} /> | `zotero.auto-refresh` | Toggle                                                      | On                                                | Synced     |
+| Label                                                | Key                   | Control                                                                                                                                                                        | Default                                           | Storage    |
+| ---------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- | ---------- |
+| <UiLabel name={m.settings_zotero_editing_name()} />  | None                  | <UiLabel name={m.settings_zotero_editing_enable()} />, <UiLabel name={m.settings_zotero_editing_check()} />, and <UiLabel name={m.settings_zotero_editing_forget()} /> actions | Not allowed                                       | Per device |
+| <UiLabel name={m.settings_db_companion_name()} />    | None                  | <UiLabel name={m.settings_db_companion_install()} /> action                                                                                                                    | Not installed                                     | None       |
+| <UiLabel name={m.settings_db_stale_help_name()} />   | None                  | <UiLabel name={m.settings_db_stale_help_action()} /> action                                                                                                                    | None                                              | None       |
+| <UiLabel name={m.settings_db_profile_dir_name()} />  | (device-local)        | Profile picker                                                                                                                                                                 | <UiLabel name={m.settings_db_profile_auto()} />   | Per device |
+| <UiLabel name={m.settings_db_file_name()} />         | (read-only)           | Displays resolved `zotero.sqlite` path                                                                                                                                         | None                                              | None       |
+| <UiLabel name={m.settings_db_read_mode_name()} />    | `zotero.read-mode`    | Dropdown                                                                                                                                                                       | <UiLabel name={m.settings_db_read_mode_auto()} /> | Synced     |
+| <UiLabel name={m.settings_db_auto_refresh_name()} /> | `zotero.auto-refresh` | Toggle                                                                                                                                                                         | On                                                | Synced     |
 
 <UiLabel name={m.settings_db_read_mode_name()} /> options:
 
@@ -419,6 +416,27 @@ Open this page from <SettingsPath page={m.settings_page_zotero()} />. It holds t
 | <UiLabel name={m.settings_db_read_mode_reflink()} />   | Fast, lightweight snapshot. What <UiLabel name={m.settings_db_read_mode_auto()} /> uses on macOS and Linux filesystems that support cloning.                                           |
 | <UiLabel name={m.settings_db_read_mode_copy()} />      | Byte-for-byte copy of the database file. Works on any filesystem but slower and uses more disk space. <UiLabel name={m.settings_db_read_mode_auto()} /> does not select this mode.     |
 | <UiLabel name={m.settings_db_read_mode_immutable()} /> | Reads the database file directly. What <UiLabel name={m.settings_db_read_mode_auto()} /> falls back to when cloning is unavailable. Recent edits in Zotero may not appear immediately. |
+
+#### Zotero editing [#zotero-editing]
+
+<UiLabel name={m.settings_zotero_editing_name()} /> shows whether ZotLit can
+change annotations in Zotero. Reading annotations needs no permission. Editing
+needs four things:
+
+- Zotero 10 or later.
+- Zotero running on the same computer.
+- In Zotero, **Allow other applications on this computer to communicate with Zotero** turned on, under Settings → Advanced.
+- Your permission. Select <UiLabel name={m.settings_zotero_editing_enable()} />, and when Zotero asks, choose **Always Allow**. **Allow** alone leaves editing off.
+
+The row shows only the actions that apply at the moment:
+
+| Action                                                | Shown                                                      | Effect                                                                  |
+| ----------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------- |
+| <UiLabel name={m.settings_zotero_editing_enable()} /> | While ZotLit needs your permission                         | Asks Zotero for permission to edit.                                     |
+| <UiLabel name={m.settings_zotero_editing_check()} />  | While ZotLit cannot reach Zotero or cannot edit through it | Checks the connection to Zotero again and shows the result in a notice. |
+| <UiLabel name={m.settings_zotero_editing_forget()} /> | While this device has a saved permission                   | Removes the saved permission. Editing stops until you allow it again.   |
+
+ZotLit saves the permission for this vault on this device only, in Obsidian's Keychain. Another computer that shares the vault asks for its own permission. See [Edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations).
 
 ### Libraries [#libraries]
 
@@ -517,6 +535,27 @@ The sub-page's first row is <UiLabel name={m.settings_attachment_approved_policy
   and never sync through the vault. Approving a folder on one computer grants
   nothing on another computer, and nothing in another vault.
 </Callout>
+
+## Reader [#reader]
+
+Open this page from <SettingsPath page={m.settings_page_reader()} />. It controls what ZotLit does when it opens a PDF in Obsidian's reader.
+
+| Label                                                        | Key                       | Control | Default | Dependency | Storage |
+| ------------------------------------------------------------ | ------------------------- | ------- | ------- | ---------- | ------- |
+| <UiLabel name={m.settings_reader_focus_annot_view_name()} /> | `reader.focus-annot-view` | Toggle  | On      | None       | Synced  |
+| <UiLabel name={m.settings_reader_open_file_links_name()} />  | `reader.open-file-links`  | Toggle  | On      | None       | Synced  |
+
+<UiLabel name={m.settings_reader_focus_annot_view_name()} /> opens the
+annotation view in the sidebar each time ZotLit opens a PDF. Turn it off to keep
+the sidebar as it is.
+
+<UiLabel name={m.settings_reader_open_file_links_name()} /> opens a file link in
+a note in Obsidian's PDF viewer when the link points to a PDF in your Zotero
+library. Every other file link opens in your system app. A link you right-click
+and send to your system app also opens there. Turn it off to open all file links
+in your system app.
+
+See [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian).
 
 ## Advanced [#advanced]
 
