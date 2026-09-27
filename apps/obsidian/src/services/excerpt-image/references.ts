@@ -4,6 +4,8 @@ import { regex } from "arkregex";
 import { parseLinktext } from "obsidian";
 import type { App, TFile } from "obsidian";
 
+import { readLiveText } from "@/lib/live-text";
+
 const markdown = parser.configure({
   defineNodes: ["WikiLink"],
   parseInline: [
@@ -47,7 +49,7 @@ export async function referencedExcerptPaths(
   app: App,
   file: TFile,
 ): Promise<string[]> {
-  const content = await app.vault.read(file);
+  const content = await readLiveText(app, file);
   const definitions = new Map<string, string>();
   const targets: string[] = [];
   const labels: string[] = [];

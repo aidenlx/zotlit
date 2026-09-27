@@ -8,7 +8,7 @@ import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { RenderedCitation } from "@/services/pandoc/engine";
 import { SettingsService } from "@/services/settings/service";
 import { TemplateService } from "@/services/template/service";
-import { MockVault, PluginStub } from "@/lib/__fixtures__/obsidian-host";
+import { createObsidianHost, PluginStub } from "@/lib/__fixtures__/obsidian-host";
 import type { NativeRenderDeps } from "@/views/note-preview/render";
 
 export const PROFILE_SOURCE = `---
@@ -69,7 +69,8 @@ export async function createRenderFixture(options: { existing?: string; javascri
     insert into itemAnnotations (itemID, parentItemID, type, authorName, text, comment, color, pageLabel, sortIndex, position, isExternal)
       values (3, 2, 1, null, 'Use readable figures.', null, '#ffd400', '2', '00000|000001|00000', '{"pageIndex":1,"rects":[]}', 0);
   `);
-  const vault = new MockVault();
+  const host = createObsidianHost();
+  const { vault } = host;
   const file = options.existing === undefined ? null : vault.addFile("notes/paper.md", options.existing);
   // Registered before `TemplateService` starts, so its initial folder scan
   // discovers the Shared Partial the way a saved vault would.
@@ -77,9 +78,9 @@ export async function createRenderFixture(options: { existing?: string; javascri
     vault.addFile(`templates/zotlit-partial.${name}.md`, source);
   const memory = new Map<string, unknown>(options.javascript ? [["zotlit-javascript-templates", "1"]] : []);
   const app = {
-    vault: Object.assign(vault, { read: vault.cachedRead }),
+    vault,
     fileManager: { getAvailablePathForAttachment: async () => "notes/preview.png", generateMarkdownLink: (target: { path: string }) => `[[${target.path}]]` },
-    workspace: { updateOptions: vi.fn() },
+    workspace: host.workspace,
     metadataCache: {
       getFirstLinkpathDest: (path: string) => path === "notes/paper.md" ? file : null,
       getFileCache: () => ({ frontmatter: { "zotero-key": "MAIN2345" } }),
@@ -117,5 +118,5 @@ export async function createRenderFixture(options: { existing?: string; javascri
   };
   const writes = { create: vi.spyOn(vault, "create"), process: vi.spyOn(vault, "process"), modify: vi.spyOn(vault, "modifyFile") };
   const snapshot = exportItemSnapshot(client, { key: "MAIN2345", library: { type: "personal" } }, { provenance: { kind: "connected", installationId: "fixture", vault: "preview" } });
-  return { deps, snapshot, vault, renderCitations, writes, async [Symbol.asyncDispose]() { await templates[Symbol.asyncDispose](); await settings[Symbol.asyncDispose](); sqlite.close(); } };
+  return { deps, snapshot, host, vault, renderCitations, writes, async [Symbol.asyncDispose]() { await templates[Symbol.asyncDispose](); await settings[Symbol.asyncDispose](); sqlite.close(); } };
 }

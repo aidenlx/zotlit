@@ -290,6 +290,21 @@ frontmatter:
       expect(write).not.toHaveBeenCalled();
   });
 
+  it("updates an open note's unsaved text, as the real update does", async () => {
+    await using fixture = await createRenderFixture({ existing: SAVED_NOTE });
+    fixture.host
+      .openInEditor(fixture.host.file("notes/paper.md"))
+      .edit(
+        SAVED_NOTE.replace("Personal introduction.", "Typed introduction."),
+      );
+    const result = await renderNativeProfile(fixture.deps, {
+      source: PROFILE_SOURCE,
+      snapshot: fixture.snapshot,
+      mode: "update",
+    });
+    expect(result.creationBody).toContain("Typed introduction.");
+  });
+
   it("uses the synthesized form when no Literature Note exists and keeps a real note with no region", async () => {
     await using fixture = await createRenderFixture();
     const result = await renderNativeProfile(fixture.deps, {

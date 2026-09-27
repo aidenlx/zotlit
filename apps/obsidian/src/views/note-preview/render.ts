@@ -38,6 +38,7 @@ import { annotationCitation as renderAnnotationCitation } from "@/lib/annotation
 import { FIELD_DOCUMENT_LANGUAGE } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { isLanguageTag } from "@/lib/language-tag";
+import { readLiveText } from "@/lib/live-text";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type { DatabaseService } from "@/services/database/service";
@@ -487,7 +488,7 @@ export async function renderNativeProfile(
     const file = sourcePath ? deps.app.vault.getFileByPath(sourcePath) : null;
     const original =
       request.mode === "update" && file
-        ? await deps.app.vault.read(file)
+        ? await readLiveText(deps.app, file)
         : null;
     let frontmatter: Record<string, unknown>;
     let body: string;

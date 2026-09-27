@@ -171,8 +171,9 @@ async function harness(
     vault: {
       getName: () => VAULT_NAME,
       getFileByPath: fileAt,
-      read: async () => content,
+      cachedRead: async () => content,
     },
+    workspace: { iterateAllLeaves: () => {} },
     metadataCache: {
       getFileCache: () => ({
         [options.reference === "link" ? "links" : "embeds"]: options.immutable
