@@ -1587,6 +1587,7 @@
   "workbench_connection_failed": "Could not connect: {message}. Open Obsidian with ZotLit enabled, then try again.",
   "workbench_connection_disconnected_notice": "Connection lost. Keep editing here, reconnect, or download your draft.",
   "workbench_connection_disconnect_complete": "Disconnected. Open the template workbench from ZotLit in Obsidian to connect again, or download your draft.",
+  "workbench_item_search_failed": "Zotero search failed. Try again.",
   "workbench_choose_item": "Choose item",
   "workbench_choose_preview_item": "Choose item to preview",
   "workbench_choose_match_item": "Choose item to check",

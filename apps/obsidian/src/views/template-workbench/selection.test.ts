@@ -1,11 +1,67 @@
+// @vitest-environment happy-dom
+import { SuggestModal } from "obsidian";
 import type { App, ItemView, WorkspaceLeaf } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { makeItem } from "@zotlit/item-lookup/fixtures";
+import type { WorkbenchSuggesterOption } from "@zotlit/workbench/ui";
+
+import type { ItemSearchDeps } from "@/services/item-lookup/search-modal";
+
+import { createTemplateWorkbenchHost } from "./host";
 import {
   publishWorkbenchSelection,
   subscribeWorkbenchSelection,
+  chooseWorkbenchItem,
 } from "./selection";
 import type { WorkbenchSelectionEvent } from "./selection";
+
+it("searches Zotero from the first item chooser and selects a matching paper", async () => {
+  const item = makeItem({
+    key: "ROUGIER1",
+    title: "Ten Simple Rules for Better Figures",
+  });
+  const search = vi.fn(async (query: string) =>
+    query ? [{ item, score: 1, matches: [], library: null }] : [],
+  );
+  const app = {} as App;
+  const deps = {
+    app,
+    lookup: { search },
+    settings: { current: {} },
+  } as unknown as ItemSearchDeps;
+  using open = vi.spyOn(SuggestModal.prototype, "open");
+  using host = createTemplateWorkbenchHost(app, {
+    render: async () => {
+      throw new Error("unused");
+    },
+    matchData: {
+      tags: async () => [],
+      collections: async () => [],
+      libraries: async () => [],
+    },
+    insertTarget: () => null,
+  });
+  const chosen = chooseWorkbenchItem(host, deps);
+  await vi.waitFor(() => expect(open).toHaveBeenCalledOnce());
+  const modal = open.mock.contexts[0] as SuggestModal<WorkbenchSuggesterOption>;
+  try {
+    const rows = await modal.getSuggestions("rougier");
+    expect(rows).toContainEqual(
+      expect.objectContaining({
+        id: item.indexedKey,
+        label: "Ten Simple Rules for Better Figures",
+      }),
+    );
+    modal.selectSuggestion(
+      rows.find((row) => row.id === item.indexedKey)!,
+      new KeyboardEvent("keydown", { key: "Enter" }),
+    );
+    await expect(chosen).resolves.toMatchObject({ id: item.indexedKey });
+  } finally {
+    modal.close();
+  }
+});
 
 function workspace() {
   const listeners = new Set<(event: WorkbenchSelectionEvent) => void>();
