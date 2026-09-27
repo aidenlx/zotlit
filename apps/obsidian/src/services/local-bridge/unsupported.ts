@@ -3,7 +3,7 @@
 // asks before it opens a browser, and the Save boundary asks again before it
 // writes, so both readings come from this one check.
 
-import { gte } from "semver";
+import gte from "semver/functions/gte";
 
 import { CONTRACT_VERSION } from "@zotlit/db";
 import { parseLiteratureNoteTemplate } from "@zotlit/templates/facade";

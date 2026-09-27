@@ -88,6 +88,7 @@ export default defineConfig(({ mode }) => {
       "process.env.NODE_ENV": JSON.stringify(mode),
     },
     build: {
+      reportCompressedSize: false,
       lib: {
         entry: resolve(import.meta.dirname, "src/zt-main.ts"),
         formats: ["cjs"],
