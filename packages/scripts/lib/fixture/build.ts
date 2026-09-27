@@ -40,6 +40,8 @@ import {
   createStressItems,
   DEFAULT_SCOPE_CASE,
   DEFAULT_VAULT_CASE,
+  DEMO_ATTACHMENTS,
+  DEMO_ITEMS,
   EXCERPT_RENDERING_PDFS,
   EXCERPT_RENDERING_VAULT_DIR,
   findScopeCase,
@@ -81,6 +83,10 @@ export {
   createStressItems,
   DEFAULT_SCOPE_CASE,
   DEFAULT_VAULT_CASE,
+  DEMO_ANNOTATIONS,
+  DEMO_ATTACHMENTS,
+  DEMO_ITEMS,
+  DEMO_PAPERS_DIR,
   EXCERPT_RENDERING_CASES,
   EXCERPT_RENDERING_PDFS,
   EXCERPT_RENDERING_VAULT_DIR,
@@ -215,12 +221,13 @@ export async function buildFixture(
   // References Style choices from the moment it exists, Zotero running or not.
   await writePristineStyles(layout.dataDir);
   await writeInstalledStyles(layout);
-  await writeAttachmentFiles(layout);
+  const demo = options.vaultCase === "demo";
+  await writeAttachmentFiles(layout, demo);
   await writeAnnotationCacheFiles(layout);
   await writePrefs(layout, options);
   await writeLocalApiAuthorizations(layout, options);
   await writeVault(layout, options);
-  await writeExcerptAcceptanceFiles(layout);
+  if (!demo) await writeExcerptAcceptanceFiles(layout);
 }
 
 /** Rewrite only the saved Library Scope of an already-built vault. */
@@ -250,6 +257,8 @@ const ATTACHMENT_LINK_MODES = {
 } as const;
 
 const VAULT_PAGES_DIR = join(import.meta.dirname, "vault-pages");
+/** The Demo Vault Case's notes, each one ZotLit wrote in a real session. */
+const DEMO_PAGES_DIR = join(import.meta.dirname, "demo-pages");
 const VAULT_PLUGINS_DIR = join(import.meta.dirname, "vault-plugins");
 
 function attachmentDatabasePath(
@@ -294,9 +303,20 @@ function attachmentFilePath(
   }
 }
 
-async function writeAttachmentFiles(layout: FixtureLayout): Promise<void> {
+async function writeAttachmentFiles(
+  layout: FixtureLayout,
+  demo: boolean,
+): Promise<void> {
   for (const attachment of ATTACHMENTS) {
     if (attachment.sourceAsset === null) continue;
+    // A vault holds the linked PDFs of its own case: the demo vault the demo
+    // papers', every other vault the test Items'.
+    if (
+      attachment.linkMode === "linked_file" &&
+      attachment.fileRoot === "vault" &&
+      DEMO_ATTACHMENTS.includes(attachment) !== demo
+    )
+      continue;
     const destination = attachmentFilePath(attachment, layout)!;
     await mkdir(dirname(destination), { recursive: true });
     await cp(join(ASSET_DIR, attachment.sourceAsset), destination);
@@ -1049,15 +1069,21 @@ async function writeVault(
     return;
   }
 
-  // The v2.1 vault predates Profiles, so it seeds every note unstamped.
-  await writeVaultNotes(
-    layout,
-    options,
-    vaultCase.id === "upgrader" ? [] : LITERATURE_NOTE_PROFILES,
-  );
+  if (vaultCase.id === "demo") {
+    // The demo vault holds no template file, so its notes render through
+    // ZotLit's shipped templates and read the way a new user's do.
+    await cp(DEMO_PAGES_DIR, layout.vaultDir, { recursive: true });
+  } else {
+    // The v2.1 vault predates Profiles, so it seeds every note unstamped.
+    await writeVaultNotes(
+      layout,
+      options,
+      vaultCase.id === "upgrader" ? [] : LITERATURE_NOTE_PROFILES,
+    );
+  }
   if (vaultCase.id === "upgrader") {
     await writeLegacyTemplates(layout);
-  } else {
+  } else if (vaultCase.id !== "demo") {
     for (const document of LITERATURE_NOTE_DOCUMENTS) {
       await writeFile(
         join(layout.vaultDir, "templates", document.filename),
@@ -1149,9 +1175,12 @@ async function writeVaultNotes(
   );
 
   // Literature Notes for the My Library items give an update batch existing
-  // notes to act on and leave every other Fixture item as create work.
+  // notes to act on and leave every other Fixture item as create work. The
+  // demo papers' PDFs live only in the demo vault, so they get no note here.
   for (const item of ITEMS.filter(
-    (candidate) => candidate.libraryID === USER_LIBRARY_ID,
+    (candidate) =>
+      candidate.libraryID === USER_LIBRARY_ID &&
+      !DEMO_ITEMS.includes(candidate),
   )) {
     const profile = profiles.find(
       ({ id }) => id === item.literatureNoteProfile,
