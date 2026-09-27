@@ -319,6 +319,9 @@ importers:
       oxlint-tsgolint:
         specifier: ^0.23.0
         version: 0.23.0
+      sharp:
+        specifier: ^0.35.2
+        version: 0.35.2
       turbo:
         specifier: ^2.10.8
         version: 2.10.8

@@ -44,6 +44,7 @@
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
     "oxlint-tsgolint": "^0.23.0",
+    "sharp": "^0.35.2",
     "turbo": "^2.10.8",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "typescript-eslint": "^8.65.0"
