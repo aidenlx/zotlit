@@ -37,7 +37,7 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 | `pnpm fixture`                    | Builds the Fixture — the disposable multi-Library test environment — under `.scratch/acceptance-fixture/`. See the [Fixture guide](docs/fixture.md); run `pnpm fixture --help` for live Fixture Spec details. |
 | `pnpm e2e`                        | Runs the End-to-end Run suite (`packages/e2e`) against a running desktop Obsidian; skips cleanly (not part of `pnpm test`/CI) when none is reachable. |
 
-**The End-to-end Run is the final gate, run once when the work is complete.** During development, iterate on typecheck and single test files, and prove a change end to end by walking it through the running app (`/obsidian-debug`); once that walkthrough passes, encode it as a test in `packages/e2e`, the repeatable artifact of that proof. A full pass takes over an hour.
+**The End-to-end Run is the final gate, run once when the work is complete.** During development, iterate on typecheck and single test files, and prove a change end to end by walking it through the running app (`/obsidian-debug`); once that walkthrough passes, encode it as a test in `packages/e2e`, the repeatable artifact of that proof. A full pass takes about 5 minutes on this machine with system sleep prevented.
 
 Linter/formatter are **oxlint + oxfmt**, not ESLint/Prettier. Configs live at `oxlint.config.ts` / `oxfmt.config.ts` at root and per-package, extending `@zotlit/config/oxlint` and `@zotlit/config/oxfmt`.
 
@@ -48,6 +48,14 @@ Scope a task to one package with a turbo filter so its deps still build first: `
 ## Truth-first
 
 Correctness before agreement. Treat every user claim as unverified until checked. Reserve "you're right" for verified claims; lead with the correction, not fake agreement. Hold a verified conclusion when pushed back — revise only on new evidence, and say what changed your mind.
+
+## First principles
+
+Start with the user's goal and necessary constraints. Separate these from assumptions in the current design, test assumptions that affect the solution, and derive the simplest approach that meets the requirements. Evaluate existing patterns by the problem they solve.
+
+## Target users
+
+ZotLit's primary users are non-technical academics: assume research expertise and little programming knowledge. Design around their research tasks, with familiar academic terms, useful defaults, and complete UI workflows for routine work. Explain choices in terms of research outcomes; introduce technical details when they help the user make a decision.
 
 ## Affirmative specs
 
@@ -61,37 +69,11 @@ Write reports to the user in ASD-STE100 Simplified Technical English.
 
 Every changed line traces to the user's request. Leave adjacent code, comments, and formatting as found. Remove only orphans YOUR changes created; mention pre-existing dead code, don't delete it.
 
-## Code standard
-
-Authoring conventions live in [`policies/`](policies/), one topic per file:
-
-- [simplicity](policies/simplicity.md) — KISS, minimum viable code
-- [deep modules](policies/pure-logic.md) — default to one cohesive module; split only with concrete payoff
-- [comments](policies/comments.md) — JSDoc conventions, module-level comments
-- [function-parameters](policies/function-parameters.md) — max 3 positional, options object for the rest
-- [testing strategy](policies/testing-strategy.md) — E2E-first; failure-mode-first for isolation tests; regression tests earn their place
-- [tautological tests](policies/tautological-tests.md) — independent oracles, change detectors, consumer boundaries, and bulk assertions
-- [test timing](policies/test-timing.md) — completion signals, clocks, polling, and external events
-- [test isolation](policies/test-isolation.md) — fixture state, resource allocation, lifetime, setup cost, and order dependence
-- [ui-testing](policies/ui-testing.md) — test decisions and wiring, not drawing; visual correctness is proved in the running app
-- [resource-disposal](policies/resource-disposal.md) — scope-bound `using`, safe-constructor, destructuring gotcha
-- [regex](policies/regex.md) — arkregex for typed captures; `/arkregex` skill
-- [event-naming](policies/event-naming.md) — nanoevents event names are dash-case, not camelCase
-- [package and workspace roots](policies/package-roots.md) — package-root paths and pnpm workspace discovery
-- [logging](policies/logging.md) — LogTape, structured fields
-- [observability](policies/observability.md) — lean `info`; permanent `debug` / `trace` at decision points
-- [temporal-dates](policies/temporal-dates.md) — Temporal API, not Date/date-fns/dayjs
-- [vocabulary](policies/vocabulary.md) — canonical terms for Zotero keys, citation keys, and `citekey`
-- [CLI + skill pair](policies/cli-skill-pair.md) — tooling facts in the CLI; process, policy, and tone in the skill
-- [CLI help](policies/cli-help.md) — help and reference generated from handler code; yargs for Node.js, guide commands for Obsidian
-- [grouping](policies/grouping.md) — `Map.groupBy` / `Object.groupBy` for keyed grouping
-- [host-state](policies/host-state.md) — read host state on demand through a seam helper; a set filled by event replay is a mirror
-
-### i18n
+## i18n
 
 User-facing strings are sourced from `messages/{locale}.json` and consumed through the generated Language Pack facade; ZotLit Companion copy lives in the same catalogs under the `zotero` object and compiles to Fluent at Companion build time. Run `/inlang-i18n` for message-format and runtime mechanics. Wording follows Obsidian's developer-guideline style (sentence case, terminology, phrasing) — run `/i18n-ui-text` before authoring or editing a string.
 
-User- and agent-facing copy has three sources: MDX under `apps/docs/content/`, i18n messages under `messages/` (Obsidian, Companion, and docs alike), and the Template Workbench CLI guide at `apps/obsidian/src/services/template-workbench/guide.ts`. Use the canonical terms in [policies/vocabulary.md](policies/vocabulary.md).
+User- and agent-facing copy has three sources: MDX under `apps/docs/content/`, i18n messages under `messages/` (Obsidian, Companion, and docs alike), and the Template Workbench CLI guide at `apps/obsidian/src/services/template-workbench/guide.ts`.
 
 ## Conventions worth knowing
 
@@ -100,7 +82,6 @@ User- and agent-facing copy has three sources: MDX under `apps/docs/content/`, i
 - `minimumReleaseAge` in `pnpm-workspace.yaml` is intentional, a supply-chain hardening measure.
 - `__DEV__` is replaced at build time (`true` in dev mode, `false` in production).
 - Use `pnpm exec` instead of `npx`.
-- ECMAScript private fields and methods (`#field`, `#method`) for internal state. Avoid TypeScript `private` for service internals.
 - Brand identity — logo geometry, palette, and wordmark (Archivo SemiBold) — is specified in [`docs/brand.md`](docs/brand.md); canonical SVGs live in `assets/logo/`. Consume those assets and follow that spec rather than redrawing the mark.
 
 ## Working files
