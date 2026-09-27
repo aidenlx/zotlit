@@ -4133,6 +4133,92 @@ describe("updateNote", () => {
     expect(harness.content()).toBe(formatManagedRegion("OLD"));
   });
 
+  describe("a Profile stamp the metadata cache has not caught up with", () => {
+    const books = "Bk3Qn7XvT2Lp" as ProfileId;
+    const papers = "Rz9Wm4YfH6Kd" as ProfileId;
+
+    /** A note stamped with Books, and a Profile reader over the host's cache. */
+    function stampedHarness() {
+      const harness = makeUpdateHarness({
+        content: formatManagedRegion("OLD"),
+        frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: `Books (${books})` },
+      });
+      harness.deps.profile = profileReader(
+        {
+          ...makeSettings().current!,
+          profiles: [
+            { id: books, label: "Books" },
+            { id: papers, label: "Papers" },
+          ],
+        },
+        harness.host.metadataCache,
+      );
+      return harness;
+    }
+
+    it("refuses an open note whose unsaved text switched its Profile", async () => {
+      stubIndexedKeyUpdate(updateContext());
+      const harness = stampedHarness();
+      const file = harness.file("Literature/Root.md");
+      const view = harness.host.openInEditor(file);
+      view.edit(
+        view.getViewData().replace(`Books (${books})`, `Papers (${papers})`),
+      );
+      const edited = view.getViewData();
+      const save = vi.spyOn(view, "save");
+
+      const result = await createNoteFeature(harness.deps).updateNote(file, {
+        indexedKey: "ABC12345",
+      });
+
+      expect(result.diagnostic?.code).toBe("literature-note-profile-changed");
+      expect(view.getViewData()).toBe(edited);
+      expect(save).not.toHaveBeenCalled();
+      expect(harness.content()).toBe(formatManagedRegion("OLD"));
+    });
+
+    it("refuses a note whose Profile switch the cache has not parsed", async () => {
+      stubIndexedKeyUpdate(updateContext());
+      const harness = stampedHarness();
+      const file = harness.file("Literature/Root.md");
+      harness.host.metadataCache.hold();
+      harness.host.vault.modifyFile(
+        file.path,
+        harness.host
+          .text(file.path)!
+          .replace(`Books (${books})`, `Papers (${papers})`),
+      );
+      const switched = harness.host.text(file.path);
+
+      const result = await createNoteFeature(harness.deps).updateNote(file, {
+        indexedKey: "ABC12345",
+      });
+
+      expect(result.diagnostic?.code).toBe("literature-note-profile-changed");
+      expect(harness.host.text(file.path)).toBe(switched);
+    });
+
+    it("updates a note whose stamp changed only its Profile hint", async () => {
+      stubIndexedKeyUpdate(updateContext());
+      const harness = stampedHarness();
+      const file = harness.file("Literature/Root.md");
+      harness.host
+        .openInEditor(file)
+        .edit(
+          harness.host
+            .text(file.path)!
+            .replace(`Books (${books})`, `My books (${books})`),
+        );
+
+      const result = await createNoteFeature(harness.deps).updateNote(file, {
+        indexedKey: "ABC12345",
+      });
+
+      expect(result.diagnostic).toBeUndefined();
+      expect(harness.content()).toBe(formatManagedRegion("NEW BODY"));
+    });
+  });
+
   it("re-evaluates managed frontmatter fields and preserves unmanaged user keys", async () => {
     const context = updateContext();
     stubIndexedKeyUpdate(context);
