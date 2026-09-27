@@ -1,4 +1,5 @@
 import { basename, dirname, join } from "node:path/posix";
+import { getFrontMatterInfo, parseYaml, stringifyYaml } from "obsidian";
 import type { TFile } from "obsidian";
 
 import {
@@ -31,13 +32,17 @@ import {
   buildAnnotationResolvers,
   renderAnnotations,
 } from "@/lib/annotation-render";
-import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
+import {
+  FIELD_LITERATURE_NOTE_PROFILE,
+  FIELD_ZOTERO_KEY,
+} from "@/lib/constants";
 import {
   ensureParentFolder,
   joinFolderPath,
   normalizeFolderPath,
 } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
+import { processLiveText } from "@/lib/live-text";
 import { getLogger } from "@/lib/log";
 import {
   DEFAULT_PROFILE,
@@ -76,6 +81,7 @@ import { ProfileAnnotationError } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 
 import { applyComposedFrontmatter, composeLiteratureNote } from "./compose";
+import type { ComposeFrontmatterInput } from "./compose";
 import {
   buildNoteResolvers,
   fetchItemCollections,
@@ -93,10 +99,6 @@ import type { AnnotationInsertOptions } from "./insert-annotation";
 
 const logger = getLogger("note-feature");
 
-// Tolerates CRLF: Obsidian's processFrontMatter preserves the note's
-// original line-ending bytes in the `---` delimiters, so a CRLF-authored
-// note must still match here or its frontmatter prefix is dropped.
-const FRONTMATTER_BLOCK = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n+|$)/;
 const MAX_UNINDEXED_CREATES = 256;
 
 export interface UpdateResult {
@@ -166,12 +168,21 @@ export interface ManagedFrontmatterRefusalDiagnostic {
   indexedKey?: string;
 }
 
+/** The note stopped carrying the Indexed Key the update rendered for. */
+export interface NoteKeyChangedDiagnostic {
+  code: "literature-note-key-changed";
+  hint: string;
+  indexedKey: string;
+  path: string;
+}
+
 export type NoteOperationDiagnostic =
   | UnknownProfileDiagnostic
   | NoteProfileConflictDiagnostic
   | MissingLiteratureNoteTemplateDiagnostic
   | LiteratureNoteTemplateConversionRequiredDiagnostic
-  | ManagedFrontmatterRefusalDiagnostic;
+  | ManagedFrontmatterRefusalDiagnostic
+  | NoteKeyChangedDiagnostic;
 
 export type CreateNoteDiagnostic =
   | ExistingNoteDiagnostic
@@ -376,7 +387,12 @@ export interface NoteFeature {
       indexedKey: string;
       scope?: UpdateScope;
       profile?: ProfileSelector;
-      /** Recheck a caller-owned editing session at each note write boundary. */
+      /**
+       * Recheck a caller-owned editing session just before the note's one
+       * write; throwing leaves the note untouched. The write itself checks the
+       * note's Zotero key and refuses a note that no longer carries
+       * `indexedKey` with `literature-note-key-changed`.
+       */
       beforeWrite?: () => void;
     },
   ): Promise<UpdateResult>;
@@ -1436,14 +1452,14 @@ async function writeNoteUpdate(
   });
 }
 
-/** Compose a managed update from its steps: prepare the frontmatter, then for
- *  the `full` scope replace the managed body region, then commit the prepared
- *  frontmatter. A document field refusal returns before either write, and the
- *  body render — where a call to a Shared Partial the vault holds no document
- *  for raises — runs while the note is still untouched, so a refusal leaves
- *  both the Properties block and the body as authored. Shared by
- *  {@link updateNote} and {@link writeNoteUpdate}; the caller supplies the
- *  already-built context and its prepared `attachmentImport`. */
+/** Compose a managed update: prepare the frontmatter, render the managed body
+ *  region for the `full` scope, then write both in one {@link rewriteNote}. A
+ *  document field refusal returns before the write, and the body render —
+ *  where a call to a Shared Partial the vault holds no document for raises —
+ *  runs while the note is still untouched, so a refusal leaves both the
+ *  Properties block and the body as authored. Shared by {@link updateNote} and
+ *  {@link writeNoteUpdate}; the caller supplies the already-built context and
+ *  its prepared `attachmentImport`. */
 async function applyManagedUpdate(
   ctx: OpsContext,
   file: TFile,
@@ -1470,87 +1486,33 @@ async function applyManagedUpdate(
   if ("diagnostic" in prepared)
     return { ...NO_BODY_UPDATE, diagnostic: prepared.diagnostic };
   await input.excerptImages?.prepare();
-  const result =
-    scope === "full"
-      ? document
-        ? await replaceDocumentManagedBody(ctx, file, {
-            context,
-            itemKey,
-            document,
-            beforeWrite,
-          })
-        : await replaceManagedBody(ctx, file, { context, itemKey, beforeWrite })
-      : NO_BODY_UPDATE;
-  await commitFrontmatter(ctx, file, {
+  const noManagedBlock =
+    scope === "full" && document !== undefined && !document.hasManagedBlock;
+  // The render waits until the note's live text has a region to receive it.
+  const renderRegion =
+    scope === "full" && !noManagedBlock
+      ? () =>
+          document
+            ? document.renderForUpdate(context)!
+            : ctx.template.render("content", context)
+      : undefined;
+  let replaced = false;
+  let duplicateCount = 0;
+  const refused = await rewriteNote(ctx, file, {
     context,
     itemKey,
     profile,
     prepared,
     beforeWrite,
+    body: (body) => {
+      if (renderRegion === undefined) return body;
+      const result = replaceManagedRegion(body, renderRegion);
+      replaced = result.replaced;
+      duplicateCount = result.duplicateCount;
+      return result.content;
+    },
   });
-
-  await flushNoteImports(ctx, input);
-
-  logger.debug("Updated literature note", {
-    path: file.path,
-    itemKey,
-    scope,
-    bodyUpdated: result.bodyUpdated,
-  });
-  return result;
-}
-
-async function replaceDocumentManagedBody(
-  ctx: NoteFeatureDeps,
-  file: TFile,
-  input: {
-    context: NoteTemplateContext;
-    itemKey: string;
-    document: ResolvedLiteratureNoteTemplate;
-    beforeWrite?: () => void;
-  },
-): Promise<UpdateResult> {
-  const { context, itemKey, document } = input;
-  if (!document.hasManagedBlock) {
-    return { ...NO_BODY_UPDATE, noManagedBlock: true };
-  }
-  return replaceManagedBody(ctx, file, {
-    context,
-    itemKey,
-    renderRegion: () => document.renderForUpdate(context)!,
-    beforeWrite: input.beforeWrite,
-  });
-}
-
-/** Replace the managed body region in place, re-rendering the `content`
- *  template. The engine's transformRender wraps `content` in the managed-region
- *  markers, so the render is already wrapped. */
-async function replaceManagedBody(
-  ctx: NoteFeatureDeps,
-  file: TFile,
-  input: {
-    context: NoteTemplateContext;
-    itemKey: string;
-    renderRegion?: () => string;
-    beforeWrite?: () => void;
-  },
-): Promise<UpdateResult> {
-  const { context, itemKey, renderRegion } = input;
-  const original = await ctx.app.vault.read(file);
-  if (!replaceManagedRegion(original, () => "").replaced) return NO_BODY_UPDATE;
-  const region = renderRegion
-    ? renderRegion()
-    : ctx.template.render("content", context);
-  let replaced = false;
-  let duplicateCount = 0;
-  await ctx.app.vault.process(file, (content) => {
-    input.beforeWrite?.();
-    const result = replaceManagedRegion(content, () => region);
-    replaced = result.replaced;
-    duplicateCount = result.duplicateCount;
-    return result.content;
-  });
-
+  if (refused) return { ...NO_BODY_UPDATE, diagnostic: refused };
   if (duplicateCount > 0) {
     logger.warn("Literature note has duplicate managed regions", {
       path: file.path,
@@ -1558,7 +1520,20 @@ async function replaceManagedBody(
       count: duplicateCount + 1,
     });
   }
-  return { bodyUpdated: replaced, duplicateRegionCount: duplicateCount };
+
+  await flushNoteImports(ctx, input);
+
+  logger.debug("Updated literature note", {
+    path: file.path,
+    itemKey,
+    scope,
+    bodyUpdated: replaced,
+  });
+  return {
+    bodyUpdated: replaced,
+    duplicateRegionCount: duplicateCount,
+    ...(noManagedBlock && { noManagedBlock: true }),
+  };
 }
 
 /** What an overwrite writes, and the batch above it when there is one. */
@@ -1630,16 +1605,14 @@ async function overwriteNote(
   const body = document
     ? document.renderForCreate(context)
     : ctx.template.render("note", context);
-  await commitFrontmatter(ctx, file, {
+  const refused = await rewriteNote(ctx, file, {
     context,
     itemKey: indexedKey,
     profile,
     prepared,
+    body: () => body,
   });
-  await ctx.app.vault.process(file, (content) => {
-    const prefix = FRONTMATTER_BLOCK.exec(content)?.[0] ?? "";
-    return `${prefix}${body}`;
-  });
+  if (refused) return { ...NO_BODY_UPDATE, diagnostic: refused };
 
   await flushNoteImports(ctx, { attachmentImport, noteImport, excerptImages });
   logger.info("Overwrote literature note", {
@@ -1799,7 +1772,7 @@ function renderAnnotationCitation(
  * Assumes the caller has settled note-index and template readiness (and pinned
  * the client via `acquireRead`); {@link updateNote} and {@link overwriteNote} do
  * so before acquiring the lease. `template.ready` in particular gates
- * `commitFrontmatter`, which reads `template.frontmatterFields` — without it,
+ * {@link applyComposedFrontmatter}, which reads `template.frontmatterFields` — without it,
  * an early update could strip managed frontmatter to the still-empty compiled
  * fields.
  */
@@ -1857,24 +1830,49 @@ async function contextForIndexedKey(
   return { context, noteImport, excerptImages };
 }
 
-/** Write one already-prepared Managed Frontmatter patch into the note's
- *  Properties block. Kept apart from {@link prepareFrontmatter} so a caller
- *  runs every render that can raise before this, its first write. */
-async function commitFrontmatter(
+/**
+ * Rewrite a Literature Note's live text in one {@link processLiveText}: apply
+ * the prepared Managed Frontmatter with the splice `processFrontMatter`
+ * performs, and transform the body, so both land together or not at all. The
+ * note's Zotero key is read from the text this write replaces: the metadata
+ * cache lags behind a recent write to the note.
+ *
+ * @returns the refusal when the note no longer carries `itemKey`; the note is
+ *   left untouched then.
+ */
+async function rewriteNote(
   ctx: OpsContext,
   file: TFile,
-  input: {
-    context: NoteTemplateContext;
-    itemKey: string;
-    profile: ResolvedProfile;
-    prepared: PreparedManagedFrontmatter;
+  input: ComposeFrontmatterInput & {
+    /** The caller's own session check, run just before the write. */
     beforeWrite?: () => void;
+    body: (body: string) => string;
   },
-): Promise<void> {
-  await ctx.app.fileManager.processFrontMatter(file, (fm) => {
+): Promise<NoteKeyChangedDiagnostic | undefined> {
+  let keyChanged = false;
+  await processLiveText(ctx.app, file, (content) => {
+    const info = getFrontMatterInfo(content);
+    const fm = info.exists ? parseYaml(info.frontmatter) : undefined;
+    if (fm?.[FIELD_ZOTERO_KEY] !== input.itemKey) {
+      keyChanged = true;
+      return content;
+    }
     input.beforeWrite?.();
     applyComposedFrontmatter(ctx, fm, input);
+    return (
+      content.slice(0, info.from) +
+      stringifyYaml(fm) +
+      content.slice(info.to, info.contentStart) +
+      input.body(content.slice(info.contentStart))
+    );
   });
+  if (!keyChanged) return undefined;
+  return {
+    code: "literature-note-key-changed",
+    hint: "The note's Zotero key changed while the update ran. Run the update again from the note.",
+    indexedKey: input.itemKey,
+    path: file.path,
+  };
 }
 
 function prepareFrontmatter(input: {

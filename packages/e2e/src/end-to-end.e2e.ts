@@ -19,7 +19,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { createServer } from "node:net";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -1020,13 +1020,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         freshId,
-        `(function(){const view=${editor};const button=Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.template_workbench_update_this_note())});button.focus();return String(view.contentEl.ownerDocument.activeElement===button&&!button.disabled);})()`,
+        `(function(){const view=${editor};const button=Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.innerText.trim()===${JSON.stringify(m.template_workbench_update_this_note())});button.focus();return String(view.contentEl.ownerDocument.activeElement===button&&!button.disabled);})()`,
         { expected: "true" },
       ),
     ).toBe(true);
+    // The first click after an edit writes the Managed Frontmatter with the
+    // body: a managed Property removed now comes back with this one update.
     await obEval(
       freshId,
-      `(function(){const view=${editor};Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.template_workbench_update_this_note())}).click();return true;})()`,
+      `(async()=>{await app.fileManager.processFrontMatter(app.vault.getFileByPath(${JSON.stringify(note.path)}),fm=>{delete fm.collections});return true;})()`,
+    );
+    await obEval(
+      freshId,
+      `(function(){const view=${editor};Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.innerText.trim()===${JSON.stringify(m.template_workbench_update_this_note())}).click();return true;})()`,
     );
     expect(
       await obEvalUntil(freshId, `String(!(${editor}).updatingNote)`, {
@@ -1043,7 +1049,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           annotationKeys.length,
       ),
     ).toBe(true);
+    const updated = m.template_workbench_updated_note({
+      name: basename(note.path!, ".md"),
+    });
+    expect(
+      await obEvalUntil(
+        freshId,
+        `(function(){const view=${editor};return String([view.contentEl.ownerDocument,document].some(doc=>Array.from(doc.querySelectorAll('.notice')).some(notice=>notice.textContent.includes(${JSON.stringify(updated)}))));})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
     const after = await readFile(join(freshPath, note.path!), "utf-8");
+    expect(after.split("---")[1]).toMatch(/^collections:/m);
     expect(noteBody(after).replace(managedRegion(after), "")).toBe(
       noteBody(before).replace(managedRegion(before), ""),
     );

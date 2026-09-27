@@ -1,4 +1,10 @@
-import type { FileManager, MetadataCache, TFile, Vault } from "obsidian";
+import type {
+  FileManager,
+  MetadataCache,
+  TFile,
+  Vault,
+  Workspace,
+} from "obsidian";
 
 import { buildFilenameContext } from "@zotlit/db";
 import type {
@@ -46,18 +52,14 @@ const logger = getLogger("note-feature");
 interface NoteVaultApp {
   vault: Pick<
     Vault,
-    | "getAbstractFileByPath"
-    | "getRoot"
-    | "createFolder"
-    | "create"
-    | "process"
-    | "read"
+    "getAbstractFileByPath" | "getRoot" | "createFolder" | "create" | "process"
   >;
   fileManager: Pick<
     FileManager,
     "generateMarkdownLink" | "processFrontMatter" | "renameFile"
   >;
   metadataCache: Pick<MetadataCache, "getFileCache">;
+  workspace: Pick<Workspace, "iterateAllLeaves">;
 }
 
 /**

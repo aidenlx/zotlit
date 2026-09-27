@@ -392,14 +392,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     const origin = this.#originatingNote;
     const update = this.#deps.noteFeature;
     if (!origin || !update) return { outcome: "no-target" };
+    // Session state only: the note update checks the note's own Zotero key
+    // against the content its one write replaces.
     const available = () =>
       !this.#closed &&
       this.#originatingNote === origin &&
       this.file === origin.template &&
-      this.app.vault.getFileByPath(origin.file.path) === origin.file &&
-      itemKeyFromFrontmatter(
-        this.app.metadataCache.getFileCache(origin.file),
-      ) === origin.indexedKey;
+      this.app.vault.getFileByPath(origin.file.path) === origin.file;
     if (!available())
       return { outcome: "unavailable", name: origin.file.basename };
     try {
@@ -436,6 +435,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         profile: origin.profile,
         beforeWrite,
       });
+      // The note no longer belongs to the item this editor opened it for, so
+      // another update from here would be refused the same way.
+      if (result.diagnostic?.code === "literature-note-key-changed")
+        return { outcome: "unavailable", name: origin.file.basename };
       return {
         outcome: result.diagnostic ? "refused" : "updated",
         name: origin.file.basename,
