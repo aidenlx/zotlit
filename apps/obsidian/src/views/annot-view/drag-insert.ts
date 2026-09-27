@@ -1,5 +1,6 @@
 // Asynchronous annotation insertion for the menu action and ZotLit-owned drops.
 import { nanoid } from "nanoid";
+import { MarkdownView } from "obsidian";
 import type { App, Editor, MarkdownFileInfo } from "obsidian";
 import type { DragEvent } from "react";
 
@@ -95,13 +96,24 @@ async function prepareAndCommit(
   }
 }
 
+/** Sidebar focus leaves the most recently used note and its cursor in place. */
+function getInsertionEditor(app: App): MarkdownFileInfo | null {
+  if (app.workspace.activeEditor) return app.workspace.activeEditor;
+  const view = app.workspace.getMostRecentLeaf()?.view;
+  return view instanceof MarkdownView && view.getMode() === "source"
+    ? view
+    : null;
+}
+
 export function createInsertHandler(deps: AsyncInsertDeps) {
   let pending: InsertionTarget | null = null;
   const cancel = () => pending?.cancel();
-  const insert = async (annotation: AnnotationRecord): Promise<void> => {
+  const insertInto = async (
+    annotation: AnnotationRecord,
+    info: MarkdownFileInfo | null,
+  ): Promise<void> => {
     cancel();
     const { workspace } = deps.app;
-    const info = workspace.activeEditor;
     const editor = info?.editor;
     if (!info?.file || !editor) {
       deps.notify(m.annot_view_insert_no_note());
@@ -115,9 +127,10 @@ export function createInsertHandler(deps: AsyncInsertDeps) {
     using target = captureInsertion({
       editor,
       info,
-      isCurrent: () =>
-        workspace.activeEditor?.editor === editor &&
-        workspace.activeEditor.file === info.file,
+      isCurrent: () => {
+        const current = getInsertionEditor(deps.app);
+        return current?.editor === editor && current.file === info.file;
+      },
     });
     using cleanup = new DisposableStack();
     cleanup.defer(() => {
@@ -135,7 +148,26 @@ export function createInsertHandler(deps: AsyncInsertDeps) {
       notePath: info.file.path,
     });
   };
-  return Object.assign(insert, { cancel });
+  const offer = () => {
+    const info = getInsertionEditor(deps.app);
+    const file = info?.file;
+    const editor = info?.editor;
+    if (!info || !file || !editor) return null;
+    return async (annotation: AnnotationRecord) => {
+      const current = getInsertionEditor(deps.app);
+      if (
+        current?.file !== file ||
+        current.editor !== editor ||
+        info.file !== file ||
+        info.editor !== editor
+      )
+        return;
+      await insertInto(annotation, info);
+    };
+  };
+  const insert = (annotation: AnnotationRecord) =>
+    insertInto(annotation, getInsertionEditor(deps.app));
+  return Object.assign(insert, { cancel, offer });
 }
 
 interface ActiveDrag {

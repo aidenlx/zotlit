@@ -465,8 +465,16 @@ export class AnnotationView extends ItemView implements HistorySurface {
       openEditor: (annot, field) =>
         this.#store.setState({ editing: { annotationKey: annot.key, field } }),
       onDragStart: drag,
-      insertAnnotation: (annotation) => {
-        void insert(annotation);
+      offerAnnotationInsert: () => {
+        const offered = insert.offer();
+        if (!offered) return null;
+        return (annotation) => {
+          // A read can replace the card's record while its menu is open.
+          const current = this.#store
+            .getState()
+            .annotations?.find(({ key }) => key === annotation.key);
+          void offered(current ?? annotation);
+        };
       },
       renderComment: createCommentRenderer({
         app: this.#deps.app,
