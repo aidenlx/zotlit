@@ -61,6 +61,8 @@ const defaultVault = getDevVaultDir(workspaceRoot);
 // `--fixture-root` moves both to another Fixture, before any command runs.
 let fixtureLayout = getFixtureLayout(getFixtureRoot(workspaceRoot));
 let fixtureVault = getFixtureVaultDir(workspaceRoot);
+// `--inactive` opens vault windows behind the app that has the OS focus.
+let inactive = false;
 const pluginId = "zotlit";
 
 interface VaultEntry {
@@ -143,6 +145,19 @@ async function obEval(code: string, target?: string): Promise<string> {
     throw new Error(`obsidian eval failed: ${text}`);
   }
   return text.slice(3);
+}
+
+/**
+ * Code that opens `abs` through `vault-open` in a host window. Obsidian's main
+ * process creates the vault window during that call and later calls its `show`,
+ * which gives it the OS focus. With `--inactive`, a `browser-window-created`
+ * listener in the main process, there only for the call, makes that window's
+ * `show` call `showInactive` and its `focus` do nothing.
+ */
+function vaultOpenCode(abs: string): string {
+  const open = `require('electron').ipcRenderer.sendSync('vault-open',${JSON.stringify(abs)},false)`;
+  if (!inactive) return open;
+  return `(()=>{const remote=require('@electron/remote');const off=remote.require('vm').runInThisContext('(app)=>{const hook=(_event,win)=>{win.show=()=>win.showInactive();win.focus=()=>{};};app.on("browser-window-created",hook);return ()=>app.off("browser-window-created",hook);}')(remote.app);try{return ${open};}finally{off();}})()`;
 }
 
 function isObsidianRunning(): Promise<boolean> {
@@ -303,10 +318,7 @@ async function create(
 
   // `vault-open` registers the path and opens its window. Pass create=false
   // because the folder is already there; create=true rejects an existing one.
-  const opened = await obEval(
-    `require('electron').ipcRenderer.sendSync('vault-open',${JSON.stringify(abs)},false)`,
-    host,
-  );
+  const opened = await obEval(vaultOpenCode(abs), host);
   if (opened !== "true") {
     throw new Error(`vault-open refused: ${opened || "unknown error"}`);
   }
@@ -563,10 +575,7 @@ async function open(
 
   await sync(abs, seed);
   if ((await vaultList(host))[registered]?.open !== true) {
-    const opened = await obEval(
-      `require('electron').ipcRenderer.sendSync('vault-open',${JSON.stringify(abs)},false)`,
-      host,
-    );
+    const opened = await obEval(vaultOpenCode(abs), host);
     if (opened !== "true") {
       throw new Error(`vault-open refused: ${opened || "unknown error"}`);
     }
@@ -962,7 +971,14 @@ const vaultCli = yargs(hideBin(process.argv))
     type: "string",
     global: true,
   })
+  .option("inactive", {
+    describe:
+      "Open vault windows behind the app that has the OS focus, as the End-to-end Run does",
+    type: "boolean",
+    global: true,
+  })
   .middleware((argv) => {
+    inactive = argv.inactive === true;
     if (argv["fixture-root"] === undefined) return;
     fixtureLayout = getFixtureLayout(resolve(argv["fixture-root"]));
     fixtureVault = fixtureLayout.vaultDir;

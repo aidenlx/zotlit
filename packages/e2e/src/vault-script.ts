@@ -54,7 +54,8 @@ async function stableHost(): Promise<string | undefined> {
 
 /**
  * `obsidian-vault.ts`, pinned to the Fixture at `fixtureRoot` and to a host
- * vault that outlives every End-to-end Run.
+ * vault that outlives every End-to-end Run. It opens vault windows with
+ * `--inactive`, so they leave the OS focus alone (policies/os-focus.md).
  */
 export function vaultScript(
   workspaceRoot: string,
@@ -64,7 +65,12 @@ export function vaultScript(
     const host = await stableHost();
     return execFileAsync(
       process.execPath,
-      [scriptPath(workspaceRoot), ...args, `--fixture-root=${fixtureRoot}`],
+      [
+        scriptPath(workspaceRoot),
+        ...args,
+        `--fixture-root=${fixtureRoot}`,
+        "--inactive",
+      ],
       {
         windowsHide: true,
         // `OBSIDIAN_HOST_VAULT_ENV` in packages/scripts/lib/obsidian-host-readiness.ts.
