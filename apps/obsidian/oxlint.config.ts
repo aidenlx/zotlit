@@ -21,6 +21,12 @@ export default defineConfig({
         ],
         paths: [
           {
+            name: "semver",
+            allowTypeImports: true,
+            message:
+              "Import from semver/functions/<name> to keep unused semver code out of the plugin bundle.",
+          },
+          {
             name: "obsidian",
             importNames: ["HoverPopover"],
             allowTypeImports: true,
