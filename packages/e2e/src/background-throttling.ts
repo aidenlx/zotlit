@@ -13,10 +13,11 @@
 // window holds the OS focus, and it gets the `focus` event that moves
 // Obsidian's `activeWindow` to it. Focus moves apply one at a time, in the
 // order they are asked for, so the last one asked wins. A popout opens with
-// `showInactive` in place of Obsidian's `show`, and `electronWindow.focus()`
-// moves only the emulation: both would take the OS focus and put the window in
-// front. A walk that needs a new popout active calls its `window.focus()`. The
-// run thus leaves the OS focus to the developer and to runs in other worktrees.
+// `showInactive` in place of Obsidian's `show`, and `window.focus()` and
+// `electronWindow.focus()` move only the emulation: each would take the OS
+// focus and put the window in front. A walk that needs a new popout active calls
+// its `window.focus()`. The run thus leaves the OS focus to the developer and to
+// runs in other worktrees.
 //
 // Both settings belong to a window's `webContents` and last until Obsidian
 // restarts. A popout is its own window that inherits nothing, so the vault's
@@ -67,7 +68,7 @@ export async function keepRendering(vaultId: string): Promise<void> {
       const followFocus=(win)=>{
         if(raised.has(win))return;
         const focus=win.focus;const shown=win.electronWindow;raised.set(win,{focus,shown,osFocus:shown?.focus});
-        win.focus=function(){void emulateFocus(win);return focus.call(this);};
+        win.focus=()=>void emulateFocus(win);
         if(shown)shown.focus=()=>void emulateFocus(win);
         win.document.hasFocus=()=>win===focusedWin;
       };
