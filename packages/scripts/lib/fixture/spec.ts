@@ -197,6 +197,49 @@ export interface FixtureCreator {
 const BOOKS_PROFILE_ID = "V1StGXR8Z5jd";
 
 /**
+ * The papers the Demo Vault Case reads: real articles with their real
+ * metadata, each on an Attachment of its own over a committed PDF, so
+ * screenshots and walkthroughs never touch a test Item.
+ */
+export const DEMO_ITEMS: readonly FixtureItem[] = [
+  {
+    itemID: 900,
+    libraryID: 1,
+    key: "DMRGRART",
+    itemType: "journalArticle",
+    citationKey: "rougier2014",
+    literatureNoteName: "rougier2014",
+    title: "Ten Simple Rules for Better Figures",
+    venue: "PLOS Computational Biology",
+    date: "2014",
+    creators: [
+      author("Nicolas P.", "Rougier"),
+      author("Michael", "Droettboom"),
+      author("Philip E.", "Bourne"),
+    ],
+    dateModified: "2024-11-20 09:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 902,
+    libraryID: 1,
+    key: "DMIANART",
+    itemType: "journalArticle",
+    citationKey: "ioannidis2005",
+    literatureNoteName: "ioannidis2005",
+    title: "Why Most Published Research Findings Are False",
+    venue: "PLoS Medicine",
+    date: "2005",
+    creators: [author("John P. A.", "Ioannidis")],
+    dateModified: "2024-11-19 09:00:00",
+    collectionIDs: [],
+  },
+];
+
+/** Vault folder that holds the demo papers' linked PDFs. */
+export const DEMO_PAPERS_DIR = "Papers";
+
+/**
  * The item set every discovery, Citation Key, and batch tracer reads.
  *
  * Modification times descend with item id apart from two deliberate ties:
@@ -766,6 +809,7 @@ export const ITEMS: readonly FixtureItem[] = [
     dateModified: "2024-12-22 12:00:00",
     collectionIDs: [2],
   },
+  ...DEMO_ITEMS,
 ];
 
 /** How a seeded Citation Key resolves against the Items the build writes. */
@@ -1231,6 +1275,41 @@ export type FixtureAttachment = FixtureAttachmentBase &
   );
 
 /**
+ * The demo papers' PDFs, linked from {@link DEMO_PAPERS_DIR} under the names
+ * Zotero's default file renaming gives them.
+ */
+export const DEMO_ATTACHMENTS: readonly FixtureAttachment[] = [
+  {
+    itemID: 901,
+    libraryID: 1,
+    key: "DMRGRPDF",
+    parentItemID: 900,
+    linkMode: "linked_file",
+    fileRoot: "vault",
+    contentType: "application/pdf",
+    title: "Full Text PDF",
+    path: `${DEMO_PAPERS_DIR}/Rougier et al. - 2014 - Ten Simple Rules for Better Figures.pdf`,
+    url: null,
+    sourceAsset: "rougier-2014/rougier-2014.pdf",
+    dateModified: "2024-11-20 09:00:00",
+  },
+  {
+    itemID: 903,
+    libraryID: 1,
+    key: "DMIANPDF",
+    parentItemID: 902,
+    linkMode: "linked_file",
+    fileRoot: "vault",
+    contentType: "application/pdf",
+    title: "Full Text PDF",
+    path: `${DEMO_PAPERS_DIR}/Ioannidis - 2005 - Why Most Published Research Findings Are False.pdf`,
+    url: null,
+    sourceAsset: "ioannidis-2005/ioannidis-2005.pdf",
+    dateModified: "2024-11-19 09:00:00",
+  },
+];
+
+/**
  * File-backed rows cover every storage and linked-file branch. `LINKURL2`
  * exercises the URL-only branch, while `MISSNG22` resolves to the one path the
  * generator deliberately leaves absent.
@@ -1412,6 +1491,7 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     sourceAsset: "external-annotation/external-annotation.pdf",
     dateModified: "2025-01-02 12:00:00",
   },
+  ...DEMO_ATTACHMENTS,
 ];
 
 interface FixtureAnnotationBase {
@@ -1473,6 +1553,290 @@ export type FixtureAnnotation = FixtureAnnotationBase &
         cacheImageAsset: null;
       }
   );
+
+/**
+ * A reader's Annotations on the demo papers, captured from a Zotero 10 reader
+ * session: Zotero drew each one, so its position, text, Sort Index, and page
+ * label are Zotero's own.
+ */
+export const DEMO_ANNOTATIONS: readonly FixtureAnnotation[] = [
+  {
+    itemID: 904,
+    libraryID: 1,
+    key: "F9AKNNK2",
+    parentItemID: 901,
+    type: 1,
+    text: "Scientific visualization is classically defined as the process of graphically displaying scientific data.",
+    comment:
+      "The textbook definition. The authors argue that it is too narrow.",
+    color: "#ffd400",
+    tags: [{ name: "definition", type: 0 }],
+    pageLabel: "1",
+    sortIndex: "00000|000434|00180",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [67.011, 612.638, 211.485, 620.77],
+        [58.054, 601.98, 211.489, 610.112],
+        [58.054, 591.321, 153.781, 599.454],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:49:36",
+    dateModified: "2026-09-26 16:54:17",
+  },
+  {
+    itemID: 905,
+    libraryID: 1,
+    key: "NEIKLK9T",
+    parentItemID: 901,
+    type: 1,
+    text: "A more accurate definition for scientific visualization would be a graphical interface between people and data.",
+    comment: "Use this framing in the chapter intro.",
+    color: "#5fb236",
+    tags: [{ name: "framing", type: 0 }],
+    pageLabel: "1",
+    sortIndex: "00000|000765|00287",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [180.792, 506.055, 211.469, 514.188],
+        [58.054, 495.397, 211.481, 503.53],
+        [58.054, 484.739, 211.471, 492.871],
+        [58.054, 474.081, 158.205, 482.213],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:53:32",
+    dateModified: "2026-09-26 16:54:17",
+  },
+  {
+    itemID: 906,
+    libraryID: 1,
+    key: "B9SXMZEU",
+    parentItemID: 901,
+    type: 1,
+    text: "Rule 1: Know Your Audience",
+    comment: null,
+    color: "#a28ae5",
+    pageLabel: "1",
+    sortIndex: "00000|001057|00398",
+    position: { pageIndex: 0, rects: [[58.054, 383.41, 196.512, 392.226]] },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:54:20",
+    dateModified: "2026-09-26 16:54:20",
+  },
+  {
+    itemID: 907,
+    libraryID: 1,
+    key: "YPM6GIAT",
+    parentItemID: 901,
+    type: 5,
+    text: "problems arise when how a visual is perceived differs significantly from the intent of the conveyer.",
+    comment: null,
+    color: "#ff6666",
+    tags: [{ name: "pitfall", type: 0 }],
+    pageLabel: "1",
+    sortIndex: "00000|001103|00416",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [176.711, 366.477, 211.525, 374.61],
+        [58.054, 355.819, 211.489, 363.951],
+        [58.054, 345.161, 211.459, 353.293],
+        [58.054, 334.503, 109.093, 342.635],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:54:25",
+    dateModified: "2026-09-26 16:54:25",
+  },
+  {
+    itemID: 908,
+    libraryID: 1,
+    key: "ADY8P65X",
+    parentItemID: 901,
+    type: 1,
+    text: "If your figure is able to convey a striking message at first glance, chances are increased that your article will draw more attention from the community.",
+    comment: "Check every figure in ch. 3 against this.",
+    color: "#ffd400",
+    tags: [{ name: "figure-design", type: 0 }],
+    pageLabel: "1",
+    sortIndex: "00000|002700|00389",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [297.353, 414.04, 382.849, 422.172],
+        [229.436, 403.438, 382.844, 411.57],
+        [229.436, 392.836, 382.856, 400.969],
+        [229.436, 382.234, 382.847, 390.367],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:54:29",
+    dateModified: "2026-09-26 16:54:29",
+  },
+  {
+    itemID: 909,
+    libraryID: 1,
+    key: "S8WTHP4F",
+    parentItemID: 901,
+    type: 1,
+    text: "you should abandon the practice of extracting a figure from your article to be put, as is, in your oral presentation.",
+    comment: "Guilty. Redraw the slides for the conference talk.",
+    color: "#f19837",
+    tags: [{ name: "talk", type: 0 }],
+    pageLabel: "1",
+    sortIndex: "00000|004039|00391",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [400.763, 391.588, 554.215, 399.72],
+        [400.763, 381.1, 554.177, 389.233],
+        [400.763, 370.555, 543.451, 378.687],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:54:33",
+    dateModified: "2026-09-26 16:54:33",
+  },
+  {
+    itemID: 910,
+    libraryID: 1,
+    key: "AGSYQ9ZZ",
+    parentItemID: 901,
+    type: 2,
+    text: null,
+    comment: "Every caption must stand on its own. Ask Sam to read them cold.",
+    color: "#ffd400",
+    pageLabel: "1",
+    sortIndex: "00000|004134|00427",
+    position: { pageIndex: 0, rects: [[539.795, 341.215, 561.795, 363.215]] },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:54:41",
+    dateModified: "2026-09-26 16:54:41",
+  },
+  {
+    itemID: 911,
+    libraryID: 1,
+    key: "TF3ZGRBV",
+    parentItemID: 901,
+    type: 5,
+    text: "you cannot explain everything within the figure itself—a figure should be accompanied by a caption.",
+    comment: null,
+    color: "#2ea8e5",
+    tags: [{ name: "figure-design", type: 0 }],
+    pageLabel: "1",
+    sortIndex: "00000|004245|00484",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [485.118, 297.822, 554.194, 305.954],
+        [400.762, 287.334, 554.179, 295.467],
+        [400.762, 276.789, 536.536, 284.921],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:54:37",
+    dateModified: "2026-09-26 16:54:37",
+  },
+  {
+    itemID: 912,
+    libraryID: 1,
+    key: "2G7A4A3L",
+    parentItemID: 901,
+    type: 3,
+    text: null,
+    comment: "Figure 1: the same data, drawn for three audiences.",
+    color: "#ffd400",
+    tags: [{ name: "figure", type: 0 }],
+    pageLabel: "2",
+    sortIndex: "00001|001860|00047",
+    position: { pageIndex: 1, rects: [[48.75, 395.509, 570, 743.723]] },
+    // Zotero cached this capture byte-for-byte as FDRFQ7C2's: same page, same rectangle.
+    cacheImageAsset: "rougier-2014/annotations/FDRFQ7C2.png",
+    dateAdded: "2026-09-26 16:55:19",
+    dateModified: "2026-09-26 16:55:20",
+  },
+  {
+    itemID: 913,
+    libraryID: 1,
+    key: "N5HVBIDP",
+    parentItemID: 903,
+    type: 1,
+    text: "the convenient, yet ill-founded strategy of claiming conclusive research findings solely on the basis of a single study assessed by formal statistical significance,",
+    comment: null,
+    color: "#ff6666",
+    tags: [{ name: "p-values", type: 0 }],
+    pageLabel: "696",
+    sortIndex: "00000|000872|00265",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [297.48, 530.696, 358.5, 539.192],
+        [219, 519.696, 354.36, 528.192],
+        [219, 508.696, 366.059, 517.192],
+        [219, 497.697, 362.28, 506.193],
+        [219, 486.697, 333.838, 495.193],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:57:22",
+    dateModified: "2026-09-26 16:57:22",
+  },
+  {
+    itemID: 914,
+    libraryID: 1,
+    key: "475YANAK",
+    parentItemID: 903,
+    type: 5,
+    text: "the probability that a research finding is indeed true depends on the prior probability of it being true (before doing the study), the statistical power of the study, and the level of statistical significance",
+    comment: "Three levers: prior, power, alpha.",
+    color: "#5fb236",
+    pageLabel: "696",
+    sortIndex: "00000|001671|00608",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [348.106, 221.421, 360.886, 229.917],
+        [219.001, 210.421, 352.559, 218.917],
+        [219.001, 199.421, 358.861, 207.917],
+        [219.001, 188.421, 354.361, 196.917],
+        [219.001, 177.422, 365.341, 185.918],
+        [219.001, 166.422, 367.681, 174.918],
+        [219.001, 155.423, 265.261, 163.919],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:57:26",
+    dateModified: "2026-09-26 16:57:26",
+  },
+  {
+    itemID: 915,
+    libraryID: 1,
+    key: "F4E7J5W5",
+    parentItemID: 903,
+    type: 1,
+    text: "a research finding is less likely to be true when the studies conducted in a field are smaller; when effect sizes are smaller;",
+    comment: "Both apply to the pilot cohort (n = 24). Say so in 3.2.",
+    color: "#ffd400",
+    tags: [{ name: "limitations", type: 0 }],
+    pageLabel: "696",
+    sortIndex: "00000|004269|00258",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [132.603, 516.971, 199.428, 524.819],
+        [45, 505.972, 192.275, 513.82],
+        [45, 494.972, 186.221, 502.82],
+        [45, 483.973, 130.303, 491.821],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:57:17",
+    dateModified: "2026-09-26 16:57:18",
+  },
+];
 
 /** Reviewed anchors for the committed Fixture documents. */
 export const ANNOTATIONS: readonly FixtureAnnotation[] = [
@@ -1746,6 +2110,7 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     dateAdded: "2025-01-03 11:30:00",
     dateModified: "2025-01-03 11:30:00",
   },
+  ...DEMO_ANNOTATIONS,
 ];
 
 /** One CSL style a user installed in Zotero, as the Fixture carries it. */
@@ -2068,7 +2433,7 @@ export type FixtureLegacyTemplate = FixtureTemplateEdit & {
   );
 
 export interface FixtureVaultCase {
-  id: "configured" | "fresh" | "upgrader";
+  id: "configured" | "fresh" | "upgrader" | "demo";
   /** One line for the maintainer choosing a case. */
   summary: string;
 }
@@ -2093,6 +2458,11 @@ export const VAULT_CASES: readonly FixtureVaultCase[] = [
     id: "upgrader",
     summary:
       "A ZotLit v2.1 vault: version-9 settings, an edited Managed Frontmatter list, and ejected Legacy Template Files with visible edits: the note slots, a mixed-language citation pair, and one bare partial.",
+  },
+  {
+    id: "demo",
+    summary:
+      "A researcher's vault for screenshots and walkthroughs: the demo papers' PDFs, their Literature Notes, and the pages that cite them, with no test page.",
   },
 ];
 

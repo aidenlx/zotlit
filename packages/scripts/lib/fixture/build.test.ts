@@ -46,6 +46,7 @@ import {
   BUILD_TIMESTAMP,
   buildFixture,
   COLLECTIONS,
+  DEMO_ITEMS,
   EXCERPT_RENDERING_PDFS,
   EXCERPT_RENDERING_VAULT_DIR,
   FIXTURE_LOCAL_API_SERVER_ID,
@@ -419,6 +420,28 @@ describe("the generated Zotero database", () => {
         path: join(layout.vaultDir, "attachments", "external-annotation.pdf"),
         charsetID: null,
         title: "External annotation PDF",
+        url: null,
+      },
+      {
+        key: "DMRGRPDF",
+        path: join(
+          layout.vaultDir,
+          "Papers",
+          "Rougier et al. - 2014 - Ten Simple Rules for Better Figures.pdf",
+        ),
+        charsetID: null,
+        title: "Full Text PDF",
+        url: null,
+      },
+      {
+        key: "DMIANPDF",
+        path: join(
+          layout.vaultDir,
+          "Papers",
+          "Ioannidis - 2005 - Why Most Published Research Findings Are False.pdf",
+        ),
+        charsetID: null,
+        title: "Full Text PDF",
         url: null,
       },
     ]);
@@ -1568,7 +1591,9 @@ describe("the generated Obsidian vault", () => {
   });
 
   it("resolves every generated Literature Note through the database", async () => {
-    const items = ITEMS.filter(({ libraryID }) => libraryID === 1);
+    const items = ITEMS.filter(
+      (item) => item.libraryID === 1 && !DEMO_ITEMS.includes(item),
+    );
     expect(await readdir(join(layout.vaultDir, "literatures"))).toEqual(
       items
         .filter(
@@ -1706,7 +1731,8 @@ describe("the generated Obsidian vault", () => {
       const parent = ITEMS.find(
         ({ itemID }) => itemID === attachment.parentItemID,
       );
-      if (!parent) continue;
+      // A demo paper's Literature Note lives only in the demo vault.
+      if (!parent || DEMO_ITEMS.includes(parent)) continue;
       const note = await readFile(
         join(
           layout.vaultDir,
@@ -2101,12 +2127,28 @@ describe("a Vault Case", () => {
     return caseLayout;
   }
 
-  it("names the configured, fresh, and upgrader cases", () => {
+  it("names the configured, fresh, upgrader, and demo cases", () => {
     expect(VAULT_CASES.map((vaultCase) => vaultCase.id)).toEqual([
       "configured",
       "fresh",
       "upgrader",
+      "demo",
     ]);
+  });
+
+  it("gives the demo vault the demo papers and pages, and no test page", async () => {
+    const demo = await buildVaultCase("demo");
+
+    expect(await readdir(demo.vaultDir)).toEqual([
+      ".obsidian",
+      "Papers",
+      "Thesis",
+    ]);
+    expect(await readdir(join(demo.vaultDir, "Papers"))).toEqual([
+      "Ioannidis - 2005 - Why Most Published Research Findings Are False.pdf",
+      "Rougier et al. - 2014 - Ten Simple Rules for Better Figures.pdf",
+    ]);
+    await expect(stat(demo.pluginDataPath)).resolves.toBeTruthy();
   });
 
   it("leaves a fresh vault with ZotLit enabled and nothing else", async () => {
