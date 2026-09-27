@@ -115,7 +115,7 @@ describe("updateNoteToast", () => {
         noManagedBlock: true,
       }),
     ).toBe(
-      "Frontmatter updated. The profile document has no managed block, so the note body stayed unchanged.",
+      "Properties updated. The profile document has no managed block, so the note body stayed unchanged.",
     );
   });
 

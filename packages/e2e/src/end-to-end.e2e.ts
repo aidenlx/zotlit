@@ -953,7 +953,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEval(
         freshId,
-        `(function(){const view=${editor};return String(view.contentEl.textContent.includes(${JSON.stringify(m.template_workbench_shared_template({ name: "zotlit-profile.default" }))})&&view.store.getState().item?.id==='RUGIER24');})()`,
+        `(function(){const view=${editor};return String(view.contentEl.textContent.includes(${JSON.stringify(m.template_workbench_shared_template({ name: m.settings_profile_default_name() }))})&&view.store.getState().item?.id==='RUGIER24');})()`,
       ),
     ).toBe("true");
     await changeNativeAnnotationCallout(freshId, {
