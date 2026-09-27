@@ -41,6 +41,7 @@ import {
   DEFAULT_VAULT_CASE,
   DEMO_ATTACHMENTS,
   DEMO_ITEMS,
+  DEMO_PROFILE_DOCUMENT,
   EXCERPT_RENDERING_PDFS,
   EXCERPT_RENDERING_VAULT_DIR,
   findScopeCase,
@@ -89,6 +90,7 @@ export {
   DEMO_ATTACHMENTS,
   DEMO_ITEMS,
   DEMO_PAPERS_DIR,
+  DEMO_PROFILE_DOCUMENT,
   EXCERPT_RENDERING_CASES,
   EXCERPT_RENDERING_PDFS,
   EXCERPT_RENDERING_VAULT_DIR,
@@ -1083,9 +1085,15 @@ async function writeVault(
   }
 
   if (vaultCase.id === "demo") {
-    // The demo vault holds no template file, so its notes render through
-    // ZotLit's shipped templates and read the way a new user's do.
+    // The demo vault's notes render through ZotLit's shipped templates and
+    // read the way a new user's do. Its one Profile document has no match,
+    // so it changes a note only when the reader chooses it.
     await cp(DEMO_PAGES_DIR, layout.vaultDir, { recursive: true });
+    await mkdir(join(layout.vaultDir, "templates"), { recursive: true });
+    await writeFile(
+      join(layout.vaultDir, "templates", DEMO_PROFILE_DOCUMENT.filename),
+      DEMO_PROFILE_DOCUMENT.source,
+    );
   } else {
     // The v2.1 vault predates Profiles, so it seeds every note unstamped.
     await writeVaultNotes(
