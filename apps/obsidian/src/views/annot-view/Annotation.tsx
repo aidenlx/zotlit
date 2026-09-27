@@ -206,7 +206,7 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
 
   return (
     <div
-      className="zt-annot-card zt:group zt:overflow-hidden zt:rounded-(--bases-kanban-card-radius) zt:bg-(--bases-kanban-card-background) zt:px-3 zt:py-2 zt:text-xs zt:leading-(--line-height-tight) zt:shadow-(--bases-kanban-card-shadow) zt:data-selected:bg-primary/10 zt:data-selected:ring-1 zt:data-selected:ring-primary zt:motion-safe:transition-colors"
+      className="zt-annot-card zt:group zt:overflow-hidden zt:rounded-(--bases-kanban-card-radius) zt:bg-(--bases-kanban-card-background) zt:px-3 zt:py-2 zt:text-xs zt:leading-(--line-height-tight) zt:shadow-(--bases-kanban-card-shadow) zt:data-selected:bg-primary/10 zt:data-selected:ring-1 zt:data-selected:ring-primary zt:motion-safe:transition-[background-color,box-shadow] zt:motion-safe:duration-(--anim-duration-fast)"
       // The card is the surface Obsidian draws for a Bases card: its fill, its
       // radius and its hairline-and-drop shadow are read from the same theme
       // variables, so a theme that restyles Bases cards restyles these. Inside,
