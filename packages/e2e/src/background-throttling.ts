@@ -8,11 +8,15 @@
 // so CodeMirror and the workspace never see an element take focus. CDP focus
 // emulation gives one window of the vault the focus it has while the developer
 // works in it: the main window first, then each window that `window.focus()`
-// raises, as the OS does for an active app. A popout opens with `showInactive`
-// in place of Obsidian's `show`, which would take the OS focus and put the
-// window in front, so a walk that needs a new popout active calls its
-// `window.focus()`. The run thus leaves the OS focus to the developer and to
-// runs in other worktrees.
+// or Obsidian's `electronWindow.focus()` raises, as the OS does for an active
+// app. Only that window answers `document.hasFocus()` with true, whichever
+// window holds the OS focus, and it gets the `focus` event that moves
+// Obsidian's `activeWindow` to it. Focus moves apply one at a time, in the
+// order they are asked for, so the last one asked wins. A popout opens with
+// `showInactive` in place of Obsidian's `show`, and `electronWindow.focus()`
+// moves only the emulation: both would take the OS focus and put the window in
+// front. A walk that needs a new popout active calls its `window.focus()`. The
+// run thus leaves the OS focus to the developer and to runs in other worktrees.
 //
 // Both settings belong to a window's `webContents` and last until Obsidian
 // restarts. A popout is its own window that inherits nothing, so the vault's
@@ -26,8 +30,9 @@ const RESTORE = "__ztRestoreBackgroundThrottling";
 /**
  * Turns background throttling off for `vaultId`'s main window and every popout
  * it has or opens, shows each popout it opens without the OS focus, and moves
- * focus emulation to the window `window.focus()` last raised, starting with
- * the main window. Calling it again replaces the earlier call's hooks.
+ * focus emulation to the window `window.focus()` or `electronWindow.focus()`
+ * last raised, starting with the main window. Calling it again replaces the
+ * earlier call's hooks.
  */
 export async function keepRendering(vaultId: string): Promise<void> {
   const reply = await obEval(
@@ -41,19 +46,30 @@ export async function keepRendering(vaultId: string): Promise<void> {
       const apply=()=>{for(const contents of vaultContents())contents.setBackgroundThrottling(false);};
       let focused;
       let focusedWin;
-      const emulateFocus=async(win)=>{
-        const next=win.require('@electron/remote').getCurrentWebContents();
-        if(focused===next)return;
-        const last=focused;focused=next;focusedWin=win;
-        if(last&&!last.isDestroyed())await last.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:false});
-        if(!next.debugger.isAttached())next.debugger.attach('1.3');
-        await next.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:true});
+      let switching=Promise.resolve();
+      const emulateFocus=(win)=>{
+        focusedWin=win;
+        const run=switching.then(async()=>{
+          if(win!==focusedWin)return;
+          const next=win.require('@electron/remote').getCurrentWebContents();
+          if(focused!==next){
+            const last=focused;focused=next;
+            if(last&&!last.isDestroyed())await last.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:false});
+            if(!next.debugger.isAttached())next.debugger.attach('1.3');
+            await next.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:true});
+          }
+          if(activeWindow!==win)win.dispatchEvent(new win.FocusEvent('focus'));
+        });
+        switching=run.catch(()=>{});
+        return run;
       };
       const raised=new Map();
       const followFocus=(win)=>{
         if(raised.has(win))return;
-        const focus=win.focus;raised.set(win,focus);
+        const focus=win.focus;const shown=win.electronWindow;raised.set(win,{focus,shown,osFocus:shown?.focus});
         win.focus=function(){void emulateFocus(win);return focus.call(this);};
+        if(shown)shown.focus=()=>void emulateFocus(win);
+        win.document.hasFocus=()=>win===focusedWin;
       };
       const refs=[
         app.workspace.on('window-open',(_workspaceWindow,win)=>{apply();followFocus(win);const shown=win.electronWindow;if(shown)shown.show=()=>shown.showInactive();}),
@@ -65,7 +81,7 @@ export async function keepRendering(vaultId: string): Promise<void> {
       await emulateFocus(window);
       window.${RESTORE}=()=>{
         for(const ref of refs)app.workspace.offref(ref);
-        for(const [win,focus] of raised)win.focus=focus;
+        for(const [win,{focus,shown,osFocus}] of raised){win.focus=focus;if(shown)shown.focus=osFocus;delete win.document.hasFocus;}
         for(const contents of vaultContents()){contents.setBackgroundThrottling(true);if(contents.debugger.isAttached())contents.debugger.detach();}
         main.setBackgroundThrottling(previous);
         delete window.${RESTORE};
