@@ -132,7 +132,7 @@ export function buildServices(
           app: plugin.app,
           version: plugin.manifest.version,
           settings,
-          openWelcomeView: (mode) => openWelcomeView(plugin.app, mode),
+          openWelcomeView: (mode) => openWelcomeView(plugin.app, { mode }),
         }),
     })
     .use({
@@ -365,7 +365,7 @@ export function buildServices(
               },
               options,
             ),
-          openPrompt: () => openWelcomeView(plugin.app, "upgraded"),
+          openPrompt: () => openWelcomeView(plugin.app, { mode: "upgraded" }),
         }),
     })
     .use({

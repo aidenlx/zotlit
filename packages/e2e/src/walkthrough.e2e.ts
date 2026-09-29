@@ -65,6 +65,56 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     ).toBe("false");
   });
 
+  it("opens Welcome beside the active note and reuses its tab", async () => {
+    const notePath = "Welcome navigation.md";
+    const noteId = await obEval(
+      vaultId,
+      `(async()=>{
+        for(const leaf of app.workspace.getLeavesOfType('zotlit-welcome'))leaf.detach();
+        const file=await app.vault.create(${JSON.stringify(notePath)},'Keep this note open.');
+        const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf,{focus:true});
+        app.commands.executeCommandById('zotlit:open-welcome-view');return leaf.id;
+      })()`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const leaf=app.workspace.getLeafById(${JSON.stringify(noteId)});leaf?.detach();const file=app.vault.getFileByPath(${JSON.stringify(notePath)});if(file)await app.vault.delete(file);return true;})()`,
+      );
+    });
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(app.workspace.activeLeaf?.view.getViewType()==='zotlit-welcome')`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(
+      await obEval(
+        vaultId,
+        `app.workspace.getLeafById(${JSON.stringify(noteId)}).view.file?.path??'<no file>'`,
+      ),
+    ).toBe(notePath);
+    const welcomeId = await obEval(vaultId, "app.workspace.activeLeaf.id");
+    await obEval(
+      vaultId,
+      `app.workspace.setActiveLeaf(app.workspace.getLeafById(${JSON.stringify(noteId)}),{focus:true});app.commands.executeCommandById('zotlit:open-welcome-view');true`,
+    );
+    expect(
+      await obEvalUntil(vaultId, "app.workspace.activeLeaf?.id", {
+        expected: welcomeId,
+      }),
+    ).toBe(true);
+    expect(
+      await obEval(
+        vaultId,
+        "String(app.workspace.getLeavesOfType('zotlit-welcome').length)",
+      ),
+    ).toBe("1");
+  });
+
   it("reuses an open literature note when searching from Welcome", async () => {
     const notePath = "Search existing note.md";
     const leafId = await obEval(
