@@ -321,7 +321,7 @@ filename: "{{ zt.title }}"
         "zotlit-profile.books.md",
       )!;
       expect(original.renderForUpdate(data)).toBe(
-        "%%zt-managed%%\nPROFILE A\n%%/zt-managed%%",
+        "%%zt-managed%%\nPROFILE A\n\n%%/zt-managed%%",
       );
       expect(original.renderForCreate(data)).toContain("PROFILE A");
       expect(
@@ -351,7 +351,7 @@ filename: "{{ zt.title }}"
         service
           .getLiteratureNoteTemplate("zotlit-profile.books.md")!
           .renderForUpdate(data),
-      ).toBe("%%zt-managed%%\nCHANGED A\n%%/zt-managed%%");
+      ).toBe("%%zt-managed%%\nCHANGED A\n\n%%/zt-managed%%");
       expect(original.renderAnnotation(data.annotation)).toBe("PROFILE A");
       expect(service.render("annotation", data.annotation)).toBe("GLOBAL A");
     },
@@ -375,7 +375,7 @@ partials:
     const paths = [...vault.files.keys()];
     const document = service.prepareLiteratureNoteTemplateSource(source);
     expect(document.renderForUpdate({ annotation: { text: "A" } })).toBe(
-      "%%zt-managed%%\nLocal A\n%%/zt-managed%%",
+      "%%zt-managed%%\nLocal A\n\n%%/zt-managed%%",
     );
     expect(document.renderAnnotation({ text: "A" })).toBe("Local A");
     expect([...vault.files.keys()]).toEqual(paths);

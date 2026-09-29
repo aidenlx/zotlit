@@ -2,8 +2,16 @@
 export const MARKER_START = "%%zt-managed%%";
 export const MARKER_END = "%%/zt-managed%%";
 
+/**
+ * A blank line keeps the closing marker a block of its own: directly after a
+ * callout it would be a lazy continuation line, hidden inside the rendered
+ * callout in Live Preview.
+ */
 export function formatManagedRegion(content: string): string {
-  return `${MARKER_START}\n${content.trim()}\n${MARKER_END}`;
+  const body = content.trim();
+  return body
+    ? `${MARKER_START}\n${body}\n\n${MARKER_END}`
+    : `${MARKER_START}\n\n${MARKER_END}`;
 }
 
 /**

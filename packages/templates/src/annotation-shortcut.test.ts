@@ -117,10 +117,10 @@ Profile ${annotation}`;
     for (const document of [a, b, a]) {
       const expected = document === b ? "Other A" : "Profile A";
       expect(facade.renderLiteratureNoteTemplateForUpdate(document, data)).toBe(
-        `%%zt-managed%%\n${expected}|${expected}|${expected}|${expected}\n%%/zt-managed%%`,
+        `%%zt-managed%%\n${expected}|${expected}|${expected}|${expected}\n\n%%/zt-managed%%`,
       );
       expect(facade.renderLiteratureNoteTemplateForCreate(document, data)).toBe(
-        `${expected}|${expected}|${expected}|${expected}\n%%zt-managed%%\n${expected}|${expected}|${expected}|${expected}\n%%/zt-managed%%\n`,
+        `${expected}|${expected}|${expected}|${expected}\n%%zt-managed%%\n${expected}|${expected}|${expected}|${expected}\n\n%%/zt-managed%%\n`,
       );
       expect(
         facade.renderLiteratureNoteTemplateAnnotation(document, { text: "A" }),

@@ -9,6 +9,21 @@ import {
 
 const oldRegion = `${MARKER_START}\nOLD\n${MARKER_END}`;
 
+describe("formatManagedRegion", () => {
+  it("ends a region that ends in a callout with the closing marker on its own block", () => {
+    // Without the blank line, the marker is a lazy continuation of the last
+    // callout, and Live Preview hides it inside the rendered callout.
+    const region = formatManagedRegion("> [!note] Page 1\n>\n> A quote.\n");
+    expect(region).toBe(
+      `${MARKER_START}\n> [!note] Page 1\n>\n> A quote.\n\n${MARKER_END}`,
+    );
+  });
+
+  it("keeps an empty region to one blank line", () => {
+    expect(formatManagedRegion("\n")).toBe(`${MARKER_START}\n\n${MARKER_END}`);
+  });
+});
+
 describe("replaceManagedRegion", () => {
   it("leaves content untouched when no managed region is present", () => {
     const region = vi.fn(() => "ignored");
