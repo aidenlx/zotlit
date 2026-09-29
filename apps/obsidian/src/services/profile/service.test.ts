@@ -324,11 +324,15 @@ describe("ProfileService", () => {
   it("prepares a kept partial from the reader's file and a replacement from the bundle", async () => {
     await using f = await harness({
       "templates/zotlit-partial.authors.md": "Mine",
+      "templates/zotlit-partial.links.md": "Links",
     });
     const source = document(
       BOOKS,
       [
         "partials:",
+        "  - name: links",
+        "    language: liquid",
+        "    source: Links",
         "  - name: summary",
         "    language: liquid",
         "    source: Their summary",
@@ -336,8 +340,14 @@ describe("ProfileService", () => {
         "    language: liquid",
         "    source: Their authors",
       ].join("\n"),
-    ).replace("Managed", '{% render "summary" %} {% render "authors" %}');
+    ).replace(
+      "Managed",
+      '{% render "links" %} {% render "summary" %} {% render "authors" %}',
+    );
     const plan = await f.profile.prepareImport(source);
+    expect(
+      plan.partials.map(({ name, verdict }) => `${name}:${verdict}`),
+    ).toEqual(["links:unchanged", "summary:write", "authors:conflict"]);
     expect(
       parseLiteratureNoteTemplate(plan.previewSource()).manifest.partials?.map(
         ({ name }) => name,
@@ -348,6 +358,16 @@ describe("ProfileService", () => {
         plan.previewSource({ replacePartials: ["authors"] }),
       ).manifest.partials?.map(({ name }) => name),
     ).toEqual(["summary", "authors"]);
+    // The preview renders every call: the vault's own files for the shared
+    // and the kept partials, the bundle for the new and the replaced ones.
+    const preview = (replacePartials?: string[]) =>
+      f.template
+        .prepareLiteratureNoteTemplateSource(
+          plan.previewSource({ replacePartials }),
+        )
+        .renderForCreate({ title: "First" });
+    expect(preview()).toContain("Links Their summary Mine");
+    expect(preview(["authors"])).toContain("Links Their summary Their authors");
   });
 
   it("renders a kept partial from the reader's own file, and the rest from the bundle", async () => {

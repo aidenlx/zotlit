@@ -453,20 +453,29 @@ function matchToggle(modal: ImportProfileModal) {
     .findLast((component) => component instanceof ToggleComponent);
 }
 
-async function realImportFixture(held: boolean, source = incoming) {
+async function realImportFixture(
+  held: boolean,
+  source = incoming,
+  files: Record<string, string> = {},
+) {
   await using stack = new AsyncDisposableStack();
   const f = stack.use(
-    await profileServiceFixture(
-      held ? { [importedPath]: incoming.replace("2.0.0", "1.0.0") } : {},
-    ),
+    await profileServiceFixture({
+      ...files,
+      ...(held ? { [importedPath]: incoming.replace("2.0.0", "1.0.0") } : {}),
+    }),
   );
   const deps = {
     ...f,
     noteFeature: {
-      prepareProfileNote: () => ({
+      prepareProfileNote: ({
+        document,
+      }: {
+        document: { renderForCreate: (data: object) => string };
+      }) => ({
         path: "Reading/Paper.md",
         properties: {},
-        body: "Preview",
+        body: `Preview ${document.renderForCreate({ title: "Paper" })}`,
       }),
     },
   } as unknown as ImportProfileDeps;
@@ -518,6 +527,42 @@ it.each([
     );
   },
 );
+
+it("previews and imports a profile that brings a shared partial and a new one", async () => {
+  const shared = "templates/zotlit-partial.links-row.md";
+  const source = `${incomingPrefix}partials:
+  - name: links-row
+    language: liquid
+    source: Links
+  - name: meanings
+    language: liquid
+    source: Meanings
+${incomingSuffix.replace(
+  "Incoming body",
+  '{% render "links-row" %} {% render "meanings" %}',
+)}`;
+  await using f = await realImportFixture(false, source, { [shared]: "Links" });
+  using buttons = observeButtons();
+  f.modal.onOpen();
+  await vi.waitFor(() =>
+    expect(f.modal.contentEl.textContent).toContain("Links Meanings"),
+  );
+  expect(buttons.disabled(m.profile_import_confirm())).toBe(false);
+  expect(f.modal.contentEl.textContent).toContain(
+    m.profile_import_partials({ names: "meanings" }),
+  );
+  await buttons.click(m.profile_import_confirm());
+  await expect(f.modal.result).resolves.toMatchObject({ id });
+  expect(f.vault.contents.get(shared)).toBe("Links");
+  expect(f.vault.contents.get("templates/zotlit-partial.meanings.md")).toBe(
+    "---\nlanguage: liquid\n---\nMeanings",
+  );
+  expect(
+    f.template
+      .getLiteratureNoteTemplate("zotlit-profile.shared.md")!
+      .renderForCreate({ title: "Paper" }),
+  ).toContain("Links Meanings");
+});
 
 it.each([false, true])(
   "shows absent summary and no checkbox for held=%s",
