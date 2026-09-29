@@ -158,4 +158,41 @@ describe("an entry page", () => {
         ?.properties,
     ).toEqual([{ key: "year", value: "1887" }]);
   });
+
+  it("shows the citations a citation text inserts under both variants, and the note names a note-name entry gives", () => {
+    const files = fixtureFiles()
+      .set(
+        "citations/fixture-citation/entry.md",
+        `---\ntitle: Fixture citation\nsummary: The variant and the item type.\nminAppVersion: "2.2.0-beta.0"\ntasks: [writing]\nproblems:\n  - I want a fixture.\naudience: Tests.\neffort: Nothing.\n---\n\nA fixture citation text.\n`,
+      )
+      .set(
+        "citations/fixture-citation/zotlit-citation.md",
+        '---\nlanguage: liquid\n---\n{{ zt.variant }}: {{ zt.items | map: "itemType" | join: " and " }}\n',
+      )
+      .set(
+        "note-names/fixture-name/entry.md",
+        `---\ntitle: Fixture name\nsummary: The item key.\nminAppVersion: "2.2.0-beta.0"\ntasks: [writing]\nproblems:\n  - I want a fixture.\naudience: Tests.\neffort: Nothing.\n---\n\nA fixture note name.\n`,
+      )
+      .set(
+        "note-names/fixture-name/note-name.liquid",
+        "{{ zt.key }}{% suffix %}",
+      );
+    const recipes = directorySite(verifyTemplateDirectory(files)).entries;
+    const citation = recipes.find(
+      ({ id }) => id === "citations/fixture-citation",
+    )!;
+    expect(citation.citations[0]).toEqual({
+      label: "Journal article",
+      main: "main: journalArticle",
+      alt: "alt: journalArticle",
+    });
+    const noteName = recipes.find(
+      ({ id }) => id === "note-names/fixture-name",
+    )!;
+    expect(noteName.notes[0]).toMatchObject({
+      label: "Journal article",
+      noteName: "IANNP5A2",
+      body: null,
+    });
+  });
 });

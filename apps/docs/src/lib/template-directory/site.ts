@@ -42,6 +42,8 @@ export interface SiteEntry extends IndexedEntry {
   readonly details: EntryDetails;
   readonly notes: readonly NoteSampleView[];
   readonly annotations: readonly AnnotationSampleView[];
+  /** Citation text entries only: each citation it inserts. */
+  readonly citations: readonly CitationSampleView[];
 }
 
 /** What the page needs to say where a recipe goes. */
@@ -83,6 +85,13 @@ export interface SampleProperty {
    * null is a property the reader fills in.
    */
   readonly value: string | readonly string[] | null;
+}
+
+/** One citation, as a citation text inserts it under each variant. */
+export interface CitationSampleView {
+  readonly label: string;
+  readonly main: string | null;
+  readonly alt: string | null;
 }
 
 /** One Sample Annotation, as the entry's annotation format renders it. */

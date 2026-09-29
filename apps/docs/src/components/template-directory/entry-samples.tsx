@@ -1,11 +1,13 @@
 // An entry page's rendered samples: the note it makes for each Directory Sample, shown the way Obsidian's reading view shows it, or as Markdown.
 
 import { Suspense, useState } from "react";
+import type { ReactNode } from "react";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/cn";
 import type {
   AnnotationSampleView,
+  CitationSampleView,
   NoteSampleView,
   SampleProperty,
   SiteEntry,
@@ -55,10 +57,14 @@ const LABEL =
 export function EntrySamples({
   entry,
 }: {
-  entry: Pick<SiteEntry, "kind" | "notes" | "annotations">;
+  entry: Pick<SiteEntry, "kind" | "notes" | "annotations" | "citations">;
 }) {
   const [showMarkdown, setShowMarkdown] = useState(false);
   const { notes, annotations } = entry;
+  if (entry.kind === "citation") {
+    return <CitationSamples citations={entry.citations} />;
+  }
+  if (entry.kind === "note-name") return <NoteNameSamples notes={notes} />;
   const hasBody = notes.some(({ body }) => body !== null);
   const viewToggle = (
     <ViewToggle showMarkdown={showMarkdown} onChange={setShowMarkdown} />
@@ -308,6 +314,116 @@ function PropertyValue({ value }: { value: SampleProperty["value"] }) {
   );
 }
 
+/** A citation text's result: the citation it inserts for each sample, under both variants. */
+function CitationSamples({
+  citations,
+}: {
+  citations: readonly CitationSampleView[];
+}) {
+  const cell = (text: string | null) =>
+    text === null ? <PropertyValue value={null} /> : text;
+  return (
+    <div>
+      <p className="mt-1 mb-6 text-fd-muted-foreground">
+        {m.docs_directory_citation_samples_intro()}
+      </p>
+      <SampleTable
+        heading={m.docs_directory_citation_cited()}
+        columns={[
+          m.docs_directory_citation_main(),
+          m.docs_directory_citation_alt(),
+        ]}
+        rows={citations.map(({ label, main, alt }) => ({
+          id: label,
+          label,
+          cells: [cell(main), cell(alt)],
+        }))}
+      />
+    </div>
+  );
+}
+
+/** A note-name entry's result: the name it gives a new note for each sample item. */
+function NoteNameSamples({ notes }: { notes: readonly NoteSampleView[] }) {
+  return (
+    <div>
+      <p className="mt-1 mb-6 text-fd-muted-foreground">
+        {m.docs_directory_note_name_samples_intro()}
+      </p>
+      <SampleTable
+        heading={m.docs_directory_samples_item()}
+        columns={[m.docs_directory_sample_note_name()]}
+        rows={notes.map(({ id, label, noteName }) => ({
+          id,
+          label,
+          cells: [nameCell(noteName)],
+        }))}
+      />
+    </div>
+  );
+}
+
+function nameCell(noteName: string | null): ReactNode {
+  if (noteName === null) return <PropertyValue value={null} />;
+  return <code className="font-mono text-[0.8rem] break-all">{noteName}</code>;
+}
+
+/** One row per sample, one column per result: the shape every recipe's samples table takes. */
+function SampleTable({
+  heading,
+  columns,
+  rows,
+  monoColumns = false,
+}: {
+  heading: string;
+  columns: readonly string[];
+  rows: readonly { id: string; label: string; cells: readonly ReactNode[] }[];
+  monoColumns?: boolean;
+}) {
+  return (
+    <div className="overflow-x-auto border border-fd-border bg-fd-card">
+      <table className="w-full text-start text-sm">
+        <thead className="border-b border-fd-border bg-fd-muted/40">
+          <tr>
+            <th scope="col" className={cn(LABEL, "px-4 py-2.5 text-start")}>
+              {heading}
+            </th>
+            {columns.map((column) => (
+              <th
+                key={column}
+                scope="col"
+                className={cn(
+                  "px-4 py-2.5 text-start",
+                  monoColumns ? "font-mono text-xs font-semibold" : LABEL,
+                )}
+              >
+                {column}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr
+              key={row.id}
+              className="border-b border-fd-border/60 align-top last:border-b-0"
+            >
+              <th scope="row" className="px-4 py-2.5 text-start font-medium">
+                {row.label}
+              </th>
+              {row.cells.map((cell, index) => (
+                <td key={columns[index]} className="px-4 py-2.5">
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /** The most properties the table shows side by side; a rule that writes more shows one sample item at a time. */
 const TABLE_KEYS = 3;
 
@@ -361,46 +477,20 @@ function PropertyTable({
   keys: readonly string[];
 }) {
   return (
-    <div className="overflow-x-auto border border-fd-border bg-fd-card">
-      <table className="w-full text-start text-sm">
-        <thead className="border-b border-fd-border bg-fd-muted/40">
-          <tr>
-            <th scope="col" className={cn(LABEL, "px-4 py-2.5 text-start")}>
-              {m.docs_directory_samples_item()}
-            </th>
-            {keys.map((key) => (
-              <th
-                key={key}
-                scope="col"
-                className="px-4 py-2.5 text-start font-mono text-xs font-semibold"
-              >
-                {key}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {notes.map((note) => (
-            <tr
-              key={note.id}
-              className="border-b border-fd-border/60 align-top last:border-b-0"
-            >
-              <th scope="row" className="px-4 py-2.5 text-start font-medium">
-                {note.label}
-              </th>
-              {keys.map((key) => (
-                <td key={key} className="px-4 py-2.5">
-                  <PropertyCell
-                    property={note.properties?.find(
-                      (entry) => entry.key === key,
-                    )}
-                  />
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <SampleTable
+      heading={m.docs_directory_samples_item()}
+      columns={keys}
+      monoColumns
+      rows={notes.map((note) => ({
+        id: note.id,
+        label: note.label,
+        cells: keys.map((key) => (
+          <PropertyCell
+            key={key}
+            property={note.properties?.find((entry) => entry.key === key)}
+          />
+        )),
+      }))}
+    />
   );
 }
