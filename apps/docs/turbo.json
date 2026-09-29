@@ -48,7 +48,14 @@
       "outputLogs": "errors-only"
     },
     "test": {
-      "dependsOn": ["^build", "transit", "generate:messages"]
+      "dependsOn": ["^build", "transit", "generate:messages"],
+      // The Template Directory suite reads and snapshots the repo-root
+      // Directory (src/lib/template-directory), so its files are test inputs.
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docs/template-directory/**"]
+    },
+    "template-directory:repack": {
+      "dependsOn": ["^build"],
+      "cache": false
     }
   }
 }

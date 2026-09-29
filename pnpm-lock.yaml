@@ -506,6 +506,12 @@ importers:
       '@zotlit/scripts':
         specifier: workspace:*
         version: link:../../packages/scripts
+      '@zotlit/templates':
+        specifier: workspace:*
+        version: link:../../packages/templates
+      ajv:
+        specifier: 'catalog:'
+        version: 8.20.0
       cross-env:
         specifier: 'catalog:'
         version: 10.1.0
@@ -542,6 +548,9 @@ importers:
       wrangler:
         specifier: ^4.125.0
         version: 4.125.0
+      yaml:
+        specifier: 'catalog:'
+        version: 2.9.0
 
   apps/obsidian:
     dependencies:
