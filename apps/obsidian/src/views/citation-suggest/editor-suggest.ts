@@ -123,6 +123,9 @@ export interface PaddedCitationInsert {
  * inserted citation from re-matching a trigger — an alternate-format `@key`
  * at a word boundary would otherwise re-open the suggester.
  *
+ * A bracketed citation ends at its closing bracket instead, which no trigger
+ * matches, so punctuation typed next follows it directly: `[@key].`
+ *
  * @param nextChar - the document character at the insert position (`""` at
  *   line end).
  */
@@ -130,6 +133,8 @@ export function padCitationInsert(
   citation: string,
   nextChar: string,
 ): PaddedCitationInsert {
+  if (closingBracketAt(citation, citation.length - 1))
+    return { text: citation, cursor: citation.length };
   return {
     text: nextChar === " " ? citation : `${citation} `,
     cursor: citation.length + 1,
