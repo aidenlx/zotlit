@@ -52,14 +52,16 @@ The groups come from your highlight colors, with the meanings of the **Color mea
 | Magenta | Examples | Cases and examples | Purple |
 | Blue | Other views | Positions of others that the author takes up | Blue |
 | Gray | Quotes to use | Sentences to quote in your own writing | Gray |
-| Plum | Paraphrases | Passages to paraphrase | Red |
+| Plum (from Citavi only) | Paraphrases | Passages to paraphrase | Red |
 | Any other color | Other highlights | | Blue |
 
 Each annotation is a callout (Obsidian's colored box with an icon and a title) in the color that matches its Zotero color, with no CSS snippet. Obsidian has no yellow or pink callout, so yellow shows orange, magenta shows purple, and plum shows red; the heading and the callout title tell them apart. The callout's title names the role and links to the annotation's page in the PDF, such as **Definitions · p. 5**. A highlight quotes its text inside the callout, and your Zotero comment follows it as ordinary text, so your objections and the author's words stay apart. Image annotations appear as embedded images, and notes and text boxes you add in the PDF appear as their text. Every kind of annotation goes into the group of its color, so nothing is left out.
 
-If you already highlight with other meanings, edit `zotlit-partial.color-meanings-argument.md` in your template folder. Change only the words between the quotation marks: the group headings and the callout titles change together. The `colors` line at the top of that file sets the order of the groups. Every note under this profile follows the next time it updates, for example when you run **Create or update all literature notes**.
+Your headings on top and the groups below follow the same argument: you write the main thesis from the **Main claims**, the key definitions from the **Definitions**, your account of the **Arguments** from the passages of that name, your objections and doubts from the **Objections** and **Unclear points**, and your key quotes from the **Quotes to use**.
 
-Everything from Zotero, from the title down, sits in the part of the note that ZotLit refreshes when you update the note. Your five headings sit above that part, so an update never touches what you write there. To change the text of an annotation, edit its comment in Zotero; the comment appears under the highlight on the next update.
+If you already highlight with other meanings, edit `zotlit-partial.color-meanings-argument.md` in your template folder. Each color has one line, such as `{%- when "red" -%} {%- assign callout = "failure" -%} {%- assign meaning = "Objections" -%}`. Change only the words after `meaning =`, between the quotation marks, and use no quotation marks inside them: the group headings and the callout titles change together. The `colors` line, just below the comment at the top of that file, sets the order of the groups: move a color in that line to move its group, and keep a comma between each two colors. Every note under this profile follows the next time it updates, for example when you run **Create or update all literature notes**.
+
+Everything from Zotero, from the title down, sits in the part of the note that ZotLit refreshes when you update the note, between two marker lines, `%%zt-managed%%` and `%%/zt-managed%%`, that Obsidian hides in reading view. Leave the marker lines in place. Your five headings sit above that part, so an update never touches what you write there. To change the text of an annotation, edit its comment in Zotero; the comment appears under the highlight on the next update.
 
 The note gets six properties, ready to sort and filter in an Obsidian Bases view:
 

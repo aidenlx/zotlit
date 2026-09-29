@@ -38,7 +38,7 @@ Each note holds, from the top:
 - the abstract, folded, so it is at hand without taking over the note;
 - your annotations under **Annotations**, in groups: one heading for each color meaning, such as **Definitions** or **Questions**, with every annotation of that meaning below it in page order. A meaning you did not use in the source gets no heading.
 
-Each annotation is a callout (Obsidian's colored box with an icon and a title) in the color that matches its Zotero color. The callout's title says what the color means and links to the annotation's page in the PDF, such as **Important · p. 5**. A highlight quotes its text inside the callout, and your Zotero comment follows it as ordinary text, so your words and the author's stay apart. Image annotations appear as embedded images, and notes and text boxes you add in the PDF appear as their text. Every kind of annotation goes into the group of its color, so nothing is left out.
+Each annotation is a callout (Obsidian's colored box with an icon and a title) in the color Obsidian has that is nearest to its Zotero color. The callout's title says what the color means and links to the annotation's page in the PDF, such as **Important · p. 5**. A highlight quotes its text inside the callout, and your Zotero comment follows it as ordinary text, so your words and the author's stay apart. Image annotations appear as embedded images, and notes and text boxes you add in the PDF appear as their text. Every kind of annotation goes into the group of its color, so nothing is left out.
 
 The profile starts with the color meanings of the **Color meanings** partial, and the groups come in this order:
 
@@ -52,14 +52,14 @@ The profile starts with the color meanings of the **Color meanings** partial, an
 | Magenta | Examples | Purple |
 | Orange | Questions | Orange |
 | Gray | Quotes to use | Gray |
-| Plum | Paraphrases | Red |
+| Plum (from Citavi only) | Paraphrases | Red |
 | Any other color | Other highlights | Blue |
 
 Obsidian has no yellow or pink callout, so each Zotero color shows the nearest color Obsidian has: yellow highlights show orange, magenta shows purple, and plum shows red. The group heading and the callout title tell them apart. Annotations in a color that is not on the list, such as a custom color from another app, come last, under **Other highlights**.
 
-To give a color another meaning, edit `zotlit-partial.color-meanings.md` in your template folder. Change only the words between the quotation marks. It is the one place the meanings live, so the group headings and the callout titles change together, in every note under this profile, the next time the note updates, for example when you run **Create or update all literature notes**. Two colors with the same meaning share one group.
+To give a color another meaning, edit `zotlit-partial.color-meanings.md` in your template folder. Each color has one line, such as `{%- when "yellow" -%} {%- assign callout = "warning" -%} {%- assign meaning = "Important" -%}`. Change only the words after `meaning =`, between the quotation marks, and use no quotation marks inside them. It is the one place the meanings live, so the group headings and the callout titles change together, in every note under this profile, the next time the note updates, for example when you run **Create or update all literature notes**. Two colors with the same meaning share one group.
 
-Everything from Zotero, from the title down, sits in the part of the note that ZotLit refreshes when you update the note. New annotations go into their groups, and a group appears when its first annotation does. Your three headings sit above that part, so an update never touches what you write there. To change the text of an annotation, edit its comment in Zotero; the comment appears under the highlight on the next update.
+Everything from Zotero, from the title down, sits in the part of the note that ZotLit refreshes when you update the note, between two marker lines, `%%zt-managed%%` and `%%/zt-managed%%`, that Obsidian hides in reading view. Leave the marker lines in place. New annotations go into their groups, and a group appears when its first annotation does. Your three headings sit above that part, so an update never touches what you write there. To change the text of an annotation, edit its comment in Zotero; the comment appears under the highlight on the next update.
 
 The note gets six properties, ready to sort and filter in an Obsidian Bases view:
 
