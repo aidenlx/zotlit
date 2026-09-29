@@ -3,6 +3,7 @@
 import { scanPandocCitations } from "@zotlit/templates/pandoc-citation";
 import type { PandocTextSpan as TextSpan } from "@zotlit/templates/pandoc-citation";
 
+import { maskWikilinks } from "@/services/citation-index/scan";
 import type {
   CitationKeyState,
   CitationSource,
@@ -86,7 +87,7 @@ export function citekeyMarks(
   isExcluded: (span: TextSpan) => boolean,
 ): CitekeyMark[] {
   const marks: CitekeyMark[] = [];
-  for (const citation of scanPandocCitations(text)) {
+  for (const citation of scanPandocCitations(maskWikilinks(text))) {
     for (const item of citation.items) {
       const span = {
         start: item.suppressAuthor ? item.start + 1 : item.start,
@@ -136,7 +137,9 @@ export function citationRanges(
   isExcluded: (span: TextSpan) => boolean,
 ): CitationRange[] {
   const found: CitationRange[] = [];
-  for (const { start, end, items } of scanPandocCitations(text)) {
+  for (const { start, end, items } of scanPandocCitations(
+    maskWikilinks(text),
+  )) {
     if (isExcluded({ start, end })) continue;
     found.push({
       start,
