@@ -62,7 +62,7 @@ function siteEntry(
     description: entry.description,
     minAppVersion: entry.minAppVersion,
     calls: entry.calls,
-    file: { name: entry.artifact.fileName, text: entry.artifact.source },
+    file: { name: downloadName(entry), text: entry.artifact.source },
     copyText: copyText(entry),
     details: details(entry),
     notes: (samples?.notes ?? []).map(
@@ -82,6 +82,23 @@ function siteEntry(
     })),
     citations: samples?.citations ?? [],
   };
+}
+
+/**
+ * The name a download carries. A Profile, a partial, and the citation text
+ * keep the name ZotLit reads in the template folder; a note name and a
+ * property go into a field rather than a file, so their download is named
+ * after the entry, and two downloads never share a name.
+ */
+function downloadName(entry: DirectoryEntry): string {
+  switch (entry.kind) {
+    case "note-name":
+      return `zotlit-note-name.${entry.slug}.liquid`;
+    case "property":
+      return `zotlit-property.${entry.slug}.yaml`;
+    default:
+      return entry.artifact.fileName;
+  }
 }
 
 /** What the reader pastes into the place the entry goes. */

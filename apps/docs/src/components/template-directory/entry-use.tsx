@@ -1,5 +1,6 @@
 // An entry page's "How to use it" steps: where the reader puts the entry in Obsidian, in the plugin's own UI Labels.
 
+import { asMarkdown } from "fumadocs-core/server";
 import { CodeBlock, Pre } from "fumadocs-ui/components/codeblock";
 import type { ReactNode } from "react";
 
@@ -11,7 +12,7 @@ import type { EntryDetails, SiteEntry } from "@/lib/template-directory/site";
 import { m } from "@/paraglide/messages.js";
 import type { LocalizedString } from "@/paraglide/runtime.js";
 
-import { copyLabel } from "./entry-actions";
+import { copyLabel } from "./labels";
 
 const MERGE_LABEL = {
   replace: m.workbench_properties_merge_replace,
@@ -27,30 +28,47 @@ export function EntryUse({
 }: {
   entry: Pick<SiteEntry, "id" | "kind" | "title" | "details">;
 }) {
+  // The Markdown edition renders these steps too; see `lib/template-directory/markdown-edition.tsx`.
+  asMarkdown();
   const copy = <strong>{copyLabel(entry.kind)}</strong>;
   const slug = entry.id.split("/")[1] ?? "";
   switch (entry.details.kind) {
     case "profile":
       return (
         <Steps>
-          <Step text={m.docs_directory_profile_step_copy({ copy: "{copy}" })}>
-            {{ copy }}
-          </Step>
-          <Step
-            text={m.docs_directory_profile_step_import({
-              command: "{command}",
-              clipboard: "{clipboard}",
-              file: "{file}",
-            })}
-          >
-            {{
-              command: (
-                <Command inline name={m.command_import_profile_name()} />
-              ),
-              clipboard: <UiLabel name={m.profile_import_clipboard()} />,
-              file: <UiLabel name={m.profile_import_file()} />,
-            }}
-          </Step>
+          <li>
+            <p>
+              <Message
+                text={m.docs_directory_profile_step_one_click({
+                  import: "{import}",
+                })}
+                slots={{ import: <UiLabel name={m.docs_directory_import()} /> }}
+              />
+            </p>
+            <p>{m.docs_directory_profile_step_fallback()}</p>
+            <ul>
+              <Step
+                text={m.docs_directory_profile_step_copy({ copy: "{copy}" })}
+              >
+                {{ copy }}
+              </Step>
+              <Step
+                text={m.docs_directory_profile_step_import({
+                  command: "{command}",
+                  clipboard: "{clipboard}",
+                  file: "{file}",
+                })}
+              >
+                {{
+                  command: (
+                    <Command inline name={m.command_import_profile_name()} />
+                  ),
+                  clipboard: <UiLabel name={m.profile_import_clipboard()} />,
+                  file: <UiLabel name={m.profile_import_file()} />,
+                }}
+              </Step>
+            </ul>
+          </li>
           <Step
             text={m.docs_directory_profile_step_confirm({
               confirm: "{confirm}",
@@ -110,9 +128,7 @@ export function EntryUse({
                   }}
                 />
               )}
-              <CodeBlock className="not-prose">
-                <Pre className="px-4">{call}</Pre>
-              </CodeBlock>
+              <CallCode call={call} />
             </li>
           </Steps>
           <p>{m.docs_directory_partial_file()}</p>
@@ -197,10 +213,12 @@ export function EntryUse({
         <Steps>
           <OpenProfileStep tab={m.workbench_tab_properties()} />
           <li>
-            <Message
-              text={m.docs_directory_property_step_add({ add: "{add}" })}
-              slots={{ add: <UiLabel name={m.workbench_properties_add()} /> }}
-            />
+            <p>
+              <Message
+                text={m.docs_directory_property_step_add({ add: "{add}" })}
+                slots={{ add: <UiLabel name={m.workbench_properties_add()} /> }}
+              />
+            </p>
             <table>
               <thead>
                 <tr>
@@ -256,7 +274,24 @@ export function EntryUse({
 }
 
 function Steps({ children }: { children: ReactNode }) {
+  asMarkdown();
   return <ol>{children}</ol>;
+}
+
+/** The Liquid a Profile writes to call a partial, as a code block. */
+function CallCode({ call }: { call: string }) {
+  if (asMarkdown()) {
+    return (
+      <pre>
+        <code className="language-liquid">{call}</code>
+      </pre>
+    );
+  }
+  return (
+    <CodeBlock className="not-prose">
+      <Pre className="px-4">{call}</Pre>
+    </CodeBlock>
+  );
 }
 
 /** One step: a sentence of the site's catalog with the plugin's UI Labels in its slots. */
@@ -267,6 +302,7 @@ function Step({
   text: string;
   children: Record<string, ReactNode>;
 }) {
+  asMarkdown();
   return (
     <li>
       <Message text={text} slots={children} />
@@ -275,6 +311,7 @@ function Step({
 }
 
 function OpenProfileStep({ tab }: { tab: LocalizedString }) {
+  asMarkdown();
   return (
     <Step
       text={m.docs_directory_open_profile_step({

@@ -104,8 +104,11 @@ function cloudflareAssetRules(): Plugin {
  * which a WebP or a zip does not survive. Rendering them here also keeps the
  * native takumi renderer and the workspace file reads in Node, where the
  * Worker runtime cannot reach them.
+ *
+ * @param directory the Template Directory as the build read it, whose index
+ * and entries each get a card. The dev server keeps the cards of that read.
  */
-function machineAssets(): Plugin {
+function machineAssets(directory: DirectorySite): Plugin {
   const renderCard = createOgCardRenderer(packageRoot);
   let skills: Promise<Map<string, Uint8Array>> | undefined;
   const agentSkills = () =>
@@ -117,7 +120,7 @@ function machineAssets(): Plugin {
       if (this.environment.name !== "client") return;
 
       const assets = new Map(await agentSkills());
-      for (const [path, card] of await ogCards(packageRoot)) {
+      for (const [path, card] of await ogCards(packageRoot, directory)) {
         assets.set(path, await renderCard(card));
       }
       for (const [path, source] of assets) {
@@ -135,7 +138,7 @@ function machineAssets(): Plugin {
           return { type, body: skill };
         }
 
-        const card = (await ogCards(packageRoot)).get(path);
+        const card = (await ogCards(packageRoot, directory)).get(path);
         if (!card) return undefined;
         return { type: "image/webp", body: await renderCard(card) };
       }
@@ -266,7 +269,7 @@ export default defineConfig(async ({ command }) => {
       tailwindcss(),
       fumadocsMdx({ index: false }),
       cloudflareAssetRules(),
-      machineAssets(),
+      machineAssets(directory),
       templateDirectoryData(directory),
       cloudflare({
         viteEnvironment: { name: "ssr" },
