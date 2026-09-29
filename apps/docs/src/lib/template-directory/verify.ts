@@ -300,7 +300,7 @@ function checkManagedBlock(source: string, report: Report): void {
   if (/\{\{|\{%/.test(outside)) {
     report(
       "managed-block",
-      "Template code sits outside the Managed Block, where an update would never refresh it. Move it inside {% managed %} … {% endmanaged %}; the text around the block is the reader's.",
+      "Template code sits outside the Managed Block, where an update would never refresh it. Move it inside {% managed %} … {% endmanaged %}; the text around the block is the reader's. Only a first-line title heading, # {{ zt.title }}, may stay outside.",
     );
   }
 }
