@@ -9,36 +9,58 @@ export const UPDATE_SAMPLES_COMMAND =
 
 export function formatEntrySamples(
   entry: Pick<DirectoryEntry, "title" | "kind">,
-  { notes, annotations, citations = [] }: EntrySamples,
+  samples: EntrySamples,
 ): string {
   const sections = [
     `<!-- Written by the Template Directory verification suite; do not edit. Update with: ${UPDATE_SAMPLES_COMMAND} -->`,
     `# Rendered samples: ${entry.title}`,
-    ...(entry.kind === "note-name"
-      ? [noteNameTable(notes)]
-      : notes.map((note) => noteSection(note, entry.kind))),
+    ...formatSampleSections(entry.kind, samples, { depth: 2 }),
   ];
+  return `${sections.join("\n\n")}\n`;
+}
+
+/**
+ * One entry's rendered samples as Markdown sections, each sample under a
+ * heading of `depth`, so a page can place them below a heading of its own.
+ * `leftOut` is what a property sample shows when the rule writes nothing.
+ */
+export function formatSampleSections(
+  kind: DirectoryEntry["kind"],
+  { notes, annotations, citations = [] }: EntrySamples,
+  { depth, leftOut = NO_OUTPUT }: { depth: number; leftOut?: string },
+): string[] {
+  const hashes = "#".repeat(depth);
+  const sections =
+    kind === "note-name"
+      ? [noteNameTable(notes)]
+      : notes.map((note) => noteSection(note, kind, { hashes, leftOut }));
   if (citations.length > 0) sections.push(citationTable(citations));
   if (annotations.length > 0) {
     sections.push(
-      "## Annotation Section",
+      `${hashes} Annotation Section`,
       ...annotations.map(({ label, output }) =>
-        [`### ${capitalize(label)}`, block(output, "markdown")].join("\n\n"),
+        [`${hashes}# ${capitalize(label)}`, codeBlock(output, "markdown")].join(
+          "\n\n",
+        ),
       ),
     );
   }
-  return `${sections.join("\n\n")}\n`;
+  return sections;
 }
 
 function noteSection(
   { sample, noteName, properties, body }: NoteSample,
   kind: DirectoryEntry["kind"],
+  { hashes, leftOut }: { hashes: string; leftOut: string },
 ): string {
-  const heading = `## ${sample.label}`;
+  const heading = `${hashes} ${sample.label}`;
   if (kind === "property")
-    return [heading, block(properties, "yaml")].join("\n\n");
+    return [
+      heading,
+      isEmpty(properties) ? leftOut : codeBlock(properties, "yaml"),
+    ].join("\n\n");
   if (kind !== "profile")
-    return [heading, block(body, "markdown")].join("\n\n");
+    return [heading, codeBlock(body, "markdown")].join("\n\n");
   const note =
     body === null
       ? null
@@ -48,7 +70,7 @@ function noteSection(
   return [
     heading,
     `Note name: \`${noteName ?? "(none)"}\``,
-    block(note, "markdown"),
+    codeBlock(note, "markdown"),
   ].join("\n\n");
 }
 
@@ -79,9 +101,16 @@ function table(
   ].join("\n");
 }
 
+/** What a sample shows when it renders nothing. */
+const NO_OUTPUT = "_No output._";
+
+function isEmpty(content: string | null): boolean {
+  return content === null || content.trim() === "";
+}
+
 /** An inline code span one backtick longer than any run inside it. */
 function code(content: string | null): string {
-  if (content === null || content.trim() === "") return "_No output._";
+  if (content === null || isEmpty(content)) return NO_OUTPUT;
   const longest = Math.max(
     0,
     ...[...content.matchAll(/`+/g)].map(([run]) => run.length),
@@ -92,8 +121,8 @@ function code(content: string | null): string {
 }
 
 /** A fenced block one backtick longer than any run inside it, so it never closes early. */
-function block(content: string | null, language: string): string {
-  if (content === null || content.trim() === "") return "_No output._";
+export function codeBlock(content: string | null, language: string): string {
+  if (content === null || isEmpty(content)) return NO_OUTPUT;
   const longest = Math.max(
     2,
     ...[...content.matchAll(/`+/g)].map(([run]) => run.length),

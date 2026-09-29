@@ -12,8 +12,16 @@
 
 import { changelogFeedRoute } from "./shared.js";
 
-/** The content sections that publish a Markdown edition. */
-export const markdownSections = ["docs", "changelog", "blog"] as const;
+/** The sections whose pages come from the content directory. */
+export const contentSections = ["docs", "changelog", "blog"] as const;
+
+export type ContentSection = (typeof contentSections)[number];
+
+/**
+ * The sections that publish a Markdown edition: the content sections, and the
+ * Template Directory, whose pages come from the Directory itself.
+ */
+export const markdownSections = [...contentSections, "templates"] as const;
 
 export type MarkdownSection = (typeof markdownSections)[number];
 

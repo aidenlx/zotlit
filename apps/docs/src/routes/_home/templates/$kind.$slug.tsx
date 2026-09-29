@@ -16,7 +16,7 @@ import {
 } from "@/components/template-directory/labels";
 import { cn } from "@/lib/cn";
 import { ztProse } from "@/lib/prose";
-import { HOME_OG_ALT, pageHead } from "@/lib/seo";
+import { pageHead } from "@/lib/seo";
 import { appName } from "@/lib/shared";
 import { breadcrumbListSchema } from "@/lib/structured-data";
 import { DIRECTORY_PATH, entryPath } from "@/lib/template-directory/site";
@@ -54,7 +54,11 @@ export const Route = createFileRoute("/_home/templates/$kind/$slug")({
       title: entry.title,
       description: entry.summary,
       path: entryPath(entry.id),
-      card: { type: "home", alt: HOME_OG_ALT() },
+      card: {
+        type: "templates",
+        slugs: entry.id.split("/"),
+        alt: m.docs_directory_entry_og_alt({ title: entry.title }),
+      },
       schemas: [
         breadcrumbListSchema([
           { name: appName, url: "/" },

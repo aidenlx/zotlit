@@ -3,12 +3,11 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
-import type { EntryLevel } from "@/lib/template-directory/entry";
 import type { Facet, IndexedEntry } from "@/lib/template-directory/search";
 import type { FacetOption } from "@/lib/template-directory/site";
 import { m } from "@/paraglide/messages.js";
 
-import { KIND_LABEL, valueLabels } from "./labels";
+import { GROUPS, KIND_LABEL, valueLabels } from "./labels";
 
 type Facets = Readonly<Record<Facet, readonly FacetOption[]>>;
 
@@ -107,23 +106,6 @@ export function StartHere({ entries }: { entries: readonly IndexedEntry[] }) {
     </section>
   );
 }
-
-const GROUPS = [
-  {
-    level: "ready-to-use",
-    heading: m.docs_directory_group_ready,
-    description: m.docs_directory_group_ready_description,
-  },
-  {
-    level: "customize",
-    heading: m.docs_directory_group_customize,
-    description: m.docs_directory_group_customize_description,
-  },
-] as const satisfies readonly {
-  level: EntryLevel;
-  heading: () => string;
-  description: () => string;
-}[];
 
 export function ResultGroups({
   results,

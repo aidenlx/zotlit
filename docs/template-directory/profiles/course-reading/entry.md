@@ -62,4 +62,4 @@ Tags you add in Obsidian stay when the note updates. A tag you remove in Zotero 
 
 ZotLit never chooses this profile by itself: the import sheet shows **Not auto-selected**, and your other profiles keep the items they take now. When you create a note for a reading, ZotLit asks which profile to use; choose **Course reading**. If another profile of yours already takes the item, ZotLit creates the note with that profile; then run **Switch literature note profile** from the note and choose **Course reading**.
 
-To use it, copy the entry or download its file, then run **Import profile…** in Obsidian. The import sheet shows the profile before anything is written. The profile brings its three building blocks (partials) with it: `links-row`, `folded-abstract`, and `plain-annotation-quote`.
+To use it, select **Import into Obsidian** on this page. If the import sheet does not open, select **Copy profile** or **Download file**, then run **Import profile…** in Obsidian. The import sheet shows the profile before anything is written. The profile brings its three building blocks (partials) with it: `links-row`, `folded-abstract`, and `plain-annotation-quote`.

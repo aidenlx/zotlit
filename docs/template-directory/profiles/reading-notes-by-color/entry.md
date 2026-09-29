@@ -74,4 +74,4 @@ The note gets six properties, ready to sort and filter in an Obsidian Bases view
 
 Tags you add in Obsidian stay when the note updates, and so does a `status` you change by hand. A tag you remove in Zotero stays in the note until you delete it from the note too. A property is left out when the item has no value for it. Spaces in a Zotero tag become underscores. Other characters stay as they are, so a Zotero tag with a comma or a `#` in it needs a manual fix in Obsidian.
 
-To use it, copy the entry or download its file, then run **Import profile…** in Obsidian. The import sheet shows the profile before anything is written. The profile brings its five building blocks (partials) with it: `links-row`, `folded-abstract`, `color-groups`, `color-meanings`, and `color-callout`.
+To use it, select **Import into Obsidian** on this page. If the import sheet does not open, select **Copy profile** or **Download file**, then run **Import profile…** in Obsidian. The import sheet shows the profile before anything is written. The profile brings its five building blocks (partials) with it: `links-row`, `folded-abstract`, `color-groups`, `color-meanings`, and `color-callout`.

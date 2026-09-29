@@ -18,6 +18,31 @@ export const LEVEL_LABEL = {
   customize: m.docs_directory_level_customize,
 } satisfies Record<EntryLevel, () => string>;
 
+/** The copy action's name, which the entry's steps also quote. */
+export function copyLabel(kind: EntryKind): string {
+  if (kind === "profile") return m.docs_directory_copy_profile();
+  if (kind === "property") return m.docs_directory_copy_rule();
+  return m.docs_directory_copy_template();
+}
+
+/** The index's groups, one per level, in the order the index lists them. */
+export const GROUPS = [
+  {
+    level: "ready-to-use",
+    heading: m.docs_directory_group_ready,
+    description: m.docs_directory_group_ready_description,
+  },
+  {
+    level: "customize",
+    heading: m.docs_directory_group_customize,
+    description: m.docs_directory_group_customize_description,
+  },
+] as const satisfies readonly {
+  level: EntryLevel;
+  heading: () => string;
+  description: () => string;
+}[];
+
 export const FACET_LABEL = {
   task: m.docs_directory_facet_task,
   kind: m.docs_directory_facet_kind,

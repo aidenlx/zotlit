@@ -14,7 +14,7 @@ import { getSlugs } from "fumadocs-core/source";
 import { globSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import type { MarkdownSection } from "./markdown-routes.js";
+import type { ContentSection } from "./markdown-routes.js";
 
 /** One content file, addressed the way the loaders address it. */
 export interface ContentEntry {
@@ -27,7 +27,7 @@ export interface ContentEntry {
  * One content directory per section, matching the file patterns the
  * collections in `collections.ts` pick up.
  */
-const sections: Record<MarkdownSection, { dir: string; files: string }> = {
+const sections: Record<ContentSection, { dir: string; files: string }> = {
   docs: { dir: "content/docs", files: "**/[!_]*.mdx" },
   changelog: { dir: "content/changelog", files: "**/*.{mdx,md}" },
   blog: { dir: "content/blog", files: "**/*.{mdx,md}" },
@@ -39,7 +39,7 @@ const sections: Record<MarkdownSection, { dir: string; files: string }> = {
  */
 export function scanContent(
   packageRoot: string,
-): Record<MarkdownSection, ContentEntry[]> {
+): Record<ContentSection, ContentEntry[]> {
   return Object.fromEntries(
     Object.entries(sections).map(([section, { dir, files }]) => {
       const cwd = resolve(packageRoot, dir);
@@ -51,5 +51,5 @@ export function scanContent(
       );
       return [section, entries];
     }),
-  ) as Record<MarkdownSection, ContentEntry[]>;
+  ) as Record<ContentSection, ContentEntry[]>;
 }
