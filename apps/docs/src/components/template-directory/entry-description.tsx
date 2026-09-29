@@ -11,7 +11,7 @@ const { Markdown } = createMarkdownRenderer({ remarkPlugins: [remarkGfm] });
 
 export function EntryDescription({ markdown }: { markdown: string }) {
   return (
-    <div className={cn("prose max-w-none", ztProse)}>
+    <div className={cn("prose max-w-[72ch]", ztProse)}>
       <Markdown components={getMDXComponents()}>{markdown}</Markdown>
     </div>
   );

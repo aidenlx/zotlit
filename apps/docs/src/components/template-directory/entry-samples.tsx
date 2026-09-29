@@ -35,7 +35,7 @@ const SHEET = cn(
 );
 
 const LABEL =
-  "font-mono text-[0.7rem] font-semibold tracking-[0.1em] text-fd-muted-foreground uppercase";
+  "font-mono text-[0.72rem] font-semibold tracking-[0.1em] text-fd-muted-foreground uppercase";
 
 export function EntrySamples({
   entry,
@@ -52,7 +52,7 @@ export function EntrySamples({
   return (
     <div className="flex flex-col gap-10">
       {entry.kind === "property" ? (
-        <PropertyTable notes={notes} />
+        <PropertySamples notes={notes} />
       ) : (
         hasBody && (
           <Tabs defaultValue={notes[0]?.id}>
@@ -149,7 +149,10 @@ function NoteSheet({
       )}
       <div className="flex flex-col p-5 sm:p-6">
         {!showMarkdown && note.properties !== null && (
-          <PropertyRows properties={note.properties} />
+          <PropertyRows
+            properties={note.properties}
+            className="mb-4 border-b border-fd-border pb-3"
+          />
         )}
         <Sheet
           markdown={note.body ?? ""}
@@ -219,29 +222,52 @@ function Sheet({
   );
 }
 
-/** A note's properties the way Obsidian lists them above the note. */
+/**
+ * A note's properties the way Obsidian lists them above the note. Given the
+ * keys a rule writes, it also lists each one this note leaves out.
+ */
 function PropertyRows({
   properties,
+  keys = properties.map(({ key }) => key),
+  className,
 }: {
   properties: readonly SampleProperty[];
+  keys?: readonly string[];
+  className?: string;
 }) {
   return (
     <dl
       aria-label={m.docs_directory_sample_properties()}
-      className="mb-4 grid grid-cols-[minmax(6rem,auto)_1fr] gap-x-4 gap-y-1 border-b border-fd-border pb-3 text-sm"
+      className={cn(
+        "grid grid-cols-[minmax(6rem,auto)_1fr] gap-x-4 gap-y-1 text-sm",
+        className,
+      )}
     >
-      {properties.map(({ key, value }) => (
+      {keys.map((key) => (
         <div key={key} className="contents">
           <dt className="font-mono text-xs leading-6 text-fd-muted-foreground">
             {key}
           </dt>
           <dd className="min-w-0 break-words">
-            <PropertyValue value={value} />
+            <PropertyCell
+              property={properties.find((property) => property.key === key)}
+            />
           </dd>
         </div>
       ))}
     </dl>
   );
+}
+
+function PropertyCell({ property }: { property: SampleProperty | undefined }) {
+  if (property === undefined) {
+    return (
+      <span className="text-fd-muted-foreground italic">
+        {m.docs_directory_sample_left_out()}
+      </span>
+    );
+  }
+  return <PropertyValue value={property.value} />;
 }
 
 function PropertyValue({ value }: { value: SampleProperty["value"] }) {
@@ -267,8 +293,11 @@ function PropertyValue({ value }: { value: SampleProperty["value"] }) {
   );
 }
 
-/** A property recipe's result for every sample item at once: one row per item, one column per property. */
-function PropertyTable({ notes }: { notes: readonly NoteSampleView[] }) {
+/** The most properties the table shows side by side; a rule that writes more shows one sample item at a time. */
+const TABLE_KEYS = 3;
+
+/** A property recipe's result for every sample item, with each property the rule writes. */
+function PropertySamples({ notes }: { notes: readonly NoteSampleView[] }) {
   const keys = [
     ...new Set(
       notes.flatMap(({ properties }) =>
@@ -278,57 +307,85 @@ function PropertyTable({ notes }: { notes: readonly NoteSampleView[] }) {
   ];
   return (
     <div>
-      <p className="mb-4 text-fd-muted-foreground">
+      <p className="mt-1 mb-6 text-fd-muted-foreground">
         {m.docs_directory_property_samples_intro()}
       </p>
-      <div className="overflow-x-auto border border-fd-border bg-fd-card">
-        <table className="w-full text-start text-sm">
-          <thead className="border-b border-fd-border bg-fd-muted/40">
-            <tr>
-              <th scope="col" className={cn(LABEL, "px-4 py-2.5")}>
-                {m.docs_directory_samples_item()}
+      {keys.length > TABLE_KEYS ? (
+        <Tabs defaultValue={notes[0]?.id}>
+          <TabsList
+            aria-label={m.docs_directory_samples_item()}
+            className="mb-5"
+          >
+            {notes.map((note) => (
+              <TabsTrigger key={note.id} value={note.id}>
+                {note.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          {notes.map((note) => (
+            <TabsContent key={note.id} value={note.id}>
+              <div className={cn(SHEET, "p-5 sm:p-6")}>
+                <PropertyRows properties={note.properties ?? []} keys={keys} />
+              </div>
+            </TabsContent>
+          ))}
+        </Tabs>
+      ) : (
+        <PropertyTable notes={notes} keys={keys} />
+      )}
+    </div>
+  );
+}
+
+/** A few properties for every sample item at once: one row per item, one column per property. */
+function PropertyTable({
+  notes,
+  keys,
+}: {
+  notes: readonly NoteSampleView[];
+  keys: readonly string[];
+}) {
+  return (
+    <div className="overflow-x-auto border border-fd-border bg-fd-card">
+      <table className="w-full text-start text-sm">
+        <thead className="border-b border-fd-border bg-fd-muted/40">
+          <tr>
+            <th scope="col" className={cn(LABEL, "px-4 py-2.5 text-start")}>
+              {m.docs_directory_samples_item()}
+            </th>
+            {keys.map((key) => (
+              <th
+                key={key}
+                scope="col"
+                className="px-4 py-2.5 text-start font-mono text-xs font-semibold"
+              >
+                {key}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {notes.map((note) => (
+            <tr
+              key={note.id}
+              className="border-b border-fd-border/60 align-top last:border-b-0"
+            >
+              <th scope="row" className="px-4 py-2.5 text-start font-medium">
+                {note.label}
               </th>
               {keys.map((key) => (
-                <th
-                  key={key}
-                  scope="col"
-                  className="px-4 py-2.5 font-mono text-xs font-semibold"
-                >
-                  {key}
-                </th>
+                <td key={key} className="px-4 py-2.5">
+                  <PropertyCell
+                    property={note.properties?.find(
+                      (entry) => entry.key === key,
+                    )}
+                  />
+                </td>
               ))}
             </tr>
-          </thead>
-          <tbody>
-            {notes.map((note) => (
-              <tr
-                key={note.id}
-                className="border-b border-fd-border/60 align-top last:border-b-0"
-              >
-                <th scope="row" className="px-4 py-2.5 font-medium">
-                  {note.label}
-                </th>
-                {keys.map((key) => {
-                  const property = note.properties?.find(
-                    (entry) => entry.key === key,
-                  );
-                  return (
-                    <td key={key} className="px-4 py-2.5">
-                      {property === undefined ? (
-                        <span className="text-fd-muted-foreground italic">
-                          {m.docs_directory_sample_left_out()}
-                        </span>
-                      ) : (
-                        <PropertyValue value={property.value} />
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

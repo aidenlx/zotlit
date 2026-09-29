@@ -95,7 +95,7 @@ function DirectoryEntryPage() {
         <h1 className="mb-3 text-4xl leading-[1.16] font-medium text-balance lg:text-[44px]">
           {entry.title}
         </h1>
-        <p className="mb-4 text-lg text-pretty text-fd-muted-foreground italic">
+        <p className="mb-4 max-w-[60ch] text-lg text-pretty text-fd-muted-foreground italic">
           {entry.summary}
         </p>
         <p className="mb-6 font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
@@ -127,9 +127,11 @@ function DirectoryEntryPage() {
               <h2 id="samples" className={HEADING}>
                 {m.docs_directory_samples_heading()}
               </h2>
-              <p className="mt-1 mb-6 text-fd-muted-foreground">
-                {m.docs_directory_samples_intro()}
-              </p>
+              {entry.kind !== "property" && (
+                <p className="mt-1 mb-6 text-fd-muted-foreground">
+                  {m.docs_directory_samples_intro()}
+                </p>
+              )}
               <EntrySamples entry={entry} />
             </section>
           )}
@@ -138,7 +140,7 @@ function DirectoryEntryPage() {
             <h2 id="use" className={HEADING}>
               {m.docs_directory_use_heading()}
             </h2>
-            <div className={cn("prose mt-2 max-w-none", ztProse)}>
+            <div className={cn("prose mt-2 max-w-[72ch]", ztProse)}>
               <EntryUse entry={entry} />
             </div>
           </section>
@@ -179,7 +181,7 @@ function DirectoryEntryPage() {
           )}
         </div>
 
-        <aside className="flex flex-col gap-7 lg:border-s lg:border-fd-border lg:ps-8">
+        <aside className="flex flex-col gap-7 border-t border-fd-border pt-8 lg:border-s lg:border-t-0 lg:ps-8 lg:pt-0">
           <FacetList
             heading={m.docs_directory_tasks()}
             values={valueLabels("task", facets.task, entry.tasks)}

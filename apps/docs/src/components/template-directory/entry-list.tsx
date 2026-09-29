@@ -37,19 +37,19 @@ function EntryLink({
 export function StartHere({ entries }: { entries: readonly IndexedEntry[] }) {
   if (entries.length === 0) return null;
   return (
-    <section aria-labelledby="start-here" className="py-8">
+    <section aria-labelledby="start-here">
       <h2
         id="start-here"
         className="mb-5 font-mono text-xs font-semibold tracking-[0.2em] text-fd-primary uppercase"
       >
         {m.docs_directory_start_here()}
       </h2>
-      <ul className="grid gap-7 sm:grid-cols-2 lg:grid-cols-3">
+      <ul className="grid gap-7 sm:grid-cols-2 lg:grid-cols-1">
         {entries.map((entry) => (
           <li key={entry.id} className="flex">
             <EntryLink
               id={entry.id}
-              className="group relative flex w-full flex-col border border-fd-border bg-fd-card p-6 font-serif no-underline shadow-[6px_6px_0_0_var(--color-fd-border)] transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:border-fd-primary hover:shadow-[6px_6px_0_0_var(--color-fd-primary)]"
+              className="group relative flex w-full flex-col border border-fd-border bg-fd-card p-6 font-serif no-underline shadow-[6px_6px_0_0_var(--color-fd-border)] transition-[translate,box-shadow,border-color] hover:-translate-x-0.5 hover:-translate-y-0.5 hover:border-fd-primary hover:shadow-[6px_6px_0_0_var(--color-fd-primary)]"
             >
               <span
                 aria-hidden
@@ -143,7 +143,7 @@ function ResultRow({ entry, facets }: { entry: IndexedEntry; facets: Facets }) {
       : [m.docs_directory_any_item_type()];
   return (
     <li className="border-b border-fd-border/60 py-5 last:border-b-0">
-      <p className="flex flex-wrap items-center gap-x-2 font-mono text-[0.7rem] font-medium tracking-[0.1em] text-fd-muted-foreground uppercase">
+      <p className="flex flex-wrap items-center gap-x-2 font-mono text-[0.72rem] font-medium tracking-[0.1em] text-fd-muted-foreground uppercase">
         <span>{KIND_LABEL[entry.kind]()}</span>
         {entry.recommended && (
           <span className="border border-fd-primary px-1.5 text-fd-primary">
@@ -159,7 +159,7 @@ function ResultRow({ entry, facets }: { entry: IndexedEntry; facets: Facets }) {
           {entry.title}
         </EntryLink>
       </h3>
-      <p className="mt-1 max-w-[62ch] text-pretty text-fd-muted-foreground">
+      <p className="mt-1 max-w-[62ch] font-serif text-pretty text-fd-muted-foreground">
         {entry.summary}
       </p>
       <p className="mt-2 text-sm text-fd-muted-foreground">

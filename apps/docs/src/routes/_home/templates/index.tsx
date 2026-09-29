@@ -86,19 +86,20 @@ function DirectoryIndex() {
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-6">
-      <header className="max-w-3xl pt-16 pb-2 font-serif">
-        <p className="mb-4 font-mono text-xs font-semibold tracking-[0.2em] text-fd-primary uppercase">
-          {m.docs_directory_title()}
-        </p>
-        <h1 className="mb-3 text-4xl leading-[1.16] font-medium text-balance lg:text-[44px]">
-          {m.docs_directory_heading()}
-        </h1>
-        <p className="max-w-[60ch] text-lg text-pretty text-fd-muted-foreground italic">
-          {m.docs_directory_intro()}
-        </p>
-      </header>
-
-      <StartHere entries={entries.filter(({ recommended }) => recommended)} />
+      <div className="grid gap-10 pt-16 pb-10 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-end lg:gap-14">
+        <header className="font-serif">
+          <p className="mb-4 font-mono text-xs font-semibold tracking-[0.2em] text-fd-primary uppercase">
+            {m.docs_directory_title()}
+          </p>
+          <h1 className="mb-3 text-4xl leading-[1.16] font-medium text-balance lg:text-[44px]">
+            {m.docs_directory_heading()}
+          </h1>
+          <p className="max-w-[60ch] text-lg text-pretty text-fd-muted-foreground italic">
+            {m.docs_directory_intro()}
+          </p>
+        </header>
+        <StartHere entries={entries.filter(({ recommended }) => recommended)} />
+      </div>
 
       <div role="search" className="border-t border-fd-border pt-8">
         <label htmlFor="directory-search" className="sr-only">
@@ -129,6 +130,7 @@ function DirectoryIndex() {
             facets={facets}
             chosen={query.facets}
             counts={counts}
+            resultCount={results.length}
             onChange={(facet, values) =>
               setQuery({
                 ...query,
