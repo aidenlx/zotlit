@@ -509,6 +509,9 @@ importers:
       '@zotlit/templates':
         specifier: workspace:*
         version: link:../../packages/templates
+      '@zotlit/zotero-types':
+        specifier: workspace:*
+        version: link:../../packages/zotero-types
       ajv:
         specifier: 'catalog:'
         version: 8.20.0

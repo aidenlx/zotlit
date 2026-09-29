@@ -18,6 +18,9 @@ import { createOgCardRenderer } from "./src/lib/og-card.js";
 import { ogCards } from "./src/lib/og-cards.js";
 import { prerenderPages } from "./src/lib/prerender-pages.js";
 import type { DocsLine } from "./src/lib/shared.js";
+import { templateDirectoryRoot } from "./src/lib/template-directory/read.js";
+import { loadDirectorySite } from "./src/lib/template-directory/site-data.js";
+import type { DirectorySite } from "./src/lib/template-directory/site.js";
 import { renderRedirectsFile } from "./src/lib/v1-redirects.js";
 
 const packageRoot = import.meta.dirname;
@@ -161,75 +164,119 @@ function machineAssets(): Plugin {
   };
 }
 
-export default defineConfig(({ command }) => ({
-  // `@base-ui/react` imports the named `useSyncExternalStoreWithSelector` from
-  // a CommonJS shim. The dev server serves that file raw unless the pre-bundler
-  // is told to convert it, and the missing named export stops hydration before
-  // the page becomes interactive. The production build converts it either way.
-  optimizeDeps: {
-    include: ["@base-ui/react > use-sync-external-store/shim/with-selector"],
-    // The Workbench sits behind a dynamic import the router's own entry scan
-    // stops short of, so its dependencies — CodeMirror, the Lezer parsers, the
-    // template engines, the reading view's parser stack — were found one by
-    // one as the page requested them, each round re-optimizing and reloading.
-    // Named here, the scan finds them all before the first request.
-    entries: ["src/lib/workbench/workbench.tsx"],
-  },
-  environments: {
-    ssr: {
-      optimizeDeps: {
-        // Macro-generated and MDX-only imports arrive after the initial scan.
-        // Pre-bundle them so the first render keeps its SSR dependency graph.
-        include: [
-          "fumadocs-mdx/runtime/macro",
-          "fumadocs-ui/components/card",
-          "fumadocs-ui/components/steps",
-        ],
-      },
+/** The module the Template Directory's pages read the Directory from. */
+const DIRECTORY_MODULE = "virtual:zotlit/template-directory";
+
+/**
+ * Serves the Template Directory, verified and rendered in Node when the build
+ * starts, as a module of JSON. The Worker bundles it and the pages read it
+ * through server functions, so the Directory costs the browser nothing
+ * beyond the page it opens. The dev server rebuilds it on a Directory edit.
+ * @see src/lib/template-directory/site-data.ts
+ */
+function templateDirectoryData(initial: DirectorySite): Plugin {
+  const resolved = `\0${DIRECTORY_MODULE}`;
+  let site: Promise<DirectorySite> = Promise.resolve(initial);
+
+  return {
+    name: "zotlit:template-directory",
+    resolveId(source) {
+      return source === DIRECTORY_MODULE ? resolved : undefined;
     },
-  },
-  // Resolve the app alias explicitly: Vite 8 leaves the app tsconfig paths
-  // unresolved through `resolve.tsconfigPaths`.
-  resolve: {
-    alias: {
-      "@": resolve(packageRoot, "src"),
+    async load(id) {
+      if (id !== resolved) return undefined;
+      return `export default ${JSON.stringify(await site)};`;
     },
-  },
-  plugins: [
-    fumadocsServerOnWorker(),
-    paraglideVitePlugin({
-      ...paraglideOptions,
-      // Group messages in dev to avoid one HTTP request per message.
-      outputStructure:
-        command === "serve" ? "locale-modules" : "message-modules",
-    }),
-    devtools(),
-    tailwindcss(),
-    fumadocsMdx({ index: false }),
-    cloudflareAssetRules(),
-    machineAssets(),
-    cloudflare({
-      viteEnvironment: { name: "ssr" },
-      config(config) {
-        const value = config.vars?.DOCS_LINE;
-        if (value !== "production" && value !== "beta") {
-          throw new Error("DOCS_LINE must be 'production' or 'beta'.");
+    async configureServer(server) {
+      const root = await templateDirectoryRoot();
+      server.watcher.add(root);
+      server.watcher.on("all", (_event, path) => {
+        if (!path.startsWith(root)) return;
+        site = loadDirectorySite();
+        for (const environment of Object.values(server.environments)) {
+          const module = environment.moduleGraph.getModuleById(resolved);
+          if (module) environment.moduleGraph.invalidateModule(module);
         }
-        docsLine = value;
+        server.ws.send({ type: "full-reload" });
+      });
+    },
+  };
+}
+
+export default defineConfig(async ({ command }) => {
+  const directory = await loadDirectorySite();
+
+  return {
+    // `@base-ui/react` imports the named `useSyncExternalStoreWithSelector` from
+    // a CommonJS shim. The dev server serves that file raw unless the pre-bundler
+    // is told to convert it, and the missing named export stops hydration before
+    // the page becomes interactive. The production build converts it either way.
+    optimizeDeps: {
+      include: ["@base-ui/react > use-sync-external-store/shim/with-selector"],
+      // The Workbench sits behind a dynamic import the router's own entry scan
+      // stops short of, so its dependencies — CodeMirror, the Lezer parsers, the
+      // template engines, the reading view's parser stack — were found one by
+      // one as the page requested them, each round re-optimizing and reloading.
+      // Named here, the scan finds them all before the first request.
+      entries: ["src/lib/workbench/workbench.tsx"],
+    },
+    environments: {
+      ssr: {
+        optimizeDeps: {
+          // Macro-generated and MDX-only imports arrive after the initial scan.
+          // Pre-bundle them so the first render keeps its SSR dependency graph.
+          include: [
+            "fumadocs-mdx/runtime/macro",
+            "fumadocs-ui/components/card",
+            "fumadocs-ui/components/steps",
+          ],
+        },
       },
-    }),
-    // The Markdown surface, the SEO endpoints, and every build-time-safe HTML
-    // page prerender into the client output, so the asset layer answers them
-    // without invoking the Worker. Discovery stays off: the routes are listed
-    // deliberately, and the request-time ones stay off the list.
-    tanstackStart({
-      pages: prerenderPages(packageRoot),
-      prerender: {
-        enabled: true,
-        autoStaticPathsDiscovery: false,
-        crawlLinks: false,
+    },
+    // Resolve the app alias explicitly: Vite 8 leaves the app tsconfig paths
+    // unresolved through `resolve.tsconfigPaths`.
+    resolve: {
+      alias: {
+        "@": resolve(packageRoot, "src"),
       },
-    }),
-    viteReact(),
-  ],
-}));
+    },
+    plugins: [
+      fumadocsServerOnWorker(),
+      paraglideVitePlugin({
+        ...paraglideOptions,
+        // Group messages in dev to avoid one HTTP request per message.
+        outputStructure:
+          command === "serve" ? "locale-modules" : "message-modules",
+      }),
+      devtools(),
+      tailwindcss(),
+      fumadocsMdx({ index: false }),
+      cloudflareAssetRules(),
+      machineAssets(),
+      templateDirectoryData(directory),
+      cloudflare({
+        viteEnvironment: { name: "ssr" },
+        config(config) {
+          const value = config.vars?.DOCS_LINE;
+          if (value !== "production" && value !== "beta") {
+            throw new Error("DOCS_LINE must be 'production' or 'beta'.");
+          }
+          docsLine = value;
+        },
+      }),
+      // The Markdown surface, the SEO endpoints, and every build-time-safe HTML
+      // page prerender into the client output, so the asset layer answers them
+      // without invoking the Worker. Discovery stays off: the routes are listed
+      // deliberately, and the request-time ones stay off the list.
+      tanstackStart({
+        pages: prerenderPages(packageRoot, directory),
+        prerender: {
+          enabled: true,
+          autoStaticPathsDiscovery: false,
+          crawlLinks: false,
+        },
+      }),
+      viteReact(),
+    ],
+  };
+});
