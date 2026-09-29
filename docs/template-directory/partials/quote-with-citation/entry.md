@@ -22,10 +22,10 @@ keywords:
   - annotation
   - highlight
 audience: Readers who write from their notes, such as historians who move quotes into drafts, and want every quote to keep its source.
-effort: Add the partial to your template folder and call it from your profile's annotation format. The citation needs the item's citation key, as every ZotLit citation does.
+effort: Add the partial to your template folder and call it from your profile's annotation format. Without the item's citation key, the quote ends with its page and no citation.
 ---
 
-Each annotation becomes a plain quote that ends with its in-text citation, which names the page:
+A highlight or underline becomes a plain quote that ends with its in-text citation, which names the page:
 
 ```markdown
 > Clear methods make research easier to reproduce. [@riveraResearchInterfaces2026, {p. 1}]
@@ -38,7 +38,7 @@ The citation takes one of two forms:
 - In the literature note, it has the form of ZotLit's built-in citation text, as above. ZotLit shows this form in your citation style, and **Export note with citations** formats it with a bibliography.
 - When you insert one annotation into another note, by dragging it from the annotation view or with **Insert into note**, the citation follows your own citation text. If you use the built-in citation text, both forms are the same.
 
-When the item has no citation key, the quote ends with its page instead, as a link to that page in the PDF.
+When the item has no citation key, the quote ends with its page instead, as a link to that page in the PDF. When Obsidian cannot reach the PDF, the page shows as plain text, such as `(p. 1)`.
 
 The partial reads one annotation's data. Call it from the annotation format of a profile, the part below `--- zotlit:annotation ---`:
 
