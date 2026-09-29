@@ -27,7 +27,7 @@ keywords:
   - persist
   - Zotero Integration
 audience: Readers of theses and dissertations who want each thesis note to name the thesis type and the university that awarded it.
-effort: Import it, then create a note for a thesis. ZotLit chooses it for every thesis by itself; your color meanings are set once, in one partial, and the ones it starts with work as they are.
+effort: Import it, then create a note for a thesis. ZotLit chooses it for every thesis by itself; your color meanings are set once, in one file, and the ones it starts with work as they are.
 ---
 
 A literature note made for theses and dissertations. Once you import it, ZotLit chooses it by itself whenever you create a note for a Zotero item of the type **Thesis**, the type Zotero uses for theses and dissertations alike. Articles, books, and every other kind of source keep the profile they use now.
@@ -47,7 +47,7 @@ The callout colors and their meanings are the same as in the **Color-coded readi
 
 The note gets these properties, ready to sort and filter in an Obsidian Bases view:
 
-| Property | Value | When the note updates |
+| Property | Value | When the note is updated |
 | --- | --- | --- |
 | `title` | The thesis's title | Replace the existing value |
 | `citekey` | The citation key | Replace the existing value |
