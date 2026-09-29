@@ -10,7 +10,7 @@ import {
   StartHere,
 } from "@/components/template-directory/entry-list";
 import { FacetPanel } from "@/components/template-directory/facet-panel";
-import { HOME_OG_ALT, pageHead } from "@/lib/seo";
+import { pageHead } from "@/lib/seo";
 import { appName } from "@/lib/shared";
 import { breadcrumbListSchema } from "@/lib/structured-data";
 import {
@@ -47,7 +47,7 @@ export const Route = createFileRoute("/_home/templates/")({
       title: m.docs_directory_title(),
       description: m.docs_directory_description(),
       path: DIRECTORY_PATH,
-      card: { type: "home", alt: HOME_OG_ALT() },
+      card: { type: "templates", alt: m.docs_directory_og_alt() },
       schemas: [
         breadcrumbListSchema([
           { name: appName, url: "/" },

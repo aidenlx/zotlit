@@ -12,10 +12,10 @@
 // @see docs/adr/0051-the-docs-site-prerenders-asset-first-and-falls-through-to-an-ssr-worker.md
 
 import { scanContent } from "./content-scan.js";
-import type { MarkdownSection } from "./markdown-routes.js";
+import type { ContentSection, MarkdownPage } from "./markdown-routes.js";
 import {
   contentRouteUrl,
-  markdownSections,
+  contentSections,
   suffixEditionUrl,
 } from "./markdown-routes.js";
 import { DIRECTORY_PATH, entryPath } from "./template-directory/site.js";
@@ -31,7 +31,7 @@ interface PrerenderPage {
  * page already carries the `/docs.md` edition; `changelog` and `blog` answer
  * their bare section path with a generated listing.
  */
-const landingSections: MarkdownSection[] = ["changelog", "blog"];
+const landingSections: ContentSection[] = ["changelog", "blog"];
 
 /** The SEO endpoints, which render from the collections and never change per request. */
 const seoPages: PrerenderPage[] = [
@@ -42,26 +42,27 @@ const seoPages: PrerenderPage[] = [
 
 /** Every build-time-safe machine route. */
 function machineRoutePages(
-  content: Record<MarkdownSection, { slugs: string[] }[]>,
+  content: Record<ContentSection, { slugs: string[] }[]>,
+  directory: Pick<DirectorySite, "entries">,
 ): PrerenderPage[] {
-  const pages: PrerenderPage[] = [
+  const editions: MarkdownPage[] = contentSections.flatMap((section) => {
+    const slugSets = content[section].map((entry) => entry.slugs);
+    if (landingSections.includes(section)) slugSets.push([]);
+    return slugSets.map((slugs) => ({ section, slugs }));
+  });
+  // The Directory's index, then each entry at its `<kind folder>/<slug>` id.
+  for (const slugs of [[], ...directory.entries.map(({ id }) => id.split("/"))])
+    editions.push({ section: "templates", slugs });
+
+  return [
     ...seoPages,
     { path: "/llms.txt" },
     { path: "/llms-full.txt" },
+    ...editions.flatMap((page) => [
+      { path: suffixEditionUrl(page) },
+      { path: contentRouteUrl(page) },
+    ]),
   ];
-
-  for (const section of markdownSections) {
-    const slugSets = content[section].map((entry) => entry.slugs);
-    if (landingSections.includes(section)) slugSets.push([]);
-
-    for (const slugs of slugSets) {
-      const page = { section, slugs };
-      pages.push({ path: suffixEditionUrl(page) });
-      pages.push({ path: contentRouteUrl(page) });
-    }
-  }
-
-  return pages;
 }
 
 /**
@@ -70,7 +71,7 @@ function machineRoutePages(
  * Template Directory with a page per entry.
  */
 function htmlPages(
-  content: Record<MarkdownSection, { slugs: string[] }[]>,
+  content: Record<ContentSection, { slugs: string[] }[]>,
   directory: Pick<DirectorySite, "entries">,
 ): PrerenderPage[] {
   const docs = content.docs.map((entry) => ({
@@ -108,5 +109,8 @@ export function prerenderPages(
 ): PrerenderPage[] {
   const content = scanContent(packageRoot);
 
-  return [...machineRoutePages(content), ...htmlPages(content, directory)];
+  return [
+    ...machineRoutePages(content, directory),
+    ...htmlPages(content, directory),
+  ];
 }

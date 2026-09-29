@@ -14,6 +14,8 @@ A profile decides a literature note's name, folder, properties, and body. Add on
 
 ## Add a profile
 
+To start from a ready-made profile instead, browse the [profiles in the template directory](/templates?kind=profile) and import one from its page in one step. [Simple reading note](/templates/profiles/simple-reading-note) is the recommended start. Some profiles, such as [Books](/templates/profiles/books), [Book chapters](/templates/profiles/book-chapters), and [Theses and dissertations](/templates/profiles/theses-and-dissertations), come with conditions, so ZotLit picks each of them for matching items on its own.
+
 <Steps>
   <Step>
     ### Open the Profiles page
@@ -81,6 +83,8 @@ Your choice covers that one operation. The note records the profile that made it
 
 A profile is a single document, so you can move it to another vault as one file, with the partials it calls travelling inside it. The [Profile document](/docs/reference/templates/profile-document) reference describes the document that travels and every key inside it.
 
+A profile from the [template directory](/templates?kind=profile) is a document of this kind too. Select <UiLabel name={m.docs_directory_import()} /> on its page, and ZotLit opens the import sheet with that profile. You can also copy or download it there and follow the last two steps below.
+
 <Steps>
   <Step>
     ### Share the profile
@@ -107,9 +111,9 @@ A profile is a single document, so you can move it to another vault as one file,
 
   </Step>
   <Step>
-    ### Read what the import dialog reports
+    ### Read what the import sheet reports
 
-    The dialog previews the partials it will unpack into the template folder, the citation style, and the incoming Profile Match written out in words. <UiLabel name={m.profile_import_include_match()} /> imports the Match with the profile, so it selects notes in this vault too; turn it off to keep the profile for manual selection only. When the shared profile carries no Match, the dialog reads <UiLabel name={m.profile_match_absent()} /> and hides the toggle. Select <UiLabel name={m.profile_import_confirm()} /> to write the profile.
+    The sheet previews the partials it will unpack into the template folder, the citation style, and the incoming Profile Match written out in words. <UiLabel name={m.profile_import_include_match()} /> imports the Match with the profile, so it selects notes in this vault too; turn it off to keep the profile for manual selection only. When the shared profile carries no Match, the sheet reads <UiLabel name={m.profile_match_absent()} /> and hides the toggle. Select <UiLabel name={m.profile_import_confirm()} /> to write the profile.
 
   </Step>
 </Steps>
@@ -136,6 +140,11 @@ A profile is a single document, so you can move it to another vault as one file,
     title="Edit a profile as Markdown"
     description="Edit the document directly, in the shape ZotLit enforces."
     href="/docs/how-to/edit-a-profile-as-markdown"
+  />
+  <Card
+    title="Template directory"
+    description="Ready-made profiles you can import into your vault."
+    href="/templates?kind=profile"
   />
   <Card
     title="Literature note profiles"

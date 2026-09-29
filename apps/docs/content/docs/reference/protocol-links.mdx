@@ -5,6 +5,7 @@ description: "Every obsidian://zotlit/* action, its parameters, and usage for sc
 
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
@@ -12,7 +13,7 @@ This page documents every `obsidian://zotlit/*` protocol action. These deep link
 
 ## Common parameters
 
-Every protocol link requires a `source-id` parameter: an 8-character hex string identifying the Zotero install that generated the link. ZotLit rejects links whose `source-id` does not match the connected database.
+Every protocol link except [`import-profile`](#import-profile) requires a `source-id` parameter: an 8-character hex string identifying the Zotero install that generated the link. ZotLit rejects links whose `source-id` does not match the connected database.
 
 If the Zotero database is not yet loaded, ZotLit shows <UiLabel name={m.notice_protocol_db_unavailable()} />.
 
@@ -223,6 +224,22 @@ Only PDF attachments are offered; the action passes over EPUBs, web snapshots, a
 
 The PDF opens whether the file sits inside the vault or in Zotero's storage folder.
 
+---
+
+### import-profile [#import-profile]
+
+Reads a profile document from the clipboard and opens the import sheet with it, as <Command inline name={m.command_import_profile_name()} /> does when you select <UiLabel name={m.profile_import_clipboard()} />. The [template directory](/templates?kind=profile) opens this link when you select <UiLabel name={m.docs_directory_import()} /> on a profile's page, after it copies the profile.
+
+```
+obsidian://zotlit/import-profile?clipboard=true
+```
+
+| Parameter   | Type   | Required | Description                                                                                                                            |
+| ----------- | ------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `clipboard` | `true` | Yes      | Confirms that the link reads the clipboard. Any other value shows <UiLabel name={m.notice_protocol_invalid()} /> and stops the action. |
+
+The link carries no `source-id`, because the profile comes from the clipboard and not from a Zotero database. Nothing is written until you select <UiLabel name={m.profile_import_confirm()} /> in the import sheet.
+
 ## Action summary
 
 | Action             | Single item | Batch | Scope param | Mode param | Library param | profile param | paneType param |
@@ -236,6 +253,7 @@ The PDF opens whether the file sits inside the vault or in Zotero's storage fold
 | `import-all-notes` |      —      |  yes  |      —      |     —      |      yes      |       —       |       —        |
 | `explore`          |     yes     |   —   |      —      |     —      |       —       |       —       |      yes       |
 | `open-attachment`  |     yes     |   —   |      —      |     —      |       —       |       —       |      yes       |
+| `import-profile`   |      —      |   —   |      —      |     —      |       —       |       —       |       —        |
 
 `profile` belongs to the literature-note actions: `open`, `update`, and `update-many`, whose `PUT {host}/literature-notes` body carries it too. The note-import actions take none. `paneType` belongs to the actions that put something on screen: `open`, `update`, `explore`, and `open-attachment`. Every other action ends in a notice or a confirmation modal rather than an opened pane, so it takes none.
 
