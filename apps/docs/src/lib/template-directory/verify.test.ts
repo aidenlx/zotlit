@@ -232,6 +232,27 @@ describe("the Directory verification", () => {
         "managed-block",
       );
     });
+
+    it("accepts a title heading on the first line, which the note gets once, when it is created", () => {
+      const files = editProfile(
+        "---\n{% managed %}",
+        "---\n# {{ zt.title }}\n\n{% managed %}",
+      );
+      expect(problemsOf(files)).toEqual([]);
+      expect(
+        verifyTemplateDirectory(files)
+          .samples.get(FIXTURE_PROFILE)!
+          .notes[0]!.body!.split("\n")[0],
+      ).toBe("# Why Most Published Research Findings Are False");
+    });
+
+    it("rejects a title heading below the first line", () => {
+      rejects(
+        editProfile("## My notes", "# {{ zt.title }}\n\n## My notes"),
+        FIXTURE_PROFILE,
+        "managed-block",
+      );
+    });
   });
 
   describe("the one partial namespace", () => {

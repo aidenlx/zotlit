@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 import { compileFilter, matchCondition } from "@zotlit/workbench/match";
 
 import {
+  DIRECTORY_SAMPLES,
+  EVERY_COLOR_SAMPLE,
   formatEntrySamples,
   ITEM_TYPES,
   readTemplateDirectory,
@@ -263,15 +265,22 @@ describe("the Template Directory", () => {
         ],
       ],
     ])(
-      "puts the prompts of %s above the part an update refreshes",
+      "opens a note of %s with its title, then puts the prompts above the part an update refreshes",
       (entry, prompts) => {
-        for (const { body } of verification.samples.get(entry)!.notes) {
+        for (const { sample, body } of verification.samples.get(entry)!.notes) {
+          const { title } = [...DIRECTORY_SAMPLES, EVERY_COLOR_SAMPLE].find(
+            ({ id }) => id === sample.id,
+          )!.snapshot.item;
           const [above, managed] = body!.split("%%zt-managed%%");
-          expect(above!.match(/^#+ .*$/gm)).toEqual(
-            prompts.map((prompt) => `## ${prompt}`),
-          );
-          for (const prompt of prompts) {
-            expect(managed!.split("\n")).not.toContain(`## ${prompt}`);
+          expect(above!.match(/^#+ .*$/gm)).toEqual([
+            `# ${title}`,
+            ...prompts.map((prompt) => `## ${prompt}`),
+          ]);
+          expect(body!.startsWith(`# ${title}\n`)).toBe(true);
+          const managedLines = managed!.split("\n");
+          expect(managedLines[1]).toBe("## Source");
+          for (const heading of [title, ...prompts]) {
+            expect(managedLines).not.toContain(`## ${heading}`);
           }
         }
       },

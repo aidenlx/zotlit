@@ -32,9 +32,9 @@ A literature note in two parts: your own thinking on top, and the source below i
 
 Each note holds, from the top:
 
+- the item's title, as the heading of the note. The note gets it once, when it is created; the `title` property keeps the current title;
 - three headings for your own writing: **Key takeaways**, the points to keep from the source; **My claims and ideas**, the ideas it gives you, each a candidate for a note of its own; and **Connections**, the notes and sources it links to. The headings start empty;
-- the item's title, as a heading;
-- one row of links back to the source: the item in Zotero, its PDF, its DOI, and its web page, each when the item has one;
+- a **Source** heading, with one row of links back to the source: the item in Zotero, its PDF, its DOI, and its web page, each when the item has one;
 - the abstract, folded, so it is at hand without taking over the note;
 - your annotations under **Annotations**, in groups: one heading for each color meaning, such as **Definitions** or **Questions**, with every annotation of that meaning below it in page order. A meaning you did not use in the source gets no heading.
 
@@ -59,7 +59,7 @@ Obsidian has no yellow or pink callout, so each Zotero color shows the nearest c
 
 To give a color another meaning, edit `zotlit-partial.color-meanings.md` in your template folder. Each color has one line, such as `{%- when "yellow" -%} {%- assign callout = "warning" -%} {%- assign meaning = "Important" -%}`. Change only the words after `meaning =`, between the quotation marks, and use no quotation marks inside them. It is the one place the meanings live, so the group headings and the callout titles change together, in every note under this profile, the next time the note updates, for example when you run **Create or update all literature notes**. Two colors with the same meaning share one group.
 
-Everything from Zotero, from the title down, sits in the part of the note that ZotLit refreshes when you update the note, between two marker lines, `%%zt-managed%%` and `%%/zt-managed%%`, that Obsidian hides in reading view. Leave the marker lines in place. New annotations go into their groups, and a group appears when its first annotation does. Your three headings sit above that part, so an update never touches what you write there. To change the text of an annotation, edit its comment in Zotero; the comment appears under the highlight on the next update.
+Everything else from Zotero, from **Source** down, sits in the part of the note that ZotLit refreshes when you update the note, between two marker lines, `%%zt-managed%%` and `%%/zt-managed%%`, that Obsidian hides in reading view. Leave the marker lines in place. New annotations go into their groups, and a group appears when its first annotation does. Your three headings sit above that part, so an update never touches what you write there. The title heading sits above that part too: ZotLit writes it once, when it creates the note. If the title changes in Zotero, the `title` property follows on the next update, and you can change the heading by hand. To change the text of an annotation, edit its comment in Zotero; the comment appears under the highlight on the next update.
 
 The note gets six properties, ready to sort and filter in an Obsidian Bases view:
 

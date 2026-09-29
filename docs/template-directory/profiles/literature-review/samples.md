@@ -16,6 +16,8 @@ status: unread
 date-read:
 contribution:
 ---
+# Why Most Published Research Findings Are False
+
 ## Aim
 
 ## Methods
@@ -27,7 +29,7 @@ contribution:
 ## Relevance to my project
 
 %%zt-managed%%
-## Why Most Published Research Findings Are False
+## Source
 
 [Zotero](zotero://select/library/items/IANNP5A2)
 
@@ -48,6 +50,8 @@ status: unread
 date-read:
 contribution:
 ---
+# Designing reproducible research interfaces
+
 ## Aim
 
 ## Methods
@@ -59,7 +63,7 @@ contribution:
 ## Relevance to my project
 
 %%zt-managed%%
-## Designing reproducible research interfaces
+## Source
 
 [Zotero](zotero://select/library/items/CNPF226A)
 
@@ -92,6 +96,8 @@ status: unread
 date-read:
 contribution:
 ---
+# Thinking, fast and slow
+
 ## Aim
 
 ## Methods
@@ -103,7 +109,7 @@ contribution:
 ## Relevance to my project
 
 %%zt-managed%%
-## Thinking, fast and slow
+## Source
 
 [Zotero](zotero://select/library/items/NW2CPDTC)
 
@@ -123,6 +129,8 @@ status: unread
 date-read:
 contribution:
 ---
+# Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities
+
 ## Aim
 
 ## Methods
@@ -134,7 +142,7 @@ contribution:
 ## Relevance to my project
 
 %%zt-managed%%
-## Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities
+## Source
 
 [Zotero](zotero://select/library/items/I49R3FTL)
 
@@ -158,6 +166,8 @@ status: unread
 date-read:
 contribution:
 ---
+# Judgment under uncertainty: Heuristics and biases
+
 ## Aim
 
 ## Methods
@@ -169,7 +179,7 @@ contribution:
 ## Relevance to my project
 
 %%zt-managed%%
-## Judgment under uncertainty: Heuristics and biases
+## Source
 
 [Zotero](zotero://select/library/items/TVKHEUR1) · [DOI](https://doi.org/10.1017/CBO9780511809477.002)
 
@@ -196,6 +206,8 @@ status: unread
 date-read:
 contribution:
 ---
+# Letter to Eleanor Whitcombe
+
 ## Aim
 
 ## Methods
@@ -207,7 +219,7 @@ contribution:
 ## Relevance to my project
 
 %%zt-managed%%
-## Letter to Eleanor Whitcombe
+## Source
 
 [Zotero](zotero://select/library/items/ALDLET87)
 
@@ -230,6 +242,8 @@ status: unread
 date-read:
 contribution:
 ---
+# Survey notebook of the Brackenridge estate
+
 ## Aim
 
 ## Methods
@@ -241,7 +255,7 @@ contribution:
 ## Relevance to my project
 
 %%zt-managed%%
-## Survey notebook of the Brackenridge estate
+## Source
 
 [Zotero](zotero://select/library/items/ALDMSS85)
 
@@ -261,6 +275,8 @@ status: unread
 date-read:
 contribution:
 ---
+# Oral history interview with Ada Okafor
+
 ## Aim
 
 ## Methods
@@ -272,7 +288,7 @@ contribution:
 ## Relevance to my project
 
 %%zt-managed%%
-## Oral history interview with Ada Okafor
+## Source
 
 [Zotero](zotero://select/library/items/OKAFOH19) · [Web page](https://archive.example.org/oral-histories/oh-2019-014)
 
@@ -296,6 +312,8 @@ status: unread
 date-read:
 contribution:
 ---
+# Minutes of the Board of Trustees, 12 March 1923
+
 ## Aim
 
 ## Methods
@@ -307,7 +325,7 @@ contribution:
 ## Relevance to my project
 
 %%zt-managed%%
-## Minutes of the Board of Trustees, 12 March 1923
+## Source
 
 [Zotero](zotero://select/library/items/BFLMIN23)
 
@@ -328,6 +346,8 @@ status: unread
 date-read:
 contribution:
 ---
+# Designing reproducible research interfaces
+
 ## Aim
 
 ## Methods
@@ -339,7 +359,7 @@ contribution:
 ## Relevance to my project
 
 %%zt-managed%%
-## Designing reproducible research interfaces
+## Source
 
 [Zotero](zotero://select/library/items/CNPF226A)
 

@@ -138,6 +138,8 @@ partials:
       {%- endfor -%}
       [Zotero]({{ zt.backlink }}){% if pdf_link != "" %} · {{ pdf_link }}{% endif %}{% if zt.DOI %} · [DOI](https://doi.org/{{ zt.DOI }}){% endif %}{% if zt.url %} · [Web page]({{ zt.url }}){% endif %}
 ---
+# {{ zt.title }}
+
 ## Key takeaways
 
 ## My claims and ideas
@@ -145,7 +147,7 @@ partials:
 ## Connections
 
 {% managed %}
-## {{ zt.title }}
+## Source
 
 {% render "links-row" with zt as zt -%}
 {% if zt.abstract %}

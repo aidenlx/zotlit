@@ -272,9 +272,16 @@ function checkLanguage(
 }
 
 /**
+ * The title heading a note may open with, outside the Managed Block: the note
+ * gets it once, when it is created, and the `title` property keeps the
+ * current title.
+ */
+const TITLE_HEADING = "# {{ zt.title }}\n";
+
+/**
  * Everything from Zotero sits inside the one Managed Block, so an update never
  * rewrites what the reader wrote: the text around the block is the reader's,
- * and holds no template code.
+ * and holds no template code but a first-line title heading.
  */
 function checkManagedBlock(source: string, report: Report): void {
   const { body, managedBlock } = parseLiteratureNoteTemplate(source);
@@ -285,8 +292,11 @@ function checkManagedBlock(source: string, report: Report): void {
     );
     return;
   }
+  const before = body.slice(0, managedBlock.start);
   const outside =
-    body.slice(0, managedBlock.start) + body.slice(managedBlock.end);
+    (before.startsWith(TITLE_HEADING)
+      ? before.slice(TITLE_HEADING.length)
+      : before) + body.slice(managedBlock.end);
   if (/\{\{|\{%/.test(outside)) {
     report(
       "managed-block",

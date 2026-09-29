@@ -14,6 +14,8 @@ year: 2005
 venue: PLoS Medicine
 status: unread
 ---
+# Why Most Published Research Findings Are False
+
 ## Key takeaways
 
 ## My claims and ideas
@@ -21,7 +23,7 @@ status: unread
 ## Connections
 
 %%zt-managed%%
-## Why Most Published Research Findings Are False
+## Source
 
 [Zotero](zotero://select/library/items/IANNP5A2)
 
@@ -40,6 +42,8 @@ year: 2026
 venue: Proceedings of the Open Research Conference
 status: unread
 ---
+# Designing reproducible research interfaces
+
 ## Key takeaways
 
 ## My claims and ideas
@@ -47,7 +51,7 @@ status: unread
 ## Connections
 
 %%zt-managed%%
-## Designing reproducible research interfaces
+## Source
 
 [Zotero](zotero://select/library/items/CNPF226A)
 
@@ -78,6 +82,8 @@ year: 2011
 venue: Penguin Books
 status: unread
 ---
+# Thinking, fast and slow
+
 ## Key takeaways
 
 ## My claims and ideas
@@ -85,7 +91,7 @@ status: unread
 ## Connections
 
 %%zt-managed%%
-## Thinking, fast and slow
+## Source
 
 [Zotero](zotero://select/library/items/NW2CPDTC)
 
@@ -103,6 +109,8 @@ citekey: Batista2010
 year: 2010
 status: unread
 ---
+# Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities
+
 ## Key takeaways
 
 ## My claims and ideas
@@ -110,7 +118,7 @@ status: unread
 ## Connections
 
 %%zt-managed%%
-## Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities
+## Source
 
 [Zotero](zotero://select/library/items/I49R3FTL)
 
@@ -132,6 +140,8 @@ year: 1982
 venue: "Judgment under Uncertainty: Heuristics and Biases"
 status: unread
 ---
+# Judgment under uncertainty: Heuristics and biases
+
 ## Key takeaways
 
 ## My claims and ideas
@@ -139,7 +149,7 @@ status: unread
 ## Connections
 
 %%zt-managed%%
-## Judgment under uncertainty: Heuristics and biases
+## Source
 
 [Zotero](zotero://select/library/items/TVKHEUR1) · [DOI](https://doi.org/10.1017/CBO9780511809477.002)
 
@@ -164,6 +174,8 @@ tags:
 year: 1887
 status: unread
 ---
+# Letter to Eleanor Whitcombe
+
 ## Key takeaways
 
 ## My claims and ideas
@@ -171,7 +183,7 @@ status: unread
 ## Connections
 
 %%zt-managed%%
-## Letter to Eleanor Whitcombe
+## Source
 
 [Zotero](zotero://select/library/items/ALDLET87)
 
@@ -192,6 +204,8 @@ citekey: aldousSurveyNotebookBrackenridge1885
 year: 1885
 status: unread
 ---
+# Survey notebook of the Brackenridge estate
+
 ## Key takeaways
 
 ## My claims and ideas
@@ -199,7 +213,7 @@ status: unread
 ## Connections
 
 %%zt-managed%%
-## Survey notebook of the Brackenridge estate
+## Source
 
 [Zotero](zotero://select/library/items/ALDMSS85)
 
@@ -217,6 +231,8 @@ citekey: okaforOralHistoryInterview2019
 year: 2019
 status: unread
 ---
+# Oral history interview with Ada Okafor
+
 ## Key takeaways
 
 ## My claims and ideas
@@ -224,7 +240,7 @@ status: unread
 ## Connections
 
 %%zt-managed%%
-## Oral history interview with Ada Okafor
+## Source
 
 [Zotero](zotero://select/library/items/OKAFOH19) · [Web page](https://archive.example.org/oral-histories/oh-2019-014)
 
@@ -246,6 +262,8 @@ year: 1923
 venue: Brackenridge Free Library
 status: unread
 ---
+# Minutes of the Board of Trustees, 12 March 1923
+
 ## Key takeaways
 
 ## My claims and ideas
@@ -253,7 +271,7 @@ status: unread
 ## Connections
 
 %%zt-managed%%
-## Minutes of the Board of Trustees, 12 March 1923
+## Source
 
 [Zotero](zotero://select/library/items/BFLMIN23)
 
@@ -272,6 +290,8 @@ year: 2026
 venue: Proceedings of the Open Research Conference
 status: unread
 ---
+# Designing reproducible research interfaces
+
 ## Key takeaways
 
 ## My claims and ideas
@@ -279,7 +299,7 @@ status: unread
 ## Connections
 
 %%zt-managed%%
-## Designing reproducible research interfaces
+## Source
 
 [Zotero](zotero://select/library/items/CNPF226A)
 

@@ -36,9 +36,9 @@ A literature note for each study in your review. You read every study against th
 
 Each note holds, from the top:
 
+- the item's title, as the heading of the note. The note gets it once, when it is created; the `title` property keeps the current title;
 - five headings for your own answers: **Aim**, **Methods**, **Findings**, **Limitations**, and **Relevance to my project**. The headings start empty;
-- the item's title, as a heading;
-- one row of links back to the source: the item in Zotero, its PDF, its DOI, and its web page, each when the item has one;
+- a **Source** heading, with one row of links back to the source: the item in Zotero, its PDF, its DOI, and its web page, each when the item has one;
 - the abstract, folded, so it is at hand without taking over the note;
 - your annotations under **Annotations**, in groups: one heading for each part of the study, such as **Methods** or **Limitations**, with every annotation of that part below it in page order. A part you did not highlight in the study gets no heading.
 
@@ -63,7 +63,7 @@ Four of your headings and four groups share a name: **Aim**, **Methods**, **Find
 
 If you already highlight with other meanings, edit `zotlit-partial.color-meanings-review.md` in your template folder. Each color has one line, such as `{%- when "blue" -%} {%- assign callout = "info" -%} {%- assign meaning = "Methods" -%}`. Change only the words after `meaning =`, between the quotation marks, and use no quotation marks inside them: the group headings and the callout titles change together. The `colors` line, just below the comment at the top of that file, sets the order of the groups: move a color in that line to move its group, and keep a comma between each two colors. Every note under this profile follows the next time it updates, for example when you run **Create or update all literature notes**.
 
-Everything from Zotero, from the title down, sits in the part of the note that ZotLit refreshes when you update the note, between two marker lines, `%%zt-managed%%` and `%%/zt-managed%%`, that Obsidian hides in reading view. Leave the marker lines in place. Your five headings sit above that part, so an update never touches what you write there. To change the text of an annotation, edit its comment in Zotero; the comment appears under the highlight on the next update.
+Everything else from Zotero, from **Source** down, sits in the part of the note that ZotLit refreshes when you update the note, between two marker lines, `%%zt-managed%%` and `%%/zt-managed%%`, that Obsidian hides in reading view. Leave the marker lines in place. Your five headings sit above that part, so an update never touches what you write there. The title heading sits above that part too: ZotLit writes it once, when it creates the note. If the title changes in Zotero, the `title` property follows on the next update, and you can change the heading by hand. To change the text of an annotation, edit its comment in Zotero; the comment appears under the highlight on the next update.
 
 The note gets eight properties, ready for a review table in an Obsidian Bases view or with the Dataview plugin: one row per study, one column per property.
 
