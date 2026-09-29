@@ -307,7 +307,7 @@ it("captures the tagged drop coordinates, maps later edits, and undoes once", as
   const drag = f.start();
   const dropped = f.drop(drag.dataTransfer, 23, 29);
   expect(dropped.defaultPrevented).toBe(true);
-  expect(position).toHaveBeenCalledWith({ x: 23, y: 29 });
+  expect(position).toHaveBeenCalledWith({ x: 23, y: 29 }, false);
   expect(f.prepare).toHaveBeenCalledOnce();
   f.cm.dispatch({ changes: { from: 0, insert: "user " } });
   f.cm.dispatch({ selection: { anchor: f.cm.state.doc.length } });
@@ -317,6 +317,23 @@ it("captures the tagged drop coordinates, maps later edits, and undoes once", as
   );
   expect(undo(f.cm)).toBe(true);
   expect(f.cm.state.doc.toString()).toBe("user one two");
+});
+
+it("inserts where CodeMirror's own drop would when no exact position is under the pointer", async () => {
+  using f = dragFixture();
+  // An empty active last line has no exact position under the pointer; the
+  // nearest one still exists.
+  vi.spyOn(f.cm, "posAtCoords").mockImplementation((_, precise = true) =>
+    precise ? null : 4,
+  );
+  const drag = f.start();
+  f.drop(drag.dataTransfer);
+  expect(f.prepare).toHaveBeenCalledOnce();
+  f.pending[0]!.resolve(result("EXCERPT"));
+  await vi.waitFor(() =>
+    expect(f.cm.state.doc.toString()).toBe("one EXCERPTtwo"),
+  );
+  expect(f.notify).not.toHaveBeenCalled();
 });
 
 it("leaves unrelated editor drops native while a ZotLit drag is active", () => {

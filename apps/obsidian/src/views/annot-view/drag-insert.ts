@@ -251,12 +251,14 @@ async function insertDrop(
 ): Promise<void> {
   const { editor, info } = options;
   const file = info.file;
-  const position = editor.cm.posAtCoords({
-    x: options.dropEvent.clientX,
-    y: options.dropEvent.clientY,
-  });
-  if (!file || position === null) {
-    deps.notify(m.annot_view_drag_unavailable());
+  // The nearest position, as CodeMirror's own drop handler asks for: the
+  // exact form is null over an empty active line.
+  const position = editor.cm.posAtCoords(
+    { x: options.dropEvent.clientX, y: options.dropEvent.clientY },
+    false,
+  );
+  if (!file) {
+    deps.notify(m.annot_view_insert_no_note());
     return;
   }
   using target = captureInsertion({

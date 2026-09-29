@@ -83,9 +83,9 @@ export async function verifyAnnotationDrag(
       vaultId,
       `(()=>{const s=${state};
       const original=s.editor.cm.posAtCoords.bind(s.editor.cm);s.posAtCoords=original;
-      s.coordinateCalls=[];s.editor.cm.posAtCoords=coords=>{const position=original(coords);s.coordinateCalls.push({coords,position});return position;};
+      s.coordinateCalls=[];s.editor.cm.posAtCoords=(coords,precise)=>{const position=original(coords,precise);s.coordinateCalls.push({coords,position});return position;};
       const rect=s.editor.cm.coordsAtPos(5);if(!rect)throw new Error('Drop coordinates unavailable');s.expectedCoords={x:Math.floor(rect.left+1),y:Math.floor((rect.top+rect.bottom)/2)};
-      s.directPosition=original(s.expectedCoords);
+      s.directPosition=original(s.expectedCoords,false);
       const drop=new s.targetWin.DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:s.transfer,clientX:s.expectedCoords.x,clientY:s.expectedCoords.y});
       app.workspace.trigger('editor-drop',drop,s.editor,s.targetLeaf.view);s.dropPrevented=drop.defaultPrevented;return true;
     })()`,
@@ -153,11 +153,11 @@ export async function verifyAnnotationDrag(
     ) as string;
     expect(text).toContain("![[zotlit-excerpt-");
     expect(text.split("FDRFQ7C2")).toHaveLength(2);
-    expect(text.indexOf("> [!note]")).toBe(
-      "user ".length + capture.directPosition,
-    );
+    // The callout stands as its own block, even where the drop splits a line.
+    const prefix = "LEFT RIGHT".slice(0, capture.directPosition);
     const suffix = "LEFT RIGHT".slice(capture.directPosition);
-    if (suffix) expect(text.endsWith(suffix)).toBe(true);
+    expect(text.slice(0, text.indexOf("> [!note]"))).toBe(`user ${prefix}\n\n`);
+    if (suffix) expect(text.endsWith(`\n\n${suffix}`)).toBe(true);
     expect(
       await obEvalUntil(
         vaultId,
