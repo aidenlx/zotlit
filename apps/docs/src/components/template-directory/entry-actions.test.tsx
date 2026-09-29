@@ -71,6 +71,7 @@ describe("one-click import", () => {
     const writeText = vi.fn(() => clipboard.promise);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     using opened = recordOpenedLinks();
+    using toasts = recordToasts();
     using page = await renderActions(profileEntry);
 
     await act(async () => page.button(m.docs_directory_import())!.click());
@@ -81,6 +82,7 @@ describe("one-click import", () => {
     expect([...opened]).toEqual([
       "obsidian://zotlit/import-profile?clipboard=true",
     ]);
+    expect(toasts.titles()).toEqual([m.docs_directory_import_started()]);
   });
 
   it("keeps Obsidian closed when the browser refuses the copy, and points to the downloaded file", async () => {
