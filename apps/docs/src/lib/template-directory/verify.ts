@@ -506,9 +506,12 @@ const LITERAL_EMPTY = /\b(?:null|undefined|NaN)\b/;
 /** Two separators with nothing between them, such as ", ," or ". .". */
 const DOUBLED_SEPARATOR = /[,;:·|]\s*[,;:·|.]|\.\s+\./;
 const EMPTY_BRACKETS = /\(\s*\)|\[\s*\]/;
-/** A volume, issue, or page label whose number is missing, such as "Vol." or "№ ,". */
+/**
+ * A volume, issue, or page label whose number is missing, such as "Vol." or
+ * "№ ,". The label's own full stop belongs to the label, so "Vol. 2" passes.
+ */
 const LABEL_WITHOUT_VALUE =
-  /(?:^|[\s(])(?:[Vv]ol|[Nn]o|[Ii]ss|pp?|№)\.?\s*(?:$|[,;:.)])/;
+  /(?:^|[\s(])(?:[Vv]ol|[Nn]o|[Ii]ss|pp?|№)(?:\.\s*(?:$|[,;:.)])|\s*(?:$|[,;:)])|\s+\.)/;
 
 function valueFaults(value: unknown): string[] {
   if (value === null || value === undefined) return ["is null"];
