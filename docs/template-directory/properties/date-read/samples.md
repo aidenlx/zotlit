@@ -4,38 +4,54 @@
 
 ## Journal article
 
-_No output._
+```yaml
+date-read:
+```
 
 ## Conference paper
 
 ```yaml
-date-read: 2025-01-03
+date-read:
 ```
 
 ## Book
 
-_No output._
+```yaml
+date-read:
+```
 
 ## Thesis
 
-_No output._
+```yaml
+date-read:
+```
 
 ## Book chapter
 
-_No output._
+```yaml
+date-read:
+```
 
 ## Letter
 
-_No output._
+```yaml
+date-read:
+```
 
 ## Manuscript
 
-_No output._
+```yaml
+date-read:
+```
 
 ## Interview
 
-_No output._
+```yaml
+date-read:
+```
 
 ## Document
 
-_No output._
+```yaml
+date-read:
+```

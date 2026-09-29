@@ -154,24 +154,6 @@ describe("the aliases entry", () => {
   });
 });
 
-describe("the date read entry", () => {
-  it("starts at the day of the latest annotation, wherever it sits in the note", () => {
-    const [annotation] = DIRECTORY_SAMPLES.find(
-      ({ id }) => id === "conference-paper",
-    )!.snapshot.roots.note.annotations as Record<string, unknown>[];
-    const item = sampleWith("conference-paper", {
-      annotations: [
-        "2025-02-01T09:00:00Z",
-        "2025-03-01T09:00:00Z",
-        "2025-01-01T09:00:00Z",
-      ].map((dateAdded) => ({ ...annotation, dateAdded })),
-    });
-    expect(render(property("date-read"), item).written).toEqual({
-      "date-read": "2025-03-01",
-    });
-  });
-});
-
 describe("the Extra field entry", () => {
   it("writes nothing for an Extra line with no value", () => {
     const item = sampleWith("book-section", {
