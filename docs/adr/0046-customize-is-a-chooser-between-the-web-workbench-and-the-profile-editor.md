@@ -2,6 +2,8 @@
 
 > Amended 2026-09-09: the native Customize destination opens the linked three-panel workbench in a new Obsidian window and creates or opens Default's document before editing, as specified in ADR 0045. The web build flag and chooser policy below stay in effect.
 
+> Amended 2026-09-30: the clipboard Profile handoff (`obsidian://zotlit/import-profile?clipboard=true`) is registered in every build, because the Template Directory's one-click import uses it ([#1288](https://github.com/aidenlx/zotlit/issues/1288)). The `WEB_WORKBENCH_ENABLED` flag decides only whether the Template Workbench opens after the import. With the flag off, the handoff ends where **Import profile…** ends: the import sheet, then the written Profile.
+
 ## Current release amendment — 2026-09-08
 
 The current release focuses on the Obsidian Profile Editor. The web Workbench's
