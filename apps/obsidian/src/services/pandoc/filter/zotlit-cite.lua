@@ -543,10 +543,61 @@ local function process_inlines(inlines)
   return result
 end
 
+--- An Obsidian callout type, `[!note]`, with the fold sign a foldable one adds.
+local CALLOUT_MARKER = "^%[![^%]]+%][+-]?$"
+
+--- Drops the Space runs that open and close `inlines`.
+local function trim(inlines)
+  while inlines[1] and inlines[1].t == "Space" do
+    inlines:remove(1)
+  end
+  while inlines[#inlines] and inlines[#inlines].t == "Space" do
+    inlines:remove(#inlines)
+  end
+  return inlines
+end
+
+--- Writes an Obsidian callout as the block quote any other reader sees: the
+--- `[!type]` marker goes, and a custom title stays as a bold first line. A
+--- block quote that opens with no callout marker is left as it is.
+local function convert_callout(quote)
+  local first = quote.content[1]
+  if not (first and (first.t == "Para" or first.t == "Plain")) then
+    return nil
+  end
+  local marker = first.content[1]
+  if not (marker and marker.t == "Str" and marker.text:match(CALLOUT_MARKER)) then
+    return nil
+  end
+  -- The title runs to the end of the marker's line; the rest of the paragraph
+  -- is the callout's first body text.
+  local title, body = pandoc.Inlines({}), pandoc.Inlines({})
+  local target = title
+  for index = 2, #first.content do
+    local inline = first.content[index]
+    if target == title and (inline.t == "SoftBreak" or inline.t == "LineBreak") then
+      target = body
+    else
+      target:insert(inline)
+    end
+  end
+  local blocks = pandoc.Blocks({})
+  if #trim(title) > 0 then
+    blocks:insert(pandoc.Para({ pandoc.Strong(title) }))
+  end
+  if #trim(body) > 0 then
+    blocks:insert(pandoc.Para(body))
+  end
+  for index = 2, #quote.content do
+    blocks:insert(quote.content[index])
+  end
+  return pandoc.BlockQuote(blocks)
+end
+
 function Pandoc(doc)
   doc.meta = resolve_style(doc.meta)
   citations = load_citations()
-  local converted = doc:walk({ Inlines = process_inlines })
+  local converted = doc:walk({ Inlines = process_inlines, BlockQuote = convert_callout })
   if #errors > 0 then
     report_errors()
   end

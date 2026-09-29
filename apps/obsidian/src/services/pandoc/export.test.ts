@@ -542,6 +542,25 @@ function docxText(docx: Uint8Array): string {
   return new TextDecoder().decode(body).replaceAll(/<[^>]*>/g, "");
 }
 
+/** Each body paragraph of a docx: its style, its text, and its bold text. */
+function docxParagraphs(
+  docx: Uint8Array,
+): { style: string | undefined; text: string; bold: string }[] {
+  const body = new TextDecoder().decode(unzipSync(docx)["word/document.xml"]);
+  const strip = (xml: string) => xml.replaceAll(/<[^>]*>/g, "");
+  return [...body.matchAll(/<w:p>[\s\S]*?<\/w:p>/g)].map(([paragraph]) => ({
+    style: /<w:pStyle w:val="([^"]+)"/.exec(paragraph)?.[1],
+    text: strip(paragraph),
+    bold: [
+      ...paragraph.matchAll(
+        /<w:r>(?:(?!<\/w:r>)[\s\S])*?<w:b \/>[\s\S]*?<\/w:r>/g,
+      ),
+    ]
+      .map(([run]) => strip(run))
+      .join(""),
+  }));
+}
+
 describe(
   "exportCitedDocument over the real engine",
   { timeout: 60_000 },
@@ -667,6 +686,113 @@ describe(
       // Both cited Items reach the bibliography, and nothing else does.
       expect(text).toContain("Zeta, Ann. 2020. A Study of Nothing.");
       expect(text).toContain("Adams, Bob. 2018. Beta and Beyond.");
+    });
+
+    /** Export `markdown`, citing Zeta once, to docx paragraphs. */
+    async function exportDocx(markdown: string, locale?: string) {
+      await using engine = await createCitationEngine(
+        new Blob([await readFile(WASM_PATH)]),
+      );
+      const fixture: Fixture = { ...CITED, links: [link("Zeta 2020")] };
+      const result = await exportCitedDocument(
+        {
+          document: { sourcePath: SOURCE, links: fixture.links ?? [] },
+          markdown,
+          format: "docx",
+          locale,
+        },
+        { ...ports(fixture), engine },
+      );
+      expect(result).toHaveProperty("output");
+      return docxParagraphs((result as { output: Uint8Array }).output);
+    }
+
+    it("writes a callout as a block quote under its bold title", async () => {
+      // An annotation dropped under a sentence, as Obsidian renders it: the
+      // callout starts on the next line, with no blank line between.
+      const paragraphs = await exportDocx(
+        "Each figure states one message [[Zeta 2020]].\n> [!note] Page 1\n>\n> A figure is meant to express an idea.\n",
+      );
+
+      expect(paragraphs.map((p) => p.text).join("\n")).not.toContain("[!");
+      expect(paragraphs[0]!.text).toBe(
+        "Each figure states one message (Zeta 2020).",
+      );
+      const quoted = paragraphs.filter((p) => p.style === "BlockText");
+      expect(quoted.map((p) => p.text)).toEqual([
+        "Page 1",
+        "A figure is meant to express an idea.",
+      ]);
+      expect(quoted[0]!.bold).toBe("Page 1");
+    });
+
+    it("writes a callout without a title, a folded one, and a nested one", async () => {
+      const paragraphs = await exportDocx(
+        [
+          "Cited [[Zeta 2020]].",
+          "",
+          "> [!quote]",
+          "> Untitled body.",
+          "",
+          "> [!tip]- Folded title",
+          "> Folded body.",
+          ">",
+          "> > [!warning]+ Inner title",
+          "> > Inner body.",
+          "",
+          "> A plain quote.",
+          "",
+        ].join("\n"),
+      );
+
+      expect(paragraphs.map((p) => p.text).join("\n")).not.toContain("[!");
+      const quoted = paragraphs.filter((p) => p.style === "BlockText");
+      expect(quoted.map((p) => p.text)).toEqual([
+        "Untitled body.",
+        "Folded title",
+        "Folded body.",
+        "Inner title",
+        "Inner body.",
+        "A plain quote.",
+      ]);
+      expect(quoted.map((p) => p.bold)).toEqual([
+        "",
+        "Folded title",
+        "",
+        "Inner title",
+        "",
+        "",
+      ]);
+    });
+
+    it("heads the bibliography in the citation language", async () => {
+      const markdown = "Cited [[Zeta 2020]].\n";
+      const english = await exportDocx(markdown);
+      const headingAt = english.findIndex((p) => p.text === "References");
+      expect(english[headingAt]?.style).toMatch(/^Heading/);
+      expect(english[headingAt + 1]?.text).toContain("A Study of Nothing");
+
+      const chinese = await exportDocx(markdown, "zh-CN");
+      expect(chinese.some((p) => p.text === "参考文献")).toBe(true);
+
+      // A document's own `lang` names its citation language.
+      const declared = await exportDocx(`---\nlang: de-DE\n---\n\n${markdown}`);
+      expect(declared.some((p) => p.text === "Literatur")).toBe(true);
+    });
+
+    it("keeps the heading a document names for its bibliography", async () => {
+      const paragraphs = await exportDocx(
+        "---\nreference-section-title: Works cited\n---\n\nCited [[Zeta 2020]].\n",
+      );
+      const texts = paragraphs.map((p) => p.text);
+      expect(texts).toContain("Works cited");
+      expect(texts).not.toContain("References");
+
+      // A closing section heading is the one Pandoc heads the bibliography with.
+      const closing = await exportDocx("Cited [[Zeta 2020]].\n\n## Sources\n");
+      const closingTexts = closing.map((p) => p.text);
+      expect(closingTexts).toContain("Sources");
+      expect(closingTexts).not.toContain("References");
     });
   },
 );

@@ -572,7 +572,8 @@ function parentIdOf(info: string): string | undefined {
   return undefined;
 }
 
-function defaultLocaleOf(xml: string): string | undefined {
+/** The `default-locale` a style's root element declares. */
+export function defaultLocaleOf(xml: string): string | undefined {
   const root = STYLE_ROOT.exec(xml)?.[0];
   const locale = root && DEFAULT_LOCALE.exec(root)?.groups.locale.trim();
   return locale ? decodeXmlText(locale) : undefined;

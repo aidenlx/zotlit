@@ -118,6 +118,8 @@ describe("Document Language", { timeout: TIMEOUT }, () => {
     expect(exported.html).toContain(EDITOR["en-US"]);
     // The vault locale controls citeproc without becoming a Document Language.
     expect(exported.html).not.toMatch(/<html[^>]*lang=/);
+    // The bibliography heading speaks the language citeproc formats in.
+    expect(exported.html).toMatch(/<h1[^>]*>References<\/h1>/);
   });
 
   it("leaves a note under a vault at Style default to the style's own locale", async () => {
@@ -130,9 +132,9 @@ describe("Document Language", { timeout: TIMEOUT }, () => {
     await expect(vault.copiedBibliography()).resolves.toContain(
       EDITOR["de-DE"],
     );
-    await expect(vault.exportNote()).resolves.toMatchObject({
-      html: expect.stringContaining(EDITOR["de-DE"]),
-    });
+    const exported = await vault.exportNote();
+    expect(exported.html).toContain(EDITOR["de-DE"]);
+    expect(exported.html).toMatch(/<h1[^>]*>Literatur<\/h1>/);
   });
 
   it("overrides the vault Citation Locale on every surface", async () => {
@@ -157,6 +159,7 @@ describe("Document Language", { timeout: TIMEOUT }, () => {
     const exported = await vault.exportNote();
     expect(exported.html).toContain(EDITOR["de-DE"]);
     expect(exported.html).toMatch(/<html[^>]*lang="de-DE"/);
+    expect(exported.html).toMatch(/<h1[^>]*>Literatur<\/h1>/);
   });
 
   it("carries a note's own style and language together", async () => {
