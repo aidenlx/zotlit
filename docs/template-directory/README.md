@@ -52,6 +52,7 @@ The kind comes from the folder and the level from the kind. Any other file in an
 | `effort` | all | yes | One sentence: what the entry asks of the reader before it works |
 | `title`, `summary`, `minAppVersion` | recipes | yes | The entry's name, its one-line summary, and the ZotLit version it needs |
 | `context` | partial | yes | The data the partial reads: `note`, `annotation`, or `citation` |
+| `call` | partial | no | The Liquid a Profile writes to call the partial, when that is more than `{% render "<slug>" with zt as zt %}`. The suite renders this call |
 | `expected` | property | no | Per Directory Sample, the properties the entry writes (see [Property](#property)) |
 
 A Profile entry states its title, summary, and required version once, in its manifest: `name`, `description`, and `minAppVersion`. The partials an entry calls are found from its artifact, directly and through the partials it calls.
@@ -75,13 +76,13 @@ The source files in `src/lib/template-directory/` of `apps/docs` own the vocabul
 
 1. Create `partials/<slug>/` with `entry.md` and `zotlit-partial.<slug>.md`. The slug is the name every caller uses; the plugin's own slot names (`filename`, `note`, `annotation`, `content`, `citation`) are not available.
 2. The artifact is a Shared Partial document: `language: liquid` between two `---` lines, then the source.
-3. Set `context` to the data the partial reads. The suite renders a `note` partial in a Profile's note body and an `annotation` partial in its Annotation Section.
+3. Set `context` to the data the partial reads. The suite renders a `note` partial in a Profile's note body and an `annotation` partial in its Annotation Section. A partial that needs more than the plain `render` call, such as one that sets values for the partial called after it, states its call in `call`.
 4. To change a partial, edit its entry, then run the re-pack command: every Profile that calls it gets the new source.
 
 ### Property
 
 1. Create `properties/<slug>/` with `entry.md` and `property.yaml`.
-2. `property.yaml` holds one Managed Frontmatter entry: `key` (leave it out for a Spread Entry), `merge`, and `value`, a JSON-e rule.
+2. `property.yaml` holds one Managed Frontmatter entry: `key` (leave it out for a Spread Entry), `merge`, and `value`, a JSON-e rule. A property the reader fills in by hand, such as a rating, starts empty: its rule writes `null`, and its merge is `keep`.
 3. Under `expected` in `entry.md`, state the result for each Directory Sample that matters, by sample ID, as the properties it writes. A property the mapping leaves out is one the entry makes absent for that sample:
 
    ```yaml
@@ -126,7 +127,7 @@ The suite fails with a named problem code when an entry breaks one of these rule
 | One namespace: every called partial is a partial entry | `unknown-partial` |
 | A Profile packs every partial it calls, byte-identical to the partial entry, and no other | `partial-not-packed`, `packed-partial-differs`, `packed-partial-uncalled` |
 | Every entry renders over every Directory Sample and Sample Annotation with no diagnostics | `render-diagnostic` |
-| Property output has no `null`, empty, `null`/`undefined`/`NaN` text, dangling separator, or label without a value | `property-output` |
+| Property output has no `null`, empty, `null`/`undefined`/`NaN` text, dangling separator, or label without a value. A `null` under `keep` is an empty property the reader fills in | `property-output` |
 | A property entry writes what its `expected` states | `property-expectation` |
 | Citation text has no `null`, empty, `null`/`undefined`/`NaN` text, dangling separator, or label without a value | `citation-output` |
 | A note name is one file name: not empty, on one line, no space at either end, no dot at the end, and no character a file name cannot hold | `note-name-output` |
@@ -136,7 +137,7 @@ The Profile ID rule covers form and uniqueness only. That an ID never changes be
 
 ## Directory Samples
 
-Every entry renders over the four Sample Items (`journal-article`, `conference-paper`, `book`, `thesis`) and five items derived from them for types without a Sample Item (`book-section`, `letter`, `manuscript`, `interview`, `document`). A Profile or `annotation` partial also renders over every Sample Annotation. A citation text or note-name entry also renders over three Edge Samples, the cases a citation or a note name must handle: a journal article with four authors (`many-authors`), a report whose title holds every character a file name cannot (`unsafe-title`), and a web page with no author, date, or citation key (`no-author-date-or-citekey`). The suite stores the output in each entry's `samples.md`, so a change in any entry's output shows in review. The `file_link` filter renders nothing in samples, because the Directory Samples have no files in a vault; `plain-annotation-quote` shows how to fall back to plain text, such as `p. 5`.
+Every entry renders over the four Sample Items (`journal-article`, `conference-paper`, `book`, `thesis`) and five items derived from them for types without a Sample Item (`book-section`, `letter`, `manuscript`, `interview`, `document`). A Profile or `annotation` partial also renders over every Sample Annotation; one with the `color-highlights` feature also renders over a highlight in every other Zotero color and a custom color. A citation text or note-name entry also renders over three Edge Samples, the cases a citation or a note name must handle: a journal article with four authors (`many-authors`), a report whose title holds every character a file name cannot (`unsafe-title`), and a web page with no author, date, or citation key (`no-author-date-or-citekey`). The suite stores the output in each entry's `samples.md`, so a change in any entry's output shows in review. The `file_link` filter renders nothing in samples, because the Directory Samples have no files in a vault; `plain-annotation-quote` shows how to fall back to plain text, such as `p. 5`.
 
 ## Commands
 

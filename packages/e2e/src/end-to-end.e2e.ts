@@ -2644,6 +2644,297 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
   }, 180000);
 });
 
+// The Template Directory's promise, from a reader's fresh vault: a Directory
+// Profile entry file imports through Import profile…, its packed partials
+// become the reader's own partial files, and a note under it has the content
+// the entry describes.
+describe.skipIf(!reachable)("Template Directory import", () => {
+  const vaultPath = e2eVaultDir(workspaceRoot, "directory-vault");
+  const directory = join(workspaceRoot, "docs", "template-directory");
+  const entryPath = join(
+    directory,
+    "profiles",
+    "simple-reading-note",
+    "zotlit-profile.simple-reading-note.md",
+  );
+  const annotatedItem = ITEMS.find((item) => item.itemID === 46)!;
+  const notePath = `literatures/${annotatedItem.citationKey}.md`;
+  let vaultId = "";
+  let m: typeof import("@obsidian-messages");
+  let entry: {
+    id: string;
+    name: string;
+    version: string;
+    partials: string[];
+  };
+
+  /** Runs Import profile… and chooses the entry file in the file picker. */
+  async function importEntryFile(sheetText: string): Promise<void> {
+    // The OS file picker has no DOM to drive; the stub answers it with the
+    // entry's path, and the plugin reads that file itself.
+    await obEval(
+      vaultId,
+      `(function(){var dialog=require('@electron/remote').dialog;window.zotlitE2EOpenDialog=dialog.showOpenDialog;dialog.showOpenDialog=async()=>({canceled:false,filePaths:[${JSON.stringify(entryPath)}]});return true;})()`,
+    );
+    try {
+      expect(
+        await obEvalUntil(
+          vaultId,
+          "app.commands.executeCommandById('zotlit:import-profile')",
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      await selectSuggestion(vaultId, m.profile_import_file());
+      await obEval(
+        vaultId,
+        "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+      );
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `String(!!Array.from(activeDocument.querySelectorAll('.modal')).at(-1)?.textContent.includes(${JSON.stringify(sheetText)}))`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+    } finally {
+      await obEval(
+        vaultId,
+        "(function(){require('@electron/remote').dialog.showOpenDialog=window.zotlitE2EOpenDialog;delete window.zotlitE2EOpenDialog;return true;})()",
+      );
+    }
+  }
+
+  /** The documents in the template folder that carry the entry's Profile ID. */
+  async function profileDocuments(): Promise<string[]> {
+    const folder = join(vaultPath, "templates");
+    const names = (await readdir(folder)).filter(
+      (name) => name.startsWith("zotlit-profile.") && name.endsWith(".md"),
+    );
+    const sources = await Promise.all(
+      names.map((name) => readFile(join(folder, name), "utf-8")),
+    );
+    return names.filter((_, index) =>
+      sources[index]!.split("\n").includes(`id: ${entry.id}`),
+    );
+  }
+
+  beforeAll(async () => {
+    m = await import("@obsidian-messages");
+    const manifest = (await readFile(entryPath, "utf-8")).split("\n---\n")[0]!;
+    const lines = manifest.split("\n");
+    const value = (key: string) => {
+      const raw = lines
+        .find((line) => line.startsWith(`${key}: `))!
+        .slice(key.length + 2);
+      return raw.startsWith('"') ? raw.slice(1, -1) : raw;
+    };
+    entry = {
+      id: value("id"),
+      name: value("name"),
+      version: value("version"),
+      partials: lines
+        .filter((line) => line.startsWith("  - name: "))
+        .map((line) => line.slice("  - name: ".length)),
+    };
+    await clearVault(runVaultScript, vaultPath);
+    const pluginDir = join(vaultPath, ".obsidian", "plugins", "zotlit");
+    await mkdir(pluginDir, { recursive: true });
+    await cp(join(workspaceRoot, "apps", "obsidian", "dist-dev"), pluginDir, {
+      recursive: true,
+    });
+    const created = await runVaultScript([
+      "open",
+      vaultPath,
+      "--vault-case",
+      "fresh",
+    ]);
+    vaultId = created.stdout.trim().split("\n")[0]!.trim();
+    await keepRendering(vaultId);
+    await obEval(
+      vaultId,
+      "app.plugins.plugins.zotlit.services.settings.update({'server.live-update':false});true",
+    );
+  }, 180000);
+
+  afterAll(async () => {
+    await runVaultScript(["remove", vaultPath, "--purge"]);
+  }, 120000);
+
+  it("imports the Simple reading note entry file, unpacks its partials, and writes its note", async () => {
+    expect(entry.partials.length).toBeGreaterThan(0);
+    await importEntryFile(
+      m.profile_import_partials({ names: entry.partials.join(", ") }),
+    );
+    const sheet = await obEval(
+      vaultId,
+      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
+    );
+    expect(sheet).toContain(entry.name);
+    expect(sheet).toContain(m.profile_match_absent());
+    expect(await clickModalButton(vaultId, m.profile_import_confirm())).toBe(
+      true,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(app.plugins.plugins.zotlit.services.profile.profiles.some(p=>p.id===${JSON.stringify(entry.id)}&&p.label===${JSON.stringify(entry.name)}))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(await profileDocuments()).toHaveLength(1);
+
+    // Each packed partial is now the reader's own partial file, byte for byte
+    // the Directory's partial entry of that name.
+    for (const name of entry.partials) {
+      const file = `zotlit-partial.${name}.md`;
+      expect(
+        await readFile(join(vaultPath, "templates", file), "utf-8"),
+        file,
+      ).toBe(await readFile(join(directory, "partials", name, file), "utf-8"));
+    }
+
+    await obEval(
+      vaultId,
+      "app.commands.executeCommandById('zotlit:note-quick-switcher')",
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "String(!!activeDocument.querySelector('.prompt input'))",
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){var input=activeDocument.querySelector('.prompt input');input.value=${JSON.stringify(annotatedItem.title)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+    );
+    await selectSuggestion(vaultId, annotatedItem.title);
+    await obEval(
+      vaultId,
+      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+    );
+    // No match, so the picker preselects Default and the reader chooses.
+    const choice = await selectSuggestion(vaultId, entry.name);
+    expect(choice).toContain(notePath);
+    await obEval(
+      vaultId,
+      "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+    );
+    let note = "";
+    expect(
+      await waitFor(async () => {
+        note = await readFile(join(vaultPath, notePath), "utf-8").catch(
+          () => "",
+        );
+        return note.includes("%%/zt-managed%%");
+      }),
+    ).toBe(true);
+
+    const managed = managedRegion(note);
+    const lines = managed.split("\n");
+    expect(lines).toContain(`# ${annotatedItem.title}`);
+    expect(lines).toContain("## Annotations");
+    // The links row: Zotero first, then the PDF; this Item has no DOI or URL.
+    const links = lines.find((line) => line.startsWith("[Zotero]("));
+    expect(links).toMatch(/^\[Zotero\]\(zotero:\/\/[^)]+\) · \[PDF\]\(/);
+    expect(managed).not.toContain("[DOI]");
+    expect(managed).not.toContain("[Web page]");
+    // This Item has no abstract, so the folded abstract is absent.
+    expect(managed).not.toContain("[!abstract]");
+
+    // Every annotation, in page order: quoted text with its page link,
+    // comment-only annotations as plain lines, and captured areas and ink
+    // embedded as images.
+    const attachment = ATTACHMENTS.find(
+      ({ parentItemID }) => parentItemID === annotatedItem.itemID,
+    )!;
+    const annotations = ANNOTATIONS.filter(
+      ({ parentItemID }) => parentItemID === attachment.itemID,
+    ).toSorted((a, b) => a.sortIndex.localeCompare(b.sortIndex));
+    const positions = annotations.flatMap((annotation) => {
+      const page = `[p. ${annotation.pageLabel}](`;
+      if (annotation.text) {
+        const line = lines.find((line) =>
+          line.startsWith(`> ${annotation.text} (${page}`),
+        );
+        expect(line, annotation.key).toBeDefined();
+        return [lines.indexOf(line!)];
+      }
+      if (annotation.comment) {
+        const line = lines.find((line) =>
+          line.startsWith(`${annotation.comment} (${page}`),
+        );
+        expect(line, annotation.key).toBeDefined();
+        return [lines.indexOf(line!)];
+      }
+      return [];
+    });
+    expect(positions).toEqual(positions.toSorted((a, b) => a - b));
+    // Image (type 3) and ink (type 4) annotations.
+    expect(lines.filter((line) => line.startsWith("> ![[")).length).toBe(
+      annotations.filter(({ type }) => type === 3 || type === 4).length,
+    );
+
+    // The reader's own section sits below the managed region.
+    expect(note.slice(note.indexOf("%%/zt-managed%%"))).toContain(
+      "\n## My notes\n",
+    );
+    expect(managed).not.toContain("## My notes");
+
+    const frontmatter = JSON.parse(
+      await obEval(
+        vaultId,
+        `JSON.stringify(app.metadataCache.getFileCache(app.vault.getFileByPath(${JSON.stringify(notePath)}))?.frontmatter??null)`,
+      ),
+    ) as Record<string, unknown>;
+    expect(frontmatter).toMatchObject({
+      title: annotatedItem.title,
+      citekey: annotatedItem.citationKey,
+      year: Number(annotatedItem.date),
+      venue: annotatedItem.venue,
+      status: "unread",
+      "zotlit-profile": `${entry.name} (${entry.id})`,
+    });
+    // This Item has no Zotero tags, so the note gets no tags property.
+    expect(frontmatter).not.toHaveProperty("tags");
+  }, 180000);
+
+  it("asks before replacing on a second import of the same entry and keeps one Profile", async () => {
+    const [document] = await profileDocuments();
+    await importEntryFile(
+      m.profile_import_replace_title({ label: entry.name }),
+    );
+    const sheet = await obEval(
+      vaultId,
+      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
+    );
+    expect(sheet).toContain(
+      m.profile_import_replace_effects({
+        version: entry.version,
+        literature: 1,
+        imported: 0,
+      }),
+    );
+    expect(await clickModalButton(vaultId, m.profile_import_replace())).toBe(
+      true,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "String(!activeDocument.querySelector('.modal'))",
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(
+      await obEval(
+        vaultId,
+        `String(app.plugins.plugins.zotlit.services.profile.profiles.filter(p=>p.id===${JSON.stringify(entry.id)}).length)`,
+      ),
+    ).toBe("1");
+    expect(await profileDocuments()).toEqual([document]);
+  });
+});
+
 interface ManagedFrontmatterReport {
   title?: unknown;
   kind?: unknown;
