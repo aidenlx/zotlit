@@ -1297,7 +1297,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         store.setRoot(value.partialContext);
       }
     } else {
-      if (TABS.some((tab) => tab === value.tab))
+      const hasTab = TABS.some((tab) => tab === value.tab);
+      if (hasTab)
         store.setTab(
           value.tab === "match" && this.isDefaultProfile
             ? "note"
@@ -1309,11 +1310,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         value.root === "filename"
       )
         store.setRoot(value.root);
-      else
+      else if (hasTab)
         store.setRoot(
-          value.tab === "annotation"
+          this.store.getState().tab === "annotation"
             ? "annotation"
-            : value.tab === "name"
+            : this.store.getState().tab === "name"
               ? "filename"
               : "note",
         );

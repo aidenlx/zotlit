@@ -28,6 +28,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { renderNativeTemplate } from "@/views/note-preview/render";
 
 import { createSharedPartial } from "./new-partial";
+import { SAMPLE_ITEM_CHOICES } from "./selection-data";
 import { TemplateWorkbenchView, originatingNoteUpdateNotice } from "./view";
 import type { TemplateWorkbenchDeps } from "./view";
 
@@ -1199,6 +1200,64 @@ An annotation.
     view.setViewData(SOURCE.replace("name: Paper", "name: Other"), true);
     expect(view.controller).not.toBe(before);
     expect(view.controller.canUndo).toBe(false);
+  });
+
+  it.each([
+    { tab: "annotation", root: "annotation", advanced: false },
+    { tab: "name", root: "filename", advanced: false },
+    { tab: "note", root: "annotation", advanced: true },
+  ] as const)(
+    "keeps $tab context when a launch updates only the file and Item (Source: $advanced)",
+    async ({ tab, root, advanced }) => {
+      const { view } = setup();
+      const file = new TFile();
+      file.path = "templates/paper.md";
+      view.file = file;
+      await view.setState(
+        { file: file.path, tab, root, advanced },
+        { history: false },
+      );
+
+      const itemIndexedKey = SAMPLE_ITEM_CHOICES[0]!.id;
+      await view.setState(
+        { file: file.path, itemIndexedKey },
+        { history: false },
+      );
+
+      expect(view.store.getState()).toMatchObject({
+        tab,
+        root,
+        advanced,
+        item: { id: itemIndexedKey },
+      });
+    },
+  );
+
+  it("preserves context for an invalid tab and derives it when a valid tab is restored", async () => {
+    const { view } = setup();
+    await view.setState(
+      { tab: "note", root: "annotation", advanced: true },
+      { history: false },
+    );
+    await view.setState({ tab: "unknown" }, { history: false });
+    expect(view.store.getState()).toMatchObject({
+      tab: "note",
+      root: "annotation",
+    });
+
+    await view.setState({ tab: "name" }, { history: false });
+    expect(view.store.getState()).toMatchObject({
+      tab: "name",
+      root: "filename",
+    });
+    await view.setState(
+      { tab: "note", root: "annotation" },
+      { history: false },
+    );
+    expect(view.store.getState()).toMatchObject({
+      tab: "note",
+      root: "annotation",
+    });
   });
 
   it("restores editor authoring state beside the file path", async () => {
