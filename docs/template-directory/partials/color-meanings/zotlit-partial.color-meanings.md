@@ -7,12 +7,13 @@ Color meanings: what each Zotero highlight color means in your notes.
 Each line below names a Zotero color, the callout type that shows it, and the
 meaning that titles the callout. Change a meaning or a callout type on its
 line, and every note that uses these meanings follows on its next update.
+Change only the words between the quotation marks.
 
 Built-in callout types, by the color they show without a CSS snippet:
   red: failure, danger, bug
   orange: warning, question
   green: success
-  cyan: tip, abstract
+  cyan: tip, important, abstract
   blue: info, note, todo
   purple: example
   gray: quote

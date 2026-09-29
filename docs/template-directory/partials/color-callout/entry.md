@@ -1,6 +1,6 @@
 ---
 title: Color callout
-summary: One annotation as a callout in its Zotero color, titled with the color's meaning and a link to its page, with no CSS snippet.
+summary: One annotation as a callout in the color that matches its Zotero color, titled with the color's meaning and a link to its page, with no CSS snippet.
 minAppVersion: "2.2.0-beta.0"
 context: annotation
 call: |
@@ -12,7 +12,7 @@ problems:
   - Colors don't show in my notes.
   - My callouts are always gray.
   - I need a CSS snippet before highlight colors show.
-  - I want my highlights in the same colors as in Zotero.
+  - I want my highlight colors to show in Obsidian.
   - My comments get mixed up with the author's words.
   - I want to jump from a highlight to its page in the PDF.
 keywords:
@@ -27,17 +27,17 @@ keywords:
   - zt-annot
   - annotation
   - Zotero Integration
-audience: Readers who build their own profile and want each annotation to show in its Zotero color.
-effort: Add this partial and the Color meanings partial to your template folder, and call both from your profile's annotation format.
+audience: Readers who build their own profile and want each annotation to show in a color that matches its Zotero color.
+effort: Add this partial and the Color meanings partial (building blocks that profiles share) to your template folder, and call both from your profile's annotation format.
 ---
 
-Each annotation becomes an Obsidian callout:
+Each annotation becomes an Obsidian callout, a colored box with an icon and a title:
 
-- the callout's color and icon come from its callout type, which the **Color meanings** partial chooses for each Zotero color. Obsidian colors built-in callout types by itself, so the colors show with no CSS snippet and no extra plugin;
+- the callout's color and icon come from its callout type, which the **Color meanings** partial chooses for each Zotero color: the nearest color Obsidian has. Obsidian colors built-in callout types by itself, so the colors show with no CSS snippet and no extra plugin;
 - the title is the color's meaning, then a link to the annotation's page in the PDF, such as **Important · p. 5**. When Obsidian cannot reach the PDF, the page shows as plain text;
 - a highlight or underline quotes its text inside the callout, so the author's words stand apart;
 - an image or ink annotation embeds its image;
-- your Zotero comment follows as ordinary text in the callout, below the quoted text. A note annotation has no quoted text, so the callout holds just your comment.
+- your Zotero comment follows as ordinary text in the callout, below the quoted text. A note or text annotation has no quoted text, so the callout holds just its comment.
 
 The partial reads one annotation's data. It shows the callout type and title it is given, so call it after the Color meanings partial, in the annotation format of a profile, the part below `--- zotlit:annotation ---`:
 
