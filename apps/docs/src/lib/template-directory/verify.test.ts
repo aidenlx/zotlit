@@ -325,6 +325,24 @@ describe("the Directory verification", () => {
       );
     });
 
+    it("accepts an empty property the reader fills in and keeps on update", () => {
+      const files = editProfile(
+        'value: {"$eval": "zt.title"}\n    merge: replace',
+        "value: null\n    merge: keep",
+      );
+      expect(problemsOf(files)).toEqual([]);
+    });
+
+    it("shows an empty property as Obsidian writes it into the note", () => {
+      const files = editProfile(
+        'value: {"$eval": "zt.title"}\n    merge: replace',
+        "value: null\n    merge: keep",
+      );
+      const [note] =
+        verifyTemplateDirectory(files).samples.get(FIXTURE_PROFILE)!.notes;
+      expect(note!.properties).toBe("title:\n");
+    });
+
     it("rejects a property entry whose result differs from its stated one", () => {
       rejects(
         edit(fixtureFiles(), `${FIXTURE_PROPERTY}/entry.md`, [

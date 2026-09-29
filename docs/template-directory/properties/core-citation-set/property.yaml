@@ -1,0 +1,11 @@
+merge: replace
+value:
+  {
+    "title": {"$if": "zt.title", "then": {"$eval": "zt.title"}},
+    "authors": {"$if": "len(zt.authors) > 0", "then": {"$map": {"$eval": "zt.authors"}, "each(author)": {"$eval": "author.fullName"}}},
+    "year": {"$if": "zt.date && zt.date.year", "then": {"$eval": "zt.date.year"}},
+    "venue": {"$if": "zt.containerTitle", "then": {"$eval": "zt.containerTitle"}, "else": {"$if": "zt.publisher", "then": {"$eval": "zt.publisher"}}},
+    "citekey": {"$if": "zt.citekey", "then": {"$eval": "zt.citekey"}},
+    "doi": {"$if": "zt.DOI", "then": "https://doi.org/${zt.DOI}"},
+    "zotero-link": {"$if": "zt.backlink", "then": {"$eval": "zt.backlink"}}
+  }
