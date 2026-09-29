@@ -390,6 +390,30 @@ describe("the Directory verification", () => {
       });
     });
 
+    it("renders the annotations a note partial calls through an Annotation Section that names each one", () => {
+      const files = edit(fixtureFiles(), FIXTURE_HEADING_FILE, [
+        "## {{ zt.title }}\n",
+        "## {{ zt.title }}\n{% for annotation in zt.annotations %}{% render_annotation annotation %}{% endfor %}",
+      ]).set(
+        FIXTURE_PROFILE_FILE,
+        PROFILE_SOURCE.replace(
+          "      ## {{ zt.title }}\n",
+          "      ## {{ zt.title }}\n      {% for annotation in zt.annotations %}{% render_annotation annotation %}{% endfor %}\n",
+        ),
+      );
+      const conferencePaper = verifyTemplateDirectory(files)
+        .samples.get(FIXTURE_HEADING)!
+        .notes.find(({ sample }) => sample.id === "conference-paper")!;
+      expect(conferencePaper.body).toBe(
+        [
+          "## Designing reproducible research interfaces",
+          "- highlight annotation, yellow, p. 1: A reproducible interface makes its inputs and outputs inspectable.",
+          "- highlight annotation, yellow, p. 1: A reproducible interface makes its inputs and outputs inspectable.",
+          "",
+        ].join("\n"),
+      );
+    });
+
     describe("highlight colors", () => {
       const SAMPLE_ANNOTATION_LABELS = [
         "highlight annotation, yellow",
@@ -427,6 +451,30 @@ describe("the Directory verification", () => {
           expect(annotations.at(-1)!.output?.trim()).toBe(
             "> Clear methods make research easier to reproduce.",
           );
+        },
+      );
+
+      it.each([
+        [FIXTURE_HEADING, `${FIXTURE_HEADING}/entry.md`, "context: note"],
+        [FIXTURE_PROFILE, `${FIXTURE_PROFILE}/entry.md`, "effort: Nothing."],
+      ])(
+        "renders %s, which groups annotations by color, over a note with an annotation in every color",
+        (entry, entryFile, line) => {
+          const plain =
+            verifyTemplateDirectory(fixtureFiles()).samples.get(entry)!.notes;
+          const grouped = verifyTemplateDirectory(
+            edit(fixtureFiles(), entryFile, [
+              line,
+              `${line}\nfeatures: [grouped-by-color]`,
+            ]),
+          ).samples.get(entry)!.notes;
+          expect(plain.map(({ sample }) => sample.id)).not.toContain(
+            "every-color",
+          );
+          expect(grouped.map(({ sample }) => sample.label)).toEqual([
+            ...plain.map(({ sample }) => sample.label),
+            "Conference paper with an annotation in every color",
+          ]);
         },
       );
 

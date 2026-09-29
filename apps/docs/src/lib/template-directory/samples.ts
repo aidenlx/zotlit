@@ -257,6 +257,80 @@ export const COLOR_HIGHLIGHTS: readonly AnnotationExample[] =
   });
 
 /**
+ * The conference paper with the Sample Annotations and the color highlights as
+ * its annotations, in page order, for entries that group annotations by color.
+ */
+export const EVERY_COLOR_SAMPLE: DirectorySample = everyColorSample(
+  SAMPLE_ITEMS[1]!,
+  [SAMPLE_ANNOTATIONS[0]!, ...COLOR_HIGHLIGHTS, ...SAMPLE_ANNOTATIONS.slice(1)],
+);
+
+/**
+ * Put annotation examples into an item's note root, each as the note lists
+ * its annotations: no `citation`, and `parentItem` pointing back at the item.
+ */
+function everyColorSample(
+  base: ItemSnapshot,
+  examples: readonly AnnotationExample[],
+): DirectorySample {
+  const own = base.descriptors.note;
+  const outsideAnnotations = <T extends { path: readonly unknown[] }>(
+    entries: readonly T[],
+  ) => entries.filter(({ path }) => path[0] !== "annotations");
+  const nested = <T extends { path: readonly (string | number)[] }>(
+    entries: readonly T[],
+    index: number,
+  ) =>
+    entries.flatMap((entry) =>
+      entry.path[0] === "parentItem"
+        ? []
+        : [{ ...entry, path: ["annotations", index, ...entry.path] }],
+    );
+  const annotations = examples.map(({ root }) => {
+    const { citation: _citation, ...annotation } = root;
+    return { ...annotation, parentItem: { $ref: "zt" } };
+  });
+  return {
+    id: "every-color",
+    label: "Conference paper with an annotation in every color",
+    snapshot: {
+      ...base,
+      revision: "derived:every-color",
+      provenance: {
+        kind: "sample",
+        id: "every-color",
+        source: "template-directory",
+      },
+      roots: { ...base.roots, note: { ...base.roots.note, annotations } },
+      descriptors: {
+        ...base.descriptors,
+        note: {
+          stringCoercions: [
+            ...outsideAnnotations(own.stringCoercions),
+            ...examples.flatMap(({ descriptors }, index) =>
+              nested(descriptors.stringCoercions, index),
+            ),
+          ],
+          temporalValues: [
+            ...outsideAnnotations(own.temporalValues),
+            ...examples.flatMap(({ descriptors }, index) =>
+              nested(descriptors.temporalValues, index),
+            ),
+          ],
+          graphReferences: [
+            ...outsideAnnotations(own.graphReferences),
+            ...examples.map((_example, index) => ({
+              path: ["annotations", index, "parentItem"],
+              target: [],
+            })),
+          ],
+        },
+      },
+    },
+  };
+}
+
+/**
  * Build an item of another type on a Sample Item's shape, so it carries every
  * root field the contract requires and the descriptors a render restores.
  */
