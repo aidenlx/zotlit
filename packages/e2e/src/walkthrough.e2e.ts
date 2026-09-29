@@ -65,6 +65,67 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     ).toBe("false");
   });
 
+  it("reuses an open literature note when searching from Welcome", async () => {
+    const notePath = "Search existing note.md";
+    const leafId = await obEval(
+      vaultId,
+      `(async()=>{
+        const file=await app.vault.create(${JSON.stringify(notePath)},'---\\nzotero-key: DMRGRART\\n---\\nExisting literature note');
+        const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);
+        const welcome=app.workspace.getLeavesOfType('zotlit-welcome')[0]??app.workspace.getLeaf('tab');
+        await welcome.setViewState({type:'zotlit-welcome',active:true});
+        app.workspace.setActiveLeaf(welcome,{focus:true});return leaf.id;
+      })()`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{for(const leaf of app.workspace.getLeavesOfType('markdown'))if(leaf.view.file?.path===${JSON.stringify(notePath)})leaf.detach();const file=app.vault.getFileByPath(${JSON.stringify(notePath)});if(file)await app.vault.delete(file);return true;})()`,
+      );
+    });
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey('DMRGRART').some(file=>file.path===${JSON.stringify(notePath)}))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(()=>{app.commands.executeCommandById('zotlit:note-quick-switcher');const input=activeDocument.querySelector('.prompt-input');input.value='ten simple';input.dispatchEvent(new input.ownerDocument.defaultView.Event('input',{bubbles:true}));return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(activeDocument.querySelector('.prompt-results')?.textContent.includes('Ten Simple Rules for Better Figures'))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(async()=>{${browserWaits}
+          const debugger_=activeWindow.require('@electron/remote').getCurrentWebContents().debugger;
+          await pressKey(debugger_,'Enter',13);return true;
+        })()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(app.workspace.activeLeaf?.view.file?.path===${JSON.stringify(notePath)})`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(
+      JSON.parse(
+        await obEval(
+          vaultId,
+          `JSON.stringify({count:app.workspace.getLeavesOfType('markdown').filter(leaf=>leaf.view.file?.path===${JSON.stringify(notePath)}).length,active:app.workspace.activeLeaf.id})`,
+        ),
+      ),
+    ).toEqual({ count: 1, active: leafId });
+  });
+
   it("keeps the citation suggester closed while entering a page locator", async () => {
     await obEval(
       vaultId,
