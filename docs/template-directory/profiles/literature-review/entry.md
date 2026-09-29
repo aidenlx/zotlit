@@ -32,7 +32,7 @@ audience: Researchers writing a literature review who read many studies against 
 effort: Import it, then create a note. Highlight with the review colors below, or change the meanings once, in one partial, to match how you highlight.
 ---
 
-A literature note for each study in your review. You read every study against the same five questions and write your answers at the top of its note; below them, your annotations are sorted into the parts of the study they come from. Three properties then let you compare your sources side by side in a table.
+A literature note for each study in your review. You read every study against the same five questions and write your answers at the top of its note; below them, your annotations are sorted into the parts of the study they come from. Its properties, among them your reading status and one line on each study's contribution, let you compare your sources side by side in a table.
 
 Each note holds, from the top:
 
@@ -54,14 +54,16 @@ The groups come from your highlight colors, with the meanings of the **Color mea
 | Magenta | Related work | Earlier studies worth following up | Purple |
 | Purple | Definitions | Key terms and concepts | Purple |
 | Gray | Quotes to use | Sentences to quote in your review | Gray |
-| Plum | Paraphrases | Passages to paraphrase | Red |
+| Plum (from Citavi only) | Paraphrases | Passages to paraphrase | Red |
 | Any other color | Other highlights | | Blue |
 
 Each annotation is a callout (Obsidian's colored box with an icon and a title) in the color that matches its Zotero color, with no CSS snippet. Obsidian has no yellow or pink callout, so yellow shows orange, magenta shows purple, and plum shows red; the heading and the callout title tell them apart. The callout's title names the part and links to the annotation's page in the PDF, such as **Methods · p. 5**. A highlight quotes its text inside the callout, and your Zotero comment follows it as ordinary text. Image annotations appear as embedded images, and notes and text boxes you add in the PDF appear as their text. Every kind of annotation goes into the group of its color, so nothing is left out.
 
-If you already highlight with other meanings, edit `zotlit-partial.color-meanings-review.md` in your template folder. Change only the words between the quotation marks: the group headings and the callout titles change together. The `colors` line at the top of that file sets the order of the groups. Every note under this profile follows the next time it updates, for example when you run **Create or update all literature notes**.
+Four of your headings and four groups share a name: **Aim**, **Methods**, **Findings**, and **Limitations**. The heading on top holds your answer; the group below holds the passages you highlighted for it.
 
-Everything from Zotero, from the title down, sits in the part of the note that ZotLit refreshes when you update the note. Your five headings sit above that part, so an update never touches what you write there. To change the text of an annotation, edit its comment in Zotero; the comment appears under the highlight on the next update.
+If you already highlight with other meanings, edit `zotlit-partial.color-meanings-review.md` in your template folder. Each color has one line, such as `{%- when "blue" -%} {%- assign callout = "info" -%} {%- assign meaning = "Methods" -%}`. Change only the words after `meaning =`, between the quotation marks, and use no quotation marks inside them: the group headings and the callout titles change together. The `colors` line, just below the comment at the top of that file, sets the order of the groups: move a color in that line to move its group, and keep a comma between each two colors. Every note under this profile follows the next time it updates, for example when you run **Create or update all literature notes**.
+
+Everything from Zotero, from the title down, sits in the part of the note that ZotLit refreshes when you update the note, between two marker lines, `%%zt-managed%%` and `%%/zt-managed%%`, that Obsidian hides in reading view. Leave the marker lines in place. Your five headings sit above that part, so an update never touches what you write there. To change the text of an annotation, edit its comment in Zotero; the comment appears under the highlight on the next update.
 
 The note gets eight properties, ready for a review table in an Obsidian Bases view or with the Dataview plugin: one row per study, one column per property.
 

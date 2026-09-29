@@ -57,26 +57,30 @@ partials:
       in the profile's annotation format. The groups follow the colors line of the
       meanings partial; without that line, they follow Zotero's color menu:
       yellow, red, green, blue, purple, magenta, orange, gray, then plum.
-      Annotations in any other color come last.
+      Annotations in any other color come last. A color with an empty meaning
+      shows under "Highlight", as its callout does.
       {%- endcomment -%}
       {%- assign meanings = meanings | default: "color-meanings" -%}
       {%- include meanings, zt: nil -%}
-      {%- assign legend = colors | default: "yellow,red,green,blue,purple,magenta,orange,gray,plum" | split: "," -%}
+      {%- assign legend = colors | default: "yellow,red,green,blue,purple,magenta,orange,gray,plum" | remove: " " | split: "," -%}
+      {%- capture line_break %}
+      {% endcapture -%}
       {%- capture found -%}
         {%- for color in legend -%}
           {%- assign first = zt.annotations | where: "colorName", color | first -%}
-          {%- if first -%}{%- include meanings, zt: first -%}{{ meaning }}|{%- endif -%}
+          {%- if first -%}{%- include meanings, zt: first -%}{{ meaning | default: "Highlight" }}{{ line_break }}{%- endif -%}
         {%- endfor -%}
         {%- for annotation in zt.annotations -%}
-          {%- unless legend contains annotation.colorName -%}{%- include meanings, zt: annotation -%}{{ meaning }}|{%- endunless -%}
+          {%- unless legend contains annotation.colorName -%}{%- include meanings, zt: annotation -%}{{ meaning | default: "Highlight" }}{{ line_break }}{%- endunless -%}
         {%- endfor -%}
       {%- endcapture -%}
-      {%- assign groups = found | split: "|" | uniq -%}
+      {%- assign groups = found | split: line_break | uniq -%}
       {%- for group in groups %}
       ### {{ group }}
       {% for annotation in zt.annotations -%}
         {%- include meanings, zt: annotation -%}
-        {%- if meaning == group %}
+        {%- assign label = meaning | default: "Highlight" -%}
+        {%- if label == group %}
       {% render_annotation annotation -%}
         {%- endif -%}
       {%- endfor -%}
@@ -91,10 +95,12 @@ partials:
       Each line below names a Zotero color, the callout type that shows it, and the
       meaning that titles the callout. Change a meaning or a callout type on its
       line, and every note that uses these meanings follows on its next update.
-      Change only the words between the quotation marks.
+      Change only the words between the quotation marks, and use no quotation
+      marks inside them.
 
-      The colors line sets the order of the groups in a note that groups
-      annotations by color. To move a group, move its color in that line.
+      The colors line, just below this comment, sets the order of the groups in a
+      note that groups annotations by color. To move a group, move its color in
+      that line, and keep a comma between each two colors.
 
       Built-in callout types, by the color they show without a CSS snippet:
         red: failure, danger, bug

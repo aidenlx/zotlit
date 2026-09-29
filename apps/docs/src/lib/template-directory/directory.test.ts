@@ -7,6 +7,7 @@ import {
   templateDirectoryRoot,
   verifyTemplateDirectory,
 } from "./index";
+import { edit } from "./test-fixtures";
 
 /**
  * The `###` headings of a rendered note, each with the non-blank lines below
@@ -171,6 +172,39 @@ describe("the Template Directory", () => {
         ).toEqual(headings);
       },
     );
+
+    it("keeps every annotation when a reader writes a | into a meaning, spaces into the colors line, or empties a meaning", async () => {
+      const files = new Map(await readTemplateDirectory(root));
+      const meanings =
+        "partials/color-meanings-review/zotlit-partial.color-meanings-review.md";
+      edit(files, meanings, ['"Methods"', '"Methods | design"']);
+      edit(files, meanings, ['"Definitions"', '""']);
+      edit(files, meanings, [
+        '"yellow,blue,green,red,orange,magenta,purple,gray,plum"',
+        '"yellow, blue, green, red, orange, magenta, purple, gray, plum"',
+      ]);
+      edit(files, "partials/color-groups/entry.md", [
+        "context: note",
+        `context: note\ncall: '{% render "color-groups" with zt as zt, meanings: "color-meanings-review" -%}'`,
+      ]);
+      const edited = verifyTemplateDirectory(files)
+        .samples.get("partials/color-groups")!
+        .notes.find(({ sample }) => sample.id === "every-color")!.body!;
+      expect(
+        groups(edited).map(([heading, lines]) => [heading, lines.length]),
+      ).toEqual([
+        ["Aim", 1],
+        ["Methods | design", 2],
+        ["Findings", 2],
+        ["Limitations", 2],
+        ["Gaps and future research", 1],
+        ["Related work", 1],
+        ["Highlight", 2],
+        ["Quotes to use", 1],
+        ["Paraphrases", 1],
+        ["Other highlights", 2],
+      ]);
+    });
 
     it("writes no heading for a color meaning without annotations", () => {
       expect(

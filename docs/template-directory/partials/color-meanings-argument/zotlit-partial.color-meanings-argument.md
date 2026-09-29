@@ -8,10 +8,12 @@ in your notes.
 Each line below names a Zotero color, the callout type that shows it, and the
 meaning that titles the callout. Change a meaning or a callout type on its
 line, and every note that uses these meanings follows on its next update.
-Change only the words between the quotation marks.
+Change only the words between the quotation marks, and use no quotation
+marks inside them.
 
-The colors line sets the order of the groups in a note that groups
-annotations by color. To move a group, move its color in that line.
+The colors line, just below this comment, sets the order of the groups in a
+note that groups annotations by color. To move a group, move its color in
+that line, and keep a comma between each two colors.
 
 Built-in callout types, by the color they show without a CSS snippet:
   red: failure, danger, bug

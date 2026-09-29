@@ -47,12 +47,12 @@ The meanings it starts with, in the order of their groups:
 | Magenta | Related work | Earlier studies worth following up | Purple |
 | Purple | Definitions | Key terms and concepts | Purple |
 | Gray | Quotes to use | Sentences to quote in your review | Gray |
-| Plum | Paraphrases | Passages to paraphrase | Red |
+| Plum (from Citavi only) | Paraphrases | Passages to paraphrase | Red |
 | Any other color | Other highlights | | Blue |
 
-The callout types are the same as in **Color meanings**, so each color shows the nearest color Obsidian has, with no CSS snippet: yellow shows orange, magenta shows purple, and plum shows red. The callout title keeps colors of the same shade apart. Plum highlights come only from Citavi projects imported into Zotero. A highlight in a color that is not on the list, such as a custom color from another app, shows blue with the title **Other highlights**, so it stays in the note.
+The callout types are the same as in **Color meanings**, so each color shows the nearest color Obsidian has, with no CSS snippet: yellow shows orange, magenta shows purple, and plum shows red. So yellow and orange highlights share a color, as do purple and magenta, red and plum, and blue and any color not on the list; the callout title keeps them apart. Plum highlights come only from Citavi projects imported into Zotero. A highlight in a color that is not on the list, such as a custom color from another app, shows blue with the title **Other highlights**, so it stays in the note.
 
-To change a meaning, open `zotlit-partial.color-meanings-review.md` in your template folder. Each color has one line, such as `{%- when "blue" -%} {%- assign callout = "info" -%} {%- assign meaning = "Methods" -%}`. Change only the words between the quotation marks: after `meaning =` to rename the color, or after `callout =` to show it in another color, with a type from the list in the file. The `colors` line at the top sets the order of the groups: to move a group, move its color in that line, and keep the commas between the colors. Every note that uses these meanings follows the next time it updates, for example when you run **Create or update all literature notes**.
+To change a meaning, open `zotlit-partial.color-meanings-review.md` in your template folder. Each color has one line, such as `{%- when "blue" -%} {%- assign callout = "info" -%} {%- assign meaning = "Methods" -%}`. Change only the words between the quotation marks: after `meaning =` to rename the color, or after `callout =` to show it in another color, with a type from the list in the file. Use no quotation marks inside a meaning. The `colors` line, just below the comment at the top of the file, sets the order of the groups: to move a group, move its color in that line, and keep a comma between each two colors. Every note that uses these meanings follows the next time it updates, for example when you run **Create or update all literature notes**.
 
 The partial reads one annotation's data and writes nothing itself: it gives the annotation's callout type and meaning to the partial called after it. Use it in the annotation format of a profile, the part below `--- zotlit:annotation ---`, together with the Color callout partial:
 
@@ -61,4 +61,4 @@ The partial reads one annotation's data and writes nothing itself: it gives the 
 {% render "color-callout" with zt as zt, callout: callout, meaning: meaning -%}
 ```
 
-To group the annotations by these meanings, name the set in the call of the Annotations grouped by color partial: `{% render "color-groups" with zt as zt, meanings: "color-meanings-review" -%}`.
+To group the annotations by these meanings, keep this set in the annotation format and name it in the call of the Annotations grouped by color partial too: `{% render "color-groups" with zt as zt, meanings: "color-meanings-review" -%}`.
