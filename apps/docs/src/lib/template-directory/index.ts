@@ -27,7 +27,7 @@ export type {
 export type { DirectoryProblem, DirectoryProblemCode } from "./problem.ts";
 export { readTemplateDirectory, templateDirectoryRoot } from "./read.ts";
 export { repackTemplateDirectory } from "./repack.ts";
-export { DIRECTORY_SAMPLES } from "./samples.ts";
+export { DIRECTORY_SAMPLES, EDGE_SAMPLES } from "./samples.ts";
 export type { DirectorySample } from "./samples.ts";
 export {
   formatEntrySamples,

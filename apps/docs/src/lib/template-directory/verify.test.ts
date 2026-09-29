@@ -93,14 +93,14 @@ describe("the Directory verification", () => {
     it("names the kinds it cannot verify yet", () => {
       const files = fixtureFiles()
         .set(
-          "citations/plain-author-year/entry.md",
-          "---\ntitle: T\nsummary: S\nminAppVersion: '2.2.0'\ntasks: [writing]\nproblems: [p]\naudience: a\neffort: e\n---\n\nText.\n",
+          "partials/cited-quote/entry.md",
+          "---\ntitle: T\nsummary: S\nminAppVersion: '2.2.0'\ncontext: citation\ntasks: [writing]\nproblems: [p]\naudience: a\neffort: e\n---\n\nText.\n",
         )
         .set(
-          "citations/plain-author-year/zotlit-citation.md",
+          "partials/cited-quote/zotlit-partial.cited-quote.md",
           "{{ zt.variant }}\n",
         );
-      rejects(files, "citations/plain-author-year", "unverified");
+      rejects(files, "partials/cited-quote", "unverified");
     });
   });
 
@@ -311,6 +311,18 @@ describe("the Directory verification", () => {
       );
     });
 
+    it("renders an annotation partial with the annotation's citation in the built-in citation text", () => {
+      const files = edit(fixtureFiles(), FIXTURE_QUOTE_FILE, [
+        "> {{ zt.text }}",
+        "> {{ zt.text }} {{ zt.citation }}",
+      ]);
+      const [highlight] =
+        verifyTemplateDirectory(files).samples.get(FIXTURE_QUOTE)!.annotations;
+      expect(highlight!.output).toBe(
+        "> Clear methods make research easier to reproduce. [@riveraResearchInterfaces2026, {p. 1}]\n",
+      );
+    });
+
     it.each([
       ["a null value", '{"$eval": "zt.DOI"}'],
       ["the word null", '"Issue: ${str(zt.issue)}"'],
@@ -323,6 +335,14 @@ describe("the Directory verification", () => {
         FIXTURE_PROFILE,
         "property-output",
       );
+    });
+
+    it("accepts volume, issue, and page labels that carry their numbers", () => {
+      const files = editProfile(
+        'value: {"$eval": "zt.title"}',
+        'value: "PLoS Medicine. 2005. Vol. 2. № 8. pp. 10–20."',
+      );
+      expect(problemsOf(files)).toEqual([]);
     });
 
     it("accepts an empty property the reader fills in and keeps on update", () => {
@@ -439,6 +459,25 @@ describe("the Directory verification", () => {
           SAMPLE_ANNOTATION_LABELS,
         );
       });
+    });
+
+    it("renders an entry that makes tasks over a highlight whose comment starts with todo", () => {
+      const files = edit(
+        edit(fixtureFiles(), `${FIXTURE_QUOTE}/entry.md`, [
+          "context: annotation",
+          "context: annotation\nfeatures: [tasks]",
+        ]),
+        FIXTURE_QUOTE_FILE,
+        ["> {{ zt.text }}", "{{ zt.comment }}"],
+      );
+      const annotations =
+        verifyTemplateDirectory(files).samples.get(FIXTURE_QUOTE)!.annotations;
+      expect(annotations.map(({ label }) => label).slice(6)).toEqual([
+        "highlight annotation, orange",
+      ]);
+      expect(annotations.at(-1)!.output?.trim()).toBe(
+        "todo Check the sample size before citing this result.",
+      );
     });
 
     it("rejects a property entry that is not a JSON-e rule", () => {
