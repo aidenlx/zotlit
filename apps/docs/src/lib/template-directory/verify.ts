@@ -45,6 +45,7 @@ import {
   COLOR_HIGHLIGHTS,
   DIRECTORY_SAMPLES,
   EDGE_SAMPLES,
+  EVERY_COLOR_SAMPLE,
   TODO_HIGHLIGHT,
 } from "./samples.ts";
 import type { DirectorySample } from "./samples.ts";
@@ -271,9 +272,16 @@ function checkLanguage(
 }
 
 /**
+ * The title heading a note may open with, outside the Managed Block: the note
+ * gets it once, when it is created, and the `title` property keeps the
+ * current title.
+ */
+const TITLE_HEADING = "# {{ zt.title }}\n";
+
+/**
  * Everything from Zotero sits inside the one Managed Block, so an update never
  * rewrites what the reader wrote: the text around the block is the reader's,
- * and holds no template code.
+ * and holds no template code but a first-line title heading.
  */
 function checkManagedBlock(source: string, report: Report): void {
   const { body, managedBlock } = parseLiteratureNoteTemplate(source);
@@ -284,12 +292,15 @@ function checkManagedBlock(source: string, report: Report): void {
     );
     return;
   }
+  const before = body.slice(0, managedBlock.start);
   const outside =
-    body.slice(0, managedBlock.start) + body.slice(managedBlock.end);
+    (before.startsWith(TITLE_HEADING)
+      ? before.slice(TITLE_HEADING.length)
+      : before) + body.slice(managedBlock.end);
   if (/\{\{|\{%/.test(outside)) {
     report(
       "managed-block",
-      "Template code sits outside the Managed Block, where an update would never refresh it. Move it inside {% managed %} … {% endmanaged %}; the text around the block is the reader's.",
+      "Template code sits outside the Managed Block, where an update would never refresh it. Move it inside {% managed %} … {% endmanaged %}; the text around the block is the reader's. Only a first-line title heading, # {{ zt.title }}, may stay outside.",
     );
   }
 }
@@ -396,11 +407,23 @@ function sampleAnnotations(
   ];
 }
 
+/**
+ * The Directory Samples, and for an entry that groups annotations by color, a
+ * note with an annotation in every color.
+ */
+function noteSamples(
+  features: DirectoryEntry["features"],
+): readonly DirectorySample[] {
+  return features.includes("grouped-by-color")
+    ? [...DIRECTORY_SAMPLES, EVERY_COLOR_SAMPLE]
+    : DIRECTORY_SAMPLES;
+}
+
 function renderProfileEntry(
   { artifact, manifest, features }: ProfileEntry,
   report: Report,
 ): EntrySamples {
-  const notes = DIRECTORY_SAMPLES.map((sample) => {
+  const notes = noteSamples(features).map((sample) => {
     const result = renderProfile(artifact.source, sample.snapshot);
     reportDiagnostics(result, sample.label, report);
     checkProperties(
@@ -423,6 +446,17 @@ function renderProfileEntry(
   });
   return { notes, annotations };
 }
+
+/**
+ * The Annotation Section a `note` partial's samples render annotations with:
+ * one line naming each annotation's type, color, page, and text or comment,
+ * so a sample shows where every annotation lands.
+ */
+const NAMED_ANNOTATION =
+  "- {{ zt.type }} annotation" +
+  "{% if zt.colorName %}, {{ zt.colorName }}{% elsif zt.colorHex %}, custom color {{ zt.colorHex }}{% endif %}" +
+  "{% if zt.pageLabel %}, p. {{ zt.pageLabel }}{% endif %}" +
+  "{% if zt.text %}: {{ zt.text }}{% elsif zt.comment %}: {{ zt.comment }}{% endif %}\n";
 
 function renderPartialEntry(
   { slug, context, call: statedCall, features }: PartialEntry,
@@ -450,9 +484,10 @@ function renderPartialEntry(
   }
   const source = harnessProfile({
     body: `{% managed %}\n${call}{% endmanaged %}\n`,
+    annotation: NAMED_ANNOTATION,
   });
   return {
-    notes: DIRECTORY_SAMPLES.map((sample) => {
+    notes: noteSamples(features).map((sample) => {
       const result = renderProfile(source, sample.snapshot, { resources });
       reportDiagnostics(result, sample.label, report);
       return {
