@@ -2985,6 +2985,14 @@ describe.skipIf(!reachable)("Template Directory import", () => {
       m.profile_import_partials({ names: added.join(", ") }),
       secondPath,
     );
+    // The preview renders the links row through the partial the vault holds.
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "String(!!Array.from(activeDocument.querySelectorAll('.modal')).at(-1)?.textContent.includes('[Zotero]('))",
+        { expected: "true" },
+      ),
+    ).toBe(true);
     const sheet = await obEval(
       vaultId,
       "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
