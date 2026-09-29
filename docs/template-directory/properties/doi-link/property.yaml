@@ -1,0 +1,3 @@
+key: doi
+merge: replace
+value: { "$if": "zt.DOI", "then": "https://doi.org/${zt.DOI}" }

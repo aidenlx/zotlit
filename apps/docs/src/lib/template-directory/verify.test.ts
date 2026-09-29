@@ -93,14 +93,14 @@ describe("the Directory verification", () => {
     it("names the kinds it cannot verify yet", () => {
       const files = fixtureFiles()
         .set(
-          "citations/plain-author-year/entry.md",
-          "---\ntitle: T\nsummary: S\nminAppVersion: '2.2.0'\ntasks: [writing]\nproblems: [p]\naudience: a\neffort: e\n---\n\nText.\n",
+          "partials/cited-quote/entry.md",
+          "---\ntitle: T\nsummary: S\nminAppVersion: '2.2.0'\ncontext: citation\ntasks: [writing]\nproblems: [p]\naudience: a\neffort: e\n---\n\nText.\n",
         )
         .set(
-          "citations/plain-author-year/zotlit-citation.md",
+          "partials/cited-quote/zotlit-partial.cited-quote.md",
           "{{ zt.variant }}\n",
         );
-      rejects(files, "citations/plain-author-year", "unverified");
+      rejects(files, "partials/cited-quote", "unverified");
     });
   });
 
@@ -232,6 +232,39 @@ describe("the Directory verification", () => {
         "managed-block",
       );
     });
+
+    it("accepts a title heading on the first line, which the note gets once, when it is created", () => {
+      const files = editProfile(
+        "---\n{% managed %}",
+        "---\n# {{ zt.title }}\n\n{% managed %}",
+      );
+      expect(problemsOf(files)).toEqual([]);
+      expect(
+        verifyTemplateDirectory(files)
+          .samples.get(FIXTURE_PROFILE)!
+          .notes[0]!.body!.split("\n")[0],
+      ).toBe("# Why Most Published Research Findings Are False");
+    });
+
+    it.each([
+      ["below the block", ["## My notes", "# {{ zt.title }}\n\n## My notes"]],
+      [
+        "below a prompt, above the block",
+        [
+          "---\n{% managed %}",
+          "---\n## Aim\n\n# {{ zt.title }}\n\n{% managed %}",
+        ],
+      ],
+      [
+        "with more template code on its line",
+        [
+          "---\n{% managed %}",
+          "---\n# {{ zt.title }} {{ zt.key }}\n\n{% managed %}",
+        ],
+      ],
+    ] as const)("rejects a title heading %s", (_, [from, to]) => {
+      rejects(editProfile(from, to), FIXTURE_PROFILE, "managed-block");
+    });
   });
 
   describe("the one partial namespace", () => {
@@ -311,6 +344,18 @@ describe("the Directory verification", () => {
       );
     });
 
+    it("renders an annotation partial with the annotation's citation in the built-in citation text", () => {
+      const files = edit(fixtureFiles(), FIXTURE_QUOTE_FILE, [
+        "> {{ zt.text }}",
+        "> {{ zt.text }} {{ zt.citation }}",
+      ]);
+      const [highlight] =
+        verifyTemplateDirectory(files).samples.get(FIXTURE_QUOTE)!.annotations;
+      expect(highlight!.output).toBe(
+        "> Clear methods make research easier to reproduce. [@riveraResearchInterfaces2026, {p. 1}]\n",
+      );
+    });
+
     it.each([
       ["a null value", '{"$eval": "zt.DOI"}'],
       ["the word null", '"Issue: ${str(zt.issue)}"'],
@@ -323,6 +368,14 @@ describe("the Directory verification", () => {
         FIXTURE_PROFILE,
         "property-output",
       );
+    });
+
+    it("accepts volume, issue, and page labels that carry their numbers", () => {
+      const files = editProfile(
+        'value: {"$eval": "zt.title"}',
+        'value: "PLoS Medicine. 2005. Vol. 2. № 8. pp. 10–20."',
+      );
+      expect(problemsOf(files)).toEqual([]);
     });
 
     it("accepts an empty property the reader fills in and keeps on update", () => {
@@ -390,6 +443,30 @@ describe("the Directory verification", () => {
       });
     });
 
+    it("renders the annotations a note partial calls through an Annotation Section that names each one", () => {
+      const files = edit(fixtureFiles(), FIXTURE_HEADING_FILE, [
+        "## {{ zt.title }}\n",
+        "## {{ zt.title }}\n{% for annotation in zt.annotations %}{% render_annotation annotation %}{% endfor %}",
+      ]).set(
+        FIXTURE_PROFILE_FILE,
+        PROFILE_SOURCE.replace(
+          "      ## {{ zt.title }}\n",
+          "      ## {{ zt.title }}\n      {% for annotation in zt.annotations %}{% render_annotation annotation %}{% endfor %}\n",
+        ),
+      );
+      const conferencePaper = verifyTemplateDirectory(files)
+        .samples.get(FIXTURE_HEADING)!
+        .notes.find(({ sample }) => sample.id === "conference-paper")!;
+      expect(conferencePaper.body).toBe(
+        [
+          "## Designing reproducible research interfaces",
+          "- highlight annotation, yellow, p. 1: A reproducible interface makes its inputs and outputs inspectable.",
+          "- highlight annotation, yellow, p. 1: A reproducible interface makes its inputs and outputs inspectable.",
+          "",
+        ].join("\n"),
+      );
+    });
+
     describe("highlight colors", () => {
       const SAMPLE_ANNOTATION_LABELS = [
         "highlight annotation, yellow",
@@ -430,6 +507,30 @@ describe("the Directory verification", () => {
         },
       );
 
+      it.each([
+        [FIXTURE_HEADING, `${FIXTURE_HEADING}/entry.md`, "context: note"],
+        [FIXTURE_PROFILE, `${FIXTURE_PROFILE}/entry.md`, "effort: Nothing."],
+      ])(
+        "renders %s, which groups annotations by color, over a note with an annotation in every color",
+        (entry, entryFile, line) => {
+          const plain =
+            verifyTemplateDirectory(fixtureFiles()).samples.get(entry)!.notes;
+          const grouped = verifyTemplateDirectory(
+            edit(fixtureFiles(), entryFile, [
+              line,
+              `${line}\nfeatures: [grouped-by-color]`,
+            ]),
+          ).samples.get(entry)!.notes;
+          expect(plain.map(({ sample }) => sample.id)).not.toContain(
+            "every-color",
+          );
+          expect(grouped.map(({ sample }) => sample.label)).toEqual([
+            ...plain.map(({ sample }) => sample.label),
+            "Conference paper with an annotation in every color",
+          ]);
+        },
+      );
+
       it("renders an entry that shows no highlight colors over the Sample Annotations alone", () => {
         const annotations =
           verifyTemplateDirectory(fixtureFiles()).samples.get(
@@ -439,6 +540,25 @@ describe("the Directory verification", () => {
           SAMPLE_ANNOTATION_LABELS,
         );
       });
+    });
+
+    it("renders an entry that makes tasks over a highlight whose comment starts with todo", () => {
+      const files = edit(
+        edit(fixtureFiles(), `${FIXTURE_QUOTE}/entry.md`, [
+          "context: annotation",
+          "context: annotation\nfeatures: [tasks]",
+        ]),
+        FIXTURE_QUOTE_FILE,
+        ["> {{ zt.text }}", "{{ zt.comment }}"],
+      );
+      const annotations =
+        verifyTemplateDirectory(files).samples.get(FIXTURE_QUOTE)!.annotations;
+      expect(annotations.map(({ label }) => label).slice(6)).toEqual([
+        "highlight annotation, orange",
+      ]);
+      expect(annotations.at(-1)!.output?.trim()).toBe(
+        "todo Check the sample size before citing this result.",
+      );
     });
 
     it("rejects a property entry that is not a JSON-e rule", () => {

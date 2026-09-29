@@ -1,0 +1,3 @@
+key: year
+merge: replace
+value: { "$if": "zt.date && zt.date.year", "then": { "$eval": "zt.date.year" } }

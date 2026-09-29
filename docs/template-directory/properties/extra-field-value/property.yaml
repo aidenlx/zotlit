@@ -1,0 +1,11 @@
+key: cover
+merge: replace
+value:
+  {
+    "$let": { "name": "cover" },
+    "in":
+      {
+        "$if": "zt.extra && name in zt.extra.fields && zt.extra.fields[name]",
+        "then": { "$eval": "zt.extra.fields[name]" },
+      },
+  }
