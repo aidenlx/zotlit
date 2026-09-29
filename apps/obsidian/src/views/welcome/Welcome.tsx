@@ -167,9 +167,13 @@ function StepConnect() {
 
 function StepFolder() {
   const literatureFolder = useWelcomeStore((s) => s.literatureFolder);
+  const done = useWelcomeStore((s) => s.literatureFolderExists);
   const actions = useWelcomeActions();
   return (
-    <TimelineNode state="todo" icon="folder">
+    <TimelineNode
+      state={done ? "done" : "todo"}
+      icon={done ? "check" : "folder"}
+    >
       <StepHeading>{m.welcome_step_folder_title()}</StepHeading>
       <p className="zt:mt-1 zt:text-sm zt:text-muted-foreground">
         {m.welcome_step_folder_body({ folder: literatureFolder })}
@@ -183,9 +187,13 @@ function StepFolder() {
 
 function StepCompanion() {
   const mode = useWelcomeStore((s) => s.mode);
+  const done = useWelcomeStore((s) => s.companionInstalled);
   const actions = useWelcomeActions();
   return (
-    <TimelineNode state="todo" icon="puzzle">
+    <TimelineNode
+      state={done ? "done" : "todo"}
+      icon={done ? "check" : "puzzle"}
+    >
       <StepHeading>
         {mode === "upgraded"
           ? m.welcome_step_companion_upgrade_title()
@@ -208,9 +216,13 @@ function StepCompanion() {
 }
 
 function StepNote() {
+  const done = useWelcomeStore((s) => s.hasLiteratureNote);
   const actions = useWelcomeActions();
   return (
-    <TimelineNode state="todo" icon="file-plus-2">
+    <TimelineNode
+      state={done ? "done" : "todo"}
+      icon={done ? "check" : "file-plus-2"}
+    >
       <StepHeading>{m.welcome_step_note_title()}</StepHeading>
       <p className="zt:mt-1 zt:text-sm zt:text-muted-foreground">
         {m.welcome_step_note_body()}

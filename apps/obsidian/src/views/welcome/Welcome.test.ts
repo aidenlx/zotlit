@@ -120,6 +120,38 @@ it.each([false, true])(
   },
 );
 
+describe("Welcome setup steps", () => {
+  /** The timeline node a step heading belongs to, which carries its state. */
+  function isDone(container: HTMLElement, title: string): boolean {
+    const heading = [...container.querySelectorAll('[role="heading"]')].find(
+      (el) => el.textContent === title,
+    );
+    const node = heading?.parentElement?.previousElementSibling;
+    if (!node) throw new Error(`No step titled ${title}`);
+    return node.classList.contains("zt:border-green");
+  }
+
+  const STEPS = [
+    m.welcome_step_companion_title(),
+    m.welcome_step_folder_title(),
+    m.welcome_step_note_title(),
+  ];
+
+  it("marks each step done once the vault and Zotero show it complete", async () => {
+    const { container } = await render("fresh", {
+      companionInstalled: true,
+      literatureFolderExists: true,
+      hasLiteratureNote: true,
+    });
+    for (const title of STEPS) expect(isDone(container, title)).toBe(true);
+  });
+
+  it("keeps each step to do until it is complete", async () => {
+    const { container } = await render("fresh");
+    for (const title of STEPS) expect(isDone(container, title)).toBe(false);
+  });
+});
+
 it("replaces the pending prompt with the persisted result after conversion", async () => {
   const { container, store } = await render("upgraded", {
     templateConversionPending: true,

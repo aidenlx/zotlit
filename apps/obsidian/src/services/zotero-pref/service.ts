@@ -21,7 +21,7 @@ import { pathToFileURL } from "node:url";
 import { sourceIdFromUris } from "@zotlit/protocol";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
-import { ZOTERO_DB_FILENAME } from "@/lib/constants";
+import { COMPANION_ADDON_ID, ZOTERO_DB_FILENAME } from "@/lib/constants";
 import { getLogger } from "@/lib/log";
 import { Service } from "@/services/service-base";
 
@@ -31,7 +31,9 @@ import {
 } from "./device-paths";
 import type { DeviceStorage } from "./device-paths";
 import {
+  EXTENSIONS_FILENAME,
   getZoteroProfilesRoot,
+  isAddonActive,
   parsePrefsJs,
   parseZoteroProfiles,
   PREF_BRANCH,
@@ -209,6 +211,26 @@ export class ZoteroPrefService extends Service<void> {
     cb: ZoteroPrefEvents[K],
   ): () => void {
     return this.#emitter.on(event, cb);
+  }
+
+  /**
+   * Whether the profile lists ZotLit Companion as installed and enabled. Read
+   * fresh on every call, since the list changes when the reader installs the
+   * Companion in Zotero; `false` while the profile is unknown or unreadable.
+   */
+  async companionInstalled(): Promise<boolean> {
+    const profileDir = this.#resolvedProfileDir;
+    if (!profileDir) return false;
+    try {
+      const content = await readFile(
+        join(profileDir, EXTENSIONS_FILENAME),
+        "utf8",
+      );
+      return isAddonActive(content, COMPANION_ADDON_ID);
+    } catch (error) {
+      logger.debug("Cannot read the Zotero add-on list", { error, profileDir });
+      return false;
+    }
   }
 
   /**
