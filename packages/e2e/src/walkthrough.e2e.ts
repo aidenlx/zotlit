@@ -1,5 +1,5 @@
 import { rm } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
@@ -64,6 +64,47 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         `String(Array.from(document.querySelectorAll('.status-bar [aria-label]')).some(el=>el.getAttribute('aria-label')==='Uninitialized'))`,
       ),
     ).toBe("false");
+  });
+
+  it("shows export destinations within the named vault when the format changes", async () => {
+    const m = await import("@obsidian-messages");
+    const vault = basename(path);
+    const result = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{
+        ${browserWaits}
+        await using cleanup=new AsyncDisposableStack();
+        const file=cleanup.adopt(await app.vault.create('Export display.md','A draft.'),file=>app.vault.delete(file));
+        const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());
+        await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});
+        const doc=leaf.view.containerEl.ownerDocument;
+        const dialog=()=>[...doc.querySelectorAll('.modal')].find(el=>el.querySelector('.modal-title')?.textContent==='Export with citations');
+        cleanup.defer(()=>dialog()?.parentElement.querySelector('.modal-bg')?.click());
+        app.commands.executeCommandById('zotlit:pandoc-export');
+        await waitFor(()=>!!dialog(),true,'Export dialog');
+        const modal=dialog();
+        const row=[...modal.querySelectorAll('.setting-item')].find(el=>el.querySelector('.setting-item-name')?.textContent==='Save to');
+        const word=row.querySelector('.setting-item-description').textContent;
+        const format=modal.querySelector('select');format.value='html';
+        format.dispatchEvent(new format.ownerDocument.defaultView.Event('change',{bubbles:true}));
+        return JSON.stringify({word,html:row.querySelector('.setting-item-description').textContent,vault:app.vault.getName(),absolutePathShown:modal.textContent.includes(app.vault.adapter.getBasePath())});
+      })()`,
+      ),
+    );
+    expect(result.word).toBe(
+      m.pandoc_export_destination_in_vault({
+        path: "Export display.docx",
+        vault,
+      }),
+    );
+    expect(result.html).toBe(
+      m.pandoc_export_destination_in_vault({
+        path: "Export display.html",
+        vault,
+      }),
+    );
+    expect(result.absolutePathShown).toBe(false);
   });
 
   it("opens Welcome beside the active note and reuses its tab", async () => {
