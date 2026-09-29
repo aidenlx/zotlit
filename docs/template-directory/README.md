@@ -90,9 +90,21 @@ The source files in `src/lib/template-directory/` of `apps/docs` own the vocabul
      letter: { year: 1887 }
    ```
 
-### Citation text and note name
+### Citation text
 
-The loader reads both kinds, but the suite does not render them yet and reports `unverified` for each such entry. The ticket that ships the first entry of a kind adds its verification.
+1. Create `citations/<slug>/` with `entry.md` and `zotlit-citation.md`.
+2. The artifact is a Citation Template document: `language: liquid` between two `---` lines, then the source. It reads `zt.variant`, `zt.citations`, and `zt.items`.
+3. A vault holds one citation text, so the description states that the entry replaces it and how to keep a copy of the current one.
+
+The suite renders the citation text as ZotLit inserts it, on one line, under both Citation Variants: each Directory Sample and Edge Sample cited alone, then the Workbench example sets (two items, a page range, a suppressed author, a prefix and a suffix, and an annotation's page). `samples.md` shows them as one table.
+
+### Note name
+
+1. Create `note-names/<slug>/` with `entry.md` and `note-name.liquid`.
+2. The artifact is the Filename Template on one line, with no line break at the end of the file, exactly as a reader pastes it into **Note name template**.
+3. End it with `{% suffix %}`, so a second note with the same name is still created.
+
+The suite renders the note name over every Directory Sample and Edge Sample with the suffix left empty, and checks that each result is one file name: not empty, on one line, with no space at either end, and with none of `\ / : * ? " < > | # ^ [ ]`. A slash would make a folder, and Obsidian would change each of the others to `_`.
 
 ## Invariants
 
@@ -116,12 +128,15 @@ The suite fails with a named problem code when an entry breaks one of these rule
 | Every entry renders over every Directory Sample and Sample Annotation with no diagnostics | `render-diagnostic` |
 | Property output has no `null`, empty, `null`/`undefined`/`NaN` text, dangling separator, or label without a value | `property-output` |
 | A property entry writes what its `expected` states | `property-expectation` |
+| Citation text has no `null`, empty, `null`/`undefined`/`NaN` text, dangling separator, or label without a value | `citation-output` |
+| A note name is one file name: not empty, on one line, no space at either end, and no character a file name cannot hold | `note-name-output` |
+| A note name holds `{% suffix %}` | `note-name-suffix` |
 
 The Profile ID rule covers form and uniqueness only. That an ID never changes between editions is a review rule.
 
 ## Directory Samples
 
-Every entry renders over the four Sample Items (`journal-article`, `conference-paper`, `book`, `thesis`) and five items derived from them for types without a Sample Item (`book-section`, `letter`, `manuscript`, `interview`, `document`). A Profile or `annotation` partial also renders over every Sample Annotation. The suite stores the output in each entry's `samples.md`, so a change in any entry's output shows in review. The `file_link` filter renders nothing in samples, because the Directory Samples have no files in a vault; `plain-annotation-quote` shows how to fall back to plain text, such as `p. 5`.
+Every entry renders over the four Sample Items (`journal-article`, `conference-paper`, `book`, `thesis`) and five items derived from them for types without a Sample Item (`book-section`, `letter`, `manuscript`, `interview`, `document`). A Profile or `annotation` partial also renders over every Sample Annotation. A citation text or note-name entry also renders over three Edge Samples, the cases a citation or a note name must handle: a journal article with four authors (`many-authors`), a report whose title holds every character a file name cannot (`unsafe-title`), and a web page with no author, date, or citation key (`no-author-date-or-citekey`). The suite stores the output in each entry's `samples.md`, so a change in any entry's output shows in review. The `file_link` filter renders nothing in samples, because the Directory Samples have no files in a vault; `plain-annotation-quote` shows how to fall back to plain text, such as `p. 5`.
 
 ## Commands
 
