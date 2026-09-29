@@ -29,10 +29,25 @@ const CALLOUT_COLORS = [
   "[&_.callout[data-callout]>.callout-title]:text-[color-mix(in_oklab,var(--zt-callout)_70%,var(--color-fd-foreground))]",
 ].join(" ");
 
+/**
+ * The note's text as Obsidian shows it: callout titles in their own words and
+ * case, and quotes upright, without the quotation marks the prose style adds.
+ */
+const OBSIDIAN_TEXT = [
+  "[&_.callout[data-callout]>.callout-title]:font-sans [&_.callout[data-callout]>.callout-title]:[font-size:inherit] [&_.callout[data-callout]>.callout-title]:tracking-normal [&_.callout[data-callout]>.callout-title]:normal-case",
+  "[&_blockquote]:not-italic [&_blockquote_p]:before:content-none [&_blockquote_p]:after:content-none",
+].join(" ");
+
 const SHEET = cn(
   "border border-fd-border bg-fd-card shadow-[6px_6px_0_0_var(--color-fd-border)]",
   CALLOUT_COLORS,
+  OBSIDIAN_TEXT,
 );
+
+/** The first sample item the entry shows something for, so the page opens on real output. */
+function firstShown(notes: readonly NoteSampleView[]): string | undefined {
+  return (notes.find(({ body }) => body?.trim()) ?? notes[0])?.id;
+}
 
 const LABEL =
   "font-mono text-[0.72rem] font-semibold tracking-[0.1em] text-fd-muted-foreground uppercase";
@@ -55,7 +70,7 @@ export function EntrySamples({
         <PropertySamples notes={notes} />
       ) : (
         hasBody && (
-          <Tabs defaultValue={notes[0]?.id}>
+          <Tabs defaultValue={firstShown(notes)}>
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
               <TabsList aria-label={m.docs_directory_samples_item()}>
                 {notes.map((note) => (

@@ -281,6 +281,17 @@ describe("facetCounts", () => {
     expect(counts.itemType).toEqual({ book: 1, letter: 0 });
   });
 
+  it("narrows a question's best answers, so a facet never brings in weaker matches", () => {
+    const question = {
+      text: "why do updates overwrite my own notes every time",
+      facets: { kind: ["partial"] },
+    };
+    expect(ids(searchDirectory(INDEX, question))).toEqual([]);
+    expect(
+      facetCounts(INDEX, { ...question, facets: {} }, OPTIONS).kind,
+    ).toEqual({ profile: 1, partial: 0, property: 0 });
+  });
+
   it("counts within the search results", () => {
     const counts = facetCounts(INDEX, { text: "link", facets: {} }, OPTIONS);
     expect(counts.kind).toEqual({ profile: 1, partial: 1, property: 0 });
