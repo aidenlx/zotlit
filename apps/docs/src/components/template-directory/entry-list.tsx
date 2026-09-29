@@ -34,43 +34,76 @@ function EntryLink({
   );
 }
 
+/**
+ * The recommended entries: each recommended profile as a paper card, and the
+ * smaller recommended pieces as compact title links grouped by kind.
+ */
 export function StartHere({ entries }: { entries: readonly IndexedEntry[] }) {
   if (entries.length === 0) return null;
+  const profiles = entries.filter(({ kind }) => kind === "profile");
+  const pieces = entries.filter(({ kind }) => kind !== "profile");
+  const pieceKinds = [...new Set(pieces.map(({ kind }) => kind))];
   return (
-    <section aria-labelledby="start-here">
+    <section
+      aria-labelledby="start-here"
+      className="grid content-start gap-7 sm:grid-cols-2 sm:gap-x-10 lg:grid-cols-1"
+    >
       <h2
         id="start-here"
-        className="mb-5 font-mono text-xs font-semibold tracking-[0.2em] text-fd-primary uppercase"
+        className="-mb-2 font-mono text-xs font-semibold tracking-[0.2em] text-fd-primary uppercase sm:col-span-full"
       >
         {m.docs_directory_start_here()}
       </h2>
-      <ul className="grid gap-7 sm:grid-cols-2 lg:grid-cols-1">
-        {entries.map((entry) => (
-          <li key={entry.id} className="flex">
-            <EntryLink
-              id={entry.id}
-              className="group relative flex w-full flex-col border border-fd-border bg-fd-card p-6 font-serif no-underline shadow-[6px_6px_0_0_var(--color-fd-border)] transition-[translate,box-shadow,border-color] hover:-translate-x-0.5 hover:-translate-y-0.5 hover:border-fd-primary hover:shadow-[6px_6px_0_0_var(--color-fd-primary)]"
-            >
-              <span
-                aria-hidden
-                className="absolute end-6 -top-1.75 h-9.5 w-5 bg-fd-primary [clip-path:polygon(0_0,100%_0,100%_100%,50%_74%,0_100%)]"
-              />
-              <span className="font-mono text-xs font-semibold tracking-[0.12em] text-fd-muted-foreground uppercase">
-                {KIND_LABEL[entry.kind]()}
-              </span>
-              <span className="mt-1 text-[1.45rem] leading-tight font-medium text-balance">
-                {entry.title}
-              </span>
-              <span className="mt-2.5 leading-relaxed text-fd-muted-foreground">
-                {entry.summary}
-              </span>
-              <span className="mt-auto inline-flex items-center gap-2 pt-5 font-mono text-xs font-semibold tracking-[0.12em] text-fd-primary uppercase">
-                {m.docs_directory_open_entry()}
-              </span>
-            </EntryLink>
-          </li>
-        ))}
-      </ul>
+      {profiles.length > 0 && (
+        <ul className="grid gap-7">
+          {profiles.map((entry) => (
+            <li key={entry.id} className="flex">
+              <EntryLink
+                id={entry.id}
+                className="group relative flex w-full flex-col border border-fd-border bg-fd-card p-6 font-serif no-underline shadow-[6px_6px_0_0_var(--color-fd-border)] transition-[translate,box-shadow,border-color] hover:-translate-x-0.5 hover:-translate-y-0.5 hover:border-fd-primary hover:shadow-[6px_6px_0_0_var(--color-fd-primary)]"
+              >
+                <span
+                  aria-hidden
+                  className="absolute end-6 -top-1.75 h-9.5 w-5 bg-fd-primary [clip-path:polygon(0_0,100%_0,100%_100%,50%_74%,0_100%)]"
+                />
+                <span className="font-mono text-xs font-semibold tracking-[0.12em] text-fd-muted-foreground uppercase">
+                  {KIND_LABEL[entry.kind]()}
+                </span>
+                <span className="mt-1 text-[1.45rem] leading-tight font-medium text-balance">
+                  {entry.title}
+                </span>
+                <span className="mt-2.5 leading-relaxed text-fd-muted-foreground">
+                  {entry.summary}
+                </span>
+                <span className="mt-auto inline-flex items-center gap-2 pt-5 font-mono text-xs font-semibold tracking-[0.12em] text-fd-primary uppercase">
+                  {m.docs_directory_open_entry()}
+                </span>
+              </EntryLink>
+            </li>
+          ))}
+        </ul>
+      )}
+      {pieceKinds.map((kind) => (
+        <div key={kind}>
+          <h3 className="mb-2.5 font-mono text-[0.72rem] font-semibold tracking-[0.12em] text-fd-muted-foreground uppercase">
+            {KIND_LABEL[kind]()}
+          </h3>
+          <ul className="flex flex-wrap gap-2">
+            {pieces
+              .filter((entry) => entry.kind === kind)
+              .map((entry) => (
+                <li key={entry.id} className="flex">
+                  <EntryLink
+                    id={entry.id}
+                    className="inline-flex min-h-10 items-center border border-fd-border bg-fd-card px-3 font-serif no-underline transition-colors hover:border-fd-primary hover:text-fd-primary"
+                  >
+                    {entry.title}
+                  </EntryLink>
+                </li>
+              ))}
+          </ul>
+        </div>
+      ))}
     </section>
   );
 }
