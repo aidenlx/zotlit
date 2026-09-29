@@ -32,6 +32,7 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
     super(deps.app);
     this.#deps = deps;
     this.limit = DEFAULT_LIMIT;
+    this.setPlaceholder(m.modal_literature_search_placeholder());
     this.setInstructions([
       { command: "↑↓", purpose: m.instruction_navigate() },
       { command: "↵", purpose: m.instruction_open_lit_note() },
