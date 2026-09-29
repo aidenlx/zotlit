@@ -19,6 +19,14 @@ The workflow for building and testing a Template Document — a Literature Note 
 The human-facing surface at `/workbench` for editing a Literature Note Profile's template document in the browser, including its note content, Annotation format, properties, and file destination. Its beginner face prints "template" and the Profile's name, never Profile, manifest, or frontmatter.
 _Avoid_: note layout (the #938 draft's placeholder, retired by #945), web template editor
 
+**Template Directory**:
+The searchable collection of ready-made Template Documents and Managed Frontmatter entries that the ZotLit project maintains for readers to find by the research task they serve and the note they produce, and to take into their own vault. Literature Note Profiles are its main entries; partials, citation text, and frontmatter entries serve readers who customize. It is a published catalogue, distinct from the template folder, the vault folder that holds a reader's own Template Documents.
+_Avoid_: template gallery, template library (Library is Zotero's term), template folder (the vault folder), preset (OZI's model), marketplace, store
+
+**Directory Entry**:
+One ready-made item in the Template Directory, a Template Document or a Managed Frontmatter entry, with its reader-facing description: the research task it serves, the facets a reader searches by, and a sample of the output it produces. A Profile entry packs every partial it calls, so one Profile import brings the whole look; a frontmatter entry is either a static-key entry or a Spread Entry, written in JSON-e.
+_Avoid_: template (bare; a Template is the source inside a document), gallery entry, preset, starter profile
+
 **UI Label**:
 A stable, untranslated name that identifies a product control or choice in the English base catalog, such as a command, setting, menu item, button, or tooltip. Documentation quotes it from its Message instead of restating its text. A notice text that documentation quotes verbatim is treated the same way.
 _Avoid_: UI text, product copy
