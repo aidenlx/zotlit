@@ -34,15 +34,15 @@ A link to the item's PDF, as a `pdf` property. Obsidian shows the link in the no
 | Conference paper (two PDFs) | zotero://open/library/items/CNPDF26A |
 | Book, book chapter, thesis | (no property: the samples have no PDF) |
 
-When the item has more than one PDF, the link opens the first. When the item has no PDF, the note gets no `pdf` property.
+When the item has more than one PDF, the link opens one of them, which can differ from the PDF that Zotero opens when you double-click the item. When the item has no PDF, the note gets no `pdf` property.
 
 When the note updates: **Replace the existing value**. When you add a PDF to the item in Zotero, the note gets the link on its next update.
 
 To add it to a profile:
 
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile** on your profile.
+1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
 2. In the **Properties** tab, select **Add a property**. Enter `pdf` as the **Property name**.
-3. Set **Value format** to **Rule · JSON-e**, then select **Change format and reset value**.
+3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
 4. Paste the rule into **Value**.
 5. Set **When the note is updated** to **Replace the existing value**.
 

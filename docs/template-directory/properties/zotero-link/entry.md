@@ -1,6 +1,6 @@
 ---
 title: Zotero link
-summary: A link that selects the item in Zotero, from the note's properties or from a Bases view.
+summary: A link that selects the item in Zotero, from the note's properties or from an Obsidian Bases view.
 minAppVersion: "2.2.0-beta.0"
 tasks: [general-reading, literature-review]
 features: [properties, source-links]
@@ -24,7 +24,7 @@ expected:
   thesis: { zotero-link: "zotero://select/library/items/I49R3FTL" }
 ---
 
-The item's Zotero link, as a `zotero-link` property. Obsidian shows the link in the note's properties; select it to select the item in Zotero. A Bases view that shows the property gives each row the same link.
+The item's Zotero link, as a `zotero-link` property. Obsidian shows the link in the note's properties; select it to select the item in Zotero. An Obsidian Bases view that shows the property gives each row the same link.
 
 | Item | `zotero-link` |
 | --- | --- |
@@ -39,9 +39,9 @@ When the note updates: **Replace the existing value**. The link follows the item
 
 To add it to a profile:
 
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile** on your profile.
+1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
 2. In the **Properties** tab, select **Add a property**. Enter `zotero-link` as the **Property name**.
-3. Set **Value format** to **Rule · JSON-e**, then select **Change format and reset value**.
+3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
 4. Paste the rule into **Value**.
 5. Set **When the note is updated** to **Replace the existing value**.
 
