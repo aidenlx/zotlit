@@ -778,7 +778,7 @@ My conclusion.
       frontmatter: all.outputs.frontmatter,
     });
     expect(all.outputs.body).toBe(
-      "My introduction.\n%%zt-managed%%\nNew generated paragraph\n%%/zt-managed%%\nMy conclusion.\n",
+      "My introduction.\n%%zt-managed%%\nNew generated paragraph\n\n%%/zt-managed%%\nMy conclusion.\n",
     );
     expect(parse(all.outputs.frontmatter)).toMatchObject({
       personal: "keep me",
@@ -815,7 +815,7 @@ My conclusion.
         attemptContext: { mode: "update" },
       });
       expect(result.outputs.body).toBe(
-        "My introduction.\n%%zt-managed%%\nManaged\n%%/zt-managed%%\nMy conclusion.\n",
+        "My introduction.\n%%zt-managed%%\nManaged\n\n%%/zt-managed%%\nMy conclusion.\n",
       );
       expect(result.outputs.fold).toMatchObject({
         personal: "keep me",
@@ -831,7 +831,7 @@ My conclusion.
         output: "body",
       });
       expect(retained.outputs).toEqual({
-        body: "My introduction.\n%%zt-managed%%\nManaged\n%%/zt-managed%%\nMy conclusion.\n",
+        body: "My introduction.\n%%zt-managed%%\nManaged\n\n%%/zt-managed%%\nMy conclusion.\n",
       });
     },
   );
@@ -924,7 +924,7 @@ My conclusion.
         },
       });
       expect(result.outputs.body).toBe(
-        "Second note.\n%%zt-managed%%\nNotes/Two.md\n%%/zt-managed%%\nMy conclusion.\n",
+        "Second note.\n%%zt-managed%%\nNotes/Two.md\n\n%%/zt-managed%%\nMy conclusion.\n",
       );
     },
   );
@@ -965,7 +965,7 @@ My conclusion.
       baseline: { kind: "supplied", path: null },
     });
     expect(result.outputs.body).toBe(
-      "My introduction.\n%%zt-managed%%\nNotes/Paper.md [[Notes/Paper.md]]\n%%/zt-managed%%\nMy conclusion.\n",
+      "My introduction.\n%%zt-managed%%\nNotes/Paper.md [[Notes/Paper.md]]\n\n%%/zt-managed%%\nMy conclusion.\n",
     );
   });
 
@@ -1032,7 +1032,9 @@ My conclusion.
     expect(synthetic).toMatchObject({
       ok: true,
       baseline: { kind: "synthetic", path: null, revision: null },
-      outputs: { body: "# Paper\n%%zt-managed%%\nManaged\n%%/zt-managed%%\n" },
+      outputs: {
+        body: "# Paper\n%%zt-managed%%\nManaged\n\n%%/zt-managed%%\n",
+      },
     });
     const result = await f.check({
       mode: "update",

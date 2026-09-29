@@ -181,7 +181,7 @@ describe("Note Preview fidelity against the real create path", () => {
     const { written } = await realCreate(fixture);
 
     expect(update.creationBody).toBe(
-      "Personal introduction.\n\n%%zt-managed%%\nManaged Better figures.\n> [!quote]\n> Use readable figures.\n%%/zt-managed%%\n\nPersonal conclusion.\n",
+      "Personal introduction.\n\n%%zt-managed%%\nManaged Better figures.\n> [!quote]\n> Use readable figures.\n\n%%/zt-managed%%\n\nPersonal conclusion.\n",
     );
     expect(update.frontmatterBlock).not.toBe(splitNote(written!.content).block);
     expect(parse(update.frontmatterBlock!)).toEqual({

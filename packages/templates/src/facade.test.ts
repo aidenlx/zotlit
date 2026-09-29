@@ -245,7 +245,7 @@ describe("transform uniformity", () => {
     facade.define("etaParent", '<%~ include("content", zt) %>', "eta");
     facade.define("liquidParent", '{% render "content" %}', "liquid");
 
-    const wrapped = `${MARKER_START}\nBODY\n${MARKER_END}`;
+    const wrapped = `${MARKER_START}\nBODY\n\n${MARKER_END}`;
     expect(facade.render("content", {})).toBe(wrapped);
     expect(facade.render("etaParent", {})).toBe(wrapped);
     expect(facade.render("liquidParent", {})).toBe(wrapped);
@@ -257,7 +257,7 @@ describe("transform uniformity", () => {
     facade.define("etaParent", '<%~ include("content", zt) %>', "eta");
     facade.define("liquidParent", '{% render "content" %}', "liquid");
 
-    const wrapped = `${MARKER_START}\nBODY\n${MARKER_END}`;
+    const wrapped = `${MARKER_START}\nBODY\n\n${MARKER_END}`;
     expect(facade.render("content", {})).toBe(wrapped);
     expect(facade.render("etaParent", {})).toBe(wrapped);
     expect(facade.render("liquidParent", {})).toBe(wrapped);

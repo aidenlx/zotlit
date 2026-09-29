@@ -274,7 +274,7 @@ frontmatter:
     });
     expect(result.diagnostics).toEqual([]);
     expect(result.creationBody).toBe(
-      "Personal introduction.\n\n%%zt-managed%%\nManaged Better figures.\n> [!quote]\n> Use readable figures.\n%%/zt-managed%%\n\nPersonal conclusion.\n",
+      "Personal introduction.\n\n%%zt-managed%%\nManaged Better figures.\n> [!quote]\n> Use readable figures.\n\n%%/zt-managed%%\n\nPersonal conclusion.\n",
     );
     expect(parse(result.frontmatterBlock!)).toEqual({
       title: "Better figures",

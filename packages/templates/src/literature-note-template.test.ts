@@ -352,8 +352,8 @@ describe("Literature Note Template document", () => {
       expect(
         facade.convertLegacyLiteratureNoteTemplates(legacy, data).rendered,
       ).toEqual({
-        create: "%%zt-managed%%\nLegacy A\n%%/zt-managed%%\n",
-        update: "%%zt-managed%%\nLegacy A\n%%/zt-managed%%",
+        create: "%%zt-managed%%\nLegacy A\n\n%%/zt-managed%%\n",
+        update: "%%zt-managed%%\nLegacy A\n\n%%/zt-managed%%",
         filename: "note",
         annotation: "Legacy A",
       });
