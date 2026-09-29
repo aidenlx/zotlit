@@ -5,7 +5,7 @@ problems:
   - Colors don't show in my notes.
   - My callouts are always gray.
   - I need a CSS snippet or another plugin before highlight colors show.
-  - I want my highlights in the same colors as in Zotero.
+  - I want my highlight colors to show in Obsidian.
   - I want my notes to say what each highlight color means.
   - Highlights in a color I have not named get lost.
   - My own notes get overwritten when the note updates.
@@ -24,14 +24,14 @@ audience: Readers who highlight in Zotero with one color for each kind of passag
 effort: Import it, then create a note. You set your color meanings once, in one partial; the meanings it starts with work as they are.
 ---
 
-A literature note that shows your annotations in their Zotero colors, as they look in the Zotero reader. The colors show in Obsidian with no CSS snippet and no extra plugin.
+A literature note that shows your annotations in colors that match your Zotero highlight colors, so the note reads like your marked-up PDF. The colors show in Obsidian with no CSS snippet and no extra plugin.
 
 Each note holds:
 
 - the item's title;
 - one row of links back to the source: the item in Zotero, its PDF, its DOI, and its web page, each when the item has one;
 - the abstract, folded, so it is at hand without taking over the note;
-- your annotations in page order, each as a callout in its color. The callout's title says what the color means and links to the annotation's page in the PDF, such as **Important · p. 5**. A highlight quotes its text inside the callout, and your Zotero comment follows it as ordinary text, so your words and the author's stay apart. Image annotations appear as embedded images, and notes you add in the PDF appear as their text;
+- your annotations in page order, each as a callout (Obsidian's colored box with an icon and a title) in the color that matches its Zotero color. The callout's title says what the color means and links to the annotation's page in the PDF, such as **Important · p. 5**. A highlight quotes its text inside the callout, and your Zotero comment follows it as ordinary text, so your words and the author's stay apart. Image annotations appear as embedded images, and notes and text boxes you add in the PDF appear as their text;
 - a **My notes** heading for your own writing.
 
 The profile starts with these color meanings:
@@ -49,9 +49,9 @@ The profile starts with these color meanings:
 | Plum | Paraphrases | Red |
 | Any other color | Other highlights | Blue |
 
-Obsidian has no yellow or pink callout, so yellow highlights show orange and magenta highlights show purple, the nearest colors Obsidian has; the callout title tells them apart from orange and purple. A highlight in a color that is not on the list shows under **Other highlights**, so it stays in the note.
+Obsidian has no yellow or pink callout, so each Zotero color shows the nearest color Obsidian has: yellow highlights show orange, magenta shows purple, and plum shows red. The callout title tells them apart from orange, purple, and red highlights. A highlight in a color that is not on the list shows under **Other highlights**, so it stays in the note.
 
-To give a color another meaning or another callout color, edit `zotlit-partial.color-meanings.md` in your template folder. It is the one place the meanings live, so every note under this profile follows the next time it updates. The **Color meanings** entry in the Template Directory lists the callout types and the color each one shows.
+To give a color another meaning or another callout color, edit `zotlit-partial.color-meanings.md` in your template folder. Change only the words between the quotation marks. It is the one place the meanings live, so every note under this profile follows the next time it updates, for example when you run **Create or update all literature notes**. The **Color meanings** entry in the Template Directory lists the callout types and the color each one shows.
 
 Everything from Zotero sits in the part of the note that ZotLit refreshes when you update the note. **My notes** sits outside it, so an update never touches what you write there. To change the text of an annotation, edit its comment in Zotero; the comment appears under the highlight on the next update.
 

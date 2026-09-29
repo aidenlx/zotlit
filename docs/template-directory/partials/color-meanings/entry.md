@@ -30,7 +30,7 @@ audience: Readers who highlight in Zotero with one color for each kind of passag
 effort: Read the list of meanings once and change the ones that do not match how you highlight. The meanings work as they are.
 ---
 
-Your highlight colors mean something only to you: one reader marks definitions in purple, another marks questions. This partial is the one place where you write down what each Zotero color means. The **Color callout** partial then shows each annotation as a callout in a matching color, titled with its meaning. The colors show with no CSS snippet and no extra plugin, because each meaning uses a callout type that Obsidian colors by itself.
+Your highlight colors mean something only to you: one reader marks definitions in purple, another marks questions. This partial, a building block that profiles share, is the one place where you write down what each Zotero color means. The **Color callout** partial then shows each annotation as a callout, Obsidian's colored box with an icon and a title, in a matching color and titled with its meaning. The colors show with no CSS snippet and no extra plugin, because each meaning uses a callout type that Obsidian colors by itself.
 
 The meanings it starts with:
 
@@ -47,9 +47,9 @@ The meanings it starts with:
 | Plum | Paraphrases | `danger` | Red |
 | Any other color | Other highlights | `note` | Blue |
 
-Obsidian has no yellow or pink callout, so each Zotero color uses the nearest color Obsidian has: yellow shows orange, magenta shows purple, and plum shows red. So yellow and orange highlights share a color, as do purple and magenta, and red and plum; the callout title keeps them apart. Plum highlights come only from Citavi projects imported into Zotero, where plum marks a paraphrase. A highlight in a color that is not on the list, such as a custom color from another app, shows blue with the title **Other highlights**, so it stays in the note.
+Obsidian has no yellow or pink callout, so each Zotero color uses the nearest color Obsidian has: yellow shows orange, magenta shows purple, and plum shows red. So yellow and orange highlights share a color, as do purple and magenta, red and plum, and blue and any color not on the list; the callout title keeps them apart. Plum highlights come only from Citavi projects imported into Zotero, where plum marks a paraphrase. A highlight in a color that is not on the list, such as a custom color from another app, shows blue with the title **Other highlights**, so it stays in the note.
 
-To change a meaning, open `zotlit-partial.color-meanings.md` in your template folder. Each color has one line. Change the text after `meaning =` to rename the color, or the text after `callout =` to show it in another color. Every note that uses these meanings follows the next time it updates.
+To change a meaning, open `zotlit-partial.color-meanings.md` in your template folder. Each color has one line, such as `{%- when "yellow" -%} {%- assign callout = "warning" -%} {%- assign meaning = "Important" -%}`. Change only the words between the quotation marks: after `meaning =` to rename the color, or after `callout =` to show it in another color, with a type from the table below. Every note that uses these meanings follows the next time it updates, for example when you run **Create or update all literature notes**.
 
 Callout types by the color they show in Obsidian's default theme. The icon comes with the type:
 
@@ -58,7 +58,7 @@ Callout types by the color they show in Obsidian's default theme. The icon comes
 | Red | `failure` (cross), `danger` (lightning bolt), `bug` (bug) |
 | Orange | `warning` (warning sign), `question` (question mark) |
 | Green | `success` (check mark) |
-| Cyan | `tip` (flame), `abstract` (clipboard) |
+| Cyan (blue-green) | `tip` (flame), `important` (flame), `abstract` (clipboard) |
 | Blue | `info` (letter i), `note` (pencil), `todo` (check circle) |
 | Purple | `example` (list) |
 | Gray | `quote` (quotation mark) |

@@ -3,7 +3,7 @@ id: prKlruGBvGyi
 name: Color-coded reading note
 version: "1.0.0"
 author: ZotLit
-description: Your annotations in page order as callouts in their Zotero colors, each titled with what its color means, with the title, links back to the source, the folded abstract, and a place for your own notes.
+description: Your annotations in page order as callouts in colors that match your Zotero colors, each titled with what its color means, with the title, links back to the source, the folded abstract, and a place for your own notes.
 contract: 3
 minAppVersion: "2.2.0-beta.0"
 sampleItemType: journalArticle
@@ -53,12 +53,13 @@ partials:
       Each line below names a Zotero color, the callout type that shows it, and the
       meaning that titles the callout. Change a meaning or a callout type on its
       line, and every note that uses these meanings follows on its next update.
+      Change only the words between the quotation marks.
 
       Built-in callout types, by the color they show without a CSS snippet:
         red: failure, danger, bug
         orange: warning, question
         green: success
-        cyan: tip, abstract
+        cyan: tip, important, abstract
         blue: info, note, todo
         purple: example
         gray: quote
