@@ -16,6 +16,7 @@ import {
   readFile,
   readdir,
   rename,
+  stat,
   writeFile,
 } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -2661,20 +2662,45 @@ describe.skipIf(!reachable)("Template Directory import", () => {
   const notePath = `literatures/${annotatedItem.citationKey}.md`;
   let vaultId = "";
   let m: typeof import("@obsidian-messages");
-  let entry: {
+  let entry: DirectoryEntry;
+
+  interface DirectoryEntry {
     id: string;
     name: string;
     version: string;
     partials: string[];
-  };
+  }
+
+  /** The identity and packed partial names of the Profile entry file at `path`. */
+  async function readEntry(path: string): Promise<DirectoryEntry> {
+    const manifest = (await readFile(path, "utf-8")).split("\n---\n")[0]!;
+    const lines = manifest.split("\n");
+    const value = (key: string) => {
+      const raw = lines
+        .find((line) => line.startsWith(`${key}: `))!
+        .slice(key.length + 2);
+      return raw.startsWith('"') ? raw.slice(1, -1) : raw;
+    };
+    return {
+      id: value("id"),
+      name: value("name"),
+      version: value("version"),
+      partials: lines
+        .filter((line) => line.startsWith("  - name: "))
+        .map((line) => line.slice("  - name: ".length)),
+    };
+  }
 
   /** Runs Import profile… and chooses the entry file in the file picker. */
-  async function importEntryFile(sheetText: string): Promise<void> {
+  async function importEntryFile(
+    sheetText: string,
+    path = entryPath,
+  ): Promise<void> {
     // The OS file picker has no DOM to drive; the stub answers it with the
     // entry's path, and the plugin reads that file itself.
     await obEval(
       vaultId,
-      `(function(){var dialog=require('@electron/remote').dialog;window.zotlitE2EOpenDialog=dialog.showOpenDialog;dialog.showOpenDialog=async()=>({canceled:false,filePaths:[${JSON.stringify(entryPath)}]});return true;})()`,
+      `(function(){var dialog=require('@electron/remote').dialog;window.zotlitE2EOpenDialog=dialog.showOpenDialog;dialog.showOpenDialog=async()=>({canceled:false,filePaths:[${JSON.stringify(path)}]});return true;})()`,
     );
     try {
       expect(
@@ -2704,6 +2730,52 @@ describe.skipIf(!reachable)("Template Directory import", () => {
     }
   }
 
+  /**
+   * Creates the Literature Note of `item` through the note quick switcher,
+   * under the Profile the reader picks by `profile`, and returns its text.
+   */
+  async function createNoteUnder(
+    item: (typeof ITEMS)[number],
+    profile: string,
+  ): Promise<string> {
+    const path = `literatures/${item.citationKey}.md`;
+    await obEval(
+      vaultId,
+      "app.commands.executeCommandById('zotlit:note-quick-switcher')",
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "String(!!activeDocument.querySelector('.prompt input'))",
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){var input=activeDocument.querySelector('.prompt input');input.value=${JSON.stringify(item.title)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+    );
+    await selectSuggestion(vaultId, item.title);
+    await obEval(
+      vaultId,
+      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+    );
+    // No match, so the picker preselects Default and the reader chooses.
+    const choice = await selectSuggestion(vaultId, profile);
+    expect(choice).toContain(path);
+    await obEval(
+      vaultId,
+      "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+    );
+    let note = "";
+    expect(
+      await waitFor(async () => {
+        note = await readFile(join(vaultPath, path), "utf-8").catch(() => "");
+        return note.includes("%%/zt-managed%%");
+      }),
+    ).toBe(true);
+    return note;
+  }
+
   /** The documents in the template folder that carry the entry's Profile ID. */
   async function profileDocuments(): Promise<string[]> {
     const folder = join(vaultPath, "templates");
@@ -2720,22 +2792,7 @@ describe.skipIf(!reachable)("Template Directory import", () => {
 
   beforeAll(async () => {
     m = await import("@obsidian-messages");
-    const manifest = (await readFile(entryPath, "utf-8")).split("\n---\n")[0]!;
-    const lines = manifest.split("\n");
-    const value = (key: string) => {
-      const raw = lines
-        .find((line) => line.startsWith(`${key}: `))!
-        .slice(key.length + 2);
-      return raw.startsWith('"') ? raw.slice(1, -1) : raw;
-    };
-    entry = {
-      id: value("id"),
-      name: value("name"),
-      version: value("version"),
-      partials: lines
-        .filter((line) => line.startsWith("  - name: "))
-        .map((line) => line.slice("  - name: ".length)),
-    };
+    entry = await readEntry(entryPath);
     await clearVault(runVaultScript, vaultPath);
     const pluginDir = join(vaultPath, ".obsidian", "plugins", "zotlit");
     await mkdir(pluginDir, { recursive: true });
@@ -2793,42 +2850,7 @@ describe.skipIf(!reachable)("Template Directory import", () => {
       ).toBe(await readFile(join(directory, "partials", name, file), "utf-8"));
     }
 
-    await obEval(
-      vaultId,
-      "app.commands.executeCommandById('zotlit:note-quick-switcher')",
-    );
-    expect(
-      await obEvalUntil(
-        vaultId,
-        "String(!!activeDocument.querySelector('.prompt input'))",
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
-      vaultId,
-      `(function(){var input=activeDocument.querySelector('.prompt input');input.value=${JSON.stringify(annotatedItem.title)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
-    );
-    await selectSuggestion(vaultId, annotatedItem.title);
-    await obEval(
-      vaultId,
-      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
-    // No match, so the picker preselects Default and the reader chooses.
-    const choice = await selectSuggestion(vaultId, entry.name);
-    expect(choice).toContain(notePath);
-    await obEval(
-      vaultId,
-      "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
-    let note = "";
-    expect(
-      await waitFor(async () => {
-        note = await readFile(join(vaultPath, notePath), "utf-8").catch(
-          () => "",
-        );
-        return note.includes("%%/zt-managed%%");
-      }),
-    ).toBe(true);
+    const note = await createNoteUnder(annotatedItem, entry.name);
 
     const managed = managedRegion(note);
     const lines = managed.split("\n");
@@ -2933,6 +2955,87 @@ describe.skipIf(!reachable)("Template Directory import", () => {
     ).toBe("1");
     expect(await profileDocuments()).toEqual([document]);
   });
+
+  // Directory Profiles share one partial namespace, so a second entry brings
+  // partials the vault already holds beside ones it lacks. Its sheet previews
+  // with both, and the import writes only the new ones.
+  it("imports a second entry that shares partials with the first and writes its note", async () => {
+    const secondPath = join(
+      directory,
+      "profiles",
+      "literature-review",
+      "zotlit-profile.literature-review.md",
+    );
+    const second = await readEntry(secondPath);
+    const shared = second.partials.filter((name) =>
+      entry.partials.includes(name),
+    );
+    const added = second.partials.filter(
+      (name) => !entry.partials.includes(name),
+    );
+    expect(shared.length).toBeGreaterThan(0);
+    expect(added.length).toBeGreaterThan(0);
+    const partialFile = (name: string) =>
+      join(vaultPath, "templates", `zotlit-partial.${name}.md`);
+    const written = await Promise.all(
+      shared.map(async (name) => (await stat(partialFile(name))).mtimeMs),
+    );
+
+    await importEntryFile(
+      m.profile_import_partials({ names: added.join(", ") }),
+      secondPath,
+    );
+    const sheet = await obEval(
+      vaultId,
+      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
+    );
+    expect(sheet).toContain(second.name);
+    expect(sheet).not.toContain("not found");
+    // The button waits for a preview that rendered, so a click proves it.
+    expect(await clickModalButton(vaultId, m.profile_import_confirm())).toBe(
+      true,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(app.plugins.plugins.zotlit.services.profile.profiles.some(p=>p.id===${JSON.stringify(second.id)}))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    for (const name of added)
+      expect(await readFile(partialFile(name), "utf-8"), name).toBe(
+        await readFile(
+          join(directory, "partials", name, `zotlit-partial.${name}.md`),
+          "utf-8",
+        ),
+      );
+    expect(
+      await Promise.all(
+        shared.map(async (name) => (await stat(partialFile(name))).mtimeMs),
+      ),
+    ).toEqual(written);
+
+    // Sakima's song: one PDF, with a yellow highlight and a yellow note.
+    const item = ITEMS.find((candidate) => candidate.itemID === 20)!;
+    const managed = managedRegion(await createNoteUnder(item, second.name));
+    const lines = managed.split("\n");
+    // The links row, from the partial the first entry unpacked.
+    expect(lines.find((line) => line.startsWith("[Zotero]("))).toMatch(
+      /^\[Zotero\]\(zotero:\/\/[^)]+\) · \[PDF\]\(/,
+    );
+    // Annotations grouped under the meaning the new partial gives yellow.
+    expect(lines).toContain("## Annotations");
+    expect(lines).toContain("### Aim");
+    expect(
+      lines.filter((line) => line.startsWith("> [!warning] Aim · [p. 2](")),
+    ).toHaveLength(2);
+    expect(lines).toContain(
+      "> > Sakima lived with his parents and his four year old sister.",
+    );
+    expect(lines).toContain(
+      "> The opening establishes Sakima’s family and home.",
+    );
+  }, 180000);
 });
 
 interface ManagedFrontmatterReport {
