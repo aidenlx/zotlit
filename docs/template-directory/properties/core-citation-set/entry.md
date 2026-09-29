@@ -26,7 +26,7 @@ keywords:
   - Zotero link
   - bibliographic data
   - spread entry
-audience: Readers who want the main citation details of each source as properties, ready for an Obsidian Bases view or Dataview.
+audience: Readers who want the main citation details of each source as properties, ready for an Obsidian Bases view or the Dataview plugin.
 effort: Add one rule to your profile in the Template Workbench. No other setup.
 expected:
   journal-article:
@@ -91,13 +91,13 @@ expected:
     zotero-link: zotero://select/library/items/BFLMIN23
 ---
 
-The main citation details of every source as seven properties, from one rule. Use them to sort and filter your literature notes in an Obsidian Bases view or with Dataview, and to see a source's details at the top of its note.
+The main citation details of every source as seven properties, from one rule. Use them to sort and filter your literature notes in an Obsidian Bases view or with the Dataview plugin, and to see a source's details at the top of its note.
 
 | Property | Value |
 | --- | --- |
 | `title` | The item's title |
-| `authors` | The authors as a list, one name per line, such as `Amos Tversky`. For an interview, the people interviewed |
-| `year` | The year of publication, as a number |
+| `authors` | The authors as a list, one name per line, such as `Amos Tversky`. For an interview, the people interviewed; for a book with editors only, the editors |
+| `year` | The year of the item's date, as a number |
 | `venue` | The journal, book, or proceedings, or else the publisher or university |
 | `citekey` | The citation key |
 | `doi` | The DOI as a link, such as `https://doi.org/10.1017/CBO9780511809477.002` |
@@ -112,11 +112,11 @@ What each kind of source gets:
 - A letter, a manuscript, or an interview: usually no `venue`.
 - Any source: `doi` only when the item has a DOI.
 
-**When the note is updated:** **Replace the existing value**. Each update writes the current values from Zotero, so correct a title or an author in Zotero, not in the note. If you delete a value in Zotero, such as the DOI, the property keeps its old value in the note until you delete it there too.
+**When the note is updated:** **Replace the existing value**. Each update writes the current values from Zotero, so correct a title or an author in Zotero, not in the note. If you delete a value in Zotero, such as the DOI, the property keeps its old value in the note until you delete it there too. If you delete a property from the note while Zotero still has its value, the next update adds it back.
 
 To add the rule to a profile:
 
-1. In Obsidian, open ZotLit's settings. Under **Profiles**, select **Edit profile** (the pencil button) on the profile you want to change. The Template Workbench opens.
+1. In Obsidian, open ZotLit's settings and go to **Literature note profiles**. On the row of the profile you want to change, select **Edit profile** (the pencil button). The Template Workbench opens.
 2. Select the **Properties** tab, then **Add several properties from one rule**.
 3. In **Value**, replace the example rule with this entry's rule: everything from the first `{` to the last `}`.
 4. Set **When the note is updated** to **Replace the existing value**.
