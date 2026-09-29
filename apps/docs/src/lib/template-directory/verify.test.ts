@@ -453,6 +453,25 @@ describe("the Directory verification", () => {
       });
     });
 
+    it("renders an entry that makes tasks over a highlight whose comment starts with todo", () => {
+      const files = edit(
+        edit(fixtureFiles(), `${FIXTURE_QUOTE}/entry.md`, [
+          "context: annotation",
+          "context: annotation\nfeatures: [tasks]",
+        ]),
+        FIXTURE_QUOTE_FILE,
+        ["> {{ zt.text }}", "{{ zt.comment }}"],
+      );
+      const annotations =
+        verifyTemplateDirectory(files).samples.get(FIXTURE_QUOTE)!.annotations;
+      expect(annotations.map(({ label }) => label).slice(6)).toEqual([
+        "highlight annotation, orange",
+      ]);
+      expect(annotations.at(-1)!.output?.trim()).toBe(
+        "todo Check the sample size before citing this result.",
+      );
+    });
+
     it("rejects a property entry that is not a JSON-e rule", () => {
       rejects(
         edit(fixtureFiles(), FIXTURE_PROPERTY_FILE, [

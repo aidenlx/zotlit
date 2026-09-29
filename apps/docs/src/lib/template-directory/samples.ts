@@ -274,6 +274,38 @@ export const COLOR_HIGHLIGHTS: readonly AnnotationExample[] =
   });
 
 /**
+ * The yellow Sample Annotation's highlight in orange, with a comment that
+ * starts with "todo" and no tags, for entries that turn such comments into
+ * tasks.
+ */
+export const TODO_HIGHLIGHT: AnnotationExample = (() => {
+  const base = SAMPLE_ANNOTATIONS[0]!;
+  const key = "TODOHL01";
+  const comment = "todo Check the sample size before citing this result.";
+  return {
+    id: "todo:highlight",
+    revision: "derived:todo:highlight",
+    root: {
+      ...base.root,
+      key,
+      indexedKey: key,
+      colorHex: "#f19837",
+      colorName: "orange",
+      comment,
+      commentHtml: comment,
+      tags: [],
+      backlink: `zotero://open/library/items/CNPDF26A?annotation=${key}&page=${String(base.root.page)}`,
+    },
+    descriptors: {
+      ...base.descriptors,
+      stringCoercions: base.descriptors.stringCoercions.filter(
+        ({ path }) => path[0] !== "tags",
+      ),
+    },
+  };
+})();
+
+/**
  * Build an item of another type on a Sample Item's shape, so it carries every
  * root field the contract requires and the descriptors a render restores.
  */
