@@ -3,15 +3,27 @@
 import { isDeepStrictEqual } from "node:util";
 import { parse as parseYaml } from "yaml";
 
-import { parseLiteratureNoteTemplate } from "@zotlit/templates/facade";
+import {
+  hasSuffixMarker,
+  inlineCitation,
+  replaceSuffixMarkers,
+} from "@zotlit/templates";
+import {
+  parseLiteratureNoteTemplate,
+  TemplateFacade,
+} from "@zotlit/templates/facade";
 import { compileFilter } from "@zotlit/workbench/match";
 import type { MatchCondition } from "@zotlit/workbench/match";
 import {
+  citationExampleData,
   renderProfile,
+  restoreTemplateData,
   SAMPLE_ANNOTATIONS,
   SAMPLE_ITEMS,
+  sampleItemCitation,
 } from "@zotlit/workbench/render";
 import type {
+  CitationExampleId,
   RenderDiagnostic,
   RenderedProperty,
   RenderResources,
@@ -26,7 +38,7 @@ import {
 } from "./load.ts";
 import type { DirectoryEntry, DirectoryFiles } from "./load.ts";
 import type { DirectoryProblem, DirectoryProblemCode } from "./problem.ts";
-import { DIRECTORY_SAMPLES } from "./samples.ts";
+import { DIRECTORY_SAMPLES, EDGE_SAMPLES } from "./samples.ts";
 import type { DirectorySample } from "./samples.ts";
 
 /** One Directory Sample's note, as the entry renders it. */
@@ -47,9 +59,18 @@ export interface AnnotationSample {
   readonly output: string | null;
 }
 
+/** One Citation, as a citation text entry renders it under each Citation Variant. */
+export interface CitationSample {
+  readonly label: string;
+  readonly main: string | null;
+  readonly alt: string | null;
+}
+
 export interface EntrySamples {
   readonly notes: readonly NoteSample[];
   readonly annotations: readonly AnnotationSample[];
+  /** Citation text entries only: every Citation the entry renders. */
+  readonly citations?: readonly CitationSample[];
 }
 
 export interface DirectoryVerification {
@@ -143,11 +164,11 @@ export function verifyTemplateDirectory(
         samples.set(entry.id, renderPropertyEntry(entry, report));
         break;
       case "citation":
+        checkLanguage(entry.language, report);
+        samples.set(entry.id, renderCitationEntry(entry, resources, report));
+        break;
       case "note-name":
-        report(
-          "unverified",
-          `The verification renders no ${entry.kind} entry yet. Add its verification before the first entry of this kind ships.`,
-        );
+        samples.set(entry.id, renderNoteNameEntry(entry, resources, report));
         break;
     }
   }
@@ -159,6 +180,8 @@ type Report = (code: DirectoryProblemCode, message: string) => void;
 type ProfileEntry = Extract<DirectoryEntry, { kind: "profile" }>;
 type PartialEntry = Extract<DirectoryEntry, { kind: "partial" }>;
 type PropertyEntry = Extract<DirectoryEntry, { kind: "property" }>;
+type CitationEntry = Extract<DirectoryEntry, { kind: "citation" }>;
+type NoteNameEntry = Extract<DirectoryEntry, { kind: "note-name" }>;
 
 function checkProfile(
   { manifest, calls, artifact }: ProfileEntry,
@@ -463,6 +486,195 @@ function renderPropertyEntry(
   };
 }
 
+/** The name a Citation Template renders under, in the plugin and here. */
+const CITATION_TEMPLATE = "citation";
+
+/**
+ * A template engine holding every Liquid partial entry, as a reader's template
+ * folder would. A partial that fails to parse is left out: its own entry
+ * reports the failure, and a call to it reports a missing partial.
+ */
+function facadeWithPartials(resources: RenderResources): TemplateFacade {
+  const facade = new TemplateFacade();
+  for (const { name, source, language } of resources.dependencies.templates) {
+    if (language !== "liquid") continue;
+    try {
+      facade.define(name, source, language);
+    } catch {
+      // Reported by the partial entry itself.
+    }
+  }
+  return facade;
+}
+
+/**
+ * The Citations a citation text renders beyond each Directory Sample cited
+ * alone: the Workbench example sets, which carry two items, a page, a
+ * suppressed author, a prefix and a suffix, and an annotation's page.
+ */
+const CITATION_SETS: readonly (readonly [CitationExampleId, string])[] = [
+  ["two-items", "Journal article and book"],
+  ["item-with-page", "Journal article, pages 12-14"],
+  ["suppressed-author", "Journal article, author left out"],
+  ["prefix-and-suffix", "Journal article, with text before and after"],
+  ["annotation-citation", "Journal article, page 1, as an annotation cites it"],
+];
+
+type CitationData = ReturnType<typeof citationExampleData>;
+
+/**
+ * Render a citation text the way the plugin inserts it: through the
+ * Citation Template, collapsed to one line, under both Citation Variants.
+ */
+function renderCitationEntry(
+  { source, language }: CitationEntry,
+  resources: RenderResources,
+  report: Report,
+): EntrySamples {
+  const facade = facadeWithPartials(resources);
+  try {
+    facade.define(CITATION_TEMPLATE, source, language);
+  } catch (error) {
+    report(
+      "render-diagnostic",
+      `The citation text does not parse: ${errorText(error)}`,
+    );
+    return { notes: [], annotations: [], citations: [] };
+  }
+  const render = (label: string, data: CitationData): string | null => {
+    try {
+      const text = inlineCitation(facade.render(CITATION_TEMPLATE, data));
+      for (const fault of valueFaults(text)) {
+        report(
+          "citation-output",
+          `The ${label} citation under the ${data.variant} variant ${fault}.`,
+        );
+      }
+      return text;
+    } catch (error) {
+      report(
+        "render-diagnostic",
+        `Rendering the ${label} citation under the ${data.variant} variant reports ${errorText(error)}`,
+      );
+      return null;
+    }
+  };
+  const cited: readonly {
+    label: string;
+    data: (variant: CitationData["variant"]) => CitationData;
+  }[] = [
+    ...[...DIRECTORY_SAMPLES, ...EDGE_SAMPLES].map(({ label, snapshot }) => ({
+      label,
+      data: (variant: CitationData["variant"]) =>
+        sampleItemCitation(snapshot, variant),
+    })),
+    ...CITATION_SETS.map(([id, label]) => ({
+      label,
+      data: (variant: CitationData["variant"]) =>
+        citationExampleData(id, variant),
+    })),
+  ];
+  return {
+    notes: [],
+    annotations: [],
+    citations: cited.map(({ label, data }) => ({
+      label,
+      main: render(label, data("main")),
+      alt: render(label, data("alt")),
+    })),
+  };
+}
+
+/**
+ * Render a Filename Template the way the plugin names a new note, over every
+ * Directory Sample and Edge Sample: the name with its collision suffix left
+ * empty, as a note gets it when no other note holds that name.
+ */
+function renderNoteNameEntry(
+  { source }: NoteNameEntry,
+  resources: RenderResources,
+  report: Report,
+): EntrySamples {
+  const document = parseLiteratureNoteTemplate(
+    harnessProfile({ filename: source }),
+  );
+  const facade = facadeWithPartials(resources);
+  return {
+    notes: [...DIRECTORY_SAMPLES, ...EDGE_SAMPLES].map(
+      ({ id, label, snapshot }) => {
+        let noteName: string | null = null;
+        try {
+          const rendered = facade.renderLiteratureNoteTemplateFilename(
+            document,
+            restoreTemplateData(
+              snapshot.roots.filename,
+              snapshot.descriptors.filename,
+            ),
+          );
+          if (!hasSuffixMarker(rendered)) {
+            report(
+              "note-name-suffix",
+              `The note name of the ${label} holds no {% suffix %}, so a second note with that name would fail to be created. End the note name with {% suffix %}.`,
+            );
+          }
+          noteName = replaceSuffixMarkers(rendered, () => "");
+          for (const fault of noteNameFaults(noteName)) {
+            report(
+              "note-name-output",
+              `For the ${label}, the note name ${fault}.`,
+            );
+          }
+        } catch (error) {
+          report(
+            "render-diagnostic",
+            `Rendering the note name of the ${label} reports ${errorText(error)}`,
+          );
+        }
+        return {
+          sample: { id, label },
+          noteName,
+          properties: null,
+          body: null,
+        };
+      },
+    ),
+    annotations: [],
+  };
+}
+
+/**
+ * Characters a file name cannot hold where Obsidian stores a note: a slash
+ * makes a folder, and Obsidian changes each of the others to "_".
+ * @see apps/obsidian/src/services/note-feature/filename.ts FORBIDDEN_CHARS
+ */
+const NOT_IN_FILE_NAME = /[\\/:*?"<>|#^[\]]/g;
+const CONTROL_CHARACTER = /\p{Cc}/u;
+
+/** Why a rendered note name is not one file name, exactly as the samples show it. */
+function noteNameFaults(name: string): string[] {
+  if (name.trim() === "") return ["is empty"];
+  const faults: string[] = [];
+  if (CONTROL_CHARACTER.test(name)) {
+    faults.push(
+      `holds a line break or another control character: ${JSON.stringify(name)}`,
+    );
+  }
+  const forbidden = [...new Set(name.match(NOT_IN_FILE_NAME))];
+  if (forbidden.length > 0) {
+    faults.push(
+      `holds ${forbidden.join(" ")}, which a file name cannot hold: "${name}"`,
+    );
+  }
+  if (name !== name.trim()) {
+    faults.push(`starts or ends with a space: "${name}"`);
+  }
+  return faults;
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function reportDiagnostics(
   result: TemplateRenderResult,
   subject: string,
@@ -506,9 +718,13 @@ const LITERAL_EMPTY = /\b(?:null|undefined|NaN)\b/;
 /** Two separators with nothing between them, such as ", ," or ". .". */
 const DOUBLED_SEPARATOR = /[,;:·|]\s*[,;:·|.]|\.\s+\./;
 const EMPTY_BRACKETS = /\(\s*\)|\[\s*\]/;
-/** A volume, issue, or page label whose number is missing, such as "Vol." or "№ ,". */
+/**
+ * A volume, issue, or page label whose number is missing, such as "Vol." or
+ * "№ ,". A label's own dot is never read as the separator after it, so
+ * "Vol. 5" and "p. 12" pass.
+ */
 const LABEL_WITHOUT_VALUE =
-  /(?:^|[\s(])(?:[Vv]ol|[Nn]o|[Ii]ss|pp?|№)\.?\s*(?:$|[,;:.)])/;
+  /(?:^|[\s(])(?:[Vv]ol|[Nn]o|[Ii]ss|pp?|№)(?:\.\s*(?:$|[,;:.)])|\s*(?:$|[,;:)])|\s+\.)/;
 
 function valueFaults(value: unknown): string[] {
   if (value === null || value === undefined) return ["is null"];
