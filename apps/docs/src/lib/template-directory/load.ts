@@ -77,6 +77,8 @@ export type DirectoryEntry = EntryBase &
     | {
         readonly kind: "partial";
         readonly context: EntryMetadata<"partial">["context"];
+        /** The Liquid a Profile writes to call the partial, when the entry states one. */
+        readonly call: string | undefined;
         readonly language: TemplateLanguage;
         /** The template source below the document's manifest. */
         readonly source: string;
@@ -275,9 +277,9 @@ function readArtifact(
     }
     case "partial": {
       const { manifest, source } = parsePlainTemplateDocument(artifact);
-      const { context } = metadata as EntryMetadata<"partial">;
+      const { context, call } = metadata as EntryMetadata<"partial">;
       return {
-        part: { kind, context, language: manifest.language, source },
+        part: { kind, context, call, language: manifest.language, source },
         callers: [source],
       };
     }

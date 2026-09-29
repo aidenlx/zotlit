@@ -1,0 +1,30 @@
+merge: replace
+value:
+  {
+    "$switch": {
+      "zt.itemType == 'journalArticle'": {
+        "journal": {"$if": "zt.containerTitle", "then": {"$eval": "zt.containerTitle"}},
+        "volume": {"$if": "zt.volume", "then": {"$eval": "zt.volume"}},
+        "issue": {"$if": "zt.issue", "then": {"$eval": "zt.issue"}},
+        "pages": {"$if": "zt.pages", "then": {"$eval": "zt.pages"}}
+      },
+      "zt.itemType == 'book'": {
+        "publisher": {"$if": "zt.publisher", "then": {"$eval": "zt.publisher"}},
+        "place": {"$if": "zt.place", "then": {"$eval": "zt.place"}},
+        "edition": {"$if": "zt.edition", "then": {"$eval": "zt.edition"}},
+        "isbn": {"$if": "zt.ISBN", "then": {"$eval": "zt.ISBN"}}
+      },
+      "zt.itemType == 'bookSection'": {
+        "$let": {"editors": {"$map": {"$eval": "zt.creators"}, "each(creator)": {"$if": "creator.role == 'editor'", "then": {"$eval": "creator.fullName"}}}},
+        "in": {
+          "book-title": {"$if": "zt.containerTitle", "then": {"$eval": "zt.containerTitle"}},
+          "editors": {"$if": "len(editors) > 0", "then": {"$eval": "editors"}},
+          "pages": {"$if": "zt.pages", "then": {"$eval": "zt.pages"}}
+        }
+      },
+      "zt.itemType == 'thesis'": {
+        "university": {"$if": "zt.publisher", "then": {"$eval": "zt.publisher"}},
+        "thesis-type": {"$if": "'type' in zt && zt.type", "then": {"$eval": "zt.type"}}
+      }
+    }
+  }
