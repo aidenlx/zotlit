@@ -103,7 +103,13 @@ function copyText(entry: DirectoryEntry): string {
 function details(entry: DirectoryEntry): EntryDetails {
   switch (entry.kind) {
     case "partial":
-      return { kind: entry.kind, context: entry.context };
+      return {
+        kind: entry.kind,
+        context: entry.context,
+        call: (
+          entry.call ?? `{% render "${entry.slug}" with zt as zt %}`
+        ).trimEnd(),
+      };
     case "property":
       return {
         kind: entry.kind,
@@ -120,7 +126,12 @@ function propertyRows(yaml: string): SampleProperty[] {
   const values = (parseYaml(yaml) ?? {}) as Record<string, unknown>;
   return Object.entries(values).map(([key, value]) => ({
     key,
-    value: Array.isArray(value) ? value.map(valueText) : valueText(value),
+    value:
+      value === null
+        ? null
+        : Array.isArray(value)
+          ? value.map(valueText)
+          : valueText(value),
   }));
 }
 

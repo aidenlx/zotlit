@@ -179,7 +179,7 @@ function DirectoryEntryPage() {
           )}
         </div>
 
-        <aside className="flex flex-col gap-7 lg:border-l lg:border-fd-border lg:pl-8">
+        <aside className="flex flex-col gap-7 lg:border-s lg:border-fd-border lg:ps-8">
           <FacetList
             heading={m.docs_directory_tasks()}
             values={valueLabels("task", facets.task, entry.tasks)}
@@ -215,7 +215,7 @@ const ASIDE_HEADING =
 
 function Fact({ term, children }: { term: string; children: string }) {
   return (
-    <div className="border-l-2 border-fd-primary pl-4">
+    <div className="border-s-2 border-fd-primary ps-4">
       <dt className="font-mono text-[0.72rem] font-semibold tracking-[0.1em] uppercase">
         {term}
       </dt>

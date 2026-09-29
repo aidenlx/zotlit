@@ -178,6 +178,29 @@ The changelog's sibling in the `_home` route group:
   mono-uppercase meta line, hairline, then `ztProse` body.
 - **Post tail**: `FooterCards` prev/next, then comments (Giscus).
 
+### Template Directory (`/templates`)
+
+The blog's sibling in the `_home` route group, built around finding a note
+that fits a research task:
+
+- **Index**: orange mono-uppercase eyebrow, serif headline, italic lede, then a
+  "Start here" row of recommended entries as landing-style paper cards (hard
+  offset shadow, accent bookmark tab). A square search box leads a two-column
+  body: a facet rail of mono-uppercase facet headings over sans checkbox rows
+  with mono counts (a disclosure button under `lg`), and the results grouped
+  by level under serif group headings, each row a mono kind label, serif
+  title, sans summary, and a muted facet line. Closes on `SiteFooter`.
+- **Entry head**: `← Template directory` crumb, mono-uppercase kind and level
+  line, serif title, italic summary, mono-uppercase version line, then the
+  square ink copy button (the landing's "Get started" look) beside an outline
+  download button.
+- **Entry body**: audience and effort as accent-barred facts in serif, the
+  entry's description in `ztProse`, the rendered samples as paper sheets in the
+  Workbench reading view with callouts in Obsidian's built-in callout colors,
+  the "How to use it" steps in `ztProse`, and an aside rail of
+  mono-uppercase headings over the entry's facets and its problems as serif
+  italic quotes.
+
 ### Docs content column
 
 - Title: serif, medium weight, balanced.

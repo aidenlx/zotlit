@@ -13,8 +13,26 @@ import type {
 import { ResultSheet } from "@/lib/workbench/result-sheet";
 import { m } from "@/paraglide/messages.js";
 
-const SHEET =
-  "border border-fd-border bg-fd-card shadow-[6px_6px_0_0_var(--color-fd-border)]";
+/**
+ * Obsidian's colors for its built-in callout types, so a sample shows each
+ * callout in the color the reader's note shows. Any other type shows as a note.
+ */
+const CALLOUT_COLORS = [
+  "[&_.callout]:[--zt-callout:rgb(8,109,221)]",
+  "[&_.callout:is([data-callout=abstract],[data-callout=summary],[data-callout=tldr],[data-callout=tip],[data-callout=hint],[data-callout=important])]:[--zt-callout:rgb(0,191,188)]",
+  "[&_.callout:is([data-callout=success],[data-callout=check],[data-callout=done])]:[--zt-callout:rgb(8,185,78)]",
+  "[&_.callout:is([data-callout=question],[data-callout=help],[data-callout=faq],[data-callout=warning],[data-callout=attention],[data-callout=caution])]:[--zt-callout:rgb(236,117,0)]",
+  "[&_.callout:is([data-callout=failure],[data-callout=missing],[data-callout=fail],[data-callout=danger],[data-callout=error],[data-callout=bug])]:[--zt-callout:rgb(233,49,71)]",
+  "[&_.callout[data-callout=example]]:[--zt-callout:rgb(120,82,238)]",
+  "[&_.callout:is([data-callout=quote],[data-callout=cite])]:[--zt-callout:rgb(158,158,158)]",
+  "[&_.callout[data-callout]]:border-(--zt-callout) [&_.callout[data-callout]]:bg-(--zt-callout)/10",
+  "[&_.callout[data-callout]>.callout-title]:text-[color-mix(in_oklab,var(--zt-callout)_70%,var(--color-fd-foreground))]",
+].join(" ");
+
+const SHEET = cn(
+  "border border-fd-border bg-fd-card shadow-[6px_6px_0_0_var(--color-fd-border)]",
+  CALLOUT_COLORS,
+);
 
 const LABEL =
   "font-mono text-[0.7rem] font-semibold tracking-[0.1em] text-fd-muted-foreground uppercase";
@@ -227,6 +245,13 @@ function PropertyRows({
 }
 
 function PropertyValue({ value }: { value: SampleProperty["value"] }) {
+  if (value === null) {
+    return (
+      <span className="text-fd-muted-foreground italic">
+        {m.docs_directory_sample_empty()}
+      </span>
+    );
+  }
   if (typeof value === "string") return <>{value}</>;
   return (
     <ul className="flex flex-wrap gap-1.5">
@@ -257,7 +282,7 @@ function PropertyTable({ notes }: { notes: readonly NoteSampleView[] }) {
         {m.docs_directory_property_samples_intro()}
       </p>
       <div className="overflow-x-auto border border-fd-border bg-fd-card">
-        <table className="w-full text-left text-sm">
+        <table className="w-full text-start text-sm">
           <thead className="border-b border-fd-border bg-fd-muted/40">
             <tr>
               <th scope="col" className={cn(LABEL, "px-4 py-2.5")}>
