@@ -22,6 +22,7 @@ const reachable = await isObsidianReachable(root);
 // These callbacks run inside Obsidian. Poll only arrivals with no completion
 // promise; CodeMirror layout and native suggestion updates have their own signals.
 const browserWaits = `
+  const measure=(cm)=>new Promise(resolve=>cm.requestMeasure({read:()=>null,write:resolve}));
   const waitFor=async(read,expected,label)=>{
     using timers=new DisposableStack();
     let lastError;
@@ -174,6 +175,95 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         ),
       ),
     ).toEqual({ count: 1, active: leafId });
+  });
+
+  it("places a plain-click caret inside a formatted citation and keeps selections", async () => {
+    const source = "Before [@rougier2014, p. 1] after\n\nEnd";
+    await obEval(
+      vaultId,
+      `(async()=>{
+        const file=await app.vault.create('Citation click.md',${JSON.stringify(source)});
+        const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf,{focus:true});window.focus();
+        leaf.view.editor.setCursor({line:2,ch:3});leaf.view.editor.focus();return true;
+      })()`,
+    );
+    const view =
+      "app.workspace.getLeavesOfType('markdown').find(leaf=>leaf.view.file?.path==='Citation click.md').view";
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(!!(${view}).contentEl.querySelector('.zt-citation'))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    const result = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{
+          ${browserWaits}
+          const view=${view},editor=view.editor;
+          const debugger_=require('@electron/remote').getCurrentWebContents().debugger;
+          const gesture=async(kind)=>{
+            editor.setCursor({line:2,ch:3});editor.focus();
+            await waitFor(()=>editor.cm.hasFocus&&!!view.contentEl.querySelector('.zt-citation'),true,'Citation widget');
+            await measure(editor.cm);
+            const element=view.contentEl.querySelector('.zt-citation');
+            const box=element.getBoundingClientRect();
+            const start={x:box.x+box.width/2,y:box.y+box.height/2};
+            const end=kind==='drag'?{x:box.right+35,y:start.y}:start;
+            const modifiers=kind==='extend'?8:0;
+            await debugger_.sendCommand('Input.dispatchMouseEvent',{type:'mousePressed',...start,button:'left',clickCount:1,modifiers});
+            if(kind==='drag')await debugger_.sendCommand('Input.dispatchMouseEvent',{type:'mouseMoved',...end,button:'left',buttons:1});
+            await debugger_.sendCommand('Input.dispatchMouseEvent',{type:'mouseReleased',...end,button:'left',clickCount:1,modifiers});
+            await measure(editor.cm);
+            return {cursor:editor.getCursor(),selection:editor.getSelection(),source:editor.getValue(),formatted:!!view.contentEl.querySelector('.zt-citation')};
+          };
+          return JSON.stringify({plain:await gesture('plain'),drag:await gesture('drag'),extend:await gesture('extend')});
+        })()`,
+      ),
+    );
+    expect(result.plain.cursor.line).toBe(0);
+    expect(result.plain.cursor.ch).toBeGreaterThan(source.indexOf("["));
+    expect(result.plain.cursor.ch).toBeLessThan(source.indexOf("]") + 1);
+    expect(result.plain.selection).toBe("");
+    expect(result.plain.formatted).toBe(false);
+    expect(result.drag.selection.length).toBeGreaterThan(0);
+    expect(result.extend.selection.length).toBeGreaterThan(0);
+    for (const gesture of [result.plain, result.drag, result.extend]) {
+      expect(gesture.source).toBe(source);
+    }
+    const navigation = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{
+          ${browserWaits}
+          const view=${view};
+          const debugger_=require('@electron/remote').getCurrentWebContents().debugger;
+          const service=app.plugins.plugins.zotlit.services.citekeyEditor;
+          const tab=app.plugins.plugins.zotlit.settingTab;
+          const previous=tab.getControlValue('citation.open-as-links');
+          const original=service.openCitekey,requests=[];
+          await using restore=new AsyncDisposableStack();
+          restore.defer(async()=>{service.openCitekey=original;await tab.setControlValue('citation.open-as-links',previous);});
+          service.openCitekey=async(...args)=>{requests.push(args);};
+            for(const openAsLinks of [false,true]){
+              await tab.setControlValue('citation.open-as-links',openAsLinks);
+              view.editor.setCursor({line:2,ch:3});view.editor.focus();
+              await waitFor(()=>view.editor.cm.hasFocus&&!!view.contentEl.querySelector('.zt-citation'),true,'Citation navigation widget');
+              await measure(view.editor.cm);
+              const box=view.contentEl.querySelector('.zt-citation').getBoundingClientRect();
+              const modifiers=openAsLinks?0:process.platform==='darwin'?4:2;
+              for(const type of ['mousePressed','mouseReleased'])await debugger_.sendCommand('Input.dispatchMouseEvent',{type,x:box.x+box.width/2,y:box.y+box.height/2,button:'left',clickCount:1,modifiers});
+            }
+            return JSON.stringify(requests);
+        })()`,
+      ),
+    );
+    expect(navigation).toEqual([
+      ["rougier2014", "tab"],
+      ["rougier2014", false],
+    ]);
   });
 
   it("keeps the citation suggester closed while entering a page locator", async () => {

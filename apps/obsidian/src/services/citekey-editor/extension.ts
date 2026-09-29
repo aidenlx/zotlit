@@ -197,12 +197,14 @@ export function citekeyEditorExtension(
       decorations: DecorationSet = Decoration.none;
       /** The widget ranges, which {@link EditorView.atomicRanges} reads. */
       widgets: DecorationSet = Decoration.none;
+      #editClick: { from: number; x: number; y: number } | null = null;
 
       constructor(view: EditorView) {
         this.#rebuild(view);
       }
 
       update(update: ViewUpdate): void {
+        if (update.docChanged) this.#editClick = null;
         const tree = syntaxTree(update.state);
         // The stream parse stops just past the viewport, so a tree shorter than
         // the viewport has no nodes over part of it. Obsidian also freezes its
@@ -234,6 +236,61 @@ export function citekeyEditorExtension(
         ) {
           this.#rebuild(update.view);
         }
+      }
+
+      startEditClick(event: MouseEvent, view: EditorView): void {
+        this.#editClick = null;
+        if (
+          handlers.navigationEnabled() ||
+          event.button !== 0 ||
+          event.shiftKey ||
+          event.altKey ||
+          citationClickIntent(
+            mouseGesture(event, "click", {
+              surface: "editor",
+              editorMode: editorModeOf(view),
+            }),
+          ) !== "edit"
+        ) {
+          return;
+        }
+        const element = citationElementAt(event);
+        if (element !== null) {
+          this.#editClick = {
+            from: view.posAtDOM(element),
+            x: event.clientX,
+            y: event.clientY,
+          };
+        }
+      }
+
+      finishEditClick(event: MouseEvent, view: EditorView): boolean {
+        const click = this.#editClick;
+        this.#editClick = null;
+        if (
+          click === null ||
+          handlers.navigationEnabled() ||
+          event.shiftKey ||
+          event.altKey ||
+          citationClickIntent(
+            mouseGesture(event, "click", {
+              surface: "editor",
+              editorMode: editorModeOf(view),
+            }),
+          ) !== "edit" ||
+          !view.state.selection.main.empty ||
+          Math.hypot(event.clientX - click.x, event.clientY - click.y) > 4
+        ) {
+          return false;
+        }
+        // Native mousedown owns drag and extended selection. Once an ordinary
+        // click finishes, move its edge caret into the source it just revealed.
+        view.dispatch({
+          selection: { anchor: click.from + 1 },
+          userEvent: "select.pointer",
+        });
+        view.focus();
+        return true;
       }
 
       /**
@@ -411,10 +468,12 @@ export function citekeyEditorExtension(
       eventHandlers: {
         click(event, view) {
           if (event.button !== 0) return false;
+          if (this.finishEditClick(event, view)) return true;
           return this.openAt(event, view);
         },
         // Obsidian reads middle-click off `mousedown`; `click` never fires for it.
         mousedown(event, view) {
+          this.startEditClick(event, view);
           if (event.button !== 1) return false;
           return this.openAt(event, view);
         },
@@ -574,12 +633,16 @@ class CitationWidget extends WidgetType {
   }
 
   /**
-   * The widget owns every gesture on its own element but one: wherever
-   * Citations stay closed as links, a plain left mousedown goes to the editor,
-   * whose mouse selection places the caret and so shows the Citation's source.
+   * Native mousedown keeps selection and drag behavior; the completed plain
+   * click lets the editor place its caret inside the revealed Citation source.
    */
   ignoreEvent(event: Event): boolean {
-    if (this.#navigable || event.type !== "mousedown") return true;
+    if (
+      this.#navigable ||
+      (event.type !== "mousedown" && event.type !== "click")
+    ) {
+      return true;
+    }
     const mouse = event as MouseEvent;
     return (
       mouse.button !== 0 ||
