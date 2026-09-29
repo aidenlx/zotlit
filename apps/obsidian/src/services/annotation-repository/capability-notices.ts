@@ -24,6 +24,8 @@ export interface CapabilityNotice {
   lines: readonly string[];
   /** Whether it waits to be dismissed rather than timing out. */
   sticky: boolean;
+  /** Optional display time; problems use the renderer's normal reading time. */
+  duration?: Temporal.Duration;
   /** The one action offered, or null where there is nothing to open. */
   action: string | null;
 }
@@ -41,7 +43,10 @@ export function allowEditingNotice(
   result: LocalApiResult<void>,
 ): CapabilityNotice | null {
   if (!("failure" in result)) {
-    return plainNotice(m.notice_zotero_editing_enabled());
+    return {
+      ...plainNotice(m.notice_zotero_editing_enabled()),
+      duration: Temporal.Duration.from({ seconds: 3 }),
+    };
   }
   switch (result.failure.kind) {
     // The one answer whose notice asks Zotero again, from the user's press.

@@ -16,7 +16,7 @@ import type { AnnotationRepository } from "./service";
 
 const logger = getLogger("annotation-repository");
 
-/** How long a notice the user need not answer stays on screen. */
+/** Default reading time for problems and actions that are not sticky. */
 const NOTICE_DURATION = Temporal.Duration.from({ seconds: 10 });
 
 /**
@@ -28,7 +28,13 @@ const NOTICE_DURATION = Temporal.Duration.from({ seconds: 10 });
  *   settings row for a capability notice, the card itself for a conflict.
  */
 export function showCapabilityNotice(
-  { title, lines, sticky, action }: CapabilityNotice,
+  {
+    title,
+    lines,
+    sticky,
+    action,
+    duration = NOTICE_DURATION,
+  }: CapabilityNotice,
   runAction: () => void,
 ): BaseNotice {
   const notice = new BaseNotice(
@@ -46,7 +52,7 @@ export function showCapabilityNotice(
           });
       });
     }),
-    sticky ? 0 : NOTICE_DURATION.total("milliseconds"),
+    sticky ? 0 : duration.total("milliseconds"),
   );
   return notice;
 }
