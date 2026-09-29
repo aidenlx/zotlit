@@ -38,18 +38,18 @@ Every citation ZotLit inserts becomes plain author–year text:
 | Shift+Enter, or a `/` at the end of your search | Smith (2020) |
 
 - One author shows as `Smith`, two as `Smith and Lee`, and three or more as `Smith et al.` An organization shows with its full name.
-- The names are the item's main creators: its authors, or, when it has none, its editors. An interview shows the person interviewed.
+- The names are the item's main creators: its authors. An item with no authors uses its editors, then its directors, then its contributors. An interview shows the person interviewed.
 - An item with no creator shows its short title, or else its title. An item with no date shows `n.d.` for the year.
-- Several items in one citation are separated by semicolons: (Smith 2020; Lee 2021).
-- A page follows the year: (Smith 2020, p. 5). When a profile shows the citation of a highlight, it reads this way, with the highlight's page.
+- Several items in one citation are separated by semicolons: (Smith 2020; Lee 2021), or Smith (2020); Lee (2021) with Shift+Enter.
+- A page follows the year: (Smith 2020, p. 5). A page range keeps the form Zotero stores, after `p.`: (Smith 2020, p. 12-14). When a profile shows the citation of a highlight, it reads this way, with the highlight's page.
 - A citation in a Zotero note that ZotLit imports keeps its extra text and its page, such as (see Smith 2020, p. 5). A citation that leaves out the author in Zotero shows the year alone: (2020).
 
-Plain text is not a Pandoc citation. ZotLit does not recognize (Smith 2020) as a citation after you insert it: hovering over it shows no preview, selecting it does not open the literature note, and Pandoc cannot build a reference list from it. If you need these, keep the built-in citation text.
+Plain text is not a Pandoc citation. (Pandoc is a tool that turns citations such as [@smith2020] into a formatted reference list.) ZotLit does not recognize (Smith 2020) as a citation after you insert it: hovering over it shows no preview, selecting it does not open the literature note, and Pandoc cannot build a reference list from it. If you need these, keep the built-in citation text.
 
-Your vault has one citation text, the file `zotlit-citation.md` in your template folder. This entry replaces it, so it changes the citations of every profile. Citations already in your notes stay as they are.
+Your vault has one citation text. Once you customize it, it is the file `zotlit-citation.md` in your template folder. This entry replaces it, so it changes the citations of every profile. Citations already in your notes stay as they are.
 
 To use it:
 
 1. Run **Customize citation text** in Obsidian. The citation text opens in the Template Workbench View.
-2. To keep a copy of your current citation text, select all of its text, copy it, and paste it into a note of your own. You need no copy if you never changed it: **Reset to default** on the **Citation text** row in the **Citations** settings brings back the built-in text at any time.
-3. Replace all of the text with the text of this entry.
+2. To keep a copy of your current citation text, select all of its text, copy it, and paste it into a note of your own. You need no copy if you never changed it: in the **Citations** settings, the **Citation text** row has a button with the tooltip **Reset to default**, which brings back the built-in text at any time.
+3. Replace all of the text with the whole text of this entry, including its first three lines (`---`, `language: liquid`, `---`).

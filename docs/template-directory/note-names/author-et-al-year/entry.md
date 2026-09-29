@@ -19,7 +19,7 @@ keywords:
   - note title
   - output path
 audience: Readers who think of their sources by author and year, as in an author–year citation.
-effort: Paste one line into your profile's note name. Notes you create from then on get the new name.
+effort: Paste one line into the "Note name template" field of your profile. Notes you create from then on get the new name.
 ---
 
 Each literature note is named by its authors and its year:
@@ -29,8 +29,8 @@ Each literature note is named by its authors and its year:
 - three or more: `Klein et al. 2014`;
 - an organization: its full name, such as `Brackenridge Free Library 1923`.
 
-The names are the item's main creators: its authors, or, when it has none, its editors. An interview uses the person interviewed. An item with no creator uses its short title, or else its title, in place of the names. An item with no date leaves out the year. Characters a file name cannot hold are changed or left out, so a title with a colon or a slash still gives one file in your literature note folder.
+The names are the item's main creators: its authors. An item with no authors uses its editors, then its directors, then its contributors. An interview uses the person interviewed. An item with no creator uses its short title, or else its title, in place of the names. An item with no date leaves out the year, and "et al." loses its final dot, because a file name cannot end with a dot. Characters a file name cannot hold are changed or left out, so a title with a colon or a slash still gives one file in your literature note folder.
 
 Two items by the same authors in the same year have the same name. The second note gets a short random ending, such as `Kahneman 2011_a1B2c3`, so ZotLit can still create it. To tell such notes apart at a glance, use the "Author Year – Title" note name instead.
 
-To use it, open a literature note that uses your profile and run **Customize this note's template**. In the Template Workbench View, select the **Name and folder** tab and replace the text in **Note name template** with the line of this entry. **Preview** shows the name for the selected item. Notes you already have keep their names.
+To use it, open a literature note that uses your profile and run **Customize this note's template**. In the Template Workbench View, select the **Name and folder** tab and replace the text in **Note name template** with the line of this entry. **Preview** shows the name for the selected item, as it is when no other note has that name. Notes you already have keep their names.

@@ -104,7 +104,7 @@ The suite renders the citation text as ZotLit inserts it, on one line, under bot
 2. The artifact is the Filename Template on one line, with no line break at the end of the file, exactly as a reader pastes it into **Note name template**.
 3. End it with `{% suffix %}`, so a second note with the same name is still created.
 
-The suite renders the note name over every Directory Sample and Edge Sample with the suffix left empty, and checks that each result is one file name: not empty, on one line, with no space at either end, and with none of `\ / : * ? " < > | # ^ [ ]`. A slash would make a folder, and Obsidian would change each of the others to `_`.
+The suite renders the note name over every Directory Sample and Edge Sample with the suffix left empty, and checks that each result is one file name: not empty, on one line, with no space at either end and no dot at the end, and with none of `\ / : * ? " < > | # ^ [ ]`. A slash would make a folder, Obsidian would change each of the others to `_`, and it removes a final dot.
 
 ## Invariants
 
@@ -129,7 +129,7 @@ The suite fails with a named problem code when an entry breaks one of these rule
 | Property output has no `null`, empty, `null`/`undefined`/`NaN` text, dangling separator, or label without a value | `property-output` |
 | A property entry writes what its `expected` states | `property-expectation` |
 | Citation text has no `null`, empty, `null`/`undefined`/`NaN` text, dangling separator, or label without a value | `citation-output` |
-| A note name is one file name: not empty, on one line, no space at either end, and no character a file name cannot hold | `note-name-output` |
+| A note name is one file name: not empty, on one line, no space at either end, no dot at the end, and no character a file name cannot hold | `note-name-output` |
 | A note name holds `{% suffix %}` | `note-name-suffix` |
 
 The Profile ID rule covers form and uniqueness only. That an ID never changes between editions is a review rule.
