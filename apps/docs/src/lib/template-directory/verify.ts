@@ -668,6 +668,11 @@ function noteNameFaults(name: string): string[] {
   if (name !== name.trim()) {
     faults.push(`starts or ends with a space: "${name}"`);
   }
+  if (name.endsWith(".")) {
+    faults.push(
+      `ends with a dot, which Obsidian removes from a file name: "${name}"`,
+    );
+  }
   return faults;
 }
 

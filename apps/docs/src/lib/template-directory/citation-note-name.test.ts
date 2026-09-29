@@ -189,6 +189,7 @@ describe("note name verification", () => {
     ["no text", "{{ zt.nothing }}"],
     ["a line break", "{{ zt.key }}\nnotes"],
     ["a space at the end", "{{ zt.key }} "],
+    ["a dot at the end, which Obsidian removes", "{{ zt.key }} et al."],
     [
       "a title that keeps characters a file name cannot hold",
       '{{ zt.title | replace: ":", " -" }}',
