@@ -7,6 +7,7 @@ import { directorySite } from "./site-data";
 import {
   edit,
   FIXTURE_PROPERTY,
+  FIXTURE_PROPERTY_FILE,
   fixtureFiles,
   PROFILE_SOURCE,
 } from "./test-fixtures";
@@ -33,13 +34,11 @@ describe("an entry's edition", () => {
   - I want a fixture.
 - ${m.docs_directory_requires({ version: "2.2.0-beta.0" })}
 `);
-    expect(edition).toContain(`## ${m.docs_directory_audience()}
+    expect(edition).toContain(`
 
-Tests.
+**${m.docs_directory_audience()}:** Tests.
 
-## ${m.docs_directory_effort()}
-
-Nothing.
+**${m.docs_directory_effort()}:** Nothing.
 
 A fixture Profile.
 `);
@@ -100,6 +99,23 @@ describe("a property entry's edition", () => {
 \`\`\`yaml
 key: year
 `);
+  });
+
+  it("marks a sample the rule leaves the property out of, the way the page does", async () => {
+    const files = edit(fixtureFiles(), FIXTURE_PROPERTY_FILE, [
+      'value: {"$if": "zt.date && zt.date.year", "then": {"$eval": "zt.date.year"}}',
+      'value: {"$if": "false", "then": "never"}',
+    ]);
+    const edition = (await directoryEdition(site(files), [
+      "properties",
+      "fixture-year",
+    ]))!;
+
+    expect(edition).toContain(`### Journal article
+
+_${m.docs_directory_sample_left_out()}_
+`);
+    expect(edition).not.toContain("_No output._");
   });
 });
 

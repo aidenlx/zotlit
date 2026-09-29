@@ -107,10 +107,8 @@ async function entryEdition(
       ...facetLines(entry, facets, { level: true }),
       `- ${m.docs_directory_requires({ version: entry.minAppVersion })}`,
     ].join("\n"),
-    `## ${m.docs_directory_audience()}`,
-    entry.audience,
-    `## ${m.docs_directory_effort()}`,
-    entry.effort,
+    `**${m.docs_directory_audience()}:** ${entry.audience}`,
+    `**${m.docs_directory_effort()}:** ${entry.effort}`,
     entry.description.trim(),
     `## ${m.docs_directory_use_heading()}`,
     await renderToMarkdown(<EntryUse entry={entry} />),
@@ -152,7 +150,10 @@ function samplesSection(entry: SiteEntry): string[] {
     annotations: entry.annotations,
     citations: entry.citations,
   };
-  const sections = formatSampleSections(entry.kind, samples, 3);
+  const sections = formatSampleSections(entry.kind, samples, {
+    depth: 3,
+    leftOut: `_${m.docs_directory_sample_left_out()}_`,
+  });
   if (sections.length === 0) return [];
   return [
     `## ${m.docs_directory_samples_heading()}`,
