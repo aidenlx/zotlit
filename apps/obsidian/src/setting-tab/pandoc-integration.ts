@@ -30,7 +30,7 @@ export function pandocIntegrationDefinition(
         id: "settings_citation_pandoc_tutorial",
         name: m.settings_citation_pandoc_tutorial_name(),
         desc: m.settings_citation_pandoc_tutorial_desc(),
-        render: (setting) =>
+        render: (setting) => {
           setting.addButton((button) =>
             button
               .setButtonText(m.settings_citation_pandoc_tutorial_open())
@@ -39,7 +39,8 @@ export function pandocIntegrationDefinition(
                   `${DOCS_SITE_URL}/docs/tutorial/pandoc-citation-workflow`,
                 ),
               ),
-          ),
+          );
+        },
       },
       {
         id: "settings_citation_pandoc_files",
