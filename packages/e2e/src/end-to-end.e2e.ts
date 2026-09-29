@@ -24,6 +24,7 @@ import { basename, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  buildImportProfileProtocolUrl,
   PROTOCOL_VERSION,
   PROTOCOL_VERSION_HEADER,
   SOURCE_ID_HEADER,
@@ -3044,6 +3045,84 @@ describe.skipIf(!reachable)("Template Directory import", () => {
       "> The opening establishes Sakima’s family and home.",
     );
   }, 180000);
+
+  // One-click import from a Directory page: the page puts the entry on the
+  // clipboard and opens ZotLit's clipboard handoff. A build without the web
+  // Workbench ends where Import profile… ends: the Profile is added and
+  // nothing else opens.
+  it.skipIf(webWorkbenchEnabled)(
+    "imports the entry a Directory page hands over on the clipboard, and opens nothing after",
+    async () => {
+      const handedPath = join(
+        directory,
+        "profiles",
+        "books",
+        "zotlit-profile.books.md",
+      );
+      const handed = await readEntry(handedPath);
+      // Obsidian hands a received obsidian:// URL to the vault window as
+      // OBS_ACT(<action and query>); calling it there leaves the OS focus
+      // where it is.
+      const url = new URL(buildImportProfileProtocolUrl());
+      const handoff = {
+        action: `${url.host}${url.pathname}`,
+        ...Object.fromEntries(url.searchParams),
+      };
+      const clipboard = async (text?: string): Promise<string> =>
+        JSON.parse(
+          await obEval(
+            vaultId,
+            `(function(){var clipboard=require('electron').clipboard;${text === undefined ? "" : `clipboard.writeText(${JSON.stringify(text)});`}return JSON.stringify(clipboard.readText());})()`,
+          ),
+        ) as string;
+      const previous = await clipboard();
+      try {
+        await clipboard(await readFile(handedPath, "utf-8"));
+        await obEval(
+          vaultId,
+          `(window.OBS_ACT(${JSON.stringify(handoff)}),true)`,
+        );
+        expect(
+          await obEvalUntil(
+            vaultId,
+            `String(!!Array.from(activeDocument.querySelectorAll('.modal')).at(-1)?.textContent.includes(${JSON.stringify(handed.name)}))`,
+            { expected: "true" },
+          ),
+        ).toBe(true);
+        expect(
+          await clickModalButton(vaultId, m.profile_import_confirm()),
+        ).toBe(true);
+      } finally {
+        await clipboard(previous);
+      }
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `String(app.plugins.plugins.zotlit.services.profile.profiles.some(p=>p.id===${JSON.stringify(handed.id)}&&p.label===${JSON.stringify(handed.name)}))`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      expect(
+        await obEvalUntil(
+          vaultId,
+          "String(!activeDocument.querySelector('.modal'))",
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      // No Template Workbench opens, in this window or in a new one.
+      expect(
+        await waitFor(
+          async () =>
+            (await obEval(
+              vaultId,
+              "String(app.workspace.getLeavesOfType('zotlit-template-workbench').length)",
+            )) !== "0",
+          8,
+        ),
+      ).toBe(false);
+    },
+    180000,
+  );
 });
 
 interface ManagedFrontmatterReport {
