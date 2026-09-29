@@ -23,7 +23,7 @@ effort: Add the partial to your template folder and call it from your profile's 
 
 A **Zotero notes** heading, then one link for each note you wrote in Zotero for the item, in the order you added them. Each link shows the note's title, which is its first line in Zotero.
 
-ZotLit brings each of these notes into your vault as a note of its own, and the literature note links to it. When you change a note in Zotero, the link shows the new title on the next update. When the item has no notes in Zotero, the partial writes nothing, not even the heading.
+ZotLit imports each of these notes into your vault once, as a note of its own, and the literature note links to it. When you change a note in Zotero, the link shows the new title on the next update, but the imported note keeps its old text. To bring in your changes, open the imported note and run **Update imported note from Zotero**. When the item has no notes in Zotero, the partial writes nothing, not even the heading.
 
 The partial reads the note's data. Call it from the note body of a profile, inside the managed block:
 

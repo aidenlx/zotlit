@@ -28,11 +28,11 @@ While you read in Zotero, start a comment with the word "todo", in any capitals,
 - `todo Check the sample size.` becomes `- [ ] Check the sample size.`
 - `TODO: Check the sample size.` becomes the same task.
 
-Every other comment stays exactly as you wrote it, including a comment that only contains a word that starts with "todo", such as "Todorov". When an annotation has no comment, the partial writes nothing.
+Every other comment stays exactly as you wrote it. This includes a comment that starts with a longer word, such as "Todorov", and a comment that is only the word "todo". When an annotation has no comment, the partial writes nothing.
 
-Obsidian shows the task with a checkbox, and task searches and plugins such as Tasks find it. The task is part of the note that ZotLit refreshes, so a tick you set in Obsidian goes away on the next update. To close a task for good, delete "todo" from the comment in Zotero.
+Obsidian shows the task with a checkbox, and task searches and plugins such as Tasks find it. The task is part of the note that ZotLit refreshes, so a tick you set in Obsidian goes away on the next update. When the work is done, delete "todo" from the comment in Zotero. After the next update, the comment shows as ordinary text, with no checkbox.
 
-The partial reads one annotation's data and writes only the comment. Use it in your profile's annotation format, the part below `--- zotlit:annotation ---`, in place of `{{ zt.comment }}`:
+The partial reads one annotation's data and writes only the comment. Put it where your profile writes the comment, `{{ zt.comment }}`, in the annotation format, the part below `--- zotlit:annotation ---`, or in the partial that the annotation format calls. The plain annotation quote writes the comment in two places: after the quote, and in the line for a note or text annotation. Replace each `{{ zt.comment }}` with:
 
 ```liquid
 {% render "todo-task" with zt as zt %}

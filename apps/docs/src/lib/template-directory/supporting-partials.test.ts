@@ -302,6 +302,14 @@ describe("the quote with a block ID", () => {
     expect(onItsOwn).toEqual(inNote);
   });
 
+  it("leaves a blank line after every block ID in a literature note that separates annotations like the Directory profiles", () => {
+    const lines = renderInLiteratureNote("quote-with-block-id").split("\n");
+    const after = lines.flatMap((line, index) =>
+      blockIds(line).length > 0 ? [lines[index + 1]] : [],
+    );
+    expect(after).toEqual(["", ""]);
+  });
+
   it("gives every annotation one block ID of its own", () => {
     const ids = SAMPLE_ANNOTATIONS.map((annotation) =>
       blockIds(renderAnnotationPartial("quote-with-block-id", annotation)),

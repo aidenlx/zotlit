@@ -21,9 +21,9 @@ audience: Readers who link items in Zotero's Related section and want to follow 
 effort: Add this partial and the author-line partial to your template folder, and call this one from your profile's note body.
 ---
 
-A **Related items** heading, then one line for each item in the Related section of the item in Zotero, sorted by title. Each line links to that item's literature note under its title, followed by its authors and year: `[[Kahneman2011|Thinking, fast and slow]] (Kahneman, 2011)`.
+A **Related items** heading, then one line for each item in the Related section of the item in Zotero, sorted by title. Each line links to that item's literature note under its title, followed by its short author line and year: `[[Kahneman2011|Thinking, fast and slow]] (Kahneman, 2011)`. The short author line uses family names, as the author-line partial writes them. When the related item has no authors or no year, the line leaves out that part. The link goes to the note name that your settings give the related item; the example uses its citation key.
 
-The link works once the related item has a literature note of its own. When the item has no related items, the partial writes nothing, not even the heading.
+The link works once the related item has a literature note of its own. When ZotLit cannot name that note, the line shows the title as plain text. When the item has no related items, the partial writes nothing, not even the heading.
 
 The partial reads the note's data and calls the `author-line` partial for the authors, so copy both into your template folder. Call it from the note body of a profile, inside the managed block:
 

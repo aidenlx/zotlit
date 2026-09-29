@@ -26,7 +26,7 @@ The authors of the item, by family name, in one short line:
 - two authors: "Smith & Lee";
 - three or more: "Smith et al.".
 
-An organization, such as a library or an agency, shows by its full name. When an item has no authors, the line names its editors instead, and when it has neither, the partial writes nothing.
+An organization, such as a library or an agency, shows by its full name. The line names the item's main creators: the authors for most items, or the main role for the item type, such as the person interviewed for an interview. When an item has none of these, the line names its editors, then its directors, then its contributors, and when it has none at all, the partial writes nothing.
 
 The partial reads the note's data. Call it from the note body of a profile, inside the managed block, for example under the title:
 
@@ -34,4 +34,4 @@ The partial reads the note's data. Call it from the note body of a profile, insi
 {% render "author-line" with zt as zt %}
 ```
 
-To write "and" instead of "&", or "等" instead of "et al.", change that word in the partial.
+To write "and" instead of "&", or "等" instead of "et al.", replace that text in the last line of the partial.

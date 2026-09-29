@@ -25,12 +25,15 @@ audience: Readers who reuse highlights in other notes, such as permanent notes o
 effort: Add the partial to your template folder and call it from your profile's annotation format.
 ---
 
-Each annotation becomes a plain quote with a link to its page, the same as the plain annotation quote, plus a block ID: `^` and the annotation's key in Zotero, such as `^EXAMP001`. A block ID names one block of a note, so other notes can link to it.
+Each annotation shows the same as in the plain annotation quote, plus a block ID: `^` and the annotation's key in Zotero, such as `^EXAMP001`. A block ID names one block of a note, so other notes can link to it.
 
-- For a highlight, underline, image, or ink annotation, the block ID sits on its own line after the quote, so it names the quote. Your Zotero comment follows as ordinary text.
-- For a note or text annotation, which has no quoted text, the block ID sits at the end of its comment.
+- A highlight or underline becomes a plain quote with a link to its page. The block ID sits on its own line after the quote, so it names the quote. Your Zotero comment follows as ordinary text.
+- An image or ink annotation embeds its image in the quote, with the link to its page on the next line. The block ID and your comment follow, the same as for a highlight.
+- A note or text annotation has no quoted text, so its comment appears as ordinary text with its page. The block ID sits at the end of that line, after the page: `Compare these findings with the replication study. (p. 3) ^EXAMP003`.
 
-The block ID comes from the annotation's key in Zotero, which never changes. When you edit the comment, change the highlight, or change its color in Zotero, the note updates and the block ID stays the same, so every link to it still works. The block ID does not show in reading view.
+An annotation with no text, image, or comment writes nothing.
+
+The block ID comes from the annotation's key in Zotero, which never changes. When you edit the comment, change the highlight, or change its color in Zotero, the note updates and the block ID stays the same, so every link to it still works. Obsidian hides the block ID in **Reading view**.
 
 To embed a highlight in another note, type `![[`, the name of the literature note, and `#^`, then select the highlight from the list, for example `![[riveraResearchInterfaces2026#^EXAMP001]]`. Leave out the `!` for a link instead of an embed.
 
@@ -40,4 +43,4 @@ The partial reads one annotation's data. Call it from the annotation format of a
 {% render "quote-with-block-id" with zt as zt %}
 ```
 
-Keep a blank line between annotations in your profile's note body, so each block ID stays with its quote.
+Obsidian finds a block ID only when a blank line follows it. The simple reading note profile puts a blank line between annotations. In a profile of your own, keep a blank line between annotations in the note body.
