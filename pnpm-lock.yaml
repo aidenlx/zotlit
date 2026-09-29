@@ -185,6 +185,9 @@ catalogs:
     cross-env:
       specifier: ^10.1.0
       version: 10.1.0
+    diff:
+      specifier: 8.0.4
+      version: 8.0.4
     drizzle-kit:
       specifier: 1.0.0-rc.4
       version: 1.0.0-rc.4
@@ -611,6 +614,9 @@ importers:
       cn:
         specifier: ^0.2.4
         version: 0.2.4
+      diff:
+        specifier: 'catalog:'
+        version: 8.0.4
       eta:
         specifier: 'catalog:'
         version: 4.6.0
@@ -1354,7 +1360,7 @@ importers:
         specifier: 'catalog:'
         version: 0.0.5
       diff:
-        specifier: 8.0.4
+        specifier: 'catalog:'
         version: 8.0.4
       jsonc-parser:
         specifier: ^3.3.1

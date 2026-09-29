@@ -75,7 +75,7 @@
     "@zotlit/ui": "workspace:*",
     "@zotlit/zotero-types": "workspace:*",
     "arkregex": "catalog:",
-    "diff": "8.0.4",
+    "diff": "catalog:",
     "jsonc-parser": "^3.3.1",
     "valibot": "catalog:",
     "yaml": "catalog:",
