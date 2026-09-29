@@ -7,10 +7,13 @@
 // silently escape the sitemap. A new machine endpoint fails the `satisfies`
 // below instead, which is the same decision made explicitly.
 
+import directory from "virtual:zotlit/template-directory";
+
 import type { FileRouteTypes } from "@/routeTree.gen";
 
 import { baseURL } from "./shared";
 import { blog, changelog, source } from "./source";
+import { entryPath } from "./template-directory/site";
 
 /** Routes that answer machines rather than readers, so no crawler indexes them. */
 const machineRoutes = [
@@ -85,6 +88,10 @@ export async function renderSitemap(): Promise<string> {
     "/community": [{}],
     "/docs": [{}],
     "/workbench": [],
+    "/templates": [{}],
+    "/templates/$kind/$slug": directory.entries.map(({ id }) => ({
+      pathname: entryPath(id),
+    })),
     "/blog/$slug": await blogEntries(),
     "/changelog/$version": changelog.getPages().map((page) => ({
       pathname: page.url,
