@@ -409,9 +409,14 @@ describe("library-wide protocol links", () => {
 describe("clipboard Profile protocol handoff", () => {
   it("imports from the clipboard when the build gate is off, and ends there as Import profile… does", async () => {
     vi.mocked(openTemplateWorkbench).mockClear();
-    const importProfile = vi.fn(async () => ({ path: "templates/shared.md" }));
+    const file = { path: "templates/shared.md" };
+    const app = {
+      vault: { getFileByPath: vi.fn(() => file) },
+    } as unknown as ProtocolDeps["app"];
+    const importProfile = vi.fn(async () => ({ path: file.path }));
     using _handlers = register({
       webWorkbenchEnabled: false,
+      app,
       importProfile,
     } as unknown as Partial<ProtocolDeps>);
 
