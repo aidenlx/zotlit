@@ -246,12 +246,24 @@ describe("the Directory verification", () => {
       ).toBe("# Why Most Published Research Findings Are False");
     });
 
-    it("rejects a title heading below the first line", () => {
-      rejects(
-        editProfile("## My notes", "# {{ zt.title }}\n\n## My notes"),
-        FIXTURE_PROFILE,
-        "managed-block",
-      );
+    it.each([
+      ["below the block", ["## My notes", "# {{ zt.title }}\n\n## My notes"]],
+      [
+        "below a prompt, above the block",
+        [
+          "---\n{% managed %}",
+          "---\n## Aim\n\n# {{ zt.title }}\n\n{% managed %}",
+        ],
+      ],
+      [
+        "with more template code on its line",
+        [
+          "---\n{% managed %}",
+          "---\n# {{ zt.title }} {{ zt.key }}\n\n{% managed %}",
+        ],
+      ],
+    ] as const)("rejects a title heading %s", (_, [from, to]) => {
+      rejects(editProfile(from, to), FIXTURE_PROFILE, "managed-block");
     });
   });
 

@@ -66,7 +66,7 @@ The source files in `src/lib/template-directory/` of `apps/docs` own the vocabul
 1. Create `profiles/<slug>/` with `entry.md` and `zotlit-profile.<slug>.md`.
 2. Mint the Profile ID once: twelve characters from the alphabet in `apps/obsidian/src/services/profile/service.ts`. Keep it for every later edition, so a newer edition imports as the same Profile. Change `version` for each edition.
 3. Set `author`, a one-line `description`, `sampleItemType`, `minAppVersion`, and `contract` (the current template contract).
-4. Write the note body in Liquid, with every template tag inside `{% managed %}…{% endmanaged %}`. Text a reader keeps, such as a **My notes** heading, goes outside the block. A note with reader prompts above the block may open with the title heading `# {{ zt.title }}` on its first line, outside the block: the note gets it once, when it is created, and the `title` property keeps the current title.
+4. Write the note body in Liquid, with every template tag inside `{% managed %}…{% endmanaged %}`. Text a reader keeps, such as a **My notes** heading, goes outside the block. A note may open with the title heading `# {{ zt.title }}` on its first line, outside the block: the note gets it once, when it is created, and the `title` property keeps the current title.
 5. Write every property as a JSON-e rule (`value`), with the merge strategy it needs: `replace` for values from Zotero, `append` for lists the reader adds to, `keep` for values the reader changes by hand.
 6. Call partials by name with `{% render "<name>" with zt as zt %}`. Every called partial must be a partial entry.
 7. Run the re-pack command. It writes the manifest's `partials` from the partial entries.
@@ -125,7 +125,7 @@ The suite fails with a named problem code when an entry breaks one of these rule
 | A Profile sets `author`, `description`, `sampleItemType`, and `minAppVersion` | `profile-metadata` |
 | Every template is Liquid | `template-language` |
 | Every property is a JSON-e rule | `property-language` |
-| A Profile body has a managed block, and every template tag sits inside it, but a first-line title heading `# {{ zt.title }}` | `managed-block` |
+| A Profile body has a managed block, and every template tag sits inside it, except a first-line title heading `# {{ zt.title }}` | `managed-block` |
 | One namespace: every called partial is a partial entry | `unknown-partial` |
 | A Profile packs every partial it calls, byte-identical to the partial entry, and no other | `partial-not-packed`, `packed-partial-differs`, `packed-partial-uncalled` |
 | Every entry renders over every Directory Sample and Sample Annotation with no diagnostics | `render-diagnostic` |

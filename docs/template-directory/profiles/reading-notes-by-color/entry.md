@@ -35,7 +35,7 @@ Each note holds, from the top:
 - the item's title, as the heading of the note. The note gets it once, when it is created; the `title` property keeps the current title;
 - three headings for your own writing: **Key takeaways**, the points to keep from the source; **My claims and ideas**, the ideas it gives you, each a candidate for a note of its own; and **Connections**, the notes and sources it links to. The headings start empty;
 - a **Source** heading, with one row of links back to the source: the item in Zotero, its PDF, its DOI, and its web page, each when the item has one;
-- the abstract, folded, so it is at hand without taking over the note;
+- below the links, the abstract, folded, so it is at hand without taking over the note;
 - your annotations under **Annotations**, in groups: one heading for each color meaning, such as **Definitions** or **Questions**, with every annotation of that meaning below it in page order. A meaning you did not use in the source gets no heading.
 
 Each annotation is a callout (Obsidian's colored box with an icon and a title) in the color Obsidian has that is nearest to its Zotero color. The callout's title says what the color means and links to the annotation's page in the PDF, such as **Important · p. 5**. A highlight quotes its text inside the callout, and your Zotero comment follows it as ordinary text, so your words and the author's stay apart. Image annotations appear as embedded images, and notes and text boxes you add in the PDF appear as their text. Every kind of annotation goes into the group of its color, so nothing is left out.

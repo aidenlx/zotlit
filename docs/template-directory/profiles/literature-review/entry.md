@@ -39,7 +39,7 @@ Each note holds, from the top:
 - the item's title, as the heading of the note. The note gets it once, when it is created; the `title` property keeps the current title;
 - five headings for your own answers: **Aim**, **Methods**, **Findings**, **Limitations**, and **Relevance to my project**. The headings start empty;
 - a **Source** heading, with one row of links back to the source: the item in Zotero, its PDF, its DOI, and its web page, each when the item has one;
-- the abstract, folded, so it is at hand without taking over the note;
+- below the links, the abstract, folded, so it is at hand without taking over the note;
 - your annotations under **Annotations**, in groups: one heading for each part of the study, such as **Methods** or **Limitations**, with every annotation of that part below it in page order. A part you did not highlight in the study gets no heading.
 
 The groups come from your highlight colors, with the meanings of the **Color meanings for a literature review** partial, in this order:
@@ -57,7 +57,7 @@ The groups come from your highlight colors, with the meanings of the **Color mea
 | Plum (from Citavi only) | Paraphrases | Passages to paraphrase | Red |
 | Any other color | Other highlights | | Blue |
 
-Each annotation is a callout (Obsidian's colored box with an icon and a title) in the color that matches its Zotero color, with no CSS snippet. Obsidian has no yellow or pink callout, so yellow shows orange, magenta shows purple, and plum shows red; the heading and the callout title tell them apart. The callout's title names the part and links to the annotation's page in the PDF, such as **Methods · p. 5**. A highlight quotes its text inside the callout, and your Zotero comment follows it as ordinary text. Image annotations appear as embedded images, and notes and text boxes you add in the PDF appear as their text. Every kind of annotation goes into the group of its color, so nothing is left out.
+Each annotation is a callout (Obsidian's colored box with an icon and a title) in the color Obsidian has that is nearest to its Zotero color, with no CSS snippet. Obsidian has no yellow or pink callout, so yellow shows orange, magenta shows purple, and plum shows red; the heading and the callout title tell them apart. The callout's title names the part and links to the annotation's page in the PDF, such as **Methods · p. 5**. A highlight quotes its text inside the callout, and your Zotero comment follows it as ordinary text. Image annotations appear as embedded images, and notes and text boxes you add in the PDF appear as their text. Every kind of annotation goes into the group of its color, so nothing is left out.
 
 Four of your headings and four groups share a name: **Aim**, **Methods**, **Findings**, and **Limitations**. The heading on top holds your answer; the group below holds the passages you highlighted for it.
 
