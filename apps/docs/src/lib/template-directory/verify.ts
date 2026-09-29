@@ -28,7 +28,11 @@ import {
 } from "./load.ts";
 import type { DirectoryEntry, DirectoryFiles } from "./load.ts";
 import type { DirectoryProblem, DirectoryProblemCode } from "./problem.ts";
-import { COLOR_HIGHLIGHTS, DIRECTORY_SAMPLES } from "./samples.ts";
+import {
+  COLOR_HIGHLIGHTS,
+  DIRECTORY_SAMPLES,
+  EVERY_COLOR_SAMPLE,
+} from "./samples.ts";
 import type { DirectorySample } from "./samples.ts";
 
 /** One Directory Sample's note, as the entry renders it. */
@@ -364,11 +368,23 @@ function sampleAnnotations(
     : SAMPLE_ANNOTATIONS;
 }
 
+/**
+ * The Directory Samples, and for an entry that groups annotations by color, a
+ * note with an annotation in every color.
+ */
+function noteSamples(
+  features: DirectoryEntry["features"],
+): readonly DirectorySample[] {
+  return features.includes("grouped-by-color")
+    ? [...DIRECTORY_SAMPLES, EVERY_COLOR_SAMPLE]
+    : DIRECTORY_SAMPLES;
+}
+
 function renderProfileEntry(
   { artifact, manifest, features }: ProfileEntry,
   report: Report,
 ): EntrySamples {
-  const notes = DIRECTORY_SAMPLES.map((sample) => {
+  const notes = noteSamples(features).map((sample) => {
     const result = renderProfile(artifact.source, sample.snapshot);
     reportDiagnostics(result, sample.label, report);
     checkProperties(
@@ -391,6 +407,17 @@ function renderProfileEntry(
   });
   return { notes, annotations };
 }
+
+/**
+ * The Annotation Section a `note` partial's samples render annotations with:
+ * one line naming each annotation's type, color, page, and text or comment,
+ * so a sample shows where every annotation lands.
+ */
+const NAMED_ANNOTATION =
+  "- {{ zt.type }} annotation" +
+  "{% if zt.colorName %}, {{ zt.colorName }}{% elsif zt.colorHex %}, custom color {{ zt.colorHex }}{% endif %}" +
+  "{% if zt.pageLabel %}, p. {{ zt.pageLabel }}{% endif %}" +
+  "{% if zt.text %}: {{ zt.text }}{% elsif zt.comment %}: {{ zt.comment }}{% endif %}\n";
 
 function renderPartialEntry(
   { slug, context, call: statedCall, features }: PartialEntry,
@@ -418,9 +445,10 @@ function renderPartialEntry(
   }
   const source = harnessProfile({
     body: `{% managed %}\n${call}{% endmanaged %}\n`,
+    annotation: NAMED_ANNOTATION,
   });
   return {
-    notes: DIRECTORY_SAMPLES.map((sample) => {
+    notes: noteSamples(features).map((sample) => {
       const result = renderProfile(source, sample.snapshot, { resources });
       reportDiagnostics(result, sample.label, report);
       return {
