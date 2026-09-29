@@ -27,6 +27,9 @@ export type DirectoryProblemCode =
   | "render-diagnostic"
   | "property-output"
   | "property-expectation"
+  | "citation-output"
+  | "note-name-output"
+  | "note-name-suffix"
   | "unverified";
 
 export interface DirectoryProblem {

@@ -1,12 +1,16 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { compileFilter, matchCondition } from "@zotlit/workbench/match";
+
 import {
   formatEntrySamples,
+  ITEM_TYPES,
   readTemplateDirectory,
   templateDirectoryRoot,
   verifyTemplateDirectory,
 } from "./index";
+import type { DirectoryEntry } from "./index";
 import { edit } from "./test-fixtures";
 
 /**
@@ -25,6 +29,22 @@ function groups(markdown: string): [string, string[]][] {
 
 const root = await templateDirectoryRoot();
 const verification = verifyTemplateDirectory(await readTemplateDirectory(root));
+
+function entryOf<K extends DirectoryEntry["kind"]>(
+  id: string,
+  kind: K,
+): Extract<DirectoryEntry, { kind: K }> {
+  const entry = verification.entries.find((candidate) => candidate.id === id);
+  expect(entry?.kind, id).toBe(kind);
+  return entry as Extract<DirectoryEntry, { kind: K }>;
+}
+
+/** The Profiles made for one item type, with the one type each is made for. */
+const TYPE_PROFILES = [
+  ["profiles/books", "book"],
+  ["profiles/book-chapters", "bookSection"],
+  ["profiles/theses-and-dissertations", "thesis"],
+] as const;
 
 describe("the Template Directory", () => {
   it("passes every check", () => {
@@ -275,6 +295,46 @@ describe("the Template Directory", () => {
         ["contribution", "keep"],
       ]);
     });
+  });
+
+  it.each(TYPE_PROFILES)(
+    "selects %s automatically for the item type %s and no other",
+    (id, itemType) => {
+      const { match } = entryOf(id, "profile").manifest;
+      expect(match, id).toBeDefined();
+      const { condition } = compileFilter(match!);
+      const selected = ITEM_TYPES.filter((type) =>
+        matchCondition(condition!, {
+          library: null,
+          itemType: type,
+          tags: [],
+          collections: [],
+        }),
+      );
+      expect(selected).toEqual([itemType]);
+    },
+  );
+
+  it.each(TYPE_PROFILES)(
+    "gives %s the Publication details rule verbatim",
+    (id) => {
+      const { property } = entryOf(
+        "properties/publication-details-set",
+        "property",
+      );
+      expect(entryOf(id, "profile").manifest.frontmatter).toContainEqual(
+        property,
+      );
+    },
+  );
+
+  it("names the book, its editors, and the chapter's pages in a Book chapters note", () => {
+    const chapter = verification.samples
+      .get("profiles/book-chapters")!
+      .notes.find(({ sample }) => sample.id === "book-section")!;
+    expect(chapter.body).toContain(
+      "In *Judgment under Uncertainty: Heuristics and Biases*, edited by Daniel Kahneman, Paul Slovic, and Amos Tversky · pp. 3–20",
+    );
   });
 
   it.each(verification.entries.map((entry) => [entry.id, entry] as const))(
