@@ -12,6 +12,7 @@ import {
   SAMPLE_ITEMS,
 } from "@zotlit/workbench/render";
 import type {
+  AnnotationExample,
   RenderDiagnostic,
   RenderedProperty,
   RenderResources,
@@ -26,7 +27,7 @@ import {
 } from "./load.ts";
 import type { DirectoryEntry, DirectoryFiles } from "./load.ts";
 import type { DirectoryProblem, DirectoryProblemCode } from "./problem.ts";
-import { DIRECTORY_SAMPLES } from "./samples.ts";
+import { COLOR_HIGHLIGHTS, DIRECTORY_SAMPLES } from "./samples.ts";
 import type { DirectorySample } from "./samples.ts";
 
 /** One Directory Sample's note, as the entry renders it. */
@@ -350,8 +351,20 @@ function duplicateProfileIds(
   );
 }
 
+/**
+ * The Sample Annotations, and for an entry that shows highlight colors, a
+ * highlight in every other Zotero color and a custom color.
+ */
+function sampleAnnotations(
+  features: DirectoryEntry["features"],
+): readonly AnnotationExample[] {
+  return features.includes("color-highlights")
+    ? [...SAMPLE_ANNOTATIONS, ...COLOR_HIGHLIGHTS]
+    : SAMPLE_ANNOTATIONS;
+}
+
 function renderProfileEntry(
-  { artifact }: ProfileEntry,
+  { artifact, features }: ProfileEntry,
   report: Report,
 ): EntrySamples {
   const notes = DIRECTORY_SAMPLES.map((sample) => {
@@ -360,7 +373,7 @@ function renderProfileEntry(
     checkProperties(result.fold, sample.label, report);
     return noteSample(sample, result, result.creationBody);
   });
-  const annotations = SAMPLE_ANNOTATIONS.map((annotation) => {
+  const annotations = sampleAnnotations(features).map((annotation) => {
     const result = renderProfile(artifact.source, ANNOTATED_ITEM, {
       annotation,
     });
@@ -375,16 +388,16 @@ function renderProfileEntry(
 }
 
 function renderPartialEntry(
-  { slug, context }: PartialEntry,
+  { slug, context, call: statedCall, features }: PartialEntry,
   resources: RenderResources,
   report: Report,
 ): EntrySamples {
-  const call = `{% render "${slug}" with zt as zt -%}\n`;
+  const call = `${statedCall ?? `{% render "${slug}" with zt as zt -%}`}\n`;
   if (context === "annotation") {
     const source = harnessProfile({ annotation: call });
     return {
       notes: [],
-      annotations: SAMPLE_ANNOTATIONS.map((annotation) => {
+      annotations: sampleAnnotations(features).map((annotation) => {
         const result = renderProfile(source, ANNOTATED_ITEM, {
           annotation,
           resources,
@@ -561,6 +574,11 @@ function withoutManagedMarkers(region: string | null): string | null {
 }
 
 function annotationLabel(root: Record<string, unknown>): string {
-  const color = typeof root.colorName === "string" ? `, ${root.colorName}` : "";
+  const color =
+    typeof root.colorName === "string"
+      ? `, ${root.colorName}`
+      : typeof root.colorHex === "string"
+        ? `, custom color ${root.colorHex}`
+        : "";
   return `${String(root.type)} annotation${color}`;
 }

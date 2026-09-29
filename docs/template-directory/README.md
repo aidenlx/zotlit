@@ -52,6 +52,7 @@ The kind comes from the folder and the level from the kind. Any other file in an
 | `effort` | all | yes | One sentence: what the entry asks of the reader before it works |
 | `title`, `summary`, `minAppVersion` | recipes | yes | The entry's name, its one-line summary, and the ZotLit version it needs |
 | `context` | partial | yes | The data the partial reads: `note`, `annotation`, or `citation` |
+| `call` | partial | no | The Liquid a Profile writes to call the partial, when that is more than `{% render "<slug>" with zt as zt %}`. The suite renders this call |
 | `expected` | property | no | Per Directory Sample, the properties the entry writes (see [Property](#property)) |
 
 A Profile entry states its title, summary, and required version once, in its manifest: `name`, `description`, and `minAppVersion`. The partials an entry calls are found from its artifact, directly and through the partials it calls.
@@ -75,7 +76,7 @@ The source files in `src/lib/template-directory/` of `apps/docs` own the vocabul
 
 1. Create `partials/<slug>/` with `entry.md` and `zotlit-partial.<slug>.md`. The slug is the name every caller uses; the plugin's own slot names (`filename`, `note`, `annotation`, `content`, `citation`) are not available.
 2. The artifact is a Shared Partial document: `language: liquid` between two `---` lines, then the source.
-3. Set `context` to the data the partial reads. The suite renders a `note` partial in a Profile's note body and an `annotation` partial in its Annotation Section.
+3. Set `context` to the data the partial reads. The suite renders a `note` partial in a Profile's note body and an `annotation` partial in its Annotation Section. A partial that needs more than the plain `render` call, such as one that sets values for the partial called after it, states its call in `call`.
 4. To change a partial, edit its entry, then run the re-pack command: every Profile that calls it gets the new source.
 
 ### Property
@@ -121,7 +122,7 @@ The Profile ID rule covers form and uniqueness only. That an ID never changes be
 
 ## Directory Samples
 
-Every entry renders over the four Sample Items (`journal-article`, `conference-paper`, `book`, `thesis`) and five items derived from them for types without a Sample Item (`book-section`, `letter`, `manuscript`, `interview`, `document`). A Profile or `annotation` partial also renders over every Sample Annotation. The suite stores the output in each entry's `samples.md`, so a change in any entry's output shows in review. The `file_link` filter renders nothing in samples, because the Directory Samples have no files in a vault; `plain-annotation-quote` shows how to fall back to plain text, such as `p. 5`.
+Every entry renders over the four Sample Items (`journal-article`, `conference-paper`, `book`, `thesis`) and five items derived from them for types without a Sample Item (`book-section`, `letter`, `manuscript`, `interview`, `document`). A Profile or `annotation` partial also renders over every Sample Annotation; one with the `color-highlights` feature also renders over a highlight in every other Zotero color and a custom color. The suite stores the output in each entry's `samples.md`, so a change in any entry's output shows in review. The `file_link` filter renders nothing in samples, because the Directory Samples have no files in a vault; `plain-annotation-quote` shows how to fall back to plain text, such as `p. 5`.
 
 ## Commands
 
