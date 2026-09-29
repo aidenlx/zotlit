@@ -1,0 +1,136 @@
+# Template Directory
+
+The Template Directory is ZotLit's catalogue of ready-made, verified Directory Entries: Literature Note Profiles a reader imports in one step, and recipes (partials, citation text, note names, properties) a reader copies into a Profile of their own. This folder is its single source of truth. The docs site renders it, and the verification suite in `apps/docs` checks every entry on every `pnpm test`.
+
+Entry descriptions are user-facing copy. Write them for academics who read in Zotero and do not write code: the research task first, the result in the note second, and Obsidian UI labels verbatim (**Import profile…**, **Add a property**, **Rule · JSON-e**, **Add from a rule**, **Add several properties from one rule**). [ADR 0062](../adr/0062-the-template-directory-is-a-repository-held-catalogue-verified-by-rendering.md) records why the Directory is shaped this way.
+
+## Layout
+
+One folder per entry, inside the folder of its kind. The folder name is the entry's slug: lowercase words joined by hyphens.
+
+```text
+docs/template-directory/
+├── README.md                              this guide
+├── profiles/
+│   └── simple-reading-note/
+│       ├── entry.md                       facets and the reader-facing description
+│       ├── zotlit-profile.simple-reading-note.md   the document a reader imports
+│       └── samples.md                     rendered samples, written by the suite
+├── partials/
+│   └── links-row/
+│       ├── entry.md
+│       ├── zotlit-partial.links-row.md
+│       └── samples.md
+├── citations/<slug>/        entry.md · zotlit-citation.md · samples.md
+├── note-names/<slug>/       entry.md · note-name.liquid   · samples.md
+└── properties/<slug>/       entry.md · property.yaml      · samples.md
+```
+
+| Kind | Folder | Artifact | Level |
+| --- | --- | --- | --- |
+| Profile | `profiles/` | `zotlit-profile.<slug>.md`: a Literature Note Profile document | Ready to use |
+| Partial | `partials/` | `zotlit-partial.<slug>.md`: a Shared Partial document; the slug is the partial's name | Customize |
+| Citation text | `citations/` | `zotlit-citation.md`: a Citation Template document | Customize |
+| Note name | `note-names/` | `note-name.liquid`: the Filename Template, exactly as a reader pastes it into **Note name** | Customize |
+| Property | `properties/` | `property.yaml`: one Managed Frontmatter entry, with `key` for a static-key entry or without it for a Spread Entry | Customize |
+
+The kind comes from the folder and the level from the kind. Any other file in an entry folder, or any file outside an entry folder other than this guide, fails the suite.
+
+## The entry file
+
+`entry.md` opens with its metadata as YAML between two `---` lines. The Markdown body below it is the reader-facing description: who the entry is for, what the note or recipe produces, and how to use it.
+
+| Field | Kinds | Required | Value |
+| --- | --- | --- | --- |
+| `tasks` | all | yes | Research tasks the entry serves: `general-reading`, `literature-review`, `close-reading`, `reading-books`, `archival-research`, `teaching`, `writing` |
+| `itemTypes` | all | no | Zotero item types the entry is made for (`book`, `bookSection`, …). Leave it out for any item type |
+| `features` | all | no | What the entry offers: `source-links`, `abstract`, `page-links`, `comments`, `images`, `color-highlights`, `grouped-by-color`, `own-notes`, `prompts`, `properties`, `child-notes`, `related-items`, `block-references`, `tasks`, `citations` |
+| `problems` | all | yes | The problems the entry solves, in the reader's own words, as a reader would search for them |
+| `keywords` | all | no | More search words, including ZotLit v1 and Zotero Integration vocabulary |
+| `recommended` | all | no | `true` for a recommended starting point |
+| `audience` | all | yes | One sentence: who the entry is for |
+| `effort` | all | yes | One sentence: what the entry asks of the reader before it works |
+| `title`, `summary`, `minAppVersion` | recipes | yes | The entry's name, its one-line summary, and the ZotLit version it needs |
+| `context` | partial | yes | The data the partial reads: `note`, `annotation`, or `citation` |
+| `expected` | property | no | Per Directory Sample, the properties the entry writes (see [Property](#property)) |
+
+A Profile entry states its title, summary, and required version once, in its manifest: `name`, `description`, and `minAppVersion`. The partials an entry calls are found from its artifact, directly and through the partials it calls.
+
+The source files in `src/lib/template-directory/` of `apps/docs` own the vocabularies; add a research task or a feature there first.
+
+## Add an entry
+
+### Profile
+
+1. Create `profiles/<slug>/` with `entry.md` and `zotlit-profile.<slug>.md`.
+2. Mint the Profile ID once: twelve characters from the alphabet in `apps/obsidian/src/services/profile/service.ts`. Keep it for every later edition, so a newer edition imports as the same Profile. Change `version` for each edition.
+3. Set `author`, a one-line `description`, `sampleItemType`, `minAppVersion`, and `contract` (the current template contract).
+4. Write the note body in Liquid, with every template tag inside `{% managed %}…{% endmanaged %}`. Text a reader keeps, such as a **My notes** heading, goes outside the block.
+5. Write every property as a JSON-e rule (`value`), with the merge strategy it needs: `replace` for values from Zotero, `append` for lists the reader adds to, `keep` for values the reader changes by hand.
+6. Call partials by name with `{% render "<name>" with zt as zt %}`. Every called partial must be a partial entry.
+7. Run the re-pack command. It writes the manifest's `partials` from the partial entries.
+8. Run the suite with the update flag, and read the new `samples.md` against the description.
+
+### Partial
+
+1. Create `partials/<slug>/` with `entry.md` and `zotlit-partial.<slug>.md`. The slug is the name every caller uses; the plugin's own slot names (`filename`, `note`, `annotation`, `content`, `citation`) are not available.
+2. The artifact is a Shared Partial document: `language: liquid` between two `---` lines, then the source.
+3. Set `context` to the data the partial reads. The suite renders a `note` partial in a Profile's note body and an `annotation` partial in its Annotation Section.
+4. To change a partial, edit its entry, then run the re-pack command: every Profile that calls it gets the new source.
+
+### Property
+
+1. Create `properties/<slug>/` with `entry.md` and `property.yaml`.
+2. `property.yaml` holds one Managed Frontmatter entry: `key` (leave it out for a Spread Entry), `merge`, and `value`, a JSON-e rule.
+3. Under `expected` in `entry.md`, state the result for each Directory Sample that matters, by sample ID, as the properties it writes. A property the mapping leaves out is one the entry makes absent for that sample:
+
+   ```yaml
+   expected:
+     journal-article: { year: 2005 }
+     letter: { year: 1887 }
+   ```
+
+### Citation text and note name
+
+The loader reads both kinds, but the suite does not render them yet and reports `unverified` for each such entry. The ticket that ships the first entry of a kind adds its verification.
+
+## Invariants
+
+The suite fails with a named problem code when an entry breaks one of these rules.
+
+| Rule | Problem code |
+| --- | --- |
+| Entry folders hold only their three files, with lowercase-hyphenated slugs | `unexpected-file`, `missing-file`, `invalid-slug`, `reserved-partial-name` |
+| `entry.md` metadata matches the schema above | `invalid-metadata` |
+| The artifact parses | `invalid-artifact` |
+| A Profile ID is twelve letters or digits and unique in the Directory | `profile-id`, `duplicate-profile-id` |
+| A Profile has no `folder`, `importFolder`, or `citationStyle` binding, and no Imported Note binding | `profile-binding` |
+| A Profile matches only on built-in item types, never on tags, collections, or Library, and never negated | `profile-match` |
+| A Profile targets the current template contract | `profile-contract` |
+| A Profile sets `author`, `description`, `sampleItemType`, and `minAppVersion` | `profile-metadata` |
+| Every template is Liquid | `template-language` |
+| Every property is a JSON-e rule | `property-language` |
+| A Profile body has a managed block, and every template tag sits inside it | `managed-block` |
+| One namespace: every called partial is a partial entry | `unknown-partial` |
+| A Profile packs every partial it calls, byte-identical to the partial entry, and no other | `partial-not-packed`, `packed-partial-differs`, `packed-partial-uncalled` |
+| Every entry renders over every Directory Sample and Sample Annotation with no diagnostics | `render-diagnostic` |
+| Property output has no `null`, empty, `null`/`undefined`/`NaN` text, dangling separator, or label without a value | `property-output` |
+| A property entry writes what its `expected` states | `property-expectation` |
+
+The Profile ID rule covers form and uniqueness only. That an ID never changes between editions is a review rule.
+
+## Directory Samples
+
+Every entry renders over the four Sample Items (`journal-article`, `conference-paper`, `book`, `thesis`) and five items derived from them for types without a Sample Item (`book-section`, `letter`, `manuscript`, `interview`, `document`). A Profile or `annotation` partial also renders over every Sample Annotation. The suite stores the output in each entry's `samples.md`, so a change in any entry's output shows in review. The `file_link` filter renders nothing in samples, because the Directory Samples have no files in a vault; `plain-annotation-quote` shows how to fall back to plain text, such as `p. 5`.
+
+## Commands
+
+Run these from the repository root.
+
+| Task | Command |
+| --- | --- |
+| Verify the Directory | `pnpm exec turbo run test --filter=@zotlit/docs` |
+| Update `samples.md` after an intended change | `pnpm exec turbo run test --filter=@zotlit/docs -- src/lib/template-directory -u` |
+| Re-pack every Profile entry from the partial entries | `pnpm exec turbo run template-directory:repack --filter=@zotlit/docs` |
+
+After a partial changes, the suite fails with `packed-partial-differs` until you re-pack. Re-pack, then update the samples, then review the sample diff.
