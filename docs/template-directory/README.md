@@ -90,6 +90,8 @@ The source files in `src/lib/template-directory/` of `apps/docs` own the vocabul
      letter: { year: 1887 }
    ```
 
+4. When the value depends on data no Directory Sample holds, such as an article's volume and issue, state those cases in `src/lib/template-directory/property-entries.test.ts` of `apps/docs`. That file also renders every property entry over a title with a colon and quotation marks, and checks that the YAML reads back.
+
 ### Citation text and note name
 
 The loader reads both kinds, but the suite does not render them yet and reports `unverified` for each such entry. The ticket that ships the first entry of a kind adds its verification.
