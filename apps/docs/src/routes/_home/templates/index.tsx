@@ -107,7 +107,7 @@ function DirectoryIndex() {
         <div className="relative">
           <Search
             aria-hidden
-            className="pointer-events-none absolute top-1/2 left-3.5 size-5 -translate-y-1/2 text-fd-muted-foreground"
+            className="pointer-events-none absolute start-3.5 top-1/2 size-5 -translate-y-1/2 text-fd-muted-foreground"
           />
           <input
             id="directory-search"
@@ -118,7 +118,7 @@ function DirectoryIndex() {
               setTyped(event.target.value);
               setQuery({ ...query, text: event.target.value });
             }}
-            className="min-h-12 w-full rounded-none border border-fd-border bg-fd-card py-2.5 pr-3 pl-11 text-base placeholder:text-fd-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring"
+            className="min-h-12 w-full rounded-none border border-fd-border bg-fd-card py-2.5 ps-11 pe-3 text-base placeholder:text-fd-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring"
           />
         </div>
       </div>

@@ -6,9 +6,11 @@ import { prerenderPages } from "@/lib/prerender-pages";
 import { searchDirectory } from "./search";
 import { directorySite } from "./site-data";
 import {
+  edit,
   FIXTURE_HEADING,
   FIXTURE_PROFILE,
   FIXTURE_PROPERTY,
+  FIXTURE_PROPERTY_FILE,
   fixtureFiles,
   HEADING_SOURCE,
   PROFILE_SOURCE,
@@ -94,6 +96,37 @@ describe("an entry page", () => {
       file: { name: "zotlit-partial.fixture-heading.md" },
       details: { kind: "partial", context: "note" },
     });
+  });
+
+  it("shows the line a Profile writes to call a partial, or the call its entry states", () => {
+    expect(page(FIXTURE_HEADING).details).toEqual({
+      kind: "partial",
+      context: "note",
+      call: '{% render "fixture-heading" with zt as zt %}',
+    });
+    const stated = directorySite(
+      verifyTemplateDirectory(
+        edit(fixtureFiles(), `${FIXTURE_HEADING}/entry.md`, [
+          "context: note\n",
+          'context: note\ncall: |\n  {% render "fixture-heading" with zt as zt, level: 3 -%}\n',
+        ]),
+      ),
+    ).entries.find(({ id }) => id === FIXTURE_HEADING)!;
+    expect(stated.details).toMatchObject({
+      call: '{% render "fixture-heading" with zt as zt, level: 3 -%}',
+    });
+  });
+
+  it("shows a property the reader fills in as empty", () => {
+    const keep = directorySite(
+      verifyTemplateDirectory(
+        edit(fixtureFiles(), FIXTURE_PROPERTY_FILE, [
+          'value: {"$if": "zt.date && zt.date.year", "then": {"$eval": "zt.date.year"}}\nmerge: replace\n',
+          "value: null\nmerge: keep\n",
+        ]),
+      ),
+    ).entries.find(({ id }) => id === FIXTURE_PROPERTY)!;
+    expect(keep.notes[0]?.properties).toEqual([{ key: "year", value: null }]);
   });
 
   it("copies a property's rule as the JSON the rule editor shows, and names the property and its update behavior", () => {

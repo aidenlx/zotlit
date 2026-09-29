@@ -47,7 +47,12 @@ export interface SiteEntry extends IndexedEntry {
 /** What the page needs to say where a recipe goes. */
 export type EntryDetails =
   | { readonly kind: "profile" }
-  | { readonly kind: "partial"; readonly context: PartialContext }
+  | {
+      readonly kind: "partial";
+      readonly context: PartialContext;
+      /** The Liquid a Profile writes to call the partial. */
+      readonly call: string;
+    }
   | { readonly kind: "citation" }
   | { readonly kind: "note-name" }
   | {
@@ -73,8 +78,11 @@ export interface NoteSampleView {
 
 export interface SampleProperty {
   readonly key: string;
-  /** The value as the note shows it; a list shows each item on its own. */
-  readonly value: string | readonly string[];
+  /**
+   * The value as the note shows it; a list shows each item on its own, and
+   * null is a property the reader fills in.
+   */
+  readonly value: string | readonly string[] | null;
 }
 
 /** One Sample Annotation, as the entry's annotation format renders it. */

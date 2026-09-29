@@ -53,7 +53,7 @@ export function StartHere({ entries }: { entries: readonly IndexedEntry[] }) {
             >
               <span
                 aria-hidden
-                className="absolute -top-1.75 right-6 h-9.5 w-5 bg-fd-primary [clip-path:polygon(0_0,100%_0,100%_100%,50%_74%,0_100%)]"
+                className="absolute end-6 -top-1.75 h-9.5 w-5 bg-fd-primary [clip-path:polygon(0_0,100%_0,100%_100%,50%_74%,0_100%)]"
               />
               <span className="font-mono text-xs font-semibold tracking-[0.12em] text-fd-muted-foreground uppercase">
                 {KIND_LABEL[entry.kind]()}

@@ -64,8 +64,7 @@ export function EntryUse({
         </Steps>
       );
     case "partial": {
-      const call = `{% render "${slug}" with zt as zt %}`;
-      const context = entry.details.context;
+      const { context, call } = entry.details;
       return (
         <>
           <Steps>
@@ -112,7 +111,7 @@ export function EntryUse({
                 />
               )}
               <CodeBlock className="not-prose">
-                <Pre>{call}</Pre>
+                <Pre className="px-4">{call}</Pre>
               </CodeBlock>
             </li>
           </Steps>
