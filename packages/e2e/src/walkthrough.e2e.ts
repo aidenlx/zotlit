@@ -33,6 +33,10 @@ const browserWaits = `
     }
     throw lastError;
   };
+  const pressKey=async(debugger_,key,code)=>{
+    await debugger_.sendCommand('Input.dispatchKeyEvent',{type:'keyDown',key,code:key,windowsVirtualKeyCode:code});
+    await debugger_.sendCommand('Input.dispatchKeyEvent',{type:'keyUp',key,code:key,windowsVirtualKeyCode:code});
+  };
 `;
 
 describe.skipIf(!reachable)("Walkthrough regressions", () => {
@@ -59,6 +63,82 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         `String(Array.from(document.querySelectorAll('.status-bar [aria-label]')).some(el=>el.getAttribute('aria-label')==='Uninitialized'))`,
       ),
     ).toBe("false");
+  });
+
+  it("keeps the citation suggester closed while entering a page locator", async () => {
+    await obEval(
+      vaultId,
+      `(async()=>{
+        const file=await app.vault.create('Citation locator.md','');
+        const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf,{focus:true});window.focus();leaf.view.editor.focus();
+        await require('@electron/remote').getCurrentWebContents().debugger.sendCommand('Input.insertText',{text:'[@ten'});
+        return true;
+      })()`,
+    );
+    const suggester =
+      "app.workspace.editorSuggest.suggests.find(suggest=>suggest.constructor.name==='CitationEditorSuggest')";
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String((${suggester}).isOpen&&(${suggester}).suggestEl.textContent.includes('Ten Simple Rules for Better Figures'))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(async()=>{${browserWaits}
+        const debugger_=activeWindow.require('@electron/remote').getCurrentWebContents().debugger;
+        await pressKey(debugger_,'Enter',13);return true;
+      })()`,
+    );
+    const editor =
+      "app.workspace.getLeavesOfType('markdown').find(leaf=>leaf.view.file?.path==='Citation locator.md').view.editor";
+    expect(
+      await obEvalUntil(vaultId, `(${editor}).getValue()`, {
+        expected: "[@rougier2014]",
+      }),
+    ).toBe(true);
+    const result = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{
+          ${browserWaits}
+          const debugger_=require('@electron/remote').getCurrentWebContents().debugger;
+          const editor=${editor},suggest=${suggester},manager=app.workspace.editorSuggest;
+          const originalTrigger=manager.trigger,originalShow=suggest.showSuggestions;
+          const updated=Promise.withResolvers();
+          using hooks=new DisposableStack();
+          hooks.defer(()=>{manager.trigger=originalTrigger;suggest.showSuggestions=originalShow;});
+          hooks.adopt(setTimeout(()=>updated.reject(new Error('Native citation suggestion update did not finish')),5000),clearTimeout);
+          let triggering=false,shown=false;
+          const entered=()=>editor.getValue()==='[@rougier2014, p]'&&editor.getCursor().ch===16;
+          manager.trigger=function(...args){
+            const relevant=args[0]===editor&&entered();
+            if(relevant)triggering=true;
+            const result=originalTrigger.apply(this,args);
+            if(relevant){triggering=false;if(suggest.context===null||shown)updated.resolve();}
+            return result;
+          };
+          suggest.showSuggestions=function(...args){
+            const result=originalShow.apply(this,args);
+            if(entered()&&suggest.context?.query==='rougier2014, p'){
+              shown=true;if(!triggering)updated.resolve();
+            }
+            return result;
+          };
+          await pressKey(debugger_,'ArrowLeft',37);
+          await debugger_.sendCommand('Input.insertText',{text:', p'});
+          await updated.promise;
+          const open=suggest.isOpen,before=editor.getValue();
+          await pressKey(debugger_,'Enter',13);
+          return JSON.stringify({open,before,after:editor.getValue()});
+        })()`,
+      ),
+    );
+    expect(result.before).toBe("[@rougier2014, p]");
+    expect(result.open).toBe(false);
+    expect(result.after).toContain(", p");
   });
 
   it("refreshes and closes citation settings without cleanup errors", async () => {

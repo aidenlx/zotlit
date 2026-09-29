@@ -9,6 +9,7 @@ import type {
 } from "obsidian";
 
 import type { CitationVariant } from "@zotlit/db";
+import { scanPandocCitations } from "@zotlit/templates/pandoc-citation";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
@@ -59,7 +60,13 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     const line = editor.getLine(cursor.line);
     const atTrigger =
       this.#deps.settings.current?.["citation.at-trigger"] ?? false;
-    const trigger = resolveCitationTrigger(line, cursor.ch, atTrigger);
+    const trigger = resolveCitationTrigger(line, cursor.ch, {
+      atTrigger,
+      isKnownCitekey: (key) => {
+        const resolved = this.#deps.citationIndex.resolveCitekey(key);
+        return resolved?.kind === "unique" || resolved?.kind === "ambiguous";
+      },
+    });
     if (!trigger) return null;
 
     this.#variant = trigger.variant;
@@ -221,18 +228,31 @@ export interface CitationTrigger {
  * what query. Pure decision core for {@link CitationEditorSuggest.onTrigger}.
  * The Bracket Trigger (`[@`/`【@`, always on) is tried first; the At Trigger
  * (bare `@` at a word boundary) is only consulted when it doesn't match and
- * `atTrigger` is enabled.
+ * `atTrigger` is enabled. A comma after a known key starts locator editing;
+ * other queries keep their title-search punctuation and spaces.
  */
 export function resolveCitationTrigger(
   line: string,
   ch: number,
-  atTrigger: boolean,
+  {
+    atTrigger,
+    isKnownCitekey = () => false,
+  }: { atTrigger: boolean; isKnownCitekey?: (key: string) => boolean },
 ): CitationTrigger | null {
   const beforeCursor = line.slice(0, ch);
 
   const bracketMatch = TRIGGER.exec(beforeCursor);
   if (bracketMatch) {
     const raw = bracketMatch[1] ?? "";
+    const source = `@${raw}`;
+    const key = scanPandocCitations(source)[0]?.items[0];
+    if (
+      key?.start === 0 &&
+      source.slice(key.end).trimStart().startsWith(",") &&
+      isKnownCitekey(key.citationKey)
+    ) {
+      return null;
+    }
     const alternate = raw.endsWith("/");
     return {
       start: bracketMatch.index,
