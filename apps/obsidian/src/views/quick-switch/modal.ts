@@ -1,4 +1,4 @@
-import { Keymap, Platform, SuggestModal } from "obsidian";
+import { Keymap, MarkdownView, Platform, SuggestModal } from "obsidian";
 import type { PaneType, TFile } from "obsidian";
 
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
@@ -108,11 +108,21 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
   ): Promise<void> {
     if (!file) return;
 
-    await this.#deps.app.workspace.openLinkText(
-      file.path,
-      "",
-      Keymap.isModEvent(evt),
-      { active: true },
-    );
+    const { workspace } = this.#deps.app;
+    const newPane = Keymap.isModEvent(evt);
+    if (!newPane) {
+      const existing = workspace
+        .getLeavesOfType("markdown")
+        .find(
+          (leaf) =>
+            leaf.view instanceof MarkdownView && leaf.view.file === file,
+        );
+      if (existing) {
+        await workspace.revealLeaf(existing);
+        workspace.setActiveLeaf(existing, { focus: true });
+        return;
+      }
+    }
+    await workspace.openLinkText(file.path, "", newPane, { active: true });
   }
 }

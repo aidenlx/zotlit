@@ -1,5 +1,11 @@
-import { Keymap, Platform } from "obsidian";
-import type { App, Instruction, Modifier, TFile } from "obsidian";
+import { Keymap, MarkdownView, Platform } from "obsidian";
+import type {
+  App,
+  Instruction,
+  Modifier,
+  TFile,
+  WorkspaceLeaf,
+} from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -260,7 +266,12 @@ describe("QuickSwitchModal Profile creation", () => {
             frontmatter: { "zotlit-profile": `Books (${books})` },
           }),
         },
-        workspace: { openLinkText },
+        workspace: {
+          openLinkText,
+          getLeavesOfType: vi.fn((): WorkspaceLeaf[] => []),
+          revealLeaf: vi.fn(async () => {}),
+          setActiveLeaf: vi.fn(),
+        },
       },
       noteIndex: {
         whenIndexed: async () => {},
@@ -311,6 +322,40 @@ describe("QuickSwitchModal Profile creation", () => {
     expect(deps.noteFeature.resolveCreationProfile).not.toHaveBeenCalled();
     expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
   });
+
+  it.each([false, true])(
+    "honors the new-pane modifier when the resolved note is already open (%s)",
+    async (newPane) => {
+      const file = { path: "Books/Existing.md" } as TFile;
+      const { modal, deps, openLinkText } = creationDeps(file);
+      const leaf = {
+        view: Object.assign(new MarkdownView({} as WorkspaceLeaf), { file }),
+      } as unknown as WorkspaceLeaf;
+      deps.app.workspace.getLeavesOfType.mockReturnValue([leaf]);
+      using _mod = vi.spyOn(Keymap, "isModEvent").mockReturnValue(newPane);
+
+      await modal.onChooseSuggestion(
+        { item: { indexedKey: "PAPER234" } } as never,
+        {} as KeyboardEvent,
+      );
+
+      if (newPane) {
+        expect(openLinkText).toHaveBeenCalledWith(file.path, "", true, {
+          active: true,
+        });
+        expect(deps.app.workspace.revealLeaf).not.toHaveBeenCalled();
+      } else {
+        expect(deps.app.workspace.revealLeaf).toHaveBeenCalledExactlyOnceWith(
+          leaf,
+        );
+        expect(deps.app.workspace.setActiveLeaf).toHaveBeenCalledWith(leaf, {
+          focus: true,
+        });
+        expect(openLinkText).not.toHaveBeenCalled();
+      }
+      expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
+    },
+  );
 
   it("passes prepared rows and the resolved selection to the picker and cancels silently", async () => {
     const { modal, deps, books, preview, create, openLinkText } =
