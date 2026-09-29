@@ -216,6 +216,78 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       ),
     ).toBe("false");
   });
+  it("keeps Annotation fields and preview when Customize reopens its workbench", async () => {
+    await obEval(
+      vaultId,
+      `(async()=>{
+        const file=await app.vault.create('Reopen workbench.md','---\\nzotero-key: DMRGRART\\n---\\n# Workbench context');
+        const leaf=app.workspace.getLeaf('tab');
+        await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;
+      })()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(app.metadataCache.getFileCache(app.vault.getFileByPath('Reopen workbench.md'))?.frontmatter?.['zotero-key']==='DMRGRART')`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `app.commands.executeCommandById('zotlit:customize-note-template');true`,
+    );
+    const editor =
+      "app.workspace.getLeavesOfType('zotlit-template-workbench')[0]?.view";
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(!!(${editor})?.contentEl.querySelector('[role="tab"]'))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await keepRendering(vaultId);
+    await obEval(
+      vaultId,
+      `Array.from((${editor}).contentEl.querySelectorAll('[role="tab"]')).find(tab=>tab.textContent==='Annotation').click();true`,
+    );
+    const contexts = `(()=>({
+      tab:(${editor}).store.getState().tab,
+      editor:(${editor}).store.getState().root,
+      preview:app.workspace.getLeavesOfType('zotlit-note-preview')[0]?.view.getState().root,
+      fields:app.workspace.getLeavesOfType('zotlit-template-data-explorer')[0]?.view.getState().root
+    }))()`;
+    const expected = {
+      tab: "annotation",
+      editor: "annotation",
+      preview: "annotation",
+      fields: "annotation",
+    };
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(JSON.stringify(${contexts})===${JSON.stringify(JSON.stringify(expected))})`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(async()=>{
+        const note=app.workspace.getLeavesOfType('markdown').find(leaf=>leaf.view.file?.path==='Reopen workbench.md');
+        await app.workspace.revealLeaf(note);app.workspace.setActiveLeaf(note,{focus:true});
+        return app.commands.executeCommandById('zotlit:customize-note-template');
+      })()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(app.workspace.activeLeaf===(${editor}).leaf)`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(
+      JSON.parse(await obEval(vaultId, `JSON.stringify(${contexts})`)),
+    ).toEqual(expected);
+  });
 
   it("shows the initial Add profile requirement as a neutral folder hint", async () => {
     await obEval(
