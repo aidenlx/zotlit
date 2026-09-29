@@ -106,6 +106,55 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     expect(result.errors).toEqual([]);
   });
 
+  it("updates the active literature note from its editor, title, and Properties", async () => {
+    const initial =
+      "---\nzotero-key: DMRGRART\n---\n%%zt-managed%%\nstale\n%%/zt-managed%%";
+    await obEval(
+      vaultId,
+      `(async()=>{
+        const file=await app.vault.create('Focus update.md',${JSON.stringify(initial)});
+        const leaf=app.workspace.getLeaf('tab');
+        await leaf.openFile(file,{state:{mode:'source',source:false}});
+        app.workspace.setActiveLeaf(leaf,{focus:true});return true;
+      })()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(app.metadataCache.getFileCache(app.vault.getFileByPath('Focus update.md'))?.frontmatter?.['zotero-key']==='DMRGRART')`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    for (const selector of [
+      ".cm-content",
+      ".inline-title",
+      ".metadata-property-key-input",
+    ]) {
+      const result = JSON.parse(
+        await obEval(
+          vaultId,
+          `(async()=>{
+            ${browserWaits}
+            const view=app.workspace.getActiveFileView(), editor=view.editor;
+            editor.setValue(editor.getValue().replace('%%zt-managed%%','%%zt-managed%%\\nFOCUS_UPDATE_SENTINEL'));
+            const target=view.containerEl.querySelector(${JSON.stringify(selector)});
+            if(!target)throw Error('Missing focus target');
+            target.focus();
+            const focused=target===target.ownerDocument.activeElement;
+            const accepted=app.commands.executeCommandById('zotlit:update-note');
+            await waitFor(()=>editor.getValue().includes('FOCUS_UPDATE_SENTINEL'),false,'Literature note update');
+            return JSON.stringify({focused,accepted,updated:!editor.getValue().includes('FOCUS_UPDATE_SENTINEL')});
+          })()`,
+        ),
+      );
+      expect(result, selector).toEqual({
+        focused: true,
+        accepted: true,
+        updated: true,
+      });
+    }
+  });
+
   it("finds a paper in Choose item and previews its callouts with native paragraph styling", async () => {
     await obEval(
       vaultId,

@@ -291,7 +291,7 @@ function reimportNoteNotice(result: ReimportResult): string | undefined {
 }
 
 /**
- * Register an editor command that updates the active literature note at the
+ * Register a command that updates the active literature note at the
  * given {@link UpdateScope}.
  */
 function addUpdateCommand(
@@ -302,7 +302,8 @@ function addUpdateCommand(
   plugin.addCommand({
     id: command.id,
     name: command.name,
-    editorCheckCallback(checking, _editor, ctx) {
+    checkCallback(checking) {
+      const ctx = { file: deps.app.workspace.getActiveFile() };
       return withLiteratureNote(plugin, { ctx, checking }, (file, itemKey) => {
         void handleUpdateNote(deps, file, { itemKey, scope: command.scope });
       });
@@ -404,7 +405,7 @@ function batchUpdateAllNotice(result: BatchUpdateResult): string | undefined {
 
 function withLiteratureNote(
   plugin: Pick<Plugin, "app">,
-  options: { ctx: MarkdownView | MarkdownFileInfo; checking: boolean },
+  options: { ctx: Pick<MarkdownFileInfo, "file">; checking: boolean },
   run: (file: TFile, itemKey: string) => void,
 ): boolean {
   const file = options.ctx.file;
