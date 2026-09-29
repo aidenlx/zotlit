@@ -178,6 +178,35 @@ The changelog's sibling in the `_home` route group:
   mono-uppercase meta line, hairline, then `ztProse` body.
 - **Post tail**: `FooterCards` prev/next, then comments (Giscus).
 
+### Template Directory (`/templates`)
+
+The blog's sibling in the `_home` route group, built around finding a note
+that fits a research task:
+
+- **Index**: a two-column hero like the landing's: orange mono-uppercase
+  eyebrow, serif headline, and italic lede on the left, the recommended entries
+  on the right: each recommended profile as a landing-style paper card (hard
+  offset shadow, accent bookmark tab), and the other recommended entries as
+  square serif title links under a mono-uppercase kind label, beside the card
+  from `sm` to `lg`. A square search box leads a two-column body: a facet rail of
+  mono-uppercase facet headings over sans checkbox rows with mono counts, and
+  the results grouped by level under serif group headings, each row a mono kind
+  label, serif title and summary, and a muted facet line. Under `lg` the rail
+  folds behind a disclosure button, lays its facets out in two columns, and
+  closes with an ink "Show N entries" button. Closes on `SiteFooter`.
+- **Entry head**: `← Template directory` crumb, mono-uppercase kind and level
+  line, serif title, italic summary held to 60ch, mono-uppercase version line,
+  then the square ink copy button (the landing's "Get started" look) beside an
+  outline download button.
+- **Entry body**: audience and effort as accent-barred facts in serif, the
+  entry's description and the "How to use it" steps in `ztProse` held to 72ch,
+  and an aside rail of mono-uppercase headings over the entry's facets and its
+  problems as serif italic quotes (below the body under `lg`, after a hairline).
+  The samples take the full column: paper sheets in the Workbench reading view
+  with callouts in Obsidian's built-in callout colors; a property recipe shows a
+  table of sample items when it writes up to three properties, and one sheet per
+  sample item when it writes more.
+
 ### Docs content column
 
 - Title: serif, medium weight, balanced.

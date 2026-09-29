@@ -18,6 +18,8 @@ import {
   markdownSections,
   suffixEditionUrl,
 } from "./markdown-routes.js";
+import { DIRECTORY_PATH, entryPath } from "./template-directory/site.js";
+import type { DirectorySite } from "./template-directory/site.js";
 
 /** A page for `tanstackStart({ pages })` to prerender. */
 interface PrerenderPage {
@@ -64,10 +66,12 @@ function machineRoutePages(
 
 /**
  * The HTML pages: the landing, community, and Workbench pages, the whole docs
- * tree, the blog and its posts, and the changelog index with its versions.
+ * tree, the blog and its posts, the changelog index with its versions, and the
+ * Template Directory with a page per entry.
  */
 function htmlPages(
   content: Record<MarkdownSection, { slugs: string[] }[]>,
+  directory: Pick<DirectorySite, "entries">,
 ): PrerenderPage[] {
   const docs = content.docs.map((entry) => ({
     path: `/${["docs", ...entry.slugs].join("/")}`,
@@ -88,15 +92,21 @@ function htmlPages(
     ...changelog,
     { path: "/blog" },
     { path: "/changelog" },
+    { path: DIRECTORY_PATH },
+    ...directory.entries.map(({ id }) => ({ path: entryPath(id) })),
   ];
 }
 
 /**
  * Every route the build prerenders into the client output.
  * @param packageRoot the app's own root, which `vite.config.ts` owns.
+ * @param directory the Template Directory as the build read it.
  */
-export function prerenderPages(packageRoot: string): PrerenderPage[] {
+export function prerenderPages(
+  packageRoot: string,
+  directory: Pick<DirectorySite, "entries">,
+): PrerenderPage[] {
   const content = scanContent(packageRoot);
 
-  return [...machineRoutePages(content), ...htmlPages(content)];
+  return [...machineRoutePages(content), ...htmlPages(content, directory)];
 }

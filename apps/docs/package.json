@@ -83,6 +83,7 @@
     "@zotlit/paraglide-vite": "workspace:*",
     "@zotlit/scripts": "workspace:*",
     "@zotlit/templates": "workspace:*",
+    "@zotlit/zotero-types": "workspace:*",
     "ajv": "catalog:",
     "cross-env": "catalog:",
     "fflate": "catalog:",
