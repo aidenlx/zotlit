@@ -15,6 +15,7 @@ import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { WelcomeActionsContext } from "./actions";
 import type { WelcomeActions } from "./actions";
+import { createCompanionRefresh } from "./companion-refresh";
 import { readConnectionStatus, readConnectionSync } from "./connection";
 import { templateMigrationNotice } from "./migration-notice";
 import type { SetupActions } from "./setup-actions";
@@ -135,9 +136,16 @@ export class WelcomeView extends ItemView {
       if (!this.#closed) refreshNotes();
     });
 
-    // The reader installs the Companion in Zotero, so the add-on list is read
-    // again whenever they may be back from it.
-    const refreshCompanion = (): void => void this.#loadCompanion();
+    // Startup may precede Zotero's add-on list. Later installs still refresh
+    // when the reader returns from Zotero or the connected services change.
+    const companion = stack.use(
+      createCompanionRefresh({
+        readInstalled: () => this.#deps.zoteroPref.companionInstalled(),
+        publish: (companionInstalled) =>
+          this.#store.setState({ companionInstalled }),
+      }),
+    );
+    const refreshCompanion = (): void => void companion.refresh();
     stack.defer(this.#deps.zoteroPref.on("changed", refreshCompanion));
     stack.defer(this.#deps.db.on("changed", refreshCompanion));
     const win = this.containerEl.win;
@@ -199,11 +207,6 @@ export class WelcomeView extends ItemView {
     this.#stack = undefined;
     this.#root?.unmount();
     this.#root = null;
-  }
-
-  async #loadCompanion(): Promise<void> {
-    const companionInstalled = await this.#deps.zoteroPref.companionInstalled();
-    if (!this.#closed) this.#store.setState({ companionInstalled });
   }
 
   async #loadConnection(): Promise<void> {

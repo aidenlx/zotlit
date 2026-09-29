@@ -66,7 +66,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     ).toBe("false");
   });
 
-  it("shows Companion installation as complete without an install action", async () => {
+  it("detects a late Companion installation without another focus event", async () => {
     const m = await import("@obsidian-messages");
     const profilePath = join(fixture, "zotero-profile");
     expect(
@@ -80,12 +80,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     await writeFile(addonsPath, JSON.stringify({ addons: [] }), { flag: "wx" });
     cleanup.defer(() => rm(addonsPath));
     const step = `(()=>{const content=app.workspace.getLeavesOfType('zotlit-welcome')[0]?.view.contentEl;const heading=[...content?.querySelectorAll('[role=heading]')??[]].find(el=>[${JSON.stringify(m.welcome_step_companion_title())},${JSON.stringify(m.welcome_step_companion_installed_title())}].includes(el.textContent));return heading?.parentElement;})()`;
-    const refresh = `(()=>{const content=app.workspace.getLeavesOfType('zotlit-welcome')[0].view.contentEl;const win=content.ownerDocument.defaultView;win.dispatchEvent(new win.Event('focus'));return true;})()`;
     await obEval(
       vaultId,
-      "app.commands.executeCommandById('zotlit:open-welcome-view');true",
+      "for(const leaf of app.workspace.getLeavesOfType('zotlit-welcome'))leaf.detach();app.commands.executeCommandById('zotlit:open-welcome-view');true",
     );
-    await obEval(vaultId, refresh);
     expect(
       await obEvalUntil(
         vaultId,
@@ -93,20 +91,22 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         { expected: "true" },
       ),
     ).toBe(true);
-    await writeFile(
-      addonsPath,
-      JSON.stringify({ addons: [{ id: "zotlit@aidenlx.site", active: true }] }),
-    );
-    await obEval(vaultId, refresh);
     const result = JSON.parse(
       await obEval(
         vaultId,
         `(async()=>{
       ${browserWaits}
       const step=()=>${step};
+      using events=new DisposableStack();
+      const win=step().ownerDocument.defaultView;
+      let focusEvents=0;
+      const onFocus=()=>focusEvents++;
+      win.addEventListener('focus',onFocus);
+      events.defer(()=>win.removeEventListener('focus',onFocus));
+      await require('node:fs/promises').writeFile(${JSON.stringify(addonsPath)},${JSON.stringify(JSON.stringify({ addons: [{ id: "zotlit@aidenlx.site", active: true }] }))});
       await waitFor(()=>!!step()?.previousElementSibling.querySelector('.lucide-check'),true,'Installed Companion step');
       const current=step();
-      return JSON.stringify({title:current.querySelector('[role=heading]').textContent,description:current.querySelector('p').textContent,installAction:!!current.querySelector('button')});
+      return JSON.stringify({title:current.querySelector('[role=heading]').textContent,description:current.querySelector('p').textContent,installAction:!!current.querySelector('button'),focusEvents});
     })()`,
       ),
     );
@@ -114,6 +114,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       title: m.welcome_step_companion_installed_title(),
       description: m.settings_db_companion_desc(),
       installAction: false,
+      focusEvents: 0,
     });
   });
 
