@@ -1020,6 +1020,7 @@
   "pandoc_export_style_changed": "Only this export uses this style. The note keeps {style}.",
   "pandoc_export_error_style": "Zotero cannot supply {style}. Install it in Zotero, or choose another style for this export.",
   "pandoc_export_error_profile_style": "Install {style} in Zotero, or choose another citation and references style for this profile.",
+  "pandoc_export_destination_in_vault": "{path} ({vault} vault)",
   "pandoc_export_destination_name": "Save to",
   "pandoc_export_destination_browse": "Choose…",
   "pandoc_export_destination_title": "Save the exported document",

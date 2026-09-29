@@ -884,6 +884,7 @@
   "pandoc_export_style_from_vault": "仓库设置指定了该样式。",
   "pandoc_export_style_changed": "该样式仅用于本次导出。笔记仍使用 {style}。",
   "pandoc_export_error_style": "Zotero 无法提供 {style}。请在 Zotero 中安装该样式，或为本次导出选择其他样式。",
+  "pandoc_export_destination_in_vault": "{path}（仓库：{vault}）",
   "pandoc_export_destination_name": "保存到",
   "pandoc_export_destination_browse": "选择…",
   "pandoc_export_destination_title": "保存导出的文档",

@@ -6,7 +6,7 @@ import {
   settingsOf,
   TFile,
 } from "@mock/obsidian";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { App, Command, Plugin } from "obsidian";
@@ -138,6 +138,7 @@ function openVault({
     metadataCache: { getFileCache: () => ({ frontmatter }) },
     vault: {
       adapter: { getBasePath: () => basePath },
+      getName: () => "Research",
       cachedRead: () => Promise.resolve("[[Doe 2020]]\n"),
     },
   } as unknown as App;
@@ -257,7 +258,12 @@ describe("the Export note with citations command", () => {
 
     expect(dialog.title).toBe(m.pandoc_export_title());
     expect(dialog.style.getValue()).toBe(NOTE_STYLE.id);
-    expect(dialog.destination()).toBe("/vault/draft.docx");
+    expect(dialog.destination()).toBe(
+      m.pandoc_export_destination_in_vault({
+        path: "draft.docx",
+        vault: "Research",
+      }),
+    );
   });
 
   it("opens the dialog on the vault style where the note names none", async () => {
@@ -277,7 +283,12 @@ describe("the Export note with citations command", () => {
     const dialog = await vault.openDialog();
     dialog.format.choose("html");
 
-    expect(dialog.destination()).toBe("/vault/draft.html");
+    expect(dialog.destination()).toBe(
+      m.pandoc_export_destination_in_vault({
+        path: "draft.html",
+        vault: "Research",
+      }),
+    );
   });
 
   it("converts nothing where the user dismissed the dialog", async () => {
@@ -375,6 +386,7 @@ describe("the Export note with citations command", () => {
         }),
       ),
     );
+    expect(await readFile(join(basePath, "draft.docx"))).toHaveLength(0);
   });
 
   it("stops rather than exporting in another style where Zotero lacks the vault style", async () => {

@@ -1,8 +1,9 @@
 // The built-in export's one dialog: output format, CSL style, and destination.
 
+import { homedir } from "node:os";
 import { extname } from "node:path";
 import { Modal, Setting } from "obsidian";
-import type { App } from "obsidian";
+import type { App, FileSystemAdapter } from "obsidian";
 
 import {
   citationStyleLabel,
@@ -16,6 +17,8 @@ import type { StyleSource } from "@/services/pandoc/document-presentation";
 import type { DocumentFormat } from "@/services/pandoc/engine";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import { addStyleDropdown } from "@/views/style-dropdown";
+
+import { exportDestinationLocation } from "./destination";
 
 const logger = getLogger(["views", "pandoc-export"]);
 
@@ -125,7 +128,18 @@ export function openPandocExportModal(
         .onClick(() => void browse()),
     );
   const showDestination = (): void => {
-    destinationSetting.setDesc(destination());
+    const location = exportDestinationLocation(destination(), {
+      vaultPath: (app.vault.adapter as FileSystemAdapter).getBasePath(),
+      homePath: homedir(),
+    });
+    destinationSetting.setDesc(
+      location.kind === "vault"
+        ? m.pandoc_export_destination_in_vault({
+            path: location.path,
+            vault: app.vault.getName(),
+          })
+        : location.path,
+    );
   };
   showDestination();
 
