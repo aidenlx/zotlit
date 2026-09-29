@@ -1,0 +1,11 @@
+key: collections
+merge: replace
+value:
+  {
+    "$if": "len(zt.collections) > 0",
+    "then":
+      {
+        "$map": { "$eval": "zt.collections" },
+        "each(collection)": { "$eval": "join(collection.path, '/')" },
+      },
+  }
