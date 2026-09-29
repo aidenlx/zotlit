@@ -5,53 +5,53 @@
 ## Journal article
 
 ```yaml
-rating: 0
+rating:
 ```
 
 ## Conference paper
 
 ```yaml
-rating: 0
+rating:
 ```
 
 ## Book
 
 ```yaml
-rating: 0
+rating:
 ```
 
 ## Thesis
 
 ```yaml
-rating: 0
+rating:
 ```
 
 ## Book chapter
 
 ```yaml
-rating: 0
+rating:
 ```
 
 ## Letter
 
 ```yaml
-rating: 0
+rating:
 ```
 
 ## Manuscript
 
 ```yaml
-rating: 0
+rating:
 ```
 
 ## Interview
 
 ```yaml
-rating: 0
+rating:
 ```
 
 ## Document
 
 ```yaml
-rating: 0
+rating:
 ```
