@@ -17,6 +17,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { yieldToMain } from "@/lib/yield-to-main";
 import type {
   CitedByGroup,
@@ -365,6 +366,7 @@ describe("CitedBy", () => {
       "Open a literature note to see citations.",
     );
     expect(container.querySelector(".pane-empty")).toBeNull();
+    expect(container.querySelector("[data-cited-by-stats]")).toBeNull();
   });
 
   it("keeps partial results visible while indexing", async () => {
@@ -435,6 +437,9 @@ describe("CitedBy", () => {
 
     expect(container.querySelector("[data-cited-by-empty]")?.textContent).toBe(
       "No notes cite this literature note.",
+    );
+    expect(container.querySelector("[data-cited-by-stats]")?.textContent).toBe(
+      `${m.cited_by_note_count({ count: 0 })} · ${m.cited_by_occurrence_count({ count: 0 })}`,
     );
   });
 
