@@ -5,8 +5,41 @@ import {
   StateField,
   Transaction,
 } from "@codemirror/state";
+import type { Text } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import type { Editor, MarkdownFileInfo } from "obsidian";
+
+/**
+ * Multi-line text, such as a rendered callout, is a block: it gets the line
+ * breaks it needs to stand apart from the text around the range. Without them
+ * a callout dropped at the end of a sentence joins that sentence's line.
+ * One-line text stays inline.
+ */
+function placeText(
+  doc: Text,
+  { from, to }: { from: number; to: number },
+  text: string,
+): string {
+  const block = text.replaceAll(/^\n+|\n+$/g, "");
+  if (!block.includes("\n")) return text;
+  const isBlank = (line: number) =>
+    line < 1 || line > doc.lines || doc.line(line).text.trim() === "";
+  const start = doc.lineAt(from);
+  const end = doc.lineAt(to);
+  const before =
+    doc.sliceString(start.from, from).trim() !== ""
+      ? "\n\n"
+      : isBlank(start.number - 1)
+        ? ""
+        : "\n";
+  const after =
+    doc.sliceString(to, end.to).trim() !== ""
+      ? "\n\n"
+      : isBlank(end.number + 1)
+        ? ""
+        : "\n";
+  return `${before}${block}${after}`;
+}
 
 /** Holds one destination across asynchronous preparation, independently of the cursor. */
 export function captureInsertion(options: {
@@ -86,9 +119,10 @@ export function captureInsertion(options: {
     commit(text: string): boolean {
       if (!valid()) return false;
       const range = cm.state.field(marker)!;
+      const insert = placeText(cm.state.doc, range, text);
       cm.dispatch({
-        changes: { ...range, insert: text },
-        selection: { anchor: range.from + text.length },
+        changes: { ...range, insert },
+        selection: { anchor: range.from + insert.length },
         annotations: [
           Transaction.userEvent.of("input.zotlit"),
           isolateHistory.of("full"),

@@ -95,3 +95,71 @@ describe("captured asynchronous insertion", () => {
     expect(f.cm.state.doc.toString()).toBe("before overlapTARGET after");
   });
 });
+
+describe("a multi-line insertion", () => {
+  const CALLOUT = "> [!note] Page 1\n>\n> A quote.";
+  const insertAt = (doc: string, at: number, text = CALLOUT) => {
+    const cm = stateEditor({ doc });
+    const editor = { cm } as Editor;
+    const info = {
+      editor,
+      file: { path: "t.md" } as TFile,
+    } as MarkdownFileInfo;
+    using target = captureInsertion({
+      editor,
+      info,
+      isCurrent: () => true,
+      range: { from: at, to: at },
+    });
+    expect(target.commit(text)).toBe(true);
+    const result = cm.state.doc.toString();
+    cm.destroy();
+    return result;
+  };
+
+  it.each([
+    {
+      where: "the end of a text line",
+      doc: "A sentence.",
+      at: 11,
+      expected: `A sentence.\n\n${CALLOUT}`,
+    },
+    {
+      where: "an empty last line under text",
+      doc: "A sentence.\n",
+      at: 12,
+      expected: `A sentence.\n\n${CALLOUT}`,
+    },
+    {
+      where: "the middle of a line",
+      doc: "LEFT RIGHT",
+      at: 5,
+      expected: `LEFT \n\n${CALLOUT}\n\nRIGHT`,
+    },
+    {
+      where: "the start of a text line",
+      doc: "A\nB",
+      at: 2,
+      expected: `A\n\n${CALLOUT}\n\nB`,
+    },
+    {
+      where: "an empty line between blank lines",
+      doc: "A\n\n\n\nB",
+      at: 3,
+      expected: `A\n\n${CALLOUT}\n\nB`,
+    },
+    { where: "an empty document", doc: "", at: 0, expected: CALLOUT },
+  ])("stands as its own block at $where", ({ doc, at, expected }) => {
+    expect(insertAt(doc, at)).toBe(expected);
+  });
+
+  it("drops the rendered text's own edge line breaks", () => {
+    expect(insertAt("A sentence.", 11, `\n${CALLOUT}\n`)).toBe(
+      `A sentence.\n\n${CALLOUT}`,
+    );
+  });
+
+  it("keeps a one-line insertion inline", () => {
+    expect(insertAt("A sentence.", 2, "short ")).toBe("A short sentence.");
+  });
+});
