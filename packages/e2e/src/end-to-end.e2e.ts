@@ -3060,6 +3060,11 @@ describe.skipIf(!reachable)("Template Directory import", () => {
         "zotlit-profile.books.md",
       );
       const handed = await readEntry(handedPath);
+      const held = await readdir(join(vaultPath, "templates"));
+      const added = handed.partials.filter(
+        (name) => !held.includes(`zotlit-partial.${name}.md`),
+      );
+      expect(added.length).toBeGreaterThan(0);
       // Obsidian hands a received obsidian:// URL to the vault window as
       // OBS_ACT(<action and query>); calling it there leaves the OS focus
       // where it is.
@@ -3068,24 +3073,21 @@ describe.skipIf(!reachable)("Template Directory import", () => {
         action: `${url.host}${url.pathname}`,
         ...Object.fromEntries(url.searchParams),
       };
-      const clipboard = async (text?: string): Promise<string> =>
-        JSON.parse(
-          await obEval(
-            vaultId,
-            `(function(){var clipboard=require('electron').clipboard;${text === undefined ? "" : `clipboard.writeText(${JSON.stringify(text)});`}return JSON.stringify(clipboard.readText());})()`,
-          ),
-        ) as string;
-      const previous = await clipboard();
+      const clipboard = "require('electron').clipboard";
+      const previous = JSON.parse(
+        await obEval(vaultId, `JSON.stringify(${clipboard}.readText())`),
+      ) as string;
       try {
-        await clipboard(await readFile(handedPath, "utf-8"));
+        // One call, so no other run's clipboard write lands between the
+        // page's copy and the handoff's read.
         await obEval(
           vaultId,
-          `(window.OBS_ACT(${JSON.stringify(handoff)}),true)`,
+          `(${clipboard}.writeText(${JSON.stringify(await readFile(handedPath, "utf-8"))}),window.OBS_ACT(${JSON.stringify(handoff)}),true)`,
         );
         expect(
           await obEvalUntil(
             vaultId,
-            `String(!!Array.from(activeDocument.querySelectorAll('.modal')).at(-1)?.textContent.includes(${JSON.stringify(handed.name)}))`,
+            `(function(){var text=Array.from(activeDocument.querySelectorAll('.modal')).at(-1)?.textContent??'';return String(text.includes(${JSON.stringify(handed.name)})&&text.includes(${JSON.stringify(m.profile_import_partials({ names: added.join(", ") }))}));})()`,
             { expected: "true" },
           ),
         ).toBe(true);
@@ -3093,7 +3095,10 @@ describe.skipIf(!reachable)("Template Directory import", () => {
           await clickModalButton(vaultId, m.profile_import_confirm()),
         ).toBe(true);
       } finally {
-        await clipboard(previous);
+        await obEval(
+          vaultId,
+          `(${clipboard}.writeText(${JSON.stringify(previous)}),true)`,
+        );
       }
       expect(
         await obEvalUntil(
