@@ -352,11 +352,18 @@ describe("resolveCitationTrigger", () => {
 });
 
 describe("padCitationInsert", () => {
-  it("appends a single trailing space with the cursor after it", () => {
-    expect(padCitationInsert("[@smith2024]", "")).toEqual({
-      text: "[@smith2024] ",
-      cursor: 13,
-    });
+  it("ends a bracketed citation at its closing bracket, with the cursor after it", () => {
+    for (const next of ["", ".", " "]) {
+      expect(padCitationInsert("[@smith2024]", next)).toEqual({
+        text: "[@smith2024]",
+        cursor: 12,
+      });
+    }
+  });
+
+  it("keeps an unpadded bracketed citation from re-matching either trigger", () => {
+    const line = "see [@smith2024]";
+    expect(resolveCitationTrigger(line, line.length, true)).toBeNull();
   });
 
   it("appends the space before a non-space character", () => {
