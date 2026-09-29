@@ -74,7 +74,7 @@ Every changed line traces to the user's request. Leave adjacent code, comments, 
 
 User-facing strings are sourced from `messages/{locale}.json` and consumed through the generated Language Pack facade; ZotLit Companion copy lives in the same catalogs under the `zotero` object and compiles to Fluent at Companion build time. Run `/inlang-i18n` for message-format and runtime mechanics. Wording follows Obsidian's developer-guideline style (sentence case, terminology, phrasing) — run `/i18n-ui-text` before authoring or editing a string.
 
-User- and agent-facing copy has three sources: MDX under `apps/docs/content/`, i18n messages under `messages/` (Obsidian, Companion, and docs alike), and the Template Workbench CLI guide at `apps/obsidian/src/services/template-workbench/guide.ts`.
+User- and agent-facing copy has four sources: MDX under `apps/docs/content/`, i18n messages under `messages/` (Obsidian, Companion, and docs alike), the Template Workbench CLI guide at `apps/obsidian/src/services/template-workbench/guide.ts`, and the Directory Entry descriptions (`entry.md`) under `docs/template-directory/`, which follow the docs' writing rules and quote Obsidian UI labels verbatim (see its [maintainer guide](docs/template-directory/README.md)).
 
 ## Conventions worth knowing
 
