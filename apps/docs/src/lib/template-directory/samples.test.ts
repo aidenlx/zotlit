@@ -8,7 +8,7 @@ import {
   renderProfile,
 } from "@zotlit/workbench/render";
 
-import { DIRECTORY_SAMPLES } from "./index";
+import { DIRECTORY_SAMPLES, EDGE_SAMPLES, EVERY_COLOR_SAMPLE } from "./index";
 
 describe("Directory Samples", () => {
   it("cover the Sample Items and the item types they lack", () => {
@@ -27,12 +27,44 @@ describe("Directory Samples", () => {
     ]);
   });
 
+  it("hold, for entries that group by color, a note with the Sample Annotations and a highlight in every other color, in page order", () => {
+    const annotations = EVERY_COLOR_SAMPLE.snapshot.roots.note
+      .annotations as readonly Record<string, unknown>[];
+    expect(
+      annotations.map(({ type, colorName, colorHex, pageLabel }) => [
+        type,
+        colorName ?? colorHex,
+        pageLabel,
+      ]),
+    ).toEqual([
+      ["highlight", "yellow", "1"],
+      ["highlight", "red", "1"],
+      ["highlight", "green", "1"],
+      ["highlight", "blue", "1"],
+      ["highlight", "purple", "1"],
+      ["highlight", "magenta", "1"],
+      ["highlight", "orange", "1"],
+      ["highlight", "gray", "1"],
+      ["highlight", "plum", "1"],
+      ["highlight", "#1f8a70", "1"],
+      ["underline", "blue", "2"],
+      ["note", "purple", "3"],
+      ["text", null, "4"],
+      ["image", "green", "5"],
+      ["ink", "red", "6"],
+    ]);
+  });
+
   it("validate every root against the current contract artifacts", () => {
     const ajv = new Ajv2020({ strict: true });
     const note = ajv.compile(noteSchema);
     const filename = ajv.compile(filenameSchema);
 
-    for (const { id, snapshot } of DIRECTORY_SAMPLES) {
+    for (const { id, snapshot } of [
+      ...DIRECTORY_SAMPLES,
+      ...EDGE_SAMPLES,
+      EVERY_COLOR_SAMPLE,
+    ]) {
       expect(
         note(snapshot.roots.note),
         `${id}: ${ajv.errorsText(note.errors)}`,

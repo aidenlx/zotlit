@@ -1,0 +1,60 @@
+key: publisher
+merge: replace
+value:
+  {
+    "$switch":
+      {
+        "zt.itemType == 'journalArticle'":
+          {
+            "$let":
+              {
+                "parts":
+                  [
+                    {
+                      "$if": "zt.containerTitle",
+                      "then": { "$eval": "zt.containerTitle" },
+                    },
+                    {
+                      "$if": "zt.date && zt.date.year",
+                      "then": "${zt.date.year}",
+                    },
+                    { "$if": "zt.volume", "then": "Vol. ${zt.volume}" },
+                    { "$if": "zt.issue", "then": "№ ${zt.issue}" },
+                    {
+                      "$if": "zt.pages",
+                      "then": "pp. ${join(split(join(split(zt.pages, '—'), '–'), '-'), '–')}",
+                    },
+                  ],
+              },
+            "in":
+              {
+                "$if": "len(parts) > 0",
+                "then": { "$eval": "join(parts, '. ') + '.'" },
+              },
+          },
+        "zt.itemType == 'bookSection'":
+          {
+            "$let":
+              {
+                "parts":
+                  [
+                    {
+                      "$if": "zt.containerTitle",
+                      "then": { "$eval": "zt.containerTitle" },
+                    },
+                    {
+                      "$if": "zt.pages",
+                      "then": "pp. ${join(split(join(split(zt.pages, '—'), '–'), '-'), '–')}",
+                    },
+                  ],
+              },
+            "in":
+              {
+                "$if": "len(parts) > 0",
+                "then": { "$eval": "join(parts, '. ') + '.'" },
+              },
+          },
+        "$default":
+          { "$if": "zt.publisher", "then": { "$eval": "zt.publisher" } },
+      },
+  }
