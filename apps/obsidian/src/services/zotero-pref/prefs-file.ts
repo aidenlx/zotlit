@@ -20,6 +20,9 @@ export const PREFS_FILENAME = "prefs.js";
 /** File that lists profiles, in the directory above `Profiles/`. */
 export const PROFILES_INI_FILENAME = "profiles.ini";
 
+/** File Gecko lists the profile's installed add-ons in, with their state. */
+export const EXTENSIONS_FILENAME = "extensions.json";
+
 /**
  * @returns the configured positive port, Zotero's built-in default, or `null`
  *   for automatic selection whose effective runtime port is not persisted.
@@ -153,6 +156,28 @@ export function parsePrefsJs(content: string): Map<string, PrefValue> {
     if (typeof key === "string" && isPrefValue(value)) prefs.set(key, value);
   }
   return prefs;
+}
+
+/**
+ * Whether the profile's add-on list (`extensions.json`) names the add-on `id`
+ * as active: installed and enabled when Zotero last wrote the list. A list
+ * that does not parse names nothing.
+ */
+export function isAddonActive(content: string, id: string): boolean {
+  let list: unknown;
+  try {
+    list = JSON.parse(content);
+  } catch {
+    return false;
+  }
+  const addons = (list as { addons?: unknown } | null)?.addons;
+  return (
+    Array.isArray(addons) &&
+    addons.some(
+      (addon: { id?: unknown; active?: unknown } | null) =>
+        addon?.id === id && addon.active === true,
+    )
+  );
 }
 
 function isPrefValue(value: unknown): value is PrefValue {

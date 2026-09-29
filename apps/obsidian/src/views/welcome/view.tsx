@@ -1,5 +1,5 @@
 // ItemView orchestrator for the Welcome View: mounts the presentational tree, wires live step actions, and keeps connection status subscribed to DB events while open.
-import { ItemView } from "obsidian";
+import { ItemView, normalizePath } from "obsidian";
 import type { App, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
@@ -7,6 +7,7 @@ import type { Root } from "react-dom/client";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import type { DatabaseService } from "@/services/database/service";
+import type { NoteIndex } from "@/services/note-index/service";
 import type { ReleaseService } from "@/services/release/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { LiteratureNoteTemplateMigrationService } from "@/services/template/migration";
@@ -30,7 +31,8 @@ const CONNECTION_CHECKING_DELAY_MS = 200;
 export interface WelcomeViewDeps {
   app: App;
   db: Pick<DatabaseService, "state" | "ready" | "client" | "error" | "on">;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
+  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "companionInstalled" | "on">;
+  noteIndex: Pick<NoteIndex, "getIndexedItemKeys" | "whenIndexed" | "on">;
   settings: Pick<SettingsService, "subscribe">;
   setupActions: SetupActions;
   templateMigration: Pick<
@@ -86,12 +88,16 @@ export class WelcomeView extends ItemView {
   protected override async onOpen(): Promise<void> {
     using stack = new DisposableStack();
 
+    const folderExists = (folder: string) =>
+      this.app.vault.getFolderByPath(normalizePath(folder)) !== null;
     stack.defer(
       this.#deps.settings.subscribe((s) => {
-        if (s)
+        if (s) {
+          const literatureFolder =
+            s["note.default-profile"].bindings["note.literature-folder"];
           this.#store.setState({
-            literatureFolder:
-              s["note.default-profile"].bindings["note.literature-folder"],
+            literatureFolder,
+            literatureFolderExists: folderExists(literatureFolder),
             templateConversionPending: s["note.template-conversion-pending"],
             templateFolder: s["template.folder"],
             templateConversionResult: s["note.template-conversion-result"],
@@ -99,22 +105,45 @@ export class WelcomeView extends ItemView {
               s["template.folder"],
             ),
           });
+        }
       }),
     );
 
-    const refreshV1Evidence = () => {
+    const refreshVaultEvidence = () => {
+      const state = this.#store.getState();
       this.#store.setState({
+        literatureFolderExists: folderExists(state.literatureFolder),
         v1TemplatesPresent: this.#deps.release.hasV1Templates(
-          this.#store.getState().templateFolder,
+          state.templateFolder,
         ),
       });
     };
-    const created = this.app.vault.on("create", refreshV1Evidence);
+    const created = this.app.vault.on("create", refreshVaultEvidence);
     stack.defer(() => this.app.vault.offref(created));
-    const deleted = this.app.vault.on("delete", refreshV1Evidence);
+    const deleted = this.app.vault.on("delete", refreshVaultEvidence);
     stack.defer(() => this.app.vault.offref(deleted));
-    const renamed = this.app.vault.on("rename", refreshV1Evidence);
+    const renamed = this.app.vault.on("rename", refreshVaultEvidence);
     stack.defer(() => this.app.vault.offref(renamed));
+
+    const refreshNotes = () => {
+      this.#store.setState({
+        hasLiteratureNote: this.#deps.noteIndex.getIndexedItemKeys().length > 0,
+      });
+    };
+    stack.defer(this.#deps.noteIndex.on("changed", refreshNotes));
+    void this.#deps.noteIndex.whenIndexed().then(() => {
+      if (!this.#closed) refreshNotes();
+    });
+
+    // The reader installs the Companion in Zotero, so the add-on list is read
+    // again whenever they may be back from it.
+    const refreshCompanion = (): void => void this.#loadCompanion();
+    stack.defer(this.#deps.zoteroPref.on("changed", refreshCompanion));
+    stack.defer(this.#deps.db.on("changed", refreshCompanion));
+    const win = this.containerEl.win;
+    win.addEventListener("focus", refreshCompanion);
+    stack.defer(() => win.removeEventListener("focus", refreshCompanion));
+    refreshCompanion();
 
     const actions: WelcomeActions = {
       retryTemplateCleanup: async () => {
@@ -170,6 +199,11 @@ export class WelcomeView extends ItemView {
     this.#stack = undefined;
     this.#root?.unmount();
     this.#root = null;
+  }
+
+  async #loadCompanion(): Promise<void> {
+    const companionInstalled = await this.#deps.zoteroPref.companionInstalled();
+    if (!this.#closed) this.#store.setState({ companionInstalled });
   }
 
   async #loadConnection(): Promise<void> {

@@ -7,6 +7,8 @@
  */
 export const DOCS_SITE_URL = __DOCS_SITE_URL__;
 export const DOCS_COMPANION = `${DOCS_SITE_URL}/docs/install-companion`;
+/** The Zotero add-on ID of ZotLit Companion (`apps/zotero/package.json`). */
+export const COMPANION_ADDON_ID = "zotlit@aidenlx.site";
 export const WEB_WORKBENCH_ENABLED = __WEB_WORKBENCH_ENABLED__;
 
 /**

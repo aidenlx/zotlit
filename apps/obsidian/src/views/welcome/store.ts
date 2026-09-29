@@ -13,6 +13,12 @@ export interface WelcomeState {
   connection: ConnectionReadout;
   /** Current `note.literature-folder` setting; seeded once by the view on open. */
   literatureFolder: string;
+  /** The Zotero profile lists ZotLit Companion as installed and enabled. */
+  companionInstalled: boolean;
+  /** The literature-notes folder exists in the vault. */
+  literatureFolderExists: boolean;
+  /** The vault holds at least one Literature Note. */
+  hasLiteratureNote: boolean;
   /** The legacy Literature Note Template slots await user-consented conversion. */
   templateConversionPending: boolean;
   templateFolder: string;
@@ -27,6 +33,9 @@ export function createWelcomeStore() {
     mode: "fresh",
     connection: { status: "checking" },
     literatureFolder: "",
+    companionInstalled: false,
+    literatureFolderExists: false,
+    hasLiteratureNote: false,
     templateConversionPending: false,
     templateFolder: "",
     templateConversionResult: null,
