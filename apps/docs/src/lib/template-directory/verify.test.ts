@@ -325,6 +325,14 @@ describe("the Directory verification", () => {
       );
     });
 
+    it("accepts volume, issue, and page labels that carry their numbers", () => {
+      const files = editProfile(
+        'value: {"$eval": "zt.title"}',
+        'value: "PLoS Medicine. 2005. Vol. 2. № 8. pp. 10–20."',
+      );
+      expect(problemsOf(files)).toEqual([]);
+    });
+
     it("rejects a property entry whose result differs from its stated one", () => {
       rejects(
         edit(fixtureFiles(), `${FIXTURE_PROPERTY}/entry.md`, [
