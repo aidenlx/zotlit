@@ -66,6 +66,46 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     ).toBe("false");
   });
 
+  it("shows Cited by counts only while following a literature note", async () => {
+    const m = await import("@obsidian-messages");
+    const result = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{
+        ${browserWaits}
+        await using cleanup=new AsyncDisposableStack();
+        // Ioannidis is cited only in this Fixture chapter; other walkthroughs cite Rougier.
+        const chapter=app.vault.getFileByPath('Thesis/Chapter 3 - Presenting the results.md');
+        const original=await app.vault.read(chapter);
+        cleanup.defer(()=>app.vault.modify(chapter,original));
+        await app.vault.modify(chapter,'A chapter without citations.');
+        const literature=cleanup.adopt(await app.vault.create('Uncited literature.md','---\\nzotero-key: DMIANART\\n---\\nA literature note.'),file=>app.vault.delete(file));
+        const plain=cleanup.adopt(await app.vault.create('Ordinary note.md','An ordinary note.'),file=>app.vault.delete(file));
+        const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());
+        await leaf.openFile(literature);app.workspace.setActiveLeaf(leaf,{focus:true});
+        app.commands.executeCommandById('zotlit:show-cited-by');
+        const content=()=>app.workspace.getLeavesOfType('zotlit-cited-by')[0]?.view.contentEl;
+        const empty=()=>content()?.querySelector('[data-cited-by-empty]')?.textContent;
+        const stats=()=>content()?.querySelector('[data-cited-by-stats]')?.textContent??null;
+        await waitFor(empty,${JSON.stringify(m.cited_by_empty())},'Uncited literature note');
+        const before=stats();
+        await leaf.openFile(plain);app.workspace.setActiveLeaf(leaf,{focus:true});
+        await waitFor(empty,${JSON.stringify(m.cited_by_open_literature_note())},'Ordinary note');
+        const withoutTarget=stats();
+        await leaf.openFile(literature);app.workspace.setActiveLeaf(leaf,{focus:true});
+        await waitFor(empty,${JSON.stringify(m.cited_by_empty())},'Restored literature target');
+        return JSON.stringify({before,withoutTarget,after:stats()});
+      })()`,
+      ),
+    );
+    const zeroCounts = `${m.cited_by_note_count({ count: 0 })} · ${m.cited_by_occurrence_count({ count: 0 })}`;
+    expect(result).toEqual({
+      before: zeroCounts,
+      withoutTarget: null,
+      after: zeroCounts,
+    });
+  });
+
   it("shows export destinations within the named vault when the format changes", async () => {
     const m = await import("@obsidian-messages");
     const vault = basename(path);

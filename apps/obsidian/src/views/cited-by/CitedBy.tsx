@@ -168,6 +168,7 @@ function Toolbar({
   paths: readonly string[];
 }) {
   const actions = useCitedByActions();
+  const hasTarget = useCitedByStore((state) => state.indexedKey !== null);
   const collapsed = useCitedByStore((state) => state.collapsed);
   const searchVisible = useCitedByStore((state) => state.searchVisible);
   const moreContext = useCitedByStore((state) => state.moreContext);
@@ -211,14 +212,16 @@ function Toolbar({
           onClick={actions.toggleSearch}
         />
       </SidebarToolbar.Actions>
-      <span
-        className="zt:w-full zt:min-w-0 zt:truncate zt:pt-1 zt:text-end zt:text-xs zt:text-faint zt:tabular-nums zt:@3xs:w-auto zt:@3xs:ps-1 zt:@3xs:pt-0"
-        data-cited-by-stats
-      >
-        {m.cited_by_note_count({ count: paths.length })}
-        {" · "}
-        {m.cited_by_occurrence_count({ count: occurrenceCount })}
-      </span>
+      {hasTarget && (
+        <span
+          className="zt:w-full zt:min-w-0 zt:truncate zt:pt-1 zt:text-end zt:text-xs zt:text-faint zt:tabular-nums zt:@3xs:w-auto zt:@3xs:ps-1 zt:@3xs:pt-0"
+          data-cited-by-stats
+        >
+          {m.cited_by_note_count({ count: paths.length })}
+          {" · "}
+          {m.cited_by_occurrence_count({ count: occurrenceCount })}
+        </span>
+      )}
     </SidebarToolbar>
   );
 }
