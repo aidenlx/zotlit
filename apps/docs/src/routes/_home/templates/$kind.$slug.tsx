@@ -74,7 +74,10 @@ function DirectoryEntryPage() {
     entry.itemTypes.length > 0
       ? valueLabels("itemType", facets.itemType, entry.itemTypes)
       : [m.docs_directory_any_item_type()];
-  const hasSamples = entry.notes.length > 0 || entry.annotations.length > 0;
+  const hasSamples =
+    entry.notes.length > 0 ||
+    entry.annotations.length > 0 ||
+    entry.citations.length > 0;
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-6">
@@ -127,7 +130,7 @@ function DirectoryEntryPage() {
               <h2 id="samples" className={HEADING}>
                 {m.docs_directory_samples_heading()}
               </h2>
-              {entry.kind !== "property" && (
+              {(entry.kind === "profile" || entry.kind === "partial") && (
                 <p className="mt-1 mb-6 text-fd-muted-foreground">
                   {m.docs_directory_samples_intro()}
                 </p>

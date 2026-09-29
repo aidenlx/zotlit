@@ -6,7 +6,7 @@ import viteReact from "@vitejs/plugin-react";
 import { fumadocsMdx } from "fumadocs-mdx/vite";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vite";
+import { defineConfig, runnerImport } from "vite";
 import type { Plugin } from "vite";
 
 import { paraglideVitePlugin } from "@zotlit/paraglide-vite";
@@ -19,7 +19,6 @@ import { ogCards } from "./src/lib/og-cards.js";
 import { prerenderPages } from "./src/lib/prerender-pages.js";
 import type { DocsLine } from "./src/lib/shared.js";
 import { templateDirectoryRoot } from "./src/lib/template-directory/read.js";
-import { loadDirectorySite } from "./src/lib/template-directory/site-data.js";
 import type { DirectorySite } from "./src/lib/template-directory/site.js";
 import { renderRedirectsFile } from "./src/lib/v1-redirects.js";
 
@@ -162,6 +161,21 @@ function machineAssets(): Plugin {
       });
     },
   };
+}
+
+/**
+ * The Directory's site data. The Directory module runs through Vite's module
+ * runner, which resolves the Vite-only imports (such as `?raw`) that plain Node
+ * cannot, and reads its source afresh on every call.
+ */
+async function loadDirectorySite(): Promise<DirectorySite> {
+  const { module } = await runnerImport<
+    typeof import("./src/lib/template-directory/site-data.js")
+  >(resolve(packageRoot, "src/lib/template-directory/site-data.ts"), {
+    configFile: false,
+    root: packageRoot,
+  });
+  return module.loadDirectorySite();
 }
 
 /** The module the Template Directory's pages read the Directory from. */

@@ -80,6 +80,7 @@ function siteEntry(
       label:
         annotation.label.charAt(0).toUpperCase() + annotation.label.slice(1),
     })),
+    citations: samples?.citations ?? [],
   };
 }
 
