@@ -325,6 +325,24 @@ describe("the Directory verification", () => {
       );
     });
 
+    it("accepts an empty property the reader fills in and keeps on update", () => {
+      const files = editProfile(
+        'value: {"$eval": "zt.title"}\n    merge: replace',
+        "value: null\n    merge: keep",
+      );
+      expect(problemsOf(files)).toEqual([]);
+    });
+
+    it("shows an empty property as Obsidian writes it into the note", () => {
+      const files = editProfile(
+        'value: {"$eval": "zt.title"}\n    merge: replace',
+        "value: null\n    merge: keep",
+      );
+      const [note] =
+        verifyTemplateDirectory(files).samples.get(FIXTURE_PROFILE)!.notes;
+      expect(note!.properties).toBe("title:\n");
+    });
+
     it("rejects a property entry whose result differs from its stated one", () => {
       rejects(
         edit(fixtureFiles(), `${FIXTURE_PROPERTY}/entry.md`, [
@@ -345,6 +363,82 @@ describe("the Directory verification", () => {
         FIXTURE_PROPERTY,
         "property-expectation",
       );
+    });
+
+    describe("a partial's stated call", () => {
+      const withCall = (call: string) =>
+        edit(fixtureFiles(), `${FIXTURE_QUOTE}/entry.md`, [
+          "context: annotation",
+          `context: annotation\ncall: '${call}'`,
+        ]);
+
+      it("renders the partial through the call its entry states", () => {
+        const annotations = verifyTemplateDirectory(
+          withCall('Called: {% render "fixture-quote" with zt as zt %}'),
+        ).samples.get(FIXTURE_QUOTE)!.annotations;
+        expect(annotations[0]!.output?.trim()).toBe(
+          "Called: > Clear methods make research easier to reproduce.",
+        );
+      });
+
+      it("rejects a call that fails to render", () => {
+        rejects(
+          withCall('{% render "nowhere" with zt as zt %}'),
+          FIXTURE_QUOTE,
+          "render-diagnostic",
+        );
+      });
+    });
+
+    describe("highlight colors", () => {
+      const SAMPLE_ANNOTATION_LABELS = [
+        "highlight annotation, yellow",
+        "underline annotation, blue",
+        "note annotation, purple",
+        "text annotation",
+        "image annotation, green",
+        "ink annotation, red",
+      ];
+
+      it.each([
+        [FIXTURE_QUOTE, `${FIXTURE_QUOTE}/entry.md`, "context: annotation"],
+        [FIXTURE_PROFILE, `${FIXTURE_PROFILE}/entry.md`, "effort: Nothing."],
+      ])(
+        "renders %s, which shows highlight colors, over a highlight in every other Zotero color and a custom color",
+        (entry, entryFile, line) => {
+          const files = edit(fixtureFiles(), entryFile, [
+            line,
+            `${line}\nfeatures: [color-highlights]`,
+          ]);
+          const annotations =
+            verifyTemplateDirectory(files).samples.get(entry)!.annotations;
+          expect(annotations.map(({ label }) => label)).toEqual([
+            ...SAMPLE_ANNOTATION_LABELS,
+            "highlight annotation, red",
+            "highlight annotation, green",
+            "highlight annotation, blue",
+            "highlight annotation, purple",
+            "highlight annotation, magenta",
+            "highlight annotation, orange",
+            "highlight annotation, gray",
+            "highlight annotation, plum",
+            "highlight annotation, custom color #1f8a70",
+          ]);
+          expect(annotations.at(-1)!.output?.trim()).toBe(
+            "> Clear methods make research easier to reproduce.",
+          );
+        },
+      );
+
+      it("renders an entry that shows no highlight colors over the Sample Annotations alone", () => {
+        const annotations =
+          verifyTemplateDirectory(fixtureFiles()).samples.get(
+            FIXTURE_QUOTE,
+          )!.annotations;
+        expect(annotations.map(({ label }) => label)).toEqual(
+          SAMPLE_ANNOTATION_LABELS,
+        );
+      });
     });
 
     it("rejects a property entry that is not a JSON-e rule", () => {
