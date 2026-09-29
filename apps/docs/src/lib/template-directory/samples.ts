@@ -27,17 +27,23 @@ interface DerivedItem {
   readonly key: string;
   readonly itemType: string;
   readonly title: string;
-  readonly date: SampleDate;
+  /** Null for an item with no date. */
+  readonly date: SampleDate | null;
   /** The raw Zotero date's user-facing half, after the ISO prefix. */
   readonly dateText: string;
   readonly primaryCreatorType: string;
   readonly creators: readonly Creator[];
-  readonly citekey: string;
+  /** Null for an item with no citation key. */
+  readonly citekey: string | null;
   readonly abstract?: string;
   readonly tags?: readonly string[];
   readonly extra?: string;
   /** Base fields and the item type's own fields, under their `zt` names. */
   readonly fields: Readonly<Record<string, string>>;
+  /** The item's Zotero child notes, in the order Zotero added them. */
+  readonly notes?: readonly { readonly key: string; readonly title: string }[];
+  /** The Sample Items in the item's Related panel, by sample id. */
+  readonly related?: readonly string[];
 }
 
 /** Root fields every item carries, null unless the item records them. */
@@ -58,6 +64,14 @@ const OPTIONAL_BASE_FIELDS = [
   "language",
   "extra",
 ] as const;
+
+/** The lists a related item leaves out, since the relation graph stops at depth 1. */
+const UNRELATED_FIELDS = new Set([
+  "annotations",
+  "attachments",
+  "relatedItems",
+  "notes",
+]);
 
 /**
  * Invented items for the item types no Sample Item covers, so type-specific
@@ -97,6 +111,11 @@ const DERIVED_ITEMS: readonly DerivedItem[] = [
       DOI: "10.1017/CBO9780511809477.002",
       language: "en",
     },
+    notes: [
+      { key: "TVKSUMM2", title: "Summary of the three heuristics" },
+      { key: "TVKQUES3", title: "Questions for the decision-making seminar" },
+    ],
+    related: ["book"],
   },
   {
     id: "letter",
@@ -206,6 +225,84 @@ export const DIRECTORY_SAMPLES: readonly DirectorySample[] = [
     snapshot: derive(SAMPLE_ITEMS[2]!, item),
   })),
 ];
+
+/**
+ * Items at the edges a note name or a citation must handle, which no
+ * Directory Sample reaches: more than two authors, a title that holds every
+ * character a file name cannot, and an item with no author, date, or citation
+ * key. Citation text and note-name entries render over these too. The
+ * many-author article is a real publication, listed with its first four
+ * authors; the other two items are invented.
+ */
+const EDGE_ITEMS: readonly DerivedItem[] = [
+  {
+    id: "many-authors",
+    label: "Journal article with four authors",
+    key: "KLNMLB14",
+    itemType: "journalArticle",
+    title:
+      'Investigating variation in replicability: A "many labs" replication project',
+    date: { year: 2014 },
+    dateText: "2014",
+    primaryCreatorType: "author",
+    creators: [
+      { given: "Richard A.", family: "Klein", role: "author" },
+      { given: "Kate A.", family: "Ratliff", role: "author" },
+      { given: "Michelangelo", family: "Vianello", role: "author" },
+      { given: "Reginald B.", family: "Adams", role: "author" },
+    ],
+    citekey: "kleinInvestigatingVariationReplicability2014",
+    fields: {
+      publicationTitle: "Social Psychology",
+      containerTitle: "Social Psychology",
+      volume: "45",
+      issue: "3",
+      pages: "142–152",
+      DOI: "10.1027/1864-9335/a000178",
+      language: "en",
+    },
+  },
+  {
+    id: "unsafe-title",
+    label: "Report whose title holds characters a file name cannot",
+    key: "LEEIOR21",
+    itemType: "report",
+    title:
+      'Input/output: Is "fair" <always> fair? A #review of R^2 * [draft] | part 1 \\ 2',
+    date: { year: 2021 },
+    dateText: "2021",
+    primaryCreatorType: "author",
+    creators: [{ given: "Min-jun", family: "Lee", role: "author" }],
+    citekey: "leeInputOutputFair2021",
+    fields: { publisher: "Brackenridge University", language: "en" },
+  },
+  {
+    id: "no-author-date-or-citekey",
+    label: "Web page with no author, date, or citation key",
+    key: "WEBFAQ24",
+    itemType: "webpage",
+    title: "Open access: Frequently asked questions",
+    date: null,
+    dateText: "",
+    primaryCreatorType: "author",
+    creators: [],
+    citekey: null,
+    fields: {
+      publicationTitle: "Brackenridge University Library",
+      containerTitle: "Brackenridge University Library",
+      url: "https://library.example.edu/open-access/faq",
+      language: "en",
+    },
+  },
+];
+
+export const EDGE_SAMPLES: readonly DirectorySample[] = EDGE_ITEMS.map(
+  (item) => ({
+    id: item.id,
+    label: item.label,
+    snapshot: derive(SAMPLE_ITEMS[2]!, item),
+  }),
+);
 
 /**
  * Every Zotero annotation color under its contract name but yellow, which the
@@ -331,6 +428,38 @@ function everyColorSample(
 }
 
 /**
+ * The yellow Sample Annotation's highlight in orange, with a comment that
+ * starts with "todo" and no tags, for entries that turn such comments into
+ * tasks.
+ */
+export const TODO_HIGHLIGHT: AnnotationExample = (() => {
+  const base = SAMPLE_ANNOTATIONS[0]!;
+  const key = "TODOHL01";
+  const comment = "todo Check the sample size before citing this result.";
+  return {
+    id: "todo:highlight",
+    revision: "derived:todo:highlight",
+    root: {
+      ...base.root,
+      key,
+      indexedKey: key,
+      colorHex: "#f19837",
+      colorName: "orange",
+      comment,
+      commentHtml: comment,
+      tags: [],
+      backlink: `zotero://open/library/items/CNPDF26A?annotation=${key}&page=${String(base.root.page)}`,
+    },
+    descriptors: {
+      ...base.descriptors,
+      stringCoercions: base.descriptors.stringCoercions.filter(
+        ({ path }) => path[0] !== "tags",
+      ),
+    },
+  };
+})();
+
+/**
  * Build an item of another type on a Sample Item's shape, so it carries every
  * root field the contract requires and the descriptors a render restores.
  */
@@ -358,23 +487,25 @@ function derive(base: ItemSnapshot, item: DerivedItem): ItemSnapshot {
   const tags = (item.tags ?? []).map((name) => ({ name, type: "manual" }));
   const extra = item.extra === undefined ? null : parseExtra(item.extra);
   const date =
-    "month" in item.date
-      ? {
-          kind: "date",
-          value: isoDate(item.date),
-          year: item.date.year,
-          month: item.date.month,
-          day: item.date.day,
-          raw: `${isoDate(item.date)} ${item.dateText}`,
-        }
-      : {
-          kind: "year",
-          value: null,
-          year: item.date.year,
-          month: null,
-          day: null,
-          raw: `${item.date.year}-00-00 ${item.dateText}`,
-        };
+    item.date === null
+      ? null
+      : "month" in item.date
+        ? {
+            kind: "date",
+            value: isoDate(item.date),
+            year: item.date.year,
+            month: item.date.month,
+            day: item.date.day,
+            raw: `${isoDate(item.date)} ${item.dateText}`,
+          }
+        : {
+            kind: "year",
+            value: null,
+            year: item.date.year,
+            month: null,
+            day: null,
+            raw: `${item.date.year}-00-00 ${item.dateText}`,
+          };
   const fields = {
     ...Object.fromEntries(OPTIONAL_BASE_FIELDS.map((name) => [name, null])),
     ...item.fields,
@@ -395,7 +526,9 @@ function derive(base: ItemSnapshot, item: DerivedItem): ItemSnapshot {
     extra,
   };
   const coercions = [
-    { path: ["date"], value: date.value ?? String(date.year) },
+    ...(date === null
+      ? []
+      : [{ path: ["date"], value: date.value ?? String(date.year) }]),
     ...creators.map(({ fullName }, index) => ({
       path: ["creators", index],
       value: fullName,
@@ -417,10 +550,12 @@ function derive(base: ItemSnapshot, item: DerivedItem): ItemSnapshot {
   ];
   const temporal = [
     ...base.descriptors.filename.temporalValues,
-    ...(date.value === null
+    ...(date === null || date.value === null
       ? []
       : [{ path: ["date", "value"], type: "Temporal.PlainDate" as const }]),
   ];
+  const notes = (item.notes ?? []).map(childNote);
+  const related = (item.related ?? []).map(relatedItem);
   return {
     ...base,
     revision: `derived:${item.id}`,
@@ -440,16 +575,27 @@ function derive(base: ItemSnapshot, item: DerivedItem): ItemSnapshot {
         annotations: [],
         attachments: [],
         collections: [],
-        notes: [],
-        relatedItems: [],
+        notes,
+        relatedItems: related.map(({ root }) => root),
       },
       filename: { ...base.roots.filename, ...fields, collections: [] },
       annotations: [],
     },
     descriptors: {
       note: {
-        stringCoercions: [{ path: [], value: item.title }, ...coercions],
-        temporalValues: temporal,
+        stringCoercions: [
+          { path: [], value: item.title },
+          ...coercions,
+          ...notes.map(({ title }, index) => ({
+            path: ["notes", index],
+            value: title,
+          })),
+          ...related.flatMap(({ stringCoercions }) => stringCoercions),
+        ],
+        temporalValues: [
+          ...temporal,
+          ...related.flatMap(({ temporalValues }) => temporalValues),
+        ],
         graphReferences: [],
       },
       filename: {
@@ -460,6 +606,57 @@ function derive(base: ItemSnapshot, item: DerivedItem): ItemSnapshot {
       annotations: [],
     },
     unavailable: [],
+  };
+}
+
+/** A Zotero child note as the note root lists it: a link to its imported note. */
+function childNote({ key, title }: { key: string; title: string }) {
+  return {
+    key,
+    indexedKey: key,
+    title,
+    noteLink: {
+      $helper: "noteLink",
+      signature: "(alias?: string, subpath?: string) => string",
+      value: `[[${title}]]`,
+    },
+  };
+}
+
+/**
+ * A Sample Item as the Related panel of the item at `index` lists it, linked
+ * to the literature note its citation key names, with the descriptors that
+ * restore it moved under `relatedItems`.
+ */
+function relatedItem(id: string, index: number) {
+  const { roots, descriptors } = SAMPLE_ITEMS.find(
+    ({ provenance }) => provenance.kind === "sample" && provenance.id === id,
+  )!;
+  const citekey = String(roots.note.citekey);
+  const kept = ({ path }: { path: readonly (string | number)[] }) =>
+    !UNRELATED_FIELDS.has(String(path[0]));
+  const moved = <T extends { path: readonly (string | number)[] }>(
+    descriptor: T,
+  ): T => ({
+    ...descriptor,
+    path: ["relatedItems", index, ...descriptor.path],
+  });
+  return {
+    root: {
+      ...Object.fromEntries(
+        Object.entries(roots.note).filter(
+          ([name]) => !UNRELATED_FIELDS.has(name),
+        ),
+      ),
+      notePath: `${citekey}.md`,
+      noteLink: {
+        $helper: "noteLink",
+        signature: "(alias?: string, subpath?: string) => string | null",
+        value: `[[${citekey}]]`,
+      },
+    },
+    stringCoercions: descriptors.note.stringCoercions.filter(kept).map(moved),
+    temporalValues: descriptors.note.temporalValues.filter(kept).map(moved),
   };
 }
 

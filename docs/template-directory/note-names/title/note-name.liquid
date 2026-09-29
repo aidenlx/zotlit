@@ -1,0 +1,1 @@
+{{ zt.title | default: zt.key | replace: ": ", " - " | replace: ":", "-" | replace: "/", "-" | replace: "\\", "-" | replace: "|", "-" | replace: "[", "(" | replace: "]", ")" | replace: '"', "'" | remove: "?" | remove: "*" | remove: "<" | remove: ">" | remove: "#" | remove: "^" | replace: "  ", " " | strip }}{% suffix %}

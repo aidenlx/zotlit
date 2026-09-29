@@ -1,0 +1,44 @@
+key: aliases
+merge: append
+value:
+  {
+    "$let":
+      {
+        "names":
+          {
+            "$map": { "$eval": "zt.authors" },
+            "each(author)":
+              {
+                "$if": "author.literal",
+                "then": { "$eval": "author.literal" },
+                "else": { "$eval": "author.family" },
+              },
+          },
+      },
+    "in":
+      {
+        "$let":
+          {
+            "aliases":
+              [
+                {
+                  "$if": "len(names) > 0 && zt.date && zt.date.year",
+                  "then":
+                    {
+                      "$switch":
+                        {
+                          "len(names) == 1": "${names[0]} ${zt.date.year}",
+                          "len(names) == 2": "${names[0]} & ${names[1]} ${zt.date.year}",
+                          "$default": "${names[0]} et al. ${zt.date.year}",
+                        },
+                    },
+                },
+                {
+                  "$if": "len(names) > 0 && zt.title",
+                  "then": "${names[0]} – ${zt.title}",
+                },
+              ],
+          },
+        "in": { "$if": "len(aliases) > 0", "then": { "$eval": "aliases" } },
+      },
+  }

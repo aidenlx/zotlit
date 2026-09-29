@@ -8,7 +8,7 @@ import {
   renderProfile,
 } from "@zotlit/workbench/render";
 
-import { DIRECTORY_SAMPLES, EVERY_COLOR_SAMPLE } from "./index";
+import { DIRECTORY_SAMPLES, EDGE_SAMPLES, EVERY_COLOR_SAMPLE } from "./index";
 
 describe("Directory Samples", () => {
   it("cover the Sample Items and the item types they lack", () => {
@@ -60,7 +60,11 @@ describe("Directory Samples", () => {
     const note = ajv.compile(noteSchema);
     const filename = ajv.compile(filenameSchema);
 
-    for (const { id, snapshot } of [...DIRECTORY_SAMPLES, EVERY_COLOR_SAMPLE]) {
+    for (const { id, snapshot } of [
+      ...DIRECTORY_SAMPLES,
+      ...EDGE_SAMPLES,
+      EVERY_COLOR_SAMPLE,
+    ]) {
       expect(
         note(snapshot.roots.note),
         `${id}: ${ajv.errorsText(note.errors)}`,

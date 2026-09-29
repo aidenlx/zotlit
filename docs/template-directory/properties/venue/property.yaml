@@ -1,0 +1,8 @@
+key: venue
+merge: replace
+value:
+  {
+    "$if": "zt.containerTitle",
+    "then": { "$eval": "zt.containerTitle" },
+    "else": { "$if": "zt.publisher", "then": { "$eval": "zt.publisher" } },
+  }

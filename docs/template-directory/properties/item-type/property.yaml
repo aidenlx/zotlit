@@ -1,0 +1,54 @@
+key: item-type
+merge: replace
+value:
+  {
+    "$let":
+      {
+        "names":
+          {
+            "artwork": "Artwork",
+            "audioRecording": "Audio Recording",
+            "bill": "Bill",
+            "blogPost": "Blog Post",
+            "book": "Book",
+            "bookSection": "Book Section",
+            "case": "Case",
+            "computerProgram": "Software",
+            "conferencePaper": "Conference Paper",
+            "dataset": "Dataset",
+            "dictionaryEntry": "Dictionary Entry",
+            "document": "Document",
+            "email": "E-mail",
+            "encyclopediaArticle": "Encyclopedia Article",
+            "film": "Film",
+            "forumPost": "Forum Post",
+            "hearing": "Hearing",
+            "instantMessage": "Instant Message",
+            "interview": "Interview",
+            "journalArticle": "Journal Article",
+            "letter": "Letter",
+            "magazineArticle": "Magazine Article",
+            "manuscript": "Manuscript",
+            "map": "Map",
+            "newspaperArticle": "Newspaper Article",
+            "patent": "Patent",
+            "podcast": "Podcast",
+            "preprint": "Preprint",
+            "presentation": "Presentation",
+            "radioBroadcast": "Radio Broadcast",
+            "report": "Report",
+            "standard": "Standard",
+            "statute": "Statute",
+            "thesis": "Thesis",
+            "tvBroadcast": "TV Broadcast",
+            "videoRecording": "Video Recording",
+            "webpage": "Web Page",
+          },
+      },
+    "in":
+      {
+        "$if": "zt.itemType in names",
+        "then": { "$eval": "names[zt.itemType]" },
+        "else": { "$eval": "zt.itemType" },
+      },
+  }

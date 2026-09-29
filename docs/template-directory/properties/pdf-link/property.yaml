@@ -1,0 +1,18 @@
+key: pdf
+merge: replace
+value:
+  {
+    "$let":
+      {
+        "pdfs":
+          {
+            "$map": { "$eval": "zt.attachments" },
+            "each(attachment)":
+              {
+                "$if": "attachment.contentType == 'application/pdf'",
+                "then": { "$eval": "attachment.backlink" },
+              },
+          },
+      },
+    "in": { "$if": "len(pdfs) > 0", "then": { "$eval": "pdfs[0]" } },
+  }
