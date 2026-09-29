@@ -1123,6 +1123,7 @@
   ],
   "welcome_action_open_settings": "打开设置",
   "welcome_action_locate": "手动定位",
+  "welcome_step_companion_installed_title": "已安装 ZotLit Companion",
   "welcome_step_companion_title": "安装 ZotLit Companion",
   "welcome_step_companion_upgrade_title": "在 ZotLit 中获取 Zotero 10 的最新更改",
   "welcome_step_companion_body": "ZotLit Companion（Zotero 扩展）可让 ZotLit 读取 Zotero 中的最新更改。请在创建第一个文献笔记前安装它。",

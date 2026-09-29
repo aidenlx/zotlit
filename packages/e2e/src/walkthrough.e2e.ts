@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -64,6 +64,57 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         `String(Array.from(document.querySelectorAll('.status-bar [aria-label]')).some(el=>el.getAttribute('aria-label')==='Uninitialized'))`,
       ),
     ).toBe("false");
+  });
+
+  it("shows Companion installation as complete without an install action", async () => {
+    const m = await import("@obsidian-messages");
+    const profilePath = join(fixture, "zotero-profile");
+    expect(
+      await obEval(
+        vaultId,
+        "app.plugins.plugins.zotlit.services.zoteroPref.resolvedProfileDir",
+      ),
+    ).toBe(profilePath);
+    await using cleanup = new AsyncDisposableStack();
+    const addonsPath = join(profilePath, "extensions.json");
+    await writeFile(addonsPath, JSON.stringify({ addons: [] }), { flag: "wx" });
+    cleanup.defer(() => rm(addonsPath));
+    const step = `(()=>{const content=app.workspace.getLeavesOfType('zotlit-welcome')[0]?.view.contentEl;const heading=[...content?.querySelectorAll('[role=heading]')??[]].find(el=>[${JSON.stringify(m.welcome_step_companion_title())},${JSON.stringify(m.welcome_step_companion_installed_title())}].includes(el.textContent));return heading?.parentElement;})()`;
+    const refresh = `(()=>{const content=app.workspace.getLeavesOfType('zotlit-welcome')[0].view.contentEl;const win=content.ownerDocument.defaultView;win.dispatchEvent(new win.Event('focus'));return true;})()`;
+    await obEval(
+      vaultId,
+      "app.commands.executeCommandById('zotlit:open-welcome-view');true",
+    );
+    await obEval(vaultId, refresh);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(!!(${step})?.querySelector('button'))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await writeFile(
+      addonsPath,
+      JSON.stringify({ addons: [{ id: "zotlit@aidenlx.site", active: true }] }),
+    );
+    await obEval(vaultId, refresh);
+    const result = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{
+      ${browserWaits}
+      const step=()=>${step};
+      await waitFor(()=>!!step()?.previousElementSibling.querySelector('.lucide-check'),true,'Installed Companion step');
+      const current=step();
+      return JSON.stringify({title:current.querySelector('[role=heading]').textContent,description:current.querySelector('p').textContent,installAction:!!current.querySelector('button')});
+    })()`,
+      ),
+    );
+    expect(result).toEqual({
+      title: m.welcome_step_companion_installed_title(),
+      description: m.settings_db_companion_desc(),
+      installAction: false,
+    });
   });
 
   it("shows Cited by counts only while following a literature note", async () => {
