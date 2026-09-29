@@ -41,6 +41,7 @@ import {
   obEvalUntil,
   obJson,
   waitFor,
+  WINDOW_DOCUMENTS,
 } from "./obsidian-cli.ts";
 import { openPairedEnvironment } from "./paired-environment.ts";
 import {
@@ -6820,6 +6821,21 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         ).toBe("true");
 
         expect(await noticeShows("Zotero editing is enabled.")).toBe(true);
+        expect(
+          await obEval(
+            vaultId!,
+            `(async()=>{
+              using cleanup=new DisposableStack();
+              const notice=${WINDOW_DOCUMENTS}.flatMap(doc=>[...doc.querySelectorAll('.zt-notice')]).find(node=>node.textContent.includes('Zotero editing is enabled.'));
+              if(!notice)throw new Error('Editing success notice is missing');
+              const dismissed=Promise.withResolvers();
+              const observer=cleanup.adopt(new notice.ownerDocument.defaultView.MutationObserver(()=>{if(!notice.isConnected)dismissed.resolve('dismissed');}),value=>value.disconnect());
+              observer.observe(notice.ownerDocument.body,{childList:true,subtree:true});
+              cleanup.adopt(setTimeout(()=>dismissed.reject(new Error('Editing success notice still covers the view after five seconds')),Temporal.Duration.from({seconds:5}).total('milliseconds')),clearTimeout);
+              return await dismissed.promise;
+            })()`,
+          ),
+        ).toBe("dismissed");
         expect(
           await obEvalUntil(vaultId!, capabilityOf(attachment.key, "kind"), {
             expected: "writable",

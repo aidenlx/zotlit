@@ -4,7 +4,10 @@ import * as m from "@/lib/i18n/generated/messages";
 
 import type { EditingCapability } from "./capability";
 import { editingCapabilityCopy } from "./capability-copy";
-import { CapabilityNoticeLedger } from "./capability-notices";
+import {
+  allowEditingNotice,
+  CapabilityNoticeLedger,
+} from "./capability-notices";
 
 const ATTACHMENT = "ABCD2345";
 const OTHER_ATTACHMENT = "WXYZ6789";
@@ -47,6 +50,25 @@ function readOnlyLines(
 function everyAttachmentIs(capability: EditingCapability) {
   return () => capability;
 }
+
+describe("authorization notice lifetime", () => {
+  it("gives a remembered grant a brief success notice", () => {
+    const notice = allowEditingNotice({ value: undefined });
+
+    expect(notice).toMatchObject({ sticky: false, action: null });
+    expect(notice?.duration?.total("seconds")).toBe(3);
+  });
+
+  it.each(["not-remembered", "not-saved"] as const)(
+    "keeps the normal reading time for %s",
+    (kind) => {
+      const notice = allowEditingNotice({ failure: { kind } });
+
+      expect(notice).toMatchObject({ sticky: false });
+      expect(notice).not.toHaveProperty("duration");
+    },
+  );
+});
 
 describe("a blocked keyboard gesture", () => {
   it("says why once per reason per Attachment per capability episode", () => {
@@ -134,6 +156,8 @@ describe("a write Zotero refused", () => {
 
     expect(invalid).toMatchObject({ sticky: true });
     expect(unsupported).toMatchObject({ sticky: true });
+    expect(invalid).not.toHaveProperty("duration");
+    expect(unsupported).not.toHaveProperty("duration");
     expect(invalid?.lines).toEqual(
       readOnlyLines("invalid-response", time.instant),
     );
