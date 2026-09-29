@@ -322,6 +322,21 @@ describe("CitationIndex", () => {
     ]);
   });
 
+  // Pandoc reads `[[@doe2024]]` as a wikilink, so the export cites nothing
+  // there; the References sidebar must agree.
+  it("reads no citekey inside a wikilink while Wikilink Citations is off", async () => {
+    const { draft, index, metadataCache } = await makeHarness({
+      "draft.md": "As @roe2025 wrote, see [[@doe2024]].",
+    });
+    metadataCache.fileCache.set("draft.md", {
+      links: [link("@doe2024", 23)],
+    } as CachedMetadata);
+
+    expect(await citationsOf(index, draft)).toMatchObject([
+      { indexedKey: KEY_B, refNumber: 1 },
+    ]);
+  });
+
   it("leaves citekeys inside code, math, comments, and frontmatter out", async () => {
     const { draft, index } = await makeHarness({
       "draft.md": [

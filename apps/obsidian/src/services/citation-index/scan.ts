@@ -30,15 +30,15 @@ export interface MalformedWikilinkCitation {
 /**
  * Exclusion is masking plus the grammar's own rules: the body is blanked
  * wherever Markdown puts text out of reach — frontmatter, fenced and indented
- * code, inline code, math, and `%%` comments — and the grammar reads what
- * remains. Blanking keeps every offset, so positions stay those of the source.
+ * code, inline code, math, `%%` comments, and wikilinks — and the grammar reads
+ * what remains. Blanking keeps every offset, so positions stay those of the source.
  *
  * @returns the literal `@citekey` occurrences of `text`, in document order.
  */
 export function scanCitekeyOccurrences(text: string): CitationOccurrence[] {
   const lineStarts = lineStartsOf(text);
   const occurrences: CitationOccurrence[] = [];
-  for (const citation of scanPandocCitations(maskExclusions(text))) {
+  for (const citation of scanPandocCitations(citationBody(text))) {
     for (const { citationKey, start, end } of citation.items) {
       occurrences.push({
         kind: "citekey",
@@ -55,13 +55,13 @@ export function scanCitekeyOccurrences(text: string): CitationOccurrence[] {
 
 /**
  * Reads the same masked body {@link scanCitekeyOccurrences} does, so a citation
- * written inside code, math, a `%%` comment, or frontmatter is no citation here
- * either. Masking keeps every offset, so a span still addresses `text` itself.
+ * written inside code, math, a `%%` comment, a wikilink, or frontmatter is no
+ * citation here either. Masking keeps every offset, so a span still addresses `text` itself.
  *
  * @returns the citations of `text`, in document order.
  */
 export function scanDocumentCitations(text: string): ScannedCitation[] {
-  return scanPandocCitations(maskExclusions(text)).map(
+  return scanPandocCitations(citationBody(text)).map(
     ({ start, end, items }) => ({
       start,
       end,
@@ -150,6 +150,11 @@ const TAB_WIDTH = 4;
 /** The indentation an indented code block needs. */
 const CODE_INDENT = 4;
 
+/** The text the Pandoc grammar reads: exclusions and wikilinks blanked. */
+function citationBody(text: string): string {
+  return maskWikilinks(maskExclusions(text));
+}
+
 /**
  * Blank every region the Citation Index must not read, keeping each character's
  * offset and every line break so the grammar still sees the document's shape.
@@ -224,6 +229,24 @@ function maskBlocks(text: string, body: string[]): void {
   }
 }
 
+/**
+ * Blank every wikilink and embed of `text`, keeping each offset. Pandoc reads
+ * `[[…]]` as a wikilink, so a `[@key]` inside one is no citation; the Wikilink
+ * Citations path alone reads a link. The citekey editor reads a line through
+ * this alone: its syntax tree rules out the rest.
+ */
+export function maskWikilinks(text: string): string {
+  const body = text.split("");
+  for (let at = 0; at < body.length; at += 1) {
+    if (body[at] === "\\") {
+      at += 1;
+    } else if (body[at] === "[" && body[at + 1] === "[") {
+      at = maskWikilink(body, at);
+    }
+  }
+  return body.join("");
+}
+
 /** Inline code, math, and `%%` comments, over the body the block pass left. */
 function maskInline(body: string[]): void {
   for (let at = 0; at < body.length; at += 1) {
@@ -238,6 +261,20 @@ function maskInline(body: string[]): void {
       at = maskMath(body, at);
     }
   }
+}
+
+/**
+ * A wikilink stays on one line; an unclosed `[[` is text.
+ *
+ * @returns the offset the inline scan continues from, as {@link maskCodeSpan} does.
+ */
+function maskWikilink(body: string[], open: number): number {
+  for (let at = open + 2; at < body.length - 1 && body[at] !== "\n"; at += 1) {
+    if (body[at] !== "]" || body[at + 1] !== "]") continue;
+    mask(body, open, at + 2);
+    return at + 1;
+  }
+  return open + 1;
 }
 
 /**
