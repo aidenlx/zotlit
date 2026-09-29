@@ -49,7 +49,7 @@ To add it to a profile:
 1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
 2. In the **Properties** tab, select **Add a property**. Enter `venue` as the **Property name**.
 3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
-4. Paste the rule into **Value**.
+4. In **Value**, replace the example rule with this entry's rule.
 5. Set **When the note is updated** to **Replace the existing value**.
 
 Limits: the property holds a name only, with no volume, issue, or pages. For one property that also holds those, use the **Publisher by item type** entry.

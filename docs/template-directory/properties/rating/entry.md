@@ -44,7 +44,7 @@ To add it to a profile:
 1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
 2. In the **Properties** tab, select **Add a property**. Enter `rating` as the **Property name**.
 3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
-4. Enter `null` into **Value**. In a rule, `null` means "no value".
+4. In **Value**, replace the example rule with `null`, which means "no value".
 5. Set **When the note is updated** to **Keep the existing value**.
 
 So that Obsidian sorts ratings as numbers, give the property its type once: in a note, select the icon beside `rating`, choose **Property type**, then **Number**. Obsidian then uses that type in every note.
