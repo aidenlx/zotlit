@@ -46,6 +46,7 @@ import type {
 import {
   attachCitationNavigation,
   attachClosedCitationGestures,
+  citationClickIntent,
   citationHoverIntent,
   hoverGesture,
   markCitationClick,
@@ -572,9 +573,23 @@ class CitationWidget extends WidgetType {
     };
   }
 
-  /** The widget owns every gesture on its own element. */
-  ignoreEvent(): boolean {
-    return true;
+  /**
+   * The widget owns every gesture on its own element but one: wherever
+   * Citations stay closed as links, a plain left mousedown goes to the editor,
+   * whose mouse selection places the caret and so shows the Citation's source.
+   */
+  ignoreEvent(event: Event): boolean {
+    if (this.#navigable || event.type !== "mousedown") return true;
+    const mouse = event as MouseEvent;
+    return (
+      mouse.button !== 0 ||
+      citationClickIntent(
+        mouseGesture(mouse, "click", {
+          surface: "editor",
+          editorMode: "live-preview",
+        }),
+      ) !== "edit"
+    );
   }
 }
 
