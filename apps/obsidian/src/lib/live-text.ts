@@ -5,8 +5,11 @@
 // read or rewrite here does the same, and reads or writes any other note on
 // disk.
 
+import type { ChangeSpec } from "@codemirror/state";
+import { diffChars } from "diff";
 import {
   getFrontMatterInfo,
+  MarkdownView,
   parseYaml,
   stringifyYaml,
   TextFileView,
@@ -81,14 +84,45 @@ export async function processLiveText(
     const text = view.getViewData();
     const next = fn(text);
     if (next === text) return;
-    view.setViewData(next, false);
+    setViewDataKeepingScroll(view, next);
     if (view.getViewData() === next) {
       await view.save();
       return;
     }
-    view.setViewData(text, false);
+    setViewDataKeepingScroll(view, text);
   }
   await app.vault.process(file, fn);
+}
+
+/** Native text replacement keeps persistence and history; a mapped snapshot keeps the viewport. */
+function setViewDataKeepingScroll(view: TextFileView, text: string): void {
+  const editor =
+    view instanceof MarkdownView && view.getMode() === "source"
+      ? view.editor.cm
+      : null;
+  const state = editor?.state;
+  const scroll = editor?.scrollSnapshot();
+  view.setViewData(text, false);
+  if (!editor || !state || !scroll || state.doc === editor.state.doc) return;
+
+  // Obsidian replaces the span between the first and last changed lines. An
+  // anchor inside that span maps to its start, even when its text is unchanged.
+  // Map through the individual edits to retain the block the reader is viewing.
+  const changes: ChangeSpec[] = [];
+  let offset = 0;
+  for (const part of diffChars(
+    state.doc.toString(),
+    editor.state.doc.toString(),
+  )) {
+    if (part.added) changes.push({ from: offset, insert: part.value });
+    else {
+      if (part.removed)
+        changes.push({ from: offset, to: offset + part.value.length });
+      offset += part.value.length;
+    }
+  }
+  const mapped = scroll.map(state.changes(changes));
+  if (mapped) editor.dispatch({ effects: mapped });
 }
 
 /**

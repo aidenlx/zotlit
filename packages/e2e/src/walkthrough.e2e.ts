@@ -436,6 +436,76 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     }
   });
 
+  it("keeps the viewport and unsaved writing when an update replaces multiple callouts", async () => {
+    const notePath = "Scroll update.md";
+    const source =
+      "---\nzotero-key: DMRGRART\n---\n%%zt-managed%%\nstale\n%%/zt-managed%%\n";
+    await obEval(
+      vaultId,
+      `(async()=>{
+        const file=await app.vault.create(${JSON.stringify(notePath)},${JSON.stringify(source)});
+        const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file,{state:{mode:'source',source:false}});
+        app.workspace.setActiveLeaf(leaf,{focus:true});window.focus();return true;
+      })()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(app.metadataCache.getFileCache(app.vault.getFileByPath(${JSON.stringify(notePath)}))?.frontmatter?.['zotero-key']==='DMRGRART')`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `app.commands.executeCommandById('zotlit:update-note');true`,
+    );
+    const view = `app.workspace.getLeavesOfType('markdown').find(leaf=>leaf.view.file?.path===${JSON.stringify(notePath)}).view`;
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String((${view}).editor.getValue().split('[!note]').length>2)`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    const result = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{
+          ${browserWaits}
+          const view=${view},editor=view.editor,cm=editor.cm;
+          let changed=0;
+          const edited=editor.getValue().replaceAll('[!note]',()=>++changed<=2?'[!quote]':'[!note]')+'\\nUnsaved researcher text.';
+          editor.setValue(edited);
+          editor.setCursor({line:7,ch:0});await measure(cm);editor.scrollTo(null,600);await measure(cm);
+          const before={top:cm.scrollDOM.scrollTop,height:cm.scrollDOM.scrollHeight,cursor:editor.getCursor()};
+          const accepted=app.commands.executeCommandById('zotlit:update-note');
+          await waitFor(()=>editor.getValue().includes('[!quote]'),false,'Updated callouts');
+          await measure(cm);
+          const after={top:cm.scrollDOM.scrollTop,height:cm.scrollDOM.scrollHeight,cursor:editor.getCursor()};
+          const updated=editor.getValue();editor.undo();const undoMatches=editor.getValue()===edited;
+          editor.redo();const redoMatches=editor.getValue()===updated;
+          return JSON.stringify({accepted,before,after,undoMatches,redoMatches,updated:!updated.includes('[!quote]'),unsaved:updated.includes('Unsaved researcher text.')});
+        })()`,
+      ),
+    );
+    expect(result.accepted).toBe(true);
+    expect(result.updated).toBe(true);
+    expect(result.unsaved).toBe(true);
+    expect(result.undoMatches).toBe(true);
+    expect(result.redoMatches).toBe(true);
+    expect(result.before.top).toBe(600);
+    expect(result.after.cursor).toEqual(result.before.cursor);
+    expect(result.after.height).toBe(result.before.height);
+    expect(Math.abs(result.after.top - result.before.top)).toBeLessThan(2);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(async()=>String((await app.vault.read(app.vault.getFileByPath(${JSON.stringify(notePath)}))).includes('Unsaved researcher text.')))()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+  });
+
   it.each(["built-in", "customized"])(
     "opens the %s template in its popout without displaying a main-window Workbench tab",
     async (kind) => {
