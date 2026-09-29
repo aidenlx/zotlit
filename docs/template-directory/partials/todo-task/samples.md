@@ -35,3 +35,9 @@ Study design and participant flow.
 ### Ink annotation, red
 
 _No output._
+
+### Highlight annotation, orange
+
+```markdown
+- [ ] Check the sample size before citing this result.
+```

@@ -29,7 +29,11 @@ import {
 } from "./load.ts";
 import type { DirectoryEntry, DirectoryFiles } from "./load.ts";
 import type { DirectoryProblem, DirectoryProblemCode } from "./problem.ts";
-import { COLOR_HIGHLIGHTS, DIRECTORY_SAMPLES } from "./samples.ts";
+import {
+  COLOR_HIGHLIGHTS,
+  DIRECTORY_SAMPLES,
+  TODO_HIGHLIGHT,
+} from "./samples.ts";
 import type { DirectorySample } from "./samples.ts";
 
 /** One Directory Sample's note, as the entry renders it. */
@@ -354,15 +358,18 @@ function duplicateProfileIds(
 }
 
 /**
- * The Sample Annotations, and for an entry that shows highlight colors, a
- * highlight in every other Zotero color and a custom color.
+ * The Sample Annotations; for an entry that shows highlight colors, a
+ * highlight in every other Zotero color and a custom color; and for an entry
+ * that makes tasks, a highlight whose comment starts with "todo".
  */
 function sampleAnnotations(
   features: DirectoryEntry["features"],
 ): readonly AnnotationExample[] {
-  return features.includes("color-highlights")
-    ? [...SAMPLE_ANNOTATIONS, ...COLOR_HIGHLIGHTS]
-    : SAMPLE_ANNOTATIONS;
+  return [
+    ...SAMPLE_ANNOTATIONS,
+    ...(features.includes("color-highlights") ? COLOR_HIGHLIGHTS : []),
+    ...(features.includes("tasks") ? [TODO_HIGHLIGHT] : []),
+  ];
 }
 
 function renderProfileEntry(
