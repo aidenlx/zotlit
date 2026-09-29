@@ -93,14 +93,14 @@ describe("the Directory verification", () => {
     it("names the kinds it cannot verify yet", () => {
       const files = fixtureFiles()
         .set(
-          "citations/plain-author-year/entry.md",
-          "---\ntitle: T\nsummary: S\nminAppVersion: '2.2.0'\ntasks: [writing]\nproblems: [p]\naudience: a\neffort: e\n---\n\nText.\n",
+          "partials/cited-quote/entry.md",
+          "---\ntitle: T\nsummary: S\nminAppVersion: '2.2.0'\ncontext: citation\ntasks: [writing]\nproblems: [p]\naudience: a\neffort: e\n---\n\nText.\n",
         )
         .set(
-          "citations/plain-author-year/zotlit-citation.md",
+          "partials/cited-quote/zotlit-partial.cited-quote.md",
           "{{ zt.variant }}\n",
         );
-      rejects(files, "citations/plain-author-year", "unverified");
+      rejects(files, "partials/cited-quote", "unverified");
     });
   });
 
