@@ -381,6 +381,108 @@ partials:
     expect([...vault.files.keys()]).toEqual(paths);
   });
 
+  it("extends the installed Shared Partials with a document's own partials", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/zotlit-partial.links.md", "Links {{ zt.title }}");
+    // An installed partial that calls a name only the document carries, the
+    // way a shared `color-groups` includes a Profile's own meanings partial.
+    vault.addFile(
+      "templates/zotlit-partial.groups.md",
+      'Groups {% include "meanings" %}',
+    );
+    const { service } = await makeHarness({ vault });
+    const source = withOwnPartials(
+      literatureNoteDocument("Draft").replace(
+        "Managed {{ zt.title }}",
+        '{% render "links" with zt as zt %} {% render "groups" with zt as zt %}',
+      ),
+      [{ name: "meanings", language: "liquid", source: "Meanings" }],
+    );
+
+    expect(
+      service.renderLiteratureNoteTemplateSource(source, { title: "Paper" })
+        .update,
+    ).toBe("%%zt-managed%%\nLinks Paper Groups Meanings\n\n%%/zt-managed%%");
+  });
+
+  it("answers a name the document carries with its own partial, in either language", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/zotlit-partial.summary.md",
+      "Local {{ zt.title }}",
+    );
+    vault.addFile(
+      "templates/zotlit-partial.wrap.md",
+      'Wrap {% include "summary" %}',
+    );
+    const { service } = await makeHarness({ vault, javascriptTemplates: true });
+    const body = literatureNoteDocument("Draft").replace(
+      "Managed {{ zt.title }}",
+      '{% render "summary" with zt as zt %} {% render "wrap" with zt as zt %}',
+    );
+
+    for (const own of [
+      { language: "liquid", source: "Own {{ zt.title }}" },
+      // The installed edition is Liquid, which a facade holding both prefers.
+      { language: "eta", source: "Own <%= zt.title %>" },
+    ])
+      expect(
+        service.renderLiteratureNoteTemplateSource(
+          withOwnPartials(body, [{ name: "summary", ...own }]),
+          { title: "Paper" },
+        ).update,
+      ).toBe("%%zt-managed%%\nOwn Paper Wrap Own Paper\n\n%%/zt-managed%%");
+    expect(service.render("summary", { title: "Paper" })).toBe("Local Paper");
+  });
+
+  it("renders a document's own partials past a Shared Partial that failed to compile", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/zotlit-partial.broken.md", "{% if %}");
+    const { service } = await makeHarness({ vault });
+    const source = withOwnPartials(
+      literatureNoteDocument("Draft").replace(
+        "Managed {{ zt.title }}",
+        '{% render "own" with zt as zt %}',
+      ),
+      [{ name: "own", language: "liquid", source: "Own {{ zt.title }}" }],
+    );
+
+    expect(
+      service.renderLiteratureNoteTemplateSource(source, { title: "Paper" })
+        .update,
+    ).toBe("%%zt-managed%%\nOwn Paper\n\n%%/zt-managed%%");
+    expect(() =>
+      service
+        .prepareLiteratureNoteTemplateSource(
+          source.replace('{% render "own"', '{% render "broken"'),
+        )
+        .renderForCreate({ title: "Paper" }),
+    ).toThrowError(
+      expect.objectContaining({
+        name: "TemplateError",
+        templateName: "broken",
+      }),
+    );
+  });
+
+  it("renders the Citation Template by name from a document with partials of its own", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/zotlit-citation.md", "Cite {{ zt.title }}");
+    const { service } = await makeHarness({ vault });
+    const source = withOwnPartials(
+      literatureNoteDocument("Draft").replace(
+        "Managed {{ zt.title }}",
+        '{% render "citation" with zt as zt %} {% render "own" %}',
+      ),
+      [{ name: "own", language: "liquid", source: "Own" }],
+    );
+
+    expect(
+      service.renderLiteratureNoteTemplateSource(source, { title: "Paper" })
+        .update,
+    ).toBe("%%zt-managed%%\nCite Paper Own\n\n%%/zt-managed%%");
+  });
+
   it("reports valid and invalid Literature Note Template documents", async () => {
     const vault = new MockVault();
     vault.addFile(
@@ -2012,6 +2114,46 @@ describe("Template Document kinds", () => {
         .getLiteratureNoteTemplate("zotlit-profile.books.md")!
         .renderForCreate({ title: "Paper", authors: "Ada Lovelace" }),
     ).toThrow(m.settings_template_inert_eta({ path }));
+    // A Liquid Profile that brings a partial of its own still meets the gate.
+    expect(() =>
+      service
+        .prepareLiteratureNoteTemplateSource(
+          withOwnPartials(
+            literatureNoteDocument("Books").replace(
+              "Managed {{ zt.title }}",
+              '{% render "own" %}{% render "authors" with zt as zt %}',
+            ),
+            [{ name: "own", language: "liquid", source: "Own" }],
+          ),
+        )
+        .renderForCreate({ title: "Paper", authors: "Ada Lovelace" }),
+    ).toThrow(m.settings_template_inert_eta({ path }));
+  });
+
+  it("renders an installed Eta partial with the configured trimming for a document with partials of its own", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/zotlit-partial.tail.md",
+      "---\nlanguage: eta\n---\n<%= zt.title %>  \n  End",
+    );
+    const { service } = await makeHarness({
+      vault,
+      javascriptTemplates: true,
+      settings: { "template.auto-trim-trailing": "slurp" },
+    });
+    const source = withOwnPartials(
+      literatureNoteDocument("Books").replace(
+        "Managed {{ zt.title }}",
+        '{% render "own" %} {% render "tail" with zt as zt %}',
+      ),
+      [{ name: "own", language: "liquid", source: "Own" }],
+    );
+
+    expect(service.render("tail", { title: "Paper" })).toBe("PaperEnd");
+    expect(
+      service.renderLiteratureNoteTemplateSource(source, { title: "Paper" })
+        .update,
+    ).toBe("%%zt-managed%%\nOwn PaperEnd\n\n%%/zt-managed%%");
   });
 
   it("re-registers a partial under its new name on rename and drops it on delete", async () => {
@@ -2531,6 +2673,21 @@ filename: "{{ zt.title }}"
 
 {% managed %}Managed {{ zt.title }}{% endmanaged %}
 --- zotlit:annotation ---\n${annotation ?? "Annotation"}`;
+}
+
+/** `source` with `partials` in its manifest, whatever names they answer. */
+function withOwnPartials(
+  source: string,
+  partials: readonly { name: string; language: string; source: string }[],
+): string {
+  const entries = partials.map(
+    (partial) =>
+      `  - name: ${partial.name}\n    language: ${partial.language}\n    source: ${JSON.stringify(partial.source)}`,
+  );
+  return source.replace(
+    "contract: 1",
+    ["contract: 1", "partials:", ...entries].join("\n"),
+  );
 }
 
 async function flushAsync(): Promise<void> {
