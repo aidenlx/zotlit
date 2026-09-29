@@ -27,12 +27,14 @@ interface DerivedItem {
   readonly key: string;
   readonly itemType: string;
   readonly title: string;
-  readonly date: SampleDate;
+  /** Null for an item with no date. */
+  readonly date: SampleDate | null;
   /** The raw Zotero date's user-facing half, after the ISO prefix. */
   readonly dateText: string;
   readonly primaryCreatorType: string;
   readonly creators: readonly Creator[];
-  readonly citekey: string;
+  /** Null for an item with no citation key. */
+  readonly citekey: string | null;
   readonly abstract?: string;
   readonly tags?: readonly string[];
   readonly extra?: string;
@@ -208,6 +210,84 @@ export const DIRECTORY_SAMPLES: readonly DirectorySample[] = [
 ];
 
 /**
+ * Items at the edges a note name or a citation must handle, which no
+ * Directory Sample reaches: more than two authors, a title that holds every
+ * character a file name cannot, and an item with no author, date, or citation
+ * key. Citation text and note-name entries render over these too. The
+ * many-author article is a real publication, listed with its first four
+ * authors; the other two items are invented.
+ */
+const EDGE_ITEMS: readonly DerivedItem[] = [
+  {
+    id: "many-authors",
+    label: "Journal article with four authors",
+    key: "KLNMLB14",
+    itemType: "journalArticle",
+    title:
+      'Investigating variation in replicability: A "many labs" replication project',
+    date: { year: 2014 },
+    dateText: "2014",
+    primaryCreatorType: "author",
+    creators: [
+      { given: "Richard A.", family: "Klein", role: "author" },
+      { given: "Kate A.", family: "Ratliff", role: "author" },
+      { given: "Michelangelo", family: "Vianello", role: "author" },
+      { given: "Reginald B.", family: "Adams", role: "author" },
+    ],
+    citekey: "kleinInvestigatingVariationReplicability2014",
+    fields: {
+      publicationTitle: "Social Psychology",
+      containerTitle: "Social Psychology",
+      volume: "45",
+      issue: "3",
+      pages: "142–152",
+      DOI: "10.1027/1864-9335/a000178",
+      language: "en",
+    },
+  },
+  {
+    id: "unsafe-title",
+    label: "Report whose title holds characters a file name cannot",
+    key: "LEEIOR21",
+    itemType: "report",
+    title:
+      'Input/output: Is "fair" <always> fair? A #review of R^2 * [draft] | part 1 \\ 2',
+    date: { year: 2021 },
+    dateText: "2021",
+    primaryCreatorType: "author",
+    creators: [{ given: "Min-jun", family: "Lee", role: "author" }],
+    citekey: "leeInputOutputFair2021",
+    fields: { publisher: "Brackenridge University", language: "en" },
+  },
+  {
+    id: "no-author-date-or-citekey",
+    label: "Web page with no author, date, or citation key",
+    key: "WEBFAQ24",
+    itemType: "webpage",
+    title: "Open access: Frequently asked questions",
+    date: null,
+    dateText: "",
+    primaryCreatorType: "author",
+    creators: [],
+    citekey: null,
+    fields: {
+      publicationTitle: "Brackenridge University Library",
+      containerTitle: "Brackenridge University Library",
+      url: "https://library.example.edu/open-access/faq",
+      language: "en",
+    },
+  },
+];
+
+export const EDGE_SAMPLES: readonly DirectorySample[] = EDGE_ITEMS.map(
+  (item) => ({
+    id: item.id,
+    label: item.label,
+    snapshot: derive(SAMPLE_ITEMS[2]!, item),
+  }),
+);
+
+/**
  * Every Zotero annotation color under its contract name but yellow, which the
  * first Sample Annotation shows, then a color outside every palette, which
  * Zotero names no color.
@@ -284,23 +364,25 @@ function derive(base: ItemSnapshot, item: DerivedItem): ItemSnapshot {
   const tags = (item.tags ?? []).map((name) => ({ name, type: "manual" }));
   const extra = item.extra === undefined ? null : parseExtra(item.extra);
   const date =
-    "month" in item.date
-      ? {
-          kind: "date",
-          value: isoDate(item.date),
-          year: item.date.year,
-          month: item.date.month,
-          day: item.date.day,
-          raw: `${isoDate(item.date)} ${item.dateText}`,
-        }
-      : {
-          kind: "year",
-          value: null,
-          year: item.date.year,
-          month: null,
-          day: null,
-          raw: `${item.date.year}-00-00 ${item.dateText}`,
-        };
+    item.date === null
+      ? null
+      : "month" in item.date
+        ? {
+            kind: "date",
+            value: isoDate(item.date),
+            year: item.date.year,
+            month: item.date.month,
+            day: item.date.day,
+            raw: `${isoDate(item.date)} ${item.dateText}`,
+          }
+        : {
+            kind: "year",
+            value: null,
+            year: item.date.year,
+            month: null,
+            day: null,
+            raw: `${item.date.year}-00-00 ${item.dateText}`,
+          };
   const fields = {
     ...Object.fromEntries(OPTIONAL_BASE_FIELDS.map((name) => [name, null])),
     ...item.fields,
@@ -321,7 +403,9 @@ function derive(base: ItemSnapshot, item: DerivedItem): ItemSnapshot {
     extra,
   };
   const coercions = [
-    { path: ["date"], value: date.value ?? String(date.year) },
+    ...(date === null
+      ? []
+      : [{ path: ["date"], value: date.value ?? String(date.year) }]),
     ...creators.map(({ fullName }, index) => ({
       path: ["creators", index],
       value: fullName,
@@ -343,7 +427,7 @@ function derive(base: ItemSnapshot, item: DerivedItem): ItemSnapshot {
   ];
   const temporal = [
     ...base.descriptors.filename.temporalValues,
-    ...(date.value === null
+    ...(date === null || date.value === null
       ? []
       : [{ path: ["date", "value"], type: "Temporal.PlainDate" as const }]),
   ];
