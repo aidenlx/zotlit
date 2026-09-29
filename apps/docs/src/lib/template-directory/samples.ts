@@ -1,6 +1,7 @@
 // The items every Directory Entry renders over: the Workbench Sample Items, and invented items of the types they lack.
 
-import { SAMPLE_ITEMS } from "@zotlit/workbench/render";
+import { SAMPLE_ANNOTATIONS, SAMPLE_ITEMS } from "@zotlit/workbench/render";
+import type { AnnotationExample } from "@zotlit/workbench/render";
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 
 export interface DirectorySample {
@@ -222,6 +223,55 @@ export const DIRECTORY_SAMPLES: readonly DirectorySample[] = [
     snapshot: derive(SAMPLE_ITEMS[2]!, item),
   })),
 ];
+
+/**
+ * Every Zotero annotation color under its contract name but yellow, which the
+ * first Sample Annotation shows, then a color outside every palette, which
+ * Zotero names no color.
+ */
+const HIGHLIGHT_COLORS: readonly { hex: string; name: string | null }[] = [
+  { hex: "#ff6666", name: "red" },
+  { hex: "#5fb236", name: "green" },
+  { hex: "#2ea8e5", name: "blue" },
+  { hex: "#a28ae5", name: "purple" },
+  { hex: "#e56eee", name: "magenta" },
+  { hex: "#f19837", name: "orange" },
+  { hex: "#aaaaaa", name: "gray" },
+  { hex: "#a6507b", name: "plum" },
+  { hex: "#1f8a70", name: null },
+];
+
+/**
+ * The yellow Sample Annotation's highlight in every other Zotero color and a
+ * custom color, without its comment and tags, for entries that show highlight
+ * colors.
+ */
+export const COLOR_HIGHLIGHTS: readonly AnnotationExample[] =
+  HIGHLIGHT_COLORS.map(({ hex, name }, index) => {
+    const base = SAMPLE_ANNOTATIONS[0]!;
+    const key = `HLCOLR${String(index + 1).padStart(2, "0")}`;
+    return {
+      id: `color:${name ?? hex}`,
+      revision: `derived:color:${hex}`,
+      root: {
+        ...base.root,
+        key,
+        indexedKey: key,
+        colorHex: hex,
+        colorName: name,
+        comment: null,
+        commentHtml: null,
+        tags: [],
+        backlink: `zotero://open/library/items/CNPDF26A?annotation=${key}&page=${String(base.root.page)}`,
+      },
+      descriptors: {
+        ...base.descriptors,
+        stringCoercions: base.descriptors.stringCoercions.filter(
+          ({ path }) => path[0] !== "tags",
+        ),
+      },
+    };
+  });
 
 /**
  * Build an item of another type on a Sample Item's shape, so it carries every
