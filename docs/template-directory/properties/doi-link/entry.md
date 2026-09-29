@@ -40,7 +40,7 @@ To add it to a profile:
 1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
 2. In the **Properties** tab, select **Add a property**. Enter `doi` as the **Property name**.
 3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
-4. Paste the rule into **Value**.
+4. In **Value**, replace the example rule with this entry's rule.
 5. Set **When the note is updated** to **Replace the existing value**.
 
 Limits: the rule expects Zotero's **DOI** field to hold the DOI itself, such as `10.1017/CBO9780511809477.002`, as Zotero stores it when it imports an item. A DOI field that holds a full link gives a link with the address twice.

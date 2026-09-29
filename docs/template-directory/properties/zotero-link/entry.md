@@ -42,7 +42,7 @@ To add it to a profile:
 1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
 2. In the **Properties** tab, select **Add a property**. Enter `zotero-link` as the **Property name**.
 3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
-4. Paste the rule into **Value**.
+4. In **Value**, replace the example rule with this entry's rule.
 5. Set **When the note is updated** to **Replace the existing value**.
 
 Limits: the link opens Zotero on a computer where Zotero is installed. It does not open the item on a phone or in a web browser.
