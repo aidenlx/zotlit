@@ -1,9 +1,10 @@
 // Verifies every Directory Entry: its invariants, and a clean render over every Directory Sample and Sample Annotation.
 
 import { isDeepStrictEqual } from "node:util";
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { parseLiteratureNoteTemplate } from "@zotlit/templates/facade";
+import type { ManagedFrontmatterEntry } from "@zotlit/templates/facade";
 import { compileFilter } from "@zotlit/workbench/match";
 import type { MatchCondition } from "@zotlit/workbench/match";
 import {
@@ -351,13 +352,17 @@ function duplicateProfileIds(
 }
 
 function renderProfileEntry(
-  { artifact }: ProfileEntry,
+  { artifact, manifest }: ProfileEntry,
   report: Report,
 ): EntrySamples {
   const notes = DIRECTORY_SAMPLES.map((sample) => {
     const result = renderProfile(artifact.source, sample.snapshot);
     reportDiagnostics(result, sample.label, report);
-    checkProperties(result.fold, sample.label, report);
+    checkProperties(
+      { fold: result.fold, frontmatter: manifest.frontmatter ?? [] },
+      sample.label,
+      report,
+    );
     return noteSample(sample, result, result.creationBody);
   });
   const annotations = SAMPLE_ANNOTATIONS.map((annotation) => {
@@ -439,7 +444,11 @@ function renderPropertyEntry(
     notes: DIRECTORY_SAMPLES.map((sample) => {
       const result = renderProfile(source, sample.snapshot);
       reportDiagnostics(result, sample.label, report);
-      checkProperties(result.fold, sample.label, report);
+      checkProperties(
+        { fold: result.fold, frontmatter: [property] },
+        sample.label,
+        report,
+      );
       const produced = Object.fromEntries(
         result.fold.flatMap(({ key, value, missing }) =>
           missing ? [] : [[key, value]],
@@ -455,7 +464,7 @@ function renderPropertyEntry(
       return {
         sample: { id: sample.id, label: sample.label },
         noteName: null,
-        properties: result.frontmatterBlock,
+        properties: propertiesBlock(result.fold),
         body: null,
       };
     }),
@@ -483,15 +492,27 @@ function describeDiagnostic(diagnostic: RenderDiagnostic): string {
 
 /**
  * Property output the reader sees as broken: null or empty values, the words
- * "null" or "undefined" in text, and separators with nothing on one side.
+ * "null" or "undefined" in text, and separators with nothing on one side. A
+ * null under "Keep the existing value" is an empty property the reader fills
+ * in, such as a rating, so it is not broken.
  */
 function checkProperties(
-  fold: readonly RenderedProperty[],
+  {
+    fold,
+    frontmatter,
+  }: {
+    readonly fold: readonly RenderedProperty[];
+    /** The entries that produced `fold`, which name each property's merge. */
+    readonly frontmatter: readonly ManagedFrontmatterEntry[];
+  },
   subject: string,
   report: Report,
 ): void {
   const present = fold.filter(({ missing }) => !missing);
-  for (const { key, value } of present) {
+  for (const { key, value, position } of present) {
+    if (value === null && frontmatter[position - 1]?.merge === "keep") {
+      continue;
+    }
     for (const fault of valueFaults(value)) {
       report(
         "property-output",
@@ -546,13 +567,27 @@ function noteSample(
 ): NoteSample {
   // The YAML block is parsed back, so a property that breaks YAML is caught
   // here rather than in the reader's note.
-  if (result.frontmatterBlock !== null) parseYaml(result.frontmatterBlock);
+  const properties = propertiesBlock(result.fold);
+  if (properties !== null) parseYaml(properties);
   return {
     sample: { id: sample.id, label: sample.label },
     noteName: result.filename,
-    properties: result.frontmatterBlock,
+    properties,
     body,
   };
+}
+
+/**
+ * The properties as Obsidian writes them into the note, with the options of
+ * its `stringifyYaml`: an empty property reads `rating:`, not `rating: null`.
+ */
+function propertiesBlock(fold: readonly RenderedProperty[]): string | null {
+  const present = fold.filter(({ missing }) => !missing);
+  if (present.length === 0) return null;
+  return stringifyYaml(
+    Object.fromEntries(present.map(({ key, value }) => [key, value])),
+    { nullStr: "", lineWidth: 0, aliasDuplicateObjects: false },
+  );
 }
 
 function withoutManagedMarkers(region: string | null): string | null {

@@ -81,7 +81,7 @@ The source files in `src/lib/template-directory/` of `apps/docs` own the vocabul
 ### Property
 
 1. Create `properties/<slug>/` with `entry.md` and `property.yaml`.
-2. `property.yaml` holds one Managed Frontmatter entry: `key` (leave it out for a Spread Entry), `merge`, and `value`, a JSON-e rule.
+2. `property.yaml` holds one Managed Frontmatter entry: `key` (leave it out for a Spread Entry), `merge`, and `value`, a JSON-e rule. A property the reader fills in by hand, such as a rating, starts empty: its rule writes `null`, and its merge is `keep`.
 3. Under `expected` in `entry.md`, state the result for each Directory Sample that matters, by sample ID, as the properties it writes. A property the mapping leaves out is one the entry makes absent for that sample:
 
    ```yaml
@@ -114,7 +114,7 @@ The suite fails with a named problem code when an entry breaks one of these rule
 | One namespace: every called partial is a partial entry | `unknown-partial` |
 | A Profile packs every partial it calls, byte-identical to the partial entry, and no other | `partial-not-packed`, `packed-partial-differs`, `packed-partial-uncalled` |
 | Every entry renders over every Directory Sample and Sample Annotation with no diagnostics | `render-diagnostic` |
-| Property output has no `null`, empty, `null`/`undefined`/`NaN` text, dangling separator, or label without a value | `property-output` |
+| Property output has no `null`, empty, `null`/`undefined`/`NaN` text, dangling separator, or label without a value. A `null` under `keep` is an empty property the reader fills in | `property-output` |
 | A property entry writes what its `expected` states | `property-expectation` |
 
 The Profile ID rule covers form and uniqueness only. That an ID never changes between editions is a review rule.
