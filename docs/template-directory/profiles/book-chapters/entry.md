@@ -31,7 +31,7 @@ keywords:
   - persist
   - Zotero Integration
 audience: Readers of chapters in edited books who want each chapter note to name the book, its editors, and the chapter's pages, so the chapter can be cited correctly.
-effort: Import it, then create a note for a book chapter. ZotLit chooses it for every book chapter by itself; your color meanings are set once, in one partial, and the ones it starts with work as they are.
+effort: Import it, then create a note for a book chapter. ZotLit chooses it for every book chapter by itself; your color meanings are set once, in one file, and the ones it starts with work as they are.
 ---
 
 A literature note made for chapters in edited books. Once you import it, ZotLit chooses it by itself whenever you create a note for a Zotero item of the type **Book Section**, the type Zotero uses for a book chapter. Articles, whole books, and every other kind of source keep the profile they use now.
@@ -51,7 +51,7 @@ The callout colors and their meanings are the same as in the **Color-coded readi
 
 The note gets these properties, ready to sort and filter in an Obsidian Bases view:
 
-| Property | Value | When the note updates |
+| Property | Value | When the note is updated |
 | --- | --- | --- |
 | `title` | The chapter's title | Replace the existing value |
 | `citekey` | The citation key | Replace the existing value |

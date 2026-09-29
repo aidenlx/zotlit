@@ -28,7 +28,7 @@ keywords:
   - persist
   - Zotero Integration
 audience: Readers of books who want each book note to carry the book's publication details and to leave room for their own summary, key points, and ideas to explore.
-effort: Import it, then create a note for a book. ZotLit chooses it for every book by itself; your color meanings are set once, in one partial, and the ones it starts with work as they are.
+effort: Import it, then create a note for a book. ZotLit chooses it for every book by itself; your color meanings are set once, in one file, and the ones it starts with work as they are.
 ---
 
 A literature note made for books. Once you import it, ZotLit chooses it by itself whenever you create a note for a Zotero item of the type **Book**. Articles, chapters, and every other kind of source keep the profile they use now.
@@ -36,7 +36,7 @@ A literature note made for books. Once you import it, ZotLit chooses it by itsel
 Each note holds:
 
 - the book's title;
-- one line with its publication details: the publisher, place, edition, and ISBN, each when Zotero has it, such as **Penguin Books · London · ISBN 978-0-14-103357-0**;
+- one line with its publication details: the publisher, place, edition, and ISBN, each when Zotero has it, such as **Penguin Books · London · ISBN 978-0-14-103357-0**. An edition shows as it is written in Zotero, such as **Edition: 2nd**;
 - one row of links back to the source: the item in Zotero, its PDF, its DOI, and its web page, each when the item has one;
 - the abstract, folded, so it is at hand without taking over the note;
 - your annotations in page order, each as a callout (Obsidian's colored box with an icon and a title) in the color that matches its Zotero color. The callout's title says what the color means and links to the annotation's page in the PDF, such as **Important · p. 5**. A highlight quotes its text inside the callout, and your Zotero comment follows it as ordinary text, so your words and the author's stay apart. Image annotations appear as embedded images, and notes and text boxes you add in the PDF appear as their text;
@@ -48,7 +48,7 @@ The callout colors and their meanings are the same as in the **Color-coded readi
 
 The note gets these properties, ready to sort and filter in an Obsidian Bases view:
 
-| Property | Value | When the note updates |
+| Property | Value | When the note is updated |
 | --- | --- | --- |
 | `title` | The book's title | Replace the existing value |
 | `citekey` | The citation key | Replace the existing value |
