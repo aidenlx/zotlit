@@ -346,6 +346,64 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     }
   });
 
+  it.each(["built-in", "customized"])(
+    "opens the %s template in its popout without displaying a main-window Workbench tab",
+    async (kind) => {
+      const notePath = `Popout ${kind}.md`;
+      await obEval(
+        vaultId,
+        `(async()=>{
+          for(const type of ['zotlit-template-workbench','zotlit-template-data-explorer','zotlit-note-preview'])
+            for(const leaf of app.workspace.getLeavesOfType(type))leaf.detach();
+          const profile=app.plugins.plugins.zotlit.services.profile;
+          ${kind === "built-in" ? "await profile.restoreDefault();" : "await profile.materializeDefault();"}
+          const file=await app.vault.create(${JSON.stringify(notePath)},'---\\nzotero-key: DMRGRART\\n---\\n# Popout');
+          const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);
+          app.workspace.setActiveLeaf(leaf,{focus:true});return true;
+        })()`,
+      );
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `String(app.metadataCache.getFileCache(app.vault.getFileByPath(${JSON.stringify(notePath)}))?.frontmatter?.['zotero-key']==='DMRGRART')`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      const result = JSON.parse(
+        await obEval(
+          vaultId,
+          `(async()=>{
+            ${browserWaits}
+            const editors=()=>app.workspace.getLeavesOfType('zotlit-template-workbench');
+            let mainSamples=0;
+            const sample=()=>{for(const leaf of editors()){
+              const el=leaf.view.containerEl;
+              if(el.ownerDocument===document&&el.isConnected&&el.getBoundingClientRect().width>0)mainSamples++;
+            }};
+            using resources=new DisposableStack();
+            const observer=resources.adopt(new MutationObserver(sample),value=>value.disconnect());
+            observer.observe(document.body,{childList:true,subtree:true});
+            resources.adopt(setInterval(sample,10),clearInterval);
+              const accepted=app.commands.executeCommandById('zotlit:customize-note-template');
+              const ready=()=>editors().some(leaf=>leaf.view.file&&leaf.view.containerEl.ownerDocument!==document)
+                &&app.workspace.getLeavesOfType('zotlit-note-preview').length>0
+                &&app.workspace.getLeavesOfType('zotlit-template-data-explorer').length>0;
+              await waitFor(ready,true,'Template Workbench and companion views');
+              sample();
+              return JSON.stringify({accepted,ready:ready(),mainSamples,
+                customized:!!app.vault.getFileByPath(app.plugins.plugins.zotlit.services.profile.defaultDocumentPath)});
+          })()`,
+        ),
+      );
+      expect(result).toEqual({
+        accepted: true,
+        ready: true,
+        mainSamples: 0,
+        customized: true,
+      });
+    },
+  );
+
   it("finds a paper in Choose item and previews its callouts with native paragraph styling", async () => {
     await obEval(
       vaultId,

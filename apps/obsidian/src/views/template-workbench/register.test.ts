@@ -59,7 +59,8 @@ function setup() {
   const workspace = {
     getActiveFile: () => file,
     getLeavesOfType: () => [],
-    getLeaf: () => leaf,
+    getLeaf: vi.fn(() => leaf),
+    openPopoutLeaf: vi.fn(() => leaf),
     revealLeaf: vi.fn(),
     on: vi.fn((event: string, handler: FileMenuHandler) => {
       if (event === "file-menu") fileMenuHandlers.push(handler);
@@ -100,6 +101,7 @@ function setup() {
     Parameters<typeof registerTemplateWorkbenchView>[1];
   return {
     app,
+    workspace,
     loadLocalStorage,
     saveLocalStorage,
     file,
@@ -120,11 +122,35 @@ function setup() {
 }
 
 describe("Template Workbench entry points", () => {
+  it.each(["file", "built-in Default"])(
+    "opens a new %s Customize editor directly in a popout",
+    async (target) => {
+      const { app, workspace, file, setViewState } = setup();
+      await openNativeProfile(
+        app,
+        target === "file"
+          ? file
+          : {
+              defaultDocumentPath: "templates/zotlit-profile.default.md",
+              getSource: async () => "Built-in source",
+            },
+        { customize: true },
+      );
+
+      expect(workspace.getLeaf).not.toHaveBeenCalled();
+      expect(workspace.openPopoutLeaf).toHaveBeenCalledWith({
+        size: { width: 1440, height: 900 },
+      });
+      expect(setViewState).toHaveBeenCalledOnce();
+    },
+  );
+
   it.each(["named", "copied-default", "default"])(
     "applies a Customize launch Item to the existing %s workbench and leaves its compact editor unchanged",
     async (kind) => {
       const {
         app,
+        workspace,
         file,
         leaf: compactLeaf,
         setViewState: compactSetState,
@@ -179,6 +205,7 @@ Annotation`);
         active: true,
       });
       expect(compactSetState).not.toHaveBeenCalled();
+      expect(workspace.openPopoutLeaf).not.toHaveBeenCalled();
       expect(openWorkbenchLayout).toHaveBeenLastCalledWith(app, workbench);
       expect(setOriginatingNote).toHaveBeenLastCalledWith(file);
       expect(chooseWorkbenchItem).not.toHaveBeenCalled();
@@ -256,7 +283,7 @@ Annotation`);
   it.each(["file", "built-in Default"])(
     "brings the %s editor window forward after its leaf is ready",
     async (target) => {
-      const { app, file, leaf, focusWindow } = setup();
+      const { app, workspace, file, leaf, focusWindow } = setup();
       const reveal = Promise.withResolvers<void>();
       const revealLeaf = vi
         .spyOn(app.workspace, "revealLeaf")
@@ -277,6 +304,8 @@ Annotation`);
       await opening;
 
       expect(focusWindow).toHaveBeenCalledOnce();
+      expect(workspace.getLeaf).toHaveBeenCalledWith("tab");
+      expect(workspace.openPopoutLeaf).not.toHaveBeenCalled();
     },
   );
 

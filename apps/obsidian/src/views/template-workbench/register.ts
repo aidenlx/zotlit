@@ -365,7 +365,9 @@ export async function openNativeProfile(
           entry.view instanceof TemplateWorkbenchView &&
           entry.view.isDefaultDraft,
       ) ??
-    app.workspace.getLeaf("tab");
+    (options.customize
+      ? app.workspace.openPopoutLeaf({ size: { width: 1440, height: 900 } })
+      : app.workspace.getLeaf("tab"));
   await leaf.setViewState({
     type: TEMPLATE_WORKBENCH_VIEW_TYPE,
     state: {
@@ -433,7 +435,9 @@ export async function openTemplateWorkbench(
           entry.view instanceof TemplateWorkbenchView &&
           entry.view.file?.path === file.path,
       ) ??
-    app.workspace.getLeaf("tab");
+    (options.customize
+      ? app.workspace.openPopoutLeaf({ size: { width: 1440, height: 900 } })
+      : app.workspace.getLeaf("tab"));
   await leaf.setViewState({
     type: TEMPLATE_WORKBENCH_VIEW_TYPE,
     state: {

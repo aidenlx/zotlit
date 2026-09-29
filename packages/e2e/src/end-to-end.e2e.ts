@@ -332,10 +332,39 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     item: { title: string },
     targetVaultId = vaultId,
   ) {
-    await obEval(
-      targetVaultId,
-      "app.workspace.detachLeavesOfType('zotlit-template-workbench');true",
-    );
+    expect(
+      await obEval(
+        targetVaultId,
+        `(async()=>{
+          if(app.workspace.getLeavesOfType('zotlit-template-workbench').length){
+            using resources=new DisposableStack();
+            await new Promise((resolve,reject)=>{
+              const ref=app.workspace.on('layout-change',()=>{
+                if(!app.workspace.getLeavesOfType('zotlit-template-workbench').length&&app.workspace.activeLeaf&&app.workspace.isAttached(app.workspace.activeLeaf))resolve();
+              });
+              resources.defer(()=>app.workspace.offref(ref));
+              const timer=setTimeout(()=>reject(new Error('Workbench detachment did not complete its layout change')),5000);
+              resources.defer(()=>clearTimeout(timer));
+              app.workspace.detachLeavesOfType('zotlit-template-workbench');
+            });
+          }
+          window.focus();
+          return true;
+        })()`,
+      ),
+    ).toBe("true");
+    // Native layout completion can focus a companion leaf in the popout.
+    // Transfer emulated focus afterwards, before a modal chooses its document.
+    await expect
+      .poll(
+        () =>
+          obEval(
+            targetVaultId,
+            "String(app.workspace.getLeavesOfType('zotlit-template-workbench').length===0&&activeWindow===window&&document.hasFocus())",
+          ),
+        { timeout: 5000 },
+      )
+      .toBe("true");
     expect(
       await obEvalUntil(
         targetVaultId,
@@ -352,7 +381,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
     await obEval(
       targetVaultId,
-      `(function(){var input=activeDocument.querySelector('.prompt input');input.value=${JSON.stringify(item.title)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      `(function(){var input=activeDocument.querySelector('.prompt input');input.value=${JSON.stringify(item.title)};input.dispatchEvent(new input.ownerDocument.defaultView.Event('input',{bubbles:true}));return true;})()`,
     );
     await selectSuggestion(targetVaultId, item.title);
     await obEval(
@@ -1442,12 +1471,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         "String(!!activeDocument.querySelector('.prompt'))",
       ),
     ).toBe("false");
-    expect(await notices.read()).toContain(
-      m.notice_created_note_from_match({
-        reason: m.profile_match_selected({ profile: booksProfile.label }),
-        path: notePath,
-      }),
-    );
+    await expect
+      .poll(() => notices.read(), { timeout: 5000 })
+      .toContain(
+        m.notice_created_note_from_match({
+          reason: m.profile_match_selected({ profile: booksProfile.label }),
+          path: notePath,
+        }),
+      );
     expect(await readFile(join(e2eVaultPath, notePath), "utf-8")).toContain(
       `zotlit-profile: Books (${booksProfile.id})`,
     );
@@ -1479,12 +1510,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         "String(!!activeDocument.querySelector('.prompt'))",
       ),
     ).toBe("false");
-    expect(await notices.read()).toContain(
-      m.notice_created_note_from_match({
-        reason: m.profile_match_selected({ profile: booksProfile.label }),
-        path: notePath,
-      }),
-    );
+    await expect
+      .poll(() => notices.read(), { timeout: 5000 })
+      .toContain(
+        m.notice_created_note_from_match({
+          reason: m.profile_match_selected({ profile: booksProfile.label }),
+          path: notePath,
+        }),
+      );
     expect(await hasOneIndexedNote(vaultId, bookItem.key)).toBe(true);
     await cli([`vault=${vaultId}`, "delete", `path=${notePath}`]);
     expect(await hasIndexedNotes(vaultId, bookItem.key, 0)).toBe(true);
@@ -2779,11 +2812,25 @@ function clickModalButton(
   );
 }
 
-/** Captures transient UI notices without replacing the plugin's notifier. */
+/** Captures notices across the vault's open documents, including a window
+ * whose closure moves the next notice to the main window. */
 async function observeNotices(vaultId: string) {
   await obEval(
     vaultId,
-    "(function(){var doc=activeDocument;var previous=new Set(doc.querySelectorAll('.notice'));var values=new Map();var observer=new MutationObserver(()=>{for(var element of doc.querySelectorAll('.notice'))if(!previous.has(element))values.set(element,element.textContent);});observer.observe(doc.body,{childList:true,subtree:true});window.zotlitE2ENotices={observer,values};return true;})()",
+    `(()=>{
+      using observers=new DisposableStack();
+      const values=new Map();
+      const documents=new Set([...${WINDOW_DOCUMENTS},activeDocument]);
+      for(const doc of documents){
+        const previous=new Set(doc.querySelectorAll('.notice'));
+        const observer=observers.adopt(new doc.defaultView.MutationObserver(()=>{
+          for(const element of doc.querySelectorAll('.notice'))
+            if(!previous.has(element))values.set(element,element.textContent);
+        }),value=>value.disconnect());
+        observer.observe(doc.body,{childList:true,subtree:true});
+      }
+      window.zotlitE2ENotices={observers:observers.move(),values};return true;
+    })()`,
   );
   return {
     async read(): Promise<string[]> {
@@ -2797,7 +2844,7 @@ async function observeNotices(vaultId: string) {
     async [Symbol.asyncDispose]() {
       await obEval(
         vaultId,
-        "window.zotlitE2ENotices.observer.disconnect();delete window.zotlitE2ENotices;true",
+        "window.zotlitE2ENotices.observers[Symbol.dispose]();delete window.zotlitE2ENotices;true",
       );
     },
   };
