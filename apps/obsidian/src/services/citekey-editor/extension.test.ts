@@ -642,13 +642,32 @@ describe("citekeyEditorExtension citation widgets", () => {
     drawn.dispatchEvent(down);
     drawn.dispatchEvent(event);
 
-    // Nothing of the plugin's stands between the click and the caret the
-    // browser places, which is what brings the Citation's source back.
+    // The editor's own mouse selection takes the mousedown and places the
+    // caret, which is what brings the Citation's source back.
     expect(opened).toEqual([]);
     expect(requests).toEqual([]);
-    expect(down.defaultPrevented).toBe(false);
+    expect(down.defaultPrevented).toBe(true);
     expect(event.defaultPrevented).toBe(false);
     expect(drawn.dataset.ztClick).toBe("edit");
+  });
+
+  it("keeps the drawn citation's Mod-mousedown from the editor", () => {
+    vi.spyOn(Keymap, "isModifier").mockReturnValue(true);
+    vi.spyOn(Keymap, "isModEvent").mockReturnValue("tab");
+    using view = viewOf("[@doe2024] tail");
+    const drawn = view.dom.querySelector<HTMLElement>(".zt-citation")!;
+    const down = new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      metaKey: true,
+      ctrlKey: true,
+    });
+
+    drawn.dispatchEvent(down);
+
+    // Mod-mousedown would add a selection range; the click opens the work.
+    expect(down.defaultPrevented).toBe(false);
   });
 
   it("opens the work a Mod-click names while Citekey Navigation is off", () => {
