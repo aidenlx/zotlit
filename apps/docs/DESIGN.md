@@ -185,8 +185,10 @@ that fits a research task:
 
 - **Index**: a two-column hero like the landing's: orange mono-uppercase
   eyebrow, serif headline, and italic lede on the left, the recommended entries
-  as landing-style paper cards (hard offset shadow, accent bookmark tab) on the
-  right. A square search box leads a two-column body: a facet rail of
+  on the right: each recommended profile as a landing-style paper card (hard
+  offset shadow, accent bookmark tab), and the other recommended entries as
+  square serif title links under a mono-uppercase kind label, beside the card
+  from `sm` to `lg`. A square search box leads a two-column body: a facet rail of
   mono-uppercase facet headings over sans checkbox rows with mono counts, and
   the results grouped by level under serif group headings, each row a mono kind
   label, serif title and summary, and a muted facet line. Under `lg` the rail
