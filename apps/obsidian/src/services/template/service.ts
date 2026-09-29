@@ -672,12 +672,8 @@ export class TemplateService extends Service<void> {
       throw new InertTemplateError(m.settings_template_inert_eta({ path }));
     }
     const facade = document.manifest.partials
-      ? new TemplateFacade({
-          transformRender: managedRegionTransform(MANAGED_CONTENT_TEMPLATE),
-        })
+      ? this.#documentFacade(document.manifest.partials)
       : this.#facade;
-    for (const partial of document.manifest.partials ?? [])
-      facade.define(partial.name, partial.source, partial.language);
     const frontmatter = document.manifest.frontmatter
       ? facade.compileManagedFrontmatterEntries(document.manifest.frontmatter, {
           javascript: this.#javascriptTemplatesEnabled,
@@ -712,6 +708,41 @@ export class TemplateService extends Service<void> {
           ),
         ),
     };
+  }
+
+  /**
+   * A facade for one document that carries partials of its own: every Shared
+   * Partial and the Citation Template the installed facade renders, with the
+   * document's partials on top, so a same-named one of its own answers for
+   * this document alone.
+   *
+   * One flat namespace, compiled anew from source: an installed partial that
+   * calls a name only the document carries resolves it here. A name the
+   * installed facade holds no compiled template for — a failed compile, or an
+   * Eta partial the JavaScript Templates gate left inert — stays out, so a call
+   * to it fails the way it fails there.
+   */
+  #documentFacade(
+    partials: readonly LiteratureNoteTemplatePartial[],
+  ): TemplateFacade {
+    const facade = new TemplateFacade({
+      autoTrim: this.#lastAutoTrim,
+      transformRender: managedRegionTransform(MANAGED_CONTENT_TEMPLATE),
+    });
+    const own = new Set(partials.map(({ name }) => name));
+    const installed: [
+      string,
+      { language: TemplateLanguage; source: string },
+    ][] = [...this.#partials];
+    if (this.#citation)
+      installed.push([CITATION_TEMPLATE_NAME, this.#citation]);
+    for (const [name, { language, source }] of installed) {
+      if (own.has(name) || this.#compileErrors.has(name)) continue;
+      facade.define(name, source, language);
+    }
+    for (const partial of partials)
+      facade.define(partial.name, partial.source, partial.language);
+    return facade;
   }
 
   /**
