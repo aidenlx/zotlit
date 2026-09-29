@@ -195,22 +195,28 @@ function StepCompanion() {
       icon={done ? "check" : "puzzle"}
     >
       <StepHeading>
-        {mode === "upgraded"
-          ? m.welcome_step_companion_upgrade_title()
-          : m.welcome_step_companion_title()}
+        {done
+          ? m.welcome_step_companion_installed_title()
+          : mode === "upgraded"
+            ? m.welcome_step_companion_upgrade_title()
+            : m.welcome_step_companion_title()}
       </StepHeading>
       <p className="zt:mt-1 zt:text-sm zt:text-muted-foreground">
-        {mode === "upgraded"
-          ? m.companion_zotero_10_guidance()
-          : m.welcome_step_companion_body()}
+        {done
+          ? m.settings_db_companion_desc()
+          : mode === "upgraded"
+            ? m.companion_zotero_10_guidance()
+            : m.welcome_step_companion_body()}
       </p>
-      <Button
-        icon="external-link"
-        className="zt:mt-3"
-        onClick={() => actions.openExternal(DOCS_COMPANION)}
-      >
-        {m.welcome_action_install_companion()}
-      </Button>
+      {!done && (
+        <Button
+          icon="external-link"
+          className="zt:mt-3"
+          onClick={() => actions.openExternal(DOCS_COMPANION)}
+        >
+          {m.welcome_action_install_companion()}
+        </Button>
+      )}
     </TimelineNode>
   );
 }

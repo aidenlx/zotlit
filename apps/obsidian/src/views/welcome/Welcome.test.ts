@@ -137,14 +137,27 @@ describe("Welcome setup steps", () => {
     m.welcome_step_note_title(),
   ];
 
-  it("marks each step done once the vault and Zotero show it complete", async () => {
-    const { container } = await render("fresh", {
-      companionInstalled: true,
-      literatureFolderExists: true,
-      hasLiteratureNote: true,
-    });
-    for (const title of STEPS) expect(isDone(container, title)).toBe(true);
-  });
+  it.each(["fresh", "upgraded"] as const)(
+    "marks each step done once setup is complete (%s)",
+    async (mode) => {
+      const { container } = await render(mode, {
+        companionInstalled: true,
+        literatureFolderExists: true,
+        hasLiteratureNote: true,
+      });
+      expect(
+        isDone(container, m.welcome_step_companion_installed_title()),
+      ).toBe(true);
+      for (const title of STEPS.slice(1))
+        expect(isDone(container, title)).toBe(true);
+      expect(
+        [...container.querySelectorAll("button")].some(
+          (button) =>
+            button.textContent === m.welcome_action_install_companion(),
+        ),
+      ).toBe(false);
+    },
+  );
 
   it("keeps each step to do until it is complete", async () => {
     const { container } = await render("fresh");
