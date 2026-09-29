@@ -190,9 +190,52 @@ describe("resolveCitationInsert", () => {
 });
 
 describe("resolveCitationTrigger", () => {
+  const knownKeys = new Set([
+    "rougier2014",
+    "smith:2024/a.b-c",
+    "key,with,commas",
+  ]);
+  const isKnownCitekey = (key: string): boolean => knownKeys.has(key);
+
+  it.each([
+    "[@rougier2014,]",
+    "[@rougier2014, p]",
+    "[@rougier2014, p. 1]",
+    "【@rougier2014, p】",
+    "[@smith:2024/a.b-c, p]",
+    "[@{key,with,commas}, p]",
+  ])("keeps locator edits out of the suggester: %s", (line) => {
+    for (const atTrigger of [false, true]) {
+      expect(
+        resolveCitationTrigger(line, line.length - 1, {
+          atTrigger,
+          isKnownCitekey,
+        }),
+      ).toBeNull();
+    }
+  });
+
+  it.each([
+    "Ten Simple Rules",
+    "Methods, results",
+    "rougier2014 figures",
+    "smith:2024/a.b-c",
+    "{key,with,commas}",
+  ])("keeps title and citation-key queries searchable: %s", (query) => {
+    const line = `[@${query}]`;
+    expect(
+      resolveCitationTrigger(line, line.length - 1, {
+        atTrigger: false,
+        isKnownCitekey,
+      }),
+    ).toEqual({ start: 0, end: line.length, query, variant: "main" });
+  });
+
   it("matches the Bracket Trigger `[@`", () => {
     const line = "see [@foo";
-    expect(resolveCitationTrigger(line, line.length, false)).toEqual({
+    expect(
+      resolveCitationTrigger(line, line.length, { atTrigger: false }),
+    ).toEqual({
       start: 4,
       end: 9,
       query: "foo",
@@ -202,7 +245,9 @@ describe("resolveCitationTrigger", () => {
 
   it("matches the Bracket Trigger `【@`", () => {
     const line = "见【@foo";
-    expect(resolveCitationTrigger(line, line.length, false)).toEqual({
+    expect(
+      resolveCitationTrigger(line, line.length, { atTrigger: false }),
+    ).toEqual({
       start: 1,
       end: 6,
       query: "foo",
@@ -214,17 +259,21 @@ describe("resolveCitationTrigger", () => {
     const bracketLine = "see [@foo";
     const wideBracketLine = "见【@foo";
     expect(
-      resolveCitationTrigger(bracketLine, bracketLine.length, true),
+      resolveCitationTrigger(bracketLine, bracketLine.length, {
+        atTrigger: true,
+      }),
     ).toEqual({ start: 4, end: 9, query: "foo", variant: "main" });
     expect(
-      resolveCitationTrigger(wideBracketLine, wideBracketLine.length, true),
+      resolveCitationTrigger(wideBracketLine, wideBracketLine.length, {
+        atTrigger: true,
+      }),
     ).toEqual({ start: 1, end: 6, query: "foo", variant: "main" });
   });
 
   it("extends `end` to swallow an adjacent closing bracket for bracket matches", () => {
     // "[@foo]" with the cursor right before "]": bracket match consumes it.
     const line = "[@foo]";
-    expect(resolveCitationTrigger(line, 5, false)).toEqual({
+    expect(resolveCitationTrigger(line, 5, { atTrigger: false })).toEqual({
       start: 0,
       end: 6,
       query: "foo",
@@ -236,7 +285,7 @@ describe("resolveCitationTrigger", () => {
     // "(@foo]" — no Bracket Trigger match here ("(" isn't an opener for it),
     // and the At Trigger never swallows a following bracket.
     const line = "(@foo]";
-    expect(resolveCitationTrigger(line, 5, true)).toEqual({
+    expect(resolveCitationTrigger(line, 5, { atTrigger: true })).toEqual({
       start: 1,
       end: 5,
       query: "foo",
@@ -246,7 +295,7 @@ describe("resolveCitationTrigger", () => {
 
   it("never extends `end` for an At Trigger match even next to `]`", () => {
     const line = "@foo]";
-    expect(resolveCitationTrigger(line, 4, true)).toEqual({
+    expect(resolveCitationTrigger(line, 4, { atTrigger: true })).toEqual({
       start: 0,
       end: 4,
       query: "foo",
@@ -264,7 +313,9 @@ describe("resolveCitationTrigger", () => {
     ['a preceding `"`', '"@foo', 1],
     ["a preceding `'`", "'@foo", 1],
   ])("fires the At Trigger at %s", (_label, line, start) => {
-    expect(resolveCitationTrigger(line, line.length, true)).toEqual({
+    expect(
+      resolveCitationTrigger(line, line.length, { atTrigger: true }),
+    ).toEqual({
       start,
       end: line.length,
       query: "foo",
@@ -274,12 +325,16 @@ describe("resolveCitationTrigger", () => {
 
   it("never fires mid-word", () => {
     const line = "user@example.com";
-    expect(resolveCitationTrigger(line, line.length, true)).toBeNull();
+    expect(
+      resolveCitationTrigger(line, line.length, { atTrigger: true }),
+    ).toBeNull();
   });
 
   it("converts underscores to spaces in At Trigger queries only", () => {
     const atLine = "@machine_learning";
-    expect(resolveCitationTrigger(atLine, atLine.length, true)).toEqual({
+    expect(
+      resolveCitationTrigger(atLine, atLine.length, { atTrigger: true }),
+    ).toEqual({
       start: 0,
       end: atLine.length,
       query: "machine learning",
@@ -288,7 +343,9 @@ describe("resolveCitationTrigger", () => {
 
     const bracketLine = "[@machine_learning";
     expect(
-      resolveCitationTrigger(bracketLine, bracketLine.length, true),
+      resolveCitationTrigger(bracketLine, bracketLine.length, {
+        atTrigger: true,
+      }),
     ).toEqual({
       start: 0,
       end: bracketLine.length,
@@ -299,7 +356,9 @@ describe("resolveCitationTrigger", () => {
 
   it("strips a trailing `/` and asks for the alt variant in the Bracket Trigger", () => {
     const line = "[@foo/";
-    expect(resolveCitationTrigger(line, line.length, false)).toEqual({
+    expect(
+      resolveCitationTrigger(line, line.length, { atTrigger: false }),
+    ).toEqual({
       start: 0,
       end: line.length,
       query: "foo",
@@ -309,7 +368,9 @@ describe("resolveCitationTrigger", () => {
 
   it("strips a trailing `/` (before underscore conversion) and asks for the alt variant in the At Trigger", () => {
     const line = "@foo_bar/";
-    expect(resolveCitationTrigger(line, line.length, true)).toEqual({
+    expect(
+      resolveCitationTrigger(line, line.length, { atTrigger: true }),
+    ).toEqual({
       start: 0,
       end: line.length,
       query: "foo bar",
@@ -319,7 +380,7 @@ describe("resolveCitationTrigger", () => {
 
   it("fires on a bare `@` with an empty query", () => {
     const line = "@";
-    expect(resolveCitationTrigger(line, 1, true)).toEqual({
+    expect(resolveCitationTrigger(line, 1, { atTrigger: true })).toEqual({
       start: 0,
       end: 1,
       query: "",
@@ -329,15 +390,19 @@ describe("resolveCitationTrigger", () => {
 
   it("never fires on the full-width `＠`", () => {
     const line = "＠foo";
-    expect(resolveCitationTrigger(line, line.length, true)).toBeNull();
+    expect(
+      resolveCitationTrigger(line, line.length, { atTrigger: true }),
+    ).toBeNull();
   });
 
   it("does not fire the At Trigger when at-trigger is disabled, but the Bracket Trigger is unaffected", () => {
-    expect(resolveCitationTrigger("@foo", 4, false)).toBeNull();
-    expect(resolveCitationTrigger(" @foo", 5, false)).toBeNull();
+    expect(resolveCitationTrigger("@foo", 4, { atTrigger: false })).toBeNull();
+    expect(resolveCitationTrigger(" @foo", 5, { atTrigger: false })).toBeNull();
 
     const bracketLine = "[@foo]";
-    expect(resolveCitationTrigger(bracketLine, 5, false)).toEqual({
+    expect(
+      resolveCitationTrigger(bracketLine, 5, { atTrigger: false }),
+    ).toEqual({
       start: 0,
       end: 6,
       query: "foo",
@@ -347,7 +412,9 @@ describe("resolveCitationTrigger", () => {
 
   it("ends the At Trigger query at the first space, so trailing content after it never fires", () => {
     const line = "@foo bar";
-    expect(resolveCitationTrigger(line, line.length, true)).toBeNull();
+    expect(
+      resolveCitationTrigger(line, line.length, { atTrigger: true }),
+    ).toBeNull();
   });
 });
 
@@ -363,7 +430,9 @@ describe("padCitationInsert", () => {
 
   it("keeps an unpadded bracketed citation from re-matching either trigger", () => {
     const line = "see [@smith2024]";
-    expect(resolveCitationTrigger(line, line.length, true)).toBeNull();
+    expect(
+      resolveCitationTrigger(line, line.length, { atTrigger: true }),
+    ).toBeNull();
   });
 
   it("appends the space before a non-space character", () => {
@@ -383,6 +452,8 @@ describe("padCitationInsert", () => {
   it("keeps the padded alternate format from re-matching the At Trigger", () => {
     const padded = padCitationInsert("@smith2024", "");
     const line = `see ${padded.text}`;
-    expect(resolveCitationTrigger(line, 4 + padded.cursor, true)).toBeNull();
+    expect(
+      resolveCitationTrigger(line, 4 + padded.cursor, { atTrigger: true }),
+    ).toBeNull();
   });
 });
