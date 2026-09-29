@@ -24,12 +24,15 @@ export function FacetPanel({
   facets,
   chosen,
   counts,
+  resultCount,
   onChange,
   onClear,
 }: {
   facets: Readonly<Record<Facet, readonly FacetOption[]>>;
   chosen: DirectoryQuery["facets"];
   counts: Record<Facet, Record<string, number>>;
+  /** How many entries the chosen filters show, which the panel's close button names. */
+  resultCount: number;
   onChange: (facet: Facet, values: string[]) => void;
   onClear: () => void;
 }) {
@@ -75,7 +78,7 @@ export function FacetPanel({
             </button>
           )}
         </div>
-        <div className="flex flex-col gap-6">
+        <div className="grid gap-6 sm:grid-cols-2 sm:gap-x-10 lg:flex lg:flex-col">
           {PANEL_ORDER.filter((facet) => facets[facet].length > 1).map(
             (facet) => (
               <FacetGroup
@@ -89,6 +92,14 @@ export function FacetPanel({
             ),
           )}
         </div>
+        <button
+          type="button"
+          aria-controls={panelId}
+          onClick={() => setOpen(false)}
+          className="mt-6 flex min-h-10 w-full cursor-pointer items-center justify-center bg-fd-foreground px-4 text-sm font-medium text-fd-background transition-colors hover:bg-fd-primary hover:text-fd-primary-foreground lg:hidden"
+        >
+          {m.docs_directory_show_results({ count: resultCount })}
+        </button>
       </div>
     </div>
   );
