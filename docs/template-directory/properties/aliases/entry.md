@@ -48,8 +48,10 @@ expected:
 
 Two aliases for each literature note, as its `aliases` property:
 
-- the authors and the year, as you cite the work: `Ioannidis 2005`, `Rivera & Chen 2026`, or the first author and "et al." for three or more authors;
+- the family names of the authors and the year, as in an author–date citation: `Ioannidis 2005` for one author, `Rivera & Chen 2026` for two, and `Ioannidis et al. 2005` for three or more;
 - the family name of the first author and the title: `Ioannidis – Why Most Published Research Findings Are False`.
+
+The aliases are the same whatever language Obsidian and ZotLit use.
 
 When you type `[[` in Obsidian, the link suggestions find the note by either alias, also when the note is named by its citation key.
 
@@ -66,10 +68,14 @@ When the note updates: **Add to the existing list**. ZotLit adds each alias the 
 
 To add it to a profile:
 
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile** on your profile.
+1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
 2. In the **Properties** tab, select **Add a property**. Enter `aliases` as the **Property name**.
-3. Set **Value format** to **Rule · JSON-e**, then select **Change format and reset value**.
+3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
 4. Paste the rule into **Value**.
 5. Set **When the note is updated** to **Add to the existing list**.
 
-Limits: when you correct an author, the year, or the title in Zotero, the note gets the new alias and keeps the old one. Delete the old alias in the note by hand. Two works by one author in one year get the same author-and-year alias.
+Limits:
+
+- When you correct an author, the year, or the title in Zotero, the note gets the new alias and keeps the old one. Delete the old alias in the note by hand.
+- Two works by one author in one year get the same author-and-year alias.
+- When the note holds `aliases` as text and not as a list, ZotLit leaves it as it is and adds no alias.

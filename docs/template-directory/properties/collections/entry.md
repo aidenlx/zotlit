@@ -25,7 +25,7 @@ expected:
   thesis: {}
 ---
 
-The item's Zotero collections, as a `collections` list property. Each entry is the full path of one collection, with its parent collections in front, such as `Thesis/Chapter 2`. A Bases view can then show the notes of one collection or project.
+The item's Zotero collections, as a `collections` list property. Each entry is the full path of one collection, with its parent collections in front, such as `Thesis/Chapter 2`. An Obsidian Bases view can then show the notes of one collection or project.
 
 | Item | `collections` |
 | --- | --- |
@@ -39,10 +39,10 @@ When the note updates: **Replace the existing value**. When you move the item to
 
 To add it to a profile:
 
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile** on your profile.
+1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
 2. In the **Properties** tab, select **Add a property**. Enter `collections` as the **Property name**.
-3. Set **Value format** to **Rule · JSON-e**, then select **Change format and reset value**.
+3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
 4. Paste the rule into **Value**.
 5. Set **When the note is updated** to **Replace the existing value**.
 
-Limits: a profile made from the Default profile already has a `collections` property. A profile holds each property name once, so select that property and change its **Value format** and **Value** to this rule, in place of step 2. A collection name that holds a `/` reads like two levels of collections.
+Limits: a profile made from the Default profile already has a `collections` property. A profile holds each property name once, so select that property in place of step 2, then do steps 3 to 5. A collection name that holds a `/` reads like two levels of collections.

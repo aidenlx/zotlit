@@ -134,6 +134,26 @@ describe("the publisher by item type entry", () => {
   });
 });
 
+describe("the aliases entry", () => {
+  it("names the first author and et al. for three or more authors", () => {
+    const [author] = DIRECTORY_SAMPLES.find(
+      ({ id }) => id === "journal-article",
+    )!.snapshot.roots.note.authors as Record<string, unknown>[];
+    const item = sampleWith("journal-article", {
+      authors: ["Ioannidis", "Rivera", "Chen"].map((family) => ({
+        ...author,
+        family,
+      })),
+    });
+    expect(render(property("aliases"), item).written).toEqual({
+      aliases: [
+        "Ioannidis et al. 2005",
+        "Ioannidis – Why Most Published Research Findings Are False",
+      ],
+    });
+  });
+});
+
 describe("the date read entry", () => {
   it("starts at the day of the latest annotation, wherever it sits in the note", () => {
     const [annotation] = DIRECTORY_SAMPLES.find(

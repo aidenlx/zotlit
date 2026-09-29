@@ -25,7 +25,7 @@ expected:
   thesis: { date-added: "2025-05-22" }
 ---
 
-The day the item was added to your Zotero library, as a `date-added` property in the form `2025-02-13`. Obsidian reads it as a date, so a Bases view can sort by it or show the items of one month.
+The day the item was added to your Zotero library, as a `date-added` property in the form `2025-02-13`, the form of an Obsidian date property. An Obsidian Bases view can sort your notes by it.
 
 | Item | `date-added` |
 | --- | --- |
@@ -39,9 +39,9 @@ When the note updates: **Replace the existing value**. Zotero does not change th
 
 To add it to a profile:
 
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile** on your profile.
+1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
 2. In the **Properties** tab, select **Add a property**. Enter `date-added` as the **Property name**.
-3. Set **Value format** to **Rule · JSON-e**, then select **Change format and reset value**.
+3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
 4. Paste the rule into **Value**.
 5. Set **When the note is updated** to **Replace the existing value**.
 

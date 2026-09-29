@@ -6,7 +6,7 @@ tasks: [general-reading, literature-review]
 features: [properties]
 problems:
   - I want all the authors of a paper as a property.
-  - I want to find every note by one author in a Bases view.
+  - I want to find every note by one author in an Obsidian Bases view.
   - My authors property is one long line of text.
 keywords:
   - authors
@@ -27,7 +27,7 @@ expected:
   document: { authors: [Brackenridge Free Library] }
 ---
 
-The item's authors, as an `authors` list property with one full name per entry, in the order Zotero lists them. Obsidian shows a list property as separate values, so a Bases view can find every note that names one author.
+The item's authors, as an `authors` list property with one full name per entry, in the order Zotero lists them. Obsidian shows a list property as separate values, so an Obsidian Bases view can find every note that names one author.
 
 | Item | `authors` |
 | --- | --- |
@@ -45,9 +45,9 @@ When the note updates: **Replace the existing value**. The list follows Zotero o
 
 To add it to a profile:
 
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile** on your profile.
+1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
 2. In the **Properties** tab, select **Add a property**. Enter `authors` as the **Property name**.
-3. Set **Value format** to **Rule · JSON-e**, then select **Change format and reset value**.
+3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
 4. Paste the rule into **Value**.
 5. Set **When the note is updated** to **Replace the existing value**.
 

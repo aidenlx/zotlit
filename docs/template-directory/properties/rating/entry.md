@@ -26,7 +26,7 @@ expected:
   thesis: { rating: 0 }
 ---
 
-A `rating` property that holds a number. It starts at `0`, which means "not rated yet", on every new literature note. After you read, you change it by hand, for example to a number from 1 to 5, and a Bases view sorts or filters your notes by it.
+A `rating` property that holds a number. It starts at `0`, which means "not rated yet", on every new literature note. After you read, you change it by hand, for example to a number from 1 to 5, and an Obsidian Bases view sorts or filters your notes by it.
 
 | Item | `rating` on a new note |
 | --- | --- |
@@ -35,13 +35,13 @@ A `rating` property that holds a number. It starts at `0`, which means "not rate
 | Book chapter | 0 |
 | Thesis | 0 |
 
-When the note updates: **Keep the existing value**. ZotLit writes `0` only when the note has no rating. A rating you set by hand stays.
+When the note updates: **Keep the existing value**. ZotLit writes `0` only when the note's rating is missing or empty. A rating you set by hand stays.
 
 To add it to a profile:
 
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile** on your profile.
+1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
 2. In the **Properties** tab, select **Add a property**. Enter `rating` as the **Property name**.
-3. Set **Value format** to **Rule · JSON-e**, then select **Change format and reset value**.
+3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
 4. Enter `0` into **Value**.
 5. Set **When the note is updated** to **Keep the existing value**.
 

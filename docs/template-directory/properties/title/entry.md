@@ -16,7 +16,7 @@ keywords:
   - property
   - Bases
   - Dataview
-audience: Readers who show, sort, or search their literature notes by title in a Bases view or a Dataview table.
+audience: Readers who show, sort, or search their literature notes by title in an Obsidian Bases view or a table from the Dataview plugin.
 effort: Add one property to your profile in the Properties tab.
 expected:
   journal-article: { title: Why Most Published Research Findings Are False }
@@ -41,10 +41,10 @@ When the note updates: **Replace the existing value**. The property always shows
 
 To add it to a profile:
 
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile** on your profile.
+1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
 2. In the **Properties** tab, select **Add a property**. Enter `title` as the **Property name**.
-3. Set **Value format** to **Rule · JSON-e**, then select **Change format and reset value**.
+3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
 4. Paste the rule into **Value**.
 5. Set **When the note is updated** to **Replace the existing value**.
 
-Limits: the property holds the full title with Zotero's capitalization. A title you edit in the note goes back to the Zotero title on the next update.
+Limits: the property holds the full title with Zotero's capitalization. A title you edit in the note goes back to the Zotero title on the next update. A profile made from the Default profile already has a `title` property. A profile holds each property name once, so select that property in place of step 2, then do steps 3 to 5.

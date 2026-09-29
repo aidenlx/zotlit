@@ -27,7 +27,7 @@ expected:
   letter: { year: 1887 }
 ---
 
-The year of publication, as a `year` property that holds a number. A Bases view or a Dataview table sorts it as a number, so 1982 comes before 2005.
+The year of publication, as a `year` property that holds a number. An Obsidian Bases view or a table from the Dataview plugin sorts it as a number, so 1982 comes before 2005.
 
 | Item | `year` |
 | --- | --- |
@@ -43,9 +43,9 @@ When the note updates: **Replace the existing value**. The property follows the 
 
 To add it to a profile:
 
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile** on your profile.
+1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
 2. In the **Properties** tab, select **Add a property**. Enter `year` as the **Property name**.
-3. Set **Value format** to **Rule · JSON-e**, then select **Change format and reset value**.
+3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
 4. Paste the rule into **Value**.
 5. Set **When the note is updated** to **Replace the existing value**.
 

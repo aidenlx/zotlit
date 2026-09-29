@@ -27,7 +27,7 @@ expected:
   thesis: {}
 ---
 
-A `date-read` property in the form `2025-01-03`, which Obsidian reads as a date. It starts at the day of your latest annotation on the item in Zotero, the last day you read and highlighted it. Change it by hand when you finish reading, and a Bases view can show what you read in one month.
+A `date-read` property in the form `2025-01-03`, the form of an Obsidian date property. It starts at the day of your latest annotation on the item in Zotero, the last day you read and highlighted it. Change it by hand when you finish reading, and an Obsidian Bases view can sort your notes by it.
 
 | Item | `date-read` |
 | --- | --- |
@@ -36,13 +36,13 @@ A `date-read` property in the form `2025-01-03`, which Obsidian reads as a date.
 
 An item with no annotations gets no `date-read` property. The property comes on the first update after you annotate the item.
 
-When the note updates: **Keep the existing value**. ZotLit writes the date only when the note has no date read. A date you set by hand stays, and so does the first date ZotLit wrote: later annotations do not change it.
+When the note updates: **Keep the existing value**. ZotLit writes the date only when the note's date read is missing or empty. A date you set by hand stays, and so does the first date ZotLit wrote: later annotations do not change it.
 
 To add it to a profile:
 
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile** on your profile.
+1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
 2. In the **Properties** tab, select **Add a property**. Enter `date-read` as the **Property name**.
-3. Set **Value format** to **Rule · JSON-e**, then select **Change format and reset value**.
+3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
 4. Paste the rule into **Value**.
 5. Set **When the note is updated** to **Keep the existing value**.
 
