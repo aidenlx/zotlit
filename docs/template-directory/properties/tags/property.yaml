@@ -1,0 +1,11 @@
+key: tags
+merge: append
+value:
+  {
+    "$if": "len(zt.tags) > 0",
+    "then":
+      {
+        "$map": { "$eval": "zt.tags" },
+        "each(tag)": { "$eval": "join(split(tag.name, ' '), '_')" },
+      },
+  }

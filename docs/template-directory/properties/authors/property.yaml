@@ -1,0 +1,11 @@
+key: authors
+merge: replace
+value:
+  {
+    "$if": "len(zt.authors) > 0",
+    "then":
+      {
+        "$map": { "$eval": "zt.authors" },
+        "each(author)": { "$eval": "author.fullName" },
+      },
+  }
