@@ -24,6 +24,8 @@ You can map Zotero data into YAML frontmatter properties that appear at the top 
 
 ## Add a frontmatter field
 
+The template directory holds ready-made [property recipes](/templates?kind=property). Paste one as a <UiLabel name={m.workbench_properties_format_rule()} /> property, or use <UiLabel name={m.workbench_properties_add_spread()} /> to add several properties from one rule, as in [Core citation set](/templates/properties/core-citation-set) (title, authors, year, venue, citekey, DOI link, and Zotero link) or [Reading tracker](/templates/properties/reading-tracker-set) (status, rating, and date read).
+
 <Steps>
   <Step>
     ### Open the Template Workbench View
@@ -60,7 +62,7 @@ You can map Zotero data into YAML frontmatter properties that appear at the top 
 
 ## Add Zotero tags to note frontmatter [#zotero-tags]
 
-Create a managed `tags` field with the `obsidian_tag` filter. The filter reads
+The template directory has a ready-made [Tags](/templates/properties/tags) recipe for this. To build the field yourself, create a managed `tags` field with the `obsidian_tag` filter. The filter reads
 Zotero tag objects from `zt.tags` and returns an array of Obsidian tag values.
 
 <Steps>
@@ -177,6 +179,11 @@ An agent with the ZotLit skill can configure managed frontmatter field templates
     title="Enable JavaScript templates"
     description="Turn on the gate to run js properties in frontmatter."
     href="/docs/how-to/enable-javascript-templates"
+  />
+  <Card
+    title="Template directory"
+    description="Ready-made property recipes to paste into a profile."
+    href="/templates?kind=property"
   />
   <Card
     title="Template Workbench CLI"

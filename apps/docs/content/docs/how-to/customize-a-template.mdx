@@ -16,6 +16,8 @@ A profile is the document that authors one literature note. See [Profiles](/docs
 
 ## Edit a literature note profile
 
+The [template directory](/templates) offers ready-made [note-name recipes](/templates?kind=note-name), such as [Author et al. Year](/templates/note-names/author-et-al-year) and [Citation key](/templates/note-names/citekey), if you want a different note name.
+
 <Steps>
   <Step>
     ### Open the profile
@@ -73,6 +75,8 @@ To return this template to its built-in form, select <UiLabel name={m.settings_p
 
 The **citation text** is one template document, `zotlit-citation.md`, that renders every citation you insert. It renders both the main and the alternate citation from one source: [`zt.variant`](/docs/reference/templates/data#citation-variant) tells it which gesture asked for the citation.
 
+For readable in-text citations such as (Smith 2020), take [Plain author–year citations](/templates/citations/plain-author-year) from the template directory.
+
 <Steps>
   <Step>
     ### Open the citation text
@@ -115,6 +119,8 @@ Once the document exists, the <UiLabel name={m.settings_citation_text_name()} />
 ## Share a piece of template text between profiles [#share-a-partial]
 
 A **partial** is a template document that any other template renders by name. Write a line once, in `zotlit-partial.<name>.md`, and call it from every profile and from the citation text.
+
+The template directory holds ready-made [partials](/templates?kind=partial), such as [Author line](/templates/partials/author-line) ("Smith et al."), [Links row](/templates/partials/links-row) (links to the item in Zotero, its PDF, its DOI, and its web page), and [Folded abstract](/templates/partials/folded-abstract).
 
 ### Create a partial [#create-a-partial]
 
@@ -184,6 +190,11 @@ A note that ZotLit writes through a template calling a partial your vault no lon
     title="Configure frontmatter properties"
     description="Add custom YAML properties derived from Zotero data."
     href="/docs/how-to/configure-frontmatter-properties"
+  />
+  <Card
+    title="Template directory"
+    description="Ready-made partials, citation text, and note names."
+    href="/templates"
   />
   <Card
     title="Customize your annotations"

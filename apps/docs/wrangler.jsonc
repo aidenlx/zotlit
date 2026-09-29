@@ -41,6 +41,8 @@
       "/changelog/*",
       "/blog",
       "/blog/*",
+      "/templates",
+      "/templates/*",
       "!/changelog/rss.xml",
     ],
   },

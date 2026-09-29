@@ -1,6 +1,7 @@
 import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
 import {
   BookIcon,
+  LayoutTemplateIcon,
   MessageSquareMoreIcon,
   NewspaperIcon,
   UsersIcon,
@@ -10,6 +11,7 @@ import { Logo } from "@/components/logo";
 import * as m from "@/paraglide/messages.js";
 
 import { repoUrl } from "./shared";
+import { DIRECTORY_PATH } from "./template-directory/site";
 
 /** Nav title and links shared by the home and docs layouts. */
 export function baseOptions({
@@ -21,6 +23,11 @@ export function baseOptions({
       ...(includeDocsLink
         ? [{ text: m.docs_nav_docs(), url: "/docs", icon: <BookIcon /> }]
         : []),
+      {
+        text: m.docs_nav_templates(),
+        url: DIRECTORY_PATH,
+        icon: <LayoutTemplateIcon />,
+      },
       {
         text: m.docs_nav_blog(),
         url: "/blog",

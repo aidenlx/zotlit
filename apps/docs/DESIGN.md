@@ -196,8 +196,10 @@ that fits a research task:
   closes with an ink "Show N entries" button. Closes on `SiteFooter`.
 - **Entry head**: `← Template directory` crumb, mono-uppercase kind and level
   line, serif title, italic summary held to 60ch, mono-uppercase version line,
-  then the square ink copy button (the landing's "Get started" look) beside an
-  outline download button.
+  then the actions. The first action is a square ink button (the landing's
+  "Get started" look): import for a profile, copy for a recipe. Outline
+  buttons follow for copy (profiles only) and download. Under a profile's
+  actions, a muted sans line gives the manual import path.
 - **Entry body**: audience and effort as accent-barred facts in serif, the
   entry's description and the "How to use it" steps in `ztProse` held to 72ch,
   and an aside rail of mono-uppercase headings over the entry's facets and its
