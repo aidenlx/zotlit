@@ -8,6 +8,7 @@ import {
   inlineCitation,
   replaceSuffixMarkers,
 } from "@zotlit/templates";
+import builtInCitation from "@zotlit/templates/defaults/citation.liquid?raw";
 import {
   parseLiteratureNoteTemplate,
   TemplateFacade,
@@ -44,6 +45,7 @@ import {
   COLOR_HIGHLIGHTS,
   DIRECTORY_SAMPLES,
   EDGE_SAMPLES,
+  TODO_HIGHLIGHT,
 } from "./samples.ts";
 import type { DirectorySample } from "./samples.ts";
 
@@ -380,15 +382,18 @@ function duplicateProfileIds(
 }
 
 /**
- * The Sample Annotations, and for an entry that shows highlight colors, a
- * highlight in every other Zotero color and a custom color.
+ * The Sample Annotations; for an entry that shows highlight colors, a
+ * highlight in every other Zotero color and a custom color; and for an entry
+ * that makes tasks, a highlight whose comment starts with "todo".
  */
 function sampleAnnotations(
   features: DirectoryEntry["features"],
 ): readonly AnnotationExample[] {
-  return features.includes("color-highlights")
-    ? [...SAMPLE_ANNOTATIONS, ...COLOR_HIGHLIGHTS]
-    : SAMPLE_ANNOTATIONS;
+  return [
+    ...SAMPLE_ANNOTATIONS,
+    ...(features.includes("color-highlights") ? COLOR_HIGHLIGHTS : []),
+    ...(features.includes("tasks") ? [TODO_HIGHLIGHT] : []),
+  ];
 }
 
 function renderProfileEntry(
@@ -432,7 +437,7 @@ function renderPartialEntry(
       annotations: sampleAnnotations(features).map((annotation) => {
         const result = renderProfile(source, ANNOTATED_ITEM, {
           annotation,
-          resources,
+          resources: withBuiltInCitation(resources),
         });
         reportDiagnostics(result, annotationLabel(annotation.root), report);
         return {
@@ -458,6 +463,24 @@ function renderPartialEntry(
       };
     }),
     annotations: [],
+  };
+}
+
+/**
+ * The resources with ZotLit's built-in Citation Template, which an annotation
+ * inserted on its own renders its `zt.citation` through until a reader
+ * replaces it. In a literature note, `zt.citation` stays empty.
+ */
+function withBuiltInCitation(resources: RenderResources): RenderResources {
+  return {
+    ...resources,
+    dependencies: {
+      ...resources.dependencies,
+      templates: [
+        ...resources.dependencies.templates,
+        { name: "citation", language: "liquid", source: builtInCitation },
+      ],
+    },
   };
 }
 
