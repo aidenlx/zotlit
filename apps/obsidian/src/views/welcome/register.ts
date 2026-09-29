@@ -57,12 +57,12 @@ export function registerWelcomeView(
     id: "open-welcome-view",
     name: m.command_open_welcome_name(),
     callback: () =>
-      void openWelcomeView(
-        plugin.app,
-        deps.settings.current?.["release.migration-pending"]
+      void openWelcomeView(plugin.app, {
+        mode: deps.settings.current?.["release.migration-pending"]
           ? "upgraded"
           : "fresh",
-      ),
+        pane: "tab",
+      }),
   });
 
   // Fresh-device notice: the database service signals when the resolved DB
@@ -85,14 +85,20 @@ export function registerWelcomeView(
   plugin.register(unsubscribe);
 }
 
-/** Every entry point delegates to this function: reuses an existing Welcome leaf, else opens one in the active leaf. */
+/** Reuses Welcome; first launch uses the active leaf, while the command requests a new tab. */
 export async function openWelcomeView(
   app: App,
-  mode: "fresh" | "upgraded" = "fresh",
+  {
+    mode = "fresh",
+    pane = false,
+  }: {
+    mode?: "fresh" | "upgraded";
+    pane?: "tab" | false;
+  } = {},
 ): Promise<void> {
   const { workspace } = app;
   const leaf =
-    workspace.getLeavesOfType(WELCOME_VIEW_TYPE)[0] ?? workspace.getLeaf(false);
+    workspace.getLeavesOfType(WELCOME_VIEW_TYPE)[0] ?? workspace.getLeaf(pane);
   await leaf.setViewState({
     type: WELCOME_VIEW_TYPE,
     active: true,
