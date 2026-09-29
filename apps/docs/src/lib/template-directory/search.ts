@@ -37,23 +37,25 @@ export type Facet = (typeof FACETS)[number];
 /**
  * The entries that answer the query, best match first. When no entry holds
  * every searched word, the entries that hold the most of them answer, so a
- * question in the reader's own words still finds something.
+ * question in the reader's own words still finds something. The facets then
+ * narrow those answers, so a chosen value never brings in a weaker match.
  */
 export function searchDirectory(
   entries: readonly IndexedEntry[],
   query: DirectoryQuery,
 ): IndexedEntry[] {
   const terms = searchTerms(query.text);
-  const ranked = entries
-    .filter((entry) => fitsFacets(entry, query.facets))
-    .map((entry) => ({ entry, ...rank(entry, terms) }));
+  const ranked = entries.map((entry) => ({ entry, ...rank(entry, terms) }));
   const best = Math.max(0, ...ranked.map(({ matched }) => matched));
   if (terms.length > 0 && best === 0) return [];
   const chosenTypes = query.facets.itemType ?? [];
   const madeFor = (entry: IndexedEntry) =>
     Number(entry.itemTypes.some((type) => chosenTypes.includes(type)));
   return ranked
-    .filter(({ matched }) => matched === best)
+    .filter(
+      ({ entry, matched }) =>
+        matched === best && fitsFacets(entry, query.facets),
+    )
     .sort(
       (a, b) =>
         b.score - a.score ||
