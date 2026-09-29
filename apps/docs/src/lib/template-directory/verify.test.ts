@@ -311,6 +311,18 @@ describe("the Directory verification", () => {
       );
     });
 
+    it("renders an annotation partial with the annotation's citation in the built-in citation text", () => {
+      const files = edit(fixtureFiles(), FIXTURE_QUOTE_FILE, [
+        "> {{ zt.text }}",
+        "> {{ zt.text }} {{ zt.citation }}",
+      ]);
+      const [highlight] =
+        verifyTemplateDirectory(files).samples.get(FIXTURE_QUOTE)!.annotations;
+      expect(highlight!.output).toBe(
+        "> Clear methods make research easier to reproduce. [@riveraResearchInterfaces2026, {p. 1}]\n",
+      );
+    });
+
     it.each([
       ["a null value", '{"$eval": "zt.DOI"}'],
       ["the word null", '"Issue: ${str(zt.issue)}"'],

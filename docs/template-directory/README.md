@@ -121,7 +121,7 @@ The Profile ID rule covers form and uniqueness only. That an ID never changes be
 
 ## Directory Samples
 
-Every entry renders over the four Sample Items (`journal-article`, `conference-paper`, `book`, `thesis`) and five items derived from them for types without a Sample Item (`book-section`, `letter`, `manuscript`, `interview`, `document`). A Profile or `annotation` partial also renders over every Sample Annotation. The suite stores the output in each entry's `samples.md`, so a change in any entry's output shows in review. The `file_link` filter renders nothing in samples, because the Directory Samples have no files in a vault; `plain-annotation-quote` shows how to fall back to plain text, such as `p. 5`.
+Every entry renders over the four Sample Items (`journal-article`, `conference-paper`, `book`, `thesis`) and five items derived from them for types without a Sample Item (`book-section`, `letter`, `manuscript`, `interview`, `document`). The `book-section` item alone has Zotero child notes and a related item (the `book`). A Profile or `annotation` partial also renders over every Sample Annotation. An `annotation` partial renders each one as a single inserted annotation, under ZotLit's built-in citation text, so `zt.citation` holds its page-pinned citation; in a literature note, `zt.citation` is empty. The suite stores the output in each entry's `samples.md`, so a change in any entry's output shows in review. The `file_link` filter renders nothing in samples, because the Directory Samples have no files in a vault; `plain-annotation-quote` shows how to fall back to plain text, such as `p. 5`.
 
 ## Commands
 

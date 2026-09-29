@@ -37,6 +37,10 @@ interface DerivedItem {
   readonly extra?: string;
   /** Base fields and the item type's own fields, under their `zt` names. */
   readonly fields: Readonly<Record<string, string>>;
+  /** The item's Zotero child notes, in the order Zotero added them. */
+  readonly notes?: readonly { readonly key: string; readonly title: string }[];
+  /** The Sample Items in the item's Related panel, by sample id. */
+  readonly related?: readonly string[];
 }
 
 /** Root fields every item carries, null unless the item records them. */
@@ -57,6 +61,14 @@ const OPTIONAL_BASE_FIELDS = [
   "language",
   "extra",
 ] as const;
+
+/** The lists a related item leaves out, since the relation graph stops at depth 1. */
+const UNRELATED_FIELDS = new Set([
+  "annotations",
+  "attachments",
+  "relatedItems",
+  "notes",
+]);
 
 /**
  * Invented items for the item types no Sample Item covers, so type-specific
@@ -96,6 +108,11 @@ const DERIVED_ITEMS: readonly DerivedItem[] = [
       DOI: "10.1017/CBO9780511809477.002",
       language: "en",
     },
+    notes: [
+      { key: "TVKSUMM2", title: "Summary of the three heuristics" },
+      { key: "TVKQUES3", title: "Questions for the decision-making seminar" },
+    ],
+    related: ["book"],
   },
   {
     id: "letter",
@@ -297,6 +314,8 @@ function derive(base: ItemSnapshot, item: DerivedItem): ItemSnapshot {
       ? []
       : [{ path: ["date", "value"], type: "Temporal.PlainDate" as const }]),
   ];
+  const notes = (item.notes ?? []).map(childNote);
+  const related = (item.related ?? []).map(relatedItem);
   return {
     ...base,
     revision: `derived:${item.id}`,
@@ -316,16 +335,27 @@ function derive(base: ItemSnapshot, item: DerivedItem): ItemSnapshot {
         annotations: [],
         attachments: [],
         collections: [],
-        notes: [],
-        relatedItems: [],
+        notes,
+        relatedItems: related.map(({ root }) => root),
       },
       filename: { ...base.roots.filename, ...fields, collections: [] },
       annotations: [],
     },
     descriptors: {
       note: {
-        stringCoercions: [{ path: [], value: item.title }, ...coercions],
-        temporalValues: temporal,
+        stringCoercions: [
+          { path: [], value: item.title },
+          ...coercions,
+          ...notes.map(({ title }, index) => ({
+            path: ["notes", index],
+            value: title,
+          })),
+          ...related.flatMap(({ stringCoercions }) => stringCoercions),
+        ],
+        temporalValues: [
+          ...temporal,
+          ...related.flatMap(({ temporalValues }) => temporalValues),
+        ],
         graphReferences: [],
       },
       filename: {
@@ -336,6 +366,57 @@ function derive(base: ItemSnapshot, item: DerivedItem): ItemSnapshot {
       annotations: [],
     },
     unavailable: [],
+  };
+}
+
+/** A Zotero child note as the note root lists it: a link to its imported note. */
+function childNote({ key, title }: { key: string; title: string }) {
+  return {
+    key,
+    indexedKey: key,
+    title,
+    noteLink: {
+      $helper: "noteLink",
+      signature: "(alias?: string, subpath?: string) => string",
+      value: `[[${title}]]`,
+    },
+  };
+}
+
+/**
+ * A Sample Item as the Related panel of the item at `index` lists it, linked
+ * to the literature note its citation key names, with the descriptors that
+ * restore it moved under `relatedItems`.
+ */
+function relatedItem(id: string, index: number) {
+  const { roots, descriptors } = SAMPLE_ITEMS.find(
+    ({ provenance }) => provenance.kind === "sample" && provenance.id === id,
+  )!;
+  const citekey = String(roots.note.citekey);
+  const kept = ({ path }: { path: readonly (string | number)[] }) =>
+    !UNRELATED_FIELDS.has(String(path[0]));
+  const moved = <T extends { path: readonly (string | number)[] }>(
+    descriptor: T,
+  ): T => ({
+    ...descriptor,
+    path: ["relatedItems", index, ...descriptor.path],
+  });
+  return {
+    root: {
+      ...Object.fromEntries(
+        Object.entries(roots.note).filter(
+          ([name]) => !UNRELATED_FIELDS.has(name),
+        ),
+      ),
+      notePath: `${citekey}.md`,
+      noteLink: {
+        $helper: "noteLink",
+        signature: "(alias?: string, subpath?: string) => string | null",
+        value: `[[${citekey}]]`,
+      },
+    },
+    stringCoercions: descriptors.note.stringCoercions.filter(kept).map(moved),
+    temporalValues: descriptors.note.temporalValues.filter(kept).map(moved),
   };
 }
 
