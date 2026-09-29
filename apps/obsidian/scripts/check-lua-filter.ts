@@ -220,6 +220,16 @@ const CASES: Case[] = [
     native: ["Link", '"Some Note"'],
   },
   {
+    name: "a callout under a paragraph becomes a block quote under its bold title",
+    markdown: "Text [[Doe 2020]].\n> [!note]- Page 1\n>\n> Quote.",
+    native: ["BlockQuote", 'Para [ Strong [ Str "Page" , Space , Str "1" ] ]'],
+  },
+  {
+    name: "a callout marker never reaches the output",
+    markdown: "Text [[Doe 2020]].\n> [!quote]\n> Quote.",
+    absent: ["[!quote]"],
+  },
+  {
     name: "a heading fragment still cites the Literature Note",
     markdown: "[[Doe 2020#Summary]]",
     plain: "(Doe 2020)",
@@ -426,7 +436,7 @@ async function runCase(workspace: string, testCase: Case): Promise<void> {
       [
         "input.md",
         "--from",
-        "markdown+wikilinks_title_after_pipe",
+        "markdown+wikilinks_title_after_pipe-blank_before_blockquote",
         "--lua-filter",
         join(workspace, PANDOC_FILTER_FILENAME),
         "--to",

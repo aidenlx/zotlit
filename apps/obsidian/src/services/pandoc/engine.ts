@@ -11,6 +11,7 @@ import type {
   Inlines,
   Pandoc,
 } from "./ast";
+import { bibliographyHeadingFilter } from "./bibliography-heading";
 import { createPandocRuntime } from "./runtime";
 import type {
   PandocConvertResult,
@@ -18,6 +19,7 @@ import type {
   PandocRuntime,
   VirtualFiles,
 } from "./runtime";
+import { defaultLocaleOf } from "./styles";
 
 const logger = getLogger("pandoc");
 
@@ -200,8 +202,11 @@ export class CitationRequestSupersededError extends Error {
 /**
  * Wikilinks reach the Lua filter as Links only under this reader extension,
  * which is also what the bundled `zotlit.yaml` selects for the native CLI.
+ * Without `blank_before_blockquote`, a `>` line starts a block quote directly
+ * under a paragraph, as it does in Obsidian.
  */
-const MARKDOWN_READER = "markdown+wikilinks_title_after_pipe";
+const MARKDOWN_READER =
+  "markdown+wikilinks_title_after_pipe-blank_before_blockquote";
 
 const STYLE_FILE = "style.csl";
 const BIBLIOGRAPHY_FILE = "bibliography.json";
@@ -351,7 +356,13 @@ class PandocCitationEngine implements CitationEngine {
         from: "json",
         to: format,
         standalone: true,
-        filters: [...localePass, "citeproc", ...localePass],
+        // The heading reads `lang` while the Citation Locale is lent to it.
+        filters: [
+          ...localePass,
+          HEADING_FILTER_FILE,
+          "citeproc",
+          ...localePass,
+        ],
         bibliography: [BIBLIOGRAPHY_FILE],
         "output-file": outputName,
         ...style.options,
@@ -361,6 +372,9 @@ class PandocCitationEngine implements CitationEngine {
         ...(locale === undefined
           ? {}
           : { [LOCALE_FILTER_FILE]: citationLocaleFilter(locale) }),
+        [HEADING_FILTER_FILE]: bibliographyHeadingFilter(
+          styleXml === undefined ? undefined : defaultLocaleOf(styleXml),
+        ),
         [BIBLIOGRAPHY_FILE]: JSON.stringify(bibliography),
         ...style.files,
       },
@@ -524,6 +538,7 @@ function distinct(ids: readonly string[]): string[] {
 }
 
 const LOCALE_FILTER_FILE = "citation-locale.lua";
+const HEADING_FILTER_FILE = "bibliography-heading.lua";
 
 /**
  * The Citation Locale, applied to citation processing alone. Pandoc reads a
