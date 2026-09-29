@@ -1,0 +1,566 @@
+// Verifies every Directory Entry: its invariants, and a clean render over every Directory Sample and Sample Annotation.
+
+import { isDeepStrictEqual } from "node:util";
+import { parse as parseYaml } from "yaml";
+
+import { parseLiteratureNoteTemplate } from "@zotlit/templates/facade";
+import { compileFilter } from "@zotlit/workbench/match";
+import type { MatchCondition } from "@zotlit/workbench/match";
+import {
+  renderProfile,
+  SAMPLE_ANNOTATIONS,
+  SAMPLE_ITEMS,
+} from "@zotlit/workbench/render";
+import type {
+  RenderDiagnostic,
+  RenderedProperty,
+  RenderResources,
+  TemplateRenderResult,
+} from "@zotlit/workbench/render";
+
+import { ITEM_TYPES } from "./entry.ts";
+import {
+  CONTRACT_VERSION,
+  harnessProfile,
+  loadTemplateDirectory,
+} from "./load.ts";
+import type { DirectoryEntry, DirectoryFiles } from "./load.ts";
+import type { DirectoryProblem, DirectoryProblemCode } from "./problem.ts";
+import { DIRECTORY_SAMPLES } from "./samples.ts";
+import type { DirectorySample } from "./samples.ts";
+
+/** One Directory Sample's note, as the entry renders it. */
+export interface NoteSample {
+  readonly sample: Pick<DirectorySample, "id" | "label">;
+  /** The note name; null for an entry that names no note. */
+  readonly noteName: string | null;
+  /** The properties as the note's YAML block; null when it writes none. */
+  readonly properties: string | null;
+  /** The note body; null for an entry that writes no body. */
+  readonly body: string | null;
+}
+
+/** One Sample Annotation, as the entry's Annotation Section renders it. */
+export interface AnnotationSample {
+  readonly id: string;
+  readonly label: string;
+  readonly output: string | null;
+}
+
+export interface EntrySamples {
+  readonly notes: readonly NoteSample[];
+  readonly annotations: readonly AnnotationSample[];
+}
+
+export interface DirectoryVerification {
+  readonly entries: readonly DirectoryEntry[];
+  readonly problems: readonly DirectoryProblem[];
+  /** Rendered samples by entry id. */
+  readonly samples: ReadonlyMap<string, EntrySamples>;
+}
+
+/** The reader-facing command that rewrites every packed partial. */
+export const REPACK_COMMAND =
+  "pnpm exec turbo run template-directory:repack --filter=@zotlit/docs";
+
+/** The Sample Item Sample Annotations belong to. */
+const ANNOTATED_ITEM = SAMPLE_ITEMS[1]!;
+
+const PROFILE_ID = /^[A-Za-z0-9]{12}$/;
+
+/** Manifest keys that bind a Profile to one vault's folders or citation style. */
+const BINDING_KEYS = [
+  "folder",
+  "importFolder",
+  "citationStyle",
+  "importColoredHighlights",
+  "importAnnotationsAsTemplate",
+] as const;
+
+/** Manifest keys every Profile entry states for the reader. */
+const REQUIRED_PROFILE_KEYS = [
+  "author",
+  "description",
+  "sampleItemType",
+  "minAppVersion",
+] as const;
+
+/**
+ * Load the Directory, check every entry, and render it over every Directory
+ * Sample and Sample Annotation. An entry that renders keeps its samples even
+ * when it breaks a rule, so a failing check can be read beside its output.
+ */
+export function verifyTemplateDirectory(
+  files: DirectoryFiles,
+): DirectoryVerification {
+  const { entries, problems: loadProblems } = loadTemplateDirectory(files);
+  const partials = new Map(
+    entries.flatMap((entry) =>
+      entry.kind === "partial" ? [[entry.slug, entry] as const] : [],
+    ),
+  );
+  const resources: RenderResources = {
+    dependencies: {
+      templates: [...partials.values()].map(({ slug, language, source }) => ({
+        name: slug,
+        language: language as "liquid",
+        source,
+      })),
+      diagnostics: [],
+    },
+    citationStyle: { kind: "default" },
+  };
+  const problems: DirectoryProblem[] = [...loadProblems];
+  const samples = new Map<string, EntrySamples>();
+  for (const entry of entries) {
+    const report = (code: DirectoryProblemCode, message: string) =>
+      problems.push({ entry: entry.id, code, message });
+    for (const name of entry.calls) {
+      if (!partials.has(name)) {
+        report(
+          "unknown-partial",
+          `It calls the partial "${name}", which no partial entry holds. Every partial a Directory Entry calls is itself a partial entry, so one name means one source.`,
+        );
+      }
+    }
+    switch (entry.kind) {
+      case "profile":
+        checkProfile(entry, partials, report);
+        samples.set(entry.id, renderProfileEntry(entry, report));
+        break;
+      case "partial":
+        checkLanguage(entry.language, report);
+        if (entry.context === "citation") {
+          report(
+            "unverified",
+            "The verification renders no citation-context partial yet. Add its verification before the first entry of this kind ships.",
+          );
+          break;
+        }
+        samples.set(entry.id, renderPartialEntry(entry, resources, report));
+        break;
+      case "property":
+        samples.set(entry.id, renderPropertyEntry(entry, report));
+        break;
+      case "citation":
+      case "note-name":
+        report(
+          "unverified",
+          `The verification renders no ${entry.kind} entry yet. Add its verification before the first entry of this kind ships.`,
+        );
+        break;
+    }
+  }
+  problems.push(...duplicateProfileIds(entries));
+  return { entries, problems, samples };
+}
+
+type Report = (code: DirectoryProblemCode, message: string) => void;
+type ProfileEntry = Extract<DirectoryEntry, { kind: "profile" }>;
+type PartialEntry = Extract<DirectoryEntry, { kind: "partial" }>;
+type PropertyEntry = Extract<DirectoryEntry, { kind: "property" }>;
+
+function checkProfile(
+  { manifest, calls, artifact }: ProfileEntry,
+  partials: ReadonlyMap<string, PartialEntry>,
+  report: Report,
+): void {
+  if (!PROFILE_ID.test(manifest.id) || manifest.id === "default") {
+    report(
+      "profile-id",
+      `The Profile ID "${manifest.id}" must be twelve letters and digits, minted once for the entry and kept across editions.`,
+    );
+  }
+  const bindings = BINDING_KEYS.filter((key) => manifest[key] !== undefined);
+  if (bindings.length > 0) {
+    report(
+      "profile-binding",
+      `The manifest binds ${bindings.join(", ")}. A Directory Profile leaves folders, citation style, and Imported Note settings to the reader's vault.`,
+    );
+  }
+  if (manifest.match !== undefined) {
+    const matchProblem = itemTypeMatchProblem(manifest.match);
+    if (matchProblem) report("profile-match", matchProblem);
+  }
+  if (manifest.contract !== CONTRACT_VERSION) {
+    report(
+      "profile-contract",
+      `The manifest states contract ${manifest.contract}; the current template contract is ${CONTRACT_VERSION}.`,
+    );
+  }
+  const missing = REQUIRED_PROFILE_KEYS.filter(
+    (key) => manifest[key] === undefined,
+  );
+  if (missing.length > 0) {
+    report(
+      "profile-metadata",
+      `The manifest needs ${missing.join(", ")}, which the import sheet and the Directory show the reader.`,
+    );
+  }
+  if (
+    manifest.sampleItemType !== undefined &&
+    !ITEM_TYPES.includes(manifest.sampleItemType)
+  ) {
+    report(
+      "profile-metadata",
+      `sampleItemType "${manifest.sampleItemType}" is not a Zotero item type.`,
+    );
+  }
+  checkLanguage(manifest.language, report);
+  for (const partial of manifest.partials ?? []) {
+    checkLanguage(
+      partial.language,
+      report,
+      `The packed partial "${partial.name}"`,
+    );
+  }
+  (manifest.frontmatter ?? []).forEach((property, index) => {
+    if (!("value" in property)) {
+      report(
+        "property-language",
+        `Property ${property.key ?? `#${index + 1}`} is not a JSON-e rule. Every Directory property is written as "Rule · JSON-e", the manifest's \`value\` member.`,
+      );
+    }
+  });
+  checkManagedBlock(artifact.source, report);
+  checkPackedPartials({ manifest, calls }, partials, report);
+}
+
+function checkLanguage(
+  language: string,
+  report: Report,
+  subject = "The template",
+): void {
+  if (language !== "liquid") {
+    report(
+      "template-language",
+      `${subject} is written in ${language}. Directory Entries are Liquid only.`,
+    );
+  }
+}
+
+/**
+ * Everything from Zotero sits inside the one Managed Block, so an update never
+ * rewrites what the reader wrote: the text around the block is the reader's,
+ * and holds no template code.
+ */
+function checkManagedBlock(source: string, report: Report): void {
+  const { body, managedBlock } = parseLiteratureNoteTemplate(source);
+  if (managedBlock === null) {
+    report(
+      "managed-block",
+      "The note body has no Managed Block. Everything that comes from Zotero belongs inside {% managed %} … {% endmanaged %}.",
+    );
+    return;
+  }
+  const outside =
+    body.slice(0, managedBlock.start) + body.slice(managedBlock.end);
+  if (/\{\{|\{%/.test(outside)) {
+    report(
+      "managed-block",
+      "Template code sits outside the Managed Block, where an update would never refresh it. Move it inside {% managed %} … {% endmanaged %}; the text around the block is the reader's.",
+    );
+  }
+}
+
+function checkPackedPartials(
+  { manifest, calls }: Pick<ProfileEntry, "manifest" | "calls">,
+  partials: ReadonlyMap<string, PartialEntry>,
+  report: Report,
+): void {
+  const packed = manifest.partials ?? [];
+  const packedByName = new Map(
+    packed.map((partial) => [partial.name, partial]),
+  );
+  for (const name of calls) {
+    const entry = partials.get(name);
+    if (entry === undefined) continue;
+    const copy = packedByName.get(name);
+    if (copy === undefined) {
+      report(
+        "partial-not-packed",
+        `It calls the partial "${name}" but does not pack it. Run \`${REPACK_COMMAND}\`.`,
+      );
+    } else if (
+      copy.source !== entry.source ||
+      copy.language !== entry.language
+    ) {
+      report(
+        "packed-partial-differs",
+        `Its packed "${name}" differs from the partial entry of that name. Run \`${REPACK_COMMAND}\`.`,
+      );
+    }
+  }
+  for (const { name } of packed) {
+    if (!calls.includes(name)) {
+      report(
+        "packed-partial-uncalled",
+        `It packs the partial "${name}", which nothing in the Profile calls. Run \`${REPACK_COMMAND}\`.`,
+      );
+    }
+  }
+}
+
+/** Why a Profile Match is not portable, or null when it tests built-in item types alone. */
+function itemTypeMatchProblem(
+  match: Parameters<typeof compileFilter>[0],
+): string | null {
+  const compiled = compileFilter(match);
+  if (compiled.problem) {
+    return `The match does not compile (${compiled.problem.code}: "${compiled.problem.text}").`;
+  }
+  const leaves: MatchCondition[] = [];
+  const visit = (condition: MatchCondition): boolean => {
+    if (condition.kind !== "group") {
+      leaves.push(condition);
+      return true;
+    }
+    return condition.conditions.length > 0 && condition.conditions.every(visit);
+  };
+  if (!visit(compiled.condition)) {
+    return "The match holds an empty group. A Directory Profile matches named item types or nothing.";
+  }
+  const other = leaves.filter(
+    (leaf) => leaf.kind !== "item-type" || leaf.negated,
+  );
+  return other.length === 0
+    ? null
+    : `The match tests ${other.map((leaf) => (leaf.kind === "item-type" ? "an excluded item type" : leaf.kind)).join(", ")}. A Directory Profile matches by built-in item type only, so it selects the same items in every vault.`;
+}
+
+function duplicateProfileIds(
+  entries: readonly DirectoryEntry[],
+): DirectoryProblem[] {
+  const byId = new Map<string, string[]>();
+  for (const entry of entries) {
+    if (entry.kind !== "profile") continue;
+    byId.set(entry.manifest.id, [
+      ...(byId.get(entry.manifest.id) ?? []),
+      entry.id,
+    ]);
+  }
+  return [...byId].flatMap(([id, holders]) =>
+    holders.length < 2
+      ? []
+      : holders.map((holder) => ({
+          entry: holder,
+          code: "duplicate-profile-id" as const,
+          message: `The Profile ID "${id}" is also used by ${holders.filter((other) => other !== holder).join(", ")}. Mint a new ID for a new Profile entry.`,
+        })),
+  );
+}
+
+function renderProfileEntry(
+  { artifact }: ProfileEntry,
+  report: Report,
+): EntrySamples {
+  const notes = DIRECTORY_SAMPLES.map((sample) => {
+    const result = renderProfile(artifact.source, sample.snapshot);
+    reportDiagnostics(result, sample.label, report);
+    checkProperties(result.fold, sample.label, report);
+    return noteSample(sample, result, result.creationBody);
+  });
+  const annotations = SAMPLE_ANNOTATIONS.map((annotation) => {
+    const result = renderProfile(artifact.source, ANNOTATED_ITEM, {
+      annotation,
+    });
+    reportDiagnostics(result, annotationLabel(annotation.root), report);
+    return {
+      id: annotation.id,
+      label: annotationLabel(annotation.root),
+      output: result.annotation,
+    };
+  });
+  return { notes, annotations };
+}
+
+function renderPartialEntry(
+  { slug, context }: PartialEntry,
+  resources: RenderResources,
+  report: Report,
+): EntrySamples {
+  const call = `{% render "${slug}" with zt as zt -%}\n`;
+  if (context === "annotation") {
+    const source = harnessProfile({ annotation: call });
+    return {
+      notes: [],
+      annotations: SAMPLE_ANNOTATIONS.map((annotation) => {
+        const result = renderProfile(source, ANNOTATED_ITEM, {
+          annotation,
+          resources,
+        });
+        reportDiagnostics(result, annotationLabel(annotation.root), report);
+        return {
+          id: annotation.id,
+          label: annotationLabel(annotation.root),
+          output: result.annotation,
+        };
+      }),
+    };
+  }
+  const source = harnessProfile({
+    body: `{% managed %}\n${call}{% endmanaged %}\n`,
+  });
+  return {
+    notes: DIRECTORY_SAMPLES.map((sample) => {
+      const result = renderProfile(source, sample.snapshot, { resources });
+      reportDiagnostics(result, sample.label, report);
+      return {
+        sample: { id: sample.id, label: sample.label },
+        noteName: null,
+        properties: null,
+        body: withoutManagedMarkers(result.managedRegion),
+      };
+    }),
+    annotations: [],
+  };
+}
+
+function renderPropertyEntry(
+  { property, expected }: PropertyEntry,
+  report: Report,
+): EntrySamples {
+  if (!("value" in property)) {
+    report(
+      "property-language",
+      'The property is not a JSON-e rule. Every Directory property is written as "Rule · JSON-e", the `value` member.',
+    );
+  }
+  const source = harnessProfile({ frontmatter: [property] });
+  for (const id of Object.keys(expected)) {
+    if (!DIRECTORY_SAMPLES.some((sample) => sample.id === id)) {
+      report(
+        "property-expectation",
+        `expected names "${id}", which is not a Directory Sample.`,
+      );
+    }
+  }
+  return {
+    notes: DIRECTORY_SAMPLES.map((sample) => {
+      const result = renderProfile(source, sample.snapshot);
+      reportDiagnostics(result, sample.label, report);
+      checkProperties(result.fold, sample.label, report);
+      const produced = Object.fromEntries(
+        result.fold.flatMap(({ key, value, missing }) =>
+          missing ? [] : [[key, value]],
+        ),
+      );
+      const wanted = expected[sample.id];
+      if (wanted !== undefined && !isDeepStrictEqual(produced, wanted)) {
+        report(
+          "property-expectation",
+          `For the ${sample.label} it writes ${JSON.stringify(produced)}; the entry states ${JSON.stringify(wanted)}.`,
+        );
+      }
+      return {
+        sample: { id: sample.id, label: sample.label },
+        noteName: null,
+        properties: result.frontmatterBlock,
+        body: null,
+      };
+    }),
+    annotations: [],
+  };
+}
+
+function reportDiagnostics(
+  result: TemplateRenderResult,
+  subject: string,
+  report: Report,
+): void {
+  for (const diagnostic of result.diagnostics) {
+    report(
+      "render-diagnostic",
+      `Rendering the ${subject} reports ${describeDiagnostic(diagnostic)}.`,
+    );
+  }
+}
+
+function describeDiagnostic(diagnostic: RenderDiagnostic): string {
+  const detail = diagnostic.message ?? JSON.stringify(diagnostic.params ?? {});
+  return `${diagnostic.code} in the ${diagnostic.part}: ${detail}`;
+}
+
+/**
+ * Property output the reader sees as broken: null or empty values, the words
+ * "null" or "undefined" in text, and separators with nothing on one side.
+ */
+function checkProperties(
+  fold: readonly RenderedProperty[],
+  subject: string,
+  report: Report,
+): void {
+  const present = fold.filter(({ missing }) => !missing);
+  for (const { key, value } of present) {
+    for (const fault of valueFaults(value)) {
+      report(
+        "property-output",
+        `For the ${subject}, property "${key}" ${fault}.`,
+      );
+    }
+  }
+}
+
+const SEPARATORS = ",;:·|/–—-";
+const LITERAL_EMPTY = /\b(?:null|undefined|NaN)\b/;
+/** Two separators with nothing between them, such as ", ," or ". .". */
+const DOUBLED_SEPARATOR = /[,;:·|]\s*[,;:·|.]|\.\s+\./;
+const EMPTY_BRACKETS = /\(\s*\)|\[\s*\]/;
+/** A volume, issue, or page label whose number is missing, such as "Vol." or "№ ,". */
+const LABEL_WITHOUT_VALUE =
+  /(?:^|[\s(])(?:[Vv]ol|[Nn]o|[Ii]ss|pp?|№)\.?\s*(?:$|[,;:.)])/;
+
+function valueFaults(value: unknown): string[] {
+  if (value === null || value === undefined) return ["is null"];
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) =>
+      valueFaults(item).map((fault) => `item ${index + 1} ${fault}`),
+    );
+  }
+  if (typeof value === "object") {
+    return Object.entries(value).flatMap(([key, item]) =>
+      valueFaults(item).map((fault) => `"${key}" ${fault}`),
+    );
+  }
+  if (typeof value !== "string") return [];
+  const text = value.trim();
+  if (text === "") return ["is empty text"];
+  const faults: string[] = [];
+  if (LITERAL_EMPTY.test(text)) faults.push(`reads "${text}"`);
+  if (
+    SEPARATORS.includes(text[0]!) ||
+    SEPARATORS.includes(text.at(-1)!) ||
+    DOUBLED_SEPARATOR.test(text) ||
+    EMPTY_BRACKETS.test(text) ||
+    LABEL_WITHOUT_VALUE.test(text)
+  ) {
+    faults.push(`has a separator with nothing beside it: "${text}"`);
+  }
+  return faults;
+}
+
+function noteSample(
+  sample: DirectorySample,
+  result: TemplateRenderResult,
+  body: string | null,
+): NoteSample {
+  // The YAML block is parsed back, so a property that breaks YAML is caught
+  // here rather than in the reader's note.
+  if (result.frontmatterBlock !== null) parseYaml(result.frontmatterBlock);
+  return {
+    sample: { id: sample.id, label: sample.label },
+    noteName: result.filename,
+    properties: result.frontmatterBlock,
+    body,
+  };
+}
+
+function withoutManagedMarkers(region: string | null): string | null {
+  if (region === null) return null;
+  return region.split("\n").slice(1, -1).join("\n");
+}
+
+function annotationLabel(root: Record<string, unknown>): string {
+  const color = typeof root.colorName === "string" ? `, ${root.colorName}` : "";
+  return `${String(root.type)} annotation${color}`;
+}

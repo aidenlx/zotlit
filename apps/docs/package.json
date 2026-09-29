@@ -17,6 +17,7 @@
     "cf-typegen:check": "wrangler types --check",
     "generate:messages": "node scripts/generate-messages.ts",
     "generate:template-data": "node scripts/generate-template-data.ts",
+    "template-directory:repack": "node scripts/repack-template-directory.ts",
     "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
     "lint": "oxlint",
     "test": "vitest run"
@@ -81,6 +82,8 @@
     "@zotlit/db": "workspace:*",
     "@zotlit/paraglide-vite": "workspace:*",
     "@zotlit/scripts": "workspace:*",
+    "@zotlit/templates": "workspace:*",
+    "ajv": "catalog:",
     "cross-env": "catalog:",
     "fflate": "catalog:",
     "happy-dom": "catalog:",
@@ -92,6 +95,7 @@
     "typescript": "catalog:",
     "vite": "catalog:",
     "vitest": "catalog:",
-    "wrangler": "^4.125.0"
+    "wrangler": "^4.125.0",
+    "yaml": "catalog:"
   }
 }
