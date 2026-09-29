@@ -311,6 +311,18 @@ describe("the Directory verification", () => {
       );
     });
 
+    it("renders an annotation partial with the annotation's citation in the built-in citation text", () => {
+      const files = edit(fixtureFiles(), FIXTURE_QUOTE_FILE, [
+        "> {{ zt.text }}",
+        "> {{ zt.text }} {{ zt.citation }}",
+      ]);
+      const [highlight] =
+        verifyTemplateDirectory(files).samples.get(FIXTURE_QUOTE)!.annotations;
+      expect(highlight!.output).toBe(
+        "> Clear methods make research easier to reproduce. [@riveraResearchInterfaces2026, {p. 1}]\n",
+      );
+    });
+
     it.each([
       ["a null value", '{"$eval": "zt.DOI"}'],
       ["the word null", '"Issue: ${str(zt.issue)}"'],
@@ -447,6 +459,25 @@ describe("the Directory verification", () => {
           SAMPLE_ANNOTATION_LABELS,
         );
       });
+    });
+
+    it("renders an entry that makes tasks over a highlight whose comment starts with todo", () => {
+      const files = edit(
+        edit(fixtureFiles(), `${FIXTURE_QUOTE}/entry.md`, [
+          "context: annotation",
+          "context: annotation\nfeatures: [tasks]",
+        ]),
+        FIXTURE_QUOTE_FILE,
+        ["> {{ zt.text }}", "{{ zt.comment }}"],
+      );
+      const annotations =
+        verifyTemplateDirectory(files).samples.get(FIXTURE_QUOTE)!.annotations;
+      expect(annotations.map(({ label }) => label).slice(6)).toEqual([
+        "highlight annotation, orange",
+      ]);
+      expect(annotations.at(-1)!.output?.trim()).toBe(
+        "todo Check the sample size before citing this result.",
+      );
     });
 
     it("rejects a property entry that is not a JSON-e rule", () => {
