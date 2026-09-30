@@ -445,6 +445,51 @@ const directory = directorySite(
   ),
 );
 
+describe("the properties of a Profile's example in its edition", () => {
+  const propertyTable = (rows: readonly string[]) =>
+    [
+      `| ${m.docs_directory_sample_property()} | ${m.docs_directory_value()} | ${m.docs_directory_sample_mark()} |`,
+      "| --- | --- | --- |",
+      ...rows,
+    ].join("\n");
+  const fixtureEdition = async () =>
+    (await directoryEdition(site(), ["profiles", "fixture-profile"]))!;
+
+  it("tabulates each property with the mark of the page: set by this look, or added by ZotLit", async () => {
+    const text = await fixtureEdition();
+
+    expect(text).toContain(
+      propertyTable([
+        "| title | Prospect theory: An analysis of decision under risk | Set by this look |",
+        "| zotero-key | KAHPRT79 | Added by ZotLit |",
+        "| zotlit-profile | Fixture profile (FixtureProf1) | Added by ZotLit |",
+      ]),
+    );
+  });
+
+  it("keeps the table between the note name and the note's Markdown, which holds ZotLit's own properties too", async () => {
+    const text = await fixtureEdition();
+    const example = text.slice(text.indexOf(`### ${ARTICLE_FULL}`));
+    const at = (part: string) => example.indexOf(part);
+
+    expect(at(m.docs_directory_sample_note_name())).toBeLessThan(
+      at("| title |"),
+    );
+    expect(at("| zotlit-profile |")).toBeLessThan(at("```markdown"));
+    expect(example).toContain(
+      "zotero-key: KAHPRT79\nzotlit-profile: Fixture profile (FixtureProf1)\n---",
+    );
+  });
+
+  it("names the keys a Spread Entry writes, as Books does", async () => {
+    const text = (await directoryEdition(directory, ["profiles", "books"]))!;
+
+    expect(text).toContain(
+      "| isbn | 978-0-226-23973-6 | Set by this look |\n| zotero-key | BOOTCR16 | Added by ZotLit |\n| zotlit-profile | Books (KVX7ozKV9Vxi) | Added by ZotLit |",
+    );
+  });
+});
+
 describe("a Profile's color key in its edition", () => {
   const edition = async (slug: string) =>
     (await directoryEdition(directory, ["profiles", slug]))!;

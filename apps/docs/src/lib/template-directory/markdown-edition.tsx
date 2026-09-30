@@ -18,9 +18,9 @@ import {
 import { m } from "@/paraglide/messages.js";
 
 import { codeBlock, formatSampleSections } from "./samples-markdown";
+import type { EntrySampleRows } from "./samples-markdown";
 import { calledPartials, DIRECTORY_PATH, entryId, entryPath } from "./site";
 import type { DirectorySite, SiteEntry } from "./site";
-import type { EntrySamples } from "./verify";
 
 /**
  * The Directory's edition at `slugs` below the index: the index for none, an
@@ -230,13 +230,18 @@ const FILE_LANGUAGE = {
 
 /** What the entry makes for each Directory Sample, under the page's own intro. */
 function samplesSection(entry: SiteEntry): string[] {
-  const samples: EntrySamples = {
-    notes: entry.notes.map(({ id, noteName, frontmatter, body }) => ({
-      sample: { id },
-      noteName,
-      properties: frontmatter,
-      body,
-    })),
+  const samples: EntrySampleRows = {
+    notes: entry.notes.map(
+      ({ id, noteName, properties, frontmatter, body }) => ({
+        sample: { id },
+        noteName,
+        properties: frontmatter,
+        ...(entry.kind === "profile" && properties !== null
+          ? { rows: properties }
+          : {}),
+        body,
+      }),
+    ),
     annotations: entry.annotations,
     citations: entry.citations,
   };
