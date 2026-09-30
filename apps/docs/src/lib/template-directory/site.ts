@@ -68,10 +68,27 @@ export interface SiteEntry extends IndexedEntry {
   /** What the reader pastes: the whole document for a Profile, the part a field takes for a recipe. */
   readonly copyText: string;
   readonly details: EntryDetails;
+  /** A Profile only: the parts of its file the page folds under Source; null for every other kind. */
+  readonly profileSource: ProfileSource | null;
   readonly notes: readonly NoteSampleView[];
   readonly annotations: readonly AnnotationSampleView[];
   /** Citation text entries only: each citation it inserts. */
   readonly citations: readonly CitationSampleView[];
+}
+
+/** What a Profile's Source section folds beside the whole file. */
+export interface ProfileSource {
+  /** The note part of the file: from the end of its manifest through the Annotation Section. */
+  readonly note: string;
+  /** The partials the file packs, one tab each. */
+  readonly partials: readonly SourcePartial[];
+}
+
+/** A partial a Profile packs, by the name its calls use. */
+export interface SourcePartial {
+  readonly name: string;
+  /** The partial's own entry, when the Directory has one. */
+  readonly id: string | null;
 }
 
 /** What the page needs to say where a recipe goes. */
@@ -129,6 +146,15 @@ export interface AnnotationSampleView {
   readonly type: string;
   readonly color: AnnotationColor;
   readonly output: string | null;
+}
+
+/** A note's raw Markdown, as ZotLit writes it: the YAML block, then the body. */
+export function noteMarkdown({
+  frontmatter,
+  body,
+}: Pick<NoteSampleView, "frontmatter" | "body">): string {
+  const block = frontmatter === null ? "" : `---\n${frontmatter}---\n`;
+  return `${block}${body ?? ""}`;
 }
 
 /** The fields of an entry the index page searches and lists. */
