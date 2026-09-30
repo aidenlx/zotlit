@@ -1,6 +1,6 @@
 ---
 title: Date read
-summary: An empty date read property on every new literature note, for the date you finish reading, kept on every update.
+summary: An empty `date-read` property on every new literature note, for the date you finish reading.
 minAppVersion: "2.2.0-beta.0"
 tasks: [general-reading, literature-review]
 features: [properties]
@@ -27,19 +27,8 @@ expected:
   thesis: { date-read: null }
 ---
 
-An empty `date-read` property on every new literature note, ready for the date you finish reading. An Obsidian Bases view can then sort your notes by it or show what you read in one month.
+Each update keeps the date you enter. ZotLit writes the empty property only when the note's `date-read` is missing or empty.
 
-| Item | `date-read` on a new note |
-| --- | --- |
-| Journal article | (empty) |
-| Book | (empty) |
-| Book chapter | (empty) |
-| Thesis | (empty) |
+To get a date picker, give the property its type once: in a note, select the icon beside `date-read`, choose **Property type**, then **Date**. Obsidian then uses that type in every note. An Obsidian Bases view can then sort your notes by it or show what you read in one month.
 
-Obsidian shows the property with no value until you fill it in.
-
-**When the note is updated**: **Keep the existing value**. ZotLit adds the empty property only when the note's date read is missing or empty. A date you set by hand stays.
-
-So that Obsidian shows a date picker, give the property its type once: in a note, select the icon beside `date-read`, choose **Property type**, then **Date**. Obsidian then uses that type in every note.
-
-Limits: ZotLit does not fill in the date for you; only you know when you finished a source. The **Reading tracker** entry adds this property together with a reading status and a rating.
+ZotLit never fills in the date, because only you know when you finished a source. The **Reading tracker** entry adds this property together with a reading status and a rating.

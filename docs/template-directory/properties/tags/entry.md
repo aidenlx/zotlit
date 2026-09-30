@@ -1,6 +1,6 @@
 ---
 title: Tags
-summary: The item's Zotero tags as Obsidian tags, added to the tags already in the note, with spaces changed to underscores.
+summary: The item's Zotero tags as Obsidian tags, with spaces changed to underscores, added to the tags that the note already has.
 minAppVersion: "2.2.0-beta.0"
 tasks: [general-reading, literature-review]
 features: [properties]
@@ -28,17 +28,8 @@ expected:
   letter: { tags: [correspondence] }
 ---
 
-The item's Zotero tags, as the note's `tags` property. Each space in a tag becomes an underscore, because an Obsidian tag cannot hold a space.
+An update adds each Zotero tag that the note does not have yet. Tags already in the note stay, also those that you add in Obsidian. A tag that you remove in Zotero stays in the note until you delete it there too.
 
-| Item | Zotero tags | `tags` |
-| --- | --- | --- |
-| Book chapter | decision making, heuristics | decision_making, heuristics |
-| Letter | correspondence | correspondence |
-| Journal article, book, thesis | (none) | (no property) |
+Only the ordinary space changes. A non-breaking space, as in text copied from a PDF, stays and makes the tag not valid. So does another character that Obsidian does not accept in a tag, such as `#` or `&`, and a tag of digits only, such as `2020`. Change such a tag in Zotero or in the note.
 
-**When the note is updated**: **Add to the existing list**. ZotLit adds each Zotero tag the note does not have yet, and keeps every tag already in the note. A tag you add in Obsidian stays. A tag you remove in Zotero stays in the note until you delete it from the note too.
-
-Limits:
-
-- Only the ordinary space changes. The rule does not change these characters, which Obsidian does not accept in a tag: `!` `"` `#` `$` `%` `&` `'` `(` `)` `*` `+` `,` `.` `:` `;` `<` `=` `>` `?` `@` `[` `\` `]` `^` `` ` `` `{` `|` `}` `~`, tabs and other spaces, such as the non-breaking space in text copied from a PDF, curly quotation marks, dashes such as `–` and `—`, and other typographic marks such as `…`. Obsidian also does not accept a tag made of digits only, such as `2020`. A Zotero tag like these comes into the note as written, and Obsidian marks it as an invalid tag. Change such a tag in Zotero, or edit it in the note.
-- When the note holds `tags` as text and not as a list, ZotLit leaves it as it is and adds no tag.
+When the note has `tags` as text and not as a list, ZotLit adds no tag.

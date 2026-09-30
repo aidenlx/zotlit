@@ -25,16 +25,8 @@ expected:
   thesis: {}
 ---
 
-The item's Zotero collections, as a `collections` list property. Each entry is the full path of one collection, with its parent collections in front, such as `Thesis/Chapter 2`. An Obsidian Bases view can then show the notes of one collection or project.
+Each entry is the path of one collection: its parent collections, then its own name, joined by `/`. A collection name that holds a `/` therefore reads like two levels.
 
-| Item | `collections` |
-| --- | --- |
-| Journal article | Shared key |
-| Conference paper | Shared key |
-| Book, book chapter, thesis | (no property: the example items are in no collection) |
+Each update replaces the list, so it follows when you move the item to other collections in Zotero. When the item leaves its last collection, the update removes the property.
 
-When the item is in no collection, the note gets no `collections` property.
-
-**When the note is updated**: **Replace the existing value**. When you move the item to other collections in Zotero, the list follows on the next update.
-
-Limits: a profile made from the Default profile already has a `collections` property. A profile holds each property name once, so select that property in the **Properties** tab in place of adding a new one, and paste this entry's rule into it. A collection name that holds a `/` reads like two levels of collections.
+A look made from **Default** already has a `collections` property. A look holds each property name once. So select that property in the **Properties** tab in place of adding a new one, and paste this rule into it.

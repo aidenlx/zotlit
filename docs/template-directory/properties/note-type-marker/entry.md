@@ -1,6 +1,6 @@
 ---
 title: Note type marker
-summary: "A category: LiteratureNote property on every literature note, so an Obsidian Bases view can select literature notes and nothing else."
+summary: A category property set to LiteratureNote on every literature note, so an Obsidian Bases view can list your literature notes and none of your other notes.
 minAppVersion: "2.2.0-beta.0"
 tasks: [general-reading, literature-review]
 features: [properties]
@@ -26,17 +26,10 @@ expected:
   thesis: { category: LiteratureNote }
 ---
 
-A `category` property with the value `LiteratureNote` on every literature note of the profile. An Obsidian Bases view whose filter selects notes with `category` set to `LiteratureNote` shows your literature notes and none of your other notes, wherever they are in the vault.
+In the view, filter on notes where `category` is `LiteratureNote`. This works wherever the notes are in your vault.
 
-| Item | `category` |
-| --- | --- |
-| Journal article | LiteratureNote |
-| Book | LiteratureNote |
-| Book chapter | LiteratureNote |
-| Thesis | LiteratureNote |
+When you update the note, ZotLit writes the marker only when `category` is missing or empty. A value that you change by hand stays.
 
-**When the note is updated**: **Keep the existing value**. ZotLit writes the marker only when the note's `category` is missing or empty. A category you change by hand stays.
+To use another property name and word, such as `type: paper`, enter your name as the **Property name**. In the pasted rule, change the word between the quotation marks and keep the marks. Use the same words in your view.
 
-The rule is the JSON-e string `"LiteratureNote"`. To use another property name or word, such as `type: paper`, enter the name as the **Property name** and change the word inside the quotation marks of the pasted rule, keeping the quotation marks. Use the same words in your views.
-
-Limits: the marker goes on notes that this profile creates or updates. Literature notes of another profile get it when you add the same property to that profile.
+The marker goes only on notes of the look that has this property. To mark the notes of another look, add the property to that look too.

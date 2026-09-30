@@ -1,6 +1,6 @@
 ---
 title: Core citation set
-summary: Seven properties from one rule — title, authors, year, venue, citekey, DOI link, and Zotero link — each only when the item has a value.
+summary: "Seven citation properties from one rule: title, authors, year, venue, citekey, DOI link, and Zotero link, each only when the item has a value."
 minAppVersion: "2.2.0-beta.0"
 tasks: [general-reading, literature-review, writing]
 features: [properties, source-links]
@@ -91,27 +91,8 @@ expected:
     zotero-link: zotero://select/library/items/BFLMIN23
 ---
 
-The main citation details of every source as seven properties, from one rule. Use them to sort and filter your literature notes in an Obsidian Bases view or with the Dataview plugin, and to see a source's details at the top of its note.
+`venue` is the journal, book, or proceedings. Without these, `venue` is the publisher or university. `authors` lists the people interviewed for an interview, and the editors of a book with no authors. A title with a colon or quotation marks stays a valid property.
 
-| Property | Value |
-| --- | --- |
-| `title` | The item's title |
-| `authors` | The authors as a list, one name per line, such as `Amos Tversky`. For an interview, the people interviewed; for a book with editors only, the editors |
-| `year` | The year of the item's date, as a number |
-| `venue` | The journal, book, or proceedings, or else the publisher or university |
-| `citekey` | The citation key |
-| `doi` | The DOI as a link, such as `https://doi.org/10.1017/CBO9780511809477.002` |
-| `zotero-link` | A link that selects the item in Zotero |
+Each update writes the current values from Zotero, so correct values in Zotero. A value you delete in Zotero stays in the note until you delete it there. A property you delete from the note comes back on the next update while Zotero still has its value.
 
-A property is left out when the item has no value for it, so a note never shows an empty property or the word "null". A title with a colon or quotation marks stays a valid property.
-
-What each kind of source gets:
-
-- An article, a conference paper, or a book chapter: its journal, proceedings, or book as `venue`.
-- A book, a thesis, or a document: its publisher or university as `venue`, when Zotero has one.
-- A letter, a manuscript, or an interview: usually no `venue`.
-- Any source: `doi` only when the item has a DOI.
-
-**When the note is updated**: **Replace the existing value**. Each update writes the current values from Zotero, so correct a title or an author in Zotero, not in the note. If you delete a value in Zotero, such as the DOI, the property keeps its old value in the note until you delete it there too. If you delete a property from the note while Zotero still has its value, the next update adds it back.
-
-The preview shows the properties for the selected item. Notes get them the next time you create or update them. In the Simple reading note, the rule adds `authors`, `doi`, and `zotero-link`; `title`, `year`, `venue`, and `citekey` keep the same values.
+The **Simple reading note** already writes `title`, `year`, `venue`, and `citekey` with the same values, so there the rule adds `authors`, `doi`, and `zotero-link`.

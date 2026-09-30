@@ -26,28 +26,10 @@ audience: Readers who build their own profile and want their annotations sorted 
 effort: Add this partial and a color meanings partial (building blocks that profiles share) to your template folder, and call this one from your profile's note format.
 ---
 
-The partial writes your annotations in groups: one heading for each color meaning, such as `### Definitions`, and below it every annotation of that meaning, in page order. A meaning you did not use in this source gets no heading, so the note holds only the groups it needs.
+The meanings come from **Color meanings**. To group by another set, add its name to the call, such as `meanings: "color-meanings-review"`, and use the same set on the **Annotation** tab. A color with an empty meaning goes under "Highlight". Two colors with the same meaning share one group.
 
-- **Which meanings.** The partial reads the meaning of each color from a color meanings partial: **Color meanings** unless you name another set in the call. Two colors with the same meaning share one group. A color whose meaning you leave empty shows under **Highlight**, as its callout does.
-- **Which order.** The groups follow the order of the colors in Zotero's color menu: yellow, red, green, blue, purple, magenta, orange, and gray, then plum. A meaning set can give its own order in a `colors` line, as **Color meanings for a literature review** and **Color meanings for critical reading** do.
-- **Other colors.** Annotations in a color the meanings do not list, such as a custom color from another app, come last, under the fallback title of the meaning set, such as **Other highlights**.
-- **Every kind of annotation.** Highlights, underlines, notes, text boxes, images, and ink drawings all go into the group of their color, so nothing is left out.
+The groups follow the `colors` line of the meaning set, or else the order of Zotero's color menu. Colors the set does not list come last.
 
-Each annotation shows in your profile's annotation format, the part below `--- zotlit:annotation ---`. For colored callouts, use the **Color callout** partial there, with the same meaning set. The examples on this page show each annotation as one line that names its type, color, page, and text; the examples of the **Reading notes by color** profile show the same groups as callouts.
+The examples show each annotation as one line; your note uses the format on your **Annotation** tab.
 
-The partial reads the item's data. Call it in the note format of a profile, below a heading of your own, inside `{% managed %}` … `{% endmanaged %}`:
-
-```liquid
-{% if zt.annotations.size > 0 %}
-## Annotations
-{% render "color-groups" with zt as zt -%}
-{% endif -%}
-```
-
-To group by another meaning set, name it in the call, and include the same set in the annotation format:
-
-```liquid
-{% render "color-groups" with zt as zt, meanings: "color-meanings-review" -%}
-```
-
-The group headings are level three (`###`), to sit under a level-two heading such as **Annotations**.
+The headings are level three (`###`). Put the call below a level-two heading of your own, inside the managed block, so **Update literature note** refreshes the groups.

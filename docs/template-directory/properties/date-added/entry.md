@@ -25,16 +25,8 @@ expected:
   thesis: { date-added: "2025-05-22" }
 ---
 
-The day the item was added to your Zotero library, as a `date-added` property in the form `2025-02-13`, the form of an Obsidian date property. An Obsidian Bases view can sort your notes by it.
+The date has the form of an Obsidian date property, so an Obsidian Bases view can sort your notes by it.
 
-| Item | `date-added` |
-| --- | --- |
-| Journal article | 2025-02-13 |
-| Conference paper | 2025-01-03 |
-| Book | 2025-05-22 |
-| Book chapter | 2025-05-22 |
-| Thesis | 2025-05-22 |
+Zotero never changes this date, so an update leaves the property the same.
 
-**When the note is updated**: **Replace the existing value**. Zotero does not change this date, so the property stays the same.
-
-Limits: the date is the day in UTC (Coordinated Universal Time), as Zotero stores it. An item added late in the evening or early in the morning can show the day before or after your local date.
+The date is the day in UTC (Coordinated Universal Time), as Zotero stores it. An item added late in the evening or early in the morning can show the day before or after your local date.

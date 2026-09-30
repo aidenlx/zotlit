@@ -7,6 +7,7 @@ export type DirectoryProblemCode =
   | "invalid-slug"
   | "invalid-metadata"
   | "invalid-artifact"
+  | "entry-length"
   | "reserved-partial-name"
   // Profile invariants
   | "profile-id"

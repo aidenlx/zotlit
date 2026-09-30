@@ -3,7 +3,7 @@ id: 10kKCGI5drW6
 name: Critical reading
 version: "1.0.0"
 author: ZotLit
-description: A note for reading an argument closely, with your main thesis, key definitions, arguments, objections, and key quotes on top, and your annotations grouped by what they mark in the argument below.
+description: A note for reading an argument closely, with your thesis, definitions, arguments, objections, and key quotes on top and your annotations below, grouped by their role in the argument.
 contract: 3
 minAppVersion: "2.2.0-beta.2"
 sampleItemType: journalArticle

@@ -30,18 +30,8 @@ expected:
   document: { venue: Brackenridge Free Library }
 ---
 
-Where the work appeared, as a `venue` property: the journal of an article, the book of a chapter, or the proceedings of a conference paper. An item that appeared in nothing larger, such as a book or a thesis, gets its publisher or its university.
+ZotLit uses the publisher, or the university of a thesis, only when the item has no journal, book, or proceedings title in Zotero. When the item has neither, the note gets no `venue` property.
 
-| Item | `venue` |
-| --- | --- |
-| Journal article | PLoS Medicine |
-| Conference paper | Proceedings of the Open Research Conference |
-| Book | Penguin Books |
-| Book chapter | Judgment under Uncertainty: Heuristics and Biases |
-| Thesis | (none: the example thesis has no university in Zotero) |
+When you update the note, the property follows Zotero.
 
-When the item has none of these, the note gets no `venue` property.
-
-**When the note is updated**: **Replace the existing value**. The property follows Zotero on every update.
-
-Limits: the property holds a name only, with no volume, issue, or pages. For one property that also holds those, use the **Publisher by item type** entry.
+The property holds a name only, with no volume, issue, or pages. For one property that also holds those, use the **Publisher by item type** entry.

@@ -2350,7 +2350,7 @@
   "docs_directory_profile_step_import": "In Obsidian, run {command} and select {clipboard}, or {file} for the downloaded file.",
   "docs_directory_profile_step_confirm": "In that window, select {confirm}.",
   "docs_directory_profile_step_create_matched": "Create a note for any {types}. It looks like the example.",
-  "docs_directory_profile_step_create": "Create a literature note and choose {name} as its profile.",
+  "docs_directory_profile_step_create": "Create a literature note. In the {picker} list that opens, select {name}.",
   "docs_directory_part_eyebrow_partial": "Part of a note · changes a look you have",
   "docs_directory_part_eyebrow_property": "Property · changes a look you have",
   "docs_directory_part_eyebrow_note_name": "Note name · changes a look you have",

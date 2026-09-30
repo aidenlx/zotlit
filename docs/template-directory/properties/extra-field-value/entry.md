@@ -25,24 +25,13 @@ expected:
   thesis: {}
 ---
 
-The value of one line of Zotero's **Extra** field, as a property of its own. Zotero users keep data that has no field of its own in Extra, one `name: value` pair per line. This entry reads the line that starts with `cover:` and writes its value as a `cover` property.
+Zotero users keep data that has no field of its own in **Extra**, one `name: value` pair per line.
 
-For the example book chapter, whose Extra field holds:
+To read another line, change `"name": "cover"` at the start of the rule to the name before the colon, such as `"name": "reading-group"`. Enter the same name as the **Property name**.
 
-```text
-original-date: 1974
-cover: judgment-under-uncertainty.jpg
-```
+- The name must match the line exactly, with the same capital letters: `Cover:` is not `cover:`.
+- When two lines have the same name, the first line counts.
+- When the line is missing or has no value, the note gets no property.
+- The property holds the text of the line, not an image.
 
-| Item | `cover` |
-| --- | --- |
-| Book chapter | judgment-under-uncertainty.jpg |
-| Journal article, book, thesis | (no property: their Extra field has no `cover:` line) |
-
-When the Extra field has no `cover:` line, or the line has no value, the note gets no `cover` property.
-
-To read another line, change `"name": "cover"` at the start of the rule to the name before the colon, such as `"name": "original-date"`, and enter the same name as the **Property name**.
-
-**When the note is updated**: **Replace the existing value**. The property follows the Extra field on every update.
-
-Limits: the name must match the Extra line exactly, with the same capital letters: `Cover:` is not `cover:`. The property holds the text of the line, not an image; an Obsidian Bases view shows it as text.
+When you delete the line in Zotero, the next update removes the property.
