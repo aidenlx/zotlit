@@ -1,6 +1,6 @@
 ---
 title: PDF link
-summary: A link that opens the item's first PDF in Zotero's reader, left out when the item has no PDF.
+summary: A link in the note's properties that opens the item's PDF in Zotero's reader, where your highlights and comments are.
 minAppVersion: "2.2.0-beta.0"
 tasks: [general-reading, literature-review, close-reading]
 features: [properties, source-links]
@@ -26,16 +26,8 @@ expected:
   thesis: {}
 ---
 
-A link to the item's PDF, as a `pdf` property. Obsidian shows the link in the note's properties; select it to open the PDF in Zotero's reader, where your highlights and comments are.
+When the item has more than one PDF, the link opens one of them. This can be a different PDF from the one that Zotero opens when you double-click the item.
 
-| Item | `pdf` |
-| --- | --- |
-| Journal article | `zotero://open/library/items/IANPDF25` |
-| Conference paper (two PDFs) | `zotero://open/library/items/CNPDF26A` |
-| Book, book chapter, thesis | (no property: the examples have no PDF) |
+When the item has no PDF, the note gets no `pdf` property. When you update the note, the link follows Zotero: a PDF that you add gets a link, and when you remove the last PDF, the property goes away.
 
-When the item has more than one PDF, the link opens one of them, which can differ from the PDF that Zotero opens when you double-click the item. When the item has no PDF, the note gets no `pdf` property.
-
-**When the note is updated**: **Replace the existing value**. When you add a PDF to the item in Zotero, the note gets the link on its next update.
-
-Limits: the link opens the PDF in Zotero, on a computer where Zotero is installed, not in Obsidian. To open a PDF that is in your vault inside Obsidian, use the **Links row** partial in the note body.
+The link opens Zotero on a computer where Zotero is installed. To open a PDF from your vault in Obsidian, add the **Links row** entry to the note.

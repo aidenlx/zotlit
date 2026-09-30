@@ -1,6 +1,6 @@
 ---
 title: Reading status
-summary: A status property that starts at unread and keeps the status you set by hand.
+summary: A status property that starts at unread, so a Bases view can list the sources that you have not read yet.
 minAppVersion: "2.2.0-beta.0"
 tasks: [general-reading, literature-review]
 features: [properties]
@@ -28,17 +28,8 @@ expected:
   thesis: { status: unread }
 ---
 
-A `status` property that starts at `unread` on every new literature note. You change it by hand as you read, for example to `reading` and then to `read`, and an Obsidian Bases view or a table from the Dataview plugin splits your reading list on it.
+You change the status by hand as you read, for example to `reading` and then to `read`. It stays the same when you read or annotate in Zotero.
 
-| Item | `status` on a new note |
-| --- | --- |
-| Journal article | unread |
-| Book | unread |
-| Book chapter | unread |
-| Thesis | unread |
+When you update the note, ZotLit writes `unread` only when `status` is missing or empty. A status that you set stays.
 
-**When the note is updated**: **Keep the existing value**. ZotLit writes `unread` only when the note's status is missing or empty. A status you set by hand stays.
-
-Other common sets of status words are `to-read`, `in-progress`, and `done`, or `unread`, `skimmed`, and `read`. The rule is the JSON-e string `"unread"`. To start at another word, change the word in the rule and keep the quotation marks. Use the same words in every note, so a view can filter on them.
-
-Limits: the status does not change by itself when you read or annotate. Only you change it.
+To start at another word, such as `to-read`, change the word in the rule and keep the quotation marks. Use the same words in every note, so a view can filter on them.

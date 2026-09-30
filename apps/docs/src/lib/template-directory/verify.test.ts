@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { annotationLabel } from "@/components/template-directory/labels";
 
-import { verifyTemplateDirectory } from "./index";
+import {
+  DETAILS_WORD_LIMIT,
+  SUMMARY_WORD_LIMIT,
+  verifyTemplateDirectory,
+  wordCount,
+} from "./index";
 import type { DirectoryProblemCode } from "./index";
 import {
   edit,
@@ -281,6 +286,56 @@ describe("the Directory verification", () => {
       ],
     ] as const)("rejects a title heading %s", (_, [from, to]) => {
       rejects(editProfile(from, to), FIXTURE_PROFILE, "managed-block");
+    });
+  });
+
+  describe("the length of an entry's prose", () => {
+    const words = (count: number) => Array(count).fill("word").join(" ");
+    const summaryOf = (count: number) =>
+      edit(fixtureFiles(), `${FIXTURE_HEADING}/entry.md`, [
+        "summary: The title as a heading.",
+        `summary: ${words(count)}`,
+      ]);
+    const detailsOf = (count: number) =>
+      edit(fixtureFiles(), `${FIXTURE_HEADING}/entry.md`, [
+        "A fixture partial.",
+        words(count),
+      ]);
+
+    it("accepts a summary and Details at their limits", () => {
+      expect(problemsOf(summaryOf(SUMMARY_WORD_LIMIT))).toEqual([]);
+      expect(problemsOf(detailsOf(DETAILS_WORD_LIMIT))).toEqual([]);
+    });
+
+    it("rejects a summary one word over its limit", () => {
+      rejects(
+        summaryOf(SUMMARY_WORD_LIMIT + 1),
+        FIXTURE_HEADING,
+        "entry-length",
+      );
+    });
+
+    it("rejects Details one word over their limit", () => {
+      rejects(
+        detailsOf(DETAILS_WORD_LIMIT + 1),
+        FIXTURE_HEADING,
+        "entry-length",
+      );
+    });
+
+    it("rejects a Profile whose summary, its manifest description, is over the limit", () => {
+      rejects(
+        editProfile(
+          "description: A Profile the verification tests break one rule at a time.",
+          `description: ${words(SUMMARY_WORD_LIMIT + 1)}`,
+        ),
+        FIXTURE_PROFILE,
+        "entry-length",
+      );
+    });
+
+    it("counts words, not table pipes, list markers, or rules", () => {
+      expect(wordCount("| Item | `tags` |\n| --- | --- |\n- one two")).toBe(4);
     });
   });
 

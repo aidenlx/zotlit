@@ -1,6 +1,6 @@
 ---
 title: Citation key
-summary: Names each literature note by the item's citation key, such as ioannidisWhyMost2005.
+summary: Names each literature note by the item's citation key, so note names match the keys you cite with in Pandoc.
 minAppVersion: "2.2.0-beta.0"
 tasks: [writing, general-reading]
 problems:
@@ -22,10 +22,8 @@ audience: Readers who cite with Better BibTeX or Pandoc keys and want each note'
 effort: Paste one line into the "Note name" field of your profile. Notes you create from then on get the new name.
 ---
 
-Each literature note is named by the item's citation key, such as `ioannidisWhyMost2005`. Citation keys come from Better BibTeX for Zotero, or from the item's Citation Key field in Zotero.
+Citation keys come from Better BibTeX for Zotero, or from the Citation Key field in Zotero. An item with no citation key is named by its Zotero item key, a code of eight letters and digits.
 
-- An item with no citation key is named by its Zotero item key, a code of eight letters and digits such as `WEBFAQ24`.
-- A citation key that holds a character a file name cannot hold is changed as in the "Title" note name: `/`, `\`, `|`, and `:` become a hyphen, square brackets become round brackets, a double quote becomes a single quote, and `?`, `*`, `<`, `>`, `#`, and `^` are left out. So the note is always one file in your literature note folder.
-- When a note with the same name already exists, the new note gets a short random ending, such as `ioannidisWhyMost2005_a1B2c3`, so ZotLit can still create it.
+A key with a character that a file name cannot hold is changed as in the **Title** note name. When a note with the same name already exists, the new note gets a short random ending, such as `ioannidisWhyMost2005_a1B2c3`. **Preview** on the **Name and folder** tab shows the name without this ending.
 
-In the **Name and folder** tab, **Preview** shows the name for the selected item, as it is when no other note has that name. Notes you already have keep their names.
+**Update literature note** keeps the name of a note you already have. When a citation key changes in Zotero later, the note keeps its old name.

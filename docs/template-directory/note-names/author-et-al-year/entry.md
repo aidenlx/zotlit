@@ -1,6 +1,6 @@
 ---
 title: Author et al. Year
-summary: Names each literature note by its authors and year, such as Rivera and Chen 2026 or Klein et al. 2014.
+summary: Names each literature note by its authors and year, so note names read like the author–year citations in your draft.
 minAppVersion: "2.2.0-beta.0"
 tasks: [writing, literature-review]
 problems:
@@ -22,15 +22,8 @@ audience: Readers who think of their sources by author and year, as in an author
 effort: Paste one line into the "Note name" field of your profile. Notes you create from then on get the new name.
 ---
 
-Each literature note is named by its authors and its year:
+The names come from the item's authors. An item with no authors uses its editors, then its directors, then its contributors. An item with no creator uses its short title, or else its title. An item with no date leaves out the year, and "et al." then loses its final dot, because a file name cannot end with a dot.
 
-- one author: `Ioannidis 2005`;
-- two authors: `Rivera and Chen 2026`;
-- three or more: `Klein et al. 2014`;
-- an organization: its full name, such as `Brackenridge Free Library 1923`.
+When two items by the same authors share a year, the second note gets a short random ending, such as `Kahneman 2011_a1B2c3`. The **Author Year – Title** note name keeps such works apart. **Preview** on the **Name and folder** tab shows the name without this ending.
 
-The names are the item's main creators: its authors. An item with no authors uses its editors, then its directors, then its contributors. An interview uses the person interviewed. An item with no creator uses its short title, or else its title, in place of the names. An item with no date leaves out the year, and "et al." loses its final dot, because a file name cannot end with a dot. Characters a file name cannot hold are changed or left out, so a title with a colon or a slash still gives one file in your literature note folder.
-
-Two items by the same authors in the same year have the same name. The second note gets a short random ending, such as `Kahneman 2011_a1B2c3`, so ZotLit can still create it. To tell such notes apart at a glance, use the "Author Year – Title" note name instead.
-
-In the **Name and folder** tab, **Preview** shows the name for the selected item, as it is when no other note has that name. Notes you already have keep their names.
+**Update literature note** keeps the name of a note you already have.

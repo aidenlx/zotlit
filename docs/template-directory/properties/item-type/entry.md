@@ -1,6 +1,6 @@
 ---
 title: Item type
-summary: The kind of source in words, such as Journal Article or Book Section, in place of Zotero's internal name.
+summary: The kind of source as a readable name, such as Journal Article or Book Section, so you can group and filter your notes by it.
 minAppVersion: "2.2.0-beta.0"
 tasks: [general-reading, literature-review, archival-research]
 features: [properties]
@@ -30,18 +30,8 @@ expected:
   document: { item-type: Document }
 ---
 
-The kind of source, as an `item-type` property that uses Zotero's English name for the item type, the name you see in Zotero's **Item Type** field.
+The rule holds an English name for each Zotero item type. To use your own word, such as `Article` for a journal article, change that name in the rule.
 
-| Item | `item-type` |
-| --- | --- |
-| Journal article | Journal Article |
-| Book | Book |
-| Book chapter | Book Section |
-| Thesis | Thesis |
-| Letter | Letter |
+When you change the item type in Zotero, the next update writes the new name.
 
-The rule holds a name for each of Zotero's item types. To use your own word, such as `Article` for a journal article or `Chapter` for a book section, change that name in the rule.
-
-**When the note is updated**: **Replace the existing value**. When you change the item type in Zotero, the note gets the new name on its next update.
-
-Limits: the names are in English. An item type that a later Zotero version adds shows its internal name, such as `journalArticle`, until you add a name for it to the rule.
+An item type that a later Zotero version adds shows Zotero's internal name for it, until you add a name for it to the rule.

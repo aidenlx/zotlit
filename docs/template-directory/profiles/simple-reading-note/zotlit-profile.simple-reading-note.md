@@ -3,7 +3,7 @@ id: 2mQFDSNcx5Ie
 name: Simple reading note
 version: "1.0.0"
 author: ZotLit
-description: The title, links back to the source, the folded abstract, and your annotations in page order, with a place for your own notes.
+description: A literature note for any Zotero item, with the title, links back to the source, the folded abstract, your annotations in page order, and a place for your notes.
 contract: 3
 minAppVersion: "2.2.0-beta.2"
 sampleItemType: journalArticle

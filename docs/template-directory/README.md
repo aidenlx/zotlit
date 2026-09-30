@@ -13,7 +13,7 @@ docs/template-directory/
 ├── README.md                              this guide
 ├── profiles/
 │   └── simple-reading-note/
-│       ├── entry.md                       facets and the reader-facing description
+│       ├── entry.md                       facets and the folded Details
 │       ├── zotlit-profile.simple-reading-note.md   the document a reader imports
 │       └── samples.md                     rendered samples, written by the suite
 ├── partials/
@@ -38,7 +38,7 @@ The kind comes from the folder and the level from the kind. Any other file in an
 
 ## The entry file
 
-`entry.md` opens with its metadata as YAML between two `---` lines. The Markdown body below it is the reader-facing description: who the entry is for and what the note or recipe produces. The entry page adds the steps to use it, built from the plugin's UI labels, so the description holds only what those steps leave out, such as a Profile's match condition.
+`entry.md` opens with its metadata as YAML between two `---` lines. The Markdown body below it is the folded **Details** on the entry page. The example shows the result and the page adds the steps to use it, built from the plugin's UI labels, so the Details hold only what neither can show: update behavior, the match toggle, and edge cases. Write prose only. Leave out a code block, because a partial's call sits in its Source fold. Say "profile" only inside a quoted UI label, such as **Literature note profiles**, and name a look in the reader's words. State an example only when it matches the example the page shows.
 
 | Field | Kinds | Required | Value |
 | --- | --- | --- | --- |
@@ -55,7 +55,11 @@ The kind comes from the folder and the level from the kind. Any other file in an
 | `call` | partial | no | The Liquid a Profile writes to call the partial, when that is more than `{% render "<slug>" with zt as zt -%}`. The suite renders this call |
 | `expected` | property | no | Per Directory Sample or type example, the properties the entry writes (see [Property](#property)) |
 
-A Profile entry states its title, summary, and required version once, in its manifest: `name`, `description`, and `minAppVersion`. The partials an entry calls are found from its artifact, directly and through the partials it calls.
+A Profile entry states its title, summary, and required version once, in its manifest: `name`, `description`, and `minAppVersion`.
+
+### Word budget
+
+Every entry keeps its prose short. The summary (a Profile's manifest `description`) is one sentence of at most 30 words. The Details are at most 120 words. A table pipe, a list marker, or a rule is not a word. An entry over either limit fails with `entry-length`. `audience`, `effort`, `problems`, and `keywords` are search and Markdown-edition metadata: the page does not show them, and the budget does not count them. The partials an entry calls are found from its artifact, directly and through the partials it calls.
 
 `minAppVersion` is the first ZotLit release that has every plugin change the entry relies on. A Profile needs `2.2.0-beta.2`: that release imports the partials a Profile brings with it, takes the Profile from **Add to ZotLit**, and keeps the closing marker of the managed block out of a callout that ends the block. A partial whose output can end the managed block with a callout or a quote needs `2.2.0-beta.2` for the same reason, and so does a partial that shows annotations in the profile's annotation format. Other recipes need `2.2.0-beta.0`.
 
@@ -72,7 +76,7 @@ The source files in `src/lib/template-directory/` of `apps/docs` own the vocabul
 5. Write every property as a JSON-e rule (`value`), with the merge strategy it needs: `replace` for values from Zotero, `append` for lists the reader adds to, `keep` for values the reader changes by hand.
 6. Call partials by name with `{% render "<name>" with zt as zt %}`. Every called partial must be a partial entry.
 7. Run the re-pack command. It writes the manifest's `partials` from the partial entries.
-8. Run the suite with the update flag, and read the new `samples.md` against the description.
+8. Run the suite with the update flag, and read the new `samples.md` against the summary and the Details.
 
 ### Partial
 
@@ -100,7 +104,7 @@ The source files in `src/lib/template-directory/` of `apps/docs` own the vocabul
 
 1. Create `citations/<slug>/` with `entry.md` and `zotlit-citation.md`.
 2. The artifact is a Citation Template document: `language: liquid` between two `---` lines, then the source. It reads `zt.variant`, `zt.citations`, and `zt.items`.
-3. A vault holds one citation text, so the description states that the entry replaces it and how to keep a copy of the current one.
+3. A vault holds one citation text, so the Details state that the entry replaces it and how to keep a copy of the current one.
 
 The suite renders the citation text as ZotLit inserts it, on one line, under both Citation Variants: each Directory Sample and Edge Sample cited alone, then the Workbench example sets (two items, a page range, a suppressed author, a prefix and a suffix, and an annotation's page). `samples.md` shows them as one table.
 
@@ -120,6 +124,7 @@ The suite fails with a named problem code when an entry breaks one of these rule
 | --- | --- |
 | Entry folders hold only their three files, with lowercase-hyphenated slugs | `unexpected-file`, `missing-file`, `invalid-slug`, `reserved-partial-name` |
 | `entry.md` metadata matches the schema above | `invalid-metadata` |
+| The summary holds at most 30 words and the Details at most 120 | `entry-length` |
 | The artifact parses | `invalid-artifact` |
 | A Profile ID is twelve letters or digits and unique in the Directory | `profile-id`, `duplicate-profile-id` |
 | A Profile has no `folder`, `importFolder`, or `citationStyle` binding, and no Imported Note binding | `profile-binding` |
