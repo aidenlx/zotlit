@@ -154,6 +154,8 @@ A Profile page shows only example variants:
 - A Profile with no `match` shows a fixed set across item types: a journal article, a book, and a book chapter with full details, then a journal article with no annotations.
 - Either page opens on the full variant of the Profile's `sampleItemType`. A Profile that groups annotations by color (`grouped-by-color`) also shows the `every-color` note.
 
+A Profile page lists each example's properties as a real note carries them: the ones the Managed Frontmatter writes (static-key and Spread Entry keys, as rendered) are marked as set by the look, and the site adds `zotero-key` with the item's key and `zotlit-profile` with the stamp `Label (ID)`, built from the Profile's `name` and `id`, marked as added by ZotLit.
+
 The `publisher-by-item-type` entry shows `journal-article-with-volume`, a type example of a real article with a volume, an issue, and pages.
 
 ## Commands
