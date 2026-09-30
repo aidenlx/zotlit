@@ -5,7 +5,7 @@ version: "1.0.0"
 author: ZotLit
 description: A note for each study in your review, with your answers on aim, methods, findings, limitations, and relevance on top, your annotations grouped by what they show below, and properties for a review table.
 contract: 3
-minAppVersion: "2.2.0-beta.0"
+minAppVersion: "2.2.0-beta.2"
 sampleItemType: journalArticle
 filename: '{{ zt.citekey | default: zt.title | default: zt.key | replace: "/", "-" }}{% suffix %}'
 frontmatter:

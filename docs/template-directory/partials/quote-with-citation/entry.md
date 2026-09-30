@@ -1,7 +1,7 @@
 ---
 title: Quote with citation
 summary: One annotation as a plain quote followed by its in-text citation with the page, ready to move into a draft.
-minAppVersion: "2.2.0-beta.0"
+minAppVersion: "2.2.0-beta.2"
 context: annotation
 tasks: [writing, archival-research, literature-review]
 features: [citations, comments, images]

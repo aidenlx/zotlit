@@ -5,7 +5,7 @@ version: "1.0.0"
 author: ZotLit
 description: The title, links back to the source, the folded abstract, and your annotations in page order, with a place for your own notes.
 contract: 3
-minAppVersion: "2.2.0-beta.0"
+minAppVersion: "2.2.0-beta.2"
 sampleItemType: journalArticle
 filename: '{{ zt.citekey | default: zt.title | default: zt.key | replace: "/", "-" }}{% suffix %}'
 frontmatter:

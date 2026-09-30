@@ -1,7 +1,7 @@
 ---
 title: Color meanings for critical reading
 summary: Highlight colors for the roles of passages in an argument, such as main claims, definitions, arguments, and objections, each shown as a callout in a matching color.
-minAppVersion: "2.2.0-beta.0"
+minAppVersion: "2.2.0-beta.2"
 context: annotation
 call: |
   {% include "color-meanings-argument" -%}

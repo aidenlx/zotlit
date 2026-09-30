@@ -5,7 +5,7 @@ version: "1.0.0"
 author: ZotLit
 description: Thesis notes that name the thesis type and the university, with your annotations in page order as callouts in colors that match your Zotero colors, and places for a summary, key points, and your own notes.
 contract: 3
-minAppVersion: "2.2.0-beta.0"
+minAppVersion: "2.2.0-beta.2"
 sampleItemType: thesis
 match: 'itemType == "thesis"'
 filename: '{{ zt.citekey | default: zt.title | default: zt.key | replace: "/", "-" }}{% suffix %}'

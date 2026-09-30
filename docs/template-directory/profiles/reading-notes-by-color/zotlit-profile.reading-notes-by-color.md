@@ -5,7 +5,7 @@ version: "1.0.0"
 author: ZotLit
 description: Your own takeaways, claims, and connections on top, and your annotations below, grouped under one heading for each color meaning, with links back to the source and the folded abstract.
 contract: 3
-minAppVersion: "2.2.0-beta.0"
+minAppVersion: "2.2.0-beta.2"
 sampleItemType: journalArticle
 filename: '{{ zt.citekey | default: zt.title | default: zt.key | replace: "/", "-" }}{% suffix %}'
 frontmatter:
