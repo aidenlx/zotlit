@@ -27,7 +27,7 @@ A link to an author who has no note yet still works: Obsidian creates the note w
 The partial reads the note's data. Call it from the note body of a profile, inside the managed block, for example under the title:
 
 ```liquid
-{% render "author-links" with zt as zt %}
+{% render "author-links" with zt as zt -%}
 ```
 
 The links use the name as Zotero stores it, given name first. The same person with a different spelling in two Zotero items gets two notes, and so does a person whose given name is an initial in one item, such as `[[D Kahneman]]` and `[[Daniel Kahneman]]`. Use one spelling for each person in Zotero.

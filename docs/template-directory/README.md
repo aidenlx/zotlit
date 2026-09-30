@@ -57,7 +57,7 @@ The kind comes from the folder and the level from the kind. Any other file in an
 
 A Profile entry states its title, summary, and required version once, in its manifest: `name`, `description`, and `minAppVersion`. The partials an entry calls are found from its artifact, directly and through the partials it calls.
 
-`minAppVersion` is the first ZotLit release that has every plugin change the entry relies on. A Profile needs `2.2.0-beta.2`: that release imports the partials a Profile brings with it, takes the Profile from **Import into Obsidian**, and keeps the closing marker of the managed block out of a callout that ends the block. A partial whose output can end the managed block with a callout or a quote needs `2.2.0-beta.2` for the same reason. Other recipes need `2.2.0-beta.0`.
+`minAppVersion` is the first ZotLit release that has every plugin change the entry relies on. A Profile needs `2.2.0-beta.2`: that release imports the partials a Profile brings with it, takes the Profile from **Import into Obsidian**, and keeps the closing marker of the managed block out of a callout that ends the block. A partial whose output can end the managed block with a callout or a quote needs `2.2.0-beta.2` for the same reason, and so does a partial that shows annotations in the profile's annotation format. Other recipes need `2.2.0-beta.0`.
 
 The source files in `src/lib/template-directory/` of `apps/docs` own the vocabularies; add a research task or a feature there first.
 

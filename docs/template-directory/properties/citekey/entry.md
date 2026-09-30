@@ -31,10 +31,10 @@ The item's citation key, as a `citekey` property. The key comes from Zotero's ow
 
 | Item | `citekey` |
 | --- | --- |
-| Journal article | ioannidisWhyMost2005 |
-| Book | Kahneman2011 |
-| Book chapter | tverskyJudgmentUncertaintyHeuristics1982 |
-| Thesis | Batista2010 |
+| Journal article | `ioannidisWhyMost2005` |
+| Book | `Kahneman2011` |
+| Book chapter | `tverskyJudgmentUncertaintyHeuristics1982` |
+| Thesis | `Batista2010` |
 
 When the item has no citation key, the note gets no `citekey` property.
 

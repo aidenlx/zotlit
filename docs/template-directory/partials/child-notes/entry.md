@@ -28,7 +28,7 @@ ZotLit imports each of these notes into your vault once, as a note of its own, a
 The partial reads the note's data. Call it from the note body of a profile, inside the managed block:
 
 ```liquid
-{% render "child-notes" with zt as zt %}
+{% render "child-notes" with zt as zt -%}
 ```
 
 To show the text of each note inside the literature note instead of a link, change `{{ note.noteLink }}` to `{{ note.noteLink | embed }}` in the partial.
