@@ -15,6 +15,7 @@ import {
   LEVEL_LABEL,
   valueLabels,
 } from "@/components/template-directory/labels";
+import { ProfileEntryPage } from "@/components/template-directory/profile-entry";
 import { cn } from "@/lib/cn";
 import { ztProse } from "@/lib/prose";
 import { pageHead } from "@/lib/seo";
@@ -76,6 +77,7 @@ const HEADING = "font-serif text-2xl font-medium";
 
 function DirectoryEntryPage() {
   const { entry, partials } = Route.useLoaderData();
+  if (entry.kind === "profile") return <ProfileEntryPage entry={entry} />;
   const itemTypes =
     entry.itemTypes.length > 0
       ? valueLabels("itemType", entry.itemTypes)
@@ -136,7 +138,7 @@ function DirectoryEntryPage() {
               <h2 id="samples" className={HEADING}>
                 {m.docs_directory_samples_heading()}
               </h2>
-              {(entry.kind === "profile" || entry.kind === "partial") && (
+              {entry.kind === "partial" && (
                 <p className="mt-1 mb-6 text-fd-muted-foreground">
                   {m.docs_directory_samples_intro()}
                 </p>
@@ -160,9 +162,7 @@ function DirectoryEntryPage() {
                 {m.docs_directory_calls_heading()}
               </h2>
               <p className="mt-1 mb-4 text-fd-muted-foreground">
-                {entry.kind === "profile"
-                  ? m.docs_directory_calls_profile()
-                  : m.docs_directory_calls_recipe()}
+                {m.docs_directory_calls_recipe()}
               </p>
               <ul className="border-t border-fd-border">
                 {partials.map((partial) => (

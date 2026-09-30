@@ -362,7 +362,7 @@ describe("the Template Directory", () => {
     ],
     [
       "profiles/books",
-      "book-with-edition",
+      "book-full-details",
       "University of Chicago Press · Chicago · Edition: 4 · ISBN 978-0-226-23973-6",
     ],
   ])(
@@ -374,6 +374,63 @@ describe("the Template Directory", () => {
       expect(note?.body).toContain(details);
     },
   );
+
+  describe("the example items of a Profile with a Profile Match", () => {
+    const ids = (id: string) =>
+      verification.samples.get(id)!.notes.map(({ sample }) => sample.id);
+
+    it.each([
+      [
+        "profiles/books",
+        ["book-full-details", "book-few-details", "book-no-annotations"],
+      ],
+      ["profiles/book-chapters", ["book-section"]],
+      [
+        "profiles/theses-and-dissertations",
+        ["thesis", "thesis-with-university"],
+      ],
+      [
+        "profiles/primary-sources-and-archives",
+        ["letter", "manuscript", "interview", "document", "newspaper-article"],
+      ],
+    ])("takes only the item types %s matches: %j", (id, expected) => {
+      expect(ids(id)).toEqual(expected);
+    });
+
+    it("keeps every Directory Sample for a Profile that takes any item type", () => {
+      expect(ids("profiles/simple-reading-note")).toEqual(
+        expect.arrayContaining(DIRECTORY_SAMPLES.map(({ id }) => id)),
+      );
+    });
+
+    it("gives the full book example an abstract and, inside the note, three colored highlights, one with a comment, and one image", () => {
+      const note = verification.samples
+        .get("profiles/books")!
+        .notes.find(({ sample }) => sample.id === "book-full-details")!;
+      expect(note.body).toContain("[!abstract]- Abstract");
+      const callouts = note
+        .body!.split("\n")
+        .filter(
+          (line) => line.startsWith("> [!") && !line.includes("abstract"),
+        );
+      expect(callouts).toHaveLength(4);
+      expect(new Set(callouts.map((line) => line.split("]")[0])).size).toBe(4);
+      expect(note.body).toMatch(/^> !\[\[.+\.png\]\]$/m);
+      expect(note.body).toContain("[Zotero]");
+    });
+
+    it("leaves the abstract, the annotations, and the publication details out of a book that has none", () => {
+      const notes = verification.samples.get("profiles/books")!.notes;
+      const few = notes.find(({ sample }) => sample.id === "book-few-details")!;
+      const none = notes.find(
+        ({ sample }) => sample.id === "book-no-annotations",
+      )!;
+      expect(few.body).not.toContain("Abstract");
+      expect(few.body).not.toMatch(/ISBN|Edition/);
+      expect(none.body).not.toContain("## Annotations");
+      expect(none.body).toContain("Edition: 4");
+    });
+  });
 
   it.each(verification.entries.map((entry) => [entry.id, entry] as const))(
     "stores the rendered samples of %s",

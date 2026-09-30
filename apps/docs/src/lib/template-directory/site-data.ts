@@ -7,6 +7,7 @@ import { ITEM_TYPES as ZOTERO_ITEM_TYPES } from "@zotlit/zotero-types/item-types
 import { partialCall } from "./calls.ts";
 import { ENTRY_FEATURES, ENTRY_KINDS, RESEARCH_TASKS } from "./entry.ts";
 import type { DirectoryEntry } from "./load.ts";
+import { matchedItemTypes } from "./profile-samples.ts";
 import { readTemplateDirectory, templateDirectoryRoot } from "./read.ts";
 import { DIRECTORY_SAMPLES } from "./samples.ts";
 import type { Facet } from "./search.ts";
@@ -62,6 +63,7 @@ function siteEntry(
     effort: entry.effort,
     description: entry.description,
     minAppVersion: entry.minAppVersion,
+    matchedItemTypes: entry.kind === "profile" ? matchedItemTypes(entry) : null,
     calls: entry.calls,
     file: { name: downloadName(entry), text: entry.artifact.source },
     copyText: copyText(entry),

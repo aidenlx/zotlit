@@ -8,7 +8,12 @@ import { directorySite } from "@/lib/template-directory/site-data";
 import { verifyTemplateDirectory } from "@/lib/template-directory/verify";
 import { m } from "@/paraglide/messages.js";
 
-import { annotationLabel, exampleLabel, optionLabel } from "./labels";
+import {
+  annotationLabel,
+  exampleLabel,
+  itemTypesInSentence,
+  optionLabel,
+} from "./labels";
 
 const site = directorySite(
   verifyTemplateDirectory(
@@ -49,6 +54,29 @@ describe("the Directory's names", () => {
     for (const id of ids) expect(exampleLabel(id), id).toMatch(/^[A-Z]/);
     expect(exampleLabel("book-section")).toBe(
       m.docs_directory_example_book_section(),
+    );
+  });
+
+  it("name the book variants by what differs", () => {
+    expect([
+      exampleLabel("book-full-details"),
+      exampleLabel("book-few-details"),
+      exampleLabel("book-no-annotations"),
+    ]).toEqual([
+      "A book with full details and highlights",
+      "A book with few details",
+      "A book with no highlights yet",
+    ]);
+  });
+
+  it("name item types as a sentence does, one or several", () => {
+    expect(itemTypesInSentence(["book"], "plural")).toBe("books");
+    expect(itemTypesInSentence(["book"], "singular")).toBe("book");
+    expect(
+      itemTypesInSentence(["letter", "manuscript", "interview"], "plural"),
+    ).toBe("letters, manuscripts, and interviews");
+    expect(itemTypesInSentence(["letter", "manuscript"], "singular")).toBe(
+      "letter or manuscript",
     );
   });
 
