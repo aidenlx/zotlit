@@ -28,7 +28,7 @@ audience: Readers who keep one publisher property for every source and want it t
 effort: Add one property to your profile in the Properties tab.
 expected:
   journal-article: { publisher: PLoS Medicine. 2005. }
-  journal-article-with-volume:
+  journal-article-full-details:
     { publisher: "Econometrica. 1979. Vol. 47. № 2. pp. 263–291." }
   conference-paper: {}
   book: { publisher: Penguin Books }

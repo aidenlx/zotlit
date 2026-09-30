@@ -381,7 +381,9 @@ describe("the Template Directory", () => {
   it("shows in the publisher by item type entry a real journal article with a volume, an issue, and pages", () => {
     const article = verification.samples
       .get("properties/publisher-by-item-type")!
-      .notes.find(({ sample }) => sample.id === "journal-article-with-volume")!;
+      .notes.find(
+        ({ sample }) => sample.id === "journal-article-full-details",
+      )!;
     expect(article.properties).toContain(
       "publisher: Econometrica. 1979. Vol. 47. № 2. pp. 263–291.",
     );

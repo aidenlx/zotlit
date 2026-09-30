@@ -237,7 +237,7 @@ effort: Nothing.`;
     ).toBeGreaterThan(source);
     expect(text.slice(0, source)).not.toContain("```liquid");
     expect(text.slice(0, source)).toContain(
-      "add the call from the Source section at the end of this page.",
+      "On the **Note** tab, add the call from the Source section at the end of this page.",
     );
   });
 

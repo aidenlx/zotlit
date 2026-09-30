@@ -117,13 +117,18 @@ export function EntryUse({
         <Steps>
           <Step
             text={m.docs_directory_partial_step_add({
-              setting: "{setting}",
+              path: "{path}",
               add: "{add}",
               name: "{name}",
             })}
           >
             {{
-              setting: <UiLabel name={m.settings_partials_heading()} />,
+              path: (
+                <SettingsPath
+                  page={m.settings_page_profiles()}
+                  setting={m.settings_partials_heading()}
+                />
+              ),
               add: <UiLabel name={m.settings_partial_add()} />,
               name: <code>{slug}</code>,
             }}
@@ -131,8 +136,14 @@ export function EntryUse({
           <Step text={m.docs_directory_partial_step_paste({ copy: "{copy}" })}>
             {{ copy }}
           </Step>
-          <Step text={m.docs_directory_partial_step_call({ tab: "{tab}" })}>
+          <Step
+            text={m.docs_directory_partial_step_call({
+              edit: "{edit}",
+              tab: "{tab}",
+            })}
+          >
             {{
+              edit: <UiLabel name={m.settings_profile_edit()} />,
               tab: (
                 <UiLabel
                   name={
