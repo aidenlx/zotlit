@@ -22,7 +22,12 @@ import type {
 import { ResultSheet } from "@/lib/workbench/result-sheet";
 import { m } from "@/paraglide/messages.js";
 
-import { annotationLabel, exampleLabel, shortExampleLabel } from "./labels";
+import {
+  annotationLabel,
+  exampleLabel,
+  MARK_LABEL,
+  shortExampleLabel,
+} from "./labels";
 
 /**
  * Obsidian's colors for its built-in callout types, so a sample shows each
@@ -228,10 +233,10 @@ function NoteSheet({
       )}
       <div className="flex flex-col p-5 sm:p-6">
         {!showMarkdown && note.properties !== null && (
-          <PropertyRows
-            properties={note.properties}
-            className="mb-4 border-b border-fd-border pb-3"
-          />
+          <div className="mb-4 border-b border-fd-border pb-3">
+            <PropertyRows properties={note.properties} marked />
+            <PropertyKey properties={note.properties} />
+          </div>
         )}
         <Sheet
           markdown={note.body ?? ""}
@@ -308,10 +313,13 @@ function Sheet({
 function PropertyRows({
   properties,
   keys = properties.map(({ key }) => key),
+  marked = false,
   className,
 }: {
   properties: readonly SampleProperty[];
   keys?: readonly string[];
+  /** Show which properties the look sets and which ZotLit adds to every note. */
+  marked?: boolean;
   className?: string;
 }) {
   return (
@@ -322,19 +330,71 @@ function PropertyRows({
         className,
       )}
     >
-      {keys.map((key) => (
-        <div key={key} className="contents">
-          <dt className="font-mono text-xs leading-6 text-fd-muted-foreground">
-            {key}
-          </dt>
-          <dd className="min-w-0 break-words">
-            <PropertyCell
-              property={properties.find((property) => property.key === key)}
-            />
-          </dd>
-        </div>
-      ))}
+      {keys.map((key) => {
+        const property = properties.find((entry) => entry.key === key);
+        const mark = marked ? property?.mark : undefined;
+        return (
+          <div
+            key={key}
+            className={cn(
+              "contents",
+              mark !== undefined &&
+                cn(
+                  "col-span-2 grid grid-cols-subgrid items-baseline px-2",
+                  MARK_ROW[mark],
+                ),
+            )}
+          >
+            <dt
+              className={cn(
+                "font-mono text-xs leading-6",
+                mark === "set"
+                  ? "font-semibold text-fd-foreground"
+                  : "text-fd-muted-foreground",
+              )}
+            >
+              {mark !== undefined && (
+                <span className="sr-only">{MARK_LABEL[mark]()}: </span>
+              )}
+              {key}
+            </dt>
+            <dd className="min-w-0 break-words">
+              <PropertyCell property={property} />
+            </dd>
+          </div>
+        );
+      })}
     </dl>
+  );
+}
+
+/** How each mark looks: the look's own properties on the accent tint with a bar, ZotLit's on a grey one. */
+const MARK_ROW = {
+  set: "bg-fd-accent shadow-[inset_3px_0_0_var(--color-fd-primary)]",
+  system: "bg-fd-muted text-fd-muted-foreground",
+} satisfies Record<SampleProperty["mark"], string>;
+
+/** The key under a note's properties, for each mark the note shows. */
+function PropertyKey({
+  properties,
+}: {
+  properties: readonly SampleProperty[];
+}) {
+  const shown = (["set", "system"] as const).filter((mark) =>
+    properties.some((property) => property.mark === mark),
+  );
+  return (
+    <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-sans text-xs text-fd-muted-foreground">
+      {shown.map((mark) => (
+        <li key={mark} className="flex items-center gap-1.5">
+          <span
+            aria-hidden
+            className={cn("size-2.5 border border-fd-border", MARK_ROW[mark])}
+          />
+          {MARK_LABEL[mark]()}
+        </li>
+      ))}
+    </ul>
   );
 }
 

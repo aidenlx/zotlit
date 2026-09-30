@@ -1,6 +1,7 @@
 // Writes one entry's rendered samples as the Markdown page a reviewer reads beside the entry.
 
 import type { DirectoryEntry } from "./load.ts";
+import type { SampleProperty } from "./site.ts";
 import type {
   AnnotationSample,
   CitationSample,
@@ -21,6 +22,13 @@ export interface SampleLabels {
   readonly item: () => string;
   /** A sample's note name, as a column and as the label over a Profile's note. */
   readonly noteName: () => string;
+  /** The columns of a Profile's property table, and the name of each mark. */
+  readonly property: () => string;
+  readonly value: () => string;
+  readonly mark: () => string;
+  readonly markName: (mark: SampleProperty["mark"]) => string;
+  /** A property the reader fills in by hand. */
+  readonly empty: () => string;
   /** The columns of the citation table: the items cited, then each citation. */
   readonly cited: () => string;
   readonly main: () => string;
@@ -31,9 +39,22 @@ export interface SampleLabels {
 export const UPDATE_SAMPLES_COMMAND =
   "pnpm exec turbo run test --filter=@zotlit/docs -- src/lib/template-directory -u";
 
+/**
+ * A note's rendered sample. A Profile's page gives its properties as `rows`
+ * too, marked as set by the Profile or added by ZotLit, and the sample then
+ * tabulates them above the note.
+ */
+export type NoteSampleRows = NoteSample & {
+  readonly rows?: readonly SampleProperty[];
+};
+
+export interface EntrySampleRows extends Omit<EntrySamples, "notes"> {
+  readonly notes: readonly NoteSampleRows[];
+}
+
 export function formatEntrySamples(
   entry: Pick<DirectoryEntry, "title" | "kind">,
-  samples: EntrySamples,
+  samples: EntrySampleRows,
   labels: SampleLabels,
 ): string {
   const sections = [
@@ -51,7 +72,7 @@ export function formatEntrySamples(
  */
 export function formatSampleSections(
   kind: DirectoryEntry["kind"],
-  { notes, annotations, citations = [] }: EntrySamples,
+  { notes, annotations, citations = [] }: EntrySampleRows,
   {
     depth,
     leftOut = NO_OUTPUT,
@@ -81,7 +102,7 @@ export function formatSampleSections(
 }
 
 function noteSection(
-  { sample, noteName, properties, body }: NoteSample,
+  { sample, noteName, properties, rows, body }: NoteSampleRows,
   kind: DirectoryEntry["kind"],
   {
     hashes,
@@ -106,8 +127,29 @@ function noteSection(
   return [
     heading,
     `${labels.noteName()}: \`${noteName ?? "(none)"}\``,
+    ...(rows === undefined || rows.length === 0
+      ? []
+      : [propertyTable(rows, labels)]),
     codeBlock(note, "markdown"),
   ].join("\n\n");
+}
+
+function propertyTable(
+  rows: readonly SampleProperty[],
+  labels: SampleLabels,
+): string {
+  return table(
+    [labels.property(), labels.value(), labels.mark()],
+    rows.map(({ key, value, mark }) => [
+      key,
+      value === null
+        ? `_${labels.empty()}_`
+        : typeof value === "string"
+          ? value
+          : value.join(", "),
+      labels.markName(mark),
+    ]),
+  );
 }
 
 function noteNameTable(
@@ -142,7 +184,7 @@ function table(
   rows: readonly (readonly string[])[],
 ): string {
   const line = (cells: readonly string[]) =>
-    `| ${cells.map((cell) => cell.replaceAll("|", "\\|")).join(" | ")} |`;
+    `| ${cells.map((cell) => cell.replaceAll("|", "\\|").replaceAll(/\s*\n\s*/g, " ")).join(" | ")} |`;
   return [
     line(headers),
     line(headers.map(() => "---")),
