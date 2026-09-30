@@ -282,6 +282,46 @@ describe("an entry page", () => {
   });
 });
 
+describe("a part page's result", () => {
+  const entries = directorySite(
+    verifyTemplateDirectory(withCitationAndNoteName(fixtureFiles())),
+  ).entries;
+  const part = (id: string) => entries.find((entry) => entry.id === id)!;
+
+  it("holds a result for every example item, in the form its kind shows: a note body, property rows, a note name, or a citation", () => {
+    expect(part(FIXTURE_HEADING).notes.every(({ body }) => body !== null)).toBe(
+      true,
+    );
+    expect(
+      part(FIXTURE_PROPERTY).notes.every(
+        ({ properties }) => properties !== null,
+      ),
+    ).toBe(true);
+    expect(
+      part("note-names/fixture-name").notes.every(
+        ({ noteName }) => noteName !== null,
+      ),
+    ).toBe(true);
+    expect(part("citations/fixture-citation").citations.length).toBeGreaterThan(
+      0,
+    );
+  });
+
+  it("holds the call a look writes only for a partial, which the page folds under Source", () => {
+    expect(part(FIXTURE_HEADING).details).toMatchObject({
+      kind: "partial",
+      call: '{% render "fixture-heading" with zt as zt -%}',
+    });
+    for (const id of [
+      FIXTURE_PROPERTY,
+      "note-names/fixture-name",
+      "citations/fixture-citation",
+    ]) {
+      expect(part(id).details).not.toHaveProperty("call");
+    }
+  });
+});
+
 describe("a Profile's source", () => {
   const site = directorySite(verifyTemplateDirectory(fixtureFiles()));
   const page = (id: string) => site.entries.find((entry) => entry.id === id)!;

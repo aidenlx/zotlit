@@ -1,6 +1,6 @@
-// An entry page's actions: one-click add for a Profile, the text the reader pastes for a recipe, and the artifact byte for byte.
+// An entry page's actions: one-click add for a Profile, the text the reader pastes for a part, and the artifact byte for byte.
 
-import { Copy, Download, Import } from "lucide-react";
+import { Copy, Import } from "lucide-react";
 
 import { Command } from "@/components/command";
 import { Message } from "@/components/message";
@@ -14,11 +14,9 @@ import { COPY_LABEL } from "./labels";
 
 const ACTION =
   "inline-flex min-h-10 cursor-pointer items-center gap-2 px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring [&_svg]:size-4";
-/** The entry's first action: add to ZotLit for a Profile, copy for a recipe. */
+/** The entry's first action: add to ZotLit for a Profile, copy for a part. */
 const PRIMARY =
   "bg-fd-foreground text-fd-background hover:bg-fd-primary hover:text-fd-primary-foreground";
-const SECONDARY =
-  "border border-fd-border bg-fd-card hover:border-fd-primary hover:text-fd-primary";
 
 /** Puts the text on the clipboard and says so in a toast; `failed` names the toast a refusal shows. */
 export function copyToClipboard(text: string, failed: string) {
@@ -42,10 +40,11 @@ export function downloadFile({ name, text }: SiteEntry["file"]) {
   });
 }
 
+/** A Profile's one action: add it to ZotLit. */
 export function EntryActions({
   entry,
 }: {
-  entry: Pick<SiteEntry, "kind" | "copyText" | "file">;
+  entry: Pick<SiteEntry, "copyText">;
 }) {
   function addToZotLit() {
     openProfileInObsidian(entry.copyText).then(
@@ -58,43 +57,32 @@ export function EntryActions({
     );
   }
 
-  if (entry.kind === "profile") {
-    return (
-      <button
-        type="button"
-        onClick={addToZotLit}
-        className={`${ACTION} ${PRIMARY}`}
-      >
-        <Import aria-hidden />
-        {m.docs_directory_import()}
-      </button>
-    );
-  }
-
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-      <button
-        type="button"
-        onClick={() =>
-          copyToClipboard(entry.copyText, m.docs_directory_copy_failed())
-        }
-        className={`${ACTION} ${PRIMARY}`}
-      >
-        <Copy aria-hidden />
-        {COPY_LABEL[entry.kind]()}
-      </button>
-      <button
-        type="button"
-        onClick={() => downloadFile(entry.file)}
-        className={`${ACTION} ${SECONDARY}`}
-      >
-        <Download aria-hidden />
-        {m.docs_directory_download()}
-      </button>
-      <span className="font-mono text-xs break-all text-fd-muted-foreground">
-        {entry.file.name}
-      </span>
-    </div>
+    <button
+      type="button"
+      onClick={addToZotLit}
+      className={`${ACTION} ${PRIMARY}`}
+    >
+      <Import aria-hidden />
+      {m.docs_directory_import()}
+    </button>
+  );
+}
+
+/** A part's one action: copy the text the reader pastes into ZotLit. */
+export function CopyButton({
+  kind,
+  copyText,
+}: Pick<SiteEntry, "kind" | "copyText">) {
+  return (
+    <button
+      type="button"
+      onClick={() => copyToClipboard(copyText, m.docs_directory_copy_failed())}
+      className={`${ACTION} ${PRIMARY}`}
+    >
+      <Copy aria-hidden />
+      {COPY_LABEL[kind]()}
+    </button>
   );
 }
 

@@ -1,8 +1,7 @@
 // An entry page's Source section: the file behind the page, folded at the end for advanced readers.
 
-import { ChevronDown, Copy, Download } from "lucide-react";
+import { Copy, Download } from "lucide-react";
 import { useState } from "react";
-import type { ReactNode } from "react";
 
 import { Message } from "@/components/message";
 import { UiLabel } from "@/components/ui-label";
@@ -21,6 +20,7 @@ import { m } from "@/paraglide/messages.js";
 
 import { copyToClipboard, downloadFile } from "./entry-actions";
 import { EntryLink } from "./entry-list";
+import { Fold } from "./fold";
 import { COPY_LABEL, exampleLabel } from "./labels";
 
 const ACTION =
@@ -46,7 +46,7 @@ export function EntrySource({
 }: {
   entry: Pick<
     SiteEntry,
-    "kind" | "copyText" | "file" | "profileSource" | "notes"
+    "kind" | "copyText" | "file" | "profileSource" | "notes" | "details"
   >;
   partials: readonly SourcePartialEntry[];
   /** The example item the page shows now; the example tab holds its Markdown. */
@@ -57,10 +57,34 @@ export function EntrySource({
     <Fold heading={m.docs_directory_source_heading()} className={className}>
       {entry.profileSource === null ? (
         <>
-          <p className="font-mono text-xs break-all text-fd-muted-foreground">
-            {entry.file.name}
-          </p>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <p className="font-mono text-xs break-all text-fd-muted-foreground">
+              {entry.file.name}
+            </p>
+            <button
+              type="button"
+              onClick={() => downloadFile(entry.file)}
+              className={ACTION}
+            >
+              <Download aria-hidden />
+              {m.docs_directory_download()}
+            </button>
+          </div>
           <SourceCode text={entry.file.text} label={entry.file.name} />
+          {entry.details.kind === "partial" && (
+            <>
+              <p className="max-w-[60ch] text-sm text-pretty text-fd-muted-foreground">
+                {m.docs_directory_partial_file()}
+              </p>
+              <p className="font-mono text-xs font-medium tracking-[0.06em] text-fd-muted-foreground uppercase">
+                {m.docs_directory_source_call()}
+              </p>
+              <SourceCode
+                text={entry.details.call}
+                label={m.docs_directory_source_call()}
+              />
+            </>
+          )}
         </>
       ) : (
         <ProfileSourceTabs
@@ -71,35 +95,6 @@ export function EntrySource({
         />
       )}
     </Fold>
-  );
-}
-
-/** A folded section of an entry page, opened by its heading. */
-function Fold({
-  heading,
-  className,
-  children,
-}: {
-  heading: string;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <details
-      className={cn(
-        "group/details min-w-0 border-t border-fd-border pt-3",
-        className,
-      )}
-    >
-      <summary className="flex min-h-8 cursor-pointer list-none items-center gap-1.5 font-mono text-xs font-medium tracking-[0.06em] text-fd-muted-foreground uppercase [&::-webkit-details-marker]:hidden">
-        <ChevronDown
-          aria-hidden
-          className="size-3.5 shrink-0 -rotate-90 group-open/details:rotate-0 rtl:rotate-90 rtl:group-open/details:rotate-0"
-        />
-        {heading}
-      </summary>
-      <div className="mt-3 flex flex-col gap-3 font-sans">{children}</div>
-    </details>
   );
 }
 
