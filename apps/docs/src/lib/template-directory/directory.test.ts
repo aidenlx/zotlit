@@ -354,6 +354,27 @@ describe("the Template Directory", () => {
     );
   });
 
+  it.each([
+    [
+      "profiles/theses-and-dissertations",
+      "thesis-with-university",
+      "PhD thesis · Princeton University",
+    ],
+    [
+      "profiles/books",
+      "book-with-edition",
+      "University of Chicago Press · Chicago · Edition: 4 · ISBN 978-0-226-23973-6",
+    ],
+  ])(
+    "shows in %s the details only the %s example fills",
+    (id, sampleId, details) => {
+      const note = verification.samples
+        .get(id)!
+        .notes.find(({ sample }) => sample.id === sampleId);
+      expect(note?.body).toContain(details);
+    },
+  );
+
   it.each(verification.entries.map((entry) => [entry.id, entry] as const))(
     "stores the rendered samples of %s",
     async (id, entry) => {

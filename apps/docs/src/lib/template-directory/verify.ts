@@ -48,6 +48,7 @@ import {
   EDGE_SAMPLES,
   EVERY_COLOR_SAMPLE,
   TODO_HIGHLIGHT,
+  typeSamples,
 } from "./samples.ts";
 import type { DirectorySample } from "./samples.ts";
 
@@ -418,22 +419,24 @@ function sampleAnnotations(
 }
 
 /**
- * The Directory Samples, and for an entry that groups annotations by color, a
- * note with an annotation in every color.
+ * The Directory Samples; for an entry made for some item types, the type
+ * examples of those types; and for an entry that groups annotations by color,
+ * a note with an annotation in every color.
  */
-function noteSamples(
-  features: DirectoryEntry["features"],
-): readonly DirectorySample[] {
-  return features.includes("grouped-by-color")
-    ? [...DIRECTORY_SAMPLES, EVERY_COLOR_SAMPLE]
-    : DIRECTORY_SAMPLES;
+function noteSamples({
+  features,
+  itemTypes,
+}: Pick<DirectoryEntry, "features" | "itemTypes">): readonly DirectorySample[] {
+  return [
+    ...DIRECTORY_SAMPLES,
+    ...typeSamples(itemTypes),
+    ...(features.includes("grouped-by-color") ? [EVERY_COLOR_SAMPLE] : []),
+  ];
 }
 
-function renderProfileEntry(
-  { artifact, manifest, features }: ProfileEntry,
-  report: Report,
-): EntrySamples {
-  const notes = noteSamples(features).map((sample) => {
+function renderProfileEntry(entry: ProfileEntry, report: Report): EntrySamples {
+  const { artifact, manifest, features } = entry;
+  const notes = noteSamples(entry).map((sample) => {
     const result = renderProfile(artifact.source, sample.snapshot);
     reportDiagnostics(result, sampleSubject(sample), report);
     checkProperties(
@@ -490,7 +493,7 @@ function renderPartialEntry(
     annotation: NAMED_ANNOTATION,
   });
   return {
-    notes: noteSamples(features).map((sample) => {
+    notes: noteSamples(entry).map((sample) => {
       const result = renderProfile(source, sample.snapshot, { resources });
       reportDiagnostics(result, sampleSubject(sample), report);
       return {
@@ -523,7 +526,7 @@ function withBuiltInCitation(resources: RenderResources): RenderResources {
 }
 
 function renderPropertyEntry(
-  { property, expected }: PropertyEntry,
+  { property, expected, itemTypes }: PropertyEntry,
   report: Report,
 ): EntrySamples {
   if (!("value" in property)) {
@@ -533,16 +536,17 @@ function renderPropertyEntry(
     );
   }
   const source = harnessProfile({ frontmatter: [property] });
+  const samples = [...DIRECTORY_SAMPLES, ...typeSamples(itemTypes)];
   for (const id of Object.keys(expected)) {
-    if (!DIRECTORY_SAMPLES.some((sample) => sample.id === id)) {
+    if (!samples.some((sample) => sample.id === id)) {
       report(
         "property-expectation",
-        `expected names "${id}", which is not a Directory Sample.`,
+        `expected names "${id}", which is not a Directory Sample or an example of the entry's item types.`,
       );
     }
   }
   return {
-    notes: DIRECTORY_SAMPLES.map((sample) => {
+    notes: samples.map((sample) => {
       const result = renderProfile(source, sample.snapshot);
       reportDiagnostics(result, sampleSubject(sample), report);
       checkProperties(
