@@ -532,6 +532,17 @@ const HIGHLIGHT_COLORS: readonly { hex: string; name: string | null }[] = [
 ];
 
 /**
+ * Every Zotero color a highlight example shows, by its contract name and hex,
+ * in the order of Zotero's color menu.
+ */
+export const ZOTERO_COLORS: readonly { name: string; hex: string }[] = [
+  { name: "yellow", hex: "#ffd400" },
+  ...HIGHLIGHT_COLORS.flatMap(({ hex, name }) =>
+    name === null ? [] : [{ name, hex }],
+  ),
+];
+
+/**
  * The yellow Sample Annotation's highlight in every other Zotero color and a
  * custom color, without its comment and tags, for entries that show highlight
  * colors.
