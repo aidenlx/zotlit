@@ -184,9 +184,9 @@ describe("the Directory in llms.txt", () => {
   it("lists every entry under its level, linked to its page, the way the docs tree lists a folder", () => {
     expect(directoryLlmsIndex(site()))
       .toBe(`- [${m.docs_directory_title()}](/templates): ${m.docs_directory_description()}
-  - ${m.docs_directory_group_ready()}: ${m.docs_directory_group_ready_description()}
+  - Start here: ready-made notes: ${m.docs_directory_group_ready_description()}
     - [Fixture profile](/templates/profiles/fixture-profile): A Profile the verification tests break one rule at a time.
-  - ${m.docs_directory_group_customize()}: ${m.docs_directory_group_customize_description()}
+  - Change one part of your notes: ${m.docs_directory_group_customize_description()}
     - [Fixture heading](/templates/partials/fixture-heading): The title as a heading.
     - [Fixture quote](/templates/partials/fixture-quote): The text as a quote.
     - [Fixture year](/templates/properties/fixture-year): The year.`);
@@ -197,7 +197,7 @@ describe("the Directory index edition", () => {
   it("lists every entry under its level, linked to its own edition, with the facets a reader searches by", async () => {
     const index = await directoryEdition(site(), []);
 
-    expect(index).toContain(`## ${m.docs_directory_group_ready()}
+    expect(index).toContain(`## Start here: ready-made notes
 
 ${m.docs_directory_group_ready_description()}
 
@@ -208,7 +208,7 @@ ${m.docs_directory_group_ready_description()}
   - ${m.docs_directory_problems()}:
     - I want a fixture.
 `);
-    expect(index).toContain(`## ${m.docs_directory_group_customize()}
+    expect(index).toContain(`## Change one part of your notes
 
 ${m.docs_directory_group_customize_description()}
 
@@ -244,10 +244,19 @@ ${m.docs_directory_group_customize_description()}
     ]);
     const index = await directoryEdition(site(files), []);
 
-    expect(index).toContain(`## ${m.docs_directory_start_here()}
+    expect(index).toContain(`## ${m.docs_directory_recommended()}
 
 - [Fixture year](/templates/properties/fixture-year.md): The year.
 
-## ${m.docs_directory_group_ready()}`);
+## Start here: ready-made notes`);
+  });
+
+  it("presents the two paths in order, under the headings the page uses", async () => {
+    const index = (await directoryEdition(site(), [])) ?? "";
+
+    expect(index.match(/^## .*$/gm)).toEqual([
+      "## Start here: ready-made notes",
+      "## Change one part of your notes",
+    ]);
   });
 });
