@@ -9,7 +9,7 @@ import type {
 import { kindLabels, levelLabels } from "@/lib/template-directory/kind-labels";
 import type { SampleLabels } from "@/lib/template-directory/samples-markdown";
 import type { Facet } from "@/lib/template-directory/search";
-import type { FacetOption } from "@/lib/template-directory/site";
+import type { ColorKeyRow, FacetOption } from "@/lib/template-directory/site";
 import type { AnnotationColor } from "@/lib/template-directory/verify";
 import { m } from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
@@ -209,6 +209,29 @@ export function annotationLabel({
         type: typeLabel,
         color: color.hex,
       });
+}
+
+const COLOR_LABEL: Readonly<Record<string, () => LocalizedString>> = {
+  yellow: m.annot_view_color_yellow,
+  red: m.annot_view_color_red,
+  green: m.annot_view_color_green,
+  blue: m.annot_view_color_blue,
+  purple: m.annot_view_color_purple,
+  magenta: m.annot_view_color_magenta,
+  orange: m.annot_view_color_orange,
+  gray: m.annot_view_color_gray,
+  plum: m.annot_view_color_plum,
+};
+
+/** One row of a color key: the Zotero color, an arrow, and what the Profile makes it mean. */
+export function colorKeyText({ color, meaning }: ColorKeyRow): string {
+  return m.docs_directory_color_key_row({
+    color:
+      color === null
+        ? m.docs_directory_color_other()
+        : (COLOR_LABEL[color]?.() ?? color),
+    meaning,
+  });
 }
 
 /** The names and headings the Markdown edition and the samples files give the samples. */
