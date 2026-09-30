@@ -2,7 +2,7 @@
 
 The Template Directory is ZotLit's catalogue of ready-made, verified Directory Entries: Literature Note Profiles a reader imports in one step, and recipes (partials, citation text, note names, properties) a reader copies into a Profile of their own. This folder is its single source of truth. The docs site renders it, and the verification suite in `apps/docs` checks every entry on every `pnpm test`.
 
-Entry descriptions are user-facing copy. Write them for academics who read in Zotero and do not write code: the research task first, the result in the note second, and Obsidian UI labels verbatim (**Import profile…**, **Add a property**, **Rule · JSON-e**, **Add from a rule**, **Add several properties from one rule**). [ADR 0062](../adr/0062-the-template-directory-is-a-repository-held-catalogue-verified-by-rendering.md) records why the Directory is shaped this way.
+Entry descriptions are user-facing copy. Write them for academics who read in Zotero and do not write code: the research task first, the result in the note second, and Obsidian UI labels verbatim (**Import profile…**, **Add a property**, **Rule · JSON-e**, **Add several properties from one rule**). [ADR 0062](../adr/0062-the-template-directory-is-a-repository-held-catalogue-verified-by-rendering.md) records why the Directory is shaped this way.
 
 ## Layout
 
@@ -38,7 +38,7 @@ The kind comes from the folder and the level from the kind. Any other file in an
 
 ## The entry file
 
-`entry.md` opens with its metadata as YAML between two `---` lines. The Markdown body below it is the reader-facing description: who the entry is for, what the note or recipe produces, and how to use it.
+`entry.md` opens with its metadata as YAML between two `---` lines. The Markdown body below it is the reader-facing description: who the entry is for and what the note or recipe produces. The entry page adds the steps to use it, built from the plugin's UI labels, so the description holds only what those steps leave out, such as a Profile's match condition.
 
 | Field | Kinds | Required | Value |
 | --- | --- | --- | --- |
@@ -52,7 +52,7 @@ The kind comes from the folder and the level from the kind. Any other file in an
 | `effort` | all | yes | One sentence: what the entry asks of the reader before it works |
 | `title`, `summary`, `minAppVersion` | recipes | yes | The entry's name, its one-line summary, and the ZotLit version it needs |
 | `context` | partial | yes | The data the partial reads: `note`, `annotation`, or `citation` |
-| `call` | partial | no | The Liquid a Profile writes to call the partial, when that is more than `{% render "<slug>" with zt as zt %}`. The suite renders this call |
+| `call` | partial | no | The Liquid a Profile writes to call the partial, when that is more than `{% render "<slug>" with zt as zt -%}`. The suite renders this call |
 | `expected` | property | no | Per Directory Sample or type example, the properties the entry writes (see [Property](#property)) |
 
 A Profile entry states its title, summary, and required version once, in its manifest: `name`, `description`, and `minAppVersion`. The partials an entry calls are found from its artifact, directly and through the partials it calls.
@@ -106,7 +106,7 @@ The suite renders the citation text as ZotLit inserts it, on one line, under bot
 ### Note name
 
 1. Create `note-names/<slug>/` with `entry.md` and `note-name.liquid`.
-2. The artifact is the Filename Template on one line, with no line break at the end of the file, exactly as a reader pastes it into **Note name template**.
+2. The artifact is the Filename Template on one line, with no line break at the end of the file, exactly as a reader pastes it into **Note name**.
 3. End it with `{% suffix %}`, so a second note with the same name is still created.
 
 The suite renders the note name over every Directory Sample and Edge Sample with the suffix left empty, and checks that each result is one file name: not empty, on one line, with no space at either end and no dot at the end, and with none of `\ / : * ? " < > | # ^ [ ]`. A slash would make a folder, Obsidian would change each of the others to `_`, and it removes a final dot.
@@ -136,6 +136,7 @@ The suite fails with a named problem code when an entry breaks one of these rule
 | Citation text has no `null`, empty, `null`/`undefined`/`NaN` text, dangling separator, or label without a value | `citation-output` |
 | A note name is one file name: not empty, on one line, no space at either end, no dot at the end, and no character a file name cannot hold | `note-name-output` |
 | A note name holds `{% suffix %}` | `note-name-suffix` |
+| A partial reads `note` or `annotation` data: the suite renders no `citation` partial yet | `unverified` |
 
 The Profile ID rule covers form and uniqueness only. That an ID never changes between editions is a review rule.
 
