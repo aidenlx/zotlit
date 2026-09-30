@@ -14,7 +14,7 @@ import {
 import { m } from "@/paraglide/messages.js";
 
 import { codeBlock, formatSampleSections } from "./samples-markdown";
-import { calledPartials, DIRECTORY_PATH, entryPath } from "./site";
+import { calledPartials, DIRECTORY_PATH, entryId, entryPath } from "./site";
 import type { DirectorySite, SiteEntry } from "./site";
 import type { EntrySamples } from "./verify";
 
@@ -27,8 +27,11 @@ export async function directoryEdition(
   slugs: readonly string[],
 ): Promise<string | undefined> {
   if (slugs.length === 0) return indexEdition(site);
-  if (slugs.length !== 2) return undefined;
-  const entry = site.entries.find(({ id }) => id === slugs.join("/"));
+  const [folder, slug, ...rest] = slugs;
+  if (folder === undefined || slug === undefined || rest.length > 0) {
+    return undefined;
+  }
+  const entry = site.entries.find(({ id }) => id === entryId(folder, slug));
   return entry && entryEdition(entry, site);
 }
 
