@@ -25,7 +25,7 @@ import { COPY_LABEL, exampleLabel } from "./labels";
 import { SummaryText } from "./summary-text";
 
 const ACTION =
-  "inline-flex min-h-8 cursor-pointer items-center gap-2 border border-fd-border bg-fd-card px-3 py-1 text-sm font-medium transition-colors hover:border-fd-primary hover:text-fd-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring [&_svg]:size-4";
+  "inline-flex min-h-8 cursor-pointer items-center gap-2 border border-fd-border bg-fd-card px-3 py-1 text-sm font-medium whitespace-nowrap transition-colors hover:border-fd-primary hover:text-fd-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring [&_svg]:size-4";
 
 /**
  * The folded Source section. A Profile offers one tab for its file, one for
@@ -156,24 +156,26 @@ function ProfileSourceTabs({
               {m.docs_directory_source_whole_file()}
             </button>
           </div>
-          <button
-            type="button"
-            onClick={() =>
-              copyToClipboard(entry.copyText, m.docs_directory_copy_failed())
-            }
-            className={ACTION}
-          >
-            <Copy aria-hidden />
-            {COPY_LABEL.profile()}
-          </button>
-          <button
-            type="button"
-            onClick={() => downloadFile(entry.file)}
-            className={ACTION}
-          >
-            <Download aria-hidden />
-            {m.docs_directory_download()}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                copyToClipboard(entry.copyText, m.docs_directory_copy_failed())
+              }
+              className={ACTION}
+            >
+              <Copy aria-hidden />
+              {COPY_LABEL.profile()}
+            </button>
+            <button
+              type="button"
+              onClick={() => downloadFile(entry.file)}
+              className={ACTION}
+            >
+              <Download aria-hidden />
+              {m.docs_directory_download()}
+            </button>
+          </div>
         </div>
         <p className="max-w-[60ch] text-sm text-pretty text-fd-muted-foreground">
           <Message

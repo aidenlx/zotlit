@@ -7,7 +7,8 @@ import { Command } from "@/components/command";
 import { Message } from "@/components/message";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
-import { entryIdParts } from "@/lib/template-directory/site";
+import { absoluteUrl } from "@/lib/structured-data";
+import { entryIdParts, entryPath } from "@/lib/template-directory/site";
 import type { EntryDetails, SiteEntry } from "@/lib/template-directory/site";
 import { m } from "@/paraglide/messages.js";
 import type { LocalizedString } from "@/paraglide/runtime.js";
@@ -35,18 +36,34 @@ export function EntryUse({
   const markdown = asMarkdown();
   const copy = <UiLabel name={COPY_LABEL[entry.kind]()} />;
   const [, slug] = entryIdParts(entry.id);
+  const pageUrl = absoluteUrl(entryPath(entry.id));
   switch (entry.details.kind) {
     case "profile":
       return (
         <Steps>
           <li>
             <p>
-              <Message
-                text={m.docs_directory_profile_step_one_click({
-                  import: "{import}",
-                })}
-                slots={{ import: <UiLabel name={m.docs_directory_import()} /> }}
-              />
+              {markdown ? (
+                <Message
+                  text={m.docs_directory_profile_step_open({
+                    url: "{url}",
+                    import: "{import}",
+                  })}
+                  slots={{
+                    url: <a href={pageUrl}>{pageUrl}</a>,
+                    import: <UiLabel name={m.docs_directory_import()} />,
+                  }}
+                />
+              ) : (
+                <Message
+                  text={m.docs_directory_profile_step_one_click({
+                    import: "{import}",
+                  })}
+                  slots={{
+                    import: <UiLabel name={m.docs_directory_import()} />,
+                  }}
+                />
+              )}
             </p>
             {markdown && (
               <>
@@ -54,12 +71,10 @@ export function EntryUse({
                 <ul>
                   <Step
                     text={m.docs_directory_profile_step_copy({
-                      copy: "{copy}",
                       source: "{source}",
                     })}
                   >
                     {{
-                      copy: <UiLabel name={m.docs_directory_copy_it()} />,
                       source: (
                         <UiLabel name={m.docs_directory_source_heading()} />
                       ),
@@ -69,7 +84,6 @@ export function EntryUse({
                     text={m.docs_directory_profile_step_import({
                       command: "{command}",
                       clipboard: "{clipboard}",
-                      file: "{file}",
                     })}
                   >
                     {{
@@ -82,7 +96,6 @@ export function EntryUse({
                       clipboard: (
                         <UiLabel name={m.profile_import_clipboard()} />
                       ),
-                      file: <UiLabel name={m.profile_import_file()} />,
                     }}
                   </Step>
                 </ul>
