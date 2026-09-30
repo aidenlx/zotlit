@@ -423,7 +423,7 @@ function PropertyValue({ value }: { value: SampleProperty["value"] }) {
       {value.map((item, index) => (
         <li
           key={index}
-          className="rounded-sm bg-fd-muted px-1.5 text-[0.8rem] leading-6"
+          className="rounded-sm border border-fd-border bg-fd-card px-1.5 text-[0.8rem] leading-6"
         >
           {item}
         </li>

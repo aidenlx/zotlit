@@ -125,7 +125,11 @@ function noteView(
 
 /** Properties as Obsidian writes them into a note's YAML block. */
 function yamlBlock(values: Record<string, string>): string {
-  return stringifyYaml(values, { lineWidth: 0 });
+  return stringifyYaml(values, {
+    nullStr: "",
+    lineWidth: 0,
+    aliasDuplicateObjects: false,
+  });
 }
 
 /**
