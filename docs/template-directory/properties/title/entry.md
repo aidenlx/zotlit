@@ -1,6 +1,6 @@
 ---
 title: Title
-summary: The item's title as a property, written as valid YAML even when it holds a colon or quotation marks.
+summary: The item's title as a property, written as valid YAML even when the title has a colon or quotation marks.
 minAppVersion: "2.2.0-beta.0"
 tasks: [general-reading, literature-review]
 features: [properties]
@@ -26,17 +26,6 @@ expected:
     title: "Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities"
 ---
 
-The item's title, as a `title` property of the literature note.
+When you update the note, the property gets the title from Zotero again, with Zotero's capitalization. A title that you edit in the note goes back to the Zotero title, so correct a title in Zotero. When the item has no title, the note gets no `title` property.
 
-| Item | `title` |
-| --- | --- |
-| Journal article | Why Most Published Research Findings Are False |
-| Book | Thinking, fast and slow |
-| Book chapter | Judgment under uncertainty: Heuristics and biases |
-| Thesis | Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities |
-
-A title with a colon or quotation marks is safe. ZotLit writes the property as valid YAML and adds quotation marks where YAML needs them. When the item has no title, the note gets no `title` property.
-
-**When the note is updated**: **Replace the existing value**. The property always shows the title as Zotero has it. To correct a title, correct it in Zotero, then update the note.
-
-Limits: the property holds the full title with Zotero's capitalization. A title you edit in the note goes back to the Zotero title on the next update. A profile made from the Default profile already has a `title` property. A profile holds each property name once, so edit that property instead of adding a new one.
+The **Default** look, and every look that you made from it, already has a `title` property. A look with the same property name twice does not load, so change that property in place of adding a second one.

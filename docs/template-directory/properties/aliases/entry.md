@@ -1,6 +1,6 @@
 ---
 title: Aliases
-summary: Two aliases for each note, author and year, and first author and title, so a link to the note finds it by either.
+summary: Two aliases on each note, authors with year and first author with title, so the link suggestions find the note by either.
 minAppVersion: "2.2.0-beta.0"
 tasks: [general-reading, literature-review, writing]
 features: [properties]
@@ -46,28 +46,12 @@ expected:
       - Brackenridge Free Library – Minutes of the Board of Trustees, 12 March 1923
 ---
 
-Two aliases for each literature note, as its `aliases` property:
+With three or more authors, the first alias names the first author and "et al.". The aliases do not change with the language of Obsidian.
 
-- the family names of the authors and the year, as in an author–date citation: `Ioannidis 2005` for one author, `Rivera & Chen 2026` for two, and `Ioannidis et al. 2005` for three or more;
-- the family name of the first author and the title: `Ioannidis – Why Most Published Research Findings Are False`.
+An item with no year gets no author-and-year alias. An item with no authors gets no alias.
 
-The aliases are the same whatever language Obsidian and ZotLit use.
+Each update adds missing aliases and keeps every alias already in the note, also the ones you add by hand.
 
-When you type `[[` in Obsidian, the link suggestions find the note by either alias, also when the note is named by its citation key.
-
-| Item | `aliases` |
-| --- | --- |
-| Journal article | Ioannidis 2005; Ioannidis – Why Most Published Research Findings Are False |
-| Book | Kahneman 2011; Kahneman – Thinking, fast and slow |
-| Book chapter | Tversky & Kahneman 1982; Tversky – Judgment under uncertainty: Heuristics and biases |
-| Thesis | Batista 2010; Batista – Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities |
-
-An alias is left out when a part of it is missing: an item with no year gets no author-and-year alias, and an item with no authors gets neither alias.
-
-**When the note is updated**: **Add to the existing list**. ZotLit adds each alias the note does not have yet, and keeps every alias already in the note, so an alias you add by hand stays.
-
-Limits:
-
-- When you correct an author, the year, or the title in Zotero, the note gets the new alias and keeps the old one. Delete the old alias in the note by hand.
+- A correction in Zotero to an author, the year, or the title adds a new alias and keeps the old one. Delete the old one by hand.
 - Two works by one author in one year get the same author-and-year alias.
-- When the note holds `aliases` as text and not as a list, ZotLit leaves it as it is and adds no alias.
+- When `aliases` holds text and not a list, ZotLit adds no alias.

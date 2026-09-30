@@ -1,6 +1,6 @@
 ---
 title: Publisher by item type
-summary: "One publisher property that fits each kind of source: the publisher of a book, \"Journal. Year. Vol. N. № N. pp. X–Y.\" for an article, the book and pages for a chapter, and the university for a thesis."
+summary: "One publisher property that fits each kind of source: journal, year, volume, issue, and pages for an article, the book and pages for a chapter, otherwise the publisher or university."
 minAppVersion: "2.2.0-beta.0"
 tasks: [general-reading, literature-review, reading-books, writing]
 itemTypes: [journalArticle, book, bookSection, thesis]
@@ -39,23 +39,12 @@ expected:
   document: { publisher: Brackenridge Free Library }
 ---
 
-One `publisher` property whose text depends on what the item is:
+Each part is left out when Zotero has no value for it, so the property never shows an empty `Vol.` or a stray `№`. A hyphen or a long dash in the pages becomes an en dash.
 
-| Item | `publisher` holds | Example |
-| --- | --- | --- |
-| Journal article | The journal, the year, the volume, the issue, and the pages | Econometrica. 1979. Vol. 47. № 2. pp. 263–291. |
-| Book | The publisher | Penguin Books |
-| Book chapter | The title of the book and the pages of the chapter | Judgment under Uncertainty: Heuristics and Biases. pp. 3–20. |
-| Thesis | The university | University of Cambridge |
-| Any other item | The publisher, when the item has one | Brackenridge Free Library |
-
-Each part is left out when its field in Zotero is empty, so the property never shows `null`, an empty `Vol.`, or a stray `№`. For example, the PLoS Medicine example article has no volume, issue, or pages in Zotero, so its property is `PLoS Medicine. 2005.` The example thesis has no university, so its note gets no `publisher` property. A hyphen or an em dash in the pages becomes an en dash, as in `pp. 10–20`.
-
-**When the note is updated**: **Replace the existing value**. The property follows Zotero on every update. When the item has none of the parts, an update removes the property.
+When you update the note, the property follows Zotero. When the item has none of the parts, the note gets no `publisher` property, and an update removes it.
 
 Limits:
 
-- The article form gives the year of publication, not the full date.
-- A conference paper, a report, and every other item type get the publisher alone.
-- A journal or book title that ends with a full stop, such as an abbreviation, gets a second full stop.
+- An article shows the year of publication, not the full date.
+- A title that ends with a full stop, such as an abbreviation, gets a second full stop.
 - The labels `Vol.`, `№`, and `pp.` are text in the rule. To use other labels, such as `No.`, change them in the rule.

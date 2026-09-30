@@ -3,7 +3,7 @@ id: KVX7ozKV9Vxi
 name: Books
 version: "1.0.0"
 author: ZotLit
-description: Book notes with the publisher, place, edition, and ISBN, your annotations in page order as callouts in colors that match your Zotero colors, and places for a summary, key points, and ideas to explore.
+description: Book notes with the publisher, place, edition, and ISBN, your annotations in page order in their Zotero colors, and sections for a summary, key points, and ideas to explore.
 contract: 3
 minAppVersion: "2.2.0-beta.2"
 sampleItemType: book

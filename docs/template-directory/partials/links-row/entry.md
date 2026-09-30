@@ -1,6 +1,6 @@
 ---
 title: Links row
-summary: One line of links back to the source, to the item in Zotero, its PDF, its DOI, and its web page.
+summary: 'One line of links back to the source: the item in Zotero, its PDF, its DOI, and its web page.'
 minAppVersion: "2.2.0-beta.0"
 context: note
 tasks: [general-reading]
@@ -20,17 +20,4 @@ audience: Readers who build their own profile and want a way back to the source 
 effort: Add the partial to your template folder and call it from your profile's note body.
 ---
 
-One line of links, separated by middle dots:
-
-- **Zotero** selects the item in Zotero;
-- **PDF** opens the item's first PDF in Obsidian, when Obsidian can reach the file;
-- **DOI** opens the item's DOI, when it has one;
-- **Web page** opens the item's URL, when it has one.
-
-A link the item has no target for is left out, so the row never shows an empty link or a stray separator.
-
-The partial reads the note's data. Call it from the note body of a profile, inside the managed block:
-
-```liquid
-{% render "links-row" with zt as zt -%}
-```
+**Zotero** selects the item in Zotero. **PDF** opens the item's first PDF in Obsidian. It appears only when Obsidian can reach the file, so the examples on this page do not show it. **DOI** and **Web page** appear when the item has a DOI or a URL. A link with no target is left out together with its dot, so the row never shows an empty link.

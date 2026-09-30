@@ -1,9 +1,12 @@
 export {
+  DETAILS_WORD_LIMIT,
   ENTRY_FEATURES,
   ENTRY_KINDS,
   ITEM_TYPES,
   PARTIAL_CONTEXTS,
   RESEARCH_TASKS,
+  SUMMARY_WORD_LIMIT,
+  wordCount,
 } from "./entry.ts";
 export type {
   EntryFeature,

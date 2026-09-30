@@ -24,15 +24,8 @@ expected:
   thesis: {}
 ---
 
-The item's DOI, as a `doi` property that holds a link to `https://doi.org/`. Obsidian shows the link in the note's properties; select it to open the publisher's page for the work.
+Select the link in the note's properties to open the publisher's page for the work.
 
-| Item | `doi` |
-| --- | --- |
-| Book chapter | https://doi.org/10.1017/CBO9780511809477.002 |
-| Journal article, book, thesis | (no property: the example items have no DOI in Zotero) |
+Each update writes the DOI from Zotero, so a DOI you add or correct there reaches the note. When you delete the DOI in Zotero, the update removes the property.
 
-When the item has no DOI, the note gets no `doi` property.
-
-**When the note is updated**: **Replace the existing value**. When you add or correct the DOI in Zotero, the note gets it on its next update.
-
-Limits: the rule expects Zotero's **DOI** field to hold the DOI itself, such as `10.1017/CBO9780511809477.002`, as Zotero stores it when it imports an item. A DOI field that holds a full link gives a link with the address twice.
+The rule expects Zotero's **DOI** field to hold the DOI itself, such as `10.1017/CBO9780511809477.002`, as Zotero stores it when it imports an item. A **DOI** field that holds a full link gives a link with the address twice. Correct the field in Zotero to fix it.

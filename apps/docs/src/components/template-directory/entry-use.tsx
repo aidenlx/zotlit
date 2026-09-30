@@ -98,9 +98,15 @@ export function EntryUse({
           </Step>
           {entry.matchedItemTypes === null ? (
             <Step
-              text={m.docs_directory_profile_step_create({ name: "{name}" })}
+              text={m.docs_directory_profile_step_create({
+                picker: "{picker}",
+                name: "{name}",
+              })}
             >
-              {{ name: <strong>{entry.title}</strong> }}
+              {{
+                picker: <UiLabel name={m.modal_profile_choose_placeholder()} />,
+                name: <strong>{entry.title}</strong>,
+              }}
             </Step>
           ) : (
             <li>

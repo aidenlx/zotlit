@@ -1,6 +1,6 @@
 ---
 title: Authors
-summary: Every author of the item as a list of full names, in Zotero's order.
+summary: Every author of the item as a list of full names, in Zotero's order, so an Obsidian Bases view can find every note by one author.
 minAppVersion: "2.2.0-beta.0"
 tasks: [general-reading, literature-review]
 features: [properties]
@@ -27,20 +27,8 @@ expected:
   document: { authors: [Brackenridge Free Library] }
 ---
 
-The item's authors, as an `authors` list property with one full name per entry, in the order Zotero lists them. Obsidian shows a list property as separate values, so an Obsidian Bases view can find every note that names one author.
+The list holds the item's main creators: the authors for most items, the interviewee for an interview. The editors of a book chapter are left out. An item with no authors, such as an edited book, gets its editors. When the item has no creators, the note gets no `authors` property.
 
-| Item | `authors` |
-| --- | --- |
-| Journal article | John P. A. Ioannidis |
-| Conference paper | Mara Rivera, Tao Chen |
-| Book | D Kahneman |
-| Book chapter | Amos Tversky, Daniel Kahneman |
-| Thesis | Edgard Antunes Dias Batista |
-| Interview | Ada Okafor (the interviewee) |
-| Document by an organization | Brackenridge Free Library |
+Each update replaces the list with the current creators from Zotero.
 
-The list holds the item's main creators: the authors for most items, the interviewee for an interview. The editors of a book chapter are left out. For an item with no authors, such as an edited book, the list holds the editors. When the item has no creators, the note gets no `authors` property.
-
-**When the note is updated**: **Replace the existing value**. The list follows Zotero on every update.
-
-Limits: names are plain text, given name first, as Zotero stores them. They are not links to notes about the authors. For a sortable name with the family name first, use the **First author** entry.
+The names are plain text, as Zotero stores them. They are not links to notes about the authors. For a name with the family name first, which sorts well, use the **First author** entry.

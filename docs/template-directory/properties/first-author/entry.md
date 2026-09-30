@@ -28,19 +28,8 @@ expected:
   document: { first-author: Brackenridge Free Library }
 ---
 
-The item's first author, as a `first-author` property in the form "Family name, Given name". A view that sorts on it lists your notes in the order of a reference list.
+An organization keeps its name as written. A creator with no given name shows the family name alone. When the item has no creators, the note gets no `first-author` property.
 
-| Item | `first-author` |
-| --- | --- |
-| Journal article | Ioannidis, John P. A. |
-| Conference paper (two authors) | Rivera, Mara |
-| Book | Kahneman, D |
-| Book chapter | Tversky, Amos |
-| Thesis | Batista, Edgard Antunes Dias |
-| Document by an organization | Brackenridge Free Library |
+The first author is the first of the item's main creators, as in the **Authors** entry. For an edited book with no authors, it is the first editor. The name is as complete as Zotero has it, so a given name stored as an initial stays an initial.
 
-An organization keeps its name as written. A name with no given name shows the family name alone. When the item has no creators, the note gets no `first-author` property.
-
-**When the note is updated**: **Replace the existing value**. The property follows Zotero on every update.
-
-Limits: the first author is the first of the item's main creators, as in the **Authors** entry: for an edited book with no authors, the first editor. The name is as complete as Zotero has it, so an author stored as `D Kahneman` shows as `Kahneman, D`.
+Each update replaces the value with the current first author from Zotero.

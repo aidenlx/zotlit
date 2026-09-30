@@ -25,23 +25,9 @@ audience: Readers who write from their notes, such as historians who move quotes
 effort: Add the partial to your template folder and call it from your profile's annotation format. Without the item's citation key, the quote ends with its page and no citation.
 ---
 
-A highlight or underline becomes a plain quote that ends with its in-text citation, which names the page:
-
-```markdown
-> Clear methods make research easier to reproduce. [@riveraResearchInterfaces2026, {p. 1}]
-```
-
-Your Zotero comment follows the quote as ordinary text, so your thinking and the author's words stay apart. An image or ink annotation embeds its image in the quote, followed by the citation. A note or text annotation has no quoted text, so its comment appears as ordinary text, followed by the citation.
-
 The citation takes one of two forms:
 
-- In the literature note, it has the form of ZotLit's built-in citation text, as above. ZotLit shows this form in your citation style, and **Export note with citations** formats it with a bibliography.
+- In the literature note, it has the form of ZotLit's built-in citation text, as in the examples. ZotLit shows this form in your citation style, and **Export note with citations** formats it with a bibliography.
 - When you insert one annotation into another note, by dragging it from the annotation view or with **Insert into note**, the citation follows your own citation text. If you use the built-in citation text, both forms are the same.
 
-When the item has no citation key, the quote ends with its page instead, as a link to that page in the PDF. When Obsidian cannot reach the PDF, the page shows as plain text, such as `(p. 1)`.
-
-The partial reads one annotation's data. Call it from the annotation format of a profile, the part below `--- zotlit:annotation ---`:
-
-```liquid
-{% render "quote-with-citation" with zt as zt -%}
-```
+When the item has no citation key, the quote ends with its page instead. The page links to that page in the PDF when Obsidian can reach the file, and shows as plain text otherwise.

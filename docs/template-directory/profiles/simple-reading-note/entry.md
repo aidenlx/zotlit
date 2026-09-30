@@ -24,27 +24,10 @@ audience: Anyone who reads in Zotero and wants a clean literature note for every
 effort: No setup. Import it, then create a note. Notes go into your own note folder and use your own citation style.
 ---
 
-A literature note with the essentials and nothing else. It is the recommended place to start: import it, create a note for any Zotero item, and change it later only if you want more.
+**Update literature note** refreshes everything above **My notes**. Your writing under **My notes** stays. To change the text under a highlight, edit its comment in Zotero.
 
-Each note holds:
+Highlights look the same whatever their Zotero color.
 
-- the item's title;
-- one row of links back to the source: the item in Zotero, its PDF, its DOI, and its web page, each when the item has one;
-- the abstract, folded, so it is at hand without taking over the note;
-- your annotations in page order. A highlight shows as a plain quote with a link to its page in the PDF, and your Zotero comment follows it as ordinary text, so your words and the author's stay apart. Image annotations appear as embedded images, and notes you add in the PDF appear as plain lines with their page link. Highlights show the same whatever their color;
-- a **My notes** heading for your own writing.
+On update, `tags` adds new Zotero tags and keeps the tags you added in Obsidian. A tag you remove in Zotero stays in the note until you delete it there too. `status` keeps the value you set by hand. The other properties take the current Zotero value.
 
-Everything from Zotero sits in the part of the note that ZotLit refreshes when you update the note. **My notes** sits outside it, so an update never touches what you write there. To change the text of an annotation, edit its comment in Zotero; the comment appears under the highlight on the next update.
-
-The note gets six properties, ready to sort and filter in an Obsidian Bases view:
-
-| Property | Value | When the note is updated |
-| --- | --- | --- |
-| `title` | The item's title | Replace the existing value |
-| `citekey` | The citation key | Replace the existing value |
-| `tags` | The item's Zotero tags, with spaces changed to underscores | Add to the existing list |
-| `year` | The year of publication | Replace the existing value |
-| `venue` | The journal, book, or proceedings, or else the publisher or university | Replace the existing value |
-| `status` | `unread` | Keep the existing value |
-
-Tags you add in Obsidian stay when the note updates, and so does a `status` you change by hand. A tag you remove in Zotero stays in the note until you delete it from the note too. A property is left out when the item has no value for it. Spaces in a Zotero tag become underscores. Other characters stay as they are, so a Zotero tag with a comma or a `#` in it needs a manual fix in Obsidian.
+Spaces in a Zotero tag become underscores. A tag with a comma or a `#` needs a manual fix in Obsidian.

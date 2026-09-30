@@ -27,18 +27,8 @@ expected:
   letter: { year: 1887 }
 ---
 
-The year of publication, as a `year` property that holds a number. An Obsidian Bases view or a table from the Dataview plugin sorts it as a number, so 1982 comes before 2005.
+The property is a number, so a Bases view sorts 1982 before 2005.
 
-| Item | `year` |
-| --- | --- |
-| Journal article | 2005 |
-| Book | 2011 |
-| Book chapter | 1982 |
-| Thesis | 2010 |
-| Letter dated 14 March 1887 | 1887 |
+ZotLit takes the year that Zotero reads from the date, as in `2005`, `March 2005`, or `2005-03-14`. When the date holds no year, the note gets no `year` property.
 
-When the item's date in Zotero has no year, the note gets no `year` property.
-
-**When the note is updated**: **Replace the existing value**. The property follows the date in Zotero on every update.
-
-Limits: the property holds the year only. Zotero must be able to read a year from the date, as it does for `2005`, `March 2005`, and `2005-03-14`.
+When you update the note, the property follows the date in Zotero.
