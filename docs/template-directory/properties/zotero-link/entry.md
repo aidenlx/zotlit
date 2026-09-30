@@ -28,10 +28,10 @@ The item's Zotero link, as a `zotero-link` property. Obsidian shows the link in 
 
 | Item | `zotero-link` |
 | --- | --- |
-| Journal article | zotero://select/library/items/IANNP5A2 |
-| Book | zotero://select/library/items/NW2CPDTC |
-| Book chapter | zotero://select/library/items/TVKHEUR1 |
-| Thesis | zotero://select/library/items/I49R3FTL |
+| Journal article | `zotero://select/library/items/IANNP5A2` |
+| Book | `zotero://select/library/items/NW2CPDTC` |
+| Book chapter | `zotero://select/library/items/TVKHEUR1` |
+| Thesis | `zotero://select/library/items/I49R3FTL` |
 
 For an item in a group library, the link names the group, so it selects the item there.
 
