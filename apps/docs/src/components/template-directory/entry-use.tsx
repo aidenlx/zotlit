@@ -1,4 +1,4 @@
-// An entry page's "How to use it" steps: where the reader puts the entry in Obsidian, in the plugin's own UI Labels.
+// An entry page's steps: where the reader puts the entry in Obsidian, in the plugin's own UI Labels.
 
 import { asMarkdown } from "fumadocs-core/server";
 import { CodeBlock, Pre } from "fumadocs-ui/components/codeblock";
@@ -13,7 +13,7 @@ import type { EntryDetails, SiteEntry } from "@/lib/template-directory/site";
 import { m } from "@/paraglide/messages.js";
 import type { LocalizedString } from "@/paraglide/runtime.js";
 
-import { COPY_LABEL } from "./labels";
+import { COPY_LABEL, itemTypesInSentence } from "./labels";
 
 const MERGE_LABEL = {
   replace: m.workbench_properties_merge_replace,
@@ -27,10 +27,13 @@ const MERGE_LABEL = {
 export function EntryUse({
   entry,
 }: {
-  entry: Pick<SiteEntry, "id" | "kind" | "title" | "details">;
+  entry: Pick<
+    SiteEntry,
+    "id" | "kind" | "title" | "details" | "matchedItemTypes"
+  >;
 }) {
   // The Markdown edition renders these steps too; see `lib/template-directory/markdown-edition.tsx`.
-  asMarkdown();
+  const markdown = asMarkdown();
   const copy = <UiLabel name={COPY_LABEL[entry.kind]()} />;
   const [, slug] = entryIdParts(entry.id);
   switch (entry.details.kind) {
@@ -46,29 +49,40 @@ export function EntryUse({
                 slots={{ import: <UiLabel name={m.docs_directory_import()} /> }}
               />
             </p>
-            <p>{m.docs_directory_profile_step_fallback()}</p>
-            <ul>
-              <Step
-                text={m.docs_directory_profile_step_copy({ copy: "{copy}" })}
-              >
-                {{ copy }}
-              </Step>
-              <Step
-                text={m.docs_directory_profile_step_import({
-                  command: "{command}",
-                  clipboard: "{clipboard}",
-                  file: "{file}",
-                })}
-              >
-                {{
-                  command: (
-                    <Command inline name={m.command_import_profile_name()} />
-                  ),
-                  clipboard: <UiLabel name={m.profile_import_clipboard()} />,
-                  file: <UiLabel name={m.profile_import_file()} />,
-                }}
-              </Step>
-            </ul>
+            {markdown && (
+              <>
+                <p>{m.docs_directory_profile_step_fallback()}</p>
+                <ul>
+                  <Step
+                    text={m.docs_directory_profile_step_copy({
+                      copy: "{copy}",
+                    })}
+                  >
+                    {{ copy }}
+                  </Step>
+                  <Step
+                    text={m.docs_directory_profile_step_import({
+                      command: "{command}",
+                      clipboard: "{clipboard}",
+                      file: "{file}",
+                    })}
+                  >
+                    {{
+                      command: (
+                        <Command
+                          inline
+                          name={m.command_import_profile_name()}
+                        />
+                      ),
+                      clipboard: (
+                        <UiLabel name={m.profile_import_clipboard()} />
+                      ),
+                      file: <UiLabel name={m.profile_import_file()} />,
+                    }}
+                  </Step>
+                </ul>
+              </>
+            )}
           </li>
           <Step
             text={m.docs_directory_profile_step_confirm({
@@ -77,9 +91,19 @@ export function EntryUse({
           >
             {{ confirm: <UiLabel name={m.profile_import_confirm()} /> }}
           </Step>
-          <Step text={m.docs_directory_profile_step_create({ name: "{name}" })}>
-            {{ name: <strong>{entry.title}</strong> }}
-          </Step>
+          {entry.matchedItemTypes === null ? (
+            <Step
+              text={m.docs_directory_profile_step_create({ name: "{name}" })}
+            >
+              {{ name: <strong>{entry.title}</strong> }}
+            </Step>
+          ) : (
+            <li>
+              {m.docs_directory_profile_step_create_matched({
+                types: itemTypesInSentence(entry.matchedItemTypes, "singular"),
+              })}
+            </li>
+          )}
         </Steps>
       );
     case "partial": {

@@ -2959,12 +2959,12 @@ describe.skipIf(!reachable)("Template Directory import", () => {
     );
   }, 180000);
 
-  // One-click import from a Directory page: the page puts the entry on the
+  // Add to ZotLit on a Directory page: the page puts the entry on the
   // clipboard and opens ZotLit's clipboard handoff. A build without the web
   // Workbench ends where Import profile… ends: the Profile is added and
   // nothing else opens.
   it.skipIf(webWorkbenchEnabled)(
-    "imports the entry a Directory page hands over on the clipboard, and opens nothing after",
+    "imports the entry Add to ZotLit hands over on the clipboard, and opens nothing after",
     async () => {
       const handedPath = join(
         directory,

@@ -16,17 +16,17 @@ import { verifyTemplateDirectory } from "./verify";
 const site = (files = fixtureFiles()) =>
   directorySite(verifyTemplateDirectory(files));
 
-describe("an entry's edition", () => {
-  it("gives a Profile's facets, who it is for, its description, the one-click import with the manual path, its partials, the file, and what it makes", async () => {
-    const edition = (await directoryEdition(site(), [
-      "profiles",
-      "fixture-profile",
-    ]))!;
+describe("a Profile's edition", () => {
+  const edition = async (files = fixtureFiles()) =>
+    (await directoryEdition(site(files), ["profiles", "fixture-profile"]))!;
 
-    expect(edition).toMatch(
+  it("gives the summary, the facets, then the steps, the example, and the Details, in the order of the page", async () => {
+    const text = await edition();
+
+    expect(text).toMatch(
       /^# Fixture profile \(\/templates\/profiles\/fixture-profile\)\n\n> A Profile the verification tests break one rule at a time\.\n\n/,
     );
-    expect(edition).toContain(`- ${m.docs_directory_facet_kind()}: Profile
+    expect(text).toContain(`- ${m.docs_directory_facet_kind()}: Profile
 - ${m.docs_directory_facet_level()}: ${m.docs_directory_level_ready()}
 - ${m.docs_directory_tasks()}: General reading
 - ${m.docs_directory_item_types()}: ${m.docs_directory_any_item_type()}
@@ -34,40 +34,80 @@ describe("an entry's edition", () => {
   - I want a fixture.
 - ${m.docs_directory_requires({ version: "2.2.0-beta.0" })}
 `);
-    expect(edition).toContain(`
+    const order = [
+      "> A Profile the verification tests break one rule at a time.",
+      `## ${m.docs_directory_use_heading()}`,
+      `## ${m.docs_directory_samples_heading()}`,
+      `## ${m.docs_directory_details_heading()}`,
+    ].map((heading) => text.indexOf(heading));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect(order).toEqual(order.toSorted((a, b) => a - b));
+  });
 
-**${m.docs_directory_audience()}:** Tests.
+  it("names the one action Add to ZotLit, with the manual path under it", async () => {
+    const text = await edition();
 
-**${m.docs_directory_effort()}:** Nothing.
+    expect(m.docs_directory_import()).toBe("Add to ZotLit");
+    expect(text).toContain(`## ${m.docs_directory_use_heading()}
+
+1. Select **Add to ZotLit**.`);
+    expect(text).toContain(
+      `   - Select **${m.docs_directory_copy_profile()}**, or download the file.
+   - In Obsidian, run \`ZotLit: ${m.command_import_profile_name()}\` and select **${m.profile_import_clipboard()}**, or **${m.profile_import_file()}** for the downloaded file.
+2. In that window, select **${m.profile_import_confirm()}**.
+3. Create a literature note and choose **Fixture profile** as its profile.`,
+    );
+  });
+
+  it("gives the description as the Details, after the example, and no longer before the steps", async () => {
+    const text = await edition();
+
+    expect(text.indexOf("A fixture Profile.")).toBeGreaterThan(
+      text.indexOf(`## ${m.docs_directory_samples_heading()}`),
+    );
+    expect(text).toContain(`## ${m.docs_directory_details_heading()}
 
 A fixture Profile.
 `);
-    expect(edition).toContain(`## ${m.docs_directory_use_heading()}
+  });
 
-1. Select **${m.docs_directory_import()}**.`);
-    expect(edition).toContain(
-      `   - Select **${m.docs_directory_copy_profile()}**, or download the file.
-   - In Obsidian, run \`ZotLit: ${m.command_import_profile_name()}\` and select **${m.profile_import_clipboard()}**, or **${m.profile_import_file()}** for the downloaded file.
-2. `,
+  it("says which item types a Profile with a match is chosen for", async () => {
+    const text = await edition(
+      edit(
+        fixtureFiles(),
+        "profiles/fixture-profile/zotlit-profile.fixture-profile.md",
+        [
+          "sampleItemType: journalArticle\n",
+          "sampleItemType: journalArticle\nmatch: 'itemType == \"journalArticle\"'\n",
+        ],
+      ),
     );
-    expect(edition).toContain(
-      "3. Create a literature note and choose **Fixture profile** as its profile.",
+
+    expect(text).toContain(
+      "3. Create a note for any journal article. It looks like the example.",
     );
-    expect(edition).toContain(`## ${m.docs_directory_calls_heading()}
+    expect(text).toContain(`### ${m.docs_directory_example_journal_article()}`);
+    expect(text).not.toContain(`### ${m.docs_directory_example_book()}`);
+  });
+
+  it("keeps the partials it calls, the file, and what it makes, after the Details", async () => {
+    const text = await edition();
+
+    expect(text).toContain(`## ${m.docs_directory_calls_heading()}
 
 ${m.docs_directory_calls_profile()}
 
 - [Fixture heading](/templates/partials/fixture-heading.md): The title as a heading.
 - [Fixture quote](/templates/partials/fixture-quote.md): The text as a quote.
 `);
-    expect(edition).toContain(`## ${m.docs_directory_file_heading()}
+    expect(text).toContain(`## ${m.docs_directory_file_heading()}
 
 \`zotlit-profile.fixture-profile.md\`
 
 \`\`\`markdown
 ${PROFILE_SOURCE}\`\`\`
 `);
-    expect(edition).toContain(`## ${m.docs_directory_samples_heading()}
+    expect(text).toContain(`## ${m.docs_directory_samples_heading()}
 
 ${m.docs_directory_samples_intro()}
 

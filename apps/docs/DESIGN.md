@@ -194,12 +194,19 @@ that fits a research task:
   label, serif title and summary, and a muted facet line. Under `lg` the rail
   folds behind a disclosure button, lays its facets out in two columns, and
   closes with an ink "Show N entries" button. Closes on `SiteFooter`.
-- **Entry head**: `← Template directory` crumb, mono-uppercase kind and level
+- **Profile entry page**: a two-column page from `lg`. The text column holds
+  the mono-uppercase "Ready-made note · for …" eyebrow, the serif title, the
+  italic summary, square chips (which sources use it, and the version it
+  needs), one square ink **Add to ZotLit** button, three numbered steps, a muted
+  fallback line with an underlined **Copy it** link, and a folded mono-uppercase
+  **Details** section that holds the description. The result column holds the
+  example switcher (the kit's segmented track: it wraps from `sm`, and scrolls
+  sideways on a phone) over the paper sheet of the example note. Under `lg`
+  the example follows the steps and **Details** comes last.
+- **Entry head** (partials, property rules, note names, and citation text): `← Template directory` crumb, mono-uppercase kind and level
   line, serif title, italic summary held to 60ch, mono-uppercase version line,
   then the actions. The first action is a square ink button (the landing's
-  "Get started" look): import for a profile, copy for a recipe. Outline
-  buttons follow for copy (profiles only) and download. Under a profile's
-  actions, a muted sans line gives the manual import path.
+  "Get started" look): copy. An outline button follows for download.
 - **Entry body**: audience and effort as accent-barred facts in serif, the
   entry's description and the "How to use it" steps in `ztProse` held to 72ch,
   and an aside rail of mono-uppercase headings over the entry's facets and its
