@@ -26,6 +26,7 @@ import {
   annotationLabel,
   exampleLabel,
   MARK_LABEL,
+  MARK_ROW_LABEL,
   shortExampleLabel,
 } from "./labels";
 
@@ -354,7 +355,7 @@ function PropertyRows({
               )}
             >
               {mark !== undefined && (
-                <span className="sr-only">{MARK_LABEL[mark]()}: </span>
+                <span className="sr-only">{MARK_ROW_LABEL[mark]()}: </span>
               )}
               {key}
             </dt>

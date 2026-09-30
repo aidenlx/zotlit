@@ -362,15 +362,11 @@ describe("the properties of a Profile's example in its edition", () => {
   it("tabulates each property with the mark of the page: set by this look, or added by ZotLit", async () => {
     const text = await fixtureEdition();
 
-    expect(m.docs_directory_sample_mark_set()).toBe("Set by this look");
-    expect(m.docs_directory_sample_mark_system()).toBe(
-      "ZotLit adds these to every note",
-    );
     expect(text).toContain(
       propertyTable([
         "| title | Prospect theory: An analysis of decision under risk | Set by this look |",
-        "| zotero-key | KAHPRT79 | ZotLit adds these to every note |",
-        "| zotlit-profile | Fixture profile (FixtureProf1) | ZotLit adds these to every note |",
+        "| zotero-key | KAHPRT79 | Added by ZotLit |",
+        "| zotlit-profile | Fixture profile (FixtureProf1) | Added by ZotLit |",
       ]),
     );
   });
@@ -393,7 +389,7 @@ describe("the properties of a Profile's example in its edition", () => {
     const text = (await directoryEdition(directory, ["profiles", "books"]))!;
 
     expect(text).toContain(
-      "| isbn | 978-0-226-23973-6 | Set by this look |\n| zotero-key | BOOTCR16 | ZotLit adds these to every note |\n| zotlit-profile | Books (KVX7ozKV9Vxi) | ZotLit adds these to every note |",
+      "| isbn | 978-0-226-23973-6 | Set by this look |\n| zotero-key | BOOTCR16 | Added by ZotLit |\n| zotlit-profile | Books (KVX7ozKV9Vxi) | Added by ZotLit |",
     );
   });
 });
