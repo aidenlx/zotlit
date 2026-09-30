@@ -19,7 +19,9 @@ const CHIP =
   "border border-fd-border bg-fd-card px-2 py-0.5 font-sans text-xs font-medium";
 
 export function ProfileEntryPage({ entry }: { entry: SiteEntry }) {
-  const { matchedItemTypes, itemTypes } = entry;
+  const { matchedItemTypes } = entry;
+  // One order for the item types the page names: the match's, else the entry's.
+  const eyebrowTypes = matchedItemTypes ?? entry.itemTypes;
   const chips =
     matchedItemTypes === null
       ? [m.docs_directory_chip_choose(), m.docs_directory_chip_any_source()]
@@ -38,9 +40,9 @@ export function ProfileEntryPage({ entry }: { entry: SiteEntry }) {
           <header>
             <p className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs font-semibold tracking-[0.14em] text-fd-primary uppercase">
               <span>
-                {itemTypes.length > 0
+                {eyebrowTypes.length > 0
                   ? m.docs_directory_ready_made_for({
-                      types: itemTypesInSentence(itemTypes, "plural"),
+                      types: itemTypesInSentence(eyebrowTypes, "plural"),
                     })
                   : m.docs_directory_ready_made_any()}
               </span>
@@ -58,12 +60,18 @@ export function ProfileEntryPage({ entry }: { entry: SiteEntry }) {
             </p>
           </header>
           <ul className="flex flex-wrap gap-1.5">
-            {chips.map((chip) => (
-              <li key={chip} className={CHIP}>
+            {chips.map((chip, index) => (
+              <li
+                key={chip}
+                className={cn(
+                  CHIP,
+                  index === 0 && "border-fd-primary text-fd-primary",
+                )}
+              >
                 {chip}
               </li>
             ))}
-            <li className={cn(CHIP, "border-fd-primary text-fd-primary")}>
+            <li className={CHIP}>
               {m.docs_directory_requires({ version: entry.minAppVersion })}
             </li>
           </ul>

@@ -206,9 +206,7 @@ that fits a research task:
 - **Entry head** (partials, property rules, note names, and citation text): `← Template directory` crumb, mono-uppercase kind and level
   line, serif title, italic summary held to 60ch, mono-uppercase version line,
   then the actions. The first action is a square ink button (the landing's
-  "Get started" look): import for a profile, copy for a recipe. Outline
-  buttons follow for copy (profiles only) and download. Under a profile's
-  actions, a muted sans line gives the manual import path.
+  "Get started" look): copy. An outline button follows for download.
 - **Entry body**: audience and effort as accent-barred facts in serif, the
   entry's description and the "How to use it" steps in `ztProse` held to 72ch,
   and an aside rail of mono-uppercase headings over the entry's facets and its

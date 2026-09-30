@@ -119,7 +119,7 @@ export function ImportFallback({ copyText }: Pick<SiteEntry, "copyText">) {
               onClick={() =>
                 copyToClipboard(copyText, m.docs_directory_add_failed())
               }
-              className="cursor-pointer text-fd-foreground underline decoration-fd-primary underline-offset-4 hover:text-fd-primary"
+              className="cursor-pointer text-fd-foreground underline decoration-fd-primary underline-offset-4 hover:text-fd-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring"
             >
               {m.docs_directory_copy_it()}
             </button>
