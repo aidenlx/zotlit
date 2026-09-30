@@ -31,10 +31,10 @@ audience: Readers of books who want each book note to carry the book's publicati
 effort: Import it, then create a note for a book. ZotLit chooses it for every book by itself; your color meanings are set once, in one file, and the ones it starts with work as they are.
 ---
 
-**Update literature note** refreshes the part from Zotero; your three sections stay. To change the text under a highlight, edit its comment in Zotero.
+**Update literature note** refreshes the part from Zotero; your three sections stay. To change the text under a highlight, edit its Zotero comment.
 
-On update, `status` and the tags you add in Obsidian stay. Every other property takes the Zotero value, and a property is left out when Zotero has none. A Zotero tag with a comma or a `#` needs a manual fix in Obsidian.
+On update, `status` and the tags you add in Obsidian stay. Every other property takes the Zotero value, and a property is left out when Zotero has none. A Zotero tag with a comma or a `#` needs a manual fix in Obsidian. `venue` repeats the publisher, so one Bases view spans every look.
 
 A change to the color meanings reaches every note that uses them.
 
-With **Import match conditions** on, ZotLit uses this look for every book. Turn it off to select it for each note yourself. If another look also matches books, ZotLit asks which to use.
+With **Import match conditions** on, ZotLit uses this look for every book; off, you select it for each note. If another look also matches, ZotLit asks which to use.

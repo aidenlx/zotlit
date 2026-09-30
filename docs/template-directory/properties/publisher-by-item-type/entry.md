@@ -27,9 +27,8 @@ keywords:
 audience: Readers who keep one publisher property for every source and want it to fit books, articles, book chapters, and theses alike.
 effort: Add one property to your profile in the Properties tab.
 expected:
-  journal-article: { publisher: PLoS Medicine. 2005. }
-  journal-article-full-details:
-    { publisher: "Econometrica. 1979. Vol. 47. № 2. pp. 263–291." }
+  journal-article:
+    { publisher: "PLoS Medicine. 2005. Vol. 2. № 8. pp. 696–701." }
   conference-paper: {}
   book: { publisher: Penguin Books }
   thesis: {}

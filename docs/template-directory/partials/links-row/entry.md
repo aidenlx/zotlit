@@ -20,4 +20,4 @@ audience: Readers who build their own profile and want a way back to the source 
 effort: Add the partial to your template folder and call it from your profile's note body.
 ---
 
-**Zotero** selects the item in Zotero. **PDF** opens the item's first PDF in Obsidian. It appears only when Obsidian can reach the file, so the examples on this page do not show it. **DOI** and **Web page** appear when the item has a DOI or a URL. A link with no target is left out together with its dot, so the row never shows an empty link.
+**Zotero** selects the item in Zotero. **PDF** opens the item's first PDF in Obsidian. It appears only when Obsidian can reach the file. **DOI** and **Web page** appear when the item has a DOI or a URL. A link with no target is left out together with its dot, so the row never shows an empty link.

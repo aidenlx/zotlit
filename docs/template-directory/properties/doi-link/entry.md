@@ -18,7 +18,7 @@ keywords:
 audience: Readers who open the published version of a paper from their literature note.
 effort: Add one property to your profile in the Properties tab.
 expected:
-  journal-article: {}
+  journal-article: { doi: "https://doi.org/10.1371/journal.pmed.0020124" }
   book: {}
   book-section: { doi: "https://doi.org/10.1017/CBO9780511809477.002" }
   thesis: {}

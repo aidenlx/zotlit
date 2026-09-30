@@ -138,7 +138,7 @@ function directoryCards(
       {
         kind: m.docs_directory_title(),
         title: entry.title,
-        description: cardSummary(entry.summary),
+        description: cardSummary(entry.summary.replaceAll("`", "")),
         meta: `${kind[entry.kind]()} · ${level[entry.level]()}`,
       },
     ]),

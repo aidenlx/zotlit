@@ -277,6 +277,8 @@ describe("an entry page", () => {
     )!;
     expect(citation.citations[0]).toEqual({
       id: "journal-article",
+      itemType: "journalArticle",
+      variant: null,
       main: "main: journalArticle",
       alt: "alt: journalArticle",
     });
@@ -343,10 +345,20 @@ describe("a Profile's source", () => {
   });
 
   it("names each packed partial and links the ones that have an entry", () => {
-    expect(page(FIXTURE_PROFILE).profileSource?.partials).toEqual([
-      { name: "fixture-heading", id: FIXTURE_HEADING },
-      { name: "fixture-quote", id: FIXTURE_QUOTE },
+    expect(
+      page(FIXTURE_PROFILE).profileSource?.partials.map(({ name, page }) => [
+        name,
+        page?.id,
+      ]),
+    ).toEqual([
+      ["fixture-heading", FIXTURE_HEADING],
+      ["fixture-quote", FIXTURE_QUOTE],
     ]);
+    expect(page(FIXTURE_PROFILE).profileSource?.partials[0]?.page).toEqual({
+      id: FIXTURE_HEADING,
+      title: page(FIXTURE_HEADING).title,
+      summary: page(FIXTURE_HEADING).summary,
+    });
   });
 
   it("leaves a packed partial without an entry unlinked", () => {
@@ -360,11 +372,12 @@ describe("a Profile's source", () => {
       ),
     );
     expect(
-      withoutEntry.entries.find(({ id }) => id === FIXTURE_PROFILE)
-        ?.profileSource?.partials,
+      withoutEntry.entries
+        .find(({ id }) => id === FIXTURE_PROFILE)
+        ?.profileSource?.partials.map(({ name, page }) => [name, page?.id]),
     ).toEqual([
-      { name: "fixture-heading", id: FIXTURE_HEADING },
-      { name: "fixture-quote", id: null },
+      ["fixture-heading", FIXTURE_HEADING],
+      ["fixture-quote", undefined],
     ]);
   });
 
@@ -383,12 +396,14 @@ describe("the Books page", () => {
     expect(note.startsWith("{% managed %}\n# {{ zt.title }}")).toBe(true);
     expect(note).toContain("--- zotlit:annotation ---");
     expect(note).not.toContain("frontmatter:");
-    expect(books.profileSource?.partials).toEqual([
-      { name: "publication-details", id: "partials/publication-details" },
-      { name: "links-row", id: "partials/links-row" },
-      { name: "folded-abstract", id: "partials/folded-abstract" },
-      { name: "color-meanings", id: "partials/color-meanings" },
-      { name: "color-callout", id: "partials/color-callout" },
+    expect(
+      books.profileSource?.partials.map(({ name, page }) => [name, page?.id]),
+    ).toEqual([
+      ["publication-details", "partials/publication-details"],
+      ["links-row", "partials/links-row"],
+      ["folded-abstract", "partials/folded-abstract"],
+      ["color-meanings", "partials/color-meanings"],
+      ["color-callout", "partials/color-callout"],
     ]);
   });
 });

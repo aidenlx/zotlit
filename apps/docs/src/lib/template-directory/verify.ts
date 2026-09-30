@@ -57,14 +57,15 @@ import {
   DIRECTORY_SAMPLES,
   EDGE_SAMPLES,
   EVERY_COLOR_SAMPLE,
+  sampleName,
   TODO_HIGHLIGHT,
   typeSamples,
 } from "./samples.ts";
-import type { DirectorySample } from "./samples.ts";
+import type { DirectorySample, SampleName } from "./samples.ts";
 
 /** One Directory Sample's note, as the entry renders it. */
 export interface NoteSample {
-  readonly sample: Pick<DirectorySample, "id">;
+  readonly sample: SampleName;
   /** The note name; null for an entry that names no note. */
   readonly noteName: string | null;
   /** The properties as the note's YAML block; null when it writes none. */
@@ -93,7 +94,7 @@ export type AnnotationColor =
 /** One Citation, as a citation text entry renders it under each Citation Variant. */
 export interface CitationSample {
   /** The Directory Sample or the Workbench example set it cites. */
-  readonly id: string;
+  readonly sample: SampleName;
   readonly main: string | null;
   readonly alt: string | null;
 }
@@ -565,7 +566,7 @@ function renderPartialEntry(
       const result = renderProfile(source, sample.snapshot, { resources });
       reportDiagnostics(result, sampleSubject(sample), report);
       return {
-        sample: { id: sample.id },
+        sample: sampleName(sample),
         noteName: null,
         properties: null,
         body: withoutManagedMarkers(result.managedRegion),
@@ -635,7 +636,7 @@ function renderPropertyEntry(
         );
       }
       return {
-        sample: { id: sample.id },
+        sample: sampleName(sample),
         noteName: null,
         properties: propertiesBlock(result.fold),
         body: null,
@@ -719,16 +720,16 @@ function renderCitationEntry(
     }
   };
   const cited: readonly {
-    id: string;
+    sample: SampleName;
     data: (variant: CitationData["variant"]) => CitationData;
   }[] = [
-    ...[...DIRECTORY_SAMPLES, ...EDGE_SAMPLES].map(({ id, snapshot }) => ({
-      id,
+    ...[...DIRECTORY_SAMPLES, ...EDGE_SAMPLES].map((sample) => ({
+      sample: sampleName(sample),
       data: (variant: CitationData["variant"]) =>
-        sampleItemCitation(snapshot, variant),
+        sampleItemCitation(sample.snapshot, variant),
     })),
     ...CITATION_SETS.map((id) => ({
-      id,
+      sample: { id, itemType: null, variant: null },
       data: (variant: CitationData["variant"]) =>
         citationExampleData(id, variant),
     })),
@@ -736,10 +737,10 @@ function renderCitationEntry(
   return {
     notes: [],
     annotations: [],
-    citations: cited.map(({ id, data }) => ({
-      id,
-      main: render(id, data("main")),
-      alt: render(id, data("alt")),
+    citations: cited.map(({ sample, data }) => ({
+      sample,
+      main: render(sample.id, data("main")),
+      alt: render(sample.id, data("alt")),
     })),
   };
 }
@@ -759,8 +760,9 @@ function renderNoteNameEntry(
   );
   const facade = facadeWithPartials(resources);
   return {
-    notes: [...DIRECTORY_SAMPLES, ...EDGE_SAMPLES].map(({ id, snapshot }) => {
-      const subject = sampleSubject({ id });
+    notes: [...DIRECTORY_SAMPLES, ...EDGE_SAMPLES].map((directorySample) => {
+      const { snapshot } = directorySample;
+      const subject = sampleSubject(directorySample);
       let noteName: string | null = null;
       try {
         const rendered = facade.renderLiteratureNoteTemplateFilename(
@@ -790,7 +792,7 @@ function renderNoteNameEntry(
         );
       }
       return {
-        sample: { id },
+        sample: sampleName(directorySample),
         noteName,
         properties: null,
         body: null,
@@ -940,7 +942,7 @@ function noteSample(
   const properties = propertiesBlock(result.fold);
   if (properties !== null) parseYaml(properties);
   return {
-    sample: { id: sample.id },
+    sample: sampleName(sample),
     noteName: result.filename,
     properties,
     itemKey: sample.snapshot.item.indexedKey,
