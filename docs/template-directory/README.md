@@ -154,7 +154,7 @@ A Profile page shows only example variants:
 - A Profile with no `match` shows a fixed set across item types: a journal article, a book, and a book chapter with full details, then a journal article with no annotations.
 - Either page opens on the full variant of the Profile's `sampleItemType`. A Profile that groups annotations by color (`grouped-by-color`) also shows the `every-color` note.
 
-The `publisher-by-item-type` entry shows `journal-article-with-volume`, a type example of a real article with a volume, an issue, and pages.
+The `publisher-by-item-type` entry shows `journal-article-full-details`, the shared full variant of a journal article, a real article with a volume, an issue, and pages.
 
 ## Commands
 

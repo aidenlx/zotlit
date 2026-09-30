@@ -65,7 +65,7 @@ edition: "4"
 isbn: 978-0-226-23973-6
 ```
 
-## Journal article with volume, issue, and pages
+## A journal article with full details and highlights
 
 ```yaml
 journal: Econometrica
