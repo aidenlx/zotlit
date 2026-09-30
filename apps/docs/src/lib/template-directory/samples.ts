@@ -536,7 +536,7 @@ const HIGHLIGHT_COLORS: readonly { hex: string; name: string | null }[] = [
  * in the order of Zotero's color menu.
  */
 export const ZOTERO_COLORS: readonly { name: string; hex: string }[] = [
-  { name: "yellow", hex: String(SAMPLE_ANNOTATIONS[0]!.root.colorHex) },
+  { name: "yellow", hex: "#ffd400" },
   ...HIGHLIGHT_COLORS.flatMap(({ hex, name }) =>
     name === null ? [] : [{ name, hex }],
   ),

@@ -6,9 +6,13 @@ import { ZOTERO_COLORS } from "./samples.ts";
 import type { ColorKey, ColorKeyRow } from "./site.ts";
 import type { AnnotationSample } from "./verify.ts";
 
-/** A callout's first line: its type, then its title, which may run on into " · " and a page link. */
+/**
+ * A callout's first line: its type, an optional fold marker, and its title,
+ * which ends before the last " · " that leads to the page link. A callout
+ * with no title on its first line gets no match.
+ */
 const CALLOUT_TITLE = regex(
-  "^> \\[![^\\]]+\\]\\s+(?<title>.*?)(?: · .*)?$",
+  "^> \\[![^\\]]+\\][-+]? (?<title>.*?)(?: · [^·]*)?$",
   "m",
 );
 

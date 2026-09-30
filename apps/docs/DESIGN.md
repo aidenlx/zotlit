@@ -198,7 +198,11 @@ that fits a research task:
   the mono-uppercase "Ready-made note · for …" eyebrow, the serif title, the
   italic summary, square chips (which sources use it, and the version it
   needs), one square ink **Add to ZotLit** button, three numbered steps, a muted
-  fallback line with an underlined **Copy it** link, and a folded mono-uppercase
+  fallback line with an underlined **Copy it** link, a **Color key** for a
+  Profile that gives colors meanings (a mono-uppercase heading over a
+  two-column grid of square swatches from `sm`, each with a border in the text
+  color so pale and dark colors show in both themes, and an underlined link to
+  the page that changes the meanings), and a folded mono-uppercase
   **Details** section that holds the description. The result column holds the
   example switcher (the kit's segmented track: it wraps from `sm`, and scrolls
   sideways on a phone) over the paper sheet of the example note. Under `lg`
