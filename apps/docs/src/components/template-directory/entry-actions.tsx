@@ -10,7 +10,7 @@ import { openProfileInObsidian } from "@/lib/profile-handoff";
 import type { SiteEntry } from "@/lib/template-directory/site";
 import { m } from "@/paraglide/messages.js";
 
-import { copyLabel } from "./labels";
+import { COPY_LABEL } from "./labels";
 
 const ACTION =
   "inline-flex min-h-10 cursor-pointer items-center gap-2 px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring [&_svg]:size-4";
@@ -79,7 +79,7 @@ export function EntryActions({
           className={`${ACTION} ${profile ? SECONDARY : PRIMARY}`}
         >
           <Copy aria-hidden />
-          {copyLabel(entry.kind)}
+          {COPY_LABEL[entry.kind]()}
         </button>
         <button
           type="button"

@@ -172,8 +172,6 @@ function clearRecord(storage: () => Storage, key: string): void {
   }
 }
 
-export { openProfileInObsidian } from "@/lib/profile-handoff";
-
 /** One transferable Default copy per editor, so a later handoff can replace it. */
 export function createProfileHandoffSource(): (source: string) => string {
   const mintId = customAlphabet(

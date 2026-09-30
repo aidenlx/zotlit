@@ -1,4 +1,4 @@
-import { Link, createFileRoute, notFound } from "@tanstack/react-router";
+import { createFileRoute, notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import directory from "virtual:zotlit/template-directory";
 
@@ -7,6 +7,7 @@ import { Message } from "@/components/message";
 import { SiteFooter } from "@/components/site-footer";
 import { EntryActions } from "@/components/template-directory/entry-actions";
 import { EntryDescription } from "@/components/template-directory/entry-description";
+import { EntryLink } from "@/components/template-directory/entry-list";
 import { EntrySamples } from "@/components/template-directory/entry-samples";
 import { EntryUse } from "@/components/template-directory/entry-use";
 import {
@@ -19,7 +20,13 @@ import { ztProse } from "@/lib/prose";
 import { pageHead } from "@/lib/seo";
 import { appName } from "@/lib/shared";
 import { breadcrumbListSchema } from "@/lib/structured-data";
-import { DIRECTORY_PATH, entryPath } from "@/lib/template-directory/site";
+import {
+  calledPartials,
+  DIRECTORY_PATH,
+  entryId,
+  entryIdParts,
+  entryPath,
+} from "@/lib/template-directory/site";
 import { m } from "@/paraglide/messages.js";
 
 const getEntry = createServerFn({ method: "GET" })
@@ -27,11 +34,7 @@ const getEntry = createServerFn({ method: "GET" })
   .handler(({ data: id }) => {
     const entry = directory.entries.find((candidate) => candidate.id === id);
     if (!entry) throw notFound();
-    const partials = entry.calls.flatMap((name) =>
-      directory.entries.filter(
-        (candidate) => candidate.id === `partials/${name}`,
-      ),
-    );
+    const partials = calledPartials(directory.entries, entry.calls);
     return {
       entry,
       facets: directory.facets,
@@ -45,7 +48,7 @@ const getEntry = createServerFn({ method: "GET" })
 
 export const Route = createFileRoute("/_home/templates/$kind/$slug")({
   component: DirectoryEntryPage,
-  loader: ({ params }) => getEntry({ data: `${params.kind}/${params.slug}` }),
+  loader: ({ params }) => getEntry({ data: entryId(params.kind, params.slug) }),
   staleTime: Infinity,
   head: ({ loaderData }) => {
     if (loaderData === undefined) return {};
@@ -56,7 +59,7 @@ export const Route = createFileRoute("/_home/templates/$kind/$slug")({
       path: entryPath(entry.id),
       card: {
         type: "templates",
-        slugs: entry.id.split("/"),
+        slugs: entryIdParts(entry.id),
         alt: m.docs_directory_entry_og_alt({ title: entry.title }),
       },
       schemas: [
@@ -168,16 +171,12 @@ function DirectoryEntryPage() {
                     key={partial.id}
                     className="border-b border-fd-border/60 py-3"
                   >
-                    <Link
-                      to="/templates/$kind/$slug"
-                      params={{
-                        kind: "partials",
-                        slug: partial.id.split("/")[1] ?? "",
-                      }}
+                    <EntryLink
+                      id={partial.id}
                       className="font-serif text-lg font-medium decoration-fd-primary underline-offset-4 hover:text-fd-primary hover:underline"
                     >
                       {partial.title}
-                    </Link>
+                    </EntryLink>
                     <p className="text-sm text-fd-muted-foreground">
                       {partial.summary}
                     </p>

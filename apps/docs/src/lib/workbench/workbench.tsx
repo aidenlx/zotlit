@@ -99,6 +99,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/toast";
+import { openProfileInObsidian } from "@/lib/profile-handoff";
 import { m } from "@/paraglide/messages.js";
 
 import { annotationHeaderMark } from "./annotation-mark";
@@ -122,7 +123,6 @@ import { WEB_THEME } from "./theme";
 import {
   downloadProfile,
   profileFileName,
-  openProfileInObsidian,
   createProfileHandoffSource,
 } from "./transfer";
 import { unsupportedDependencies, unsupportedProblems } from "./unsupported";

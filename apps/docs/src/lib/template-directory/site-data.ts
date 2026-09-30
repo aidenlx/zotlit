@@ -4,6 +4,7 @@ import { parse as parseYaml } from "yaml";
 
 import { ITEM_TYPES as ZOTERO_ITEM_TYPES } from "@zotlit/zotero-types/item-types";
 
+import { partialCall } from "./calls.ts";
 import { ENTRY_FEATURES, ENTRY_KINDS, RESEARCH_TASKS } from "./entry.ts";
 import type { DirectoryEntry } from "./load.ts";
 import { readTemplateDirectory, templateDirectoryRoot } from "./read.ts";
@@ -124,9 +125,7 @@ function details(entry: DirectoryEntry): EntryDetails {
       return {
         kind: entry.kind,
         context: entry.context,
-        call: (
-          entry.call ?? `{% render "${entry.slug}" with zt as zt %}`
-        ).trimEnd(),
+        call: partialCall(entry),
       };
     case "property":
       return {

@@ -37,7 +37,7 @@ const CALLOUT_COLORS = [
  */
 const OBSIDIAN_TEXT = [
   "[&_.callout[data-callout]>.callout-title]:font-sans [&_.callout[data-callout]>.callout-title]:[font-size:inherit] [&_.callout[data-callout]>.callout-title]:tracking-normal [&_.callout[data-callout]>.callout-title]:normal-case",
-  "[&_blockquote]:not-italic [&_blockquote_p]:before:content-none [&_blockquote_p]:after:content-none",
+  "prose-blockquote:not-italic [&_blockquote_p]:before:content-none [&_blockquote_p]:after:content-none",
 ].join(" ");
 
 const SHEET = cn(

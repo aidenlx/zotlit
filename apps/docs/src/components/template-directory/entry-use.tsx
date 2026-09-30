@@ -8,11 +8,12 @@ import { Command } from "@/components/command";
 import { Message } from "@/components/message";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
+import { entryIdParts } from "@/lib/template-directory/site";
 import type { EntryDetails, SiteEntry } from "@/lib/template-directory/site";
 import { m } from "@/paraglide/messages.js";
 import type { LocalizedString } from "@/paraglide/runtime.js";
 
-import { copyLabel } from "./labels";
+import { COPY_LABEL } from "./labels";
 
 const MERGE_LABEL = {
   replace: m.workbench_properties_merge_replace,
@@ -30,8 +31,8 @@ export function EntryUse({
 }) {
   // The Markdown edition renders these steps too; see `lib/template-directory/markdown-edition.tsx`.
   asMarkdown();
-  const copy = <strong>{copyLabel(entry.kind)}</strong>;
-  const slug = entry.id.split("/")[1] ?? "";
+  const copy = <UiLabel name={COPY_LABEL[entry.kind]()} />;
+  const [, slug] = entryIdParts(entry.id);
   switch (entry.details.kind) {
     case "profile":
       return (
@@ -110,24 +111,20 @@ export function EntryUse({
               {{ copy }}
             </Step>
             <li>
-              {context === "citation" ? (
-                m.docs_directory_partial_step_call_citation()
-              ) : (
-                <Message
-                  text={m.docs_directory_partial_step_call({ tab: "{tab}" })}
-                  slots={{
-                    tab: (
-                      <UiLabel
-                        name={
-                          context === "note"
-                            ? m.workbench_tab_note()
-                            : m.workbench_tab_annotation()
-                        }
-                      />
-                    ),
-                  }}
-                />
-              )}
+              <Message
+                text={m.docs_directory_partial_step_call({ tab: "{tab}" })}
+                slots={{
+                  tab: (
+                    <UiLabel
+                      name={
+                        context === "note"
+                          ? m.workbench_tab_note()
+                          : m.workbench_tab_annotation()
+                      }
+                    />
+                  ),
+                }}
+              />
               <CallCode call={call} />
             </li>
           </Steps>

@@ -33,6 +33,7 @@ import type {
   TemplateRenderResult,
 } from "@zotlit/workbench/render";
 
+import { partialCall } from "./calls.ts";
 import { ITEM_TYPES } from "./entry.ts";
 import {
   CONTRACT_VERSION,
@@ -459,11 +460,12 @@ const NAMED_ANNOTATION =
   "{% if zt.text %}: {{ zt.text }}{% elsif zt.comment %}: {{ zt.comment }}{% endif %}\n";
 
 function renderPartialEntry(
-  { slug, context, call: statedCall, features }: PartialEntry,
+  entry: PartialEntry,
   resources: RenderResources,
   report: Report,
 ): EntrySamples {
-  const call = `${statedCall ?? `{% render "${slug}" with zt as zt -%}`}\n`;
+  const { context, features } = entry;
+  const call = `${partialCall(entry)}\n`;
   if (context === "annotation") {
     const source = harnessProfile({ annotation: call });
     return {

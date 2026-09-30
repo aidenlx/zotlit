@@ -22,8 +22,8 @@ import {
   publishedOn,
 } from "./shared.js";
 import type { OgType } from "./shared.js";
-import type { EntryKind, EntryLevel } from "./template-directory/entry.js";
-import { DIRECTORY_PATH } from "./template-directory/site.js";
+import { kindLabels, levelLabels } from "./template-directory/kind-labels.js";
+import { DIRECTORY_PATH, entryIdParts } from "./template-directory/site.js";
 import type { DirectorySite } from "./template-directory/site.js";
 
 const docsCard = v.object({
@@ -115,24 +115,14 @@ function cardsOf<Schema extends v.GenericSchema>(
 
 /**
  * The Template Directory's cards: the index, and one per entry naming its
- * kind and level. The labels mirror `KIND_LABEL` and `LEVEL_LABEL` in
- * `src/components/template-directory/labels.ts`, which the build cannot import.
+ * kind and level, by the names the pages use.
  */
 function directoryCards(
   m: Messages,
   { entries }: Pick<DirectorySite, "entries">,
 ): [string, CardProps][] {
-  const kind = {
-    profile: m.docs_directory_kind_profile,
-    partial: m.docs_directory_kind_partial,
-    citation: m.docs_directory_kind_citation,
-    "note-name": m.docs_directory_kind_note_name,
-    property: m.docs_directory_kind_property,
-  } satisfies Record<EntryKind, () => string>;
-  const level = {
-    "ready-to-use": m.docs_directory_level_ready,
-    customize: m.docs_directory_level_customize,
-  } satisfies Record<EntryLevel, () => string>;
+  const kind = kindLabels(m);
+  const level = levelLabels(m);
   return [
     [
       ogImageUrl("templates"),
@@ -144,7 +134,7 @@ function directoryCards(
       },
     ],
     ...entries.map((entry): [string, CardProps] => [
-      ogImageUrl("templates", entry.id.split("/")),
+      ogImageUrl("templates", entryIdParts(entry.id)),
       {
         kind: m.docs_directory_title(),
         title: entry.title,
