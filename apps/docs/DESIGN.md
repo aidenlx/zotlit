@@ -200,8 +200,9 @@ that fits a research task:
   needs), one square ink **Add to ZotLit** button, three numbered steps, a muted
   fallback line with an underlined **Copy it** link, and a folded mono-uppercase
   **Details** section that holds the description. The result column holds the
-  example switcher (the kit's segmented track: it wraps from `sm`, and scrolls
-  sideways on a phone) over the paper sheet of the example note. Under `lg`
+  example switcher (a mono-uppercase "See it with" label over the kit's
+  segmented track: it wraps from `sm`, and scrolls sideways on a phone) over
+  the paper sheet of the example note. Under `lg`
   the example follows the steps and **Details** comes last.
 - **Entry head** (partials, property rules, note names, and citation text): `← Template directory` crumb, mono-uppercase kind and level
   line, serif title, italic summary held to 60ch, mono-uppercase version line,

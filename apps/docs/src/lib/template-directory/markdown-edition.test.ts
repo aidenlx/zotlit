@@ -13,6 +13,10 @@ import {
 } from "./test-fixtures";
 import { verifyTemplateDirectory } from "./verify";
 
+const ARTICLE_FULL = m.docs_directory_example_full_details({
+  subject: m.docs_directory_example_subject_journal_article(),
+});
+
 const site = (files = fixtureFiles()) =>
   directorySite(verifyTemplateDirectory(files));
 
@@ -86,8 +90,11 @@ A fixture Profile.
     expect(text).toContain(
       "3. Create a note for any journal article. It looks like the example.",
     );
-    expect(text).toContain(`### ${m.docs_directory_example_journal_article()}`);
-    expect(text).not.toContain(`### ${m.docs_directory_example_book()}`);
+    expect(text).toContain(`### ${ARTICLE_FULL}`);
+    expect(text).not.toContain(
+      `### ${m.docs_directory_example_book_section()}`,
+    );
+    expect(text).not.toContain("A book");
   });
 
   it("keeps the partials it calls, the file, and what it makes, after the Details", async () => {
@@ -111,9 +118,9 @@ ${PROFILE_SOURCE}\`\`\`
 
 ${m.docs_directory_samples_intro()}
 
-### Journal article
+### ${ARTICLE_FULL}
 
-${m.docs_directory_sample_note_name()}: \`ioannidisWhyMost2005\`
+${m.docs_directory_sample_note_name()}: \`kahnemanProspectTheoryAnalysis1979\`
 `);
   });
 });

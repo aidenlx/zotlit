@@ -57,15 +57,19 @@ describe("the Directory's names", () => {
     );
   });
 
-  it("name the book variants by what differs", () => {
+  it("name the example variants of an item type by what differs", () => {
     expect([
       exampleLabel("book-full-details"),
       exampleLabel("book-few-details"),
       exampleLabel("book-no-annotations"),
+      exampleLabel("interview-few-details"),
+      exampleLabel("book-section-no-annotations"),
     ]).toEqual([
       "A book with full details and highlights",
       "A book with few details",
       "A book with no highlights yet",
+      "An interview with few details",
+      "A book chapter with no highlights yet",
     ]);
   });
 

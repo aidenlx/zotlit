@@ -28,6 +28,8 @@ audience: Readers who keep one publisher property for every source and want it t
 effort: Add one property to your profile in the Properties tab.
 expected:
   journal-article: { publisher: PLoS Medicine. 2005. }
+  journal-article-with-volume:
+    { publisher: "Econometrica. 1979. Vol. 47. № 2. pp. 263–291." }
   conference-paper: {}
   book: { publisher: Penguin Books }
   thesis: {}
@@ -41,13 +43,13 @@ One `publisher` property whose text depends on what the item is:
 
 | Item | `publisher` holds | Example |
 | --- | --- | --- |
-| Journal article | The journal, the year, the volume, the issue, and the pages | PLoS Medicine. 2005. Vol. 2. № 8. pp. e124. |
+| Journal article | The journal, the year, the volume, the issue, and the pages | Econometrica. 1979. Vol. 47. № 2. pp. 263–291. |
 | Book | The publisher | Penguin Books |
 | Book chapter | The title of the book and the pages of the chapter | Judgment under Uncertainty: Heuristics and Biases. pp. 3–20. |
 | Thesis | The university | University of Cambridge |
 | Any other item | The publisher, when the item has one | Brackenridge Free Library |
 
-Each part is left out when its field in Zotero is empty, so the property never shows `null`, an empty `Vol.`, or a stray `№`. For example, the example journal article has no volume, issue, or pages in Zotero, so its property is `PLoS Medicine. 2005.` The example thesis has no university, so its note gets no `publisher` property. A hyphen or an em dash in the pages becomes an en dash, as in `pp. 10–20`.
+Each part is left out when its field in Zotero is empty, so the property never shows `null`, an empty `Vol.`, or a stray `№`. For example, the PLoS Medicine example article has no volume, issue, or pages in Zotero, so its property is `PLoS Medicine. 2005.` The example thesis has no university, so its note gets no `publisher` property. A hyphen or an em dash in the pages becomes an en dash, as in `pp. 10–20`.
 
 **When the note is updated**: **Replace the existing value**. The property follows Zotero on every update. When the item has none of the parts, an update removes the property.
 

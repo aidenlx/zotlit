@@ -4,6 +4,8 @@ import { SAMPLE_ANNOTATIONS, SAMPLE_ITEMS } from "@zotlit/workbench/render";
 import type { AnnotationExample } from "@zotlit/workbench/render";
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 
+import { EXAMPLE_ITEMS } from "./example-items.ts";
+
 /**
  * How much of an item an example variant carries: every detail with an
  * abstract and an annotation set, few details, or the full details with no
@@ -30,7 +32,7 @@ type SampleDate =
   | { readonly year: number }
   | { readonly year: number; readonly month: number; readonly day: number };
 
-interface DerivedItem {
+export interface DerivedItem {
   readonly id: string;
   /** Eight characters, like a Zotero item key. */
   readonly key: string;
@@ -60,7 +62,7 @@ interface DerivedItem {
 }
 
 /** A highlight or an image the reader made in an item's PDF. */
-interface AnnotationSpec {
+export interface AnnotationSpec {
   readonly type: "highlight" | "image";
   readonly page: number;
   readonly color: { readonly name: string; readonly hex: string };
@@ -314,7 +316,8 @@ export const EDGE_SAMPLES: readonly DirectorySample[] = EDGE_ITEMS.map(
 /**
  * Items that fill the fields a type-specific entry reads and no Directory
  * Sample holds: a thesis with its university and thesis type, a book with its
- * place and edition, and a newspaper article. An entry renders over each one
+ * place and edition, a newspaper article, and a journal article with its
+ * volume, issue, and pages. An entry renders over each one
  * whose item type it is made for. The thesis and the book are real
  * publications; the newspaper article is invented, from the town of the
  * archive items.
@@ -385,6 +388,12 @@ const TYPE_ITEMS: readonly DerivedItem[] = [
       language: "en",
     },
   },
+  {
+    ...EXAMPLE_ITEMS[0]!.full,
+    id: "journal-article-with-volume",
+    pdf: undefined,
+    annotations: undefined,
+  },
 ];
 
 const TYPE_SAMPLES: readonly DirectorySample[] = TYPE_ITEMS.map((item) => ({
@@ -402,117 +411,34 @@ export function typeSamples(
 }
 
 /**
- * A book with every detail, an abstract, and four annotations, then the
- * variants of it. Each variant of an item type is defined here once and
- * shared by every entry made for that item type.
+ * The example variants of each item type an entry can be made for, in the
+ * order of `EXAMPLE_ITEMS`: every detail with an abstract and annotations,
+ * few details, and the full item with no PDF or annotations, a note nobody
+ * has read yet. Each variant is defined once and shared by every entry made
+ * for its item type.
  */
-const FULL_BOOK: DerivedItem = {
-  id: "book-full-details",
-  key: "BOOTCR16",
-  itemType: "book",
-  title: "The craft of research",
-  date: { year: 2016 },
-  dateText: "2016",
-  primaryCreatorType: "author",
-  creators: [
-    { given: "Wayne C.", family: "Booth", role: "author" },
-    { given: "Gregory G.", family: "Colomb", role: "author" },
-    { given: "Joseph M.", family: "Williams", role: "author" },
-    { given: "Joseph", family: "Bizup", role: "author" },
-    { given: "William T.", family: "FitzGerald", role: "author" },
-  ],
-  citekey: "boothCraftResearch2016",
-  abstract:
-    "A guide to planning, drafting, and revising a research paper.\n\nThe book shows how to turn a topic into a question, a question into a problem, and a problem into an argument that readers can follow.",
-  fields: {
-    publisher: "University of Chicago Press",
-    place: "Chicago",
-    edition: "4",
-    ISBN: "978-0-226-23973-6",
-    language: "en",
-  },
-  pdf: { key: "BOOTPDF1", filename: "the-craft-of-research.pdf" },
-  annotations: [
-    {
-      type: "highlight",
-      page: 14,
-      color: { name: "yellow", hex: "#ffd400" },
-      text: "A good research question names what you do not yet understand.",
-      comment: "Use this wording in my introduction.",
-    },
-    {
-      type: "highlight",
-      page: 32,
-      color: { name: "blue", hex: "#2ea8e5" },
-      text: "Readers judge a claim by the reasons and evidence behind it.",
-      comment: null,
-    },
-    {
-      type: "highlight",
-      page: 47,
-      color: { name: "purple", hex: "#a28ae5" },
-      text: "A warrant explains why a reason supports a claim.",
-      comment: null,
-    },
-    {
-      type: "image",
-      page: 58,
-      color: { name: "green", hex: "#5fb236" },
-      text: null,
-      comment: null,
-      image: "the-craft-of-research-p58.png",
-    },
-  ],
-};
-
-const FEW_DETAILS_BOOK: DerivedItem = {
-  id: "book-few-details",
-  key: "KAHTFS11",
-  itemType: "book",
-  title: "Thinking, fast and slow",
-  date: { year: 2011 },
-  dateText: "2011",
-  primaryCreatorType: "author",
-  creators: [{ given: "Daniel", family: "Kahneman", role: "author" }],
-  citekey: "kahnemanThinkingFastSlow2011",
-  fields: { language: "en" },
-  pdf: { key: "KAHPDF11", filename: "thinking-fast-and-slow.pdf" },
-  annotations: [
-    {
-      type: "highlight",
-      page: 20,
-      color: { name: "yellow", hex: "#ffd400" },
-      text: "Intuition is thinking that feels effortless.",
-      comment: null,
-    },
-  ],
-};
-
-/** The full book with its PDF and annotations left off: a book nobody has read yet. */
-const UNANNOTATED_BOOK: DerivedItem = {
-  ...FULL_BOOK,
-  id: "book-no-annotations",
-  pdf: undefined,
-  annotations: undefined,
-};
-
-/**
- * The example variants of each item type an entry can be made for: every
- * detail with an abstract and annotations, few details, and no annotations.
- * An entry made for an item type shows that type's variants in place of the
- * type's older examples.
- */
-export const EXAMPLE_VARIANTS: readonly DirectorySample[] = (
-  [
-    ["full-details", FULL_BOOK],
-    ["few-details", FEW_DETAILS_BOOK],
-    ["no-annotations", UNANNOTATED_BOOK],
-  ] as const
-).map(([variant, item]) => ({
-  id: item.id,
-  variant,
-  snapshot: derive(SAMPLE_ITEMS[2]!, item),
-}));
+export const EXAMPLE_VARIANTS: readonly DirectorySample[] =
+  EXAMPLE_ITEMS.flatMap(({ slug, full, few }) =>
+    (
+      [
+        ["full-details", full],
+        ["few-details", few],
+        [
+          "no-annotations",
+          {
+            ...full,
+            id: `${slug}-no-annotations`,
+            pdf: undefined,
+            annotations: undefined,
+          },
+        ],
+      ] as const
+    ).map(([variant, item]) => ({
+      id: item.id,
+      variant,
+      snapshot: derive(SAMPLE_ITEMS[2]!, item),
+    })),
+  );
 
 /**
  * Every Zotero annotation color under its contract name but yellow, which the
@@ -846,7 +772,10 @@ function attachment({ key, filename }: { key: string; filename: string }) {
 function linkValue(helper: string, value: string) {
   return {
     $helper: helper,
-    signature: "(alias?: string, subpath?: string) => string | null",
+    signature:
+      helper === "imgLink"
+        ? "(alias?: string, subpath?: string) => string"
+        : "(alias?: string, subpath?: string) => string | null",
     value,
   };
 }

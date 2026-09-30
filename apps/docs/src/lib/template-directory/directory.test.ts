@@ -11,6 +11,7 @@ import {
 import {
   DIRECTORY_SAMPLES,
   EVERY_COLOR_SAMPLE,
+  EXAMPLE_VARIANTS,
   formatEntrySamples,
   ITEM_TYPES,
   readTemplateDirectory,
@@ -276,9 +277,11 @@ describe("the Template Directory", () => {
       "opens a note of %s with its title, then puts the prompts above the part an update refreshes",
       (entry, prompts) => {
         for (const { sample, body } of verification.samples.get(entry)!.notes) {
-          const { title } = [...DIRECTORY_SAMPLES, EVERY_COLOR_SAMPLE].find(
-            ({ id }) => id === sample.id,
-          )!.snapshot.item;
+          const { title } = [
+            ...DIRECTORY_SAMPLES,
+            ...EXAMPLE_VARIANTS,
+            EVERY_COLOR_SAMPLE,
+          ].find(({ id }) => id === sample.id)!.snapshot.item;
           const [above, managed] = body!.split("%%zt-managed%%");
           expect(above!.match(/^#+ .*$/gm)).toEqual([
             `# ${title}`,
@@ -348,7 +351,7 @@ describe("the Template Directory", () => {
   it("names the book, its editors, and the chapter's pages in a Book chapters note", () => {
     const chapter = verification.samples
       .get("profiles/book-chapters")!
-      .notes.find(({ sample }) => sample.id === "book-section")!;
+      .notes.find(({ sample }) => sample.id === "book-section-full-details")!;
     expect(chapter.body).toContain(
       "In *Judgment under Uncertainty: Heuristics and Biases*, edited by Daniel Kahneman, Paul Slovic, and Amos Tversky · pp. 3–20",
     );
@@ -357,7 +360,7 @@ describe("the Template Directory", () => {
   it.each([
     [
       "profiles/theses-and-dissertations",
-      "thesis-with-university",
+      "thesis-full-details",
       "PhD thesis · Princeton University",
     ],
     [
@@ -375,33 +378,77 @@ describe("the Template Directory", () => {
     },
   );
 
+  it("shows in the publisher by item type entry a real journal article with a volume, an issue, and pages", () => {
+    const article = verification.samples
+      .get("properties/publisher-by-item-type")!
+      .notes.find(({ sample }) => sample.id === "journal-article-with-volume")!;
+    expect(article.properties).toContain(
+      "publisher: Econometrica. 1979. Vol. 47. № 2. pp. 263–291.",
+    );
+  });
+
   describe("the example items of a Profile with a Profile Match", () => {
     const ids = (id: string) =>
       verification.samples.get(id)!.notes.map(({ sample }) => sample.id);
 
+    const variants = (slug: string) => [
+      `${slug}-full-details`,
+      `${slug}-few-details`,
+      `${slug}-no-annotations`,
+    ];
+
     it.each([
-      [
-        "profiles/books",
-        ["book-full-details", "book-few-details", "book-no-annotations"],
-      ],
-      ["profiles/book-chapters", ["book-section"]],
-      [
-        "profiles/theses-and-dissertations",
-        ["thesis", "thesis-with-university"],
-      ],
+      ["profiles/books", variants("book")],
+      ["profiles/book-chapters", variants("book-section")],
+      ["profiles/theses-and-dissertations", variants("thesis")],
       [
         "profiles/primary-sources-and-archives",
-        ["letter", "manuscript", "interview", "document", "newspaper-article"],
+        [
+          "letter-full-details",
+          "document-full-details",
+          "interview-full-details",
+          "manuscript-full-details",
+          "newspaper-article-full-details",
+          "letter-few-details",
+          "letter-no-annotations",
+        ],
       ],
     ])("takes only the item types %s matches: %j", (id, expected) => {
       expect(ids(id)).toEqual(expected);
     });
 
-    it("keeps every Directory Sample for a Profile that takes any item type", () => {
-      expect(ids("profiles/simple-reading-note")).toEqual(
-        expect.arrayContaining(DIRECTORY_SAMPLES.map(({ id }) => id)),
-      );
-    });
+    it.each([
+      "profiles/simple-reading-note",
+      "profiles/course-reading",
+      "profiles/color-coded-reading-note",
+    ])(
+      "switches %s, a Profile with no match, across an article, a book, a book chapter, and an item with no annotations, and opens on its own item type",
+      (id) => {
+        expect(ids(id)).toEqual([
+          "journal-article-full-details",
+          "book-full-details",
+          "book-section-full-details",
+          "journal-article-no-annotations",
+        ]);
+      },
+    );
+
+    it.each([
+      "profiles/reading-notes-by-color",
+      "profiles/critical-reading",
+      "profiles/literature-review",
+    ])(
+      "adds the note with an annotation in every color to %s, which groups annotations by color",
+      (id) => {
+        expect(ids(id)).toEqual([
+          "journal-article-full-details",
+          "book-full-details",
+          "book-section-full-details",
+          "journal-article-no-annotations",
+          "every-color",
+        ]);
+      },
+    );
 
     it("gives the full book example an abstract and, inside the note, three colored highlights, one with a comment, and one image", () => {
       const note = verification.samples
