@@ -2,63 +2,49 @@
 
 # Rendered samples: Books
 
-## Journal article
+## A book with full details and highlights
 
-Note name: `ioannidisWhyMost2005`
-
-```markdown
----
-title: Why Most Published Research Findings Are False
-citekey: ioannidisWhyMost2005
-year: 2005
-venue: PLoS Medicine
-status: unread
-journal: PLoS Medicine
----
-%%zt-managed%%
-# Why Most Published Research Findings Are False
-
-*PLoS Medicine*
-
-[Zotero](zotero://select/library/items/IANNP5A2)
-
-%%/zt-managed%%
-
-## Summary
-
-
-## Key points
-
-
-## Ideas to explore
-```
-
-## Conference paper
-
-Note name: `riveraResearchInterfaces2026`
+Note name: `boothCraftResearch2016`
 
 ```markdown
 ---
-title: Designing reproducible research interfaces
-citekey: riveraResearchInterfaces2026
-year: 2026
-venue: Proceedings of the Open Research Conference
+title: The craft of research
+citekey: boothCraftResearch2016
+year: 2016
+venue: University of Chicago Press
 status: unread
+publisher: University of Chicago Press
+place: Chicago
+edition: "4"
+isbn: 978-0-226-23973-6
 ---
 %%zt-managed%%
-# Designing reproducible research interfaces
+# The craft of research
 
-[Zotero](zotero://select/library/items/CNPF226A)
+University of Chicago Press · Chicago · Edition: 4 · ISBN 978-0-226-23973-6
+
+[Zotero](zotero://select/library/items/BOOTCR16) · [[the-craft-of-research.pdf|PDF]]
+
+> [!abstract]- Abstract
+> A guide to planning, drafting, and revising a research paper.
+>
+> The book shows how to turn a topic into a question, a question into a problem, and a problem into an argument that readers can follow.
 
 ## Annotations
 
-> [!warning] Important · p. 1
-> > A reproducible interface makes its inputs and outputs inspectable.
+> [!warning] Important · [[the-craft-of-research.pdf#page=14|p. 14]]
+> > A good research question names what you do not yet understand.
 >
-> Reviewed Fixture text; it contains no personal library data.
+> Use this wording in my introduction.
 
-> [!warning] Important · p. 1
-> > A reproducible interface makes its inputs and outputs inspectable.
+> [!info] Background · [[the-craft-of-research.pdf#page=32|p. 32]]
+> > Readers judge a claim by the reasons and evidence behind it.
+
+> [!example] Definitions · [[the-craft-of-research.pdf#page=47|p. 47]]
+> > A warrant explains why a reason supports a claim.
+
+> [!success] Agree · [[the-craft-of-research.pdf#page=58|p. 58]]
+> ![[the-craft-of-research-p58.png]]
 
 %%/zt-managed%%
 
@@ -71,52 +57,26 @@ status: unread
 ## Ideas to explore
 ```
 
-## Book
+## A book with few details
 
-Note name: `Kahneman2011`
+Note name: `kahnemanThinkingFastSlow2011`
 
 ```markdown
 ---
 title: Thinking, fast and slow
-citekey: Kahneman2011
+citekey: kahnemanThinkingFastSlow2011
 year: 2011
-venue: Penguin Books
 status: unread
-publisher: Penguin Books
 ---
 %%zt-managed%%
 # Thinking, fast and slow
 
-Penguin Books
+[Zotero](zotero://select/library/items/KAHTFS11) · [[thinking-fast-and-slow.pdf|PDF]]
 
-[Zotero](zotero://select/library/items/NW2CPDTC)
+## Annotations
 
-%%/zt-managed%%
-
-## Summary
-
-
-## Key points
-
-
-## Ideas to explore
-```
-
-## Thesis
-
-Note name: `Batista2010`
-
-```markdown
----
-title: "Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities"
-citekey: Batista2010
-year: 2010
-status: unread
----
-%%zt-managed%%
-# Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities
-
-[Zotero](zotero://select/library/items/I49R3FTL)
+> [!warning] Important · [[thinking-fast-and-slow.pdf#page=20|p. 20]]
+> > Intuition is thinking that feels effortless.
 
 %%/zt-managed%%
 
@@ -129,168 +89,7 @@ status: unread
 ## Ideas to explore
 ```
 
-## Book chapter
-
-Note name: `tverskyJudgmentUncertaintyHeuristics1982`
-
-```markdown
----
-title: "Judgment under uncertainty: Heuristics and biases"
-citekey: tverskyJudgmentUncertaintyHeuristics1982
-tags:
-  - decision_making
-  - heuristics
-year: 1982
-venue: "Judgment under Uncertainty: Heuristics and Biases"
-status: unread
-book-title: "Judgment under Uncertainty: Heuristics and Biases"
-editors:
-  - Daniel Kahneman
-  - Paul Slovic
-  - Amos Tversky
-pages: 3–20
----
-%%zt-managed%%
-# Judgment under uncertainty: Heuristics and biases
-
-In *Judgment under Uncertainty: Heuristics and Biases*, edited by Daniel Kahneman, Paul Slovic, and Amos Tversky · pp. 3–20
-
-[Zotero](zotero://select/library/items/TVKHEUR1) · [DOI](https://doi.org/10.1017/CBO9780511809477.002)
-
-> [!abstract]- Abstract
-> People rely on a limited number of heuristic principles to assess probabilities and predict values.
->
-> The chapter describes three of them (representativeness, availability, and adjustment from an anchor) and the systematic errors each one causes.
-
-%%/zt-managed%%
-
-## Summary
-
-
-## Key points
-
-
-## Ideas to explore
-```
-
-## Letter
-
-Note name: `aldousLetterEleanorWhitcombe1887`
-
-```markdown
----
-title: Letter to Eleanor Whitcombe
-citekey: aldousLetterEleanorWhitcombe1887
-tags:
-  - correspondence
-year: 1887
-status: unread
----
-%%zt-managed%%
-# Letter to Eleanor Whitcombe
-
-[Zotero](zotero://select/library/items/ALDLET87)
-
-> [!abstract]- Abstract
-> Aldous describes the spring flood at the mill and asks Whitcombe for news of the estate survey.
-
-%%/zt-managed%%
-
-## Summary
-
-
-## Key points
-
-
-## Ideas to explore
-```
-
-## Manuscript
-
-Note name: `aldousSurveyNotebookBrackenridge1885`
-
-```markdown
----
-title: Survey notebook of the Brackenridge estate
-citekey: aldousSurveyNotebookBrackenridge1885
-year: 1885
-status: unread
----
-%%zt-managed%%
-# Survey notebook of the Brackenridge estate
-
-[Zotero](zotero://select/library/items/ALDMSS85)
-
-%%/zt-managed%%
-
-## Summary
-
-
-## Key points
-
-
-## Ideas to explore
-```
-
-## Interview
-
-Note name: `okaforOralHistoryInterview2019`
-
-```markdown
----
-title: Oral history interview with Ada Okafor
-citekey: okaforOralHistoryInterview2019
-year: 2019
-status: unread
----
-%%zt-managed%%
-# Oral history interview with Ada Okafor
-
-[Zotero](zotero://select/library/items/OKAFOH19) · [Web page](https://archive.example.org/oral-histories/oh-2019-014)
-
-> [!abstract]- Abstract
-> Okafor recalls the founding of the Riverside tenants' association and the 1978 rent strike.
-
-%%/zt-managed%%
-
-## Summary
-
-
-## Key points
-
-
-## Ideas to explore
-```
-
-## Document
-
-Note name: `brackenridgefreelibraryMinutesBoardTrustees1923`
-
-```markdown
----
-title: Minutes of the Board of Trustees, 12 March 1923
-citekey: brackenridgefreelibraryMinutesBoardTrustees1923
-year: 1923
-venue: Brackenridge Free Library
-status: unread
----
-%%zt-managed%%
-# Minutes of the Board of Trustees, 12 March 1923
-
-[Zotero](zotero://select/library/items/BFLMIN23)
-
-%%/zt-managed%%
-
-## Summary
-
-
-## Key points
-
-
-## Ideas to explore
-```
-
-## Book with place and edition
+## A book with no highlights yet
 
 Note name: `boothCraftResearch2016`
 
@@ -312,6 +111,11 @@ isbn: 978-0-226-23973-6
 University of Chicago Press · Chicago · Edition: 4 · ISBN 978-0-226-23973-6
 
 [Zotero](zotero://select/library/items/BOOTCR16)
+
+> [!abstract]- Abstract
+> A guide to planning, drafting, and revising a research paper.
+>
+> The book shows how to turn a topic into a question, a question into a problem, and a problem into an argument that readers can follow.
 
 %%/zt-managed%%
 

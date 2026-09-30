@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { toast } from "@/components/ui/toast";
 import { m } from "@/paraglide/messages.js";
 
-import { EntryActions } from "./entry-actions";
+import { EntryActions, ImportFallback } from "./entry-actions";
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -85,7 +85,7 @@ describe("one-click import", () => {
     expect(toasts.titles()).toEqual([m.docs_directory_import_started()]);
   });
 
-  it("keeps Obsidian closed when the browser refuses the copy, and points to the downloaded file", async () => {
+  it("keeps Obsidian closed when the browser refuses the copy, and says how to allow it", async () => {
     vi.stubGlobal("navigator", {
       clipboard: { writeText: () => Promise.reject(new Error("Denied")) },
     });
@@ -96,16 +96,34 @@ describe("one-click import", () => {
     await act(async () => page.button(m.docs_directory_import())!.click());
 
     expect([...opened]).toEqual([]);
-    expect(toasts.titles()).toEqual([m.docs_directory_copy_failed()]);
+    expect(toasts.titles()).toEqual([m.docs_directory_add_failed()]);
   });
 
-  it("names the manual path beside the button: copy, then Import profile… from the clipboard", async () => {
+  it("shows one button for a Profile, named Add to ZotLit", async () => {
     using page = await renderActions(profileEntry);
 
-    const fallback = page.host.querySelector("p")?.textContent ?? "";
-    expect(fallback).toContain(m.docs_directory_copy_profile());
-    expect(fallback).toContain(m.command_import_profile_name());
-    expect(fallback).toContain(m.profile_import_clipboard());
+    expect(
+      [...page.host.querySelectorAll("button")].map((b) => b.textContent),
+    ).toEqual(["Add to ZotLit"]);
+  });
+
+  it("names the manual path when the window does not open: copy, then Import profile… from the clipboard", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    using toasts = recordToasts();
+    const host = document.body.appendChild(document.createElement("div"));
+    const root = createRoot(host);
+    await act(async () => root.render(<ImportFallback copyText={PROFILE} />));
+
+    const text = host.textContent ?? "";
+    expect(text).toContain(m.docs_directory_copy_it());
+    expect(text).toContain(m.command_import_profile_name());
+    expect(text).toContain(m.profile_import_clipboard());
+    await act(async () => host.querySelector("button")!.click());
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(PROFILE);
+    expect(toasts.titles()).toEqual([m.docs_directory_copied()]);
+    act(() => root.unmount());
+    host.remove();
   });
 
   it("leaves a recipe to its copy and download, since a recipe goes into a field of a profile", async () => {

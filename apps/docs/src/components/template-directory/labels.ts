@@ -12,6 +12,7 @@ import type { Facet } from "@/lib/template-directory/search";
 import type { FacetOption } from "@/lib/template-directory/site";
 import type { AnnotationColor } from "@/lib/template-directory/verify";
 import { m } from "@/paraglide/messages.js";
+import { getLocale } from "@/paraglide/runtime.js";
 import type { LocalizedString } from "@/paraglide/runtime.js";
 
 export const KIND_LABEL = kindLabels(m);
@@ -95,6 +96,53 @@ const ITEM_TYPE_LABEL: Readonly<Record<string, () => LocalizedString>> = {
   newspaperArticle: m.docs_directory_item_type_newspaper_article,
 };
 
+/** The item types by the name a sentence uses for several of them ("for books"). */
+const ITEM_TYPE_PLURAL: Readonly<Record<string, () => LocalizedString>> = {
+  journalArticle: m.docs_directory_item_type_plural_journal_article,
+  conferencePaper: m.docs_directory_item_type_plural_conference_paper,
+  book: m.docs_directory_item_type_plural_book,
+  thesis: m.docs_directory_item_type_plural_thesis,
+  bookSection: m.docs_directory_item_type_plural_book_section,
+  letter: m.docs_directory_item_type_plural_letter,
+  manuscript: m.docs_directory_item_type_plural_manuscript,
+  interview: m.docs_directory_item_type_plural_interview,
+  document: m.docs_directory_item_type_plural_document,
+  newspaperArticle: m.docs_directory_item_type_plural_newspaper_article,
+};
+
+/** The item types by the name a sentence uses for one of them ("every book"). */
+const ITEM_TYPE_SINGULAR: Readonly<Record<string, () => LocalizedString>> = {
+  journalArticle: m.docs_directory_item_type_singular_journal_article,
+  conferencePaper: m.docs_directory_item_type_singular_conference_paper,
+  book: m.docs_directory_item_type_singular_book,
+  thesis: m.docs_directory_item_type_singular_thesis,
+  bookSection: m.docs_directory_item_type_singular_book_section,
+  letter: m.docs_directory_item_type_singular_letter,
+  manuscript: m.docs_directory_item_type_singular_manuscript,
+  interview: m.docs_directory_item_type_singular_interview,
+  document: m.docs_directory_item_type_singular_document,
+  newspaperArticle: m.docs_directory_item_type_singular_newspaper_article,
+};
+
+/**
+ * Item types as a sentence names them: the plural form joins them with "and"
+ * ("letters, manuscripts, and interviews"), and the singular form joins them
+ * with "or", as "every book or thesis" reads.
+ */
+export function itemTypesInSentence(
+  itemTypes: readonly string[],
+  form: "plural" | "singular",
+): string {
+  const names = form === "plural" ? ITEM_TYPE_PLURAL : ITEM_TYPE_SINGULAR;
+  return new Intl.ListFormat(getLocale(), {
+    type: form === "plural" ? "conjunction" : "disjunction",
+  }).format(
+    itemTypes.map(
+      (type) => names[type]?.() ?? optionLabel("itemType", { value: type }),
+    ),
+  );
+}
+
 /** The example items and citation sets an entry page renders, by id. */
 const EXAMPLE_LABEL: Readonly<Record<string, () => LocalizedString>> = {
   "journal-article": m.docs_directory_example_journal_article,
@@ -113,6 +161,9 @@ const EXAMPLE_LABEL: Readonly<Record<string, () => LocalizedString>> = {
     m.docs_directory_example_no_author_date_or_citekey,
   "thesis-with-university": m.docs_directory_example_thesis_with_university,
   "book-with-edition": m.docs_directory_example_book_with_edition,
+  "book-full-details": m.docs_directory_example_book_full_details,
+  "book-few-details": m.docs_directory_example_book_few_details,
+  "book-no-annotations": m.docs_directory_example_book_no_annotations,
   "newspaper-article": m.docs_directory_example_newspaper_article,
   "two-items": m.docs_directory_example_two_items,
   "item-with-page": m.docs_directory_example_item_with_page,

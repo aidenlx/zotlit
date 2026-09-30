@@ -63,6 +63,41 @@ function firstShown(notes: readonly NoteSampleView[]): string | undefined {
 const LABEL =
   "font-mono text-[0.72rem] font-semibold tracking-[0.1em] text-fd-muted-foreground uppercase";
 
+/**
+ * A Profile's example note as Obsidian's reading view shows it, under a
+ * switcher that names each example item. The switcher wraps on a wide screen
+ * and scrolls sideways on a phone.
+ */
+export function ProfileExample({
+  notes,
+}: {
+  notes: readonly NoteSampleView[];
+}) {
+  return (
+    <Tabs defaultValue={firstShown(notes)}>
+      <TabsList
+        aria-label={m.docs_directory_samples_item()}
+        className="mb-4 max-w-full max-sm:w-max max-sm:flex-nowrap max-sm:overflow-x-auto"
+      >
+        {notes.map((note) => (
+          <TabsTrigger
+            key={note.id}
+            value={note.id}
+            className="max-sm:shrink-0 max-sm:whitespace-nowrap"
+          >
+            {exampleLabel(note.id)}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+      {notes.map((note) => (
+        <TabsContent key={note.id} value={note.id}>
+          <NoteSheet note={note} showMarkdown={false} />
+        </TabsContent>
+      ))}
+    </Tabs>
+  );
+}
+
 export function EntrySamples({
   entry,
 }: {
