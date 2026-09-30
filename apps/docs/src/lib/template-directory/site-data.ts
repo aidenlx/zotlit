@@ -6,6 +6,7 @@ import { parseLiteratureNoteTemplate } from "@zotlit/templates/facade";
 import { ITEM_TYPES as ZOTERO_ITEM_TYPES } from "@zotlit/zotero-types/item-types";
 
 import { partialCall } from "./calls.ts";
+import { colorKey } from "./color-key.ts";
 import { ENTRY_FEATURES, ENTRY_KINDS, RESEARCH_TASKS } from "./entry.ts";
 import type { DirectoryEntry } from "./load.ts";
 import { matchedItemTypes } from "./profile-samples.ts";
@@ -40,11 +41,8 @@ export function directorySite({
   entries,
   samples,
 }: DirectoryVerification): DirectorySite {
-  const partialIds = new Set(
-    entries.filter(({ kind }) => kind === "partial").map(({ id }) => id),
-  );
   const siteEntries = entries.map((entry) =>
-    siteEntry(entry, samples.get(entry.id), partialIds),
+    siteEntry(entry, samples.get(entry.id), entries),
   );
   return { entries: siteEntries, facets: facetOptions(siteEntries) };
 }
@@ -52,7 +50,7 @@ export function directorySite({
 function siteEntry(
   entry: DirectoryEntry,
   samples: EntrySamples | undefined,
-  partialIds: ReadonlySet<string>,
+  entries: readonly DirectoryEntry[],
 ): SiteEntry {
   return {
     id: entry.id,
@@ -76,7 +74,11 @@ function siteEntry(
     copyText: copyText(entry),
     details: details(entry),
     profileSource:
-      entry.kind === "profile" ? profileSource(entry, partialIds) : null,
+      entry.kind === "profile" ? profileSource(entry, entries) : null,
+    colorKey:
+      entry.kind === "profile" && entry.features.includes("color-highlights")
+        ? colorKey(samples?.annotations ?? [], meaningsEntry(entry, entries))
+        : null,
     notes: (samples?.notes ?? []).map(
       ({ sample, noteName, properties, body }): NoteSampleView => ({
         id: sample.id,
@@ -89,6 +91,21 @@ function siteEntry(
     annotations: samples?.annotations ?? [],
     citations: samples?.citations ?? [],
   };
+}
+
+/**
+ * The partial entry that sets the color meanings a Profile brings: the one
+ * of its partials named "color-meanings…", which the key links.
+ */
+function meaningsEntry(
+  { calls }: DirectoryEntry,
+  entries: readonly DirectoryEntry[],
+): string | null {
+  const name = calls.find((call) => call.startsWith("color-meanings"));
+  return (
+    entries.find(({ kind, slug }) => kind === "partial" && slug === name)?.id ??
+    null
+  );
 }
 
 /**
@@ -131,7 +148,7 @@ function copyText(entry: DirectoryEntry): string {
  */
 function profileSource(
   entry: Extract<DirectoryEntry, { kind: "profile" }>,
-  partialIds: ReadonlySet<string>,
+  entries: readonly DirectoryEntry[],
 ): ProfileSource {
   const { source } = entry.artifact;
   const { bodyStart } = parseLiteratureNoteTemplate(source);
@@ -147,7 +164,10 @@ function profileSource(
       .toSorted((a, b) => namedAt(a) - namedAt(b))
       .map((name) => {
         const id = entryId("partials", name);
-        return { name, id: partialIds.has(id) ? id : null };
+        const exists = entries.some(
+          (candidate) => candidate.kind === "partial" && candidate.id === id,
+        );
+        return { name, id: exists ? id : null };
       }),
   };
 }
