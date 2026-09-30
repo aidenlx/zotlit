@@ -212,15 +212,15 @@ export function annotationLabel({
 }
 
 const COLOR_LABEL: Readonly<Record<string, () => LocalizedString>> = {
-  yellow: m.annot_view_color_yellow,
-  red: m.annot_view_color_red,
-  green: m.annot_view_color_green,
-  blue: m.annot_view_color_blue,
-  purple: m.annot_view_color_purple,
-  magenta: m.annot_view_color_magenta,
-  orange: m.annot_view_color_orange,
-  gray: m.annot_view_color_gray,
-  plum: m.annot_view_color_plum,
+  yellow: m.docs_directory_color_yellow,
+  red: m.docs_directory_color_red,
+  green: m.docs_directory_color_green,
+  blue: m.docs_directory_color_blue,
+  purple: m.docs_directory_color_purple,
+  magenta: m.docs_directory_color_magenta,
+  orange: m.docs_directory_color_orange,
+  gray: m.docs_directory_color_gray,
+  plum: m.docs_directory_color_plum,
 };
 
 /** One row of a color key: the Zotero color, an arrow, and what the Profile makes it mean. */

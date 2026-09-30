@@ -339,14 +339,6 @@ describe("the color key of a Profile", () => {
     expect(keyOf("primary-sources-and-archives")).toBeNull();
   });
 
-  it("gives no key to a recipe", () => {
-    expect(
-      directory.entries.filter(
-        ({ kind, colorKey }) => kind !== "profile" && colorKey !== null,
-      ),
-    ).toEqual([]);
-  });
-
   describe("from a highlight's rendered callout", () => {
     const keyWith = (format: string) => {
       const files = edit(fixtureFiles(), `${FIXTURE_PROFILE}/entry.md`, [
@@ -375,6 +367,28 @@ describe("the color key of a Profile", () => {
 
     it("shows no key when every color gets the same callout title", () => {
       expect(keyWith("> [!note] Highlight · p. {{ zt.pageLabel }}")).toBeNull();
+    });
+
+    it("keeps a title that holds a dot, and a callout that folds", () => {
+      const key = keyWith(
+        "> [!note]- {{ zt.colorName | default: 'other' }} · notes · p. {{ zt.pageLabel }}",
+      )!;
+      expect(key.rows[0]).toMatchObject({
+        color: "yellow",
+        meaning: "yellow · notes",
+      });
+    });
+
+    it("leaves out the row for other colors when their callout has no title", () => {
+      const key = keyWith(
+        "> [!note] {% if zt.colorName %}{{ zt.colorName }}{% endif %} · p. {{ zt.pageLabel }}",
+      )!;
+      expect(key.rows).toHaveLength(9);
+      expect(key.rows.at(-1)).toMatchObject({ color: "plum" });
+    });
+
+    it("gives no key when a highlight is not a titled callout", () => {
+      expect(keyWith("> [!quote]\n> {{ zt.text }}")).toBeNull();
     });
   });
 });

@@ -80,6 +80,7 @@ The source files in `src/lib/template-directory/` of `apps/docs` own the vocabul
 2. The artifact is a Shared Partial document: `language: liquid` between two `---` lines, then the source.
 3. Set `context` to the data the partial reads. The suite renders a `note` partial in a Profile's note body and an `annotation` partial in its Annotation Section. A partial that needs more than the plain `render` call, such as one that sets values for the partial called after it, states its call in `call`.
 4. To change a partial, edit its entry, then run the re-pack command: every Profile that calls it gets the new source.
+5. A partial that sets the meaning of each highlight color starts its name with `color-meanings`. A Profile page with the `color-highlights` feature shows a color key from the Profile's rendered highlights, and links the called partial with that name prefix as the page that changes the meanings.
 
 ### Property
 
