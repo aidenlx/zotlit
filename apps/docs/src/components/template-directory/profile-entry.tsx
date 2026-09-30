@@ -1,6 +1,5 @@
 // A Profile entry's page: the ready-made note first, with one button to add it to ZotLit and the example note beside it.
 
-import { ChevronDown } from "lucide-react";
 import { useState } from "react";
 
 import { BackCrumb } from "@/components/back-crumb";
@@ -17,6 +16,7 @@ import { firstShown, ProfileExample } from "./entry-samples";
 import { EntrySource } from "./entry-source";
 import type { SourcePartialEntry } from "./entry-source";
 import { EntryUse } from "./entry-use";
+import { Fold } from "./fold";
 import { itemTypesInSentence } from "./labels";
 
 const CHIP =
@@ -119,18 +119,12 @@ export function ProfileEntryPage({
           />
         </section>
 
-        <details className="group/details min-w-0 border-t border-fd-border pt-3 lg:col-start-1">
-          <summary className="flex min-h-8 cursor-pointer list-none items-center gap-1.5 font-mono text-xs font-medium tracking-[0.06em] text-fd-muted-foreground uppercase [&::-webkit-details-marker]:hidden">
-            <ChevronDown
-              aria-hidden
-              className="size-3.5 shrink-0 -rotate-90 group-open/details:rotate-0 rtl:rotate-90 rtl:group-open/details:rotate-0"
-            />
-            {m.docs_directory_details_heading()}
-          </summary>
-          <div className="mt-3">
-            <EntryDescription markdown={entry.description} />
-          </div>
-        </details>
+        <Fold
+          heading={m.docs_directory_details_heading()}
+          className="lg:col-start-1"
+        >
+          <EntryDescription markdown={entry.description} />
+        </Fold>
 
         <EntrySource
           entry={entry}

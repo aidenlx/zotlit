@@ -3,7 +3,10 @@
 
 import { renderToMarkdown } from "fumadocs-core/server";
 
-import { EntryUse } from "@/components/template-directory/entry-use";
+import {
+  EntryChanges,
+  EntryUse,
+} from "@/components/template-directory/entry-use";
 import {
   colorKeyText,
   GROUPS,
@@ -94,9 +97,9 @@ function indexEdition({ entries }: DirectorySite): string {
 /**
  * One entry, in the order its page reads. A Profile reads as its page does:
  * facets, the steps, the color key, the example it makes, then the Details,
- * and the Source last. A recipe reads: facets, who it is for, the description,
- * the steps, the partials it needs, the samples it renders, and the Source
- * last.
+ * and the Source last. A part reads: facets, the result for each example
+ * item, the look it changes and the steps, the partials it needs, the Details,
+ * and the Source last.
  */
 async function entryEdition(
   entry: SiteEntry,
@@ -116,6 +119,9 @@ async function entryEdition(
   const description = entry.description.trim();
   const steps = [
     `## ${m.docs_directory_use_heading()}`,
+    ...(entry.kind === "profile"
+      ? []
+      : [(await renderToMarkdown(<EntryChanges entry={entry} />)).trim()]),
     await renderToMarkdown(<EntryUse entry={entry} />),
   ];
   const sections =
@@ -131,7 +137,7 @@ async function entryEdition(
         ]
       : [
           ...head,
-          description,
+          ...samplesSection(entry),
           ...steps,
           ...(partials.length > 0
             ? [
@@ -140,7 +146,8 @@ async function entryEdition(
                 partials.map(entryLink).join("\n"),
               ]
             : []),
-          ...samplesSection(entry),
+          `## ${m.docs_directory_details_heading()}`,
+          description,
           ...sourceSection(entry, entries),
         ];
   return `${sections.join("\n\n")}\n`;
@@ -161,7 +168,19 @@ function sourceSection(
     codeBlock(entry.file.text, FILE_LANGUAGE[entry.kind]),
   ];
   const { profileSource } = entry;
-  if (profileSource === null) return [heading, ...file];
+  if (profileSource === null) {
+    return [
+      heading,
+      ...file,
+      ...(entry.details.kind === "partial"
+        ? [
+            m.docs_directory_partial_file(),
+            `### ${m.docs_directory_source_call()}`,
+            codeBlock(entry.details.call, "liquid"),
+          ]
+        : []),
+    ];
+  }
   return [
     heading,
     m.docs_directory_source_profile_hint({

@@ -388,12 +388,6 @@ const TYPE_ITEMS: readonly DerivedItem[] = [
       language: "en",
     },
   },
-  {
-    ...EXAMPLE_ITEMS[0]!.full,
-    id: "journal-article-with-volume",
-    pdf: undefined,
-    annotations: undefined,
-  },
 ];
 
 const TYPE_SAMPLES: readonly DirectorySample[] = TYPE_ITEMS.map((item) => ({
@@ -401,13 +395,20 @@ const TYPE_SAMPLES: readonly DirectorySample[] = TYPE_ITEMS.map((item) => ({
   snapshot: derive(SAMPLE_ITEMS[2]!, item),
 }));
 
-/** The type examples of the item types an entry is made for, in the order samples show. */
+/**
+ * The type examples of the item types an entry is made for, in the order
+ * samples show. A journal article with a volume, an issue, and pages is the
+ * shared full-details variant of that type, not a copy of it.
+ */
 export function typeSamples(
   itemTypes: readonly string[],
 ): readonly DirectorySample[] {
-  return TYPE_SAMPLES.filter(({ snapshot }) =>
-    itemTypes.includes(snapshot.item.itemType),
-  );
+  return [
+    ...TYPE_SAMPLES,
+    ...EXAMPLE_VARIANTS.filter(
+      ({ id }) => id === "journal-article-full-details",
+    ),
+  ].filter(({ snapshot }) => itemTypes.includes(snapshot.item.itemType));
 }
 
 /**
