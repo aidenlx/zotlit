@@ -9,7 +9,11 @@ import type {
 import { kindLabels, levelLabels } from "@/lib/template-directory/kind-labels";
 import type { SampleLabels } from "@/lib/template-directory/samples-markdown";
 import type { Facet } from "@/lib/template-directory/search";
-import type { ColorKeyRow, FacetOption } from "@/lib/template-directory/site";
+import type {
+  ColorKeyRow,
+  FacetOption,
+  SampleProperty,
+} from "@/lib/template-directory/site";
 import type { AnnotationColor } from "@/lib/template-directory/verify";
 import { m } from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
@@ -287,6 +291,18 @@ export function colorKeyText({ color, meaning }: ColorKeyRow): string {
   });
 }
 
+/** What the key under an example's properties says of each mark. */
+export const MARK_LABEL = {
+  set: m.docs_directory_sample_mark_set,
+  system: m.docs_directory_sample_mark_system,
+} satisfies Record<SampleProperty["mark"], () => string>;
+
+/** What each property's own row says of its mark: in the Markdown edition's table, and to a screen reader. */
+export const MARK_ROW_LABEL = {
+  set: m.docs_directory_sample_mark_set,
+  system: m.docs_directory_sample_mark_system_row,
+} satisfies Record<SampleProperty["mark"], () => string>;
+
 /** The names and headings the Markdown edition and the samples files give the samples. */
 export const SAMPLE_LABELS: SampleLabels = {
   example: exampleLabel,
@@ -294,6 +310,11 @@ export const SAMPLE_LABELS: SampleLabels = {
   annotations: () => m.docs_directory_samples_annotations(),
   item: () => m.docs_directory_samples_item(),
   noteName: () => m.docs_directory_sample_note_name(),
+  property: () => m.docs_directory_sample_property(),
+  value: () => m.docs_directory_value(),
+  mark: () => m.docs_directory_sample_mark(),
+  markName: (mark) => MARK_ROW_LABEL[mark](),
+  empty: () => m.docs_directory_sample_empty(),
   cited: () => m.docs_directory_citation_cited(),
   main: () => m.docs_directory_citation_main(),
   alt: () => m.docs_directory_citation_alt(),
