@@ -2,6 +2,10 @@
 
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
+import {
+  ITEM_KEY_PROPERTY,
+  PROFILE_STAMP_PROPERTY,
+} from "@zotlit/templates/constants";
 import { parseLiteratureNoteTemplate } from "@zotlit/templates/facade";
 import { ITEM_TYPES as ZOTERO_ITEM_TYPES } from "@zotlit/zotero-types/item-types";
 
@@ -13,12 +17,12 @@ import { matchedItemTypes } from "./profile-samples.ts";
 import { readTemplateDirectory, templateDirectoryRoot } from "./read.ts";
 import { DIRECTORY_SAMPLES } from "./samples.ts";
 import type { Facet } from "./search.ts";
-import { entryId } from "./site.ts";
 import type {
   DirectorySite,
   EntryDetails,
   FacetOption,
   NoteSampleView,
+  PartialLink,
   ProfileSource,
   SampleProperty,
   SiteEntry,
@@ -68,12 +72,14 @@ function siteEntry(
     problems: entry.problems,
     keywords: entry.keywords,
     recommended: entry.recommended,
-    audience: entry.audience,
-    effort: entry.effort,
     description: entry.description,
     minAppVersion: entry.minAppVersion,
     matchedItemTypes: entry.kind === "profile" ? matchedItemTypes(entry) : null,
     calls: entry.calls,
+    calledPartials: entry.calls.flatMap((name) => {
+      const link = partialLink(name, entries);
+      return link === null ? [] : [link];
+    }),
     file: { name: downloadName(entry), text: entry.artifact.source },
     copyText: copyText(entry),
     details: details(entry),
@@ -85,7 +91,11 @@ function siteEntry(
         : null,
     notes: (samples?.notes ?? []).map((note) => noteView(note, entry)),
     annotations: samples?.annotations ?? [],
-    citations: samples?.citations ?? [],
+    citations: (samples?.citations ?? []).map(({ sample, main, alt }) => ({
+      ...sample,
+      main,
+      alt,
+    })),
   };
 }
 
@@ -102,7 +112,7 @@ function noteView(
   const set = properties === null ? [] : propertyRows(properties, "set");
   if (entry.kind !== "profile" || itemKey === undefined) {
     return {
-      id: sample.id,
+      ...sample,
       noteName,
       properties: properties === null ? null : set,
       frontmatter: properties,
@@ -110,12 +120,12 @@ function noteView(
     };
   }
   const system = yamlBlock({
-    "zotero-key": itemKey,
-    // The stamp the plugin writes: the Profile's label, then its ID in parentheses.
-    "zotlit-profile": `${entry.manifest.name.trim()} (${entry.manifest.id})`,
+    [ITEM_KEY_PROPERTY]: itemKey,
+    // The stamp the plugin writes, as `formatProfileStamp` in apps/obsidian does: the Profile's label, then its ID in parentheses.
+    [PROFILE_STAMP_PROPERTY]: `${entry.manifest.name.trim()} (${entry.manifest.id})`,
   });
   return {
-    id: sample.id,
+    ...sample,
     noteName,
     properties: [...set, ...propertyRows(system, "system")],
     frontmatter: `${properties ?? ""}${system}`,
@@ -201,14 +211,21 @@ function profileSource(
     partials: (entry.manifest.partials ?? [])
       .map(({ name }) => name)
       .toSorted((a, b) => namedAt(a) - namedAt(b))
-      .map((name) => {
-        const id = entryId("partials", name);
-        const exists = entries.some(
-          (candidate) => candidate.kind === "partial" && candidate.id === id,
-        );
-        return { name, id: exists ? id : null };
-      }),
+      .map((name) => ({ name, page: partialLink(name, entries) })),
   };
+}
+
+/** The page of the partial entry that goes by `name`; null when the Directory has none. */
+function partialLink(
+  name: string,
+  entries: readonly DirectoryEntry[],
+): PartialLink | null {
+  const partial = entries.find(
+    (candidate) => candidate.kind === "partial" && candidate.slug === name,
+  );
+  return partial === undefined
+    ? null
+    : { id: partial.id, title: partial.title, summary: partial.summary };
 }
 
 function details(entry: DirectoryEntry): EntryDetails {

@@ -12,9 +12,9 @@ import { m } from "@/paraglide/messages.js";
 import { ColorKeyList } from "./color-key";
 import { EntryActions, ImportFallback } from "./entry-actions";
 import { EntryDescription } from "./entry-description";
+import { EntryHeading } from "./entry-heading";
 import { firstShown, ProfileExample } from "./entry-samples";
 import { EntrySource } from "./entry-source";
-import type { SourcePartialEntry } from "./entry-source";
 import { EntryUse } from "./entry-use";
 import { Fold } from "./fold";
 import { itemTypesInSentence } from "./labels";
@@ -22,13 +22,7 @@ import { itemTypesInSentence } from "./labels";
 const CHIP =
   "border border-fd-border bg-fd-card px-2 py-0.5 font-sans text-xs font-medium";
 
-export function ProfileEntryPage({
-  entry,
-  partials,
-}: {
-  entry: SiteEntry;
-  partials: readonly SourcePartialEntry[];
-}) {
+export function ProfileEntryPage({ entry }: { entry: SiteEntry }) {
   const { matchedItemTypes } = entry;
   const [example, setExample] = useState(firstShown(entry.notes));
   // One order for the item types the page names: the match's, else the entry's.
@@ -63,12 +57,7 @@ export function ProfileEntryPage({
                 </span>
               )}
             </p>
-            <h1 className="mb-3 text-4xl leading-[1.16] font-medium text-balance lg:text-[44px]">
-              {entry.title}
-            </h1>
-            <p className="max-w-[60ch] text-lg text-pretty text-fd-muted-foreground italic">
-              {entry.summary}
-            </p>
+            <EntryHeading title={entry.title} summary={entry.summary} />
           </header>
           <ul className="flex flex-wrap gap-1.5">
             {chips.map((chip, index) => (
@@ -128,7 +117,6 @@ export function ProfileEntryPage({
 
         <EntrySource
           entry={entry}
-          partials={partials}
           example={example}
           className="-mt-7 lg:col-start-1"
         />

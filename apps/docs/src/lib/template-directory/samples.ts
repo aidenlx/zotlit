@@ -24,6 +24,26 @@ export interface DirectorySample {
   readonly variant?: VariantKind;
 }
 
+/**
+ * What the site needs to name a sample: its id, the item type of the item it
+ * is, and, for an example variant, which variant. A citation set of the
+ * Workbench has no item, so it has neither.
+ */
+export interface SampleName {
+  readonly id: string;
+  readonly itemType: string | null;
+  readonly variant: VariantKind | null;
+}
+
+/** The name data of a Directory Sample, an Edge Sample, or an example variant. */
+export function sampleName({
+  id,
+  snapshot,
+  variant,
+}: DirectorySample): SampleName {
+  return { id, itemType: snapshot.item.itemType, variant: variant ?? null };
+}
+
 type Creator =
   | { readonly given: string; readonly family: string; readonly role: string }
   | { readonly literal: string; readonly role: string };
@@ -142,6 +162,7 @@ const DERIVED_ITEMS: readonly DerivedItem[] = [
       { key: "TVKQUES3", title: "Questions for the decision-making seminar" },
     ],
     related: ["book"],
+    pdf: { key: "TVKPDF82", filename: "judgment-under-uncertainty.pdf" },
   },
   {
     id: "letter",
@@ -165,6 +186,7 @@ const DERIVED_ITEMS: readonly DerivedItem[] = [
       archiveLocation: "Aldous papers, box 3, folder 12",
       language: "en",
     },
+    pdf: { key: "ALDPDF87", filename: "aldous-letter-1887-03-14.pdf" },
   },
   {
     id: "manuscript",
@@ -183,6 +205,7 @@ const DERIVED_ITEMS: readonly DerivedItem[] = [
       archive: "Brackenridge County Record Office",
       archiveLocation: "Aldous papers, box 1, item 4",
     },
+    pdf: { key: "ALDPDF85", filename: "survey-notebook-1885.pdf" },
   },
   {
     id: "interview",
@@ -206,6 +229,7 @@ const DERIVED_ITEMS: readonly DerivedItem[] = [
       url: "https://archive.example.org/oral-histories/oh-2019-014",
       language: "en",
     },
+    pdf: { key: "OKAPDF19", filename: "okafor-interview-transcript.pdf" },
   },
   {
     id: "document",
@@ -222,14 +246,66 @@ const DERIVED_ITEMS: readonly DerivedItem[] = [
       archive: "Brackenridge Free Library archives",
       archiveLocation: "Board minutes, vol. 7",
     },
+    pdf: { key: "BFLPDF23", filename: "board-minutes-1923-03-12.pdf" },
   },
 ];
+
+/**
+ * The details of a Sample Item that the docs' examples fill in: the journal
+ * article's DOI, web page, volume, issue, and pages, so an example shows every
+ * link and every publication detail an entry offers for an article.
+ */
+const SAMPLE_ITEM_DETAILS: Readonly<Record<string, Record<string, string>>> = {
+  "journal-article": {
+    DOI: "10.1371/journal.pmed.0020124",
+    url: "https://journals.plos.org/plosmedicine/article?id=10.1371/journal.pmed.0020124",
+    volume: "2",
+    issue: "8",
+    pages: "696–701",
+  },
+};
+
+/**
+ * A Sample Item as a reader with the item's PDF in the vault sees it: the file
+ * link of each imported PDF resolves to the file, and the item carries the
+ * details the docs' examples fill in.
+ */
+function inVault(snapshot: ItemSnapshot): ItemSnapshot {
+  const { note, filename } = snapshot.roots;
+  const details =
+    snapshot.provenance.kind === "sample"
+      ? (SAMPLE_ITEM_DETAILS[snapshot.provenance.id] ?? {})
+      : {};
+  return {
+    ...snapshot,
+    roots: {
+      ...snapshot.roots,
+      note: {
+        ...note,
+        ...details,
+        attachments: (note.attachments as Record<string, unknown>[]).map(
+          (file) =>
+            file.linkMode === "imported_file"
+              ? {
+                  ...file,
+                  fileLink: linkValue(
+                    "fileLink",
+                    `[[${String(file.filename)}]]`,
+                  ),
+                }
+              : file,
+        ),
+      },
+      filename: { ...filename, ...details },
+    },
+  };
+}
 
 /** The four Sample Items, then the derived items, in the order samples show. */
 export const DIRECTORY_SAMPLES: readonly DirectorySample[] = [
   ...SAMPLE_ITEMS.map((snapshot) => ({
     id: snapshot.provenance.kind === "sample" ? snapshot.provenance.id : "",
-    snapshot,
+    snapshot: inVault(snapshot),
   })),
   // The book carries no annotations or attachments, so nothing of its own
   // leaks into an item of another type.
@@ -316,8 +392,7 @@ export const EDGE_SAMPLES: readonly DirectorySample[] = EDGE_ITEMS.map(
 /**
  * Items that fill the fields a type-specific entry reads and no Directory
  * Sample holds: a thesis with its university and thesis type, a book with its
- * place and edition, a newspaper article, and a journal article with its
- * volume, issue, and pages. An entry renders over each one
+ * place and edition, and a newspaper article. An entry renders over each one
  * whose item type it is made for. The thesis and the book are real
  * publications; the newspaper article is invented, from the town of the
  * archive items.
@@ -395,20 +470,13 @@ const TYPE_SAMPLES: readonly DirectorySample[] = TYPE_ITEMS.map((item) => ({
   snapshot: derive(SAMPLE_ITEMS[2]!, item),
 }));
 
-/**
- * The type examples of the item types an entry is made for, in the order
- * samples show. A journal article with a volume, an issue, and pages is the
- * shared full-details variant of that type, not a copy of it.
- */
+/** The type examples of the item types an entry is made for, in the order samples show. */
 export function typeSamples(
   itemTypes: readonly string[],
 ): readonly DirectorySample[] {
-  return [
-    ...TYPE_SAMPLES,
-    ...EXAMPLE_VARIANTS.filter(
-      ({ id }) => id === "journal-article-full-details",
-    ),
-  ].filter(({ snapshot }) => itemTypes.includes(snapshot.item.itemType));
+  return TYPE_SAMPLES.filter(({ snapshot }) =>
+    itemTypes.includes(snapshot.item.itemType),
+  );
 }
 
 /**

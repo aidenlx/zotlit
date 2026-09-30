@@ -24,20 +24,30 @@ _No output._
 
 ## Book chapter
 
-_No output._
+```yaml
+pdf: zotero://open/library/items/TVKPDF82
+```
 
 ## Letter
 
-_No output._
+```yaml
+pdf: zotero://open/library/items/ALDPDF87
+```
 
 ## Manuscript
 
-_No output._
+```yaml
+pdf: zotero://open/library/items/ALDPDF85
+```
 
 ## Interview
 
-_No output._
+```yaml
+pdf: zotero://open/library/items/OKAPDF19
+```
 
 ## Document
 
-_No output._
+```yaml
+pdf: zotero://open/library/items/BFLPDF23
+```

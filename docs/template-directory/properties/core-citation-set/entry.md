@@ -1,6 +1,6 @@
 ---
 title: Core citation set
-summary: "Seven citation properties from one rule: title, authors, year, venue, citekey, DOI link, and Zotero link, each only when the item has a value."
+summary: "Seven citation properties from one rule: title, authors, year, `venue`, `citekey`, DOI link, and Zotero link, each only when the item has a value."
 minAppVersion: "2.2.0-beta.0"
 tasks: [general-reading, literature-review, writing]
 features: [properties, source-links]
@@ -35,6 +35,7 @@ expected:
     year: 2005
     venue: PLoS Medicine
     citekey: ioannidisWhyMost2005
+    doi: https://doi.org/10.1371/journal.pmed.0020124
     zotero-link: zotero://select/library/items/IANNP5A2
   conference-paper:
     title: Designing reproducible research interfaces

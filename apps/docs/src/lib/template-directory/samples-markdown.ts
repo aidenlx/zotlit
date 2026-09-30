@@ -1,6 +1,7 @@
 // Writes one entry's rendered samples as the Markdown page a reviewer reads beside the entry.
 
 import type { DirectoryEntry } from "./load.ts";
+import type { SampleName } from "./samples.ts";
 import type { SampleProperty } from "./site.ts";
 import type {
   AnnotationSample,
@@ -11,8 +12,8 @@ import type {
 
 /** The names and headings the site's messages give the samples. */
 export interface SampleLabels {
-  /** A Directory Sample, an Edge Sample, or a Workbench example set, by id. */
-  readonly example: (id: string) => string;
+  /** A Directory Sample, an Edge Sample, or a Workbench example set. */
+  readonly example: (sample: SampleName) => string;
   readonly annotation: (
     annotation: Pick<AnnotationSample, "type" | "color">,
   ) => string;
@@ -110,7 +111,7 @@ function noteSection(
     labels,
   }: { hashes: string; leftOut: string; labels: SampleLabels },
 ): string {
-  const heading = `${hashes} ${labels.example(sample.id)}`;
+  const heading = `${hashes} ${labels.example(sample)}`;
   if (kind === "property")
     return [
       heading,
@@ -159,7 +160,7 @@ function noteNameTable(
   return table(
     [labels.item(), labels.noteName()],
     notes.map(({ sample, noteName }) => [
-      labels.example(sample.id),
+      labels.example(sample),
       code(noteName),
     ]),
   );
@@ -171,8 +172,8 @@ function citationTable(
 ): string {
   return table(
     [labels.cited(), labels.main(), labels.alt()],
-    citations.map(({ id, main, alt }) => [
-      labels.example(id),
+    citations.map(({ sample, main, alt }) => [
+      labels.example(sample),
       code(main),
       code(alt),
     ]),

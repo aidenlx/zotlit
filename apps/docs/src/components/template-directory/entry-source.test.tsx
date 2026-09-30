@@ -47,13 +47,22 @@ const profile: Props["entry"] = {
   profileSource: {
     note: NOTE,
     partials: [
-      { name: "links-row", id: "partials/links-row" },
-      { name: "local-only", id: null },
+      {
+        name: "links-row",
+        page: {
+          id: "partials/links-row",
+          title: "Links row",
+          summary: "One row of links.",
+        },
+      },
+      { name: "local-only", page: null },
     ],
   },
   notes: [
     {
       id: "book-full-details",
+      itemType: "book",
+      variant: "full-details",
       noteName: "Kahneman 2011",
       properties: null,
       frontmatter: "title: Thinking\n",
@@ -61,6 +70,8 @@ const profile: Props["entry"] = {
     },
     {
       id: "book-few-details",
+      itemType: "book",
+      variant: "few-details",
       noteName: null,
       properties: null,
       frontmatter: null,
@@ -68,14 +79,6 @@ const profile: Props["entry"] = {
     },
   ],
 };
-
-const partials: Props["partials"] = [
-  {
-    id: "partials/links-row",
-    title: "Links row",
-    summary: "One row of links.",
-  },
-];
 
 async function render(props: Props) {
   const host = document.body.appendChild(document.createElement("div"));
@@ -116,7 +119,6 @@ afterEach(() => {
 describe("a Profile's Source section", () => {
   const props: Props = {
     entry: profile,
-    partials,
     example: "book-full-details",
   };
 
@@ -201,9 +203,7 @@ describe("a Profile's Source section", () => {
     using toasts = recordToasts();
     using page = await render(props);
 
-    await act(async () =>
-      page.button(m.docs_directory_copy_profile())!.click(),
-    );
+    await act(async () => page.button(m.docs_directory_copy_file())!.click());
     expect(writeText).toHaveBeenCalledExactlyOnceWith(FILE);
     await act(async () => page.button(m.docs_directory_download())!.click());
     expect(opened).toEqual(["zotlit-profile.books.md"]);
@@ -230,7 +230,7 @@ describe("a part entry's Source section", () => {
       call: '{% render "title" with zt as zt -%}',
     },
   };
-  const props: Props = { entry: partial, partials: [], example: undefined };
+  const props: Props = { entry: partial, example: undefined };
 
   it("holds the call a look writes to use a partial, after the file", async () => {
     using page = await render(props);
@@ -244,7 +244,7 @@ describe("a part entry's Source section", () => {
     expect(page.host.textContent).toContain(m.docs_directory_source_call());
   });
 
-  it("offers the download of the file, which the header no longer holds", async () => {
+  it("offers the download of the file", async () => {
     const opened: string[] = [];
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
       function (this: HTMLAnchorElement) {

@@ -6,6 +6,9 @@
 
 ```yaml
 journal: PLoS Medicine
+volume: "2"
+issue: "8"
+pages: 696–701
 ```
 
 ## Conference paper
@@ -63,13 +66,4 @@ publisher: University of Chicago Press
 place: Chicago
 edition: "4"
 isbn: 978-0-226-23973-6
-```
-
-## A journal article with full details and highlights
-
-```yaml
-journal: Econometrica
-volume: "47"
-issue: "2"
-pages: 263–291
 ```
