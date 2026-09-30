@@ -237,7 +237,24 @@ export function EntryUse({
                     <UiLabel name={m.workbench_properties_format()} />
                   </td>
                   <td>
-                    <UiLabel name={m.workbench_properties_format_rule()} />
+                    <Message
+                      text={m.docs_directory_property_format({
+                        rule: "{rule}",
+                        reset: "{reset}",
+                      })}
+                      slots={{
+                        rule: (
+                          <UiLabel
+                            name={m.workbench_properties_format_rule()}
+                          />
+                        ),
+                        reset: (
+                          <UiLabel
+                            name={m.workbench_properties_format_reset()}
+                          />
+                        ),
+                      }}
+                    />
                   </td>
                 </tr>
                 <tr>
