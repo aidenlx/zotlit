@@ -91,16 +91,18 @@ function indexEdition({ entries }: DirectorySite): string {
 }
 
 /**
- * One entry, in the order its page reads: facets, who it is for, the
- * description, the steps, the partials it calls, then the file itself and the
- * samples it renders.
+ * One entry, in the order its page reads. A Profile reads as its page does:
+ * facets, the steps, the example it makes, then the Details, and the partials
+ * it calls and the file itself after them. A recipe reads: facets, who it is
+ * for, the description, the steps, the partials it calls, the file itself,
+ * and the samples it renders.
  */
 async function entryEdition(
   entry: SiteEntry,
   { entries }: DirectorySite,
 ): Promise<string> {
   const partials = calledPartials(entries, entry.calls);
-  const sections = [
+  const head = [
     `# ${entry.title} (${entryPath(entry.id)})`,
     `> ${entry.summary}`,
     [
@@ -109,10 +111,14 @@ async function entryEdition(
     ].join("\n"),
     `**${m.docs_directory_audience()}:** ${entry.audience}`,
     `**${m.docs_directory_effort()}:** ${entry.effort}`,
-    entry.description.trim(),
+  ];
+  const description = entry.description.trim();
+  const steps = [
     `## ${m.docs_directory_use_heading()}`,
     await renderToMarkdown(<EntryUse entry={entry} />),
-    ...(partials.length > 0
+  ];
+  const calls =
+    partials.length > 0
       ? [
           `## ${m.docs_directory_calls_heading()}`,
           entry.kind === "profile"
@@ -120,12 +126,31 @@ async function entryEdition(
             : m.docs_directory_calls_recipe(),
           partials.map(entryLink).join("\n"),
         ]
-      : []),
+      : [];
+  const file = [
     `## ${m.docs_directory_file_heading()}`,
     `\`${entry.file.name}\``,
     codeBlock(entry.file.text, FILE_LANGUAGE[entry.kind]),
-    ...samplesSection(entry),
   ];
+  const sections =
+    entry.kind === "profile"
+      ? [
+          ...head,
+          ...steps,
+          ...samplesSection(entry),
+          `## ${m.docs_directory_details_heading()}`,
+          description,
+          ...calls,
+          ...file,
+        ]
+      : [
+          ...head,
+          description,
+          ...steps,
+          ...calls,
+          ...file,
+          ...samplesSection(entry),
+        ];
   return `${sections.join("\n\n")}\n`;
 }
 

@@ -56,6 +56,11 @@ export interface SiteEntry extends IndexedEntry {
   /** The reader-facing description, Markdown. */
   readonly description: string;
   readonly minAppVersion: string;
+  /**
+   * A Profile only: the item types its match takes, which it is chosen for
+   * automatically; null when the reader chooses it for each note.
+   */
+  readonly matchedItemTypes: readonly string[] | null;
   /** Every partial the entry calls, directly or through another partial. */
   readonly calls: readonly string[];
   /** The artifact, byte for byte, as the reader downloads it. */

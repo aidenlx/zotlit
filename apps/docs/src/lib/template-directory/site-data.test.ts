@@ -225,6 +225,33 @@ describe("an entry page", () => {
     ).toEqual([{ key: "year", value: "1887" }]);
   });
 
+  it("lists every example item for a Profile with no match, and no item types it is chosen for automatically", () => {
+    expect(page(FIXTURE_PROFILE).matchedItemTypes).toBeNull();
+    expect(page(FIXTURE_PROFILE).notes.length).toBeGreaterThan(5);
+  });
+
+  it("lists only the items a Profile's match takes, and names the item types it is chosen for", () => {
+    const matched = directorySite(
+      verifyTemplateDirectory(
+        edit(
+          fixtureFiles(),
+          `${FIXTURE_PROFILE}/zotlit-profile.fixture-profile.md`,
+          [
+            "sampleItemType: journalArticle\n",
+            "sampleItemType: journalArticle\nmatch:\n  or:\n    - 'itemType == \"journalArticle\"'\n    - 'itemType == \"book\"'\n",
+          ],
+        ),
+      ),
+    ).entries.find(({ id }) => id === FIXTURE_PROFILE)!;
+    expect(matched.matchedItemTypes).toEqual(["book", "journalArticle"]);
+    expect(matched.notes.map(({ id }) => id)).toEqual([
+      "journal-article",
+      "book-full-details",
+      "book-few-details",
+      "book-no-annotations",
+    ]);
+  });
+
   it("shows the citations a citation text inserts under both variants, and the note names a note-name entry gives", () => {
     const recipes = directorySite(
       verifyTemplateDirectory(withCitationAndNoteName(fixtureFiles())),

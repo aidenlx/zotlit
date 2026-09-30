@@ -4,6 +4,13 @@ import { SAMPLE_ANNOTATIONS, SAMPLE_ITEMS } from "@zotlit/workbench/render";
 import type { AnnotationExample } from "@zotlit/workbench/render";
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 
+/**
+ * How much of an item an example variant carries: every detail with an
+ * abstract and an annotation set, few details, or the full details with no
+ * annotations yet.
+ */
+export type VariantKind = "full-details" | "few-details" | "no-annotations";
+
 export interface DirectorySample {
   /**
    * Stable name of the sample, which a property entry's `expected` keys use
@@ -11,6 +18,8 @@ export interface DirectorySample {
    */
   readonly id: string;
   readonly snapshot: ItemSnapshot;
+  /** Set on an example variant, which an entry made for its item type shows. */
+  readonly variant?: VariantKind;
 }
 
 type Creator =
@@ -44,6 +53,22 @@ interface DerivedItem {
   readonly notes?: readonly { readonly key: string; readonly title: string }[];
   /** The Sample Items in the item's Related panel, by sample id. */
   readonly related?: readonly string[];
+  /** The item's PDF, which its annotations belong to. */
+  readonly pdf?: { readonly key: string; readonly filename: string };
+  /** The item's annotations in page order, on its PDF. */
+  readonly annotations?: readonly AnnotationSpec[];
+}
+
+/** A highlight or an image the reader made in an item's PDF. */
+interface AnnotationSpec {
+  readonly type: "highlight" | "image";
+  readonly page: number;
+  readonly color: { readonly name: string; readonly hex: string };
+  /** The highlighted text; null for an image. */
+  readonly text: string | null;
+  readonly comment: string | null;
+  /** The file an image annotation is saved as. */
+  readonly image?: string;
 }
 
 /** Root fields every item carries, null unless the item records them. */
@@ -377,6 +402,119 @@ export function typeSamples(
 }
 
 /**
+ * A book with every detail, an abstract, and four annotations, then the
+ * variants of it. Each variant of an item type is defined here once and
+ * shared by every entry made for that item type.
+ */
+const FULL_BOOK: DerivedItem = {
+  id: "book-full-details",
+  key: "BOOTCR16",
+  itemType: "book",
+  title: "The craft of research",
+  date: { year: 2016 },
+  dateText: "2016",
+  primaryCreatorType: "author",
+  creators: [
+    { given: "Wayne C.", family: "Booth", role: "author" },
+    { given: "Gregory G.", family: "Colomb", role: "author" },
+    { given: "Joseph M.", family: "Williams", role: "author" },
+    { given: "Joseph", family: "Bizup", role: "author" },
+    { given: "William T.", family: "FitzGerald", role: "author" },
+  ],
+  citekey: "boothCraftResearch2016",
+  abstract:
+    "A guide to planning, drafting, and revising a research paper.\n\nThe book shows how to turn a topic into a question, a question into a problem, and a problem into an argument that readers can follow.",
+  fields: {
+    publisher: "University of Chicago Press",
+    place: "Chicago",
+    edition: "4",
+    ISBN: "978-0-226-23973-6",
+    language: "en",
+  },
+  pdf: { key: "BOOTPDF1", filename: "the-craft-of-research.pdf" },
+  annotations: [
+    {
+      type: "highlight",
+      page: 14,
+      color: { name: "yellow", hex: "#ffd400" },
+      text: "A good research question names what you do not yet understand.",
+      comment: "Use this wording in my introduction.",
+    },
+    {
+      type: "highlight",
+      page: 32,
+      color: { name: "blue", hex: "#2ea8e5" },
+      text: "Readers judge a claim by the reasons and evidence behind it.",
+      comment: null,
+    },
+    {
+      type: "highlight",
+      page: 47,
+      color: { name: "purple", hex: "#a28ae5" },
+      text: "A warrant explains why a reason supports a claim.",
+      comment: null,
+    },
+    {
+      type: "image",
+      page: 58,
+      color: { name: "green", hex: "#5fb236" },
+      text: null,
+      comment: null,
+      image: "the-craft-of-research-p58.png",
+    },
+  ],
+};
+
+const FEW_DETAILS_BOOK: DerivedItem = {
+  id: "book-few-details",
+  key: "KAHTFS11",
+  itemType: "book",
+  title: "Thinking, fast and slow",
+  date: { year: 2011 },
+  dateText: "2011",
+  primaryCreatorType: "author",
+  creators: [{ given: "Daniel", family: "Kahneman", role: "author" }],
+  citekey: "kahnemanThinkingFastSlow2011",
+  fields: { language: "en" },
+  pdf: { key: "KAHPDF11", filename: "thinking-fast-and-slow.pdf" },
+  annotations: [
+    {
+      type: "highlight",
+      page: 20,
+      color: { name: "yellow", hex: "#ffd400" },
+      text: "Intuition is thinking that feels effortless.",
+      comment: null,
+    },
+  ],
+};
+
+/** The full book with its PDF and annotations left off: a book nobody has read yet. */
+const UNANNOTATED_BOOK: DerivedItem = {
+  ...FULL_BOOK,
+  id: "book-no-annotations",
+  pdf: undefined,
+  annotations: undefined,
+};
+
+/**
+ * The example variants of each item type an entry can be made for: every
+ * detail with an abstract and annotations, few details, and no annotations.
+ * An entry made for an item type shows that type's variants in place of the
+ * type's older examples.
+ */
+export const EXAMPLE_VARIANTS: readonly DirectorySample[] = (
+  [
+    ["full-details", FULL_BOOK],
+    ["few-details", FEW_DETAILS_BOOK],
+    ["no-annotations", UNANNOTATED_BOOK],
+  ] as const
+).map(([variant, item]) => ({
+  id: item.id,
+  variant,
+  snapshot: derive(SAMPLE_ITEMS[2]!, item),
+}));
+
+/**
  * Every Zotero annotation color under its contract name but yellow, which the
  * first Sample Annotation shows, then a color outside every palette, which
  * Zotero names no color.
@@ -627,6 +765,10 @@ function derive(base: ItemSnapshot, item: DerivedItem): ItemSnapshot {
   ];
   const notes = (item.notes ?? []).map(childNote);
   const related = (item.related ?? []).map(relatedItem);
+  const pdf = item.pdf === undefined ? null : attachment(item.pdf);
+  const annotations = (item.annotations ?? []).map((spec, index) =>
+    annotation(item, spec, index),
+  );
   return {
     ...base,
     revision: `derived:${item.id}`,
@@ -643,8 +785,8 @@ function derive(base: ItemSnapshot, item: DerivedItem): ItemSnapshot {
         ...base.roots.note,
         ...fields,
         backlink: `zotero://select/library/items/${item.key}`,
-        annotations: [],
-        attachments: [],
+        annotations: annotations.map(({ root }) => root),
+        attachments: pdf === null ? [] : [pdf],
         collections: [],
         notes,
         relatedItems: related.map(({ root }) => root),
@@ -662,12 +804,19 @@ function derive(base: ItemSnapshot, item: DerivedItem): ItemSnapshot {
             value: title,
           })),
           ...related.flatMap(({ stringCoercions }) => stringCoercions),
+          ...(item.pdf === undefined
+            ? []
+            : [{ path: ["attachments", 0], value: item.pdf.filename }]),
+          ...annotations.flatMap(({ stringCoercions }) => stringCoercions),
         ],
         temporalValues: [
           ...temporal,
           ...related.flatMap(({ temporalValues }) => temporalValues),
+          ...annotations.flatMap(({ temporalValues }) => temporalValues),
         ],
-        graphReferences: [],
+        graphReferences: annotations.flatMap(
+          ({ graphReferences }) => graphReferences,
+        ),
       },
       filename: {
         stringCoercions: coercions,
@@ -677,6 +826,77 @@ function derive(base: ItemSnapshot, item: DerivedItem): ItemSnapshot {
       annotations: [],
     },
     unavailable: [],
+  };
+}
+
+/** A PDF as the note root lists an item's attachments. */
+function attachment({ key, filename }: { key: string; filename: string }) {
+  return {
+    key,
+    indexedKey: key,
+    filename,
+    contentType: "application/pdf",
+    linkMode: "imported_file",
+    backlink: `zotero://open/library/items/${key}`,
+    filePath: null,
+    fileLink: linkValue("fileLink", `[[${filename}]]`),
+  };
+}
+
+function linkValue(helper: string, value: string) {
+  return {
+    $helper: helper,
+    signature: "(alias?: string, subpath?: string) => string | null",
+    value,
+  };
+}
+
+/**
+ * One annotation as the note root lists it, with the descriptors that restore
+ * it, at `index` in the item's annotation list. It is built on the yellow
+ * Sample Annotation's shape, so it carries every field the contract requires.
+ */
+function annotation(item: DerivedItem, spec: AnnotationSpec, index: number) {
+  const {
+    citation: _citation,
+    parentItem: _parentItem,
+    ...base
+  } = SAMPLE_ANNOTATIONS[0]!.root;
+  const pdf = item.pdf!;
+  const key = `${item.key.slice(0, 4)}AN${String(index + 1).padStart(2, "0")}`;
+  const at = (...path: (string | number)[]) => ["annotations", index, ...path];
+  return {
+    root: {
+      ...base,
+      key,
+      indexedKey: key,
+      type: spec.type,
+      text: spec.text,
+      comment: spec.comment,
+      commentHtml: spec.comment,
+      colorHex: spec.color.hex,
+      colorName: spec.color.name,
+      pageLabel: String(spec.page),
+      page: spec.page,
+      tags: [],
+      imgLink:
+        spec.image === undefined
+          ? null
+          : linkValue("imgLink", `[[${spec.image}]]`),
+      fileLink: linkValue("fileLink", `[[${pdf.filename}#page=${spec.page}]]`),
+      backlink: `zotero://open/library/items/${pdf.key}?annotation=${key}&page=${spec.page}`,
+      parentItem: { $ref: "zt" },
+      parentAttachment: attachment(pdf),
+    },
+    stringCoercions: [
+      { path: at(), value: spec.text ?? spec.comment ?? spec.type },
+      { path: at("parentAttachment"), value: pdf.filename },
+    ],
+    temporalValues: [
+      { path: at("dateAdded"), type: "Temporal.Instant" as const },
+      { path: at("dateModified"), type: "Temporal.Instant" as const },
+    ],
+    graphReferences: [{ path: at("parentItem"), target: [] }],
   };
 }
 

@@ -42,6 +42,7 @@ import {
 } from "./load.ts";
 import type { DirectoryEntry, DirectoryFiles } from "./load.ts";
 import type { DirectoryProblem, DirectoryProblemCode } from "./problem.ts";
+import { matchedSamples } from "./profile-samples.ts";
 import {
   COLOR_HIGHLIGHTS,
   DIRECTORY_SAMPLES,
@@ -436,7 +437,7 @@ function noteSamples({
 
 function renderProfileEntry(entry: ProfileEntry, report: Report): EntrySamples {
   const { artifact, manifest, features } = entry;
-  const notes = noteSamples(entry).map((sample) => {
+  const notes = matchedSamples(entry, noteSamples(entry)).map((sample) => {
     const result = renderProfile(artifact.source, sample.snapshot);
     reportDiagnostics(result, sampleSubject(sample), report);
     checkProperties(
