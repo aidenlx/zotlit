@@ -48,10 +48,11 @@ export interface ExampleItems {
 
 /**
  * The example items of every item type an entry can be made for, in the order
- * the site lists item types. The journal article, the conference paper, the
- * book, the book chapter, and the thesis are real publications; the archive
- * items are fictional. Every string is plain data the reader would see in
- * Zotero.
+ * the site lists item types. The full journal article, conference paper, book,
+ * book chapter, and thesis, and the few-details article, book, and book
+ * chapter, are real publications with their real details; their highlights,
+ * comments, and abstracts are invented, and the archive items are fictional.
+ * Every string is plain data the reader would see in Zotero.
  */
 const ITEMS: readonly ExampleItems[] = [
   {
@@ -77,7 +78,7 @@ const ITEMS: readonly ExampleItems[] = [
         containerTitle: "Econometrica",
         volume: "47",
         issue: "2",
-        pages: "263-291",
+        pages: "263–291",
         DOI: "10.2307/1914185",
         ISSN: "0012-9682",
         language: "en",
@@ -156,7 +157,7 @@ const ITEMS: readonly ExampleItems[] = [
         containerTitle: "Advances in Neural Information Processing Systems 30",
         publisher: "Curran Associates",
         place: "Red Hook, NY",
-        pages: "5998-6008",
+        pages: "5998–6008",
         language: "en",
       },
       pdf: { key: "VASPDF17", filename: "attention-is-all-you-need.pdf" },

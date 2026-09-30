@@ -71,5 +71,5 @@ isbn: 978-0-226-23973-6
 journal: Econometrica
 volume: "47"
 issue: "2"
-pages: 263-291
+pages: 263–291
 ```
