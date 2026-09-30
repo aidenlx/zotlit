@@ -46,7 +46,7 @@ One line of publication details, chosen by the kind of source and separated by m
 | Book chapter (Zotero's "Book Section") | the book and its editors, then the chapter's pages | In *Judgment under Uncertainty: Heuristics and Biases*, edited by Daniel Kahneman, Paul Slovic, and Amos Tversky · pp. 3–20 |
 | Thesis | the thesis type and the university | PhD thesis · University of Oxford |
 
-A detail that Zotero has no value for is left out, together with its label, so the line never shows "Vol. null", an empty "No.", or a stray dot. An article with no issue number shows its journal, volume, and pages only. Pages that name one page, such as `e124`, show as `p. e124`; a range such as `3–20` shows as `pp. 3–20`. Each value is the text from Zotero, so an edition you entered as `2nd` shows as `Edition: 2nd`. Other kinds of source, such as conference papers and letters, get no line.
+A detail that Zotero has no value for is left out, together with its label, so the line never shows "Vol. null", an empty "No.", or a stray dot. An article with no issue number shows its journal, volume, and pages only. Pages that name one page, such as `e124`, show as `p. e124`; a range such as `3-20` shows as `pp. 3-20`. Each value is the text from Zotero, so an edition you entered as `2nd` shows as `Edition: 2nd`. Other kinds of source, such as conference papers and letters, get no line.
 
 The partial reads the note's data. Call it from the note body of a profile, inside the managed block, for example right under the title:
 

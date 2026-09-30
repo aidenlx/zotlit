@@ -44,7 +44,7 @@ Everything from Zotero sits in the part of the note that ZotLit refreshes when y
 
 The note gets these properties, ready to sort and filter in an Obsidian Bases view:
 
-| Property | Value | When the note updates |
+| Property | Value | When the note is updated |
 | --- | --- | --- |
 | `title` | The reading's title | Replace the existing value |
 | `authors` | The reading's authors | Replace the existing value |
@@ -60,6 +60,4 @@ The note gets these properties, ready to sort and filter in an Obsidian Bases vi
 
 Tags you add in Obsidian stay when the note updates. A tag you remove in Zotero stays in the note until you delete it from the note too. A property from Zotero is left out when the item has no value for it. Spaces in a Zotero tag become underscores. Other characters stay as they are, so a Zotero tag with a comma or a `#` in it needs a manual fix in Obsidian.
 
-ZotLit never chooses this profile by itself: the import sheet shows **Not auto-selected**, and your other profiles keep the items they take now. When you create a note for a reading, ZotLit asks which profile to use; choose **Course reading**. If another profile of yours already takes the item, ZotLit creates the note with that profile; then run **Switch literature note profile** from the note and choose **Course reading**.
-
-To use it, select **Import into Obsidian** on this page. If the import sheet does not open, select **Copy profile** or **Download file**, then run **Import profile…** in Obsidian. The import sheet shows the profile before anything is written. The profile brings its three building blocks (partials) with it: `links-row`, `folded-abstract`, and `plain-annotation-quote`.
+ZotLit never chooses this profile by itself: the import sheet shows **Not auto-selected**, and your other profiles keep the items they take now. When you create a note for a reading, ZotLit asks which profile to use; choose **Course reading**. If another profile of yours already takes the item, ZotLit creates the note with that profile; then run **Switch literature note profile** from the note and choose **Course reading**. Switching keeps the rest of the note as it is, so the note does not get the **Summary**, **Key points**, and **Discussion questions** sections: ZotLit writes those only when it creates a note.

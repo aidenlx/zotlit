@@ -2,7 +2,7 @@
 
 # Rendered samples: Citation key
 
-| Item | Note name |
+| Example item | Note name |
 | --- | --- |
 | Journal article | `ioannidisWhyMost2005` |
 | Conference paper | `riveraResearchInterfaces2026` |

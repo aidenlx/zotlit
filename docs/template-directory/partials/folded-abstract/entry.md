@@ -1,7 +1,7 @@
 ---
 title: Folded abstract
 summary: The item's abstract in a folded callout, at hand without taking over the note.
-minAppVersion: "2.2.0-beta.0"
+minAppVersion: "2.2.0-beta.2"
 context: note
 tasks: [general-reading]
 features: [abstract]
@@ -24,7 +24,7 @@ The abstract appears in an `abstract` callout that starts folded; select its tit
 The partial reads the note's data. Call it from the note body of a profile, inside the managed block:
 
 ```liquid
-{% render "folded-abstract" with zt as zt %}
+{% render "folded-abstract" with zt as zt -%}
 ```
 
 To show the abstract open, change `[!abstract]-` to `[!abstract]+` in the partial.

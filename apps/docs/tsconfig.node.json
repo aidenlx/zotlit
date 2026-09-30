@@ -6,7 +6,9 @@
     "isolatedDeclarations": false,
     // The build renders the OG cards from JSX through takumi.
     "jsx": "react-jsx",
-    "types": ["node"]
+    // `vite.config.ts` runs the Template Directory module through Vite's
+    // module runner, which resolves its `?raw` imports.
+    "types": ["node", "vite/client"]
   },
   "include": [
     "./source.config.ts",

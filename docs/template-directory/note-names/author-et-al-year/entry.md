@@ -19,7 +19,7 @@ keywords:
   - note title
   - output path
 audience: Readers who think of their sources by author and year, as in an author–year citation.
-effort: Paste one line into the "Note name template" field of your profile. Notes you create from then on get the new name.
+effort: Paste one line into the "Note name" field of your profile. Notes you create from then on get the new name.
 ---
 
 Each literature note is named by its authors and its year:
@@ -33,4 +33,4 @@ The names are the item's main creators: its authors. An item with no authors use
 
 Two items by the same authors in the same year have the same name. The second note gets a short random ending, such as `Kahneman 2011_a1B2c3`, so ZotLit can still create it. To tell such notes apart at a glance, use the "Author Year – Title" note name instead.
 
-To use it, open a literature note that uses your profile and run **Customize this note's template**. In the Template Workbench View, select the **Name and folder** tab and replace the text in **Note name template** with the line of this entry. **Preview** shows the name for the selected item, as it is when no other note has that name. Notes you already have keep their names.
+In the **Name and folder** tab, **Preview** shows the name for the selected item, as it is when no other note has that name. Notes you already have keep their names.

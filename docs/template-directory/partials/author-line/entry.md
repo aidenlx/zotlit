@@ -31,7 +31,7 @@ An organization, such as a library or an agency, shows by its full name. The lin
 The partial reads the note's data. Call it from the note body of a profile, inside the managed block, for example under the title:
 
 ```liquid
-{% render "author-line" with zt as zt %}
+{% render "author-line" with zt as zt -%}
 ```
 
 To write "and" instead of "&", or "等" instead of "et al.", replace that text in the last line of the partial.

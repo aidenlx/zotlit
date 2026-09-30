@@ -33,6 +33,7 @@ import type {
   TemplateRenderResult,
 } from "@zotlit/workbench/render";
 
+import { partialCall } from "./calls.ts";
 import { ITEM_TYPES } from "./entry.ts";
 import {
   CONTRACT_VERSION,
@@ -47,12 +48,13 @@ import {
   EDGE_SAMPLES,
   EVERY_COLOR_SAMPLE,
   TODO_HIGHLIGHT,
+  typeSamples,
 } from "./samples.ts";
 import type { DirectorySample } from "./samples.ts";
 
 /** One Directory Sample's note, as the entry renders it. */
 export interface NoteSample {
-  readonly sample: Pick<DirectorySample, "id" | "label">;
+  readonly sample: Pick<DirectorySample, "id">;
   /** The note name; null for an entry that names no note. */
   readonly noteName: string | null;
   /** The properties as the note's YAML block; null when it writes none. */
@@ -64,13 +66,22 @@ export interface NoteSample {
 /** One Sample Annotation, as the entry's Annotation Section renders it. */
 export interface AnnotationSample {
   readonly id: string;
-  readonly label: string;
+  /** The annotation's type and color, which name it. */
+  readonly type: string;
+  readonly color: AnnotationColor;
   readonly output: string | null;
 }
 
+/** A Zotero color by its contract name, a custom color by its hex, or none. */
+export type AnnotationColor =
+  | { readonly name: string }
+  | { readonly hex: string }
+  | null;
+
 /** One Citation, as a citation text entry renders it under each Citation Variant. */
 export interface CitationSample {
-  readonly label: string;
+  /** The Directory Sample or the Workbench example set it cites. */
+  readonly id: string;
   readonly main: string | null;
   readonly alt: string | null;
 }
@@ -408,27 +419,29 @@ function sampleAnnotations(
 }
 
 /**
- * The Directory Samples, and for an entry that groups annotations by color, a
- * note with an annotation in every color.
+ * The Directory Samples; for an entry made for some item types, the type
+ * examples of those types; and for an entry that groups annotations by color,
+ * a note with an annotation in every color.
  */
-function noteSamples(
-  features: DirectoryEntry["features"],
-): readonly DirectorySample[] {
-  return features.includes("grouped-by-color")
-    ? [...DIRECTORY_SAMPLES, EVERY_COLOR_SAMPLE]
-    : DIRECTORY_SAMPLES;
+function noteSamples({
+  features,
+  itemTypes,
+}: Pick<DirectoryEntry, "features" | "itemTypes">): readonly DirectorySample[] {
+  return [
+    ...DIRECTORY_SAMPLES,
+    ...typeSamples(itemTypes),
+    ...(features.includes("grouped-by-color") ? [EVERY_COLOR_SAMPLE] : []),
+  ];
 }
 
-function renderProfileEntry(
-  { artifact, manifest, features }: ProfileEntry,
-  report: Report,
-): EntrySamples {
-  const notes = noteSamples(features).map((sample) => {
+function renderProfileEntry(entry: ProfileEntry, report: Report): EntrySamples {
+  const { artifact, manifest, features } = entry;
+  const notes = noteSamples(entry).map((sample) => {
     const result = renderProfile(artifact.source, sample.snapshot);
-    reportDiagnostics(result, sample.label, report);
+    reportDiagnostics(result, sampleSubject(sample), report);
     checkProperties(
       { fold: result.fold, frontmatter: manifest.frontmatter ?? [] },
-      sample.label,
+      sampleSubject(sample),
       report,
     );
     return noteSample(sample, result, result.creationBody);
@@ -437,12 +450,8 @@ function renderProfileEntry(
     const result = renderProfile(artifact.source, ANNOTATED_ITEM, {
       annotation,
     });
-    reportDiagnostics(result, annotationLabel(annotation.root), report);
-    return {
-      id: annotation.id,
-      label: annotationLabel(annotation.root),
-      output: result.annotation,
-    };
+    reportDiagnostics(result, annotationSubject(annotation), report);
+    return annotationSample(annotation, result.annotation);
   });
   return { notes, annotations };
 }
@@ -459,11 +468,12 @@ const NAMED_ANNOTATION =
   "{% if zt.text %}: {{ zt.text }}{% elsif zt.comment %}: {{ zt.comment }}{% endif %}\n";
 
 function renderPartialEntry(
-  { slug, context, call: statedCall, features }: PartialEntry,
+  entry: PartialEntry,
   resources: RenderResources,
   report: Report,
 ): EntrySamples {
-  const call = `${statedCall ?? `{% render "${slug}" with zt as zt -%}`}\n`;
+  const { context, features } = entry;
+  const call = `${partialCall(entry)}\n`;
   if (context === "annotation") {
     const source = harnessProfile({ annotation: call });
     return {
@@ -473,12 +483,8 @@ function renderPartialEntry(
           annotation,
           resources: withBuiltInCitation(resources),
         });
-        reportDiagnostics(result, annotationLabel(annotation.root), report);
-        return {
-          id: annotation.id,
-          label: annotationLabel(annotation.root),
-          output: result.annotation,
-        };
+        reportDiagnostics(result, annotationSubject(annotation), report);
+        return annotationSample(annotation, result.annotation);
       }),
     };
   }
@@ -487,11 +493,11 @@ function renderPartialEntry(
     annotation: NAMED_ANNOTATION,
   });
   return {
-    notes: noteSamples(features).map((sample) => {
+    notes: noteSamples(entry).map((sample) => {
       const result = renderProfile(source, sample.snapshot, { resources });
-      reportDiagnostics(result, sample.label, report);
+      reportDiagnostics(result, sampleSubject(sample), report);
       return {
-        sample: { id: sample.id, label: sample.label },
+        sample: { id: sample.id },
         noteName: null,
         properties: null,
         body: withoutManagedMarkers(result.managedRegion),
@@ -520,7 +526,7 @@ function withBuiltInCitation(resources: RenderResources): RenderResources {
 }
 
 function renderPropertyEntry(
-  { property, expected }: PropertyEntry,
+  { property, expected, itemTypes }: PropertyEntry,
   report: Report,
 ): EntrySamples {
   if (!("value" in property)) {
@@ -530,21 +536,22 @@ function renderPropertyEntry(
     );
   }
   const source = harnessProfile({ frontmatter: [property] });
+  const samples = [...DIRECTORY_SAMPLES, ...typeSamples(itemTypes)];
   for (const id of Object.keys(expected)) {
-    if (!DIRECTORY_SAMPLES.some((sample) => sample.id === id)) {
+    if (!samples.some((sample) => sample.id === id)) {
       report(
         "property-expectation",
-        `expected names "${id}", which is not a Directory Sample.`,
+        `expected names "${id}", which is not a Directory Sample or an example of the entry's item types.`,
       );
     }
   }
   return {
-    notes: DIRECTORY_SAMPLES.map((sample) => {
+    notes: samples.map((sample) => {
       const result = renderProfile(source, sample.snapshot);
-      reportDiagnostics(result, sample.label, report);
+      reportDiagnostics(result, sampleSubject(sample), report);
       checkProperties(
         { fold: result.fold, frontmatter: [property] },
-        sample.label,
+        sampleSubject(sample),
         report,
       );
       const produced = Object.fromEntries(
@@ -556,11 +563,11 @@ function renderPropertyEntry(
       if (wanted !== undefined && !isDeepStrictEqual(produced, wanted)) {
         report(
           "property-expectation",
-          `For the ${sample.label} it writes ${JSON.stringify(produced)}; the entry states ${JSON.stringify(wanted)}.`,
+          `For the ${sampleSubject(sample)} it writes ${JSON.stringify(produced)}; the entry states ${JSON.stringify(wanted)}.`,
         );
       }
       return {
-        sample: { id: sample.id, label: sample.label },
+        sample: { id: sample.id },
         noteName: null,
         properties: propertiesBlock(result.fold),
         body: null,
@@ -596,12 +603,12 @@ function facadeWithPartials(resources: RenderResources): TemplateFacade {
  * alone: the Workbench example sets, which carry two items, a page, a
  * suppressed author, a prefix and a suffix, and an annotation's page.
  */
-const CITATION_SETS: readonly (readonly [CitationExampleId, string])[] = [
-  ["two-items", "Journal article and book"],
-  ["item-with-page", "Journal article, pages 12-14"],
-  ["suppressed-author", "Journal article, author left out"],
-  ["prefix-and-suffix", "Journal article, with text before and after"],
-  ["annotation-citation", "Journal article, page 1, as an annotation cites it"],
+const CITATION_SETS: readonly CitationExampleId[] = [
+  "two-items",
+  "item-with-page",
+  "suppressed-author",
+  "prefix-and-suffix",
+  "annotation-citation",
 ];
 
 type CitationData = ReturnType<typeof citationExampleData>;
@@ -625,35 +632,35 @@ function renderCitationEntry(
     );
     return { notes: [], annotations: [], citations: [] };
   }
-  const render = (label: string, data: CitationData): string | null => {
+  const render = (id: string, data: CitationData): string | null => {
     try {
       const text = inlineCitation(facade.render(CITATION_TEMPLATE, data));
       for (const fault of valueFaults(text)) {
         report(
           "citation-output",
-          `The ${label} citation under the ${data.variant} variant ${fault}.`,
+          `The ${id} citation under the ${data.variant} variant ${fault}.`,
         );
       }
       return text;
     } catch (error) {
       report(
         "render-diagnostic",
-        `Rendering the ${label} citation under the ${data.variant} variant reports ${errorText(error)}`,
+        `Rendering the ${id} citation under the ${data.variant} variant reports ${errorText(error)}`,
       );
       return null;
     }
   };
   const cited: readonly {
-    label: string;
+    id: string;
     data: (variant: CitationData["variant"]) => CitationData;
   }[] = [
-    ...[...DIRECTORY_SAMPLES, ...EDGE_SAMPLES].map(({ label, snapshot }) => ({
-      label,
+    ...[...DIRECTORY_SAMPLES, ...EDGE_SAMPLES].map(({ id, snapshot }) => ({
+      id,
       data: (variant: CitationData["variant"]) =>
         sampleItemCitation(snapshot, variant),
     })),
-    ...CITATION_SETS.map(([id, label]) => ({
-      label,
+    ...CITATION_SETS.map((id) => ({
+      id,
       data: (variant: CitationData["variant"]) =>
         citationExampleData(id, variant),
     })),
@@ -661,10 +668,10 @@ function renderCitationEntry(
   return {
     notes: [],
     annotations: [],
-    citations: cited.map(({ label, data }) => ({
-      label,
-      main: render(label, data("main")),
-      alt: render(label, data("alt")),
+    citations: cited.map(({ id, data }) => ({
+      id,
+      main: render(id, data("main")),
+      alt: render(id, data("alt")),
     })),
   };
 }
@@ -684,44 +691,43 @@ function renderNoteNameEntry(
   );
   const facade = facadeWithPartials(resources);
   return {
-    notes: [...DIRECTORY_SAMPLES, ...EDGE_SAMPLES].map(
-      ({ id, label, snapshot }) => {
-        let noteName: string | null = null;
-        try {
-          const rendered = facade.renderLiteratureNoteTemplateFilename(
-            document,
-            restoreTemplateData(
-              snapshot.roots.filename,
-              snapshot.descriptors.filename,
-            ),
-          );
-          if (!hasSuffixMarker(rendered)) {
-            report(
-              "note-name-suffix",
-              `The note name of the ${label} holds no {% suffix %}, so a second note with that name would fail to be created. End the note name with {% suffix %}.`,
-            );
-          }
-          noteName = replaceSuffixMarkers(rendered, () => "");
-          for (const fault of noteNameFaults(noteName)) {
-            report(
-              "note-name-output",
-              `For the ${label}, the note name ${fault}.`,
-            );
-          }
-        } catch (error) {
+    notes: [...DIRECTORY_SAMPLES, ...EDGE_SAMPLES].map(({ id, snapshot }) => {
+      const subject = sampleSubject({ id });
+      let noteName: string | null = null;
+      try {
+        const rendered = facade.renderLiteratureNoteTemplateFilename(
+          document,
+          restoreTemplateData(
+            snapshot.roots.filename,
+            snapshot.descriptors.filename,
+          ),
+        );
+        if (!hasSuffixMarker(rendered)) {
           report(
-            "render-diagnostic",
-            `Rendering the note name of the ${label} reports ${errorText(error)}`,
+            "note-name-suffix",
+            `The note name of the ${subject} holds no {% suffix %}, so a second note with that name would fail to be created. End the note name with {% suffix %}.`,
           );
         }
-        return {
-          sample: { id, label },
-          noteName,
-          properties: null,
-          body: null,
-        };
-      },
-    ),
+        noteName = replaceSuffixMarkers(rendered, () => "");
+        for (const fault of noteNameFaults(noteName)) {
+          report(
+            "note-name-output",
+            `For the ${subject}, the note name ${fault}.`,
+          );
+        }
+      } catch (error) {
+        report(
+          "render-diagnostic",
+          `Rendering the note name of the ${subject} reports ${errorText(error)}`,
+        );
+      }
+      return {
+        sample: { id },
+        noteName,
+        properties: null,
+        body: null,
+      };
+    }),
     annotations: [],
   };
 }
@@ -866,7 +872,7 @@ function noteSample(
   const properties = propertiesBlock(result.fold);
   if (properties !== null) parseYaml(properties);
   return {
-    sample: { id: sample.id, label: sample.label },
+    sample: { id: sample.id },
     noteName: result.filename,
     properties,
     body,
@@ -891,12 +897,29 @@ function withoutManagedMarkers(region: string | null): string | null {
   return region.split("\n").slice(1, -1).join("\n");
 }
 
-function annotationLabel(root: Record<string, unknown>): string {
-  const color =
-    typeof root.colorName === "string"
-      ? `, ${root.colorName}`
-      : typeof root.colorHex === "string"
-        ? `, custom color ${root.colorHex}`
-        : "";
-  return `${String(root.type)} annotation${color}`;
+/** How a problem names a Directory Sample. */
+function sampleSubject({ id }: Pick<DirectorySample, "id">): string {
+  return `${id} sample`;
+}
+
+/** How a problem names a Sample Annotation. */
+function annotationSubject({ id }: AnnotationExample): string {
+  return `${id} annotation`;
+}
+
+function annotationSample(
+  { id, root }: AnnotationExample,
+  output: string | null,
+): AnnotationSample {
+  return {
+    id,
+    type: String(root.type),
+    color:
+      typeof root.colorName === "string"
+        ? { name: root.colorName }
+        : typeof root.colorHex === "string"
+          ? { hex: root.colorHex }
+          : null,
+    output,
+  };
 }

@@ -2,7 +2,7 @@
 
 # Rendered samples: Quote with citation
 
-## Annotation Section
+## Annotations
 
 ### Highlight annotation, yellow
 

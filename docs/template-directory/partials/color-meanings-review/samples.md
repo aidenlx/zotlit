@@ -2,7 +2,7 @@
 
 # Rendered samples: Color meanings for a literature review
 
-## Annotation Section
+## Annotations
 
 ### Highlight annotation, yellow
 

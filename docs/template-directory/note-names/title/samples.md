@@ -2,7 +2,7 @@
 
 # Rendered samples: Title
 
-| Item | Note name |
+| Example item | Note name |
 | --- | --- |
 | Journal article | `Why Most Published Research Findings Are False` |
 | Conference paper | `Designing reproducible research interfaces` |

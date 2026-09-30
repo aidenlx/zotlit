@@ -290,7 +290,39 @@ status: unread
 ## My notes
 ```
 
-## Annotation Section
+## Thesis with university and thesis type
+
+Note name: `nashNoncooperativeGames1950`
+
+```markdown
+---
+title: Non-cooperative games
+citekey: nashNoncooperativeGames1950
+year: 1950
+venue: Princeton University
+status: unread
+university: Princeton University
+thesis-type: PhD thesis
+---
+%%zt-managed%%
+# Non-cooperative games
+
+PhD thesis · Princeton University
+
+[Zotero](zotero://select/library/items/NASHNC50)
+
+%%/zt-managed%%
+
+## Summary
+
+
+## Key points
+
+
+## My notes
+```
+
+## Annotations
 
 ### Highlight annotation, yellow
 

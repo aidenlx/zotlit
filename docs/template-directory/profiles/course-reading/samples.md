@@ -312,7 +312,7 @@ status: unread
 ## Discussion questions
 ```
 
-## Annotation Section
+## Annotations
 
 ### Highlight annotation, yellow
 

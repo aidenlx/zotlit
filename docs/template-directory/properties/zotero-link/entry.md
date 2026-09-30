@@ -28,21 +28,13 @@ The item's Zotero link, as a `zotero-link` property. Obsidian shows the link in 
 
 | Item | `zotero-link` |
 | --- | --- |
-| Journal article | zotero://select/library/items/IANNP5A2 |
-| Book | zotero://select/library/items/NW2CPDTC |
-| Book chapter | zotero://select/library/items/TVKHEUR1 |
-| Thesis | zotero://select/library/items/I49R3FTL |
+| Journal article | `zotero://select/library/items/IANNP5A2` |
+| Book | `zotero://select/library/items/NW2CPDTC` |
+| Book chapter | `zotero://select/library/items/TVKHEUR1` |
+| Thesis | `zotero://select/library/items/I49R3FTL` |
 
 For an item in a group library, the link names the group, so it selects the item there.
 
-When the note updates: **Replace the existing value**. The link follows the item on every update.
-
-To add it to a profile:
-
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
-2. In the **Properties** tab, select **Add a property**. Enter `zotero-link` as the **Property name**.
-3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
-4. In **Value**, replace the example rule with this entry's rule.
-5. Set **When the note is updated** to **Replace the existing value**.
+**When the note is updated**: **Replace the existing value**. The link follows the item on every update.
 
 Limits: the link opens Zotero on a computer where Zotero is installed. It does not open the item on a phone or in a web browser.

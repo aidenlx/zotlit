@@ -4,6 +4,11 @@ import { describe, expect, it } from "vitest";
 import { compileFilter, matchCondition } from "@zotlit/workbench/match";
 
 import {
+  annotationLabel,
+  SAMPLE_LABELS,
+} from "@/components/template-directory/labels";
+
+import {
   DIRECTORY_SAMPLES,
   EVERY_COLOR_SAMPLE,
   formatEntrySamples,
@@ -69,20 +74,23 @@ describe("the Template Directory", () => {
   it("shows every highlight color in the Color-coded reading note as the callout its color meanings name", () => {
     const titles = verification.samples
       .get("profiles/color-coded-reading-note")!
-      .annotations.filter(({ label }) => label.startsWith("highlight"))
-      .map(({ label, output }) => [label, output!.split("\n")[0]]);
+      .annotations.filter(({ type }) => type === "highlight")
+      .map((annotation) => [
+        annotationLabel(annotation),
+        annotation.output!.split("\n")[0],
+      ]);
     expect(titles).toEqual([
-      ["highlight annotation, yellow", "> [!warning] Important · p. 1"],
-      ["highlight annotation, red", "> [!failure] Disagree · p. 1"],
-      ["highlight annotation, green", "> [!success] Agree · p. 1"],
-      ["highlight annotation, blue", "> [!info] Background · p. 1"],
-      ["highlight annotation, purple", "> [!example] Definitions · p. 1"],
-      ["highlight annotation, magenta", "> [!example] Examples · p. 1"],
-      ["highlight annotation, orange", "> [!question] Questions · p. 1"],
-      ["highlight annotation, gray", "> [!quote] Quotes to use · p. 1"],
-      ["highlight annotation, plum", "> [!danger] Paraphrases · p. 1"],
+      ["Highlight annotation, yellow", "> [!warning] Important · p. 1"],
+      ["Highlight annotation, red", "> [!failure] Disagree · p. 1"],
+      ["Highlight annotation, green", "> [!success] Agree · p. 1"],
+      ["Highlight annotation, blue", "> [!info] Background · p. 1"],
+      ["Highlight annotation, purple", "> [!example] Definitions · p. 1"],
+      ["Highlight annotation, magenta", "> [!example] Examples · p. 1"],
+      ["Highlight annotation, orange", "> [!question] Questions · p. 1"],
+      ["Highlight annotation, gray", "> [!quote] Quotes to use · p. 1"],
+      ["Highlight annotation, plum", "> [!danger] Paraphrases · p. 1"],
       [
-        "highlight annotation, custom color #1f8a70",
+        "Highlight annotation, custom color #1f8a70",
         "> [!note] Other highlights · p. 1",
       ],
     ]);
@@ -346,11 +354,32 @@ describe("the Template Directory", () => {
     );
   });
 
+  it.each([
+    [
+      "profiles/theses-and-dissertations",
+      "thesis-with-university",
+      "PhD thesis · Princeton University",
+    ],
+    [
+      "profiles/books",
+      "book-with-edition",
+      "University of Chicago Press · Chicago · Edition: 4 · ISBN 978-0-226-23973-6",
+    ],
+  ])(
+    "shows in %s the details only the %s example fills",
+    (id, sampleId, details) => {
+      const note = verification.samples
+        .get(id)!
+        .notes.find(({ sample }) => sample.id === sampleId);
+      expect(note?.body).toContain(details);
+    },
+  );
+
   it.each(verification.entries.map((entry) => [entry.id, entry] as const))(
     "stores the rendered samples of %s",
     async (id, entry) => {
       await expect(
-        formatEntrySamples(entry, verification.samples.get(id)!),
+        formatEntrySamples(entry, verification.samples.get(id)!, SAMPLE_LABELS),
       ).toMatchFileSnapshot(join(root, id, "samples.md"));
     },
   );

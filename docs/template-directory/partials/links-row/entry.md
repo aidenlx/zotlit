@@ -32,5 +32,5 @@ A link the item has no target for is left out, so the row never shows an empty l
 The partial reads the note's data. Call it from the note body of a profile, inside the managed block:
 
 ```liquid
-{% render "links-row" with zt as zt %}
+{% render "links-row" with zt as zt -%}
 ```

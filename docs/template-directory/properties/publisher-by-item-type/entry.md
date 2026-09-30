@@ -47,17 +47,9 @@ One `publisher` property whose text depends on what the item is:
 | Thesis | The university | University of Cambridge |
 | Any other item | The publisher, when the item has one | Brackenridge Free Library |
 
-Each part is left out when its field in Zotero is empty, so the property never shows `null`, an empty `Vol.`, or a stray `№`. For example, the sample journal article has no volume, issue, or pages in Zotero, so its property is `PLoS Medicine. 2005.` The sample thesis has no university, so its note gets no `publisher` property. A hyphen or an em dash in the pages becomes an en dash, as in `pp. 10–20`.
+Each part is left out when its field in Zotero is empty, so the property never shows `null`, an empty `Vol.`, or a stray `№`. For example, the example journal article has no volume, issue, or pages in Zotero, so its property is `PLoS Medicine. 2005.` The example thesis has no university, so its note gets no `publisher` property. A hyphen or an em dash in the pages becomes an en dash, as in `pp. 10–20`.
 
-When the note updates: **Replace the existing value**. The property follows Zotero on every update. When the item has none of the parts, an update removes the property.
-
-To add it to a profile:
-
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
-2. In the **Properties** tab, select **Add a property**. Enter `publisher` as the **Property name**.
-3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
-4. In **Value**, replace the example rule with this entry's rule.
-5. Set **When the note is updated** to **Replace the existing value**.
+**When the note is updated**: **Replace the existing value**. The property follows Zotero on every update. When the item has none of the parts, an update removes the property.
 
 Limits:
 

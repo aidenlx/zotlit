@@ -1,7 +1,7 @@
 ---
 title: Quote with citation
 summary: One annotation as a plain quote followed by its in-text citation with the page, ready to move into a draft.
-minAppVersion: "2.2.0-beta.0"
+minAppVersion: "2.2.0-beta.2"
 context: annotation
 tasks: [writing, archival-research, literature-review]
 features: [citations, comments, images]
@@ -43,5 +43,5 @@ When the item has no citation key, the quote ends with its page instead, as a li
 The partial reads one annotation's data. Call it from the annotation format of a profile, the part below `--- zotlit:annotation ---`:
 
 ```liquid
-{% render "quote-with-citation" with zt as zt %}
+{% render "quote-with-citation" with zt as zt -%}
 ```
