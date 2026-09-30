@@ -1,6 +1,6 @@
 // An entry page's rendered samples: the note it makes for each Directory Sample, shown the way Obsidian's reading view shows it, or as Markdown.
 
-import { Suspense, useState } from "react";
+import { Suspense, useId, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
@@ -22,7 +22,7 @@ import type {
 import { ResultSheet } from "@/lib/workbench/result-sheet";
 import { m } from "@/paraglide/messages.js";
 
-import { annotationLabel, exampleLabel } from "./labels";
+import { annotationLabel, exampleLabel, shortExampleLabel } from "./labels";
 
 /**
  * Obsidian's colors for its built-in callout types, so a sample shows each
@@ -70,13 +70,20 @@ const LABEL =
  */
 export function ProfileExample({
   notes,
+  shortLabels = false,
 }: {
   notes: readonly NoteSampleView[];
+  /** Name the tabs by item type, for a Profile that takes several item types. */
+  shortLabels?: boolean;
 }) {
+  const labelId = useId();
   return (
     <Tabs defaultValue={firstShown(notes)}>
+      <p id={labelId} className={cn(LABEL, "mb-2")}>
+        {m.docs_directory_see_it_with()}
+      </p>
       <TabsList
-        aria-label={m.docs_directory_samples_item()}
+        aria-labelledby={labelId}
         className="mb-4 max-w-full max-sm:w-max max-sm:flex-nowrap max-sm:overflow-x-auto"
       >
         {notes.map((note) => (
@@ -85,7 +92,7 @@ export function ProfileExample({
             value={note.id}
             className="max-sm:shrink-0 max-sm:whitespace-nowrap"
           >
-            {exampleLabel(note.id)}
+            {(shortLabels ? shortExampleLabel : exampleLabel)(note.id)}
           </TabsTrigger>
         ))}
       </TabsList>

@@ -31,6 +31,7 @@ export {
   DIRECTORY_SAMPLES,
   EDGE_SAMPLES,
   EVERY_COLOR_SAMPLE,
+  EXAMPLE_VARIANTS,
 } from "./samples.ts";
 export type { DirectorySample } from "./samples.ts";
 export {

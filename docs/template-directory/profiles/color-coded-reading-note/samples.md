@@ -2,104 +2,96 @@
 
 # Rendered samples: Color-coded reading note
 
-## Journal article
+## A journal article with full details and highlights
 
-Note name: `ioannidisWhyMost2005`
-
-```markdown
----
-title: Why Most Published Research Findings Are False
-citekey: ioannidisWhyMost2005
-year: 2005
-venue: PLoS Medicine
-status: unread
----
-%%zt-managed%%
-# Why Most Published Research Findings Are False
-
-[Zotero](zotero://select/library/items/IANNP5A2)
-
-%%/zt-managed%%
-
-## My notes
-```
-
-## Conference paper
-
-Note name: `riveraResearchInterfaces2026`
+Note name: `kahnemanProspectTheoryAnalysis1979`
 
 ```markdown
 ---
-title: Designing reproducible research interfaces
-citekey: riveraResearchInterfaces2026
-year: 2026
-venue: Proceedings of the Open Research Conference
+title: "Prospect theory: An analysis of decision under risk"
+citekey: kahnemanProspectTheoryAnalysis1979
+tags:
+  - decision_making
+  - risk
+year: 1979
+venue: Econometrica
 status: unread
 ---
 %%zt-managed%%
-# Designing reproducible research interfaces
+# Prospect theory: An analysis of decision under risk
 
-[Zotero](zotero://select/library/items/CNPF226A)
+[Zotero](zotero://select/library/items/KAHPRT79) · [[prospect-theory.pdf|PDF]] · [DOI](https://doi.org/10.2307/1914185)
+
+> [!abstract]- Abstract
+> People do not judge a risky choice by the final wealth it may bring. They judge gains and losses from a reference point, and a loss weighs more than a gain of the same size.
+>
+> The article sets out prospect theory, which describes these choices better than expected utility theory does.
 
 ## Annotations
 
-> [!warning] Important · p. 1
-> > A reproducible interface makes its inputs and outputs inspectable.
+> [!warning] Important · [[prospect-theory.pdf#page=264|p. 264]]
+> > People judge an outcome as a gain or a loss from a reference point.
 >
-> Reviewed Fixture text; it contains no personal library data.
+> Compare with the framing study in week 4.
 
-> [!warning] Important · p. 1
-> > A reproducible interface makes its inputs and outputs inspectable.
+> [!info] Background · [[prospect-theory.pdf#page=279|p. 279]]
+> > A loss weighs more than a gain of the same size.
+
+> [!success] Agree · [[prospect-theory.pdf#page=281|p. 281]]
+> ![[prospect-theory-p281.png]]
+
+> [!example] Definitions · [[prospect-theory.pdf#page=283|p. 283]]
+> > Small probabilities are often given too much weight.
 
 %%/zt-managed%%
 
 ## My notes
 ```
 
-## Book
+## A book with full details and highlights
 
-Note name: `Kahneman2011`
+Note name: `boothCraftResearch2016`
 
 ```markdown
 ---
-title: Thinking, fast and slow
-citekey: Kahneman2011
-year: 2011
-venue: Penguin Books
+title: The craft of research
+citekey: boothCraftResearch2016
+year: 2016
+venue: University of Chicago Press
 status: unread
 ---
 %%zt-managed%%
-# Thinking, fast and slow
+# The craft of research
 
-[Zotero](zotero://select/library/items/NW2CPDTC)
+[Zotero](zotero://select/library/items/BOOTCR16) · [[the-craft-of-research.pdf|PDF]]
+
+> [!abstract]- Abstract
+> A guide to planning, drafting, and revising a research paper.
+>
+> The book shows how to turn a topic into a question, a question into a problem, and a problem into an argument that readers can follow.
+
+## Annotations
+
+> [!warning] Important · [[the-craft-of-research.pdf#page=14|p. 14]]
+> > A good research question names what you do not yet understand.
+>
+> Use this wording in my introduction.
+
+> [!info] Background · [[the-craft-of-research.pdf#page=32|p. 32]]
+> > Readers judge a claim by the reasons and evidence behind it.
+
+> [!example] Definitions · [[the-craft-of-research.pdf#page=47|p. 47]]
+> > A warrant explains why a reason supports a claim.
+
+> [!success] Agree · [[the-craft-of-research.pdf#page=58|p. 58]]
+> ![[the-craft-of-research-p58.png]]
 
 %%/zt-managed%%
 
 ## My notes
 ```
 
-## Thesis
-
-Note name: `Batista2010`
-
-```markdown
----
-title: "Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities"
-citekey: Batista2010
-year: 2010
-status: unread
----
-%%zt-managed%%
-# Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities
-
-[Zotero](zotero://select/library/items/I49R3FTL)
-
-%%/zt-managed%%
-
-## My notes
-```
-
-## Book chapter
+## A book chapter with full details and highlights
 
 Note name: `tverskyJudgmentUncertaintyHeuristics1982`
 
@@ -117,105 +109,58 @@ status: unread
 %%zt-managed%%
 # Judgment under uncertainty: Heuristics and biases
 
-[Zotero](zotero://select/library/items/TVKHEUR1) · [DOI](https://doi.org/10.1017/CBO9780511809477.002)
+[Zotero](zotero://select/library/items/TVKHEUR1) · [[judgment-under-uncertainty.pdf|PDF]] · [DOI](https://doi.org/10.1017/CBO9780511809477.002)
 
 > [!abstract]- Abstract
 > People rely on a limited number of heuristic principles to assess probabilities and predict values.
 >
 > The chapter describes three of them (representativeness, availability, and adjustment from an anchor) and the systematic errors each one causes.
 
+## Annotations
+
+> [!warning] Important · [[judgment-under-uncertainty.pdf#page=4|p. 4]]
+> > People rely on a limited number of heuristic principles to assess probabilities.
+>
+> Ask in the seminar how this applies to peer review.
+
+> [!info] Background · [[judgment-under-uncertainty.pdf#page=7|p. 7]]
+> > The more easily an event comes to mind, the more likely it seems.
+
+> [!success] Agree · [[judgment-under-uncertainty.pdf#page=10|p. 10]]
+> ![[judgment-under-uncertainty-p10.png]]
+
+> [!example] Definitions · [[judgment-under-uncertainty.pdf#page=12|p. 12]]
+> > People start from an initial value and adjust it too little.
+
 %%/zt-managed%%
 
 ## My notes
 ```
 
-## Letter
+## A journal article with no highlights yet
 
-Note name: `aldousLetterEleanorWhitcombe1887`
+Note name: `kahnemanProspectTheoryAnalysis1979`
 
 ```markdown
 ---
-title: Letter to Eleanor Whitcombe
-citekey: aldousLetterEleanorWhitcombe1887
+title: "Prospect theory: An analysis of decision under risk"
+citekey: kahnemanProspectTheoryAnalysis1979
 tags:
-  - correspondence
-year: 1887
+  - decision_making
+  - risk
+year: 1979
+venue: Econometrica
 status: unread
 ---
 %%zt-managed%%
-# Letter to Eleanor Whitcombe
+# Prospect theory: An analysis of decision under risk
 
-[Zotero](zotero://select/library/items/ALDLET87)
+[Zotero](zotero://select/library/items/KAHPRT79) · [DOI](https://doi.org/10.2307/1914185)
 
 > [!abstract]- Abstract
-> Aldous describes the spring flood at the mill and asks Whitcombe for news of the estate survey.
-
-%%/zt-managed%%
-
-## My notes
-```
-
-## Manuscript
-
-Note name: `aldousSurveyNotebookBrackenridge1885`
-
-```markdown
----
-title: Survey notebook of the Brackenridge estate
-citekey: aldousSurveyNotebookBrackenridge1885
-year: 1885
-status: unread
----
-%%zt-managed%%
-# Survey notebook of the Brackenridge estate
-
-[Zotero](zotero://select/library/items/ALDMSS85)
-
-%%/zt-managed%%
-
-## My notes
-```
-
-## Interview
-
-Note name: `okaforOralHistoryInterview2019`
-
-```markdown
----
-title: Oral history interview with Ada Okafor
-citekey: okaforOralHistoryInterview2019
-year: 2019
-status: unread
----
-%%zt-managed%%
-# Oral history interview with Ada Okafor
-
-[Zotero](zotero://select/library/items/OKAFOH19) · [Web page](https://archive.example.org/oral-histories/oh-2019-014)
-
-> [!abstract]- Abstract
-> Okafor recalls the founding of the Riverside tenants' association and the 1978 rent strike.
-
-%%/zt-managed%%
-
-## My notes
-```
-
-## Document
-
-Note name: `brackenridgefreelibraryMinutesBoardTrustees1923`
-
-```markdown
----
-title: Minutes of the Board of Trustees, 12 March 1923
-citekey: brackenridgefreelibraryMinutesBoardTrustees1923
-year: 1923
-venue: Brackenridge Free Library
-status: unread
----
-%%zt-managed%%
-# Minutes of the Board of Trustees, 12 March 1923
-
-[Zotero](zotero://select/library/items/BFLMIN23)
+> People do not judge a risky choice by the final wealth it may bring. They judge gains and losses from a reference point, and a loss weighs more than a gain of the same size.
+>
+> The article sets out prospect theory, which describes these choices better than expected utility theory does.
 
 %%/zt-managed%%
 

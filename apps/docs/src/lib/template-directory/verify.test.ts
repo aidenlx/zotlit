@@ -216,6 +216,21 @@ describe("the Directory verification", () => {
       },
     );
 
+    it.each([
+      [
+        "sampleItemType",
+        "sampleItemType: journalArticle",
+        "sampleItemType: report",
+      ],
+      [
+        "an item type its match takes",
+        "sampleItemType: journalArticle",
+        'sampleItemType: journalArticle\nmatch: \'itemType == "journalArticle" || itemType == "report"\'',
+      ],
+    ])("rejects a Profile with no full example of %s", (_subject, from, to) => {
+      rejects(editProfile(from, to), FIXTURE_PROFILE, "profile-example");
+    });
+
     it("rejects a note body without a Managed Block", () => {
       rejects(
         editProfile(
@@ -245,7 +260,7 @@ describe("the Directory verification", () => {
         verifyTemplateDirectory(files)
           .samples.get(FIXTURE_PROFILE)!
           .notes[0]!.body!.split("\n")[0],
-      ).toBe("# Why Most Published Research Findings Are False");
+      ).toBe("# Prospect theory: An analysis of decision under risk");
     });
 
     it.each([

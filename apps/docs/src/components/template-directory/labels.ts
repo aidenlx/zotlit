@@ -161,15 +161,46 @@ const EXAMPLE_LABEL: Readonly<Record<string, () => LocalizedString>> = {
     m.docs_directory_example_no_author_date_or_citekey,
   "thesis-with-university": m.docs_directory_example_thesis_with_university,
   "book-with-edition": m.docs_directory_example_book_with_edition,
-  "book-full-details": m.docs_directory_example_book_full_details,
-  "book-few-details": m.docs_directory_example_book_few_details,
-  "book-no-annotations": m.docs_directory_example_book_no_annotations,
+  "journal-article-with-volume":
+    m.docs_directory_example_journal_article_with_volume,
   "newspaper-article": m.docs_directory_example_newspaper_article,
   "two-items": m.docs_directory_example_two_items,
   "item-with-page": m.docs_directory_example_item_with_page,
   "suppressed-author": m.docs_directory_example_suppressed_author,
   "prefix-and-suffix": m.docs_directory_example_prefix_and_suffix,
   "annotation-citation": m.docs_directory_example_annotation_citation,
+};
+
+/** The item types an example variant is named for, as a subject that starts a label. */
+const VARIANT_SUBJECT: Readonly<Record<string, () => LocalizedString>> = {
+  "journal-article": m.docs_directory_example_subject_journal_article,
+  "conference-paper": m.docs_directory_example_subject_conference_paper,
+  book: m.docs_directory_example_subject_book,
+  "book-section": m.docs_directory_example_subject_book_section,
+  thesis: m.docs_directory_example_subject_thesis,
+  letter: m.docs_directory_example_subject_letter,
+  manuscript: m.docs_directory_example_subject_manuscript,
+  interview: m.docs_directory_example_subject_interview,
+  document: m.docs_directory_example_subject_document,
+  "newspaper-article": m.docs_directory_example_subject_newspaper_article,
+};
+
+/** What each example variant says differs: its details and its highlights. */
+const VARIANT_LABEL: Readonly<
+  Record<string, (inputs: { subject: string }) => LocalizedString>
+> = {
+  "full-details": m.docs_directory_example_full_details,
+  "few-details": m.docs_directory_example_few_details,
+  "no-annotations": m.docs_directory_example_no_annotations,
+};
+
+/** What each example variant adds to an item type's name when a page shows several item types. */
+const SHORT_VARIANT_LABEL: Readonly<
+  Record<string, ((inputs: { type: string }) => LocalizedString) | null>
+> = {
+  "full-details": null,
+  "few-details": m.docs_directory_example_short_few_details,
+  "no-annotations": m.docs_directory_example_short_no_annotations,
 };
 
 /** A facet value as the reader reads it. */
@@ -186,7 +217,29 @@ export function optionLabel(facet: Facet, { value }: FacetOption): string {
 
 /** An example item or a citation set, as the entry page names it. */
 export function exampleLabel(id: string): string {
+  for (const [variant, label] of Object.entries(VARIANT_LABEL)) {
+    const suffix = `-${variant}`;
+    if (!id.endsWith(suffix)) continue;
+    const subject = VARIANT_SUBJECT[id.slice(0, -suffix.length)];
+    if (subject !== undefined) return label({ subject: subject() });
+  }
   return EXAMPLE_LABEL[id]?.() ?? id;
+}
+
+/**
+ * An example item as the tabs of a Profile that takes several item types
+ * name it: the full variant by its item type ("Letter"), the other two
+ * variants by the item type and what differs ("Letter, few details").
+ */
+export function shortExampleLabel(id: string): string {
+  for (const [variant, label] of Object.entries(SHORT_VARIANT_LABEL)) {
+    const suffix = `-${variant}`;
+    if (!id.endsWith(suffix)) continue;
+    const type = EXAMPLE_LABEL[id.slice(0, -suffix.length)];
+    if (type === undefined) continue;
+    return label === null ? type() : label({ type: type() });
+  }
+  return exampleLabel(id);
 }
 
 /** A Sample Annotation, named by its type and color. */
