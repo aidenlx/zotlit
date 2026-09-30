@@ -69,18 +69,13 @@ function siteEntry(
     notes: (samples?.notes ?? []).map(
       ({ sample, noteName, properties, body }): NoteSampleView => ({
         id: sample.id,
-        label: sample.label,
         noteName,
         properties: properties === null ? null : propertyRows(properties),
         frontmatter: properties,
         body,
       }),
     ),
-    annotations: (samples?.annotations ?? []).map((annotation) => ({
-      ...annotation,
-      label:
-        annotation.label.charAt(0).toUpperCase() + annotation.label.slice(1),
-    })),
+    annotations: samples?.annotations ?? [],
     citations: samples?.citations ?? [],
   };
 }
@@ -171,16 +166,16 @@ function facetOptions(
   const kinds = held(({ kind }) => [kind]);
   const levels = held(({ level }) => [level]);
   return {
-    task: Object.entries(RESEARCH_TASKS)
-      .filter(([value]) => tasks.has(value))
-      .map(([value, label]) => ({ value, label })),
+    task: RESEARCH_TASKS.filter((value) => tasks.has(value)).map((value) => ({
+      value,
+    })),
     kind: Object.keys(ENTRY_KINDS)
       .filter((value) => kinds.has(value))
       .map((value) => ({ value })),
     itemType: itemTypeOptions(held(({ itemTypes }) => itemTypes)),
-    feature: Object.entries(ENTRY_FEATURES)
-      .filter(([value]) => features.has(value))
-      .map(([value, label]) => ({ value, label })),
+    feature: ENTRY_FEATURES.filter((value) => features.has(value)).map(
+      (value) => ({ value }),
+    ),
     level: ["ready-to-use", "customize"]
       .filter((value) => levels.has(value))
       .map((value) => ({ value })),
@@ -192,13 +187,11 @@ function facetOptions(
  * made for. An entry for any item type fits each of them.
  */
 function itemTypeOptions(named: ReadonlySet<string>): FacetOption[] {
-  const sampled = DIRECTORY_SAMPLES.map(({ label, snapshot }) => ({
-    value: snapshot.item.itemType,
-    label,
-  }));
-  const others = ZOTERO_ITEM_TYPES.filter(
-    ({ name }) =>
-      named.has(name) && !sampled.some(({ value }) => value === name),
-  ).map(({ name, labels }) => ({ value: name, label: labels["en-US"] }));
-  return [...sampled, ...others];
+  const sampled = [
+    ...new Set(DIRECTORY_SAMPLES.map(({ snapshot }) => snapshot.item.itemType)),
+  ];
+  const others = ZOTERO_ITEM_TYPES.map(({ name }) => name).filter(
+    (name) => named.has(name) && !sampled.includes(name),
+  );
+  return [...sampled, ...others].map((value) => ({ value }));
 }

@@ -126,10 +126,7 @@ describe("the Directory pages", () => {
         ({ id }) => id,
       ),
     ).toEqual(["partials/fixture-byline"]);
-    expect(site.facets.task).toContainEqual({
-      value: "writing",
-      label: "Writing with citations",
-    });
+    expect(site.facets.task).toContainEqual({ value: "writing" });
   });
 });
 
@@ -211,7 +208,6 @@ describe("an entry page", () => {
     const article = page(FIXTURE_PROFILE).notes[0]!;
     expect(article).toMatchObject({
       id: "journal-article",
-      label: "Journal article",
       noteName: "ioannidisWhyMost2005",
       properties: [
         {
@@ -237,7 +233,7 @@ describe("an entry page", () => {
       ({ id }) => id === "citations/fixture-citation",
     )!;
     expect(citation.citations[0]).toEqual({
-      label: "Journal article",
+      id: "journal-article",
       main: "main: journalArticle",
       alt: "alt: journalArticle",
     });
@@ -245,7 +241,7 @@ describe("an entry page", () => {
       ({ id }) => id === "note-names/fixture-name",
     )!;
     expect(noteName.notes[0]).toMatchObject({
-      label: "Journal article",
+      id: "journal-article",
       noteName: "IANNP5A2",
       body: null,
     });

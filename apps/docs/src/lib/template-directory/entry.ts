@@ -42,39 +42,45 @@ export type EntryKind = keyof typeof ENTRY_KINDS;
  */
 export type EntryLevel = "ready-to-use" | "customize";
 
-/** The research tasks a reader searches by, with the label a reader sees. */
-export const RESEARCH_TASKS = {
-  "general-reading": "General reading",
-  "literature-review": "Literature review",
-  "close-reading": "Close reading",
-  "reading-books": "Reading books",
-  "archival-research": "Archive sources",
-  teaching: "Teaching and course reading",
-  writing: "Writing with citations",
-} as const;
+/**
+ * The research tasks a reader searches by, in the order the index lists them.
+ * The site's messages name each one.
+ */
+export const RESEARCH_TASKS = [
+  "general-reading",
+  "literature-review",
+  "close-reading",
+  "reading-books",
+  "archival-research",
+  "teaching",
+  "writing",
+] as const;
 
-export type ResearchTask = keyof typeof RESEARCH_TASKS;
+export type ResearchTask = (typeof RESEARCH_TASKS)[number];
 
-/** What a note or recipe offers, as a reader filters for it. */
-export const ENTRY_FEATURES = {
-  "source-links": "Links to Zotero, the PDF, the DOI, and the web page",
-  abstract: "Folded abstract",
-  "page-links": "Page links",
-  comments: "Zotero comments under highlights",
-  images: "Image annotations",
-  "color-highlights": "Highlight colors",
-  "grouped-by-color": "Annotations grouped by color",
-  "own-notes": "A place for your own notes",
-  prompts: "Reading prompts",
-  properties: "Properties for Bases",
-  "child-notes": "Zotero child notes",
-  "related-items": "Related items",
-  "block-references": "Block references",
-  tasks: "Tasks from comments",
-  citations: "In-text citations",
-} as const;
+/**
+ * What a note or recipe offers, as a reader filters for it, in the order the
+ * index lists them. The site's messages name each one.
+ */
+export const ENTRY_FEATURES = [
+  "source-links",
+  "abstract",
+  "page-links",
+  "comments",
+  "images",
+  "color-highlights",
+  "grouped-by-color",
+  "own-notes",
+  "prompts",
+  "properties",
+  "child-notes",
+  "related-items",
+  "block-references",
+  "tasks",
+  "citations",
+] as const;
 
-export type EntryFeature = keyof typeof ENTRY_FEATURES;
+export type EntryFeature = (typeof ENTRY_FEATURES)[number];
 
 /** The Root a Shared Partial renders with, which decides where it can be called. */
 export const PARTIAL_CONTEXTS = ["note", "annotation", "citation"] as const;
@@ -87,16 +93,10 @@ export const ITEM_TYPES: readonly string[] = Object.keys(ir.itemTypes);
 const text = v.pipe(v.string(), v.trim(), v.nonEmpty());
 
 const facets = {
-  tasks: v.pipe(
-    v.array(v.picklist(Object.keys(RESEARCH_TASKS) as ResearchTask[])),
-    v.nonEmpty(),
-  ),
+  tasks: v.pipe(v.array(v.picklist(RESEARCH_TASKS)), v.nonEmpty()),
   /** Item types the entry is made for; an empty list means any item type. */
   itemTypes: v.optional(v.array(v.picklist(ITEM_TYPES)), []),
-  features: v.optional(
-    v.array(v.picklist(Object.keys(ENTRY_FEATURES) as EntryFeature[])),
-    [],
-  ),
+  features: v.optional(v.array(v.picklist(ENTRY_FEATURES)), []),
   /** The problems the entry solves, in the reader's own words. */
   problems: v.pipe(v.array(text), v.nonEmpty()),
   /** Search words, including ZotLit v1 and Zotero Integration vocabulary. */
