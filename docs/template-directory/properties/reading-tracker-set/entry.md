@@ -48,17 +48,10 @@ Three properties for your own reading progress, from one rule. ZotLit adds them 
 | `rating` | Empty | A number, such as `4` |
 | `date-read` | Empty | The date you finished the source |
 
-Every kind of source gets the same three properties. An empty property is intended: the note shows its name with no value, such as `rating:`, ready for you to fill in.
+Every kind of source gets the same three properties. An empty property is intended: Obsidian shows the property with no value until you fill it in.
 
-**When the note is updated:** **Keep the existing value**. An update fills a property only when it is empty or missing. So a source you read before you added the rule starts as `unread` too, until you change it. If you delete one of the properties from a note, or clear its value, the next update adds it back: `status` as `unread`, the others empty.
+**When the note is updated**: **Keep the existing value**. An update fills a property only when it is empty or missing. So a source you read before you added the rule starts as `unread` too, until you change it. If you delete one of the properties from a note, or clear its value, the next update adds it back: `status` as `unread`, the others empty.
 
-To add the rule to a profile:
-
-1. In Obsidian, open ZotLit's settings and go to **Literature note profiles**. On the row of the profile you want to change, select **Edit profile** (the pencil button). The Template Workbench opens.
-2. Select the **Properties** tab, then **Add several properties from one rule**.
-3. In **Value**, replace the example rule with this entry's rule: everything from the first `{` to the last `}`.
-4. Set **When the note is updated** to **Keep the existing value**.
-
-To start with another word, such as `to read` or `new`, change `unread` in the rule. If your profile already has a `status` property, as the Simple reading note does, the one higher in the list sets the starting word. So that the word you want is the one used, select **Remove property** on the other one's row in the **Properties** tab.
+To start with another word, such as `to read` or `new`, change `unread` in the rule and keep the quotation marks around it. If your profile already has a `status` property, as the Simple reading note does, the one higher in the list sets the starting word. So that the word you want is the one used, select **Remove property** on the other one's row in the **Properties** tab.
 
 So that Obsidian shows a date picker and sorts ratings as numbers, give each property its type once: in a note, select the icon beside `rating`, choose **Property type**, then **Number**; do the same for `date-read` with **Date**. Obsidian then uses those types in every note.

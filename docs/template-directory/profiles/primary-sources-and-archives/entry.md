@@ -56,7 +56,7 @@ Everything from Zotero sits in the part of the note that ZotLit refreshes when y
 
 The note gets these properties, ready to sort and filter in an Obsidian Bases view:
 
-| Property | Value | When the note updates |
+| Property | Value | When the note is updated |
 | --- | --- | --- |
 | `title` | The source's title | Replace the existing value |
 | `authors` | The source's authors: the writer of a letter, the person interviewed in an interview | Replace the existing value |
@@ -78,4 +78,4 @@ ZotLit chooses this profile by itself when you create a note for a Zotero item o
 
 Reports keep the profile they use now, because reports are often research reports and working papers that you read as secondary literature. For a report or any other item that is a primary source for you, choose this profile when you create the note. If another profile of yours already takes that item, create the note, then run **Switch literature note profile** from the note and choose this profile.
 
-To use it, select **Import into Obsidian** on this page. If the import sheet does not open, select **Copy profile** or **Download file**, then run **Import profile…** in Obsidian. The import sheet shows the profile before anything is written, with its condition in words, which starts **Item type is Letter**. Keep **Import match conditions** on to let ZotLit choose the profile by itself for these five item types. Turn it off to import the profile without its condition; ZotLit then never chooses it by itself, and you choose it when you create a note. If another profile of yours also matches one of these item types, ZotLit asks which one to use. Notes you already have keep the profile that wrote them. The profile brings its three building blocks (partials) with it: `links-row`, `folded-abstract`, and `quote-with-citation`.
+The import sheet shows the profile's condition in words, which starts **Item type is Letter**. Keep **Import match conditions** on to let ZotLit choose the profile by itself for these five item types. Turn it off to import the profile without its condition; ZotLit then never chooses it by itself, and you choose it when you create a note. If another profile of yours also matches one of these item types, ZotLit asks which one to use. Notes you already have keep the profile that wrote them.

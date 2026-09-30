@@ -37,16 +37,8 @@ A `status` property that starts at `unread` on every new literature note. You ch
 | Book chapter | unread |
 | Thesis | unread |
 
-When the note updates: **Keep the existing value**. ZotLit writes `unread` only when the note's status is missing or empty. A status you set by hand stays.
+**When the note is updated**: **Keep the existing value**. ZotLit writes `unread` only when the note's status is missing or empty. A status you set by hand stays.
 
-To add it to a profile:
-
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
-2. In the **Properties** tab, select **Add a property**. Enter `status` as the **Property name**.
-3. In the **Value format** menu beside **Value**, choose **Fixed text**, then select **Change format and reset value**.
-4. Enter `unread` into **Value**.
-5. Set **When the note is updated** to **Keep the existing value**.
-
-Other common sets of status words are `to-read`, `in-progress`, and `done`, or `unread`, `skimmed`, and `read`. To start at another word, enter that word in step 4. Use the same words in every note, so a view can filter on them.
+Other common sets of status words are `to-read`, `in-progress`, and `done`, or `unread`, `skimmed`, and `read`. The rule is the JSON-e string `"unread"`. To start at another word, change the word in the rule and keep the quotation marks. Use the same words in every note, so a view can filter on them.
 
 Limits: the status does not change by itself when you read or annotate. Only you change it.

@@ -63,15 +63,8 @@ The publication details of every source as separate properties, chosen by the ki
 
 Other kinds of source, such as conference papers, letters, and manuscripts, get none of these properties. For the journal, proceedings, or book of every kind of source in one property, use `venue` from the Core citation set.
 
-A property is left out when Zotero has no value for it, so a note never shows "Vol. null", an empty issue, or a stray "No.". An article with no issue number gets `journal`, `volume`, and `pages` only. Each value is the text from Zotero, such as `3–20` for pages or `2nd` for an edition.
+A property is left out when Zotero has no value for it, so a note never shows "Vol. null", an empty issue, or a stray "No.". An article with no issue number gets `journal`, `volume`, and `pages` only. Each value is the text from Zotero, such as `3-20` for pages or `2nd` for an edition.
 
-**When the note is updated:** **Replace the existing value**. Each update writes the current values from Zotero, so correct a detail in Zotero, not in the note. If you delete a value in Zotero, or change the item to another kind of source, the old properties keep their values in the note until you delete them there too. If you delete a property from the note while Zotero still has its value, the next update adds it back.
-
-To add the rule to a profile:
-
-1. In Obsidian, open ZotLit's settings and go to **Literature note profiles**. On the row of the profile you want to change, select **Edit profile** (the pencil button). The Template Workbench opens.
-2. Select the **Properties** tab, then **Add several properties from one rule**.
-3. In **Value**, replace the example rule with this entry's rule: everything from the first `{` to the last `}`.
-4. Set **When the note is updated** to **Replace the existing value**.
+**When the note is updated**: **Replace the existing value**. Each update writes the current values from Zotero, so correct a detail in Zotero, not in the note. If you delete a value in Zotero, or change the item to another kind of source, the old properties keep their values in the note until you delete them there too. If you delete a property from the note while Zotero still has its value, the next update adds it back.
 
 The preview shows the properties for the selected item; select a book, a book chapter, or a thesis to see its details. Notes get them the next time you create or update them.

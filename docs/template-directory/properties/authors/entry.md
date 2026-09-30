@@ -41,14 +41,6 @@ The item's authors, as an `authors` list property with one full name per entry, 
 
 The list holds the item's main creators: the authors for most items, the interviewee for an interview. The editors of a book chapter are left out. For an item with no authors, such as an edited book, the list holds the editors. When the item has no creators, the note gets no `authors` property.
 
-When the note updates: **Replace the existing value**. The list follows Zotero on every update.
-
-To add it to a profile:
-
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
-2. In the **Properties** tab, select **Add a property**. Enter `authors` as the **Property name**.
-3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
-4. In **Value**, replace the example rule with this entry's rule.
-5. Set **When the note is updated** to **Replace the existing value**.
+**When the note is updated**: **Replace the existing value**. The list follows Zotero on every update.
 
 Limits: names are plain text, given name first, as Zotero stores them. They are not links to notes about the authors. For a sortable name with the family name first, use the **First author** entry.
