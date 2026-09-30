@@ -12,6 +12,7 @@ import { directorySite } from "./site-data";
 import {
   edit,
   FIXTURE_HEADING,
+  FIXTURE_QUOTE,
   FIXTURE_PROFILE,
   FIXTURE_PROPERTY,
   FIXTURE_PROPERTY_FILE,
@@ -278,6 +279,68 @@ describe("an entry page", () => {
       noteName: "IANNP5A2",
       body: null,
     });
+  });
+});
+
+describe("a Profile's source", () => {
+  const site = directorySite(verifyTemplateDirectory(fixtureFiles()));
+  const page = (id: string) => site.entries.find((entry) => entry.id === id)!;
+
+  it("starts at the note part, so the manifest and its packed partials stay out of it, and runs through the Annotation Section", () => {
+    expect(page(FIXTURE_PROFILE).profileSource?.note).toBe(
+      PROFILE_SOURCE.slice(PROFILE_SOURCE.indexOf("{% managed %}")),
+    );
+    expect(page(FIXTURE_PROFILE).file.text).toBe(PROFILE_SOURCE);
+  });
+
+  it("names each packed partial and links the ones that have an entry", () => {
+    expect(page(FIXTURE_PROFILE).profileSource?.partials).toEqual([
+      { name: "fixture-heading", id: FIXTURE_HEADING },
+      { name: "fixture-quote", id: FIXTURE_QUOTE },
+    ]);
+  });
+
+  it("leaves a packed partial without an entry unlinked", () => {
+    const withoutEntry = directorySite(
+      verifyTemplateDirectory(
+        new Map(
+          [...fixtureFiles()].filter(
+            ([path]) => !path.startsWith(`${FIXTURE_QUOTE}/`),
+          ),
+        ),
+      ),
+    );
+    expect(
+      withoutEntry.entries.find(({ id }) => id === FIXTURE_PROFILE)
+        ?.profileSource?.partials,
+    ).toEqual([
+      { name: "fixture-heading", id: FIXTURE_HEADING },
+      { name: "fixture-quote", id: null },
+    ]);
+  });
+
+  it("is a Profile's alone: a recipe folds its own file", () => {
+    expect(page(FIXTURE_HEADING).profileSource).toBeNull();
+  });
+});
+
+describe("the Books page", () => {
+  it("folds the note part, then one tab for each packed partial, each linked to its entry", () => {
+    const { entries } = directory;
+    const books = entries.find(({ id }) => id === "profiles/books")!;
+    const note = books.profileSource?.note ?? "";
+
+    expect(books.file.name).toBe("zotlit-profile.books.md");
+    expect(note.startsWith("{% managed %}\n# {{ zt.title }}")).toBe(true);
+    expect(note).toContain("--- zotlit:annotation ---");
+    expect(note).not.toContain("frontmatter:");
+    expect(books.profileSource?.partials).toEqual([
+      { name: "publication-details", id: "partials/publication-details" },
+      { name: "links-row", id: "partials/links-row" },
+      { name: "folded-abstract", id: "partials/folded-abstract" },
+      { name: "color-meanings", id: "partials/color-meanings" },
+      { name: "color-callout", id: "partials/color-callout" },
+    ]);
   });
 });
 

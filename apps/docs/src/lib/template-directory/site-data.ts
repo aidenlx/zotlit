@@ -2,6 +2,7 @@
 
 import { parse as parseYaml } from "yaml";
 
+import { parseLiteratureNoteTemplate } from "@zotlit/templates/facade";
 import { ITEM_TYPES as ZOTERO_ITEM_TYPES } from "@zotlit/zotero-types/item-types";
 
 import { partialCall } from "./calls.ts";
@@ -12,11 +13,13 @@ import { matchedItemTypes } from "./profile-samples.ts";
 import { readTemplateDirectory, templateDirectoryRoot } from "./read.ts";
 import { DIRECTORY_SAMPLES } from "./samples.ts";
 import type { Facet } from "./search.ts";
+import { entryId } from "./site.ts";
 import type {
   DirectorySite,
   EntryDetails,
   FacetOption,
   NoteSampleView,
+  ProfileSource,
   SampleProperty,
   SiteEntry,
 } from "./site.ts";
@@ -70,6 +73,8 @@ function siteEntry(
     file: { name: downloadName(entry), text: entry.artifact.source },
     copyText: copyText(entry),
     details: details(entry),
+    profileSource:
+      entry.kind === "profile" ? profileSource(entry, entries) : null,
     colorKey:
       entry.kind === "profile" && entry.features.includes("color-highlights")
         ? colorKey(samples?.annotations ?? [], meaningsEntry(entry, entries))
@@ -135,6 +140,36 @@ function copyText(entry: DirectoryEntry): string {
         ? JSON.stringify(entry.property.value, null, 2)
         : entry.artifact.source;
   }
+}
+
+/**
+ * The parts of a Profile's file the page folds: the note part, and the
+ * partials the file packs in the order its note first names them.
+ */
+function profileSource(
+  entry: Extract<DirectoryEntry, { kind: "profile" }>,
+  entries: readonly DirectoryEntry[],
+): ProfileSource {
+  const { source } = entry.artifact;
+  const { bodyStart } = parseLiteratureNoteTemplate(source);
+  const note = source.slice(bodyStart);
+  const namedAt = (name: string) => {
+    const at = note.indexOf(`"${name}"`);
+    return at === -1 ? note.length : at;
+  };
+  return {
+    note,
+    partials: (entry.manifest.partials ?? [])
+      .map(({ name }) => name)
+      .toSorted((a, b) => namedAt(a) - namedAt(b))
+      .map((name) => {
+        const id = entryId("partials", name);
+        const exists = entries.some(
+          (candidate) => candidate.kind === "partial" && candidate.id === id,
+        );
+        return { name, id: exists ? id : null };
+      }),
+  };
 }
 
 function details(entry: DirectoryEntry): EntryDetails {
