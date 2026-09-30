@@ -146,6 +146,11 @@ export interface NoteSampleView {
 export interface SampleProperty {
   readonly key: string;
   /**
+   * Where the property comes from: "set" for one the entry's rule writes,
+   * "system" for one of the two ZotLit adds to every Profile's note.
+   */
+  readonly mark: "set" | "system";
+  /**
    * The value as the note shows it; a list shows each item on its own, and
    * null is a property the reader fills in.
    */

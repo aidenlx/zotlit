@@ -195,7 +195,9 @@ describe("an entry page", () => {
         ]),
       ),
     ).entries.find(({ id }) => id === FIXTURE_PROPERTY)!;
-    expect(keep.notes[0]?.properties).toEqual([{ key: "year", value: null }]);
+    expect(keep.notes[0]?.properties).toEqual([
+      { key: "year", value: null, mark: "set" },
+    ]);
   });
 
   it("copies a property's rule as the JSON the rule editor shows, and names the property and its update behavior", () => {
@@ -215,6 +217,13 @@ describe("an entry page", () => {
         {
           key: "title",
           value: "Prospect theory: An analysis of decision under risk",
+          mark: "set",
+        },
+        { key: "zotero-key", value: "KAHPRT79", mark: "system" },
+        {
+          key: "zotlit-profile",
+          value: "Fixture profile (FixtureProf1)",
+          mark: "system",
         },
       ],
     });
@@ -224,7 +233,7 @@ describe("an entry page", () => {
     expect(
       page(FIXTURE_PROPERTY).notes.find(({ id }) => id === "letter")
         ?.properties,
-    ).toEqual([{ key: "year", value: "1887" }]);
+    ).toEqual([{ key: "year", value: "1887", mark: "set" }]);
   });
 
   it("lists a fixed set of example items across item types for a Profile with no match, and no item types it is chosen for automatically", () => {
@@ -389,6 +398,74 @@ const directory = directorySite(
     await readTemplateDirectory(await templateDirectoryRoot()),
   ),
 );
+
+describe("the properties of a Profile's example", () => {
+  const books = directory.entries.find(({ id }) => id === "profiles/books")!;
+  const example = (id: string) => books.notes.find((note) => note.id === id)!;
+  const marked = (id: string, mark: "set" | "system") =>
+    example(id)
+      .properties!.filter((property) => property.mark === mark)
+      .map(({ key }) => key);
+
+  it("marks the properties the Profile sets, a Spread Entry's keys among them, and adds ZotLit's own with the item's key and the stamp as a note carries it", () => {
+    expect(example("book-full-details").properties).toEqual([
+      { key: "title", value: "The craft of research", mark: "set" },
+      { key: "citekey", value: "boothCraftResearch2016", mark: "set" },
+      { key: "year", value: "2016", mark: "set" },
+      { key: "venue", value: "University of Chicago Press", mark: "set" },
+      { key: "status", value: "unread", mark: "set" },
+      { key: "publisher", value: "University of Chicago Press", mark: "set" },
+      { key: "place", value: "Chicago", mark: "set" },
+      { key: "edition", value: "4", mark: "set" },
+      { key: "isbn", value: "978-0-226-23973-6", mark: "set" },
+      { key: "zotero-key", value: "BOOTCR16", mark: "system" },
+      {
+        key: "zotlit-profile",
+        value: "Books (KVX7ozKV9Vxi)",
+        mark: "system",
+      },
+    ]);
+  });
+
+  it("writes ZotLit's own properties into the note's Markdown, after the Profile's", () => {
+    expect(example("book-full-details").frontmatter).toMatch(
+      /isbn: 978-0-226-23973-6\nzotero-key: BOOTCR16\nzotlit-profile: Books \(KVX7ozKV9Vxi\)\n$/,
+    );
+  });
+
+  it("highlights fewer properties for a book with few details, and shows no null", () => {
+    const few = example("book-few-details");
+    expect(marked("book-few-details", "set").length).toBeLessThan(
+      marked("book-full-details", "set").length,
+    );
+    expect(marked("book-few-details", "set")).not.toContain("isbn");
+    expect(marked("book-few-details", "system")).toEqual([
+      "zotero-key",
+      "zotlit-profile",
+    ]);
+    expect(few.properties!.every(({ value }) => value !== null)).toBe(true);
+    expect(few.frontmatter).not.toContain("null");
+  });
+
+  it("gives a Profile that writes no property of its own the two grey ones", () => {
+    const bare = directorySite(
+      verifyTemplateDirectory(
+        edit(
+          fixtureFiles(),
+          `${FIXTURE_PROFILE}/zotlit-profile.fixture-profile.md`,
+          [
+            'frontmatter:\n  - key: title\n    value: {"$eval": "zt.title"}\n    merge: replace\n',
+            "",
+          ],
+        ),
+      ),
+    ).entries.find(({ id }) => id === FIXTURE_PROFILE)!;
+    expect(bare.notes[0]?.properties?.map(({ mark }) => mark)).toEqual([
+      "system",
+      "system",
+    ]);
+  });
+});
 
 describe("the color key of a Profile", () => {
   const keyOf = (slug: string) =>

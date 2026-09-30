@@ -1,6 +1,6 @@
 // Node-only: builds the site's Directory data from the verified Directory, and hands it to the app as a virtual module when the site builds.
 
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { parseLiteratureNoteTemplate } from "@zotlit/templates/facade";
 import { ITEM_TYPES as ZOTERO_ITEM_TYPES } from "@zotlit/zotero-types/item-types";
@@ -24,7 +24,11 @@ import type {
   SiteEntry,
 } from "./site.ts";
 import { verifyTemplateDirectory } from "./verify.ts";
-import type { DirectoryVerification, EntrySamples } from "./verify.ts";
+import type {
+  DirectoryVerification,
+  EntrySamples,
+  NoteSample,
+} from "./verify.ts";
 
 /** The Directory of the checked-out repository, as the site publishes it. */
 export async function loadDirectorySite(): Promise<DirectorySite> {
@@ -79,18 +83,53 @@ function siteEntry(
       entry.kind === "profile" && entry.features.includes("color-highlights")
         ? colorKey(samples?.annotations ?? [], meaningsEntry(entry, entries))
         : null,
-    notes: (samples?.notes ?? []).map(
-      ({ sample, noteName, properties, body }): NoteSampleView => ({
-        id: sample.id,
-        noteName,
-        properties: properties === null ? null : propertyRows(properties),
-        frontmatter: properties,
-        body,
-      }),
-    ),
+    notes: (samples?.notes ?? []).map((note) => noteView(note, entry)),
     annotations: samples?.annotations ?? [],
     citations: samples?.citations ?? [],
   };
+}
+
+/**
+ * One example's note. For a Profile, the properties the Profile sets come
+ * first, then the two ZotLit adds to every note, which `renderProfile` leaves
+ * out: `zotero-key` with the item's key, and `zotlit-profile` with the stamp
+ * as a note carries it.
+ */
+function noteView(
+  { sample, noteName, properties, itemKey, body }: NoteSample,
+  entry: DirectoryEntry,
+): NoteSampleView {
+  const set = properties === null ? [] : propertyRows(properties, "set");
+  if (entry.kind !== "profile" || itemKey === undefined) {
+    return {
+      id: sample.id,
+      noteName,
+      properties: properties === null ? null : set,
+      frontmatter: properties,
+      body,
+    };
+  }
+  const system = yamlBlock({
+    "zotero-key": itemKey,
+    // The stamp the plugin writes: the Profile's label, then its ID in parentheses.
+    "zotlit-profile": `${entry.manifest.name.trim()} (${entry.manifest.id})`,
+  });
+  return {
+    id: sample.id,
+    noteName,
+    properties: [...set, ...propertyRows(system, "system")],
+    frontmatter: `${properties ?? ""}${system}`,
+    body,
+  };
+}
+
+/** Properties as Obsidian writes them into a note's YAML block. */
+function yamlBlock(values: Record<string, string>): string {
+  return stringifyYaml(values, {
+    nullStr: "",
+    lineWidth: 0,
+    aliasDuplicateObjects: false,
+  });
 }
 
 /**
@@ -192,10 +231,14 @@ function details(entry: DirectoryEntry): EntryDetails {
 }
 
 /** A note's YAML block as rows, in the order the note holds them. */
-function propertyRows(yaml: string): SampleProperty[] {
+function propertyRows(
+  yaml: string,
+  mark: SampleProperty["mark"],
+): SampleProperty[] {
   const values = (parseYaml(yaml) ?? {}) as Record<string, unknown>;
   return Object.entries(values).map(([key, value]) => ({
     key,
+    mark,
     value:
       value === null
         ? null

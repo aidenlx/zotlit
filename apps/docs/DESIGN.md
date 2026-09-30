@@ -206,7 +206,11 @@ that fits a research task:
   **Details** section that holds the description. The result column holds the
   example switcher (a mono-uppercase "See it with" label over the kit's
   segmented track: it wraps from `sm`, and scrolls sideways on a phone) over
-  the paper sheet of the example note. Under `lg`
+  the paper sheet of the example note. Its properties come first: the ones the
+  Profile sets sit on the accent tint with a 3px primary bar and a semibold
+  key, the two ZotLit adds to every note (`zotero-key`, `zotlit-profile`) sit
+  on the muted tint in muted text, and a small key under them names each mark.
+  Under `lg`
   the example follows the steps, then **Details**, and the folded mono-uppercase
   **Source · for advanced users** section comes last. Its tabs (a segmented
   track that scrolls sideways on a phone) are the Profile file, one for each

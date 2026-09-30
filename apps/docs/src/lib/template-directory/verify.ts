@@ -64,6 +64,8 @@ export interface NoteSample {
   readonly noteName: string | null;
   /** The properties as the note's YAML block; null when it writes none. */
   readonly properties: string | null;
+  /** A Profile's note only: the key of its example item, which the `zotero-key` property holds. */
+  readonly itemKey?: string;
   /** The note body; null for an entry that writes no body. */
   readonly body: string | null;
 }
@@ -911,6 +913,7 @@ function noteSample(
     sample: { id: sample.id },
     noteName: result.filename,
     properties,
+    itemKey: sample.snapshot.item.indexedKey,
     body,
   };
 }
