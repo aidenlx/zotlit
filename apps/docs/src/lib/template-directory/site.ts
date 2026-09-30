@@ -70,6 +70,11 @@ export interface SiteEntry extends IndexedEntry {
   readonly details: EntryDetails;
   /** A Profile only: the parts of its file the page folds under Source; null for every other kind. */
   readonly profileSource: ProfileSource | null;
+  /**
+   * A Profile only: what each Zotero highlight color means in its notes;
+   * null when its highlights do not differ by color.
+   */
+  readonly colorKey: ColorKey | null;
   readonly notes: readonly NoteSampleView[];
   readonly annotations: readonly AnnotationSampleView[];
   /** Citation text entries only: each citation it inserts. */
@@ -89,6 +94,22 @@ export interface SourcePartial {
   readonly name: string;
   /** The partial's own entry, when the Directory has one. */
   readonly id: string | null;
+}
+
+/** The meaning each Zotero highlight color has in a Profile's notes. */
+export interface ColorKey {
+  readonly rows: readonly ColorKeyRow[];
+  /** The id of the entry that explains how to change the meanings; null when the Profile brings none. */
+  readonly changeWith: string | null;
+}
+
+export interface ColorKeyRow {
+  /** The Zotero color's name; null for every other color. */
+  readonly color: string | null;
+  /** The color's hex, for its swatch; null for every other color. */
+  readonly hex: string | null;
+  /** The callout title the Profile gives the color. */
+  readonly meaning: string;
 }
 
 /** What the page needs to say where a recipe goes. */

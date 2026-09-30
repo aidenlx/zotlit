@@ -5,6 +5,7 @@ import { renderToMarkdown } from "fumadocs-core/server";
 
 import { EntryUse } from "@/components/template-directory/entry-use";
 import {
+  colorKeyText,
   GROUPS,
   KIND_LABEL,
   LEVEL_LABEL,
@@ -92,9 +93,10 @@ function indexEdition({ entries }: DirectorySite): string {
 
 /**
  * One entry, in the order its page reads. A Profile reads as its page does:
- * facets, the steps, the example it makes, then the Details, and the Source
- * last. A recipe reads: facets, who it is for, the description, the steps, the
- * partials it needs, the samples it renders, and the Source last.
+ * facets, the steps, the color key, the example it makes, then the Details,
+ * and the Source last. A recipe reads: facets, who it is for, the description,
+ * the steps, the partials it needs, the samples it renders, and the Source
+ * last.
  */
 async function entryEdition(
   entry: SiteEntry,
@@ -121,6 +123,7 @@ async function entryEdition(
       ? [
           ...head,
           ...steps,
+          ...colorKeySection(entry),
           ...samplesSection(entry),
           `## ${m.docs_directory_details_heading()}`,
           description,
@@ -180,6 +183,20 @@ function sourceSection(
       : []),
     `### ${m.docs_directory_source_whole_file()}`,
     ...file,
+  ];
+}
+
+/** The color key of a Profile that gives colors meanings, with the link to change them. */
+function colorKeySection({ colorKey }: SiteEntry): string[] {
+  if (colorKey === null) return [];
+  return [
+    `## ${m.docs_directory_color_key_heading()}`,
+    colorKey.rows.map((row) => `- ${colorKeyText(row)}`).join("\n"),
+    ...(colorKey.changeWith === null
+      ? []
+      : [
+          `[${m.docs_directory_color_key_change()}](${entryPath(colorKey.changeWith)}.md)`,
+        ]),
   ];
 }
 

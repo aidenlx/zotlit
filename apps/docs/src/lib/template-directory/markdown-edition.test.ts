@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { m } from "@/paraglide/messages.js";
 
 import { directoryEdition, directoryLlmsIndex } from "./markdown-edition";
+import { readTemplateDirectory, templateDirectoryRoot } from "./read";
 import { directorySite } from "./site-data";
 import {
   edit,
@@ -332,5 +333,50 @@ ${m.docs_directory_group_customize_description()}
       "## Start here: ready-made notes",
       "## Change one part of your notes",
     ]);
+  });
+});
+
+const directory = directorySite(
+  verifyTemplateDirectory(
+    await readTemplateDirectory(await templateDirectoryRoot()),
+  ),
+);
+
+describe("a Profile's color key in its edition", () => {
+  const edition = async (slug: string) =>
+    (await directoryEdition(directory, ["profiles", slug]))!;
+
+  it("lists each color with its meaning, then links the page that changes the meanings, between the steps and the example", async () => {
+    const text = await edition("books");
+
+    expect(text).toContain(`## ${m.docs_directory_color_key_heading()}
+
+- Yellow → Important
+- Red → Disagree
+- Green → Agree
+- Blue → Background
+- Purple → Definitions
+- Magenta → Examples
+- Orange → Questions
+- Gray → Quotes to use
+- Plum → Paraphrases
+- ${m.docs_directory_color_other()} → Other highlights
+
+[${m.docs_directory_color_key_change()}](/templates/partials/color-meanings.md)
+`);
+    const order = [
+      `## ${m.docs_directory_use_heading()}`,
+      `## ${m.docs_directory_color_key_heading()}`,
+      `## ${m.docs_directory_samples_heading()}`,
+      `## ${m.docs_directory_details_heading()}`,
+    ].map((heading) => text.indexOf(heading));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect(order).toEqual(order.toSorted((a, b) => a - b));
+  });
+
+  it("leaves the key out for a Profile with plain quotes", async () => {
+    expect(await edition("course-reading")).not.toContain(
+      m.docs_directory_color_key_heading(),
+    );
   });
 });
