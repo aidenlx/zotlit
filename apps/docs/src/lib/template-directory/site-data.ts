@@ -68,8 +68,6 @@ function siteEntry(
     problems: entry.problems,
     keywords: entry.keywords,
     recommended: entry.recommended,
-    audience: entry.audience,
-    effort: entry.effort,
     description: entry.description,
     minAppVersion: entry.minAppVersion,
     matchedItemTypes: entry.kind === "profile" ? matchedItemTypes(entry) : null,
@@ -85,7 +83,11 @@ function siteEntry(
         : null,
     notes: (samples?.notes ?? []).map((note) => noteView(note, entry)),
     annotations: samples?.annotations ?? [],
-    citations: samples?.citations ?? [],
+    citations: (samples?.citations ?? []).map(({ sample, main, alt }) => ({
+      ...sample,
+      main,
+      alt,
+    })),
   };
 }
 
@@ -102,7 +104,7 @@ function noteView(
   const set = properties === null ? [] : propertyRows(properties, "set");
   if (entry.kind !== "profile" || itemKey === undefined) {
     return {
-      id: sample.id,
+      ...sample,
       noteName,
       properties: properties === null ? null : set,
       frontmatter: properties,
@@ -115,7 +117,7 @@ function noteView(
     "zotlit-profile": `${entry.manifest.name.trim()} (${entry.manifest.id})`,
   });
   return {
-    id: sample.id,
+    ...sample,
     noteName,
     properties: [...set, ...propertyRows(system, "system")],
     frontmatter: `${properties ?? ""}${system}`,

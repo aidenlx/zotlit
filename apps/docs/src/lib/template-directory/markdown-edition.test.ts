@@ -25,15 +25,13 @@ describe("a Profile's edition", () => {
   const edition = async (files = fixtureFiles()) =>
     (await directoryEdition(site(files), ["profiles", "fixture-profile"]))!;
 
-  it("gives the summary, the facets, then the steps, the example, and the Details, in the order of the page", async () => {
+  it("reads as its page does: the summary and facets, the example, the steps, and the Details", async () => {
     const text = await edition();
 
     expect(text).toMatch(
       /^# Fixture profile \(\/templates\/profiles\/fixture-profile\)\n\n> A Profile the verification tests break one rule at a time\.\n\n/,
     );
-    expect(text).toContain(`- ${m.docs_directory_facet_kind()}: Profile
-- ${m.docs_directory_facet_level()}: ${m.docs_directory_level_ready()}
-- ${m.docs_directory_tasks()}: General reading
+    expect(text).toContain(`- ${m.docs_directory_tasks()}: General reading
 - ${m.docs_directory_item_types()}: ${m.docs_directory_any_item_type()}
 - ${m.docs_directory_problems()}:
   - I want a fixture.
@@ -41,12 +39,27 @@ describe("a Profile's edition", () => {
 `);
     const order = [
       "> A Profile the verification tests break one rule at a time.",
-      `## ${m.docs_directory_use_heading()}`,
       `## ${m.docs_directory_samples_heading()}`,
+      `## ${m.docs_directory_use_heading()}`,
       `## ${m.docs_directory_details_heading()}`,
     ].map((heading) => text.indexOf(heading));
     expect(order.every((at) => at >= 0)).toBe(true);
     expect(order).toEqual(order.toSorted((a, b) => a - b));
+  });
+
+  it("leaves out what the page no longer shows: who it is for, what it asks, its kind, and its level", async () => {
+    const text = await edition();
+
+    expect(text).not.toContain("Who it is for");
+    expect(text).not.toContain("What it asks of you");
+    expect(text).not.toContain(m.docs_directory_facet_kind());
+    expect(text).not.toContain(m.docs_directory_facet_level());
+  });
+
+  it("puts the highlights inside the example note and lists none apart", async () => {
+    const text = await edition();
+
+    expect(text).not.toContain(m.docs_directory_samples_annotations());
   });
 
   it("names the one action Add to ZotLit, with the manual path under it", async () => {
@@ -93,7 +106,7 @@ A fixture Profile.
     );
     expect(text).toContain(`### ${ARTICLE_FULL}`);
     expect(text).not.toContain(
-      `### ${m.docs_directory_example_book_section()}`,
+      `### ${m.docs_directory_item_type_book_section()}`,
     );
     expect(text).not.toContain("A book");
   });
@@ -195,7 +208,7 @@ effort: Nothing.`;
   ];
 
   it.each(PARTS)(
-    "reads the result for each example item first, then the look it changes, the steps, and the Source: $kind",
+    "reads the result for each example item first, then the steps, which start with the look it changes, then the Details and the Source: $kind",
     async ({ folder, slug }) => {
       const text = await edition(folder, slug);
       const changes =
@@ -220,6 +233,23 @@ effort: Nothing.`;
     },
   );
 
+  it.each(PARTS)(
+    "offers the text to copy below the steps, since it has no button to select: $kind",
+    async ({ folder, slug }) => {
+      const text = await edition(folder, slug);
+      const { copyText } = site(files()).entries.find(
+        ({ id }) => id === `${folder}/${slug}`,
+      )!;
+      const steps = text.indexOf(`## ${m.docs_directory_use_heading()}`);
+      const details = text.indexOf(`## ${m.docs_directory_details_heading()}`);
+
+      expect(text).not.toContain(m.docs_directory_copy_template());
+      expect(text).not.toContain(m.docs_directory_copy_rule());
+      expect(text.slice(steps, details)).toContain(copyText.trim());
+      expect(text.slice(steps, details)).toMatch(/below/);
+    },
+  );
+
   it("names where to open the look: Settings, then the look's Edit profile button", async () => {
     const text = await edition("properties", "fixture-year");
 
@@ -235,14 +265,13 @@ effort: Nothing.`;
     expect(
       text.indexOf('{% render "fixture-heading" with zt as zt -%}'),
     ).toBeGreaterThan(source);
-    expect(text.slice(0, source)).not.toContain("```liquid");
     expect(text.slice(0, source)).toContain(
-      "On the **Note** tab, add the call from the Source section at the end of this page.",
+      `On the **Note** tab, add the call from the **${m.docs_directory_source_heading()}** section at the end of this page.`,
     );
   });
 
   it.each(PARTS)(
-    "keeps the file's text in the Source section alone: $kind",
+    "keeps the file, by its name and its text, in the Source section alone: $kind",
     async ({ folder, slug }) => {
       const text = await edition(folder, slug);
       const { file } = site(files()).entries.find(
@@ -250,7 +279,8 @@ effort: Nothing.`;
       )!;
       const source = text.indexOf(`## ${m.docs_directory_source_heading()}`);
 
-      expect(text.slice(0, source)).not.toContain(file.text.trim());
+      expect(text.slice(0, source)).not.toContain(file.name);
+      expect(text.slice(source)).toContain(file.name);
       expect(text.slice(source)).toContain(file.text.trim());
     },
   );
@@ -283,10 +313,10 @@ effort: Nothing.`;
         "---\nlanguage: liquid\n---\n[{% for cite in zt.citations %}@{{ cite.item.citekey }}{% endfor %}]",
       );
 
-  it("heads a Profile's annotations from the site's messages", async () => {
+  it("heads an annotation partial's annotations from the site's messages", async () => {
     const edition = (await directoryEdition(site(), [
-      "profiles",
-      "fixture-profile",
+      "partials",
+      "fixture-quote",
     ]))!;
 
     expect(edition).toContain(
@@ -362,9 +392,9 @@ describe("the Directory in llms.txt", () => {
   it("lists every entry under its level, linked to its page, the way the docs tree lists a folder", () => {
     expect(directoryLlmsIndex(site()))
       .toBe(`- [${m.docs_directory_title()}](/templates): ${m.docs_directory_description()}
-  - Start here: ready-made notes: ${m.docs_directory_group_ready_description()}
+  - Start here: ready-made notes. ${m.docs_directory_group_ready_description()}
     - [Fixture profile](/templates/profiles/fixture-profile): A Profile the verification tests break one rule at a time.
-  - Change one part of your notes: ${m.docs_directory_group_customize_description()}
+  - Change one part of your notes. ${m.docs_directory_group_customize_description()}
     - [Fixture heading](/templates/partials/fixture-heading): The title as a heading.
     - [Fixture quote](/templates/partials/fixture-quote): The text as a quote.
     - [Fixture year](/templates/properties/fixture-year): The year.`);
@@ -380,7 +410,7 @@ describe("the Directory index edition", () => {
 ${m.docs_directory_group_ready_description()}
 
 - [Fixture profile](/templates/profiles/fixture-profile.md): A Profile the verification tests break one rule at a time.
-  - ${m.docs_directory_facet_kind()}: Profile
+  - ${m.docs_directory_facet_kind()}: ${m.docs_directory_kind_profile()}
   - ${m.docs_directory_tasks()}: General reading
   - ${m.docs_directory_item_types()}: ${m.docs_directory_any_item_type()}
   - ${m.docs_directory_problems()}:
@@ -391,7 +421,7 @@ ${m.docs_directory_group_ready_description()}
 ${m.docs_directory_group_customize_description()}
 
 - [Fixture heading](/templates/partials/fixture-heading.md): The title as a heading.
-  - ${m.docs_directory_facet_kind()}: Partial
+  - ${m.docs_directory_facet_kind()}: ${m.docs_directory_kind_partial()}
 `);
     expect(index).toContain(
       "- [Fixture year](/templates/properties/fixture-year.md): The year.\n",
@@ -494,28 +524,28 @@ describe("a Profile's color key in its edition", () => {
   const edition = async (slug: string) =>
     (await directoryEdition(directory, ["profiles", slug]))!;
 
-  it("lists each color with its meaning, then links the page that changes the meanings, between the steps and the example", async () => {
+  it("lists each color with its meaning, then links the page that changes the meanings, between the steps and the Details", async () => {
     const text = await edition("books");
 
     expect(text).toContain(`## ${m.docs_directory_color_key_heading()}
 
-- Yellow → Important
-- Red → Disagree
-- Green → Agree
-- Blue → Background
-- Purple → Definitions
-- Magenta → Examples
-- Orange → Questions
-- Gray → Quotes to use
-- Plum → Paraphrases
-- ${m.docs_directory_color_other()} → Other highlights
+- Yellow: Important
+- Red: Disagree
+- Green: Agree
+- Blue: Background
+- Purple: Definitions
+- Magenta: Examples
+- Orange: Questions
+- Gray: Quotes to use
+- Plum: Paraphrases
+- ${m.docs_directory_color_other()}: Other highlights
 
 [${m.docs_directory_color_key_change()}](/templates/partials/color-meanings.md)
 `);
     const order = [
+      `## ${m.docs_directory_samples_heading()}`,
       `## ${m.docs_directory_use_heading()}`,
       `## ${m.docs_directory_color_key_heading()}`,
-      `## ${m.docs_directory_samples_heading()}`,
       `## ${m.docs_directory_details_heading()}`,
     ].map((heading) => text.indexOf(heading));
     expect(order.every((at) => at >= 0)).toBe(true);

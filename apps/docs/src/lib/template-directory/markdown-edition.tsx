@@ -11,7 +11,6 @@ import {
   colorKeyText,
   GROUPS,
   KIND_LABEL,
-  LEVEL_LABEL,
   SAMPLE_LABELS,
   valueLabels,
 } from "@/components/template-directory/labels";
@@ -56,7 +55,7 @@ export function directoryLlmsIndex({ entries }: DirectorySite): string {
       const members = entries.filter((entry) => entry.level === level);
       if (members.length === 0) return [];
       return [
-        item(1, heading(), description()),
+        `  - ${heading()}. ${description()}`,
         ...members.map(({ id, title, summary }) =>
           item(2, `[${escapeLinkText(title)}](${entryPath(id)})`, summary),
         ),
@@ -95,11 +94,10 @@ function indexEdition({ entries }: DirectorySite): string {
 }
 
 /**
- * One entry, in the order its page reads. A Profile reads as its page does:
- * facets, the steps, the color key, the example it makes, then the Details,
- * and the Source last. A part reads: facets, the result for each example
- * item, the look it changes and the steps, the partials it needs, the Details,
- * and the Source last.
+ * One entry, in the order its page reads: the summary and facets, the result
+ * for each example item, the steps, the color key of a Profile that has one,
+ * the partials a part needs, the Details, and the Source last. A part's steps
+ * start with the look it changes and end with the text to copy.
  */
 async function entryEdition(
   entry: SiteEntry,
@@ -110,11 +108,9 @@ async function entryEdition(
     `# ${entry.title} (${entryPath(entry.id)})`,
     `> ${entry.summary}`,
     [
-      ...facetLines(entry, { level: true }),
+      ...facetLines(entry, { kind: false }),
       `- ${m.docs_directory_requires({ version: entry.minAppVersion })}`,
     ].join("\n"),
-    `**${m.docs_directory_audience()}:** ${entry.audience}`,
-    `**${m.docs_directory_effort()}:** ${entry.effort}`,
   ];
   const description = entry.description.trim();
   const steps = [
@@ -123,33 +119,26 @@ async function entryEdition(
       ? []
       : [(await renderToMarkdown(<EntryChanges entry={entry} />)).trim()]),
     await renderToMarkdown(<EntryUse entry={entry} />),
+    ...(entry.kind === "profile"
+      ? []
+      : [codeBlock(entry.copyText, COPY_LANGUAGE[entry.kind])]),
   ];
-  const sections =
-    entry.kind === "profile"
+  const sections = [
+    ...head,
+    ...samplesSection(entry),
+    ...steps,
+    ...colorKeySection(entry),
+    ...(partials.length > 0 && entry.kind !== "profile"
       ? [
-          ...head,
-          ...steps,
-          ...colorKeySection(entry),
-          ...samplesSection(entry),
-          `## ${m.docs_directory_details_heading()}`,
-          description,
-          ...sourceSection(entry, entries),
+          `## ${m.docs_directory_calls_heading()}`,
+          m.docs_directory_calls_recipe(),
+          partials.map(entryLink).join("\n"),
         ]
-      : [
-          ...head,
-          ...samplesSection(entry),
-          ...steps,
-          ...(partials.length > 0
-            ? [
-                `## ${m.docs_directory_calls_heading()}`,
-                m.docs_directory_calls_recipe(),
-                partials.map(entryLink).join("\n"),
-              ]
-            : []),
-          `## ${m.docs_directory_details_heading()}`,
-          description,
-          ...sourceSection(entry, entries),
-        ];
+      : []),
+    `## ${m.docs_directory_details_heading()}`,
+    description,
+    ...sourceSection(entry, entries),
+  ];
   return `${sections.join("\n\n")}\n`;
 }
 
@@ -219,6 +208,14 @@ function colorKeySection({ colorKey }: SiteEntry): string[] {
   ];
 }
 
+/** The fence language of the text each part offers to copy. */
+const COPY_LANGUAGE = {
+  partial: "liquid",
+  citation: "liquid",
+  "note-name": "liquid",
+  property: "json",
+} satisfies Record<Exclude<SiteEntry["kind"], "profile">, string>;
+
 /** The fence language of each kind's file. */
 const FILE_LANGUAGE = {
   profile: "markdown",
@@ -232,8 +229,8 @@ const FILE_LANGUAGE = {
 function samplesSection(entry: SiteEntry): string[] {
   const samples: EntrySampleRows = {
     notes: entry.notes.map(
-      ({ id, noteName, properties, frontmatter, body }) => ({
-        sample: { id },
+      ({ id, itemType, variant, noteName, properties, frontmatter, body }) => ({
+        sample: { id, itemType, variant },
         noteName,
         properties: frontmatter,
         ...(entry.kind === "profile" && properties !== null
@@ -242,8 +239,13 @@ function samplesSection(entry: SiteEntry): string[] {
         body,
       }),
     ),
-    annotations: entry.annotations,
-    citations: entry.citations,
+    // A Profile's example note holds its highlights, so it lists none apart.
+    annotations: entry.kind === "profile" ? [] : entry.annotations,
+    citations: entry.citations.map(({ id, itemType, variant, main, alt }) => ({
+      sample: { id, itemType, variant },
+      main,
+      alt,
+    })),
   };
   const sections = formatSampleSections(entry.kind, samples, {
     depth: 3,
@@ -273,11 +275,12 @@ function entryLink({ id, title, summary }: SiteEntry): string {
 
 /**
  * An entry's facets as list items, each value by the name a reader sees. The
- * index lists entries under their level; an entry's own edition names it.
+ * index lists entries under their level and names each one's kind; an entry's
+ * own edition leaves the kind out, as its page does.
  */
 function facetLines(
   entry: SiteEntry,
-  { level = false }: { level?: boolean } = {},
+  { kind = true }: { kind?: boolean } = {},
 ): string[] {
   const itemTypes =
     entry.itemTypes.length > 0
@@ -286,9 +289,8 @@ function facetLines(
   const facet = (label: string, values: readonly string[]) =>
     values.length > 0 ? [`- ${label}: ${values.join("; ")}`] : [];
   return [
-    ...facet(m.docs_directory_facet_kind(), [KIND_LABEL[entry.kind]()]),
-    ...(level
-      ? facet(m.docs_directory_facet_level(), [LEVEL_LABEL[entry.level]()])
+    ...(kind
+      ? facet(m.docs_directory_facet_kind(), [KIND_LABEL[entry.kind]()])
       : []),
     ...facet(m.docs_directory_tasks(), valueLabels("task", entry.tasks)),
     ...facet(m.docs_directory_item_types(), itemTypes),

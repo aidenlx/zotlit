@@ -237,7 +237,7 @@ function ProfileSourceTabs({
         <TabsContent value={EXAMPLE_TAB} className="flex flex-col gap-3">
           <p className="max-w-[60ch] text-sm text-pretty text-fd-muted-foreground">
             {m.docs_directory_source_example_hint({
-              example: exampleLabel(shown.id),
+              example: exampleLabel(shown),
             })}
           </p>
           <SourceCode

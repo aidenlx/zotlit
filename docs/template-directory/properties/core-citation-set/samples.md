@@ -11,6 +11,7 @@ authors:
 year: 2005
 venue: PLoS Medicine
 citekey: ioannidisWhyMost2005
+doi: https://doi.org/10.1371/journal.pmed.0020124
 zotero-link: zotero://select/library/items/IANNP5A2
 ```
 

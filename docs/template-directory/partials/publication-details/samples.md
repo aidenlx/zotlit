@@ -5,7 +5,7 @@
 ## Journal article
 
 ```markdown
-*PLoS Medicine*
+*PLoS Medicine* · Vol. 2 · No. 8 · pp. 696–701
 ```
 
 ## Conference paper
@@ -54,10 +54,4 @@ PhD thesis · Princeton University
 
 ```markdown
 University of Chicago Press · Chicago · Edition: 4 · ISBN 978-0-226-23973-6
-```
-
-## A journal article with full details and highlights
-
-```markdown
-*Econometrica* · Vol. 47 · No. 2 · pp. 263–291
 ```

@@ -4,7 +4,9 @@
 
 ## Journal article
 
-_No output._
+```yaml
+doi: https://doi.org/10.1371/journal.pmed.0020124
+```
 
 ## Conference paper
 

@@ -38,6 +38,9 @@ effort: Add one rule to your profile in the Template Workbench. No other setup.
 expected:
   journal-article:
     journal: PLoS Medicine
+    volume: "2"
+    issue: "8"
+    pages: 696–701
   conference-paper: {}
   book:
     publisher: Penguin Books

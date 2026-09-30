@@ -378,14 +378,12 @@ describe("the Template Directory", () => {
     },
   );
 
-  it("shows in the publisher by item type entry a real journal article with a volume, an issue, and pages", () => {
+  it("shows in the publisher by item type entry the first journal article with its volume, issue, and pages", () => {
     const article = verification.samples
       .get("properties/publisher-by-item-type")!
-      .notes.find(
-        ({ sample }) => sample.id === "journal-article-full-details",
-      )!;
+      .notes.find(({ sample }) => sample.id === "journal-article")!;
     expect(article.properties).toContain(
-      "publisher: Econometrica. 1979. Vol. 47. № 2. pp. 263–291.",
+      "publisher: PLoS Medicine. 2005. Vol. 2. № 8. pp. 696–701.",
     );
   });
 

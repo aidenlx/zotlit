@@ -4,6 +4,7 @@ import {
   readTemplateDirectory,
   templateDirectoryRoot,
 } from "@/lib/template-directory/read";
+import type { VariantKind } from "@/lib/template-directory/samples";
 import { directorySite } from "@/lib/template-directory/site-data";
 import { verifyTemplateDirectory } from "@/lib/template-directory/verify";
 import { m } from "@/paraglide/messages.js";
@@ -21,6 +22,13 @@ const site = directorySite(
     await readTemplateDirectory(await templateDirectoryRoot()),
   ),
 );
+
+/** A sample as the site names it, by the item type and the variant its data holds. */
+const named = (
+  id: string,
+  itemType: string | null,
+  variant: VariantKind | null = null,
+) => ({ id, itemType, variant });
 
 /** Only the first letter is a capital, as the site writes an item type. */
 const SENTENCE_CASE = /^[A-Z][^A-Z]*$/;
@@ -45,26 +53,32 @@ describe("the Directory's names", () => {
   });
 
   it("name every example item and citation an entry page shows", () => {
-    const ids = new Set(
-      site.entries.flatMap(({ notes, citations }) => [
-        ...notes.map(({ id }) => id),
-        ...citations.map(({ id }) => id),
-      ]),
+    const samples = new Map(
+      site.entries
+        .flatMap(({ notes, citations }) => [...notes, ...citations])
+        .map((sample) => [sample.id, sample]),
     );
-    expect(ids.size).toBeGreaterThan(0);
-    for (const id of ids) expect(exampleLabel(id), id).toMatch(/^[A-Z]/);
-    expect(exampleLabel("book-section")).toBe(
-      m.docs_directory_example_book_section(),
+    expect(samples.size).toBeGreaterThan(0);
+    for (const [id, sample] of samples) {
+      expect(exampleLabel(sample), id).toMatch(/^[A-Z]/);
+    }
+    expect(exampleLabel(named("book-section", "bookSection"))).toBe(
+      m.docs_directory_item_type_book_section(),
+    );
+    expect(exampleLabel(named("every-color", "conferencePaper"))).toBe(
+      m.docs_directory_example_every_color(),
     );
   });
 
   it("name the example variants of an item type by what differs", () => {
     expect([
-      exampleLabel("book-full-details"),
-      exampleLabel("book-few-details"),
-      exampleLabel("book-no-annotations"),
-      exampleLabel("interview-few-details"),
-      exampleLabel("book-section-no-annotations"),
+      exampleLabel(named("book-full-details", "book", "full-details")),
+      exampleLabel(named("book-few-details", "book", "few-details")),
+      exampleLabel(named("book-no-annotations", "book", "no-annotations")),
+      exampleLabel(named("interview-few-details", "interview", "few-details")),
+      exampleLabel(
+        named("book-section-no-annotations", "bookSection", "no-annotations"),
+      ),
     ]).toEqual([
       "A book with full details and highlights",
       "A book with few details",
@@ -76,17 +90,26 @@ describe("the Directory's names", () => {
 
   it("name the examples of a Profile that takes several item types by the item type, with the two extra variants of its own", () => {
     expect([
-      shortExampleLabel("letter-full-details"),
-      shortExampleLabel("newspaper-article-full-details"),
-      shortExampleLabel("letter-few-details"),
-      shortExampleLabel("book-section-no-annotations"),
+      shortExampleLabel(named("letter-full-details", "letter", "full-details")),
+      shortExampleLabel(
+        named(
+          "newspaper-article-full-details",
+          "newspaperArticle",
+          "full-details",
+        ),
+      ),
+      shortExampleLabel(named("letter-few-details", "letter", "few-details")),
+      shortExampleLabel(
+        named("book-section-no-annotations", "bookSection", "no-annotations"),
+      ),
     ]).toEqual([
       "Letter",
       "Newspaper article",
       "Letter, few details",
       "Book chapter, no highlights yet",
     ]);
-    expect(shortExampleLabel("every-color")).toBe(exampleLabel("every-color"));
+    const everyColor = named("every-color", "conferencePaper");
+    expect(shortExampleLabel(everyColor)).toBe(exampleLabel(everyColor));
   });
 
   it("name item types as a sentence does, one or several", () => {

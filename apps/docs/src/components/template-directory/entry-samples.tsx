@@ -25,8 +25,8 @@ import { m } from "@/paraglide/messages.js";
 import {
   annotationLabel,
   exampleLabel,
-  MARK_LABEL,
-  MARK_ROW_LABEL,
+  LEGEND_MARK_LABEL,
+  ROW_MARK_LABEL,
   shortExampleLabel,
 } from "./labels";
 
@@ -105,7 +105,7 @@ export function ProfileExample({
             value={note.id}
             className="max-sm:shrink-0 max-sm:whitespace-nowrap"
           >
-            {(shortLabels ? shortExampleLabel : exampleLabel)(note.id)}
+            {(shortLabels ? shortExampleLabel : exampleLabel)(note)}
           </TabsTrigger>
         ))}
       </TabsList>
@@ -145,7 +145,7 @@ export function EntrySamples({
               <TabsList aria-label={m.docs_directory_samples_item()}>
                 {notes.map((note) => (
                   <TabsTrigger key={note.id} value={note.id}>
-                    {exampleLabel(note.id)}
+                    {exampleLabel(note)}
                   </TabsTrigger>
                 ))}
               </TabsList>
@@ -355,7 +355,7 @@ function PropertyRows({
               )}
             >
               {mark !== undefined && (
-                <span className="sr-only">{MARK_ROW_LABEL[mark]()}: </span>
+                <span className="sr-only">{ROW_MARK_LABEL[mark]()}: </span>
               )}
               {key}
             </dt>
@@ -392,7 +392,7 @@ function PropertyKey({
             aria-hidden
             className={cn("size-2.5 border border-fd-border", MARK_ROW[mark])}
           />
-          {MARK_LABEL[mark]()}
+          {LEGEND_MARK_LABEL[mark]()}
         </li>
       ))}
     </ul>
@@ -452,10 +452,10 @@ function CitationSamples({
           m.docs_directory_citation_main(),
           m.docs_directory_citation_alt(),
         ]}
-        rows={citations.map(({ id, main, alt }) => ({
-          id,
-          label: exampleLabel(id),
-          cells: [cell(main), cell(alt)],
+        rows={citations.map((citation) => ({
+          id: citation.id,
+          label: exampleLabel(citation),
+          cells: [cell(citation.main), cell(citation.alt)],
         }))}
       />
     </div>
@@ -472,10 +472,10 @@ function NoteNameSamples({ notes }: { notes: readonly NoteSampleView[] }) {
       <SampleTable
         heading={m.docs_directory_samples_item()}
         columns={[m.docs_directory_sample_note_name()]}
-        rows={notes.map(({ id, noteName }) => ({
-          id,
-          label: exampleLabel(id),
-          cells: [nameCell(noteName)],
+        rows={notes.map((note) => ({
+          id: note.id,
+          label: exampleLabel(note),
+          cells: [nameCell(note.noteName)],
         }))}
       />
     </div>
@@ -568,7 +568,7 @@ function PropertySamples({ notes }: { notes: readonly NoteSampleView[] }) {
           >
             {notes.map((note) => (
               <TabsTrigger key={note.id} value={note.id}>
-                {exampleLabel(note.id)}
+                {exampleLabel(note)}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -602,7 +602,7 @@ function PropertyTable({
       monoColumns
       rows={notes.map((note) => ({
         id: note.id,
-        label: exampleLabel(note.id),
+        label: exampleLabel(note),
         cells: keys.map((key) => (
           <PropertyCell
             key={key}

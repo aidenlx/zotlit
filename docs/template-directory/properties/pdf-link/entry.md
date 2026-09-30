@@ -22,7 +22,7 @@ expected:
   journal-article: { pdf: "zotero://open/library/items/IANPDF25" }
   conference-paper: { pdf: "zotero://open/library/items/CNPDF26A" }
   book: {}
-  book-section: {}
+  book-section: { pdf: "zotero://open/library/items/TVKPDF82" }
   thesis: {}
 ---
 

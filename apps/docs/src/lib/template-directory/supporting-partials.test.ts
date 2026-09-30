@@ -208,6 +208,32 @@ describe("the author links", () => {
   });
 });
 
+describe("the links row", () => {
+  it("links the item in Zotero, its PDF in the vault, its DOI, and its web page, in that order", () => {
+    expect(renderNotePartial("links-row", sample("journal-article"))).toBe(
+      [
+        "[Zotero](zotero://select/library/items/IANNP5A2)",
+        "[[ioannidis-2005.pdf|PDF]]",
+        "[DOI](https://doi.org/10.1371/journal.pmed.0020124)",
+        "[Web page](https://journals.plos.org/plosmedicine/article?id=10.1371/journal.pmed.0020124)",
+      ].join(" · "),
+    );
+  });
+
+  it("offers the PDF for an archive item, and leaves out the links an item has no target for", () => {
+    expect(renderNotePartial("links-row", sample("interview"))).toBe(
+      [
+        "[Zotero](zotero://select/library/items/OKAFOH19)",
+        "[[okafor-interview-transcript.pdf|PDF]]",
+        "[Web page](https://archive.example.org/oral-histories/oh-2019-014)",
+      ].join(" · "),
+    );
+    expect(renderNotePartial("links-row", sample("book"))).toBe(
+      "[Zotero](zotero://select/library/items/NW2CPDTC)",
+    );
+  });
+});
+
 describe("the child notes", () => {
   it("list the item's Zotero notes as links under a heading", () => {
     expect(renderNotePartial("child-notes", sample("book-section"))).toBe(
