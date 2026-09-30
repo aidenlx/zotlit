@@ -207,7 +207,9 @@ that fits a research task:
   The samples take the full column: paper sheets in the Workbench reading view
   with callouts in Obsidian's built-in callout colors; a property recipe shows a
   table of sample items when it writes up to three properties, and one sheet per
-  sample item when it writes more.
+  sample item when it writes more. The sample-item tabs and the Preview/Markdown
+  toggle share the kit's square segmented track (`ui/tabs.tsx`): 32 px segments
+  on a muted track, the active one in ink.
 
 ### Docs content column
 

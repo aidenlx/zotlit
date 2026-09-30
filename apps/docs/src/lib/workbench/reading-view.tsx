@@ -30,8 +30,6 @@ import { PropertyList, WorkbenchMessagesProvider } from "@zotlit/workbench/ui";
 
 import { m } from "@/paraglide/messages.js";
 
-import imagePlaceholder from "./image-placeholder.svg";
-
 /** What an `![[…]]` or `![](…)` embed points at, by the target's file type. */
 type EmbedKind = "audio" | "image" | "note" | "pdf" | "video";
 
@@ -268,15 +266,25 @@ function EmbedPlaceholder({
       className="my-1 flex flex-col gap-0.5 border border-dashed border-fd-border px-2 py-1.5"
     >
       {kind === "image" && (
-        // oxlint-disable-next-line nextjs/no-img-element -- a static placeholder for an embed the Workbench cannot resolve
-        <img
-          src={imagePlaceholder}
-          alt={m.workbench_image_placeholder()}
-          width={640}
-          height={360}
-          loading="lazy"
-          className="my-1 h-auto w-full max-w-sm rounded-sm"
-        />
+        // Drawn inline in the theme's tokens, so the placeholder darkens with the sheet.
+        <svg
+          role="img"
+          aria-label={m.workbench_image_placeholder()}
+          viewBox="0 0 640 360"
+          className="my-1 h-auto w-full max-w-sm rounded-sm bg-fd-muted text-fd-muted-foreground"
+        >
+          <g
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={4}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect x="266" y="132" width="108" height="96" rx="8" />
+            <circle cx="295" cy="160" r="8" />
+            <path d="m266 205 29-29 24 24 22-22 33 33" />
+          </g>
+        </svg>
       )}
       <span className="font-mono text-[0.62rem] font-semibold tracking-widest text-fd-muted-foreground uppercase">
         {label}

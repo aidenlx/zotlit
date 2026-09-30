@@ -5,14 +5,18 @@ import { cn } from "@/lib/cn";
 
 export const Tabs = TabsPrimitive.Root;
 
+/** The square muted track that holds the tabs, or the buttons of a segmented toggle. */
+export const segmentedTrack = "flex flex-wrap gap-1 bg-fd-muted p-1";
+
+/** One 32 px segment of the track, in ink when it is the active tab or the pressed button. */
+export const segment =
+  "flex min-h-8 cursor-pointer items-center justify-center gap-2 px-3 py-1 text-sm font-medium text-fd-muted-foreground data-active:bg-fd-foreground data-active:text-fd-background aria-pressed:bg-fd-foreground aria-pressed:text-fd-background [&_svg]:size-4";
+
 export function TabsList({ className, ...props }: TabsPrimitive.List.Props) {
   return (
     <TabsPrimitive.List
       data-slot="tabs-list"
-      className={cn(
-        "flex flex-wrap gap-1 rounded-md bg-fd-muted p-1",
-        className,
-      )}
+      className={cn(segmentedTrack, className)}
       {...props}
     />
   );
@@ -22,10 +26,7 @@ export function TabsTrigger({ className, ...props }: TabsPrimitive.Tab.Props) {
   return (
     <TabsPrimitive.Tab
       data-slot="tabs-trigger"
-      className={cn(
-        "flex min-h-9 cursor-pointer items-center justify-center gap-2 rounded-sm px-3 py-1.5 text-sm font-medium text-fd-muted-foreground data-active:bg-fd-card data-active:text-fd-foreground data-active:shadow-sm [&_svg]:size-4",
-        className,
-      )}
+      className={cn(segment, className)}
       {...props}
     />
   );
