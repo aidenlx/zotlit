@@ -60,7 +60,7 @@ describe("a Profile's edition", () => {
       `   - Select **${m.docs_directory_copy_it()}**, or download the file from the **${m.docs_directory_source_heading()}** section.
    - In Obsidian, run \`ZotLit: ${m.command_import_profile_name()}\` and select **${m.profile_import_clipboard()}**, or **${m.profile_import_file()}** for the downloaded file.
 2. In that window, select **${m.profile_import_confirm()}**.
-3. Create a literature note. In the list of looks that opens, select **Fixture profile**.`,
+3. Create a literature note. In the **Choose a profile…** list that opens, select **Fixture profile**.`,
     );
   });
 

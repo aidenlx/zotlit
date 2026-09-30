@@ -33,7 +33,7 @@ effort: Import it, then create a note for a book. ZotLit chooses it for every bo
 
 **Update literature note** refreshes the part from Zotero; your three sections stay. To change the text under a highlight, edit its comment in Zotero.
 
-On update, `status` and the tags you add in Obsidian stay. Every other property takes the Zotero value. A Zotero tag with a comma or a `#` needs a manual fix in Obsidian.
+On update, `status` and the tags you add in Obsidian stay. Every other property takes the Zotero value, and a property is left out when Zotero has none. A Zotero tag with a comma or a `#` needs a manual fix in Obsidian.
 
 A change to the color meanings reaches every note that uses them.
 

@@ -32,6 +32,6 @@ effort: Replace your citation text with this one. It changes every citation ZotL
 
 A `/` at the end of your search in the citation suggester gives the alternate form, as Shift+Enter does.
 
-The inserted citation is plain text: it shows no preview on hover and does not open the literature note. Pandoc, which turns `[@citekey]` citations into a reference list, cannot read it. If you need these, keep the built-in citation text.
+The inserted citation is plain text. It shows no preview on hover and does not open the literature note. Pandoc, which builds a reference list from `[@citekey]` citations, cannot read it. If you need them, keep the built-in citation text.
 
-This entry replaces your vault's one citation text, for every look. Citations already in your notes stay as they are. To keep a copy first, select all the text on the **Citation** tab and paste it into a note. If you never changed it, **Reset to default** next to **Citation text** in the **Citations** settings brings back the built-in text.
+This entry replaces the one citation text of your vault. Citations already in your notes stay as they are. To keep a copy first, select all the text on the **Citation** tab and paste it into a note. If you never changed it, the **Reset to default** button next to **Citation text** in the **Citations** settings brings back the built-in text.
