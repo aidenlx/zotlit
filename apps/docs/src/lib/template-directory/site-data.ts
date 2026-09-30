@@ -5,6 +5,7 @@ import { parse as parseYaml } from "yaml";
 import { ITEM_TYPES as ZOTERO_ITEM_TYPES } from "@zotlit/zotero-types/item-types";
 
 import { partialCall } from "./calls.ts";
+import { colorKey } from "./color-key.ts";
 import { ENTRY_FEATURES, ENTRY_KINDS, RESEARCH_TASKS } from "./entry.ts";
 import type { DirectoryEntry } from "./load.ts";
 import { matchedItemTypes } from "./profile-samples.ts";
@@ -38,7 +39,7 @@ export function directorySite({
   samples,
 }: DirectoryVerification): DirectorySite {
   const siteEntries = entries.map((entry) =>
-    siteEntry(entry, samples.get(entry.id)),
+    siteEntry(entry, samples.get(entry.id), entries),
   );
   return { entries: siteEntries, facets: facetOptions(siteEntries) };
 }
@@ -46,6 +47,7 @@ export function directorySite({
 function siteEntry(
   entry: DirectoryEntry,
   samples: EntrySamples | undefined,
+  entries: readonly DirectoryEntry[],
 ): SiteEntry {
   return {
     id: entry.id,
@@ -68,6 +70,10 @@ function siteEntry(
     file: { name: downloadName(entry), text: entry.artifact.source },
     copyText: copyText(entry),
     details: details(entry),
+    colorKey:
+      entry.kind === "profile" && entry.features.includes("color-highlights")
+        ? colorKey(samples?.annotations ?? [], meaningsEntry(entry, entries))
+        : null,
     notes: (samples?.notes ?? []).map(
       ({ sample, noteName, properties, body }): NoteSampleView => ({
         id: sample.id,
@@ -80,6 +86,21 @@ function siteEntry(
     annotations: samples?.annotations ?? [],
     citations: samples?.citations ?? [],
   };
+}
+
+/**
+ * The partial entry that sets the color meanings a Profile brings: the one
+ * of its partials named "color-meanings…", which the key links.
+ */
+function meaningsEntry(
+  { calls }: DirectoryEntry,
+  entries: readonly DirectoryEntry[],
+): string | null {
+  const name = calls.find((call) => call.startsWith("color-meanings"));
+  return (
+    entries.find(({ kind, slug }) => kind === "partial" && slug === name)?.id ??
+    null
+  );
 }
 
 /**

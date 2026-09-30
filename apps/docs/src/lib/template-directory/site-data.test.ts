@@ -6,6 +6,7 @@ import { parseContentRoute } from "@/lib/markdown-routes";
 import { prerenderPages } from "@/lib/prerender-pages";
 
 import { directoryEdition } from "./markdown-edition";
+import { readTemplateDirectory, templateDirectoryRoot } from "./read";
 import { searchDirectory } from "./search";
 import { directorySite } from "./site-data";
 import {
@@ -271,6 +272,123 @@ describe("an entry page", () => {
       id: "journal-article",
       noteName: "IANNP5A2",
       body: null,
+    });
+  });
+});
+
+const directory = directorySite(
+  verifyTemplateDirectory(
+    await readTemplateDirectory(await templateDirectoryRoot()),
+  ),
+);
+
+describe("the color key of a Profile", () => {
+  const keyOf = (slug: string) =>
+    directory.entries.find(({ id }) => id === `profiles/${slug}`)!.colorKey;
+
+  it("names each Zotero color with the meaning the Profile's own highlight gives it, and the other colors last", () => {
+    expect(keyOf("books")).toEqual({
+      rows: [
+        { color: "yellow", hex: "#ffd400", meaning: "Important" },
+        { color: "red", hex: "#ff6666", meaning: "Disagree" },
+        { color: "green", hex: "#5fb236", meaning: "Agree" },
+        { color: "blue", hex: "#2ea8e5", meaning: "Background" },
+        { color: "purple", hex: "#a28ae5", meaning: "Definitions" },
+        { color: "magenta", hex: "#e56eee", meaning: "Examples" },
+        { color: "orange", hex: "#f19837", meaning: "Questions" },
+        { color: "gray", hex: "#aaaaaa", meaning: "Quotes to use" },
+        { color: "plum", hex: "#a6507b", meaning: "Paraphrases" },
+        { color: null, hex: null, meaning: "Other highlights" },
+      ],
+      changeWith: "partials/color-meanings",
+    });
+  });
+
+  it("follows the meanings a Profile brings, and links the page that sets them", () => {
+    const key = keyOf("critical-reading")!;
+    expect(key.rows.map(({ meaning }) => meaning).slice(0, 2)).toEqual([
+      "Main claims",
+      "Objections",
+    ]);
+    expect(key.changeWith).toBe("partials/color-meanings-argument");
+  });
+
+  it("gives every Profile that sets color meanings a key of nine colors", () => {
+    const keyed = directory.entries.filter(
+      ({ kind, colorKey }) => kind === "profile" && colorKey !== null,
+    );
+    expect(keyed.map(({ id }) => id).toSorted()).toEqual([
+      "profiles/book-chapters",
+      "profiles/books",
+      "profiles/color-coded-reading-note",
+      "profiles/critical-reading",
+      "profiles/literature-review",
+      "profiles/reading-notes-by-color",
+      "profiles/theses-and-dissertations",
+    ]);
+    for (const { colorKey } of keyed) {
+      expect(colorKey!.rows.filter(({ color }) => color !== null)).toHaveLength(
+        9,
+      );
+    }
+  });
+
+  it("gives no key to a Profile with plain quotes", () => {
+    expect(keyOf("course-reading")).toBeNull();
+    expect(keyOf("simple-reading-note")).toBeNull();
+    expect(keyOf("primary-sources-and-archives")).toBeNull();
+  });
+
+  describe("from a highlight's rendered callout", () => {
+    const keyWith = (format: string) => {
+      const files = edit(fixtureFiles(), `${FIXTURE_PROFILE}/entry.md`, [
+        "tasks: [general-reading]\n",
+        "tasks: [general-reading]\nfeatures: [color-highlights]\n",
+      ]);
+      edit(files, `${FIXTURE_PROFILE}/zotlit-profile.fixture-profile.md`, [
+        '--- zotlit:annotation ---\n{% render "fixture-quote" with zt as zt %}\n',
+        `--- zotlit:annotation ---\n${format}\n{% render "fixture-quote" with zt as zt %}\n`,
+      ]);
+      return directorySite(verifyTemplateDirectory(files)).entries.find(
+        ({ id }) => id === FIXTURE_PROFILE,
+      )!.colorKey;
+    };
+
+    it("shows the callout's title, without its page, whatever the callout type", () => {
+      const key = keyWith(
+        "> [!note] {{ zt.colorName | default: 'other' | capitalize }} reading · p. {{ zt.pageLabel }}",
+      )!;
+      expect(key.rows[0]).toMatchObject({
+        color: "yellow",
+        meaning: "Yellow reading",
+      });
+      expect(key.changeWith).toBeNull();
+    });
+
+    it("shows no key when every color gets the same callout title", () => {
+      expect(keyWith("> [!note] Highlight · p. {{ zt.pageLabel }}")).toBeNull();
+    });
+
+    it("keeps a title that holds a dot, and a callout that folds", () => {
+      const key = keyWith(
+        "> [!note]- {{ zt.colorName | default: 'other' }} · notes · p. {{ zt.pageLabel }}",
+      )!;
+      expect(key.rows[0]).toMatchObject({
+        color: "yellow",
+        meaning: "yellow · notes",
+      });
+    });
+
+    it("leaves out the row for other colors when their callout has no title", () => {
+      const key = keyWith(
+        "> [!note] {% if zt.colorName %}{{ zt.colorName }}{% endif %} · p. {{ zt.pageLabel }}",
+      )!;
+      expect(key.rows).toHaveLength(9);
+      expect(key.rows.at(-1)).toMatchObject({ color: "plum" });
+    });
+
+    it("gives no key when a highlight is not a titled callout", () => {
+      expect(keyWith("> [!quote]\n> {{ zt.text }}")).toBeNull();
     });
   });
 });
