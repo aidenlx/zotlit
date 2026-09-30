@@ -171,7 +171,7 @@ function machineAssets(directory: DirectorySite): Plugin {
  * runner, which resolves the Vite-only imports (such as `?raw`) that plain Node
  * cannot, and reads its source afresh on every call.
  */
-async function loadDirectorySite(): Promise<DirectorySite> {
+async function loadDirectorySiteThroughRunner(): Promise<DirectorySite> {
   const { module } = await runnerImport<
     typeof import("./src/lib/template-directory/site-data.js")
   >(resolve(packageRoot, "src/lib/template-directory/site-data.ts"), {
@@ -209,7 +209,7 @@ function templateDirectoryData(initial: DirectorySite): Plugin {
       server.watcher.add(root);
       server.watcher.on("all", (_event, path) => {
         if (!path.startsWith(root)) return;
-        site = loadDirectorySite();
+        site = loadDirectorySiteThroughRunner();
         for (const environment of Object.values(server.environments)) {
           const module = environment.moduleGraph.getModuleById(resolved);
           if (module) environment.moduleGraph.invalidateModule(module);
@@ -221,7 +221,7 @@ function templateDirectoryData(initial: DirectorySite): Plugin {
 }
 
 export default defineConfig(async ({ command }) => {
-  const directory = await loadDirectorySite();
+  const directory = await loadDirectorySiteThroughRunner();
 
   return {
     // `@base-ui/react` imports the named `useSyncExternalStoreWithSelector` from

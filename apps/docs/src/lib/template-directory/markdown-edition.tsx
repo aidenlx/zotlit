@@ -13,7 +13,7 @@ import {
 import { m } from "@/paraglide/messages.js";
 
 import { codeBlock, formatSampleSections } from "./samples-markdown";
-import { DIRECTORY_PATH, entryPath } from "./site";
+import { calledPartials, DIRECTORY_PATH, entryPath } from "./site";
 import type { DirectorySite, SiteEntry } from "./site";
 import type { EntrySamples } from "./verify";
 
@@ -97,9 +97,7 @@ async function entryEdition(
   entry: SiteEntry,
   { entries, facets }: DirectorySite,
 ): Promise<string> {
-  const partials = entry.calls.flatMap((name) =>
-    entries.filter(({ id }) => id === `partials/${name}`),
-  );
+  const partials = calledPartials(entries, entry.calls);
   const sections = [
     `# ${entry.title} (${entryPath(entry.id)})`,
     `> ${entry.summary}`,

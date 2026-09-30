@@ -19,6 +19,7 @@ import { reachableCalls } from "./calls.ts";
 import { ENTRY_KINDS, ENTRY_METADATA_SCHEMAS } from "./entry.ts";
 import type { EntryKind, EntryLevel, EntryMetadata } from "./entry.ts";
 import type { DirectoryProblem } from "./problem.ts";
+import { entryId, entryIdParts } from "./site.ts";
 
 /** The Directory's files, keyed by `/`-separated path relative to its root. */
 export type DirectoryFiles = ReadonlyMap<string, string>;
@@ -124,7 +125,7 @@ export function loadTemplateDirectory(files: DirectoryFiles): LoadedDirectory {
       });
       continue;
     }
-    const id = `${segments[0]}/${segments[1]}`;
+    const id = entryId(segments[0]!, segments[1]!);
     const folder = folders.get(id) ?? new Map<string, string>();
     folder.set(segments[2]!, content);
     folders.set(id, folder);
@@ -177,7 +178,7 @@ function readEntry(
   id: string,
   folder: ReadonlyMap<string, string>,
 ): { entry?: EntryDraft; problems: DirectoryProblem[] } {
-  const [kindFolder, slug] = id.split("/") as [string, string];
+  const [kindFolder, slug] = entryIdParts(id);
   const kind = kindOfFolder(kindFolder)!;
   const artifactName = ENTRY_KINDS[kind].artifact(slug);
   const problem = (

@@ -1,29 +1,24 @@
 // The site's names for the Template Directory's kinds, levels, and facets.
 
 import type { EntryKind, EntryLevel } from "@/lib/template-directory/entry";
+import { kindLabels, levelLabels } from "@/lib/template-directory/kind-labels";
 import type { Facet } from "@/lib/template-directory/search";
 import type { FacetOption } from "@/lib/template-directory/site";
 import { m } from "@/paraglide/messages.js";
+import type { LocalizedString } from "@/paraglide/runtime.js";
 
-export const KIND_LABEL = {
-  profile: m.docs_directory_kind_profile,
-  partial: m.docs_directory_kind_partial,
-  citation: m.docs_directory_kind_citation,
-  "note-name": m.docs_directory_kind_note_name,
-  property: m.docs_directory_kind_property,
-} satisfies Record<EntryKind, () => string>;
+export const KIND_LABEL = kindLabels(m);
 
-export const LEVEL_LABEL = {
-  "ready-to-use": m.docs_directory_level_ready,
-  customize: m.docs_directory_level_customize,
-} satisfies Record<EntryLevel, () => string>;
+export const LEVEL_LABEL = levelLabels(m);
 
-/** The copy action's name, which the entry's steps also quote. */
-export function copyLabel(kind: EntryKind): string {
-  if (kind === "profile") return m.docs_directory_copy_profile();
-  if (kind === "property") return m.docs_directory_copy_rule();
-  return m.docs_directory_copy_template();
-}
+/** The copy action's name for each kind, which the entry's steps also quote. */
+export const COPY_LABEL = {
+  profile: m.docs_directory_copy_profile,
+  partial: m.docs_directory_copy_template,
+  citation: m.docs_directory_copy_template,
+  "note-name": m.docs_directory_copy_template,
+  property: m.docs_directory_copy_rule,
+} satisfies Record<EntryKind, () => LocalizedString>;
 
 /** The index's groups, one per level, in the order the index lists them. */
 export const GROUPS = [

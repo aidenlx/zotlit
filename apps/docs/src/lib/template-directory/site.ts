@@ -6,6 +6,32 @@ import type { Facet, IndexedEntry } from "./search.ts";
 /** The index page's path; each entry page sits below it at its entry id. */
 export const DIRECTORY_PATH = "/templates";
 
+/**
+ * An entry's id: the folder of its kind and its slug, which its page path, its
+ * card URL, and its Markdown edition repeat.
+ */
+export function entryId(folder: string, slug: string): string {
+  return `${folder}/${slug}`;
+}
+
+/** The kind folder and the slug an entry id joins. */
+export function entryIdParts(id: string): [folder: string, slug: string] {
+  const separator = id.indexOf("/");
+  return [id.slice(0, separator), id.slice(separator + 1)];
+}
+
+/** The partial entries an entry calls, by the partial names in `calls`, in that order. */
+export function calledPartials<T extends Pick<SiteEntry, "id" | "kind">>(
+  entries: readonly T[],
+  calls: readonly string[],
+): T[] {
+  return calls.flatMap((name) =>
+    entries.filter(
+      ({ id, kind }) => kind === "partial" && entryIdParts(id)[1] === name,
+    ),
+  );
+}
+
 export function entryPath(id: string): string {
   return `${DIRECTORY_PATH}/${id}`;
 }

@@ -1,5 +1,6 @@
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+
+import { getPackageRoot } from "@zotlit/scripts/package-roots";
 
 import { parseContentRoute } from "@/lib/markdown-routes";
 import { prerenderPages } from "@/lib/prerender-pages";
@@ -19,7 +20,7 @@ import {
 } from "./test-fixtures";
 import { verifyTemplateDirectory } from "./verify";
 
-const packageRoot = resolve(import.meta.dirname, "../../..");
+const packageRoot = getPackageRoot(import.meta.filename);
 
 const pagePaths = (site: ReturnType<typeof directorySite>) =>
   prerenderPages(packageRoot, site).map(({ path }) => path);
@@ -110,7 +111,7 @@ describe("the Directory pages", () => {
       const route = parseContentRoute(`${page.slice(1)}/content.md`)!;
       expect(route.section).toBe("templates");
       expect(await directoryEdition(site, route.slugs)).toMatch(
-        new RegExp(`^# .+ \\(${page}\\)\\n`),
+        new RegExp(`^# .+ \\(${RegExp.escape(page)}\\)\\n`),
       );
     }
   });
@@ -167,11 +168,11 @@ describe("an entry page", () => {
     });
   });
 
-  it("shows the line a Profile writes to call a partial, or the call its entry states", () => {
+  it("shows the line a Profile writes to call a partial, or the call its entry states, as the verification renders it", () => {
     expect(page(FIXTURE_HEADING).details).toEqual({
       kind: "partial",
       context: "note",
-      call: '{% render "fixture-heading" with zt as zt %}',
+      call: '{% render "fixture-heading" with zt as zt -%}',
     });
     const stated = directorySite(
       verifyTemplateDirectory(

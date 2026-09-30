@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { Facet, IndexedEntry } from "@/lib/template-directory/search";
+import { entryIdParts } from "@/lib/template-directory/site";
 import type { FacetOption } from "@/lib/template-directory/site";
 import { m } from "@/paraglide/messages.js";
 
@@ -12,7 +13,7 @@ import { GROUPS, KIND_LABEL, valueLabels } from "./labels";
 type Facets = Readonly<Record<Facet, readonly FacetOption[]>>;
 
 /** The link to an entry's page, from its `<kind folder>/<slug>` id. */
-function EntryLink({
+export function EntryLink({
   id,
   className,
   children,
@@ -21,7 +22,7 @@ function EntryLink({
   className?: string;
   children: ReactNode;
 }) {
-  const [kind = "", slug = ""] = id.split("/");
+  const [kind, slug] = entryIdParts(id);
   return (
     <Link
       to="/templates/$kind/$slug"

@@ -14,6 +14,21 @@ const PARTIAL_CALL = regex(
  */
 const ANNOTATION_SECTION = "annotation";
 
+/**
+ * The Liquid a Profile writes to call a partial entry: the call its entry
+ * states, or the plain `render` of its slug. The verification renders this
+ * call, and the entry page shows it.
+ */
+export function partialCall({
+  slug,
+  call,
+}: {
+  readonly slug: string;
+  readonly call?: string | undefined;
+}): string {
+  return (call ?? `{% render "${slug}" with zt as zt -%}`).trimEnd();
+}
+
 /** The names the given sources call directly, excluding the Annotation Section. */
 export function directCalls(sources: readonly string[]): string[] {
   return [

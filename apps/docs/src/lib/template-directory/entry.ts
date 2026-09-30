@@ -133,7 +133,7 @@ export const ENTRY_METADATA_SCHEMAS = {
     context: v.picklist(PARTIAL_CONTEXTS),
     /**
      * The Liquid a Profile writes to call the partial, when that is more than
-     * `{% render "<slug>" with zt as zt %}`.
+     * `{% render "<slug>" with zt as zt -%}`.
      */
     call: v.optional(text),
   }),

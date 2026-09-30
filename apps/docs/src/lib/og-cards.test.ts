@@ -1,5 +1,6 @@
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+
+import { getPackageRoot } from "@zotlit/scripts/package-roots";
 
 import { m } from "@/paraglide/messages.js";
 
@@ -12,7 +13,7 @@ import {
 } from "./template-directory/test-fixtures";
 import { verifyTemplateDirectory } from "./template-directory/verify";
 
-const packageRoot = resolve(import.meta.dirname, "../..");
+const packageRoot = getPackageRoot(import.meta.filename);
 
 describe("the Template Directory's social cards", () => {
   it("give the index and every entry a card of its own, which names the entry and what kind it is", async () => {
