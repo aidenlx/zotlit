@@ -30,8 +30,8 @@ A link to the item's PDF, as a `pdf` property. Obsidian shows the link in the no
 
 | Item | `pdf` |
 | --- | --- |
-| Journal article | zotero://open/library/items/IANPDF25 |
-| Conference paper (two PDFs) | zotero://open/library/items/CNPDF26A |
+| Journal article | `zotero://open/library/items/IANPDF25` |
+| Conference paper (two PDFs) | `zotero://open/library/items/CNPDF26A` |
 | Book, book chapter, thesis | (no property: the samples have no PDF) |
 
 When the item has more than one PDF, the link opens one of them, which can differ from the PDF that Zotero opens when you double-click the item. When the item has no PDF, the note gets no `pdf` property.

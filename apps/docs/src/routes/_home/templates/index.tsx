@@ -17,6 +17,7 @@ import {
   facetCounts,
   FACETS,
   queryFromSearch,
+  queryNarrows,
   searchDirectory,
   searchFromQuery,
 } from "@/lib/template-directory/search";
@@ -98,7 +99,13 @@ function DirectoryIndex() {
             {m.docs_directory_intro()}
           </p>
         </header>
-        <StartHere entries={entries.filter(({ recommended }) => recommended)} />
+        {/* A search or a chosen facet answers the reader's question, so the
+            starting points give way to the results. */}
+        {!queryNarrows(query) && (
+          <StartHere
+            entries={entries.filter(({ recommended }) => recommended)}
+          />
+        )}
       </div>
 
       <div role="search" className="border-t border-fd-border pt-8">
