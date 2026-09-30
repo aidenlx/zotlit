@@ -2489,8 +2489,7 @@ export interface FixtureVaultCase {
   id: "configured" | "fresh" | "upgrader" | "demo";
   /** One line for the maintainer choosing a case. */
   summary: string;
-  /** Stable language and core features for a capture scenario. */
-  locale?: string;
+  /** Core features for a capture scenario. */
   corePlugins?: Readonly<Record<string, boolean>>;
 }
 
@@ -2517,7 +2516,6 @@ export const VAULT_CASES: readonly FixtureVaultCase[] = [
   },
   {
     id: "demo",
-    locale: "en-US",
     corePlugins: { sync: false },
     summary:
       "A researcher's vault for screenshots and walkthroughs: the demo papers' PDFs, their Literature Notes, and the pages that cite them, with only the demo papers and their annotations, English Zotero UI, and Sync disabled.",
