@@ -207,7 +207,13 @@ that fits a research task:
   example switcher (a mono-uppercase "See it with" label over the kit's
   segmented track: it wraps from `sm`, and scrolls sideways on a phone) over
   the paper sheet of the example note. Under `lg`
-  the example follows the steps and **Details** comes last.
+  the example follows the steps, then **Details**, and the folded mono-uppercase
+  **Source · for advanced users** section comes last. Its tabs (a segmented
+  track that scrolls sideways on a phone) are the Profile file, one for each
+  partial it packs, and the raw Markdown of the example shown. The file tab
+  opens on the note part in a scrolling code box, with a segmented control for
+  the whole file and outline **Copy profile** and **Download file** buttons; a
+  partial tab holds its summary and a link to its page.
 - **Entry head** (partials, property rules, note names, and citation text): `← Template directory` crumb, mono-uppercase kind and level
   line, serif title, italic summary held to 60ch, mono-uppercase version line,
   then the actions. The first action is a square ink button (the landing's
@@ -216,6 +222,8 @@ that fits a research task:
   entry's description and the "How to use it" steps in `ztProse` held to 72ch,
   and an aside rail of mono-uppercase headings over the entry's facets and its
   problems as serif italic quotes (below the body under `lg`, after a hairline).
+  The body ends with the folded **Source · for advanced users** section, which
+  shows the entry's own file in a scrolling code box.
   The samples take the full column: paper sheets in the Workbench reading view
   with callouts in Obsidian's built-in callout colors; a property recipe shows a
   table of sample items when it writes up to three properties, and one sheet per

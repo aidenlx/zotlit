@@ -1,6 +1,7 @@
 // A Profile entry's page: the ready-made note first, with one button to add it to ZotLit and the example note beside it.
 
 import { ChevronDown } from "lucide-react";
+import { useState } from "react";
 
 import { BackCrumb } from "@/components/back-crumb";
 import { SiteFooter } from "@/components/site-footer";
@@ -12,15 +13,24 @@ import { m } from "@/paraglide/messages.js";
 import { ColorKeyList } from "./color-key";
 import { EntryActions, ImportFallback } from "./entry-actions";
 import { EntryDescription } from "./entry-description";
-import { ProfileExample } from "./entry-samples";
+import { firstShown, ProfileExample } from "./entry-samples";
+import { EntrySource } from "./entry-source";
+import type { SourcePartialEntry } from "./entry-source";
 import { EntryUse } from "./entry-use";
 import { itemTypesInSentence } from "./labels";
 
 const CHIP =
   "border border-fd-border bg-fd-card px-2 py-0.5 font-sans text-xs font-medium";
 
-export function ProfileEntryPage({ entry }: { entry: SiteEntry }) {
+export function ProfileEntryPage({
+  entry,
+  partials,
+}: {
+  entry: SiteEntry;
+  partials: readonly SourcePartialEntry[];
+}) {
   const { matchedItemTypes } = entry;
+  const [example, setExample] = useState(firstShown(entry.notes));
   // One order for the item types the page names: the match's, else the entry's.
   const eyebrowTypes = matchedItemTypes ?? entry.itemTypes;
   const chips =
@@ -36,7 +46,7 @@ export function ProfileEntryPage({ entry }: { entry: SiteEntry }) {
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-6">
       <BackCrumb to="/templates" label={m.docs_directory_title()} />
-      <div className="grid gap-x-12 gap-y-10 pt-4.5 pb-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] lg:grid-rows-[auto_1fr]">
+      <div className="grid gap-x-12 gap-y-10 pt-4.5 pb-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] lg:grid-rows-[auto_auto_1fr]">
         <div className="flex min-w-0 flex-col gap-4 font-serif lg:col-start-1">
           <header>
             <p className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs font-semibold tracking-[0.14em] text-fd-primary uppercase">
@@ -97,10 +107,12 @@ export function ProfileEntryPage({ entry }: { entry: SiteEntry }) {
 
         <section
           aria-label={m.docs_directory_samples_item()}
-          className="min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1"
+          className="min-w-0 lg:col-start-2 lg:row-span-3 lg:row-start-1"
         >
           <ProfileExample
             notes={entry.notes}
+            selected={example}
+            onSelect={setExample}
             shortLabels={
               matchedItemTypes !== null && matchedItemTypes.length > 1
             }
@@ -119,6 +131,13 @@ export function ProfileEntryPage({ entry }: { entry: SiteEntry }) {
             <EntryDescription markdown={entry.description} />
           </div>
         </details>
+
+        <EntrySource
+          entry={entry}
+          partials={partials}
+          example={example}
+          className="-mt-7 lg:col-start-1"
+        />
       </div>
       <SiteFooter />
     </main>

@@ -57,7 +57,7 @@ describe("a Profile's edition", () => {
 
 1. Select **Add to ZotLit**.`);
     expect(text).toContain(
-      `   - Select **${m.docs_directory_copy_profile()}**, or download the file.
+      `   - Select **${m.docs_directory_copy_it()}**, or download the file from the **${m.docs_directory_source_heading()}** section.
    - In Obsidian, run \`ZotLit: ${m.command_import_profile_name()}\` and select **${m.profile_import_clipboard()}**, or **${m.profile_import_file()}** for the downloaded file.
 2. In that window, select **${m.profile_import_confirm()}**.
 3. Create a literature note and choose **Fixture profile** as its profile.`,
@@ -98,23 +98,9 @@ A fixture Profile.
     expect(text).not.toContain("A book");
   });
 
-  it("keeps the partials it calls, the file, and what it makes, after the Details", async () => {
+  it("keeps what it makes and the Details first, and closes with one Source section", async () => {
     const text = await edition();
 
-    expect(text).toContain(`## ${m.docs_directory_calls_heading()}
-
-${m.docs_directory_calls_profile()}
-
-- [Fixture heading](/templates/partials/fixture-heading.md): The title as a heading.
-- [Fixture quote](/templates/partials/fixture-quote.md): The text as a quote.
-`);
-    expect(text).toContain(`## ${m.docs_directory_file_heading()}
-
-\`zotlit-profile.fixture-profile.md\`
-
-\`\`\`markdown
-${PROFILE_SOURCE}\`\`\`
-`);
     expect(text).toContain(`## ${m.docs_directory_samples_heading()}
 
 ${m.docs_directory_samples_intro()}
@@ -123,6 +109,54 @@ ${m.docs_directory_samples_intro()}
 
 ${m.docs_directory_sample_note_name()}: \`kahnemanProspectTheoryAnalysis1979\`
 `);
+    const source = `## ${m.docs_directory_source_heading()}`;
+    expect(text.split(source)).toHaveLength(2);
+    for (const heading of [
+      m.docs_directory_use_heading(),
+      m.docs_directory_samples_heading(),
+      m.docs_directory_details_heading(),
+    ]) {
+      expect(text.indexOf(`## ${heading}`)).toBeLessThan(text.indexOf(source));
+    }
+  });
+
+  it("puts the note part, the partials it packs with links, and the whole file in the Source section, and nowhere else", async () => {
+    const text = await edition();
+    const source = text.slice(
+      text.indexOf(`## ${m.docs_directory_source_heading()}`),
+    );
+
+    expect(source).toContain(`### ${m.docs_directory_source_note_part()}
+
+\`\`\`markdown
+{% managed %}
+{% render "fixture-heading" with zt as zt %}
+{% endmanaged %}
+
+## My notes
+
+--- zotlit:annotation ---
+{% render "fixture-quote" with zt as zt %}
+\`\`\`
+`);
+    expect(source).toContain(`### ${m.docs_directory_calls_heading()}
+
+${m.docs_directory_calls_profile()}
+
+- [Fixture heading](/templates/partials/fixture-heading.md): The title as a heading.
+- [Fixture quote](/templates/partials/fixture-quote.md): The text as a quote.
+`);
+    expect(source).toContain(`### ${m.docs_directory_source_whole_file()}
+
+\`zotlit-profile.fixture-profile.md\`
+
+\`\`\`markdown
+${PROFILE_SOURCE}\`\`\`
+`);
+    const before = text.slice(0, text.indexOf(source));
+    expect(before).not.toContain("{% managed %}");
+    expect(before).not.toContain("zotlit-profile.fixture-profile.md`");
+    expect(before).not.toContain(`## ${m.docs_directory_calls_heading()}`);
   });
 });
 
@@ -201,7 +235,7 @@ describe("a property entry's edition", () => {
    | --- | --- |
    | **${m.workbench_properties_name()}** | \`year\` |
 `);
-    expect(edition).toContain(`## ${m.docs_directory_file_heading()}
+    expect(edition).toContain(`## ${m.docs_directory_source_heading()}
 
 \`zotlit-property.fixture-year.yaml\`
 

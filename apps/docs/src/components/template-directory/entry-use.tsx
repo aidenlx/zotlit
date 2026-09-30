@@ -56,9 +56,15 @@ export function EntryUse({
                   <Step
                     text={m.docs_directory_profile_step_copy({
                       copy: "{copy}",
+                      source: "{source}",
                     })}
                   >
-                    {{ copy }}
+                    {{
+                      copy: <UiLabel name={m.docs_directory_copy_it()} />,
+                      source: (
+                        <UiLabel name={m.docs_directory_source_heading()} />
+                      ),
+                    }}
                   </Step>
                   <Step
                     text={m.docs_directory_profile_step_import({

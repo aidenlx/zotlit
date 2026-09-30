@@ -21,11 +21,25 @@ const SECONDARY =
   "border border-fd-border bg-fd-card hover:border-fd-primary hover:text-fd-primary";
 
 /** Puts the text on the clipboard and says so in a toast; `failed` names the toast a refusal shows. */
-function copyToClipboard(text: string, failed: string) {
+export function copyToClipboard(text: string, failed: string) {
   navigator.clipboard.writeText(text).then(
     () => toast.add({ title: m.docs_directory_copied(), type: "success" }),
     () => toast.add({ title: failed, type: "error" }),
   );
+}
+
+/** Saves the entry's file byte for byte and says so in a toast. */
+export function downloadFile({ name, text }: SiteEntry["file"]) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
+  toast.add({
+    title: m.docs_directory_downloaded({ file: name }),
+    type: "success",
+  });
 }
 
 export function EntryActions({
@@ -42,21 +56,6 @@ export function EntryActions({
         }),
       () => toast.add({ title: m.docs_directory_add_failed(), type: "error" }),
     );
-  }
-
-  function download() {
-    const url = URL.createObjectURL(
-      new Blob([entry.file.text], { type: "text/plain" }),
-    );
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = entry.file.name;
-    link.click();
-    URL.revokeObjectURL(url);
-    toast.add({
-      title: m.docs_directory_downloaded({ file: entry.file.name }),
-      type: "success",
-    });
   }
 
   if (entry.kind === "profile") {
@@ -86,7 +85,7 @@ export function EntryActions({
       </button>
       <button
         type="button"
-        onClick={download}
+        onClick={() => downloadFile(entry.file)}
         className={`${ACTION} ${SECONDARY}`}
       >
         <Download aria-hidden />

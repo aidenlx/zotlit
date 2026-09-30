@@ -56,7 +56,9 @@ const SHEET = cn(
 );
 
 /** The first sample item the entry shows something for, so the page opens on real output. */
-function firstShown(notes: readonly NoteSampleView[]): string | undefined {
+export function firstShown(
+  notes: readonly NoteSampleView[],
+): string | undefined {
   return (notes.find(({ body }) => body?.trim()) ?? notes[0])?.id;
 }
 
@@ -66,19 +68,24 @@ const LABEL =
 /**
  * A Profile's example note as Obsidian's reading view shows it, under a
  * switcher that names each example item. The switcher wraps on a wide screen
- * and scrolls sideways on a phone.
+ * and scrolls sideways on a phone. The page holds the selection, so its Source
+ * section can show the Markdown of the same example.
  */
 export function ProfileExample({
   notes,
+  selected,
+  onSelect,
   shortLabels = false,
 }: {
   notes: readonly NoteSampleView[];
+  selected: string | undefined;
+  onSelect: (id: string) => void;
   /** Name the tabs by item type, for a Profile that takes several item types. */
   shortLabels?: boolean;
 }) {
   const labelId = useId();
   return (
-    <Tabs defaultValue={firstShown(notes)}>
+    <Tabs value={selected} onValueChange={(id) => onSelect(String(id))}>
       <p id={labelId} className={cn(LABEL, "mb-2")}>
         {m.docs_directory_see_it_with()}
       </p>
