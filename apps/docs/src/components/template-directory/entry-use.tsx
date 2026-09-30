@@ -1,7 +1,6 @@
 // An entry page's steps: where the reader puts the entry in Obsidian, in the plugin's own UI Labels.
 
 import { asMarkdown } from "fumadocs-core/server";
-import { CodeBlock, Pre } from "fumadocs-ui/components/codeblock";
 import type { ReactNode } from "react";
 
 import { Command } from "@/components/command";
@@ -113,53 +112,50 @@ export function EntryUse({
         </Steps>
       );
     case "partial": {
-      const { context, call } = entry.details;
+      const { context } = entry.details;
       return (
-        <>
-          <Steps>
-            <Step
-              text={m.docs_directory_partial_step_add({
-                path: "{path}",
-                add: "{add}",
-                name: "{name}",
-              })}
-            >
-              {{
-                path: (
-                  <SettingsPath
-                    page={m.settings_page_profiles()}
-                    setting={m.settings_partials_heading()}
-                  />
-                ),
-                add: <UiLabel name={m.settings_partial_add()} />,
-                name: <code>{slug}</code>,
-              }}
-            </Step>
-            <Step
-              text={m.docs_directory_partial_step_paste({ copy: "{copy}" })}
-            >
-              {{ copy }}
-            </Step>
-            <li>
-              <Message
-                text={m.docs_directory_partial_step_call({ tab: "{tab}" })}
-                slots={{
-                  tab: (
-                    <UiLabel
-                      name={
-                        context === "note"
-                          ? m.workbench_tab_note()
-                          : m.workbench_tab_annotation()
-                      }
-                    />
-                  ),
-                }}
-              />
-              <CallCode call={call} />
-            </li>
-          </Steps>
-          <p>{m.docs_directory_partial_file()}</p>
-        </>
+        <Steps>
+          <Step
+            text={m.docs_directory_partial_step_add({
+              path: "{path}",
+              add: "{add}",
+              name: "{name}",
+            })}
+          >
+            {{
+              path: (
+                <SettingsPath
+                  page={m.settings_page_profiles()}
+                  setting={m.settings_partials_heading()}
+                />
+              ),
+              add: <UiLabel name={m.settings_partial_add()} />,
+              name: <code>{slug}</code>,
+            }}
+          </Step>
+          <Step text={m.docs_directory_partial_step_paste({ copy: "{copy}" })}>
+            {{ copy }}
+          </Step>
+          <Step
+            text={m.docs_directory_partial_step_call({
+              edit: "{edit}",
+              tab: "{tab}",
+            })}
+          >
+            {{
+              edit: <UiLabel name={m.settings_profile_edit()} />,
+              tab: (
+                <UiLabel
+                  name={
+                    context === "note"
+                      ? m.workbench_tab_note()
+                      : m.workbench_tab_annotation()
+                  }
+                />
+              ),
+            }}
+          </Step>
+        </Steps>
       );
     }
     case "citation":
@@ -167,13 +163,11 @@ export function EntryUse({
         <Steps>
           <Step
             text={m.docs_directory_citation_step_open({
-              path: "{path}",
               row: "{row}",
               open: "{open}",
             })}
           >
             {{
-              path: <SettingsPath page={m.settings_page_citations()} />,
               row: <UiLabel name={m.settings_citation_text_name()} />,
               open: <UiLabel name={m.settings_citation_text_open()} />,
             }}
@@ -191,7 +185,7 @@ export function EntryUse({
     case "note-name":
       return (
         <Steps>
-          <OpenProfileStep tab={m.workbench_tab_name_and_folder()} />
+          <TabStep tab={m.workbench_tab_name_and_folder()} />
           <Step
             text={m.docs_directory_step_replace_field({
               copy: "{copy}",
@@ -210,7 +204,7 @@ export function EntryUse({
       if (key === null) {
         return (
           <Steps>
-            <OpenProfileStep tab={m.workbench_tab_properties()} />
+            <TabStep tab={m.workbench_tab_properties()} />
             <Step
               text={m.docs_directory_property_step_add_spread({
                 spread: "{spread}",
@@ -238,7 +232,7 @@ export function EntryUse({
       }
       return (
         <Steps>
-          <OpenProfileStep tab={m.workbench_tab_properties()} />
+          <TabStep tab={m.workbench_tab_properties()} />
           <li>
             <p>
               <Message
@@ -322,22 +316,6 @@ function Steps({ children }: { children: ReactNode }) {
   return <ol>{children}</ol>;
 }
 
-/** The Liquid a Profile writes to call a partial, as a code block. */
-function CallCode({ call }: { call: string }) {
-  if (asMarkdown()) {
-    return (
-      <pre>
-        <code className="language-liquid">{call}</code>
-      </pre>
-    );
-  }
-  return (
-    <CodeBlock className="not-prose">
-      <Pre className="px-4">{call}</Pre>
-    </CodeBlock>
-  );
-}
-
 /** One step: a sentence of the site's catalog with the plugin's UI Labels in its slots. */
 function Step({
   text,
@@ -354,21 +332,43 @@ function Step({
   );
 }
 
-function OpenProfileStep({ tab }: { tab: LocalizedString }) {
+function TabStep({ tab }: { tab: LocalizedString }) {
   asMarkdown();
   return (
-    <Step
-      text={m.docs_directory_open_profile_step({
-        path: "{path}",
-        edit: "{edit}",
-        tab: "{tab}",
-      })}
-    >
-      {{
-        path: <SettingsPath page={m.settings_page_profiles()} />,
-        edit: <UiLabel name={m.settings_profile_edit()} />,
-        tab: <UiLabel name={tab} />,
-      }}
+    <Step text={m.docs_directory_open_tab_step({ tab: "{tab}" })}>
+      {{ tab: <UiLabel name={tab} /> }}
     </Step>
+  );
+}
+
+/**
+ * The first line under a part's result: which look it changes and where to
+ * open it. The Markdown edition renders this line too.
+ */
+export function EntryChanges({ entry }: { entry: Pick<SiteEntry, "kind"> }) {
+  asMarkdown();
+  if (entry.kind === "profile") return null;
+  if (entry.kind === "citation") {
+    return (
+      <p>
+        <Message
+          text={m.docs_directory_changes_citation({ path: "{path}" })}
+          slots={{
+            path: <SettingsPath page={m.settings_page_citations()} />,
+          }}
+        />
+      </p>
+    );
+  }
+  return (
+    <p>
+      <Message
+        text={m.docs_directory_changes_look({ path: "{path}", edit: "{edit}" })}
+        slots={{
+          path: <SettingsPath page={m.settings_page_profiles()} />,
+          edit: <UiLabel name={m.settings_profile_edit()} />,
+        }}
+      />
+    </p>
   );
 }

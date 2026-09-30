@@ -56,7 +56,7 @@ PhD thesis · Princeton University
 University of Chicago Press · Chicago · Edition: 4 · ISBN 978-0-226-23973-6
 ```
 
-## Journal article with volume, issue, and pages
+## A journal article with full details and highlights
 
 ```markdown
 *Econometrica* · Vol. 47 · No. 2 · pp. 263–291

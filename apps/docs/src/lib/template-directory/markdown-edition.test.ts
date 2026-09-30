@@ -160,6 +160,102 @@ ${PROFILE_SOURCE}\`\`\`
   });
 });
 
+describe("a part's edition", () => {
+  const RECIPE = `minAppVersion: "2.2.0-beta.0"
+tasks: [writing]
+problems:
+  - I want a fixture.
+audience: Tests.
+effort: Nothing.`;
+  const files = () =>
+    fixtureFiles()
+      .set(
+        "note-names/fixture-citekey/entry.md",
+        `---\ntitle: Fixture citekey\nsummary: The citation key as the note name.\n${RECIPE}\n---\n\nA fixture note name.\n`,
+      )
+      .set(
+        "note-names/fixture-citekey/note-name.liquid",
+        "{{ zt.citekey | default: zt.key }}{% suffix %}",
+      )
+      .set(
+        "citations/fixture-citekey/entry.md",
+        `---\ntitle: Fixture citation\nsummary: The citation key in brackets.\n${RECIPE}\n---\n\nA fixture citation text.\n`,
+      )
+      .set(
+        "citations/fixture-citekey/zotlit-citation.md",
+        "---\nlanguage: liquid\n---\n[{% for cite in zt.citations %}@{{ cite.item.citekey }}{% endfor %}]",
+      );
+  const edition = async (folder: string, slug: string) =>
+    (await directoryEdition(site(files()), [folder, slug]))!;
+  const PARTS = [
+    { kind: "partial", folder: "partials", slug: "fixture-heading" },
+    { kind: "property", folder: "properties", slug: "fixture-year" },
+    { kind: "note name", folder: "note-names", slug: "fixture-citekey" },
+    { kind: "citation text", folder: "citations", slug: "fixture-citekey" },
+  ];
+
+  it.each(PARTS)(
+    "reads the result for each example item first, then the look it changes, the steps, and the Source: $kind",
+    async ({ folder, slug }) => {
+      const text = await edition(folder, slug);
+      const changes =
+        folder === "citations"
+          ? "This changes the text that ZotLit inserts when you cite an item."
+          : "This changes a look that you already have.";
+      const order = [
+        `## ${m.docs_directory_samples_heading()}`,
+        changes,
+        `## ${m.docs_directory_details_heading()}`,
+        `## ${m.docs_directory_source_heading()}`,
+      ].map((heading) => text.indexOf(heading));
+
+      expect(order.every((at) => at >= 0)).toBe(true);
+      expect(order).toEqual(order.toSorted((a, b) => a - b));
+      expect(text.indexOf(`## ${m.docs_directory_use_heading()}`)).toBeLessThan(
+        text.indexOf(changes),
+      );
+      expect(
+        text.split(`## ${m.docs_directory_source_heading()}`),
+      ).toHaveLength(2);
+    },
+  );
+
+  it("names where to open the look: Settings, then the look's Edit profile button", async () => {
+    const text = await edition("properties", "fixture-year");
+
+    expect(text).toContain(
+      `This changes a look that you already have. Open it at **Settings > ZotLit > ${m.settings_page_profiles()}**, then select **${m.settings_profile_edit()}** next to the look.`,
+    );
+  });
+
+  it("puts the call a profile writes in the Source section, and names that section in the step that uses it", async () => {
+    const text = await edition("partials", "fixture-heading");
+    const source = text.indexOf(`## ${m.docs_directory_source_heading()}`);
+
+    expect(
+      text.indexOf('{% render "fixture-heading" with zt as zt -%}'),
+    ).toBeGreaterThan(source);
+    expect(text.slice(0, source)).not.toContain("```liquid");
+    expect(text.slice(0, source)).toContain(
+      "On the **Note** tab, add the call from the Source section at the end of this page.",
+    );
+  });
+
+  it.each(PARTS)(
+    "keeps the file's text in the Source section alone: $kind",
+    async ({ folder, slug }) => {
+      const text = await edition(folder, slug);
+      const { file } = site(files()).entries.find(
+        ({ id }) => id === `${folder}/${slug}`,
+      )!;
+      const source = text.indexOf(`## ${m.docs_directory_source_heading()}`);
+
+      expect(text.slice(0, source)).not.toContain(file.text.trim());
+      expect(text.slice(source)).toContain(file.text.trim());
+    },
+  );
+});
+
 describe("the labels of an edition's samples", () => {
   const RECIPE = `minAppVersion: "2.2.0-beta.0"
 tasks: [writing]

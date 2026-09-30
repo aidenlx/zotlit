@@ -156,7 +156,7 @@ A Profile page shows only example variants:
 
 A Profile page lists each example's properties as a real note carries them: the ones the Managed Frontmatter writes (static-key and Spread Entry keys, as rendered) are marked as set by the look, and the site adds `zotero-key` with the item's key and `zotlit-profile` with the stamp `Label (ID)`, built from the Profile's `name` and `id`, marked as added by ZotLit.
 
-The `publisher-by-item-type` entry shows `journal-article-with-volume`, a type example of a real article with a volume, an issue, and pages.
+The `publisher-by-item-type` entry shows `journal-article-full-details`, the shared full variant of a journal article, a real article with a volume, an issue, and pages.
 
 ## Commands
 
