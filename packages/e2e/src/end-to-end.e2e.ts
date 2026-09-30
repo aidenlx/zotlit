@@ -22,6 +22,7 @@ import {
 import { createServer } from "node:net";
 import { basename, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { parse as parseYaml } from "yaml";
 
 import {
   buildImportProfileProtocolUrl,
@@ -357,10 +358,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       `(function(){var input=activeDocument.querySelector('.prompt input');input.value=${JSON.stringify(item.title)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
     await selectSuggestion(targetVaultId, item.title);
-    await obEval(
-      targetVaultId,
-      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
+    await pressEnterInPrompt(targetVaultId);
   }
 
   beforeAll(async () => {
@@ -1179,10 +1177,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(selected).toContain(booksProfile.label);
     expect(selected).not.toContain(m.modal_profile_preselected());
     expect(selected).toContain(booksNotePath);
-    await obEval(
-      vaultId,
-      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
+    await pressEnterInPrompt(vaultId);
     expect(
       await waitFor(async () =>
         (
@@ -1573,10 +1568,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const articlesPath = `articles/articles-${sharedItem.citationKey}.md`;
     const preprintPath = `books/books-${preprintItem.citationKey}.md`;
     const labPath = `books/books-${labItem.citationKey}.md`;
-    const confirmation = await obEval(
-      vaultId,
-      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
-    );
+    const confirmation = await modalText(vaultId);
     for (const text of [
       bookPath,
       articlesPath,
@@ -1612,10 +1604,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       `(function(){var input=Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input');input.value=${JSON.stringify(booksProfile.label)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
     await selectSuggestion(vaultId, preprintPath);
-    await obEval(
-      vaultId,
-      "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
+    await pressEnterInPrompt(vaultId);
     expect(
       await obEvalUntil(
         vaultId,
@@ -1623,10 +1612,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { expected: "true" },
       ),
     ).toBe(true);
-    const chosen = await obEval(
-      vaultId,
-      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
-    );
+    const chosen = await modalText(vaultId);
     for (const text of [
       bookPath,
       articlesPath,
@@ -1648,10 +1634,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { expected: "true" },
       ),
     ).toBe(true);
-    const summary = await obEval(
-      vaultId,
-      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
-    );
+    const summary = await modalText(vaultId);
     for (const text of [
       m.batch_profile_created({ count: 3, label: booksProfile.label }),
       m.batch_profile_created({
@@ -2596,47 +2579,17 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
         expected: "true",
       }),
     ).toBe(true);
-    await obEval(
+    const { choice, note: book } = await createNoteFromQuickSwitcher(
       vaultId,
-      "app.commands.executeCommandById('zotlit:note-quick-switcher')",
+      vaultPath,
+      {
+        title: "Thinking, fast and slow",
+        choice: "books/Kahneman2011.md",
+        path: "books/Kahneman2011.md",
+        ready: "Thinking, fast and slow",
+      },
     );
-    expect(
-      await obEvalUntil(
-        vaultId,
-        "String(!!activeDocument.querySelector('.prompt input'))",
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
-      vaultId,
-      "(function(){var input=activeDocument.querySelector('.prompt input');input.value='Thinking, fast and slow';input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()",
-    );
-    await selectSuggestion(vaultId, "Thinking, fast and slow");
-    await obEval(
-      vaultId,
-      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
-    const choice = await selectSuggestion(vaultId, "books/Kahneman2011.md");
     expect(choice).toContain("Books");
-    expect(choice).toContain("books/Kahneman2011.md");
-    await obEval(
-      vaultId,
-      "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
-    expect(
-      await waitFor(async () =>
-        (
-          await readFile(
-            join(vaultPath, "books/Kahneman2011.md"),
-            "utf-8",
-          ).catch(() => "")
-        ).includes("Thinking, fast and slow"),
-      ),
-    ).toBe(true);
-    const book = await readFile(
-      join(vaultPath, "books/Kahneman2011.md"),
-      "utf-8",
-    );
     expect(book).toContain(`zotlit-profile: Books (${books.id})`);
     expect(await readFile(join(vaultPath, first.path), "utf-8")).toBe(original);
     expect(await indexedNote(vaultId, 46)).toEqual({
@@ -2674,21 +2627,21 @@ describe.skipIf(!reachable)("Template Directory import", () => {
 
   /** The identity and packed partial names of the Profile entry file at `path`. */
   async function readEntry(path: string): Promise<DirectoryEntry> {
-    const manifest = (await readFile(path, "utf-8")).split("\n---\n")[0]!;
-    const lines = manifest.split("\n");
-    const value = (key: string) => {
-      const raw = lines
-        .find((line) => line.startsWith(`${key}: `))!
-        .slice(key.length + 2);
-      return raw.startsWith('"') ? raw.slice(1, -1) : raw;
+    const [, manifest = ""] = (await readFile(path, "utf-8")).split(
+      /^---$/m,
+      2,
+    );
+    const { id, name, version, partials } = parseYaml(manifest) as {
+      id: string;
+      name: string;
+      version: string;
+      partials: { name: string }[];
     };
     return {
-      id: value("id"),
-      name: value("name"),
-      version: value("version"),
-      partials: lines
-        .filter((line) => line.startsWith("  - name: "))
-        .map((line) => line.slice("  - name: ".length)),
+      id,
+      name,
+      version,
+      partials: partials.map((partial) => partial.name),
     };
   }
 
@@ -2712,10 +2665,7 @@ describe.skipIf(!reachable)("Template Directory import", () => {
         ),
       ).toBe(true);
       await selectSuggestion(vaultId, m.profile_import_file());
-      await obEval(
-        vaultId,
-        "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-      );
+      await pressEnterInPrompt(vaultId);
       expect(
         await obEvalUntil(
           vaultId,
@@ -2739,41 +2689,13 @@ describe.skipIf(!reachable)("Template Directory import", () => {
     item: (typeof ITEMS)[number],
     profile: string,
   ): Promise<string> {
-    const path = `literatures/${item.citationKey}.md`;
-    await obEval(
-      vaultId,
-      "app.commands.executeCommandById('zotlit:note-quick-switcher')",
-    );
-    expect(
-      await obEvalUntil(
-        vaultId,
-        "String(!!activeDocument.querySelector('.prompt input'))",
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
-      vaultId,
-      `(function(){var input=activeDocument.querySelector('.prompt input');input.value=${JSON.stringify(item.title)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
-    );
-    await selectSuggestion(vaultId, item.title);
-    await obEval(
-      vaultId,
-      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
     // No match, so the picker preselects Default and the reader chooses.
-    const choice = await selectSuggestion(vaultId, profile);
-    expect(choice).toContain(path);
-    await obEval(
-      vaultId,
-      "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
-    let note = "";
-    expect(
-      await waitFor(async () => {
-        note = await readFile(join(vaultPath, path), "utf-8").catch(() => "");
-        return note.includes("%%/zt-managed%%");
-      }),
-    ).toBe(true);
+    const { note } = await createNoteFromQuickSwitcher(vaultId, vaultPath, {
+      title: item.title,
+      choice: profile,
+      path: `literatures/${item.citationKey}.md`,
+      ready: "%%/zt-managed%%",
+    });
     return note;
   }
 
@@ -2823,10 +2745,7 @@ describe.skipIf(!reachable)("Template Directory import", () => {
     await importEntryFile(
       m.profile_import_partials({ names: entry.partials.join(", ") }),
     );
-    const sheet = await obEval(
-      vaultId,
-      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
-    );
+    const sheet = await modalText(vaultId);
     expect(sheet).toContain(entry.name);
     expect(sheet).toContain(m.profile_match_absent());
     expect(await clickModalButton(vaultId, m.profile_import_confirm())).toBe(
@@ -2927,10 +2846,7 @@ describe.skipIf(!reachable)("Template Directory import", () => {
     await importEntryFile(
       m.profile_import_replace_title({ label: entry.name }),
     );
-    const sheet = await obEval(
-      vaultId,
-      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
-    );
+    const sheet = await modalText(vaultId);
     expect(sheet).toContain(
       m.profile_import_replace_effects({
         version: entry.version,
@@ -2994,10 +2910,7 @@ describe.skipIf(!reachable)("Template Directory import", () => {
         { expected: "true" },
       ),
     ).toBe(true);
-    const sheet = await obEval(
-      vaultId,
-      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
-    );
+    const sheet = await modalText(vaultId);
     expect(sheet).toContain(second.name);
     expect(sheet).not.toContain("not found");
     // The button waits for a preview that rendered, so a click proves it.
@@ -3251,6 +3164,67 @@ async function selectSuggestion(
     vaultId,
     "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('.is-selected').textContent",
   );
+}
+
+/** Presses Enter in the topmost prompt, which chooses its selected row. */
+async function pressEnterInPrompt(vaultId: string): Promise<void> {
+  await obEval(
+    vaultId,
+    "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+  );
+}
+
+/** The text of the topmost modal. */
+function modalText(vaultId: string): Promise<string> {
+  return obEval(
+    vaultId,
+    "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
+  );
+}
+
+/**
+ * Creates the Literature Note at `path` through the note quick switcher: finds
+ * the item by `title`, then chooses the Profile row that includes `choice`.
+ * Returns the chosen row's text and the note, once the note holds `ready`.
+ */
+async function createNoteFromQuickSwitcher(
+  vaultId: string,
+  vaultPath: string,
+  {
+    title,
+    choice,
+    path,
+    ready,
+  }: { title: string; choice: string; path: string; ready: string },
+): Promise<{ choice: string; note: string }> {
+  await obEval(
+    vaultId,
+    "app.commands.executeCommandById('zotlit:note-quick-switcher')",
+  );
+  expect(
+    await obEvalUntil(
+      vaultId,
+      "String(!!activeDocument.querySelector('.prompt input'))",
+      { expected: "true" },
+    ),
+  ).toBe(true);
+  await obEval(
+    vaultId,
+    `(function(){var input=activeDocument.querySelector('.prompt input');input.value=${JSON.stringify(title)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+  );
+  await selectSuggestion(vaultId, title);
+  await pressEnterInPrompt(vaultId);
+  const chosen = await selectSuggestion(vaultId, choice);
+  expect(chosen).toContain(path);
+  await pressEnterInPrompt(vaultId);
+  let note = "";
+  expect(
+    await waitFor(async () => {
+      note = await readFile(join(vaultPath, path), "utf-8").catch(() => "");
+      return note.includes(ready);
+    }),
+  ).toBe(true);
+  return { choice: chosen, note };
 }
 
 function clickModalButton(
