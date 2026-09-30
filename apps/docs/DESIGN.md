@@ -214,21 +214,23 @@ that fits a research task:
   opens on the note part in a scrolling code box, with a segmented control for
   the whole file and outline **Copy profile** and **Download file** buttons; a
   partial tab holds its summary and a link to its page.
-- **Entry head** (partials, property rules, note names, and citation text): `← Template directory` crumb, mono-uppercase kind and level
-  line, serif title, italic summary held to 60ch, mono-uppercase version line,
-  then the actions. The first action is a square ink button (the landing's
-  "Get started" look): copy. An outline button follows for download.
-- **Entry body**: audience and effort as accent-barred facts in serif, the
-  entry's description and the "How to use it" steps in `ztProse` held to 72ch,
-  and an aside rail of mono-uppercase headings over the entry's facets and its
-  problems as serif italic quotes (below the body under `lg`, after a hairline).
-  The body ends with the folded **Source · for advanced users** section, which
-  shows the entry's own file in a scrolling code box.
+- **Part entry page** (partials, property rules, note names, and citation
+  text): `← Template directory` crumb, a mono-uppercase eyebrow that names the
+  kind and what it changes ("Part of a note · changes a look you have"), serif
+  title, italic summary held to 60ch, and a mono-uppercase version line. One
+  column of 56rem holds, in order: **What it makes** (the result for each
+  example item), **How to use it** (the "This changes a look that you already
+  have" line, one square ink Copy button, then the steps in `ztProse` held to
+  72ch), the partials it needs, and two folds, **Details** (the description) and
+  **Source · for advanced users**. The Source fold shows the entry's own file in
+  a scrolling code box under an outline **Download file** button; a partial adds
+  the call a look writes, under a mono-uppercase "Call it from a look" label.
+  Both folds share one component (`fold.tsx`) with the Profile page.
   The samples take the full column: paper sheets in the Workbench reading view
   with callouts in Obsidian's built-in callout colors; a property recipe shows a
   table of sample items when it writes up to three properties, and one sheet per
   sample item when it writes more. The sample-item tabs and the Preview/Markdown
-  toggle share the kit's square segmented track (`ui/tabs.tsx`): 32 px segments
+  toggle of a partial share the kit's square segmented track (`ui/tabs.tsx`): 32 px segments
   on a muted track, the active one in ink.
 
 ### Docs content column

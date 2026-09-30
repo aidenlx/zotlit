@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { toast } from "@/components/ui/toast";
 import { m } from "@/paraglide/messages.js";
 
-import { EntryActions, ImportFallback } from "./entry-actions";
+import { CopyButton, EntryActions, ImportFallback } from "./entry-actions";
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -125,15 +125,29 @@ describe("one-click import", () => {
     act(() => root.unmount());
     host.remove();
   });
+});
 
-  it("leaves a recipe to its copy and download, since a recipe goes into a field of a profile", async () => {
-    using page = await renderActions({
-      kind: "property",
-      copyText: '{"$eval": "zt.title"}',
-      file: { name: "zotlit-property.title.yaml", text: "key: title\n" },
-    });
+describe("a part's one Copy button", () => {
+  it("names what it copies, and puts the text the reader pastes on the clipboard", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    using toasts = recordToasts();
+    const host = document.body.appendChild(document.createElement("div"));
+    const root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <CopyButton kind="property" copyText={'{"$eval": "zt.title"}'} />,
+      ),
+    );
 
-    expect(page.button(m.docs_directory_import())).toBeUndefined();
-    expect(page.host.querySelector("p")).toBeNull();
+    const buttons = [...host.querySelectorAll("button")];
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      m.docs_directory_copy_rule(),
+    ]);
+    await act(async () => buttons[0]!.click());
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('{"$eval": "zt.title"}');
+    expect(toasts.titles()).toEqual([m.docs_directory_copied()]);
+    act(() => root.unmount());
+    host.remove();
   });
 });

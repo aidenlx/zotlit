@@ -43,6 +43,7 @@ const profile: Props["entry"] = {
   kind: "profile",
   copyText: FILE,
   file: { name: "zotlit-profile.books.md", text: FILE },
+  details: { kind: "profile" },
   profileSource: {
     note: NOTE,
     partials: [
@@ -214,21 +215,70 @@ describe("a Profile's Source section", () => {
 });
 
 describe("a part entry's Source section", () => {
-  it("folds its own file, with no tabs", async () => {
-    using page = await render({
-      entry: {
-        kind: "partial",
-        copyText: "{{ zt.title }}\n",
-        file: {
-          name: "zotlit-partial.title.md",
-          text: "---\nlanguage: liquid\n---\n{{ zt.title }}\n",
-        },
-        profileSource: null,
-        notes: [],
+  const partial: Props["entry"] = {
+    kind: "partial",
+    copyText: "{{ zt.title }}\n",
+    file: {
+      name: "zotlit-partial.title.md",
+      text: "---\nlanguage: liquid\n---\n{{ zt.title }}\n",
+    },
+    profileSource: null,
+    notes: [],
+    details: {
+      kind: "partial",
+      context: "note",
+      call: '{% render "title" with zt as zt -%}',
+    },
+  };
+  const props: Props = { entry: partial, partials: [], example: undefined };
+
+  it("holds the call a look writes to use a partial, after the file", async () => {
+    using page = await render(props);
+
+    expect(
+      [...page.host.querySelectorAll("pre")].map((pre) => pre.textContent),
+    ).toEqual([
+      "---\nlanguage: liquid\n---\n{{ zt.title }}\n",
+      '{% render "title" with zt as zt -%}',
+    ]);
+    expect(page.host.textContent).toContain(m.docs_directory_source_call());
+  });
+
+  it("offers the download of the file, which the header no longer holds", async () => {
+    const opened: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
+      function (this: HTMLAnchorElement) {
+        opened.push(this.download);
       },
-      partials: [],
-      example: undefined,
+    );
+    URL.createObjectURL = () => "blob:file";
+    URL.revokeObjectURL = () => {};
+    using toasts = recordToasts();
+    using page = await render(props);
+
+    await act(async () => page.button(m.docs_directory_download())!.click());
+
+    expect(opened).toEqual(["zotlit-partial.title.md"]);
+    expect(toasts.titles()).toEqual([
+      m.docs_directory_downloaded({ file: "zotlit-partial.title.md" }),
+    ]);
+  });
+
+  it("leaves the call to a partial: a property folds its file alone", async () => {
+    using page = await render({
+      ...props,
+      entry: {
+        ...partial,
+        kind: "property",
+        details: { kind: "property", key: "year", merge: "replace" },
+      },
     });
+
+    expect(page.host.querySelectorAll("pre")).toHaveLength(1);
+  });
+
+  it("folds its own file, with no tabs", async () => {
+    using page = await render(props);
 
     expect(page.host.querySelector("summary")?.textContent).toBe(
       m.docs_directory_source_heading(),
