@@ -3,7 +3,14 @@
 import { Suspense, useState } from "react";
 import type { ReactNode } from "react";
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  segment,
+  segmentedTrack,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import { cn } from "@/lib/cn";
 import type {
   AnnotationSampleView,
@@ -138,7 +145,7 @@ function ViewToggle({
       type="button"
       aria-pressed={showMarkdown === markdown}
       onClick={() => onChange(markdown)}
-      className="min-h-8 cursor-pointer rounded-sm px-3 py-1 text-sm font-medium text-fd-muted-foreground aria-pressed:bg-fd-card aria-pressed:text-fd-foreground aria-pressed:shadow-sm"
+      className={segment}
     >
       {label}
     </button>
@@ -147,7 +154,7 @@ function ViewToggle({
     <div
       role="group"
       aria-label={m.docs_directory_samples_view()}
-      className="flex gap-1 rounded-md bg-fd-muted p-1"
+      className={segmentedTrack}
     >
       {option(false, m.docs_directory_samples_preview())}
       {option(true, m.docs_directory_samples_markdown())}

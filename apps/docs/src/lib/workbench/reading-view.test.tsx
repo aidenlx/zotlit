@@ -201,13 +201,17 @@ describe("inert marks", () => {
     expect(markup).not.toContain("href=");
   });
 
-  it("shows bundled image placeholders while preserving image targets in Markdown", () => {
+  it("draws image placeholders in the theme's colors while preserving image targets in Markdown", () => {
     const markdown =
       "![[private/figure.png]]\n\n![Chart](file:///Users/researcher/figure.png)\n\n![Remote](https://example.com/image?id=7)";
     const reading = renderToStaticMarkup(
       <ResultSheet markdown={markdown} properties={[]} showMarkdown={false} />,
     );
-    expect(reading.split("<img ")).toHaveLength(4);
+    const placeholder = `<svg role="img" aria-label="${m.workbench_image_placeholder()}"`;
+    expect(reading.split(placeholder)).toHaveLength(4);
+    // A fixed color stays light on the dark theme; the tokens follow the theme.
+    expect(reading).not.toMatch(/#[\da-f]{3,6}\b/i);
+    expect(reading).not.toContain("<img ");
     expect(reading).not.toContain('src="file:');
     expect(reading).not.toContain('src="https:');
     expect(reading).not.toContain('src="private/');
