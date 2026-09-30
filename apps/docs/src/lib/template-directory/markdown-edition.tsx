@@ -69,7 +69,7 @@ function indexEdition({ entries }: DirectorySite): string {
     `> ${m.docs_directory_description()}`,
     ...(recommended.length > 0
       ? [
-          `## ${m.docs_directory_start_here()}`,
+          `## ${m.docs_directory_recommended()}`,
           recommended.map(entryLink).join("\n"),
         ]
       : []),

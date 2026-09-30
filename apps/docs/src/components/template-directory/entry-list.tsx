@@ -42,14 +42,14 @@ export function StartHere({ entries }: { entries: readonly IndexedEntry[] }) {
   const pieceKinds = [...new Set(pieces.map(({ kind }) => kind))];
   return (
     <section
-      aria-labelledby="start-here"
+      aria-labelledby="recommended-entries"
       className="grid content-start gap-7 sm:grid-cols-2 sm:gap-x-10 lg:grid-cols-1"
     >
       <h2
-        id="start-here"
+        id="recommended-entries"
         className="-mb-2 font-mono text-xs font-semibold tracking-[0.2em] text-fd-primary uppercase sm:col-span-full"
       >
-        {m.docs_directory_start_here()}
+        {m.docs_directory_recommended()}
       </h2>
       {profiles.length > 0 && (
         <ul className="grid gap-7">
