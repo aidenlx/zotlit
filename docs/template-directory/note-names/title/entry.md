@@ -1,6 +1,6 @@
 ---
 title: Title
-summary: Names each literature note by the item's title, such as Thinking, fast and slow.
+summary: Names each literature note by the item's title, so you find a note by the name of the work.
 minAppVersion: "2.2.0-beta.0"
 tasks: [general-reading]
 problems:
@@ -22,13 +22,10 @@ audience: Readers who find their notes by the title of the work.
 effort: Paste one line into the "Note name" field of your profile. Notes you create from then on get the new name.
 ---
 
-Each literature note is named by the item's title, such as `Thinking, fast and slow`. Characters a file name cannot hold are changed, so every note is one file in your literature note folder:
+Characters a file name cannot hold are changed or left out:
 
-- a colon becomes a hyphen: `Bicycle Sharing in Developing Countries: A proposal…` becomes `Bicycle Sharing in Developing Countries - A proposal…`, and `10:30` becomes `10-30`;
-- a slash, a backslash, or a vertical bar becomes a hyphen, so a title never makes a subfolder;
+- a colon, a slash, a backslash, or a vertical bar becomes a hyphen, so a title never makes a subfolder;
 - square brackets become round brackets, and double quotes become single quotes;
 - `?`, `*`, `<`, `>`, `#`, and `^` are left out.
 
-An item with no title is named by its Zotero item key, a code of eight letters and digits. When a note with the same name already exists, the new note gets a short random ending, such as `Thinking, fast and slow_a1B2c3`, so ZotLit can still create it.
-
-In the **Name and folder** tab, **Preview** shows the name for the selected item, as it is when no other note has that name. Notes you already have keep their names.
+An item with no title is named by its Zotero item key. When a note with the same name already exists, the new note gets a short random ending, such as `Thinking, fast and slow_a1B2c3`. **Preview** on the **Name and folder** tab shows the name without this ending. **Update literature note** keeps the name of a note you already have.

@@ -1,6 +1,6 @@
 ---
 title: Zotero link
-summary: A link that selects the item in Zotero, from the note's properties or from an Obsidian Bases view.
+summary: A link in the note's properties that selects the item in Zotero, also as a column in an Obsidian Bases view.
 minAppVersion: "2.2.0-beta.0"
 tasks: [general-reading, literature-review]
 features: [properties, source-links]
@@ -24,17 +24,8 @@ expected:
   thesis: { zotero-link: "zotero://select/library/items/I49R3FTL" }
 ---
 
-The item's Zotero link, as a `zotero-link` property. Obsidian shows the link in the note's properties; select it to select the item in Zotero. An Obsidian Bases view that shows the property gives each row the same link.
-
-| Item | `zotero-link` |
-| --- | --- |
-| Journal article | `zotero://select/library/items/IANNP5A2` |
-| Book | `zotero://select/library/items/NW2CPDTC` |
-| Book chapter | `zotero://select/library/items/TVKHEUR1` |
-| Thesis | `zotero://select/library/items/I49R3FTL` |
-
 For an item in a group library, the link names the group, so it selects the item there.
 
-**When the note is updated**: **Replace the existing value**. The link follows the item on every update.
+When you update the note, the link follows the item.
 
-Limits: the link opens Zotero on a computer where Zotero is installed. It does not open the item on a phone or in a web browser.
+The link opens Zotero on a computer where Zotero is installed. It does not open the item on a phone or in a web browser.

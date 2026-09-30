@@ -34,7 +34,12 @@ import type {
 } from "@zotlit/workbench/render";
 
 import { partialCall } from "./calls.ts";
-import { ITEM_TYPES } from "./entry.ts";
+import {
+  DETAILS_WORD_LIMIT,
+  ITEM_TYPES,
+  SUMMARY_WORD_LIMIT,
+  wordCount,
+} from "./entry.ts";
 import {
   CONTRACT_VERSION,
   harnessProfile,
@@ -171,6 +176,7 @@ export function verifyTemplateDirectory(
         );
       }
     }
+    checkLength(entry, report);
     switch (entry.kind) {
       case "profile":
         checkProfile(entry, partials, report);
@@ -204,6 +210,30 @@ export function verifyTemplateDirectory(
 }
 
 type Report = (code: DirectoryProblemCode, message: string) => void;
+
+/**
+ * An entry's prose stays short: a one-line summary, and Details that hold only
+ * what the example cannot show.
+ */
+function checkLength(
+  { summary, description }: Pick<DirectoryEntry, "summary" | "description">,
+  report: Report,
+): void {
+  const summaryWords = wordCount(summary);
+  if (summaryWords > SUMMARY_WORD_LIMIT) {
+    report(
+      "entry-length",
+      `The summary holds ${summaryWords} words; the limit is ${SUMMARY_WORD_LIMIT}. Keep it to one line that says what the entry gives the reader.`,
+    );
+  }
+  const detailsWords = wordCount(description);
+  if (detailsWords > DETAILS_WORD_LIMIT) {
+    report(
+      "entry-length",
+      `The Details hold ${detailsWords} words; the limit is ${DETAILS_WORD_LIMIT}. Keep only what the example cannot show, such as update behavior, the match toggle, and edge cases.`,
+    );
+  }
+}
 type ProfileEntry = Extract<DirectoryEntry, { kind: "profile" }>;
 type PartialEntry = Extract<DirectoryEntry, { kind: "partial" }>;
 type PropertyEntry = Extract<DirectoryEntry, { kind: "property" }>;

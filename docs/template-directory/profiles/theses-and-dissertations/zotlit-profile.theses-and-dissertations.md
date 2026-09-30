@@ -3,7 +3,7 @@ id: nOxw2MNwoIDY
 name: Theses and dissertations
 version: "1.0.0"
 author: ZotLit
-description: Thesis notes that name the thesis type and the university, with your annotations in page order as callouts in colors that match your Zotero colors, and places for a summary, key points, and your own notes.
+description: Thesis notes that name the thesis type and the university, with your annotations in page order in their Zotero colors and sections for your own writing.
 contract: 3
 minAppVersion: "2.2.0-beta.2"
 sampleItemType: thesis

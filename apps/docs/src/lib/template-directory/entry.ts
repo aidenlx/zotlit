@@ -90,6 +90,21 @@ export type PartialContext = (typeof PARTIAL_CONTEXTS)[number];
 /** Every Zotero item type the current template contract knows. */
 export const ITEM_TYPES: readonly string[] = Object.keys(ir.itemTypes);
 
+/** The most words an entry's one-line summary holds. */
+export const SUMMARY_WORD_LIMIT = 30;
+
+/** The most words an entry's Details, the body of `entry.md`, hold. */
+export const DETAILS_WORD_LIMIT = 120;
+
+/**
+ * The words of a Markdown text, as a reader counts them: a table pipe, a list
+ * marker, or a rule made of symbols only is not a word.
+ */
+export function wordCount(markdown: string): number {
+  return markdown.split(/\s+/).filter((token) => /[\p{L}\p{N}]/u.test(token))
+    .length;
+}
+
 const text = v.pipe(v.string(), v.trim(), v.nonEmpty());
 
 const facets = {

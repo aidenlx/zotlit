@@ -25,25 +25,9 @@ expected:
   thesis: { cssclasses: [literature-note] }
 ---
 
-The CSS class `literature-note` in the `cssclasses` property of every literature note. Obsidian gives a note the classes in its `cssclasses` property, so a CSS snippet can change how literature notes look and leave your other notes as they are.
+The class changes nothing by itself: a CSS snippet or your theme styles it. For example, the snippet `.literature-note { --file-line-width: 60rem; }` makes literature notes wider. Save it as a `.css` file in your vault's snippets folder, and turn it on in **Settings > Appearance > CSS snippets**. To use a class from your theme, add it to the rule.
 
-| Item | `cssclasses` |
-| --- | --- |
-| Journal article | literature-note |
-| Book | literature-note |
-| Book chapter | literature-note |
-| Thesis | literature-note |
+Each update adds `literature-note` when the note does not have it, and keeps every other class in the note.
 
-The class does nothing by itself. For example, this CSS snippet makes literature notes wider:
-
-```css
-.literature-note {
-  --file-line-width: 60rem;
-}
-```
-
-Save it as a `.css` file in your vault's snippets folder and turn it on in **Settings → Appearance → CSS snippets**. Some themes also offer classes of their own; add them to the list in the rule.
-
-**When the note is updated**: **Add to the existing list**. ZotLit adds `literature-note` when the note does not have it, and keeps every class already in the note, so a class you add by hand stays.
-
-Limits: a class you delete from one note comes back on its next update. To remove it from every note, remove it from the rule. When the note holds `cssclasses` as text and not as a list, ZotLit leaves it as it is and adds no class.
+- A class you delete from one note comes back on its next update. To remove it from every note, remove it from the rule.
+- When `cssclasses` holds text and not a list, ZotLit adds no class.

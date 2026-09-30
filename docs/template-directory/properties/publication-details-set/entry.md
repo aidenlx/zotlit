@@ -1,6 +1,6 @@
 ---
 title: Publication details by item type
-summary: Separate properties for the details each kind of source has — journal, volume, issue, and pages for an article; publisher, place, edition, and ISBN for a book; book title, editors, and pages for a book chapter; university and thesis type for a thesis.
+summary: Separate properties for the publication details of each kind of source, such as the journal and volume of an article or the publisher and ISBN of a book.
 minAppVersion: "2.2.0-beta.0"
 tasks: [general-reading, reading-books, writing]
 itemTypes: [journalArticle, book, bookSection, thesis]
@@ -52,19 +52,8 @@ expected:
   document: {}
 ---
 
-The publication details of every source as separate properties, chosen by the kind of source. Each note gets the details that its kind of source has, ready to show and filter in an Obsidian Bases view or with the Dataview plugin.
+The rule covers four kinds of source: journal article, book, book chapter, and thesis. Other kinds, such as conference papers and letters, get none of these properties. For the journal, book, or proceedings of every source, use the **Publication** entry.
 
-| Kind of source | Properties |
-| --- | --- |
-| Journal article | `journal`, `volume`, `issue`, `pages` |
-| Book | `publisher`, `place`, `edition`, `isbn` |
-| Book chapter (Zotero's "Book Section") | `book-title`, `editors` (a list, one name per line), `pages` |
-| Thesis | `university`, `thesis-type` (such as `PhD thesis`) |
+A property is left out when Zotero has no value for it.
 
-Other kinds of source, such as conference papers, letters, and manuscripts, get none of these properties. For the journal, proceedings, or book of every kind of source in one property, use `venue` from the Core citation set.
-
-A property is left out when Zotero has no value for it, so a note never shows "Vol. null", an empty issue, or a stray "No.". An article with no issue number gets `journal`, `volume`, and `pages` only. Each value is the text from Zotero, such as `3-20` for pages or `2nd` for an edition.
-
-**When the note is updated**: **Replace the existing value**. Each update writes the current values from Zotero, so correct a detail in Zotero, not in the note. If you delete a value in Zotero, or change the item to another kind of source, the old properties keep their values in the note until you delete them there too. If you delete a property from the note while Zotero still has its value, the next update adds it back.
-
-The preview shows the properties for the selected item; select a book, a book chapter, or a thesis to see its details. Notes get them the next time you create or update them.
+When you update the note, each property gets the current value from Zotero, so correct a detail in Zotero. A property that you delete from the note comes back while Zotero has its value. A value that you delete in Zotero, or a property of the old kind after you change the item type, stays in the note until you delete it there.

@@ -3,7 +3,7 @@ id: prKlruGBvGyi
 name: Color-coded reading note
 version: "1.0.0"
 author: ZotLit
-description: Your annotations in page order as callouts in colors that match your Zotero colors, each titled with what its color means, with the title, links back to the source, the folded abstract, and a place for your own notes.
+description: Your annotations as callouts in the colors of your Zotero highlights, each titled with what its color means and linked to its page in the PDF.
 contract: 3
 minAppVersion: "2.2.0-beta.2"
 sampleItemType: journalArticle

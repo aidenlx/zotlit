@@ -1,6 +1,6 @@
 ---
 title: Plain annotation quote
-summary: One annotation as a plain quote with a link to its page, the image for image annotations, and your Zotero comment below it.
+summary: One annotation as a plain quote with its page, the image for an image annotation, and your Zotero comment below it.
 minAppVersion: "2.2.0-beta.2"
 context: annotation
 tasks: [general-reading]
@@ -24,16 +24,6 @@ audience: Readers who build their own profile and want each annotation as a quot
 effort: Add the partial to your template folder and call it from your profile's annotation format.
 ---
 
-Each annotation becomes a Markdown quote:
+The page after each quote links to that page in the PDF when Obsidian can reach the file. Otherwise it shows as plain text, as in the examples on this page.
 
-- a highlight or underline quotes its text and ends with its page, as a link to that page in the PDF;
-- an image or ink annotation embeds its image in the quote, followed by its page;
-- a note or text annotation has no quoted text, so its comment appears as ordinary text with its page.
-
-Your Zotero comment follows the quote as ordinary text, so your thinking and the author's words stay apart. The quote is the same whatever the highlight color. When Obsidian cannot reach the PDF, the page shows as plain text.
-
-The partial reads one annotation's data. Call it from the annotation format of a profile, the part below `--- zotlit:annotation ---`:
-
-```liquid
-{% render "plain-annotation-quote" with zt as zt -%}
-```
+The quote looks the same for every highlight color. An annotation with no text, image, or comment writes nothing.

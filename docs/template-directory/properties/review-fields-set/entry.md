@@ -1,6 +1,6 @@
 ---
 title: Literature review fields
-summary: Three empty properties for your own judgment of each source — contribution, method, and relevance — that keep your words when the note updates.
+summary: Empty contribution, method, and relevance properties for your own judgment of each source, so a Bases view becomes a literature review matrix.
 minAppVersion: "2.2.0-beta.0"
 tasks: [literature-review]
 features: [properties]
@@ -40,16 +40,8 @@ expected:
   document: { contribution: null, method: null, relevance: null }
 ---
 
-Three empty properties for your own judgment of every source, from one rule. Write a few words or a sentence in each, then compare your sources side by side in an Obsidian Bases view or a table of the Dataview plugin: one row per source, one column per property, like a literature review matrix.
+Write a few words in each property: what the source adds, how the authors did the work, and how it relates to your question.
 
-| Property | What you write |
-| --- | --- |
-| `contribution` | What the source adds: its main finding or argument |
-| `method` | How the authors did the work: the design, data, or approach |
-| `relevance` | How the source relates to your own project or question |
+When you update the note, ZotLit fills a property only when it is missing or empty, so your words stay. A note that you have now gets the three properties at its next update. If you delete one, the next update adds it back empty.
 
-ZotLit adds the three properties empty to each new note, and to each note you already have at its next update. Every kind of source gets the same three. An empty property is intended: Obsidian shows the property with no value until you fill it in.
-
-**When the note is updated**: **Keep the existing value**. An update never changes what you write. It fills a property only when it is empty or missing, so if you delete one of them from a note, the next update adds it back empty.
-
-A property holds one line of text. Keep it to a short summary, and write longer thinking under your own heading in the note, such as **My notes**, outside the part that ZotLit refreshes. To use other names, such as `findings` or `limitations`, change or add names in the rule, each with the value `null`, which means empty. For example, `{"contribution": null, "findings": null, "limitations": null}` gives three properties with those names.
+A property holds one line of text. Write longer thinking under your own heading in the note, outside the part that ZotLit refreshes. To use other names, such as `findings`, change or add names in the rule, and give each the value `null`, which means empty.

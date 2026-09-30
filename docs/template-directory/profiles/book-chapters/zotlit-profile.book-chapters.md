@@ -3,7 +3,7 @@ id: TbtUOPL31mTc
 name: Book chapters
 version: "1.0.0"
 author: ZotLit
-description: Chapter notes that name the book, its editors, and the chapter's pages, with your annotations in page order as callouts in colors that match your Zotero colors, and places for a summary, key points, and your own notes.
+description: Chapter notes that name the book, its editors, and the chapter's pages, with your annotations in page order in their Zotero colors and sections for your own writing.
 contract: 3
 minAppVersion: "2.2.0-beta.2"
 sampleItemType: bookSection
