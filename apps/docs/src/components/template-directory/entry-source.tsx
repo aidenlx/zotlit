@@ -75,7 +75,7 @@ export function EntrySource({
 }
 
 /** A folded section of an entry page, opened by its heading. */
-export function Fold({
+function Fold({
   heading,
   className,
   children,
