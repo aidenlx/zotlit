@@ -342,7 +342,7 @@ citekey: floodAldousMill1887
 ## Connections
 ```
 
-## Annotation Section
+## Annotations
 
 ### Highlight annotation, yellow
 

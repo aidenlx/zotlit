@@ -417,7 +417,7 @@ status: unread
 %%/zt-managed%%
 ```
 
-## Annotation Section
+## Annotations
 
 ### Highlight annotation, yellow
 

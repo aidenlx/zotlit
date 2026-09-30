@@ -160,10 +160,16 @@ export function annotationLabel({
       });
 }
 
-/** The names the Markdown edition and the samples files give example items and annotations. */
+/** The names and headings the Markdown edition and the samples files give the samples. */
 export const SAMPLE_LABELS: SampleLabels = {
   example: exampleLabel,
   annotation: annotationLabel,
+  annotations: () => m.docs_directory_samples_annotations(),
+  item: () => m.docs_directory_samples_item(),
+  noteName: () => m.docs_directory_sample_note_name(),
+  cited: () => m.docs_directory_citation_cited(),
+  main: () => m.docs_directory_citation_main(),
+  alt: () => m.docs_directory_citation_alt(),
 };
 
 /** The labels of a facet's `values`, in the order given. */

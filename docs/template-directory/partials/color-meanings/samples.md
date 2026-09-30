@@ -2,7 +2,7 @@
 
 # Rendered samples: Color meanings
 
-## Annotation Section
+## Annotations
 
 ### Highlight annotation, yellow
 

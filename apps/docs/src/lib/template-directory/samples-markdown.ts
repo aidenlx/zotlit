@@ -8,13 +8,23 @@ import type {
   NoteSample,
 } from "./verify.ts";
 
-/** The names the site's messages give the example items and Sample Annotations. */
+/** The names and headings the site's messages give the samples. */
 export interface SampleLabels {
   /** A Directory Sample, an Edge Sample, or a Workbench example set, by id. */
   readonly example: (id: string) => string;
   readonly annotation: (
     annotation: Pick<AnnotationSample, "type" | "color">,
   ) => string;
+  /** The heading over the Sample Annotations. */
+  readonly annotations: () => string;
+  /** The column of example items in a table. */
+  readonly item: () => string;
+  /** A sample's note name, as a column and as the label over a Profile's note. */
+  readonly noteName: () => string;
+  /** The columns of the citation table: the items cited, then each citation. */
+  readonly cited: () => string;
+  readonly main: () => string;
+  readonly alt: () => string;
 }
 
 /** The command that rewrites every entry's `samples.md` after a change. */
@@ -58,7 +68,7 @@ export function formatSampleSections(
   if (citations.length > 0) sections.push(citationTable(citations, labels));
   if (annotations.length > 0) {
     sections.push(
-      `${hashes} Annotation Section`,
+      `${hashes} ${labels.annotations()}`,
       ...annotations.map((annotation) =>
         [
           `${hashes}# ${labels.annotation(annotation)}`,
@@ -95,7 +105,7 @@ function noteSection(
         : `---\n${properties}---\n${body}`;
   return [
     heading,
-    `Note name: \`${noteName ?? "(none)"}\``,
+    `${labels.noteName()}: \`${noteName ?? "(none)"}\``,
     codeBlock(note, "markdown"),
   ].join("\n\n");
 }
@@ -105,7 +115,7 @@ function noteNameTable(
   labels: SampleLabels,
 ): string {
   return table(
-    ["Item", "Note name"],
+    [labels.item(), labels.noteName()],
     notes.map(({ sample, noteName }) => [
       labels.example(sample.id),
       code(noteName),
@@ -118,7 +128,7 @@ function citationTable(
   labels: SampleLabels,
 ): string {
   return table(
-    ["Citation", "Main (Enter)", "Alternate (Shift+Enter)"],
+    [labels.cited(), labels.main(), labels.alt()],
     citations.map(({ id, main, alt }) => [
       labels.example(id),
       code(main),
