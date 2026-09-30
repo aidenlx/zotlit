@@ -18,8 +18,8 @@ import { m } from "@/paraglide/messages.js";
 
 import { codeBlock, formatSampleSections } from "./samples-markdown";
 import type { EntrySampleRows } from "./samples-markdown";
-import { calledPartials, DIRECTORY_PATH, entryId, entryPath } from "./site";
-import type { DirectorySite, SiteEntry } from "./site";
+import { DIRECTORY_PATH, entryId, entryPath } from "./site";
+import type { DirectorySite, PartialLink, SiteEntry } from "./site";
 
 /**
  * The Directory's edition at `slugs` below the index: the index for none, an
@@ -35,7 +35,7 @@ export async function directoryEdition(
     return undefined;
   }
   const entry = site.entries.find(({ id }) => id === entryId(folder, slug));
-  return entry && entryEdition(entry, site);
+  return entry && entryEdition(entry);
 }
 
 /**
@@ -99,11 +99,7 @@ function indexEdition({ entries }: DirectorySite): string {
  * the partials a part needs, the Details, and the Source last. A part's steps
  * start with the look it changes and end with the text to copy.
  */
-async function entryEdition(
-  entry: SiteEntry,
-  { entries }: DirectorySite,
-): Promise<string> {
-  const partials = calledPartials(entries, entry.calls);
+async function entryEdition(entry: SiteEntry): Promise<string> {
   const head = [
     `# ${entry.title} (${entryPath(entry.id)})`,
     `> ${entry.summary}`,
@@ -128,16 +124,16 @@ async function entryEdition(
     ...samplesSection(entry),
     ...steps,
     ...colorKeySection(entry),
-    ...(partials.length > 0 && entry.kind !== "profile"
+    ...(entry.calledPartials.length > 0 && entry.kind !== "profile"
       ? [
           `## ${m.docs_directory_calls_heading()}`,
           m.docs_directory_calls_recipe(),
-          partials.map(entryLink).join("\n"),
+          entry.calledPartials.map(entryLink).join("\n"),
         ]
       : []),
     `## ${m.docs_directory_details_heading()}`,
     description,
-    ...sourceSection(entry, entries),
+    ...sourceSection(entry),
   ];
   return `${sections.join("\n\n")}\n`;
 }
@@ -147,10 +143,7 @@ async function entryEdition(
  * note part, the partials its file packs, and the whole file; any other
  * entry gives its own file.
  */
-function sourceSection(
-  entry: SiteEntry,
-  entries: readonly SiteEntry[],
-): string[] {
+function sourceSection(entry: SiteEntry): string[] {
   const heading = `## ${m.docs_directory_source_heading()}`;
   const file = [
     `\`${entry.file.name}\``,
@@ -182,10 +175,7 @@ function sourceSection(
           `### ${m.docs_directory_calls_heading()}`,
           m.docs_directory_calls_profile(),
           profileSource.partials
-            .map(({ name, id }) => {
-              const partial = entries.find((candidate) => candidate.id === id);
-              return partial ? entryLink(partial) : `- ${name}`;
-            })
+            .map(({ name, page }) => (page ? entryLink(page) : `- ${name}`))
             .join("\n"),
         ]
       : []),
@@ -269,7 +259,7 @@ const SAMPLES_INTRO = {
 } satisfies Record<SiteEntry["kind"], () => string>;
 
 /** A list item linking an entry's own edition, with its summary. */
-function entryLink({ id, title, summary }: SiteEntry): string {
+function entryLink({ id, title, summary }: PartialLink | SiteEntry): string {
   return `- [${escapeLinkText(title)}](${entryPath(id)}.md): ${summary}`;
 }
 

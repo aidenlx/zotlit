@@ -1,6 +1,6 @@
 // The Template Directory as the docs site publishes it: the data each page reads, and where each page lives.
 
-import type { PartialContext } from "./entry.ts";
+import type { EntryKind, PartialContext } from "./entry.ts";
 import type { SampleName } from "./samples.ts";
 import type { Facet, IndexedEntry } from "./search.ts";
 import type { AnnotationColor } from "./verify.ts";
@@ -20,18 +20,6 @@ export function entryId(folder: string, slug: string): string {
 export function entryIdParts(id: string): [folder: string, slug: string] {
   const separator = id.indexOf("/");
   return [id.slice(0, separator), id.slice(separator + 1)];
-}
-
-/** The partial entries an entry calls, by the partial names in `calls`, in that order. */
-export function calledPartials<T extends Pick<SiteEntry, "id" | "kind">>(
-  entries: readonly T[],
-  calls: readonly string[],
-): T[] {
-  return calls.flatMap((name) =>
-    entries.filter(
-      ({ id, kind }) => kind === "partial" && entryIdParts(id)[1] === name,
-    ),
-  );
 }
 
 export function entryPath(id: string): string {
@@ -60,8 +48,10 @@ export interface SiteEntry extends IndexedEntry {
    * automatically; null when the reader chooses it for each note.
    */
   readonly matchedItemTypes: readonly string[] | null;
-  /** Every partial the entry calls, directly or through another partial. */
+  /** Every partial the entry calls, directly or through another partial, by name. */
   readonly calls: readonly string[];
+  /** The partial entries behind `calls`, in that order, as the page links them. */
+  readonly calledPartials: readonly PartialLink[];
   /** The artifact, byte for byte, as the reader downloads it. */
   readonly file: { readonly name: string; readonly text: string };
   /** What the reader pastes: the whole document for a Profile, the part a field takes for a recipe. */
@@ -88,11 +78,18 @@ export interface ProfileSource {
   readonly partials: readonly SourcePartial[];
 }
 
+/** A partial entry as a page links it: its id, and the words that name and describe it. */
+export interface PartialLink {
+  readonly id: string;
+  readonly title: string;
+  readonly summary: string;
+}
+
 /** A partial a Profile packs, by the name its calls use. */
 export interface SourcePartial {
   readonly name: string;
   /** The partial's own entry, when the Directory has one. */
-  readonly id: string | null;
+  readonly page: PartialLink | null;
 }
 
 /** The meaning each Zotero highlight color has in a Profile's notes. */
@@ -177,6 +174,15 @@ export function noteMarkdown({
 }: Pick<NoteSampleView, "frontmatter" | "body">): string {
   const block = frontmatter === null ? "" : `---\n${frontmatter}---\n`;
   return `${block}${body ?? ""}`;
+}
+
+/** An entry that is a part of a note: a partial, a property, a note name, or a citation text. */
+export type PartEntry = SiteEntry & {
+  readonly kind: Exclude<EntryKind, "profile">;
+};
+
+export function isPartEntry(entry: SiteEntry): entry is PartEntry {
+  return entry.kind !== "profile";
 }
 
 /** The fields of an entry the index page searches and lists. */

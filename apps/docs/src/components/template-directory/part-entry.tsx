@@ -5,15 +5,15 @@ import { Message } from "@/components/message";
 import { SiteFooter } from "@/components/site-footer";
 import { cn } from "@/lib/cn";
 import { ztProse } from "@/lib/prose";
-import type { SiteEntry } from "@/lib/template-directory/site";
+import type { PartEntry } from "@/lib/template-directory/site";
 import { m } from "@/paraglide/messages.js";
 
 import { CopyButton } from "./entry-actions";
 import { EntryDescription } from "./entry-description";
+import { EntryHeading } from "./entry-heading";
 import { EntryLink } from "./entry-list";
 import { EntrySamples } from "./entry-samples";
 import { EntrySource } from "./entry-source";
-import type { SourcePartialEntry } from "./entry-source";
 import { EntryChanges, EntryUse } from "./entry-use";
 import { Fold } from "./fold";
 
@@ -25,17 +25,10 @@ const EYEBROW = {
   property: m.docs_directory_part_eyebrow_property,
   "note-name": m.docs_directory_part_eyebrow_note_name,
   citation: m.docs_directory_part_eyebrow_citation,
-} satisfies Record<Exclude<SiteEntry["kind"], "profile">, () => string>;
+} satisfies Record<PartEntry["kind"], () => string>;
 
-export function PartEntryPage({
-  entry,
-  partials,
-}: {
-  entry: SiteEntry;
-  partials: readonly SourcePartialEntry[];
-}) {
-  const { kind } = entry;
-  if (kind === "profile") return null;
+export function PartEntryPage({ entry }: { entry: PartEntry }) {
+  const { kind, calledPartials } = entry;
   const hasSamples =
     entry.notes.length > 0 ||
     entry.annotations.length > 0 ||
@@ -48,13 +41,8 @@ export function PartEntryPage({
         <p className="mb-3 font-mono text-xs font-semibold tracking-[0.14em] text-fd-primary uppercase">
           {EYEBROW[kind]()}
         </p>
-        <h1 className="mb-3 text-4xl leading-[1.16] font-medium text-balance lg:text-[44px]">
-          {entry.title}
-        </h1>
-        <p className="mb-4 max-w-[60ch] text-lg text-pretty text-fd-muted-foreground italic">
-          {entry.summary}
-        </p>
-        <p className="font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
+        <EntryHeading title={entry.title} summary={entry.summary} />
+        <p className="mt-4 font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
           <Message
             text={m.docs_directory_requires({ version: "{version}" })}
             slots={{
@@ -94,7 +82,7 @@ export function PartEntryPage({
           </div>
         </section>
 
-        {partials.length > 0 && (
+        {calledPartials.length > 0 && (
           <section aria-labelledby="partials">
             <h2 id="partials" className={HEADING}>
               {m.docs_directory_calls_heading()}
@@ -103,7 +91,7 @@ export function PartEntryPage({
               {m.docs_directory_calls_recipe()}
             </p>
             <ul className="border-t border-fd-border">
-              {partials.map((partial) => (
+              {calledPartials.map((partial) => (
                 <li
                   key={partial.id}
                   className="border-b border-fd-border/60 py-3"
@@ -127,7 +115,7 @@ export function PartEntryPage({
           <Fold heading={m.docs_directory_details_heading()}>
             <EntryDescription markdown={entry.description} />
           </Fold>
-          <EntrySource entry={entry} partials={partials} example={undefined} />
+          <EntrySource entry={entry} example={undefined} />
         </div>
       </div>
 

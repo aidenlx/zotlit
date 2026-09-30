@@ -47,7 +47,7 @@ describe("a Profile's edition", () => {
     expect(order).toEqual(order.toSorted((a, b) => a - b));
   });
 
-  it("leaves out what the page no longer shows: who it is for, what it asks, its kind, and its level", async () => {
+  it("leaves out what the page does not show: who it is for, what it asks, its kind, and its level", async () => {
     const text = await edition();
 
     expect(text).not.toContain("Who it is for");
@@ -77,7 +77,7 @@ describe("a Profile's edition", () => {
     );
   });
 
-  it("gives the description as the Details, after the example, and no longer before the steps", async () => {
+  it("gives the description as the Details, after the example", async () => {
     const text = await edition();
 
     expect(text.indexOf("A fixture Profile.")).toBeGreaterThan(

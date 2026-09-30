@@ -40,10 +40,16 @@ export type FrontmatterMergeStrategy = v.InferOutput<
   typeof frontmatterMergeStrategySchema
 >;
 
+/** The note property that holds the key of the Zotero item the note is for. */
+export const ITEM_KEY_PROPERTY = "zotero-key";
+
+/** The note property that holds the stamp of the Profile the note was made with. */
+export const PROFILE_STAMP_PROPERTY = "zotlit-profile";
+
 /** System-owned note keys reserved for ZotLit and Zotero metadata. */
 export const RESERVED_FRONTMATTER_KEYS: ReadonlySet<string> = new Set([
-  "zotero-key",
-  "zotlit-profile",
+  ITEM_KEY_PROPERTY,
+  PROFILE_STAMP_PROPERTY,
   "zotero-note-key",
   "zotero-lastmod",
   "zotlit-csl",
