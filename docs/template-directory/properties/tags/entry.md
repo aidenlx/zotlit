@@ -36,15 +36,7 @@ The item's Zotero tags, as the note's `tags` property. Each space in a tag becom
 | Letter | correspondence | correspondence |
 | Journal article, book, thesis | (none) | (no property) |
 
-When the note updates: **Add to the existing list**. ZotLit adds each Zotero tag the note does not have yet, and keeps every tag already in the note. A tag you add in Obsidian stays. A tag you remove in Zotero stays in the note until you delete it from the note too.
-
-To add it to a profile:
-
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
-2. In the **Properties** tab, select **Add a property**. Enter `tags` as the **Property name**.
-3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
-4. In **Value**, replace the example rule with this entry's rule.
-5. Set **When the note is updated** to **Add to the existing list**.
+**When the note is updated**: **Add to the existing list**. ZotLit adds each Zotero tag the note does not have yet, and keeps every tag already in the note. A tag you add in Obsidian stays. A tag you remove in Zotero stays in the note until you delete it from the note too.
 
 Limits:
 

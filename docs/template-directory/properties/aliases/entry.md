@@ -64,15 +64,7 @@ When you type `[[` in Obsidian, the link suggestions find the note by either ali
 
 An alias is left out when a part of it is missing: an item with no year gets no author-and-year alias, and an item with no authors gets neither alias.
 
-When the note updates: **Add to the existing list**. ZotLit adds each alias the note does not have yet, and keeps every alias already in the note, so an alias you add by hand stays.
-
-To add it to a profile:
-
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
-2. In the **Properties** tab, select **Add a property**. Enter `aliases` as the **Property name**.
-3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
-4. In **Value**, replace the example rule with this entry's rule.
-5. Set **When the note is updated** to **Add to the existing list**.
+**When the note is updated**: **Add to the existing list**. ZotLit adds each alias the note does not have yet, and keeps every alias already in the note, so an alias you add by hand stays.
 
 Limits:
 

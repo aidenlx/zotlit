@@ -112,13 +112,6 @@ What each kind of source gets:
 - A letter, a manuscript, or an interview: usually no `venue`.
 - Any source: `doi` only when the item has a DOI.
 
-**When the note is updated:** **Replace the existing value**. Each update writes the current values from Zotero, so correct a title or an author in Zotero, not in the note. If you delete a value in Zotero, such as the DOI, the property keeps its old value in the note until you delete it there too. If you delete a property from the note while Zotero still has its value, the next update adds it back.
-
-To add the rule to a profile:
-
-1. In Obsidian, open ZotLit's settings and go to **Literature note profiles**. On the row of the profile you want to change, select **Edit profile** (the pencil button). The Template Workbench opens.
-2. Select the **Properties** tab, then **Add several properties from one rule**.
-3. In **Value**, replace the example rule with this entry's rule: everything from the first `{` to the last `}`.
-4. Set **When the note is updated** to **Replace the existing value**.
+**When the note is updated**: **Replace the existing value**. Each update writes the current values from Zotero, so correct a title or an author in Zotero, not in the note. If you delete a value in Zotero, such as the DOI, the property keeps its old value in the note until you delete it there too. If you delete a property from the note while Zotero still has its value, the next update adds it back.
 
 The preview shows the properties for the selected item. Notes get them the next time you create or update them. In the Simple reading note, the rule adds `authors`, `doi`, and `zotero-link`; `title`, `year`, `venue`, and `citekey` keep the same values.

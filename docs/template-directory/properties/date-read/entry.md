@@ -36,17 +36,9 @@ An empty `date-read` property on every new literature note, ready for the date y
 | Book chapter | (empty) |
 | Thesis | (empty) |
 
-The note shows the property name with no value, `date-read:`, until you fill it in.
+Obsidian shows the property with no value until you fill it in.
 
-When the note updates: **Keep the existing value**. ZotLit adds the empty property only when the note's date read is missing or empty. A date you set by hand stays.
-
-To add it to a profile:
-
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
-2. In the **Properties** tab, select **Add a property**. Enter `date-read` as the **Property name**.
-3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
-4. In **Value**, replace the example rule with `null`, which means "no value".
-5. Set **When the note is updated** to **Keep the existing value**.
+**When the note is updated**: **Keep the existing value**. ZotLit adds the empty property only when the note's date read is missing or empty. A date you set by hand stays.
 
 So that Obsidian shows a date picker, give the property its type once: in a note, select the icon beside `date-read`, choose **Property type**, then **Date**. Obsidian then uses that type in every note.
 

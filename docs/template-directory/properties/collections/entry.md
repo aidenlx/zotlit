@@ -31,18 +31,10 @@ The item's Zotero collections, as a `collections` list property. Each entry is t
 | --- | --- |
 | Journal article | Shared key |
 | Conference paper | Shared key |
-| Book, book chapter, thesis | (no property: the samples are in no collection) |
+| Book, book chapter, thesis | (no property: the example items are in no collection) |
 
 When the item is in no collection, the note gets no `collections` property.
 
-When the note updates: **Replace the existing value**. When you move the item to other collections in Zotero, the list follows on the next update.
+**When the note is updated**: **Replace the existing value**. When you move the item to other collections in Zotero, the list follows on the next update.
 
-To add it to a profile:
-
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
-2. In the **Properties** tab, select **Add a property**. Enter `collections` as the **Property name**.
-3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
-4. In **Value**, replace the example rule with this entry's rule.
-5. Set **When the note is updated** to **Replace the existing value**.
-
-Limits: a profile made from the Default profile already has a `collections` property. A profile holds each property name once, so select that property in place of step 2, then do steps 3 to 5. A collection name that holds a `/` reads like two levels of collections.
+Limits: a profile made from the Default profile already has a `collections` property. A profile holds each property name once, so select that property in the **Properties** tab in place of adding a new one, and paste this entry's rule into it. A collection name that holds a `/` reads like two levels of collections.

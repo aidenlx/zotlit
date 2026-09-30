@@ -36,16 +36,8 @@ The item's citation key, as a `citekey` property. The key comes from Zotero's ow
 | Book chapter | tverskyJudgmentUncertaintyHeuristics1982 |
 | Thesis | Batista2010 |
 
-When the item has no citation key, the note gets no `citekey` property, in place of `citekey: null`.
+When the item has no citation key, the note gets no `citekey` property.
 
-When the note updates: **Replace the existing value**. When the key changes in Zotero, the note gets the new key on its next update.
+**When the note is updated**: **Replace the existing value**. When the key changes in Zotero, the note gets the new key on its next update.
 
-To add it to a profile:
-
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
-2. In the **Properties** tab, select **Add a property**. Enter `citekey` as the **Property name**.
-3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
-4. In **Value**, replace the example rule with this entry's rule.
-5. Set **When the note is updated** to **Replace the existing value**.
-
-Limits: a profile made from the Default profile already has a `citekey` property, which writes `null` for an item with no key. A profile holds each property name once, so select that property in place of step 2, then do steps 3 to 5.
+Limits: a profile made from the Default profile already has a `citekey` property, which Obsidian shows with no value for an item with no key. A profile holds each property name once, so select that property in the **Properties** tab in place of adding a new one, and paste this entry's rule into it.

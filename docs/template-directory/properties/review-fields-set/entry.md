@@ -48,15 +48,8 @@ Three empty properties for your own judgment of every source, from one rule. Wri
 | `method` | How the authors did the work: the design, data, or approach |
 | `relevance` | How the source relates to your own project or question |
 
-ZotLit adds the three properties empty to each new note, and to each note you already have at its next update. Every kind of source gets the same three. An empty property is intended: the note shows its name with no value, such as `contribution:`, ready for you to fill in.
+ZotLit adds the three properties empty to each new note, and to each note you already have at its next update. Every kind of source gets the same three. An empty property is intended: Obsidian shows the property with no value until you fill it in.
 
-**When the note is updated:** **Keep the existing value**. An update never changes what you write. It fills a property only when it is empty or missing, so if you delete one of them from a note, the next update adds it back empty.
-
-To add the rule to a profile:
-
-1. In Obsidian, open ZotLit's settings and go to **Literature note profiles**. On the row of the profile you want to change, select **Edit profile** (the pencil button). The Template Workbench opens.
-2. Select the **Properties** tab, then **Add several properties from one rule**.
-3. In **Value**, replace the example rule with this entry's rule: everything from the first `{` to the last `}`.
-4. Set **When the note is updated** to **Keep the existing value**.
+**When the note is updated**: **Keep the existing value**. An update never changes what you write. It fills a property only when it is empty or missing, so if you delete one of them from a note, the next update adds it back empty.
 
 A property holds one line of text. Keep it to a short summary, and write longer thinking under your own heading in the note, such as **My notes**, outside the part that ZotLit refreshes. To use other names, such as `findings` or `limitations`, change or add names in the rule, each with the value `null`, which means empty. For example, `{"contribution": null, "findings": null, "limitations": null}` gives three properties with those names.

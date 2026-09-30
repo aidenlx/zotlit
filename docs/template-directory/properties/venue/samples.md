@@ -1,6 +1,6 @@
 <!-- Written by the Template Directory verification suite; do not edit. Update with: pnpm exec turbo run test --filter=@zotlit/docs -- src/lib/template-directory -u -->
 
-# Rendered samples: Venue
+# Rendered samples: Publication
 
 ## Journal article
 

@@ -19,7 +19,7 @@ keywords:
   - slash
   - special characters
 audience: Readers who find their notes by the title of the work.
-effort: Paste one line into the "Note name template" field of your profile. Notes you create from then on get the new name.
+effort: Paste one line into the "Note name" field of your profile. Notes you create from then on get the new name.
 ---
 
 Each literature note is named by the item's title, such as `Thinking, fast and slow`. Characters a file name cannot hold are changed, so every note is one file in your literature note folder:
@@ -31,4 +31,4 @@ Each literature note is named by the item's title, such as `Thinking, fast and s
 
 An item with no title is named by its Zotero item key, a code of eight letters and digits. When a note with the same name already exists, the new note gets a short random ending, such as `Thinking, fast and slow_a1B2c3`, so ZotLit can still create it.
 
-To use it, open a literature note that uses your profile and run **Customize this note's template**. In the Template Workbench View, select the **Name and folder** tab and replace the text in **Note name template** with the line of this entry. **Preview** shows the name for the selected item, as it is when no other note has that name. Notes you already have keep their names.
+In the **Name and folder** tab, **Preview** shows the name for the selected item, as it is when no other note has that name. Notes you already have keep their names.
