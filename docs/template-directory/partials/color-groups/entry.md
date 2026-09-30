@@ -1,7 +1,7 @@
 ---
 title: Annotations grouped by color
 summary: Your annotations under one heading for each color meaning, such as Definitions or Questions, in a fixed order, with no heading for a meaning you did not use.
-minAppVersion: "2.2.0-beta.0"
+minAppVersion: "2.2.0-beta.2"
 context: note
 tasks: [general-reading, literature-review, close-reading]
 features: [grouped-by-color]

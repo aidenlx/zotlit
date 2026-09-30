@@ -28,5 +28,5 @@ The link works once the related item has a literature note of its own. When ZotL
 The partial reads the note's data and calls the `author-line` partial for the authors, so copy both into your template folder. Call it from the note body of a profile, inside the managed block:
 
 ```liquid
-{% render "related-items" with zt as zt %}
+{% render "related-items" with zt as zt -%}
 ```

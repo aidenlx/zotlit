@@ -43,5 +43,5 @@ When the item has no citation key, the quote ends with its page instead, as a li
 The partial reads one annotation's data. Call it from the annotation format of a profile, the part below `--- zotlit:annotation ---`:
 
 ```liquid
-{% render "quote-with-citation" with zt as zt %}
+{% render "quote-with-citation" with zt as zt -%}
 ```

@@ -35,5 +35,5 @@ Your Zotero comment follows the quote as ordinary text, so your thinking and the
 The partial reads one annotation's data. Call it from the annotation format of a profile, the part below `--- zotlit:annotation ---`:
 
 ```liquid
-{% render "plain-annotation-quote" with zt as zt %}
+{% render "plain-annotation-quote" with zt as zt -%}
 ```
