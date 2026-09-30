@@ -71,6 +71,11 @@ export function firstShown(
 const LABEL =
   "font-mono text-[0.72rem] font-semibold tracking-[0.1em] text-fd-muted-foreground uppercase";
 
+/** An example switcher wraps on a wide screen and scrolls sideways on a phone, one row of tabs that keep their names whole. */
+const SWITCHER =
+  "max-w-full max-sm:w-max max-sm:flex-nowrap max-sm:overflow-x-auto";
+const SWITCHER_TAB = "max-sm:shrink-0 max-sm:whitespace-nowrap";
+
 /**
  * A Profile's example note as Obsidian's reading view shows it, under a
  * switcher that names each example item. The switcher wraps on a wide screen
@@ -95,16 +100,9 @@ export function ProfileExample({
       <p id={labelId} className={cn(LABEL, "mb-2")}>
         {m.docs_directory_see_it_with()}
       </p>
-      <TabsList
-        aria-labelledby={labelId}
-        className="mb-4 max-w-full max-sm:w-max max-sm:flex-nowrap max-sm:overflow-x-auto"
-      >
+      <TabsList aria-labelledby={labelId} className={cn("mb-4", SWITCHER)}>
         {notes.map((note) => (
-          <TabsTrigger
-            key={note.id}
-            value={note.id}
-            className="max-sm:shrink-0 max-sm:whitespace-nowrap"
-          >
+          <TabsTrigger key={note.id} value={note.id} className={SWITCHER_TAB}>
             {(shortLabels ? shortExampleLabel : exampleLabel)(note)}
           </TabsTrigger>
         ))}
@@ -142,9 +140,16 @@ export function EntrySamples({
         hasBody && (
           <Tabs defaultValue={firstShown(notes)}>
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-              <TabsList aria-label={m.docs_directory_samples_item()}>
+              <TabsList
+                aria-label={m.docs_directory_samples_item()}
+                className={SWITCHER}
+              >
                 {notes.map((note) => (
-                  <TabsTrigger key={note.id} value={note.id}>
+                  <TabsTrigger
+                    key={note.id}
+                    value={note.id}
+                    className={SWITCHER_TAB}
+                  >
                     {exampleLabel(note)}
                   </TabsTrigger>
                 ))}
@@ -229,7 +234,7 @@ function NoteSheet({
       {note.noteName !== null && (
         <p className="flex flex-wrap items-baseline gap-x-2 border-b border-fd-border bg-fd-muted/40 px-5 py-2">
           <span className={LABEL}>{m.docs_directory_sample_note_name()}</span>
-          <code className="font-mono text-sm break-all">{note.noteName}</code>
+          <code className="font-mono text-sm break-words">{note.noteName}</code>
         </p>
       )}
       <div className="flex flex-col p-5 sm:p-6">
@@ -484,7 +489,11 @@ function NoteNameSamples({ notes }: { notes: readonly NoteSampleView[] }) {
 
 function nameCell(noteName: string | null): ReactNode {
   if (noteName === null) return <PropertyValue value={null} />;
-  return <code className="font-mono text-[0.8rem] break-all">{noteName}</code>;
+  return (
+    <code className="font-mono text-[0.8rem] [overflow-wrap:anywhere]">
+      {noteName}
+    </code>
+  );
 }
 
 /** One row per sample, one column per result: the shape every recipe's samples table takes. */
@@ -564,10 +573,14 @@ function PropertySamples({ notes }: { notes: readonly NoteSampleView[] }) {
         <Tabs defaultValue={notes[0]?.id}>
           <TabsList
             aria-label={m.docs_directory_samples_item()}
-            className="mb-5"
+            className={cn("mb-5", SWITCHER)}
           >
             {notes.map((note) => (
-              <TabsTrigger key={note.id} value={note.id}>
+              <TabsTrigger
+                key={note.id}
+                value={note.id}
+                className={SWITCHER_TAB}
+              >
                 {exampleLabel(note)}
               </TabsTrigger>
             ))}

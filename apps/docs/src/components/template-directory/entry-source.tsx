@@ -26,13 +26,6 @@ import { COPY_LABEL, exampleLabel } from "./labels";
 const ACTION =
   "inline-flex min-h-8 cursor-pointer items-center gap-2 border border-fd-border bg-fd-card px-3 py-1 text-sm font-medium transition-colors hover:border-fd-primary hover:text-fd-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring [&_svg]:size-4";
 
-/** The partials a Profile's page can title and link: the entries its file calls. */
-export interface SourcePartialEntry {
-  readonly id: string;
-  readonly title: string;
-  readonly summary: string;
-}
-
 /**
  * The folded Source section. A Profile offers one tab for its file, one for
  * each partial it packs, and one for the raw Markdown of the example shown
@@ -40,7 +33,6 @@ export interface SourcePartialEntry {
  */
 export function EntrySource({
   entry,
-  partials,
   example,
   className,
 }: {
@@ -48,7 +40,6 @@ export function EntrySource({
     SiteEntry,
     "kind" | "copyText" | "file" | "profileSource" | "notes" | "details"
   >;
-  partials: readonly SourcePartialEntry[];
   /** The example item the page shows now; the example tab holds its Markdown. */
   example: string | undefined;
   className?: string;
@@ -58,7 +49,7 @@ export function EntrySource({
       {entry.profileSource === null ? (
         <>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <p className="font-mono text-xs break-all text-fd-muted-foreground">
+            <p className="font-mono text-xs break-words text-fd-muted-foreground">
               {entry.file.name}
             </p>
             <button
@@ -90,7 +81,6 @@ export function EntrySource({
         <ProfileSourceTabs
           entry={entry}
           source={entry.profileSource}
-          partials={partials}
           example={example}
         />
       )}
@@ -105,23 +95,21 @@ const partialTab = (name: string) => `partial:${name}`;
 function ProfileSourceTabs({
   entry,
   source,
-  partials,
   example,
 }: {
   entry: Pick<SiteEntry, "copyText" | "file" | "notes">;
   source: NonNullable<SiteEntry["profileSource"]>;
-  partials: readonly SourcePartialEntry[];
   example: string | undefined;
 }) {
   const [whole, setWhole] = useState(false);
   const shown = entry.notes.find(({ id }) => id === example);
-  const trigger = "max-sm:shrink-0 max-sm:whitespace-nowrap";
+  const trigger = "shrink-0 whitespace-nowrap";
   return (
     <Tabs defaultValue={FILE_TAB}>
-      <div className="mb-3 max-sm:overflow-x-auto">
+      <div className="mb-3 overflow-x-auto">
         <TabsList
           aria-label={m.docs_directory_source_files()}
-          className="max-sm:w-max max-sm:flex-nowrap"
+          className="w-max flex-nowrap"
         >
           <TabsTrigger value={FILE_TAB} className={cn(trigger, "font-mono")}>
             {entry.file.name}
@@ -202,36 +190,31 @@ function ProfileSourceTabs({
         />
       </TabsContent>
 
-      {source.partials.map(({ name, id }) => {
-        const partial = partials.find((candidate) => candidate.id === id);
-        return (
-          <TabsContent
-            key={name}
-            value={partialTab(name)}
-            className="flex flex-col gap-2 text-sm"
-          >
-            {id !== null && partial ? (
-              <>
-                <p className="max-w-[60ch] text-pretty text-fd-muted-foreground">
-                  {partial.summary}
-                </p>
-                <EntryLink
-                  id={id}
-                  className="w-fit font-medium text-fd-foreground underline decoration-fd-primary underline-offset-4 hover:text-fd-primary"
-                >
-                  {m.docs_directory_source_partial_open({
-                    title: partial.title,
-                  })}
-                </EntryLink>
-              </>
-            ) : (
-              <p className="text-fd-muted-foreground">
-                {m.docs_directory_source_partial_packed()}
+      {source.partials.map(({ name, page }) => (
+        <TabsContent
+          key={name}
+          value={partialTab(name)}
+          className="flex flex-col gap-2 text-sm"
+        >
+          {page !== null ? (
+            <>
+              <p className="max-w-[60ch] text-pretty text-fd-muted-foreground">
+                {page.summary}
               </p>
-            )}
-          </TabsContent>
-        );
-      })}
+              <EntryLink
+                id={page.id}
+                className="w-fit font-medium text-fd-foreground underline decoration-fd-primary underline-offset-4 hover:text-fd-primary"
+              >
+                {m.docs_directory_source_partial_open({ title: page.title })}
+              </EntryLink>
+            </>
+          ) : (
+            <p className="text-fd-muted-foreground">
+              {m.docs_directory_source_partial_packed()}
+            </p>
+          )}
+        </TabsContent>
+      ))}
 
       {shown && (
         <TabsContent value={EXAMPLE_TAB} className="flex flex-col gap-3">

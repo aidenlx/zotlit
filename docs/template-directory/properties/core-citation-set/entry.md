@@ -1,6 +1,6 @@
 ---
 title: Core citation set
-summary: "Seven citation properties from one rule: title, authors, year, venue, citekey, DOI link, and Zotero link, each only when the item has a value."
+summary: "Seven citation properties from one rule: title, authors, year, `venue`, `citekey`, DOI link, and Zotero link, each only when the item has a value."
 minAppVersion: "2.2.0-beta.0"
 tasks: [general-reading, literature-review, writing]
 features: [properties, source-links]
