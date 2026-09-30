@@ -57,3 +57,9 @@ publisher: Princeton University
 ```yaml
 publisher: University of Chicago Press
 ```
+
+## Journal article with volume, issue, and pages
+
+```yaml
+publisher: Econometrica. 1979. Vol. 47. № 2. pp. 263–291.
+```

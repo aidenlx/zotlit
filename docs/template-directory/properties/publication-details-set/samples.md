@@ -64,3 +64,12 @@ place: Chicago
 edition: "4"
 isbn: 978-0-226-23973-6
 ```
+
+## Journal article with volume, issue, and pages
+
+```yaml
+journal: Econometrica
+volume: "47"
+issue: "2"
+pages: 263–291
+```

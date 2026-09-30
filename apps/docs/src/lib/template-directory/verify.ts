@@ -42,7 +42,11 @@ import {
 } from "./load.ts";
 import type { DirectoryEntry, DirectoryFiles } from "./load.ts";
 import type { DirectoryProblem, DirectoryProblemCode } from "./problem.ts";
-import { matchedSamples } from "./profile-samples.ts";
+import {
+  fullExample,
+  matchedItemTypes,
+  profileExamples,
+} from "./profile-samples.ts";
 import {
   COLOR_HIGHLIGHTS,
   DIRECTORY_SAMPLES,
@@ -205,7 +209,7 @@ type CitationEntry = Extract<DirectoryEntry, { kind: "citation" }>;
 type NoteNameEntry = Extract<DirectoryEntry, { kind: "note-name" }>;
 
 function checkProfile(
-  { manifest, calls, artifact }: ProfileEntry,
+  { manifest, calls, artifact, itemTypes }: ProfileEntry,
   partials: ReadonlyMap<string, PartialEntry>,
   report: Report,
 ): void {
@@ -250,6 +254,7 @@ function checkProfile(
       `sampleItemType "${manifest.sampleItemType}" is not a Zotero item type.`,
     );
   }
+  checkFullExamples({ manifest, itemTypes }, report);
   checkLanguage(manifest.language, report);
   for (const partial of manifest.partials ?? []) {
     checkLanguage(
@@ -268,6 +273,31 @@ function checkProfile(
   });
   checkManagedBlock(artifact.source, report);
   checkPackedPartials({ manifest, calls }, partials, report);
+}
+
+/**
+ * Every Profile page opens on a full example: every detail, an abstract, and
+ * an annotation set, of the item type the Profile is made for. The Profile's
+ * `sampleItemType` and each item type its match takes need one.
+ */
+function checkFullExamples(
+  entry: Pick<ProfileEntry, "manifest" | "itemTypes">,
+  report: Report,
+): void {
+  const { sampleItemType } = entry.manifest;
+  const types = [
+    ...new Set([
+      ...(sampleItemType === undefined ? [] : [sampleItemType]),
+      ...(matchedItemTypes(entry) ?? []),
+    ]),
+  ];
+  const without = types.filter((type) => fullExample(type) === undefined);
+  if (without.length > 0) {
+    report(
+      "profile-example",
+      `The Directory has no full example for ${without.join(", ")}, so the Profile page cannot open on one. Add the item type's example variants to example-items.ts in apps/docs/src/lib/template-directory.`,
+    );
+  }
 }
 
 function checkLanguage(
@@ -437,7 +467,12 @@ function noteSamples({
 
 function renderProfileEntry(entry: ProfileEntry, report: Report): EntrySamples {
   const { artifact, manifest, features } = entry;
-  const notes = matchedSamples(entry, noteSamples(entry)).map((sample) => {
+  const groupedByColor = features.includes("grouped-by-color");
+  const examples = profileExamples(
+    entry,
+    groupedByColor ? [EVERY_COLOR_SAMPLE] : [],
+  );
+  const notes = examples.map((sample) => {
     const result = renderProfile(artifact.source, sample.snapshot);
     reportDiagnostics(result, sampleSubject(sample), report);
     checkProperties(

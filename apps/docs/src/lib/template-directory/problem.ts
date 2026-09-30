@@ -15,6 +15,7 @@ export type DirectoryProblemCode =
   | "profile-match"
   | "profile-contract"
   | "profile-metadata"
+  | "profile-example"
   | "template-language"
   | "property-language"
   | "managed-block"

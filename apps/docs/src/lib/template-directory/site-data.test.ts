@@ -205,20 +205,20 @@ describe("an entry page", () => {
     });
   });
 
-  it("shows each Directory Sample's note, its properties as rows", () => {
+  it("shows each example item's note, its properties as rows", () => {
     const article = page(FIXTURE_PROFILE).notes[0]!;
     expect(article).toMatchObject({
-      id: "journal-article",
-      noteName: "ioannidisWhyMost2005",
+      id: "journal-article-full-details",
+      noteName: "kahnemanProspectTheoryAnalysis1979",
       properties: [
         {
           key: "title",
-          value: "Why Most Published Research Findings Are False",
+          value: "Prospect theory: An analysis of decision under risk",
         },
       ],
     });
     expect(article.body).toContain(
-      "## Why Most Published Research Findings Are False",
+      "## Prospect theory: An analysis of decision under risk",
     );
     expect(
       page(FIXTURE_PROPERTY).notes.find(({ id }) => id === "letter")
@@ -226,9 +226,14 @@ describe("an entry page", () => {
     ).toEqual([{ key: "year", value: "1887" }]);
   });
 
-  it("lists every example item for a Profile with no match, and no item types it is chosen for automatically", () => {
+  it("lists a fixed set of example items across item types for a Profile with no match, and no item types it is chosen for automatically", () => {
     expect(page(FIXTURE_PROFILE).matchedItemTypes).toBeNull();
-    expect(page(FIXTURE_PROFILE).notes.length).toBeGreaterThan(5);
+    expect(page(FIXTURE_PROFILE).notes.map(({ id }) => id)).toEqual([
+      "journal-article-full-details",
+      "book-full-details",
+      "book-section-full-details",
+      "journal-article-no-annotations",
+    ]);
   });
 
   it("lists only the items a Profile's match takes, and names the item types it is chosen for", () => {
@@ -246,10 +251,10 @@ describe("an entry page", () => {
     ).entries.find(({ id }) => id === FIXTURE_PROFILE)!;
     expect(matched.matchedItemTypes).toEqual(["book", "journalArticle"]);
     expect(matched.notes.map(({ id }) => id)).toEqual([
-      "journal-article",
+      "journal-article-full-details",
       "book-full-details",
-      "book-few-details",
-      "book-no-annotations",
+      "journal-article-few-details",
+      "journal-article-no-annotations",
     ]);
   });
 
