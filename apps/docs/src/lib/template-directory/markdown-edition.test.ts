@@ -62,16 +62,18 @@ describe("a Profile's edition", () => {
     expect(text).not.toContain(m.docs_directory_samples_annotations());
   });
 
-  it("names the one action Add to ZotLit, with the manual path under it", async () => {
+  it("sends the reader to the entry page for Add to ZotLit, and to the Source section for the file", async () => {
     const text = await edition();
 
     expect(m.docs_directory_import()).toBe("Add to ZotLit");
     expect(text).toContain(`## ${m.docs_directory_use_heading()}
 
-1. Select **Add to ZotLit**.`);
+1. Open [https://zotlit.aidenlx.site/templates/profiles/fixture-profile](https://zotlit.aidenlx.site/templates/profiles/fixture-profile) and select **Add to ZotLit** there.`);
+    expect(text).not.toContain(m.docs_directory_copy_it());
+    expect(text).not.toContain("download");
     expect(text).toContain(
-      `   - Select **${m.docs_directory_copy_it()}**, or download the file from the **${m.docs_directory_source_heading()}** section.
-   - In Obsidian, run \`ZotLit: ${m.command_import_profile_name()}\` and select **${m.profile_import_clipboard()}**, or **${m.profile_import_file()}** for the downloaded file.
+      `   - Copy the whole file from the **${m.docs_directory_source_heading()}** section below.
+   - In Obsidian, run \`ZotLit: ${m.command_import_profile_name()}\` and select **${m.profile_import_clipboard()}** to paste the file.
 2. In that window, select **${m.profile_import_confirm()}**.
 3. Create a literature note. In the **Choose a profile…** list that opens, select **Fixture profile**.`,
     );
