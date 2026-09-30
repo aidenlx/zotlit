@@ -290,7 +290,41 @@ status: unread
 ## Ideas to explore
 ```
 
-## Annotation Section
+## Book with place and edition
+
+Note name: `boothCraftResearch2016`
+
+```markdown
+---
+title: The craft of research
+citekey: boothCraftResearch2016
+year: 2016
+venue: University of Chicago Press
+status: unread
+publisher: University of Chicago Press
+place: Chicago
+edition: "4"
+isbn: 978-0-226-23973-6
+---
+%%zt-managed%%
+# The craft of research
+
+University of Chicago Press · Chicago · Edition: 4 · ISBN 978-0-226-23973-6
+
+[Zotero](zotero://select/library/items/BOOTCR16)
+
+%%/zt-managed%%
+
+## Summary
+
+
+## Key points
+
+
+## Ideas to explore
+```
+
+## Annotations
 
 ### Highlight annotation, yellow
 

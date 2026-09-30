@@ -35,16 +35,8 @@ A `category` property with the value `LiteratureNote` on every literature note o
 | Book chapter | LiteratureNote |
 | Thesis | LiteratureNote |
 
-When the note updates: **Keep the existing value**. ZotLit writes the marker only when the note's `category` is missing or empty. A category you change by hand stays.
+**When the note is updated**: **Keep the existing value**. ZotLit writes the marker only when the note's `category` is missing or empty. A category you change by hand stays.
 
-To add it to a profile:
-
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
-2. In the **Properties** tab, select **Add a property**. Enter `category` as the **Property name**.
-3. In the **Value format** menu beside **Value**, choose **Fixed text**, then select **Change format and reset value**.
-4. Enter `LiteratureNote` into **Value**.
-5. Set **When the note is updated** to **Keep the existing value**.
-
-To use another property name or word, such as `type: paper`, enter those in steps 2 and 4, and use the same words in your views.
+The rule is the JSON-e string `"LiteratureNote"`. To use another property name or word, such as `type: paper`, enter the name as the **Property name** and change the word inside the quotation marks of the pasted rule, keeping the quotation marks. Use the same words in your views.
 
 Limits: the marker goes on notes that this profile creates or updates. Literature notes of another profile get it when you add the same property to that profile.

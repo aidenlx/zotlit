@@ -73,8 +73,69 @@ ${m.docs_directory_samples_intro()}
 
 ### Journal article
 
-Note name: \`ioannidisWhyMost2005\`
+${m.docs_directory_sample_note_name()}: \`ioannidisWhyMost2005\`
 `);
+  });
+});
+
+describe("the labels of an edition's samples", () => {
+  const RECIPE = `minAppVersion: "2.2.0-beta.0"
+tasks: [writing]
+problems:
+  - I want a fixture.
+audience: Tests.
+effort: Nothing.`;
+  /** The fixture Directory with a note name and a citation text, which it does not hold. */
+  const withNameAndCitation = () =>
+    fixtureFiles()
+      .set(
+        "note-names/fixture-citekey/entry.md",
+        `---\ntitle: Fixture citekey\nsummary: The citation key as the note name.\n${RECIPE}\n---\n\nA fixture note name.\n`,
+      )
+      .set(
+        "note-names/fixture-citekey/note-name.liquid",
+        "{{ zt.citekey | default: zt.key }}{% suffix %}",
+      )
+      .set(
+        "citations/fixture-citekey/entry.md",
+        `---\ntitle: Fixture citation\nsummary: The citation key in brackets.\n${RECIPE}\n---\n\nA fixture citation text.\n`,
+      )
+      .set(
+        "citations/fixture-citekey/zotlit-citation.md",
+        "---\nlanguage: liquid\n---\n[{% for cite in zt.citations %}@{{ cite.item.citekey }}{% endfor %}]",
+      );
+
+  it("heads a Profile's annotations from the site's messages", async () => {
+    const edition = (await directoryEdition(site(), [
+      "profiles",
+      "fixture-profile",
+    ]))!;
+
+    expect(edition).toContain(
+      `### ${m.docs_directory_samples_annotations()}\n\n#### `,
+    );
+  });
+
+  it("heads the note-name table from the site's messages", async () => {
+    const edition = (await directoryEdition(site(withNameAndCitation()), [
+      "note-names",
+      "fixture-citekey",
+    ]))!;
+
+    expect(edition).toContain(
+      `| ${m.docs_directory_samples_item()} | ${m.docs_directory_sample_note_name()} |\n| --- | --- |\n`,
+    );
+  });
+
+  it("heads the citation table from the site's messages", async () => {
+    const edition = (await directoryEdition(site(withNameAndCitation()), [
+      "citations",
+      "fixture-citekey",
+    ]))!;
+
+    expect(edition).toContain(
+      `| ${m.docs_directory_citation_cited()} | ${m.docs_directory_citation_main()} | ${m.docs_directory_citation_alt()} |\n| --- | --- | --- |\n`,
+    );
   });
 });
 

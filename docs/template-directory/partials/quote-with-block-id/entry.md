@@ -40,7 +40,7 @@ To embed a highlight in another note, type `![[`, the name of the literature not
 The partial reads one annotation's data. Call it from the annotation format of a profile, the part below `--- zotlit:annotation ---`:
 
 ```liquid
-{% render "quote-with-block-id" with zt as zt %}
+{% render "quote-with-block-id" with zt as zt -%}
 ```
 
 Obsidian finds a block ID only when a blank line follows it. The simple reading note profile puts a blank line between annotations. In a profile of your own, keep a blank line between annotations in the note body.

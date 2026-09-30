@@ -37,14 +37,6 @@ The item's title, as a `title` property of the literature note.
 
 A title with a colon or quotation marks is safe. ZotLit writes the property as valid YAML and adds quotation marks where YAML needs them. When the item has no title, the note gets no `title` property.
 
-When the note updates: **Replace the existing value**. The property always shows the title as Zotero has it. To correct a title, correct it in Zotero, then update the note.
+**When the note is updated**: **Replace the existing value**. The property always shows the title as Zotero has it. To correct a title, correct it in Zotero, then update the note.
 
-To add it to a profile:
-
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
-2. In the **Properties** tab, select **Add a property**. Enter `title` as the **Property name**.
-3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
-4. In **Value**, replace the example rule with this entry's rule.
-5. Set **When the note is updated** to **Replace the existing value**.
-
-Limits: the property holds the full title with Zotero's capitalization. A title you edit in the note goes back to the Zotero title on the next update. A profile made from the Default profile already has a `title` property. A profile holds each property name once, so select that property in place of step 2, then do steps 3 to 5.
+Limits: the property holds the full title with Zotero's capitalization. A title you edit in the note goes back to the Zotero title on the next update. A profile made from the Default profile already has a `title` property. A profile holds each property name once, so edit that property instead of adding a new one.

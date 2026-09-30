@@ -2,7 +2,7 @@
 
 # Rendered samples: Plain author–year citations
 
-| Citation | Main (Enter) | Alternate (Shift+Enter) |
+| Items cited | Main (Enter) | Alternate (Shift+Enter) |
 | --- | --- | --- |
 | Journal article | `(Ioannidis 2005)` | `Ioannidis (2005)` |
 | Conference paper | `(Rivera and Chen 2026)` | `Rivera and Chen (2026)` |

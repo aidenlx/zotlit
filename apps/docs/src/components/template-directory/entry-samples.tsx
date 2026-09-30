@@ -3,7 +3,14 @@
 import { Suspense, useState } from "react";
 import type { ReactNode } from "react";
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  segment,
+  segmentedTrack,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import { cn } from "@/lib/cn";
 import type {
   AnnotationSampleView,
@@ -14,6 +21,8 @@ import type {
 } from "@/lib/template-directory/site";
 import { ResultSheet } from "@/lib/workbench/result-sheet";
 import { m } from "@/paraglide/messages.js";
+
+import { annotationLabel, exampleLabel } from "./labels";
 
 /**
  * Obsidian's colors for its built-in callout types, so a sample shows each
@@ -37,7 +46,7 @@ const CALLOUT_COLORS = [
  */
 const OBSIDIAN_TEXT = [
   "[&_.callout[data-callout]>.callout-title]:font-sans [&_.callout[data-callout]>.callout-title]:[font-size:inherit] [&_.callout[data-callout]>.callout-title]:tracking-normal [&_.callout[data-callout]>.callout-title]:normal-case",
-  "[&_blockquote]:not-italic [&_blockquote_p]:before:content-none [&_blockquote_p]:after:content-none",
+  "prose-blockquote:not-italic [&_blockquote_p]:before:content-none [&_blockquote_p]:after:content-none",
 ].join(" ");
 
 const SHEET = cn(
@@ -81,7 +90,7 @@ export function EntrySamples({
               <TabsList aria-label={m.docs_directory_samples_item()}>
                 {notes.map((note) => (
                   <TabsTrigger key={note.id} value={note.id}>
-                    {note.label}
+                    {exampleLabel(note.id)}
                   </TabsTrigger>
                 ))}
               </TabsList>
@@ -136,7 +145,7 @@ function ViewToggle({
       type="button"
       aria-pressed={showMarkdown === markdown}
       onClick={() => onChange(markdown)}
-      className="min-h-8 cursor-pointer rounded-sm px-3 py-1 text-sm font-medium text-fd-muted-foreground aria-pressed:bg-fd-card aria-pressed:text-fd-foreground aria-pressed:shadow-sm"
+      className={segment}
     >
       {label}
     </button>
@@ -145,7 +154,7 @@ function ViewToggle({
     <div
       role="group"
       aria-label={m.docs_directory_samples_view()}
-      className="flex gap-1 rounded-md bg-fd-muted p-1"
+      className={segmentedTrack}
     >
       {option(false, m.docs_directory_samples_preview())}
       {option(true, m.docs_directory_samples_markdown())}
@@ -195,7 +204,7 @@ function AnnotationSheet({
   return (
     <li className={cn(SHEET, "flex flex-col")}>
       <p className={cn(LABEL, "border-b border-fd-border px-4 py-2")}>
-        {annotation.label}
+        {annotationLabel(annotation)}
       </p>
       <div className="flex flex-1 flex-col p-4">
         <Sheet
@@ -333,9 +342,9 @@ function CitationSamples({
           m.docs_directory_citation_main(),
           m.docs_directory_citation_alt(),
         ]}
-        rows={citations.map(({ label, main, alt }) => ({
-          id: label,
-          label,
+        rows={citations.map(({ id, main, alt }) => ({
+          id,
+          label: exampleLabel(id),
           cells: [cell(main), cell(alt)],
         }))}
       />
@@ -353,9 +362,9 @@ function NoteNameSamples({ notes }: { notes: readonly NoteSampleView[] }) {
       <SampleTable
         heading={m.docs_directory_samples_item()}
         columns={[m.docs_directory_sample_note_name()]}
-        rows={notes.map(({ id, label, noteName }) => ({
+        rows={notes.map(({ id, noteName }) => ({
           id,
-          label,
+          label: exampleLabel(id),
           cells: [nameCell(noteName)],
         }))}
       />
@@ -449,7 +458,7 @@ function PropertySamples({ notes }: { notes: readonly NoteSampleView[] }) {
           >
             {notes.map((note) => (
               <TabsTrigger key={note.id} value={note.id}>
-                {note.label}
+                {exampleLabel(note.id)}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -483,7 +492,7 @@ function PropertyTable({
       monoColumns
       rows={notes.map((note) => ({
         id: note.id,
-        label: note.label,
+        label: exampleLabel(note.id),
         cells: keys.map((key) => (
           <PropertyCell
             key={key}

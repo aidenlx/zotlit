@@ -97,6 +97,11 @@ export function searchFromQuery({
   return search;
 }
 
+/** Whether the reader has typed a word or chosen a facet value, which the address then carries. */
+export function queryNarrows(query: DirectoryQuery): boolean {
+  return Object.keys(searchFromQuery(query)).length > 0;
+}
+
 /**
  * For each facet value, how many entries the reader would see with that value
  * chosen and the other facets as they stand, so a choice that leaves nothing

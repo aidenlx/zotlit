@@ -2,7 +2,7 @@
 
 The Template Directory is ZotLit's catalogue of ready-made, verified Directory Entries: Literature Note Profiles a reader imports in one step, and recipes (partials, citation text, note names, properties) a reader copies into a Profile of their own. This folder is its single source of truth. The docs site renders it, and the verification suite in `apps/docs` checks every entry on every `pnpm test`.
 
-Entry descriptions are user-facing copy. Write them for academics who read in Zotero and do not write code: the research task first, the result in the note second, and Obsidian UI labels verbatim (**Import profile…**, **Add a property**, **Rule · JSON-e**, **Add from a rule**, **Add several properties from one rule**). [ADR 0062](../adr/0062-the-template-directory-is-a-repository-held-catalogue-verified-by-rendering.md) records why the Directory is shaped this way.
+Entry descriptions are user-facing copy. Write them for academics who read in Zotero and do not write code: the research task first, the result in the note second, and Obsidian UI labels verbatim (**Import profile…**, **Add a property**, **Rule · JSON-e**, **Add several properties from one rule**). [ADR 0062](../adr/0062-the-template-directory-is-a-repository-held-catalogue-verified-by-rendering.md) records why the Directory is shaped this way.
 
 ## Layout
 
@@ -38,7 +38,7 @@ The kind comes from the folder and the level from the kind. Any other file in an
 
 ## The entry file
 
-`entry.md` opens with its metadata as YAML between two `---` lines. The Markdown body below it is the reader-facing description: who the entry is for, what the note or recipe produces, and how to use it.
+`entry.md` opens with its metadata as YAML between two `---` lines. The Markdown body below it is the reader-facing description: who the entry is for and what the note or recipe produces. The entry page adds the steps to use it, built from the plugin's UI labels, so the description holds only what those steps leave out, such as a Profile's match condition.
 
 | Field | Kinds | Required | Value |
 | --- | --- | --- | --- |
@@ -52,10 +52,12 @@ The kind comes from the folder and the level from the kind. Any other file in an
 | `effort` | all | yes | One sentence: what the entry asks of the reader before it works |
 | `title`, `summary`, `minAppVersion` | recipes | yes | The entry's name, its one-line summary, and the ZotLit version it needs |
 | `context` | partial | yes | The data the partial reads: `note`, `annotation`, or `citation` |
-| `call` | partial | no | The Liquid a Profile writes to call the partial, when that is more than `{% render "<slug>" with zt as zt %}`. The suite renders this call |
-| `expected` | property | no | Per Directory Sample, the properties the entry writes (see [Property](#property)) |
+| `call` | partial | no | The Liquid a Profile writes to call the partial, when that is more than `{% render "<slug>" with zt as zt -%}`. The suite renders this call |
+| `expected` | property | no | Per Directory Sample or type example, the properties the entry writes (see [Property](#property)) |
 
 A Profile entry states its title, summary, and required version once, in its manifest: `name`, `description`, and `minAppVersion`. The partials an entry calls are found from its artifact, directly and through the partials it calls.
+
+`minAppVersion` is the first ZotLit release that has every plugin change the entry relies on. A Profile needs `2.2.0-beta.2`: that release imports the partials a Profile brings with it, takes the Profile from **Import into Obsidian**, and keeps the closing marker of the managed block out of a callout that ends the block. A partial whose output can end the managed block with a callout or a quote needs `2.2.0-beta.2` for the same reason, and so does a partial that shows annotations in the profile's annotation format. Other recipes need `2.2.0-beta.0`.
 
 The source files in `src/lib/template-directory/` of `apps/docs` own the vocabularies; add a research task or a feature there first.
 
@@ -83,7 +85,7 @@ The source files in `src/lib/template-directory/` of `apps/docs` own the vocabul
 
 1. Create `properties/<slug>/` with `entry.md` and `property.yaml`.
 2. `property.yaml` holds one Managed Frontmatter entry: `key` (leave it out for a Spread Entry), `merge`, and `value`, a JSON-e rule. A property the reader fills in by hand, such as a rating, starts empty: its rule writes `null`, and its merge is `keep`.
-3. Under `expected` in `entry.md`, state the result for each Directory Sample that matters, by sample ID, as the properties it writes. A property the mapping leaves out is one the entry makes absent for that sample:
+3. Under `expected` in `entry.md`, state the result for each Directory Sample or type example that matters, by sample ID, as the properties it writes. A property the mapping leaves out is one the entry makes absent for that sample:
 
    ```yaml
    expected:
@@ -104,7 +106,7 @@ The suite renders the citation text as ZotLit inserts it, on one line, under bot
 ### Note name
 
 1. Create `note-names/<slug>/` with `entry.md` and `note-name.liquid`.
-2. The artifact is the Filename Template on one line, with no line break at the end of the file, exactly as a reader pastes it into **Note name template**.
+2. The artifact is the Filename Template on one line, with no line break at the end of the file, exactly as a reader pastes it into **Note name**.
 3. End it with `{% suffix %}`, so a second note with the same name is still created.
 
 The suite renders the note name over every Directory Sample and Edge Sample with the suffix left empty, and checks that each result is one file name: not empty, on one line, with no space at either end and no dot at the end, and with none of `\ / : * ? " < > | # ^ [ ]`. A slash would make a folder, Obsidian would change each of the others to `_`, and it removes a final dot.
@@ -134,12 +136,13 @@ The suite fails with a named problem code when an entry breaks one of these rule
 | Citation text has no `null`, empty, `null`/`undefined`/`NaN` text, dangling separator, or label without a value | `citation-output` |
 | A note name is one file name: not empty, on one line, no space at either end, no dot at the end, and no character a file name cannot hold | `note-name-output` |
 | A note name holds `{% suffix %}` | `note-name-suffix` |
+| A partial reads `note` or `annotation` data: the suite renders no `citation` partial yet | `unverified` |
 
 The Profile ID rule covers form and uniqueness only. That an ID never changes between editions is a review rule.
 
 ## Directory Samples
 
-Every entry renders over the four Sample Items (`journal-article`, `conference-paper`, `book`, `thesis`) and five items derived from them for types without a Sample Item (`book-section`, `letter`, `manuscript`, `interview`, `document`). The `book-section` item alone has Zotero child notes and a related item (the `book`). A Profile or `annotation` partial also renders over every Sample Annotation; one with the `color-highlights` feature also renders over a highlight in every other Zotero color and a custom color; one with the `tasks` feature also renders over a highlight whose comment starts with "todo". A Profile or `note` partial with the `grouped-by-color` feature also renders one more note, `every-color`: the conference paper with the Sample Annotations and those color highlights as its annotations, in page order. A `note` partial that renders annotations shows each as one line with its type, color, page, and text or comment. An `annotation` partial renders each one as a single inserted annotation, under ZotLit's built-in citation text, so `zt.citation` holds its page-pinned citation; in a literature note, `zt.citation` is empty. A citation text or note-name entry also renders over three Edge Samples, the cases a citation or a note name must handle: a journal article with four authors (`many-authors`), a report whose title holds every character a file name cannot (`unsafe-title`), and a web page with no author, date, or citation key (`no-author-date-or-citekey`). The suite stores the output in each entry's `samples.md`, so a change in any entry's output shows in review. The `file_link` filter renders nothing in samples, because the Directory Samples have no files in a vault; `plain-annotation-quote` shows how to fall back to plain text, such as `p. 5`.
+Every entry renders over the four Sample Items (`journal-article`, `conference-paper`, `book`, `thesis`) and five items derived from them for types without a Sample Item (`book-section`, `letter`, `manuscript`, `interview`, `document`). The `book-section` item alone has Zotero child notes and a related item (the `book`). An entry made for some item types (`itemTypes`) also renders over the type examples of those types, which fill the fields no Directory Sample holds: a thesis with its university and thesis type (`thesis-with-university`), a book with its place and edition (`book-with-edition`), and a newspaper article (`newspaper-article`). A Profile or `annotation` partial also renders over every Sample Annotation; one with the `color-highlights` feature also renders over a highlight in every other Zotero color and a custom color; one with the `tasks` feature also renders over a highlight whose comment starts with "todo". A Profile or `note` partial with the `grouped-by-color` feature also renders one more note, `every-color`: the conference paper with the Sample Annotations and those color highlights as its annotations, in page order. A `note` partial that renders annotations shows each as one line with its type, color, page, and text or comment. An `annotation` partial renders each one as a single inserted annotation, under ZotLit's built-in citation text, so `zt.citation` holds its page-pinned citation; in a literature note, `zt.citation` is empty. A citation text or note-name entry also renders over three Edge Samples, the cases a citation or a note name must handle: a journal article with four authors (`many-authors`), a report whose title holds every character a file name cannot (`unsafe-title`), and a web page with no author, date, or citation key (`no-author-date-or-citekey`). The suite stores the output in each entry's `samples.md`, so a change in any entry's output shows in review. The `file_link` filter renders nothing in samples, because the Directory Samples have no files in a vault; `plain-annotation-quote` shows how to fall back to plain text, such as `p. 5`.
 
 ## Commands
 

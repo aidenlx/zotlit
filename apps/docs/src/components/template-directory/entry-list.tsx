@@ -3,16 +3,14 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
-import type { Facet, IndexedEntry } from "@/lib/template-directory/search";
-import type { FacetOption } from "@/lib/template-directory/site";
+import type { IndexedEntry } from "@/lib/template-directory/search";
+import { entryIdParts } from "@/lib/template-directory/site";
 import { m } from "@/paraglide/messages.js";
 
 import { GROUPS, KIND_LABEL, valueLabels } from "./labels";
 
-type Facets = Readonly<Record<Facet, readonly FacetOption[]>>;
-
 /** The link to an entry's page, from its `<kind folder>/<slug>` id. */
-function EntryLink({
+export function EntryLink({
   id,
   className,
   children,
@@ -21,7 +19,7 @@ function EntryLink({
   className?: string;
   children: ReactNode;
 }) {
-  const [kind = "", slug = ""] = id.split("/");
+  const [kind, slug] = entryIdParts(id);
   return (
     <Link
       to="/templates/$kind/$slug"
@@ -109,10 +107,8 @@ export function StartHere({ entries }: { entries: readonly IndexedEntry[] }) {
 
 export function ResultGroups({
   results,
-  facets,
 }: {
   results: readonly IndexedEntry[];
-  facets: Facets;
 }) {
   if (results.length === 0) {
     return (
@@ -141,7 +137,7 @@ export function ResultGroups({
             </header>
             <ul>
               {entries.map((entry) => (
-                <ResultRow key={entry.id} entry={entry} facets={facets} />
+                <ResultRow key={entry.id} entry={entry} />
               ))}
             </ul>
           </section>
@@ -151,10 +147,10 @@ export function ResultGroups({
   );
 }
 
-function ResultRow({ entry, facets }: { entry: IndexedEntry; facets: Facets }) {
+function ResultRow({ entry }: { entry: IndexedEntry }) {
   const itemTypes =
     entry.itemTypes.length > 0
-      ? valueLabels("itemType", facets.itemType, entry.itemTypes)
+      ? valueLabels("itemType", entry.itemTypes)
       : [m.docs_directory_any_item_type()];
   return (
     <li className="border-b border-fd-border/60 py-5 last:border-b-0">
@@ -178,10 +174,9 @@ function ResultRow({ entry, facets }: { entry: IndexedEntry; facets: Facets }) {
         {entry.summary}
       </p>
       <p className="mt-2 text-sm text-fd-muted-foreground">
-        {[
-          ...valueLabels("task", facets.task, entry.tasks),
-          itemTypes.join(", "),
-        ].join(" · ")}
+        {[...valueLabels("task", entry.tasks), itemTypes.join(", ")].join(
+          " · ",
+        )}
       </p>
     </li>
   );

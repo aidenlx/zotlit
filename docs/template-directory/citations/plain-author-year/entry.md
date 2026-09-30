@@ -48,8 +48,4 @@ Plain text is not a Pandoc citation. (Pandoc is a tool that turns citations such
 
 Your vault has one citation text. Once you customize it, it is the file `zotlit-citation.md` in your template folder. This entry replaces it, so it changes the citations of every profile. Citations already in your notes stay as they are.
 
-To use it:
-
-1. Run **Customize citation text** in Obsidian. The citation text opens in the Template Workbench View.
-2. To keep a copy of your current citation text, select all of its text, copy it, and paste it into a note of your own. You need no copy if you never changed it: in the **Citations** settings, the **Citation text** row has a button with the tooltip **Reset to default**, which brings back the built-in text at any time.
-3. Replace all of the text with the whole text of this entry, including its first three lines (`---`, `language: liquid`, `---`).
+Before you replace it, you can keep a copy of your current citation text: on the **Citation** tab, select all of its text, copy it, and paste it into a note of your own. You need no copy if you never changed it: in the **Citations** settings, the **Citation text** row has a button with the tooltip **Reset to default**, which brings back the built-in text at any time.

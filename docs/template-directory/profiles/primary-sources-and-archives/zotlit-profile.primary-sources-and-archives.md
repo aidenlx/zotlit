@@ -5,7 +5,7 @@ version: "1.0.0"
 author: ZotLit
 description: Source notes for letters, manuscripts, interviews, documents, and newspaper articles, with the archive, the archive location, the date, and the place, each quote followed by its citation, and places for context, content, and connections.
 contract: 3
-minAppVersion: "2.2.0-beta.0"
+minAppVersion: "2.2.0-beta.2"
 sampleItemType: letter
 match:
   or:

@@ -1,5 +1,5 @@
 ---
-title: Venue
+title: Publication
 summary: Where the work appeared, the journal, book, or proceedings, or else the publisher or university.
 minAppVersion: "2.2.0-beta.0"
 tasks: [general-reading, literature-review]
@@ -38,18 +38,10 @@ Where the work appeared, as a `venue` property: the journal of an article, the b
 | Conference paper | Proceedings of the Open Research Conference |
 | Book | Penguin Books |
 | Book chapter | Judgment under Uncertainty: Heuristics and Biases |
-| Thesis | (none: the sample thesis has no university in Zotero) |
+| Thesis | (none: the example thesis has no university in Zotero) |
 
 When the item has none of these, the note gets no `venue` property.
 
-When the note updates: **Replace the existing value**. The property follows Zotero on every update.
-
-To add it to a profile:
-
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
-2. In the **Properties** tab, select **Add a property**. Enter `venue` as the **Property name**.
-3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
-4. In **Value**, replace the example rule with this entry's rule.
-5. Set **When the note is updated** to **Replace the existing value**.
+**When the note is updated**: **Replace the existing value**. The property follows Zotero on every update.
 
 Limits: the property holds a name only, with no volume, issue, or pages. For one property that also holds those, use the **Publisher by item type** entry.

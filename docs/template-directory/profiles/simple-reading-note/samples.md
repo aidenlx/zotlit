@@ -220,7 +220,7 @@ status: unread
 ## My notes
 ```
 
-## Annotation Section
+## Annotations
 
 ### Highlight annotation, yellow
 

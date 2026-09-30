@@ -27,7 +27,7 @@ expected:
 
 The value of one line of Zotero's **Extra** field, as a property of its own. Zotero users keep data that has no field of its own in Extra, one `name: value` pair per line. This entry reads the line that starts with `cover:` and writes its value as a `cover` property.
 
-For the sample book chapter, whose Extra field holds:
+For the example book chapter, whose Extra field holds:
 
 ```text
 original-date: 1974
@@ -43,14 +43,6 @@ When the Extra field has no `cover:` line, or the line has no value, the note ge
 
 To read another line, change `"name": "cover"` at the start of the rule to the name before the colon, such as `"name": "original-date"`, and enter the same name as the **Property name**.
 
-When the note updates: **Replace the existing value**. The property follows the Extra field on every update.
-
-To add it to a profile:
-
-1. Open **Settings > ZotLit > Literature note profiles** and select **Edit profile**, the pencil button, on your profile.
-2. In the **Properties** tab, select **Add a property**. Enter `cover` as the **Property name**.
-3. In the **Value format** menu beside **Value**, choose **Rule · JSON-e**, then select **Change format and reset value**.
-4. In **Value**, replace the example rule with this entry's rule.
-5. Set **When the note is updated** to **Replace the existing value**.
+**When the note is updated**: **Replace the existing value**. The property follows the Extra field on every update.
 
 Limits: the name must match the Extra line exactly, with the same capital letters: `Cover:` is not `cover:`. The property holds the text of the line, not an image; an Obsidian Bases view shows it as text.

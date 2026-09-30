@@ -1,7 +1,7 @@
 ---
 title: Plain annotation quote
 summary: One annotation as a plain quote with a link to its page, the image for image annotations, and your Zotero comment below it.
-minAppVersion: "2.2.0-beta.0"
+minAppVersion: "2.2.0-beta.2"
 context: annotation
 tasks: [general-reading]
 features: [page-links, comments, images]
@@ -35,5 +35,5 @@ Your Zotero comment follows the quote as ordinary text, so your thinking and the
 The partial reads one annotation's data. Call it from the annotation format of a profile, the part below `--- zotlit:annotation ---`:
 
 ```liquid
-{% render "plain-annotation-quote" with zt as zt %}
+{% render "plain-annotation-quote" with zt as zt -%}
 ```

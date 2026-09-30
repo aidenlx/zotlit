@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   facetCounts,
   queryFromSearch,
+  queryNarrows,
   searchDirectory,
   searchFromQuery,
 } from "./search";
@@ -254,6 +255,15 @@ describe("the query in the page address", () => {
       }),
     ).toEqual({ q: "et al", itemType: "book,thesis" });
     expect(searchFromQuery({ text: "", facets: {} })).toEqual({});
+  });
+
+  it("narrows the Directory once the reader types a word or chooses a value", () => {
+    expect(queryNarrows({ text: "", facets: {} })).toBe(false);
+    expect(queryNarrows({ text: "   ", facets: { level: [] } })).toBe(false);
+    expect(queryNarrows({ text: "colour", facets: {} })).toBe(true);
+    expect(queryNarrows({ text: "", facets: { kind: ["profile"] } })).toBe(
+      true,
+    );
   });
 });
 

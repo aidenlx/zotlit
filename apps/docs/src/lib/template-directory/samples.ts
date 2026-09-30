@@ -5,10 +5,11 @@ import type { AnnotationExample } from "@zotlit/workbench/render";
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 
 export interface DirectorySample {
-  /** Stable name of the sample, which a property entry's `expected` keys use. */
+  /**
+   * Stable name of the sample, which a property entry's `expected` keys use
+   * and the site's messages name.
+   */
   readonly id: string;
-  /** The item type as a reader names it. */
-  readonly label: string;
   readonly snapshot: ItemSnapshot;
 }
 
@@ -22,7 +23,6 @@ type SampleDate =
 
 interface DerivedItem {
   readonly id: string;
-  readonly label: string;
   /** Eight characters, like a Zotero item key. */
   readonly key: string;
   readonly itemType: string;
@@ -82,7 +82,6 @@ const UNRELATED_FIELDS = new Set([
 const DERIVED_ITEMS: readonly DerivedItem[] = [
   {
     id: "book-section",
-    label: "Book chapter",
     key: "TVKHEUR1",
     itemType: "bookSection",
     title: "Judgment under uncertainty: Heuristics and biases",
@@ -119,7 +118,6 @@ const DERIVED_ITEMS: readonly DerivedItem[] = [
   },
   {
     id: "letter",
-    label: "Letter",
     key: "ALDLET87",
     itemType: "letter",
     title: "Letter to Eleanor Whitcombe",
@@ -143,7 +141,6 @@ const DERIVED_ITEMS: readonly DerivedItem[] = [
   },
   {
     id: "manuscript",
-    label: "Manuscript",
     key: "ALDMSS85",
     itemType: "manuscript",
     title: "Survey notebook of the Brackenridge estate",
@@ -162,7 +159,6 @@ const DERIVED_ITEMS: readonly DerivedItem[] = [
   },
   {
     id: "interview",
-    label: "Interview",
     key: "OKAFOH19",
     itemType: "interview",
     title: "Oral history interview with Ada Okafor",
@@ -186,7 +182,6 @@ const DERIVED_ITEMS: readonly DerivedItem[] = [
   },
   {
     id: "document",
-    label: "Document",
     key: "BFLMIN23",
     itemType: "document",
     title: "Minutes of the Board of Trustees, 12 March 1923",
@@ -203,25 +198,16 @@ const DERIVED_ITEMS: readonly DerivedItem[] = [
   },
 ];
 
-const SAMPLE_ITEM_LABELS: Readonly<Record<string, string>> = {
-  journalArticle: "Journal article",
-  conferencePaper: "Conference paper",
-  book: "Book",
-  thesis: "Thesis",
-};
-
 /** The four Sample Items, then the derived items, in the order samples show. */
 export const DIRECTORY_SAMPLES: readonly DirectorySample[] = [
   ...SAMPLE_ITEMS.map((snapshot) => ({
     id: snapshot.provenance.kind === "sample" ? snapshot.provenance.id : "",
-    label: SAMPLE_ITEM_LABELS[snapshot.item.itemType]!,
     snapshot,
   })),
   // The book carries no annotations or attachments, so nothing of its own
   // leaks into an item of another type.
   ...DERIVED_ITEMS.map((item) => ({
     id: item.id,
-    label: item.label,
     snapshot: derive(SAMPLE_ITEMS[2]!, item),
   })),
 ];
@@ -237,7 +223,6 @@ export const DIRECTORY_SAMPLES: readonly DirectorySample[] = [
 const EDGE_ITEMS: readonly DerivedItem[] = [
   {
     id: "many-authors",
-    label: "Journal article with four authors",
     key: "KLNMLB14",
     itemType: "journalArticle",
     title:
@@ -264,7 +249,6 @@ const EDGE_ITEMS: readonly DerivedItem[] = [
   },
   {
     id: "unsafe-title",
-    label: "Report whose title holds characters a file name cannot",
     key: "LEEIOR21",
     itemType: "report",
     title:
@@ -278,7 +262,6 @@ const EDGE_ITEMS: readonly DerivedItem[] = [
   },
   {
     id: "no-author-date-or-citekey",
-    label: "Web page with no author, date, or citation key",
     key: "WEBFAQ24",
     itemType: "webpage",
     title: "Open access: Frequently asked questions",
@@ -299,10 +282,99 @@ const EDGE_ITEMS: readonly DerivedItem[] = [
 export const EDGE_SAMPLES: readonly DirectorySample[] = EDGE_ITEMS.map(
   (item) => ({
     id: item.id,
-    label: item.label,
     snapshot: derive(SAMPLE_ITEMS[2]!, item),
   }),
 );
+
+/**
+ * Items that fill the fields a type-specific entry reads and no Directory
+ * Sample holds: a thesis with its university and thesis type, a book with its
+ * place and edition, and a newspaper article. An entry renders over each one
+ * whose item type it is made for. The thesis and the book are real
+ * publications; the newspaper article is invented, from the town of the
+ * archive items.
+ */
+const TYPE_ITEMS: readonly DerivedItem[] = [
+  {
+    id: "thesis-with-university",
+    key: "NASHNC50",
+    itemType: "thesis",
+    title: "Non-cooperative games",
+    date: { year: 1950 },
+    dateText: "1950",
+    primaryCreatorType: "author",
+    creators: [{ given: "John F.", family: "Nash", role: "author" }],
+    citekey: "nashNoncooperativeGames1950",
+    fields: {
+      type: "PhD thesis",
+      publisher: "Princeton University",
+      place: "Princeton, NJ",
+      numPages: "27",
+      language: "en",
+    },
+  },
+  {
+    id: "book-with-edition",
+    key: "BOOTCR16",
+    itemType: "book",
+    title: "The craft of research",
+    date: { year: 2016 },
+    dateText: "2016",
+    primaryCreatorType: "author",
+    creators: [
+      { given: "Wayne C.", family: "Booth", role: "author" },
+      { given: "Gregory G.", family: "Colomb", role: "author" },
+      { given: "Joseph M.", family: "Williams", role: "author" },
+      { given: "Joseph", family: "Bizup", role: "author" },
+      { given: "William T.", family: "FitzGerald", role: "author" },
+    ],
+    citekey: "boothCraftResearch2016",
+    fields: {
+      publisher: "University of Chicago Press",
+      place: "Chicago",
+      edition: "4",
+      ISBN: "978-0-226-23973-6",
+      language: "en",
+    },
+  },
+  {
+    id: "newspaper-article",
+    key: "BGZFLD87",
+    itemType: "newspaperArticle",
+    title: "The flood at Aldous's mill",
+    date: { year: 1887, month: 3, day: 18 },
+    dateText: "18 March 1887",
+    primaryCreatorType: "author",
+    creators: [],
+    citekey: "floodAldousMill1887",
+    abstract:
+      "A report of the spring flood that stopped the Aldous mill for nine days.",
+    fields: {
+      publicationTitle: "Brackenridge Gazette",
+      containerTitle: "Brackenridge Gazette",
+      place: "Brackenridge",
+      section: "Local news",
+      pages: "3",
+      archive: "Brackenridge County Record Office",
+      archiveLocation: "Newspaper collection, reel 14",
+      language: "en",
+    },
+  },
+];
+
+const TYPE_SAMPLES: readonly DirectorySample[] = TYPE_ITEMS.map((item) => ({
+  id: item.id,
+  snapshot: derive(SAMPLE_ITEMS[2]!, item),
+}));
+
+/** The type examples of the item types an entry is made for, in the order samples show. */
+export function typeSamples(
+  itemTypes: readonly string[],
+): readonly DirectorySample[] {
+  return TYPE_SAMPLES.filter(({ snapshot }) =>
+    itemTypes.includes(snapshot.item.itemType),
+  );
+}
 
 /**
  * Every Zotero annotation color under its contract name but yellow, which the
@@ -389,7 +461,6 @@ function everyColorSample(
   });
   return {
     id: "every-color",
-    label: "Conference paper with an annotation in every color",
     snapshot: {
       ...base,
       revision: "derived:every-color",

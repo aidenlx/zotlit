@@ -1,7 +1,7 @@
 ---
 title: Color meanings for a literature review
 summary: Highlight colors for the parts of a study that a literature review compares, such as aim, methods, findings, and limitations, each shown as a callout in a matching color.
-minAppVersion: "2.2.0-beta.0"
+minAppVersion: "2.2.0-beta.2"
 context: annotation
 call: |
   {% include "color-meanings-review" -%}

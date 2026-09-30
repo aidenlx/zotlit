@@ -2,7 +2,7 @@
 
 # Rendered samples: Author et al. Year
 
-| Item | Note name |
+| Example item | Note name |
 | --- | --- |
 | Journal article | `Ioannidis 2005` |
 | Conference paper | `Rivera and Chen 2026` |

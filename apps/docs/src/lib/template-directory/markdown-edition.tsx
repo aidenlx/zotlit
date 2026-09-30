@@ -8,16 +8,15 @@ import {
   GROUPS,
   KIND_LABEL,
   LEVEL_LABEL,
+  SAMPLE_LABELS,
   valueLabels,
 } from "@/components/template-directory/labels";
 import { m } from "@/paraglide/messages.js";
 
 import { codeBlock, formatSampleSections } from "./samples-markdown";
-import { DIRECTORY_PATH, entryPath } from "./site";
+import { calledPartials, DIRECTORY_PATH, entryId, entryPath } from "./site";
 import type { DirectorySite, SiteEntry } from "./site";
 import type { EntrySamples } from "./verify";
-
-type Facets = DirectorySite["facets"];
 
 /**
  * The Directory's edition at `slugs` below the index: the index for none, an
@@ -28,8 +27,11 @@ export async function directoryEdition(
   slugs: readonly string[],
 ): Promise<string | undefined> {
   if (slugs.length === 0) return indexEdition(site);
-  if (slugs.length !== 2) return undefined;
-  const entry = site.entries.find(({ id }) => id === slugs.join("/"));
+  const [folder, slug, ...rest] = slugs;
+  if (folder === undefined || slug === undefined || rest.length > 0) {
+    return undefined;
+  }
+  const entry = site.entries.find(({ id }) => id === entryId(folder, slug));
   return entry && entryEdition(entry, site);
 }
 
@@ -60,7 +62,7 @@ export function directoryLlmsIndex({ entries }: DirectorySite): string {
 }
 
 /** The index: the recommended entries, then every entry under its level with its facets. */
-function indexEdition({ entries, facets }: DirectorySite): string {
+function indexEdition({ entries }: DirectorySite): string {
   const recommended = entries.filter(({ recommended }) => recommended);
   const sections = [
     `# ${m.docs_directory_title()} (${DIRECTORY_PATH})`,
@@ -79,7 +81,7 @@ function indexEdition({ entries, facets }: DirectorySite): string {
         description(),
         members
           .map((entry) =>
-            [entryLink(entry), ...indent(facetLines(entry, facets))].join("\n"),
+            [entryLink(entry), ...indent(facetLines(entry))].join("\n"),
           )
           .join("\n"),
       ];
@@ -95,16 +97,14 @@ function indexEdition({ entries, facets }: DirectorySite): string {
  */
 async function entryEdition(
   entry: SiteEntry,
-  { entries, facets }: DirectorySite,
+  { entries }: DirectorySite,
 ): Promise<string> {
-  const partials = entry.calls.flatMap((name) =>
-    entries.filter(({ id }) => id === `partials/${name}`),
-  );
+  const partials = calledPartials(entries, entry.calls);
   const sections = [
     `# ${entry.title} (${entryPath(entry.id)})`,
     `> ${entry.summary}`,
     [
-      ...facetLines(entry, facets, { level: true }),
+      ...facetLines(entry, { level: true }),
       `- ${m.docs_directory_requires({ version: entry.minAppVersion })}`,
     ].join("\n"),
     `**${m.docs_directory_audience()}:** ${entry.audience}`,
@@ -141,8 +141,8 @@ const FILE_LANGUAGE = {
 /** What the entry makes for each Directory Sample, under the page's own intro. */
 function samplesSection(entry: SiteEntry): string[] {
   const samples: EntrySamples = {
-    notes: entry.notes.map(({ id, label, noteName, frontmatter, body }) => ({
-      sample: { id, label },
+    notes: entry.notes.map(({ id, noteName, frontmatter, body }) => ({
+      sample: { id },
       noteName,
       properties: frontmatter,
       body,
@@ -153,6 +153,7 @@ function samplesSection(entry: SiteEntry): string[] {
   const sections = formatSampleSections(entry.kind, samples, {
     depth: 3,
     leftOut: `_${m.docs_directory_sample_left_out()}_`,
+    labels: SAMPLE_LABELS,
   });
   if (sections.length === 0) return [];
   return [
@@ -181,12 +182,11 @@ function entryLink({ id, title, summary }: SiteEntry): string {
  */
 function facetLines(
   entry: SiteEntry,
-  facets: Facets,
   { level = false }: { level?: boolean } = {},
 ): string[] {
   const itemTypes =
     entry.itemTypes.length > 0
-      ? valueLabels("itemType", facets.itemType, entry.itemTypes)
+      ? valueLabels("itemType", entry.itemTypes)
       : [m.docs_directory_any_item_type()];
   const facet = (label: string, values: readonly string[]) =>
     values.length > 0 ? [`- ${label}: ${values.join("; ")}`] : [];
@@ -195,14 +195,11 @@ function facetLines(
     ...(level
       ? facet(m.docs_directory_facet_level(), [LEVEL_LABEL[entry.level]()])
       : []),
-    ...facet(
-      m.docs_directory_tasks(),
-      valueLabels("task", facets.task, entry.tasks),
-    ),
+    ...facet(m.docs_directory_tasks(), valueLabels("task", entry.tasks)),
     ...facet(m.docs_directory_item_types(), itemTypes),
     ...facet(
       m.docs_directory_features(),
-      valueLabels("feature", facets.feature, entry.features),
+      valueLabels("feature", entry.features),
     ),
     ...facet(m.docs_directory_keywords(), entry.keywords),
     `- ${m.docs_directory_problems()}:`,

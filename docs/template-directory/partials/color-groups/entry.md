@@ -1,7 +1,7 @@
 ---
 title: Annotations grouped by color
 summary: Your annotations under one heading for each color meaning, such as Definitions or Questions, in a fixed order, with no heading for a meaning you did not use.
-minAppVersion: "2.2.0-beta.0"
+minAppVersion: "2.2.0-beta.2"
 context: note
 tasks: [general-reading, literature-review, close-reading]
 features: [grouped-by-color]
@@ -33,7 +33,7 @@ The partial writes your annotations in groups: one heading for each color meanin
 - **Other colors.** Annotations in a color the meanings do not list, such as a custom color from another app, come last, under the fallback title of the meaning set, such as **Other highlights**.
 - **Every kind of annotation.** Highlights, underlines, notes, text boxes, images, and ink drawings all go into the group of their color, so nothing is left out.
 
-Each annotation shows in your profile's annotation format, the part below `--- zotlit:annotation ---`. For colored callouts, use the **Color callout** partial there, with the same meaning set. The samples of this entry show each annotation as one line that names its type, color, page, and text; the samples of the **Reading notes by color** profile show the same groups as callouts.
+Each annotation shows in your profile's annotation format, the part below `--- zotlit:annotation ---`. For colored callouts, use the **Color callout** partial there, with the same meaning set. The examples on this page show each annotation as one line that names its type, color, page, and text; the examples of the **Reading notes by color** profile show the same groups as callouts.
 
 The partial reads the item's data. Call it in the note format of a profile, below a heading of your own, inside `{% managed %}` … `{% endmanaged %}`:
 

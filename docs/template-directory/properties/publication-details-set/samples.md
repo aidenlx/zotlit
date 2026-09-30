@@ -48,3 +48,19 @@ _No output._
 ## Document
 
 _No output._
+
+## Thesis with university and thesis type
+
+```yaml
+university: Princeton University
+thesis-type: PhD thesis
+```
+
+## Book with place and edition
+
+```yaml
+publisher: University of Chicago Press
+place: Chicago
+edition: "4"
+isbn: 978-0-226-23973-6
+```

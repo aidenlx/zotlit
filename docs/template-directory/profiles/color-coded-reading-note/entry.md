@@ -51,13 +51,13 @@ The profile starts with these color meanings:
 
 Obsidian has no yellow or pink callout, so each Zotero color shows the nearest color Obsidian has: yellow highlights show orange, magenta shows purple, and plum shows red. The callout title tells them apart from orange, purple, and red highlights. A highlight in a color that is not on the list shows under **Other highlights**, so it stays in the note.
 
-To give a color another meaning or another callout color, edit `zotlit-partial.color-meanings.md` in your template folder. Change only the words between the quotation marks. It is the one place the meanings live, so every note under this profile follows the next time it updates, for example when you run **Create or update all literature notes**. The **Color meanings** entry in the Template Directory lists the callout types and the color each one shows.
+To give a color another meaning or another callout color, edit `zotlit-partial.color-meanings.md` in your template folder. Change only the words between the quotation marks. It is the one place the meanings live, so every note under this profile follows the next time it updates, for example when you run **Create or update all literature notes**. The **Color meanings** entry in the template directory lists the callout types and the color each one shows.
 
 Everything from Zotero sits in the part of the note that ZotLit refreshes when you update the note. **My notes** sits outside it, so an update never touches what you write there. To change the text of an annotation, edit its comment in Zotero; the comment appears under the highlight on the next update.
 
 The note gets six properties, ready to sort and filter in an Obsidian Bases view:
 
-| Property | Value | When the note updates |
+| Property | Value | When the note is updated |
 | --- | --- | --- |
 | `title` | The item's title | Replace the existing value |
 | `citekey` | The citation key | Replace the existing value |
@@ -67,5 +67,3 @@ The note gets six properties, ready to sort and filter in an Obsidian Bases view
 | `status` | `unread` | Keep the existing value |
 
 Tags you add in Obsidian stay when the note updates, and so does a `status` you change by hand. A tag you remove in Zotero stays in the note until you delete it from the note too. A property is left out when the item has no value for it. Spaces in a Zotero tag become underscores. Other characters stay as they are, so a Zotero tag with a comma or a `#` in it needs a manual fix in Obsidian.
-
-To use it, select **Import into Obsidian** on this page. If the import sheet does not open, select **Copy profile** or **Download file**, then run **Import profile…** in Obsidian. The import sheet shows the profile before anything is written. The profile brings its four building blocks (partials) with it: `links-row`, `folded-abstract`, `color-meanings`, and `color-callout`.

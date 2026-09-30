@@ -2,7 +2,7 @@
 
 # Rendered samples: Todo comment as a task
 
-## Annotation Section
+## Annotations
 
 ### Highlight annotation, yellow
 

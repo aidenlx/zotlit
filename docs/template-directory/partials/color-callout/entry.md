@@ -1,7 +1,7 @@
 ---
 title: Color callout
 summary: One annotation as a callout in the color that matches its Zotero color, titled with the color's meaning and a link to its page, with no CSS snippet.
-minAppVersion: "2.2.0-beta.0"
+minAppVersion: "2.2.0-beta.2"
 context: annotation
 call: |
   {% include "color-meanings" -%}

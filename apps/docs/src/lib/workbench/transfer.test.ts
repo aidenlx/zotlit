@@ -4,9 +4,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
 
+import { openProfileInObsidian } from "@/lib/profile-handoff";
+
 import {
   clearDraft,
-  openProfileInObsidian,
   createProfileHandoffSource,
   downloadProfile,
   profileFileName,

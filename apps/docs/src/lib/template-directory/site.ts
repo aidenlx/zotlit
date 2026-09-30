@@ -2,9 +2,36 @@
 
 import type { PartialContext } from "./entry.ts";
 import type { Facet, IndexedEntry } from "./search.ts";
+import type { AnnotationColor } from "./verify.ts";
 
 /** The index page's path; each entry page sits below it at its entry id. */
 export const DIRECTORY_PATH = "/templates";
+
+/**
+ * An entry's id: the folder of its kind and its slug, which its page path, its
+ * card URL, and its Markdown edition repeat.
+ */
+export function entryId(folder: string, slug: string): string {
+  return `${folder}/${slug}`;
+}
+
+/** The kind folder and the slug an entry id joins. */
+export function entryIdParts(id: string): [folder: string, slug: string] {
+  const separator = id.indexOf("/");
+  return [id.slice(0, separator), id.slice(separator + 1)];
+}
+
+/** The partial entries an entry calls, by the partial names in `calls`, in that order. */
+export function calledPartials<T extends Pick<SiteEntry, "id" | "kind">>(
+  entries: readonly T[],
+  calls: readonly string[],
+): T[] {
+  return calls.flatMap((name) =>
+    entries.filter(
+      ({ id, kind }) => kind === "partial" && entryIdParts(id)[1] === name,
+    ),
+  );
+}
 
 export function entryPath(id: string): string {
   return `${DIRECTORY_PATH}/${id}`;
@@ -17,13 +44,9 @@ export interface DirectorySite {
   readonly facets: Readonly<Record<Facet, readonly FacetOption[]>>;
 }
 
-/**
- * One value a facet offers. The entry format names research tasks, features,
- * and item types; the site's own messages name kinds and levels.
- */
+/** One value a facet offers; the site's messages name it. */
 export interface FacetOption {
   readonly value: string;
-  readonly label?: string;
 }
 
 /** One entry page's content. */
@@ -66,9 +89,8 @@ export type EntryDetails =
 
 /** One Directory Sample, as the entry renders it. */
 export interface NoteSampleView {
+  /** The Directory Sample, which the site's messages name. */
   readonly id: string;
-  /** The item type as a reader names it. */
-  readonly label: string;
   readonly noteName: string | null;
   /** The properties the entry writes, in order; null when it writes none. */
   readonly properties: readonly SampleProperty[] | null;
@@ -89,7 +111,8 @@ export interface SampleProperty {
 
 /** One citation, as a citation text inserts it under each variant. */
 export interface CitationSampleView {
-  readonly label: string;
+  /** The example it cites, which the site's messages name. */
+  readonly id: string;
   readonly main: string | null;
   readonly alt: string | null;
 }
@@ -97,7 +120,9 @@ export interface CitationSampleView {
 /** One Sample Annotation, as the entry's annotation format renders it. */
 export interface AnnotationSampleView {
   readonly id: string;
-  readonly label: string;
+  /** The annotation's type and color, which name it. */
+  readonly type: string;
+  readonly color: AnnotationColor;
   readonly output: string | null;
 }
 

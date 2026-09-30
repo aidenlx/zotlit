@@ -29,6 +29,7 @@ import type {
   LiteratureNoteTemplateErrorCode,
   LiteratureNoteTemplateManifest,
   RootVariableUse,
+  TemplateFacadeOptions,
   TemplateLanguage,
 } from "@zotlit/templates/facade";
 import { evalFrontmatterFields } from "@zotlit/templates/frontmatter";
@@ -88,6 +89,14 @@ const FLUSH_DEBOUNCE_MS = 500;
 const SETTLE_TIMEOUT_MS = 5_000;
 const LEGACY_LITERATURE_NOTE_TEMPLATE_NAMES: ReadonlySet<TemplateName> =
   new Set(["filename", "note", "annotation", MANAGED_CONTENT_TEMPLATE]);
+
+/**
+ * What every facade of the service shares: the Managed Content template's
+ * output renders inside the Managed Region markers.
+ */
+const FACADE_OPTIONS = {
+  transformRender: managedRegionTransform(MANAGED_CONTENT_TEMPLATE),
+} satisfies TemplateFacadeOptions;
 
 /** localStorage key for the per-device JavaScript Templates consent flag. */
 const JS_TEMPLATES_STORAGE_KEY = "zotlit-javascript-templates";
@@ -438,9 +447,7 @@ export type SettleOutcome = "settled" | "timeout" | "init-failed";
 export class TemplateService extends Service<void> {
   readonly #app;
   readonly #settings;
-  readonly #facade = new TemplateFacade({
-    transformRender: managedRegionTransform(MANAGED_CONTENT_TEMPLATE),
-  });
+  readonly #facade = new TemplateFacade(FACADE_OPTIONS);
   readonly #emitter = createNanoEvents<TemplateServiceEvents>();
   readonly #compileErrors = new Map<string, CompileError>();
   /** Exact bytes observed by reconciliation, including sources that fail parsing. */
@@ -726,8 +733,8 @@ export class TemplateService extends Service<void> {
     partials: readonly LiteratureNoteTemplatePartial[],
   ): TemplateFacade {
     const facade = new TemplateFacade({
+      ...FACADE_OPTIONS,
       autoTrim: this.#lastAutoTrim,
-      transformRender: managedRegionTransform(MANAGED_CONTENT_TEMPLATE),
     });
     const own = new Set(partials.map(({ name }) => name));
     const installed: [

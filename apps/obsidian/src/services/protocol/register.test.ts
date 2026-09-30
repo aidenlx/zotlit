@@ -413,7 +413,11 @@ describe("clipboard Profile protocol handoff", () => {
     const app = {
       vault: { getFileByPath: vi.fn(() => file) },
     } as unknown as ProtocolDeps["app"];
-    const importProfile = vi.fn(async () => ({ path: file.path }));
+    const imported =
+      Promise.withResolvers<
+        Awaited<ReturnType<ProtocolDeps["importProfile"]>>
+      >();
+    const importProfile = vi.fn(() => imported.promise);
     using _handlers = register({
       webWorkbenchEnabled: false,
       app,
@@ -424,7 +428,12 @@ describe("clipboard Profile protocol handoff", () => {
       action: "zotlit/import-profile",
       clipboard: "true",
     });
-    await new Promise((resolve) => setTimeout(resolve));
+    imported.resolve({ path: file.path } as Awaited<
+      ReturnType<ProtocolDeps["importProfile"]>
+    >);
+    // The handler awaited the import first, so it has ended by the time this
+    // await on the same promise resumes the test.
+    await imported.promise;
 
     expect(importProfile).toHaveBeenCalledExactlyOnceWith({
       source: "clipboard",

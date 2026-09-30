@@ -18,7 +18,11 @@ import {
   contentSections,
   suffixEditionUrl,
 } from "./markdown-routes.js";
-import { DIRECTORY_PATH, entryPath } from "./template-directory/site.js";
+import {
+  DIRECTORY_PATH,
+  entryIdParts,
+  entryPath,
+} from "./template-directory/site.js";
 import type { DirectorySite } from "./template-directory/site.js";
 
 /** A page for `tanstackStart({ pages })` to prerender. */
@@ -51,7 +55,10 @@ function machineRoutePages(
     return slugSets.map((slugs) => ({ section, slugs }));
   });
   // The Directory's index, then each entry at its `<kind folder>/<slug>` id.
-  for (const slugs of [[], ...directory.entries.map(({ id }) => id.split("/"))])
+  for (const slugs of [
+    [],
+    ...directory.entries.map(({ id }) => entryIdParts(id)),
+  ])
     editions.push({ section: "templates", slugs });
 
   return [

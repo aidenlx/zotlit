@@ -307,7 +307,42 @@ citekey: brackenridgefreelibraryMinutesBoardTrustees1923
 ## Connections
 ```
 
-## Annotation Section
+## Newspaper article
+
+Note name: `floodAldousMill1887`
+
+```markdown
+---
+title: The flood at Aldous's mill
+date: 1887-03-18
+year: 1887
+item-type: Newspaper Article
+venue: Brackenridge Gazette
+archive: Brackenridge County Record Office
+archive-location: Newspaper collection, reel 14
+place: Brackenridge
+citekey: floodAldousMill1887
+---
+%%zt-managed%%
+# The flood at Aldous's mill
+
+[Zotero](zotero://select/library/items/BGZFLD87)
+
+> [!abstract]- Abstract
+> A report of the spring flood that stopped the Aldous mill for nine days.
+
+%%/zt-managed%%
+
+## Context
+
+
+## Content
+
+
+## Connections
+```
+
+## Annotations
 
 ### Highlight annotation, yellow
 

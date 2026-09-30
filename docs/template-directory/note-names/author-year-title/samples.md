@@ -2,7 +2,7 @@
 
 # Rendered samples: Author Year – Title
 
-| Item | Note name |
+| Example item | Note name |
 | --- | --- |
 | Journal article | `Ioannidis 2005 – Why Most Published Research Findings Are False` |
 | Conference paper | `Rivera 2026 – Designing reproducible research interfaces` |

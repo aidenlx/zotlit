@@ -2,7 +2,7 @@
 
 # Rendered samples: Color callout
 
-## Annotation Section
+## Annotations
 
 ### Highlight annotation, yellow
 
