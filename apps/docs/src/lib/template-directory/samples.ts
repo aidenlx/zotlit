@@ -287,6 +287,96 @@ export const EDGE_SAMPLES: readonly DirectorySample[] = EDGE_ITEMS.map(
 );
 
 /**
+ * Items that fill the fields a type-specific entry reads and no Directory
+ * Sample holds: a thesis with its university and thesis type, a book with its
+ * place and edition, and a newspaper article. An entry renders over each one
+ * whose item type it is made for. The thesis and the book are real
+ * publications; the newspaper article is invented, from the town of the
+ * archive items.
+ */
+const TYPE_ITEMS: readonly DerivedItem[] = [
+  {
+    id: "thesis-with-university",
+    key: "NASHNC50",
+    itemType: "thesis",
+    title: "Non-cooperative games",
+    date: { year: 1950 },
+    dateText: "1950",
+    primaryCreatorType: "author",
+    creators: [{ given: "John F.", family: "Nash", role: "author" }],
+    citekey: "nashNoncooperativeGames1950",
+    fields: {
+      type: "PhD thesis",
+      publisher: "Princeton University",
+      place: "Princeton, NJ",
+      numPages: "27",
+      language: "en",
+    },
+  },
+  {
+    id: "book-with-edition",
+    key: "BOOTCR16",
+    itemType: "book",
+    title: "The craft of research",
+    date: { year: 2016 },
+    dateText: "2016",
+    primaryCreatorType: "author",
+    creators: [
+      { given: "Wayne C.", family: "Booth", role: "author" },
+      { given: "Gregory G.", family: "Colomb", role: "author" },
+      { given: "Joseph M.", family: "Williams", role: "author" },
+      { given: "Joseph", family: "Bizup", role: "author" },
+      { given: "William T.", family: "FitzGerald", role: "author" },
+    ],
+    citekey: "boothCraftResearch2016",
+    fields: {
+      publisher: "University of Chicago Press",
+      place: "Chicago",
+      edition: "4",
+      ISBN: "978-0-226-23973-6",
+      language: "en",
+    },
+  },
+  {
+    id: "newspaper-article",
+    key: "BGZFLD87",
+    itemType: "newspaperArticle",
+    title: "The flood at Aldous's mill",
+    date: { year: 1887, month: 3, day: 18 },
+    dateText: "18 March 1887",
+    primaryCreatorType: "author",
+    creators: [],
+    citekey: "floodAldousMill1887",
+    abstract:
+      "A report of the spring flood that stopped the Aldous mill for nine days.",
+    fields: {
+      publicationTitle: "Brackenridge Gazette",
+      containerTitle: "Brackenridge Gazette",
+      place: "Brackenridge",
+      section: "Local news",
+      pages: "3",
+      archive: "Brackenridge County Record Office",
+      archiveLocation: "Newspaper collection, reel 14",
+      language: "en",
+    },
+  },
+];
+
+const TYPE_SAMPLES: readonly DirectorySample[] = TYPE_ITEMS.map((item) => ({
+  id: item.id,
+  snapshot: derive(SAMPLE_ITEMS[2]!, item),
+}));
+
+/** The type examples of the item types an entry is made for, in the order samples show. */
+export function typeSamples(
+  itemTypes: readonly string[],
+): readonly DirectorySample[] {
+  return TYPE_SAMPLES.filter(({ snapshot }) =>
+    itemTypes.includes(snapshot.item.itemType),
+  );
+}
+
+/**
  * Every Zotero annotation color under its contract name but yellow, which the
  * first Sample Annotation shows, then a color outside every palette, which
  * Zotero names no color.

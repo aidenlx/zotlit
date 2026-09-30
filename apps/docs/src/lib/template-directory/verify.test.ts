@@ -420,6 +420,50 @@ describe("the Directory verification", () => {
       );
     });
 
+    describe("an entry made for some item types", () => {
+      const madeFor = (itemTypes: string) =>
+        edit(fixtureFiles(), `${FIXTURE_PROPERTY}/entry.md`, [
+          "title: Fixture year",
+          `title: Fixture year\nitemTypes: [${itemTypes}]`,
+        ]);
+      const sampleIds = (files: Map<string, string>) =>
+        verifyTemplateDirectory(files)
+          .samples.get(FIXTURE_PROPERTY)!
+          .notes.map(({ sample }) => sample.id);
+      const stating = (files: Map<string, string>, result: string) =>
+        edit(files, `${FIXTURE_PROPERTY}/entry.md`, [
+          "letter: { year: 1887 }",
+          `letter: { year: 1887 }\n  ${result}`,
+        ]);
+
+      it("renders over an example of each of its types that fills the fields no Directory Sample has", () => {
+        const every = sampleIds(fixtureFiles());
+        expect(every).not.toContain("thesis-with-university");
+        expect(sampleIds(madeFor("newspaperArticle, thesis, book"))).toEqual([
+          ...every,
+          "thesis-with-university",
+          "book-with-edition",
+          "newspaper-article",
+        ]);
+      });
+
+      it("accepts a result it states for an example of its types", () => {
+        expect(
+          problemsOf(
+            stating(madeFor("book"), "book-with-edition: { year: 2016 }"),
+          ),
+        ).toEqual([]);
+      });
+
+      it("rejects a result it states for an example of another type", () => {
+        rejects(
+          stating(madeFor("thesis"), "book-with-edition: { year: 2016 }"),
+          FIXTURE_PROPERTY,
+          "property-expectation",
+        );
+      });
+    });
+
     describe("a partial's stated call", () => {
       const withCall = (call: string) =>
         edit(fixtureFiles(), `${FIXTURE_QUOTE}/entry.md`, [

@@ -111,6 +111,9 @@ const EXAMPLE_LABEL: Readonly<Record<string, () => LocalizedString>> = {
   "unsafe-title": m.docs_directory_example_unsafe_title,
   "no-author-date-or-citekey":
     m.docs_directory_example_no_author_date_or_citekey,
+  "thesis-with-university": m.docs_directory_example_thesis_with_university,
+  "book-with-edition": m.docs_directory_example_book_with_edition,
+  "newspaper-article": m.docs_directory_example_newspaper_article,
   "two-items": m.docs_directory_example_two_items,
   "item-with-page": m.docs_directory_example_item_with_page,
   "suppressed-author": m.docs_directory_example_suppressed_author,

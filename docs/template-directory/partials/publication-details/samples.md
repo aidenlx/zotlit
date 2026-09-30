@@ -43,3 +43,15 @@ _No output._
 ## Document
 
 _No output._
+
+## Thesis with university and thesis type
+
+```markdown
+PhD thesis · Princeton University
+```
+
+## Book with place and edition
+
+```markdown
+University of Chicago Press · Chicago · Edition: 4 · ISBN 978-0-226-23973-6
+```

@@ -45,3 +45,15 @@ _No output._
 ```yaml
 publisher: Brackenridge Free Library
 ```
+
+## Thesis with university and thesis type
+
+```yaml
+publisher: Princeton University
+```
+
+## Book with place and edition
+
+```yaml
+publisher: University of Chicago Press
+```
