@@ -2,7 +2,7 @@
 
 # Rendered samples: Quote with a block ID
 
-## Annotation Section
+## Annotations
 
 ### Highlight annotation, yellow
 

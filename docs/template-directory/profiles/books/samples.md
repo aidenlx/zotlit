@@ -324,7 +324,7 @@ University of Chicago Press · Chicago · Edition: 4 · ISBN 978-0-226-23973-6
 ## Ideas to explore
 ```
 
-## Annotation Section
+## Annotations
 
 ### Highlight annotation, yellow
 

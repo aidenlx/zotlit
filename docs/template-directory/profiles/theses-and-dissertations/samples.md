@@ -322,7 +322,7 @@ PhD thesis · Princeton University
 ## My notes
 ```
 
-## Annotation Section
+## Annotations
 
 ### Highlight annotation, yellow
 
