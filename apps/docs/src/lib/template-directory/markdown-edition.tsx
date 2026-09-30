@@ -92,10 +92,9 @@ function indexEdition({ entries }: DirectorySite): string {
 
 /**
  * One entry, in the order its page reads. A Profile reads as its page does:
- * facets, the steps, the example it makes, then the Details, and the partials
- * it calls and the file itself after them. A recipe reads: facets, who it is
- * for, the description, the steps, the partials it calls, the file itself,
- * and the samples it renders.
+ * facets, the steps, the example it makes, then the Details, and the Source
+ * last. A recipe reads: facets, who it is for, the description, the steps, the
+ * partials it needs, the samples it renders, and the Source last.
  */
 async function entryEdition(
   entry: SiteEntry,
@@ -117,21 +116,6 @@ async function entryEdition(
     `## ${m.docs_directory_use_heading()}`,
     await renderToMarkdown(<EntryUse entry={entry} />),
   ];
-  const calls =
-    partials.length > 0
-      ? [
-          `## ${m.docs_directory_calls_heading()}`,
-          entry.kind === "profile"
-            ? m.docs_directory_calls_profile()
-            : m.docs_directory_calls_recipe(),
-          partials.map(entryLink).join("\n"),
-        ]
-      : [];
-  const file = [
-    `## ${m.docs_directory_file_heading()}`,
-    `\`${entry.file.name}\``,
-    codeBlock(entry.file.text, FILE_LANGUAGE[entry.kind]),
-  ];
   const sections =
     entry.kind === "profile"
       ? [
@@ -140,18 +124,63 @@ async function entryEdition(
           ...samplesSection(entry),
           `## ${m.docs_directory_details_heading()}`,
           description,
-          ...calls,
-          ...file,
+          ...sourceSection(entry, entries),
         ]
       : [
           ...head,
           description,
           ...steps,
-          ...calls,
-          ...file,
+          ...(partials.length > 0
+            ? [
+                `## ${m.docs_directory_calls_heading()}`,
+                m.docs_directory_calls_recipe(),
+                partials.map(entryLink).join("\n"),
+              ]
+            : []),
           ...samplesSection(entry),
+          ...sourceSection(entry, entries),
         ];
   return `${sections.join("\n\n")}\n`;
+}
+
+/**
+ * The final Source section, where the page folds it. A Profile gives the
+ * note part, the partials its file packs, and the whole file; any other
+ * entry gives its own file.
+ */
+function sourceSection(
+  entry: SiteEntry,
+  entries: readonly SiteEntry[],
+): string[] {
+  const heading = `## ${m.docs_directory_source_heading()}`;
+  const file = [
+    `\`${entry.file.name}\``,
+    codeBlock(entry.file.text, FILE_LANGUAGE[entry.kind]),
+  ];
+  const { profileSource } = entry;
+  if (profileSource === null) return [heading, ...file];
+  return [
+    heading,
+    m.docs_directory_source_profile_hint({
+      import: `**${m.docs_directory_import()}**`,
+    }),
+    `### ${m.docs_directory_source_note_part()}`,
+    codeBlock(profileSource.note, FILE_LANGUAGE[entry.kind]),
+    ...(profileSource.partials.length > 0
+      ? [
+          `### ${m.docs_directory_calls_heading()}`,
+          m.docs_directory_calls_profile(),
+          profileSource.partials
+            .map(({ name, id }) => {
+              const partial = entries.find((candidate) => candidate.id === id);
+              return partial ? entryLink(partial) : `- ${name}`;
+            })
+            .join("\n"),
+        ]
+      : []),
+    `### ${m.docs_directory_source_whole_file()}`,
+    ...file,
+  ];
 }
 
 /** The fence language of each kind's file. */

@@ -9,6 +9,7 @@ import { EntryActions } from "@/components/template-directory/entry-actions";
 import { EntryDescription } from "@/components/template-directory/entry-description";
 import { EntryLink } from "@/components/template-directory/entry-list";
 import { EntrySamples } from "@/components/template-directory/entry-samples";
+import { EntrySource } from "@/components/template-directory/entry-source";
 import { EntryUse } from "@/components/template-directory/entry-use";
 import {
   KIND_LABEL,
@@ -35,7 +36,20 @@ const getEntry = createServerFn({ method: "GET" })
   .handler(({ data: id }) => {
     const entry = directory.entries.find((candidate) => candidate.id === id);
     if (!entry) throw notFound();
-    const partials = calledPartials(directory.entries, entry.calls);
+    // A Profile's Source tabs title every partial its file packs, called or not.
+    const packed = new Set(
+      entry.profileSource?.partials.flatMap(({ id: partialId }) =>
+        partialId === null ? [] : [partialId],
+      ),
+    );
+    const partials = [
+      ...calledPartials(directory.entries, entry.calls),
+      ...directory.entries.filter(
+        (candidate) =>
+          packed.has(candidate.id) &&
+          !entry.calls.includes(entryIdParts(candidate.id)[1]),
+      ),
+    ];
     return {
       entry,
       partials: partials.map(({ id: partialId, title, summary }) => ({
@@ -77,7 +91,9 @@ const HEADING = "font-serif text-2xl font-medium";
 
 function DirectoryEntryPage() {
   const { entry, partials } = Route.useLoaderData();
-  if (entry.kind === "profile") return <ProfileEntryPage entry={entry} />;
+  if (entry.kind === "profile") {
+    return <ProfileEntryPage entry={entry} partials={partials} />;
+  }
   const itemTypes =
     entry.itemTypes.length > 0
       ? valueLabels("itemType", entry.itemTypes)
@@ -184,6 +200,8 @@ function DirectoryEntryPage() {
               </ul>
             </section>
           )}
+
+          <EntrySource entry={entry} partials={partials} example={undefined} />
         </div>
 
         <aside className="flex flex-col gap-7 border-t border-fd-border pt-8 lg:border-s lg:border-t-0 lg:ps-8 lg:pt-0">

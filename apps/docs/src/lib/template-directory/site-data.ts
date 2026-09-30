@@ -2,6 +2,7 @@
 
 import { parse as parseYaml } from "yaml";
 
+import { parseLiteratureNoteTemplate } from "@zotlit/templates/facade";
 import { ITEM_TYPES as ZOTERO_ITEM_TYPES } from "@zotlit/zotero-types/item-types";
 
 import { partialCall } from "./calls.ts";
@@ -11,11 +12,13 @@ import { matchedItemTypes } from "./profile-samples.ts";
 import { readTemplateDirectory, templateDirectoryRoot } from "./read.ts";
 import { DIRECTORY_SAMPLES } from "./samples.ts";
 import type { Facet } from "./search.ts";
+import { entryId } from "./site.ts";
 import type {
   DirectorySite,
   EntryDetails,
   FacetOption,
   NoteSampleView,
+  ProfileSource,
   SampleProperty,
   SiteEntry,
 } from "./site.ts";
@@ -37,8 +40,11 @@ export function directorySite({
   entries,
   samples,
 }: DirectoryVerification): DirectorySite {
+  const partialIds = new Set(
+    entries.filter(({ kind }) => kind === "partial").map(({ id }) => id),
+  );
   const siteEntries = entries.map((entry) =>
-    siteEntry(entry, samples.get(entry.id)),
+    siteEntry(entry, samples.get(entry.id), partialIds),
   );
   return { entries: siteEntries, facets: facetOptions(siteEntries) };
 }
@@ -46,6 +52,7 @@ export function directorySite({
 function siteEntry(
   entry: DirectoryEntry,
   samples: EntrySamples | undefined,
+  partialIds: ReadonlySet<string>,
 ): SiteEntry {
   return {
     id: entry.id,
@@ -68,6 +75,8 @@ function siteEntry(
     file: { name: downloadName(entry), text: entry.artifact.source },
     copyText: copyText(entry),
     details: details(entry),
+    profileSource:
+      entry.kind === "profile" ? profileSource(entry, partialIds) : null,
     notes: (samples?.notes ?? []).map(
       ({ sample, noteName, properties, body }): NoteSampleView => ({
         id: sample.id,
@@ -114,6 +123,33 @@ function copyText(entry: DirectoryEntry): string {
         ? JSON.stringify(entry.property.value, null, 2)
         : entry.artifact.source;
   }
+}
+
+/**
+ * The parts of a Profile's file the page folds: the note part, and the
+ * partials the file packs in the order its note first names them.
+ */
+function profileSource(
+  entry: Extract<DirectoryEntry, { kind: "profile" }>,
+  partialIds: ReadonlySet<string>,
+): ProfileSource {
+  const { source } = entry.artifact;
+  const { bodyStart } = parseLiteratureNoteTemplate(source);
+  const note = source.slice(bodyStart);
+  const namedAt = (name: string) => {
+    const at = note.indexOf(`"${name}"`);
+    return at === -1 ? note.length : at;
+  };
+  return {
+    note,
+    partials: (entry.manifest.partials ?? [])
+      .map(({ name }) => name)
+      .toSorted((a, b) => namedAt(a) - namedAt(b))
+      .map((name) => {
+        const id = entryId("partials", name);
+        return { name, id: partialIds.has(id) ? id : null };
+      }),
+  };
 }
 
 function details(entry: DirectoryEntry): EntryDetails {
