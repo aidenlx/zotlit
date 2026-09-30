@@ -954,13 +954,9 @@ function writePrefs(
   layout: FixtureLayout,
   options: BuildOptions,
 ): Promise<void> {
-  const scenario = findVaultCase(options.vaultCase ?? DEFAULT_VAULT_CASE);
   const lines = [
-    ...(scenario.locale
-      ? [
-          `user_pref("intl.locale.requested", ${JSON.stringify(scenario.locale)});`,
-        ]
-      : []),
+    'user_pref("intl.locale.requested", "en-US");',
+    'user_pref("intl.regional_prefs.use_os_locales", false);',
     'user_pref("extensions.zotero.useDataDir", true);',
     `user_pref("extensions.zotero.dataDir", ${JSON.stringify(layout.dataDir)});`,
     ...QUIET_FIRST_RUN_PREFS,
