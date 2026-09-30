@@ -403,7 +403,7 @@ describe("the Template Directory", () => {
       );
     });
 
-    it("gives the full book example an abstract and, inside the note, four coloured highlights, one with a comment, and one image", () => {
+    it("gives the full book example an abstract and, inside the note, three colored highlights, one with a comment, and one image", () => {
       const note = verification.samples
         .get("profiles/books")!
         .notes.find(({ sample }) => sample.id === "book-full-details")!;
