@@ -2,21 +2,49 @@
 
 # Rendered samples: Theses and dissertations
 
-## Thesis
+## A thesis with full details and highlights
 
-Note name: `Batista2010`
+Note name: `nashNoncooperativeGames1950`
 
 ```markdown
 ---
-title: "Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities"
-citekey: Batista2010
-year: 2010
+title: Non-cooperative games
+citekey: nashNoncooperativeGames1950
+tags:
+  - game_theory
+year: 1950
+venue: Princeton University
 status: unread
+university: Princeton University
+thesis-type: PhD thesis
 ---
 %%zt-managed%%
-# Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities
+# Non-cooperative games
 
-[Zotero](zotero://select/library/items/I49R3FTL)
+PhD thesis · Princeton University
+
+[Zotero](zotero://select/library/items/NASHNC50) · [[non-cooperative-games.pdf|PDF]]
+
+> [!abstract]- Abstract
+> The thesis studies games in which the players cannot make binding agreements.
+>
+> It defines an equilibrium point, a set of strategies in which no player gains by changing alone, and proves that every finite game has one.
+
+## Annotations
+
+> [!warning] Important · [[non-cooperative-games.pdf#page=5|p. 5]]
+> > An equilibrium point is a set of strategies in which no player gains by changing alone.
+>
+> Compare with the cooperative case in chapter 2.
+
+> [!info] Background · [[non-cooperative-games.pdf#page=8|p. 8]]
+> > Every finite game has at least one equilibrium point.
+
+> [!example] Definitions · [[non-cooperative-games.pdf#page=12|p. 12]]
+> > The proof rests on a fixed-point argument.
+
+> [!success] Agree · [[non-cooperative-games.pdf#page=15|p. 15]]
+> ![[non-cooperative-games-p15.png]]
 
 %%/zt-managed%%
 
@@ -29,7 +57,39 @@ status: unread
 ## My notes
 ```
 
-## Thesis with university and thesis type
+## A thesis with few details
+
+Note name: `batistaBicycleSharingDeveloping2010`
+
+```markdown
+---
+title: "Bicycle sharing in developing countries: A proposal towards sustainable transportation"
+citekey: batistaBicycleSharingDeveloping2010
+year: 2010
+status: unread
+---
+%%zt-managed%%
+# Bicycle sharing in developing countries: A proposal towards sustainable transportation
+
+[Zotero](zotero://select/library/items/BATBIC10) · [[bicycle-sharing.pdf|PDF]]
+
+## Annotations
+
+> [!warning] Important · [[bicycle-sharing.pdf#page=9|p. 9]]
+> > Bicycle sharing works best where trips are short.
+
+%%/zt-managed%%
+
+## Summary
+
+
+## Key points
+
+
+## My notes
+```
+
+## A thesis with no highlights yet
 
 Note name: `nashNoncooperativeGames1950`
 
@@ -37,6 +97,8 @@ Note name: `nashNoncooperativeGames1950`
 ---
 title: Non-cooperative games
 citekey: nashNoncooperativeGames1950
+tags:
+  - game_theory
 year: 1950
 venue: Princeton University
 status: unread
@@ -49,6 +111,11 @@ thesis-type: PhD thesis
 PhD thesis · Princeton University
 
 [Zotero](zotero://select/library/items/NASHNC50)
+
+> [!abstract]- Abstract
+> The thesis studies games in which the players cannot make binding agreements.
+>
+> It defines an equilibrium point, a set of strategies in which no player gains by changing alone, and proves that every finite game has one.
 
 %%/zt-managed%%
 

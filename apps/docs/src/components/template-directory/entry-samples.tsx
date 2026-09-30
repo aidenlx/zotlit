@@ -1,6 +1,6 @@
 // An entry page's rendered samples: the note it makes for each Directory Sample, shown the way Obsidian's reading view shows it, or as Markdown.
 
-import { Suspense, useState } from "react";
+import { Suspense, useId, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
@@ -73,10 +73,14 @@ export function ProfileExample({
 }: {
   notes: readonly NoteSampleView[];
 }) {
+  const labelId = useId();
   return (
     <Tabs defaultValue={firstShown(notes)}>
+      <p id={labelId} className={cn(LABEL, "mb-2")}>
+        {m.docs_directory_see_it_with()}
+      </p>
       <TabsList
-        aria-label={m.docs_directory_samples_item()}
+        aria-labelledby={labelId}
         className="mb-4 max-w-full max-sm:w-max max-sm:flex-nowrap max-sm:overflow-x-auto"
       >
         {notes.map((note) => (
