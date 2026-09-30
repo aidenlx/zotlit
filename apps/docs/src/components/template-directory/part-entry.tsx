@@ -16,6 +16,7 @@ import { EntrySamples } from "./entry-samples";
 import { EntrySource } from "./entry-source";
 import { EntryChanges, EntryUse } from "./entry-use";
 import { Fold } from "./fold";
+import { SummaryText } from "./summary-text";
 
 const HEADING = "font-serif text-2xl font-medium";
 
@@ -103,7 +104,7 @@ export function PartEntryPage({ entry }: { entry: PartEntry }) {
                     {partial.title}
                   </EntryLink>
                   <p className="text-sm text-fd-muted-foreground">
-                    {partial.summary}
+                    <SummaryText text={partial.summary} />
                   </p>
                 </li>
               ))}

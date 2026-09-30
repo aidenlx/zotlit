@@ -8,6 +8,7 @@ import { entryIdParts } from "@/lib/template-directory/site";
 import { m } from "@/paraglide/messages.js";
 
 import { GROUPS, KIND_LABEL, valueLabels } from "./labels";
+import { SummaryText } from "./summary-text";
 
 /** The link to an entry's page, from its `<kind folder>/<slug>` id. */
 export function EntryLink({
@@ -70,7 +71,7 @@ export function StartHere({ entries }: { entries: readonly IndexedEntry[] }) {
                   {entry.title}
                 </span>
                 <span className="mt-2.5 leading-relaxed text-fd-muted-foreground">
-                  {entry.summary}
+                  <SummaryText text={entry.summary} />
                 </span>
                 <span className="mt-auto inline-flex items-center gap-2 pt-5 font-mono text-xs font-semibold tracking-[0.12em] text-fd-primary uppercase">
                   {m.docs_directory_open_entry()}
@@ -171,7 +172,7 @@ function ResultRow({ entry }: { entry: IndexedEntry }) {
         </EntryLink>
       </h3>
       <p className="mt-1 max-w-[62ch] font-serif text-pretty text-fd-muted-foreground">
-        {entry.summary}
+        <SummaryText text={entry.summary} />
       </p>
       <p className="mt-2 text-sm text-fd-muted-foreground">
         {[...valueLabels("task", entry.tasks), itemTypes.join(", ")].join(

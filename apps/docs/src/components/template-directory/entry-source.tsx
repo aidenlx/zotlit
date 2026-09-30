@@ -22,6 +22,7 @@ import { copyToClipboard, downloadFile } from "./entry-actions";
 import { EntryLink } from "./entry-list";
 import { Fold } from "./fold";
 import { COPY_LABEL, exampleLabel } from "./labels";
+import { SummaryText } from "./summary-text";
 
 const ACTION =
   "inline-flex min-h-8 cursor-pointer items-center gap-2 border border-fd-border bg-fd-card px-3 py-1 text-sm font-medium transition-colors hover:border-fd-primary hover:text-fd-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring [&_svg]:size-4";
@@ -199,7 +200,7 @@ function ProfileSourceTabs({
           {page !== null ? (
             <>
               <p className="max-w-[60ch] text-pretty text-fd-muted-foreground">
-                {page.summary}
+                <SummaryText text={page.summary} />
               </p>
               <EntryLink
                 id={page.id}

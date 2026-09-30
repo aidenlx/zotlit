@@ -1,5 +1,7 @@
 // The title and the one-line summary that open every entry page, set in the page's serif.
 
+import { SummaryText } from "./summary-text";
+
 export function EntryHeading({
   title,
   summary,
@@ -13,7 +15,7 @@ export function EntryHeading({
         {title}
       </h1>
       <p className="max-w-[60ch] text-lg text-pretty text-fd-muted-foreground italic">
-        {summary}
+        <SummaryText text={summary} />
       </p>
     </>
   );
