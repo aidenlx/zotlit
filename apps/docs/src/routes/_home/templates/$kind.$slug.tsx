@@ -33,7 +33,7 @@ export const Route = createFileRoute("/_home/templates/$kind/$slug")({
     const entry = loaderData;
     return pageHead({
       title: entry.title,
-      description: entry.summary,
+      description: entry.summary.replaceAll("`", ""),
       path: entryPath(entry.id),
       card: {
         type: "templates",

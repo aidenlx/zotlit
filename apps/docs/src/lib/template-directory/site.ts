@@ -151,8 +151,10 @@ export interface SampleProperty {
   readonly value: string | readonly string[] | null;
 }
 
-/** One citation, as a citation text inserts it under each variant. */
-/** The example it cites is named by the site's messages. */
+/**
+ * One citation, as a citation text inserts it under each variant. The example
+ * it cites is named by the site's messages.
+ */
 export interface CitationSampleView extends SampleName {
   readonly main: string | null;
   readonly alt: string | null;
