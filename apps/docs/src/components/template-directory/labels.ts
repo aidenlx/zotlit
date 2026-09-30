@@ -194,6 +194,15 @@ const VARIANT_LABEL: Readonly<
   "no-annotations": m.docs_directory_example_no_annotations,
 };
 
+/** What each example variant adds to an item type's name when a page shows several item types. */
+const SHORT_VARIANT_LABEL: Readonly<
+  Record<string, ((inputs: { type: string }) => LocalizedString) | null>
+> = {
+  "full-details": null,
+  "few-details": m.docs_directory_example_short_few_details,
+  "no-annotations": m.docs_directory_example_short_no_annotations,
+};
+
 /** A facet value as the reader reads it. */
 export function optionLabel(facet: Facet, { value }: FacetOption): string {
   const labels: Readonly<Record<string, () => LocalizedString>> = {
@@ -215,6 +224,22 @@ export function exampleLabel(id: string): string {
     if (subject !== undefined) return label({ subject: subject() });
   }
   return EXAMPLE_LABEL[id]?.() ?? id;
+}
+
+/**
+ * An example item as the tabs of a Profile that takes several item types
+ * name it: the full variant by its item type ("Letter"), the other two
+ * variants by the item type and what differs ("Letter, few details").
+ */
+export function shortExampleLabel(id: string): string {
+  for (const [variant, label] of Object.entries(SHORT_VARIANT_LABEL)) {
+    const suffix = `-${variant}`;
+    if (!id.endsWith(suffix)) continue;
+    const type = EXAMPLE_LABEL[id.slice(0, -suffix.length)];
+    if (type === undefined) continue;
+    return label === null ? type() : label({ type: type() });
+  }
+  return exampleLabel(id);
 }
 
 /** A Sample Annotation, named by its type and color. */

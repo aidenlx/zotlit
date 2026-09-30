@@ -22,7 +22,7 @@ import type {
 import { ResultSheet } from "@/lib/workbench/result-sheet";
 import { m } from "@/paraglide/messages.js";
 
-import { annotationLabel, exampleLabel } from "./labels";
+import { annotationLabel, exampleLabel, shortExampleLabel } from "./labels";
 
 /**
  * Obsidian's colors for its built-in callout types, so a sample shows each
@@ -70,8 +70,11 @@ const LABEL =
  */
 export function ProfileExample({
   notes,
+  shortLabels = false,
 }: {
   notes: readonly NoteSampleView[];
+  /** Name the tabs by item type, for a Profile that takes several item types. */
+  shortLabels?: boolean;
 }) {
   const labelId = useId();
   return (
@@ -89,7 +92,7 @@ export function ProfileExample({
             value={note.id}
             className="max-sm:shrink-0 max-sm:whitespace-nowrap"
           >
-            {exampleLabel(note.id)}
+            {(shortLabels ? shortExampleLabel : exampleLabel)(note.id)}
           </TabsTrigger>
         ))}
       </TabsList>

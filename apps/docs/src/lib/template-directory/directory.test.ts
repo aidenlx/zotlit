@@ -405,9 +405,9 @@ describe("the Template Directory", () => {
         "profiles/primary-sources-and-archives",
         [
           "letter-full-details",
-          "document-full-details",
-          "interview-full-details",
           "manuscript-full-details",
+          "interview-full-details",
+          "document-full-details",
           "newspaper-article-full-details",
           "letter-few-details",
           "letter-no-annotations",

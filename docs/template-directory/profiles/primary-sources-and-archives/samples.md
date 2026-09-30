@@ -52,45 +52,44 @@ Matches the report in the Gazette.
 ## Connections
 ```
 
-## A document with full details and highlights
+## A manuscript with full details and highlights
 
-Note name: `brackenridgefreelibraryMinutesBoardTrustees1923`
+Note name: `aldousSurveyNotebookBrackenridge1885`
 
 ```markdown
 ---
-title: Minutes of the Board of Trustees, 12 March 1923
+title: Survey notebook of the Brackenridge estate
 authors:
-  - Brackenridge Free Library
-date: 1923-03-12
-year: 1923
-item-type: Document
-venue: Brackenridge Free Library
-archive: Brackenridge Free Library archives
-archive-location: Board minutes, vol. 7
-citekey: brackenridgefreelibraryMinutesBoardTrustees1923
+  - Henry Aldous
+year: 1885
+item-type: Manuscript
+archive: Brackenridge County Record Office
+archive-location: Aldous papers, box 1, item 4
+place: Brackenridge
+citekey: aldousSurveyNotebookBrackenridge1885
 tags:
-  - library_history
+  - survey
 ---
 %%zt-managed%%
-# Minutes of the Board of Trustees, 12 March 1923
+# Survey notebook of the Brackenridge estate
 
-[Zotero](zotero://select/library/items/BFLMIN23) · [[board-minutes-1923-03-12.pdf|PDF]]
+[Zotero](zotero://select/library/items/ALDMSS85) · [[survey-notebook-1885.pdf|PDF]]
 
 > [!abstract]- Abstract
-> The trustees vote to open a reading room for children and to extend the library's evening hours.
+> A field notebook with the boundaries, the fields, and the water courses of the Brackenridge estate.
 
 ## Annotations
 
-> Resolved, that a reading room for children be opened in the spring. [@brackenridgefreelibraryMinutesBoardTrustees1923, {p. 1}]
+> The eastern boundary follows the old mill race. [@aldousSurveyNotebookBrackenridge1885, {p. 6}]
 
-The first mention of the children's room.
+Check against the 1887 letter.
 
-> The library shall stay open until nine on weekday evenings. [@brackenridgefreelibraryMinutesBoardTrustees1923, {p. 2}]
+> Twelve acres of meadow lie below the flood line. [@aldousSurveyNotebookBrackenridge1885, {p. 19}]
 
-> ![[board-minutes-1923-p2.png]]
-> [@brackenridgefreelibraryMinutesBoardTrustees1923, {p. 2}]
+> ![[survey-notebook-p23.png]]
+> [@aldousSurveyNotebookBrackenridge1885, {p. 23}]
 
-> The treasurer reported a balance of forty-two dollars. [@brackenridgefreelibraryMinutesBoardTrustees1923, {p. 3}]
+> The lower fields were let to two tenants. [@aldousSurveyNotebookBrackenridge1885, {p. 41}]
 
 %%/zt-managed%%
 
@@ -153,44 +152,45 @@ Ask about the first meeting date.
 ## Connections
 ```
 
-## A manuscript with full details and highlights
+## A document with full details and highlights
 
-Note name: `aldousSurveyNotebookBrackenridge1885`
+Note name: `brackenridgefreelibraryMinutesBoardTrustees1923`
 
 ```markdown
 ---
-title: Survey notebook of the Brackenridge estate
+title: Minutes of the Board of Trustees, 12 March 1923
 authors:
-  - Henry Aldous
-year: 1885
-item-type: Manuscript
-archive: Brackenridge County Record Office
-archive-location: Aldous papers, box 1, item 4
-place: Brackenridge
-citekey: aldousSurveyNotebookBrackenridge1885
+  - Brackenridge Free Library
+date: 1923-03-12
+year: 1923
+item-type: Document
+venue: Brackenridge Free Library
+archive: Brackenridge Free Library archives
+archive-location: Board minutes, vol. 7
+citekey: brackenridgefreelibraryMinutesBoardTrustees1923
 tags:
-  - survey
+  - library_history
 ---
 %%zt-managed%%
-# Survey notebook of the Brackenridge estate
+# Minutes of the Board of Trustees, 12 March 1923
 
-[Zotero](zotero://select/library/items/ALDMSS85) · [[survey-notebook-1885.pdf|PDF]]
+[Zotero](zotero://select/library/items/BFLMIN23) · [[board-minutes-1923-03-12.pdf|PDF]]
 
 > [!abstract]- Abstract
-> A field notebook with the boundaries, the fields, and the water courses of the Brackenridge estate.
+> The trustees vote to open a reading room for children and to extend the library's evening hours.
 
 ## Annotations
 
-> The eastern boundary follows the old mill race. [@aldousSurveyNotebookBrackenridge1885, {p. 6}]
+> Resolved, that a reading room for children be opened in the spring. [@brackenridgefreelibraryMinutesBoardTrustees1923, {p. 1}]
 
-Check against the 1887 letter.
+The first mention of the children's room.
 
-> Twelve acres of meadow lie below the flood line. [@aldousSurveyNotebookBrackenridge1885, {p. 19}]
+> The library shall stay open until nine on weekday evenings. [@brackenridgefreelibraryMinutesBoardTrustees1923, {p. 2}]
 
-> ![[survey-notebook-p23.png]]
-> [@aldousSurveyNotebookBrackenridge1885, {p. 23}]
+> ![[board-minutes-1923-p2.png]]
+> [@brackenridgefreelibraryMinutesBoardTrustees1923, {p. 2}]
 
-> The lower fields were let to two tenants. [@aldousSurveyNotebookBrackenridge1885, {p. 41}]
+> The treasurer reported a balance of forty-two dollars. [@brackenridgefreelibraryMinutesBoardTrustees1923, {p. 3}]
 
 %%/zt-managed%%
 
