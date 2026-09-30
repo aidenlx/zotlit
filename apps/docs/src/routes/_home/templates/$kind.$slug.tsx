@@ -37,7 +37,6 @@ const getEntry = createServerFn({ method: "GET" })
     const partials = calledPartials(directory.entries, entry.calls);
     return {
       entry,
-      facets: directory.facets,
       partials: partials.map(({ id: partialId, title, summary }) => ({
         id: partialId,
         title,
@@ -76,10 +75,10 @@ export const Route = createFileRoute("/_home/templates/$kind/$slug")({
 const HEADING = "font-serif text-2xl font-medium";
 
 function DirectoryEntryPage() {
-  const { entry, facets, partials } = Route.useLoaderData();
+  const { entry, partials } = Route.useLoaderData();
   const itemTypes =
     entry.itemTypes.length > 0
-      ? valueLabels("itemType", facets.itemType, entry.itemTypes)
+      ? valueLabels("itemType", entry.itemTypes)
       : [m.docs_directory_any_item_type()];
   const hasSamples =
     entry.notes.length > 0 ||
@@ -190,7 +189,7 @@ function DirectoryEntryPage() {
         <aside className="flex flex-col gap-7 border-t border-fd-border pt-8 lg:border-s lg:border-t-0 lg:ps-8 lg:pt-0">
           <FacetList
             heading={m.docs_directory_tasks()}
-            values={valueLabels("task", facets.task, entry.tasks)}
+            values={valueLabels("task", entry.tasks)}
           />
           <FacetList
             heading={m.docs_directory_item_types()}
@@ -198,7 +197,7 @@ function DirectoryEntryPage() {
           />
           <FacetList
             heading={m.docs_directory_features()}
-            values={valueLabels("feature", facets.feature, entry.features)}
+            values={valueLabels("feature", entry.features)}
           />
           <section>
             <h2 className={ASIDE_HEADING}>{m.docs_directory_problems()}</h2>

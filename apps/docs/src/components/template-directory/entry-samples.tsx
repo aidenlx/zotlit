@@ -15,6 +15,8 @@ import type {
 import { ResultSheet } from "@/lib/workbench/result-sheet";
 import { m } from "@/paraglide/messages.js";
 
+import { annotationLabel, exampleLabel } from "./labels";
+
 /**
  * Obsidian's colors for its built-in callout types, so a sample shows each
  * callout in the color the reader's note shows. Any other type shows as a note.
@@ -81,7 +83,7 @@ export function EntrySamples({
               <TabsList aria-label={m.docs_directory_samples_item()}>
                 {notes.map((note) => (
                   <TabsTrigger key={note.id} value={note.id}>
-                    {note.label}
+                    {exampleLabel(note.id)}
                   </TabsTrigger>
                 ))}
               </TabsList>
@@ -195,7 +197,7 @@ function AnnotationSheet({
   return (
     <li className={cn(SHEET, "flex flex-col")}>
       <p className={cn(LABEL, "border-b border-fd-border px-4 py-2")}>
-        {annotation.label}
+        {annotationLabel(annotation)}
       </p>
       <div className="flex flex-1 flex-col p-4">
         <Sheet
@@ -333,9 +335,9 @@ function CitationSamples({
           m.docs_directory_citation_main(),
           m.docs_directory_citation_alt(),
         ]}
-        rows={citations.map(({ label, main, alt }) => ({
-          id: label,
-          label,
+        rows={citations.map(({ id, main, alt }) => ({
+          id,
+          label: exampleLabel(id),
           cells: [cell(main), cell(alt)],
         }))}
       />
@@ -353,9 +355,9 @@ function NoteNameSamples({ notes }: { notes: readonly NoteSampleView[] }) {
       <SampleTable
         heading={m.docs_directory_samples_item()}
         columns={[m.docs_directory_sample_note_name()]}
-        rows={notes.map(({ id, label, noteName }) => ({
+        rows={notes.map(({ id, noteName }) => ({
           id,
-          label,
+          label: exampleLabel(id),
           cells: [nameCell(noteName)],
         }))}
       />
@@ -449,7 +451,7 @@ function PropertySamples({ notes }: { notes: readonly NoteSampleView[] }) {
           >
             {notes.map((note) => (
               <TabsTrigger key={note.id} value={note.id}>
-                {note.label}
+                {exampleLabel(note.id)}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -483,7 +485,7 @@ function PropertyTable({
       monoColumns
       rows={notes.map((note) => ({
         id: note.id,
-        label: note.label,
+        label: exampleLabel(note.id),
         cells: keys.map((key) => (
           <PropertyCell
             key={key}

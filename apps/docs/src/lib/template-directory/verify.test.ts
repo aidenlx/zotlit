@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { annotationLabel } from "@/components/template-directory/labels";
+
 import { verifyTemplateDirectory } from "./index";
 import type { DirectoryProblemCode } from "./index";
 import {
@@ -469,12 +471,12 @@ describe("the Directory verification", () => {
 
     describe("highlight colors", () => {
       const SAMPLE_ANNOTATION_LABELS = [
-        "highlight annotation, yellow",
-        "underline annotation, blue",
-        "note annotation, purple",
-        "text annotation",
-        "image annotation, green",
-        "ink annotation, red",
+        "Highlight annotation, yellow",
+        "Underline annotation, blue",
+        "Note annotation, purple",
+        "Text annotation",
+        "Image annotation, green",
+        "Ink annotation, red",
       ];
 
       it.each([
@@ -489,17 +491,17 @@ describe("the Directory verification", () => {
           ]);
           const annotations =
             verifyTemplateDirectory(files).samples.get(entry)!.annotations;
-          expect(annotations.map(({ label }) => label)).toEqual([
+          expect(annotations.map(annotationLabel)).toEqual([
             ...SAMPLE_ANNOTATION_LABELS,
-            "highlight annotation, red",
-            "highlight annotation, green",
-            "highlight annotation, blue",
-            "highlight annotation, purple",
-            "highlight annotation, magenta",
-            "highlight annotation, orange",
-            "highlight annotation, gray",
-            "highlight annotation, plum",
-            "highlight annotation, custom color #1f8a70",
+            "Highlight annotation, red",
+            "Highlight annotation, green",
+            "Highlight annotation, blue",
+            "Highlight annotation, purple",
+            "Highlight annotation, magenta",
+            "Highlight annotation, orange",
+            "Highlight annotation, gray",
+            "Highlight annotation, plum",
+            "Highlight annotation, custom color #1f8a70",
           ]);
           expect(annotations.at(-1)!.output?.trim()).toBe(
             "> Clear methods make research easier to reproduce.",
@@ -524,9 +526,9 @@ describe("the Directory verification", () => {
           expect(plain.map(({ sample }) => sample.id)).not.toContain(
             "every-color",
           );
-          expect(grouped.map(({ sample }) => sample.label)).toEqual([
-            ...plain.map(({ sample }) => sample.label),
-            "Conference paper with an annotation in every color",
+          expect(grouped.map(({ sample }) => sample.id)).toEqual([
+            ...plain.map(({ sample }) => sample.id),
+            "every-color",
           ]);
         },
       );
@@ -536,7 +538,7 @@ describe("the Directory verification", () => {
           verifyTemplateDirectory(fixtureFiles()).samples.get(
             FIXTURE_QUOTE,
           )!.annotations;
-        expect(annotations.map(({ label }) => label)).toEqual(
+        expect(annotations.map(annotationLabel)).toEqual(
           SAMPLE_ANNOTATION_LABELS,
         );
       });
@@ -553,8 +555,8 @@ describe("the Directory verification", () => {
       );
       const annotations =
         verifyTemplateDirectory(files).samples.get(FIXTURE_QUOTE)!.annotations;
-      expect(annotations.map(({ label }) => label).slice(6)).toEqual([
-        "highlight annotation, orange",
+      expect(annotations.map(annotationLabel).slice(6)).toEqual([
+        "Highlight annotation, orange",
       ]);
       expect(annotations.at(-1)!.output?.trim()).toBe(
         "todo Check the sample size before citing this result.",

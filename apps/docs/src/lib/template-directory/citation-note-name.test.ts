@@ -89,12 +89,12 @@ describe("citation text verification", () => {
     const { citations } =
       verifyTemplateDirectory(withRecipes()).samples.get(CITATION)!;
     expect(citations).toContainEqual({
-      label: "Journal article",
+      id: "journal-article",
       main: "main: journalArticle",
       alt: "alt: journalArticle",
     });
     expect(citations).toContainEqual({
-      label: "Journal article and book",
+      id: "two-items",
       main: "main: journalArticle and book",
       alt: "alt: journalArticle and book",
     });
@@ -103,9 +103,9 @@ describe("citation text verification", () => {
   it("cites every Directory Sample and every Edge Sample alone", () => {
     const { citations } =
       verifyTemplateDirectory(withRecipes()).samples.get(CITATION)!;
-    expect(citations!.map(({ label }) => label)).toEqual(
+    expect(citations!.map(({ id }) => id)).toEqual(
       expect.arrayContaining(
-        [...DIRECTORY_SAMPLES, ...EDGE_SAMPLES].map(({ label }) => label),
+        [...DIRECTORY_SAMPLES, ...EDGE_SAMPLES].map(({ id }) => id),
       ),
     );
   });

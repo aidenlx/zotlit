@@ -1,7 +1,21 @@
 // Writes one entry's rendered samples as the Markdown page a reviewer reads beside the entry.
 
 import type { DirectoryEntry } from "./load.ts";
-import type { CitationSample, EntrySamples, NoteSample } from "./verify.ts";
+import type {
+  AnnotationSample,
+  CitationSample,
+  EntrySamples,
+  NoteSample,
+} from "./verify.ts";
+
+/** The names the site's messages give the example items and Sample Annotations. */
+export interface SampleLabels {
+  /** A Directory Sample, an Edge Sample, or a Workbench example set, by id. */
+  readonly example: (id: string) => string;
+  readonly annotation: (
+    annotation: Pick<AnnotationSample, "type" | "color">,
+  ) => string;
+}
 
 /** The command that rewrites every entry's `samples.md` after a change. */
 export const UPDATE_SAMPLES_COMMAND =
@@ -10,11 +24,12 @@ export const UPDATE_SAMPLES_COMMAND =
 export function formatEntrySamples(
   entry: Pick<DirectoryEntry, "title" | "kind">,
   samples: EntrySamples,
+  labels: SampleLabels,
 ): string {
   const sections = [
     `<!-- Written by the Template Directory verification suite; do not edit. Update with: ${UPDATE_SAMPLES_COMMAND} -->`,
     `# Rendered samples: ${entry.title}`,
-    ...formatSampleSections(entry.kind, samples, { depth: 2 }),
+    ...formatSampleSections(entry.kind, samples, { depth: 2, labels }),
   ];
   return `${sections.join("\n\n")}\n`;
 }
@@ -27,21 +42,28 @@ export function formatEntrySamples(
 export function formatSampleSections(
   kind: DirectoryEntry["kind"],
   { notes, annotations, citations = [] }: EntrySamples,
-  { depth, leftOut = NO_OUTPUT }: { depth: number; leftOut?: string },
+  {
+    depth,
+    leftOut = NO_OUTPUT,
+    labels,
+  }: { depth: number; leftOut?: string; labels: SampleLabels },
 ): string[] {
   const hashes = "#".repeat(depth);
   const sections =
     kind === "note-name"
-      ? [noteNameTable(notes)]
-      : notes.map((note) => noteSection(note, kind, { hashes, leftOut }));
-  if (citations.length > 0) sections.push(citationTable(citations));
+      ? [noteNameTable(notes, labels)]
+      : notes.map((note) =>
+          noteSection(note, kind, { hashes, leftOut, labels }),
+        );
+  if (citations.length > 0) sections.push(citationTable(citations, labels));
   if (annotations.length > 0) {
     sections.push(
       `${hashes} Annotation Section`,
-      ...annotations.map(({ label, output }) =>
-        [`${hashes}# ${capitalize(label)}`, codeBlock(output, "markdown")].join(
-          "\n\n",
-        ),
+      ...annotations.map((annotation) =>
+        [
+          `${hashes}# ${labels.annotation(annotation)}`,
+          codeBlock(annotation.output, "markdown"),
+        ].join("\n\n"),
       ),
     );
   }
@@ -51,9 +73,13 @@ export function formatSampleSections(
 function noteSection(
   { sample, noteName, properties, body }: NoteSample,
   kind: DirectoryEntry["kind"],
-  { hashes, leftOut }: { hashes: string; leftOut: string },
+  {
+    hashes,
+    leftOut,
+    labels,
+  }: { hashes: string; leftOut: string; labels: SampleLabels },
 ): string {
-  const heading = `${hashes} ${sample.label}`;
+  const heading = `${hashes} ${labels.example(sample.id)}`;
   if (kind === "property")
     return [
       heading,
@@ -74,17 +100,30 @@ function noteSection(
   ].join("\n\n");
 }
 
-function noteNameTable(notes: readonly NoteSample[]): string {
+function noteNameTable(
+  notes: readonly NoteSample[],
+  labels: SampleLabels,
+): string {
   return table(
     ["Item", "Note name"],
-    notes.map(({ sample, noteName }) => [sample.label, code(noteName)]),
+    notes.map(({ sample, noteName }) => [
+      labels.example(sample.id),
+      code(noteName),
+    ]),
   );
 }
 
-function citationTable(citations: readonly CitationSample[]): string {
+function citationTable(
+  citations: readonly CitationSample[],
+  labels: SampleLabels,
+): string {
   return table(
     ["Citation", "Main (Enter)", "Alternate (Shift+Enter)"],
-    citations.map(({ label, main, alt }) => [label, code(main), code(alt)]),
+    citations.map(({ id, main, alt }) => [
+      labels.example(id),
+      code(main),
+      code(alt),
+    ]),
   );
 }
 
@@ -129,8 +168,4 @@ export function codeBlock(content: string | null, language: string): string {
   );
   const fence = "`".repeat(longest + 1);
   return `${fence}${language}\n${content.replace(/\n$/, "")}\n${fence}`;
-}
-
-function capitalize(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1);
 }

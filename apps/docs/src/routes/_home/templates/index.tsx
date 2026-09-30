@@ -147,7 +147,7 @@ function DirectoryIndex() {
           >
             {m.docs_directory_result_count({ count: results.length })}
           </p>
-          <ResultGroups results={results} facets={facets} />
+          <ResultGroups results={results} />
         </div>
       </div>
 

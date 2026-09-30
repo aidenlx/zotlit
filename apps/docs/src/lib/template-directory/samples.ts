@@ -5,10 +5,11 @@ import type { AnnotationExample } from "@zotlit/workbench/render";
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 
 export interface DirectorySample {
-  /** Stable name of the sample, which a property entry's `expected` keys use. */
+  /**
+   * Stable name of the sample, which a property entry's `expected` keys use
+   * and the site's messages name.
+   */
   readonly id: string;
-  /** The item type as a reader names it. */
-  readonly label: string;
   readonly snapshot: ItemSnapshot;
 }
 
@@ -22,7 +23,6 @@ type SampleDate =
 
 interface DerivedItem {
   readonly id: string;
-  readonly label: string;
   /** Eight characters, like a Zotero item key. */
   readonly key: string;
   readonly itemType: string;
@@ -82,7 +82,6 @@ const UNRELATED_FIELDS = new Set([
 const DERIVED_ITEMS: readonly DerivedItem[] = [
   {
     id: "book-section",
-    label: "Book chapter",
     key: "TVKHEUR1",
     itemType: "bookSection",
     title: "Judgment under uncertainty: Heuristics and biases",
@@ -119,7 +118,6 @@ const DERIVED_ITEMS: readonly DerivedItem[] = [
   },
   {
     id: "letter",
-    label: "Letter",
     key: "ALDLET87",
     itemType: "letter",
     title: "Letter to Eleanor Whitcombe",
@@ -143,7 +141,6 @@ const DERIVED_ITEMS: readonly DerivedItem[] = [
   },
   {
     id: "manuscript",
-    label: "Manuscript",
     key: "ALDMSS85",
     itemType: "manuscript",
     title: "Survey notebook of the Brackenridge estate",
@@ -162,7 +159,6 @@ const DERIVED_ITEMS: readonly DerivedItem[] = [
   },
   {
     id: "interview",
-    label: "Interview",
     key: "OKAFOH19",
     itemType: "interview",
     title: "Oral history interview with Ada Okafor",
@@ -186,7 +182,6 @@ const DERIVED_ITEMS: readonly DerivedItem[] = [
   },
   {
     id: "document",
-    label: "Document",
     key: "BFLMIN23",
     itemType: "document",
     title: "Minutes of the Board of Trustees, 12 March 1923",
@@ -203,25 +198,16 @@ const DERIVED_ITEMS: readonly DerivedItem[] = [
   },
 ];
 
-const SAMPLE_ITEM_LABELS: Readonly<Record<string, string>> = {
-  journalArticle: "Journal article",
-  conferencePaper: "Conference paper",
-  book: "Book",
-  thesis: "Thesis",
-};
-
 /** The four Sample Items, then the derived items, in the order samples show. */
 export const DIRECTORY_SAMPLES: readonly DirectorySample[] = [
   ...SAMPLE_ITEMS.map((snapshot) => ({
     id: snapshot.provenance.kind === "sample" ? snapshot.provenance.id : "",
-    label: SAMPLE_ITEM_LABELS[snapshot.item.itemType]!,
     snapshot,
   })),
   // The book carries no annotations or attachments, so nothing of its own
   // leaks into an item of another type.
   ...DERIVED_ITEMS.map((item) => ({
     id: item.id,
-    label: item.label,
     snapshot: derive(SAMPLE_ITEMS[2]!, item),
   })),
 ];
@@ -237,7 +223,6 @@ export const DIRECTORY_SAMPLES: readonly DirectorySample[] = [
 const EDGE_ITEMS: readonly DerivedItem[] = [
   {
     id: "many-authors",
-    label: "Journal article with four authors",
     key: "KLNMLB14",
     itemType: "journalArticle",
     title:
@@ -264,7 +249,6 @@ const EDGE_ITEMS: readonly DerivedItem[] = [
   },
   {
     id: "unsafe-title",
-    label: "Report whose title holds characters a file name cannot",
     key: "LEEIOR21",
     itemType: "report",
     title:
@@ -278,7 +262,6 @@ const EDGE_ITEMS: readonly DerivedItem[] = [
   },
   {
     id: "no-author-date-or-citekey",
-    label: "Web page with no author, date, or citation key",
     key: "WEBFAQ24",
     itemType: "webpage",
     title: "Open access: Frequently asked questions",
@@ -299,7 +282,6 @@ const EDGE_ITEMS: readonly DerivedItem[] = [
 export const EDGE_SAMPLES: readonly DirectorySample[] = EDGE_ITEMS.map(
   (item) => ({
     id: item.id,
-    label: item.label,
     snapshot: derive(SAMPLE_ITEMS[2]!, item),
   }),
 );
@@ -389,7 +371,6 @@ function everyColorSample(
   });
   return {
     id: "every-color",
-    label: "Conference paper with an annotation in every color",
     snapshot: {
       ...base,
       revision: "derived:every-color",
