@@ -5,7 +5,7 @@ version: "1.0.0"
 author: ZotLit
 description: Notes for the readings of a course, with course and week properties you fill in, a reading status, your annotations in page order, and places for a summary, key points, and discussion questions.
 contract: 3
-minAppVersion: "2.2.0-beta.0"
+minAppVersion: "2.2.0-beta.2"
 sampleItemType: journalArticle
 filename: '{{ zt.citekey | default: zt.title | default: zt.key | replace: "/", "-" }}{% suffix %}'
 frontmatter:

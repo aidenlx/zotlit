@@ -5,7 +5,7 @@ version: "1.0.0"
 author: ZotLit
 description: Book notes with the publisher, place, edition, and ISBN, your annotations in page order as callouts in colors that match your Zotero colors, and places for a summary, key points, and ideas to explore.
 contract: 3
-minAppVersion: "2.2.0-beta.0"
+minAppVersion: "2.2.0-beta.2"
 sampleItemType: book
 match: 'itemType == "book"'
 filename: '{{ zt.citekey | default: zt.title | default: zt.key | replace: "/", "-" }}{% suffix %}'

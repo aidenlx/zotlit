@@ -1,7 +1,7 @@
 ---
 title: Color meanings
 summary: The one place where you name what each Zotero highlight color means and which callout type shows it in the note.
-minAppVersion: "2.2.0-beta.0"
+minAppVersion: "2.2.0-beta.2"
 context: annotation
 call: |
   {% include "color-meanings" -%}

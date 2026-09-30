@@ -1,7 +1,7 @@
 ---
 title: Folded abstract
 summary: The item's abstract in a folded callout, at hand without taking over the note.
-minAppVersion: "2.2.0-beta.0"
+minAppVersion: "2.2.0-beta.2"
 context: note
 tasks: [general-reading]
 features: [abstract]
