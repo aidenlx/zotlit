@@ -22,6 +22,6 @@ effort: Paste one line into the "Note name" field of your profile. Notes you cre
 
 The first author comes from the item's authors. An item with no authors uses its editors, then its directors, then its contributors. An item with no creator or no date leaves that part out. With neither, the note has the title alone.
 
-Characters a file name cannot hold are changed or left out, so each note stays one file in your literature note folder. When a note with the same name already exists, the new note gets a short random ending, such as `_a1B2c3`. **Preview** on the **Name and folder** tab shows the name without this ending.
+An interview uses the person interviewed. Characters a file name cannot hold are changed or left out, so each note stays one file in your literature note folder. When a note with the same name already exists, the new note gets a short random ending, such as `_a1B2c3`. **Preview** on the **Name and folder** tab shows the name without this ending.
 
 **Update literature note** keeps the name of a note you already have.
