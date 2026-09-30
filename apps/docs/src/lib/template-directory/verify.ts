@@ -209,7 +209,7 @@ type CitationEntry = Extract<DirectoryEntry, { kind: "citation" }>;
 type NoteNameEntry = Extract<DirectoryEntry, { kind: "note-name" }>;
 
 function checkProfile(
-  { manifest, calls, artifact }: ProfileEntry,
+  { manifest, calls, artifact, itemTypes }: ProfileEntry,
   partials: ReadonlyMap<string, PartialEntry>,
   report: Report,
 ): void {
@@ -254,7 +254,7 @@ function checkProfile(
       `sampleItemType "${manifest.sampleItemType}" is not a Zotero item type.`,
     );
   }
-  checkFullExamples({ manifest }, report);
+  checkFullExamples({ manifest, itemTypes }, report);
   checkLanguage(manifest.language, report);
   for (const partial of manifest.partials ?? []) {
     checkLanguage(
@@ -281,7 +281,7 @@ function checkProfile(
  * `sampleItemType` and each item type its match takes need one.
  */
 function checkFullExamples(
-  entry: Pick<ProfileEntry, "manifest">,
+  entry: Pick<ProfileEntry, "manifest" | "itemTypes">,
   report: Report,
 ): void {
   const { sampleItemType } = entry.manifest;

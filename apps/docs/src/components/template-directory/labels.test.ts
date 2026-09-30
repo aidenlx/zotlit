@@ -12,6 +12,7 @@ import {
   annotationLabel,
   exampleLabel,
   itemTypesInSentence,
+  shortExampleLabel,
   optionLabel,
 } from "./labels";
 
@@ -71,6 +72,21 @@ describe("the Directory's names", () => {
       "An interview with few details",
       "A book chapter with no highlights yet",
     ]);
+  });
+
+  it("name the examples of a Profile that takes several item types by the item type, with the two extra variants of its own", () => {
+    expect([
+      shortExampleLabel("letter-full-details"),
+      shortExampleLabel("newspaper-article-full-details"),
+      shortExampleLabel("letter-few-details"),
+      shortExampleLabel("book-section-no-annotations"),
+    ]).toEqual([
+      "Letter",
+      "Newspaper article",
+      "Letter, few details",
+      "Book chapter, no highlights yet",
+    ]);
+    expect(shortExampleLabel("every-color")).toBe(exampleLabel("every-color"));
   });
 
   it("name item types as a sentence does, one or several", () => {

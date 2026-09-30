@@ -2402,6 +2402,8 @@
   "docs_directory_example_full_details": "{subject} with full details and highlights",
   "docs_directory_example_few_details": "{subject} with few details",
   "docs_directory_example_no_annotations": "{subject} with no highlights yet",
+  "docs_directory_example_short_few_details": "{type}, few details",
+  "docs_directory_example_short_no_annotations": "{type}, no highlights yet",
   "docs_directory_example_journal_article_with_volume": "Journal article with volume, issue, and pages",
   "docs_directory_example_newspaper_article": "Newspaper article",
   "docs_directory_example_two_items": "Journal article and book",

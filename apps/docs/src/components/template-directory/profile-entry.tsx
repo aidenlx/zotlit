@@ -93,7 +93,12 @@ export function ProfileEntryPage({ entry }: { entry: SiteEntry }) {
           aria-label={m.docs_directory_samples_item()}
           className="min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1"
         >
-          <ProfileExample notes={entry.notes} />
+          <ProfileExample
+            notes={entry.notes}
+            shortLabels={
+              matchedItemTypes !== null && matchedItemTypes.length > 1
+            }
+          />
         </section>
 
         <details className="group/details min-w-0 border-t border-fd-border pt-3 lg:col-start-1">

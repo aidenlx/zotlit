@@ -23,16 +23,25 @@ function takesItemType(
 }
 
 /**
- * The Zotero item types the Profile's match takes, in the order Zotero lists
- * them; null for a Profile with no match, which the reader chooses by hand.
+ * The Zotero item types the Profile's match takes: first those its entry
+ * lists in `itemTypes`, in that order, then any other in the order Zotero
+ * lists them; null for a Profile with no match, which the reader chooses by
+ * hand.
  */
 export function matchedItemTypes({
   manifest,
-}: Pick<ProfileEntry, "manifest">): readonly string[] | null {
+  itemTypes,
+}: Pick<ProfileEntry, "manifest" | "itemTypes">): readonly string[] | null {
   if (manifest.match === undefined) return null;
   const { condition } = compileFilter(manifest.match);
   if (condition === null) return null;
-  return ITEM_TYPES.filter((type) => takesItemType(condition, type));
+  const listed = (type: string) => {
+    const index = itemTypes.indexOf(type);
+    return index === -1 ? itemTypes.length : index;
+  };
+  return ITEM_TYPES.filter((type) => takesItemType(condition, type)).sort(
+    (a, b) => listed(a) - listed(b),
+  );
 }
 
 /**
@@ -74,7 +83,7 @@ export function fullExample(
  * annotation in every color; a match keeps those it takes.
  */
 export function profileExamples(
-  entry: Pick<ProfileEntry, "manifest">,
+  entry: Pick<ProfileEntry, "manifest" | "itemTypes">,
   extras: readonly DirectorySample[],
 ): readonly DirectorySample[] {
   const { sampleItemType } = entry.manifest;
