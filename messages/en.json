@@ -2392,6 +2392,7 @@
   "docs_directory_sample_mark": "Mark",
   "docs_directory_sample_mark_set": "Set by this look",
   "docs_directory_sample_mark_system": "ZotLit adds these to every note",
+  "docs_directory_sample_mark_system_row": "Added by ZotLit",
   "docs_directory_citation_samples_intro": "ZotLit renders the citation text for each example item below, so these are the exact citations it inserts.",
   "docs_directory_citation_cited": "Items cited",
   "docs_directory_citation_main": "Main (Enter)",

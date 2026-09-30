@@ -291,10 +291,16 @@ export function colorKeyText({ color, meaning }: ColorKeyRow): string {
   });
 }
 
-/** What each mark on an example's property says. */
+/** What the key under an example's properties says of each mark. */
 export const MARK_LABEL = {
   set: m.docs_directory_sample_mark_set,
   system: m.docs_directory_sample_mark_system,
+} satisfies Record<SampleProperty["mark"], () => string>;
+
+/** What each property's own row says of its mark: in the Markdown edition's table, and to a screen reader. */
+export const MARK_ROW_LABEL = {
+  set: m.docs_directory_sample_mark_set,
+  system: m.docs_directory_sample_mark_system_row,
 } satisfies Record<SampleProperty["mark"], () => string>;
 
 /** The names and headings the Markdown edition and the samples files give the samples. */
@@ -307,7 +313,7 @@ export const SAMPLE_LABELS: SampleLabels = {
   property: () => m.docs_directory_sample_property(),
   value: () => m.docs_directory_value(),
   mark: () => m.docs_directory_sample_mark(),
-  markName: (mark) => MARK_LABEL[mark](),
+  markName: (mark) => MARK_ROW_LABEL[mark](),
   empty: () => m.docs_directory_sample_empty(),
   cited: () => m.docs_directory_citation_cited(),
   main: () => m.docs_directory_citation_main(),
