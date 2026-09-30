@@ -9,6 +9,7 @@ import { ztProse } from "@/lib/prose";
 import type { SiteEntry } from "@/lib/template-directory/site";
 import { m } from "@/paraglide/messages.js";
 
+import { ColorKeyList } from "./color-key";
 import { EntryActions, ImportFallback } from "./entry-actions";
 import { EntryDescription } from "./entry-description";
 import { ProfileExample } from "./entry-samples";
@@ -87,6 +88,11 @@ export function ProfileEntryPage({ entry }: { entry: SiteEntry }) {
               {m.docs_directory_existing_notes()}
             </p>
           </div>
+          {entry.colorKey !== null && (
+            <div className="font-sans">
+              <ColorKeyList colorKey={entry.colorKey} />
+            </div>
+          )}
         </div>
 
         <section
