@@ -1,6 +1,7 @@
 // The Template Directory as the docs site publishes it: the data each page reads, and where each page lives.
 
 import type { PartialContext } from "./entry.ts";
+import type { SampleName } from "./samples.ts";
 import type { Facet, IndexedEntry } from "./search.ts";
 import type { AnnotationColor } from "./verify.ts";
 
@@ -51,8 +52,6 @@ export interface FacetOption {
 
 /** One entry page's content. */
 export interface SiteEntry extends IndexedEntry {
-  readonly audience: string;
-  readonly effort: string;
   /** The reader-facing description, Markdown. */
   readonly description: string;
   readonly minAppVersion: string;
@@ -130,10 +129,8 @@ export type EntryDetails =
       readonly merge: "replace" | "append" | "keep";
     };
 
-/** One Directory Sample, as the entry renders it. */
-export interface NoteSampleView {
-  /** The Directory Sample, which the site's messages name. */
-  readonly id: string;
+/** One Directory Sample, as the entry renders it; the site's messages name it. */
+export interface NoteSampleView extends SampleName {
   readonly noteName: string | null;
   /** The properties the entry writes, in order; null when it writes none. */
   readonly properties: readonly SampleProperty[] | null;
@@ -158,9 +155,8 @@ export interface SampleProperty {
 }
 
 /** One citation, as a citation text inserts it under each variant. */
-export interface CitationSampleView {
-  /** The example it cites, which the site's messages name. */
-  readonly id: string;
+/** The example it cites is named by the site's messages. */
+export interface CitationSampleView extends SampleName {
   readonly main: string | null;
   readonly alt: string | null;
 }

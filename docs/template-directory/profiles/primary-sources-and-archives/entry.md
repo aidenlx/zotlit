@@ -40,8 +40,8 @@ audience: Historians and other researchers who work with letters, manuscripts, i
 effort: Import it, then create a note for a source. ZotLit chooses it by itself for letters, manuscripts, interviews, documents, and newspaper articles; the archive details come from the fields you fill in for the item in Zotero.
 ---
 
-**Update literature note** refreshes everything above **Context**, so your three sections stay. Tags you add in Obsidian stay. A tag you remove in Zotero stays in the note until you delete it there. A Zotero tag with a comma or a `#` needs a manual fix in Obsidian.
+**Update literature note** refreshes everything above **Context**, so your three sections stay. Tags you add in Obsidian stay, and a tag you remove in Zotero stays until you delete it there. A Zotero tag with a comma or a `#` needs a manual fix. Quotes cite the item's Better BibTeX **Citation Key** when it has one.
 
 `date` appears only when Zotero records the day. Otherwise only `year` appears.
 
-With **Import match conditions** on, ZotLit uses this look for these item types; off, you select it for each note. If another look also matches, ZotLit asks which to use. Notes you already have keep their look. **Document** also covers items of no other type. For a report or another primary source, select this look when you create the note.
+With **Import match conditions** on, ZotLit uses this look for these item types; off, you select it for each note. If another look also matches, ZotLit asks which to use. **Document** also covers items of no other type. For a report or another primary source, select this look when you create the note.

@@ -30,12 +30,12 @@ audience: Readers of theses and dissertations who want each thesis note to name 
 effort: Import it, then create a note for a thesis. ZotLit chooses it for every thesis by itself; your color meanings are set once, in one file, and the ones it starts with work as they are.
 ---
 
-**Update literature note** refreshes the part from Zotero; your three sections stay. To change the text under a highlight, edit its comment in Zotero.
+**Update literature note** refreshes the part from Zotero; your three sections stay. To change the text under a highlight, edit its Zotero comment.
 
-The thesis type and the university come from the **Type** and **University** fields of the Zotero item.
+**Type** and **University** in Zotero give the thesis type and the university.
 
-On update, `status` and the tags you add in Obsidian stay. Every other property takes the Zotero value. A Zotero tag with a comma or a `#` needs a manual fix in Obsidian.
+On update, `status` and the tags you add in Obsidian stay. Every other property takes the Zotero value. A Zotero tag with a comma or a `#` needs a manual fix in Obsidian. `venue` repeats the university, so one Bases view spans every look.
 
 A change to the color meanings reaches every note that uses them.
 
-With **Import match conditions** on, ZotLit uses this look for every thesis. Turn it off to select it for each note yourself. If another look also matches theses, ZotLit asks which to use.
+With **Import match conditions** on, ZotLit uses this look for every thesis; off, you select it for each note. If another look also matches, ZotLit asks which to use.

@@ -102,12 +102,20 @@ describe("the publisher by item type entry", () => {
     ],
     [
       "a journal article with no issue",
-      sampleWith("journal-article", { volume: "2", pages: "e124" }),
+      sampleWith("journal-article", {
+        volume: "2",
+        issue: null,
+        pages: "e124",
+      }),
       { publisher: "PLoS Medicine. 2005. Vol. 2. pp. e124." },
     ],
     [
       "a journal article with no volume",
-      sampleWith("journal-article", { issue: "8", pages: "e124" }),
+      sampleWith("journal-article", {
+        volume: null,
+        issue: "8",
+        pages: "e124",
+      }),
       { publisher: "PLoS Medicine. 2005. № 8. pp. e124." },
     ],
     [
@@ -116,6 +124,9 @@ describe("the publisher by item type entry", () => {
         containerTitle: null,
         publicationTitle: null,
         date: null,
+        volume: null,
+        issue: null,
+        pages: null,
       }),
       {},
     ],

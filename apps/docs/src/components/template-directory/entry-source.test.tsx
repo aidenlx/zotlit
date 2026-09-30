@@ -54,6 +54,8 @@ const profile: Props["entry"] = {
   notes: [
     {
       id: "book-full-details",
+      itemType: "book",
+      variant: "full-details",
       noteName: "Kahneman 2011",
       properties: null,
       frontmatter: "title: Thinking\n",
@@ -61,6 +63,8 @@ const profile: Props["entry"] = {
     },
     {
       id: "book-few-details",
+      itemType: "book",
+      variant: "few-details",
       noteName: null,
       properties: null,
       frontmatter: null,
@@ -201,9 +205,7 @@ describe("a Profile's Source section", () => {
     using toasts = recordToasts();
     using page = await render(props);
 
-    await act(async () =>
-      page.button(m.docs_directory_copy_profile())!.click(),
-    );
+    await act(async () => page.button(m.docs_directory_copy_file())!.click());
     expect(writeText).toHaveBeenCalledExactlyOnceWith(FILE);
     await act(async () => page.button(m.docs_directory_download())!.click());
     expect(opened).toEqual(["zotlit-profile.books.md"]);

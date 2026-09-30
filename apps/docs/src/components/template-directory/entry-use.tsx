@@ -139,16 +139,24 @@ export function EntryUse({
               name: <code>{slug}</code>,
             }}
           </Step>
-          <Step text={m.docs_directory_partial_step_paste({ copy: "{copy}" })}>
+          <Step
+            text={
+              markdown
+                ? m.docs_directory_partial_step_paste_below()
+                : m.docs_directory_partial_step_paste({ copy: "{copy}" })
+            }
+          >
             {{ copy }}
           </Step>
           <Step
             text={m.docs_directory_partial_step_call({
               edit: "{edit}",
               tab: "{tab}",
+              source: "{source}",
             })}
           >
             {{
+              source: <UiLabel name={m.docs_directory_source_heading()} />,
               edit: <UiLabel name={m.settings_profile_edit()} />,
               tab: (
                 <UiLabel
@@ -179,10 +187,14 @@ export function EntryUse({
             }}
           </Step>
           <Step
-            text={m.docs_directory_step_replace_tab({
-              copy: "{copy}",
-              tab: "{tab}",
-            })}
+            text={
+              markdown
+                ? m.docs_directory_step_replace_tab_below({ tab: "{tab}" })
+                : m.docs_directory_step_replace_tab({
+                    copy: "{copy}",
+                    tab: "{tab}",
+                  })
+            }
           >
             {{ copy, tab: <UiLabel name={m.workbench_tab_citation()} /> }}
           </Step>
@@ -193,10 +205,16 @@ export function EntryUse({
         <Steps>
           <TabStep tab={m.workbench_tab_name_and_folder()} />
           <Step
-            text={m.docs_directory_step_replace_field({
-              copy: "{copy}",
-              field: "{field}",
-            })}
+            text={
+              markdown
+                ? m.docs_directory_step_replace_field_below({
+                    field: "{field}",
+                  })
+                : m.docs_directory_step_replace_field({
+                    copy: "{copy}",
+                    field: "{field}",
+                  })
+            }
           >
             {{
               copy,
@@ -212,10 +230,16 @@ export function EntryUse({
           <Steps>
             <TabStep tab={m.workbench_tab_properties()} />
             <Step
-              text={m.docs_directory_property_step_add_spread({
-                spread: "{spread}",
-                copy: "{copy}",
-              })}
+              text={
+                markdown
+                  ? m.docs_directory_property_step_add_spread_below({
+                      spread: "{spread}",
+                    })
+                  : m.docs_directory_property_step_add_spread({
+                      spread: "{spread}",
+                      copy: "{copy}",
+                    })
+              }
             >
               {{
                 spread: <UiLabel name={m.workbench_properties_add_spread()} />,
@@ -293,9 +317,13 @@ export function EntryUse({
                   </td>
                   <td>
                     <Message
-                      text={m.docs_directory_property_paste({
-                        copy: "{copy}",
-                      })}
+                      text={
+                        markdown
+                          ? m.docs_directory_property_paste_below()
+                          : m.docs_directory_property_paste({
+                              copy: "{copy}",
+                            })
+                      }
                       slots={{ copy }}
                     />
                   </td>

@@ -5,7 +5,7 @@
 ## Journal article
 
 ```yaml
-publisher: PLoS Medicine. 2005.
+publisher: PLoS Medicine. 2005. Vol. 2. № 8. pp. 696–701.
 ```
 
 ## Conference paper
@@ -56,10 +56,4 @@ publisher: Princeton University
 
 ```yaml
 publisher: University of Chicago Press
-```
-
-## A journal article with full details and highlights
-
-```yaml
-publisher: Econometrica. 1979. Vol. 47. № 2. pp. 263–291.
 ```

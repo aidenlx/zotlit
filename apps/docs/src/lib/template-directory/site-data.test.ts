@@ -277,6 +277,8 @@ describe("an entry page", () => {
     )!;
     expect(citation.citations[0]).toEqual({
       id: "journal-article",
+      itemType: "journalArticle",
+      variant: null,
       main: "main: journalArticle",
       alt: "alt: journalArticle",
     });

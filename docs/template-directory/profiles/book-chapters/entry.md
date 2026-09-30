@@ -34,12 +34,12 @@ audience: Readers of chapters in edited books who want each chapter note to name
 effort: Import it, then create a note for a book chapter. ZotLit chooses it for every book chapter by itself; your color meanings are set once, in one file, and the ones it starts with work as they are.
 ---
 
-**Update literature note** refreshes the part from Zotero; your three sections stay. To change the text under a highlight, edit its comment in Zotero.
+**Update literature note** refreshes the part from Zotero; your three sections stay. To change the text under a highlight, edit its Zotero comment.
 
-Enter the book's editors in Zotero as **Editor**, so they show apart from the chapter's authors.
+Enter the book's editors as **Editor** in Zotero, not as authors.
 
-On update, `status` and the tags you add in Obsidian stay. Every other property takes the Zotero value. A Zotero tag with a comma or a `#` needs a manual fix in Obsidian.
+On update, `status` and the tags you add in Obsidian stay. Every other property takes the Zotero value. A Zotero tag with a comma or a `#` needs a manual fix in Obsidian. `venue` repeats the book title, so one Bases view spans every look.
 
 A change to the color meanings reaches every note that uses them.
 
-With **Import match conditions** on, ZotLit uses this look for every book chapter. Turn it off to select it for each note yourself. If another look also matches book chapters, ZotLit asks which to use.
+With **Import match conditions** on, ZotLit uses this look for every book chapter; off, you select it for each note. If another look also matches, ZotLit asks which to use.
