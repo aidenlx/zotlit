@@ -12,12 +12,16 @@ export interface TestClock {
   passCooldown: () => void;
 }
 
+/**
+ * Wall time shifted by what the test has passed: Query Core stamps a failure
+ * with the wall clock, so the cooldown is measured from that stamp.
+ */
 export function testClock(): TestClock {
-  let instant = Temporal.Now.instant();
+  let offset = Temporal.Duration.from({ milliseconds: 0 });
   return {
-    now: () => instant,
+    now: () => Temporal.Now.instant().add(offset),
     passCooldown: () => {
-      instant = instant.add(FAILURE_COOLDOWN).add({ milliseconds: 1 });
+      offset = offset.add(FAILURE_COOLDOWN).add({ milliseconds: 1 });
     },
   };
 }
