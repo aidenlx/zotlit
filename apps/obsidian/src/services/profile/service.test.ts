@@ -543,16 +543,12 @@ describe("ProfileService", () => {
 
   it("reports creation constraints separately from saving", async () => {
     await using fixture = await harness();
-    const unchanged = await fixture.profile.prepareCreate({ label: "" });
-    expect(unchanged.constraint?.kind).toBe("no-difference");
-    await expect(unchanged.create()).rejects.toThrow(
-      m.settings_profile_create_no_difference(),
-    );
-    const unnamed = await fixture.profile.prepareCreate({
-      label: "",
-      bindings: { folder: "Reading" },
-    });
+    const unnamed = await fixture.profile.prepareCreate({ label: "" });
     expect(unnamed.constraint?.kind).toBe("invalid-name");
+    await expect(unnamed.create()).rejects.toThrow(
+      m.settings_profile_name_invalid(),
+    );
+    expect([...fixture.vault.files.keys()]).toEqual([]);
   });
 
   it("prepares the effective Default look and writes only differing bindings with the previewed stamp", async () => {
@@ -584,21 +580,32 @@ describe("ProfileService", () => {
     expect(vault.contents.get(created.path)).toBe(draft.source);
   });
 
-  it("refuses creation when explicit choices still equal Default", async () => {
+  it("creates a Profile from a name alone and leaves values equal to Default out of its document", async () => {
     await using fixture = await harness();
     const base = fixture.profile.resolveProfile("default")!;
-    await expect(
-      fixture.profile.create({
-        label: "Same",
-        bindings: {
-          folder: base.bindings["note.literature-folder"],
-          citationStyle: base.bindings["citation.references-style"],
-        },
-      }),
-    ).rejects.toThrow();
+    const draft = await fixture.profile.prepareCreate({
+      label: "Same",
+      bindings: {
+        folder: base.bindings["note.literature-folder"],
+        citationStyle: base.bindings["citation.references-style"],
+      },
+    });
+    expect(draft.constraint).toBeUndefined();
+    expect(draft.inherited).toEqual(["folder", "citationStyle", "look"]);
+    const pending = draft.create();
+    await vi.advanceTimersByTimeAsync(500);
+    const created = await pending;
+    const source = fixture.vault.contents.get(created.path)!;
+    expect(source).not.toContain("folder:");
+    expect(source).not.toContain("citationStyle:");
+    expect(
+      fixture.profile.resolveProfile(created.id)?.bindings[
+        "note.literature-folder"
+      ],
+    ).toBe(base.bindings["note.literature-folder"]);
   });
 
-  it("refuses a copied look identical to Default even when its source Profile has bindings", async () => {
+  it("creates a Profile from a copied look identical to Default without its source Profile's bindings", async () => {
     await using fixture = await harness({
       "templates/zotlit-profile.default.md": document("default"),
       "templates/zotlit-profile.books.md": document(BOOKS, "folder: Books"),
@@ -608,9 +615,11 @@ describe("ProfileService", () => {
       look: BOOKS,
     });
     expect(draft.inherited).toEqual(["folder", "citationStyle", "look"]);
-    await expect(draft.create()).rejects.toThrow();
-    expect(fixture.vault.files.has("templates/zotlit-profile.same.md")).toBe(
-      false,
+    const pending = draft.create();
+    await vi.advanceTimersByTimeAsync(500);
+    const created = await pending;
+    expect(fixture.vault.contents.get(created.path)).not.toContain(
+      "folder: Books",
     );
   });
 

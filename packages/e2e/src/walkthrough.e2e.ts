@@ -898,7 +898,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     ).toEqual(expected);
   });
 
-  it("shows the initial Add profile requirement as a neutral folder hint", async () => {
+  it("creates a Profile from a name alone in Add profile and opens it on Name and folder", async () => {
     await obEval(
       vaultId,
       `app.vault.setConfig('settingsPopoutWindow',false);app.setting.open();true`,
@@ -913,14 +913,41 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       await obEvalUntil(vaultId, `String(!!(${add}))`, { expected: "true" }),
     ).toBe(true);
     await obEval(vaultId, `(${add}).click();true`);
-    const status = `Array.from(activeDocument.querySelectorAll('p[role="status"]')).find(el=>el.textContent==='Choose a different literature note folder to create a profile.')`;
+    const dialog = `Array.from(activeDocument.querySelectorAll('.modal')).find(el=>el.querySelector('.modal-title')?.textContent==='Add profile')`;
+    const status = `(${dialog})?.querySelector('p[role="status"]')`;
     expect(
-      await obEvalUntil(vaultId, `String(!!(${status}))`, { expected: "true" }),
+      await obEvalUntil(vaultId, `String((${status})?.textContent)`, {
+        expected: "Enter a unique profile name whose filename is not default.",
+      }),
     ).toBe(true);
     expect(
       await obEval(
         vaultId,
         `String((${status}).classList.contains('zt:text-(--text-error)'))`,
+      ),
+    ).toBe("false");
+    const action = `Array.from((${dialog}).querySelectorAll('.modal-button-container button')).find(el=>el.textContent==='Add profile')`;
+    expect(await obEval(vaultId, `String((${action}).disabled)`)).toBe("true");
+    await obEval(
+      vaultId,
+      `(()=>{const input=Array.from((${dialog}).querySelectorAll('label')).find(el=>el.firstChild?.textContent==='Name').querySelector('input');input.value='Reading group';input.dispatchEvent(new input.ownerDocument.defaultView.Event('input',{bubbles:true}));return true;})()`,
+    );
+    expect(
+      await obEvalUntil(vaultId, `String((${action}).disabled)`, {
+        expected: "false",
+      }),
+    ).toBe(true);
+    await obEval(vaultId, `(${action}).click();true`);
+    const editor = `app.workspace.getLeavesOfType('zotlit-template-workbench').map(leaf=>leaf.view).find(view=>view.file?.name==='zotlit-profile.reading-group.md')`;
+    expect(
+      await obEvalUntil(vaultId, `String((${editor})?.store.getState().tab)`, {
+        expected: "name",
+      }),
+    ).toBe(true);
+    expect(
+      await obEval(
+        vaultId,
+        `app.vault.read((${editor}).file).then(text=>String(/^folder:/m.test(text)))`,
       ),
     ).toBe("false");
   });
