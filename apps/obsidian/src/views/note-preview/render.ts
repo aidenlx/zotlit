@@ -607,7 +607,7 @@ export async function renderNativeProfile(
       citations: noteCitations.citations,
       annotationCitations: annotationCitations.citations,
       filename: noteName,
-      notePath: noteName === null ? null : resolveNoteRelPath(noteName),
+      notePath: resolveNoteRelPath(noteName),
       properties,
       fold: Object.entries(frontmatter).map(([key, value]) => ({
         key,
@@ -633,7 +633,7 @@ export async function renderNativeProfile(
     return {
       ...failure,
       filename: noteName,
-      notePath: noteName === null ? null : resolveNoteRelPath(noteName),
+      notePath: resolveNoteRelPath(noteName),
       diagnostics: [
         ...(noteNameFailure ? [noteNameFailure] : []),
         ...failure.diagnostics,

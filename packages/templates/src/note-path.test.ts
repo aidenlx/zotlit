@@ -120,6 +120,10 @@ describe("resolveNoteRelPath", () => {
   ])("reports an empty note name for %s", (_label, input) => {
     expect(resolveNoteRelPath(input)).toBeNull();
   });
+
+  it("passes a template that rendered no name through as null", () => {
+    expect(resolveNoteRelPath(null)).toBeNull();
+  });
 });
 
 describe("joinNotePath", () => {

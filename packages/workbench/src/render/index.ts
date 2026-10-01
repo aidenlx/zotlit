@@ -275,7 +275,7 @@ export function renderProfile(
     return {
       ...identity,
       filename,
-      notePath: filename === null ? null : resolveNoteRelPath(filename),
+      notePath: resolveNoteRelPath(filename),
       properties: frontmatter.properties,
       fold: frontmatter.fold,
       frontmatterBlock: frontmatterBlock(frontmatter.fold),
@@ -319,7 +319,7 @@ export function renderProfile(
     return {
       ...failure,
       filename,
-      notePath: filename === null ? null : resolveNoteRelPath(filename),
+      notePath: resolveNoteRelPath(filename),
       annotation: preview,
       annotationCitation,
       diagnostics: [

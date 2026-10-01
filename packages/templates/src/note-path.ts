@@ -104,10 +104,12 @@ export function resolveFlatNoteName(rendered: string): string | null {
  * honored. Every segment is sanitized per {@link normalizeFilename} and
  * truncated to the filesystem byte limit ({@link MAX_SEGMENT_BYTES}).
  *
- * @returns the relative path, or `null` when the file name slot normalizes to
- *   empty.
+ * @param rendered the rendered template, or `null` when it rendered no name.
+ * @returns the relative path, or `null` when there is no rendered name or the
+ *   file name slot normalizes to empty.
  */
-export function resolveNoteRelPath(rendered: string): string | null {
+export function resolveNoteRelPath(rendered: string | null): string | null {
+  if (rendered === null) return null;
   const segments = stripBidirectionalFormattingControls(rendered).split("/");
   const filename = resolveFlatNoteName(segments.pop() ?? "");
   if (filename === null) return null;
