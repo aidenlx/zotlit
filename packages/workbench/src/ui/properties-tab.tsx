@@ -162,6 +162,8 @@ export function PropertiesPane({
   useEffect(() => {
     if (openRow !== null) openRetained(openRow);
   }, [openRow, openRetained]);
+  // A held list stays on screen for repair, but no list change can patch it.
+  const locked = controller.readOnly || controller.managedEntriesHeld;
 
   function add(kind: "property" | "spread", after = entries.length) {
     if (controller.editManagedEntry({ action: "add", kind, after })) {
@@ -174,6 +176,11 @@ export function PropertiesPane({
     <div {...part("pane")}>
       {entries.length === 0 && (
         <p {...part("empty")}>{m.workbench_properties_empty()}</p>
+      )}
+      {controller.managedEntriesHeld && (
+        <p role="status" {...part("empty", "error")}>
+          {m.workbench_properties_unparsed()}
+        </p>
       )}
       {(exampleMessage ||
         onChooseItem ||
@@ -259,7 +266,7 @@ export function PropertiesPane({
                   <button
                     type="button"
                     {...part("row-action")}
-                    disabled={controller.readOnly}
+                    disabled={locked}
                     aria-label={m.workbench_properties_add_override()}
                     {...tooltip(m.workbench_properties_add_override())}
                     onClick={() => add("property", entry.position)}
@@ -279,7 +286,7 @@ export function PropertiesPane({
                         aria-label={label}
                         {...tooltip(label)}
                         disabled={
-                          controller.readOnly ||
+                          locked ||
                           (by === -1
                             ? entry.position === 1
                             : entry.position === entries.length)
@@ -305,14 +312,17 @@ export function PropertiesPane({
                   <button
                     type="button"
                     {...part("row-action")}
-                    disabled={controller.readOnly}
+                    disabled={locked}
                     aria-label={m.workbench_properties_remove()}
                     {...tooltip(m.workbench_properties_remove())}
                     onClick={() => {
-                      controller.editManagedEntry({
-                        action: "remove",
-                        position: entry.position,
-                      });
+                      if (
+                        !controller.editManagedEntry({
+                          action: "remove",
+                          position: entry.position,
+                        })
+                      )
+                        return;
                       if (open) onSelect(null);
                       else if (selected !== null && selected > entry.position)
                         onSelect(selected - 1);
@@ -347,7 +357,7 @@ export function PropertiesPane({
         <button
           type="button"
           {...part("primary-action")}
-          disabled={controller.readOnly}
+          disabled={locked}
           onClick={() => add("property")}
         >
           {icon("add")}
@@ -356,7 +366,7 @@ export function PropertiesPane({
         <button
           type="button"
           {...part("secondary-action")}
-          disabled={controller.readOnly}
+          disabled={locked}
           onClick={() => add("spread")}
         >
           {icon("add")}
@@ -418,6 +428,7 @@ function EntryForm({
   const [name, setName] = useState(entry.key ?? "");
   useEffect(() => setName(entry.key ?? ""), [entry.key]);
   const spread = entry.key === undefined;
+  const locked = controller.readOnly || controller.managedEntriesHeld;
   const errorId = `${instanceId}-property-${entry.position}-errors`;
   return (
     <div
@@ -430,7 +441,7 @@ function EntryForm({
           {m.workbench_properties_name()}
           <input
             type="text"
-            readOnly={controller.readOnly}
+            readOnly={locked}
             ref={nameInput}
             value={name}
             onInput={(event) => setName(event.currentTarget.value)}
@@ -439,13 +450,17 @@ function EntryForm({
             }}
             onBlur={(event) => {
               const value = event.currentTarget.value.trim();
-              if (value && value !== entry.key)
-                controller.editManagedEntry({
+              if (
+                value &&
+                value !== entry.key &&
+                !controller.editManagedEntry({
                   action: "set",
                   position: entry.position,
                   field: "key",
                   value,
-                });
+                })
+              )
+                setName(entry.key ?? "");
             }}
             {...part("name-input")}
           />
@@ -480,7 +495,7 @@ function EntryForm({
                   {m.workbench_properties_format()}
                 </span>
                 <WorkbenchSelect
-                  disabled={controller.readOnly}
+                  disabled={locked}
                   value={pendingLanguage ?? format}
                   onInput={(event) =>
                     setPendingLanguage(
@@ -514,17 +529,21 @@ function EntryForm({
               <div {...part("confirm-actions")}>
                 <button
                   type="button"
-                  disabled={controller.readOnly}
+                  disabled={locked}
                   {...part("primary-action")}
                   onClick={() => {
-                    controller.editManagedEntry({
-                      action: "language",
-                      position: entry.position,
-                      language:
-                        pendingLanguage === "text" ? "value" : pendingLanguage,
-                      ...(pendingLanguage === "text" ? { text: "" } : {}),
-                    });
-                    setPendingLanguage(null);
+                    if (
+                      controller.editManagedEntry({
+                        action: "language",
+                        position: entry.position,
+                        language:
+                          pendingLanguage === "text"
+                            ? "value"
+                            : pendingLanguage,
+                        ...(pendingLanguage === "text" ? { text: "" } : {}),
+                      })
+                    )
+                      setPendingLanguage(null);
                   }}
                 >
                   {m.workbench_properties_format_reset()}
@@ -593,7 +612,7 @@ function EntryForm({
         <label {...part("field")}>
           {m.workbench_properties_merge()}
           <WorkbenchSelect
-            disabled={controller.readOnly}
+            disabled={locked}
             value={entry.merge}
             onInput={(event) =>
               controller.editManagedEntry({

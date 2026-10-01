@@ -2045,6 +2045,7 @@
   "workbench_properties_lede": "设置每篇文献笔记顶部的属性。",
   "workbench_properties_empty": "属性用于存储标题、标签或阅读状态等信息。添加一个属性即可开始。",
   "workbench_properties_source_only": "此列表的写法无法用这些行编辑。请在源码中打开。",
+  "workbench_properties_unparsed": "修正此配置方案中的错误后，才能添加、移动或移除属性。撤销可恢复上一个可用版本。",
   "workbench_properties_spread": "多个属性",
   "workbench_properties_row_problem": "问题",
   "workbench_properties_produced": [

@@ -168,6 +168,7 @@ export class WorkbenchDocumentController {
   #problems: readonly WorkbenchProblem[] = [];
   #focused: WorkbenchSliceId | null = null;
   #entries: readonly ManagedEntrySource[] | null = null;
+  #entriesHeld = false;
   #dependencies: readonly string[] = [];
   #regions: NoteRegions = { annotationCalls: [], managedBlock: null };
   readonly #ranges = new Map<WorkbenchSliceId, WorkbenchSliceRange>([
@@ -333,6 +334,15 @@ export class WorkbenchDocumentController {
    */
   get managedEntries(): readonly ManagedEntrySource[] | null {
     return this.#entries;
+  }
+
+  /**
+   * Whether {@link managedEntries} is the last list that parsed, held while the
+   * manifest does not. No Properties action can patch a held list, so a form
+   * offers its list changes again only once the text is repaired.
+   */
+  get managedEntriesHeld(): boolean {
+    return this.#entriesHeld;
   }
 
   /**
@@ -842,6 +852,7 @@ export class WorkbenchDocumentController {
    */
   #readManifest(source: string): void {
     const list = managedFrontmatterEntries(source);
+    this.#entriesHeld = list.status === "unparsed";
     if (list.status === "unparsed") return;
     const filename = manifestScalarSlice(source, ["filename"]);
     if (filename) this.#ranges.set("filename", filename);

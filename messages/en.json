@@ -1754,6 +1754,7 @@
   "workbench_properties_lede": "Set the properties at the top of each literature note.",
   "workbench_properties_empty": "Properties store information such as a title, tags, or reading status. Add a property to get started.",
   "workbench_properties_source_only": "This list is written in a form these rows can't edit. Open it in Source.",
+  "workbench_properties_unparsed": "Fix the error in this profile to add, move, or remove properties. Undo restores the last working version.",
   "workbench_properties_spread": "Several properties",
   "workbench_properties_row_problem": "Problem",
   "workbench_properties_produced": [
