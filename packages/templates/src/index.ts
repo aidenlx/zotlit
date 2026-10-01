@@ -165,6 +165,14 @@ export {
   replaceSuffixMarkers,
 } from "./filename-suffix";
 export { inlineCitation } from "./inline-citation";
+export {
+  joinNotePath,
+  MAX_SEGMENT_BYTES,
+  normalizeFilename,
+  resolveFlatNoteName,
+  resolveNoteRelPath,
+  truncateToByteLimit,
+} from "./note-path";
 
 function pointToSyntaxError(
   source: string,

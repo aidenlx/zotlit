@@ -1,4 +1,5 @@
 // The single consent surface for changing a Literature Note's Profile.
+import { dirname } from "node:path/posix";
 import { ConfirmationModal } from "obsidian";
 import type { App, TFile } from "obsidian";
 
@@ -86,7 +87,12 @@ export async function switchNoteProfileInteractively(
     const consent = await confirmProfileSwitch(deps.app, {
       current: plan.current.label ?? m.settings_profile_default_name(),
       requested: choice.label,
-      moveFolder: target.path === file.path ? undefined : target.folder,
+      moveFolder:
+        target.path === file.path
+          ? undefined
+          : target.path === undefined
+            ? target.folder
+            : dirname(target.path),
       importedCount: plan.importedNotes?.length ?? null,
       imported: plan.imported,
     });

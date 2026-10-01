@@ -1196,6 +1196,7 @@ export function Workbench() {
                     controller={controller}
                     manifest={shownManifest}
                     filename={result?.filename ?? null}
+                    notePath={result?.notePath ?? null}
                     citationStyles={citationStyles}
                     focus={focusField}
                     suggest={suggest}

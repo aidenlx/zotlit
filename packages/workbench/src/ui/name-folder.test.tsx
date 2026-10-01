@@ -27,15 +27,19 @@ afterEach(cleanup);
 
 function ReactivePane({
   controller,
+  filename = "Reading",
+  notePath = "Reading",
   ...props
-}: Omit<NameFolderPaneProps, "manifest" | "filename">) {
+}: Omit<NameFolderPaneProps, "manifest" | "filename" | "notePath"> &
+  Partial<Pick<NameFolderPaneProps, "filename" | "notePath">>) {
   useDocumentRevision(controller);
   return (
     <NameFolderPane
       {...props}
       controller={controller}
       manifest={controller.document?.manifest ?? null}
-      filename="Reading.md"
+      filename={filename}
+      notePath={notePath}
     />
   );
 }
@@ -289,7 +293,7 @@ it("shares undo between filename text and a form edit, and refuses newlines", ()
     });
   });
   expect(controller.source).toBe(SOURCE);
-  expect(screen.getByText("Reading.md")).toBeDefined();
+  expect(screen.getByText("papers/Reading.md")).toBeDefined();
 });
 
 it("scopes problem navigation to the selected editor instance", () => {
@@ -349,7 +353,7 @@ it("shows identity, the live note name, and each binding's source", () => {
     screen.getByLabelText<HTMLInputElement>(m.workbench_name_field_author())
       .value,
   ).toBe("ZotLit");
-  expect(screen.getByText("Reading.md")).toBeDefined();
+  expect(screen.getByText("papers/Reading.md")).toBeDefined();
   const folder = screen.getByLabelText<HTMLInputElement>(
     m.workbench_name_binding_folder(),
   );
@@ -439,4 +443,137 @@ it("keeps read-only configuration selectable and disables binding changes", () =
       name: m.workbench_name_binding_colored_highlights(),
     }),
   ).toHaveProperty("disabled", true);
+});
+
+/** The full path the note path group previews, by its visible label. */
+const preview = () =>
+  screen.getByRole("status", { name: m.workbench_name_filename_result() })
+    .textContent;
+
+/** Every control of the note path group, in reading order. */
+function notePathGroup() {
+  return screen.getByRole("region", { name: m.workbench_name_path_heading() });
+}
+
+it("previews the note under the folder inherited from Default", () => {
+  open({
+    source: SOURCE.replace("folder: papers\n", ""),
+    notePath: "2024/Reading",
+  });
+  const folder = within(notePathGroup()).getByLabelText<HTMLInputElement>(
+    m.workbench_name_binding_folder(),
+  );
+  expect(folder.value).toBe("literatures");
+  expect(folder.closest('[data-part="binding-row"]')?.textContent).toContain(
+    m.workbench_name_origin_default(),
+  );
+  expect(preview()).toBe("literatures/2024/Reading.md");
+});
+
+it("follows a folder override, its reset, and a new Default folder", () => {
+  const defaults = {
+    folder: "literatures",
+    citationStyle: null,
+    importFolder: "zotero_notes",
+    importColoredHighlights: false,
+    importAnnotationsAsTemplate: false,
+  };
+  const { controller, rerender } = open({
+    source: SOURCE.replace("folder: papers\n", ""),
+    defaults,
+  });
+  expect(preview()).toBe("literatures/Reading.md");
+  write(m.workbench_name_binding_folder(), "Reading/Methods");
+  expect(controller.document!.manifest.folder).toBe("Reading/Methods");
+  expect(preview()).toBe("Reading/Methods/Reading.md");
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: m.workbench_name_use_default_for({
+        name: m.workbench_name_binding_folder(),
+      }),
+    }),
+  );
+  expect(controller.document!.manifest.folder).toBeUndefined();
+  expect(preview()).toBe("literatures/Reading.md");
+  rerender(
+    <WorkbenchHostProvider host={fakeHost()}>
+      <ReactivePane
+        controller={controller}
+        defaults={{ ...defaults, folder: "Zotero/Papers" }}
+      />
+    </WorkbenchHostProvider>,
+  );
+  expect(preview()).toBe("Zotero/Papers/Reading.md");
+});
+
+it("previews a backslash folder as the slash path creation writes", () => {
+  open({ source: SOURCE.replace("folder: papers\n", "") });
+  write(m.workbench_name_binding_folder(), "Reading\\Methods\\");
+  expect(preview()).toBe("Reading/Methods/Reading.md");
+});
+
+it("previews the name path alone for a vault-root folder", () => {
+  open({ source: SOURCE.replace("folder: papers", "folder: ''") });
+  expect(preview()).toBe("Reading.md");
+});
+
+it("says so when the note name resolves to empty", () => {
+  open({ filename: "  ", notePath: null });
+  expect(preview()).toContain(m.workbench_name_path_empty());
+});
+
+it("orders folder, note name template, and preview inside one labelled group", () => {
+  open();
+  const group = notePathGroup();
+  const folder = within(group).getByLabelText(
+    m.workbench_name_binding_folder(),
+  );
+  const template = within(group).getByRole("textbox", {
+    name: m.workbench_name_filename_label(),
+  });
+  const result = within(group).getByRole("status", {
+    name: m.workbench_name_filename_result(),
+  });
+  expect(
+    folder.compareDocumentPosition(template) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    template.compareDocumentPosition(result) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  // The remaining bindings keep their own group.
+  expect(
+    within(group).queryByLabelText(m.workbench_name_binding_import_folder()),
+  ).toBeNull();
+  expect(
+    within(
+      screen.getByRole("region", { name: m.workbench_name_bindings_heading() }),
+    ).getByLabelText(m.workbench_name_binding_import_folder()),
+  ).toBeDefined();
+});
+
+it("focuses the folder control for a problem pinned to the folder key", () => {
+  open({ focus: { field: "folder" } });
+  expect(document.activeElement).toBe(
+    within(notePathGroup()).getByLabelText(m.workbench_name_binding_folder()),
+  );
+});
+
+it("shows the Default folder read-only and still previews the full path", () => {
+  const onOpenSettings = vi.fn<() => void>();
+  open({ source: DEFAULT_PROFILE_SOURCE, onOpenSettings });
+  const group = notePathGroup();
+  expect(
+    within(group).queryByRole("textbox", {
+      name: m.workbench_name_binding_folder(),
+    }),
+  ).toBeNull();
+  expect(within(group).getByText("literatures")).toBeDefined();
+  expect(
+    within(group).getByText(m.workbench_name_binding_folder()),
+  ).toBeDefined();
+  expect(preview()).toBe("literatures/Reading.md");
+  fireEvent.click(
+    screen.getByRole("button", { name: m.workbench_open_settings() }),
+  );
+  expect(onOpenSettings).toHaveBeenCalledOnce();
 });

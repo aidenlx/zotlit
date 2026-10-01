@@ -825,6 +825,83 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     expect(result).toEqual({ rule, name, invalid: false });
   });
 
+  it("previews the full note path in the Profile editor and creates the note there", async () => {
+    const m = await import("@obsidian-messages");
+    // A paper no other walkthrough keeps a note for, so creation is not refused.
+    const title = "Why Most Published Research Findings Are False";
+    const result = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{
+          ${browserWaits}
+          await using cleanup=new AsyncDisposableStack();
+          const services=app.plugins.plugins.zotlit.services;
+          const types=['zotlit-template-workbench','zotlit-template-data-explorer','zotlit-note-preview'];
+          const detach=()=>{for(const type of types)for(const leaf of app.workspace.getLeavesOfType(type))leaf.detach();};
+          detach();
+          // The paper is searchable once the item index answers.
+          let hit,hits=[];
+          for(let attempt=0;attempt<400&&!hit;attempt++){
+            hits=await services.itemLookup.search('ioannidis',{limit:20});
+            hit=hits.find(candidate=>candidate.item.key==='DMIANART');
+            if(!hit)await new Promise(resolve=>setTimeout(resolve,25));
+          }
+          if(!hit)throw new Error('Paper not found: '+JSON.stringify(hits.map(candidate=>candidate.item.key)));
+          const profile=await services.profile.create({label:'Path preview',bindings:{folder:'path-notes'}});
+          cleanup.defer(async()=>{
+            detach();
+            await services.profile.delete(profile.id,'default');
+          });
+          const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());
+          await leaf.openFile(app.vault.getFileByPath(profile.path));
+          app.workspace.setActiveLeaf(leaf,{focus:true});
+          app.commands.executeCommandById('zotlit:customize-profile');
+          const view=()=>app.workspace.getLeavesOfType('zotlit-template-workbench')[0]?.view;
+          await waitFor(()=>!!view()?.contentEl.querySelector('[role="tab"]'),true,'Profile editor');
+          const el=view().contentEl;
+          // Choose item has its own walkthrough; this one starts from the paper.
+          view().selectItem({id:hit.item.indexedKey,title:${JSON.stringify(title)}});
+          Array.from(el.querySelectorAll('[role="tab"]')).find(tab=>tab.textContent===${JSON.stringify(m.workbench_tab_name_and_folder())}).click();
+          const preview=()=>el.querySelector('[data-part="filename-output"]')?.textContent;
+          await waitFor(()=>/^path-notes\\/[^/]+\\.md$/.test(preview()??''),true,'Preview under the Profile folder');
+          // A slash in the note name makes a subfolder under the folder.
+          const nameEditor=()=>Array.from(el.querySelectorAll('.cm-content')).find(content=>el.ownerDocument.getElementById(content.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.workbench_name_filename_label())});
+          await waitFor(()=>!!nameEditor(),true,'Note name editor');
+          const cm=nameEditor().cmTile.view;
+          const name='Findings/{{ zt.title }}';
+          cm.focus();
+          cm.dispatch({changes:{from:0,to:cm.state.doc.length,insert:name},selection:{anchor:name.length},userEvent:'input.type'});
+          await waitFor(preview,${JSON.stringify(`path-notes/Findings/${title}.md`)},'Preview with a subfolder');
+          // A folder override moves the whole preview.
+          const label=Array.from(el.querySelectorAll('label[for]')).find(label=>label.textContent===${JSON.stringify(m.workbench_name_binding_folder())});
+          const folder=el.ownerDocument.getElementById(label.htmlFor);
+          folder.focus();
+          folder.value='Reading list';
+          folder.dispatchEvent(new folder.ownerDocument.defaultView.Event('input',{bubbles:true}));
+          folder.dispatchEvent(new folder.ownerDocument.defaultView.FocusEvent('focusout',{bubbles:true}));
+          const previewed=${JSON.stringify(`Reading list/Findings/${title}.md`)};
+          await waitFor(preview,previewed,'Preview under the overridden folder');
+          await view().save();
+          // The Profile takes the saved document once the template recompiles.
+          await waitFor(()=>services.profile.resolveProfile(profile.id)?.bindings['note.literature-folder'],'Reading list','Saved folder');
+          const created=await services.noteFeature.createNote(hit.item,{profile:profile.id});
+          if(created.outcome!=='created')throw new Error('Note refused: '+created.diagnostic?.code);
+          const path=created.file.path;
+          cleanup.defer(async()=>{
+            for(const leaf of app.workspace.getLeavesOfType('markdown'))if(leaf.view.file?.path===path)leaf.detach();
+            const file=app.vault.getFileByPath(path);
+            if(file)await app.vault.delete(file);
+          });
+          return JSON.stringify({previewed:preview(),created:path});
+        })()`,
+      ),
+    );
+    expect(result).toEqual({
+      previewed: `Reading list/Findings/${title}.md`,
+      created: `Reading list/Findings/${title}.md`,
+    });
+  });
+
   it("keeps Annotation fields and preview when Customize reopens its workbench", async () => {
     await obEval(
       vaultId,
@@ -898,7 +975,79 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     ).toEqual(expected);
   });
 
-  it("shows the initial Add profile requirement as a neutral folder hint", async () => {
+  it("keeps a switched note's subfolder under the target Profile's folder", async () => {
+    const created = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{
+          const {profile}=app.plugins.plugins.zotlit.services;
+          const books=await profile.create({label:'Books',bindings:{folder:'books'}});
+          const folder=profile.resolveProfile('default').bindings['note.literature-folder'].replace(/^\\/+|\\/+$/g,'');
+          const dir=(folder?folder+'/':'')+'2024';
+          if(!app.vault.getAbstractFileByPath(dir))await app.vault.createFolder(dir);
+          const file=await app.vault.create(dir+'/Subfolder move.md','---\\nzotero-key: DMRGRART\\n---\\nMy reading notes\\n');
+          const leaf=app.workspace.getLeaf('tab');
+          await leaf.openFile(file);
+          app.workspace.setActiveLeaf(leaf,{focus:true});
+          return JSON.stringify({id:books.id,path:file.path});
+        })()`,
+      ),
+    ) as { id: string; path: string };
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(app.metadataCache.getFileCache(app.vault.getFileByPath(${JSON.stringify(created.path)}))?.frontmatter?.['zotero-key']==='DMRGRART')`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `app.commands.executeCommandById('zotlit:switch-literature-note-profile')`,
+    );
+    const target = "books/2024/Subfolder move.md";
+    const row = `Array.from(Array.from(activeDocument.querySelectorAll('.prompt')).at(-1)?.querySelectorAll('.suggestion-item')??[]).find(el=>el.textContent.includes(${JSON.stringify(target)}))`;
+    expect(
+      await obEvalUntil(vaultId, `String(!!(${row}))`, { expected: "true" }),
+    ).toBe(true);
+    await obEval(vaultId, `(${row}).click();true`);
+    const move = `(()=>{const modal=Array.from(activeDocument.querySelectorAll('.modal')).at(-1);return Array.from(modal?.querySelectorAll('input[type=checkbox]')??[]).find(input=>{for(let el=input.parentElement;el&&el!==modal;el=el.parentElement){if(el.querySelectorAll('input[type=checkbox]').length>1)return false;if(el.textContent.includes('Move to books/2024/'))return true;}return false;});})()`;
+    expect(
+      await obEvalUntil(vaultId, `String(!!${move})`, { expected: "true" }),
+    ).toBe(true);
+    await obEval(vaultId, `${move}.click();true`);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(()=>{const modal=Array.from(activeDocument.querySelectorAll('.modal')).at(-1);const button=Array.from(modal?.querySelectorAll('button')??[]).find(el=>el.textContent.trim()==='Switch to “Books”');if(!button)return false;button.click();return true;})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(app.metadataCache.getFileCache(app.vault.getFileByPath(${JSON.stringify(target)}))?.frontmatter?.['zotlit-profile']??'')`,
+        { expected: `Books (${created.id})` },
+      ),
+    ).toBe(true);
+    expect(
+      await obEval(
+        vaultId,
+        `(async()=>{
+          const moved=app.vault.getFileByPath(${JSON.stringify(target)});
+          const body=await app.vault.read(moved);
+          const left=!!app.vault.getAbstractFileByPath(${JSON.stringify(created.path)});
+          await app.vault.delete(moved);
+          const {profile}=app.plugins.plugins.zotlit.services;
+          await app.vault.delete(app.vault.getFileByPath(profile.profiles.find(p=>p.id===${JSON.stringify(created.id)}).path));
+          app.workspace.detachLeavesOfType('empty');
+          return String(!left&&body.includes('My reading notes'));
+        })()`,
+      ),
+    ).toBe("true");
+  });
+
+  it("creates a Profile from a name alone in Add profile and opens it on Name and folder", async () => {
+    const m = await import("@obsidian-messages");
     await obEval(
       vaultId,
       `app.vault.setConfig('settingsPopoutWindow',false);app.setting.open();true`,
@@ -908,19 +1057,46 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       vaultId,
       `app.setting.navigateToSearchResult({tab:app.setting.activeTab,pagePath:['settings_page_profiles']});true`,
     );
-    const add = `app.setting.containerEl.querySelector('[aria-label="Add profile"]')`;
+    const add = `app.setting.containerEl.querySelector('[aria-label=${JSON.stringify(m.settings_profile_add())}]')`;
     expect(
       await obEvalUntil(vaultId, `String(!!(${add}))`, { expected: "true" }),
     ).toBe(true);
     await obEval(vaultId, `(${add}).click();true`);
-    const status = `Array.from(activeDocument.querySelectorAll('p[role="status"]')).find(el=>el.textContent==='Choose a different literature note folder to create a profile.')`;
+    const dialog = `Array.from(activeDocument.querySelectorAll('.modal')).find(el=>el.querySelector('.modal-title')?.textContent===${JSON.stringify(m.settings_profile_add())})`;
+    const status = `(${dialog})?.querySelector('p[role="status"]')`;
     expect(
-      await obEvalUntil(vaultId, `String(!!(${status}))`, { expected: "true" }),
+      await obEvalUntil(vaultId, `String((${status})?.textContent)`, {
+        expected: m.settings_profile_name_invalid(),
+      }),
     ).toBe(true);
     expect(
       await obEval(
         vaultId,
         `String((${status}).classList.contains('zt:text-(--text-error)'))`,
+      ),
+    ).toBe("false");
+    const action = `Array.from((${dialog}).querySelectorAll('.modal-button-container button')).find(el=>el.textContent===${JSON.stringify(m.settings_profile_add())})`;
+    expect(await obEval(vaultId, `String((${action}).disabled)`)).toBe("true");
+    await obEval(
+      vaultId,
+      `(()=>{const input=Array.from((${dialog}).querySelectorAll('label')).find(el=>el.firstChild?.textContent===${JSON.stringify(m.settings_profile_name_name())}).querySelector('input');input.value='Reading group';input.dispatchEvent(new input.ownerDocument.defaultView.Event('input',{bubbles:true}));return true;})()`,
+    );
+    expect(
+      await obEvalUntil(vaultId, `String((${action}).disabled)`, {
+        expected: "false",
+      }),
+    ).toBe(true);
+    await obEval(vaultId, `(${action}).click();true`);
+    const editor = `app.workspace.getLeavesOfType('zotlit-template-workbench').map(leaf=>leaf.view).find(view=>view.file?.name==='zotlit-profile.reading-group.md')`;
+    expect(
+      await obEvalUntil(vaultId, `String((${editor})?.store.getState().tab)`, {
+        expected: "name",
+      }),
+    ).toBe(true);
+    expect(
+      await obEval(
+        vaultId,
+        `app.vault.read((${editor}).file).then(text=>String(/^folder:/m.test(text)))`,
       ),
     ).toBe("false");
   });

@@ -59,7 +59,7 @@ function fixture() {
   return { deps, draft, create, prepareCreate, preview };
 }
 
-it("shows the preview while refusing a no-op and a colliding label, then enables a differing draft", async () => {
+it("shows the preview while asking for a name, refuses a colliding label, then enables a name with no other difference", async () => {
   using disabled = vi.spyOn(ButtonComponent.prototype, "setDisabled");
   const saveDisabled = () =>
     disabled.mock.calls.findLast((_, index) => {
@@ -70,10 +70,13 @@ it("shows the preview while refusing a no-op and a colliding label, then enables
       );
     })?.[0];
   const f = fixture();
-  f.prepareCreate.mockResolvedValueOnce({
+  const inheritsAll = {
     ...f.draft,
     inherited: ["folder", "citationStyle", "look"],
-    constraint: { kind: "no-difference", message: "REFUSED_NO_DIFFERENCE" },
+  } satisfies PreparedProfileCreation;
+  f.prepareCreate.mockResolvedValueOnce({
+    ...inheritsAll,
+    constraint: { kind: "invalid-name", message: "ASK_FOR_NAME" },
   });
   const modal = new CreateProfileModal(f.deps, {
     data: { note: {} as never, filename: {} },
@@ -81,15 +84,15 @@ it("shows the preview while refusing a no-op and a colliding label, then enables
   });
   modal.contentEl = document.createElement("div");
   modal.onOpen();
-  await vi.waitFor(() =>
-    expect(modal.contentEl.textContent).toContain("REFUSED_NO_DIFFERENCE"),
-  );
+  const status = () => modal.contentEl.querySelector('[role="status"]')!;
+  await vi.waitFor(() => expect(status().textContent).toBe("ASK_FOR_NAME"));
+  expect(status().classList.contains("zt:text-(--text-error)")).toBe(false);
   expect(saveDisabled()).toBe(true);
   expect(modal.contentEl.textContent).toContain("Reading/Paper-7cx.md");
   expect(modal.contentEl.textContent).toContain("Reading (Bk3Qn7XvT2Lp)");
   expect(modal.contentEl.textContent).toContain("Default look marker.");
   f.prepareCreate.mockResolvedValueOnce({
-    ...f.draft,
+    ...inheritsAll,
     constraint: { kind: "invalid-name", message: "REFUSED_INVALID_NAME" },
   });
   const text = (name: string) =>
@@ -97,22 +100,29 @@ it("shows the preview while refusing a no-op and a colliding label, then enables
       .filter((label) => label.firstChild?.textContent === name)
       .flatMap((label) => controlsOf(label.lastElementChild as HTMLElement))
       .find((control) => control instanceof TextComponent)!;
-  text(m.settings_profile_name_name()).type("Books");
+  text(m.settings_profile_name_name()).type("Reading");
   await vi.waitFor(() =>
-    expect(modal.contentEl.textContent).toContain("REFUSED_INVALID_NAME"),
+    expect(status().textContent).toBe("REFUSED_INVALID_NAME"),
   );
+  expect(status().classList.contains("zt:text-(--text-error)")).toBe(true);
   expect(saveDisabled()).toBe(true);
-  text(m.settings_profile_folder_name()).type("Reading");
+  f.prepareCreate.mockResolvedValueOnce(inheritsAll);
+  text(m.settings_profile_name_name()).type("Books");
   await vi.waitFor(() => expect(saveDisabled()).toBe(false));
   expect(f.prepareCreate).toHaveBeenLastCalledWith({
     label: "Books",
     look: "default",
-    bindings: { folder: "Reading" },
+    bindings: {},
   });
   expect(modal.contentEl.textContent).toContain(
-    m.settings_profile_citation_style_name(),
+    m.settings_profile_inheritance({
+      values: [
+        m.settings_profile_folder_name(),
+        m.settings_profile_citation_style_name(),
+        m.settings_profile_look_name(),
+      ].join(", "),
+    }),
   );
-  expect(modal.contentEl.textContent).toContain(m.settings_profile_look_name());
   expect(f.create).not.toHaveBeenCalled();
   modal.onClose();
   await expect(modal.result).resolves.toBeUndefined();

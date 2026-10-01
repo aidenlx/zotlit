@@ -23,11 +23,7 @@ import {
 import type { LiteratureNotePartialUnpack } from "@zotlit/templates/literature-note-pack";
 
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
-import {
-  ensureParentFolder,
-  joinFolderPath,
-  normalizeFolderPath,
-} from "@/lib/ensure-folder";
+import { ensureParentFolder, normalizeFolderPath } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import {
   processLiveFrontMatter,
@@ -56,6 +52,7 @@ import type {
   ResolvedProfile,
   ResolvedLiteratureNoteProfileBindings,
 } from "@/services/profile/bindings";
+import { relocatedNotePath } from "@/services/profile/relocation";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
@@ -106,7 +103,7 @@ export interface PreparedProfileCreation {
   profile: ResolvedProfile;
   source: string;
   inherited: ("folder" | "citationStyle" | "look")[];
-  constraint?: { kind: "no-difference" | "invalid-name"; message: string };
+  constraint?: { kind: "invalid-name"; message: string };
   create(): Promise<LiteratureNoteProfile>;
 }
 
@@ -358,23 +355,16 @@ export class ProfileService extends Service {
       )
         delete bindings[name];
     }
-    let constraint: PreparedProfileCreation["constraint"] =
-      !differs && Object.keys(bindings).length === 0
-        ? {
-            kind: "no-difference",
-            message: m.settings_profile_create_no_difference(),
-          }
-        : undefined;
+    let constraint: PreparedProfileCreation["constraint"];
     try {
       this.#validateLabel(requestedLabel);
     } catch (error) {
-      if (requestedLabel || !constraint)
-        constraint = {
-          kind: "invalid-name",
-          message: Error.isError(error)
-            ? error.message
-            : m.settings_profile_name_invalid(),
-        };
+      constraint = {
+        kind: "invalid-name",
+        message: Error.isError(error)
+          ? error.message
+          : m.settings_profile_name_invalid(),
+      };
     }
     const id = mintId() as ProfileId;
     const content = profileSource(source, { id, label, bindings });
@@ -989,23 +979,26 @@ export class ProfileService extends Service {
         .filter((profile) => profile.id !== id)
         .map(({ id }) => id),
     ];
+    const current = this.resolveProfile(id);
     const targets = selectors.flatMap((selector) => {
       const profile = this.resolveProfile(selector);
       if (!profile) return [];
       const files = [
         ...literatureNotes.map((file) => ({
           file,
-          path: joinFolderPath(
-            normalizeFolderPath(profile.bindings["note.literature-folder"]),
-            file.name,
-          ),
+          path: relocatedNotePath(file, {
+            from: current,
+            to: profile,
+            imported: false,
+          }),
         })),
         ...importedNotes.map((file) => ({
           file,
-          path: joinFolderPath(
-            normalizeFolderPath(profile.bindings["note.import-folder"]),
-            file.name,
-          ),
+          path: relocatedNotePath(file, {
+            from: current,
+            to: profile,
+            imported: true,
+          }),
         })),
       ];
       return [{ profile, files }];
