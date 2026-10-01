@@ -1187,6 +1187,11 @@ function prepareProfileNote(
   };
 }
 
+/** The Profile a note moves from: none for an unresolved Profile stamp. */
+function relocationSource(current: NoteProfile): ResolvedProfile | undefined {
+  return current.ok ? current.profile : undefined;
+}
+
 async function prepareProfileSwitch(
   ctx: NoteFeatureDeps,
   file: TFile,
@@ -1198,7 +1203,7 @@ async function prepareProfileSwitch(
   const indexedKey = itemKeyFromFrontmatter(cache);
   if (!imported && !indexedKey)
     throw new Error("The file is not a ZotLit note");
-  const source = current.ok ? current.profile : undefined;
+  const source = relocationSource(current);
   const profiles = selectableProfiles(ctx).map((profile) => ({
     ...profilePreview(
       profile,
@@ -1264,9 +1269,8 @@ async function switchNoteProfile(
   const previousPath = file.path;
   const imported =
     noteKeyFromFrontmatter(ctx.app.metadataCache.getFileCache(file)) !== null;
-  const current = ctx.profile.profileOf(file);
   const targetPath = relocatedNotePath(file, {
-    from: current.ok ? current.profile : undefined,
+    from: relocationSource(ctx.profile.profileOf(file)),
     to: profile,
     imported,
   });
