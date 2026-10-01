@@ -877,8 +877,6 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           folder.focus();
           folder.value='Reading list';
           folder.dispatchEvent(new folder.ownerDocument.defaultView.Event('input',{bubbles:true}));
-          // The box commits the draft it rendered, so leave it after that render.
-          await new Promise(resolve=>setTimeout(resolve,50));
           folder.dispatchEvent(new folder.ownerDocument.defaultView.FocusEvent('focusout',{bubbles:true}));
           const previewed=${JSON.stringify(`Reading list/Figures/${title}.md`)};
           await waitFor(preview,previewed,'Preview under the overridden folder');

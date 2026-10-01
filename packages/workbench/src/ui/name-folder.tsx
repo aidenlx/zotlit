@@ -582,8 +582,9 @@ function DraftText({
       readOnly={readOnly}
       placeholder={placeholder}
       onInput={(event) => setDraft(event.currentTarget.value)}
-      onBlur={() => {
-        const next = draft.trim();
+      onBlur={(event) => {
+        // The text in the box, even when the blur precedes the draft's render.
+        const next = event.currentTarget.value.trim();
         if (next !== value) onCommit(next);
       }}
       {...part(binding ? "binding-input" : "input")}
