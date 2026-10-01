@@ -15,7 +15,7 @@ import type { WorkbenchMessages } from "./generated/messages";
 import { diagnosisExplanation } from "./problems";
 import type { WorkbenchDiagnosis } from "./problems";
 
-import { entryPosition, jsonPosition } from "#/document/index";
+import { entryPosition, sliceOffsets } from "#/document/index";
 import { currentCallSite, currentSliceSite } from "#/render/locate";
 
 const Findings = createContext<readonly WorkbenchDiagnosis[]>([]);
@@ -59,11 +59,18 @@ export function sourceDiagnostics({
   json: boolean;
 }): SourceDiagnostic[] {
   const bounds = controller.sliceRange(slice);
+  const offsets = sliceOffsets(controller, slice, source);
+  // A range in master offsets, in the text the pane shows, when the pane holds it.
+  const shown = (range: { from: number; to: number } | undefined) =>
+    range && range.from >= bounds.from && range.to <= bounds.to
+      ? {
+          from: offsets.toShown(range.from - bounds.from),
+          to: offsets.toShown(range.to - bounds.from),
+        }
+      : undefined;
   // The row this pane edits, when it edits one. A property failure names the
   // place inside that row's own expression, which no other pane can place.
   const position = entryPosition(slice);
-  const inSlice = (site: { from: number; to: number } | undefined) =>
-    site && { from: bounds.from + site.from, to: bounds.from + site.to };
   // Whether a failure's own place is one this pane holds. A site is read
   // against the text the pane shows, so one fault marks one place: the row it
   // names, or the note-name pane a note-name failure names.
@@ -75,26 +82,15 @@ export function sourceDiagnostics({
     const explanation = diagnosisExplanation(messages, diagnosis);
     const ranges =
       diagnosis.kind === "document"
-        ? diagnosis.occurrences.map((problem) => problem.range)
+        ? diagnosis.occurrences.map((problem) => shown(problem.range))
         : diagnosis.occurrences.map((diagnostic) =>
             ownSite(diagnostic)
-              ? inSlice(
-                  currentSliceSite(diagnostic, controller.sliceText(slice)),
-                )
-              : currentCallSite(diagnostic, controller),
+              ? currentSliceSite(diagnostic, source)
+              : shown(currentCallSite(diagnostic, controller)),
           );
     return ranges.flatMap((range): SourceDiagnostic[] => {
-      if (!range || range.from < bounds.from || range.to > bounds.to) return [];
-      const local = (offset: number) =>
-        json
-          ? jsonPosition(
-              controller.sliceText(slice),
-              source,
-              offset - bounds.from,
-            )
-          : offset - bounds.from;
-      const from = local(range.from);
-      const to = local(range.to);
+      if (!range) return [];
+      const { from, to } = range;
       return [
         {
           from,

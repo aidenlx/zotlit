@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { synthesizeLegacyLiteratureNoteTemplate } from "@zotlit/templates/facade";
 
 import { entrySlice, WorkbenchDocumentController } from "./controller";
+import { scalarCodec } from "./slice-codec";
 
 /**
  * A hand-written Profile: an out-of-order manifest with a comment, a single-
@@ -341,14 +342,15 @@ describe("WorkbenchDocumentController", () => {
     expect(controller.source.slice(from, to)).toBe("eta");
   });
 
-  it("reads the note name as the text inside the quotes the author wrote", () => {
+  it("reads the note name as the whole scalar the author wrote, quotes included", () => {
     const controller = new WorkbenchDocumentController(HAND_WRITTEN);
     const filename = controller.filenameSlice!;
 
     expect(HAND_WRITTEN.slice(filename.from, filename.to)).toBe(
-      "{{ zt.citationKey }}",
+      "'{{ zt.citationKey }}'",
     );
     expect(controller.sliceRange("filename")).toEqual(filename);
+    expect(controller.sliceCodec("filename")).toBe(scalarCodec);
   });
 
   it("leaves a note name no one line can hold to Advanced", () => {
@@ -406,7 +408,7 @@ describe("WorkbenchDocumentController", () => {
     const { from } = controller.filenameSlice!;
 
     controller.dispatch({
-      changes: { from, insert: "{{ zt.date }}-" },
+      changes: { from: from + 1, insert: "{{ zt.date }}-" },
       userEvent: "input.type",
     });
 

@@ -41,6 +41,15 @@ reports a rule only when the manifest cannot read it. A rule in another YAML
 form shows as formatted JSON of the value its own text reads as, and its first
 edit stores that value as compact JSON, so comments inside that one rule do
 not survive the edit. Other entries keep their bytes.)
+(Amended 2026-10-01: a manifest scalar that a pane edits — the note name and a
+Liquid property rule — shows the text YAML reads, without its quotes or
+escapes. Every edit stores a YAML spelling that reads back as exactly the
+typed text: the scalar keeps its quoting while that quoting holds the text,
+and otherwise takes the first of plain, single-quoted, and double-quoted that
+does. A note name written as a one-line block scalar is edited as its line,
+which YAML holds as written. The controller chooses this rule for each slice,
+so typed text cannot make the manifest invalid; see
+[discussion #1197](https://github.com/aidenlx/zotlit/discussions/1197).)
 The [JSON-e editor design](../research/json-e-editor-design.md) restores
 the JSON authoring syntax from the
 [#938 ruling](https://github.com/aidenlx/zotlit/issues/938#issuecomment-5468828547)

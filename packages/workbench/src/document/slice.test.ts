@@ -6,7 +6,8 @@ import { describe, expect, it } from "vitest";
 
 import { WorkbenchDocumentController } from "./controller";
 import type { WorkbenchSliceId } from "./controller";
-import { jsonSliceText, workbenchSlice } from "./slice";
+import { sliceShownText, workbenchSlice } from "./slice";
+import { jsonCodec } from "./slice-codec";
 
 import { applyTemplateCompletion } from "#/language/completion";
 import { templatePairing } from "#/language/pairing";
@@ -34,14 +35,13 @@ interface Slice extends Disposable {
 function open(
   controller: WorkbenchDocumentController,
   id: WorkbenchSliceId,
-  json = false,
 ): Slice {
   const view = new EditorView({
     state: EditorState.create({
-      doc: json ? jsonSliceText(controller, id) : controller.sliceText(id),
+      doc: sliceShownText(controller, id),
       extensions: [
-        workbenchSlice(controller, id, json),
-        ...(json ? [] : [templatePairing()]),
+        workbenchSlice(controller, id),
+        ...(controller.sliceCodec(id) === jsonCodec ? [] : [templatePairing()]),
       ],
     }),
     parent: document.body,
@@ -461,7 +461,7 @@ const JSON_PROFILE = PROFILE.replace(
 
 it("displays pretty JSON, stores compact JSON, and preserves draft-only undo", () => {
   const controller = new WorkbenchDocumentController(JSON_PROFILE);
-  using rule = open(controller, "entry:1", true);
+  using rule = open(controller, "entry:1");
   expect(rule.text()).toBe('{\n  "$eval": "zt.title"\n}');
   const original = rule.text();
   rule.view.dispatch({
@@ -490,7 +490,7 @@ it("displays pretty JSON, stores compact JSON, and preserves draft-only undo", (
 
 it("retains invalid JSON drafts and translates master edits into formatted offsets", () => {
   const controller = new WorkbenchDocumentController(JSON_PROFILE);
-  using rule = open(controller, "entry:1", true);
+  using rule = open(controller, "entry:1");
   rule.view.focus();
   controller.setFocusedSlice("entry:1");
   const from = controller.source.indexOf("zt.title");
@@ -513,7 +513,7 @@ it("retains invalid JSON drafts and translates master edits into formatted offse
 
 it("keeps grouped typing aligned across pretty and compact undo and redo", () => {
   const controller = new WorkbenchDocumentController(JSON_PROFILE);
-  using rule = open(controller, "entry:1", true);
+  using rule = open(controller, "entry:1");
   const original = rule.text();
   const at = original.indexOf("zt.title") + 8;
   for (const [index, insert] of ["A", "B"].entries()) {
@@ -550,7 +550,7 @@ const YAML_RULE_PROFILE = PROFILE.replace(
 
 it("shows a YAML rule as JSON and stores the first edit as compact JSON", () => {
   const controller = new WorkbenchDocumentController(YAML_RULE_PROFILE);
-  using rule = open(controller, "entry:1", true);
+  using rule = open(controller, "entry:1");
   const shown = [
     "{",
     '  "$map": {',
@@ -588,7 +588,7 @@ it("shows a YAML rule as JSON while another entry keeps the manifest invalid", (
   );
   const controller = new WorkbenchDocumentController(source);
   expect(controller.document).toBeNull();
-  using rule = open(controller, "entry:2", true);
+  using rule = open(controller, "entry:2");
   const shown = [
     "{",
     '  "$map": {',
@@ -620,7 +620,7 @@ it("shows a YAML rule as JSON while another entry keeps the manifest invalid", (
 
 it("replays a form edit into a focused YAML rule by the value it changes", () => {
   const controller = new WorkbenchDocumentController(YAML_RULE_PROFILE);
-  using rule = open(controller, "entry:1", true);
+  using rule = open(controller, "entry:1");
   rule.view.focus();
   controller.setFocusedSlice("entry:1");
   const from = controller.source.indexOf("zt.authors");
@@ -646,7 +646,7 @@ it("replays a form edit into a focused YAML rule by the value it changes", () =>
 it("writes the first rule into an empty value as readable YAML", () => {
   const source = JSON_PROFILE.replace('value: {"$eval":"zt.title"}', "value:");
   const controller = new WorkbenchDocumentController(source);
-  using rule = open(controller, "entry:1", true);
+  using rule = open(controller, "entry:1");
   expect(rule.text()).toBe("null");
 
   rule.view.dispatch({
@@ -662,4 +662,192 @@ it("writes the first rule into an empty value as readable YAML", () => {
   controller.undo();
   expect(controller.source).toBe(source);
   expect(rule.text()).toBe("null");
+});
+
+const LIQUID_PROFILE = PROFILE.replace(
+  "language: liquid",
+  "language: liquid\nfrontmatter:\n  - key: title\n    expr: zt.title",
+);
+
+/** Replace the rule's whole text the way a reader retypes it. */
+function retype(rule: Slice, insert: string): void {
+  rule.view.dispatch({
+    changes: { from: 0, to: rule.text().length, insert },
+    selection: { anchor: insert.length },
+    userEvent: "input.type",
+  });
+}
+
+describe("Liquid rule rows", () => {
+  it.each([
+    'zt.creators | map: "fullName"',
+    "zt.publicationTitle | append: '. ' | append: zt.date",
+    '"[[" | append: zt.title | append: ".pdf]]"',
+    "{{ zt.title }}",
+    "zt.title | append: 'it''s' | append: \"x\" # tag",
+    "2017",
+    "*a",
+    "&a zt.title",
+    "!tag zt.title",
+    "- zt.title",
+    "",
+  ])("stores %j as the rule the reader typed", (typed) => {
+    const controller = new WorkbenchDocumentController(LIQUID_PROFILE);
+    using rule = open(controller, "entry:1");
+    retype(rule, typed);
+
+    expect(rule.text()).toBe(typed);
+    expect(controller.problems).toEqual([]);
+    expect(controller.document?.manifest.frontmatter?.[0]).toMatchObject({
+      key: "title",
+      expr: typed,
+    });
+    expect(rule.view.state.selection.main.head).toBe(typed.length);
+  });
+
+  it("keeps a rule plain while plain YAML holds it", () => {
+    const controller = new WorkbenchDocumentController(LIQUID_PROFILE);
+    using rule = open(controller, "entry:1");
+    rule.view.dispatch({
+      changes: { from: rule.text().length, insert: " | upcase" },
+      userEvent: "input.type",
+    });
+
+    expect(controller.source).toBe(
+      LIQUID_PROFILE.replace("expr: zt.title", "expr: zt.title | upcase"),
+    );
+  });
+
+  it("shows a quoted rule without its YAML quotes and keeps them valid", () => {
+    const source = LIQUID_PROFILE.replace(
+      "expr: zt.title",
+      `expr: 'zt.creators | map: "fullName"'`,
+    );
+    const controller = new WorkbenchDocumentController(source);
+    using rule = open(controller, "entry:1");
+    expect(rule.text()).toBe('zt.creators | map: "fullName"');
+
+    const at = rule.text().length;
+    rule.view.dispatch({
+      changes: { from: at, insert: " | join: ', '" },
+      selection: { anchor: at + " | join: ', '".length },
+      userEvent: "input.type",
+    });
+
+    expect(controller.sliceText("entry:1")).toBe(
+      `'zt.creators | map: "fullName" | join: '', '''`,
+    );
+    expect(controller.document?.manifest.frontmatter?.[0]).toMatchObject({
+      expr: `zt.creators | map: "fullName" | join: ', '`,
+    });
+    expect(rule.view.state.selection.main.head).toBe(rule.text().length);
+    controller.undo();
+    expect(controller.source).toBe(source);
+    expect(rule.text()).toBe('zt.creators | map: "fullName"');
+  });
+
+  it("shows a block rule at the indentation its header names", () => {
+    const source = LIQUID_PROFILE.replace(
+      "expr: zt.title",
+      "expr: |2-\n      zt.title",
+    );
+    const controller = new WorkbenchDocumentController(source);
+    using rule = open(controller, "entry:1");
+    expect(rule.text()).toBe("zt.title");
+
+    rule.view.dispatch({
+      changes: { from: rule.text().length, insert: " | upcase" },
+      userEvent: "input.type",
+    });
+
+    expect(controller.document?.manifest.frontmatter?.[0]).toMatchObject({
+      expr: "zt.title | upcase",
+    });
+  });
+
+  it("replays a form edit into a focused rule by the value it changes", () => {
+    const source = LIQUID_PROFILE.replace(
+      "expr: zt.title",
+      "expr: 'zt.title | append: '' x'''",
+    );
+    const controller = new WorkbenchDocumentController(source);
+    using rule = open(controller, "entry:1");
+    rule.view.focus();
+    controller.setFocusedSlice("entry:1");
+    const from = controller.source.indexOf("zt.title");
+    controller.dispatch({
+      changes: { from, to: from + "zt.title".length, insert: "zt.key" },
+      userEvent: "input.form",
+    });
+
+    expect(rule.text()).toBe("zt.key | append: ' x'");
+    expect(controller.document?.manifest.frontmatter?.[0]).toMatchObject({
+      expr: "zt.key | append: ' x'",
+    });
+  });
+});
+
+describe("Note-name pane", () => {
+  it.each(
+    [
+      "{{ zt.title | replace: ':', '-' }}",
+      "{{ zt.title }}: notes",
+      "{{ zt.title }} #draft",
+      '"{{ zt.title }}"',
+    ].flatMap((typed) => [
+      { typed, lineBreak: "\n" },
+      { typed, lineBreak: "\r\n" },
+    ]),
+  )(
+    "stores $typed as the note name the reader typed ($lineBreak)",
+    ({ typed, lineBreak }) => {
+      const controller = new WorkbenchDocumentController(
+        PROFILE.split("\n").join(lineBreak),
+      );
+      using filename = open(controller, "filename");
+      expect(filename.text()).toBe("{{ zt.citationKey }}");
+      retype(filename, typed);
+
+      expect(filename.text()).toBe(typed);
+      expect(controller.problems).toEqual([]);
+      expect(controller.document?.manifest.filename).toBe(typed);
+      expect(filename.view.state.selection.main.head).toBe(typed.length);
+      expect(controller.source.split(lineBreak)).toHaveLength(
+        PROFILE.split("\n").length,
+      );
+    },
+  );
+
+  it.each([
+    {
+      from: "filename: '{{ zt.citationKey }}'",
+      to: "filename: |\n  {{ zt.citationKey }}",
+      value: "{{ zt.title }}: 'x'\n",
+    },
+    {
+      from: "filename: |\n  {{ zt.citationKey }}",
+      to: "filename: '{{ zt.citationKey }}'",
+      value: "{{ zt.title }}: 'x'",
+    },
+  ])(
+    "keeps storing the typed note name after Advanced rewrites $from as $to",
+    ({ from, to, value }) => {
+      const controller = new WorkbenchDocumentController(
+        PROFILE.replace("filename: '{{ zt.citationKey }}'", from),
+      );
+      using filename = open(controller, "filename");
+      const at = controller.source.indexOf(from);
+      controller.dispatch({
+        changes: { from: at, to: at + from.length, insert: to },
+        userEvent: "input.type",
+      });
+      expect(filename.text()).toBe("{{ zt.citationKey }}");
+
+      retype(filename, "{{ zt.title }}: 'x'");
+
+      expect(filename.text()).toBe("{{ zt.title }}: 'x'");
+      expect(controller.problems).toEqual([]);
+      expect(controller.document?.manifest.filename).toBe(value);
+    },
+  );
 });

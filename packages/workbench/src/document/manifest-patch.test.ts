@@ -370,6 +370,27 @@ describe("Managed Frontmatter patching", () => {
     );
   });
 
+  it("renames a property written as a block scalar in one line YAML reads back", () => {
+    const source = HAND_WRITTEN.replace(
+      "  - key: title\n",
+      "  - key: |-\n      title\n",
+    );
+    const { source: renamed, controller } = edit(source, {
+      action: "set",
+      position: 1,
+      field: "key",
+      value: "heading: main",
+    });
+
+    expect(renamed).toBe(
+      source.replace("key: |-\n      title", "key: 'heading: main'"),
+    );
+    expect(controller.problems).toEqual([]);
+    expect(controller.managedEntries![0]).toMatchObject({
+      key: "heading: main",
+    });
+  });
+
   it("starts a new expression on a language change, one undo from the old text", () => {
     const action: ManagedEntryAction = {
       action: "language",

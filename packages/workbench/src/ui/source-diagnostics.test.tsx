@@ -197,6 +197,52 @@ it("underlines the expression a property rule failed on, in the row's own editor
   expect(mounted.container.querySelector(".cm-lintRange-error")).not.toBeNull();
 });
 
+it("underlines a failure in a quoted Liquid rule at the text the row shows", () => {
+  const rule = "zt.title | append: '-' | nope";
+  const controller = new WorkbenchDocumentController(
+    DEFAULT_PROFILE_SOURCE.replace(
+      "expr: zt.title",
+      `expr: '${rule.replaceAll("'", "''")}'`,
+    ),
+  );
+  const diagnoses = workbenchDiagnoses(
+    [],
+    [
+      {
+        code: "property-error",
+        params: { key: "title", detail: "undefined filter: nope" },
+        part: "properties",
+        position: 1,
+        sliceSite: {
+          kind: "span",
+          from: rule.indexOf("nope"),
+          to: rule.length,
+          source: rule,
+        },
+      },
+    ],
+  );
+  const mounted = render(
+    <WorkbenchDiagnosticsProvider value={diagnoses}>
+      <SliceEditor
+        controller={controller}
+        slice={entrySlice(1)}
+        label="Value"
+        language="expression"
+      />
+    </WorkbenchDiagnosticsProvider>,
+  );
+  const editor = EditorView.findFromDOM(
+    mounted.container.querySelector(".cm-editor")!,
+  )!;
+  const marked: string[] = [];
+  forEachDiagnostic(editor.state, (_diagnostic, start, end) => {
+    marked.push(editor.state.sliceDoc(start, end));
+  });
+  expect(editor.state.doc.toString()).toBe(rule);
+  expect(marked).toEqual(["nope"]);
+});
+
 it("leaves a property failure unmarked in another row's editor", () => {
   const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
   const diagnoses = workbenchDiagnoses(
@@ -229,7 +275,7 @@ it("leaves a property failure unmarked in another row's editor", () => {
 
 it("underlines the failing text in the note-name editor", () => {
   const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
-  const source = controller.sliceText("filename");
+  const source = controller.document!.manifest.filename!;
   const diagnoses = workbenchDiagnoses(
     [],
     [
@@ -269,7 +315,7 @@ it("underlines the failing text in the note-name editor", () => {
 
 it("leaves the note editor unmarked for a note-name failure", () => {
   const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
-  const source = controller.sliceText("filename");
+  const source = controller.document!.manifest.filename!;
   const diagnoses = workbenchDiagnoses(
     [],
     [

@@ -37,11 +37,14 @@ The complete source is the authority ([ADR 0032](../../docs/adr/0032-web-workben
   small document, no history of its own, an echo-guard annotation across the
   boundary, the child's user event forwarded so keystrokes group into one undo
   step, undo and redo routed to the master, and a wholesale child refresh.
-  Pass `true` as the third argument for a JSON-e property: initialize its text
-  with `jsonLayout(source, true).text` and use `jsonPosition` to map offsets.
-  The editor shows two-space indentation and stores compact JSON in YAML.
-  Draft layout and selections, including whitespace-only edits, use master
-  history effects. Token spelling and string contents remain unchanged.
+  The editor shows its slice through the controller's `sliceCodec(id)`:
+  initialize its text with `sliceShownText(controller, id)` and map carets with
+  `sliceOffsets(controller, id, shown)`. A manifest scalar — the note name and a
+  Liquid property rule — shows the text YAML reads, and every edit stores a
+  YAML spelling that reads back as exactly the reader's text. A JSON-e property
+  shows two-space indentation and stores compact JSON in YAML; its draft layout
+  and selections, including whitespace-only edits, use master history effects.
+  Token spelling and string contents remain unchanged.
 - `manifestValueEdit(source, path, value)` — the one targeted YAML patch, so a
   form control changes a single manifest node and every other byte survives.
 - `manifestKeyEdit(source, key, value)` and the controller's `setManifestKey` —
@@ -52,12 +55,14 @@ The complete source is the authority ([ADR 0032](../../docs/adr/0032-web-workben
   is one undo step.
 - `manifestNodeRange(source, path)` — the source range one manifest node covers,
   so a host can tell which manifest value an editor position sits in.
-- `manifestScalarSlice(source, path)` — the text a manifest scalar holds, inside
-  its quotes when it has them, so the note-name template is edited as template
-  source. It answers null for a value one line cannot hold — a block scalar, a
-  folded plain scalar, or a quoted one carrying an escape — which leaves that
-  value to Advanced. The controller keeps it as the `filename` slice and reports
-  it through `filenameSlice`.
+- `manifestScalarSlice(source, path)` — the region a pane edits a manifest
+  scalar through, so the note-name template is edited as template source. A
+  block scalar's one content line is `literal`, which YAML holds as written;
+  any other scalar is the whole scalar, quotes included, which the pane shows
+  through the scalar codec. It answers null for a value that is not a scalar or
+  one of several lines, which leaves that value to Advanced. The
+  controller keeps it as the `filename` slice and reports it through
+  `filenameSlice`.
 - `managedFrontmatterEntries(source)` — every Managed Frontmatter entry the
   manifest authors, with its key, language, merge strategy, the whole lines it
   occupies, and the expression a row edits. It answers `rows` with those

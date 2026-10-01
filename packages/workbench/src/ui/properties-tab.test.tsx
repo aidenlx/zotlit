@@ -205,7 +205,7 @@ it("keeps an authored expression until format confirmation and restores it with 
   act(() => {
     controller.undo();
   });
-  expect(controller.source).toContain("expr: 'To read'");
+  expect(controller.source).toContain("expr: '''To read'''");
   expect(
     EditorView.findFromDOM(
       container.querySelector(".cm-editor")!,
@@ -292,17 +292,11 @@ it.each(["\n", "\r\n"])(
     using mounted = mount(<EditorPane />, {
       source: DEFAULT_PROFILE_SOURCE.replaceAll("\n", lineBreak),
     });
-    const { controller } = mounted;
     const { container } = render(mounted.ui);
     const summaries = [
       ...container.querySelectorAll('[data-part="row"] [data-part="summary"]'),
     ].map((summary) => summary.textContent);
 
-    expect(summaries).toEqual(
-      controller.managedEntries?.map((entry) =>
-        controller.sliceText(entrySlice(entry.position)),
-      ),
-    );
     expect(summaries).toEqual([
       "zt.title",
       "zt.relatedItems | note_links",
