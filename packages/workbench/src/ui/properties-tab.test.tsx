@@ -9,13 +9,19 @@ import { PropertiesPane } from "./properties-tab";
 import { fakeHost, mount, renderWithMessages as render } from "./test-host";
 import { m } from "./test-messages";
 
-import { entrySlice, WorkbenchDocumentController } from "#/document/controller";
+import { WorkbenchDocumentController } from "#/document/controller";
 import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";
 import { renderProfile, SAMPLE_ITEMS } from "#/render/index";
 
 afterEach(cleanup);
 
-function Pane({ controller }: { controller: WorkbenchDocumentController }) {
+function Pane({
+  controller,
+  onShowProblem,
+}: {
+  controller: WorkbenchDocumentController;
+  onShowProblem?: (id: string) => void;
+}) {
   useDocumentRevision(controller);
   const [selected, onSelect] = useState<number | null>(null);
   return (
@@ -27,6 +33,7 @@ function Pane({ controller }: { controller: WorkbenchDocumentController }) {
       diagnostics={[]}
       selected={selected}
       onSelect={onSelect}
+      onShowProblem={onShowProblem}
     />
   );
 }
@@ -36,12 +43,15 @@ function EditorPane() {
   return <Pane controller={useWorkbenchController()} />;
 }
 
-function setup(source = DEFAULT_PROFILE_SOURCE) {
+function setup(
+  source = DEFAULT_PROFILE_SOURCE,
+  onShowProblem?: (id: string) => void,
+) {
   const controller = new WorkbenchDocumentController(source);
   const host = fakeHost();
   const result = render(
     <WorkbenchHostProvider host={host}>
-      <Pane controller={controller} />
+      <Pane controller={controller} onShowProblem={onShowProblem} />
     </WorkbenchHostProvider>,
   );
   const press = (name: string, index = 0) =>
@@ -307,25 +317,64 @@ it.each(["\n", "\r\n"])(
 );
 
 it.each(["\n", "\r\n"])(
-  "explains and holds back list changes while the manifest does not parse (line break %j)",
+  "edits a row's rule and keeps every other byte of the profile (line break %j)",
   (lineBreak) => {
     const source = DEFAULT_PROFILE_SOURCE.replaceAll("\n", lineBreak);
-    const { controller, press } = setup(source);
-    const button = (name: string, index = 0) =>
-      screen.getAllByRole<HTMLButtonElement>("button", { name })[index]!;
-    press(m.workbench_properties_edit(), 3);
-    // Drop the closing brace of the citekey rule, which breaks the manifest.
-    const brace = controller.sliceRange(entrySlice(4)).to - 1;
+    const { container, controller, press } = setup(source);
+    press(m.workbench_properties_edit(), 1);
+    const rule = EditorView.findFromDOM(
+      container.querySelector(".cm-editor")!,
+    )!;
+    expect(rule.state.doc.toString()).toBe("zt.relatedItems | note_links");
     act(() => {
-      controller.dispatch({
-        changes: { from: brace, to: brace + 1 },
+      rule.dispatch({
+        changes: { from: rule.state.doc.length, insert: ' | append: ": x"' },
         userEvent: "input.type",
       });
     });
+
+    expect(controller.source).toBe(
+      source.replace(
+        "expr: zt.relatedItems | note_links",
+        `expr: 'zt.relatedItems | note_links | append: ": x"'`,
+      ),
+    );
+    expect(controller.problems).toEqual([]);
+  },
+);
+
+it.each(["\n", "\r\n"])(
+  "explains, links to, and holds back list changes while the manifest does not parse (line break %j)",
+  (lineBreak) => {
+    const source = DEFAULT_PROFILE_SOURCE.replaceAll("\n", lineBreak);
+    const shown: string[] = [];
+    const { container, controller, press } = setup(source, (id) =>
+      shown.push(id),
+    );
+    const button = (name: string, index = 0) =>
+      screen.getAllByRole<HTMLButtonElement>("button", { name })[index]!;
+    press(m.workbench_properties_edit(), 3);
+    // Delete the closing brace of the citekey rule in its own editor, which
+    // leaves a JSON draft the manifest cannot read.
+    const rule = EditorView.findFromDOM(
+      container.querySelector(".cm-editor")!,
+    )!;
+    act(() => {
+      const end = rule.state.doc.length;
+      rule.dispatch({
+        changes: { from: end - 1, to: end },
+        userEvent: "delete.backward",
+      });
+    });
     const broken = controller.source;
+    expect(broken).not.toBe(source);
+    expect(controller.document).toBeNull();
     expect(controller.managedEntries).toHaveLength(4);
 
     expect(screen.getByText(m.workbench_properties_unparsed())).toBeTruthy();
+    fireEvent.click(button(m.workbench_problem_show()));
+    expect(shown).toHaveLength(1);
+    expect(shown[0]).toMatch(/^document:invalid-manifest:.*:entry:4$/);
     expect(button(m.workbench_properties_remove(), 3).disabled).toBe(true);
     expect(button(m.workbench_properties_add()).disabled).toBe(true);
     expect(button(m.workbench_properties_add_override(), 3).disabled).toBe(

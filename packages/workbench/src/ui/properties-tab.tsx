@@ -15,6 +15,7 @@ import type { WorkbenchMessages } from "./generated/messages";
 import { useOptionalHost } from "./host";
 import type { WorkbenchMessageLabel } from "./messages";
 import { useWorkbenchMessages } from "./messages";
+import { documentDiagnosis } from "./problems";
 import { PropertyList, propertyText } from "./property-list";
 import { WorkbenchSelect, WorkbenchOption } from "./select";
 import { SliceEditor } from "./slice-editor";
@@ -52,6 +53,8 @@ export interface PropertiesPaneProps {
   onSelect: (position: number | null) => void;
   /** A native host can edit JavaScript in its whole-document editor. */
   onOpenSource?: (range: WorkbenchSliceRange) => void;
+  /** Opens Problems at one problem, by its diagnosis id. */
+  onShowProblem?: (id: string) => void;
   onChooseItem?: () => void;
   onRetry?: () => void;
   reveal?: WorkbenchSliceRange | null;
@@ -121,6 +124,7 @@ export function PropertiesPane({
   selected,
   onSelect,
   onOpenSource,
+  onShowProblem,
   onChooseItem,
   onRetry,
   reveal,
@@ -180,6 +184,20 @@ export function PropertiesPane({
       {controller.managedEntriesHeld && (
         <p role="status" {...part("empty", "error")}>
           {m.workbench_properties_unparsed()}
+          {onShowProblem && controller.problems[0] && (
+            <>
+              {" "}
+              <button
+                type="button"
+                {...part("secondary-action")}
+                onClick={() =>
+                  onShowProblem(documentDiagnosis(controller.problems[0]!).id)
+                }
+              >
+                {m.workbench_problem_show()}
+              </button>
+            </>
+          )}
         </p>
       )}
       {(exampleMessage ||
