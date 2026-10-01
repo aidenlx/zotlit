@@ -17,6 +17,7 @@ import {
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import packageJson from "./package.json" with { type: "json" };
+import { deriveDevVersion } from "./scripts/dev-version.ts";
 import { pandocFilterVariants } from "./scripts/lua-filter.ts";
 import { resolvePandocEnginePin } from "./scripts/pandoc-engine.ts";
 
@@ -141,7 +142,7 @@ export default defineConfig(({ mode }) => {
       preact(),
       tailwindcss(),
       pandocFilterVariants(),
-      obsidianBuildPlugin(),
+      obsidianBuildPlugin(isDev),
       Boolean(process.env.ANALYZE) &&
         unstableRolldownAdapter(
           analyzer({
@@ -178,7 +179,7 @@ function parseI18nDevServerPort(value: string | undefined): number | undefined {
   return Number.isInteger(port) && port > 0 ? port : 9092;
 }
 
-function obsidianBuildPlugin(): Plugin {
+function obsidianBuildPlugin(isDev: boolean): Plugin {
   const packageJsonPath = join(import.meta.dirname, "package.json");
   return {
     name: "obsidian-build",
@@ -190,6 +191,7 @@ function obsidianBuildPlugin(): Plugin {
 
       const packageJson = JSON.parse(await readFile(packageJsonPath, "utf-8"));
       const manifestJson = parseManifest(packageJson);
+      if (isDev) manifestJson.version = deriveDevVersion(manifestJson.version);
       await writeFile(
         join(outDir, "manifest.json"),
         JSON.stringify(manifestJson, null, 2),
