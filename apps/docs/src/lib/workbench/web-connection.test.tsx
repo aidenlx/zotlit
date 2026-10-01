@@ -97,6 +97,13 @@ describe("a Workbench Connection", () => {
       ).toHaveLength(2),
     );
     await page.settle();
+    // The note path follows the vault's own folder, not the built-in one.
+    page.press(m.workbench_tab_name_and_folder());
+    await page.waitFor(() =>
+      expect(
+        page.host.querySelector('[data-part="filename-output"]')?.textContent,
+      ).toBe("fixture-literature/ioannidisWhyMost2005.md"),
+    );
     expect(renderInThread.mock.calls.at(-1)?.[0].resources).toEqual({
       dependencies: {
         templates: [

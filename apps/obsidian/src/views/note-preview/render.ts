@@ -7,7 +7,7 @@ import type {
   CitationTemplateData,
   NoteTemplateContext,
 } from "@zotlit/db";
-import { replaceSuffixMarkers } from "@zotlit/templates";
+import { replaceSuffixMarkers, resolveNoteRelPath } from "@zotlit/templates";
 import type { LiteratureNoteTemplateManifest } from "@zotlit/templates/facade";
 import { parsePlainTemplateDocument } from "@zotlit/templates/facade";
 import type { FrontmatterMergeConflictHandler } from "@zotlit/templates/frontmatter-merge";
@@ -607,6 +607,7 @@ export async function renderNativeProfile(
       citations: noteCitations.citations,
       annotationCitations: annotationCitations.citations,
       filename: noteName,
+      notePath: noteName === null ? null : resolveNoteRelPath(noteName),
       properties,
       fold: Object.entries(frontmatter).map(([key, value]) => ({
         key,
@@ -632,6 +633,7 @@ export async function renderNativeProfile(
     return {
       ...failure,
       filename: noteName,
+      notePath: noteName === null ? null : resolveNoteRelPath(noteName),
       diagnostics: [
         ...(noteNameFailure ? [noteNameFailure] : []),
         ...failure.diagnostics,

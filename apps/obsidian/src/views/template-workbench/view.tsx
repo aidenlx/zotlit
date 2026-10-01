@@ -2736,6 +2736,7 @@ function EditorContent({
                 citationStyles={view.citationStyles}
                 focus={fieldFocus}
                 filename={result?.filename ?? null}
+                notePath={result?.notePath ?? null}
                 onOpenSource={() => state.setAdvanced(true)}
                 onShowProblem={(id) => problems.select(id)}
                 reveal={advanced ? null : reveal}
@@ -2749,6 +2750,7 @@ function EditorContent({
                 manifest={manifest.current}
                 focus={fieldFocus}
                 filename={null}
+                notePath={null}
                 onOpenSource={() => state.setAdvanced(true)}
               />
             </TabPanel>

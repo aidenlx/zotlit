@@ -15,7 +15,11 @@ import {
   withAnnotationCitation,
 } from "@zotlit/db";
 import type { AnnotationTemplateContext, TemplateAnnotation } from "@zotlit/db";
-import { inlineCitation, replaceSuffixMarkers } from "@zotlit/templates";
+import {
+  inlineCitation,
+  replaceSuffixMarkers,
+  resolveNoteRelPath,
+} from "@zotlit/templates";
 import { TemplateFacade } from "@zotlit/templates/facade";
 import type { ManagedFrontmatterEntry } from "@zotlit/templates/facade";
 import {
@@ -271,6 +275,7 @@ export function renderProfile(
     return {
       ...identity,
       filename,
+      notePath: filename === null ? null : resolveNoteRelPath(filename),
       properties: frontmatter.properties,
       fold: frontmatter.fold,
       frontmatterBlock: frontmatterBlock(frontmatter.fold),
@@ -314,6 +319,7 @@ export function renderProfile(
     return {
       ...failure,
       filename,
+      notePath: filename === null ? null : resolveNoteRelPath(filename),
       annotation: preview,
       annotationCitation,
       diagnostics: [
