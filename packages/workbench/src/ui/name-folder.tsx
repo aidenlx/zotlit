@@ -272,19 +272,11 @@ export function NameFolderPane({
             >
               {isDefault ? (
                 <div {...part("path-row")}>
-                  <dl {...part("defaults")}>
-                    <div {...part("actions")}>
-                      <dt {...part("default-label")}>
-                        {m.workbench_name_binding_folder()}
-                      </dt>
-                      <dd {...part("default-value")}>
-                        {valueText(m, defaults.folder)}
-                      </dd>
-                    </div>
-                  </dl>
-                  <p {...part("secondary")}>
-                    {m.workbench_name_folder_default_note()}
-                  </p>
+                  <DefaultBindings
+                    bindings={[FOLDER_BINDING]}
+                    defaults={defaults}
+                    note={m.workbench_name_folder_default_note()}
+                  />
                 </div>
               ) : (
                 <BindingRow
@@ -382,21 +374,11 @@ export function NameFolderPane({
               }
             >
               {isDefault ? (
-                <>
-                  <dl {...part("defaults")}>
-                    {BINDINGS.map((binding) => (
-                      <div key={binding.key} {...part("actions")}>
-                        <dt {...part("default-label")}>{m[binding.label]()}</dt>
-                        <dd {...part("default-value")}>
-                          {valueText(m, defaults[binding.key])}
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
-                  <p {...part("secondary")}>
-                    {m.workbench_name_default_note()}
-                  </p>
-                </>
+                <DefaultBindings
+                  bindings={BINDINGS}
+                  defaults={defaults}
+                  note={m.workbench_name_default_note()}
+                />
               ) : (
                 BINDINGS.map((binding) => (
                   <BindingRow
@@ -617,6 +599,35 @@ function TextValue({
       placeholder={optional ? m.workbench_name_optional() : undefined}
       onCommit={(next) => onCommit(optional && next === "" ? undefined : next)}
     />
+  );
+}
+
+/** The Default Profile's bindings, read-only: they live in the host's settings. */
+function DefaultBindings({
+  bindings,
+  defaults,
+  note,
+}: {
+  bindings: readonly Binding[];
+  defaults: ProfileBindingDefaults;
+  note: string;
+}) {
+  const m = useWorkbenchMessages();
+  const part = useParts("nameFolder");
+  return (
+    <>
+      <dl {...part("defaults")}>
+        {bindings.map((binding) => (
+          <div key={binding.key} {...part("actions")}>
+            <dt {...part("default-label")}>{m[binding.label]()}</dt>
+            <dd {...part("default-value")}>
+              {valueText(m, defaults[binding.key])}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p {...part("secondary")}>{note}</p>
+    </>
   );
 }
 
