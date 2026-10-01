@@ -37,8 +37,10 @@ The view groups these parts into six tabs:
   ZotLit manages.
 - <UiLabel name={m.workbench_tab_annotation()} /> edits the format of one
   annotation.
-- <UiLabel name={m.workbench_tab_name_and_folder()} /> edits the note name,
-  folders, citation style, and template language.
+- <UiLabel name={m.workbench_tab_name_and_folder()} /> edits the note path,
+  citation style, imported note settings, and template language. Its
+  <UiLabel name={m.workbench_name_path_heading()} /> group joins the literature
+  note folder and the note name template, and previews the full path.
 - <UiLabel name={m.workbench_tab_match()} /> selects the Zotero items that use
   an added profile automatically.
 - <UiLabel name={m.workbench_tab_profile()} /> edits the profile's own name,
