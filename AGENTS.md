@@ -24,7 +24,7 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 
 ## Commands
 
-Run these from the repo root. `build` / `test` / `lint` go through turbo, which builds workspace dependencies first and caches outputs. Scope a task to one package with `turbo run <task> --filter=@zotlit/obsidian`; for an inner loop that needs no dependency build (single-file Vitest, `db:pull`), call the package tool directly — see each package's `AGENTS.md`.
+Run these from the repo root. `build` / `test` / `lint` go through turbo, which builds workspace dependencies first and caches outputs. Scope `build` or `test` to one package with `turbo run <task> --filter=@zotlit/obsidian`; lint is the root task `//#lint:repo` and always covers the whole tree through `pnpm lint`. For an inner loop that needs no dependency build (single-file Vitest, `db:pull`), call the package tool directly — see each package's `AGENTS.md`.
 
 | Command                           | What it does                                                                                                                |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
