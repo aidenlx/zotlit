@@ -827,7 +827,8 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
 
   it("previews the full note path in the Profile editor and creates the note there", async () => {
     const m = await import("@obsidian-messages");
-    const title = "Ten Simple Rules for Better Figures";
+    // A paper no other walkthrough keeps a note for, so creation is not refused.
+    const title = "Why Most Published Research Findings Are False";
     const result = JSON.parse(
       await obEval(
         vaultId,
@@ -841,12 +842,12 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           // The paper is searchable once the item index answers.
           let hit,hits=[];
           for(let attempt=0;attempt<400&&!hit;attempt++){
-            hits=await services.itemLookup.search('rougier',{limit:20});
-            hit=hits.find(candidate=>candidate.item.key==='DMRGRART');
+            hits=await services.itemLookup.search('ioannidis',{limit:20});
+            hit=hits.find(candidate=>candidate.item.key==='DMIANART');
             if(!hit)await new Promise(resolve=>setTimeout(resolve,25));
           }
           if(!hit)throw new Error('Paper not found: '+JSON.stringify(hits.map(candidate=>candidate.item.key)));
-          const profile=await services.profile.create({label:'Figure papers',bindings:{folder:'path-notes'}});
+          const profile=await services.profile.create({label:'Path preview',bindings:{folder:'path-notes'}});
           cleanup.defer(async()=>{
             detach();
             await services.profile.delete(profile.id,'default');
@@ -867,10 +868,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           const nameEditor=()=>Array.from(el.querySelectorAll('.cm-content')).find(content=>el.ownerDocument.getElementById(content.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.workbench_name_filename_label())});
           await waitFor(()=>!!nameEditor(),true,'Note name editor');
           const cm=nameEditor().cmTile.view;
-          const name='Figures/{{ zt.title }}';
+          const name='Findings/{{ zt.title }}';
           cm.focus();
           cm.dispatch({changes:{from:0,to:cm.state.doc.length,insert:name},selection:{anchor:name.length},userEvent:'input.type'});
-          await waitFor(preview,${JSON.stringify(`path-notes/Figures/${title}.md`)},'Preview with a subfolder');
+          await waitFor(preview,${JSON.stringify(`path-notes/Findings/${title}.md`)},'Preview with a subfolder');
           // A folder override moves the whole preview.
           const label=Array.from(el.querySelectorAll('label[for]')).find(label=>label.textContent===${JSON.stringify(m.workbench_name_binding_folder())});
           const folder=el.ownerDocument.getElementById(label.htmlFor);
@@ -878,7 +879,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           folder.value='Reading list';
           folder.dispatchEvent(new folder.ownerDocument.defaultView.Event('input',{bubbles:true}));
           folder.dispatchEvent(new folder.ownerDocument.defaultView.FocusEvent('focusout',{bubbles:true}));
-          const previewed=${JSON.stringify(`Reading list/Figures/${title}.md`)};
+          const previewed=${JSON.stringify(`Reading list/Findings/${title}.md`)};
           await waitFor(preview,previewed,'Preview under the overridden folder');
           await view().save();
           // The Profile takes the saved document once the template recompiles.
@@ -896,8 +897,8 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       ),
     );
     expect(result).toEqual({
-      previewed: `Reading list/Figures/${title}.md`,
-      created: `Reading list/Figures/${title}.md`,
+      previewed: `Reading list/Findings/${title}.md`,
+      created: `Reading list/Findings/${title}.md`,
     });
   });
 
