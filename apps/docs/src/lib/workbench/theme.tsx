@@ -80,6 +80,10 @@ const historyButton = buttonVariants({ variant: "ghost", size: "icon-sm" });
 
 const nameInput = inputVariants({ size: "xs" });
 
+/** One card per row of the note path and binding groups. */
+const nameRow =
+  "flex flex-col gap-2 rounded-md border border-fd-border bg-fd-card px-2.5 py-2";
+
 export const WEB_THEME: WorkbenchTheme = {
   editorExtension: (slice, language) => [
     editorTheme,
@@ -221,10 +225,8 @@ export const WEB_THEME: WorkbenchTheme = {
       group: "flex flex-col gap-2",
       heading: "text-xs font-semibold",
       field: "flex flex-col gap-1 text-xs font-medium",
-      "binding-row":
-        "flex flex-col gap-2 rounded-md border border-fd-border bg-fd-card px-2.5 py-2",
-      "path-row":
-        "flex flex-col gap-2 rounded-md border border-fd-border bg-fd-card px-2.5 py-2",
+      "binding-row": nameRow,
+      "path-row": nameRow,
       "binding-heading": "flex min-h-8 flex-wrap items-center gap-2",
       "binding-label": "min-w-0 flex-1 text-xs font-medium",
       "toggle-row": "flex min-h-8 items-center gap-2 text-xs",

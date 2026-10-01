@@ -4,7 +4,7 @@ import {
   hasSuffixMarker,
   replaceSuffixMarkers,
   resolveFlatNoteName,
-  resolveNoteRelPath as resolveSharedNoteRelPath,
+  resolveNoteRelPath,
 } from "@zotlit/templates";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -28,18 +28,6 @@ export class EmptyFilenameError extends Error {
     super(m.notice_empty_filename());
     this.name = "EmptyFilenameError";
   }
-}
-
-/**
- * Resolve a rendered Filename Template into a relative note path (no `.md`
- * extension) by the shared Note Path rule.
- *
- * @throws {@link EmptyFilenameError} when the filename slot sanitizes to empty.
- */
-function resolveNoteRelPath(rendered: string): string {
-  const rel = resolveSharedNoteRelPath(rendered);
-  if (rel === null) throw new EmptyFilenameError();
-  return rel;
 }
 
 /** @see {@link resolveFreeNotePath} */
@@ -80,28 +68,31 @@ export function resolveFreeFlatName(
   rendered: string,
   exists: (rel: string) => boolean,
 ): string {
-  return resolveAvailable(rendered, exists, { resolve: resolveFlatName });
-}
-
-/** Single-segment counterpart to {@link resolveNoteRelPath} — never splits. */
-function resolveFlatName(rendered: string): string {
-  const name = resolveFlatNoteName(rendered);
-  if (name === null) throw new EmptyFilenameError();
-  return name;
+  return resolveAvailable(rendered, exists, { resolve: resolveFlatNoteName });
 }
 
 /**
  * Fill `rendered`'s `suffix()` markers into a free name, retrying on collision.
  * `resolve` maps each filled candidate to its final relative form — the only
  * difference between the lit-note ({@link resolveNoteRelPath}, subfolder-routed)
- * and imported-note ({@link resolveFlatName}, single-segment) callers.
+ * and imported-note ({@link resolveFlatNoteName}, single-segment) callers.
+ *
+ * @throws {@link EmptyFilenameError} when `resolve` finds no name.
  */
 function resolveAvailable(
   rendered: string,
   exists: (rel: string) => boolean,
-  opts: { resolve: (rendered: string) => string; forceSuffix?: boolean },
+  opts: {
+    resolve: (rendered: string) => string | null;
+    forceSuffix?: boolean;
+  },
 ): string {
-  const { resolve, forceSuffix = false } = opts;
+  const { forceSuffix = false } = opts;
+  const resolve = (filled: string) => {
+    const rel = opts.resolve(filled);
+    if (rel === null) throw new EmptyFilenameError();
+    return rel;
+  };
   const baseRel = resolve(replaceSuffixMarkers(rendered, () => ""));
   if (!hasSuffixMarker(rendered) || (!forceSuffix && !exists(baseRel))) {
     return baseRel;

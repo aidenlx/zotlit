@@ -877,8 +877,6 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           folder.focus();
           folder.value='Reading list';
           folder.dispatchEvent(new folder.ownerDocument.defaultView.Event('input',{bubbles:true}));
-          // The box commits the draft it rendered, so leave it after that render.
-          await new Promise(resolve=>setTimeout(resolve,50));
           folder.dispatchEvent(new folder.ownerDocument.defaultView.FocusEvent('focusout',{bubbles:true}));
           const previewed=${JSON.stringify(`Reading list/Figures/${title}.md`)};
           await waitFor(preview,previewed,'Preview under the overridden folder');
@@ -1048,6 +1046,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
   });
 
   it("creates a Profile from a name alone in Add profile and opens it on Name and folder", async () => {
+    const m = await import("@obsidian-messages");
     await obEval(
       vaultId,
       `app.vault.setConfig('settingsPopoutWindow',false);app.setting.open();true`,
@@ -1057,16 +1056,16 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       vaultId,
       `app.setting.navigateToSearchResult({tab:app.setting.activeTab,pagePath:['settings_page_profiles']});true`,
     );
-    const add = `app.setting.containerEl.querySelector('[aria-label="Add profile"]')`;
+    const add = `app.setting.containerEl.querySelector('[aria-label=${JSON.stringify(m.settings_profile_add())}]')`;
     expect(
       await obEvalUntil(vaultId, `String(!!(${add}))`, { expected: "true" }),
     ).toBe(true);
     await obEval(vaultId, `(${add}).click();true`);
-    const dialog = `Array.from(activeDocument.querySelectorAll('.modal')).find(el=>el.querySelector('.modal-title')?.textContent==='Add profile')`;
+    const dialog = `Array.from(activeDocument.querySelectorAll('.modal')).find(el=>el.querySelector('.modal-title')?.textContent===${JSON.stringify(m.settings_profile_add())})`;
     const status = `(${dialog})?.querySelector('p[role="status"]')`;
     expect(
       await obEvalUntil(vaultId, `String((${status})?.textContent)`, {
-        expected: "Enter a unique profile name whose filename is not default.",
+        expected: m.settings_profile_name_invalid(),
       }),
     ).toBe(true);
     expect(
@@ -1075,11 +1074,11 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         `String((${status}).classList.contains('zt:text-(--text-error)'))`,
       ),
     ).toBe("false");
-    const action = `Array.from((${dialog}).querySelectorAll('.modal-button-container button')).find(el=>el.textContent==='Add profile')`;
+    const action = `Array.from((${dialog}).querySelectorAll('.modal-button-container button')).find(el=>el.textContent===${JSON.stringify(m.settings_profile_add())})`;
     expect(await obEval(vaultId, `String((${action}).disabled)`)).toBe("true");
     await obEval(
       vaultId,
-      `(()=>{const input=Array.from((${dialog}).querySelectorAll('label')).find(el=>el.firstChild?.textContent==='Name').querySelector('input');input.value='Reading group';input.dispatchEvent(new input.ownerDocument.defaultView.Event('input',{bubbles:true}));return true;})()`,
+      `(()=>{const input=Array.from((${dialog}).querySelectorAll('label')).find(el=>el.firstChild?.textContent===${JSON.stringify(m.settings_profile_name_name())}).querySelector('input');input.value='Reading group';input.dispatchEvent(new input.ownerDocument.defaultView.Event('input',{bubbles:true}));return true;})()`,
     );
     expect(
       await obEvalUntil(vaultId, `String((${action}).disabled)`, {

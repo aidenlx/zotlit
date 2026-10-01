@@ -104,10 +104,12 @@ export function resolveFlatNoteName(rendered: string): string | null {
  * honored. Every segment is sanitized per {@link normalizeFilename} and
  * truncated to the filesystem byte limit ({@link MAX_SEGMENT_BYTES}).
  *
- * @returns the relative path, or `null` when the file name slot normalizes to
- *   empty.
+ * @param rendered the rendered template, or `null` when it rendered no name.
+ * @returns the relative path, or `null` when there is no rendered name or the
+ *   file name slot normalizes to empty.
  */
-export function resolveNoteRelPath(rendered: string): string | null {
+export function resolveNoteRelPath(rendered: string | null): string | null {
+  if (rendered === null) return null;
   const segments = stripBidirectionalFormattingControls(rendered).split("/");
   const filename = resolveFlatNoteName(segments.pop() ?? "");
   if (filename === null) return null;
@@ -120,12 +122,31 @@ export function resolveNoteRelPath(rendered: string): string | null {
   return [...folders, filename].join("/");
 }
 
+/** The no-break spaces Obsidian's `normalizePath` turns into plain spaces. */
+const NO_BREAK_SPACES = / | /g;
+
+/**
+ * Normalize a folder setting the way Obsidian's `normalizePath` does: `\` and
+ * repeated slashes become one `/`, surrounding slashes go, no-break spaces
+ * become plain spaces, and the text is NFC-composed.
+ *
+ * @returns the folder path, or `""` for the vault root (empty, `/`, or `.`).
+ */
+function normalizeNoteFolder(folder: string): string {
+  const dir = folder
+    .replaceAll(/[\\/]+/g, "/")
+    .replaceAll(/^\/|\/$/g, "")
+    .replaceAll(NO_BREAK_SPACES, " ")
+    .normalize("NFC");
+  return dir === "." ? "" : dir;
+}
+
 /**
  * Join a relative note path (from {@link resolveNoteRelPath}) under a folder and
- * append `.md`. Repeated and surrounding slashes in the folder collapse; an
- * empty folder or `/` is the vault root.
+ * append `.md`. The folder is normalized as Obsidian's `normalizePath` does; an
+ * empty folder, `/`, or `.` is the vault root.
  */
 export function joinNotePath(folder: string, rel: string): string {
-  const dir = folder.replaceAll(/\/+/g, "/").replaceAll(/^\/|\/$/g, "");
+  const dir = normalizeNoteFolder(folder);
   return dir === "" ? `${rel}.md` : `${dir}/${rel}.md`;
 }

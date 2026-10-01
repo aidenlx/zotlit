@@ -506,6 +506,12 @@ it("follows a folder override, its reset, and a new Default folder", () => {
   expect(preview()).toBe("Zotero/Papers/Reading.md");
 });
 
+it("previews a backslash folder as the slash path creation writes", () => {
+  open({ source: SOURCE.replace("folder: papers\n", "") });
+  write(m.workbench_name_binding_folder(), "Reading\\Methods\\");
+  expect(preview()).toBe("Reading/Methods/Reading.md");
+});
+
 it("previews the name path alone for a vault-root folder", () => {
   open({ source: SOURCE.replace("folder: papers", "folder: ''") });
   expect(preview()).toBe("Reading.md");
