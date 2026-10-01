@@ -3,13 +3,13 @@ import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, expect, it } from "vitest";
 
-import { useDocumentRevision } from "./editor";
+import { useDocumentRevision, useWorkbenchController } from "./editor";
 import { WorkbenchHostProvider } from "./host";
 import { PropertiesPane } from "./properties-tab";
-import { fakeHost, renderWithMessages as render } from "./test-host";
+import { fakeHost, mount, renderWithMessages as render } from "./test-host";
 import { m } from "./test-messages";
 
-import { WorkbenchDocumentController } from "#/document/controller";
+import { entrySlice, WorkbenchDocumentController } from "#/document/controller";
 import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";
 import { renderProfile, SAMPLE_ITEMS } from "#/render/index";
 
@@ -29,6 +29,11 @@ function Pane({ controller }: { controller: WorkbenchDocumentController }) {
       onSelect={onSelect}
     />
   );
+}
+
+/** The pane over the controller of the editor in context. */
+function EditorPane() {
+  return <Pane controller={useWorkbenchController()} />;
 }
 
 function setup() {
@@ -280,3 +285,29 @@ it("keeps read-only rows openable and disables property changes", () => {
     screen.getAllByRole("button", { name: m.workbench_properties_remove() })[0],
   ).toHaveProperty("disabled", true);
 });
+
+it.each(["\n", "\r\n"])(
+  "summarizes each folded row with its own expression before an item is chosen (line break %j)",
+  (lineBreak) => {
+    using mounted = mount(<EditorPane />, {
+      source: DEFAULT_PROFILE_SOURCE.replaceAll("\n", lineBreak),
+    });
+    const { controller } = mounted;
+    const { container } = render(mounted.ui);
+    const summaries = [
+      ...container.querySelectorAll('[data-part="row"] [data-part="summary"]'),
+    ].map((summary) => summary.textContent);
+
+    expect(summaries).toEqual(
+      controller.managedEntries?.map((entry) =>
+        controller.sliceText(entrySlice(entry.position)),
+      ),
+    );
+    expect(summaries).toEqual([
+      "zt.title",
+      "zt.relatedItems | note_links",
+      "zt.collections | collection_paths",
+      '{"$eval":"zt.citationKey"}',
+    ]);
+  },
+);
