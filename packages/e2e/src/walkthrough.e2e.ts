@@ -825,6 +825,84 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     expect(result).toEqual({ rule, name, invalid: false });
   });
 
+  it("previews the full note path in the Profile editor and creates the note there", async () => {
+    const m = await import("@obsidian-messages");
+    const title = "Ten Simple Rules for Better Figures";
+    const result = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{
+          ${browserWaits}
+          await using cleanup=new AsyncDisposableStack();
+          const services=app.plugins.plugins.zotlit.services;
+          const types=['zotlit-template-workbench','zotlit-template-data-explorer','zotlit-note-preview'];
+          const detach=()=>{for(const type of types)for(const leaf of app.workspace.getLeavesOfType(type))leaf.detach();};
+          detach();
+          // The paper is searchable once the item index answers.
+          let hit,hits=[];
+          for(let attempt=0;attempt<400&&!hit;attempt++){
+            hits=await services.itemLookup.search('rougier',{limit:20});
+            hit=hits.find(candidate=>candidate.item.key==='DMRGRART');
+            if(!hit)await new Promise(resolve=>setTimeout(resolve,25));
+          }
+          if(!hit)throw new Error('Paper not found: '+JSON.stringify(hits.map(candidate=>candidate.item.key)));
+          const profile=await services.profile.create({label:'Figure papers',bindings:{folder:'path-notes'}});
+          cleanup.defer(async()=>{
+            detach();
+            await services.profile.delete(profile.id,'default');
+          });
+          const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());
+          await leaf.openFile(app.vault.getFileByPath(profile.path));
+          app.workspace.setActiveLeaf(leaf,{focus:true});
+          app.commands.executeCommandById('zotlit:customize-profile');
+          const view=()=>app.workspace.getLeavesOfType('zotlit-template-workbench')[0]?.view;
+          await waitFor(()=>!!view()?.contentEl.querySelector('[role="tab"]'),true,'Profile editor');
+          const el=view().contentEl;
+          // Choose item has its own walkthrough; this one starts from the paper.
+          view().selectItem({id:hit.item.indexedKey,title:${JSON.stringify(title)}});
+          Array.from(el.querySelectorAll('[role="tab"]')).find(tab=>tab.textContent===${JSON.stringify(m.workbench_tab_name_and_folder())}).click();
+          const preview=()=>el.querySelector('[data-part="filename-output"]')?.textContent;
+          await waitFor(()=>/^path-notes\\/[^/]+\\.md$/.test(preview()??''),true,'Preview under the Profile folder');
+          // A slash in the note name makes a subfolder under the folder.
+          const nameEditor=()=>Array.from(el.querySelectorAll('.cm-content')).find(content=>el.ownerDocument.getElementById(content.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.workbench_name_filename_label())});
+          await waitFor(()=>!!nameEditor(),true,'Note name editor');
+          const cm=nameEditor().cmTile.view;
+          const name='Figures/{{ zt.title }}';
+          cm.focus();
+          cm.dispatch({changes:{from:0,to:cm.state.doc.length,insert:name},selection:{anchor:name.length},userEvent:'input.type'});
+          await waitFor(preview,${JSON.stringify(`path-notes/Figures/${title}.md`)},'Preview with a subfolder');
+          // A folder override moves the whole preview.
+          const label=Array.from(el.querySelectorAll('label[for]')).find(label=>label.textContent===${JSON.stringify(m.workbench_name_binding_folder())});
+          const folder=el.ownerDocument.getElementById(label.htmlFor);
+          folder.focus();
+          folder.value='Reading list';
+          folder.dispatchEvent(new folder.ownerDocument.defaultView.Event('input',{bubbles:true}));
+          // The box commits the draft it rendered, so leave it after that render.
+          await new Promise(resolve=>setTimeout(resolve,50));
+          folder.dispatchEvent(new folder.ownerDocument.defaultView.FocusEvent('focusout',{bubbles:true}));
+          const previewed=${JSON.stringify(`Reading list/Figures/${title}.md`)};
+          await waitFor(preview,previewed,'Preview under the overridden folder');
+          await view().save();
+          // The Profile takes the saved document once the template recompiles.
+          await waitFor(()=>services.profile.resolveProfile(profile.id)?.bindings['note.literature-folder'],'Reading list','Saved folder');
+          const created=await services.noteFeature.createNote(hit.item,{profile:profile.id});
+          if(created.outcome!=='created')throw new Error('Note refused: '+created.diagnostic?.code);
+          const path=created.file.path;
+          cleanup.defer(async()=>{
+            for(const leaf of app.workspace.getLeavesOfType('markdown'))if(leaf.view.file?.path===path)leaf.detach();
+            const file=app.vault.getFileByPath(path);
+            if(file)await app.vault.delete(file);
+          });
+          return JSON.stringify({previewed:preview(),created:path});
+        })()`,
+      ),
+    );
+    expect(result).toEqual({
+      previewed: `Reading list/Figures/${title}.md`,
+      created: `Reading list/Figures/${title}.md`,
+    });
+  });
+
   it("keeps Annotation fields and preview when Customize reopens its workbench", async () => {
     await obEval(
       vaultId,
