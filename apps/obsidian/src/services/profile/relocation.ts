@@ -6,9 +6,15 @@ import type { ResolvedProfile } from "@/services/profile/bindings";
 
 /**
  * Replace the folder part of a note's path and keep the remainder, so the
- * subfolders that came from the note name stay. The remainder is the path
- * relative to the source Profile's folder when the note is inside it, else the
- * file name; `from` is undefined for a note with an unresolved Profile stamp.
+ * subfolders that came from the note name stay.
+ *
+ * @param options.from the source Profile, or `undefined` for a note with an
+ *   unresolved Profile stamp.
+ * @param options.to the Profile whose folder the note moves to.
+ * @param options.imported selects the Imported note folder instead of the
+ *   Literature note folder.
+ * @returns the path under `to`'s folder: the note's path relative to `from`'s
+ *   folder when the note is inside it, else its file name.
  */
 export function relocatedNotePath(
   file: Pick<TFile, "path" | "name">,
