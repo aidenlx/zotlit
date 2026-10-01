@@ -110,11 +110,11 @@ it("states the unavailable Imported Note lookup and offers only the Literature N
   });
 });
 
-it("marks the current Profile and applies the single dialog's move and Imported Note consent", async () => {
+it("marks the current Profile, names the destination folder, and applies the single dialog's move and Imported Note consent", async () => {
   using dialog = observeDialog();
   const current = "Bk3Qn7XvT2Lp" as ProfileId;
   const requested = "Rz9Wm4YfH6Kd" as ProfileId;
-  const file = { path: "Books/My title.md" } as TFile;
+  const file = { path: "Books/2024/My title.md" } as TFile;
   const imported = { path: "Imported/Child.md" } as TFile;
   const profiles = [
     {
@@ -123,7 +123,7 @@ it("marks the current Profile and applies the single dialog's move and Imported 
       folder: "Papers",
       citationStyle: null,
       document: undefined,
-      path: "Papers/My title.md",
+      path: "Papers/2024/My title.md",
     },
   ];
   const switchProfile = vi.fn(async () => ({
@@ -161,6 +161,9 @@ it("marks the current Profile and applies the single dialog's move and Imported 
     onNew: expect.any(Function),
     onImport: expect.any(Function),
   });
+  expect(dialog.checkbox.mock.calls[0]![0]).toBe(
+    m.modal_profile_switch_move({ folder: "Papers/2024/" }),
+  );
   expect(switchProfile).not.toHaveBeenCalled();
   for (const [, change] of dialog.checkbox.mock.calls) change(true);
   dialog.click.mock.calls[0]![0]({} as MouseEvent);

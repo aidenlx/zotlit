@@ -914,28 +914,31 @@ describe("ProfileService", () => {
     expect(vault.files.has("templates/zotlit-profile.books.md")).toBe(true);
   });
 
-  it("reports deletion counts and moves both note kinds before trashing only the Profile document", async () => {
+  it("reports deletion counts and moves both note kinds with their subfolders before trashing only the Profile document", async () => {
     const papers = "Rz9Wm4YfH6Kd" as ProfileId;
     await using fixture = await harness({
-      "templates/zotlit-profile.books.md": document(),
+      "templates/zotlit-profile.books.md": document(
+        BOOKS,
+        "folder: Books\nimportFolder: Imports",
+      ),
       "templates/zotlit-profile.papers.md": document(
         papers,
         "folder: Papers\nimportFolder: Imported/Papers",
         "Papers",
       ),
       "templates/shared.liquid.md": "Shared partial",
-      "Books/My title.md": noteText(
+      "Books/2024/My title.md": noteText(
         { "zotero-key": "PAPER234", "zotlit-profile": BOOKS },
         "My reading text",
       ),
-      "Imports/Child.md": noteText(
+      "Imports/2024/Child.md": noteText(
         { "zotero-note-key": "NTE23456", "zotlit-profile": BOOKS },
         "Imported text",
       ),
     });
     const { profile, vault, app } = fixture;
-    const literature = vault.getFileByPath("Books/My title.md")!;
-    const imported = vault.getFileByPath("Imports/Child.md")!;
+    const literature = vault.getFileByPath("Books/2024/My title.md")!;
+    const imported = vault.getFileByPath("Imports/2024/Child.md")!;
     const order: string[] = [];
     app.fileManager.renameFile = async (file, path) => {
       order.push(path);
@@ -954,6 +957,13 @@ describe("ProfileService", () => {
       "default",
       papers,
     ]);
+    const planned = plan.targets
+      .find(({ profile }) => profile.selector === papers)!
+      .files.map(({ path }) => path);
+    expect(planned).toEqual([
+      "Papers/2024/My title.md",
+      "Imported/Papers/2024/Child.md",
+    ]);
     const pending = profile.delete(BOOKS, papers, { move: true });
     await vi.advanceTimersByTimeAsync(500);
     await expect(pending).resolves.toEqual({
@@ -961,18 +971,14 @@ describe("ProfileService", () => {
       importedNotes: 1,
       movedFiles: 2,
     });
-    expect(order).toEqual([
-      "Papers/My title.md",
-      "Imported/Papers/Child.md",
-      "templates/zotlit-profile.books.md",
-    ]);
-    expect(vault.contents.get("Papers/My title.md")).toBe(
+    expect(order).toEqual([...planned, "templates/zotlit-profile.books.md"]);
+    expect(vault.contents.get("Papers/2024/My title.md")).toBe(
       noteText(
         { "zotero-key": "PAPER234", "zotlit-profile": "Papers (Rz9Wm4YfH6Kd)" },
         "My reading text",
       ),
     );
-    expect(vault.contents.get("Imported/Papers/Child.md")).toBe(
+    expect(vault.contents.get("Imported/Papers/2024/Child.md")).toBe(
       noteText(
         {
           "zotero-note-key": "NTE23456",

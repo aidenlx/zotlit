@@ -36,11 +36,7 @@ import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
 } from "@/lib/constants";
-import {
-  ensureParentFolder,
-  joinFolderPath,
-  normalizeFolderPath,
-} from "@/lib/ensure-folder";
+import { ensureParentFolder } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import {
   parseFrontMatter,
@@ -81,6 +77,7 @@ import {
 } from "@/services/profile-selection";
 import { noteProfileSelector } from "@/services/profile/bindings";
 import type { NoteProfile, ResolvedProfile } from "@/services/profile/bindings";
+import { relocatedNotePath } from "@/services/profile/relocation";
 import type { LiteratureNoteProfile } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 import { ProfileAnnotationError } from "@/services/template/service";
@@ -1201,8 +1198,12 @@ async function prepareProfileSwitch(
   const indexedKey = itemKeyFromFrontmatter(cache);
   if (!imported && !indexedKey)
     throw new Error("The file is not a ZotLit note");
+  const source = current.ok ? current.profile : undefined;
   const profiles = selectableProfiles(ctx).map((profile) => ({
-    ...profilePreview(profile, profileSwitchPath(file, profile, { imported })),
+    ...profilePreview(
+      profile,
+      relocatedNotePath(file, { from: source, to: profile, imported }),
+    ),
     folder:
       profile.bindings[
         imported ? "note.import-folder" : "note.literature-folder"
@@ -1263,7 +1264,12 @@ async function switchNoteProfile(
   const previousPath = file.path;
   const imported =
     noteKeyFromFrontmatter(ctx.app.metadataCache.getFileCache(file)) !== null;
-  const targetPath = profileSwitchPath(file, profile, { imported });
+  const current = ctx.profile.profileOf(file);
+  const targetPath = relocatedNotePath(file, {
+    from: current.ok ? current.profile : undefined,
+    to: profile,
+    imported,
+  });
   const move = options.move && targetPath !== previousPath;
   if (move) {
     await ensureParentFolder(ctx.app, targetPath);
@@ -1295,22 +1301,6 @@ async function switchNoteProfile(
     moved: !!move,
   });
   return NO_BODY_UPDATE;
-}
-
-/** A switch keeps the existing name; only the target folder can change. */
-function profileSwitchPath(
-  file: TFile,
-  profile: ResolvedProfile,
-  options: { imported: boolean },
-): string {
-  return joinFolderPath(
-    normalizeFolderPath(
-      profile.bindings[
-        options.imported ? "note.import-folder" : "note.literature-folder"
-      ],
-    ),
-    file.name,
-  );
 }
 
 async function getImportedNotesForItem(
