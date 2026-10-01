@@ -4827,6 +4827,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               await obEvalUntil(vaultId!, selectedMarks, {
                 expected: JSON.stringify([noteKey]),
               }),
+              "the placed note's mark alone is selected",
             ).toBe(true);
 
             // The note opens its comment sheet, and a sheet left open keeps
@@ -4841,14 +4842,16 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(!${POPUP_EDITOR}&&repository.mutationFor(${JSON.stringify(noteKey)}).kind==='idle'&&!repository.textDraftFor('comment',${JSON.stringify(noteKey)}));})()`,
                 { expected: "true" },
               ),
+              "Escape closed the comment sheet, and the note's write settled with no draft",
             ).toBe(true);
 
             expect(await undoKey()).toEqual({ handled: true });
             await stepSettled();
 
-            expect(await waitFor(async () => (await extra()) === null)).toBe(
-              true,
-            );
+            expect(
+              await waitFor(async () => (await extra()) === null),
+              "Zotero no longer holds the note after undo",
+            ).toBe(true);
             // The reader landed where the note was, with nothing selected
             // and no mark left for it.
             expect(
@@ -4857,6 +4860,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 `(function(){const selected=${selectedMarks};const mark=${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(noteKey)}]');return JSON.stringify({selected:JSON.parse(selected),mark:!!mark});})()`,
                 { expected: JSON.stringify({ selected: [], mark: false }) },
               ),
+              "after undo, no mark is selected and the note's mark is gone",
             ).toBe(true);
           }, 120000);
 
@@ -5985,6 +5989,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 `(function(){const card=${cardOf(second)};if(!card)return 'no card';card.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,${platformKey}:true}));return 'clicked';})()`,
                 { expected: "clicked" },
               ),
+              "the second card is there to Cmd/Ctrl-click",
             ).toBe(true);
             await expect.poll(shown, poll).toMatchObject({
               cards: expect.arrayContaining(made),
@@ -6013,6 +6018,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             await waitFor(async () =>
               (await colorsOf(made)).every((color) => color === "#5fb236"),
             ),
+            "Zotero holds green on both Annotations",
           ).toBe(true);
           expect(
             await obEvalUntil(
@@ -6020,6 +6026,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(${JSON.stringify(made)}.every((key)=>repository.mutationFor(key).kind==='idle'));})()`,
               { expected: "true" },
             ),
+            "ZotLit read both recolour writes back",
           ).toBe(true);
           // The chord goes to the PDF view's own Scope, and no tab switches
           // while the undo writes are sent.
@@ -6031,6 +6038,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 JSON.stringify(await colorsOf(made)) ===
                 JSON.stringify(["#a28ae5", "#ff6666"]),
             ),
+            "one undo returned both first colours in Zotero",
           ).toBe(true);
         }
 
