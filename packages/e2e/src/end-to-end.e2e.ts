@@ -16,13 +16,16 @@ import {
   readFile,
   readdir,
   rename,
+  stat,
   writeFile,
 } from "node:fs/promises";
 import { createServer } from "node:net";
 import { basename, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { parse as parseYaml } from "yaml";
 
 import {
+  buildImportProfileProtocolUrl,
   PROTOCOL_VERSION,
   PROTOCOL_VERSION_HEADER,
   SOURCE_ID_HEADER,
@@ -384,10 +387,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       `(function(){var input=activeDocument.querySelector('.prompt input');input.value=${JSON.stringify(item.title)};input.dispatchEvent(new input.ownerDocument.defaultView.Event('input',{bubbles:true}));return true;})()`,
     );
     await selectSuggestion(targetVaultId, item.title);
-    await obEval(
-      targetVaultId,
-      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
+    await pressEnterInPrompt(targetVaultId);
   }
 
   beforeAll(async () => {
@@ -1206,10 +1206,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(selected).toContain(booksProfile.label);
     expect(selected).not.toContain(m.modal_profile_preselected());
     expect(selected).toContain(booksNotePath);
-    await obEval(
-      vaultId,
-      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
+    await pressEnterInPrompt(vaultId);
     expect(
       await waitFor(async () =>
         (
@@ -1604,10 +1601,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const articlesPath = `articles/articles-${sharedItem.citationKey}.md`;
     const preprintPath = `books/books-${preprintItem.citationKey}.md`;
     const labPath = `books/books-${labItem.citationKey}.md`;
-    const confirmation = await obEval(
-      vaultId,
-      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
-    );
+    const confirmation = await modalText(vaultId);
     for (const text of [
       bookPath,
       articlesPath,
@@ -1643,10 +1637,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       `(function(){var input=Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input');input.value=${JSON.stringify(booksProfile.label)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
     await selectSuggestion(vaultId, preprintPath);
-    await obEval(
-      vaultId,
-      "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
+    await pressEnterInPrompt(vaultId);
     expect(
       await obEvalUntil(
         vaultId,
@@ -1654,10 +1645,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { expected: "true" },
       ),
     ).toBe(true);
-    const chosen = await obEval(
-      vaultId,
-      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
-    );
+    const chosen = await modalText(vaultId);
     for (const text of [
       bookPath,
       articlesPath,
@@ -1679,10 +1667,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { expected: "true" },
       ),
     ).toBe(true);
-    const summary = await obEval(
-      vaultId,
-      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
-    );
+    const summary = await modalText(vaultId);
     for (const text of [
       m.batch_profile_created({ count: 3, label: booksProfile.label }),
       m.batch_profile_created({
@@ -2627,47 +2612,17 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
         expected: "true",
       }),
     ).toBe(true);
-    await obEval(
+    const { choice, note: book } = await createNoteFromQuickSwitcher(
       vaultId,
-      "app.commands.executeCommandById('zotlit:note-quick-switcher')",
+      vaultPath,
+      {
+        title: "Thinking, fast and slow",
+        choice: "books/Kahneman2011.md",
+        path: "books/Kahneman2011.md",
+        ready: "Thinking, fast and slow",
+      },
     );
-    expect(
-      await obEvalUntil(
-        vaultId,
-        "String(!!activeDocument.querySelector('.prompt input'))",
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
-      vaultId,
-      "(function(){var input=activeDocument.querySelector('.prompt input');input.value='Thinking, fast and slow';input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()",
-    );
-    await selectSuggestion(vaultId, "Thinking, fast and slow");
-    await obEval(
-      vaultId,
-      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
-    const choice = await selectSuggestion(vaultId, "books/Kahneman2011.md");
     expect(choice).toContain("Books");
-    expect(choice).toContain("books/Kahneman2011.md");
-    await obEval(
-      vaultId,
-      "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
-    expect(
-      await waitFor(async () =>
-        (
-          await readFile(
-            join(vaultPath, "books/Kahneman2011.md"),
-            "utf-8",
-          ).catch(() => "")
-        ).includes("Thinking, fast and slow"),
-      ),
-    ).toBe(true);
-    const book = await readFile(
-      join(vaultPath, "books/Kahneman2011.md"),
-      "utf-8",
-    );
     expect(book).toContain(`zotlit-profile: Books (${books.id})`);
     expect(await readFile(join(vaultPath, first.path), "utf-8")).toBe(original);
     expect(await indexedNote(vaultId, 46)).toEqual({
@@ -2675,6 +2630,450 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       path: first.path,
     });
   }, 180000);
+});
+
+// The Template Directory's promise, from a reader's fresh vault: a Directory
+// Profile entry file imports through Import profile…, its packed partials
+// become the reader's own partial files, and a note under it has the content
+// the entry describes.
+describe.skipIf(!reachable)("Template Directory import", () => {
+  const vaultPath = e2eVaultDir(workspaceRoot, "directory-vault");
+  const directory = join(workspaceRoot, "docs", "template-directory");
+  const entryPath = join(
+    directory,
+    "profiles",
+    "simple-reading-note",
+    "zotlit-profile.simple-reading-note.md",
+  );
+  const annotatedItem = ITEMS.find((item) => item.itemID === 46)!;
+  const notePath = `literatures/${annotatedItem.citationKey}.md`;
+  let vaultId = "";
+  let m: typeof import("@obsidian-messages");
+  let entry: DirectoryEntry;
+
+  interface DirectoryEntry {
+    id: string;
+    name: string;
+    version: string;
+    partials: string[];
+  }
+
+  /** The identity and packed partial names of the Profile entry file at `path`. */
+  async function readEntry(path: string): Promise<DirectoryEntry> {
+    const [, manifest = ""] = (await readFile(path, "utf-8")).split(
+      /^---$/m,
+      2,
+    );
+    const { id, name, version, partials } = parseYaml(manifest) as {
+      id: string;
+      name: string;
+      version: string;
+      partials: { name: string }[];
+    };
+    return {
+      id,
+      name,
+      version,
+      partials: partials.map((partial) => partial.name),
+    };
+  }
+
+  /** Runs Import profile… and chooses the entry file in the file picker. */
+  async function importEntryFile(
+    sheetText: string,
+    path = entryPath,
+  ): Promise<void> {
+    // The OS file picker has no DOM to drive; the stub answers it with the
+    // entry's path, and the plugin reads that file itself.
+    await obEval(
+      vaultId,
+      `(function(){var dialog=require('@electron/remote').dialog;window.zotlitE2EOpenDialog=dialog.showOpenDialog;dialog.showOpenDialog=async()=>({canceled:false,filePaths:[${JSON.stringify(path)}]});return true;})()`,
+    );
+    try {
+      expect(
+        await obEvalUntil(
+          vaultId,
+          "app.commands.executeCommandById('zotlit:import-profile')",
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      await selectSuggestion(vaultId, m.profile_import_file());
+      await pressEnterInPrompt(vaultId);
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `String(!!Array.from(activeDocument.querySelectorAll('.modal')).at(-1)?.textContent.includes(${JSON.stringify(sheetText)}))`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+    } finally {
+      await obEval(
+        vaultId,
+        "(function(){require('@electron/remote').dialog.showOpenDialog=window.zotlitE2EOpenDialog;delete window.zotlitE2EOpenDialog;return true;})()",
+      );
+    }
+  }
+
+  /**
+   * Creates the Literature Note of `item` through the note quick switcher,
+   * under the Profile the reader picks by `profile`, and returns its text.
+   */
+  async function createNoteUnder(
+    item: (typeof ITEMS)[number],
+    profile: string,
+  ): Promise<string> {
+    // No match, so the picker preselects Default and the reader chooses.
+    const { note } = await createNoteFromQuickSwitcher(vaultId, vaultPath, {
+      title: item.title,
+      choice: profile,
+      path: `literatures/${item.citationKey}.md`,
+      ready: "%%/zt-managed%%",
+    });
+    return note;
+  }
+
+  /** The documents in the template folder that carry the entry's Profile ID. */
+  async function profileDocuments(): Promise<string[]> {
+    const folder = join(vaultPath, "templates");
+    const names = (await readdir(folder)).filter(
+      (name) => name.startsWith("zotlit-profile.") && name.endsWith(".md"),
+    );
+    const sources = await Promise.all(
+      names.map((name) => readFile(join(folder, name), "utf-8")),
+    );
+    return names.filter((_, index) =>
+      sources[index]!.split("\n").includes(`id: ${entry.id}`),
+    );
+  }
+
+  beforeAll(async () => {
+    m = await import("@obsidian-messages");
+    entry = await readEntry(entryPath);
+    await clearVault(runVaultScript, vaultPath);
+    const pluginDir = join(vaultPath, ".obsidian", "plugins", "zotlit");
+    await mkdir(pluginDir, { recursive: true });
+    await cp(join(workspaceRoot, "apps", "obsidian", "dist-dev"), pluginDir, {
+      recursive: true,
+    });
+    const created = await runVaultScript([
+      "open",
+      vaultPath,
+      "--vault-case",
+      "fresh",
+    ]);
+    vaultId = created.stdout.trim().split("\n")[0]!.trim();
+    await keepRendering(vaultId);
+    await obEval(
+      vaultId,
+      "app.plugins.plugins.zotlit.services.settings.update({'server.live-update':false});true",
+    );
+  }, 180000);
+
+  afterAll(async () => {
+    await runVaultScript(["remove", vaultPath, "--purge"]);
+  }, 120000);
+
+  it("imports the Simple reading note entry file, unpacks its partials, and writes its note", async () => {
+    expect(entry.partials.length).toBeGreaterThan(0);
+    await importEntryFile(
+      m.profile_import_partials({ names: entry.partials.join(", ") }),
+    );
+    const sheet = await modalText(vaultId);
+    expect(sheet).toContain(entry.name);
+    expect(sheet).toContain(m.profile_match_absent());
+    expect(await clickModalButton(vaultId, m.profile_import_confirm())).toBe(
+      true,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(app.plugins.plugins.zotlit.services.profile.profiles.some(p=>p.id===${JSON.stringify(entry.id)}&&p.label===${JSON.stringify(entry.name)}))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(await profileDocuments()).toHaveLength(1);
+
+    // Each packed partial is now the reader's own partial file, byte for byte
+    // the Directory's partial entry of that name.
+    for (const name of entry.partials) {
+      const file = `zotlit-partial.${name}.md`;
+      expect(
+        await readFile(join(vaultPath, "templates", file), "utf-8"),
+        file,
+      ).toBe(await readFile(join(directory, "partials", name, file), "utf-8"));
+    }
+
+    const note = await createNoteUnder(annotatedItem, entry.name);
+
+    const managed = managedRegion(note);
+    const lines = managed.split("\n");
+    expect(lines).toContain(`# ${annotatedItem.title}`);
+    expect(lines).toContain("## Annotations");
+    // The links row: Zotero first, then the PDF; this Item has no DOI or URL.
+    const links = lines.find((line) => line.startsWith("[Zotero]("));
+    expect(links).toMatch(/^\[Zotero\]\(zotero:\/\/[^)]+\) · \[PDF\]\(/);
+    expect(managed).not.toContain("[DOI]");
+    expect(managed).not.toContain("[Web page]");
+    // This Item has no abstract, so the folded abstract is absent.
+    expect(managed).not.toContain("[!abstract]");
+
+    // Every annotation, in page order: quoted text with its page link,
+    // comment-only annotations as plain lines, and captured areas and ink
+    // embedded as images.
+    const attachment = ATTACHMENTS.find(
+      ({ parentItemID }) => parentItemID === annotatedItem.itemID,
+    )!;
+    const annotations = ANNOTATIONS.filter(
+      ({ parentItemID }) => parentItemID === attachment.itemID,
+    ).toSorted((a, b) => a.sortIndex.localeCompare(b.sortIndex));
+    const positions = annotations.flatMap((annotation) => {
+      const page = `[p. ${annotation.pageLabel}](`;
+      if (annotation.text) {
+        const line = lines.find((line) =>
+          line.startsWith(`> ${annotation.text} (${page}`),
+        );
+        expect(line, annotation.key).toBeDefined();
+        return [lines.indexOf(line!)];
+      }
+      if (annotation.comment) {
+        const line = lines.find((line) =>
+          line.startsWith(`${annotation.comment} (${page}`),
+        );
+        expect(line, annotation.key).toBeDefined();
+        return [lines.indexOf(line!)];
+      }
+      return [];
+    });
+    expect(positions).toEqual(positions.toSorted((a, b) => a - b));
+    // Image (type 3) and ink (type 4) annotations.
+    expect(lines.filter((line) => line.startsWith("> ![[")).length).toBe(
+      annotations.filter(({ type }) => type === 3 || type === 4).length,
+    );
+
+    // The reader's own section sits below the managed region.
+    expect(note.slice(note.indexOf("%%/zt-managed%%"))).toContain(
+      "\n## My notes\n",
+    );
+    expect(managed).not.toContain("## My notes");
+
+    const frontmatter = JSON.parse(
+      await obEval(
+        vaultId,
+        `JSON.stringify(app.metadataCache.getFileCache(app.vault.getFileByPath(${JSON.stringify(notePath)}))?.frontmatter??null)`,
+      ),
+    ) as Record<string, unknown>;
+    expect(frontmatter).toMatchObject({
+      title: annotatedItem.title,
+      citekey: annotatedItem.citationKey,
+      year: Number(annotatedItem.date),
+      venue: annotatedItem.venue,
+      status: "unread",
+      "zotlit-profile": `${entry.name} (${entry.id})`,
+    });
+    // This Item has no Zotero tags, so the note gets no tags property.
+    expect(frontmatter).not.toHaveProperty("tags");
+  }, 180000);
+
+  it("asks before replacing on a second import of the same entry and keeps one Profile", async () => {
+    const [document] = await profileDocuments();
+    await importEntryFile(
+      m.profile_import_replace_title({ label: entry.name }),
+    );
+    const sheet = await modalText(vaultId);
+    expect(sheet).toContain(
+      m.profile_import_replace_effects({
+        version: entry.version,
+        literature: 1,
+        imported: 0,
+      }),
+    );
+    expect(await clickModalButton(vaultId, m.profile_import_replace())).toBe(
+      true,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "String(!activeDocument.querySelector('.modal'))",
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(
+      await obEval(
+        vaultId,
+        `String(app.plugins.plugins.zotlit.services.profile.profiles.filter(p=>p.id===${JSON.stringify(entry.id)}).length)`,
+      ),
+    ).toBe("1");
+    expect(await profileDocuments()).toEqual([document]);
+  });
+
+  // Directory Profiles share one partial namespace, so a second entry brings
+  // partials the vault already holds beside ones it lacks. Its sheet previews
+  // with both, and the import writes only the new ones.
+  it("imports a second entry that shares partials with the first and writes its note", async () => {
+    const secondPath = join(
+      directory,
+      "profiles",
+      "literature-review",
+      "zotlit-profile.literature-review.md",
+    );
+    const second = await readEntry(secondPath);
+    const shared = second.partials.filter((name) =>
+      entry.partials.includes(name),
+    );
+    const added = second.partials.filter(
+      (name) => !entry.partials.includes(name),
+    );
+    expect(shared.length).toBeGreaterThan(0);
+    expect(added.length).toBeGreaterThan(0);
+    const partialFile = (name: string) =>
+      join(vaultPath, "templates", `zotlit-partial.${name}.md`);
+    const written = await Promise.all(
+      shared.map(async (name) => (await stat(partialFile(name))).mtimeMs),
+    );
+
+    await importEntryFile(
+      m.profile_import_partials({ names: added.join(", ") }),
+      secondPath,
+    );
+    // The preview renders the links row through the partial the vault holds.
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "String(!!Array.from(activeDocument.querySelectorAll('.modal')).at(-1)?.textContent.includes('[Zotero]('))",
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    const sheet = await modalText(vaultId);
+    expect(sheet).toContain(second.name);
+    expect(sheet).not.toContain("not found");
+    // The button waits for a preview that rendered, so a click proves it.
+    expect(await clickModalButton(vaultId, m.profile_import_confirm())).toBe(
+      true,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(app.plugins.plugins.zotlit.services.profile.profiles.some(p=>p.id===${JSON.stringify(second.id)}))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    for (const name of added)
+      expect(await readFile(partialFile(name), "utf-8"), name).toBe(
+        await readFile(
+          join(directory, "partials", name, `zotlit-partial.${name}.md`),
+          "utf-8",
+        ),
+      );
+    expect(
+      await Promise.all(
+        shared.map(async (name) => (await stat(partialFile(name))).mtimeMs),
+      ),
+    ).toEqual(written);
+
+    // Sakima's song: one PDF, with a yellow highlight and a yellow note.
+    const item = ITEMS.find((candidate) => candidate.itemID === 20)!;
+    const managed = managedRegion(await createNoteUnder(item, second.name));
+    const lines = managed.split("\n");
+    // The links row, from the partial the first entry unpacked.
+    expect(lines.find((line) => line.startsWith("[Zotero]("))).toMatch(
+      /^\[Zotero\]\(zotero:\/\/[^)]+\) · \[PDF\]\(/,
+    );
+    // Annotations grouped under the meaning the new partial gives yellow.
+    expect(lines).toContain("## Annotations");
+    expect(lines).toContain("### Aim");
+    expect(
+      lines.filter((line) => line.startsWith("> [!warning] Aim · [p. 2](")),
+    ).toHaveLength(2);
+    expect(lines).toContain(
+      "> > Sakima lived with his parents and his four year old sister.",
+    );
+    expect(lines).toContain(
+      "> The opening establishes Sakima’s family and home.",
+    );
+  }, 180000);
+
+  // Add to ZotLit on a Directory page: the page puts the entry on the
+  // clipboard and opens ZotLit's clipboard handoff. A build without the web
+  // Workbench ends where Import profile… ends: the Profile is added and
+  // nothing else opens.
+  it.skipIf(webWorkbenchEnabled)(
+    "imports the entry Add to ZotLit hands over on the clipboard, and opens nothing after",
+    async () => {
+      const handedPath = join(
+        directory,
+        "profiles",
+        "books",
+        "zotlit-profile.books.md",
+      );
+      const handed = await readEntry(handedPath);
+      const held = await readdir(join(vaultPath, "templates"));
+      const added = handed.partials.filter(
+        (name) => !held.includes(`zotlit-partial.${name}.md`),
+      );
+      expect(added.length).toBeGreaterThan(0);
+      // Obsidian hands a received obsidian:// URL to the vault window as
+      // OBS_ACT(<action and query>); calling it there leaves the OS focus
+      // where it is.
+      const url = new URL(buildImportProfileProtocolUrl());
+      const handoff = {
+        action: `${url.host}${url.pathname}`,
+        ...Object.fromEntries(url.searchParams),
+      };
+      const clipboard = "require('electron').clipboard";
+      const previous = JSON.parse(
+        await obEval(vaultId, `JSON.stringify(${clipboard}.readText())`),
+      ) as string;
+      try {
+        // One call, so no other run's clipboard write lands between the
+        // page's copy and the handoff's read.
+        await obEval(
+          vaultId,
+          `(${clipboard}.writeText(${JSON.stringify(await readFile(handedPath, "utf-8"))}),window.OBS_ACT(${JSON.stringify(handoff)}),true)`,
+        );
+        expect(
+          await obEvalUntil(
+            vaultId,
+            `(function(){var text=Array.from(activeDocument.querySelectorAll('.modal')).at(-1)?.textContent??'';return String(text.includes(${JSON.stringify(handed.name)})&&text.includes(${JSON.stringify(m.profile_import_partials({ names: added.join(", ") }))}));})()`,
+            { expected: "true" },
+          ),
+        ).toBe(true);
+        expect(
+          await clickModalButton(vaultId, m.profile_import_confirm()),
+        ).toBe(true);
+      } finally {
+        await obEval(
+          vaultId,
+          `(${clipboard}.writeText(${JSON.stringify(previous)}),true)`,
+        );
+      }
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `String(app.plugins.plugins.zotlit.services.profile.profiles.some(p=>p.id===${JSON.stringify(handed.id)}&&p.label===${JSON.stringify(handed.name)}))`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      expect(
+        await obEvalUntil(
+          vaultId,
+          "String(!activeDocument.querySelector('.modal'))",
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      // No Template Workbench opens, in this window or in a new one.
+      expect(
+        await waitFor(
+          async () =>
+            (await obEval(
+              vaultId,
+              "String(app.workspace.getLeavesOfType('zotlit-template-workbench').length)",
+            )) !== "0",
+          8,
+        ),
+      ).toBe(false);
+    },
+    180000,
+  );
 });
 
 interface ManagedFrontmatterReport {
@@ -2798,6 +3197,67 @@ async function selectSuggestion(
     vaultId,
     "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('.is-selected').textContent",
   );
+}
+
+/** Presses Enter in the topmost prompt, which chooses its selected row. */
+async function pressEnterInPrompt(vaultId: string): Promise<void> {
+  await obEval(
+    vaultId,
+    "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+  );
+}
+
+/** The text of the topmost modal. */
+function modalText(vaultId: string): Promise<string> {
+  return obEval(
+    vaultId,
+    "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
+  );
+}
+
+/**
+ * Creates the Literature Note at `path` through the note quick switcher: finds
+ * the item by `title`, then chooses the Profile row that includes `choice`.
+ * Returns the chosen row's text and the note, once the note holds `ready`.
+ */
+async function createNoteFromQuickSwitcher(
+  vaultId: string,
+  vaultPath: string,
+  {
+    title,
+    choice,
+    path,
+    ready,
+  }: { title: string; choice: string; path: string; ready: string },
+): Promise<{ choice: string; note: string }> {
+  await obEval(
+    vaultId,
+    "app.commands.executeCommandById('zotlit:note-quick-switcher')",
+  );
+  expect(
+    await obEvalUntil(
+      vaultId,
+      "String(!!activeDocument.querySelector('.prompt input'))",
+      { expected: "true" },
+    ),
+  ).toBe(true);
+  await obEval(
+    vaultId,
+    `(function(){var input=activeDocument.querySelector('.prompt input');input.value=${JSON.stringify(title)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+  );
+  await selectSuggestion(vaultId, title);
+  await pressEnterInPrompt(vaultId);
+  const chosen = await selectSuggestion(vaultId, choice);
+  expect(chosen).toContain(path);
+  await pressEnterInPrompt(vaultId);
+  let note = "";
+  expect(
+    await waitFor(async () => {
+      note = await readFile(join(vaultPath, path), "utf-8").catch(() => "");
+      return note.includes(ready);
+    }),
+  ).toBe(true);
+  return { choice: chosen, note };
 }
 
 function clickModalButton(

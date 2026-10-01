@@ -2,7 +2,8 @@
 // answers at.
 //
 // Node-only: the inventory comes from the content scan rather than the
-// collections, for the reason `src/lib/content-scan.ts` explains. The card
+// collections, for the reason `src/lib/content-scan.ts` explains, and from the
+// Template Directory as the build read it. The card
 // bodies below mirror what each page's own head advertises, so a page and its
 // card always describe the same thing.
 
@@ -21,6 +22,9 @@ import {
   publishedOn,
 } from "./shared.js";
 import type { OgType } from "./shared.js";
+import { kindLabels, levelLabels } from "./template-directory/kind-labels.js";
+import { DIRECTORY_PATH, entryIdParts } from "./template-directory/site.js";
+import type { DirectorySite } from "./template-directory/site.js";
 
 const docsCard = v.object({
   title: v.string(),
@@ -110,11 +114,58 @@ function cardsOf<Schema extends v.GenericSchema>(
 }
 
 /**
+ * The Template Directory's cards: the index, and one per entry naming its
+ * kind and level, by the names the pages use.
+ */
+function directoryCards(
+  m: Messages,
+  { entries }: Pick<DirectorySite, "entries">,
+): [string, CardProps][] {
+  const kind = kindLabels(m);
+  const level = levelLabels(m);
+  return [
+    [
+      ogImageUrl("templates"),
+      {
+        kind: m.docs_directory_title(),
+        title: m.docs_directory_heading(),
+        description: m.docs_directory_description(),
+        meta: `${baseURL}${DIRECTORY_PATH}`,
+      },
+    ],
+    ...entries.map((entry): [string, CardProps] => [
+      ogImageUrl("templates", entryIdParts(entry.id)),
+      {
+        kind: m.docs_directory_title(),
+        title: entry.title,
+        description: cardSummary(entry.summary.replaceAll("`", "")),
+        meta: `${kind[entry.kind]()} · ${level[entry.level]()}`,
+      },
+    ]),
+  ];
+}
+
+/**
+ * The longest description that fits three lines of a card under a two-line
+ * title; a longer one pushes the footer off the card.
+ */
+const CARD_SUMMARY_LENGTH = 120;
+
+/** `summary`, shortened at a word to fit the card when it is too long. */
+function cardSummary(summary: string): string {
+  if (summary.length <= CARD_SUMMARY_LENGTH) return summary;
+  const cut = summary.slice(0, CARD_SUMMARY_LENGTH - 1);
+  return `${cut.slice(0, cut.lastIndexOf(" ")).replace(/[\s,;:—–-]+$/u, "")}…`;
+}
+
+/**
  * @param packageRoot the app's own root, which `vite.config.ts` owns.
+ * @param directory the Template Directory as the build read it.
  * @returns every card URL and the card it renders.
  */
 export async function ogCards(
   packageRoot: string,
+  directory: Pick<DirectorySite, "entries">,
 ): Promise<Map<string, CardProps>> {
   // Asset hooks run after Paraglide generates the facade; config loading runs before it.
   const messagesUrl = pathToFileURL(
@@ -155,5 +206,6 @@ export async function ogCards(
         meta: `v${release.version} · ${formatReleaseDate(release.date)}`,
       }),
     }),
+    ...directoryCards(m, directory),
   ]);
 }

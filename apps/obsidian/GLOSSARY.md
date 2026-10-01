@@ -91,6 +91,14 @@ _Avoid_: global settings, vault settings
 The moment `zotlit-profile.default.md` first exists in the template folder, from which point the Default Profile's look is that document rather than the built-in template. User-facing copy names the action "Customize"; the file's existence is the whole of the state.
 _Avoid_: customize (the verb on the surface, not the state), unlock, export default template, detach
 
+**Profile Share**:
+Writing one Literature Note Profile as a single self-contained Profile document for another vault, to the clipboard or a Markdown file: the document with a version, the partials it calls packed into its manifest, and its Profile Match and folders only when the sender includes them. User-facing copy says **Share**.
+_Avoid_: export (the Template Data Export is another artifact), Template Pack (retired), bundle
+
+**Profile Import**:
+Bringing one shared Profile document into the vault from the clipboard or a Markdown file, through a consent sheet that previews it before anything is written: ZotLit writes the Profile document and unpacks its packed partials into the template folder. A document whose Profile ID the vault already holds is a second edition of that Profile and replaces it after confirmation. User-facing copy says **Import profile**.
+_Avoid_: Note Import (brings Zotero notes into the vault), imported Profile (an Imported Note is another concept), install (the retired Template Pack lifecycle)
+
 **Profile stamp**:
 The whole `zotlit-profile` system frontmatter value that records a note's Literature Note Profile. It carries a Profile hint followed by the Profile ID in parentheses; a stamp that is a bare Profile ID is also valid. Every ZotLit write of a stamped note re-emits the stamp with the Profile's current label.
 _Avoid_: profile field, profile reference

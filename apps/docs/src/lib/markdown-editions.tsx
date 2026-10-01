@@ -7,11 +7,14 @@
 // module renders that component and owns `mdxComponents`, the map those
 // elements resolve against: a component there that calls `asMarkdown()` gives
 // its own Markdown form, and every other one is serialized as JSX.
+// The Template Directory's editions come from the Directory itself, through
+// `src/lib/template-directory/markdown-edition.tsx`.
 // `src/lib/markdown-routes.ts` owns the URLs these editions answer at.
 
 import { renderToMarkdown } from "fumadocs-core/server";
 import { llms } from "fumadocs-core/source";
 import type { ComponentType, ElementType } from "react";
+import directory from "virtual:zotlit/template-directory";
 
 import { ActionLink } from "@/components/action-link";
 import { Callout } from "@/components/callout";
@@ -28,6 +31,10 @@ import {
   getChangelogPages,
   source,
 } from "./source";
+import {
+  directoryEdition,
+  directoryLlmsIndex,
+} from "./template-directory/markdown-edition";
 
 /** Every edition is authored Markdown, never HTML converted after the fact. */
 export const markdownHeaders = {
@@ -142,17 +149,25 @@ export async function getMarkdownEdition({
       const page = blog.getPage(slugs);
       return page && renderPage(page.data.title, page);
     }
+    case "templates":
+      return directoryEdition(directory, slugs);
   }
 }
 
-/** `llms.txt`: the docs page tree as a Markdown index. */
+/** `llms.txt`: the docs page tree as a Markdown index, then the Template Directory. */
 export function getLlmsIndex() {
-  return llms(source).index();
+  return [llms(source).index(), directoryLlmsIndex(directory)].join("\n");
 }
 
-/** `llms-full.txt`: every docs page's edition, concatenated. */
+/**
+ * `llms-full.txt`: every docs page's edition, concatenated, then the Template
+ * Directory's index edition, which lists every entry with its facets.
+ */
 export async function getLlmsFullText() {
-  const editions = await Promise.all(source.getPages().map(renderDocsPage));
+  const editions = await Promise.all([
+    ...source.getPages().map(renderDocsPage),
+    directoryEdition(directory, []),
+  ]);
 
   return editions.join("\n\n");
 }
