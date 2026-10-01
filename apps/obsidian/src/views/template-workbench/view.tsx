@@ -2648,6 +2648,7 @@ function EditorContent({
                 <PropertiesPane
                   onChooseItem={() => void view.chooseItem()}
                   onRetry={() => view.preview?.refresh()}
+                  onShowProblem={(id) => problems.select(id)}
                   controller={controller}
                   entries={controller.managedEntries}
                   properties={result?.properties ?? []}

@@ -1234,6 +1234,7 @@ export function Workbench() {
                     onSelect={setOpenRow}
                     reveal={reveal}
                     onSelection={trackSelection}
+                    onShowProblem={showProblem}
                   />
                 )}
               </TabPanel>
