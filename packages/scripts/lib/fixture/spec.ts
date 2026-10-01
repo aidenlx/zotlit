@@ -131,6 +131,16 @@ export const FIXTURE_ITEM_TYPES = [
   "letter",
 ] as const;
 
+/** The Zotero fields an Item's {@link FixtureItem.fields} can carry. */
+export const FIXTURE_ITEM_FIELDS = [
+  "volume",
+  "issue",
+  "pages",
+  "place",
+] as const;
+
+export type FixtureItemField = (typeof FIXTURE_ITEM_FIELDS)[number];
+
 export interface FixtureItem {
   itemID: number;
   libraryID: number;
@@ -174,6 +184,11 @@ export interface FixtureItem {
    * the container-first Venue chain has something to win against.
    */
   publisher?: string;
+  /**
+   * Locator and imprint fields under their canonical Zotero names. The build
+   * fails when {@link itemType} has no such field.
+   */
+  fields?: Readonly<Partial<Record<FixtureItemField, string>>>;
   /** Publication year, as Zotero stores the raw `date` string. */
   date: string;
   creators: readonly FixtureCreator[];
@@ -642,6 +657,89 @@ export const ITEMS: readonly FixtureItem[] = [
     date: "2010-00-00 2010",
     creators: [author("Edgard Antunes Dias", "Batista")],
     dateModified: "2025-05-22 03:30:30",
+    collectionIDs: [],
+  },
+  // ── Publisher by item type (discussion #1197) ─────────────────────
+  // One `publisher` property formatted per item type: a journal article with
+  // every locator and one with only a volume, a book with a place, a chapter
+  // in an edited collection, and a thesis whose university is its publisher.
+  {
+    itemID: 86,
+    libraryID: 1,
+    key: "PUBJRNL2",
+    itemType: "journalArticle",
+    citationKey: "orlovaArchivalReading2021",
+    title: "Archival reading practices in regional libraries",
+    venue: "Journal of Library History",
+    fields: { volume: "12", issue: "3", pages: "45-67" },
+    date: "2021-03-00 March 2021",
+    creators: [author("Anna", "Orlova")],
+    dateModified: "2024-11-05 12:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 87,
+    libraryID: 1,
+    key: "PUBJRNL3",
+    itemType: "journalArticle",
+    citationKey: "marshMarginaliaEvidence2019",
+    title: "Marginalia as evidence of reading",
+    venue: "Book History Review",
+    fields: { volume: "8" },
+    date: "2019",
+    creators: [author("Peter", "Marsh")],
+    dateModified: "2024-11-04 12:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 88,
+    libraryID: 1,
+    key: "PUBBKPL4",
+    itemType: "book",
+    citationKey: "sokolovReadingCultures2018",
+    title: "Reading cultures of the nineteenth century",
+    venue: "Fixture Academic Press",
+    fields: { place: "Moscow" },
+    date: "2018",
+    creators: [author("Ivan", "Sokolov")],
+    dateModified: "2024-11-03 12:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 89,
+    libraryID: 1,
+    key: "PUBSECT5",
+    itemType: "bookSection",
+    citationKey: "grantFootnotesReaders2016",
+    title: "Footnotes and their readers",
+    venue: "Essays on scholarly apparatus",
+    publisher: "Leiden Fixture Publishers",
+    fields: { place: "Leiden", pages: "101-118" },
+    date: "2016",
+    creators: [
+      author("Helen", "Grant"),
+      {
+        firstName: "Jan",
+        lastName: "de Vries",
+        creatorType: "editor",
+        fieldMode: 0,
+      },
+    ],
+    dateModified: "2024-11-02 12:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 90,
+    libraryID: 1,
+    key: "PUBTHSS6",
+    itemType: "thesis",
+    citationKey: "petrovaCorrespondenceNetworks2020",
+    title: "Scholarly correspondence networks in the long nineteenth century",
+    venue: "Fixture State University",
+    fields: { place: "Saint Petersburg" },
+    date: "2020",
+    creators: [author("Maria", "Petrova")],
+    dateModified: "2024-11-01 12:00:00",
     collectionIDs: [],
   },
   // ── Graph showcase: information-science citation web ──────────────

@@ -47,6 +47,7 @@ import {
   EXCERPT_RENDERING_VAULT_DIR,
   findScopeCase,
   findVaultCase,
+  FIXTURE_ITEM_FIELDS,
   FIXTURE_ITEM_TYPES,
   INSTALLED_STYLES,
   ITEMS,
@@ -67,6 +68,7 @@ import type {
   FixtureAttachment,
   FixtureCreator,
   FixtureItem,
+  FixtureItemField,
   FixtureLegacyTemplate,
   FixtureLegacyTemplateOrigin,
   FixtureNote,
@@ -446,6 +448,11 @@ interface SchemaIDs {
    * never asks the Spec author to know Zotero's base-field table.
    */
   roleFields: Record<FixtureItem["itemType"], VenueRoleFields>;
+  /** Per-Item-type ids of the {@link FixtureItem.fields} the type carries. */
+  itemFields: Record<
+    FixtureItem["itemType"],
+    Partial<Record<FixtureItemField, number>>
+  >;
   charsets: Record<"utf-8", number>;
   creatorTypes: Record<FixtureCreator["creatorType"], number>;
 }
@@ -495,6 +502,12 @@ function readSchemaIDs(db: DatabaseSync): SchemaIDs {
         readVenueRoleFields(db, itemTypes[itemType]),
       ]),
     ) as Record<FixtureItem["itemType"], VenueRoleFields>,
+    itemFields: Object.fromEntries(
+      FIXTURE_ITEM_TYPES.map((itemType) => [
+        itemType,
+        readItemFields(db, itemTypes[itemType]),
+      ]),
+    ) as SchemaIDs["itemFields"],
     charsets: lookup(
       "select charsetID from charsets where charset = ?",
       "charsetID",
@@ -535,6 +548,41 @@ function readVenueRoleFields(
     container: roleFieldID("publicationTitle"),
     publisher: roleFieldID("publisher"),
   };
+}
+
+/** The {@link FixtureItemField}s the Item type carries, by field id. */
+function readItemFields(
+  db: DatabaseSync,
+  itemTypeID: number,
+): Partial<Record<FixtureItemField, number>> {
+  const native = db.prepare(
+    "select itf.fieldID as fieldID from itemTypeFieldsCombined itf" +
+      " join fieldsCombined f on f.fieldID = itf.fieldID" +
+      " where itf.itemTypeID = ? and f.fieldName = ?",
+  );
+  return Object.fromEntries(
+    FIXTURE_ITEM_FIELDS.flatMap((fieldName) => {
+      const row = native.get(itemTypeID, fieldName) as
+        | { fieldID: number }
+        | undefined;
+      return row === undefined ? [] : [[fieldName, row.fieldID]];
+    }),
+  );
+}
+
+/** Where an Item's {@link FixtureItem.fields} entry is stored. */
+function itemFieldID(
+  ids: SchemaIDs,
+  item: FixtureItem,
+  fieldName: FixtureItemField,
+): number {
+  const fieldID = ids.itemFields[item.itemType][fieldName];
+  if (fieldID === undefined) {
+    throw new Error(
+      `item "${item.key}" names a ${fieldName}, which item type "${item.itemType}" cannot hold.`,
+    );
+  }
+  return fieldID;
 }
 
 /**
@@ -857,6 +905,11 @@ function seedItemData(
               value: item.publisher,
             },
           ]),
+      ...Object.entries(item.fields ?? {}).map(([fieldName, value]) => ({
+        itemID: item.itemID,
+        fieldID: itemFieldID(ids, item, fieldName as FixtureItemField),
+        value,
+      })),
       ...(item.citationKey === null
         ? []
         : [
