@@ -18,6 +18,11 @@ import type {
   TemplateNoteLink,
 } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import {
+  MAX_SEGMENT_BYTES,
+  normalizeFilename,
+  truncateToByteLimit,
+} from "@zotlit/templates";
 
 import { renderAnnotations } from "@/lib/annotation-render";
 import {
@@ -52,12 +57,7 @@ import type {
   ExcerptSummary,
   PreparedExcerpts,
 } from "@/services/excerpt-image/prepare";
-import {
-  MAX_SEGMENT_BYTES,
-  normalizeFilename,
-  randomFilenameId,
-  truncateToByteLimit,
-} from "@/services/note-feature/filename";
+import { randomFilenameId } from "@/services/note-feature/filename";
 import type { NoteIndex } from "@/services/note-index/service";
 import { boundProfile, getProfileBinding } from "@/services/profile/bindings";
 import type {

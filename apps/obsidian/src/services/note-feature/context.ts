@@ -16,10 +16,10 @@ import type {
   TemplateFilenameItemData,
 } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-import { hasSuffixMarker } from "@zotlit/templates";
+import { hasSuffixMarker, joinNotePath } from "@zotlit/templates";
 
 import { buildAnnotationResolvers } from "@/lib/annotation-render";
-import { joinFolderPath, normalizeFolderPath } from "@/lib/ensure-folder";
+import { normalizeFolderPath } from "@/lib/ensure-folder";
 import { creatorSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { syntheticFile } from "@/lib/markdown-link";
@@ -248,8 +248,7 @@ export function resolveRenderedNotePath(
 
 /** Join a rendered relative note path under the literature-note folder. */
 function literatureNotePath(folderSetting: string, rel: string): string {
-  const folder = normalizeFolderPath(folderSetting);
-  return joinFolderPath(folder, `${rel}.md`);
+  return joinNotePath(normalizeFolderPath(folderSetting), rel);
 }
 
 function resolveRenderedRelPath(

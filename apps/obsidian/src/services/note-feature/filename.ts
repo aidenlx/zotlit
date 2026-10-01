@@ -1,6 +1,11 @@
 import { customAlphabet } from "nanoid";
 
-import { hasSuffixMarker, replaceSuffixMarkers } from "@zotlit/templates";
+import {
+  hasSuffixMarker,
+  replaceSuffixMarkers,
+  resolveFlatNoteName,
+  resolveNoteRelPath as resolveSharedNoteRelPath,
+} from "@zotlit/templates";
 
 import * as m from "@/lib/i18n/generated/messages";
 
@@ -15,36 +20,6 @@ export function randomFilenameId(size: number): string {
 }
 
 /**
- * Characters Obsidian forbids in a file name. Beyond the platform-agnostic
- * `\ / :` and Windows `* ? " < > |`, the path doubles as a wikilink /
- * frontmatter-link target, so `# ^ [ ]` are stripped too.
- */
-const FORBIDDEN_CHARS = /[\\/:*?"<>|#^[\]]/g;
-
-/** Windows reserved device names; an exact (case-insensitive) match is invalid. */
-const WINDOWS_RESERVED = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
-
-function isBidirectionalFormattingControl(codePoint: number): boolean {
-  return (
-    codePoint === 0x061c ||
-    codePoint === 0x200e ||
-    codePoint === 0x200f ||
-    (codePoint >= 0x202a && codePoint <= 0x202e) ||
-    (codePoint >= 0x2066 && codePoint <= 0x2069)
-  );
-}
-
-function stripBidirectionalFormattingControls(input: string): string {
-  let result = "";
-  for (const character of input) {
-    if (!isBidirectionalFormattingControl(character.codePointAt(0)!)) {
-      result += character;
-    }
-  }
-  return result;
-}
-
-/**
  * Thrown when the filename slot of a rendered template resolves to an empty or
  * degenerate name. Its message is localized and ready for surfacing.
  */
@@ -55,78 +30,16 @@ export class EmptyFilenameError extends Error {
   }
 }
 
-/** Maximum bytes for a single filesystem path component (ext4, HFS+, NTFS). */
-export const MAX_SEGMENT_BYTES = 255;
-
 /**
- * Normalize a single path segment into a safe Obsidian file/folder name:
- * replace forbidden characters with `_`, strip leading dots and trailing
- * dots/spaces, and prefix Windows reserved names. Returns `""` for a
- * degenerate segment (empty, `.`, `..`, or all dots/spaces).
- */
-export function normalizeFilename(input: string): string {
-  let result = input
-    .replace(FORBIDDEN_CHARS, "_")
-    .replace(/[. ]+$/, "")
-    .replace(/^\.+/, "");
-  if (WINDOWS_RESERVED.test(result)) result = `_${result}`;
-  return result;
-}
-
-function utf8ByteLength(codePoint: number): number {
-  if (codePoint <= 0x7f) return 1;
-  if (codePoint <= 0x7ff) return 2;
-  if (codePoint <= 0xffff) return 3;
-  return 4;
-}
-
-/**
- * Truncate `name` so its UTF-8 encoding fits within `maxBytes`, iterating by
- * code point so surrogate pairs are never split. Strips trailing dots/spaces
- * the cut may expose.
- */
-export function truncateToByteLimit(name: string, maxBytes: number): string {
-  let byteCount = 0;
-  let endIndex = 0;
-  for (const cp of name) {
-    const cpBytes = utf8ByteLength(cp.codePointAt(0)!);
-    if (byteCount + cpBytes > maxBytes) break;
-    byteCount += cpBytes;
-    endIndex += cp.length;
-  }
-  if (endIndex >= name.length) return name;
-  return name.slice(0, endIndex).replace(/[. ]+$/, "");
-}
-
-/** UTF-8 byte cost of the `.md` extension the caller appends. */
-const MD_EXT_BYTES = 3;
-
-/**
- * Resolve a rendered filename template into a vault-relative path (no `.md`
- * extension), routing `/`-separated segments into nested subfolders.
- *
- * The last segment is the filename; preceding segments are folders. Degenerate
- * folder segments (empty / `.` / `..`) are dropped, so no `..` traversal is
- * honored. Every segment is sanitized per {@link normalizeFilename} and
- * truncated to the filesystem byte limit ({@link MAX_SEGMENT_BYTES}).
+ * Resolve a rendered Filename Template into a relative note path (no `.md`
+ * extension) by the shared Note Path rule.
  *
  * @throws {@link EmptyFilenameError} when the filename slot sanitizes to empty.
  */
-export function resolveNoteRelPath(rendered: string): string {
-  const segments = stripBidirectionalFormattingControls(rendered).split("/");
-  const rawName = segments.pop() ?? "";
-  const filename = truncateToByteLimit(
-    normalizeFilename(rawName),
-    MAX_SEGMENT_BYTES - MD_EXT_BYTES,
-  );
-  if (filename === "") throw new EmptyFilenameError();
-
-  const folders = segments
-    .map((segment) =>
-      truncateToByteLimit(normalizeFilename(segment), MAX_SEGMENT_BYTES),
-    )
-    .filter((segment) => segment !== "");
-  return [...folders, filename].join("/");
+function resolveNoteRelPath(rendered: string): string {
+  const rel = resolveSharedNoteRelPath(rendered);
+  if (rel === null) throw new EmptyFilenameError();
+  return rel;
 }
 
 /** @see {@link resolveFreeNotePath} */
@@ -172,11 +85,8 @@ export function resolveFreeFlatName(
 
 /** Single-segment counterpart to {@link resolveNoteRelPath} — never splits. */
 function resolveFlatName(rendered: string): string {
-  const name = truncateToByteLimit(
-    normalizeFilename(rendered),
-    MAX_SEGMENT_BYTES - MD_EXT_BYTES,
-  );
-  if (name === "") throw new EmptyFilenameError();
+  const name = resolveFlatNoteName(rendered);
+  if (name === null) throw new EmptyFilenameError();
   return name;
 }
 
