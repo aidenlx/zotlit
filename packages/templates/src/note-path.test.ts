@@ -155,6 +155,12 @@ describe("joinNotePath", () => {
       path: "smith2020.md",
     },
     {
+      label: "vault root as dot",
+      folder: ".",
+      rel: "smith2020",
+      path: "smith2020.md",
+    },
+    {
       label: "surrounding slashes",
       folder: "/literatures/",
       rel: "smith2020",
@@ -165,6 +171,24 @@ describe("joinNotePath", () => {
       folder: "a//b",
       rel: "smith2020",
       path: "a/b/smith2020.md",
+    },
+    {
+      label: "backslash separators",
+      folder: "a\\b\\",
+      rel: "smith2020",
+      path: "a/b/smith2020.md",
+    },
+    {
+      label: "non-breaking spaces",
+      folder: "my\u00A0notes/x\u202Fy",
+      rel: "smith2020",
+      path: "my notes/x y/smith2020.md",
+    },
+    {
+      label: "decomposed Unicode",
+      folder: "Re\u0301sume\u0301s",
+      rel: "smith2020",
+      path: "R\u00E9sum\u00E9s/smith2020.md",
     },
   ])("$label", ({ folder, rel, path }) => {
     expect(joinNotePath(folder, rel)).toBe(path);
