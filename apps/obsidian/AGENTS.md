@@ -7,7 +7,7 @@ The Obsidian plugin. Shared constants live in `src/lib/constants.ts`.
 Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Package-specific:
 
 - `pnpm --filter @zotlit/obsidian dev` — Vite watch build.
-- `I18N_DEV_SERVER=true pnpm --filter @zotlit/obsidian dev` — opt-in when testing multi-language i18n: also serves the generated Language Pack JSONs at `http://127.0.0.1:9092` (or pass a port number) and points the dev build's pack download URL there instead of the GitHub release.
+- `I18N_DEV_SERVER=true pnpm --filter @zotlit/obsidian dev` — the Language Pack source for a dev build in any non-English locale: serves the generated Language Pack JSONs at `http://127.0.0.1:9092` (or pass a port number) and points the dev build's pack download URL there. A dev build's manifest carries a Dev Build version (`2.2.0-beta.1.dev`, from `scripts/dev-version.ts`) that has no Resource Release, so without this server the pack download fails and the build stays on the bundled English pack.
 - `pnpm --filter @zotlit/obsidian generate:language-packs` — regenerate the typed message facade and bundled English pack. Only needed when bypassing turbo; turbo `typecheck`/`test` depend on it.
 - `pnpm --filter @zotlit/obsidian test:lua-filter` — drive a native Pandoc (3.1.1 or newer) over fixture Markdown to check both `zotlit-cite.lua` variants. Needs `pandoc` on PATH; set `PANDOC_BIN` to check another Pandoc version. Outside `pnpm test`, since it needs a binary the workspace does not install.
 - `pnpm --filter @zotlit/obsidian analyze` — production build with an interactive bundle-size report at `bundle-stats.html`. Set `ANALYZE=json` for a machine-readable `bundle-stats.json` instead.
