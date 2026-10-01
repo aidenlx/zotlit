@@ -205,10 +205,7 @@ export function PropertiesPane({
           const summary =
             failure ??
             (exampleMessage
-              ? controller.source.slice(
-                  entry.expression.from,
-                  entry.expression.to,
-                )
+              ? controller.sliceText(entrySlice(entry.position))
               : summarize(m, { entry, produced: fields, fold }));
           return (
             <li key={entry.position} {...part("row")}>
