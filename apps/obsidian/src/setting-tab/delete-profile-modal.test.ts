@@ -123,3 +123,38 @@ it("shows both counts and informed Default target, changing the move option with
   clicked.mock.calls[0]![0]({} as MouseEvent);
   await expect(decision).resolves.toEqual({ target: papers, move: false });
 });
+
+it("names the target Profile's folders for the moved note kinds, however many subfolders the notes use", () => {
+  using opened = vi.spyOn(ConfirmationModal.prototype, "open");
+  const used = plan(true);
+  const literature = used.literatureNotes[0]!;
+  const imported = used.importedNotes[0]!;
+  used.targets[0]!.files = [
+    { file: literature, path: "literatures/2020/Smith/My title.md" },
+    { file: literature, path: "literatures/2021/Jones/My title.md" },
+    { file: imported, path: "zotero_notes/2020/Child.md" },
+  ];
+  used.targets[1]!.files = [
+    { file: literature, path: "Books/2020/My title.md" },
+    { file: imported, path: imported.path },
+  ];
+  void confirmProfileDeletion({} as App, { plan: used });
+  const modal = opened.mock.instances[0] as ConfirmationModal;
+  const caption = () =>
+    modal.contentEl.querySelector<HTMLInputElement>('input[type="checkbox"]')!
+      .parentElement!.textContent;
+  expect(caption()).toBe(
+    m.settings_profile_delete_move_files({
+      folder: "literatures/, zotero_notes/",
+    }),
+  );
+  const radios = modal.contentEl.querySelectorAll<HTMLInputElement>(
+    'input[type="radio"]',
+  );
+  radios[1]!.checked = true;
+  radios[1]!.dispatchEvent(new Event("change"));
+  expect(caption()).toBe(
+    m.settings_profile_delete_move_files({ folder: "Books/" }),
+  );
+  modal.close();
+});
