@@ -5,6 +5,8 @@
 // the end of a reply on macOS and wait until killed; this client cannot, and
 // every call is bounded.
 
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 
@@ -19,6 +21,7 @@ binary. Put options before the first argument; everything from the first
 argument on belongs to Obsidian.
 
   obsidian-cli.ts vault=<id> eval code='<js>'
+  obsidian-cli.ts --js probe.js vault=<id>  the same, with the code in a file
   obsidian-cli.ts vault=<id> plugin:reload id=zotlit
   obsidian-cli.ts help                      Obsidian's own command list
 
@@ -49,9 +52,17 @@ await yargs(hideBin(process.argv))
           describe: "seconds to wait for the reply",
           type: "number",
           default: OBSIDIAN_CALL_TIMEOUT_MS / 1_000,
+        })
+        .option("js", {
+          describe:
+            "JavaScript file to run in the app, as `eval code=<file contents>` after the other arguments",
+          type: "string",
         }),
     async (argv) => {
       const args = [...(argv.args ?? []), ...argv._.map(String)];
+      if (argv.js !== undefined) {
+        args.push("eval", `code=${await readFile(resolve(argv.js), "utf-8")}`);
+      }
       if (args.length === 0) throw new Error("Give at least one argument.");
       const call = createObsidianCall({ timeoutMs: argv.timeout * 1_000 });
       console.log(await call(args));

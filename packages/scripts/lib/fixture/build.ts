@@ -12,6 +12,7 @@ import {
   formatIndexedKey,
   USER_LIBRARY_ID,
 } from "@zotlit/db";
+import type { FrontmatterField } from "@zotlit/templates/constants";
 import {
   DEFAULT_CITATION_BRANCHES,
   formatPlainTemplateDocument,
@@ -192,6 +193,12 @@ export interface BuildOptions {
    * @default false
    */
   grantLocalApiWrites?: boolean;
+  /**
+   * The upgrader case's `note.frontmatter-fields`, such as a reader's own list.
+   *
+   * @default UPGRADER_FRONTMATTER_FIELDS
+   */
+  upgraderFields?: readonly FrontmatterField[];
   /** Development Vault root used by vault-backed linked Attachment rows. */
   linkedAttachmentVaultDir?: string;
 }
@@ -1124,7 +1131,7 @@ async function writeVault(
   // saved there. The generated settings are the ones this build promises.
   await writeJson(
     layout.pluginDataPath,
-    vaultSettings(vaultCase, scopeCase.scope, options.liveUpdatePort),
+    vaultSettings(vaultCase, scopeCase.scope, options),
   );
 }
 
@@ -1328,7 +1335,7 @@ function applyTemplateEdit(
 function vaultSettings(
   vaultCase: FixtureVaultCase,
   scope: PersistedLibraryScope,
-  liveUpdatePort: number | undefined,
+  { liveUpdatePort, upgraderFields }: BuildOptions,
 ): Record<string, unknown> {
   const shared = {
     "server.enabled": true,
@@ -1342,7 +1349,7 @@ function vaultSettings(
       __VERSION__: UPGRADER_SETTINGS_VERSION,
       "note.literature-folder": "literatures",
       "note.import-folder": "zotero_notes",
-      "note.frontmatter-fields": UPGRADER_FRONTMATTER_FIELDS,
+      "note.frontmatter-fields": upgraderFields ?? UPGRADER_FRONTMATTER_FIELDS,
       "release.previous-version": UPGRADER_PLUGIN_VERSION,
       ...shared,
     };

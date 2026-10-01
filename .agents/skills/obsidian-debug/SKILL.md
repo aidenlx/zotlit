@@ -34,8 +34,13 @@ breakpoints, popout or settings windows, the main process), follow [devtools.md]
    worktree's Development Vault:
 
 ```bash
+pnpm exec turbo run build --filter='@zotlit/obsidian^...'
 pnpm --filter @zotlit/obsidian build:dev
 ```
+
+The first command rebuilds the workspace packages the plugin bundles from
+their `dist`, such as `@zotlit/workbench`. The second builds the plugin and
+copies it into the vault.
 
 Editing the Fixture Spec or its committed vault-page assets changes the next
 Fixture build, not the open Development Vault. Use the live `open` command
@@ -56,6 +61,7 @@ When the check is done, close what the check opened, in this order:
 | `obsidian-cli.ts vault=<id> commands filter=zotlit` | List available plugin commands |
 | `obsidian-cli.ts vault=<id> command id=zotlit:<cmd>` | Run a command |
 | `obsidian-cli.ts vault=<id> eval code='<js>'` | Run JS in the app, returns the value |
+| `obsidian-cli.ts --js <file.js> vault=<id>` | Run a JS file in the app; use it for multi-line probes |
 | `obsidian-cli.ts vault=<id> dev:screenshot path=<abs>` | Capture the window (absolute path required) |
 | `obsidian-cli.ts vault=<id> dev:errors` | Captured errors |
 | `obsidian-cli.ts vault=<id> dev:console` | Console output |
@@ -65,8 +71,9 @@ Read the output text: `=> ` prefixes a result, and command failures come back as
 
 ## Loop
 
-1. **Build** — `pnpm --filter @zotlit/obsidian build:dev` copies the bundle into
-   this worktree's Development Vault.
+1. **Build** — the two build commands from Vault setup step 5. The second copies the
+   bundle into this worktree's Development Vault; prefix it with `ZT_VAULT_CASE=<case>`
+   to copy into a Vault Case vault, such as the `upgrader` vault.
 2. **Reload** — `obsidian-cli.ts vault=<id> plugin:reload id=zotlit`.
 3. **Open** — `obsidian-cli.ts vault=<id> command id=zotlit:<cmd>`, or `eval` to mount a view in a specific split.
 4. **Probe** — `obsidian-cli.ts vault=<id> eval code='…'` with `getComputedStyle(el)` /
