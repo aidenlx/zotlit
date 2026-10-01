@@ -43,7 +43,8 @@ export class ObsidianUnreachableError extends Error {
     super(
       `${vault ? `Obsidian vault ${vault}` : "The focused Obsidian vault window"} did not answer within ${timeoutLabel(timeoutMs)}.\n\n` +
         "Known causes: the evaluated code awaits a promise that never settles\n" +
-        "(requestAnimationFrame in a hidden window, for example); the window\n" +
+        "(requestAnimationFrame in a hidden window, for example — the obsidian-debug\n" +
+        'skill\'s "Hidden window" section turns its throttling off); the window\n' +
         "reloaded during the call; or the window's renderer crashed while the\n" +
         "vault registry still reports it open, so every call to it waits forever.\n\n" +
         "Restart Obsidian if a quick call to the same vault, such as\n" +

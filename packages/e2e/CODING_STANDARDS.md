@@ -8,3 +8,4 @@ or a direct edit. State the expected behavior and what the reviewer must check.
 ## Policies
 
 - [OS focus](policies/os-focus.md)
+- [View cleanup](policies/view-cleanup.md)
