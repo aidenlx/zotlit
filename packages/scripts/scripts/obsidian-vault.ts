@@ -26,8 +26,12 @@ import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
+import * as v from "valibot";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
+
+import { frontmatterFieldSchema } from "@zotlit/templates/constants";
+import type { FrontmatterField } from "@zotlit/templates/constants";
 
 import {
   DEV_VAULT_CASE_ENV,
@@ -251,6 +255,8 @@ interface SeedOptions {
   localApi?: boolean;
   /** Seed the matching remembered write grant in Zotero and Obsidian. */
   grantLocalApiWrites?: boolean;
+  /** The upgrader case's `note.frontmatter-fields`, in place of its built-in list. */
+  upgraderFields?: readonly FrontmatterField[];
 }
 
 async function create(
@@ -263,6 +269,7 @@ async function create(
     zoteroHttpPort,
     localApi,
     grantLocalApiWrites,
+    upgraderFields,
   }: SeedOptions = {},
 ): Promise<void> {
   const abs = resolve(vaultPath);
@@ -291,6 +298,7 @@ async function create(
     zoteroHttpPort,
     localApi,
     grantLocalApiWrites,
+    upgraderFields,
   });
   if (purge) {
     const exists = await access(abs).then(
@@ -444,6 +452,7 @@ async function sync(
     zoteroHttpPort,
     localApi,
     grantLocalApiWrites,
+    upgraderFields,
   }: SeedOptions = {},
 ): Promise<void> {
   const abs = resolve(vaultPath);
@@ -465,6 +474,7 @@ async function sync(
       zoteroHttpPort,
       localApi,
       grantLocalApiWrites,
+      upgraderFields,
     });
 
     // `--purge` deletes the folder first, so renamed or removed Fixture files
@@ -499,6 +509,7 @@ async function rebuildFixtureVault(
     zoteroHttpPort,
     localApi,
     grantLocalApiWrites,
+    upgraderFields,
   }: SeedOptions = {},
 ): Promise<void> {
   if (resolve(target) === resolve(fixtureVault)) return;
@@ -533,6 +544,7 @@ async function rebuildFixtureVault(
     zoteroHttpPort,
     localApi,
     grantLocalApiWrites,
+    upgraderFields,
     linkedAttachmentVaultDir: resolve(target),
     pluginBundleDir: hasDistDev
       ? distDev
@@ -553,6 +565,7 @@ async function open(
     zoteroHttpPort,
     localApi,
     grantLocalApiWrites,
+    upgraderFields,
   }: SeedOptions = {},
 ): Promise<void> {
   const abs = resolve(vaultPath);
@@ -567,6 +580,7 @@ async function open(
     zoteroHttpPort,
     localApi,
     grantLocalApiWrites,
+    upgraderFields,
   };
   if (!registered) {
     await create(abs, seed);
@@ -925,6 +939,30 @@ const grantLocalApiWritesOption = {
   default: true,
 } as const;
 
+const upgraderFieldsOption = {
+  describe:
+    "JSON file whose Managed Frontmatter fields replace the upgrader case's list: a field array, or a ZotLit data.json; needs --vault-case upgrader",
+  type: "string",
+} as const;
+
+/** The `--upgrader-fields` file, checked against the field shape ZotLit saves. */
+async function readUpgraderFields(
+  path: string | undefined,
+  vaultCase: string | undefined,
+): Promise<FrontmatterField[] | undefined> {
+  if (path === undefined) return undefined;
+  if (vaultCase !== "upgrader") {
+    throw new Error("--upgrader-fields needs --vault-case upgrader");
+  }
+  const json: unknown = JSON.parse(await readFile(resolve(path), "utf-8"));
+  return v.parse(
+    v.array(frontmatterFieldSchema),
+    Array.isArray(json)
+      ? json
+      : (json as Record<string, unknown>)["note.frontmatter-fields"],
+  );
+}
+
 const scopeCaseOption = {
   describe: "Scope Case to build",
   type: "string",
@@ -1005,7 +1043,8 @@ const vaultCli = yargs(hideBin(process.argv))
         .option("live-update-port", liveUpdatePortOption)
         .option("zotero-http-port", zoteroHttpPortOption)
         .option("local-api", localApiOption)
-        .option("grant-local-api-writes", grantLocalApiWritesOption),
+        .option("grant-local-api-writes", grantLocalApiWritesOption)
+        .option("upgrader-fields", upgraderFieldsOption),
     async (argv) => {
       await open(
         argv["vault-path"] ?? getDevVaultDir(workspaceRoot, argv["vault-case"]),
@@ -1017,6 +1056,10 @@ const vaultCli = yargs(hideBin(process.argv))
           zoteroHttpPort: argv["zotero-http-port"],
           localApi: argv["local-api"],
           grantLocalApiWrites: argv["grant-local-api-writes"],
+          upgraderFields: await readUpgraderFields(
+            argv["upgrader-fields"],
+            argv["vault-case"],
+          ),
         },
       );
     },
@@ -1040,7 +1083,8 @@ const vaultCli = yargs(hideBin(process.argv))
         .option("live-update-port", liveUpdatePortOption)
         .option("zotero-http-port", zoteroHttpPortOption)
         .option("local-api", localApiOption)
-        .option("grant-local-api-writes", grantLocalApiWritesOption),
+        .option("grant-local-api-writes", grantLocalApiWritesOption)
+        .option("upgrader-fields", upgraderFieldsOption),
     async (argv) => {
       await sync(
         argv["vault-path"] ?? getDevVaultDir(workspaceRoot, argv["vault-case"]),
@@ -1051,6 +1095,10 @@ const vaultCli = yargs(hideBin(process.argv))
           zoteroHttpPort: argv["zotero-http-port"],
           localApi: argv["local-api"],
           grantLocalApiWrites: argv["grant-local-api-writes"],
+          upgraderFields: await readUpgraderFields(
+            argv["upgrader-fields"],
+            argv["vault-case"],
+          ),
         },
       );
     },

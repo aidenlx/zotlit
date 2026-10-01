@@ -193,6 +193,10 @@ ${UPGRADER_PLUGIN_VERSION}, and this note.frontmatter-fields list:
 
 ${UPGRADER_FRONTMATTER_FIELDS.map((f) => `  ${f.key.padEnd(12)} ${f.expr}`).join("\n")}
 
+To reproduce a reader's migration, pass their list to obsidian-vault.ts open
+or sync with --upgrader-fields <file>: a JSON field array, or their ZotLit
+data.json.
+
 Its template folder holds these ejected Legacy Template Files. Each starts
 from a shipped default and carries one visible edit:
 

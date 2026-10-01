@@ -71,7 +71,11 @@ import {
   UPGRADER_LEGACY_TEMPLATES,
   VAULT_CASES,
 } from "./build.ts";
-import type { FixtureLayout, PersistedLibraryScope } from "./build.ts";
+import type {
+  BuildOptions,
+  FixtureLayout,
+  PersistedLibraryScope,
+} from "./build.ts";
 import {
   BETTER_BIBTEX_PREFS,
   OBSIDIAN_PROTOCOL_PREFS,
@@ -2110,7 +2114,10 @@ describe("the generated Obsidian vault", () => {
 });
 
 describe("a Vault Case", () => {
-  async function buildVaultCase(vaultCase: string): Promise<FixtureLayout> {
+  async function buildVaultCase(
+    vaultCase: string,
+    options: Pick<BuildOptions, "upgraderFields"> = {},
+  ): Promise<FixtureLayout> {
     const caseLayout = getFixtureLayout(
       await mkdtemp(join(dirname(layout.root), `fixture-test-${vaultCase}-`)),
     );
@@ -2124,7 +2131,11 @@ describe("a Vault Case", () => {
       join(bundleDir, "data.json"),
       JSON.stringify({ __VERSION__: 10, stale: true }),
     );
-    await buildFixture(caseLayout, { vaultCase, pluginBundleDir: bundleDir });
+    await buildFixture(caseLayout, {
+      ...options,
+      vaultCase,
+      pluginBundleDir: bundleDir,
+    });
     return caseLayout;
   }
 
@@ -2269,6 +2280,31 @@ describe("a Vault Case", () => {
       "citekey",
       "year",
     ]);
+  });
+
+  it("writes a reader's own field list into an upgrader vault", async () => {
+    const fields: NonNullable<BuildOptions["upgraderFields"]> = [
+      {
+        key: "aliases",
+        expr: "zt.shortTitle",
+        merge: "append",
+        language: "liquid",
+      },
+      {
+        key: "authors",
+        expr: "zt.creators.map((c) => c.lastName)",
+        merge: "replace",
+        language: "javascript",
+      },
+    ];
+    const upgrader = await buildVaultCase("upgrader", {
+      upgraderFields: fields,
+    });
+    const data = JSON.parse(
+      await readFile(upgrader.pluginDataPath, "utf-8"),
+    ) as Record<string, unknown>;
+
+    expect(data["note.frontmatter-fields"]).toEqual(fields);
   });
 
   it("ejects every Legacy Template File with its visible edit, and no Profile document", async () => {
