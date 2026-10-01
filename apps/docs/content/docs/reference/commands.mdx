@@ -241,7 +241,7 @@ Opens the profile document that the note resolves against in the Template Workbe
 
 <Command name={m.command_switch_literature_note_profile_name()} />
 
-Opens the profile picker for the note, then asks for consent before writing anything. The switch re-renders the note with the chosen profile. The dialog also offers to move the note into that profile's folder.
+Opens the profile picker for the note, then asks for consent before writing anything. The switch re-renders the note with the chosen profile. The dialog also offers to move the note into that profile's folder. The checkbox names the folder the note moves into, for example <UiLabel name={m.modal_profile_switch_move({ folder: "books/2024/" })} />. The move keeps the subfolders the note has under its current profile's folder: `literatures/2024/Smith2020.md` moves to `books/2024/Smith2020.md`. A note outside its profile's folder, or a note whose profile ZotLit does not recognize, moves by its file name alone.
 
 | Entry point     | Details                     |
 | --------------- | --------------------------- |

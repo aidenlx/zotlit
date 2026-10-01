@@ -150,7 +150,9 @@ Only the Liquid edition is built in. The same template in Eta reads:
 
 ## Filename template
 
-In a Profile document: the `filename` key of its YAML manifest.
+In a Profile document: the `filename` key of its YAML manifest. The Template Workbench View labels it <UiLabel name={m.workbench_name_filename_label()} />.
+
+The rendered output is the name part of a new note's path. ZotLit creates the note in the Profile's [literature note folder](/docs/reference/settings#literature-note-folder), under this name.
 
 ```liquid
 {{ zt.citationKey | default: zt.DOI | default: zt.title | default: zt.key }}{% suffix %}
@@ -163,9 +165,10 @@ In a Profile document: the `filename` key of its YAML manifest.
 | Single line    | The rendered output is collapsed to a single trimmed line (all newlines and surrounding whitespace removed).                           |
 | Extension      | The `.md` extension is appended automatically; the template produces only the base name.                                               |
 
-<Callout type="info" title="Subfolders in filenames">
-  Include a forward slash (`/`) in the rendered filename to route the note into
-  a subfolder under the literature note folder.
+<Callout type="info" title="Subfolders in the note name">
+  A forward slash (`/`) in the rendered name makes a subfolder under the
+  literature note folder. The folder `literatures` and the name `2024/Smith2020`
+  give `literatures/2024/Smith2020.md`.
 </Callout>
 
 ## Live recompilation
