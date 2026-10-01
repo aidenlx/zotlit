@@ -36,8 +36,8 @@ function EditorPane() {
   return <Pane controller={useWorkbenchController()} />;
 }
 
-function setup() {
-  const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
+function setup(source = DEFAULT_PROFILE_SOURCE) {
+  const controller = new WorkbenchDocumentController(source);
   const host = fakeHost();
   const result = render(
     <WorkbenchHostProvider host={host}>
@@ -308,6 +308,59 @@ it.each(["\n", "\r\n"])(
       "zt.relatedItems | note_links",
       "zt.collections | collection_paths",
       '{"$eval":"zt.citationKey"}',
+    ]);
+  },
+);
+
+it.each(["\n", "\r\n"])(
+  "explains and holds back list changes while the manifest does not parse (line break %j)",
+  (lineBreak) => {
+    const source = DEFAULT_PROFILE_SOURCE.replaceAll("\n", lineBreak);
+    const { controller, press } = setup(source);
+    const button = (name: string, index = 0) =>
+      screen.getAllByRole<HTMLButtonElement>("button", { name })[index]!;
+    press(m.workbench_properties_edit(), 3);
+    // Drop the closing brace of the citekey rule, which breaks the manifest.
+    const brace = controller.sliceRange(entrySlice(4)).to - 1;
+    act(() => {
+      controller.dispatch({
+        changes: { from: brace, to: brace + 1 },
+        userEvent: "input.type",
+      });
+    });
+    const broken = controller.source;
+    expect(controller.managedEntries).toHaveLength(4);
+
+    expect(screen.getByText(m.workbench_properties_unparsed())).toBeTruthy();
+    expect(button(m.workbench_properties_remove(), 3).disabled).toBe(true);
+    expect(button(m.workbench_properties_add()).disabled).toBe(true);
+    expect(button(m.workbench_properties_add_override(), 3).disabled).toBe(
+      true,
+    );
+    expect(button(m.workbench_properties_move_up(), 3).disabled).toBe(true);
+    const format = screen.getByRole<HTMLSelectElement>("combobox", {
+      name: m.workbench_properties_format(),
+    });
+    expect(format.disabled).toBe(true);
+    expect(
+      screen.getByRole<HTMLInputElement>("textbox", {
+        name: m.workbench_properties_name(),
+      }).readOnly,
+    ).toBe(true);
+    fireEvent.click(button(m.workbench_properties_remove(), 3));
+    expect(controller.source).toBe(broken);
+    expect(controller.managedEntries).toHaveLength(4);
+
+    act(() => {
+      controller.undo();
+    });
+    expect(screen.queryByText(m.workbench_properties_unparsed())).toBeNull();
+    expect(button(m.workbench_properties_remove(), 3).disabled).toBe(false);
+    press(m.workbench_properties_remove(), 3);
+    expect(controller.managedEntries?.map((entry) => entry.key)).toEqual([
+      "title",
+      "related",
+      "collections",
     ]);
   },
 );
