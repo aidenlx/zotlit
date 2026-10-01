@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "imports": {
+    "#commit-tree": "./lib/commit-tree.ts",
     "#fixture": "./lib/fixture/build.ts",
     "#fixture/*": "./lib/fixture/*.ts",
     "#obsidian-manifest": "./lib/obsidian-manifest.ts",

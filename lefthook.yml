@@ -1,6 +1,11 @@
 pre-commit:
   piped: true
   commands:
+    # Runs first: lint builds the working tree, so files outside the commit
+    # would reach it. See packages/scripts/lib/commit-tree.ts.
+    tree:
+      priority: 1
+      run: mise exec -- node packages/scripts/scripts/commit-tree.ts
     format:
       run: mise exec -- oxfmt --no-error-on-unmatched-pattern {staged_files}
       stage_fixed: true
