@@ -1,0 +1,78 @@
+---
+version: "2.2.0-beta.2"
+date: "2026-10-02"
+description: "Note path in one place, profiles that keep what you type, Word export fixes"
+---
+
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+This beta shows a literature note's full path while you edit its profile, and fixes many problems found in the Template Workbench, citations, and Word export.
+
+## What's New
+
+### Note path
+
+The <UiLabel name={m.workbench_tab_name_and_folder()} /> tab of the Template Workbench now shows one <UiLabel name={m.workbench_name_path_heading()} /> group. It holds the <UiLabel name={m.workbench_name_binding_folder()} />, the <UiLabel name={m.workbench_name_filename_label()} />, and a <UiLabel name={m.workbench_name_filename_result()} /> of the full vault path the note gets. A slash (`/`) in the note name makes a subfolder. See [Template Workbench View](/docs/concepts/template-workbench-view) and [Customize a template](/docs/how-to/customize-a-template).
+
+<UiLabel name={m.settings_profile_add()} /> on
+<SettingsPath page={m.settings_page_profiles()} /> now needs only a valid name
+that no other profile uses. The folder is optional; leave it empty to use the
+Default profile's folder. Before, ZotLit refused a new profile unless its
+folder, citation style, or note look was different. See [Use a different
+template for different notes](/docs/how-to/use-different-templates).
+
+When you switch a note to another profile, or delete a profile and its notes move, each note now keeps its subfolders under the new folder. For example, `literatures/2024/Smith2020.md` moves to `books/2024/Smith2020.md`. Before, the note moved to the top of the new folder.
+
+### Other improvements
+
+- The search box of <Command inline name={m.command_open_lit_note_name()} /> reads <UiLabel name={m.modal_literature_search_placeholder()} />, so you know what you can search by.
+- The notice that confirms Zotero editing is on now closes after 3 seconds. Before, it covered the top of the annotation view for 10 seconds.
+- The export dialog shows the destination in a readable form. A destination in your vault shows its path in the vault and the vault name; a destination in your home folder shows a short path.
+
+## Bug Fixes
+
+### Template Workbench
+
+- A property rule such as `zt.creators | map: "fullName"`, or a note name with quotes, `: `, `- `, or a leading `*`, `&`, or `!`, could change meaning when you typed it into a Workbench pane, or break the profile so that it stopped working. Text you type now saves exactly as you typed it.
+- While the profile had an error, <UiLabel name={m.workbench_properties_remove()} /> and <UiLabel name={m.workbench_properties_format_reset()} /> on the <UiLabel name={m.workbench_tab_properties()} /> tab looked like they worked but changed nothing. The tab now tells you to fix the error first and stops list changes until you do. You can still edit the rules to make the repair. <UiLabel name={m.workbench_problem_show()} /> goes to the error, and undo restores the last working version. See [Configure frontmatter properties](/docs/how-to/configure-frontmatter-properties).
+- Folded rows on the <UiLabel name={m.workbench_tab_properties()} /> tab showed broken summaries for a profile saved with Windows line endings. They now show the rule correctly.
+- <Command inline name={m.command_customize_note_template_name()} /> showed the
+  Workbench in the main window for a moment before it moved to its own window.
+  It now opens in its own window directly.
+- A reopened Workbench went back to the <UiLabel name={m.workbench_tab_note()} /> tab. It now returns to the tab you were on, such as <UiLabel name={m.workbench_tab_annotation()} />, <UiLabel name={m.workbench_tab_name_and_folder()} />, or <UiLabel name={m.workbench_advanced()} />.
+
+### Citations
+
+- With <UiLabel name={m.settings_citation_open_as_links_name()} /> off, a plain click on a formatted citation did not put the cursor in it. The click now shows the citation's source text with the cursor where you clicked. `Ctrl`-click or `Command`-click still opens the cited literature note.
+- `[[@key]]` was read as a citation, both in the editor and in the note's references. It is now an ordinary wikilink.
+- An inserted bracketed citation such as `[@key]` got a space after it, so punctuation could not follow it directly. It now gets no space.
+- Editing the locator after a citation key, as in `[@key, p. 5]`, opened the citation suggester, and choosing a result replaced the locator. The suggester now stays closed while you edit a locator.
+
+### Notes and annotations
+
+- Live note updates moved your reading position. The note now stays where you were reading.
+- <Command inline name={m.command_update_note_name()} /> and
+  <Command inline name={m.command_update_note_metadata_name()} /> were not
+  available while the cursor was in the note title or in Properties. They now
+  work from anywhere in the note.
+- A dragged annotation dropped at the end of a sentence joined that line. It now goes in as a block of its own. A drop on the empty last line of a note now inserts the annotation, and a drop with no target note tells you so. See [Use the annotation view](/docs/how-to/use-annotation-view).
+- In Live Preview, the `%%/zt-managed%%` closing marker was hidden inside the last callout of the note. It now stays outside the callout.
+- The <UiLabel name={m.cited_by_view_name()} /> view showed zero counts when no literature note was open. It now shows counts only for a literature note.
+
+### Export
+
+- Exporting to Word now handles three things correctly. See [Export a note with citations](/docs/how-to/export-note-with-citations).
+  - A callout showed its raw `[!type]` text. It now becomes a quote with a bold title.
+  - A quote directly under a line of text became plain text. It now stays a quote.
+  - The reference list had no heading. It now has one in the language of the citation style. The note's `reference-section-title` property sets a different heading.
+
+### Welcome view
+
+- The folder, ZotLit Companion, and first-note steps stayed to-do after you completed them. They now show as done, and the Companion step stops offering the install once the Companion is installed.
+- <Command inline name={m.command_open_welcome_name()} /> opened in place of the
+  active note, so going back skipped that note. It now opens in a new tab beside
+  it.
+- Choosing a result in the literature note search from the Welcome view opened a second copy of a note that was already open. It now switches to the open note. Modifier keys still open the note in a new pane.
