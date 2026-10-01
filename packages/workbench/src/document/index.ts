@@ -32,6 +32,7 @@ export type {
   ManagedEntrySource,
   ManagedFrontmatterList,
   ManifestScalar,
+  ManifestScalarSlice,
 } from "./manifest-patch";
 export { noteRegions, partialCalls, templateCalls } from "./regions";
 export type {
@@ -40,6 +41,8 @@ export type {
   NoteRegions,
   PartialRenderSite,
 } from "./regions";
-export { jsonSliceText, workbenchSlice } from "./slice";
+export { sliceOffsets, sliceShownText, workbenchSlice } from "./slice";
+export { jsonCodec, scalarCodec, sourceCodec } from "./slice-codec";
+export type { SliceCodec } from "./slice-codec";
 
 export { jsonLayout, jsonPosition } from "./json-source";

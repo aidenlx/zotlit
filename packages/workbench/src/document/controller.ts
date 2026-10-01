@@ -38,7 +38,7 @@ import {
   updateLiteratureNotePackMetadata,
 } from "@zotlit/templates/literature-note-pack";
 
-import { jsonSliceHistory, yamlValue } from "./json-source";
+import { jsonSliceHistory } from "./json-source";
 import {
   managedEntryEdit,
   managedFrontmatterEntries,
@@ -55,6 +55,9 @@ import type {
 } from "./manifest-patch";
 import { noteRegions, RESERVED_CALL_NAMES } from "./regions";
 import type { NoteRegions } from "./regions";
+import { yamlValue } from "./scalar-source";
+import { jsonCodec, scalarCodec, sourceCodec } from "./slice-codec";
+import type { SliceCodec } from "./slice-codec";
 
 import { pairingState, pairingHistory } from "#/language/pairing-state";
 import { DEFAULT_PARTIAL_CONTEXT } from "#/render/partial-preview";
@@ -175,6 +178,8 @@ export class WorkbenchDocumentController {
     ["note", { from: 0, to: 0 }],
     ["advanced", { from: 0, to: 0 }],
   ]);
+  /** The slices a pane shows other than as written: the manifest values. */
+  readonly #codecs = new Map<WorkbenchSliceId, SliceCodec>();
   readonly #slices = new Map<WorkbenchSliceId, WorkbenchSliceEditor>();
   readonly #listeners = new Set<(update: WorkbenchUpdate) => void>();
 
@@ -466,6 +471,21 @@ export class WorkbenchDocumentController {
   sliceText(id: WorkbenchSliceId): string {
     const { from, to } = this.sliceRange(id);
     return this.#state.doc.sliceString(from, to);
+  }
+
+  /** The text before slice `id` on its first line, where a manifest value's key sits. */
+  slicePrefix(id: WorkbenchSliceId): string {
+    const { from } = this.sliceRange(id);
+    return this.#state.doc.sliceString(this.#state.doc.lineAt(from).from, from);
+  }
+
+  /**
+   * How a pane shows slice `id`. A manifest scalar shows the text YAML reads
+   * and stores the reader's text as YAML; a JSON-e rule shows laid-out JSON;
+   * every other slice shows its text as written.
+   */
+  sliceCodec(id: WorkbenchSliceId): SliceCodec {
+    return this.#codecs.get(id) ?? sourceCodec;
   }
 
   /** Records which slice holds the caret, so the change filter can quarantine it. */
@@ -855,15 +875,21 @@ export class WorkbenchDocumentController {
     this.#entriesHeld = list.status === "unparsed";
     if (list.status === "unparsed") return;
     const filename = manifestScalarSlice(source, ["filename"]);
-    if (filename) this.#ranges.set("filename", filename);
-    else this.#ranges.delete("filename");
+    this.#codecs.clear();
+    if (filename) {
+      this.#ranges.set("filename", { from: filename.from, to: filename.to });
+      if (!filename.literal) this.#codecs.set("filename", scalarCodec);
+    } else this.#ranges.delete("filename");
     const entries = list.status === "rows" ? list.entries : null;
     this.#entries = entries;
     for (const id of this.#ranges.keys()) {
       if (id.startsWith("entry:")) this.#ranges.delete(id);
     }
     for (const entry of entries ?? []) {
-      this.#ranges.set(entrySlice(entry.position), entry.expression);
+      const id = entrySlice(entry.position);
+      this.#ranges.set(id, entry.expression);
+      if (entry.language === "expr") this.#codecs.set(id, scalarCodec);
+      if (entry.language === "value") this.#codecs.set(id, jsonCodec);
     }
   }
 
@@ -912,7 +938,7 @@ export class WorkbenchDocumentController {
     } catch (error) {
       if (!(error instanceof LiteratureNoteTemplateError)) throw error;
       this.#document = null;
-      const entry = error.manifestPath ? null : this.#unreadableEntry(source);
+      const entry = error.manifestPath ? null : this.#unreadableEntry();
       // A manifest field the parser can name beats the line its offset sits on,
       // which for a schema failure is the manifest's first line.
       const range =
@@ -983,14 +1009,13 @@ export class WorkbenchDocumentController {
    * that stops the manifest parsing is repaired in that row, whose range the
    * change set remapped.
    */
-  #unreadableEntry(
-    source: string,
-  ): { id: WorkbenchSliceId; range: WorkbenchSliceRange } | null {
+  #unreadableEntry(): {
+    id: WorkbenchSliceId;
+    range: WorkbenchSliceRange;
+  } | null {
     for (const [id, range] of this.#ranges) {
       if (entryPosition(id) === null) continue;
-      const column =
-        range.from - (source.lastIndexOf("\n", range.from - 1) + 1);
-      if (yamlValue(source.slice(range.from, range.to), column) === undefined)
+      if (yamlValue(this.sliceText(id), this.slicePrefix(id)) === undefined)
         return { id, range };
     }
     return null;

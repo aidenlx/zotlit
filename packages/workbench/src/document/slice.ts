@@ -20,13 +20,9 @@ import type {
   WorkbenchSliceId,
   WorkbenchSliceRange,
 } from "./controller";
-import {
-  isJson,
-  jsonLayout,
-  jsonPosition,
-  jsonSliceEdit,
-  ruleDisplay,
-} from "./json-source";
+import { isJson, jsonSliceEdit } from "./json-source";
+import { jsonCodec, sourceCodec } from "./slice-codec";
+import type { SliceCodec } from "./slice-codec";
 
 import {
   addPair,
@@ -42,16 +38,18 @@ const fromMaster = Annotation.define<boolean>();
 /**
  * Binds one editor to `id`'s region of `controller`. Child edits are forwarded
  * to the master carrying their user event, so keystrokes group into one undo
- * step; master changes replace the child document wholesale.
+ * step; master changes replace the child document wholesale. The editor shows
+ * the region through the controller's {@link SliceCodec} for `id`.
  */
 export function workbenchSlice(
   controller: WorkbenchDocumentController,
   id: WorkbenchSliceId,
-  json = false,
 ): Extension {
   return [
     pairingState.init(() =>
-      json ? [] : slicePairs(controller.state, controller.sliceRange(id)),
+      controller.sliceCodec(id) === sourceCodec
+        ? slicePairs(controller.state, controller.sliceRange(id))
+        : [],
     ),
     // Undo belongs to the master, which holds the only history, so this
     // binding has to beat every other undo binding in the host.
@@ -67,42 +65,45 @@ export function workbenchSlice(
       ]),
     ),
     keymap.of(defaultKeymap),
-    ViewPlugin.define((view) => new SliceSync(view, controller, { id, json })),
+    ViewPlugin.define((view) => new SliceSync(view, controller, id)),
   ];
 }
 
-/** The text a rule editor shows for `id`. */
-export function jsonSliceText(
+/** The text an editor shows for slice `id`. */
+export function sliceShownText(
   controller: WorkbenchDocumentController,
   id: WorkbenchSliceId,
 ): string {
-  return ruleDisplay(controller.sliceText(id), sliceColumn(controller, id));
+  return controller
+    .sliceCodec(id)
+    .show(controller.sliceText(id), controller.slicePrefix(id));
 }
 
-/** How far into its line the slice `id` starts. */
-function sliceColumn(
+/** Maps carets between `shown`, an editor's text for slice `id`, and the slice's stored text. */
+export function sliceOffsets(
   controller: WorkbenchDocumentController,
   id: WorkbenchSliceId,
-): number {
-  const { from } = controller.sliceRange(id);
-  return from - (controller.source.lastIndexOf("\n", from - 1) + 1);
+  shown: string,
+) {
+  const codec = controller.sliceCodec(id);
+  const stored = controller.sliceText(id);
+  return {
+    toStored: (position: number) => codec.toStored(shown, stored, position),
+    toShown: (position: number) => codec.toShown(stored, shown, position),
+  };
 }
 
 class SliceSync implements PluginValue {
   #range: WorkbenchSliceRange;
   #pushing = false;
-  readonly id: WorkbenchSliceId;
-  readonly json: boolean;
   readonly #unsubscribe: () => void;
   readonly #unregister: () => void;
 
   constructor(
     readonly view: EditorView,
     readonly controller: WorkbenchDocumentController,
-    { id, json }: { id: WorkbenchSliceId; json: boolean },
+    readonly id: WorkbenchSliceId,
   ) {
-    this.id = id;
-    this.json = json;
     this.#range = controller.sliceRange(id);
     this.#unsubscribe = controller.subscribe((update) => {
       if (
@@ -115,47 +116,55 @@ class SliceSync implements PluginValue {
     // is suppressed and handed back here instead.
     this.#unregister = controller.registerSlice(id, {
       replay: (changes, userEvent) => {
-        const mapped: ChangeSpec[] = [];
+        const { codec } = this;
         const source = controller.sliceText(id);
-        if (json && !isJson(source)) {
+        const edit = ChangeSet.of(changes, source.length);
+        if (this.json && !isJson(source)) {
           // A rule in another YAML form has no JSON tokens to map the edit
           // onto, so the edit applies to its text and the editor shows the
           // value that results.
-          const edited = ChangeSet.of(changes, source.length)
-            .apply(Text.of(source.split("\n")))
-            .toString();
+          const edited = edit.apply(Text.of(source.split("\n"))).toString();
           this.view.dispatch({
             changes: {
               from: 0,
               to: this.view.state.doc.length,
-              insert: ruleDisplay(edited, sliceColumn(controller, id)),
+              insert: codec.show(edited, controller.slicePrefix(id)),
             },
             ...(userEvent === undefined ? {} : { userEvent }),
           });
           return;
         }
-        if (json) {
-          ChangeSet.of(changes, source.length).iterChanges(
-            // oxlint-disable-next-line max-params -- CM's iterChanges callback signature.
-            (from, to, _fromB, _toB, inserted) => {
-              mapped.push({
-                from: jsonPosition(
-                  source,
-                  this.view.state.doc.toString(),
-                  from,
-                ),
-                to: jsonPosition(source, this.view.state.doc.toString(), to),
-                insert: inserted.toString(),
-              });
-            },
-          );
-        }
+        // The edit names places in the stored text; the editor takes it at the
+        // same places in its own text, as the reader's own text.
+        const shown = this.view.state.doc.toString();
+        const mapped: ChangeSpec[] = [];
+        // oxlint-disable-next-line max-params -- CM's iterChanges callback signature.
+        edit.iterChanges((from, to, _fromB, _toB, inserted) => {
+          mapped.push({
+            from: codec.toShown(source, shown, from),
+            to: codec.toShown(source, shown, to),
+            insert: inserted.toString(),
+          });
+        });
         this.view.dispatch({
-          changes: json ? mapped : changes,
+          changes: mapped,
           ...(userEvent === undefined ? {} : { userEvent }),
         });
       },
     });
+  }
+
+  /**
+   * Read at each use: Advanced can rewrite a note name between a quoted and a
+   * block scalar while this editor stays mounted.
+   */
+  get codec(): SliceCodec {
+    return this.controller.sliceCodec(this.id);
+  }
+
+  /** A JSON-e rule keeps the layout the reader typed as a draft of its own. */
+  get json(): boolean {
+    return this.codec === jsonCodec;
   }
 
   update(update: ViewUpdate): void {
@@ -176,9 +185,10 @@ class SliceSync implements PluginValue {
     this.controller.setFocusedSlice(null);
   }
 
-  /** Forward edits in source coordinates; JSON layout stays in the child. */
+  /** Forward edits in source coordinates; the shown spelling stays in the child. */
   #push(transaction: Transaction): void {
     const { from } = this.#range;
+    const { codec } = this;
     const changes: ChangeSpec[] = [];
     // oxlint-disable-next-line max-params -- CM's iterChanges callback signature.
     transaction.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
@@ -190,29 +200,30 @@ class SliceSync implements PluginValue {
     });
 
     let head = transaction.state.selection.main.head;
-    const effects: StateEffect<unknown>[] = this.json
-      ? []
-      : transaction.effects
-          .filter((effect) => effect.is(addPair))
-          .map((effect) => addPair.of(offsetPair(effect.value, from)));
+    const effects: StateEffect<unknown>[] =
+      codec === sourceCodec
+        ? transaction.effects
+            .filter((effect) => effect.is(addPair))
+            .map((effect) => addPair.of(offsetPair(effect.value, from)))
+        : [];
     let grown = transaction.newDoc.length - transaction.startState.doc.length;
-    if (this.json) {
-      const source = this.controller.sliceText(this.id);
+    const source = this.controller.sliceText(this.id);
+    if (codec !== sourceCodec) {
       const display = transaction.newDoc.toString();
-      const compact = jsonLayout(display, false);
+      const stored = codec.store(display, source);
       let left = 0;
       while (
         left < source.length &&
-        left < compact.text.length &&
-        source[left] === compact.text[left]
+        left < stored.length &&
+        source[left] === stored[left]
       )
         left++;
       let right = source.length;
-      let end = compact.text.length;
+      let end = stored.length;
       while (
         right > left &&
         end > left &&
-        source[right - 1] === compact.text[end - 1]
+        source[right - 1] === stored[end - 1]
       ) {
         right--;
         end--;
@@ -221,8 +232,8 @@ class SliceSync implements PluginValue {
       // there only after a space.
       const gap =
         source === "" &&
-        compact.text !== "" &&
-        !/\s/.test(this.controller.source[from - 1] ?? " ")
+        stored !== "" &&
+        !/\s/.test(this.controller.slicePrefix(this.id).at(-1) ?? " ")
           ? " "
           : "";
       changes.length = 0;
@@ -230,20 +241,22 @@ class SliceSync implements PluginValue {
         changes.push({
           from: from + left,
           to: from + right,
-          insert: gap + compact.text.slice(left, end),
+          insert: gap + stored.slice(left, end),
         });
-      effects.push(
-        jsonSliceEdit.of({
-          id: this.id,
-          before: {
-            text: transaction.startState.doc.toString(),
-            head: transaction.startState.selection.main.head,
-          },
-          after: { text: display, head },
-        }),
-      );
-      head = compact.changes.mapPos(head, 1) + gap.length;
-      grown = gap.length + compact.text.length - source.length;
+      if (this.json) {
+        effects.push(
+          jsonSliceEdit.of({
+            id: this.id,
+            before: {
+              text: transaction.startState.doc.toString(),
+              head: transaction.startState.selection.main.head,
+            },
+            after: { text: display, head },
+          }),
+        );
+      }
+      head = codec.toStored(display, stored, head) + gap.length;
+      grown = gap.length + stored.length - source.length;
     }
     head = Math.min(from + head, this.controller.state.doc.length + grown);
     const userEvent = transaction.annotation(Transaction.userEvent);
@@ -251,7 +264,12 @@ class SliceSync implements PluginValue {
     if (!this.json) {
       this.controller.dispatch({
         selection: EditorSelection.cursor(
-          from + transaction.startState.selection.main.head,
+          from +
+            codec.toStored(
+              transaction.startState.doc.toString(),
+              source,
+              transaction.startState.selection.main.head,
+            ),
         ),
         annotations: Transaction.addToHistory.of(false),
       });
@@ -283,6 +301,7 @@ class SliceSync implements PluginValue {
     const previous = this.#range;
     this.#range = this.controller.sliceRange(this.id);
     if (this.json && this.#pushing) return;
+    const { codec } = this;
     const source = this.controller.sliceText(this.id);
     const draft = this.json
       ? transaction.effects.findLast(
@@ -290,10 +309,10 @@ class SliceSync implements PluginValue {
         )?.value.after
       : undefined;
     const text =
-      draft?.text ??
-      (this.json ? jsonSliceText(this.controller, this.id) : source);
+      draft?.text ?? codec.show(source, this.controller.slicePrefix(this.id));
+    const pairs = codec === sourceCodec;
     if (text === this.view.state.doc.toString() && !draft) {
-      if (!this.json && transaction.annotation(sliceEdit) !== this.id) {
+      if (pairs && transaction.annotation(sliceEdit) !== this.id) {
         this.view.dispatch({
           effects: restorePairs.of(
             slicePairs(this.controller.state, this.#range),
@@ -303,13 +322,11 @@ class SliceSync implements PluginValue {
       }
       return;
     }
-    const oldHead = this.json
-      ? jsonPosition(
-          this.view.state.doc.toString(),
-          transaction.startState.sliceDoc(previous.from, previous.to),
-          this.view.state.selection.main.head,
-        )
-      : this.view.state.selection.main.head;
+    const oldHead = codec.toStored(
+      this.view.state.doc.toString(),
+      transaction.startState.sliceDoc(previous.from, previous.to),
+      this.view.state.selection.main.head,
+    );
     const masterHead = Math.min(
       Math.max(
         (transaction.isUserEvent("undo") || transaction.isUserEvent("redo")
@@ -320,16 +337,14 @@ class SliceSync implements PluginValue {
       ),
       source.length,
     );
-    const head =
-      draft?.head ??
-      (this.json ? jsonPosition(source, text, masterHead) : masterHead);
+    const head = draft?.head ?? codec.toShown(source, text, masterHead);
     this.view.dispatch({
       changes: { from: 0, to: this.view.state.doc.length, insert: text },
       selection: EditorSelection.cursor(
         Math.min(Math.max(head, 0), text.length),
       ),
       effects: restorePairs.of(
-        this.json ? [] : slicePairs(this.controller.state, this.#range),
+        pairs ? slicePairs(this.controller.state, this.#range) : [],
       ),
       annotations: fromMaster.of(true),
     });

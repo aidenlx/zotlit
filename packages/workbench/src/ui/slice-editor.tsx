@@ -35,7 +35,12 @@ import {
 import { tagDescription } from "./tag-help";
 import { useParts, useEditorExtension } from "./theme";
 
-import { workbenchSlice, jsonSliceText, jsonPosition } from "#/document/index";
+import {
+  workbenchSlice,
+  sliceOffsets,
+  sliceShownText,
+  sourceCodec,
+} from "#/document/index";
 import {
   liquidTemplate,
   etaLanguage,
@@ -89,7 +94,7 @@ export interface SliceEditorProps {
   language?: SliceLanguage;
   /**
    * Refuses a line break. A pane over a manifest scalar — the note name is the
-   * one — holds a value a break would end, taking the document with it.
+   * one — holds a value of one line.
    */
   singleLine?: boolean;
   /**
@@ -201,14 +206,13 @@ export function SliceEditor({
     );
     const read: SuggestionSource = (position) => {
       const sliceRange = controller.sliceRange(slice);
-      const local =
-        language === "json-e" && editor.current
-          ? jsonPosition(
-              editor.current.state.doc.toString(),
-              controller.sliceText(slice),
-              position,
-            )
-          : position;
+      const local = editor.current
+        ? sliceOffsets(
+            controller,
+            slice,
+            editor.current.state.doc.toString(),
+          ).toStored(position)
+        : position;
       const masterPosition = sliceRange.from + local;
       const region = controller.templateRegions.find(
         (region) =>
@@ -228,13 +232,16 @@ export function SliceEditor({
         root,
         language: language === "json-e" ? "json-e" : region?.language,
         mode: expression ? "expression" : undefined,
+        // A pane that shows a manifest value holds that value's text alone.
         scope:
           language === "json-e"
             ? undefined
-            : {
-                from: region!.from - sliceRange.from,
-                to: region!.to - sliceRange.from,
-              },
+            : controller.sliceCodec(slice) === sourceCodec
+              ? {
+                  from: region!.from - sliceRange.from,
+                  to: region!.to - sliceRange.from,
+                }
+              : { from: 0, to: sliceShownText(controller, slice).length },
         fields: completionFields(report.current.m, root),
         tagDescription: (name) => tagDescription(report.current.m, name),
         filterDescription: (name) =>
@@ -243,13 +250,10 @@ export function SliceEditor({
     };
     const view = new EditorView({
       state: EditorState.create({
-        doc:
-          language === "json-e"
-            ? jsonSliceText(controller, slice)
-            : controller.sliceText(slice),
+        doc: sliceShownText(controller, slice),
         extensions: [
           EditorState.readOnly.of(readOnly),
-          workbenchSlice(controller, slice, language === "json-e"),
+          workbenchSlice(controller, slice),
           syntaxSlot.current.of(report.current.syntax),
           ...(language === "expression"
             ? [
@@ -325,7 +329,11 @@ export function SliceEditor({
               sliceSelection(
                 update.view,
                 from,
-                language === "json-e" ? controller.sliceText(slice) : undefined,
+                sliceOffsets(
+                  controller,
+                  slice,
+                  update.view.state.doc.toString(),
+                ).toStored,
               ),
             );
           }),
@@ -351,7 +359,7 @@ export function SliceEditor({
       sliceSelection(
         view,
         controller.sliceRange(slice).from,
-        language === "json-e" ? controller.sliceText(slice) : undefined,
+        sliceOffsets(controller, slice, view.state.doc.toString()).toStored,
       ),
     );
   }, [controller, slice, language, onScreen]);
@@ -413,13 +421,9 @@ export function SliceEditor({
         Math.max(offset - from, 0),
         controller.sliceText(slice).length,
       );
-      return language === "json-e"
-        ? jsonPosition(
-            controller.sliceText(slice),
-            view.state.doc.toString(),
-            local,
-          )
-        : local;
+      return sliceOffsets(controller, slice, view.state.doc.toString()).toShown(
+        local,
+      );
     };
     view.dispatch({
       selection: EditorSelection.range(
@@ -455,14 +459,10 @@ export function SliceEditor({
 function sliceSelection(
   view: EditorView,
   sliceFrom: number,
-  jsonSource?: string,
+  toStored: (position: number) => number,
 ): WorkbenchInsertTarget["range"] {
   const { main } = view.state.selection;
-  const map = (position: number) =>
-    sliceFrom +
-    (jsonSource === undefined
-      ? position
-      : jsonPosition(view.state.doc.toString(), jsonSource, position));
+  const map = (position: number) => sliceFrom + toStored(position);
   return {
     from: map(main.from),
     to: map(main.to),

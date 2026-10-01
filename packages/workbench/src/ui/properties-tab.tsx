@@ -22,7 +22,7 @@ import type { SuggestionSource } from "./slice-editor";
 import { useIcon, useParts } from "./theme";
 import { useRetention } from "./visited";
 
-import { entrySlice } from "#/document/index";
+import { entrySlice, sliceShownText } from "#/document/index";
 
 const MERGE_LABEL: Record<string, WorkbenchMessageLabel> = {
   replace: "workbench_properties_merge_replace",
@@ -212,7 +212,9 @@ export function PropertiesPane({
           const summary =
             failure ??
             (exampleMessage
-              ? controller.sliceText(entrySlice(entry.position))
+              ? entry.language === "expr"
+                ? sliceShownText(controller, entrySlice(entry.position))
+                : controller.sliceText(entrySlice(entry.position))
               : summarize(m, { entry, produced: fields, fold }));
           return (
             <li key={entry.position} {...part("row")}>

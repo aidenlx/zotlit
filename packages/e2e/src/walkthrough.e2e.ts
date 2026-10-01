@@ -758,6 +758,73 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       ),
     ).toBe("false");
   });
+  it("stores a typed property rule and note name that YAML has to quote as the text the reader typed", async () => {
+    const m = await import("@obsidian-messages");
+    const rule = 'zt.creators | map: "fullName"';
+    const name = "{{ zt.title | replace: ':', '-' }}";
+    const result = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{
+          ${browserWaits}
+          await using cleanup=new AsyncDisposableStack();
+          const profile=app.plugins.plugins.zotlit.services.profile;
+          await profile.materializeDefault();
+          const file=app.vault.getFileByPath(profile.defaultDocumentPath);
+          const original=await app.vault.read(file);
+          cleanup.defer(async()=>{
+            for(const type of ['zotlit-template-workbench','zotlit-template-data-explorer','zotlit-note-preview'])
+              for(const leaf of app.workspace.getLeavesOfType(type))leaf.detach();
+            await app.vault.modify(file,original);
+          });
+          // The built-in Profile writes its note name as a block scalar, which
+          // YAML holds as written; a hand-written Profile quotes it.
+          const lines=original.split('\\n');
+          const at=lines.indexOf('filename: |');
+          if(at<0)throw new Error('Block note name');
+          lines.splice(at,2,"filename: '"+lines[at+1].trim().replaceAll("'","''")+"'");
+          await app.vault.modify(file,lines.join('\\n'));
+          const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());
+          await leaf.openFile(file);
+          app.workspace.setActiveLeaf(leaf,{focus:true});
+          app.commands.executeCommandById('zotlit:customize-profile');
+          const view=()=>app.workspace.getLeavesOfType('zotlit-template-workbench')[0]?.view;
+          await waitFor(()=>!!view()?.contentEl.querySelector('[role="tab"]'),true,'Profile Editor');
+          const el=view().contentEl;
+          const open=(label)=>Array.from(el.querySelectorAll('[role="tab"]')).find(tab=>tab.textContent===label).click();
+          const type=(content,text)=>{
+            const cm=content.cmTile.view;
+            cm.focus();
+            cm.dispatch({changes:{from:0,to:cm.state.doc.length,insert:text},selection:{anchor:text.length},userEvent:'input.type'});
+            return ()=>cm.state.doc.toString();
+          };
+          open(${JSON.stringify(m.workbench_tab_properties())});
+          const toggleOf=()=>Array.from(el.querySelectorAll('button[aria-controls][aria-expanded]')).find(button=>button.closest('li')?.innerText.startsWith('title\\n'));
+          await waitFor(()=>!!toggleOf(),true,'Title property row');
+          const toggle=toggleOf();
+          toggle.click();
+          const ruleEditor=()=>el.ownerDocument.getElementById(toggle.getAttribute('aria-controls'))?.querySelector('.cm-content');
+          await waitFor(()=>!!ruleEditor(),true,'Title rule editor');
+          const ruleShown=type(ruleEditor(),${JSON.stringify(rule)});
+          const storedRule=${JSON.stringify(`expr: '${rule}'`)};
+          await waitFor(()=>view().data.includes(storedRule),true,'Stored rule');
+          open(${JSON.stringify(m.workbench_tab_name_and_folder())});
+          const nameEditor=()=>Array.from(el.querySelectorAll('.cm-content')).find(content=>el.ownerDocument.getElementById(content.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.workbench_name_filename_label())});
+          await waitFor(()=>!!nameEditor(),true,'Note name editor');
+          const nameShown=type(nameEditor(),${JSON.stringify(name)});
+          const storedName=${JSON.stringify(`filename: '${name.replaceAll("'", "''")}'`)};
+          await waitFor(()=>view().data.includes(storedName),true,'Stored note name');
+          return JSON.stringify({
+            rule:ruleShown(),
+            name:nameShown(),
+            invalid:el.textContent.includes(${JSON.stringify(m.workbench_problem_invalid_manifest())}),
+          });
+        })()`,
+      ),
+    );
+    expect(result).toEqual({ rule, name, invalid: false });
+  });
+
   it("keeps Annotation fields and preview when Customize reopens its workbench", async () => {
     await obEval(
       vaultId,

@@ -7,6 +7,8 @@ import type { Document, Node, Pair, YAMLMap } from "yaml";
 
 import { literatureNoteTemplateManifestRange } from "@zotlit/templates/facade";
 
+import { scalarSource, scalarStyle } from "./scalar-source";
+
 /**
  * The value kinds a form control writes into the manifest. A multi-line YAML
  * value would land with its continuation lines at column 0, so patching one
@@ -89,8 +91,8 @@ export function manifestValueEdit(
   const found = manifestNode(source, path);
   if (!found) return null;
 
-  const { node, from, to } = found;
-  return { from, to, insert: scalarText(value, node) };
+  const { from, to } = found;
+  return { from, to, insert: scalarText(value, source.slice(from, to)) };
 }
 
 /**
@@ -116,7 +118,7 @@ export function manifestKeyEdit(
       : {
           from: manifest.end,
           to: manifest.end,
-          insert: `${key}: ${scalarText(value, null)}\n`,
+          insert: `${key}: ${scalarText(value, "")}\n`,
         };
   }
   // A block mapping or a sequence under this key spans lines the removal below
@@ -133,8 +135,11 @@ export function manifestKeyEdit(
   if (value !== undefined) {
     return {
       from: manifest.offset + from,
-      to: manifest.offset + to,
-      insert: scalarText(value, pair.value),
+      to: contentEnd(source, manifest.offset + from, manifest.offset + to),
+      insert: scalarText(
+        value,
+        source.slice(manifest.offset + from, manifest.offset + to),
+      ),
     };
   }
   // The key goes with the line it was written on, so the manifest keeps the
@@ -145,18 +150,27 @@ export function manifestKeyEdit(
   };
 }
 
+/** The region a pane edits a manifest scalar through. */
+export interface ManifestScalarSlice extends WorkbenchSliceRange {
+  /**
+   * The region is a block scalar's one content line, which YAML holds as
+   * written. Otherwise it is the whole scalar, quotes included, which a pane
+   * shows as the text YAML reads.
+   */
+  readonly literal: boolean;
+}
+
 /**
- * The text a manifest scalar holds, inside its quotes when it has them — the
- * region a slice editor owns, so the note-name template is edited as template
- * source rather than as YAML.
- * A block scalar's single content line leaves its header, indentation, and
- * trailing line breaks outside the slice.
- * @returns null for multi-line content or a quoted value carrying an escape.
+ * The region a slice editor owns for a manifest scalar, so the note-name
+ * template is edited as template source rather than as YAML. A block scalar's
+ * single content line leaves its header, indentation, and trailing line breaks
+ * outside the slice.
+ * @returns null for a value that is not a scalar, or a value of several lines.
  */
 export function manifestScalarSlice(
   source: string,
   path: readonly (string | number)[],
-): WorkbenchSliceRange | null {
+): ManifestScalarSlice | null {
   const found = manifestNode(source, path);
   if (!found || !isScalar(found.node)) return null;
 
@@ -178,15 +192,10 @@ export function manifestScalarSlice(
     )
       return null;
     const end = to - body.length + line.length;
-    return { from: end - text.length, to: end };
+    return { from: end - text.length, to: end, literal: true };
   }
-  const quoted = node.type === "QUOTE_SINGLE" || node.type === "QUOTE_DOUBLE";
-  if (node.type !== "PLAIN" && !quoted) return null;
-  const slice = quoted ? { from: from + 1, to: to - 1 } : { from, to };
-  const text = source.slice(slice.from, slice.to);
-  // A quoted scalar whose raw text differs from its value carries an escape or
-  // a doubled quote, which an editor over the raw text would corrupt.
-  return text.includes("\n") || (quoted && text !== node.value) ? null : slice;
+  if (typeof node.value === "string" && node.value.includes("\n")) return null;
+  return { from, to: contentEnd(source, from, to), literal: false };
 }
 
 /**
@@ -247,7 +256,7 @@ export function managedEntryEdit(
     case "language":
       return changeLanguage(list, action);
     case "set":
-      return setField(list, action);
+      return setField(source, list, action);
   }
 }
 
@@ -525,6 +534,7 @@ function changeLanguage(
 }
 
 function setField(
+  source: string,
   list: ManagedList,
   {
     position,
@@ -537,11 +547,14 @@ function setField(
 
   const pair = mapPair(target.node, field);
   if (pair && isNode(pair.value) && pair.value.range) {
-    return {
-      from: list.manifest.offset + pair.value.range[0],
-      to: list.manifest.offset + pair.value.range[1],
-      insert: scalarText(value, pair.value),
-    };
+    const from = list.manifest.offset + pair.value.range[0];
+    // A block scalar ends on the line under it, whose break the entry keeps.
+    const to = contentEnd(
+      source,
+      from,
+      list.manifest.offset + pair.value.range[1],
+    );
+    return { from, to, insert: scalarText(value, source.slice(from, to)) };
   }
   // An entry that never wrote the key gains it as its own line, at the column
   // its siblings sit at.
@@ -549,7 +562,7 @@ function setField(
   return {
     from: block.to,
     to: block.to,
-    insert: `${" ".repeat(target.column)}${field}: ${scalarText(value, null)}\n`,
+    insert: `${" ".repeat(target.column)}${field}: ${scalarText(value, "")}\n`,
   };
 }
 
@@ -565,14 +578,10 @@ function freshKey(list: ManagedList): string {
   return key;
 }
 
-/** A scalar written the way the node it replaces was written. */
-function scalarText(value: ManifestScalar, node: Node | null): string {
-  return stringify(value, {
-    lineWidth: 0,
-    ...(typeof value === "string" && node && isScalar(node) && node.type
-      ? { defaultStringType: node.type }
-      : {}),
-  }).trimEnd();
+/** A scalar written in the quoting of `previous`, the text it replaces, while that quoting holds it. */
+function scalarText(value: ManifestScalar, previous: string): string {
+  if (typeof value !== "string") return stringify(value).trimEnd();
+  return scalarSource(value, scalarStyle(previous));
 }
 
 function mapPair(node: unknown, name: string): Pair | null {
