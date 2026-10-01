@@ -36,7 +36,7 @@ it("renders editor examples and independent Preview after StrictMode replays eff
   await page.waitFor(() => {
     expect(
       page.host.querySelector('[data-part="filename-output"]')?.textContent,
-    ).toBe("ioannidisWhyMost2005");
+    ).toBe("literatures/ioannidisWhyMost2005.md");
     expect(page.host.querySelector('[role="document"]')?.textContent).toContain(
       "Why Most Published Research Findings Are False",
     );
@@ -51,7 +51,7 @@ it("renders editor examples and independent Preview after StrictMode replays eff
   await page.waitFor(() => {
     expect(
       page.host.querySelector('[data-part="filename-output"]')?.textContent,
-    ).toBe("Kahneman2011");
+    ).toBe("literatures/Kahneman2011.md");
     expect(page.host.querySelector('[role="document"]')?.textContent).toContain(
       "Thinking, fast and slow",
     );

@@ -16,10 +16,9 @@ import type {
   TemplateFilenameItemData,
 } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-import { hasSuffixMarker } from "@zotlit/templates";
+import { hasSuffixMarker, joinNotePath } from "@zotlit/templates";
 
 import { buildAnnotationResolvers } from "@/lib/annotation-render";
-import { joinFolderPath, normalizeFolderPath } from "@/lib/ensure-folder";
 import { creatorSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { syntheticFile } from "@/lib/markdown-link";
@@ -241,15 +240,9 @@ export function resolveRenderedNotePath(
 ): { path: string; canSuffix: boolean } {
   const rel = resolveRenderedRelPath(folder, rendered, options);
   return {
-    path: literatureNotePath(folder, rel),
+    path: joinNotePath(folder, rel),
     canSuffix: hasSuffixMarker(rendered),
   };
-}
-
-/** Join a rendered relative note path under the literature-note folder. */
-function literatureNotePath(folderSetting: string, rel: string): string {
-  const folder = normalizeFolderPath(folderSetting);
-  return joinFolderPath(folder, `${rel}.md`);
 }
 
 function resolveRenderedRelPath(
@@ -259,7 +252,7 @@ function resolveRenderedRelPath(
 ): string {
   return resolveFreeNotePath(
     rendered,
-    (rel) => options.exists(literatureNotePath(folderSetting, rel)),
+    (rel) => options.exists(joinNotePath(folderSetting, rel)),
     options.forceSuffix,
   );
 }
@@ -298,7 +291,7 @@ function resolveNoteTarget(
       ctx.template.renderFilename(item),
       { exists: () => false },
     );
-    const path = literatureNotePath(folderSetting, rel);
+    const path = joinNotePath(folderSetting, rel);
     // This item has no indexed note (checked above), so an occupant at the
     // base path belongs to a different item. The real note's random `suffix()`
     // can't be predicted here, so linking to the occupant would point at the

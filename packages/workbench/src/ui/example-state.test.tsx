@@ -36,6 +36,7 @@ function Configuration({
         controller={controller}
         manifest={controller.document!.manifest}
         filename={result?.filename ?? null}
+        notePath={result?.notePath ?? null}
         onChooseItem={onChooseItem}
         onRetry={onRetry}
         onShowProblem={onShowProblem}
@@ -84,7 +85,10 @@ it("marks the previous example stale after the source changes", async () => {
     mounted.scheduler.run();
   });
   await act(async () =>
-    mounted.host.renders[0]!.answer({ filename: "Research.md" }),
+    mounted.host.renders[0]!.answer({
+      filename: "Research",
+      notePath: "Research",
+    }),
   );
   act(() => {
     mounted.controller.setManifestKey("filename", "Updated");
@@ -110,7 +114,8 @@ it("keeps Name and Properties examples when only Annotation fails", async () => 
   });
   await act(async () =>
     mounted.host.renders[0]!.answer({
-      filename: "Research.md",
+      filename: "Research",
+      notePath: "Research",
       properties: [
         {
           key: "title",
@@ -122,7 +127,7 @@ it("keeps Name and Properties examples when only Annotation fails", async () => 
       diagnostics: [{ code: "render-error", part: "annotation" }],
     }),
   );
-  expect(screen.getByText("Research.md")).toBeTruthy();
+  expect(screen.getByText("literatures/Research.md")).toBeTruthy();
   expect(
     screen.getByRole("button", { name: "title Published research" }),
   ).toBeTruthy();
@@ -139,7 +144,10 @@ it("marks a held live result as stale while rendering cannot run", async () => {
     mounted.scheduler.run();
   });
   await act(async () =>
-    mounted.host.renders[0]!.answer({ filename: "Research.md" }),
+    mounted.host.renders[0]!.answer({
+      filename: "Research",
+      notePath: "Research",
+    }),
   );
   act(() => {
     mounted.scheduler.setInput({ snapshot: SAMPLE_ITEMS[0]!, hold: true });
@@ -196,9 +204,12 @@ it("offers local item actions and shows retry only after evaluation fails", asyn
     screen.queryByRole("button", { name: m.workbench_example_retry() }),
   ).toBeNull();
   await act(async () =>
-    mounted.host.renders[0]!.answer({ filename: "Recovered.md" }),
+    mounted.host.renders[0]!.answer({
+      filename: "Recovered",
+      notePath: "Recovered",
+    }),
   );
-  expect(screen.getByText("Recovered.md")).toBeTruthy();
+  expect(screen.getByText("literatures/Recovered.md")).toBeTruthy();
 });
 
 it("clears note-name and expanded spread results immediately when another item is selected", async () => {
@@ -217,7 +228,8 @@ it("clears note-name and expanded spread results immediately when another item i
   });
   await act(async () =>
     mounted.host.renders[0]!.answer({
-      filename: "First.md",
+      filename: "First",
+      notePath: "First",
       properties: [
         {
           key: "source",
@@ -228,12 +240,12 @@ it("clears note-name and expanded spread results immediately when another item i
       ],
     }),
   );
-  expect(screen.getByText("First.md")).toBeTruthy();
+  expect(screen.getByText("literatures/First.md")).toBeTruthy();
   expect(screen.getByText("First item value")).toBeTruthy();
   act(() =>
     mounted.store.getState().setItem({ id: "second", title: "Second item" }),
   );
-  expect(screen.queryByText("First.md")).toBeNull();
+  expect(screen.queryByText("literatures/First.md")).toBeNull();
   expect(screen.queryByText("First item value")).toBeNull();
   expect(screen.getAllByText(m.workbench_loading_item())).toHaveLength(2);
   act(() => {
@@ -242,7 +254,8 @@ it("clears note-name and expanded spread results immediately when another item i
   });
   await act(async () =>
     mounted.host.renders[1]!.answer({
-      filename: "Second.md",
+      filename: "Second",
+      notePath: "Second",
       properties: [
         {
           key: "source",
@@ -253,7 +266,7 @@ it("clears note-name and expanded spread results immediately when another item i
       ],
     }),
   );
-  expect(screen.getByText("Second.md")).toBeTruthy();
+  expect(screen.getByText("literatures/Second.md")).toBeTruthy();
   expect(screen.getByText("Second item value")).toBeTruthy();
 });
 
@@ -303,11 +316,12 @@ it("labels the retained note name and drops it with the selected item", async ()
   });
   await act(async () =>
     mounted.host.renders[0]!.answer({
-      filename: "Working.md",
+      filename: "Working",
+      notePath: "Working",
       creationBody: "# A paper",
     }),
   );
-  expect(noteName(dom.container)).toBe("Working.md");
+  expect(noteName(dom.container)).toBe("literatures/Working.md");
 
   act(() => mounted.controller.setManifestKey("filename", "{% for a i b %}"));
   act(() => mounted.scheduler.run());
@@ -317,7 +331,7 @@ it("labels the retained note name and drops it with the selected item", async ()
       diagnostics: [{ code: "liquid-syntax-error", part: "filename" }],
     }),
   );
-  expect(noteName(dom.container)).toBe("Working.md");
+  expect(noteName(dom.container)).toBe("literatures/Working.md");
   expect(screen.getByText(m.workbench_preview_retained())).toBeTruthy();
 
   act(() =>

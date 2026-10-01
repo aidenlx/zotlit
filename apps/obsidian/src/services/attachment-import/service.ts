@@ -5,6 +5,7 @@ import type { App } from "obsidian";
 
 import type { TemplateLink } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
+import { normalizeFilename } from "@zotlit/templates";
 
 import { copyAttachments } from "@/lib/copy-attachments";
 import type {
@@ -19,7 +20,6 @@ import {
 } from "@/lib/ensure-folder";
 import { getLogger } from "@/lib/log";
 import { fileUrlLink, syntheticFile } from "@/lib/markdown-link";
-import { normalizeFilename } from "@/services/note-feature/filename";
 import { Service } from "@/services/service-base";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";

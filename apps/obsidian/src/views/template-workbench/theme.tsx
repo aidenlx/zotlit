@@ -445,6 +445,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       field,
       "binding-row":
         "zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-2 zt:py-2",
+      "path-row": cn(field, "zt:py-2"),
       "binding-heading":
         "zt:flex zt:min-w-0 zt:basis-full zt:flex-wrap zt:items-center zt:gap-2",
       "binding-label": "zt:font-medium",

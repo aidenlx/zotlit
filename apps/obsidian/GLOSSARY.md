@@ -167,8 +167,12 @@ The gated capability to run user-authored JavaScript through Eta template files.
 _Avoid_: advanced templates, legacy templates, scripting, user scripts
 
 **Filename Template**:
-The `filename` Template, evaluated to determine a new Literature Note's filename. Uses the `zt.*` template data without note-path resolvers (the note doesn't exist yet at evaluation time); output is a single line.
+The `filename` Template, evaluated to determine a new Literature Note's filename. Uses the `zt.*` template data without note-path resolvers (the note doesn't exist yet at evaluation time); output is a single line. Its resolved output is the name part of the Note Path.
 _Avoid_: filename expression, filename setting (it is a vault file, not configuration)
+
+**Note Path**:
+The vault path of a new Literature Note: the Literature note folder joined with the resolved Filename Template output, plus `.md`. A slash in the output makes subfolders under the folder; each segment is made safe for the file system. One shared rule in `@zotlit/templates` resolves it for note creation and the Template Workbench.
+_Avoid_: filename (the last segment only), note folder (the folder part only)
 
 **Template Workbench**:
 The workflow for building and testing a Template Document: a Profile document, the Citation Template, or a Shared Partial. Three surfaces serve it: the web Workbench (Profile documents only), the Template Workbench CLI, and the Template Workbench View. The term names the activity, not one surface.

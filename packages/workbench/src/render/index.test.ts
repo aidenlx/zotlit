@@ -163,6 +163,26 @@ describe("Sample Items", () => {
     ).toBe("ioannidisWhyMost2005");
   });
 
+  it("resolves the note path the way note creation writes it", () => {
+    const withName = (filename: string) =>
+      DEFAULT_PROFILE_SOURCE.replace(
+        /^filename: .*$/m,
+        `filename: '${filename}'`,
+      );
+    expect(
+      renderProfile(DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS[0]!).notePath,
+    ).toBe("ioannidisWhyMost2005");
+    const routed = renderProfile(
+      withName("{{ zt.citationKey }}/Why: most?{% suffix %}"),
+      SAMPLE_ITEMS[0]!,
+    );
+    expect(routed.filename).toBe("ioannidisWhyMost2005/Why: most?");
+    expect(routed.notePath).toBe("ioannidisWhyMost2005/Why_ most_");
+    const empty = renderProfile(withName("{% suffix %}"), SAMPLE_ITEMS[0]!);
+    expect(empty.filename).toBe("");
+    expect(empty.notePath).toBeNull();
+  });
+
   it("renders fixed property text without YAML quoting and restores its field with undo", () => {
     const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
     const text = 'To read: John\'s "paper"';

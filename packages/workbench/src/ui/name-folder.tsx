@@ -1,6 +1,6 @@
 // The Name and folder and Profile forms share manifest controls. Name and
-// folder owns the note-name template and bindings; Profile owns identity,
-// language, and compatibility details.
+// folder owns the note path (the folder and the note-name template) and the
+// other bindings; Profile owns identity, language, and compatibility details.
 
 import type {
   InstalledCitationStyle,
@@ -20,6 +20,8 @@ import {
   useState,
 } from "react";
 import type { ReactNode } from "react";
+
+import { joinNotePath } from "@zotlit/templates";
 
 import { ExampleActions, useExampleState } from "./example-state";
 import type { WorkbenchMessages } from "./generated/messages";
@@ -56,8 +58,15 @@ interface Binding {
   readonly kind: "path" | "style" | "toggle";
 }
 
+/** The folder part of the note path, which the note path group holds. */
+const FOLDER_BINDING: Binding = {
+  key: "folder",
+  label: "workbench_name_binding_folder",
+  kind: "path",
+};
+
+/** The bindings outside the note path, which keep a group of their own. */
 const BINDINGS: readonly Binding[] = [
-  { key: "folder", label: "workbench_name_binding_folder", kind: "path" },
   {
     key: "citationStyle",
     label: "workbench_name_binding_citation_style",
@@ -136,6 +145,12 @@ export interface NameFolderPaneProps {
   /** The note name the current render produced, for the live result. */
   filename: string | null;
   /**
+   * The relative Note Path the current render resolved from that note name,
+   * which the preview joins under the effective folder. Null where the note
+   * name resolves to empty.
+   */
+  notePath: string | null;
+  /**
    * The styles the connected vault has installed, for the citation-style
    * picker. Null standalone, and while the connection lists none.
    */
@@ -174,6 +189,7 @@ export function NameFolderPane({
   onRetry,
   manifest,
   filename,
+  notePath,
   citationStyles,
   defaults = BUILT_IN_BINDING_DEFAULTS,
   focus,
@@ -186,11 +202,21 @@ export function NameFolderPane({
   const example = useExampleState("filename");
   const prefix = useId();
   const statusId = useId();
+  const previewLabelId = useId();
   // The note name on screen: this attempt's own, or the last that worked while
   // the Filename Template is under repair. Anything else the tab cannot show,
   // and its condition is read in place of a name.
   const shown =
-    example.message === null ? filename : (example.retained?.filename ?? null);
+    example.message === null
+      ? { filename, notePath }
+      : example.retained
+        ? {
+            filename: example.retained.filename,
+            notePath: example.retained.notePath,
+          }
+        : null;
+  // A name that rendered and still resolves to nothing creates no note.
+  const empty = shown?.filename != null && shown.notePath === null;
   const container = useRef<HTMLDivElement>(null);
   const icon = useIcon();
   const part = useParts("nameFolder");
@@ -225,6 +251,14 @@ export function NameFolderPane({
 
   const write = (key: string, value: ManifestScalar | undefined) =>
     controller.setManifestKey(key, value);
+  const isDefault = manifest.id === DEFAULT_PROFILE_ID;
+  // The folder in effect: the Default Profile's lives in settings, and any
+  // other Profile's own value stands over the one it inherits.
+  const folder = isDefault
+    ? defaults.folder
+    : (manifest.folder ?? defaults.folder);
+  const fullPath =
+    shown?.notePath != null ? joinNotePath(folder, shown.notePath) : null;
 
   return (
     <FieldIdContext.Provider value={{ prefix, readOnly: controller.readOnly }}>
@@ -232,22 +266,46 @@ export function NameFolderPane({
         {section === "name" && (
           <>
             <Group
-              heading={m.workbench_name_filename_heading()}
-              lede={m.workbench_name_filename_lede()}
+              heading={m.workbench_name_path_heading()}
+              lede={m.workbench_name_path_lede()}
+              region
             >
-              {controller.filenameSlice ? (
-                <div {...part("filename-editor")}>
-                  <SliceEditor
-                    controller={controller}
-                    slice="filename"
-                    label={m.workbench_name_filename_label()}
-                    singleLine
-                    invalid={example.kind === "failed"}
-                    describedBy={statusId}
-                    reveal={reveal}
-                    suggest={suggest}
-                    onSelection={onSelection}
+              {isDefault ? (
+                <div {...part("path-row")}>
+                  <DefaultBindings
+                    bindings={[FOLDER_BINDING]}
+                    defaults={defaults}
+                    note={m.workbench_name_folder_default_note()}
                   />
+                </div>
+              ) : (
+                <BindingRow
+                  binding={FOLDER_BINDING}
+                  value={manifest.folder}
+                  fallback={defaults.folder}
+                  citationStyles={null}
+                  onWrite={(value) => write(FOLDER_BINDING.key, value)}
+                />
+              )}
+              {controller.filenameSlice ? (
+                <div {...part("path-row")}>
+                  {/* The editor carries this name itself; the caption shows it. */}
+                  <span aria-hidden {...part("binding-label")}>
+                    {m.workbench_name_filename_label()}
+                  </span>
+                  <div {...part("filename-editor")}>
+                    <SliceEditor
+                      controller={controller}
+                      slice="filename"
+                      label={m.workbench_name_filename_label()}
+                      singleLine
+                      invalid={example.kind === "failed" || empty}
+                      describedBy={statusId}
+                      reveal={reveal}
+                      suggest={suggest}
+                      onSelection={onSelection}
+                    />
+                  </div>
                 </div>
               ) : (
                 <p {...part("help")}>
@@ -264,12 +322,24 @@ export function NameFolderPane({
                 </p>
               )}
               <p {...part("filename-result")}>
-                <span {...part("muted")}>
+                <span id={previewLabelId} {...part("muted")}>
                   {m.workbench_name_filename_result()}
                 </span>
-                <span id={statusId} {...part("filename-status", example.kind)}>
-                  <output {...part("filename-output", example.kind)}>
-                    {shown ?? example.message ?? m.workbench_property_unset()}
+                <span
+                  id={statusId}
+                  {...part("filename-status", empty ? "failed" : example.kind)}
+                >
+                  <output
+                    aria-labelledby={previewLabelId}
+                    {...part(
+                      "filename-output",
+                      empty ? "failed" : example.kind,
+                    )}
+                  >
+                    {fullPath ??
+                      (empty
+                        ? m.workbench_name_path_empty()
+                        : (example.message ?? m.workbench_property_unset()))}
                   </output>
                   {shown !== null && example.message !== null && (
                     <span {...part("secondary")}>{example.message}</span>
@@ -296,28 +366,19 @@ export function NameFolderPane({
 
             <Group
               heading={m.workbench_name_bindings_heading()}
+              region
               lede={
-                manifest.id === DEFAULT_PROFILE_ID
+                isDefault
                   ? m.workbench_name_default_lede()
                   : m.workbench_name_bindings_lede()
               }
             >
-              {manifest.id === DEFAULT_PROFILE_ID ? (
-                <>
-                  <dl {...part("defaults")}>
-                    {BINDINGS.map((binding) => (
-                      <div key={binding.key} {...part("actions")}>
-                        <dt {...part("default-label")}>{m[binding.label]()}</dt>
-                        <dd {...part("default-value")}>
-                          {valueText(m, defaults[binding.key])}
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
-                  <p {...part("secondary")}>
-                    {m.workbench_name_default_note()}
-                  </p>
-                </>
+              {isDefault ? (
+                <DefaultBindings
+                  bindings={BINDINGS}
+                  defaults={defaults}
+                  note={m.workbench_name_default_note()}
+                />
               ) : (
                 BINDINGS.map((binding) => (
                   <BindingRow
@@ -433,16 +494,25 @@ export function NameFolderPane({
 function Group({
   heading,
   lede,
+  region = false,
   children,
 }: {
   heading: string;
   lede?: string;
+  /** Names the group by its heading, as a landmark the reader can reach. */
+  region?: boolean;
   children: ReactNode;
 }) {
   const part = useParts("nameFolder");
+  const headingId = useId();
   return (
-    <section {...part("group")}>
-      <h3 {...part("heading")}>{heading}</h3>
+    <section
+      aria-labelledby={region ? headingId : undefined}
+      {...part("group")}
+    >
+      <h3 id={headingId} {...part("heading")}>
+        {heading}
+      </h3>
       {lede && <p {...part("help")}>{lede}</p>}
       {children}
     </section>
@@ -494,8 +564,9 @@ function DraftText({
       readOnly={readOnly}
       placeholder={placeholder}
       onInput={(event) => setDraft(event.currentTarget.value)}
-      onBlur={() => {
-        const next = draft.trim();
+      onBlur={(event) => {
+        // The text in the box, even when the blur precedes the draft's render.
+        const next = event.currentTarget.value.trim();
         if (next !== value) onCommit(next);
       }}
       {...part(binding ? "binding-input" : "input")}
@@ -528,6 +599,35 @@ function TextValue({
       placeholder={optional ? m.workbench_name_optional() : undefined}
       onCommit={(next) => onCommit(optional && next === "" ? undefined : next)}
     />
+  );
+}
+
+/** The Default Profile's bindings, read-only: they live in the host's settings. */
+function DefaultBindings({
+  bindings,
+  defaults,
+  note,
+}: {
+  bindings: readonly Binding[];
+  defaults: ProfileBindingDefaults;
+  note: string;
+}) {
+  const m = useWorkbenchMessages();
+  const part = useParts("nameFolder");
+  return (
+    <>
+      <dl {...part("defaults")}>
+        {bindings.map((binding) => (
+          <div key={binding.key} {...part("actions")}>
+            <dt {...part("default-label")}>{m[binding.label]()}</dt>
+            <dd {...part("default-value")}>
+              {valueText(m, defaults[binding.key])}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p {...part("secondary")}>{note}</p>
+    </>
   );
 }
 

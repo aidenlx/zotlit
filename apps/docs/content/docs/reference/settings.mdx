@@ -41,7 +41,9 @@ See [Migrate from 2.1 templates](/docs/how-to/migrate-from-2.1-templates).
 
 ### Literature note folder [#literature-note-folder]
 
-Where ZotLit creates literature notes. A Profile can set its own folder, and a note stays in the folder of the Profile it was created with.
+The folder part of a new literature note's path. ZotLit creates the note in this folder, under the name that the Profile's [note name template](/docs/reference/templates/defaults#filename-template) gives, and adds `.md`. A slash (`/`) in that name makes a subfolder in this folder. For example, the folder `literatures` and the name `2024/Smith2020` give `literatures/2024/Smith2020.md`.
+
+A Profile can set its own folder, and a note stays in the folder of the Profile it was created with. A Profile switch or a Profile deletion can move the note. The move keeps the subfolders the note has under its Profile's folder.
 
 ### Imported note folder [#imported-note-folder]
 
@@ -93,7 +95,7 @@ Open this page from <SettingsPath page={m.settings_page_profiles()} />. A Profil
 
 The first row is <UiLabel name={m.settings_profile_default_name()} />, the default Profile: <UiLabel name={m.settings_profile_default_desc()} /> Its buttons are <UiLabel name={m.settings_profile_edit()} /> and <UiLabel name={m.workbench_more_actions()} />, whose menu holds <UiLabel name={m.settings_profile_share()} />.
 
-The <UiLabel name={m.settings_profile_other_heading()} /> list holds every other Profile. Its header carries two buttons. <UiLabel name={m.settings_profile_add()} /> opens a dialog that reads <UiLabel name={m.settings_profile_destination_desc()} /> Its fields are <UiLabel name={m.settings_profile_name_name()} /> and <UiLabel name={m.settings_profile_folder_name()} />, and the new document then opens in the Template Workbench View. <UiLabel name={m.command_import_profile_name()} /> reads a Profile in from your clipboard or a file. Until you add one, the list reads <UiLabel name={m.settings_profile_empty_desc()} />.
+The <UiLabel name={m.settings_profile_other_heading()} /> list holds every other Profile. Its header carries two buttons. <UiLabel name={m.settings_profile_add()} /> opens a dialog that reads <UiLabel name={m.settings_profile_destination_desc()} /> Its fields are <UiLabel name={m.settings_profile_name_name()} /> and <UiLabel name={m.settings_profile_folder_name()} />, and the new document then opens in the Template Workbench View. A valid name is enough to create the Profile. The folder is optional: while it is empty, its placeholder shows the folder the Profile inherits, for example <UiLabel name={m.settings_profile_same_as_default({ value: "literatures" })} />. <UiLabel name={m.command_import_profile_name()} /> reads a Profile in from your clipboard or a file. Until you add one, the list reads <UiLabel name={m.settings_profile_empty_desc()} />.
 
 Each added Profile has one row showing its label and a short Profile Match status:
 
@@ -115,7 +117,7 @@ A row carries one button for the Profile and one menu for everything else:
 
 A new Profile starts with the default Profile's template. Its own document can set a folder, citation style, appearance, or Profile Match.
 
-Each Profile is edited in its own document. Deleting a Profile that notes still use asks where those notes go first.
+Each Profile is edited in its own document. Deleting a Profile that notes still use asks where those notes go first. The dialog can also move the notes into the folders of the Profile they go to. Its checkbox names those folders, for example <UiLabel name={m.settings_profile_delete_move_files({ folder: "books/" })} />. The move keeps the subfolders a note has under the deleted Profile's folder. A note outside that folder moves by its file name alone.
 
 ### Partials [#partials]
 

@@ -3679,6 +3679,133 @@ describe("updateNote", () => {
     expect(harness.content()).toBe("My notes");
   });
 
+  it("keeps the note's subfolders under the target Profile's folder in the preview and the move", async () => {
+    const target = "Rz9Wm4YfH6Kd" as ProfileId;
+    const harness = makeUpdateHarness({
+      content: "My notes",
+      frontmatter: { "zotero-key": "ABCD2345" },
+      settings: {
+        profiles: [
+          {
+            id: target,
+            label: "Books",
+            bindings: { "note.literature-folder": "books" },
+          },
+        ],
+      },
+    });
+    const file = harness.file("Literature/2024/smith2024.md");
+    harness.deps.app.fileManager.renameFile = async (_file, path) => {
+      harness.host.vault.renameFile(file.path, path);
+    };
+    const feature = createNoteFeature(harness.deps);
+    const plan = await feature.prepareProfileSwitch(file);
+    expect(
+      plan.profiles.find(({ selector }) => selector === target)?.path,
+    ).toBe("books/2024/smith2024.md");
+    await feature.switchNoteProfile(file, { profile: target, move: true });
+    expect(file.path).toBe("books/2024/smith2024.md");
+    expect(harness.content()).toBe("My notes");
+  });
+
+  it.each([
+    {
+      name: "a note outside its Profile's folder by file name",
+      stamp: undefined,
+      path: "Literature2/2024/smith2024.md",
+      expected: "books/smith2024.md",
+    },
+    {
+      name: "a note with an unresolved Profile stamp by file name",
+      stamp: "Missing profile (Qw8Er5Ty2Ui9)",
+      path: "Literature/2024/smith2024.md",
+      expected: "books/smith2024.md",
+    },
+    {
+      name: "a note from a vault-root folder with its full relative path",
+      stamp: "Bk3Qn7XvT2Lp",
+      path: "2024/smith2024.md",
+      expected: "books/2024/smith2024.md",
+    },
+    {
+      name: "an Imported Note with its subfolders under the Imported note folder",
+      stamp: "Bk3Qn7XvT2Lp",
+      noteKey: "NTE23456",
+      path: "Imported/2024/Child.md",
+      expected: "imports/2024/Child.md",
+    },
+  ])("moves $name", async ({ stamp, noteKey, path, expected }) => {
+    const target = "Rz9Wm4YfH6Kd" as ProfileId;
+    const harness = makeUpdateHarness({
+      content: "My notes",
+      frontmatter: {
+        ...(noteKey
+          ? { "zotero-note-key": noteKey }
+          : { "zotero-key": "ABCD2345" }),
+        ...(stamp && { [FIELD_LITERATURE_NOTE_PROFILE]: stamp }),
+      },
+      settings: {
+        profiles: [
+          {
+            id: "Bk3Qn7XvT2Lp" as ProfileId,
+            label: "Root",
+            bindings: {
+              "note.literature-folder": "/",
+              "note.import-folder": "Imported",
+            },
+          },
+          {
+            id: target,
+            label: "Books",
+            bindings: {
+              "note.literature-folder": "books",
+              "note.import-folder": "imports",
+            },
+          },
+        ],
+      },
+    });
+    const file = harness.file(path);
+    harness.deps.app.fileManager.renameFile = async (_file, path) => {
+      harness.host.vault.renameFile(file.path, path);
+    };
+    const feature = createNoteFeature(harness.deps);
+    const plan = await feature.prepareProfileSwitch(file);
+    expect(
+      plan.profiles.find(({ selector }) => selector === target)?.path,
+    ).toBe(expected);
+    await feature.switchNoteProfile(file, { profile: target, move: true });
+    expect(file.path).toBe(expected);
+  });
+
+  it("offers no move when the target path equals the current path", async () => {
+    const target = "Rz9Wm4YfH6Kd" as ProfileId;
+    const harness = makeUpdateHarness({
+      content: "My notes",
+      frontmatter: { "zotero-key": "ABCD2345" },
+      settings: {
+        profiles: [
+          {
+            id: target,
+            label: "Papers",
+            bindings: { "note.literature-folder": "Literature" },
+          },
+        ],
+      },
+    });
+    const file = harness.file("Literature/2024/smith2024.md");
+    const rename = vi.fn();
+    harness.deps.app.fileManager.renameFile = rename;
+    const feature = createNoteFeature(harness.deps);
+    const plan = await feature.prepareProfileSwitch(file);
+    expect(
+      plan.profiles.find(({ selector }) => selector === target)?.path,
+    ).toBe(file.path);
+    await feature.switchNoteProfile(file, { profile: target, move: true });
+    expect(rename).not.toHaveBeenCalled();
+    expect(file.path).toBe("Literature/2024/smith2024.md");
+  });
+
   it("lists the Imported Notes that belong to one Zotero item", async () => {
     const first = makeFile("Imported/First.md");
     const second = makeFile("Imported/Second.md");
@@ -3913,7 +4040,7 @@ describe("updateNote", () => {
         ],
       },
     });
-    const literature = harness.file("Literature/Root.md");
+    const literature = harness.file("Literature/2024/Root.md");
     const imported = [
       harness.file("Imported/First.md"),
       harness.file("Imported/Second.md"),
@@ -3944,10 +4071,10 @@ describe("updateNote", () => {
       }),
     ).rejects.toThrow("frontmatter write failed");
 
-    expect(literature.path).toBe("Literature/Root.md");
+    expect(literature.path).toBe("Literature/2024/Root.md");
     expect(rename.mock.calls.map(([, path]) => path)).toEqual([
-      "Papers/Root.md",
-      "Literature/Root.md",
+      "Papers/2024/Root.md",
+      "Literature/2024/Root.md",
     ]);
     expect(properties(literature)).toMatchObject({
       [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId,

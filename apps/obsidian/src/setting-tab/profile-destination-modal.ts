@@ -62,9 +62,12 @@ export class ProfileDestinationModal extends Modal {
     const folder = new TextComponent(
       field(controls, m.settings_profile_folder_name()),
     ).setPlaceholder(
-      this.#ctx.profile.resolveProfile("default")!.bindings[
-        "note.literature-folder"
-      ] || "/",
+      m.settings_profile_same_as_default({
+        value:
+          this.#ctx.profile.resolveProfile("default")!.bindings[
+            "note.literature-folder"
+          ] || "/",
+      }),
     );
     const reason = note(controls, { status: true });
     let draft: PreparedProfileCreation | undefined;
@@ -114,10 +117,8 @@ export class ProfileDestinationModal extends Modal {
         draft = prepared;
         const constraint = prepared.constraint;
         reason.set(
-          constraint?.kind === "no-difference"
-            ? m.settings_profile_destination_choose_folder()
-            : (constraint?.message ?? ""),
-          constraint?.kind === "invalid-name" && nameEdited ? "error" : "muted",
+          constraint?.message ?? "",
+          constraint && nameEdited ? "error" : "muted",
         );
         create.setDisabled(!!constraint || this.#saving);
       } catch (error) {

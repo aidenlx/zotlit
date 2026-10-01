@@ -216,6 +216,13 @@ export function renderIdentity({
 
 export interface TemplateRenderResult extends RenderIdentity {
   readonly filename: string | null;
+  /**
+   * The note name as the relative Note Path that note creation writes under the
+   * Literature note folder, without `.md`: a slash makes a subfolder and each
+   * segment is made safe for the file system. Null when no note name rendered,
+   * and when the note name resolves to empty.
+   */
+  readonly notePath: string | null;
   /** What each entry produced on its own, in list order. */
   readonly properties: readonly RenderedProperty[];
   /**
@@ -270,6 +277,7 @@ export function emptyRender(identity: RenderIdentity): TemplateRenderResult {
   return {
     ...identity,
     filename: null,
+    notePath: null,
     properties: [],
     fold: [],
     frontmatterBlock: null,
@@ -333,7 +341,7 @@ export function retainOutputs<R extends TemplateRenderResult>(
     // newest output: a name that worked while the body failed stands, and a
     // name that failed beside a body that worked shows the last that worked.
     result.filename === null && kept.filename !== null
-      ? { filename: kept.filename }
+      ? { filename: kept.filename, notePath: kept.notePath }
       : null,
     result.creationBody === null && kept.creationBody !== null
       ? {

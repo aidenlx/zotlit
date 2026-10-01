@@ -1,6 +1,5 @@
 // Profile deletion gathers target and file-move consent in the same dialog,
 // and names the Profile Selection Rules the user must repair afterwards.
-import { dirname } from "node:path/posix";
 import { ConfirmationModal } from "obsidian";
 import type { App } from "obsidian";
 
@@ -106,11 +105,25 @@ export function confirmProfileDeletion(
         row.content.empty();
         renderProfileChoice(row.choice, row.content);
       }
+      // Name the target Profile's folders, one per note kind that moves;
+      // subfolders stay visible in each Profile's path preview above.
+      const moving = new Set(
+        target?.files
+          .filter(({ file, path }) => path !== file.path)
+          .map(({ file }) => file),
+      );
       const folders = [
         ...new Set(
-          target?.files
-            .filter(({ file, path }) => path !== file.path)
-            .map(({ path }) => normalizeFolderPath(dirname(path))) ?? [],
+          (
+            [
+              [plan.literatureNotes, "note.literature-folder"],
+              [plan.importedNotes, "note.import-folder"],
+            ] as const
+          )
+            .filter(([notes]) => notes.some((note) => moving.has(note)))
+            .map(([, key]) =>
+              normalizeFolderPath(target!.profile.bindings[key]),
+            ),
         ),
       ];
       moveLabel.hidden = folders.length === 0;

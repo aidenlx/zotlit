@@ -113,6 +113,7 @@ export interface WorkbenchParts {
     | "heading"
     | "field"
     | "binding-row"
+    | "path-row"
     | "binding-heading"
     | "binding-label"
     | "toggle-row"

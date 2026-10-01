@@ -91,6 +91,8 @@ describe("native Profile rendering", () => {
       });
       expect(result.diagnostics).toEqual([]);
       expect(result.filename).toBe(title);
+      // A colon in a title is one a file name cannot hold.
+      expect(result.notePath).toBe(title?.replaceAll(":", "_"));
       expect(result.creationBody).toContain(`# ${title}`);
       expect(result.creationBody).toContain("See [@figures2014].");
       expect(result.properties[0]?.value).toBe(title);
@@ -135,6 +137,7 @@ describe("native Profile rendering", () => {
     });
     expect(result.creationBody).toBeNull();
     expect(result.filename).toBe(fixture.snapshot.roots.filename["title"]);
+    expect(result.notePath).toBe(fixture.snapshot.roots.filename["title"]);
     expect(result.diagnostics.map(({ part }) => part)).toEqual(["render"]);
   });
 

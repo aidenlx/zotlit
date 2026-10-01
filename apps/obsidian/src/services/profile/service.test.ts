@@ -543,16 +543,12 @@ describe("ProfileService", () => {
 
   it("reports creation constraints separately from saving", async () => {
     await using fixture = await harness();
-    const unchanged = await fixture.profile.prepareCreate({ label: "" });
-    expect(unchanged.constraint?.kind).toBe("no-difference");
-    await expect(unchanged.create()).rejects.toThrow(
-      m.settings_profile_create_no_difference(),
-    );
-    const unnamed = await fixture.profile.prepareCreate({
-      label: "",
-      bindings: { folder: "Reading" },
-    });
+    const unnamed = await fixture.profile.prepareCreate({ label: "" });
     expect(unnamed.constraint?.kind).toBe("invalid-name");
+    await expect(unnamed.create()).rejects.toThrow(
+      m.settings_profile_name_invalid(),
+    );
+    expect([...fixture.vault.files.keys()]).toEqual([]);
   });
 
   it("prepares the effective Default look and writes only differing bindings with the previewed stamp", async () => {
@@ -584,21 +580,32 @@ describe("ProfileService", () => {
     expect(vault.contents.get(created.path)).toBe(draft.source);
   });
 
-  it("refuses creation when explicit choices still equal Default", async () => {
+  it("creates a Profile from a name alone and leaves values equal to Default out of its document", async () => {
     await using fixture = await harness();
     const base = fixture.profile.resolveProfile("default")!;
-    await expect(
-      fixture.profile.create({
-        label: "Same",
-        bindings: {
-          folder: base.bindings["note.literature-folder"],
-          citationStyle: base.bindings["citation.references-style"],
-        },
-      }),
-    ).rejects.toThrow();
+    const draft = await fixture.profile.prepareCreate({
+      label: "Same",
+      bindings: {
+        folder: base.bindings["note.literature-folder"],
+        citationStyle: base.bindings["citation.references-style"],
+      },
+    });
+    expect(draft.constraint).toBeUndefined();
+    expect(draft.inherited).toEqual(["folder", "citationStyle", "look"]);
+    const pending = draft.create();
+    await vi.advanceTimersByTimeAsync(500);
+    const created = await pending;
+    const source = fixture.vault.contents.get(created.path)!;
+    expect(source).not.toContain("folder:");
+    expect(source).not.toContain("citationStyle:");
+    expect(
+      fixture.profile.resolveProfile(created.id)?.bindings[
+        "note.literature-folder"
+      ],
+    ).toBe(base.bindings["note.literature-folder"]);
   });
 
-  it("refuses a copied look identical to Default even when its source Profile has bindings", async () => {
+  it("creates a Profile from a copied look identical to Default without its source Profile's bindings", async () => {
     await using fixture = await harness({
       "templates/zotlit-profile.default.md": document("default"),
       "templates/zotlit-profile.books.md": document(BOOKS, "folder: Books"),
@@ -608,9 +615,11 @@ describe("ProfileService", () => {
       look: BOOKS,
     });
     expect(draft.inherited).toEqual(["folder", "citationStyle", "look"]);
-    await expect(draft.create()).rejects.toThrow();
-    expect(fixture.vault.files.has("templates/zotlit-profile.same.md")).toBe(
-      false,
+    const pending = draft.create();
+    await vi.advanceTimersByTimeAsync(500);
+    const created = await pending;
+    expect(fixture.vault.contents.get(created.path)).not.toContain(
+      "folder: Books",
     );
   });
 
@@ -914,28 +923,31 @@ describe("ProfileService", () => {
     expect(vault.files.has("templates/zotlit-profile.books.md")).toBe(true);
   });
 
-  it("reports deletion counts and moves both note kinds before trashing only the Profile document", async () => {
+  it("reports deletion counts and moves both note kinds with their subfolders before trashing only the Profile document", async () => {
     const papers = "Rz9Wm4YfH6Kd" as ProfileId;
     await using fixture = await harness({
-      "templates/zotlit-profile.books.md": document(),
+      "templates/zotlit-profile.books.md": document(
+        BOOKS,
+        "folder: Books\nimportFolder: Imports",
+      ),
       "templates/zotlit-profile.papers.md": document(
         papers,
         "folder: Papers\nimportFolder: Imported/Papers",
         "Papers",
       ),
       "templates/shared.liquid.md": "Shared partial",
-      "Books/My title.md": noteText(
+      "Books/2024/My title.md": noteText(
         { "zotero-key": "PAPER234", "zotlit-profile": BOOKS },
         "My reading text",
       ),
-      "Imports/Child.md": noteText(
+      "Imports/2024/Child.md": noteText(
         { "zotero-note-key": "NTE23456", "zotlit-profile": BOOKS },
         "Imported text",
       ),
     });
     const { profile, vault, app } = fixture;
-    const literature = vault.getFileByPath("Books/My title.md")!;
-    const imported = vault.getFileByPath("Imports/Child.md")!;
+    const literature = vault.getFileByPath("Books/2024/My title.md")!;
+    const imported = vault.getFileByPath("Imports/2024/Child.md")!;
     const order: string[] = [];
     app.fileManager.renameFile = async (file, path) => {
       order.push(path);
@@ -954,6 +966,13 @@ describe("ProfileService", () => {
       "default",
       papers,
     ]);
+    const planned = plan.targets
+      .find(({ profile }) => profile.selector === papers)!
+      .files.map(({ path }) => path);
+    expect(planned).toEqual([
+      "Papers/2024/My title.md",
+      "Imported/Papers/2024/Child.md",
+    ]);
     const pending = profile.delete(BOOKS, papers, { move: true });
     await vi.advanceTimersByTimeAsync(500);
     await expect(pending).resolves.toEqual({
@@ -961,18 +980,14 @@ describe("ProfileService", () => {
       importedNotes: 1,
       movedFiles: 2,
     });
-    expect(order).toEqual([
-      "Papers/My title.md",
-      "Imported/Papers/Child.md",
-      "templates/zotlit-profile.books.md",
-    ]);
-    expect(vault.contents.get("Papers/My title.md")).toBe(
+    expect(order).toEqual([...planned, "templates/zotlit-profile.books.md"]);
+    expect(vault.contents.get("Papers/2024/My title.md")).toBe(
       noteText(
         { "zotero-key": "PAPER234", "zotlit-profile": "Papers (Rz9Wm4YfH6Kd)" },
         "My reading text",
       ),
     );
-    expect(vault.contents.get("Imported/Papers/Child.md")).toBe(
+    expect(vault.contents.get("Imported/Papers/2024/Child.md")).toBe(
       noteText(
         {
           "zotero-note-key": "NTE23456",

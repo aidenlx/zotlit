@@ -24,7 +24,7 @@ A profile decides a literature note's name, folder, properties, and body. Add on
   <Step>
     ### Name it and choose its folder
 
-    Enter the <UiLabel name={m.settings_profile_name_name()} /> and the <UiLabel name={m.settings_profile_folder_name()} /> for the notes it creates. The dialog reads <UiLabel name={m.settings_profile_destination_desc()} /> Select <UiLabel name={m.settings_profile_add()} /> to create the profile.
+    Enter the <UiLabel name={m.settings_profile_name_name()} />. A name is enough to create the profile. To keep its notes in a folder of their own, also enter the <UiLabel name={m.settings_profile_folder_name()} />. Leave the folder empty to use the Default profile's folder. The dialog reads <UiLabel name={m.settings_profile_destination_desc()} /> Select <UiLabel name={m.settings_profile_add()} /> to create the profile.
 
     ZotLit writes `zotlit-profile.<slug>.md` into the folder named by <UiLabel name={m.settings_template_folder_name()} /> and opens the document in the Template Workbench View. The name you typed is the label you see in lists. The profile's actual identity is a separate ID inside the document, so renaming the file changes nothing. See [Profiles](/docs/concepts/profiles) for what the document carries.
 
