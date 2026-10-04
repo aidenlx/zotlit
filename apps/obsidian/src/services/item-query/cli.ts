@@ -224,7 +224,7 @@ export function createItemQuerySchemaHandler(
       const schema = exit.value;
       return envelope(ITEM_QUERY_SCHEMA_COMMAND, {
         ok: true,
-        identity: await deps.identity(),
+        identity: read.identity,
         schema: {
           ...schema,
           defaults: {
@@ -306,7 +306,7 @@ export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
     if ("answer" in read.value) return read.value.answer;
 
     return answerExit(read.value.exit, {
-      identity: () => deps.identity(),
+      identity: read.identity,
       library: read.value.library.wire,
       signal: deps.signal,
     });
@@ -317,12 +317,15 @@ export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
  * Run `read` under one source lease. The lease ends when `read` settles, so
  * it ends after the last database read and before the caller answers or
  * rejects. A source that gives no lease answers `source-unavailable`.
+ *
+ * The identity is read while the lease holds the client, so the answer names
+ * the source its rows come from when the user connects another one in the run.
  */
 async function withLease<T>(
   deps: ItemQueryCliDeps,
   command: ItemQueryCommand,
   read: (client: NodeDatabaseClient) => Promise<T>,
-): Promise<{ answer: string } | { value: T }> {
+): Promise<{ answer: string } | { value: T; identity: WorkbenchIdentity }> {
   let acquired: ItemQueryLease;
   try {
     acquired = await deps.acquireRead();
@@ -339,7 +342,8 @@ async function withLease<T>(
     };
   }
   using lease = acquired;
-  return { value: await read(lease.client) };
+  const identity = await deps.identity();
+  return { value: await read(lease.client), identity };
 }
 
 type ItemQueryExit = Exit.Exit<
@@ -355,7 +359,8 @@ type ItemQueryExit = Exit.Exit<
 export async function answerExit(
   exit: ItemQueryExit,
   context: {
-    identity: () => Promise<WorkbenchIdentity>;
+    /** The identity of the source the run leased. */
+    identity: WorkbenchIdentity;
     library: LibraryWire;
     signal: AbortSignal;
   },
@@ -364,7 +369,7 @@ export async function answerExit(
     const result = exit.value;
     return envelope(ITEM_QUERY_COMMAND, {
       ok: true,
-      identity: await context.identity(),
+      identity: context.identity,
       library: context.library,
       request: result.query,
       returnedCount: result.returnedCount,

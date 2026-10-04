@@ -440,6 +440,29 @@ describe("zotlit:item-query source and lease", () => {
     expect(events).toEqual(["acquire", "release", "answer"]);
   });
 
+  it("answers the identity of the source it leased when the user connects another source in the run", async () => {
+    using scenario = openScenarioDatabase();
+    const other = {
+      vault: IDENTITY.vault,
+      source: { id: "source-2", databasePath: "/other/zotero.sqlite" },
+    };
+    let connected = IDENTITY;
+    const { run } = setup(scenario, {
+      acquireRead: async () => ({
+        client: scenario.db,
+        // The switch comes while the run holds the lease.
+        [Symbol.dispose]: () => {
+          connected = other;
+        },
+      }),
+      identity: async () => connected,
+    });
+
+    const answer = await run();
+
+    expect(answer).toMatchObject({ ok: true, identity: IDENTITY });
+  });
+
   it("answers source-unavailable when the source cannot be leased", async () => {
     using scenario = openScenarioDatabase();
     const { run } = setup(scenario, {
@@ -548,7 +571,7 @@ describe("zotlit:item-query cancellation", () => {
 
 describe("answerExit", () => {
   const context = {
-    identity: async () => IDENTITY,
+    identity: IDENTITY,
     library: { type: "personal" } as const,
     signal: new AbortController().signal,
   };
@@ -723,6 +746,29 @@ describe("zotlit:item-query-schema", () => {
       },
     });
     expect(acquireRead).not.toHaveBeenCalled();
+  });
+
+  it("answers the identity of the source it leased when the user connects another source in the run", async () => {
+    using scenario = openScenarioDatabase();
+    const other = {
+      vault: IDENTITY.vault,
+      source: { id: "source-2", databasePath: "/other/zotero.sqlite" },
+    };
+    let connected = IDENTITY;
+    const { run } = setupSchema(scenario, {
+      acquireRead: async () => ({
+        client: scenario.db,
+        // The switch comes while the run holds the lease.
+        [Symbol.dispose]: () => {
+          connected = other;
+        },
+      }),
+      identity: async () => connected,
+    });
+
+    const answer = await run();
+
+    expect(answer).toMatchObject({ ok: true, identity: IDENTITY });
   });
 
   it("answers source-unavailable when the source cannot be leased", async () => {
