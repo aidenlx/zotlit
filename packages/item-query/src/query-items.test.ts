@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit } from "effect";
+import { Cause, Clock, Effect, Exit } from "effect";
 import type { SQLInputValue } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -74,6 +74,23 @@ function recordHydratedItemIDs(
     return statement;
   };
   return () => ids;
+}
+
+/** Store a built-in field value on a personal Item of the scenario. */
+function setField(
+  database: ScenarioDatabase,
+  key: string,
+  [field, value]: readonly [string, string],
+): void {
+  const { sqlite } = database;
+  sqlite
+    .prepare("insert or ignore into itemDataValues (value) values (?)")
+    .run(value);
+  sqlite
+    .prepare(
+      "insert or replace into itemData (itemID, fieldID, valueID) select i.itemID, f.fieldID, v.valueID from items i, fieldsCombined f, itemDataValues v where i.key = ? and i.libraryID = 1 and f.fieldName = ? and f.custom = 0 and v.value = ?",
+    )
+    .run(key, field, value);
 }
 
 function itemIDsOf(database: ScenarioDatabase, keys: string[]): number[] {
@@ -1430,6 +1447,175 @@ describe("queryItems with a filter", () => {
     });
   });
 
+  describe("dates and the Query Clock", () => {
+    /** The keys the filter selects at one instant in one time zone. */
+    const matchingAt = async (
+      filter: string,
+      clock: { now: string; timeZone: string },
+    ) => {
+      scenario ??= openScenarioDatabase();
+      const { exit } = await runEffect(
+        queryItems({ library: personal, filter, fields: [], sort: [] }),
+        { client: scenario.db, ...clock },
+      );
+      if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
+      return keys(exit.value);
+    };
+
+    // 02:00Z on 2020-01-08 is still 2020-01-07 in New York (UTC-5).
+    const NEW_YORK = {
+      now: "2020-01-08T02:00:00Z",
+      timeZone: "America/New_York",
+    };
+
+    it("compares a timestamp with today() on the calendar day of the query time zone", async () => {
+      // BK2MNTH2 was added at 06:00Z (01:00 local on 7 January), CNF2TEXT at
+      // 04:00Z (23:00 local on 6 January).
+      expect(await matchingAt("dateAdded >= today()", NEW_YORK)).toEqual([
+        "ALS2CNFL",
+        "ART2FULL",
+        "BK2MNTH2",
+        "RPT2NDTE",
+        "TIE2AAAA",
+        "TIE2BBBB",
+        "TIE2CCCC",
+        "UNI2CDE2",
+      ]);
+      expect(await matchingAt("today() == now().date()", NEW_YORK)).toEqual(
+        EVERY_PERSONAL_ITEM,
+      );
+    });
+
+    it("gives every call in one query the same instant", async () => {
+      scenario = openScenarioDatabase();
+      // A clock that moves one day forward at every read.
+      let reads = 0;
+      const start = Temporal.Instant.from(NEW_YORK.now).epochMilliseconds;
+      const moving = (): number => start + 86_400_000 * reads++;
+      const clock: Clock.Clock = {
+        currentTimeMillisUnsafe: moving,
+        currentTimeMillis: Effect.sync(moving),
+        currentTimeNanosUnsafe: () => BigInt(moving()) * 1_000_000n,
+        currentTimeNanos: Effect.sync(() => BigInt(moving()) * 1_000_000n),
+        monotonicTimeNanosUnsafe: () => 0n,
+        monotonicTimeNanos: Effect.succeed(0n),
+        sleep: () => Effect.void,
+      };
+
+      const { exit } = await runEffect(
+        Effect.provideService(
+          queryItems({
+            library: personal,
+            filter: "now() == now() && today() == now().date()",
+            fields: [],
+            sort: [],
+          }),
+          Clock.Clock,
+          clock,
+        ),
+        { client: scenario.db, timeZone: NEW_YORK.timeZone },
+      );
+
+      expect(Exit.isSuccess(exit) && keys(exit.value)).toEqual(
+        EVERY_PERSONAL_ITEM,
+      );
+    });
+
+    it("takes the instant from the Effect Clock", async () => {
+      const filter = "dateAdded >= today()";
+
+      expect(
+        await matchingAt(filter, { ...NEW_YORK, now: "2024-02-29T23:00:00Z" }),
+      ).toEqual(["UNI2CDE2"]);
+      expect(
+        await matchingAt(filter, { ...NEW_YORK, now: "2024-03-01T05:00:00Z" }),
+      ).toEqual([]);
+    });
+
+    it("gives .date() of a timestamp the calendar day of the query time zone", async () => {
+      expect(
+        await matchingAt('dateAdded.date() == date("2020-01-06")', NEW_YORK),
+      ).toEqual(["CNF2TEXT"]);
+      expect(
+        await matchingAt('dateAdded.date() == date("2020-01-06")', {
+          ...NEW_YORK,
+          timeZone: "UTC",
+        }),
+      ).toEqual([]);
+    });
+
+    it("computes a window from now() with a duration", async () => {
+      expect(
+        await matchingAt(
+          'dateAdded > now() - duration("1d") && dateAdded < now()',
+          NEW_YORK,
+        ),
+      ).toEqual(["BK2MNTH2", "CNF2TEXT"]);
+    });
+
+    it("compares partial dates as the interval of days each one covers", async () => {
+      // ART2FULL 2020-03-15, ALS2CNFL 2021-06-30, UNI2CDE2 2024-02-29,
+      // TIE2* 2021, BK2MNTH2 2019-11, CHP2YEAR 2018; CNF2TEXT has a text date
+      // without a year and RPT2NDTE no date.
+      expect(await matchingAt('date >= date("2020")', NEW_YORK)).toEqual([
+        "ALS2CNFL",
+        "ART2FULL",
+        "TIE2AAAA",
+        "TIE2BBBB",
+        "TIE2CCCC",
+        "UNI2CDE2",
+      ]);
+      expect(await matchingAt('date == date("2019-11-30")', NEW_YORK)).toEqual([
+        "BK2MNTH2",
+      ]);
+      expect(await matchingAt('date == date("2021-06")', NEW_YORK)).toEqual([
+        "ALS2CNFL",
+        "TIE2AAAA",
+        "TIE2BBBB",
+        "TIE2CCCC",
+      ]);
+      expect(await matchingAt('date <= date("2018-01-01")', NEW_YORK)).toEqual([
+        "CHP2YEAR",
+      ]);
+      expect(await matchingAt('date > date("2018-12-31")', NEW_YORK)).toEqual([
+        "ALS2CNFL",
+        "ART2FULL",
+        "BK2MNTH2",
+        "TIE2AAAA",
+        "TIE2BBBB",
+        "TIE2CCCC",
+        "UNI2CDE2",
+      ]);
+      expect(await matchingAt('date == date("2024-02-29")', NEW_YORK)).toEqual([
+        "UNI2CDE2",
+      ]);
+      expect(await matchingAt("date == null", NEW_YORK)).toEqual([
+        "CNF2TEXT",
+        "RPT2NDTE",
+      ]);
+    });
+
+    it("reads a text date by the year in its text, and accessDate as a UTC timestamp", async () => {
+      scenario = openScenarioDatabase();
+      setField(scenario, "RPT2NDTE", ["date", "0000-00-00 circa 1850"]);
+      // 03:00Z on 16 March is 23:00 on 15 March in New York.
+      setField(scenario, "ART2FULL", ["accessDate", "2020-03-16 03:00:00"]);
+
+      expect(await matchingAt('date == date("1850")', NEW_YORK)).toEqual([
+        "RPT2NDTE",
+      ]);
+      expect(
+        await matchingAt('accessDate.date() == date("2020-03-15")', NEW_YORK),
+      ).toEqual(["ART2FULL"]);
+      expect(
+        await matchingAt(
+          'accessDate == date("2020-03-16 03:00:00Z")',
+          NEW_YORK,
+        ),
+      ).toEqual(["ART2FULL"]);
+    });
+  });
+
   describe("names", () => {
     it("resolves a base field through the type-specific field of each item type", async () => {
       expect(
@@ -1609,7 +1795,8 @@ describe("queryItems with a filter", () => {
       ['tags.startsWith("a")', "unknown-function", [5, 15]],
       ['title == "a', "invalid-filter", [11, 11]],
       ["title.lenght > 3", "unknown-property", [6, 12]],
-      ['dateAdded > "2020"', "unfilterable-field", [0, 9]],
+      ['custom == "a"', "unfilterable-field", [0, 6]],
+      ["dateAdded > date(2020)", "wrong-argument-type", [17, 21]],
       // A branch that never runs.
       ["false && title.startsWith(1)", "wrong-argument-type", [26, 27]],
       ["true || noSuchFunction()", "unknown-function", [8, 22]],

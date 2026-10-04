@@ -25,6 +25,7 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Tests
 - A function, a method, or a property of the Filter Expression language: one entry in `src/filter-functions.ts`. Its parameters drive the argument checks of validation and execution.
 - Filter validation: `planFilter` in `src/filter-plan.ts`. It gives the typed tree (`FilterNode`) with every name resolved, the hydration needs, and the custom fields for the engine to check against the source. `hasBareForm` decides the bare form of a custom field.
 - Filter execution: `src/filter-evaluate.ts` over the values of `src/filter-values.ts`. The evaluator is the authority for every match. A failure that depends on the data of one Item gives null.
+- Date and duration values: `src/filter-dates.ts`. The evaluator, each function, and each property get the Query Clock as an argument; `queryItems` reads it once with `readQueryClock` in `src/query-clock.ts`.
 - A database read: a reader in `packages/db/src/item-query/`.
 
 ## Tests

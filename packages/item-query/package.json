@@ -24,6 +24,7 @@
     "@zotlit/db": "workspace:*",
     "@zotlit/filter-expression": "workspace:*",
     "@zotlit/zotero-types": "workspace:*",
+    "arkregex": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {

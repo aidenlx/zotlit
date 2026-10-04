@@ -29,6 +29,7 @@ import type { FilterPlan } from "./filter-plan";
 import { allMatches, firstMatches } from "./matches";
 import { readPath } from "./projection";
 import type { PlannedPath } from "./projection";
+import { readQueryClock } from "./query-clock";
 import { planRequest } from "./request";
 import type {
   ItemQueryRequest,
@@ -60,6 +61,8 @@ export function queryItems(
     const { library } = request;
     const { query, filter, paths, sorts } = yield* planRequest(request);
     const { limit } = query;
+    // One instant and one time zone for every date in the query.
+    const clock = yield* readQueryClock;
 
     const pathNeeds = paths.map((path) => path.needs);
     // The scan pass loads what the filter and the sort read.
@@ -119,7 +122,7 @@ export function queryItems(
           const matching: Match[] = [];
           for (const scan of chunk) {
             const item = itemOf(scan, hydrated);
-            if (filter && !isMatch(filter.root, item)) continue;
+            if (filter && !isMatch(filter.root, item, clock)) continue;
             matching.push({ scan, keys: sorts.map((sort) => sort.key(item)) });
           }
           matches.add(matching);
