@@ -37,7 +37,7 @@ The adapter is `apps/obsidian/src/services/item-query/`; it is the only Promise 
 
 - Command names, flags, and `DEFAULT_CLI_LIMIT`: `contract.ts`. The handlers (`cli.ts`) and the guide (`guide.ts`) read them there; the guide also prints `DEFAULT_FIELDS` and `DEFAULT_SORT` of this package.
 - The Target Library and the query run in one Effect (`run.ts`) under one source lease (`withLease` in `cli.ts`), which also reads the identity of the envelope.
-- The answer of a query is built in steps after the lease ends (`answerResult` in `cli.ts`): each step takes rows for `ANSWER_STEP_BUDGET_MS`, half of `SLICE_BUDGET_MS`, then yields with `yieldToMain` and checks the abort signal. Keep the text byte-identical to `JSON.stringify(envelope, null, 2)`. The measure command (`measure.ts`) reports each step, and the measurement record holds the steps to the slice limits.
+- The answer of a query is built in steps after the lease ends (`answerResult` in `cli.ts`): each step takes chunks of rows for `ANSWER_STEP_BUDGET_MS`, half of `SLICE_BUDGET_MS`, then yields with `yieldToMain` and checks the abort signal. One `JSON.stringify` call makes one chunk of about `CHUNK_TEXT_LENGTH`: a few large strings keep V8's scavenges and mark-compact collections out of the steps, where a string for each row put collections of 9 to 110 ms into them. Keep the text byte-identical to `JSON.stringify(envelope, null, 2)`. The measure command (`measure.ts`) reports each step, and the measurement record holds the steps to the slice limits.
 
 ## Tests
 

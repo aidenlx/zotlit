@@ -227,6 +227,23 @@ export function evaluateTier(tier: TierMeasurement): Check[] {
   return checks;
 }
 
+/**
+ * The failed checks of the engine for some queries of a tier: their slices and
+ * their total time. A step of the answer is the handler's work, after the
+ * engine.
+ */
+export function failedEngineChecks(
+  tier: TierMeasurement,
+  queryIDs: ReadonlySet<string>,
+): Check[] {
+  return evaluateTier(tier).filter(
+    (check) =>
+      check.status === "failed" &&
+      (check.kind === "slices" || check.kind === "total") &&
+      queryIDs.has(check.subject),
+  );
+}
+
 const MARK: Record<Status, string> = {
   passed: "pass",
   failed: "**FAIL**",

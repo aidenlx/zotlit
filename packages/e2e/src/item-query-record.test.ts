@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   evaluateTier,
+  failedEngineChecks,
   formatSummary,
   median,
   percentile,
@@ -220,6 +221,26 @@ describe("threshold evaluation", () => {
         }),
       ).filter((status) => status.startsWith("answer")),
     ).toEqual(["answer short: passed", "answer long: failed"]);
+  });
+
+  it("counts for the scan only the failed engine checks of the queries that read scan pages", () => {
+    const run = (slices: number[], answerSteps: number[]) => [
+      { totalMs: 10, slices, worstSliceReaders: [], answerSteps },
+    ];
+    const measured = tier({
+      queries: [
+        // The engine holds its limits; one step of the answer is long.
+        query({ id: "export", class: "all", runs: run([8], [4, 90]) }),
+        query({ id: "scan", runs: run([8, 40], [1]) }),
+        query({ id: "key", runs: run([8, 40], [1]) }),
+      ],
+    });
+
+    expect(
+      failedEngineChecks(measured, new Set(["export", "scan"])).map(
+        ({ kind, subject }) => `${kind} ${subject}`,
+      ),
+    ).toEqual(["slices scan"]);
   });
 
   it("judges each cancel against 50 ms from request to settlement", () => {
