@@ -13,7 +13,10 @@ import * as v from "valibot";
 
 import { getLibraries, getLibraryByGroupID } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-import type { ItemQueryDatabaseError } from "@zotlit/db/item-query";
+import type {
+  ItemQueryDatabaseError,
+  ItemQueryLayoutError,
+} from "@zotlit/db/item-query";
 import type {
   ItemQueryError,
   ProjectionValue,
@@ -94,6 +97,8 @@ const DIAGNOSTIC_HINTS = {
     "Use library=personal, or the group ID of a group Library that the connected Zotero source holds.",
   "database-error":
     "Run the command again; if it fails again, ask the user to check the plugin log.",
+  "unsupported-database-layout":
+    "Ask the user to update ZotLit: this ZotLit version cannot read the way their Zotero version stores its data. Running the command again gives the same result until then.",
 } as const satisfies Record<string, string>;
 
 type AdapterDiagnosticCode = keyof typeof DIAGNOSTIC_HINTS;
@@ -249,7 +254,7 @@ export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
 
 type ItemQueryExit = Exit.Exit<
   QueryResult,
-  ItemQueryError | ItemQueryDatabaseError
+  ItemQueryError | ItemQueryLayoutError | ItemQueryDatabaseError
 >;
 
 /**
@@ -293,6 +298,10 @@ export async function answerExit(
         hint: failed.hint,
         location: failed.location,
       });
+    }
+    if (failed._tag === "ItemQueryLayoutError") {
+      // `@zotlit/db` logs the missing layout and the versions once per copy.
+      return failure(diagnostic("unsupported-database-layout", failed.message));
     }
     return databaseFailure(failed.cause, failed);
   }

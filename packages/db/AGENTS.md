@@ -37,6 +37,8 @@ The `zt` types plus their doc comments are the single source of truth for the te
 
 `src/item-query/` holds every SQL statement of Item Query, behind the `@zotlit/db/item-query` export. It is the only entry that loads `effect`; keep `effect` imports inside it. Define each statement with `defineStatement` in `src/item-query/database.ts`: it is the one place where a driver call becomes an Effect and a thrown value becomes `ItemQueryDatabaseError`. Test readers on the scenario database (`src/test-scenario/`).
 
+Every table and column a reader statement reads belongs in `ITEM_QUERY_LAYOUT` (`src/item-query/layout.ts`); add them with each new reader. `defineStatement` runs the layout check before the first statement on each copy, and `layout.test.ts` fails when a statement of a reader module that `src/item-query/index.ts` exports reads outside the manifest.
+
 ## Logging
 
 Logging uses `@logtape/logtape`; configuration belongs to the consuming app.

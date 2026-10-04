@@ -5,6 +5,7 @@ import { openScenarioDatabase, SCENARIO_LIBRARIES } from "@/test-scenario";
 import type { ScenarioDatabase } from "@/test-scenario";
 
 import {
+  checkLayout,
   ItemQueryDatabase,
   ItemQueryDatabaseError,
   readScanPage,
@@ -131,6 +132,8 @@ describe("readScanPage", () => {
 
   it("fails with the tagged database error that carries the statement", () => {
     scenario = openScenarioDatabase();
+    // The copy passes the layout check first, so the statement itself fails.
+    runOk(checkLayout());
     scenario.sqlite.exec("alter table items rename column dateAdded to added");
 
     const exit = run(

@@ -8,7 +8,21 @@ export default defineConfig({
   },
   test: {
     ...testDefaults,
-    include: ["src/**/*.test.ts"],
     environment: "node",
+    projects: [
+      {
+        extends: true,
+        test: { name: "highest", include: ["src/**/*.test.ts"] },
+      },
+      {
+        // The query scenario again on the lowest supported Zotero layout.
+        extends: true,
+        test: {
+          name: "lowest",
+          include: ["src/query-items.test.ts"],
+          env: { ZOTLIT_SCENARIO_LAYOUT: "lowest" },
+        },
+      },
+    ],
   },
 });

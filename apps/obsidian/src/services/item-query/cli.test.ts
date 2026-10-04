@@ -2,7 +2,10 @@ import { Exit } from "effect";
 import type { CliData, CliHandler, Plugin } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ItemQueryDatabaseError } from "@zotlit/db/item-query";
+import {
+  ItemQueryDatabaseError,
+  ItemQueryLayoutError,
+} from "@zotlit/db/item-query";
 import { openScenarioDatabase } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
@@ -476,6 +479,32 @@ describe("answerExit", () => {
         message: expect.stringContaining("disk I/O error"),
       },
     });
+  });
+
+  it("answers unsupported-database-layout for a layout this ZotLit cannot read", async () => {
+    const exit = Exit.fail(
+      new ItemQueryLayoutError({
+        missing: [
+          { table: "itemData", column: null },
+          { table: "items", column: "itemTypeID" },
+        ],
+        versions: { userdata: 131, compatibility: 10 },
+      }),
+    );
+
+    const answer = JSON.parse(await answerExit(exit, context));
+
+    expect(answer).toMatchObject({
+      contractVersion: 1,
+      command: "zotlit:item-query",
+      ok: false,
+      diagnostic: {
+        code: "unsupported-database-layout",
+        message: expect.stringContaining("items.itemTypeID"),
+        hint: expect.stringContaining("update ZotLit"),
+      },
+    });
+    expect(answer.diagnostic.message).toContain("the table itemData");
   });
 
   it("rejects with an Error for a defect, distinct from a cancellation", async () => {

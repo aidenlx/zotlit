@@ -2,8 +2,10 @@
 // `@zotlit/db` that loads `effect`.
 export { type CollectionPaths, readCollectionPaths } from "./collection-paths";
 export {
+  checkLayout,
   ItemQueryDatabase,
   ItemQueryDatabaseError,
+  type ItemQueryReaderError,
   type Statement,
 } from "./database";
 export {
@@ -17,4 +19,10 @@ export {
   readFieldVocabulary,
   readHydrateChunk,
 } from "./hydrate-chunk";
+export {
+  ITEM_QUERY_LAYOUT,
+  ItemQueryLayoutError,
+  type LayoutGap,
+  type LayoutVersions,
+} from "./layout";
 export { readScanPage, SCAN_PAGE_SIZE, type ScanRow } from "./scan-page";
