@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "e2e": "vitest run",
+    "measure:item-query": "node src/item-query-measure.ts",
+    "test": "vitest run --config vitest.unit.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

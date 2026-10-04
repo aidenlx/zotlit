@@ -7,7 +7,10 @@ The End-to-end Run suite — the plugin running in a real desktop Obsidian windo
 - `pnpm e2e` (root) or `pnpm --filter @zotlit/e2e e2e` — runs the suite.
 - `pnpm --filter @zotlit/e2e typecheck` — type-checks the suite.
 
-Deliberately no `test` script: this suite drives a real Electron app and stays out of `pnpm test` / CI, which only invoke packages that declare one.
+- `pnpm --filter @zotlit/e2e measure:item-query` — the release-time measurement of Item Query (see below).
+- `pnpm --filter @zotlit/e2e test` — unit tests of the measurement record (`src/**/*.test.ts`, `vitest.unit.config.ts`). They touch no Obsidian.
+
+The End-to-end Run and the measurement drive a real Electron app and stay out of `pnpm test` / CI: the `test` script runs the unit tests alone.
 
 ## Requirements
 
@@ -25,3 +28,11 @@ Each suite file builds its own Fixture and new purged vaults under `.scratch/e2e
 - The OS focus stays with the developer and with runs in other worktrees. `keepRendering` makes a vault's windows render, and one of them act focused, behind other apps.
 - A Paired Zotero that fails to start or to serve its Local API fails the file.
 - `src/paired-zotero.ts` holds the Local API client and the RDP levers. The [Fixture guide](../../docs/fixture.md) has the paths.
+
+## Item Query measurement
+
+`src/item-query-measure.ts` proves the performance acceptance criteria of Item Query in a visible Obsidian window, on the Stress Build Libraries of 10,000, 50,000, and 100,000 Items. Run it before a release and after a planner change; its header has the usage. The vault window must stay visible for the whole run.
+
+- Thresholds, their evaluation, and the summary format: `src/item-query-record.ts`, with unit tests beside it.
+- The numbers come from the dev-build commands `zotlit:item-query-measure` and `zotlit:item-query-measure-cancel` (`apps/obsidian/src/services/item-query/measure.ts`).
+- Output goes to `.scratch/item-query-measure/<time>/`: `raw.json` and `summary.md`, the comment for the release pull request.
