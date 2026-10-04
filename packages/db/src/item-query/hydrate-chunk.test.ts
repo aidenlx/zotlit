@@ -7,10 +7,11 @@ import type { ScenarioDatabase, ScenarioItemName } from "@/test-scenario";
 import {
   HYDRATE_CHUNK_SIZE,
   ItemQueryDatabase,
+  readCollectionPaths,
   readFieldVocabulary,
   readHydrateChunk,
 } from ".";
-import type { HydrateFields, HydratedItem } from ".";
+import type { HydrateFields, HydratedItem, HydrateRelation } from ".";
 
 let scenario: ScenarioDatabase | undefined;
 
@@ -50,6 +51,27 @@ function hydrate(
   return new Map(names.map((name, i) => [name, hydrated.get(ids[i]!)!]));
 }
 
+function hydrateRelations(
+  names: readonly ScenarioItemName[],
+  relations: readonly HydrateRelation[],
+): Map<ScenarioItemName, HydratedItem> {
+  const ids = names.map(itemID);
+  const hydrated = runOk(
+    Effect.gen(function* () {
+      const vocabulary = yield* readFieldVocabulary();
+      const collectionPaths = yield* readCollectionPaths({ libraryID: 1 });
+      return yield* readHydrateChunk({
+        vocabulary,
+        itemIDs: ids,
+        fields: { builtIn: [], custom: [] },
+        relations,
+        collectionPaths,
+      });
+    }),
+  );
+  return new Map(names.map((name, i) => [name, hydrated.get(ids[i]!)!]));
+}
+
 const plain = (item: HydratedItem | undefined) =>
   item && {
     fields: Object.fromEntries(item.fields),
@@ -66,6 +88,25 @@ describe("readFieldVocabulary", () => {
       "title",
       "publicationTitle",
     ]);
+  });
+});
+
+describe("readCollectionPaths", () => {
+  it("gives the root-first path of each live Collection of one Library", () => {
+    const personalPaths = runOk(readCollectionPaths({ libraryID: 1 }));
+    const groupPaths = runOk(readCollectionPaths({ libraryID: 2 }));
+
+    // Archive is trashed; Archive/Old is live below it.
+    expect([...personalPaths.values()]).toHaveLength(4);
+    expect([...personalPaths.values()]).toEqual(
+      expect.arrayContaining([
+        ["Thesis"],
+        ["Thesis", "Methods"],
+        ["Teaching"],
+        ["Teaching", "Methods"],
+      ]),
+    );
+    expect([...groupPaths.values()]).toEqual([["Methods"]]);
   });
 });
 
@@ -136,6 +177,105 @@ describe("readHydrateChunk", () => {
     const items = hydrate(["tieUntitled"], { builtIn: ["title"], custom: [] });
 
     expect(plain(items.get("tieUntitled"))).toEqual({ fields: {}, custom: {} });
+  });
+
+  it("loads the Creators of each Item in Zotero's creator order, one for each row", () => {
+    const items = hydrateRelations(
+      ["yearMonthBook", "fullDateArticle", "missingDateReport"],
+      ["creators"],
+    );
+
+    expect(items.get("yearMonthBook")?.creators).toEqual([
+      {
+        firstName: "Grace",
+        lastName: "Hopper",
+        fieldMode: 0,
+        creatorType: "author",
+      },
+      {
+        firstName: "Grace",
+        lastName: "Hopper",
+        fieldMode: 0,
+        creatorType: "editor",
+      },
+    ]);
+    expect(items.get("fullDateArticle")?.creators).toEqual([
+      {
+        firstName: "Ada",
+        lastName: "Lovelace",
+        fieldMode: 0,
+        creatorType: "author",
+      },
+      {
+        firstName: "",
+        lastName: "World Health Organization",
+        fieldMode: 1,
+        creatorType: "author",
+      },
+    ]);
+    expect(items.get("missingDateReport")?.creators).toEqual([]);
+  });
+
+  it("loads every Tag of each Item with its type", () => {
+    const items = hydrateRelations(
+      ["fullDateArticle", "missingDateReport"],
+      ["tags"],
+    );
+
+    expect(items.get("fullDateArticle")?.tags).toHaveLength(3);
+    expect(items.get("fullDateArticle")?.tags).toEqual(
+      expect.arrayContaining([
+        { name: "to-read", type: 0 },
+        { name: "To-Read", type: 1 },
+        { name: "methods", type: 0 },
+      ]),
+    );
+    expect(items.get("missingDateReport")?.tags).toEqual([]);
+  });
+
+  it("loads the root-first path of each live Collection an Item is filed in", () => {
+    const items = hydrateRelations(
+      ["fullDateArticle", "yearMonthBook", "yearOnlyChapter", "tieFirst"],
+      ["collections"],
+    );
+
+    // ART2FULL is also in Archive/Old, below the trashed Archive.
+    expect(items.get("fullDateArticle")?.collections).toEqual([
+      ["Thesis", "Methods"],
+    ]);
+    // BK2MNTH2 is also in the trashed Archive.
+    expect(items.get("yearMonthBook")?.collections).toEqual([
+      ["Teaching", "Methods"],
+    ]);
+    expect(items.get("yearOnlyChapter")?.collections).toHaveLength(2);
+    expect(items.get("yearOnlyChapter")?.collections).toEqual(
+      expect.arrayContaining([["Thesis"], ["Thesis", "Methods"]]),
+    );
+    expect(items.get("tieFirst")?.collections).toEqual([]);
+  });
+
+  it("reports whether an Item has a live child Attachment", () => {
+    const items = hydrateRelations(
+      ["fullDateArticle", "missingDateReport"],
+      ["attachments"],
+    );
+
+    expect(items.get("fullDateArticle")?.hasAttachments).toBe(true);
+    expect(items.get("missingDateReport")?.hasAttachments).toBe(false);
+  });
+
+  it("ignores a trashed Attachment", () => {
+    // ART2FULL keeps only its trashed Attachment.
+    scenario = openScenarioDatabase();
+    scenario.sqlite
+      .prepare(
+        "insert into deletedItems (itemID, dateDeleted) values (?, '2024-01-01 00:00:00')",
+      )
+      .run(itemID("liveAttachment"));
+
+    const items = hydrateRelations(["fullDateArticle"], ["attachments"]);
+
+    expect(items.get("fullDateArticle")?.hasAttachments).toBe(false);
   });
 
   it("rejects a chunk larger than the chunk size", () => {
