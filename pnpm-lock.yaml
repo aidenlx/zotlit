@@ -1015,6 +1015,9 @@ importers:
       '@zotlit/db':
         specifier: workspace:*
         version: link:../db
+      '@zotlit/zotero-types':
+        specifier: workspace:*
+        version: link:../zotero-types
       effect:
         specifier: 'catalog:'
         version: 4.0.0

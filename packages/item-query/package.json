@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@zotlit/db": "workspace:*",
+    "@zotlit/zotero-types": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {
