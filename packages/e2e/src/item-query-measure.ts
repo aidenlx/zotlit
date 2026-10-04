@@ -91,6 +91,7 @@ interface MeasureReport {
   engineMs?: number;
   answerMs?: number;
   answerBytes?: number;
+  answerSteps: number[];
   slices: number[];
   worstSlice?: {
     ms: number;
@@ -620,6 +621,7 @@ function toTier(raw: RawTier, notes: string[]): TierMeasurement {
       runs: runs.map((run) => ({
         totalMs: run.totalMs,
         slices: run.slices,
+        answerSteps: run.answerSteps,
         worstSliceReaders: [
           ...new Set(
             run.worstSlice?.statements.map(({ reader }) => reader) ?? [],

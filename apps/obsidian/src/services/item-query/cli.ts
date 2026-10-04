@@ -20,6 +20,7 @@ import type {
   ItemQueryLayoutError,
   TargetLibrarySelector,
 } from "@zotlit/db/item-query";
+import { SLICE_BUDGET_MS } from "@zotlit/item-query";
 import type {
   ItemQueryError,
   ItemQuerySchema,
@@ -29,6 +30,7 @@ import type {
 } from "@zotlit/item-query";
 
 import { getLogger } from "@/lib/log";
+import { yieldToMain } from "@/lib/yield-to-main";
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
 import {
@@ -168,6 +170,11 @@ export interface ItemQueryCliDeps {
   signal: AbortSignal;
   /** Observes the engine of each query run; the measurement command sets it. */
   instrument?: ItemQueryInstrument;
+  /**
+   * Receives the duration of each step of the answer of a query, in
+   * milliseconds; the measurement command sets it.
+   */
+  onAnswerStep?: (ms: number) => void;
 }
 
 export function registerItemQueryCli(
@@ -304,6 +311,7 @@ export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
               name: library.name ?? "",
             },
       signal: deps.signal,
+      onAnswerStep: deps.onAnswerStep,
     });
   };
 }
@@ -358,25 +366,66 @@ export async function answerExit(
     identity: WorkbenchIdentity;
     library: LibraryWire;
     signal: AbortSignal;
+    onAnswerStep?: (ms: number) => void;
   },
 ): Promise<string> {
-  if (Exit.isSuccess(exit)) {
-    const result = exit.value;
-    return envelope(ITEM_QUERY_COMMAND, {
-      ok: true,
-      identity: context.identity,
-      library: context.library,
-      request: result.query,
-      returnedCount: result.returnedCount,
-      truncated: result.truncated,
-      rows: result.rows.map((row) => ({
-        indexedKey: row.indexedKey,
-        values: toWire(row.values) as object,
-      })),
-    });
-  }
-
+  if (Exit.isSuccess(exit)) return answerResult(exit.value, context);
   return answerFailure(exit.cause, ITEM_QUERY_COMMAND, context.signal);
+}
+
+/** The end of the envelope of a result without rows. */
+const NO_ROWS = "[]\n}";
+/** The indentation of one row in the envelope: `rows` is a top-level key. */
+const ROW_INDENT = "    ";
+
+/**
+ * Build the envelope of a result: the pretty JSON of the complete envelope,
+ * made in steps. A result of every match has no row limit, so one step takes
+ * rows until the slice budget of the engine ends, then gives the window a
+ * turn and stops when the run is cancelled.
+ */
+async function answerResult(
+  result: QueryResult,
+  context: {
+    identity: WorkbenchIdentity;
+    library: LibraryWire;
+    signal: AbortSignal;
+    onAnswerStep?: (ms: number) => void;
+  },
+): Promise<string> {
+  let stepStart = performance.now();
+  const head = envelope(ITEM_QUERY_COMMAND, {
+    ok: true,
+    identity: context.identity,
+    library: context.library,
+    request: result.query,
+    returnedCount: result.returnedCount,
+    truncated: result.truncated,
+    rows: [],
+  });
+  // `text` grows by concatenation, which V8 keeps as a rope: no step copies
+  // the rows before it.
+  let text = head;
+  if (result.rows.length > 0) {
+    text = `${head.slice(0, -NO_ROWS.length)}[`;
+    for (const [index, row] of result.rows.entries()) {
+      const wire = JSON.stringify(
+        { indexedKey: row.indexedKey, values: toWire(row.values) },
+        null,
+        2,
+      );
+      text += `${index === 0 ? "" : ","}\n${ROW_INDENT}${wire.replaceAll("\n", `\n${ROW_INDENT}`)}`;
+      const now = performance.now();
+      if (now - stepStart < SLICE_BUDGET_MS) continue;
+      context.onAnswerStep?.(now - stepStart);
+      await yieldToMain();
+      context.signal.throwIfAborted();
+      stepStart = performance.now();
+    }
+    text += "\n  ]\n}";
+  }
+  context.onAnswerStep?.(performance.now() - stepStart);
+  return text;
 }
 
 /**

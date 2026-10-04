@@ -128,6 +128,84 @@ describe("zotlit:item-query without arguments", () => {
   });
 });
 
+describe("zotlit:item-query answer", () => {
+  /**
+   * A clock that moves 3 ms at each read: the third read of a step is over
+   * the budget of 8 ms, so a step of the answer holds three rows.
+   */
+  function fastClock() {
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => (now += 3));
+  }
+
+  function handlerOf(
+    scenario: ScenarioDatabase,
+    overrides: Partial<ItemQueryCliDeps> = {},
+  ) {
+    return createItemQueryHandler({
+      acquireRead: async () => ({
+        client: scenario.db,
+        [Symbol.dispose]: () => {},
+      }),
+      identity: async () => IDENTITY,
+      signal: new AbortController().signal,
+      ...overrides,
+    });
+  }
+
+  it.each<CliData>([
+    { limit: "all" },
+    { limit: "all", fields: "[]" },
+    { limit: "1", fields: '["title","creators","date","tags","custom"]' },
+    { filter: "false" },
+  ])("is the pretty JSON of its envelope for %j", async (params) => {
+    using scenario = openScenarioDatabase();
+    fastClock();
+
+    const answer = await handlerOf(scenario)(params);
+
+    expect(answer).toBe(JSON.stringify(JSON.parse(answer), null, 2));
+    expect(Object.keys(JSON.parse(answer) as object).at(-1)).toBe("rows");
+  });
+
+  it("builds the rows in steps and gives the window a turn between them", async () => {
+    using scenario = openScenarioDatabase();
+    fastClock();
+    const steps: number[] = [];
+
+    const answer = await handlerOf(scenario, {
+      onAnswerStep: (ms) => steps.push(ms),
+    })({ limit: "all", fields: "[]" });
+
+    // Three steps of three rows; the last step has one row and the end.
+    expect(JSON.parse(answer)).toMatchObject({ returnedCount: 10 });
+    expect(steps).toHaveLength(4);
+  });
+
+  it("rejects with the abort reason when the cancel request comes while it builds the answer", async () => {
+    using scenario = openScenarioDatabase();
+    fastClock();
+    const controller = new AbortController();
+    const reason = new Error("plugin unloaded");
+    const events: string[] = [];
+
+    const answering = handlerOf(scenario, {
+      acquireRead: async () => ({
+        client: scenario.db,
+        [Symbol.dispose]: () => events.push("release"),
+      }),
+      signal: controller.signal,
+      onAnswerStep: () => {
+        events.push("step");
+        controller.abort(reason);
+      },
+    })({ limit: "all", fields: "[]" });
+
+    await expect(answering).rejects.toBe(reason);
+    expect(events).toEqual(["release", "step"]);
+  });
+});
+
 describe("zotlit:item-query limit", () => {
   it("returns the first rows and reports truncation for a numeric limit", async () => {
     using scenario = openScenarioDatabase();

@@ -60,9 +60,11 @@ export interface ItemQueryMeasureReport {
   leaseMs?: number;
   /** The Effect run: Target Library resolution and `queryItems`. */
   engineMs?: number;
-  /** The envelope: one synchronous step after the engine settles. */
+  /** The envelope, built in steps after the engine settles. */
   answerMs?: number;
   answerBytes?: number;
+  /** The duration of each step in which the handler built the answer. */
+  answerSteps: number[];
   /** The duration of each slice, in run order. */
   slices: number[];
   worstSlice?: SliceRecord;
@@ -192,7 +194,7 @@ function decodeCancelAfterMs(raw: string | undefined): number | undefined {
 
 export function registerItemQueryMeasureCli(
   plugin: Plugin,
-  deps: Omit<ItemQueryCliDeps, "signal" | "instrument">,
+  deps: Omit<ItemQueryCliDeps, "signal" | "instrument" | "onAnswerStep">,
 ): void {
   const unload = new AbortController();
   plugin.register(() => unload.abort());
@@ -205,10 +207,12 @@ export function registerItemQueryMeasureCli(
     inFlight.add(own);
     const signal = AbortSignal.any([unload.signal, own.signal]);
     const trace = createTrace(heap === "true");
+    const answerSteps: number[] = [];
     const handler = createItemQueryHandler({
       ...deps,
       signal,
       instrument: trace.instrument,
+      onAnswerStep: (ms) => answerSteps.push(round(ms)),
     });
 
     let hiddenDuringRun = document.visibilityState !== "visible";
@@ -307,6 +311,7 @@ export function registerItemQueryMeasureCli(
           ? undefined
           : round(settledAt - trace.engineEnd),
       answerBytes: answer?.length,
+      answerSteps,
       slices: durations,
       worstSlice,
       pauses: trace.paused.length,
