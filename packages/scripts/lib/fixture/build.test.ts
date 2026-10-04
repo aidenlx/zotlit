@@ -1483,6 +1483,174 @@ describe("a Stress Build", () => {
   );
 });
 
+describe("a one-Library Stress Build", () => {
+  /** My Library at 2,038 Items: the 38 Fixture Spec Items and 2,000 synthetic ones. */
+  const LIBRARY_ITEMS = 2_038;
+  let libraryLayout: FixtureLayout;
+
+  beforeAll(async () => {
+    libraryLayout = await buildTemporaryLibraryStressFixture(
+      "fixture-stress-library-",
+      LIBRARY_ITEMS,
+    );
+  });
+
+  async function buildTemporaryLibraryStressFixture(
+    prefix: string,
+    stressLibraryItemCount: number,
+  ): Promise<FixtureLayout> {
+    const generatedLayout = getFixtureLayout(
+      await mkdtemp(join(dirname(layout.root), prefix)),
+    );
+    fixture.defer(() =>
+      rm(generatedLayout.root, { recursive: true, force: true }),
+    );
+    await buildFixture(generatedLayout, { stressLibraryItemCount });
+    return generatedLayout;
+  }
+
+  function synthetic(db: NodeDatabaseClient): IndexedItem[] {
+    return indexedItems(db, 1).filter(({ citationKey }) =>
+      citationKey?.startsWith("stress"),
+    );
+  }
+
+  function countBy(values: readonly (string | null)[]): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const value of values) {
+      counts[String(value)] = (counts[String(value)] ?? 0) + 1;
+    }
+    return counts;
+  }
+
+  it("holds exactly the requested Item count in My Library and leaves the group Libraries as specified", () => {
+    using db = openClientAt(libraryLayout.databasePath);
+    expect(getIndexedItemIDsByLibrary(db, 1)).toHaveLength(LIBRARY_ITEMS);
+    for (const libraryID of [2, 3, 4]) {
+      expect(getIndexedItemIDsByLibrary(db, libraryID)).toHaveLength(
+        ITEMS.filter((item) => item.libraryID === libraryID).length,
+      );
+    }
+  });
+
+  it("gives rare, common, and dominant Tags", () => {
+    using db = openClientAt(libraryLayout.databasePath);
+    const tags = synthetic(db).flatMap(({ itemID }) =>
+      resolveItemTags(db, itemID, new Map()).map(({ tag }) => tag.name),
+    );
+    expect(countBy(tags)).toEqual({
+      "stress-rare": 2,
+      "stress-common": 200,
+      "stress-dominant": 1_200,
+    });
+  });
+
+  it("files Items in nested Collections of rare, common, and dominant size", () => {
+    using db = openClientAt(libraryLayout.databasePath);
+    const nodes = getCollectionNodesByLibrary(db, 1);
+    const byKey = new Map(nodes.map((node) => [node.key, node]));
+    const parentName = (key: string) =>
+      nodes.find(
+        ({ collectionID }) =>
+          collectionID === byKey.get(key)!.parentCollectionID,
+      )?.collectionName ?? null;
+    expect(
+      ["STRESSRT", "STRESSCM", "STRESSRR", "STRESSDM"].map((key) => [
+        byKey.get(key)!.collectionName,
+        parentName(key),
+      ]),
+    ).toEqual([
+      ["Stress Build", null],
+      ["Common", "Stress Build"],
+      ["Rare", "Common"],
+      ["Dominant", "Stress Build"],
+    ]);
+
+    const subtree = (collectionKey: string) =>
+      getIndexedItemIDsByCollection(db, { libraryID: 1, collectionKey }).length;
+    expect({
+      root: subtree("STRESSRT"),
+      common: subtree("STRESSCM"),
+      rare: subtree("STRESSRR"),
+      dominant: subtree("STRESSDM"),
+    }).toEqual({ root: 1_402, common: 202, rare: 2, dominant: 1_200 });
+  });
+
+  it("gives a dominant item type, exact Venue values of every frequency, and one unique title", () => {
+    using db = openClientAt(libraryLayout.databasePath);
+    const items = synthetic(db);
+    expect(items).toHaveLength(2_000);
+    expect(countBy(items.map(({ itemType }) => itemType))).toEqual({
+      journalArticle: 1_798,
+      book: 200,
+      thesis: 2,
+    });
+    expect(
+      countBy(
+        items
+          .filter(({ itemType }) => itemType === "journalArticle")
+          .map(({ publicationTitle }) => publicationTitle),
+      ),
+    ).toEqual({
+      "Stress Rare Journal": 2,
+      "Stress Common Journal": 200,
+      "Stress Dominant Journal": 1_596,
+    });
+    expect(
+      indexedItems(db, 1).filter(
+        ({ title }) => title === "Stress Build unique title",
+      ),
+    ).toHaveLength(1);
+    expect(new Set(items.map(({ title }) => title)).size).toBe(2_000);
+  });
+
+  it("varies modification times so the default newest-first order has few ties", () => {
+    using db = openClientAt(libraryLayout.databasePath);
+    const times = new Set(
+      synthetic(db).map(({ dateModified }) => dateModified.toString()),
+    );
+    expect(times.size).toBe(2_000);
+  });
+
+  it("generates the same content from its fixed seed", async () => {
+    const comparisonLayout = await buildTemporaryLibraryStressFixture(
+      "fixture-stress-library-comparison-",
+      LIBRARY_ITEMS,
+    );
+    expect(readIndexedItemSemantics(comparisonLayout)).toBe(
+      readIndexedItemSemantics(libraryLayout),
+    );
+  });
+
+  it("rejects a count below the Fixture Spec Items of My Library", async () => {
+    await expect(
+      buildTemporaryLibraryStressFixture("fixture-stress-library-small-", 37),
+    ).rejects.toThrow(/at least 38/);
+  });
+
+  it("rejects a build that also asks for the additive corpus", async () => {
+    await expect(
+      buildFixture(getFixtureLayout(join(dirname(layout.root), "unused")), {
+        stressItemCount: 10,
+        stressLibraryItemCount: 10_000,
+      }),
+    ).rejects.toThrow(/one Stress Build/);
+  });
+
+  it(
+    "builds and opens the 10,000-Item tier",
+    { timeout: 120_000 },
+    async () => {
+      const tierLayout = await buildTemporaryLibraryStressFixture(
+        "fixture-stress-library-tier-",
+        10_000,
+      );
+      using db = openClientAt(tierLayout.databasePath);
+      expect(getIndexedItemIDsByLibrary(db, 1)).toHaveLength(10_000);
+    },
+  );
+});
+
 describe("the generated Obsidian vault", () => {
   it("carries the prose test pages verbatim from committed assets", async () => {
     for (const name of [

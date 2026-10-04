@@ -37,7 +37,9 @@ import {
   ATTACHMENTS,
   BUILD_TIMESTAMP,
   CITATION_DOCUMENT_EDIT,
+  COLLECTIONS,
   createStressItems,
+  createStressLibraryCorpus,
   DEFAULT_SCOPE_CASE,
   DEFAULT_VAULT_CASE,
   DEMO_ATTACHMENTS,
@@ -87,6 +89,7 @@ export {
   BUILD_TIMESTAMP,
   COLLECTIONS,
   createStressItems,
+  createStressLibraryCorpus,
   DEFAULT_SCOPE_CASE,
   DEFAULT_VAULT_CASE,
   DEMO_ANNOTATIONS,
@@ -124,6 +127,10 @@ export {
 export {
   DEFAULT_STRESS_ITEM_COUNT,
   STRESS_ITEM_COUNT_CONSTRAINT,
+  STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT,
+  STRESS_LIBRARY_MIN_ITEM_COUNT,
+  STRESS_LIBRARY_TIERS,
+  STRESS_LIBRARY_VALUES,
 } from "./spec.ts";
 export type {
   FixtureAnnotation,
@@ -144,6 +151,7 @@ export type {
   FixtureVaultCase,
   LibrarySelector,
   PersistedLibraryScope,
+  StressLibraryCorpus,
 } from "./spec.ts";
 export { getFixtureLayout, getFixtureRoot } from "./layout.ts";
 export type { FixtureLayout } from "./layout.ts";
@@ -166,6 +174,12 @@ export interface BuildOptions {
   vaultCase?: string;
   /** Number of additive synthetic Items in an on-demand Stress Build. */
   stressItemCount?: number;
+  /**
+   * Exact Item count of My Library in a one-Library Stress Build: synthetic
+   * Items fill it past its Fixture Spec Items. Excludes
+   * {@link BuildOptions.stressItemCount}.
+   */
+  stressLibraryItemCount?: number;
   /**
    * Built plugin bundle to copy into the vault (`apps/obsidian/dist-dev`).
    * Absent, the vault carries the Fixture's data with ZotLit neither installed
@@ -218,15 +232,30 @@ export async function buildFixture(
   layout: FixtureLayout,
   options: BuildOptions = {},
 ): Promise<void> {
+  if (
+    options.stressItemCount !== undefined &&
+    options.stressLibraryItemCount !== undefined
+  ) {
+    throw new Error(
+      "a build takes one Stress Build: an additive Item count or a My Library Item count",
+    );
+  }
+  const stressLibrary =
+    options.stressLibraryItemCount === undefined
+      ? undefined
+      : createStressLibraryCorpus(options.stressLibraryItemCount);
   const items =
-    options.stressItemCount === undefined
-      ? ITEMS
-      : [...ITEMS, ...createStressItems(options.stressItemCount)];
+    options.stressItemCount !== undefined
+      ? [...ITEMS, ...createStressItems(options.stressItemCount)]
+      : stressLibrary
+        ? [...ITEMS, ...stressLibrary.items]
+        : ITEMS;
 
   assertSeededCitationKeys(items);
   const data = vaultCaseZoteroData(
     options.vaultCase ?? DEFAULT_VAULT_CASE,
     items,
+    stressLibrary ? [...COLLECTIONS, ...stressLibrary.collections] : undefined,
   );
 
   await rm(layout.root, { recursive: true, force: true });
