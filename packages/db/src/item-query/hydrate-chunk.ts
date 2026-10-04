@@ -35,6 +35,11 @@ export const HYDRATE_CHUNK_SIZE = 250;
 export interface FieldVocabulary {
   /** Exact source names of the custom fields (`fieldsCombined.custom = 1`). */
   readonly customFieldNames: readonly string[];
+  /**
+   * Every field ID that stores a value of one built-in field: the field itself
+   * and each type-specific field that aliases it. Empty for an unknown name.
+   */
+  readonly fieldIDsOf: (name: string) => readonly number[];
   /** @internal The base-field table of one built-in field name. */
   readonly tableOf: (name: string) => BaseFieldTable<string>;
   /** @internal */
@@ -154,6 +159,17 @@ export function readFieldVocabulary(): Effect.Effect<
       const tables = new Map<string, BaseFieldTable<string>>();
       return {
         customFieldNames: custom.map((row) => row.fieldName),
+        fieldIDsOf: (name: string) => {
+          const own = builtIn.find((row) => row.fieldName === name);
+          return [
+            ...new Set([
+              ...(own ? [own.fieldID] : []),
+              ...mappings
+                .filter((row) => row.baseFieldName === name)
+                .flatMap((row) => (row.fieldID === null ? [] : [row.fieldID])),
+            ]),
+          ];
+        },
         builtInID: new Map(builtIn.map((row) => [row.fieldName, row.fieldID])),
         customID: new Map(custom.map((row) => [row.fieldName, row.fieldID])),
         tableOf: (name: string) => {
