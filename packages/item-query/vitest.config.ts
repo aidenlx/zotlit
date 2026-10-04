@@ -15,11 +15,12 @@ export default defineConfig({
         test: { name: "highest", include: ["src/**/*.test.ts"] },
       },
       {
-        // The query scenario again on the lowest supported Zotero layout.
+        // The query scenario and the parity suite again on the lowest supported
+        // Zotero layout.
         extends: true,
         test: {
           name: "lowest",
-          include: ["src/query-items.test.ts"],
+          include: ["src/query-items.test.ts", "src/parity.test.ts"],
           env: { ZOTLIT_SCENARIO_LAYOUT: "lowest" },
         },
       },

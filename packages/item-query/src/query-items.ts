@@ -6,7 +6,9 @@ import {
   readCollectionPaths,
   readFieldVocabulary,
   readHydrateChunk,
+  readLibraryRowCount,
   readScanPage,
+  readUniverseRows,
   SCAN_PAGE_SIZE,
 } from "@zotlit/db/item-query";
 import type {
@@ -20,6 +22,7 @@ import type {
   ScanRow,
 } from "@zotlit/db/item-query";
 
+import { planCandidates, readCandidates } from "./candidate-plan";
 import { compareStrings } from "./collation";
 import { ItemQueryError } from "./error";
 import type { FieldNeeds, QueryItem, SortKey } from "./fields";
@@ -37,6 +40,7 @@ import type {
   QueryResult,
   QueryRow,
 } from "./request";
+import { ItemQueryTuning } from "./tuning";
 
 /** One match while the query orders it: its scan row and its sort keys. */
 interface Match {
@@ -63,6 +67,12 @@ export function queryItems(
     const { limit } = query;
     // One instant and one time zone for every date in the query.
     const clock = yield* readQueryClock;
+    const tuning = yield* ItemQueryTuning;
+    const scanPageSize = sizeWithin(tuning.scanPageSize, SCAN_PAGE_SIZE);
+    const hydrateChunkSize = sizeWithin(
+      tuning.hydrateChunkSize,
+      HYDRATE_CHUNK_SIZE,
+    );
 
     const pathNeeds = paths.map((path) => path.needs);
     // The scan pass loads what the filter and the sort read.
@@ -99,37 +109,75 @@ export function queryItems(
         : null;
     const compare = byKeysThenKey(sorts);
     const matches =
-      limit === null ? allMatches(compare) : firstMatches(limit + 1, compare);
-    let afterKey: string | null = null;
-    for (;;) {
-      const page: ScanRow[] = yield* readScanPage({
-        libraryID: library.libraryID,
-        afterKey,
+      limit === null
+        ? allMatches(compare, sizeWithin(tuning.mergeStepSize, Infinity))
+        : firstMatches(limit + 1, compare);
+    /** Hydrate one page of the query universe and keep its matches. */
+    const takePage = (page: readonly ScanRow[]) =>
+      Effect.gen(function* () {
+        const chunkSize = sortFields ? hydrateChunkSize : scanPageSize;
+        for (let start = 0; start < page.length; start += chunkSize) {
+          const chunk = page.slice(start, start + chunkSize);
+          const hydrated: ReadonlyMap<number, HydratedItem> =
+            vocabulary && sortFields
+              ? yield* readHydrateChunk({
+                  vocabulary,
+                  itemIDs: chunk.map((row) => row.itemID),
+                  ...sortFields,
+                  collectionPaths,
+                })
+              : new Map();
+          yield* Effect.sync(() => {
+            const matching: Match[] = [];
+            for (const scan of chunk) {
+              const item = itemOf(scan, hydrated);
+              if (filter && !isMatch(filter.root, item, clock)) continue;
+              matching.push({
+                scan,
+                keys: sorts.map((sort) => sort.key(item)),
+              });
+            }
+            matches.add(matching);
+          });
+        }
       });
-      const chunkSize = sortFields ? HYDRATE_CHUNK_SIZE : SCAN_PAGE_SIZE;
-      for (let start = 0; start < page.length; start += chunkSize) {
-        const chunk = page.slice(start, start + chunkSize);
-        const hydrated: ReadonlyMap<number, HydratedItem> =
-          vocabulary && sortFields
-            ? yield* readHydrateChunk({
-                vocabulary,
-                itemIDs: chunk.map((row) => row.itemID),
-                ...sortFields,
-                collectionPaths,
-              })
-            : new Map();
-        yield* Effect.sync(() => {
-          const matching: Match[] = [];
-          for (const scan of chunk) {
-            const item = itemOf(scan, hydrated);
-            if (filter && !isMatch(filter.root, item, clock)) continue;
-            matching.push({ scan, keys: sorts.map((sort) => sort.key(item)) });
-          }
-          matches.add(matching);
-        });
+
+    // The candidate pass reads the Items that the lowered leaves of the filter
+    // name; the Library scan reads every Item. The evaluator decides the match
+    // on both paths.
+    const candidatePlan =
+      filter && !tuning.forceScan ? planCandidates(filter.root) : null;
+    const candidates = candidatePlan
+      ? yield* readCandidates(
+          candidatePlan,
+          library.libraryID,
+          Math.floor(
+            (yield* readLibraryRowCount(library.libraryID)) * tuning.capRatio,
+          ),
+        )
+      : null;
+    if (candidates) {
+      const itemIDs = [...candidates];
+      for (let start = 0; start < itemIDs.length; start += scanPageSize) {
+        yield* takePage(
+          yield* readUniverseRows({
+            libraryID: library.libraryID,
+            itemIDs: itemIDs.slice(start, start + scanPageSize),
+          }),
+        );
       }
-      if (page.length < SCAN_PAGE_SIZE) break;
-      afterKey = page.at(-1)!.key;
+    } else {
+      let afterKey: string | null = null;
+      for (;;) {
+        const page: ScanRow[] = yield* readScanPage({
+          libraryID: library.libraryID,
+          afterKey,
+          size: scanPageSize,
+        });
+        yield* takePage(page);
+        if (page.length < scanPageSize) break;
+        afterKey = page.at(-1)!.key;
+      }
     }
 
     const ordered = yield* matches.ordered();
@@ -142,8 +190,8 @@ export function queryItems(
         ? hydrateFields(pathNeeds, vocabulary)
         : null;
     const rows: QueryRow[] = [];
-    for (let start = 0; start < returned.length; start += HYDRATE_CHUNK_SIZE) {
-      const chunk = returned.slice(start, start + HYDRATE_CHUNK_SIZE);
+    for (let start = 0; start < returned.length; start += hydrateChunkSize) {
+      const chunk = returned.slice(start, start + hydrateChunkSize);
       const hydrated: ReadonlyMap<number, HydratedItem> =
         vocabulary && fields
           ? yield* readHydrateChunk({
@@ -167,6 +215,11 @@ export function queryItems(
     }
     return { query, rows, returnedCount: rows.length, truncated };
   });
+}
+
+/** A tuned size as a whole number from one to the upper limit of its reader. */
+function sizeWithin(size: number, limit: number): number {
+  return Math.max(1, Math.min(Math.floor(size), limit));
 }
 
 const NOTHING_HYDRATED: HydratedItem = { fields: new Map(), custom: new Map() };
