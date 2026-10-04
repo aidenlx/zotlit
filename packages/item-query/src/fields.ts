@@ -9,6 +9,7 @@ import { FIELD_ALIASES, ZOTERO_DATE_FIELDS } from "@zotlit/zotero-types";
 import { FIELD_LABELS } from "@zotlit/zotero-types/field-labels";
 
 import { compareStrings } from "./collation";
+import { fromAccessDate, fromItemDate, timestamp } from "./filter-dates";
 import type { FilterValue, FilterValueType } from "./filter-values";
 import type { PathSegment } from "./projection-path";
 import type { ProjectionValue } from "./request";
@@ -127,7 +128,10 @@ function zoteroField(name: string): FieldDefinition {
       needs: () => ({ builtIn }),
       read,
       sortKey: read,
-      filter: { type: "string", read },
+      filter:
+        name === "accessDate"
+          ? { type: "date", read: (item) => fromAccessDate(read(item)) }
+          : { type: "string", read },
     };
   }
   return {
@@ -135,6 +139,11 @@ function zoteroField(name: string): FieldDefinition {
     needs: () => ({ builtIn }),
     read: (item) => dateValue(read(item)),
     sortKey: (item) => firstDay(read(item)),
+    // A calendar date at the precision the Item gives.
+    filter: {
+      type: "date",
+      read: (item) => fromItemDate(parseItemDate(read(item))),
+    },
   };
 }
 
@@ -303,6 +312,7 @@ const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map([
     fromScan(
       (row) => row.dateAdded,
       (row) => row.dateAdded.epochMilliseconds,
+      { type: "date", read: (item) => timestamp(item.scan.dateAdded) },
     ),
   ],
   [
@@ -310,6 +320,7 @@ const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map([
     fromScan(
       (row) => row.dateModified,
       (row) => row.dateModified.epochMilliseconds,
+      { type: "date", read: (item) => timestamp(item.scan.dateModified) },
     ),
   ],
   ["custom", customField],

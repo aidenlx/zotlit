@@ -161,6 +161,23 @@ const FILTERS: readonly string[] = [
   "attachments",
   "!attachments",
   'attachments && key == "ART2FULL"',
+  // Dates under the Query Clock of the test: partial dates, timestamps, and
+  // date arithmetic.
+  'date >= date("2020")',
+  'date == date("2019-11-30")',
+  'date == date("2021-06")',
+  'date <= date("2018-01-01")',
+  'date == date("2024-02-29")',
+  "date == null",
+  'date.year == 2021 && tags.contains("tie")',
+  'dateAdded >= now() - duration("1 year")',
+  'dateAdded.date() == date("2020-01-07")',
+  "dateModified > dateAdded",
+  'dateAdded < date("2020-01-07 05:00Z") && key == "CNF2TEXT"',
+  'dateAdded.format("YYYY") == "2021" || tags.contains("to-read")',
+  "today() == now().date()",
+  "accessDate == null",
+  "date(title) == null",
   // Typed failures: every plan gives the same failure.
   "title.startsWith(1)",
   'tags.contains("tie") && noSuchFunction()',
@@ -276,6 +293,24 @@ const REQUESTS: readonly ScenarioQuery[] = [
       sort: [{ field: "tags", direction: "asc" }],
     },
   },
+  {
+    name: "today() on the calendar day of New York",
+    library: "personal",
+    request: { filter: "dateAdded >= today()", fields: [], sort: [] },
+    now: "2020-01-08T02:00:00Z",
+    timeZone: "America/New_York",
+  },
+  {
+    name: "Tag filter and a timestamp window, limit 1",
+    library: "personal",
+    request: {
+      filter: 'tags.contains("to-read") && dateAdded > now() - duration("1d")',
+      fields: ["dateAdded"],
+      limit: 1,
+    },
+    now: "2020-01-08T02:00:00Z",
+    timeZone: "America/New_York",
+  },
 ];
 
 /**
@@ -363,4 +398,7 @@ export const GENERATED_FILTER_PARTS: readonly string[] = [
   "creators.isEmpty()",
   "collections.length == 2",
   "attachments",
+  'date >= date("2021")',
+  'date == date("2019-11")',
+  'dateAdded >= date("2022")',
 ];
