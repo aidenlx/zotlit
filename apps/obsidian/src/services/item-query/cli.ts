@@ -363,7 +363,13 @@ function toWire(
   value: ProjectionValue | Readonly<Record<string, ProjectionValue>>,
 ): unknown {
   if (value === null || typeof value !== "object") return value;
-  if (value instanceof Temporal.Instant) return value.toString();
+  if (
+    value instanceof Temporal.Instant ||
+    value instanceof Temporal.PlainDate ||
+    value instanceof Temporal.PlainYearMonth
+  ) {
+    return value.toString();
+  }
   if (Array.isArray(value))
     return value.map((entry: ProjectionValue) => toWire(entry));
   return Object.fromEntries(

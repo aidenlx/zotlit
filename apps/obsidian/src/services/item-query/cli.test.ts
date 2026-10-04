@@ -217,16 +217,29 @@ describe("zotlit:item-query fields", () => {
     expect(answer.request).toMatchObject({ fields: [] });
   });
 
-  it("writes Temporal values as ISO strings", async () => {
+  it("writes Temporal values as ISO strings, nested ones included", async () => {
     const { run } = setup();
 
-    const answer = await run({ fields: '["dateModified"]', limit: "1" });
+    const answer = await run({
+      fields: '["date.value","dateModified","date"]',
+      limit: "all",
+    });
 
-    const [row] = answer.rows as { values: { dateModified: unknown } }[];
-    expect(row!.values.dateModified).toEqual(expect.any(String));
-    expect(
-      Temporal.Instant.from(row!.values.dateModified as string).toString(),
-    ).toBe(row!.values.dateModified);
+    const values = Object.fromEntries(
+      (answer.rows as { indexedKey: string; values: object }[]).map((row) => [
+        row.indexedKey,
+        row.values,
+      ]),
+    );
+    expect(values["ART2FULL"]).toMatchObject({
+      "date.value": "2020-03-15",
+      dateModified: "2024-06-01T10:00:00Z",
+      date: { kind: "date", value: "2020-03-15", year: 2020 },
+    });
+    expect(values["BK2MNTH2"]).toMatchObject({
+      "date.value": "2019-11",
+      date: { kind: "yearMonth", value: "2019-11" },
+    });
   });
 
   it("answers the code, location, and hint of an unknown field", async () => {
