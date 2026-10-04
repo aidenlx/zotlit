@@ -8,7 +8,7 @@ import {
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
-import { describeItemQuery, queryItems } from ".";
+import { describeItemQuery, ItemQueryScheduler, queryItems } from ".";
 import type {
   ItemQueryRequest,
   ItemQuerySchema,
@@ -291,7 +291,10 @@ describe("the Item Query Schema and queryItems", () => {
   ): Promise<string | null> {
     const { exit } = await runEffect(
       queryItems({ library: personal, limit: 1, ...request }),
-      { client: scenario.db },
+      // The production scheduler: these tests run several hundred queries,
+      // and a pause after every operation makes each one a long chain of
+      // tasks that a busy machine runs slowly.
+      { client: scenario.db, scheduler: new ItemQueryScheduler() },
     );
     if (Exit.isSuccess(exit)) return null;
     const error = Cause.findErrorOption(exit.cause);
