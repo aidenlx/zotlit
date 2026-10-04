@@ -108,7 +108,9 @@ export interface HydratedItem {
   readonly hasAttachments?: boolean;
 }
 
-const fieldsStatement = defineStatement<Record<string, never>>()((db) =>
+const fieldsStatement = defineStatement<Record<string, never>>(
+  "field-vocabulary",
+)((db) =>
   db
     .select({
       fieldID: fieldsCombined.fieldID,
@@ -121,19 +123,20 @@ const fieldsStatement = defineStatement<Record<string, never>>()((db) =>
 
 const baseField = alias(fieldsCombined, "baseField");
 
-const baseFieldMappingsStatement = defineStatement<Record<string, never>>()(
-  (db) =>
-    db
-      .select({
-        itemTypeID: baseFieldMappingsCombined.itemTypeID,
-        fieldID: baseFieldMappingsCombined.fieldID,
-        baseFieldName: baseField.fieldName,
-      })
-      .from(baseFieldMappingsCombined)
-      .innerJoin(
-        baseField,
-        eq(baseField.fieldID, baseFieldMappingsCombined.baseFieldID),
-      ),
+const baseFieldMappingsStatement = defineStatement<Record<string, never>>(
+  "field-vocabulary",
+)((db) =>
+  db
+    .select({
+      itemTypeID: baseFieldMappingsCombined.itemTypeID,
+      fieldID: baseFieldMappingsCombined.fieldID,
+      baseFieldName: baseField.fieldName,
+    })
+    .from(baseFieldMappingsCombined)
+    .innerJoin(
+      baseField,
+      eq(baseField.fieldID, baseFieldMappingsCombined.baseFieldID),
+    ),
 );
 
 /**
@@ -204,7 +207,7 @@ interface LoadingItem {
 
 const fieldValuesStatement = defineStatement<
   Record<string, number | string | null>
->()((db, { placeholder }) =>
+>("hydrate-chunk")((db, { placeholder }) =>
   db
     .select({
       itemID: itemData.itemID,
@@ -226,64 +229,67 @@ const fieldValuesStatement = defineStatement<
     ),
 );
 
-const creatorsStatement = defineStatement<Record<IdSlot, number | null>>()(
-  (db, { placeholder }) =>
-    db
-      .select({
-        itemID: itemCreators.itemID,
-        firstName: creators.firstName,
-        lastName: creators.lastName,
-        fieldMode: creators.fieldMode,
-        creatorType: creatorTypes.creatorType,
-      })
-      .from(itemCreators)
-      .innerJoin(creators, eq(creators.creatorID, itemCreators.creatorID))
-      .innerJoin(
-        creatorTypes,
-        eq(creatorTypes.creatorTypeID, itemCreators.creatorTypeID),
-      )
-      .where(
-        inArray(
-          itemCreators.itemID,
-          ID_SLOTS.map((slot) => placeholder(slot)),
-        ),
-      )
-      .orderBy(asc(itemCreators.itemID), asc(itemCreators.orderIndex)),
+const creatorsStatement = defineStatement<Record<IdSlot, number | null>>(
+  "hydrate-chunk",
+)((db, { placeholder }) =>
+  db
+    .select({
+      itemID: itemCreators.itemID,
+      firstName: creators.firstName,
+      lastName: creators.lastName,
+      fieldMode: creators.fieldMode,
+      creatorType: creatorTypes.creatorType,
+    })
+    .from(itemCreators)
+    .innerJoin(creators, eq(creators.creatorID, itemCreators.creatorID))
+    .innerJoin(
+      creatorTypes,
+      eq(creatorTypes.creatorTypeID, itemCreators.creatorTypeID),
+    )
+    .where(
+      inArray(
+        itemCreators.itemID,
+        ID_SLOTS.map((slot) => placeholder(slot)),
+      ),
+    )
+    .orderBy(asc(itemCreators.itemID), asc(itemCreators.orderIndex)),
 );
 
-const tagsStatement = defineStatement<Record<IdSlot, number | null>>()(
-  (db, { placeholder }) =>
-    db
-      .select({ itemID: itemTags.itemID, name: tags.name, type: itemTags.type })
-      .from(itemTags)
-      .innerJoin(tags, eq(tags.tagID, itemTags.tagID))
-      .where(
-        inArray(
-          itemTags.itemID,
-          ID_SLOTS.map((slot) => placeholder(slot)),
-        ),
+const tagsStatement = defineStatement<Record<IdSlot, number | null>>(
+  "hydrate-chunk",
+)((db, { placeholder }) =>
+  db
+    .select({ itemID: itemTags.itemID, name: tags.name, type: itemTags.type })
+    .from(itemTags)
+    .innerJoin(tags, eq(tags.tagID, itemTags.tagID))
+    .where(
+      inArray(
+        itemTags.itemID,
+        ID_SLOTS.map((slot) => placeholder(slot)),
       ),
+    ),
 );
 
-const membershipsStatement = defineStatement<Record<IdSlot, number | null>>()(
-  (db, { placeholder }) =>
-    db
-      .select({
-        itemID: collectionItems.itemID,
-        collectionID: collectionItems.collectionID,
-      })
-      .from(collectionItems)
-      .where(
-        inArray(
-          collectionItems.itemID,
-          ID_SLOTS.map((slot) => placeholder(slot)),
-        ),
+const membershipsStatement = defineStatement<Record<IdSlot, number | null>>(
+  "hydrate-chunk",
+)((db, { placeholder }) =>
+  db
+    .select({
+      itemID: collectionItems.itemID,
+      collectionID: collectionItems.collectionID,
+    })
+    .from(collectionItems)
+    .where(
+      inArray(
+        collectionItems.itemID,
+        ID_SLOTS.map((slot) => placeholder(slot)),
       ),
+    ),
 );
 
 const attachmentParentsStatement = defineStatement<
   Record<IdSlot, number | null>
->()((db, { placeholder }) =>
+>("hydrate-chunk")((db, { placeholder }) =>
   db
     .selectDistinct({ itemID: itemAttachments.parentItemID })
     .from(itemAttachments)

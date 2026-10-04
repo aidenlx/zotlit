@@ -35,9 +35,9 @@ The `zt` types plus their doc comments are the single source of truth for the te
 
 ## Item Query readers
 
-`src/item-query/` holds every SQL statement of Item Query, behind the `@zotlit/db/item-query` export. It is the only entry that loads `effect`; keep `effect` imports inside it. Define each statement with `defineStatement` in `src/item-query/database.ts`: it is the one place where a driver call becomes an Effect and a thrown value becomes `ItemQueryDatabaseError`. Test readers on the scenario database (`src/test-scenario/`).
+`src/item-query/` holds every SQL statement of Item Query, behind the `@zotlit/db/item-query` export. It is the only entry that loads `effect`; keep `effect` imports inside it. Define each statement with `defineStatement` in `src/item-query/database.ts` and name its reader: it is the one place where a driver call becomes an Effect, a thrown value becomes `ItemQueryDatabaseError`, and `ItemQueryStatementObserver` (a reference with a no-op default) gets the reader, the parameters, and the rows of each statement. Test readers on the scenario database (`src/test-scenario/`); `seedBulkLibrary` adds a Library of any size for a test that needs several pages.
 
-A candidate leaf is one kind of `CandidateLeaf` with one statement in `src/item-query/candidate-set.ts`. The statement selects Item IDs of the Target Library with the `limit` of the caller; `readUniverseRows` restricts them to the query universe.
+A candidate leaf is one kind of `CandidateLeaf` with one statement in `src/item-query/candidate-set.ts`. The statement selects Item IDs of the Target Library with the `limit` of the caller, and no Item row: the 500-Item limit of one statement applies to the scan page, the universe chunk, and the hydrate chunk; `readUniverseRows` restricts them to the query universe.
 
 Every table and column a reader statement reads belongs in `ITEM_QUERY_LAYOUT` (`src/item-query/layout.ts`); add them with each new reader. `defineStatement` runs the layout check before the first statement on each copy, and `layout.test.ts` fails when a statement of a reader module that `src/item-query/index.ts` exports reads outside the manifest.
 

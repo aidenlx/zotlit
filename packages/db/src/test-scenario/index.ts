@@ -15,6 +15,13 @@ import type { NodeDatabaseClient } from "@/client/node";
 import { seedScenario } from "./seed";
 
 export {
+  BULK_FIFTH_TAG,
+  BULK_LIBRARY,
+  BULK_TAG,
+  bulkItemKey,
+  seedBulkLibrary,
+} from "./bulk";
+export {
   SCENARIO_ITEMS,
   SCENARIO_LIBRARIES,
   type ScenarioItem,
