@@ -30,9 +30,12 @@ const BULK_CAP = 650;
 
 let scenario: ScenarioDatabase;
 
-beforeAll(() => {
+beforeAll(async () => {
   scenario = openScenarioDatabase();
   seedBulkLibrary(scenario.sqlite, BULK_ITEMS);
+  // The first statement on a copy runs the layout check. Its two statements
+  // are in the events of that run only, so each test starts after it.
+  resultOf(await run({ fields: [], limit: 1 }));
 });
 
 afterAll(() => {
@@ -289,6 +292,14 @@ describe("a cancel request", () => {
     },
   ];
 
+  /**
+   * The pause test runs the query once for each of its pauses, about 400 to
+   * 550, and each run takes every pause before its own as a real
+   * `MessageChannel` task: about 75,000 to 150,000 tasks. That is 1 second on
+   * an idle machine and 16 seconds when every core is busy four times over.
+   */
+  const PAUSE_CANCEL_TIMEOUT_MS = 60_000;
+
   /** Run the query and cancel it at the event at `index`. */
   async function cancelAt(
     request: Request,
@@ -354,5 +365,6 @@ describe("a cancel request", () => {
         expect(after.length).toBeLessThanOrEqual(1);
       }
     },
+    PAUSE_CANCEL_TIMEOUT_MS,
   );
 });
