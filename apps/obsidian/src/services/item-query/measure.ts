@@ -56,9 +56,9 @@ export interface ItemQueryMeasureReport {
   truncated?: boolean;
   /** The handler, from its call to its answer or rejection. */
   totalMs: number;
-  /** Argument decoding, the source lease, and Target Library resolution. */
+  /** Argument decoding and the source lease. */
   leaseMs?: number;
-  /** The Effect run of `queryItems`. */
+  /** The Effect run: Target Library resolution and `queryItems`. */
   engineMs?: number;
   /** The envelope: one synchronous step after the engine settles. */
   answerMs?: number;

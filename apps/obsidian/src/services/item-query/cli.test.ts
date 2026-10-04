@@ -505,6 +505,42 @@ describe("zotlit:item-query source and lease", () => {
   });
 });
 
+describe("zotlit:item-query on the layout of the Zotero database", () => {
+  it.each([
+    ["the lowest supported layout", null],
+    ["the lowest layout stamped outside the supported range", 999],
+  ])(
+    "resolves the personal and a group Library on %s",
+    async (_name, userdata) => {
+      using scenario = openScenarioDatabase({ layout: "lowest" });
+      if (userdata !== null) {
+        scenario.sqlite
+          .prepare("update version set version = ? where schema = 'userdata'")
+          .run(userdata);
+      }
+      const { run } = setup(scenario);
+
+      const personal = await run({ fields: "[]" });
+      const group = await run({ fields: "[]", library: "group:4815" });
+
+      expect(personal).toMatchObject({
+        ok: true,
+        library: { type: "personal" },
+        returnedCount: 10,
+      });
+      expect(group).toMatchObject({
+        ok: true,
+        library: {
+          type: "group",
+          groupID: 4815,
+          name: "Methods Reading Group",
+        },
+        returnedCount: 2,
+      });
+    },
+  );
+});
+
 describe("zotlit:item-query cancellation", () => {
   it("rejects with the abort reason and takes no lease when the signal is already aborted", async () => {
     using scenario = openScenarioDatabase();

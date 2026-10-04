@@ -14,11 +14,11 @@ import { Cause, Exit } from "effect";
 import type { CliData, CliFlag, CliFlags, CliHandler, Plugin } from "obsidian";
 import * as v from "valibot";
 
-import { getLibraries, getLibraryByGroupID } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import type {
   ItemQueryDatabaseError,
   ItemQueryLayoutError,
+  TargetLibrarySelector,
 } from "@zotlit/db/item-query";
 import type {
   ItemQueryError,
@@ -26,7 +26,6 @@ import type {
   ProjectionValue,
   QueryResult,
   SortSpec,
-  TargetLibrary,
 } from "@zotlit/item-query";
 
 import { getLogger } from "@/lib/log";
@@ -115,13 +114,9 @@ type LibraryWire =
   | { type: "personal" }
   | { type: "group"; groupID: number; name: string };
 
-type LibrarySelector =
-  | { type: "personal" }
-  | { type: "group"; groupID: number };
-
 /** The flat arguments after decoding. */
 interface DecodedArguments {
-  library: LibrarySelector;
+  library: TargetLibrarySelector;
   filter: string | undefined;
   fields: readonly string[] | undefined;
   sort: readonly SortSpec[] | undefined;
@@ -269,45 +264,45 @@ export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
 
     deps.signal.throwIfAborted();
 
-    const read = await withLease<
-      { answer: string } | { exit: ItemQueryExit; library: ResolvedLibrary }
-    >(deps, ITEM_QUERY_COMMAND, async (client) => {
-      let library: ResolvedLibrary | null;
-      try {
-        library = resolveLibrary(client, decoded.library);
-      } catch (error) {
-        return { answer: databaseFailure(ITEM_QUERY_COMMAND, error) };
-      }
-      if (library === null) {
-        return {
-          answer: failure(
-            ITEM_QUERY_COMMAND,
-            diagnostic(
-              "library-not-found",
-              `The connected Zotero source holds no ${describeSelector(decoded.library)}.`,
-              { details: { parameter: "library" } },
-            ),
-          ),
-        };
-      }
-      const exit = await runItemQuery(
+    const read = await withLease(deps, ITEM_QUERY_COMMAND, (client) =>
+      runItemQuery(
+        decoded.library,
         {
-          library: library.target,
           filter: decoded.filter,
           fields: decoded.fields,
           sort: decoded.sort,
           limit: decoded.limit,
         },
         { client, signal: deps.signal, instrument: deps.instrument },
-      );
-      return { exit, library };
-    });
+      ),
+    );
     if ("answer" in read) return read.answer;
-    if ("answer" in read.value) return read.value.answer;
+    const exit = read.value;
 
-    return answerExit(read.value.exit, {
+    if (Exit.isFailure(exit)) {
+      return answerFailure(exit.cause, ITEM_QUERY_COMMAND, deps.signal);
+    }
+    const { library } = exit.value;
+    if (library === null) {
+      return failure(
+        ITEM_QUERY_COMMAND,
+        diagnostic(
+          "library-not-found",
+          `The connected Zotero source holds no ${describeSelector(decoded.library)}.`,
+          { details: { parameter: "library" } },
+        ),
+      );
+    }
+    return answerExit(Exit.succeed(exit.value.result), {
       identity: read.identity,
-      library: read.value.library.wire,
+      library:
+        library.groupID === null
+          ? { type: "personal" }
+          : {
+              type: "group",
+              groupID: library.groupID,
+              name: library.name ?? "",
+            },
       signal: deps.signal,
     });
   };
@@ -450,41 +445,10 @@ function databaseFailure(
   );
 }
 
-function describeSelector(selector: LibrarySelector): string {
+function describeSelector(selector: TargetLibrarySelector): string {
   return selector.type === "group"
     ? `group Library with the group ID ${selector.groupID}`
     : "personal Library";
-}
-
-interface ResolvedLibrary {
-  target: TargetLibrary;
-  wire: LibraryWire;
-}
-
-function resolveLibrary(
-  client: NodeDatabaseClient,
-  selector: LibrarySelector,
-): ResolvedLibrary | null {
-  if (selector.type === "personal") {
-    const personal = getLibraries(client).find(
-      (library) => library.type === "user",
-    );
-    if (!personal) return null;
-    return {
-      target: { libraryID: personal.libraryID, groupID: null },
-      wire: { type: "personal" },
-    };
-  }
-  const group = getLibraryByGroupID(client, selector.groupID);
-  if (!group) return null;
-  return {
-    target: { libraryID: group.libraryID, groupID: selector.groupID },
-    wire: {
-      type: "group",
-      groupID: selector.groupID,
-      name: group.name ?? "",
-    },
-  };
 }
 
 /** Temporal values become ISO strings; every other value is JSON already. */
@@ -533,7 +497,7 @@ function decodeArguments(params: CliData): DecodedArguments | Diagnostic {
   const rejected = rejectParameters(params, ITEM_QUERY_PARAMS);
   if (rejected) return rejected;
 
-  let library: LibrarySelector = { type: "personal" };
+  let library: TargetLibrarySelector = { type: "personal" };
   if (params.library !== undefined) {
     const group = GROUP_SELECTOR.exec(params.library);
     if (params.library === "personal") library = { type: "personal" };
