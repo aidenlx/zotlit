@@ -272,19 +272,29 @@ describe("a cancel request", () => {
     hydrateChunkSize: 2,
     mergeStepSize: 2,
   };
-  const QUERIES: readonly { name: string; request: Request }[] = [
+  const QUERIES: readonly {
+    name: string;
+    request: Request;
+    /** The plan reads a candidate set in place of the Library scan. */
+    candidates: boolean;
+  }[] = [
     {
       name: "a limited scan",
+      candidates: false,
       request: { fields: ["title", "creators"], sort: byTitle, limit: 4 },
     },
     {
       name: "an unlimited scan with a merge",
+      candidates: false,
       request: { fields: ["title"], sort: byTitle, limit: null },
     },
     {
       name: "candidate sets",
+      candidates: true,
       request: {
-        filter: 'tags.contains("methods") || itemType == "book"',
+        // Each branch lowers to a candidate set.
+        filter:
+          'tags.contains("methods") || collections.contains("Thesis/Methods")',
         fields: ["title", "tags"],
         sort: byTitle,
         limit: null,
@@ -321,9 +331,12 @@ describe("a cancel request", () => {
 
   it.each(QUERIES)(
     "starts no statement after a cancel request that comes in a statement of $name",
-    async ({ request }) => {
+    async ({ request, candidates }) => {
       const complete = await run(request, { library: personal, tuning });
       resultOf(complete);
+      expect(itemsRead(complete.events, "candidate-set").length > 0).toBe(
+        candidates,
+      );
       const statements = complete.events.flatMap((event, index) =>
         event.type === "statement" ? [index] : [],
       );
