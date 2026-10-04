@@ -100,7 +100,7 @@ describe("describeItemQuery fields", () => {
     expect(entry("date.year")).toEqual({
       path: "date.year",
       type: "number",
-      filter: null,
+      filter: "number",
       projection: true,
       sort: false,
     });
@@ -125,8 +125,18 @@ describe("describeItemQuery fields", () => {
       projection: true,
       sort: false,
     });
-    expect(entry("tags[0].name")?.type).toBe("string");
-    expect(entry("collections[0]")?.type).toBe("string");
+    // A filter has no property `kind` on a date and reads a list element by
+    // its index; the type of the element depends on the Item.
+    expect(entry("date.kind")?.filter).toBeNull();
+    expect(entry("creators[0]")?.filter).toBe("any");
+    expect(entry("tags[0].name")).toMatchObject({
+      type: "string",
+      filter: null,
+    });
+    expect(entry("collections[0]")).toMatchObject({
+      type: "string",
+      filter: "any",
+    });
     expect(entry("attachments")).toEqual({
       path: "attachments",
       type: "boolean",
@@ -315,15 +325,7 @@ describe("the Item Query Schema and queryItems", () => {
         { sort: [{ field: path, direction: "asc" }] },
         field.sort,
       );
-      // A filter reads a field by name or a custom field by its path; a
-      // filter reaches a part of a value through properties and methods.
-      if (!/[.[]/.test(path) || "name" in field) {
-        await expect_(
-          `filter ${path}`,
-          { filter: path },
-          field.filter !== null,
-        );
-      }
+      await expect_(`filter ${path}`, { filter: path }, field.filter !== null);
     }
     for (const field of customFields.filter((entry) => entry.bareName)) {
       await expect_(`filter ${field.name}`, { filter: field.name }, true);
