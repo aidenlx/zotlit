@@ -587,6 +587,9 @@ importers:
       '@zotlit/item-lookup':
         specifier: workspace:*
         version: link:../../packages/item-lookup
+      '@zotlit/item-query':
+        specifier: workspace:*
+        version: link:../../packages/item-query
       '@zotlit/obsidian-i18n':
         specifier: workspace:*
         version: link:../../packages/obsidian-i18n
@@ -620,6 +623,9 @@ importers:
       diff:
         specifier: 'catalog:'
         version: 8.0.4
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0
       eta:
         specifier: 'catalog:'
         version: 4.6.0

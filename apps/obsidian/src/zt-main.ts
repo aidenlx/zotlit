@@ -37,6 +37,7 @@ import { savedExcerptRequest } from "./services/excerpt-image/request";
 import { addGraphCitationsActions } from "./services/graph-citations/actions";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
+import { registerItemQueryCli } from "./services/item-query/cli";
 import { registerLibraryScopeCli } from "./services/library-scope/cli";
 import { registerLibraryScopeNotices } from "./services/library-scope/notices";
 import { addCustomizeActions } from "./services/local-bridge/actions";
@@ -533,6 +534,23 @@ export default class ZotLitPlugin extends Plugin {
       settings: services.settings,
       templates: services.template,
       zoteroPref: services.zoteroPref,
+    });
+
+    registerItemQueryCli(this, {
+      acquireRead: () => services.db.acquireRead(),
+      identity: async () => {
+        await services.zoteroPref.ready;
+        return {
+          vault: {
+            name: this.app.vault.getName(),
+            path: (this.app.vault.adapter as FileSystemAdapter).getBasePath(),
+          },
+          source: {
+            id: services.zoteroPref.sourceId,
+            databasePath: services.zoteroPref.databasePath,
+          },
+        };
+      },
     });
 
     registerPandocResolve(this, {
