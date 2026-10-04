@@ -354,6 +354,8 @@ describe("methods of every value", () => {
     ['publisher.isType("string")', false],
     ['publisher.isType("any")', true],
     ["title.isType(publisher)", null],
+    // A type name that comes from the Item's data and names no type.
+    ["title.isType(title)", null],
   ]);
 });
 
@@ -836,6 +838,7 @@ describe("validation", () => {
     ['min(1, "2")', "wrong-argument-type", [7, 10]],
     ['(1.5).round("2")', "wrong-argument-type", [12, 15]],
     ["title.isType(1)", "wrong-argument-type", [13, 14]],
+    ['title.isType("strng")', "wrong-argument-type", [13, 20]],
     ["collections.within(1)", "wrong-argument-type", [19, 20]],
     // The type of the argument is known from the field it reads.
     ["title.startsWith(tags)", "wrong-argument-type", [17, 21]],
@@ -902,6 +905,14 @@ describe("validation", () => {
     });
   });
 
+  it("names the type names that isType takes when the literal is none of them", () => {
+    expect(problem('title.isType("strng")')).toMatchObject({
+      message:
+        'Argument 1 of isType is "strng"; isType takes one of "any", "null", "boolean", "number", "string", "list", "date", "duration" there.',
+      hint: "Call value.isType(type).",
+    });
+  });
+
   it("tells a method from a global function in the hint", () => {
     expect(problem('contains(title, "a")').hint).toContain(
       "value.contains(...)",
@@ -917,6 +928,7 @@ describe("validation", () => {
     ["if(false, title.lenght, 1)", "unknown-property"],
     ["if(true, 1, custom)", "unfilterable-field"],
     ["if(true, now(), date(1))", "wrong-argument-type"],
+    ['if(false, title.isType("strng"), true)', "wrong-argument-type"],
     ["true || title.contains(/a/)", "invalid-filter"],
     ["[1, noSuchFunction()].length", "unknown-function"],
   ] as const)("rejects the dead branch of %j with %s", (expression, code) => {

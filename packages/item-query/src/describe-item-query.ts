@@ -63,6 +63,8 @@ export interface SchemaParameter {
   readonly name: string;
   /** `any` also takes null. */
   readonly type: FunctionParameter["type"];
+  /** Present on a string parameter that takes only these texts. */
+  readonly values?: readonly string[];
 }
 
 /** A global function of the Filter Expression language. */
@@ -234,9 +236,14 @@ function customSchemaField(name: string): SchemaCustomField {
   };
 }
 
-const parameter = ({ name, type }: FunctionParameter): SchemaParameter => ({
+const parameter = ({
   name,
   type,
+  values,
+}: FunctionParameter): SchemaParameter => ({
+  name,
+  type,
+  ...(values && { values }),
 });
 
 function signature(

@@ -227,19 +227,46 @@ function isDefinite(
   return type !== "unknown" && type !== "null";
 }
 
-/** The argument at `index` has a type that the parameter does not take. */
+/**
+ * The argument at `index` has a type that the parameter does not take, or is
+ * a string literal outside the texts that the parameter takes.
+ */
 function mismatch(
   definition: Pick<FunctionDefinition, "parameters" | "optional" | "rest">,
   args: readonly FilterNode[],
-): { index: number; expected: string } | null {
+): { index: number; found: string; expected: string } | null {
   for (const [index, arg] of args.entries()) {
     const parameter = parameterAt(definition, index);
     if (!parameter || parameter.type === "any") continue;
     if (isDefinite(arg.valueType) && arg.valueType !== parameter.type) {
-      return { index, expected: parameter.type };
+      return {
+        index,
+        found: `a ${arg.valueType}`,
+        expected: `a ${parameter.type}`,
+      };
+    }
+    if (
+      parameter.values &&
+      arg.kind === "literal" &&
+      typeof arg.value === "string" &&
+      !parameter.values.includes(arg.value)
+    ) {
+      return {
+        index,
+        found: quote(arg.value),
+        expected: `one of ${parameter.values.map(quote).join(", ")}`,
+      };
     }
   }
   return null;
+}
+
+/** The message of a {@link mismatch} in a call of `name`. */
+function describeMismatch(
+  name: string,
+  wrong: { index: number; found: string; expected: string },
+): string {
+  return `Argument ${wrong.index + 1} of ${name} is ${wrong.found}; ${name} takes ${wrong.expected} there.`;
 }
 
 class Validator {
@@ -459,7 +486,7 @@ class Validator {
     const wrong = mismatch(definition, args);
     if (wrong) {
       return fail("wrong-argument-type", args[wrong.index]!, {
-        message: `Argument ${wrong.index + 1} of ${name} is a ${args[wrong.index]!.valueType}; ${name} takes a ${wrong.expected} there.`,
+        message: describeMismatch(name, wrong),
         hint: `Call ${signature(name, definition)}.`,
       });
     }
@@ -534,7 +561,7 @@ class Validator {
     if (fitting.every((method) => mismatch(method, args) !== null)) {
       const wrong = mismatch(fitting[0]!, args)!;
       return fail("wrong-argument-type", args[wrong.index]!, {
-        message: `Argument ${wrong.index + 1} of ${name} is a ${args[wrong.index]!.valueType}; ${name} takes a ${wrong.expected} there.`,
+        message: describeMismatch(name, wrong),
         hint: `Call ${signature(`value.${name}`, fitting[0]!)}.`,
       });
     }

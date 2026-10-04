@@ -23,13 +23,17 @@ export type ParameterType = "string" | "number" | "list" | "any";
 export interface FunctionParameter {
   readonly name: string;
   readonly type: ParameterType;
+  /** Present on a string parameter that takes only these texts. */
+  readonly values?: readonly string[];
 }
 
 /**
  * One function or method. A call with a wrong argument count, or with an
  * argument whose type is known before execution and differs from the
- * parameter, fails the query. At execution, a null or wrongly typed argument
- * of a typed parameter gives null and `call` does not run.
+ * parameter, fails the query; so does a string literal outside the `values`
+ * of its parameter. At execution, a null or wrongly typed argument of a typed
+ * parameter, or a text outside its `values`, gives null and `call` does not
+ * run.
  */
 export interface FunctionDefinition {
   /** The required parameters, in order. */
@@ -158,29 +162,6 @@ const includes = (
 /** One list argument means its elements; otherwise the arguments themselves. */
 const candidates = (args: readonly FilterValue[]): readonly FilterValue[] =>
   args.length === 1 && isList(args[0]!) ? args[0] : args;
-
-/** The methods of every value, null included, called as `value.name(...)`. */
-const ANY_METHODS: Registry<FunctionDefinition> = new Map<
-  string,
-  FunctionDefinition
->([
-  [
-    "toString",
-    {
-      parameters: NONE,
-      returns: "string",
-      call: (subject) => toText(subject),
-    },
-  ],
-  [
-    "isType",
-    {
-      parameters: [string("type")],
-      returns: "boolean",
-      call: (subject, [type]) => type === "any" || type === typeOf(subject),
-    },
-  ],
-]);
 
 /** The methods of each value type. A type also has {@link ANY_METHODS}. */
 const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
@@ -311,6 +292,32 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
     duration: functions({}),
   };
 
+/** The value types of the Filter Expression language. */
+export const VALUE_TYPES = Object.keys(METHODS) as FilterValueType[];
+
+/** The methods of every value, null included, called as `value.name(...)`. */
+const ANY_METHODS: Registry<FunctionDefinition> = new Map<
+  string,
+  FunctionDefinition
+>([
+  [
+    "toString",
+    {
+      parameters: NONE,
+      returns: "string",
+      call: (subject) => toText(subject),
+    },
+  ],
+  [
+    "isType",
+    {
+      parameters: [{ ...string("type"), values: ["any", ...VALUE_TYPES] }],
+      returns: "boolean",
+      call: (subject, [type]) => type === "any" || type === typeOf(subject),
+    },
+  ],
+]);
+
 const length: PropertyDefinition = {
   returns: "number",
   read: (subject) => (subject as string | readonly FilterValue[]).length,
@@ -344,9 +351,6 @@ const PROPERTIES: Readonly<
   }),
   duration: properties({}),
 };
-
-/** The value types of the Filter Expression language. */
-export const VALUE_TYPES = Object.keys(METHODS) as FilterValueType[];
 
 /** The method `name` of a value of `type`. */
 export function methodOf(
@@ -445,6 +449,9 @@ export function invoke(
     const parameter = parameterAt(definition, index);
     if (!parameter) return null;
     if (parameter.type !== "any" && typeOf(value) !== parameter.type) {
+      return null;
+    }
+    if (parameter.values && !parameter.values.includes(value as string)) {
       return null;
     }
   }

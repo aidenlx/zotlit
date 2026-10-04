@@ -206,6 +206,10 @@ describe("describeItemQuery functions", () => {
       on: "any",
       returns: "string",
     });
+    expect(methods.find((entry) => entry.name === "isType")).toMatchObject({
+      on: "any",
+      parameters: [{ name: "type", type: "string", values: ["any", ...types] }],
+    });
     expect(
       properties.filter((entry) => entry.name === "length").map((e) => e.on),
     ).toEqual(["string", "list"]);
@@ -263,7 +267,12 @@ function call(name: string, entry: Omit<SchemaFunction, "name">): string {
     ...entry.parameters,
     ...entry.optional,
     ...(entry.rest ? [entry.rest] : []),
-  ].map((parameter) => ARGUMENT[parameter.type]);
+  ].map((parameter) =>
+    // A parameter with a closed set of values takes one of them.
+    parameter.values
+      ? JSON.stringify(parameter.values[0])
+      : ARGUMENT[parameter.type],
+  );
   return `${name}(${args.join(", ")})`;
 }
 
@@ -353,6 +362,7 @@ describe("the Item Query Schema and queryItems", () => {
     [{ filter: "notAFunction()" }, "unknown-function"],
     [{ filter: "title.notAMethod()" }, "unknown-function"],
     [{ filter: "title.notAProperty" }, "unknown-property"],
+    [{ filter: 'title.isType("notAType")' }, "wrong-argument-type"],
   ] satisfies [Omit<ItemQueryRequest, "library">, string][])(
     "rejects a name outside it: %j",
     async (request, code) => {
