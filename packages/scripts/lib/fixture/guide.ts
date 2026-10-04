@@ -15,6 +15,9 @@ import {
   PERSONAL_SELECTOR,
   SCOPE_CASES,
   STRESS_ITEM_COUNT_CONSTRAINT,
+  STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT,
+  STRESS_LIBRARY_TIERS,
+  STRESS_LIBRARY_VALUES,
   UNAVAILABLE_GROUP_IDS,
   UPGRADER_FRONTMATTER_FIELDS,
   UPGRADER_LEGACY_PARTIAL_NAME,
@@ -368,6 +371,32 @@ const CHANGING_THE_FIXTURE_SECTION = `CHANGING THE FIXTURE
 Edit packages/scripts/lib/fixture/spec.ts and rebuild.
 packages/scripts/lib/fixture/build.test.ts guards the Fixture Spec properties.`;
 
+const C = STRESS_LIBRARY_VALUES.collections;
+
+function stressLibraryRows(): string {
+  const { tags, itemTypes, venues } = STRESS_LIBRARY_VALUES;
+  const paths = {
+    rare: `${C.root.name}/${C.common.name}/${C.rare.name}`,
+    common: `${C.root.name}/${C.common.name}`,
+    dominant: `${C.root.name}/${C.dominant.name}`,
+  };
+  return (["rare", "common", "dominant"] as const)
+    .flatMap((frequency) =>
+      (
+        [
+          ["Tag", tags],
+          ["Collection", paths],
+          ["Item type", itemTypes],
+          ["publicationTitle", venues],
+        ] as const
+      ).map(
+        ([target, values]) =>
+          `  ${frequency.padEnd(10)}${target.padEnd(18)}${values[frequency]}`,
+      ),
+    )
+    .join("\n");
+}
+
 const STRESS_BUILD_SECTION = `STRESS BUILD
 
 Build an additive deterministic corpus for performance work:
@@ -377,6 +406,16 @@ Build an additive deterministic corpus for performance work:
 This adds ${DEFAULT_STRESS_ITEM_COUNT.toLocaleString("en-US")} synthetic Items with creators, tags, and Citation Keys across all Fixture Libraries. The corpus uses one fixed seed. Pass ${STRESS_ITEM_COUNT_CONSTRAINT} to change the scale:
 
   pnpm fixture stress 100000
+
+For Item Query performance work, fill My Library to an exact Item count. The tiers are ${STRESS_LIBRARY_TIERS.map((tier) => tier.toLocaleString("en-US")).join(", ")}; pass ${STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT}:
+
+  pnpm fixture stress --library-items 10000
+
+The group Libraries keep their Fixture Spec content. In the synthetic Items, each query target has a rare (0.1%), a common (10%), and a dominant (60% or more) value:
+
+${stressLibraryRows()}
+
+The ${C.root.name} Collection holds the other three Collections and no Items of its own. One Item has the title "${STRESS_LIBRARY_VALUES.uniqueTitle}". STRESS_LIBRARY_VALUES in packages/scripts/lib/fixture/spec.ts states the exact rule for each value.
 
 The ordinary pnpm fixture command keeps the Fixture at its committed Fixture Spec size.`;
 

@@ -546,6 +546,25 @@ Pass a non-negative safe integer to set the synthetic Item count:
 pnpm fixture stress 100000
 ```
 
+For Item Query performance work, fill My Library to an exact Item count. The measured tiers are 10,000, 50,000, and 100,000 Items:
+
+```sh
+pnpm fixture stress --library-items 10000
+```
+
+The count includes the Fixture Spec Items of My Library, so it must be at least that number. Synthetic Items fill the rest. The group Libraries keep their Fixture Spec content. `--library-items` and an Item count are alternatives: give one of them.
+
+Each query target in the synthetic Items has a rare value (0.1% of the Items), a common value (10%), and a dominant value (60% or more). A query on a rare or common value is selective; a query on a dominant value reads most of the Library:
+
+| Target | Rare | Common | Dominant |
+| --- | --- | --- | --- |
+| Tag | `stress-rare` | `stress-common` | `stress-dominant` |
+| Collection | `Stress Build/Common/Rare` | `Stress Build/Common` | `Stress Build/Dominant` |
+| Item type | `thesis` | `book` | `journalArticle` |
+| `publicationTitle` | `Stress Rare Journal` | `Stress Common Journal` | `Stress Dominant Journal` |
+
+The `Stress Build` Collection holds the other three Collections and no Items of its own. One Item has the title `Stress Build unique title`, and every other title is also unique. Modification times are spread across the Items. `STRESS_LIBRARY_VALUES` in `packages/scripts/lib/fixture/spec.ts` states the exact rule for each value.
+
 Stress Build content uses one fixed seed. An ordinary `pnpm fixture` build returns to the committed Fixture Spec size.
 
 ## Inspect, discard, or change the Fixture
