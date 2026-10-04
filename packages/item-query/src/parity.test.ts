@@ -86,7 +86,9 @@ async function outcome(query: ScenarioQuery, tuning: Tuning): Promise<unknown> {
   if (Exit.isSuccess(exit)) return wire({ result: exit.value });
   const error = Cause.findErrorOption(exit.cause);
   if (error._tag === "None") throw new Error(String(exit.cause));
-  return wire({ failure: { ...error.value, message: error.value.message } });
+  return wire({
+    failure: Object.assign({}, error.value, { message: error.value.message }),
+  });
 }
 
 /** A value as JSON gives it back: a Temporal value becomes its ISO string. */

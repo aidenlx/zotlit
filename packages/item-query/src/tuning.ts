@@ -6,7 +6,7 @@ import { HYDRATE_CHUNK_SIZE, SCAN_PAGE_SIZE } from "@zotlit/db/item-query";
  * The internal tuning of the engine. Every value changes speed only; each one
  * gives the identical Query Result. It is not an option of `queryItems`.
  */
-export interface ItemQueryTuning {
+export interface Tuning {
   /**
    * The candidate cap as a share of the Library's `items` row count. The
    * engine uses a candidate set that holds at most this share, and the scan
@@ -30,7 +30,7 @@ export interface ItemQueryTuning {
 }
 
 /** The production tuning. The measurement record can change these values. */
-export const PRODUCTION_TUNING: ItemQueryTuning = {
+export const PRODUCTION_TUNING: Tuning = {
   capRatio: 0.25,
   scanPageSize: SCAN_PAGE_SIZE,
   hydrateChunkSize: HYDRATE_CHUNK_SIZE,
@@ -42,7 +42,7 @@ export const PRODUCTION_TUNING: ItemQueryTuning = {
  * The tuning reference of one run, with {@link PRODUCTION_TUNING} as its
  * default. A test provides another value; the Obsidian adapter provides none.
  */
-export const ItemQueryTuning = Context.Reference<ItemQueryTuning>(
+export const ItemQueryTuning = Context.Reference<Tuning>(
   "@zotlit/item-query/ItemQueryTuning",
   { defaultValue: () => PRODUCTION_TUNING },
 );

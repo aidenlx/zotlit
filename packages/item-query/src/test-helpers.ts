@@ -8,6 +8,7 @@ import { ItemQueryDatabase } from "@zotlit/db/item-query";
 import { QueryTimeZone } from "./query-clock";
 import { ItemQueryScheduler, messageChannelPause } from "./scheduler";
 import { ItemQueryTuning, PRODUCTION_TUNING } from "./tuning";
+import type { Tuning } from "./tuning";
 
 export interface RunOptions {
   /** The leased client the readers use. Omit it for an Effect that reads no database. */
@@ -18,7 +19,7 @@ export interface RunOptions {
   timeZone?: string;
   signal?: AbortSignal;
   /** Values of the tuning reference that replace the production defaults. */
-  tuning?: Partial<ItemQueryTuning>;
+  tuning?: Partial<Tuning>;
 }
 
 export interface Run<A, E> {
