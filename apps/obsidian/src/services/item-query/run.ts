@@ -2,7 +2,10 @@ import { Effect, Exit } from "effect";
 
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { ItemQueryDatabase } from "@zotlit/db/item-query";
-import type { ItemQueryDatabaseError } from "@zotlit/db/item-query";
+import type {
+  ItemQueryDatabaseError,
+  ItemQueryLayoutError,
+} from "@zotlit/db/item-query";
 import { ItemQueryScheduler, queryItems } from "@zotlit/item-query";
 import type {
   ItemQueryError,
@@ -21,7 +24,12 @@ import type {
 export function runItemQuery(
   request: ItemQueryRequest,
   options: { client: NodeDatabaseClient; signal: AbortSignal },
-): Promise<Exit.Exit<QueryResult, ItemQueryError | ItemQueryDatabaseError>> {
+): Promise<
+  Exit.Exit<
+    QueryResult,
+    ItemQueryError | ItemQueryLayoutError | ItemQueryDatabaseError
+  >
+> {
   if (options.signal.aborted) return Promise.resolve(Exit.interrupt());
   return Effect.runPromiseExit(
     Effect.provideService(queryItems(request), ItemQueryDatabase, {

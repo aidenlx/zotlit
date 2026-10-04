@@ -14,6 +14,7 @@ import type {
   HydrateFields,
   ItemQueryDatabase,
   ItemQueryDatabaseError,
+  ItemQueryLayoutError,
   ScanRow,
 } from "@zotlit/db/item-query";
 
@@ -47,7 +48,7 @@ export function queryItems(
   request: ItemQueryRequest,
 ): Effect.Effect<
   QueryResult,
-  ItemQueryError | ItemQueryDatabaseError,
+  ItemQueryError | ItemQueryLayoutError | ItemQueryDatabaseError,
   ItemQueryDatabase
 > {
   return Effect.gen(function* () {

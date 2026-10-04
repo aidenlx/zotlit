@@ -10,7 +10,8 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Tests
 
 - Effect v4 differs from v3. Read the installed source (`node_modules/effect/src`) for API facts.
 - The engine has no pause calls. Put each SQL statement and each in-memory chunk in one Effect; `ItemQueryScheduler` (`src/scheduler.ts`) ends a slice. Effect's default scheduler blocks the Obsidian window.
-- Failures: `ItemQueryError` for an invalid request, the tagged errors of `@zotlit/db/item-query` for the database, interruption for cancellation, a defect for an implementation failure.
+- Failures: `ItemQueryError` for an invalid request, the tagged errors of `@zotlit/db/item-query` for the database (`ItemQueryLayoutError` for a layout the readers cannot read, `ItemQueryDatabaseError` for a failed statement), interruption for cancellation, a defect for an implementation failure.
+- The layout check needs no call: the first reader statement on a copy runs it. An operation that reads the database through the readers gets it.
 
 ## Where things go
 
