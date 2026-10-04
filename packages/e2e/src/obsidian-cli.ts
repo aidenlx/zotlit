@@ -93,12 +93,19 @@ export async function clearNotices(vaultId: string): Promise<void> {
  * value, a plugin's `registerCliHandler` reply prints as its own text with no
  * `=> ` prefix, so this returns it as-is — the caller's own parsing (e.g.
  * `JSON.parse`) is what tells a reply from an error sentence.
+ *
+ * Each entry of `args` goes after the command as one `name=value` token.
  */
 export async function cliCommand(
   vaultId: string,
   command: string,
+  args: Readonly<Record<string, string>> = {},
 ): Promise<string> {
-  return cli([`vault=${vaultId}`, command]);
+  return cli([
+    `vault=${vaultId}`,
+    command,
+    ...Object.entries(args).map(([name, value]) => `${name}=${value}`),
+  ]);
 }
 
 /** Bounded polling — mirrors `waitFor` in obsidian-vault.ts. */

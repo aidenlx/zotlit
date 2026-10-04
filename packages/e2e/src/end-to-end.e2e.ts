@@ -2385,6 +2385,65 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
   });
 
+  it("answers a limited zotlit:item-query with the Fixture's Indexed Keys", async () => {
+    const [myLibrary, sharedReading] = LIBRARIES;
+    const byModified = (libraryID: number) =>
+      [...ITEMS, ...DEMO_ITEMS]
+        .filter((item) => item.libraryID === libraryID)
+        .toSorted(
+          (a, b) =>
+            b.dateModified.localeCompare(a.dateModified) ||
+            (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
+        )
+        .map((item) => item.key);
+
+    // Dispatched as a registered CLI command with arguments, the way an agent
+    // calls it. The default Target Library is My Library.
+    const limited = JSON.parse(
+      await cliCommand(vaultId, "zotlit:item-query", {
+        fields: "[]",
+        limit: "3",
+      }),
+    ) as ItemQueryReport;
+
+    expect(limited).toMatchObject({
+      contractVersion: 1,
+      command: "zotlit:item-query",
+      ok: true,
+      library: { type: "personal" },
+      request: { fields: [], limit: 3 },
+      returnedCount: 3,
+      truncated: true,
+    });
+    expect(limited.rows!.map((row) => row.indexedKey)).toEqual(
+      byModified(myLibrary!.libraryID).slice(0, 3),
+    );
+
+    const group = JSON.parse(
+      await cliCommand(vaultId, "zotlit:item-query", {
+        library: `group:${sharedReading!.groupID}`,
+        fields: "[]",
+        limit: "all",
+      }),
+    ) as ItemQueryReport;
+
+    expect(group).toMatchObject({
+      ok: true,
+      library: {
+        type: "group",
+        groupID: sharedReading!.groupID,
+        name: sharedReading!.name,
+      },
+      request: { limit: null },
+      truncated: false,
+    });
+    expect(group.rows!.map((row) => row.indexedKey)).toEqual(
+      byModified(sharedReading!.libraryID).map(
+        (key) => `${key}g${sharedReading!.groupID}`,
+      ),
+    );
+  });
+
   it("reflects a Scope Case switch through zotlit:library-scope", async () => {
     const availableCase = findScopeCase("available");
     const dataPath = join(
@@ -2459,6 +2518,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
   });
 });
+
+/** The `zotlit:item-query` reply shape this suite reads (see
+ *  apps/obsidian/src/services/item-query/cli.ts). */
+interface ItemQueryReport {
+  contractVersion: number;
+  command: string;
+  ok: boolean;
+  library?:
+    | { type: "personal" }
+    | { type: "group"; groupID: number; name: string };
+  request?: { fields: string[]; limit: number | null };
+  returnedCount?: number;
+  truncated?: boolean;
+  rows?: { indexedKey: string; values: Record<string, unknown> }[];
+}
 
 /** The `zotlit:library-scope` reply shape this suite reads (see
  *  apps/obsidian/src/services/library-scope/cli.ts). */
