@@ -50,6 +50,7 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import {
   evaluateTier,
+  failedEngineChecks,
   formatSummary,
   median,
   THRESHOLDS,
@@ -702,9 +703,7 @@ function findings(rawTiers: RawTier[], tiers: TierMeasurement[]): string[] {
         runs.some((run) => run.statements["scan-page"]),
       ).map(({ spec }) => spec.id),
     );
-    return evaluateTier(tier).filter(
-      (check) => check.status === "failed" && scanning.has(check.subject),
-    );
+    return failedEngineChecks(tier, scanning);
   });
   notes.push(
     `Keyset paging for the scan ${scanFailures.length === 0 ? "meets the budgets: every query that reads scan pages holds its slice limits and its total budget" : `misses the budgets in ${scanFailures.length} checks of queries that read scan pages (see the failed thresholds)`}. Longest slice with a scan page: ${each((raw) => `${longest(raw, "scan-page").toFixed(1)} ms`)}.`,
