@@ -6,12 +6,22 @@ import type {
   ItemQueryDatabaseError,
   ItemQueryLayoutError,
 } from "@zotlit/db/item-query";
-import { ItemQueryScheduler, queryItems } from "@zotlit/item-query";
+import {
+  describeItemQuery,
+  ItemQueryScheduler,
+  queryItems,
+} from "@zotlit/item-query";
 import type {
   ItemQueryError,
   ItemQueryRequest,
+  ItemQuerySchema,
   QueryResult,
 } from "@zotlit/item-query";
+
+interface RunOptions {
+  client: NodeDatabaseClient;
+  signal: AbortSignal;
+}
 
 /**
  * Run one Item Query on the leased client to its `Exit`. Each run gets its own
@@ -23,16 +33,32 @@ import type {
  */
 export function runItemQuery(
   request: ItemQueryRequest,
-  options: { client: NodeDatabaseClient; signal: AbortSignal },
+  options: RunOptions,
 ): Promise<
   Exit.Exit<
     QueryResult,
     ItemQueryError | ItemQueryLayoutError | ItemQueryDatabaseError
   >
 > {
+  return run(queryItems(request), options);
+}
+
+/** Read the Item Query Schema of the leased source to its `Exit`, as {@link runItemQuery} does. */
+export function runDescribeItemQuery(
+  options: RunOptions,
+): Promise<
+  Exit.Exit<ItemQuerySchema, ItemQueryLayoutError | ItemQueryDatabaseError>
+> {
+  return run(describeItemQuery(), options);
+}
+
+function run<A, E>(
+  operation: Effect.Effect<A, E, ItemQueryDatabase>,
+  options: RunOptions,
+): Promise<Exit.Exit<A, E>> {
   if (options.signal.aborted) return Promise.resolve(Exit.interrupt());
   return Effect.runPromiseExit(
-    Effect.provideService(queryItems(request), ItemQueryDatabase, {
+    Effect.provideService(operation, ItemQueryDatabase, {
       client: options.client,
     }),
     { scheduler: new ItemQueryScheduler(), signal: options.signal },
