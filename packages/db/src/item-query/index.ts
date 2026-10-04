@@ -1,5 +1,10 @@
 // The Effect-native readers of Item Query. This entry is the only one of
 // `@zotlit/db` that loads `effect`.
+export {
+  type CandidateLeaf,
+  readCandidateSet,
+  readLibraryRowCount,
+} from "./candidate-set";
 export { type CollectionPaths, readCollectionPaths } from "./collection-paths";
 export {
   checkLayout,
@@ -25,4 +30,9 @@ export {
   type LayoutGap,
   type LayoutVersions,
 } from "./layout";
-export { readScanPage, SCAN_PAGE_SIZE, type ScanRow } from "./scan-page";
+export {
+  readScanPage,
+  readUniverseRows,
+  SCAN_PAGE_SIZE,
+  type ScanRow,
+} from "./scan-page";

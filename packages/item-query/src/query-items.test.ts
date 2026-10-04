@@ -16,6 +16,7 @@ import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 import { ItemQueryError, ItemQueryScheduler, queryItems } from ".";
 import type { ItemQueryRequest, QueryResult } from ".";
 import { runEffect } from "./test-helpers";
+import type { RunOptions } from "./test-helpers";
 
 let scenario: ScenarioDatabase | undefined;
 
@@ -1730,5 +1731,224 @@ describe("queryItems with a filter", () => {
       ).toEqual(["RPT2NDTE"]);
       expect([...reads.tables]).toEqual(["itemCreators"]);
     });
+  });
+});
+
+describe("queryItems candidate sets", () => {
+  /** The marker of the statement that loads the Tags of a hydrate chunk. */
+  const TAG_HYDRATION = '"itemTags"."itemID" in (';
+
+  /**
+   * Run a filter on the personal Library, and give its Indexed Keys in key
+   * order and the keys of the Items whose Tags the run loaded.
+   */
+  async function tagReads(filter: string, tuning?: RunOptions["tuning"]) {
+    scenario = openScenarioDatabase();
+    const loaded = recordHydratedItemIDs(scenario, TAG_HYDRATION);
+    const { exit } = await runEffect(
+      queryItems({ library: personal, filter, fields: [], sort: [] }),
+      { client: scenario.db, tuning },
+    );
+    if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
+    const keyOf = scenario.sqlite.prepare(
+      "select key from items where itemID = ?",
+    );
+    return {
+      matched: keys(exit.value),
+      read: [...new Set(loaded())]
+        .map((itemID) => (keyOf.get(itemID) as { key: string }).key)
+        .toSorted(),
+    };
+  }
+
+  const EVERY_PERSONAL_ITEM = PERSONAL_BY_MODIFIED.toSorted();
+  const TIE_ITEMS = ["TIE2AAAA", "TIE2BBBB", "TIE2CCCC"];
+
+  it("reads only the Items that carry the Tag for a selective Tag filter", async () => {
+    expect(await tagReads('tags.contains("tie")')).toEqual({
+      matched: TIE_ITEMS,
+      read: TIE_ITEMS,
+    });
+  });
+
+  it("reads the candidates that are outside the query universe from no further table, and returns none of them", async () => {
+    // The trashed Item TRS2SHED also carries the Tag.
+    expect(await tagReads('tags.contains("to-read")')).toEqual({
+      matched: ["ART2FULL", "BK2MNTH2"],
+      read: ["ART2FULL", "BK2MNTH2"],
+    });
+    // The key of an Attachment and of a trashed Item.
+    expect(await tagReads('key == "PDF2LIVE" && tags.isEmpty()')).toEqual({
+      matched: [],
+      read: [],
+    });
+    expect(
+      await tagReads('key == "TRS2SHED" && tags.contains("to-read")'),
+    ).toEqual({ matched: [], read: [] });
+  });
+
+  it("returns only the matches of the whole filter from a candidate set that holds more Items", async () => {
+    expect(
+      await tagReads('tags.contains("to-read") && itemType == "book"'),
+    ).toEqual({ matched: ["BK2MNTH2"], read: ["ART2FULL", "BK2MNTH2"] });
+  });
+
+  it("reads the one Item of a Zotero Key filter", async () => {
+    expect(await tagReads('key == "ART2FULL" && !tags.isEmpty()')).toEqual({
+      matched: ["ART2FULL"],
+      read: ["ART2FULL"],
+    });
+    expect(await tagReads('"ALS2CNFL" == key && tags.length == 1')).toEqual({
+      matched: ["ALS2CNFL"],
+      read: ["ALS2CNFL"],
+    });
+  });
+
+  it("intersects the candidate sets of both sides of &&", async () => {
+    expect(
+      await tagReads('tags.contains("to-read") && tags.contains("methods")'),
+    ).toEqual({ matched: ["ART2FULL"], read: ["ART2FULL"] });
+  });
+
+  it("uses the lowered side of && when the other side gives no set", async () => {
+    expect(
+      await tagReads('title == "Same Title" && tags.contains("tie")'),
+    ).toEqual({ matched: ["TIE2AAAA", "TIE2BBBB"], read: TIE_ITEMS });
+  });
+
+  it("unites the candidate sets of || when every branch gives one", async () => {
+    expect(
+      await tagReads('tags.contains("eclair") || key == "RPT2NDTE"'),
+    ).toEqual({
+      matched: ["RPT2NDTE", "UNI2CDE2"],
+      read: ["RPT2NDTE", "UNI2CDE2"],
+    });
+  });
+
+  it("reads every Item when one branch of || gives no set", async () => {
+    expect(
+      await tagReads('tags.contains("eclair") || itemType == "report"'),
+    ).toEqual({
+      matched: ["RPT2NDTE", "UNI2CDE2"],
+      read: EVERY_PERSONAL_ITEM,
+    });
+  });
+
+  it.each([
+    '!tags.contains("tie")',
+    '!!tags.contains("tie")',
+    'if(tags.contains("tie"), true, false)',
+    'tags.contains("tie") == true',
+    'tags.containsAny("tie")',
+    'tags.contains("TIE".lower())',
+    'tags.length > 0 && key != "ART2FULL"',
+  ])("reads every Item for %j", async (filter) => {
+    expect((await tagReads(filter)).read).toEqual(EVERY_PERSONAL_ITEM);
+  });
+
+  it("uses a candidate set of at most 25% of the Library's `items` rows, and the scan for a larger one", async () => {
+    // The personal Library has 15 `items` rows: the cap is 3 Items. The Tag
+    // `tie` is on 3 Items; `tie` and `methods` together are on 5.
+    const within = await tagReads('tags.contains("tie")');
+    const above = await tagReads(
+      'tags.contains("tie") || tags.contains("methods")',
+    );
+
+    expect(within.read).toEqual(TIE_ITEMS);
+    expect(above).toEqual({
+      matched: ["ALS2CNFL", "ART2FULL", ...TIE_ITEMS],
+      read: EVERY_PERSONAL_ITEM,
+    });
+  });
+
+  it("uses the side of && within the cap when the other side is above it", async () => {
+    scenario = openScenarioDatabase();
+    // The Tag `methods` on four more Items: five in total, above the cap of 3.
+    scenario.sqlite.exec(
+      `insert into itemTags (itemID, tagID, type)
+       select itemID, (select tagID from tags where name = 'methods'), 0
+       from items where key in ('TIE2AAAA', 'TIE2BBBB', 'RPT2NDTE', 'CNF2TEXT') and libraryID = 1`,
+    );
+    const loaded = recordHydratedItemIDs(scenario, TAG_HYDRATION);
+
+    const found = await result({
+      library: personal,
+      filter: 'tags.contains("methods") && tags.contains("tie")',
+      fields: [],
+      sort: [],
+    });
+
+    expect(keys(found)).toEqual(["TIE2AAAA", "TIE2BBBB"]);
+    expect(new Set(loaded()).size).toBe(3);
+  });
+
+  it("gives the same result with the scan forced by the tuning reference", async () => {
+    expect(await tagReads('tags.contains("tie")', { forceScan: true })).toEqual(
+      { matched: TIE_ITEMS, read: EVERY_PERSONAL_ITEM },
+    );
+  });
+
+  it("takes the cap ratio from the tuning reference", async () => {
+    expect(
+      (await tagReads('tags.contains("tie")', { capRatio: 0.1 })).read,
+    ).toEqual(EVERY_PERSONAL_ITEM);
+    expect(
+      (
+        await tagReads('tags.contains("tie") || tags.contains("methods")', {
+          capRatio: 0.5,
+        })
+      ).read,
+    ).toEqual(["ALS2CNFL", "ART2FULL", ...TIE_ITEMS]);
+  });
+
+  it("keeps a Tag and a Zotero Key of the other Library out of the result", async () => {
+    const matching = async (
+      filter: string,
+      library: ItemQueryRequest["library"],
+    ) => keys(await result({ library, filter, fields: [], sort: [] }));
+
+    // `to-read` and the key ART2FULL exist in both Libraries.
+    expect(await matching('tags.contains("to-read")', group)).toEqual([
+      "ART2FULLg4815",
+    ]);
+    expect(await matching('key == "ART2FULL"', group)).toEqual([
+      "ART2FULLg4815",
+    ]);
+    expect(await matching('key == "ART2FULL"', personal)).toEqual(["ART2FULL"]);
+    // `group-only` and GRP2BK22 exist in the group Library only.
+    expect(await matching('tags.contains("group-only")', personal)).toEqual([]);
+    expect(await matching('key == "GRP2BK22"', personal)).toEqual([]);
+    expect(
+      await matching('tags.contains("group-only") || key == "GRP2BK22"', group),
+    ).toEqual(["GRP2BK22g4815"]);
+  });
+
+  it("reads a candidate set that is larger than one universe chunk and one hydrate chunk", async () => {
+    scenario = openScenarioDatabase();
+    const insert = scenario.sqlite.prepare(
+      "insert into items (itemTypeID, libraryID, key) select itemTypeID, ?, ? from itemTypesCombined where typeName = 'book'",
+    );
+    for (let i = 0; i < 3000; i++) {
+      insert.run(personal.libraryID, `ZZ${String(i).padStart(6, "0")}`);
+    }
+    // 700 of the 3,015 `items` rows carry the Tag: within the cap of 753.
+    scenario.sqlite.exec(
+      `insert into itemTags (itemID, tagID, type)
+       select itemID, (select tagID from tags where name = 'group-only'), 0
+       from items where key >= 'ZZ000000' and key < 'ZZ000700' and libraryID = 1`,
+    );
+    const loaded = recordHydratedItemIDs(scenario, TAG_HYDRATION);
+
+    const found = await result({
+      library: personal,
+      filter: 'tags.contains("group-only")',
+      fields: [],
+      sort: [],
+    });
+
+    expect(found.returnedCount).toBe(700);
+    expect(keys(found).at(0)).toBe("ZZ000000");
+    expect(keys(found).at(-1)).toBe("ZZ000699");
+    expect(new Set(loaded()).size).toBe(700);
   });
 });

@@ -19,6 +19,8 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Tests
 - A relation list (`creators`, `tags`, `collections`) or Attachment presence: the entry names a `HydrateRelation` of `@zotlit/db/item-query` in `needs.relations`; the hydrate reader runs one statement for each named relation.
 - A Sortable Field: the `sortKey` of its registry entry, which gives a string, a number, or null. An entry without `sortKey` fails a sort with `unsortable-field`.
 - The string order of sort, ordered comparison, and relation lists: `compareStrings` in `src/collation.ts`.
+- A candidate set: `src/candidate-plan.ts`. A leaf form of the Filter Expression that Zotero's indexes answer is one `Lowering` in `LOWERINGS`, which gives a `CandidateLeaf` of `@zotlit/db/item-query`; the reader there has one statement for each leaf kind. A candidate set holds every Item for which the leaf is truthy and may hold more: the universe restriction and the evaluator decide the result. `&&` uses the sides that lower, `||` needs every branch, and every other expression uses the scan.
+- A size or a plan switch of the engine: `ItemQueryTuning` in `src/tuning.ts` (cap ratio, scan page size, hydrate chunk size, merge step size, force-scan), read once for each query. It is internal: `src/index.ts` does not export it.
 - The matches a query keeps: `src/matches.ts`. A limited query keeps `limit + 1` rows; an unlimited query keeps one sorted run for each chunk and merges the runs in steps of one Effect each.
 - Request validation and defaults: `planRequest` in `src/request.ts`.
 - The value of a field in a Filter Expression: the `filter` of its registry entry. An entry without `filter` fails a filter with `unfilterable-field`. A name only a filter reads (`key`) is in `FILTER_ONLY_FIELDS`.
@@ -32,3 +34,6 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Tests
 - The seam is the package interface, run through the real readers on the scenario database (`@zotlit/db/test-scenario`). Assert the public Query Result or the typed failure.
 - Evaluator vectors (`src/filter.test.ts`) run a Filter Expression on one Item without a database: function semantics, the null and type matrix, and validation.
 - Run every Effect with `runEffect` from `src/test-helpers.ts`: fixed clock, fixed time zone, and a test scheduler that pauses after every operation and counts its pauses.
+- Override the tuning reference with the `tuning` option of `runEffect`.
+- The parity suite (`src/parity.test.ts`) runs every query of `SCENARIO_QUERIES` (`src/scenario-queries.ts`) with each plan and chunk size and compares the complete Query Result, or the typed failure, with the forced scan. Add each new scenario query, leaf, and function to that list: a filter in `FILTERS`, a full request in `REQUESTS`.
+- The suite also generates filter combinations from `GENERATED_FILTER_PARTS` with the fixed seed `GENERATED_SEED`. Add the parts of each new leaf. When a generated query fails, add the entry that the failure message prints to `NAMED_CASES`, then correct the engine.

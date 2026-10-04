@@ -1,6 +1,6 @@
 import { deletedItems, items, itemTypesCombined } from "@drizzle/schema";
-import { and, asc, eq, gt, notExists, notInArray } from "drizzle-orm";
-import type { Effect } from "effect";
+import { and, asc, eq, gt, inArray, notExists, notInArray } from "drizzle-orm";
+import { Effect } from "effect";
 
 import { CHILD_ITEM_TYPES } from "@/lib/item-types";
 
@@ -70,5 +70,71 @@ export function readScanPage(page: {
     libraryID: page.libraryID,
     afterKey: page.afterKey ?? "",
     limit: Math.min(page.size ?? SCAN_PAGE_SIZE, SCAN_PAGE_SIZE),
+  });
+}
+
+const ID_SLOTS = Array.from(
+  { length: SCAN_PAGE_SIZE },
+  (_, i) => `id${i}` as const,
+);
+
+const universeRowsStatement = defineStatement<Record<string, number | null>>()(
+  (db, { placeholder }) =>
+    db
+      .select({
+        itemID: items.itemID,
+        key: items.key,
+        itemType: itemTypesCombined.typeName,
+        dateAdded: items.dateAdded,
+        dateModified: items.dateModified,
+      })
+      .from(items)
+      .innerJoin(
+        itemTypesCombined,
+        eq(itemTypesCombined.itemTypeID, items.itemTypeID),
+      )
+      .where(
+        and(
+          inArray(
+            items.itemID,
+            ID_SLOTS.map((slot) => placeholder(slot)),
+          ),
+          eq(items.libraryID, placeholder("libraryID")),
+          notInArray(itemTypesCombined.typeName, [...CHILD_ITEM_TYPES]),
+          notExists(
+            db
+              .select({ itemID: deletedItems.itemID })
+              .from(deletedItems)
+              .where(eq(deletedItems.itemID, items.itemID)),
+          ),
+        ),
+      )
+      .orderBy(asc(items.key)),
+);
+
+/**
+ * Restrict a chunk of Item IDs to the query universe: the row of each ID that
+ * is a top-level, non-trashed Item of the Target Library, in key order and in
+ * the form of {@link readScanPage}. A chunk holds at most
+ * {@link SCAN_PAGE_SIZE} IDs.
+ */
+export function readUniverseRows(chunk: {
+  libraryID: number;
+  itemIDs: readonly number[];
+}): Effect.Effect<ScanRow[], ItemQueryReaderError, ItemQueryDatabase> {
+  const { libraryID, itemIDs } = chunk;
+  if (itemIDs.length > SCAN_PAGE_SIZE) {
+    return Effect.die(
+      new RangeError(
+        `A universe chunk holds at most ${SCAN_PAGE_SIZE} Item IDs, not ${itemIDs.length}.`,
+      ),
+    );
+  }
+  if (itemIDs.length === 0) return Effect.succeed([]);
+  return universeRowsStatement.all({
+    libraryID,
+    ...Object.fromEntries(
+      ID_SLOTS.map((slot, i) => [slot, itemIDs[i] ?? null]),
+    ),
   });
 }

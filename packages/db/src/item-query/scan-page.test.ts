@@ -9,6 +9,7 @@ import {
   ItemQueryDatabase,
   ItemQueryDatabaseError,
   readScanPage,
+  readUniverseRows,
   SCAN_PAGE_SIZE,
 } from ".";
 import type { ScanRow } from ".";
@@ -152,5 +153,98 @@ describe("readScanPage", () => {
         message: expect.stringContaining("dateAdded"),
       }),
     });
+  });
+});
+
+describe("readUniverseRows", () => {
+  /** The ID of the `items` row with a key in a Library. */
+  function idOf(key: string, library: { libraryID: number } = personal) {
+    scenario ??= openScenarioDatabase();
+    return (
+      scenario.sqlite
+        .prepare("select itemID from items where key = ? and libraryID = ?")
+        .get(key, library.libraryID) as { itemID: number }
+    ).itemID;
+  }
+
+  it("keeps the IDs that are live top-level Items of the Target Library, as scan rows in key order", () => {
+    const rows = runOk(
+      readUniverseRows({
+        libraryID: personal.libraryID,
+        itemIDs: [
+          idOf("UNI2CDE2"),
+          // A trashed Item, an Attachment, a Child Note, an Annotation, an Item
+          // of the other Library, and an ID that no row has.
+          idOf("TRS2SHED"),
+          idOf("PDF2LIVE"),
+          idOf("NTE2CHLD"),
+          idOf("ANN2HGHT"),
+          idOf("GRP2BK22", group),
+          987_654,
+          idOf("ART2FULL"),
+        ],
+      }),
+    );
+
+    expect(rows).toEqual([
+      {
+        itemID: idOf("ART2FULL"),
+        key: "ART2FULL",
+        itemType: "journalArticle",
+        dateAdded: Temporal.Instant.from("2020-03-16T09:30:00Z"),
+        dateModified: Temporal.Instant.from("2024-06-01T10:00:00Z"),
+      },
+      expect.objectContaining({ itemID: idOf("UNI2CDE2"), key: "UNI2CDE2" }),
+    ]);
+  });
+
+  it("gives the same row as the scan for each Item", () => {
+    const scanned = runOk(
+      readScanPage({ libraryID: personal.libraryID, afterKey: null }),
+    );
+
+    expect(
+      runOk(
+        readUniverseRows({
+          libraryID: personal.libraryID,
+          itemIDs: scanned.map((row) => row.itemID).toReversed(),
+        }),
+      ),
+    ).toEqual(scanned);
+  });
+
+  it("gives one row for an ID that the chunk names twice, and no row for no IDs", () => {
+    const id = idOf("ART2FULL", group);
+
+    expect(
+      runOk(
+        readUniverseRows({ libraryID: group.libraryID, itemIDs: [id, id] }),
+      ).map((row) => row.key),
+    ).toEqual(["ART2FULL"]);
+    expect(
+      runOk(readUniverseRows({ libraryID: group.libraryID, itemIDs: [] })),
+    ).toEqual([]);
+  });
+
+  it("takes at most 500 IDs in one chunk", () => {
+    const id = idOf("ART2FULL");
+
+    expect(
+      runOk(
+        readUniverseRows({
+          libraryID: personal.libraryID,
+          itemIDs: Array.from({ length: 500 }, (_, i) => id + i * 1000),
+        }),
+      ).map((row) => row.key),
+    ).toEqual(["ART2FULL"]);
+    const exit = run(
+      readUniverseRows({
+        libraryID: personal.libraryID,
+        itemIDs: Array.from({ length: 501 }, (_, i) => i),
+      }),
+    );
+    if (!Exit.isFailure(exit)) throw new Error("the read did not fail.");
+    expect(Cause.hasDies(exit.cause)).toBe(true);
+    expect(Cause.squash(exit.cause)).toBeInstanceOf(RangeError);
   });
 });
