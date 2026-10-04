@@ -6,6 +6,8 @@ export default defineConfig({
   extends: [baseConfig],
   ignorePatterns: [
     "**/dist/**",
+    // PROTOTYPE branch only: throwaway #595 benchmark is exempt from production lint
+    "packages/item-query/prototype/**",
     "**/dist-dev/**",
     "**/build/**",
     "**/.turbo/**",

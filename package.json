@@ -18,7 +18,8 @@
     "format:fix": "oxfmt",
     "quality": "pnpm lint && pnpm format",
     "quality:fix": "pnpm lint:fix && pnpm format:fix",
-    "prepare": "git rev-parse --git-dir > /dev/null 2>&1 && lefthook install || true"
+    "prepare": "git rev-parse --git-dir > /dev/null 2>&1 && lefthook install || true",
+    "prototype:item-query": "pnpm -F @zotlit/filter-expression codegen && pnpm -F @zotlit/filter-expression build && node --expose-gc packages/item-query/prototype/bench.ts"
   },
   "devDependencies": {
     "@electron/asar": "^4.2.0",
