@@ -13,6 +13,7 @@ import type { RefObject } from "react";
 import { Icon } from "@/components/obsidian/icon";
 import { SearchInput } from "@/components/obsidian/search-input";
 import * as m from "@/lib/i18n/generated/messages";
+import { cn } from "@/lib/utils";
 
 import { AnnotActionsContext } from "./actions";
 import { Annotation, FIELD_SHEET_SELECTOR } from "./Annotation";
@@ -374,6 +375,8 @@ function AnnotList({ collapsed }: { collapsed: boolean }) {
   const clearFilters = useClearFilters();
   const gridRef = useRef<HTMLDivElement>(null);
   const labelId = useId();
+  /** Whether the list is scrolled off its top, which shows the top fade. */
+  const [scrolled, setScrolled] = useState(false);
 
   const filter = useAnnotFilter();
   const filtered = useMemo(
@@ -412,7 +415,32 @@ function AnnotList({ collapsed }: { collapsed: boolean }) {
     // A click on the list's empty space, around or between the cards, closes
     // an open card editor or clears the Card Selection.
     <div
-      className="annots-container zt:@container zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:py-3"
+      className={cn(
+        "annots-container zt:@container zt:mt-1 zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-1",
+        // Obsidian's status bar (fixed, bottom-right) overlays the pane's
+        // bottom edge in any dock. The list scrolls under it, and its end
+        // padding, the list's own 3 plus the bar's 8, lets the last card
+        // scroll fully clear of the bar; the scroll padding keeps a card
+        // scrolled into view clear of it too.
+        "zt:scroll-pb-8 zt:pb-11",
+        // A card scrolled up under the filter bar fades out rather than being
+        // cut flat. The strip lies over the top of the list, held there as the
+        // cards scroll under it (`-top-1` cancels the `pt-1`, where a sticky
+        // box stops), and is painted from the pane's own background, as
+        // Obsidian paints the leaf. It spans the side gutters too, where a
+        // card's ring and shadow reach. It shows only while the list is
+        // scrolled off its top, so at the top of the list, and in a list too
+        // short to scroll, the first row shows whole; the top scroll padding
+        // keeps a card scrolled into view below it. It sits inside the
+        // scrolled content, so the overlay scrollbar draws over it.
+        "zt:scroll-pt-2 zt:before:pointer-events-none zt:before:sticky zt:before:-top-1 zt:before:z-1 zt:before:-mx-3 zt:before:-mb-2 zt:before:block zt:before:h-2",
+        "zt:before:bg-linear-to-b zt:before:from-(--background-secondary) zt:before:to-transparent zt:[.mod-root_&]:before:from-(--background-primary)",
+        "zt:before:opacity-0 zt:before:transition-opacity zt:data-scrolled:before:opacity-100",
+      )}
+      data-scrolled={scrolled ? "" : undefined}
+      // A list that stops being scrollable, as when the pane widens, is
+      // clamped back to its top, and that clamp fires a scroll too.
+      onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 0)}
       onClick={(e) => {
         if (e.target !== e.currentTarget && e.target !== gridRef.current)
           return;
