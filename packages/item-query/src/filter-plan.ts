@@ -20,9 +20,11 @@ import {
   methodOf,
   methodsNamed,
   parameterAt,
+  parameterTypes,
   propertiesNamed,
   PROPERTY_NAMES,
   propertyOf,
+  takesType,
 } from "./filter-functions";
 import type { FunctionDefinition } from "./filter-functions";
 import type { FilterValue, FilterValueType } from "./filter-values";
@@ -237,12 +239,14 @@ function mismatch(
 ): { index: number; found: string; expected: string } | null {
   for (const [index, arg] of args.entries()) {
     const parameter = parameterAt(definition, index);
-    if (!parameter || parameter.type === "any") continue;
-    if (isDefinite(arg.valueType) && arg.valueType !== parameter.type) {
+    if (!parameter) continue;
+    if (isDefinite(arg.valueType) && !takesType(parameter, arg.valueType)) {
       return {
         index,
         found: `a ${arg.valueType}`,
-        expected: `a ${parameter.type}`,
+        expected: parameterTypes(parameter)
+          .map((type) => `a ${type}`)
+          .join(" or "),
       };
     }
     if (

@@ -185,7 +185,7 @@ describe("describeItemQuery functions", () => {
     });
     expect(functions.find((entry) => entry.name === "date")).toEqual({
       name: "date",
-      parameters: [{ name: "text", type: "string" }],
+      parameters: [{ name: "text", type: ["string", "date"] }],
       optional: [],
       rest: null,
       returns: "date",
@@ -249,10 +249,11 @@ describe("describeItemQuery on the layout of the Zotero database", () => {
 });
 
 /** A literal of each parameter type, for a call that validation accepts. */
-const ARGUMENT: Record<SchemaParameter["type"], string> = {
+const ARGUMENT: Record<Extract<SchemaParameter["type"], string>, string> = {
   string: '"2024-01-02"',
   number: "1",
   list: '["a"]',
+  date: "now()",
   any: '"a"',
 };
 
@@ -277,7 +278,11 @@ function call(name: string, entry: Omit<SchemaFunction, "name">): string {
     // A parameter with a closed set of values takes one of them.
     parameter.values
       ? JSON.stringify(parameter.values[0])
-      : ARGUMENT[parameter.type],
+      : ARGUMENT[
+          typeof parameter.type === "string"
+            ? parameter.type
+            : parameter.type[0]!
+        ],
   );
   return `${name}(${args.join(", ")})`;
 }

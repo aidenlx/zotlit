@@ -24,7 +24,10 @@ export type DateValue =
   | {
       readonly type: "date";
       readonly precision: DatePrecision;
-      /** The first day of the interval. */
+      /**
+       * A day of the interval: its first day, or after date arithmetic a
+       * later day of the same year or month.
+       */
       readonly first: Temporal.PlainDate;
     };
 
@@ -230,15 +233,23 @@ function dayInterval(
   date: DateValue,
   clock: QueryClock,
 ): readonly [number, number] {
-  const calendar = dateOnly(date, clock);
-  const { first } = calendar;
-  const last =
-    calendar.precision === "year"
-      ? first.with({ month: 12, day: 31 })
-      : calendar.precision === "month"
-        ? first.with({ day: first.daysInMonth })
-        : first;
-  return [dayKey(first), dayKey(last)];
+  const { first, precision } = dateOnly(date, clock);
+  // The year or the month that holds `first`: arithmetic on a partial date
+  // can move `first` off the first day of its precision.
+  switch (precision) {
+    case "year":
+      return [
+        dayKey(first.with({ month: 1, day: 1 })),
+        dayKey(first.with({ month: 12, day: 31 })),
+      ];
+    case "month":
+      return [
+        dayKey(first.with({ day: 1 })),
+        dayKey(first.with({ day: first.daysInMonth })),
+      ];
+    case "day":
+      return [dayKey(first), dayKey(first)];
+  }
 }
 
 /** A calendar day as the number `yyyymmdd`, which orders days. */

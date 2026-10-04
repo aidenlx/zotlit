@@ -333,8 +333,21 @@ describe("global functions", () => {
     ["max(3, 1, 2)", 3],
     ["min(5)", 5],
     ["max(number(volume), 20)", 20],
-    ["min(1, null)", null],
-    ["max(number(pages), 1)", null],
+    // min and max take the numbers among their arguments.
+    ["min(1, null)", 1],
+    ["max(number(pages), 1)", 1],
+    ["min(null, 4, 2)", 2],
+    ["min()", null],
+    ["max(null)", null],
+    ["max(number(pages))", null],
+    // A date as its Unix time in milliseconds.
+    ['number(date("2020-01-15T10:30:00Z"))', 1_579_084_200_000],
+    ['number(date("2020-01-15"))', 1_579_046_400_000],
+    ["number(dateAdded)", 1_577_836_800_000],
+    // date() gives a date as it is.
+    ["date(dateAdded) == dateAdded", true],
+    ['date(date("2020-01")).toString()', "2020-01"],
+    ["date(publisher)", null],
   ]);
 });
 
@@ -630,6 +643,16 @@ describe("date arithmetic", () => {
     // A partial date keeps its precision.
     ['(date("2020") + duration("1M")).toString()', "2020"],
     ['(date("2020-01") - duration("1M")).toString()', "2019-12"],
+    // A partial date is the whole year or month that holds the day the
+    // arithmetic gives.
+    ['(date("2020") + duration("1M")) == date("2020-01-15")', true],
+    ['(date("2020") + duration("1M")) == date("2020-12-31")', true],
+    ['(date("2020") + duration("1M")) < date("2021-01-01")', true],
+    ['(date("2020") + duration("1M")) == date("2021-01-15")', false],
+    ['(date("2020") + duration("12M")) == date("2021-01-15")', true],
+    ['(date("2020-03") + duration("10d")) == date("2020-03-05")', true],
+    ['(date("2020-03") + duration("10d")) == date("2020-04-05")', false],
+    ['(date("2020-03") + duration("31d")) == date("2020-04-30")', true],
     // A time of day gives a timestamp from the start of the first day.
     [
       '(date("2020-01-15") - duration("12h")).toString()',
@@ -828,7 +851,6 @@ describe("validation", () => {
     ["title.lower(1)", "wrong-argument-count", [0, 14]],
     ["number()", "wrong-argument-count", [0, 8]],
     ["number(1, 2)", "wrong-argument-count", [0, 12]],
-    ["min()", "wrong-argument-count", [0, 5]],
     ["if(true)", "wrong-argument-count", [0, 8]],
     ["if(true, 1, 2, 3)", "wrong-argument-count", [0, 17]],
     ["(1).round(1, 2)", "wrong-argument-count", [0, 15]],
@@ -851,7 +873,7 @@ describe("validation", () => {
     ["(1).length", "unknown-property", [4, 10]],
     // Date functions, methods, and properties.
     ["date(5)", "wrong-argument-type", [5, 6]],
-    ["date(dateAdded)", "wrong-argument-type", [5, 14]],
+    ["date(tags)", "wrong-argument-type", [5, 9]],
     ['duration(["1d"])', "wrong-argument-type", [9, 15]],
     ["now(1)", "wrong-argument-count", [0, 6]],
     ['today("UTC")', "wrong-argument-count", [0, 12]],
@@ -900,10 +922,6 @@ describe("validation", () => {
     expect(problem("if(true)")).toMatchObject({
       message: "if takes 2 to 3 arguments, not 1.",
       hint: "Call if(condition, then, else?).",
-    });
-    expect(problem("min()")).toMatchObject({
-      message: "min takes at least 1 argument, not 0.",
-      hint: "Call min(value, ...values).",
     });
   });
 

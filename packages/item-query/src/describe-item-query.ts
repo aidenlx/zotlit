@@ -65,8 +65,10 @@ export interface SchemaCustomField extends SchemaField {
 
 export interface SchemaParameter {
   readonly name: string;
-  /** `any` also takes null. */
+  /** One type, or each type the parameter takes. `any` also takes null. */
   readonly type: FunctionParameter["type"];
+  /** Present on a typed parameter that also takes null. */
+  readonly nullable?: true;
   /** Present on a string parameter that takes only these texts. */
   readonly values?: readonly string[];
 }
@@ -251,10 +253,12 @@ function customSchemaField(name: string): SchemaCustomField {
 const parameter = ({
   name,
   type,
+  nullable,
   values,
 }: FunctionParameter): SchemaParameter => ({
   name,
   type,
+  ...(nullable && { nullable }),
   ...(values && { values }),
 });
 
