@@ -1,9 +1,8 @@
 // The deterministic invariants that keep the Obsidian window responsive. No
 // test reads wall time: each one counts the statements and the pauses that the
-// two observer services report.
+// two observer services report. The rows a limited query retains are in
+// `retention.test.ts`.
 import { Cause, Exit } from "effect";
-import { setFlagsFromString } from "node:v8";
-import { runInNewContext } from "node:vm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -260,98 +259,6 @@ describe("the rows a limited query projects", () => {
     expect(hydrated).toHaveLength(10);
   });
 });
-
-// V8's collector, to count the rows that the engine still holds.
-setFlagsFromString("--expose-gc");
-const collectGarbage = runInNewContext("gc") as () => void;
-
-describe("the rows a limited query retains", () => {
-  const LIMIT = 10;
-  const QUERIES: readonly { name: string; request: Request; items: number }[] =
-    [
-      {
-        name: "a scan that hydrates the returned rows only",
-        request: { fields: ["title"], limit: LIMIT },
-        items: BULK_ITEMS,
-      },
-      {
-        name: "a scan that hydrates every Item for the sort",
-        request: { fields: ["title", "tags"], sort: byTitle, limit: LIMIT },
-        items: BULK_ITEMS,
-      },
-      {
-        name: "a candidate set",
-        request: {
-          filter: `tags.contains("${BULK_FIFTH_TAG}")`,
-          fields: ["title"],
-          sort: byTitle,
-          limit: LIMIT,
-        },
-        items: 520,
-      },
-    ];
-
-  it.each(QUERIES)(
-    "holds the limit plus one row, one page, and one hydrate chunk at most in $name",
-    async ({ request, items }) => {
-      // The rows of the query universe and the rows of the hydrate statements
-      // that the collector has not freed.
-      const scanned: WeakRef<object>[] = [];
-      const hydrated: WeakRef<{ itemID: number }>[] = [];
-      const samples: { at: string; rows: number; hydratedItems: number }[] = [];
-
-      const limited = await run(request, {
-        keepStatements: false,
-        onEvent: (event) => {
-          if (event.type !== "statement") return;
-          // Free what the engine has released, then count what it holds with
-          // the rows of this statement. The first collection can end a marking
-          // cycle that began earlier and keeps what was live at its start.
-          collectGarbage();
-          collectGarbage();
-          const { reader, rows } = event.statement;
-          const kept = reader === "hydrate-chunk" ? hydrated : scanned;
-          if (reader === "hydrate-chunk" || READS_UNIVERSE.has(reader)) {
-            for (const row of rows) kept.push(new WeakRef(row as never));
-          }
-          samples.push({
-            at: reader,
-            rows: scanned.filter((row) => row.deref()).length,
-            hydratedItems: new Set(
-              hydrated.flatMap((row) => row.deref()?.itemID ?? []),
-            ).size,
-          });
-        },
-      });
-
-      expect(resultOf(limited)).toMatchObject({
-        returnedCount: LIMIT,
-        truncated: true,
-      });
-      expect(scanned).toHaveLength(items);
-      const most = (values: number[]) => Math.max(0, ...values);
-      // The collector sees the rows: one page is in memory while it is read.
-      expect(most(samples.map((entry) => entry.rows))).toBeGreaterThanOrEqual(
-        Math.min(items, 500),
-      );
-      expect(most(samples.map((entry) => entry.rows))).toBeLessThanOrEqual(
-        LIMIT + 1 + 500,
-      );
-      expect(
-        most(samples.map((entry) => entry.hydratedItems)),
-      ).toBeLessThanOrEqual(250);
-      // The projection starts with the matches only: the pages are released.
-      expect(samples.at(-1)).toEqual({
-        at: "hydrate-chunk",
-        rows: LIMIT + 1,
-        hydratedItems: LIMIT,
-      });
-    },
-  );
-});
-
-/** The readers whose rows are the rows of the query universe. */
-const READS_UNIVERSE = new Set(["scan-page", "universe-rows"]);
 
 describe("a cancel request", () => {
   const { personal } = SCENARIO_LIBRARIES;
