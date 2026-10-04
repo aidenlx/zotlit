@@ -7,6 +7,7 @@ import type { ScenarioDatabase, ScenarioItemName } from "@/test-scenario";
 import {
   HYDRATE_CHUNK_SIZE,
   ItemQueryDatabase,
+  ItemQueryStatementObserver,
   readCollectionPaths,
   readFieldVocabulary,
   readHydrateChunk,
@@ -128,6 +129,31 @@ describe("readHydrateChunk", () => {
       fields: { title: "Lab Report" },
       custom: {},
     });
+  });
+
+  it("reads the stored values of the requested fields only", () => {
+    const rows: unknown[] = [];
+    const id = itemID("yearOnlyChapter");
+
+    runOk(
+      Effect.flatMap(readFieldVocabulary(), (vocabulary) =>
+        readHydrateChunk({
+          vocabulary,
+          itemIDs: [id],
+          fields: { builtIn: ["title"], custom: [] },
+        }),
+      ).pipe(
+        Effect.provideService(ItemQueryStatementObserver, (run) => {
+          if (run.reader === "hydrate-chunk") rows.push(...run.rows);
+        }),
+      ),
+    );
+
+    // The chapter also stores `bookTitle`, a type-specific field of another
+    // base field.
+    expect(rows).toEqual([
+      expect.objectContaining({ itemID: id, value: "A Chapter on Sampling" }),
+    ]);
   });
 
   it("resolves a base field through the type-specific field of the item type", () => {

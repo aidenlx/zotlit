@@ -154,35 +154,35 @@ export function readFieldVocabulary(): Effect.Effect<
     return yield* Effect.sync(() => {
       const builtIn = fields.filter((row) => row.custom === 0);
       const custom = fields.filter((row) => row.custom !== 0);
-      const aliasRows = mappings.map((row) => ({
-        itemTypeID: row.itemTypeID,
-        fieldID: row.fieldID,
-        baseField: { fieldName: row.baseFieldName },
-      }));
       const tables = new Map<string, BaseFieldTable<string>>();
+      /**
+       * The table of one built-in field, from the mapping rows of that field
+       * alone: its field IDs are the field and the fields that alias it.
+       */
+      const tableOf = (name: string) => {
+        let table = tables.get(name);
+        if (!table) {
+          table = buildTable(
+            builtIn,
+            mappings
+              .filter((row) => row.baseFieldName === name)
+              .map((row) => ({
+                itemTypeID: row.itemTypeID,
+                fieldID: row.fieldID,
+                baseField: { fieldName: name },
+              })),
+            [name],
+          );
+          tables.set(name, table);
+        }
+        return table;
+      };
       return {
         customFieldNames: custom.map((row) => row.fieldName),
-        fieldIDsOf: (name: string) => {
-          const own = builtIn.find((row) => row.fieldName === name);
-          return [
-            ...new Set([
-              ...(own ? [own.fieldID] : []),
-              ...mappings
-                .filter((row) => row.baseFieldName === name)
-                .flatMap((row) => (row.fieldID === null ? [] : [row.fieldID])),
-            ]),
-          ];
-        },
+        fieldIDsOf: (name: string) => tableOf(name).fieldIDs,
         builtInID: new Map(builtIn.map((row) => [row.fieldName, row.fieldID])),
         customID: new Map(custom.map((row) => [row.fieldName, row.fieldID])),
-        tableOf: (name: string) => {
-          let table = tables.get(name);
-          if (!table) {
-            table = buildTable(builtIn, aliasRows, [name]);
-            tables.set(name, table);
-          }
-          return table;
-        },
+        tableOf,
       };
     });
   });
