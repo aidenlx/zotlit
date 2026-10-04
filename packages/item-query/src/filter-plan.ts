@@ -586,8 +586,22 @@ function binaryType(
       if (left === "string" || right === "string") return "string";
       if (left === "list" && right === "list") return "list";
       if (left === "number" && right === "number") return "number";
+      if (
+        (left === "date" && right === "duration") ||
+        (left === "duration" && right === "date")
+      ) {
+        return "date";
+      }
       return "unknown";
     case "-":
+      // `date - duration` is a date.
+      if (left === "date" && right === "duration") return "date";
+      return left === "date" ||
+        left === "unknown" ||
+        right === "duration" ||
+        right === "unknown"
+        ? "unknown"
+        : "number";
     case "*":
     case "/":
     case "%":

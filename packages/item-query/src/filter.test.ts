@@ -8,6 +8,7 @@ import { evaluate, matches } from "./filter-evaluate";
 import { hasBareForm, planFilter } from "./filter-plan";
 import type { FilterPlan, FilterProblem } from "./filter-plan";
 import type { FilterValue } from "./filter-values";
+import type { QueryClock } from "./query-clock";
 
 interface ItemSpec {
   key?: string;
@@ -18,6 +19,8 @@ interface ItemSpec {
   tags?: readonly string[];
   collections?: readonly (readonly string[])[];
   hasAttachments?: boolean;
+  /** An ISO instant; defaults to 2020-01-01T00:00:00Z. */
+  dateAdded?: string;
 }
 
 function item(spec: ItemSpec = {}): QueryItem {
@@ -27,7 +30,9 @@ function item(spec: ItemSpec = {}): QueryItem {
       itemID: 1,
       key: spec.key ?? "ABCD2345",
       itemType: spec.itemType ?? "journalArticle",
-      dateAdded: instant,
+      dateAdded: spec.dateAdded
+        ? Temporal.Instant.from(spec.dateAdded)
+        : instant,
       dateModified: instant,
     },
     hydrated: {
@@ -94,13 +99,25 @@ function problem(expression: string): FilterProblem {
   return planned;
 }
 
-const valueOf = (expression: string, of: QueryItem = ARTICLE): FilterValue =>
-  evaluate(plan(expression).root, of);
+/** The Query Clock of the vectors: noon UTC, 15 July 2024. */
+const CLOCK: QueryClock = {
+  now: Temporal.Instant.from("2024-07-15T12:00:00Z"),
+  timeZone: "UTC",
+};
+
+const valueOf = (
+  expression: string,
+  of: QueryItem = ARTICLE,
+  clock: QueryClock = CLOCK,
+): FilterValue => evaluate(plan(expression).root, of, clock);
 
 /** Run each `[expression, value]` vector against the article. */
-function vectors(cases: readonly (readonly [string, FilterValue])[]): void {
+function vectors(
+  cases: readonly (readonly [string, FilterValue])[],
+  clock: QueryClock = CLOCK,
+): void {
   it.each(cases)("%s gives %j", (expression, expected) => {
-    expect(valueOf(expression)).toEqual(expected);
+    expect(valueOf(expression, ARTICLE, clock)).toEqual(expected);
   });
 }
 
@@ -238,10 +255,10 @@ describe("logic and truthiness", () => {
   ]);
 
   it("treats a null filter value as no match", () => {
-    expect(matches(plan('publisher > "a"').root, ARTICLE)).toBe(false);
-    expect(matches(plan("!publisher").root, ARTICLE)).toBe(false);
-    expect(matches(plan("title").root, ARTICLE)).toBe(true);
-    expect(matches(plan("shortTitle").root, ARTICLE)).toBe(false);
+    expect(matches(plan('publisher > "a"').root, ARTICLE, CLOCK)).toBe(false);
+    expect(matches(plan("!publisher").root, ARTICLE, CLOCK)).toBe(false);
+    expect(matches(plan("title").root, ARTICLE, CLOCK)).toBe(true);
+    expect(matches(plan("shortTitle").root, ARTICLE, CLOCK)).toBe(false);
   });
 });
 
@@ -483,6 +500,306 @@ describe("relation lists", () => {
   ]);
 });
 
+// The vectors assert primitive values: a date is read through its text, its
+// parts, or a comparison.
+describe("now() and today()", () => {
+  vectors([
+    ["now().toString()", "2024-07-15T12:00:00Z"],
+    ["now().timestamp", 1_721_044_800_000],
+    ["today().toString()", "2024-07-15"],
+    ["today().hour", 0],
+    // Every call sees the same instant.
+    ["now() == now()", true],
+    ["today() == now().date()", true],
+    ["now() >= today()", true],
+    ["now() > today()", false],
+    ['now().isType("date")', true],
+    ['duration("1d").isType("duration")', true],
+    ["today().isEmpty()", false],
+  ]);
+});
+
+describe("date()", () => {
+  vectors([
+    ['date("2020-01-15").year', 2020],
+    ['date("2020-01-15").month', 1],
+    ['date("2020-01-15").day', 15],
+    ['date("2020-03").day', null],
+    ['date("2020").month', null],
+    ['date("2020").year', 2020],
+    ['date("2020-01-15").hour', 0],
+    ['date("2020-01-15 10:30").hour', 10],
+    ['date("2020-01-15T10:30:00Z").timestamp', 1_579_084_200_000],
+    ['date("2020-01-15T10:30:00.123Z").millisecond', 123],
+    // An explicit offset fixes the instant.
+    ['date("2020-01-15 10:30+02:00").hour', 8],
+    ['date("20200115") == date("2020-01-15")', true],
+    ['date("202001151030").hour', 10],
+    ['date("2024-02-29").day', 29],
+    // Unparseable text and impossible dates are null.
+    ['date("banana")', null],
+    ['date("2020-13-01")', null],
+    ['date("2021-02-29")', null],
+    ['date("2020-01-15 25:00")', null],
+    ["date(publisher)", null],
+    ["date(null)", null],
+  ]);
+});
+
+describe("duration()", () => {
+  vectors([
+    ['duration("P1Y") == duration("1 year")', true],
+    ['duration("-2 weeks") == duration("-P2W")', true],
+    // Weeks fold into days.
+    ['duration("2 weeks") == duration("14 days")', true],
+    ['duration("P2W") == duration("14 days")', true],
+    ['duration("90m") == duration("PT90M")', true],
+    // `M` is months, `m` minutes.
+    ['duration("1M") == duration("1 month")', true],
+    ['duration("1M") == duration("1m")', false],
+    ['duration("nonsense")', null],
+    ["duration(publisher)", null],
+    // A zero duration is falsy.
+    ['duration("1 day") && true', true],
+    ['duration("0 days") || false', false],
+  ]);
+});
+
+describe("date text", () => {
+  vectors([
+    ['date("2020-01-15").toString()', "2020-01-15"],
+    ['date("2020-03").toString()', "2020-03"],
+    ['date("2020").toString()', "2020"],
+    ['date("2020-01-15 10:30").toString()', "2020-01-15T10:30:00Z"],
+    ['"P: " + duration("1 year")', "P: P1Y"],
+    ['"on " + today()', "on 2024-07-15"],
+    ['[today(), duration("P1D")].toString()', "2024-07-15, P1D"],
+  ]);
+});
+
+describe("date comparison", () => {
+  vectors([
+    // A partial date is the interval of days it covers.
+    ['date("2020") == date("2020-06-15")', true],
+    ['date("2020") != date("2021-01-01")', true],
+    ['date("2020") > date("2019-12-31")', true],
+    ['date("2020") > date("2020-01-01")', false],
+    ['date("2020") >= date("2020-12-31")', true],
+    ['date("2020") <= date("2020-01-01")', true],
+    ['date("2020") < date("2020-06-01")', false],
+    ['date("2020") < date("2021")', true],
+    ['date("2020-05") < date("2020-06")', true],
+    ['date("2020-05") <= date("2020-05-31")', true],
+    // Month ends, a leap day, and the year end.
+    ['date("2020-02") == date("2020-02-29")', true],
+    ['date("2021-02") == date("2021-02-28")', true],
+    ['date("2021-02") < date("2021-03-01")', true],
+    ['date("2020-12-31") < date("2021")', true],
+    ['date("2020") < date("2021-01-01")', true],
+    // Two timestamps compare as instants.
+    ['date("2020-01-15 10:30") < date("2020-01-15 10:31")', true],
+    ['date("2020-01-15 10:30") == date("2020-01-15 10:31")', false],
+    ['date("2020-01-15 10:30:00.5") > date("2020-01-15 10:30")', true],
+    // A timestamp and a calendar date compare by calendar day, in both orders.
+    ['date("2020-01-15 10:30") == date("2020-01-15")', true],
+    ['date("2020-01-15") == date("2020-01-15 10:30")', true],
+    ['date("2020-01-15") < date("2020-01-15 23:59")', false],
+    ['date("2020-01-15") <= date("2020-01-15 23:59")', true],
+    ['date("2020") >= date("2020-12-31 23:59")', true],
+    // An offset that crosses the UTC day boundary.
+    ['date("2020-01-15T23:30:00-05:00") == date("2020-01-16")', true],
+    // No coercion between types.
+    ['date("2020") == "2020"', false],
+    ['date("2020") > "2019"', null],
+    ['date("2020") > 5', null],
+    ['duration("1d") > duration("2d")', null],
+    ['duration("1d") == "P1D"', false],
+    ["publisher < today()", null],
+    ['[date("2020")].contains(date("2020-06-15"))', true],
+  ]);
+});
+
+describe("date arithmetic", () => {
+  vectors([
+    ['(date("2020-01-15") + duration("1 month")).toString()', "2020-02-15"],
+    ['(duration("1 year") + date("2020-01-15")).toString()', "2021-01-15"],
+    // The calendar clamps a day past the end of the month.
+    ['(date("2020-01-31") + duration("1M")).toString()', "2020-02-29"],
+    // A partial date keeps its precision.
+    ['(date("2020") + duration("1M")).toString()', "2020"],
+    ['(date("2020-01") - duration("1M")).toString()', "2019-12"],
+    // A time of day gives a timestamp from the start of the first day.
+    [
+      '(date("2020-01-15") - duration("12h")).toString()',
+      "2020-01-14T12:00:00Z",
+    ],
+    ['(now() - duration("1d")).toString()', "2024-07-14T12:00:00Z"],
+    ['now() - duration("7 days") < now()', true],
+    // Other combinations give null.
+    ['date("2020-01-15") - date("2020-01-14")', null],
+    ["now() + 1", null],
+    ['duration("1d") + duration("1d")', null],
+    ['duration("1d") - now()', null],
+    ['publisher + duration("1d")', null],
+  ]);
+});
+
+describe("date methods and properties", () => {
+  vectors([
+    ['date("2020-01-15 10:30").date().toString()', "2020-01-15"],
+    ['date("2020").date().toString()', "2020"],
+    ['date("2020-01-15 10:30:45").time()', "10:30:45"],
+    ['date("2020-01-15").time()', "00:00:00"],
+    [
+      'date("2020-01-15 10:30").format("YYYY/MM/DD HH:mm:ss")',
+      "2020/01/15 10:30:00",
+    ],
+    ['date("2020-03").format("YYYY-MM-DD")', "2020-03-01"],
+    ['date("2020-01-15").format(publisher)', null],
+    ["now().relative()", "just now"],
+    ['(now() - duration("3 days")).relative()', "3 days ago"],
+    ['(now() + duration("2h")).relative()', "in 2 hours"],
+    ["today().relative()", "today"],
+    ['(today() - duration("1d")).relative()', "1 day ago"],
+    ['date("2020-03-01").relative()', "4 years ago"],
+    ['date("2020-03").year', 2020],
+    ['date("2020-03").month', 3],
+  ]);
+});
+
+describe("date fields", () => {
+  const dated = (fields: Record<string, string>) =>
+    item({ fields, dateAdded: "2020-01-07T06:00:00Z" });
+
+  it.each([
+    ["2020-03-15 2020-03-15", "date.toString()", "2020-03-15"],
+    ["2019-11-00 November 2019", "date.toString()", "2019-11"],
+    ["2019-11-00 November 2019", 'date == date("2019-11-30")', true],
+    ["2018-00-00 2018", 'date > date("2017-12-31")', true],
+    // A text date takes the year the date parser finds in it.
+    ["0000-00-00 circa 1850", "date.toString()", "1850"],
+    ["0000-00-00 circa 1850", 'date == date("1850-06")', true],
+    ["0000-00-00 1990-1991", "date.year", 1990],
+    // A text date without a year in 1000-2999 is null.
+    ["0000-00-00 forthcoming", "date", null],
+    ["0000-00-00 0999", "date", null],
+    ["0000-00-00 3000", "date", null],
+    // An impossible day falls back to the month.
+    ["2021-02-30 2021-02-30", "date.toString()", "2021-02"],
+  ])("reads the date %j: %s gives %j", (stored, expression, expected) => {
+    expect(valueOf(expression, dated({ date: stored }))).toEqual(expected);
+  });
+
+  it("reads filingDate and the type-specific fields of date as calendar dates", () => {
+    expect(
+      valueOf(
+        "filingDate.toString()",
+        dated({ filingDate: "2021-06-00 June 2021" }),
+      ),
+    ).toBe("2021-06");
+    expect(
+      valueOf("issueDate.year", dated({ issueDate: "2020-05-04 2020-05-04" })),
+    ).toBe(2020);
+  });
+
+  it("reads dateAdded and dateModified as timestamps", () => {
+    const of = dated({});
+
+    expect(valueOf("dateAdded.toString()", of)).toBe("2020-01-07T06:00:00Z");
+    expect(valueOf("dateModified.toString()", of)).toBe("2020-01-01T00:00:00Z");
+    expect(valueOf("dateAdded > dateModified", of)).toBe(true);
+  });
+
+  it.each([
+    // Zotero stores a UTC timestamp.
+    ["2020-01-07 04:00:00", "accessDate.toString()", "2020-01-07T04:00:00Z"],
+    ["2020-01-07 04:00:00", "accessDate < dateAdded", true],
+    ["2020-01-07", "accessDate.toString()", "2020-01-07"],
+    ["2020-01-07", "accessDate == dateAdded", true],
+    ["yesterday", "accessDate", null],
+    ["2021-02-30 10:00:00", "accessDate", null],
+  ])("reads the accessDate %j: %s gives %j", (stored, expression, expected) => {
+    expect(valueOf(expression, dated({ accessDate: stored }))).toEqual(
+      expected,
+    );
+  });
+});
+
+describe("the query time zone", () => {
+  // 02:00Z on 8 January is 21:00 on 7 January in New York.
+  const NEW_YORK: QueryClock = {
+    now: Temporal.Instant.from("2020-01-08T02:00:00Z"),
+    timeZone: "America/New_York",
+  };
+  const inNewYork = (expression: string, of: QueryItem = ARTICLE) =>
+    valueOf(expression, of, NEW_YORK);
+
+  it("defines today() and .date() on a timestamp", () => {
+    expect(inNewYork("today().toString()")).toBe("2020-01-07");
+    expect(inNewYork("now().date().toString()")).toBe("2020-01-07");
+    expect(inNewYork("today() == now().date()")).toBe(true);
+    expect(
+      valueOf("today().toString()", ARTICLE, { ...NEW_YORK, timeZone: "UTC" }),
+    ).toBe("2020-01-08");
+  });
+
+  it("compares a timestamp with a calendar day on the day of the zone", () => {
+    const at = (instant: string) => item({ dateAdded: instant });
+
+    expect(inNewYork("dateAdded >= today()", at("2020-01-07T06:00:00Z"))).toBe(
+      true,
+    );
+    expect(inNewYork("dateAdded >= today()", at("2020-01-07T04:00:00Z"))).toBe(
+      false,
+    );
+    expect(
+      inNewYork('dateAdded == date("2020-01-06")', at("2020-01-07T04:00:00Z")),
+    ).toBe(true);
+  });
+
+  it("gives the parts, the time, and the format of a timestamp in the zone", () => {
+    expect(inNewYork("now().day")).toBe(7);
+    expect(inNewYork("now().hour")).toBe(21);
+    expect(inNewYork("now().time()")).toBe("21:00:00");
+    expect(inNewYork('now().format("YYYY-MM-DD HH:mm")')).toBe(
+      "2020-01-07 21:00",
+    );
+    // The timestamp of a calendar date is the start of its first day.
+    expect(inNewYork('date("2020-01-08").timestamp')).toBe(1_578_459_600_000);
+  });
+
+  it("reads a time without an offset as a wall-clock time in the zone", () => {
+    expect(inNewYork('date("2020-01-07 23:00").timestamp')).toBe(
+      1_578_456_000_000,
+    );
+    expect(inNewYork('date("2020-01-07 23:00") == today()')).toBe(true);
+  });
+
+  it("counts relative() calendar days from today in the zone", () => {
+    expect(inNewYork('date("2020-01-07").relative()')).toBe("today");
+    expect(inNewYork('date("2020-01-08").relative()')).toBe("in 1 day");
+    expect(
+      valueOf('date("2020-01-08").relative()', ARTICLE, {
+        ...NEW_YORK,
+        timeZone: "UTC",
+      }),
+    ).toBe("today");
+  });
+
+  it("adds calendar days by the wall clock of the zone, across a change of offset", () => {
+    // New York moves to daylight saving time on 8 March 2020.
+    expect(inNewYork('(date("2020-03-08 00:00") + duration("1d")).hour')).toBe(
+      0,
+    );
+    expect(inNewYork('(date("2020-03-08 00:00") + duration("24h")).hour')).toBe(
+      1,
+    );
+    expect(inNewYork('(date("2020-01-07") + duration("1h")).toString()')).toBe(
+      "2020-01-07T06:00:00Z",
+    );
+  });
+});
+
 describe("validation", () => {
   it.each([
     ["", "invalid-filter", [0, 0]],
@@ -529,10 +846,23 @@ describe("validation", () => {
     ["title.Length", "unknown-property", [6, 12]],
     ["attachments.length", "unknown-property", [12, 18]],
     ["(1).length", "unknown-property", [4, 10]],
-    // Date fields get their filter value with the date functions.
-    ["date", "unfilterable-field", [0, 4]],
-    ['dateAdded > "2020"', "unfilterable-field", [0, 9]],
-    ["dateModified == null", "unfilterable-field", [0, 12]],
+    // Date functions, methods, and properties.
+    ["date(5)", "wrong-argument-type", [5, 6]],
+    ["date(dateAdded)", "wrong-argument-type", [5, 14]],
+    ['duration(["1d"])', "wrong-argument-type", [9, 15]],
+    ["now(1)", "wrong-argument-count", [0, 6]],
+    ['today("UTC")', "wrong-argument-count", [0, 12]],
+    ["date()", "wrong-argument-count", [0, 6]],
+    ["dateAdded.format()", "wrong-argument-count", [0, 18]],
+    ["dateAdded.format(1)", "wrong-argument-type", [17, 18]],
+    ["dateAdded.relative(1)", "wrong-argument-count", [0, 21]],
+    ["dateAdded.lower()", "unknown-function", [10, 15]],
+    ["title.relative()", "unknown-function", [6, 14]],
+    ['duration("1d").date()', "unknown-function", [15, 19]],
+    ["date.length", "unknown-property", [5, 11]],
+    ["title.year", "unknown-property", [6, 10]],
+    ['duration("1d").days', "unknown-property", [15, 19]],
+    ['(now() - duration("1d")).length', "unknown-property", [25, 31]],
     ["custom", "unfilterable-field", [0, 6]],
     ["custom.isEmpty()", "unfilterable-field", [0, 6]],
     ["min == 1", "unknown-field", [0, 3]],
@@ -550,7 +880,6 @@ describe("validation", () => {
       "title.startsWith()",
       "title.startsWith(1)",
       "title.lenght",
-      "date",
       "custom",
       "min",
     ]) {
@@ -588,7 +917,8 @@ describe("validation", () => {
     ["true || title.startsWith(1)", "wrong-argument-type"],
     ["if(true, 1, title.startsWith())", "wrong-argument-count"],
     ["if(false, title.lenght, 1)", "unknown-property"],
-    ["if(true, 1, date)", "unfilterable-field"],
+    ["if(true, 1, custom)", "unfilterable-field"],
+    ["if(true, now(), date(1))", "wrong-argument-type"],
     ["true || title.contains(/a/)", "invalid-filter"],
     ["[1, noSuchFunction()].length", "unknown-function"],
   ] as const)("rejects the dead branch of %j with %s", (expression, code) => {
@@ -605,6 +935,11 @@ describe("validation", () => {
     "null.isEmpty()",
     "null.lower()",
     "min(number(volume), 3)",
+    // A date before and after date arithmetic keeps its methods.
+    '(now() - duration("1d")).format("YYYY")',
+    '(duration("1d") + today()).relative()',
+    "date.date().year",
+    'date(title).format("YYYY")',
   ])("accepts %j", (expression) => {
     expect(() => plan(expression)).not.toThrow();
   });
