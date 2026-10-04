@@ -1,3 +1,5 @@
+// Runs the two operations of `@zotlit/item-query` to an `Exit` on a leased
+// client: the scheduler, the abort signal, and the database service of a run.
 import { Effect, Exit } from "effect";
 
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";

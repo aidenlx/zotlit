@@ -23,16 +23,12 @@ import {
 import type { ItemQueryCliDeps } from "./cli";
 import { GUIDE_EXAMPLES, GUIDE_FILTERS, GUIDE_TOPIC_NAMES } from "./guide";
 
-let scenario: ScenarioDatabase | undefined;
-
 /** The driver call under every statement of the leased client. */
 // oxlint-disable-next-line typescript/unbound-method -- applied to its statement in the test.
 const readRows = StatementSync.prototype.all;
 
 afterEach(() => {
   vi.restoreAllMocks();
-  scenario?.close();
-  scenario = undefined;
 });
 
 const IDENTITY = {
@@ -54,10 +50,12 @@ const PERSONAL_BY_MODIFIED = [
   "CNF2TEXT",
 ];
 
-function setup(overrides: Partial<ItemQueryCliDeps> = {}) {
+function setup(
+  scenario: ScenarioDatabase,
+  overrides: Partial<ItemQueryCliDeps> = {},
+) {
   const events: string[] = [];
   const acquireRead = vi.fn(async () => {
-    scenario ??= openScenarioDatabase();
     events.push("acquire");
     return {
       client: scenario.db,
@@ -87,7 +85,8 @@ const keys = (answer: Record<string, unknown>) =>
 
 describe("zotlit:item-query without arguments", () => {
   it("answers the versioned envelope for the personal Library with the CLI defaults", async () => {
-    const { run } = setup();
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
 
     const answer = await run();
 
@@ -114,9 +113,9 @@ describe("zotlit:item-query without arguments", () => {
   });
 
   it("answers pretty JSON", async () => {
+    using scenario = openScenarioDatabase();
     const handler = createItemQueryHandler({
       acquireRead: async () => {
-        scenario ??= openScenarioDatabase();
         return { client: scenario.db, [Symbol.dispose]: () => {} };
       },
       identity: async () => IDENTITY,
@@ -131,7 +130,8 @@ describe("zotlit:item-query without arguments", () => {
 
 describe("zotlit:item-query limit", () => {
   it("returns the first rows and reports truncation for a numeric limit", async () => {
-    const { run } = setup();
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
 
     const answer = await run({ limit: "3" });
 
@@ -144,7 +144,8 @@ describe("zotlit:item-query limit", () => {
   });
 
   it("normalizes limit=all to null and returns every match", async () => {
-    const { run } = setup();
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
 
     const answer = await run({ limit: "all" });
 
@@ -158,7 +159,8 @@ describe("zotlit:item-query limit", () => {
   it.each(["0", "-1", "1.5", "ten", "", "1e3", "99999999999999999999"])(
     "rejects limit=%j with the diagnostic envelope before it reads the source",
     async (limit) => {
-      const { run, acquireRead } = setup();
+      using scenario = openScenarioDatabase();
+      const { run, acquireRead } = setup(scenario);
 
       const answer = await run({ limit });
 
@@ -179,7 +181,8 @@ describe("zotlit:item-query limit", () => {
 
 describe("zotlit:item-query Target Library", () => {
   it("reads a group Library by its group ID and reports it with its name", async () => {
-    const { run } = setup();
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
 
     const answer = await run({ library: "group:4815" });
 
@@ -192,7 +195,8 @@ describe("zotlit:item-query Target Library", () => {
   });
 
   it("accepts library=personal", async () => {
-    const { run } = setup();
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
 
     const answer = await run({ library: "personal" });
 
@@ -201,7 +205,8 @@ describe("zotlit:item-query Target Library", () => {
   });
 
   it("answers library-not-found for a group the source does not hold, and releases the lease", async () => {
-    const { run, events } = setup();
+    using scenario = openScenarioDatabase();
+    const { run, events } = setup(scenario);
 
     const answer = await run({ library: "group:999" });
 
@@ -218,7 +223,8 @@ describe("zotlit:item-query Target Library", () => {
   it.each(["group:", "group:abc", "group:0", "My Library", "1"])(
     "rejects library=%j",
     async (library) => {
-      const { run } = setup();
+      using scenario = openScenarioDatabase();
+      const { run } = setup(scenario);
 
       const answer = await run({ library });
 
@@ -235,7 +241,8 @@ describe("zotlit:item-query Target Library", () => {
 
 describe("zotlit:item-query fields", () => {
   it("returns identity-only rows for fields=[]", async () => {
-    const { run } = setup();
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
 
     const answer = await run({ fields: "[]", limit: "2" });
 
@@ -247,7 +254,8 @@ describe("zotlit:item-query fields", () => {
   });
 
   it("writes Temporal values as ISO strings, nested ones included", async () => {
-    const { run } = setup();
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
 
     const answer = await run({
       fields: '["date.value","dateModified","date"]',
@@ -272,7 +280,8 @@ describe("zotlit:item-query fields", () => {
   });
 
   it("answers the code, location, and hint of an unknown field", async () => {
-    const { run } = setup();
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
 
     const answer = await run({ fields: '["itemType","nope"]' });
 
@@ -290,7 +299,8 @@ describe("zotlit:item-query fields", () => {
   it.each(['["title"', '"title"', "[1]", '{"0":"title"}'])(
     "rejects fields=%s",
     async (fields) => {
-      const { run } = setup();
+      using scenario = openScenarioDatabase();
+      const { run } = setup(scenario);
 
       const answer = await run({ fields });
 
@@ -314,7 +324,8 @@ describe("zotlit:item-query filter and sort", () => {
     ["sort", '[{"field":"title","direction":"up"}]'],
     ["sort", '{"field":"title","direction":"asc"}'],
   ])("rejects %s=%j", async (parameter, value) => {
-    const { run } = setup();
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
 
     const answer = await run({ [parameter]: value });
 
@@ -324,7 +335,8 @@ describe("zotlit:item-query filter and sort", () => {
     });
   });
   it("passes a well-formed filter through to the engine and echoes it", async () => {
-    const { run } = setup();
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
     const filter = 'tags.contains("to-read")';
 
     const answer = await run({ filter });
@@ -334,7 +346,8 @@ describe("zotlit:item-query filter and sort", () => {
   });
 
   it("answers an invalid filter with the code, the location in the filter text, and the hint", async () => {
-    const { run } = setup();
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
 
     const answer = await run({ filter: "title.startsWith(1)" });
 
@@ -349,7 +362,8 @@ describe("zotlit:item-query filter and sort", () => {
   });
 
   it("passes a well-formed sort through to the engine and echoes it", async () => {
-    const { run } = setup();
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
 
     const answer = await run({
       sort: '[{"field":"title","direction":"asc"}]',
@@ -376,7 +390,8 @@ describe("zotlit:item-query filter and sort", () => {
 
 describe("zotlit:item-query parameters", () => {
   it("rejects an undeclared parameter", async () => {
-    const { run } = setup();
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
 
     const answer = await run({ fields: "[]", colour: "red" });
 
@@ -390,7 +405,8 @@ describe("zotlit:item-query parameters", () => {
   });
 
   it("explains a vault parameter after the command name", async () => {
-    const { run } = setup();
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
 
     const answer = await run({ vault: "Research" });
 
@@ -405,7 +421,8 @@ describe("zotlit:item-query parameters", () => {
   });
 
   it("leaves Obsidian's own -- tokens alone", async () => {
-    const { run } = setup();
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
 
     const answer = await run({ "--copy": "true", limit: "1" });
 
@@ -415,7 +432,8 @@ describe("zotlit:item-query parameters", () => {
 
 describe("zotlit:item-query source and lease", () => {
   it("releases the lease before it answers", async () => {
-    const { run, events } = setup();
+    using scenario = openScenarioDatabase();
+    const { run, events } = setup(scenario);
 
     await run({ limit: "1" });
 
@@ -423,7 +441,8 @@ describe("zotlit:item-query source and lease", () => {
   });
 
   it("answers source-unavailable when the source cannot be leased", async () => {
-    const { run } = setup({
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario, {
       acquireRead: async () => {
         throw new Error("Zotero database not found");
       },
@@ -442,10 +461,11 @@ describe("zotlit:item-query source and lease", () => {
   });
 
   it("answers database-error when the leased database cannot be read", async () => {
+    using scenario = openScenarioDatabase();
     const closed = openScenarioDatabase();
     const client = closed.db;
     closed.close();
-    const { run, events } = setup({
+    const { run, events } = setup(scenario, {
       acquireRead: async () => {
         events.push("acquire");
         return { client, [Symbol.dispose]: () => events.push("release") };
@@ -464,19 +484,21 @@ describe("zotlit:item-query source and lease", () => {
 
 describe("zotlit:item-query cancellation", () => {
   it("rejects with the abort reason and takes no lease when the signal is already aborted", async () => {
+    using scenario = openScenarioDatabase();
     const controller = new AbortController();
     const reason = new Error("plugin unloaded");
     controller.abort(reason);
-    const { run, acquireRead } = setup({ signal: controller.signal });
+    const { run, acquireRead } = setup(scenario, { signal: controller.signal });
 
     await expect(run()).rejects.toBe(reason);
     expect(acquireRead).not.toHaveBeenCalled();
   });
 
   it("rejects with the abort reason when the run is cancelled, after it releases the lease", async () => {
+    using scenario = openScenarioDatabase();
     const controller = new AbortController();
     const reason = new Error("plugin unloaded");
-    const { run, events } = setup({ signal: controller.signal });
+    const { run, events } = setup(scenario, { signal: controller.signal });
 
     const running = run();
     controller.abort(reason);
@@ -486,9 +508,10 @@ describe("zotlit:item-query cancellation", () => {
   });
 
   it("releases the lease after the last database read and before a cancelled run settles", async () => {
+    using scenario = openScenarioDatabase();
     const controller = new AbortController();
     const reason = new Error("plugin unloaded");
-    const { run, events } = setup({ signal: controller.signal });
+    const { run, events } = setup(scenario, { signal: controller.signal });
     // Warm the copy, then count the reads of one complete run.
     await run({ fields: '["title"]' });
     const read = vi.spyOn(StatementSync.prototype, "all");
@@ -595,10 +618,12 @@ describe("answerExit", () => {
   });
 });
 
-function setupSchema(overrides: Partial<ItemQueryCliDeps> = {}) {
+function setupSchema(
+  scenario: ScenarioDatabase,
+  overrides: Partial<ItemQueryCliDeps> = {},
+) {
   const events: string[] = [];
   const acquireRead = vi.fn(async () => {
-    scenario ??= openScenarioDatabase();
     events.push("acquire");
     return {
       client: scenario.db,
@@ -629,7 +654,8 @@ function setupSchema(overrides: Partial<ItemQueryCliDeps> = {}) {
 
 describe("zotlit:item-query-schema", () => {
   it("answers the Item Query Schema of the source in the versioned envelope, as pretty JSON", async () => {
-    const { text, events } = setupSchema();
+    using scenario = openScenarioDatabase();
+    const { text, events } = setupSchema(scenario);
 
     const output = await text();
     const answer = JSON.parse(output) as Record<string, unknown>;
@@ -668,7 +694,8 @@ describe("zotlit:item-query-schema", () => {
   });
 
   it("reports the CLI defaults: 100 rows of My Library, newest modification first", async () => {
-    const { run } = setupSchema();
+    using scenario = openScenarioDatabase();
+    const { run } = setupSchema(scenario);
 
     const answer = await run();
 
@@ -681,7 +708,8 @@ describe("zotlit:item-query-schema", () => {
   });
 
   it("rejects a parameter before it reads the source", async () => {
-    const { run, acquireRead } = setupSchema();
+    using scenario = openScenarioDatabase();
+    const { run, acquireRead } = setupSchema(scenario);
 
     const answer = await run({ library: "personal" });
 
@@ -698,7 +726,8 @@ describe("zotlit:item-query-schema", () => {
   });
 
   it("answers source-unavailable when the source cannot be leased", async () => {
-    const { run } = setupSchema({
+    using scenario = openScenarioDatabase();
+    const { run } = setupSchema(scenario, {
       acquireRead: async () => {
         throw new Error("Zotero database not found");
       },
@@ -714,9 +743,9 @@ describe("zotlit:item-query-schema", () => {
   });
 
   it("answers unsupported-database-layout for a copy that lacks a manifest column", async () => {
-    scenario = openScenarioDatabase();
+    using scenario = openScenarioDatabase();
     scenario.sqlite.exec('alter table "fieldsCombined" drop column "custom"');
-    const { run } = setupSchema();
+    const { run } = setupSchema(scenario);
 
     const answer = await run();
 
@@ -731,10 +760,13 @@ describe("zotlit:item-query-schema", () => {
   });
 
   it("rejects with the abort reason and takes no lease when the signal is already aborted", async () => {
+    using scenario = openScenarioDatabase();
     const controller = new AbortController();
     const reason = new Error("plugin unloaded");
     controller.abort(reason);
-    const { run, acquireRead } = setupSchema({ signal: controller.signal });
+    const { run, acquireRead } = setupSchema(scenario, {
+      signal: controller.signal,
+    });
 
     await expect(run()).rejects.toBe(reason);
     expect(acquireRead).not.toHaveBeenCalled();
@@ -754,7 +786,13 @@ describe("zotlit:item-query-guide", () => {
       expect(output).toContain(command);
     }
     for (const topic of GUIDE_TOPIC_NAMES) expect(output).toContain(topic);
-    expect(output).toContain("100 most recently modified Items");
+    expect(output).toContain(
+      "obsidian zotlit:item-query [filter=<expression>] [fields=<json>]",
+    );
+    expect(output).toContain("[limit=<n|all>] [library=<personal|group:id>]");
+    expect(output).toContain(
+      "returns at most\n  100 rows, sorted by dateModified descending.\n  Each row has itemType, title, creators, date, and dateModified.",
+    );
     expect(output).toContain("My Library");
   });
 
@@ -785,7 +823,8 @@ describe("zotlit:item-query-guide", () => {
   });
 
   it("shows only commands and filters that run", async () => {
-    const { run } = setup();
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
     const failures: string[] = [];
 
     for (const args of GUIDE_EXAMPLES) {

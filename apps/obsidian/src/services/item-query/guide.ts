@@ -1,6 +1,18 @@
 // The Item Query guide: tiered literal-English text, after the Template
 // Workbench guide. Every command and Filter Expression it shows comes from
 // `example` or `filter` below, so a test runs each one against a real query.
+// Command names, parameters, and defaults come from the constants the
+// handlers run.
+
+import { DEFAULT_FIELDS, DEFAULT_SORT } from "@zotlit/item-query";
+
+import {
+  DEFAULT_CLI_LIMIT,
+  ITEM_QUERY_COMMAND,
+  ITEM_QUERY_GUIDE_COMMAND,
+  ITEM_QUERY_SCHEMA_COMMAND,
+  itemQueryFlags,
+} from "./contract";
 
 /** One query command of the guide, as flat CLI arguments. */
 export type GuideExample = Readonly<Record<string, string>>;
@@ -19,7 +31,36 @@ function example(args: GuideExample): string {
   const parts = Object.entries(args).map(([name, value]) =>
     /^[\w:-]+$/.test(value) ? `${name}=${value}` : `${name}='${value}'`,
   );
-  return ["obsidian zotlit:item-query", ...parts].join(" ");
+  return [`obsidian ${ITEM_QUERY_COMMAND}`, ...parts].join(" ");
+}
+
+/** "a, b, and c". */
+function listOf(names: readonly string[]): string {
+  return new Intl.ListFormat("en", { type: "conjunction" }).format(names);
+}
+
+const DEFAULT_FIELD_LIST = listOf(DEFAULT_FIELDS);
+/** The default sort in words, such as "dateModified descending". */
+const DEFAULT_SORT_TEXT = listOf(
+  DEFAULT_SORT.map(
+    ({ field, direction }) =>
+      `${field} ${direction === "desc" ? "descending" : "ascending"}`,
+  ),
+);
+
+/** The query command with each parameter, wrapped as the synopsis shows it. */
+function querySynopsis(): string {
+  const lines = [`obsidian ${ITEM_QUERY_COMMAND}`];
+  for (const [name, flag] of Object.entries(itemQueryFlags)) {
+    const parameter = `[${name}=${flag.value}]`;
+    const last = lines.at(-1)!;
+    if (last.length + parameter.length < 72) {
+      lines[lines.length - 1] = `${last} ${parameter}`;
+    } else {
+      lines.push(`  ${parameter}`);
+    }
+  }
+  return lines.join("\n  ");
 }
 
 /** A Filter Expression shown on its own line. */
@@ -92,8 +133,7 @@ const FIELDS_SECTION = `FIELDS AND PROJECTION PATHS
 
 DESCRIPTION
   fields is a JSON array of Projection Paths: the values each row returns.
-  Without fields, each row has itemType, title, creators, date, and
-  dateModified.
+  Without fields, each row has ${DEFAULT_FIELD_LIST}.
   Use fields='[]' to return only the Indexed Keys.
     ${example({ fields: "[]", limit: "all" })}
 
@@ -118,7 +158,7 @@ SORT
   or "desc". The first entry orders first. A Sortable Field has sort true in
   schema.fields: one value per Item, such as title, date, or dateModified.
     ${example({ sort: '[{"field":"date","direction":"desc"},{"field":"title","direction":"asc"}]' })}
-  The default is dateModified, newest first.
+  The default is ${DEFAULT_SORT_TEXT}.
   Items without a value come last in both directions. The Indexed Key orders
   Items that tie on every entry.
 
@@ -133,7 +173,7 @@ ORDER OF DATES
 
 LIMIT
   limit is the most rows to return: a positive integer, or all for every
-  match. The default is 100. truncated is true when more Items match.
+  match. The default is ${DEFAULT_CLI_LIMIT}. truncated is true when more Items match.
     ${example({ sort: '[{"field":"title","direction":"asc"}]', limit: "all" })}`;
 
 const RESULTS_SECTION = `RESULTS AND DIAGNOSTICS
@@ -184,14 +224,14 @@ WORKFLOW
   3. On ok false, follow diagnostic.hint and run the query again.
 
 SYNOPSIS
-  obsidian zotlit:item-query-schema
-  obsidian zotlit:item-query [filter=<expression>] [fields=<json>]
-    [sort=<json>] [limit=<n|all>] [library=<personal|group:groupID>]
-  obsidian zotlit:item-query-guide [topic=<${GUIDE_TOPIC_NAMES.join("|")}>]
+  obsidian ${ITEM_QUERY_SCHEMA_COMMAND}
+  ${querySynopsis()}
+  obsidian ${ITEM_QUERY_GUIDE_COMMAND} [topic=<${GUIDE_TOPIC_NAMES.join("|")}>]
 
 DEFAULTS
-  Without arguments, a query returns the 100 most recently modified Items of
-  My Library with itemType, title, creators, date, and dateModified.
+  Without arguments, a query reads My Library and returns at most
+  ${DEFAULT_CLI_LIMIT} rows, sorted by ${DEFAULT_SORT_TEXT}.
+  Each row has ${DEFAULT_FIELD_LIST}.
   library=group:<groupID> reads a group Library; the group ID is the number
   in the group's address on zotero.org.
 
@@ -201,10 +241,10 @@ EXAMPLES
 
 TOPICS
   ${GUIDE_TOPIC_NAMES.join(", ")}
-  Read one topic with obsidian zotlit:item-query-guide topic=<name>.
+  Read one topic with obsidian ${ITEM_QUERY_GUIDE_COMMAND} topic=<name>.
 
 SEE ALSO
-  obsidian help zotlit:item-query`;
+  obsidian help ${ITEM_QUERY_COMMAND}`;
 
 export function renderGuide(topic: GuideTopic | null): string {
   return topic === null ? QUICKSTART : GUIDE_TOPICS[topic];

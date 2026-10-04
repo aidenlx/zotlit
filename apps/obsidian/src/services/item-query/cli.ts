@@ -9,6 +9,7 @@
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 
+import { regex } from "arkregex";
 import { Cause, Exit } from "effect";
 import type { CliData, CliFlag, CliFlags, CliHandler, Plugin } from "obsidian";
 import * as v from "valibot";
@@ -31,6 +32,15 @@ import type {
 import { getLogger } from "@/lib/log";
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
+import {
+  DEFAULT_CLI_LIMIT,
+  ITEM_QUERY_COMMAND,
+  ITEM_QUERY_GUIDE_COMMAND,
+  ITEM_QUERY_PARAMS,
+  ITEM_QUERY_SCHEMA_COMMAND,
+  itemQueryFlags,
+} from "./contract";
+import type { ItemQueryCommand } from "./contract";
 import { GUIDE_TOPIC_NAMES, parseGuideTopic, renderGuide } from "./guide";
 import { runDescribeItemQuery, runItemQuery } from "./run";
 import type { ItemQueryInstrument } from "./run";
@@ -43,55 +53,13 @@ const logger = getLogger(["item-query"]);
  */
 export const CONTRACT_VERSION = 1;
 
-export const ITEM_QUERY_COMMAND = "zotlit:item-query" as const;
-export const ITEM_QUERY_SCHEMA_COMMAND = "zotlit:item-query-schema" as const;
-export const ITEM_QUERY_GUIDE_COMMAND = "zotlit:item-query-guide" as const;
-
-type ItemQueryCommand =
-  | typeof ITEM_QUERY_COMMAND
-  | typeof ITEM_QUERY_SCHEMA_COMMAND
-  | typeof ITEM_QUERY_GUIDE_COMMAND;
-
-/** The rows a CLI query returns when the caller gives no limit. */
-export const DEFAULT_CLI_LIMIT = 100;
-
-const ITEM_QUERY_PARAMS = [
-  "filter",
-  "fields",
-  "sort",
-  "limit",
-  "library",
-] as const;
-
-type ItemQueryParam = (typeof ITEM_QUERY_PARAMS)[number];
-
-export const itemQueryFlags: CliFlags = {
-  filter: {
-    value: "<expression>",
-    description:
-      "Filter Expression that selects the Items; omit it to match every Item",
-  },
-  fields: {
-    value: "<json>",
-    description:
-      'JSON array of Projection Paths, such as ["title","date.year"]; [] returns only Indexed Keys',
-  },
-  sort: {
-    value: "<json>",
-    description:
-      'JSON array of {"field","direction"} objects; direction is "asc" or "desc"',
-  },
-  limit: {
-    value: "<n|all>",
-    description:
-      "Most rows to return: a positive integer, or all (default 100)",
-  },
-  library: {
-    value: "<personal|group:id>",
-    description:
-      "Target Library: personal, or group:<groupID> (default: personal)",
-  },
-} satisfies Record<ItemQueryParam, CliFlag>;
+export {
+  DEFAULT_CLI_LIMIT,
+  ITEM_QUERY_COMMAND,
+  ITEM_QUERY_GUIDE_COMMAND,
+  ITEM_QUERY_SCHEMA_COMMAND,
+  itemQueryFlags,
+};
 
 export const itemQueryGuideFlags: CliFlags = {
   topic: {
@@ -132,9 +100,14 @@ interface Diagnostic {
 function diagnostic(
   code: AdapterDiagnosticCode,
   message: string,
-  details?: Diagnostic["details"],
+  options: { details?: Diagnostic["details"] } = {},
 ): Diagnostic {
-  return { code, message, hint: DIAGNOSTIC_HINTS[code], details };
+  return {
+    code,
+    message,
+    hint: DIAGNOSTIC_HINTS[code],
+    details: options.details,
+  };
 }
 
 /** The Target Library on the wire: local `libraryID` values stay inside. */
@@ -184,10 +157,7 @@ function envelope(command: ItemQueryCommand, tail: EnvelopeTail): string {
   );
 }
 
-function failure(
-  diagnostic: Diagnostic,
-  command: ItemQueryCommand = ITEM_QUERY_COMMAND,
-): string {
+function failure(command: ItemQueryCommand, diagnostic: Diagnostic): string {
   return envelope(command, { ok: false, diagnostic });
 }
 
@@ -240,35 +210,15 @@ export function createItemQuerySchemaHandler(
 ): CliHandler {
   return async (params: CliData): Promise<string> => {
     const rejected = rejectParameters(params, []);
-    if (rejected) return failure(rejected, ITEM_QUERY_SCHEMA_COMMAND);
+    if (rejected) return failure(ITEM_QUERY_SCHEMA_COMMAND, rejected);
 
     deps.signal.throwIfAborted();
 
-    let lease: ItemQueryLease;
-    try {
-      lease = await deps.acquireRead();
-    } catch (error) {
-      logger.warn("Item Query could not read the Zotero source", { error });
-      return failure(
-        diagnostic(
-          "source-unavailable",
-          `The connected Zotero source is not readable: ${messageOf(error)}`,
-        ),
-        ITEM_QUERY_SCHEMA_COMMAND,
-      );
-    }
-    let exit: Exit.Exit<
-      ItemQuerySchema,
-      ItemQueryLayoutError | ItemQueryDatabaseError
-    >;
-    try {
-      exit = await runDescribeItemQuery({
-        client: lease.client,
-        signal: deps.signal,
-      });
-    } finally {
-      lease[Symbol.dispose]();
-    }
+    const read = await withLease(deps, ITEM_QUERY_SCHEMA_COMMAND, (client) =>
+      runDescribeItemQuery({ client, signal: deps.signal }),
+    );
+    if ("answer" in read) return read.answer;
+    const exit = read.value;
 
     if (Exit.isSuccess(exit)) {
       const schema = exit.value;
@@ -292,16 +242,16 @@ export function createItemQuerySchemaHandler(
 /** The guide is plain text; an unknown topic answers the diagnostic envelope. */
 export function itemQueryGuideHandler(params: CliData): string {
   const rejected = rejectParameters(params, ["topic"]);
-  if (rejected) return failure(rejected, ITEM_QUERY_GUIDE_COMMAND);
+  if (rejected) return failure(ITEM_QUERY_GUIDE_COMMAND, rejected);
   if (params.topic === undefined) return renderGuide(null);
   const topic = parseGuideTopic(params.topic);
   if (topic === null) {
     return failure(
+      ITEM_QUERY_GUIDE_COMMAND,
       invalid(
         "topic",
         `topic '${params.topic}' is not a guide topic: use ${GUIDE_TOPIC_NAMES.join(", ")}.`,
       ),
-      ITEM_QUERY_GUIDE_COMMAND,
     );
   }
   return renderGuide(topic);
@@ -315,41 +265,32 @@ export function itemQueryGuideHandler(params: CliData): string {
 export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
   return async (params: CliData): Promise<string> => {
     const decoded = decodeArguments(params);
-    if ("code" in decoded) return failure(decoded);
+    if ("code" in decoded) return failure(ITEM_QUERY_COMMAND, decoded);
 
     deps.signal.throwIfAborted();
 
-    let lease: ItemQueryLease;
-    try {
-      lease = await deps.acquireRead();
-    } catch (error) {
-      logger.warn("Item Query could not read the Zotero source", { error });
-      return failure(
-        diagnostic(
-          "source-unavailable",
-          `The connected Zotero source is not readable: ${messageOf(error)}`,
-        ),
-      );
-    }
-
-    let library: ResolvedLibrary | null;
-    let exit: ItemQueryExit;
-    try {
+    const read = await withLease<
+      { answer: string } | { exit: ItemQueryExit; library: ResolvedLibrary }
+    >(deps, ITEM_QUERY_COMMAND, async (client) => {
+      let library: ResolvedLibrary | null;
       try {
-        library = resolveLibrary(lease.client, decoded.library);
+        library = resolveLibrary(client, decoded.library);
       } catch (error) {
-        return databaseFailure(error);
+        return { answer: databaseFailure(ITEM_QUERY_COMMAND, error) };
       }
       if (library === null) {
-        return failure(
-          diagnostic(
-            "library-not-found",
-            `The connected Zotero source holds no ${describeSelector(decoded.library)}.`,
-            { parameter: "library" },
+        return {
+          answer: failure(
+            ITEM_QUERY_COMMAND,
+            diagnostic(
+              "library-not-found",
+              `The connected Zotero source holds no ${describeSelector(decoded.library)}.`,
+              { details: { parameter: "library" } },
+            ),
           ),
-        );
+        };
       }
-      exit = await runItemQuery(
+      const exit = await runItemQuery(
         {
           library: library.target,
           filter: decoded.filter,
@@ -357,22 +298,48 @@ export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
           sort: decoded.sort,
           limit: decoded.limit,
         },
-        {
-          client: lease.client,
-          signal: deps.signal,
-          instrument: deps.instrument,
-        },
+        { client, signal: deps.signal, instrument: deps.instrument },
       );
-    } finally {
-      lease[Symbol.dispose]();
-    }
+      return { exit, library };
+    });
+    if ("answer" in read) return read.answer;
+    if ("answer" in read.value) return read.value.answer;
 
-    return answerExit(exit, {
+    return answerExit(read.value.exit, {
       identity: () => deps.identity(),
-      library: library.wire,
+      library: read.value.library.wire,
       signal: deps.signal,
     });
   };
+}
+
+/**
+ * Run `read` under one source lease. The lease ends when `read` settles, so
+ * it ends after the last database read and before the caller answers or
+ * rejects. A source that gives no lease answers `source-unavailable`.
+ */
+async function withLease<T>(
+  deps: ItemQueryCliDeps,
+  command: ItemQueryCommand,
+  read: (client: NodeDatabaseClient) => Promise<T>,
+): Promise<{ answer: string } | { value: T }> {
+  let acquired: ItemQueryLease;
+  try {
+    acquired = await deps.acquireRead();
+  } catch (error) {
+    logger.warn("Item Query could not read the Zotero source", { error });
+    return {
+      answer: failure(
+        command,
+        diagnostic(
+          "source-unavailable",
+          `The connected Zotero source is not readable: ${messageOf(error)}`,
+        ),
+      ),
+    };
+  }
+  using lease = acquired;
+  return { value: await read(lease.client) };
 }
 
 type ItemQueryExit = Exit.Exit<
@@ -428,24 +395,21 @@ function answerFailure(
   if (error._tag === "Some") {
     const failed = error.value;
     if (failed._tag === "ItemQueryError") {
-      return failure(
-        {
-          code: failed.code,
-          message: failed.message,
-          hint: failed.hint,
-          location: failed.location,
-        },
-        command,
-      );
+      return failure(command, {
+        code: failed.code,
+        message: failed.message,
+        hint: failed.hint,
+        location: failed.location,
+      });
     }
     if (failed._tag === "ItemQueryLayoutError") {
       // `@zotlit/db` logs the missing layout and the versions once per copy.
       return failure(
-        diagnostic("unsupported-database-layout", failed.message),
         command,
+        diagnostic("unsupported-database-layout", failed.message),
       );
     }
-    return databaseFailure(failed.cause, failed, command);
+    return databaseFailure(command, failed.cause, { logged: failed });
   }
   if (Cause.hasInterruptsOnly(cause)) {
     throw (
@@ -462,19 +426,22 @@ function answerFailure(
 }
 
 function databaseFailure(
+  command: ItemQueryCommand,
   cause: unknown,
-  logged: unknown = cause,
-  command: ItemQueryCommand = ITEM_QUERY_COMMAND,
+  options: {
+    /** @default cause */
+    logged?: unknown;
+  } = {},
 ): string {
   logger.error("Item Query failed to read the Zotero database", {
-    error: logged,
+    error: options.logged ?? cause,
   });
   return failure(
+    command,
     diagnostic(
       "database-error",
       `Item Query could not read the Zotero database: ${messageOf(cause)}`,
     ),
-    command,
   );
 }
 
@@ -541,7 +508,7 @@ function messageOf(error: unknown): string {
 // ---------------------------------------------------------------------------
 // Argument decoding
 
-const GROUP_SELECTOR = /^group:([1-9]\d*)$/;
+const GROUP_SELECTOR = regex("^group:([1-9]\\d*)$");
 const POSITIVE_INTEGER = /^[1-9]\d*$/;
 
 const fieldsSchema = v.array(v.string());
@@ -675,5 +642,5 @@ function rejectParameters(
 }
 
 function invalid(parameter: string, message: string): Diagnostic {
-  return diagnostic("invalid-argument", message, { parameter });
+  return diagnostic("invalid-argument", message, { details: { parameter } });
 }
