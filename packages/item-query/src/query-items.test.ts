@@ -52,16 +52,19 @@ async function failure(request: ItemQueryRequest, client = true) {
 const keys = (found: QueryResult) => found.rows.map((row) => row.indexedKey);
 
 /**
- * Record the Item IDs that the field-value statement binds. Only that statement
- * reads its field list through `json_each`.
+ * Record the Item IDs that the statements whose SQL contains `marker` bind.
+ * Only the field-value statement reads its field list through `json_each`.
  */
-function recordHydratedItemIDs(database: ScenarioDatabase): () => number[] {
+function recordHydratedItemIDs(
+  database: ScenarioDatabase,
+  marker = "json_each",
+): () => number[] {
   const ids: number[] = [];
   const { sqlite } = database;
   const prepare = sqlite.prepare.bind(sqlite);
   sqlite.prepare = (sql: string) => {
     const statement = prepare(sql);
-    if (!sql.includes("json_each")) return statement;
+    if (!sql.includes(marker)) return statement;
     const all = statement.all.bind(statement);
     statement.all = ((...params: SQLInputValue[]) => {
       for (const param of params)
@@ -183,7 +186,7 @@ describe("queryItems with a limit", () => {
 });
 
 describe("queryItems projection", () => {
-  it("projects the item type, title, date, and modification time when the caller names no fields", async () => {
+  it("projects the item type, title, creators, date, and modification time when the caller names no fields", async () => {
     const found = await result({ library: personal, limit: 1 });
 
     expect(found.rows).toEqual([
@@ -192,6 +195,22 @@ describe("queryItems projection", () => {
         values: {
           itemType: "journalArticle",
           title: "Exact Matching in Literature Review",
+          creators: [
+            {
+              family: "Lovelace",
+              given: "Ada",
+              literal: null,
+              role: "author",
+              fullName: "Ada Lovelace",
+            },
+            {
+              family: "",
+              given: "",
+              literal: "World Health Organization",
+              role: "author",
+              fullName: "World Health Organization",
+            },
+          ],
           date: {
             kind: "date",
             value: Temporal.PlainDate.from("2020-03-15"),
@@ -451,12 +470,185 @@ describe("queryItems Projection Paths", () => {
   });
 });
 
+describe("queryItems relation lists", () => {
+  it("projects Creators in Zotero's creator order, one element for each row", async () => {
+    const found = await result({ library: personal, fields: ["creators"] });
+    const values = valuesByKey(found);
+
+    // The same person as author and as editor gives two elements.
+    expect(values["BK2MNTH2"]).toEqual({
+      creators: [
+        {
+          family: "Hopper",
+          given: "Grace",
+          literal: null,
+          role: "author",
+          fullName: "Grace Hopper",
+        },
+        {
+          family: "Hopper",
+          given: "Grace",
+          literal: null,
+          role: "editor",
+          fullName: "Grace Hopper",
+        },
+      ],
+    });
+    expect(values["ART2FULL"]).toEqual({
+      creators: [
+        {
+          family: "Lovelace",
+          given: "Ada",
+          literal: null,
+          role: "author",
+          fullName: "Ada Lovelace",
+        },
+        {
+          family: "",
+          given: "",
+          literal: "World Health Organization",
+          role: "author",
+          fullName: "World Health Organization",
+        },
+      ],
+    });
+    expect(values["RPT2NDTE"]).toEqual({ creators: [] });
+  });
+
+  it("projects Tags in the Item Query string order, with their type", async () => {
+    const found = await result({
+      library: personal,
+      fields: ["tags", "tags[0].name"],
+    });
+    const values = valuesByKey(found);
+
+    expect(values["ART2FULL"]).toEqual({
+      tags: [
+        { name: "methods", type: "manual" },
+        { name: "to-read", type: "manual" },
+        { name: "To-Read", type: "auto" },
+      ],
+      "tags[0].name": "methods",
+    });
+    expect(values["UNI2CDE2"]?.["tags"]).toEqual([
+      { name: "100%_raw\\path", type: "manual" },
+      { name: "eclair", type: "manual" },
+      { name: "Éclair", type: "manual" },
+    ]);
+    expect(values["RPT2NDTE"]).toEqual({ tags: [], "tags[0].name": null });
+  });
+
+  it("projects each live Collection as its root-first path, in the Item Query string order", async () => {
+    const found = await result({
+      library: personal,
+      fields: ["collections", "collections[1]"],
+    });
+    const values = valuesByKey(found);
+
+    expect(values["CHP2YEAR"]).toEqual({
+      collections: ["Thesis", "Thesis/Methods"],
+      "collections[1]": "Thesis/Methods",
+    });
+    // Also filed in Archive/Old, below the trashed Archive.
+    expect(values["ART2FULL"]?.["collections"]).toEqual(["Thesis/Methods"]);
+    // Also filed in the trashed Archive.
+    expect(values["BK2MNTH2"]?.["collections"]).toEqual(["Teaching/Methods"]);
+    expect(values["RPT2NDTE"]).toEqual({
+      collections: [],
+      "collections[1]": null,
+    });
+  });
+
+  it("gives the Collection paths of the Target Library", async () => {
+    const found = await result({ library: group, fields: ["collections"] });
+
+    expect(valuesByKey(found)).toEqual({
+      ART2FULLg4815: { collections: [] },
+      GRP2BK22g4815: { collections: ["Methods"] },
+    });
+  });
+
+  it("projects Attachment presence as true for an Item with a live Attachment", async () => {
+    const found = await result({ library: personal, fields: ["attachments"] });
+
+    expect(valuesByKey(found)["ART2FULL"]).toEqual({ attachments: true });
+    expect(valuesByKey(found)["RPT2NDTE"]).toEqual({ attachments: false });
+  });
+
+  it("projects Attachment presence as false for an Item with only trashed Attachments", async () => {
+    scenario = openScenarioDatabase();
+    // ART2FULL keeps only its already trashed Attachment.
+    scenario.sqlite.exec(
+      "insert into deletedItems (itemID, dateDeleted) select itemID, '2024-01-01 00:00:00' from items where key = 'PDF2LIVE'",
+    );
+
+    const found = await result({ library: personal, fields: ["attachments"] });
+
+    expect(valuesByKey(found)["ART2FULL"]).toEqual({ attachments: false });
+  });
+
+  it("loads each relation only for the rows a limited query returns", async () => {
+    scenario = openScenarioDatabase();
+    const tables = [
+      "itemCreators",
+      "itemTags",
+      "collectionItems",
+      "itemAttachments",
+    ];
+    const recorded = tables.map((table) =>
+      recordHydratedItemIDs(scenario!, `"${table}"`),
+    );
+
+    await result({
+      library: personal,
+      fields: ["creators", "tags", "collections", "attachments"],
+      limit: 2,
+    });
+
+    const byNumber = (a: number, b: number) => a - b;
+    const returned = itemIDsOf(scenario, ["ART2FULL", "UNI2CDE2"]);
+    for (const ids of recorded) {
+      expect(ids().toSorted(byNumber)).toEqual(returned.toSorted(byNumber));
+    }
+  });
+
+  it("loads no relation that the query does not read", async () => {
+    scenario = openScenarioDatabase();
+    const recorded = ["itemCreators", "itemTags", "collectionItems"].map(
+      (table) => recordHydratedItemIDs(scenario!, `"${table}"`),
+    );
+
+    await result({ library: personal, fields: ["title", "attachments"] });
+
+    for (const ids of recorded) expect(ids()).toEqual([]);
+  });
+
+  it("reaches one Creator by index, with null past the end", async () => {
+    const found = await result({
+      library: personal,
+      fields: ["creators[0].fullName", "creators[1].role", "creators[2]"],
+    });
+    const values = valuesByKey(found);
+
+    expect(values["CHP2YEAR"]).toEqual({
+      "creators[0].fullName": "Alan Turing",
+      "creators[1].role": "editor",
+      "creators[2]": null,
+    });
+    expect(values["RPT2NDTE"]).toEqual({
+      "creators[0].fullName": null,
+      "creators[1].role": null,
+      "creators[2]": null,
+    });
+  });
+});
+
 describe("queryItems normalized request", () => {
   it("reports the defaults it applied", async () => {
     const found = await result({ library: personal });
 
     expect(found.query).toEqual({
-      fields: ["itemType", "title", "date", "dateModified"],
+      fields: ["itemType", "title", "creators", "date", "dateModified"],
       sort: [{ field: "dateModified", direction: "desc" }],
       limit: null,
     });
@@ -506,6 +698,12 @@ describe("queryItems failures", () => {
     ["title.length", "unknown-path"],
     ["date[0]", "unknown-path"],
     ["custom[0]", "unknown-path"],
+    // Array access does not vectorize.
+    ["creators.fullName", "unknown-path"],
+    ["tags.name", "unknown-path"],
+    ["creators[0].name", "unknown-path"],
+    ["collections[0].name", "unknown-path"],
+    ["attachments[0]", "unknown-path"],
   ])(
     "fails the path %j with ItemQueryError before it reads the database",
     async (path, code) => {

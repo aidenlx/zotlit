@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import { formatIndexedKey } from "@zotlit/db";
 import {
   HYDRATE_CHUNK_SIZE,
+  readCollectionPaths,
   readFieldVocabulary,
   readHydrateChunk,
   readScanPage,
@@ -12,6 +13,7 @@ import type {
   FieldVocabulary,
   HydratedItem,
   HydrateFields,
+  HydrateRelation,
   ItemQueryDatabase,
   ItemQueryDatabaseError,
   ItemQueryLayoutError,
@@ -62,6 +64,11 @@ export function queryItems(
       ? yield* readFieldVocabulary()
       : null;
     if (vocabulary) yield* checkCustomFields(paths, vocabulary);
+    const collectionPaths = [...pathNeeds, ...sortNeeds].some((needs) =>
+      needs.relations?.includes("collections"),
+    )
+      ? yield* readCollectionPaths(library)
+      : undefined;
     const itemOf = (
       scan: ScanRow,
       hydrated: ReadonlyMap<number, HydratedItem>,
@@ -94,7 +101,8 @@ export function queryItems(
             ? yield* readHydrateChunk({
                 vocabulary,
                 itemIDs: chunk.map((row) => row.itemID),
-                fields: sortFields,
+                ...sortFields,
+                collectionPaths,
               })
             : new Map();
         yield* Effect.sync(() => {
@@ -127,7 +135,8 @@ export function queryItems(
           ? yield* readHydrateChunk({
               vocabulary,
               itemIDs: chunk.map((row) => row.scan.itemID),
-              fields,
+              ...fields,
+              collectionPaths,
             })
           : new Map();
       yield* Effect.sync(() => {
@@ -173,22 +182,29 @@ function checkCustomFields(
 }
 
 function needsHydration(needs: FieldNeeds): boolean {
-  return Boolean(needs.builtIn?.length || needs.custom?.length);
+  return Boolean(
+    needs.builtIn?.length || needs.custom?.length || needs.relations?.length,
+  );
 }
 
 function hydrateFields(
   allNeeds: readonly FieldNeeds[],
   vocabulary: FieldVocabulary,
-): HydrateFields {
+): { fields: HydrateFields; relations: HydrateRelation[] } {
   const builtIn = new Set<string>();
   const custom = new Set<string>();
+  const relations = new Set<HydrateRelation>();
   for (const needs of allNeeds) {
     for (const name of needs.builtIn ?? []) builtIn.add(name);
     const names =
       needs.custom === "all" ? vocabulary.customFieldNames : needs.custom;
     for (const name of names ?? []) custom.add(name);
+    for (const relation of needs.relations ?? []) relations.add(relation);
   }
-  return { builtIn: [...builtIn], custom: [...custom] };
+  return {
+    fields: { builtIn: [...builtIn], custom: [...custom] },
+    relations: [...relations],
+  };
 }
 
 /**
