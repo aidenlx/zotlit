@@ -742,6 +742,33 @@ export const ITEMS: readonly FixtureItem[] = [
     dateModified: "2024-11-01 12:00:00",
     collectionIDs: [],
   },
+  // ── Title collation (Item Query string order) ─────────────────────
+  // Titles that differ in case, accent, and digits. Item Query sorts them as
+  // 10, 9, apple, eclair, Éclair, Zebra in the running Obsidian, which proves
+  // that Electron's collator agrees with Node's.
+  ...(
+    [
+      [91, "SRTZEBRA", "Zebra"],
+      [92, "SRTAPPLE", "apple"],
+      [93, "SRTECLR2", "Éclair"],
+      [94, "SRTECLR3", "eclair"],
+      [95, "SRTTEN22", "10"],
+      [96, "SRTNINE2", "9"],
+    ] as const
+  ).map(
+    ([itemID, key, title]): FixtureItem => ({
+      itemID,
+      libraryID: 1,
+      key,
+      itemType: "journalArticle",
+      citationKey: null,
+      title,
+      date: "2010",
+      creators: [author("Lena", "Collator")],
+      dateModified: `2019-01-01 00:00:${String(itemID - 90).padStart(2, "0")}`,
+      collectionIDs: [],
+    }),
+  ),
   // ── Graph showcase: information-science citation web ──────────────
   {
     itemID: 70,
