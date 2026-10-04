@@ -8,6 +8,7 @@ export default defineConfig({
       index: "./src/index.ts",
       "client/*": "./src/client/*.ts",
       "contract/ir": "./src/contract/ir.ts",
+      "item-query": "./src/item-query/index.ts",
       path: "./src/lib/zt-path.ts",
       "test-utils": "./src/test-utils.ts",
       "test-scenario": "./src/test-scenario/index.ts",
