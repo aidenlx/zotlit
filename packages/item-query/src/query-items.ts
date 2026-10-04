@@ -23,6 +23,9 @@ import type {
 import { compareStrings } from "./collation";
 import { ItemQueryError } from "./error";
 import type { FieldNeeds, QueryItem, SortKey } from "./fields";
+import { matches as isMatch } from "./filter-evaluate";
+import { hasBareForm } from "./filter-plan";
+import type { FilterPlan } from "./filter-plan";
 import { allMatches, firstMatches } from "./matches";
 import { readPath } from "./projection";
 import type { PlannedPath } from "./projection";
@@ -55,16 +58,23 @@ export function queryItems(
 > {
   return Effect.gen(function* () {
     const { library } = request;
-    const { query, paths, sorts } = yield* planRequest(request);
+    const { query, filter, paths, sorts } = yield* planRequest(request);
     const { limit } = query;
 
     const pathNeeds = paths.map((path) => path.needs);
-    const sortNeeds = sorts.map((sort) => sort.needs);
-    const vocabulary = [...pathNeeds, ...sortNeeds].some(needsHydration)
+    // The scan pass loads what the filter and the sort read.
+    const scanNeeds = [
+      ...(filter?.needs ?? []),
+      ...sorts.map((sort) => sort.needs),
+    ];
+    const vocabulary = [...pathNeeds, ...scanNeeds].some(needsHydration)
       ? yield* readFieldVocabulary()
       : null;
-    if (vocabulary) yield* checkCustomFields(paths, vocabulary);
-    const collectionPaths = [...pathNeeds, ...sortNeeds].some((needs) =>
+    if (vocabulary) {
+      if (filter) yield* checkFilterCustomFields(filter, vocabulary);
+      yield* checkCustomFields(paths, vocabulary);
+    }
+    const collectionPaths = [...pathNeeds, ...scanNeeds].some((needs) =>
       needs.relations?.includes("collections"),
     )
       ? yield* readCollectionPaths(library)
@@ -78,11 +88,11 @@ export function queryItems(
       customFieldNames: vocabulary?.customFieldNames ?? [],
     });
 
-    // The sort pass: every Item is hydrated with the sort fields only, and the
-    // query keeps the scan row and the sort keys of a match.
+    // The scan pass: every Item is hydrated with the filter and sort fields
+    // only, and the query keeps the scan row and the sort keys of a match.
     const sortFields =
-      vocabulary && sortNeeds.some(needsHydration)
-        ? hydrateFields(sortNeeds, vocabulary)
+      vocabulary && scanNeeds.some(needsHydration)
+        ? hydrateFields(scanNeeds, vocabulary)
         : null;
     const compare = byKeysThenKey(sorts);
     const matches =
@@ -106,12 +116,13 @@ export function queryItems(
               })
             : new Map();
         yield* Effect.sync(() => {
-          matches.add(
-            chunk.map((scan): Match => {
-              const item = itemOf(scan, hydrated);
-              return { scan, keys: sorts.map((sort) => sort.key(item)) };
-            }),
-          );
+          const matching: Match[] = [];
+          for (const scan of chunk) {
+            const item = itemOf(scan, hydrated);
+            if (filter && !isMatch(filter.root, item)) continue;
+            matching.push({ scan, keys: sorts.map((sort) => sort.key(item)) });
+          }
+          matches.add(matching);
         });
       }
       if (page.length < SCAN_PAGE_SIZE) break;
@@ -177,6 +188,41 @@ function checkCustomFields(
         names.length === 0
           ? "The Zotero source has no custom fields."
           : `Use the exact name of a custom field: ${names.map((name) => JSON.stringify(name)).join(", ")}.`,
+    }),
+  );
+}
+
+/**
+ * A custom field that the source does not define fails the query. A bare name
+ * outside the built-in names is a custom field of the source or an unknown
+ * field.
+ */
+function checkFilterCustomFields(
+  filter: FilterPlan,
+  vocabulary: FieldVocabulary,
+): Effect.Effect<void, ItemQueryError> {
+  const names = vocabulary.customFieldNames;
+  const known = new Set(names);
+  const missing = filter.customFields.find((field) => !known.has(field.name));
+  if (!missing) return Effect.void;
+  const { from, to, name, bare } = missing;
+  const bareNames = names.filter(hasBareForm);
+  return Effect.fail(
+    new ItemQueryError({
+      code: "unknown-field",
+      location: { argument: "filter", span: { from, to } },
+      message: bare
+        ? `${JSON.stringify(name)} is not a field of Item Query.`
+        : `The Zotero source has no custom field named ${JSON.stringify(name)}.`,
+      hint: bare
+        ? `Use a field of the Item Query Schema; field names are case-sensitive.${
+            bareNames.length === 0
+              ? ""
+              : ` The custom fields with a bare name: ${bareNames.join(", ")}.`
+          } Reach every custom field with custom["exact name"].`
+        : names.length === 0
+          ? "The Zotero source has no custom fields."
+          : `Use the exact name of a custom field: ${names.map((entry) => JSON.stringify(entry)).join(", ")}.`,
     }),
   );
 }

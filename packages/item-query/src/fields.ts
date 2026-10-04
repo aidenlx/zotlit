@@ -9,6 +9,7 @@ import { FIELD_ALIASES, ZOTERO_DATE_FIELDS } from "@zotlit/zotero-types";
 import { FIELD_LABELS } from "@zotlit/zotero-types/field-labels";
 
 import { compareStrings } from "./collation";
+import type { FilterValue, FilterValueType } from "./filter-values";
 import type { PathSegment } from "./projection-path";
 import type { ProjectionValue } from "./request";
 
@@ -67,6 +68,21 @@ export interface FieldDefinition {
    * loads `needs([])` before it runs.
    */
   readonly sortKey?: (item: QueryItem) => SortKey;
+  /**
+   * Present on a field that a Filter Expression can read. Hydration loads
+   * `needs([])` before it runs.
+   */
+  readonly filter?: FilterValueDefinition;
+}
+
+/**
+ * The value of a field in a Filter Expression. A relation list is a list of
+ * strings here; projection gives the richer structure.
+ */
+export interface FilterValueDefinition {
+  /** The type of the value when the Item has one. */
+  readonly type: Exclude<FilterValueType, "null">;
+  readonly read: (item: QueryItem) => FilterValue;
 }
 
 const SCALAR: ValueShape = { kind: "scalar" };
@@ -90,12 +106,14 @@ const NO_NEEDS = (): FieldNeeds => ({});
 function fromScan(
   read: (row: ScanRow) => ProjectionValue,
   sortKey: (row: ScanRow) => SortKey,
+  filter?: FilterValueDefinition,
 ): FieldDefinition {
   return {
     shape: SCALAR,
     needs: NO_NEEDS,
     read: (item) => read(item.scan),
     sortKey: (item) => sortKey(item.scan),
+    ...(filter && { filter }),
   };
 }
 
@@ -104,7 +122,13 @@ function zoteroField(name: string): FieldDefinition {
   const builtIn = [name];
   const read = (item: QueryItem) => item.hydrated.fields.get(name) ?? null;
   if (!isDateField(name)) {
-    return { shape: SCALAR, needs: () => ({ builtIn }), read, sortKey: read };
+    return {
+      shape: SCALAR,
+      needs: () => ({ builtIn }),
+      read,
+      sortKey: read,
+      filter: { type: "string", read },
+    };
   }
   return {
     shape: DATE_SHAPE,
@@ -175,7 +199,18 @@ const creatorsField: FieldDefinition = {
   shape: { kind: "list", element: CREATOR_SHAPE },
   needs: () => ({ relations: ["creators"] }),
   read: (item) => (item.hydrated.creators ?? []).map(templateCreator),
+  filter: {
+    type: "list",
+    read: (item) => (item.hydrated.creators ?? []).map(fullName),
+  },
 };
+
+/** The display name of a Creator: the one-field name, or given then family. */
+function fullName(creator: HydratedCreator): string {
+  return creator.fieldMode === 1
+    ? creator.lastName
+    : `${creator.firstName} ${creator.lastName}`.trim();
+}
 
 /**
  * A Creator as the template vocabulary gives it: a one-field name is
@@ -188,7 +223,7 @@ function templateCreator(creator: HydratedCreator): ProjectionValue {
       given: "",
       literal: creator.lastName,
       role: creator.creatorType,
-      fullName: creator.lastName,
+      fullName: fullName(creator),
     };
   }
   return {
@@ -196,7 +231,7 @@ function templateCreator(creator: HydratedCreator): ProjectionValue {
     given: creator.firstName,
     literal: null,
     role: creator.creatorType,
-    fullName: `${creator.firstName} ${creator.lastName}`.trim(),
+    fullName: fullName(creator),
   };
 }
 
@@ -213,6 +248,13 @@ const tagsField: FieldDefinition = {
     (item.hydrated.tags ?? [])
       .toSorted((a, b) => compareStrings(a.name, b.name))
       .map((tag) => ({ name: tag.name, type: tagTypeToName(tag.type) })),
+  filter: {
+    type: "list",
+    read: (item) =>
+      (item.hydrated.tags ?? [])
+        .map((tag) => tag.name)
+        .toSorted(compareStrings),
+  },
 };
 
 /**
@@ -220,13 +262,16 @@ const tagsField: FieldDefinition = {
  * the names from the top-level Collection down, joined by `/` without escaping
  * (ADR 0040).
  */
+const collectionPaths = (item: QueryItem): string[] =>
+  (item.hydrated.collections ?? [])
+    .map((path) => path.join("/"))
+    .toSorted(compareStrings);
+
 const collectionsField: FieldDefinition = {
   shape: { kind: "list", element: SCALAR },
   needs: () => ({ relations: ["collections"] }),
-  read: (item) =>
-    (item.hydrated.collections ?? [])
-      .map((path) => path.join("/"))
-      .toSorted(compareStrings),
+  read: collectionPaths,
+  filter: { type: "list", read: collectionPaths },
 };
 
 /** Attachment presence: the Item has at least one non-trashed Attachment. */
@@ -234,6 +279,10 @@ const attachmentsField: FieldDefinition = {
   shape: SCALAR,
   needs: () => ({ relations: ["attachments"] }),
   read: (item) => item.hydrated.hasAttachments ?? false,
+  filter: {
+    type: "boolean",
+    read: (item) => item.hydrated.hasAttachments ?? false,
+  },
 };
 
 const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map([
@@ -246,6 +295,7 @@ const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map([
     fromScan(
       (row) => row.itemType,
       (row) => row.itemType,
+      { type: "string", read: (item) => item.scan.itemType },
     ),
   ],
   [
@@ -281,3 +331,59 @@ export const DEFAULT_FIELDS: readonly string[] = [
 export function fieldDefinition(name: string): FieldDefinition | undefined {
   return FIELDS.get(name);
 }
+
+/**
+ * The names a Filter Expression reads that are outside the projection
+ * vocabulary. `key` is the Zotero Key of the Item inside the Target Library.
+ */
+const FILTER_ONLY_FIELDS: ReadonlyMap<string, FilterValueDefinition> = new Map([
+  ["key", { type: "string", read: (item: QueryItem) => item.scan.key }],
+]);
+
+/** A built-in name as a Filter Expression reads it. */
+export type FilterField =
+  | {
+      readonly filterable: true;
+      readonly value: FilterValueDefinition;
+      readonly needs: FieldNeeds;
+    }
+  | { readonly filterable: false };
+
+/**
+ * The built-in meaning of a bare name in a Filter Expression: a field with a
+ * filter value, or a field that a filter cannot read. `undefined` for a name
+ * that is not built in.
+ */
+export function filterField(name: string): FilterField | undefined {
+  const filterOnly = FILTER_ONLY_FIELDS.get(name);
+  if (filterOnly) return { filterable: true, value: filterOnly, needs: {} };
+  const definition = FIELDS.get(name);
+  if (!definition) return undefined;
+  return definition.filter
+    ? {
+        filterable: true,
+        value: definition.filter,
+        needs: definition.needs([]),
+      }
+    : { filterable: false };
+}
+
+/** The value of one custom field in a Filter Expression, by exact source name. */
+export function customFilterValue(name: string): {
+  value: FilterValueDefinition;
+  needs: FieldNeeds;
+} {
+  return {
+    value: {
+      type: "string",
+      read: (item) => item.hydrated.custom.get(name) ?? null,
+    },
+    needs: { custom: [name] },
+  };
+}
+
+/** Every built-in field name, with the names only a filter reads. */
+export const BUILT_IN_NAMES: readonly string[] = [
+  ...FIELDS.keys(),
+  ...FILTER_ONLY_FIELDS.keys(),
+];

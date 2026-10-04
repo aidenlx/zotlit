@@ -233,6 +233,7 @@ export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
       exit = await runItemQuery(
         {
           library: library.target,
+          filter: decoded.filter,
           fields: decoded.fields,
           sort: decoded.sort,
           limit: decoded.limit,
@@ -246,7 +247,6 @@ export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
     return answerExit(exit, {
       identity: () => deps.identity(),
       library: library.wire,
-      filter: decoded.filter,
       signal: deps.signal,
     });
   };
@@ -267,7 +267,6 @@ export async function answerExit(
   context: {
     identity: () => Promise<WorkbenchIdentity>;
     library: LibraryWire;
-    filter: string | undefined;
     signal: AbortSignal;
   },
 ): Promise<string> {
@@ -277,7 +276,7 @@ export async function answerExit(
       ok: true,
       identity: await context.identity(),
       library: context.library,
-      request: { filter: context.filter ?? null, ...result.query },
+      request: result.query,
       returnedCount: result.returnedCount,
       truncated: result.truncated,
       rows: result.rows.map((row) => ({
@@ -471,15 +470,6 @@ function decodeArguments(params: CliData): DecodedArguments | Diagnostic {
         `limit '${params.limit}' is not a positive integer: use a positive integer, or all for every match.`,
       );
     }
-  }
-
-  // The package takes no filter yet (#1321). Refuse it, so a query never
-  // returns Items the caller did not ask for.
-  if (filter !== undefined) {
-    return invalid(
-      "filter",
-      "filter is not available in this ZotLit build yet.",
-    );
   }
 
   return { library, filter, fields, sort, limit };
