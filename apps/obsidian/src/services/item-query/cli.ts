@@ -24,7 +24,6 @@ import { SLICE_BUDGET_MS } from "@zotlit/item-query";
 import type {
   ItemQueryError,
   ItemQuerySchema,
-  ProjectionValue,
   QueryResult,
   SortSpec,
 } from "@zotlit/item-query";
@@ -374,23 +373,33 @@ export async function answerExit(
 }
 
 /**
- * The time one step of the answer takes rows. Half the slice budget of the
- * engine: a step holds the rows and the text of the whole result, and a
- * garbage collection in a step at the full budget took it past 16 ms in the
- * measurement at 50,000 and 100,000 Items.
+ * The time one step of the answer takes rows: half the slice budget of the
+ * engine, which leaves room for a garbage collection of V8 in the step.
  */
 const ANSWER_STEP_BUDGET_MS = SLICE_BUDGET_MS / 2;
 
 /** The end of the envelope of a result without rows. */
 const NO_ROWS = "[]\n}";
-/** The indentation of one row in the envelope: `rows` is a top-level key. */
-const ROW_INDENT = "    ";
+/** The text around the rows of one chunk: `rows` is a top-level key. */
+const CHUNK_START = '{\n  "rows": [';
+const CHUNK_END = "\n  ]\n}";
+/** The rows of the first chunk, which measures the size of a row. */
+const FIRST_CHUNK_ROWS = 64;
+/**
+ * The text of one chunk. One `JSON.stringify` call makes it, so it bounds the
+ * work between two reads of the clock. A string of this size is outside the
+ * young generation of V8: a scavenge does not copy it, and the answer makes a
+ * few hundred strings for 100,000 rows in place of several for each row.
+ */
+const CHUNK_TEXT_LENGTH = 256 * 1024;
 
 /**
  * Build the envelope of a result: the pretty JSON of the complete envelope,
  * made in steps. A result of every match has no row limit, so one step takes
- * rows until {@link ANSWER_STEP_BUDGET_MS} ends, then gives the window a
- * turn and stops when the run is cancelled.
+ * chunks of rows until {@link ANSWER_STEP_BUDGET_MS} ends, then gives the
+ * window a turn and stops when the run is cancelled.
+ *
+ * `JSON.stringify` writes a Temporal value as its ISO text.
  */
 async function answerResult(
   result: QueryResult,
@@ -411,18 +420,26 @@ async function answerResult(
     truncated: result.truncated,
     rows: [],
   });
+  const { rows } = result;
   // `text` grows by concatenation, which V8 keeps as a rope: no step copies
   // the rows before it.
   let text = head;
-  if (result.rows.length > 0) {
+  if (rows.length > 0) {
     text = `${head.slice(0, -NO_ROWS.length)}[`;
-    for (const [index, row] of result.rows.entries()) {
-      const wire = JSON.stringify(
-        { indexedKey: row.indexedKey, values: toWire(row.values) },
-        null,
-        2,
+    let chunkRows = FIRST_CHUNK_ROWS;
+    for (let start = 0; start < rows.length; ) {
+      const chunk = rows.slice(start, start + chunkRows);
+      // The rows at the depth they have in the envelope.
+      const wire = JSON.stringify({ rows: chunk }, null, 2).slice(
+        CHUNK_START.length,
+        -CHUNK_END.length,
       );
-      text += `${index === 0 ? "" : ","}\n${ROW_INDENT}${wire.replaceAll("\n", `\n${ROW_INDENT}`)}`;
+      text += start === 0 ? wire : `,${wire}`;
+      start += chunk.length;
+      chunkRows = Math.max(
+        1,
+        Math.ceil(CHUNK_TEXT_LENGTH / (wire.length / chunk.length)),
+      );
       const now = performance.now();
       if (now - stepStart < ANSWER_STEP_BUDGET_MS) continue;
       context.onAnswerStep?.(now - stepStart);
@@ -430,7 +447,7 @@ async function answerResult(
       context.signal.throwIfAborted();
       stepStart = performance.now();
     }
-    text += "\n  ]\n}";
+    text += CHUNK_END;
   }
   context.onAnswerStep?.(performance.now() - stepStart);
   return text;
@@ -506,25 +523,6 @@ function describeSelector(selector: TargetLibrarySelector): string {
   return selector.type === "group"
     ? `group Library with the group ID ${selector.groupID}`
     : "personal Library";
-}
-
-/** Temporal values become ISO strings; every other value is JSON already. */
-function toWire(
-  value: ProjectionValue | Readonly<Record<string, ProjectionValue>>,
-): unknown {
-  if (value === null || typeof value !== "object") return value;
-  if (
-    value instanceof Temporal.Instant ||
-    value instanceof Temporal.PlainDate ||
-    value instanceof Temporal.PlainYearMonth
-  ) {
-    return value.toString();
-  }
-  if (Array.isArray(value))
-    return value.map((entry: ProjectionValue) => toWire(entry));
-  return Object.fromEntries(
-    Object.entries(value).map(([key, entry]) => [key, toWire(entry)]),
-  );
 }
 
 function messageOf(error: unknown): string {

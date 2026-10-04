@@ -7,7 +7,11 @@ import {
   ItemQueryDatabaseError,
   ItemQueryLayoutError,
 } from "@zotlit/db/item-query";
-import { openScenarioDatabase } from "@zotlit/db/test-scenario";
+import {
+  BULK_LIBRARY,
+  openScenarioDatabase,
+  seedBulkLibrary,
+} from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
 import {
@@ -130,13 +134,16 @@ describe("zotlit:item-query without arguments", () => {
 
 describe("zotlit:item-query answer", () => {
   /**
-   * A clock that moves 3 ms at each read: the second read of a step is over
-   * the budget of 4 ms, so a step of the answer holds two rows.
+   * A clock that moves 2 ms at each read: the second read of a step is at
+   * the budget of 4 ms, so a step of the answer holds two chunks of rows.
    */
   function fastClock() {
     let now = 0;
-    vi.spyOn(performance, "now").mockImplementation(() => (now += 3));
+    vi.spyOn(performance, "now").mockImplementation(() => (now += 2));
   }
+
+  /** The bulk Library: more rows than the first chunk of an answer. */
+  const BULK = { library: `group:${BULK_LIBRARY.groupID}`, limit: "all" };
 
   function handlerOf(
     scenario: ScenarioDatabase,
@@ -158,8 +165,11 @@ describe("zotlit:item-query answer", () => {
     { limit: "all", fields: "[]" },
     { limit: "1", fields: '["title","creators","date","tags","custom"]' },
     { filter: "false" },
+    { ...BULK, fields: '["title","dateAdded","tags"]' },
+    { ...BULK, fields: "[]" },
   ])("is the pretty JSON of its envelope for %j", async (params) => {
     using scenario = openScenarioDatabase();
+    seedBulkLibrary(scenario.sqlite, 600);
     fastClock();
 
     const answer = await handlerOf(scenario)(params);
@@ -170,20 +180,23 @@ describe("zotlit:item-query answer", () => {
 
   it("builds the rows in steps and gives the window a turn between them", async () => {
     using scenario = openScenarioDatabase();
+    seedBulkLibrary(scenario.sqlite, 600);
     fastClock();
     const steps: number[] = [];
 
     const answer = await handlerOf(scenario, {
       onAnswerStep: (ms) => steps.push(ms),
-    })({ limit: "all", fields: "[]" });
+    })({ ...BULK, fields: '["title"]' });
 
-    // Five steps of two rows, and one step for the end of the envelope.
-    expect(JSON.parse(answer)).toMatchObject({ returnedCount: 10 });
-    expect(steps).toHaveLength(6);
+    // One step with the first chunk of 64 rows and the chunk of the other
+    // rows, and one step for the end of the envelope.
+    expect(JSON.parse(answer)).toMatchObject({ returnedCount: 600 });
+    expect(steps).toHaveLength(2);
   });
 
   it("rejects with the abort reason when the cancel request comes while it builds the answer", async () => {
     using scenario = openScenarioDatabase();
+    seedBulkLibrary(scenario.sqlite, 600);
     fastClock();
     const controller = new AbortController();
     const reason = new Error("plugin unloaded");
@@ -199,7 +212,7 @@ describe("zotlit:item-query answer", () => {
         events.push("step");
         controller.abort(reason);
       },
-    })({ limit: "all", fields: "[]" });
+    })({ ...BULK, fields: "[]" });
 
     await expect(answering).rejects.toBe(reason);
     expect(events).toEqual(["release", "step"]);
