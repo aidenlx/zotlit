@@ -16,7 +16,7 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Tests
 ## Where things go
 
 - A field: one entry in the registry of `src/fields.ts`. Validation, execution, and the Item Query Schema read that registry. The entry's `shape` decides the Projection Paths below it and their JSON types; its `needs` names what the hydrate reader loads.
-- The Item Query Schema: `describeItemQuery` in `src/describe-item-query.ts`. It reads the field and function registries and the custom fields of the source, so a new field, function, method, or property appears in the schema with no change there. `src/describe-item-query.test.ts` runs every entry of the schema through `queryItems`.
+- The Item Query Schema: `describeItemQuery` in `src/describe-item-query.ts`. It reads the field and function registries and the custom fields of the source, so a new field, function, method, or property appears in the schema with no change there. The `filter` capability of a nested Projection Path is the answer of `planFilter` for the path text: a type, `"any"` for a value whose type depends on the Item (a list element), or `null`. `src/describe-item-query.test.ts` runs every entry of the schema through `queryItems`.
 - A relation list (`creators`, `tags`, `collections`) or Attachment presence: the entry names a `HydrateRelation` of `@zotlit/db/item-query` in `needs.relations`; the hydrate reader runs one statement for each named relation.
 - A Sortable Field: the `sortKey` of its registry entry, which gives a string, a number, or null. An entry without `sortKey` fails a sort with `unsortable-field`.
 - The string order of sort, ordered comparison, and relation lists: `compareStrings` in `src/collation.ts`.
@@ -25,11 +25,19 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Tests
 - The matches a query keeps: `src/matches.ts`. A limited query keeps `limit + 1` rows; an unlimited query keeps one sorted run for each chunk and merges the runs in steps of one Effect each.
 - Request validation and defaults: `planRequest` in `src/request.ts`.
 - The value of a field in a Filter Expression: the `filter` of its registry entry. An entry without `filter` fails a filter with `unfilterable-field`. A name only a filter reads (`key`) is in `FILTER_ONLY_FIELDS`.
-- A function, a method, or a property of the Filter Expression language: one entry in `src/filter-functions.ts`. Its parameters drive the argument checks of validation and execution.
+- A function, a method, or a property of the Filter Expression language: one entry in `src/filter-functions.ts`. Its parameters drive the argument checks of validation and execution. A parameter's `type` is one type or a list of types; `nullable` lets a typed parameter take null; `values` is the closed set of texts a string parameter takes (`isType`). The Item Query Schema reports all three.
 - Filter validation: `planFilter` in `src/filter-plan.ts`. It gives the typed tree (`FilterNode`) with every name resolved, the hydration needs, and the custom fields for the engine to check against the source. `hasBareForm` decides the bare form of a custom field.
 - Filter execution: `src/filter-evaluate.ts` over the values of `src/filter-values.ts`. The evaluator is the authority for every match. A failure that depends on the data of one Item gives null.
 - Date and duration values: `src/filter-dates.ts`. The evaluator, each function, and each property get the Query Clock as an argument; `queryItems` reads it once with `readQueryClock` in `src/query-clock.ts`.
 - A database read: a reader in `packages/db/src/item-query/`.
+
+## Obsidian adapter
+
+The adapter is `apps/obsidian/src/services/item-query/`; it is the only Promise edge.
+
+- Command names, flags, and `DEFAULT_CLI_LIMIT`: `contract.ts`. The handlers (`cli.ts`) and the guide (`guide.ts`) read them there; the guide also prints `DEFAULT_FIELDS` and `DEFAULT_SORT` of this package.
+- The Target Library and the query run in one Effect (`run.ts`) under one source lease (`withLease` in `cli.ts`), which also reads the identity of the envelope.
+- The answer of a query is built in steps after the lease ends (`answerResult` in `cli.ts`): each step takes rows for `ANSWER_STEP_BUDGET_MS`, half of `SLICE_BUDGET_MS`, then yields with `yieldToMain` and checks the abort signal. Keep the text byte-identical to `JSON.stringify(envelope, null, 2)`. The measure command (`measure.ts`) reports each step, and the measurement record holds the steps to the slice limits.
 
 ## Tests
 
@@ -37,7 +45,7 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Tests
 - Evaluator vectors (`src/filter.test.ts`) run a Filter Expression on one Item without a database: function semantics, the null and type matrix, and validation.
 - Run every Effect with `runEffect` from `src/test-helpers.ts`: fixed clock, fixed time zone, and a test scheduler that pauses after every operation. `Run.events` holds the statements and the pauses of the run in order.
 - Statements and pauses come from two observer services with no-op defaults: `ItemQueryStatementObserver` of `@zotlit/db/item-query` and `ItemQuerySliceObserver` of `src/scheduler.ts`. A test or a measurement provides them; the engine and the scheduler take no option for them.
-- The responsiveness invariants (`src/invariants.test.ts`) run on the bulk Library of `@zotlit/db/test-scenario` with the production tuning: the Items one statement reads, a pause between two chunks, the rows a limited query projects, and no statement after a cancel request. Add each new plan path to `PLAN_PATHS` there. Count with the two observers; read no wall time.
+- The responsiveness invariants (`src/invariants.test.ts`) run on the bulk Library of `@zotlit/db/test-scenario` with the production tuning: the Items one statement reads, a pause between two chunks, the rows a limited query projects, and no statement after a cancel request. Add each new plan path to `PLAN_PATHS` there. Count with the two observers; read no wall time. The suite runs one query in `beforeAll`, so the layout statements of the first read are outside every recorded run. The pause-cancel test runs the query once for each pause, which is quadratic in real `MessageChannel` tasks; `PAUSE_CANCEL_TIMEOUT_MS` gives it the time a busy machine needs.
 - The rows a limited query retains (`src/retention.test.ts`) are counted with `WeakRef` and a forced collection. Keep that test in its own file: the file turns off V8's optimizing compilers, because a compilation job holds the closure of a page until the job ends, and that time depends on the load of the machine.
 - Override the tuning reference with the `tuning` option of `runEffect`.
 - The parity suite (`src/parity.test.ts`) runs every query of `SCENARIO_QUERIES` (`src/scenario-queries.ts`) with each plan and chunk size and compares the complete Query Result, or the typed failure, with the forced scan. Add each new scenario query, leaf, and function to that list: a filter in `FILTERS`, a full request in `REQUESTS`.
