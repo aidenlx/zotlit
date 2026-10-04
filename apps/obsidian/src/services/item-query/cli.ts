@@ -33,6 +33,7 @@ import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
 import { GUIDE_TOPIC_NAMES, parseGuideTopic, renderGuide } from "./guide";
 import { runDescribeItemQuery, runItemQuery } from "./run";
+import type { ItemQueryInstrument } from "./run";
 
 const logger = getLogger(["item-query"]);
 
@@ -200,6 +201,8 @@ export interface ItemQueryCliDeps {
   identity(): Promise<WorkbenchIdentity>;
   /** Cancels every run, such as when the plugin unloads. */
   signal: AbortSignal;
+  /** Observes the engine of each query run; the measurement command sets it. */
+  instrument?: ItemQueryInstrument;
 }
 
 export function registerItemQueryCli(
@@ -354,7 +357,11 @@ export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
           sort: decoded.sort,
           limit: decoded.limit,
         },
-        { client: lease.client, signal: deps.signal },
+        {
+          client: lease.client,
+          signal: deps.signal,
+          instrument: deps.instrument,
+        },
       );
     } finally {
       lease[Symbol.dispose]();

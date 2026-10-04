@@ -38,6 +38,7 @@ import { addGraphCitationsActions } from "./services/graph-citations/actions";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
 import { registerItemQueryCli } from "./services/item-query/cli";
+import { registerItemQueryMeasureCli } from "./services/item-query/measure";
 import { registerLibraryScopeCli } from "./services/library-scope/cli";
 import { registerLibraryScopeNotices } from "./services/library-scope/notices";
 import { addCustomizeActions } from "./services/local-bridge/actions";
@@ -536,7 +537,7 @@ export default class ZotLitPlugin extends Plugin {
       zoteroPref: services.zoteroPref,
     });
 
-    registerItemQueryCli(this, {
+    const itemQueryCliDeps = {
       acquireRead: () => services.db.acquireRead(),
       identity: async () => {
         await services.zoteroPref.ready;
@@ -551,7 +552,15 @@ export default class ZotLitPlugin extends Plugin {
           },
         };
       },
-    });
+    };
+    registerItemQueryCli(this, itemQueryCliDeps);
+
+    // Measurement-only: lets packages/e2e/src/item-query-measure.ts read the
+    // slices, statements, heap, and cancel times of a run. A dev-build port,
+    // never registered in a production build.
+    if (__DEV__) {
+      registerItemQueryMeasureCli(this, itemQueryCliDeps);
+    }
 
     registerPandocResolve(this, {
       app: this.app,
