@@ -1,3 +1,5 @@
+// The database seam of Item Query: the leased client as a service, the one
+// place where a statement becomes an Effect, and the layout check of a copy.
 import { version } from "@drizzle/schema";
 import { getLogger } from "@logtape/logtape";
 import { fillPlaceholders, inArray, sql } from "drizzle-orm";
@@ -124,6 +126,26 @@ export function unindexed(column: AnyColumn): SQL {
   return sql`+${column}`;
 }
 
+/** A slot of a statement that takes a chunk of Item IDs. */
+export type IdSlot = `id${number}`;
+
+/**
+ * The ID placeholders of a statement that is prepared once for chunks of at
+ * most `size` Item IDs.
+ */
+export function idSlots(size: number): {
+  readonly names: readonly IdSlot[];
+  /** The IDs by slot; a slot after the last ID is null. */
+  readonly bind: (itemIDs: readonly number[]) => Record<IdSlot, number | null>;
+} {
+  const names = Array.from({ length: size }, (_, i) => `id${i}` as const);
+  return {
+    names,
+    bind: (itemIDs) =>
+      Object.fromEntries(names.map((slot, i) => [slot, itemIDs[i] ?? null])),
+  };
+}
+
 type Build<TParams, TRow> = (
   db: NodeDatabaseClient,
   operators: QueryOperators<TParams>,
@@ -238,20 +260,17 @@ export function readLayout(): Effect.Effect<
   ItemQueryDatabase
 > {
   return Effect.gen(function* () {
-    const columns = new Map<string, Set<string>>();
-    for (const row of yield* columnsStatement.all({})) {
-      let table = columns.get(row.table);
-      if (!table) columns.set(row.table, (table = new Set()));
-      table.add(row.column);
-    }
+    const columns = new Map(
+      [...Map.groupBy(yield* columnsStatement.all({}), (row) => row.table)].map(
+        ([table, rows]) => [table, new Set(rows.map((row) => row.column))],
+      ),
+    );
     const stamped =
       columns.get("version")?.has("schema") &&
       columns.get("version")?.has("version");
     const rows = stamped ? yield* versionsStatement.all({}) : [];
-    const stamp = (schema: string) => {
-      const value = rows.find((row) => row.schema === schema)?.version;
-      return typeof value === "number" ? value : null;
-    };
+    const stamp = (schema: string) =>
+      rows.find((row) => row.schema === schema)?.version ?? null;
     return {
       columns,
       versions: {
@@ -295,7 +314,7 @@ export function checkLayout(): Effect.Effect<
           { ...layout.versions, message: result.message },
         );
       } else {
-        logger.info(
+        logger.debug(
           "Item Query read the layout of the Zotero database (userdata {userdata}, compatibility {compatibility})",
           { ...layout.versions },
         );

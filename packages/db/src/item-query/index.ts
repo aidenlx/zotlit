@@ -7,13 +7,11 @@ export {
 } from "./candidate-set";
 export { type CollectionPaths, readCollectionPaths } from "./collection-paths";
 export {
-  checkLayout,
   ItemQueryDatabase,
   ItemQueryDatabaseError,
   type ItemQueryReader,
   type ItemQueryReaderError,
   ItemQueryStatementObserver,
-  type Statement,
   type StatementRun,
 } from "./database";
 export {
@@ -27,12 +25,7 @@ export {
   readFieldVocabulary,
   readHydrateChunk,
 } from "./hydrate-chunk";
-export {
-  ITEM_QUERY_LAYOUT,
-  ItemQueryLayoutError,
-  type LayoutGap,
-  type LayoutVersions,
-} from "./layout";
+export { ItemQueryLayoutError, type LayoutVersions } from "./layout";
 export {
   readScanPage,
   readUniverseRows,

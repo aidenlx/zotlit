@@ -17,12 +17,17 @@ import { and, asc, eq, inArray, notExists, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { Effect } from "effect";
 
+import type { CreatorFieldMode } from "@/lib/zt-creator";
 import { buildTable } from "@/queries/_base-fields";
 import type { BaseFieldTable } from "@/queries/_base-fields";
 
 import type { CollectionPaths } from "./collection-paths";
-import { defineStatement } from "./database";
-import type { ItemQueryDatabase, ItemQueryReaderError } from "./database";
+import { defineStatement, idSlots } from "./database";
+import type {
+  IdSlot,
+  ItemQueryDatabase,
+  ItemQueryReaderError,
+} from "./database";
 
 /** The Items one hydrate statement reads at most. */
 export const HYDRATE_CHUNK_SIZE = 250;
@@ -71,10 +76,10 @@ export type HydrateRelation =
 export interface HydratedCreator {
   /** Empty for a one-field (institutional) name. */
   readonly firstName: string;
-  /** The complete name of a one-field creator (`fieldMode` 1). */
+  /** The complete name of a one-field creator. */
   readonly lastName: string;
-  /** `0` two-field name, `1` one-field name. */
-  readonly fieldMode: number;
+  /** Raw `creators.fieldMode`; resolve it with `creatorFieldModeToName`. */
+  readonly fieldMode: CreatorFieldMode;
   /** Zotero creator type: `"author"`, `"editor"`, … */
   readonly creatorType: string;
 }
@@ -188,12 +193,7 @@ export function readFieldVocabulary(): Effect.Effect<
   });
 }
 
-const ID_SLOTS = Array.from(
-  { length: HYDRATE_CHUNK_SIZE },
-  (_, i) => `id${i}` as const,
-);
-
-type IdSlot = (typeof ID_SLOTS)[number];
+const ID_SLOTS = idSlots(HYDRATE_CHUNK_SIZE);
 
 /** The values of one Item while the reader loads them. */
 interface LoadingItem {
@@ -222,7 +222,7 @@ const fieldValuesStatement = defineStatement<
       and(
         inArray(
           itemData.itemID,
-          ID_SLOTS.map((slot) => placeholder(slot)),
+          ID_SLOTS.names.map((slot) => placeholder(slot)),
         ),
         sql`${itemData.fieldID} in (select value from json_each(${placeholder("fieldIDs")}))`,
       ),
@@ -249,7 +249,7 @@ const creatorsStatement = defineStatement<Record<IdSlot, number | null>>(
     .where(
       inArray(
         itemCreators.itemID,
-        ID_SLOTS.map((slot) => placeholder(slot)),
+        ID_SLOTS.names.map((slot) => placeholder(slot)),
       ),
     )
     .orderBy(asc(itemCreators.itemID), asc(itemCreators.orderIndex)),
@@ -265,7 +265,7 @@ const tagsStatement = defineStatement<Record<IdSlot, number | null>>(
     .where(
       inArray(
         itemTags.itemID,
-        ID_SLOTS.map((slot) => placeholder(slot)),
+        ID_SLOTS.names.map((slot) => placeholder(slot)),
       ),
     ),
 );
@@ -282,7 +282,7 @@ const membershipsStatement = defineStatement<Record<IdSlot, number | null>>(
     .where(
       inArray(
         collectionItems.itemID,
-        ID_SLOTS.map((slot) => placeholder(slot)),
+        ID_SLOTS.names.map((slot) => placeholder(slot)),
       ),
     ),
 );
@@ -297,7 +297,7 @@ const attachmentParentsStatement = defineStatement<
       and(
         inArray(
           itemAttachments.parentItemID,
-          ID_SLOTS.map((slot) => placeholder(slot)),
+          ID_SLOTS.names.map((slot) => placeholder(slot)),
         ),
         notExists(
           db
@@ -351,9 +351,7 @@ export function readHydrateChunk(chunk: {
       result.set(id, item);
     }
     if (itemIDs.length === 0) return result;
-    const slots: Record<IdSlot, number | null> = Object.fromEntries(
-      ID_SLOTS.map((slot, i) => [slot, itemIDs[i] ?? null]),
-    ) as Record<IdSlot, number | null>;
+    const slots = ID_SLOTS.bind(itemIDs);
 
     const tables = fields.builtIn.map(
       (name) => [name, vocabulary.tableOf(name)] as const,

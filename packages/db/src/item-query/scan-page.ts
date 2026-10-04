@@ -12,10 +12,15 @@ import {
 import type { AnyColumn, SQL } from "drizzle-orm";
 import { Effect } from "effect";
 
+import type { NodeDatabaseClient } from "@/client/node";
 import { CHILD_ITEM_TYPES } from "@/lib/item-types";
 
-import { defineStatement, unindexed } from "./database";
-import type { ItemQueryDatabase, ItemQueryReaderError } from "./database";
+import { defineStatement, idSlots, unindexed } from "./database";
+import type {
+  IdSlot,
+  ItemQueryDatabase,
+  ItemQueryReaderError,
+} from "./database";
 
 /** The Items one scan statement reads at most. */
 export const SCAN_PAGE_SIZE = 500;
@@ -40,12 +45,9 @@ function epochMilliseconds(column: AnyColumn): SQL<number | null> {
   return sql<number | null>`unixepoch(${column}) * 1000`;
 }
 
-const scanPageStatement = defineStatement<{
-  libraryID: number;
-  afterKey: string;
-  limit: number;
-}>("scan-page")((db, { placeholder }) =>
-  db
+/** The scan rows of `items`, before a statement restricts them. */
+function selectScanRows(db: NodeDatabaseClient) {
+  return db
     .select({
       itemID: items.itemID,
       key: items.key,
@@ -57,18 +59,33 @@ const scanPageStatement = defineStatement<{
     .innerJoin(
       itemTypesCombined,
       eq(itemTypesCombined.itemTypeID, items.itemTypeID),
-    )
+    );
+}
+
+/** The terms of the query universe: a top-level Item outside the trash. */
+function universeTerms(db: NodeDatabaseClient): SQL[] {
+  return [
+    notInArray(itemTypesCombined.typeName, [...CHILD_ITEM_TYPES]),
+    notExists(
+      db
+        .select({ itemID: deletedItems.itemID })
+        .from(deletedItems)
+        .where(eq(deletedItems.itemID, items.itemID)),
+    ),
+  ];
+}
+
+const scanPageStatement = defineStatement<{
+  libraryID: number;
+  afterKey: string;
+  limit: number;
+}>("scan-page")((db, { placeholder }) =>
+  selectScanRows(db)
     .where(
       and(
         eq(items.libraryID, placeholder("libraryID")),
         gt(items.key, placeholder("afterKey")),
-        notInArray(itemTypesCombined.typeName, [...CHILD_ITEM_TYPES]),
-        notExists(
-          db
-            .select({ itemID: deletedItems.itemID })
-            .from(deletedItems)
-            .where(eq(deletedItems.itemID, items.itemID)),
-        ),
+        ...universeTerms(db),
       ),
     )
     .orderBy(asc(items.key))
@@ -84,7 +101,11 @@ const scanPageStatement = defineStatement<{
 export function readScanPage(page: {
   libraryID: number;
   afterKey: string | null;
-  /** Defaults to {@link SCAN_PAGE_SIZE}, which is also its upper limit. */
+  /**
+   * At most {@link SCAN_PAGE_SIZE}.
+   *
+   * @default SCAN_PAGE_SIZE
+   */
   size?: number;
 }): Effect.Effect<ScanRow[], ItemQueryReaderError, ItemQueryDatabase> {
   return scanPageStatement.all({
@@ -94,41 +115,20 @@ export function readScanPage(page: {
   });
 }
 
-const ID_SLOTS = Array.from(
-  { length: SCAN_PAGE_SIZE },
-  (_, i) => `id${i}` as const,
-);
+const ID_SLOTS = idSlots(SCAN_PAGE_SIZE);
 
-const universeRowsStatement = defineStatement<Record<string, number | null>>(
-  "universe-rows",
-)((db, { placeholder }) =>
-  db
-    .select({
-      itemID: items.itemID,
-      key: items.key,
-      itemType: itemTypesCombined.typeName,
-      dateAdded: epochMilliseconds(items.dateAdded),
-      dateModified: epochMilliseconds(items.dateModified),
-    })
-    .from(items)
-    .innerJoin(
-      itemTypesCombined,
-      eq(itemTypesCombined.itemTypeID, items.itemTypeID),
-    )
+const universeRowsStatement = defineStatement<
+  Record<IdSlot, number | null> & { libraryID: number }
+>("universe-rows")((db, { placeholder }) =>
+  selectScanRows(db)
     .where(
       and(
         inArray(
           items.itemID,
-          ID_SLOTS.map((slot) => placeholder(slot)),
+          ID_SLOTS.names.map((slot) => placeholder(slot)),
         ),
         eq(unindexed(items.libraryID), placeholder("libraryID")),
-        notInArray(itemTypesCombined.typeName, [...CHILD_ITEM_TYPES]),
-        notExists(
-          db
-            .select({ itemID: deletedItems.itemID })
-            .from(deletedItems)
-            .where(eq(deletedItems.itemID, items.itemID)),
-        ),
+        ...universeTerms(db),
       ),
     )
     .orderBy(asc(items.key)),
@@ -153,10 +153,5 @@ export function readUniverseRows(chunk: {
     );
   }
   if (itemIDs.length === 0) return Effect.succeed([]);
-  return universeRowsStatement.all({
-    libraryID,
-    ...Object.fromEntries(
-      ID_SLOTS.map((slot, i) => [slot, itemIDs[i] ?? null]),
-    ),
-  });
+  return universeRowsStatement.all({ libraryID, ...ID_SLOTS.bind(itemIDs) });
 }
