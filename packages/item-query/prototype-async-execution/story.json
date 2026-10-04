@@ -1,0 +1,102 @@
+{
+  "question": "Item Query runs on the same thread that draws Obsidian. This prototype runs a chunked query against three Libraries (9,232, 24,352, and a 10× scaled 92,320 Items) in Node and inside a real Obsidian window. It records each synchronous stretch, dropped frames, how long the source lease stays held, and how fast a cancel request stops the query. The physical plan (#592) is still open, so the three plan families share one scheduler.",
+  "findings": [
+    {
+      "title": "Chunking keeps every slice near the 8 ms budget",
+      "verdict": "holds",
+      "tone": "good",
+      "body": "With an 8 ms slice budget and 250–500 Items per database read, the longest slice stays at 8–12 ms on all Libraries, also for an 85,080-row export. Batches of 25 Items add about 50% to query time; batches above 500 give no gain. A budget of 16 ms or more drops many frames (53 versus 0 in Node on 92k Items).",
+      "show": { "host": "node", "lib": "scaled-10x", "id": "slice-budget full-export sliceBudgetMs=16" }
+    },
+    {
+      "title": "scheduler.yield() starves timers and cancellation",
+      "verdict": "fails",
+      "tone": "bad",
+      "body": "In the Obsidian window, scheduler.yield() is the fastest pause, but its continuation runs before timer tasks. A timer could not run for the full query (870 ms on 92k Items), and a cancel request that arrives as a timer task never stopped the query. Use a MessageChannel pause in the renderer: about 15% slower, a 20–24 ms longest block, and cancellation in 14–19 ms in all six runs. setTimeout(0) also cancels reliably but costs about 60% more time. setImmediate missed 2 of 6 cancel requests.",
+      "show": { "host": "renderer", "lib": "scaled-10x", "id": "cancel-yield full-export yield=schedulerYield cancel@0.1" }
+    },
+    {
+      "title": "One in-memory sort blocks for up to 213 ms",
+      "verdict": "fixed in prototype",
+      "tone": "warn",
+      "body": "Sorting 85,080 rows by title in one Array.sort call blocked the thread for 182–213 ms. A bounded top-K buffer for limited queries and sorted runs with a pausable merge for unlimited ones keep the longest slice under 12 ms at equal or lower total time. Projection must also pause between rows.",
+      "show": { "host": "renderer", "lib": "scaled-10x", "id": "sort-strategy full-export sortStrategy=whole" }
+    },
+    {
+      "title": "A SQL sort is one block that grows with the Library",
+      "verdict": "trade-off",
+      "tone": "warn",
+      "body": "ORDER BY dateModified has no index, so the first cursor step runs the whole sort: 4 ms at 9k, 13 ms at 24k, and 29 ms at 92k Items. In exchange, the limited query stops after 101 matches and finishes in 31 ms. Ordering in memory with top-K keeps slices under 9 ms but takes 72 ms. Reading all candidates at once doubles the block to 66 ms.",
+      "show": { "host": "renderer", "lib": "scaled-10x", "id": "order-limit newest-100 sqlOrder=true candidateChunk=1000" }
+    },
+    {
+      "title": "Limit and truncation are cheap to report",
+      "verdict": "holds",
+      "tone": "good",
+      "body": "Every limited query reported truncated correctly with limit + 1 rows. Late projection (read display fields only for the returned rows) saved 25% on a title search. For a query without a limit it reads everything twice, so the prototype applies it to limited queries only. Parity checks across all knob combinations returned identical Query Results on all three Libraries.",
+      "show": { "host": "node", "lib": "scaled-10x", "id": "order-limit title-contains lateProjection=false" }
+    },
+    {
+      "title": "Release the source lease after the last read",
+      "verdict": "holds",
+      "tone": "good",
+      "body": "Releasing the lease after the last database read, before the final merge and projection, cut lease time for the 92k export from 1,098 ms to 660 ms in Node and to 531 ms in the renderer. A refresh can then start about 40% sooner. For limited queries the lease covers nearly the full query either way.",
+      "show": { "host": "node", "lib": "scaled-10x", "id": "lease full-export releaseLeaseEarly=false" }
+    },
+    {
+      "title": "Cancellation latency equals one slice",
+      "verdict": "holds",
+      "tone": "good",
+      "body": "With a pause that lets timers run, a cancel request stopped the query within 2–23 ms. A 100 ms budget raised this to 84 ms. Cancellation cannot interrupt one SQL statement: a 66 ms SQL sort delays it by the same time.",
+      "show": { "host": "node", "lib": "scaled-10x", "id": "cancel title-contains sliceBudgetMs=100 cancel@0.1" }
+    },
+    {
+      "title": "An unlimited export holds the full result in memory",
+      "verdict": "open for #596",
+      "tone": "warn",
+      "body": "Exporting 85,080 rows with six fields reached about 245 MB of JavaScript heap in Node. This is a consequence of the complete Query Result contract, not of scheduling. The performance criteria should set a Library size or row-count limit for this case.",
+      "show": { "host": "node", "lib": "scaled-10x", "id": "baseline full-export" }
+    }
+  ],
+  "walkthroughs": [
+    {
+      "title": "Responsive export",
+      "intro": "A researcher exports every Item whose creator contains “a” from a 92k-Item Library. Watch the bars stay under the one-frame line while the query takes about one second.",
+      "steps": [
+        { "label": "Baseline export in the Obsidian window", "host": "renderer", "lib": "scaled-10x", "id": "baseline full-export", "note": "All slices are short. But see “Longest thread block”: a timer could not run during the whole query." },
+        { "label": "Same export with a MessageChannel pause", "host": "renderer", "lib": "scaled-10x", "id": "yield-mechanism full-export yield=messageChannel", "note": "Slices stay short and the longest thread block falls to about 23 ms. Timers and messages can run between slices." },
+        { "label": "Same export with one big sort", "host": "renderer", "lib": "scaled-10x", "id": "sort-strategy full-export sortStrategy=whole", "note": "One red bar near the end: the single Array.sort call." },
+        { "label": "Budget too large", "host": "node", "lib": "scaled-10x", "id": "slice-budget full-export sliceBudgetMs=100", "note": "Each slice runs for 100 ms. The query is a little faster, but frames drop all the time." }
+      ]
+    },
+    {
+      "title": "Cancel a long query",
+      "intro": "The user cancels the export after a short time. The black line shows when the cancel request was sent.",
+      "steps": [
+        { "label": "Cancel with a MessageChannel pause", "host": "renderer", "lib": "scaled-10x", "id": "cancel-yield full-export yield=messageChannel cancel@0.1", "note": "The query stops about 19 ms after the request." },
+        { "label": "Cancel with scheduler.yield()", "host": "renderer", "lib": "scaled-10x", "id": "cancel-yield full-export yield=schedulerYield cancel@0.1", "note": "The request waits until the query is complete. The cancel had no effect." },
+        { "label": "Cancel with a 100 ms budget", "host": "node", "lib": "scaled-10x", "id": "cancel title-contains sliceBudgetMs=100 cancel@0.1", "note": "The request waits for the current long slice to end." },
+        { "label": "Cancel during a SQL sort", "host": "node", "lib": "scaled-10x", "id": "cancel newest-100 candidateChunk=0 cancel@0.1", "note": "One SQL statement cannot be interrupted. The request waits for it." }
+      ]
+    },
+    {
+      "title": "Newest 100 Items",
+      "intro": "The default sort is by modification date. Compare a SQL sort that can stop early with an in-memory top-K that never blocks for long.",
+      "steps": [
+        { "label": "SQL sorts, query stops at 101 matches", "host": "renderer", "lib": "scaled-10x", "id": "order-limit newest-100 sqlOrder=true candidateChunk=1000", "note": "Fast in total, but the first slice holds the full SQL sort." },
+        { "label": "SQL sorts, all candidates read at once", "host": "renderer", "lib": "scaled-10x", "id": "order-limit newest-100 sqlOrder=true candidateChunk=0", "note": "The block doubles: reading every candidate in one step adds to the sort." },
+        { "label": "Top-K in memory", "host": "renderer", "lib": "scaled-10x", "id": "order-limit newest-100 sqlOrder=false candidateChunk=1000", "note": "Every slice is short, but the query reads all 92,320 Items." },
+        { "label": "Same on a 9k-Item Library", "host": "renderer", "lib": "active", "id": "order-limit newest-100 sqlOrder=true candidateChunk=1000", "note": "At a typical Library size, the SQL sort block is about 4 ms." }
+      ]
+    },
+    {
+      "title": "Plan families",
+      "intro": "The scheduler is the same for each plan family. Filter by the most-used Tag and compare the work each plan does.",
+      "steps": [
+        { "label": "Predicate-led: start from the Tag", "host": "renderer", "lib": "scaled-10x", "id": "plan-family common-tag plan=predicate-led", "note": "Reads only the Items that have the Tag." },
+        { "label": "Item-led: check each Item for the Tag in SQL", "host": "renderer", "lib": "scaled-10x", "id": "baseline common-tag", "note": "One SQL statement checks every Item and sorts. It is short but grows with the Library." },
+        { "label": "Snapshot: read everything and filter in memory", "host": "renderer", "lib": "scaled-10x", "id": "plan-family common-tag plan=snapshot", "note": "Many short slices. It stays responsive but does the most work." }
+      ]
+    }
+  ]
+}

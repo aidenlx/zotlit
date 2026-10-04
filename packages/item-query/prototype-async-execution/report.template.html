@@ -1,0 +1,470 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Question (#593): does a chunked Item Query plan stay
+  responsive and cancellable on Obsidian's renderer thread? `render-report.ts`
+  injects the measured results into this template and writes
+  `prototype-item-query-async-execution.html`.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Prototype · Item Query asynchronous execution</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Schibsted+Grotesk:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      @theme inline {
+        --color-ground: var(--ground);
+        --color-panel: var(--panel);
+        --color-line: var(--line);
+        --color-ink: var(--ink);
+        --color-muted: var(--muted);
+        --color-accent: var(--accent);
+        --color-good: var(--good);
+        --color-warn: var(--warn);
+        --color-bad: var(--bad);
+        --font-display: var(--font-display);
+        --font-body: var(--font-body);
+        --font-mono: var(--font-mono);
+      }
+    </style>
+    <style>
+      :root {
+        --ground: #f4f6f8;
+        --panel: #ffffff;
+        --line: #dfe3e8;
+        --ink: #14171c;
+        --muted: #646d7a;
+        --accent: #0e7c86;
+        --good: #2f8f4e;
+        --warn: #b7791f;
+        --bad: #c2412d;
+        --font-display: "Schibsted Grotesk", ui-sans-serif, sans-serif;
+        --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+        --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ground: #0e1115;
+          --panel: #161a20;
+          --line: #2a313a;
+          --ink: #e5e8ec;
+          --muted: #8d97a5;
+          --accent: #4fc1c9;
+          --good: #5cbf7a;
+          --warn: #e0a84a;
+          --bad: #ef7a64;
+        }
+      }
+      html,
+      body,
+      #root {
+        min-height: 100%;
+        margin: 0;
+        background: var(--ground);
+      }
+      .tnum {
+        font-variant-numeric: tabular-nums;
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19",
+          "react-dom/client": "https://esm.sh/react-dom@19/client",
+          "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="application/json" id="data">
+      /*__DATA__*/
+    </script>
+    <script type="application/json" id="story">
+      /*__STORY__*/
+    </script>
+
+    <script type="text/jsx" id="app">
+      import React, { useState, useMemo } from "react";
+      import { createRoot } from "react-dom/client";
+
+      // --- App ---
+      const DATA = JSON.parse(document.getElementById("data").textContent);
+      for (const libs of Object.values(DATA))
+        for (const d of Object.values(libs)) for (const e of d.results) e.slices = e.slices.map(([a, b, i]) => [a, b, d.labels[i]]);
+      const STORY = JSON.parse(document.getElementById("story").textContent);
+      const FRAME = 16.7;
+
+      const HOST_LABEL = { node: "Node (bench process)", renderer: "Obsidian window" };
+      const GROUP_LABEL = {
+        baseline: "Baseline for each query",
+        "batch-size": "Items per database read",
+        "slice-budget": "Work before each pause",
+        "yield-mechanism": "How the query pauses",
+        "order-limit": "Ordering, limit, and late projection",
+        "sort-strategy": "One sort or incremental sort",
+        "plan-family": "Plan family",
+        lease: "Source lease lifetime",
+        cancel: "Cancellation",
+        "cancel-yield": "Cancellation per pause method",
+        "ui-load": "With and without simulated UI work",
+      };
+      const QUERY_LABEL = {
+        "newest-100": "Newest 100 Items",
+        "title-contains": "Title contains “the”, by title",
+        "common-tag": "Most-used Tag",
+        "rare-tag": "A rarely used Tag",
+        "has-attachment": "Items with Attachments",
+        "full-export": "Creator contains “a”, all fields, no limit",
+      };
+
+      const ms = (v, d = 1) => (v === undefined || v === null || Number.isNaN(v) ? "—" : `${v.toFixed(d)} ms`);
+      const sev = (v) => (v < FRAME ? "good" : v < 50 ? "warn" : "bad");
+      const sevColor = { good: "var(--good)", warn: "var(--warn)", bad: "var(--bad)" };
+
+      function knobLabel(exp) {
+        const parts = Object.entries(exp.id.split(" ").slice(2).reduce((o, kv) => {
+          const [k, v] = kv.split("=");
+          o[k] = v;
+          return o;
+        }, {}));
+        return parts.length ? parts.map(([k, v]) => (v === undefined ? k : `${k}=${v}`)).join(" · ") : "baseline settings";
+      }
+
+      function Pill({ tone, children }) {
+        return (
+          <span
+            className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium tracking-wide uppercase"
+            style={{ color: sevColor[tone] ?? "var(--accent)", border: `1px solid ${sevColor[tone] ?? "var(--accent)"}` }}
+          >
+            {children}
+          </span>
+        );
+      }
+
+      function Segmented({ value, options, onChange, label }) {
+        return (
+          <div className="flex flex-col gap-1">
+            <span className="text-xs uppercase tracking-wider text-muted">{label}</span>
+            <div className="flex flex-wrap gap-1">
+              {options.map((o) => (
+                <button
+                  key={o.value}
+                  onClick={() => onChange(o.value)}
+                  className={`rounded-md border px-3 py-1.5 text-sm ${
+                    o.value === value ? "border-accent bg-accent text-panel" : "border-line bg-panel hover:border-accent"
+                  }`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      }
+
+      function Timeline({ exp }) {
+        const total = exp.median.totalMs;
+        const W = 1000;
+        const H = 150;
+        const x = (t) => (t / total) * W;
+        const maxDur = Math.max(1, ...exp.slices.map((s) => s[1] - s[0]));
+        const yScale = Math.max(50, maxDur);
+        const barH = (d) => Math.max(2, (d / yScale) * 100);
+        const cancelAt = exp.cancelFrac !== undefined ? exp.median.totalMs - exp.median.cancelLatencyMs : null;
+        const [hover, setHover] = useState(null);
+        return (
+          <div className="flex flex-col gap-2">
+            <div className="overflow-x-auto">
+              <svg viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[640px]" role="img" aria-label="Timeline of synchronous slices">
+                <line x1="0" x2={W} y1={120 - (FRAME / yScale) * 100} y2={120 - (FRAME / yScale) * 100} stroke="var(--good)" strokeDasharray="4 4" strokeWidth="1" />
+                <text x={W - 4} y={116 - (FRAME / yScale) * 100} textAnchor="end" fontSize="10" fill="var(--good)">one frame (16.7 ms)</text>
+                <line x1="0" x2={W} y1={120 - (50 / yScale) * 100} y2={120 - (50 / yScale) * 100} stroke="var(--bad)" strokeDasharray="2 6" strokeWidth="1" />
+                <text x={W - 4} y={116 - (50 / yScale) * 100} textAnchor="end" fontSize="10" fill="var(--bad)">long task (50 ms)</text>
+                <rect x={x(Math.max(0, exp.leaseSpan[0]))} width={Math.max(1, x(exp.leaseSpan[1] - exp.leaseSpan[0]))} y="128" height="8" fill="var(--accent)" opacity="0.35" />
+                <text x={x(Math.max(0, exp.leaseSpan[0])) + 2} y="148" fontSize="10" fill="var(--muted)">source lease held</text>
+                {exp.slices.map((s, i) => {
+                  const d = s[1] - s[0];
+                  return (
+                    <rect
+                      key={i}
+                      x={x(s[0])}
+                      width={Math.max(0.8, x(d))}
+                      y={120 - barH(d)}
+                      height={barH(d)}
+                      fill={sevColor[sev(d)]}
+                      opacity={hover === i ? 1 : 0.8}
+                      onMouseEnter={() => setHover(i)}
+                      onMouseLeave={() => setHover(null)}
+                    />
+                  );
+                })}
+                <line x1="0" x2={W} y1="120" y2="120" stroke="var(--line)" />
+                {cancelAt !== null && (
+                  <g>
+                    <line x1={x(cancelAt)} x2={x(cancelAt)} y1="0" y2="124" stroke="var(--ink)" strokeWidth="2" />
+                    <text x={x(cancelAt) + 4} y="12" fontSize="11" fill="var(--ink)">cancel requested</text>
+                  </g>
+                )}
+              </svg>
+            </div>
+            <div className="flex justify-between text-xs text-muted font-mono tnum">
+              <span>0 ms</span>
+              <span>
+                {hover !== null
+                  ? `slice ${hover + 1}: ${ms(exp.slices[hover][1] - exp.slices[hover][0], 2)} — ${exp.slices[hover][2]}`
+                  : `${exp.slices.length} slices · hover a bar to see what ran`}
+              </span>
+              <span>{ms(total, 0)}</span>
+            </div>
+          </div>
+        );
+      }
+
+      function Metric({ label, value, tone, hint }) {
+        return (
+          <div className="flex flex-col gap-0.5 rounded-md border border-line bg-panel px-3 py-2">
+            <span className="text-xs uppercase tracking-wider text-muted">{label}</span>
+            <span className="font-mono text-lg tnum" style={tone ? { color: sevColor[tone] } : undefined}>{value}</span>
+            {hint && <span className="text-xs text-muted">{hint}</span>}
+          </div>
+        );
+      }
+
+      function Metrics({ exp }) {
+        const m = exp.median;
+        const longest = exp.slices.reduce((a, s) => (s[1] - s[0] > a[1] - a[0] ? s : a), [0, 0, ""]);
+        return (
+          <div className="flex flex-col gap-3">
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+              <Metric label="Query time" value={ms(m.totalMs, 0)} />
+              <Metric label="Longest query slice" value={ms(m.maxSliceMs)} tone={sev(m.maxSliceMs)} hint={longest[2]} />
+              <Metric label="Longest thread block" value={ms(m.maxGapMs)} tone={sev(m.maxGapMs)} hint="time a 4 ms heartbeat timer could not run" />
+              <Metric label="Dropped frames" value={m.droppedFrames} tone={m.droppedFrames === 0 ? "good" : m.droppedFrames < 5 ? "warn" : "bad"} />
+              <Metric label="Source lease held" value={ms(m.leaseMs, 0)} hint={`${((m.leaseMs / m.totalMs) * 100).toFixed(0)}% of query time`} />
+              <Metric label="First candidate read" value={ms(m.firstCandidateStepMs)} tone={sev(m.firstCandidateStepMs)} hint="a SQL sort runs here in one piece" />
+              <Metric label="Rows" value={`${m.returnedCount}${m.truncated ? "+" : ""}`} hint={`${m.truncated ? "truncated · " : ""}${m.matchedCount === null ? "stopped early" : `${m.matchedCount} matched`} · ${m.hydratedCount} hydrated`} />
+              <Metric label="Memory peak" value={`${m.heapPeakMB.toFixed(1)} MB`} hint={`${m.statements} SQL statements`} />
+              {m.cancelLatencyMs !== undefined && (
+                <Metric label="Cancel latency" value={ms(m.cancelLatencyMs)} tone={sev(m.cancelLatencyMs)} hint={`abort event ran ${ms(m.abortFiredLateMs)} late`} />
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      function CompareTable({ host, group, libs, select, current }) {
+        const ids = [];
+        for (const lib of libs) for (const e of DATA[host]?.[lib]?.results ?? []) if (e.group === group && !ids.includes(e.id)) ids.push(e.id);
+        const find = (lib, id) => DATA[host]?.[lib]?.results.find((e) => e.id === id);
+        const showCancel = group.startsWith("cancel");
+        return (
+          <div className="overflow-x-auto rounded-md border border-line bg-panel">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wider text-muted">
+                  <th className="px-3 py-2">Query and settings</th>
+                  {libs.map((l) => (
+                    <th key={l} className="px-3 py-2" colSpan={showCancel ? 3 : 3}>
+                      {l}
+                    </th>
+                  ))}
+                </tr>
+                <tr className="text-left text-xs text-muted">
+                  <th />
+                  {libs.map((l) => (
+                    <React.Fragment key={l}>
+                      <th className="px-3 font-normal">time</th>
+                      <th className="px-3 font-normal">longest block</th>
+                      <th className="px-3 font-normal">{showCancel ? "cancel" : "dropped"}</th>
+                    </React.Fragment>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {ids.map((id) => {
+                  const first = libs.map((l) => find(l, id)).find(Boolean);
+                  return (
+                    <tr key={id} className={`border-t border-line ${current === id ? "bg-ground" : ""}`}>
+                      <td className="px-3 py-1.5">
+                        <button className="text-left hover:text-accent" onClick={() => select(id)}>
+                          <div>{QUERY_LABEL[first.query]}</div>
+                          <div className="text-xs text-muted font-mono">{knobLabel(first)}</div>
+                        </button>
+                      </td>
+                      {libs.map((l) => {
+                        const e = find(l, id);
+                        if (!e) return <td key={l} colSpan={3} className="px-3 text-muted">—</td>;
+                        const m = e.median;
+                        return (
+                          <React.Fragment key={l}>
+                            <td className="px-3 font-mono tnum">{ms(m.totalMs, 0)}</td>
+                            <td className="px-3 font-mono tnum" style={{ color: sevColor[sev(m.maxGapMs)] }}>{ms(m.maxGapMs, 0)}</td>
+                            <td className="px-3 font-mono tnum" style={showCancel ? { color: sevColor[sev(m.cancelLatencyMs)] } : undefined}>
+                              {showCancel ? ms(m.cancelLatencyMs, 0) : m.droppedFrames}
+                            </td>
+                          </React.Fragment>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+
+      function App() {
+        const hosts = Object.keys(DATA);
+        const [host, setHost] = useState(hosts.includes("renderer") ? "renderer" : hosts[0]);
+        const libs = Object.keys(DATA[host] ?? {});
+        const [lib, setLib] = useState(libs.includes("scaled-10x") ? "scaled-10x" : libs[0]);
+        const results = DATA[host]?.[lib]?.results ?? [];
+        const groups = [...new Set(results.map((e) => e.group))];
+        const [group, setGroup] = useState("baseline");
+        const inGroup = results.filter((e) => e.group === group);
+        const [expId, setExpId] = useState(null);
+        const exp = inGroup.find((e) => e.id === expId) ?? inGroup[0];
+        const [tab, setTab] = useState(0);
+        const [step, setStep] = useState(0);
+
+        const go = (s) => {
+          if (s.host) setHost(s.host);
+          if (s.lib) setLib(s.lib);
+          const g = s.id.split(" ")[0];
+          setGroup(g);
+          setExpId(s.id);
+          document.getElementById("explorer")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        };
+
+        return (
+          <main className="font-body text-ink mx-auto flex max-w-6xl flex-col gap-10 px-6 py-10">
+            <header className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wider text-muted">
+                <Pill tone="warn">Prototype · throwaway</Pill>
+                <a className="hover:text-accent" href="https://github.com/aidenlx/zotlit/issues/593">#593 on map #591</a>
+              </div>
+              <h1 className="font-display text-4xl font-bold text-balance">Can an Item Query stay responsive and cancellable on Obsidian’s main thread?</h1>
+              <p className="max-w-[65ch] text-muted">{STORY.question}</p>
+              <div className="flex flex-wrap gap-2 text-xs text-muted font-mono">
+                {hosts.map((h) => Object.values(DATA[h]).slice(0, 1).map((d) => <span key={h} className="rounded border border-line bg-panel px-2 py-1">{HOST_LABEL[h]}: {d.host} · SQLite {d.library.sqlite}</span>))}
+              </div>
+            </header>
+
+            <section className="flex flex-col gap-4">
+              <h2 className="font-display text-2xl font-semibold">What the measurements say</h2>
+              <div className="grid gap-3 md:grid-cols-2">
+                {STORY.findings.map((f) => (
+                  <article key={f.title} className="flex flex-col gap-2 rounded-lg border border-line bg-panel p-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="font-semibold">{f.title}</h3>
+                      <Pill tone={f.tone}>{f.verdict}</Pill>
+                    </div>
+                    <p className="text-sm text-muted max-w-[65ch]">{f.body}</p>
+                    {f.show && (
+                      <button className="self-start text-sm text-accent hover:underline" onClick={() => go(f.show)}>
+                        Show the trace →
+                      </button>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className="flex flex-col gap-4">
+              <h2 className="font-display text-2xl font-semibold">Walkthroughs</h2>
+              <div className="flex flex-wrap gap-1 border-b border-line">
+                {STORY.walkthroughs.map((w, i) => (
+                  <button
+                    key={w.title}
+                    onClick={() => {
+                      setTab(i);
+                      setStep(0);
+                    }}
+                    className={`-mb-px border-b-2 px-3 py-2 text-sm ${i === tab ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"}`}
+                  >
+                    {w.title}
+                  </button>
+                ))}
+              </div>
+              {STORY.walkthroughs[tab] && (
+                <div className="flex flex-col gap-3">
+                  <p className="max-w-[65ch] text-sm text-muted">{STORY.walkthroughs[tab].intro}</p>
+                  <ol className="flex flex-col gap-2">
+                    {STORY.walkthroughs[tab].steps.map((s, i) => (
+                      <li key={i} className={`flex flex-col gap-1 rounded-md border px-3 py-2 ${i === step ? "border-accent bg-panel" : "border-line"}`}>
+                        <button
+                          className="text-left font-medium hover:text-accent"
+                          onClick={() => {
+                            setStep(Math.min(i + 1, STORY.walkthroughs[tab].steps.length - 1));
+                            go(s);
+                          }}
+                        >
+                          {i + 1}. {s.label}
+                        </button>
+                        <span className="text-sm text-muted">{s.note}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+            </section>
+
+            <section id="explorer" className="flex flex-col gap-4 scroll-mt-4">
+              <h2 className="font-display text-2xl font-semibold">Trace explorer</h2>
+              <div className="flex flex-wrap gap-6">
+                <Segmented label="Where it ran" value={host} onChange={setHost} options={hosts.map((h) => ({ value: h, label: HOST_LABEL[h] }))} />
+                <Segmented label="Library" value={lib} onChange={setLib} options={libs.map((l) => ({ value: l, label: `${l} · ${DATA[host][l].library.topLevelItems.toLocaleString()} Items` }))} />
+              </div>
+              <Segmented label="Experiment group" value={group} onChange={(g) => { setGroup(g); setExpId(null); }} options={groups.map((g) => ({ value: g, label: GROUP_LABEL[g] ?? g }))} />
+              {exp ? (
+                <div className="flex flex-col gap-4 rounded-lg border border-line bg-panel p-4">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <div>
+                      <div className="font-semibold">{QUERY_LABEL[exp.query]}</div>
+                      <div className="text-xs text-muted font-mono">{knobLabel(exp)} · pause: {exp.yield} · simulated UI work: {exp.uiLoad ? "on" : "off"}</div>
+                    </div>
+                    <div className="text-xs text-muted font-mono">
+                      plan {exp.opts.plan} · {exp.opts.hydrateBatch} Items/read · budget {exp.opts.sliceBudgetMs} ms · median of {exp.runs.length}
+                    </div>
+                  </div>
+                  <Timeline exp={exp} />
+                  <Metrics exp={exp} />
+                </div>
+              ) : (
+                <p className="text-muted">This host has no result for this experiment.</p>
+              )}
+              <CompareTable host={host} group={group} libs={libs} select={setExpId} current={exp?.id} />
+            </section>
+
+            <footer className="text-xs text-muted">
+              Slices are synchronous stretches between two pauses. Green fits in one frame, amber delays a frame, red is a long task. Results hold timings and counts only; no Item data.
+            </footer>
+          </main>
+        );
+      }
+      // --- App END ---
+
+      createRoot(document.getElementById("root")).render(<App />);
+    </script>
+    <script type="module">
+      import { transform } from "https://esm.sh/sucrase@3";
+      const src = document.getElementById("app").textContent;
+      const { code } = transform(src, { transforms: ["jsx"], production: true });
+      const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
+      await import(url);
+    </script>
+  </body>
+</html>
