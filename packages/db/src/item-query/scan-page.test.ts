@@ -75,8 +75,8 @@ describe("readScanPage", () => {
         itemID: expect.any(Number),
         key: "ART2FULL",
         itemType: "journalArticle",
-        dateAdded: Temporal.Instant.from("2020-03-16T09:30:00Z"),
-        dateModified: Temporal.Instant.from("2024-06-01T10:00:00Z"),
+        dateAdded: Date.parse("2020-03-16T09:30:00Z"),
+        dateModified: Date.parse("2024-06-01T10:00:00Z"),
       },
     ]);
   });
@@ -191,8 +191,8 @@ describe("readUniverseRows", () => {
         itemID: idOf("ART2FULL"),
         key: "ART2FULL",
         itemType: "journalArticle",
-        dateAdded: Temporal.Instant.from("2020-03-16T09:30:00Z"),
-        dateModified: Temporal.Instant.from("2024-06-01T10:00:00Z"),
+        dateAdded: Date.parse("2020-03-16T09:30:00Z"),
+        dateModified: Date.parse("2024-06-01T10:00:00Z"),
       },
       expect.objectContaining({ itemID: idOf("UNI2CDE2"), key: "UNI2CDE2" }),
     ]);

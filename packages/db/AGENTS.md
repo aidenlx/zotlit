@@ -39,6 +39,8 @@ The `zt` types plus their doc comments are the single source of truth for the te
 
 A candidate leaf is one kind of `CandidateLeaf` with one statement in `src/item-query/candidate-set.ts`. The statement selects Item IDs of the Target Library with the `limit` of the caller, and no Item row: the 500-Item limit of one statement applies to the scan page, the universe chunk, and the hydrate chunk; `readUniverseRows` restricts them to the query universe.
 
+A Zotero database has no `sqlite_stat1`, so SQLite starts a join at `items.libraryID = ?` and reads every `items` row of the Library. In a statement that starts at a leaf or an ID list, write the Library term with `unindexed` (`src/item-query/database.ts`), and check the plan with `EXPLAIN QUERY PLAN` on a Stress Build (`pnpm fixture stress --library-items 100000`). A scan row holds its timestamps as numbers: a `Temporal` object for each Item of a Library makes long garbage-collection pauses in the Obsidian window.
+
 Every table and column a reader statement reads belongs in `ITEM_QUERY_LAYOUT` (`src/item-query/layout.ts`); add them with each new reader. `defineStatement` runs the layout check before the first statement on each copy, and `layout.test.ts` fails when a statement of a reader module that `src/item-query/index.ts` exports reads outside the manifest.
 
 ## Logging

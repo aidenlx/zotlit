@@ -18,9 +18,18 @@ import type {
   QueryResult,
 } from "@zotlit/item-query";
 
+/**
+ * Wraps the operation of one run before it starts, to provide the observer
+ * references of the engine. Only the dev-build measurement command passes one.
+ */
+export type ItemQueryInstrument = <A, E, R>(
+  operation: Effect.Effect<A, E, R>,
+) => Effect.Effect<A, E, R>;
+
 interface RunOptions {
   client: NodeDatabaseClient;
   signal: AbortSignal;
+  instrument?: ItemQueryInstrument;
 }
 
 /**
@@ -58,9 +67,11 @@ function run<A, E>(
 ): Promise<Exit.Exit<A, E>> {
   if (options.signal.aborted) return Promise.resolve(Exit.interrupt());
   return Effect.runPromiseExit(
-    Effect.provideService(operation, ItemQueryDatabase, {
-      client: options.client,
-    }),
+    Effect.provideService(
+      options.instrument?.(operation) ?? operation,
+      ItemQueryDatabase,
+      { client: options.client },
+    ),
     { scheduler: new ItemQueryScheduler(), signal: options.signal },
   );
 }
