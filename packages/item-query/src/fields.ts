@@ -398,3 +398,21 @@ export const BUILT_IN_NAMES: readonly string[] = [
   ...FIELDS.keys(),
   ...FILTER_ONLY_FIELDS.keys(),
 ];
+
+/**
+ * The bare name reads the stored value of one built-in Zotero field as a
+ * string, resolved through the field's aliases: its filter value is a string
+ * and hydration loads that one field. The field-value candidate leaf reads
+ * these fields.
+ */
+export function isStoredStringField(name: string): boolean {
+  const definition = FIELDS.get(name);
+  if (definition?.filter?.type !== "string") return false;
+  const needs = definition.needs([]);
+  return (
+    needs.builtIn?.length === 1 &&
+    needs.builtIn[0] === name &&
+    !needs.custom &&
+    !needs.relations
+  );
+}

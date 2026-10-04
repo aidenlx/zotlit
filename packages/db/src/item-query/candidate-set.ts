@@ -1,5 +1,12 @@
-import { items, itemTags, tags } from "@drizzle/schema";
-import { and, count, eq } from "drizzle-orm";
+import {
+  collectionItems,
+  itemData,
+  itemDataValues,
+  items,
+  itemTags,
+  tags,
+} from "@drizzle/schema";
+import { and, count, eq, or, sql } from "drizzle-orm";
 import { Effect } from "effect";
 
 import { defineStatement } from "./database";
@@ -34,16 +41,43 @@ export type CandidateLeaf =
   /** The Items that carry the Tag with this exact name. */
   | { readonly kind: "tag"; readonly name: string }
   /** The Item with this Zotero Key. */
-  | { readonly kind: "key"; readonly key: string };
+  | { readonly kind: "key"; readonly key: string }
+  /**
+   * The Items that store this exact value in one of these fields. Give every
+   * field ID of a built-in field and its aliases (`FieldVocabulary.fieldIDsOf`).
+   * The value matches a stored text and a stored number that reads as it.
+   */
+  | {
+      readonly kind: "field";
+      readonly fieldIDs: readonly number[];
+      readonly value: string;
+    }
+  /** The Items filed directly in one of these Collections. */
+  | { readonly kind: "collection"; readonly collectionIDs: readonly number[] };
 
 interface CandidateParams extends Record<string, unknown> {
   libraryID: number;
-  value: string;
   limit: number;
 }
 
+interface ValueParams extends CandidateParams {
+  value: string;
+}
+
+interface FieldParams extends ValueParams {
+  /** The field IDs as a JSON array. */
+  fieldIDs: string;
+  /** The number that reads as `value`, or null. */
+  number: number | null;
+}
+
+interface CollectionParams extends CandidateParams {
+  /** The Collection IDs as a JSON array. */
+  collectionIDs: string;
+}
+
 const candidateStatements = {
-  tag: defineStatement<CandidateParams>()((db, { placeholder }) =>
+  tag: defineStatement<ValueParams>()((db, { placeholder }) =>
     db
       .select({ itemID: itemTags.itemID })
       .from(itemTags)
@@ -57,7 +91,7 @@ const candidateStatements = {
       )
       .limit(placeholder("limit")),
   ),
-  key: defineStatement<CandidateParams>()((db, { placeholder }) =>
+  key: defineStatement<ValueParams>()((db, { placeholder }) =>
     db
       .select({ itemID: items.itemID })
       .from(items)
@@ -69,7 +103,77 @@ const candidateStatements = {
       )
       .limit(placeholder("limit")),
   ),
+  field: defineStatement<FieldParams>()((db, { placeholder }) =>
+    db
+      .selectDistinct({ itemID: items.itemID })
+      .from(itemDataValues)
+      .innerJoin(itemData, eq(itemData.valueID, itemDataValues.valueID))
+      .innerJoin(items, eq(items.itemID, itemData.itemID))
+      .where(
+        and(
+          or(
+            eq(itemDataValues.value, placeholder("value")),
+            eq(itemDataValues.value, placeholder("number")),
+          ),
+          sql`${itemData.fieldID} in (select value from json_each(${placeholder("fieldIDs")}))`,
+          eq(items.libraryID, placeholder("libraryID")),
+        ),
+      )
+      .limit(placeholder("limit")),
+  ),
+  collection: defineStatement<CollectionParams>()((db, { placeholder }) =>
+    db
+      .selectDistinct({ itemID: items.itemID })
+      .from(collectionItems)
+      .innerJoin(items, eq(items.itemID, collectionItems.itemID))
+      .where(
+        and(
+          sql`${collectionItems.collectionID} in (select value from json_each(${placeholder("collectionIDs")}))`,
+          eq(items.libraryID, placeholder("libraryID")),
+        ),
+      )
+      .limit(placeholder("limit")),
+  ),
 } satisfies Record<CandidateLeaf["kind"], unknown>;
+
+/**
+ * The number that the hydrate reader gives back as `value` when SQLite stores
+ * it as a number, or null. A stored number reads as its JavaScript string, so
+ * `"12"` and `"1.5"` have one and `"012"` and `"12.0"` have none.
+ */
+function storedNumberOf(value: string): number | null {
+  const number = Number(value);
+  return Number.isNaN(number) || String(number) !== value ? null : number;
+}
+
+/** The rows of one leaf's statement. */
+function leafRows(
+  leaf: CandidateLeaf,
+  scope: CandidateParams,
+): Effect.Effect<
+  { itemID: number }[],
+  ItemQueryReaderError,
+  ItemQueryDatabase
+> {
+  switch (leaf.kind) {
+    case "tag":
+      return candidateStatements.tag.all({ ...scope, value: leaf.name });
+    case "key":
+      return candidateStatements.key.all({ ...scope, value: leaf.key });
+    case "field":
+      return candidateStatements.field.all({
+        ...scope,
+        value: leaf.value,
+        number: storedNumberOf(leaf.value),
+        fieldIDs: JSON.stringify(leaf.fieldIDs),
+      });
+    case "collection":
+      return candidateStatements.collection.all({
+        ...scope,
+        collectionIDs: JSON.stringify(leaf.collectionIDs),
+      });
+  }
+}
 
 /**
  * Read the candidate set of one leaf: the IDs of the `items` rows of the
@@ -87,12 +191,7 @@ export function readCandidateSet(candidates: {
   limit: number;
 }): Effect.Effect<number[], ItemQueryReaderError, ItemQueryDatabase> {
   const { libraryID, leaf, limit } = candidates;
-  return Effect.map(
-    candidateStatements[leaf.kind].all({
-      libraryID,
-      value: leaf.kind === "tag" ? leaf.name : leaf.key,
-      limit,
-    }),
-    (rows) => rows.map((row) => row.itemID),
+  return Effect.map(leafRows(leaf, { libraryID, limit }), (rows) =>
+    rows.map((row) => row.itemID),
   );
 }
