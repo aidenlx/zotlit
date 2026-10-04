@@ -318,17 +318,29 @@ const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map([
   [
     "dateAdded",
     fromScan(
+      (row) => Temporal.Instant.fromEpochMilliseconds(row.dateAdded),
       (row) => row.dateAdded,
-      (row) => row.dateAdded.epochMilliseconds,
-      { type: "date", read: (item) => timestamp(item.scan.dateAdded) },
+      {
+        type: "date",
+        read: (item) =>
+          timestamp(
+            Temporal.Instant.fromEpochMilliseconds(item.scan.dateAdded),
+          ),
+      },
     ),
   ],
   [
     "dateModified",
     fromScan(
+      (row) => Temporal.Instant.fromEpochMilliseconds(row.dateModified),
       (row) => row.dateModified,
-      (row) => row.dateModified.epochMilliseconds,
-      { type: "date", read: (item) => timestamp(item.scan.dateModified) },
+      {
+        type: "date",
+        read: (item) =>
+          timestamp(
+            Temporal.Instant.fromEpochMilliseconds(item.scan.dateModified),
+          ),
+      },
     ),
   ],
   ["custom", customField],

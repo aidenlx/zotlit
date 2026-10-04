@@ -1,7 +1,7 @@
 import { version } from "@drizzle/schema";
 import { getLogger } from "@logtape/logtape";
 import { fillPlaceholders, inArray, sql } from "drizzle-orm";
-import type { Query } from "drizzle-orm";
+import type { AnyColumn, Query, SQL } from "drizzle-orm";
 import { Context, Data, Effect } from "effect";
 
 import type { NodeDatabaseClient } from "@/client/node";
@@ -110,6 +110,18 @@ const readerStatements: ((client: NodeDatabaseClient) => string)[] = [];
  */
 export function readerStatementSQL(client: NodeDatabaseClient): string[] {
   return readerStatements.map((sqlOf) => sqlOf(client));
+}
+
+/**
+ * `column` as a term that no index answers: SQLite's unary `+`. A Zotero
+ * database has no `sqlite_stat1`, so the planner takes `items.libraryID = ?`
+ * for a selective term and starts the join at every `items` row of the
+ * Library, which costs the same for one match as for all. With the Library
+ * term outside the indexes, a statement starts at the rows its leaf or its ID
+ * list names and checks the Library of each one. It changes speed only.
+ */
+export function unindexed(column: AnyColumn): SQL {
+  return sql`+${column}`;
 }
 
 type Build<TParams, TRow> = (

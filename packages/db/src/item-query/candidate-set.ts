@@ -9,7 +9,7 @@ import {
 import { and, count, eq, or, sql } from "drizzle-orm";
 import { Effect } from "effect";
 
-import { defineStatement } from "./database";
+import { defineStatement, unindexed } from "./database";
 import type { ItemQueryDatabase, ItemQueryReaderError } from "./database";
 
 const libraryRowCountStatement = defineStatement<{ libraryID: number }>(
@@ -87,7 +87,7 @@ const candidateStatements = {
       .where(
         and(
           eq(tags.name, placeholder("value")),
-          eq(items.libraryID, placeholder("libraryID")),
+          eq(unindexed(items.libraryID), placeholder("libraryID")),
         ),
       )
       .limit(placeholder("limit")),
@@ -108,7 +108,13 @@ const candidateStatements = {
     db
       .selectDistinct({ itemID: items.itemID })
       .from(itemDataValues)
-      .innerJoin(itemData, eq(itemData.valueID, itemDataValues.valueID))
+      // `itemData.valueID` has no declared type. The unary `+` keeps the
+      // affinity of the value ID off the comparison, so the join starts at the
+      // value and reads `itemData` through its `valueID` index.
+      .innerJoin(
+        itemData,
+        eq(itemData.valueID, unindexed(itemDataValues.valueID)),
+      )
       .innerJoin(items, eq(items.itemID, itemData.itemID))
       .where(
         and(
@@ -116,8 +122,9 @@ const candidateStatements = {
             eq(itemDataValues.value, placeholder("value")),
             eq(itemDataValues.value, placeholder("number")),
           ),
-          sql`${itemData.fieldID} in (select value from json_each(${placeholder("fieldIDs")}))`,
-          eq(items.libraryID, placeholder("libraryID")),
+          // The value names the `itemData` rows; the field list checks them.
+          sql`${unindexed(itemData.fieldID)} in (select value from json_each(${placeholder("fieldIDs")}))`,
+          eq(unindexed(items.libraryID), placeholder("libraryID")),
         ),
       )
       .limit(placeholder("limit")),
@@ -131,7 +138,7 @@ const candidateStatements = {
         .where(
           and(
             sql`${collectionItems.collectionID} in (select value from json_each(${placeholder("collectionIDs")}))`,
-            eq(items.libraryID, placeholder("libraryID")),
+            eq(unindexed(items.libraryID), placeholder("libraryID")),
           ),
         )
         .limit(placeholder("limit")),

@@ -1,10 +1,20 @@
 import { deletedItems, items, itemTypesCombined } from "@drizzle/schema";
-import { and, asc, eq, gt, inArray, notExists, notInArray } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  inArray,
+  notExists,
+  notInArray,
+  sql,
+} from "drizzle-orm";
+import type { AnyColumn, SQL } from "drizzle-orm";
 import { Effect } from "effect";
 
 import { CHILD_ITEM_TYPES } from "@/lib/item-types";
 
-import { defineStatement } from "./database";
+import { defineStatement, unindexed } from "./database";
 import type { ItemQueryDatabase, ItemQueryReaderError } from "./database";
 
 /** The Items one scan statement reads at most. */
@@ -15,8 +25,18 @@ export interface ScanRow {
   itemID: number;
   key: string;
   itemType: string;
-  dateAdded: Temporal.Instant;
-  dateModified: Temporal.Instant;
+  /**
+   * The Unix time in milliseconds. A scan reads every Item of the Library, so
+   * a row holds a number: a `Temporal.Instant` for each row fills the young
+   * heap, and its collections are long pauses in the Obsidian window.
+   */
+  dateAdded: number;
+  dateModified: number;
+}
+
+/** A timestamp column of `items` as its Unix time in milliseconds. */
+function epochMilliseconds(column: AnyColumn): SQL<number> {
+  return sql<number>`unixepoch(${column}) * 1000`;
 }
 
 const scanPageStatement = defineStatement<{
@@ -29,8 +49,8 @@ const scanPageStatement = defineStatement<{
       itemID: items.itemID,
       key: items.key,
       itemType: itemTypesCombined.typeName,
-      dateAdded: items.dateAdded,
-      dateModified: items.dateModified,
+      dateAdded: epochMilliseconds(items.dateAdded),
+      dateModified: epochMilliseconds(items.dateModified),
     })
     .from(items)
     .innerJoin(
@@ -86,8 +106,8 @@ const universeRowsStatement = defineStatement<Record<string, number | null>>(
       itemID: items.itemID,
       key: items.key,
       itemType: itemTypesCombined.typeName,
-      dateAdded: items.dateAdded,
-      dateModified: items.dateModified,
+      dateAdded: epochMilliseconds(items.dateAdded),
+      dateModified: epochMilliseconds(items.dateModified),
     })
     .from(items)
     .innerJoin(
@@ -100,7 +120,7 @@ const universeRowsStatement = defineStatement<Record<string, number | null>>(
           items.itemID,
           ID_SLOTS.map((slot) => placeholder(slot)),
         ),
-        eq(items.libraryID, placeholder("libraryID")),
+        eq(unindexed(items.libraryID), placeholder("libraryID")),
         notInArray(itemTypesCombined.typeName, [...CHILD_ITEM_TYPES]),
         notExists(
           db
