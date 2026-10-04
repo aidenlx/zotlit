@@ -26,14 +26,14 @@
 // `summary.md` as a comment on the release pull request. The thresholds are in
 // `item-query-record.ts`.
 //
-// Options: `--tiers=10000,50000` (default: every Stress Build tier),
-// `--runs=5`, `--keep` (keep the vault and the Fixture when done).
+// `--help` prints the options and the thresholds.
 
 import { cp, mkdir, writeFile } from "node:fs/promises";
 import { arch, cpus, release, totalmem } from "node:os";
 import { join, relative } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { parseArgs } from "node:util";
+import yargs from "yargs";
+import { hideBin } from "yargs/helpers";
 
 import {
   buildFixture,
@@ -41,6 +41,8 @@ import {
   getFixtureLayout,
 } from "@zotlit/scripts/fixture";
 import {
+  STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT,
+  STRESS_LIBRARY_MIN_ITEM_COUNT,
   STRESS_LIBRARY_TIERS,
   STRESS_LIBRARY_VALUES,
 } from "@zotlit/scripts/fixture/spec";
@@ -227,17 +229,86 @@ function querySpecs(uniqueKey: string): QuerySpec[] {
   ];
 }
 
-const options = parseArgs({
-  options: {
-    tiers: { type: "string" },
-    runs: { type: "string", default: "5" },
-    keep: { type: "boolean", default: false },
-  },
-}).values;
-const tiers = options.tiers
-  ? options.tiers.split(",").map(Number)
-  : [...STRESS_LIBRARY_TIERS];
-const runCount = Number(options.runs);
+/** The runs of each query; the record takes their median. */
+const DEFAULT_RUNS = 5;
+
+/** The reference of `--help`, from the constants the script runs on. */
+function renderReference(): string {
+  const totals = Object.entries(THRESHOLDS.totalMs).flatMap(
+    ([queryClass, budgets]) =>
+      Object.entries(budgets).map(
+        ([items, budget]) =>
+          `  ${queryClass} limit 100 at ${Number(items).toLocaleString("en-US")} Items: median total at most ${budget} ms`,
+      ),
+  );
+  return [
+    "The vault window must stay visible for the whole run: on screen, not",
+    "minimized, and not fully covered by another window.",
+    "",
+    "Tiers:",
+    `  Default: ${STRESS_LIBRARY_TIERS.join(", ")} Items in My Library.`,
+    `  A tier is ${STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT}.`,
+    "  A tier without a time threshold is recorded only.",
+    "",
+    "Thresholds:",
+    `  slices: 99th percentile at most ${THRESHOLDS.slice.p99Ms} ms, longest at most ${THRESHOLDS.slice.maxMs} ms`,
+    `  cancel: settled within ${THRESHOLDS.cancelMs} ms of the request`,
+    ...totals,
+    "",
+    "Output:",
+    "  .scratch/item-query-measure/<time>/raw.json and summary.md",
+  ].join("\n");
+}
+
+/**
+ * @throws {Error} when an entry is not an Item count a Stress Build takes.
+ */
+function parseTiers(text: string): number[] {
+  return text.split(",").map((entry) => {
+    const items = Number(entry.trim());
+    if (
+      entry.trim() === "" ||
+      !Number.isSafeInteger(items) ||
+      items < STRESS_LIBRARY_MIN_ITEM_COUNT
+    ) {
+      throw new Error(
+        `--tiers: "${entry}" is not ${STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT}`,
+      );
+    }
+    return items;
+  });
+}
+
+const options = await yargs(hideBin(process.argv))
+  .scriptName("measure:item-query")
+  .usage("$0 [--tiers=<items,...>] [--runs=<n>] [--keep]")
+  .option("tiers", {
+    describe:
+      "Item counts of the Stress Build tiers to measure, comma-separated",
+    type: "string",
+    default: STRESS_LIBRARY_TIERS.join(","),
+    coerce: parseTiers,
+  })
+  .option("runs", {
+    describe: "Measured runs of each query, after one warm-up run",
+    type: "number",
+    default: DEFAULT_RUNS,
+  })
+  .option("keep", {
+    describe: "Keep the vault and the Fixture when the script ends",
+    type: "boolean",
+    default: false,
+  })
+  .check(({ runs }) => {
+    if (Number.isSafeInteger(runs) && runs >= 1) return true;
+    throw new Error("--runs: give a whole number of at least 1");
+  })
+  .epilogue(renderReference())
+  .strict()
+  .version(false)
+  .parse();
+const { tiers } = options;
+const runCount = options.runs;
 
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 const scratch = join(workspaceRoot, ".scratch", "item-query-measure");
@@ -245,10 +316,10 @@ const fixture = getFixtureLayout(join(scratch, "fixture"));
 const vaultPath = e2eVaultDir(workspaceRoot, "item-query-measure");
 const pluginBundleDir = join(workspaceRoot, "apps", "obsidian", "dist-dev");
 const runVaultScript = vaultScript(workspaceRoot, fixture.root);
-const startedAt = new Date();
+const startedAt = Temporal.Now.instant();
 const outDir = join(
   scratch,
-  startedAt.toISOString().replaceAll(":", "-").slice(0, 19),
+  startedAt.toString().replaceAll(":", "-").slice(0, 19),
 );
 
 const log = (message: string): void => console.error(message);
@@ -292,14 +363,10 @@ async function requireVisible(): Promise<void> {
 async function measure(args: Record<string, string>): Promise<MeasureReport> {
   for (let attempt = 0; ; attempt++) {
     const report = JSON.parse(
-      await cli(
-        [
-          `vault=${vaultId}`,
-          MEASURE_COMMAND,
-          ...Object.entries(args).map(([name, value]) => `${name}=${value}`),
-        ],
-        CALL_TIMEOUT_MS,
-      ),
+      await cliCommand(vaultId, MEASURE_COMMAND, {
+        args,
+        timeoutMs: CALL_TIMEOUT_MS,
+      }),
     ) as MeasureReport;
     if (!report.window.hiddenDuringRun && report.window.visibleAtEnd) {
       return report;
@@ -356,8 +423,10 @@ async function readChannels(): Promise<ChannelCount> {
 async function pluginReady(): Promise<boolean> {
   return waitFor(async () => {
     const answer = await cliCommand(vaultId, MEASURE_COMMAND, {
-      limit: "1",
-      fields: "[]",
+      args: {
+        limit: "1",
+        fields: "[]",
+      },
     }).catch(() => "");
     try {
       return (JSON.parse(answer) as MeasureReport).ok === true;
@@ -407,8 +476,10 @@ async function measureTier(raw: RawTier): Promise<void> {
 
   const located = JSON.parse(
     await cliCommand(vaultId, "zotlit:item-query", {
-      filter: `title == ${quote(uniqueTitle)}`,
-      fields: "[]",
+      args: {
+        filter: `title == ${quote(uniqueTitle)}`,
+        fields: "[]",
+      },
     }),
   ) as { rows?: { indexedKey: string }[] };
   const uniqueKey = located.rows?.[0]?.indexedKey;
@@ -465,7 +536,7 @@ async function measureTier(raw: RawTier): Promise<void> {
   for (let run = 0; run < 3; run++) {
     const running = measure(exportSpec.args);
     await delay(cancelDelayMs);
-    const sentAtEpochMs = Date.now();
+    const sentAtEpochMs = Temporal.Now.instant().epochMilliseconds;
     const cancelled = JSON.parse(await cliCommand(vaultId, CANCEL_COMMAND)) as {
       cancelled: number;
       arrivedAtEpochMs: number;
@@ -494,7 +565,7 @@ async function measureTier(raw: RawTier): Promise<void> {
   {
     const running = measure(exportSpec.args);
     await delay(cancelDelayMs);
-    const sentAtEpochMs = Date.now();
+    const sentAtEpochMs = Temporal.Now.instant().epochMilliseconds;
     const arrivedAtEpochMs = Number(
       await obEval(
         vaultId,
@@ -706,7 +777,7 @@ if (failure) {
   );
 }
 const record: MeasurementRecord = {
-  startedAt: startedAt.toISOString(),
+  startedAt: startedAt.toString({ smallestUnit: "millisecond" }),
   environment: environmentLines,
   tiers: measured,
   notes: [...findings(rawTiers, measured), ...notes],
