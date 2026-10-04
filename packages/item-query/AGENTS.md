@@ -14,7 +14,7 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Tests
 
 ## Where things go
 
-- A field: one entry in the registry of `src/fields.ts`. Validation, execution, and the Item Query Schema read that registry.
+- A field: one entry in the registry of `src/fields.ts`. Validation, execution, and the Item Query Schema read that registry. The entry's `shape` decides the Projection Paths below it; its `needs` names what the hydrate reader loads.
 - Request validation and defaults: `planRequest` in `src/request.ts`.
 - A database read: a reader in `packages/db/src/item-query/`.
 
