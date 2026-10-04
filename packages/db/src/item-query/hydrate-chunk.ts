@@ -18,6 +18,7 @@ import { alias } from "drizzle-orm/sqlite-core";
 import { Effect } from "effect";
 
 import type { CreatorFieldMode } from "@/lib/zt-creator";
+import type { TagType } from "@/lib/zt-tag";
 import { buildTable } from "@/queries/_base-fields";
 import type { BaseFieldTable } from "@/queries/_base-fields";
 
@@ -87,8 +88,8 @@ export interface HydratedCreator {
 /** One `itemTags` row of an Item. */
 export interface HydratedTag {
   readonly name: string;
-  /** Raw `itemTags.type`: `0` manual, `1` automatic. */
-  readonly type: number;
+  /** Raw `itemTags.type`; resolve it with `tagTypeToName`. */
+  readonly type: TagType;
 }
 
 /**
