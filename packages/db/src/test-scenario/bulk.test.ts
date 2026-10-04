@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   ItemQueryDatabase,
@@ -21,28 +21,25 @@ import {
 } from ".";
 import type { ScenarioDatabase } from ".";
 
-let scenario: ScenarioDatabase | undefined;
-
-afterEach(() => {
-  scenario?.close();
-  scenario = undefined;
-});
-
-function read<A, E>(effect: Effect.Effect<A, E, ItemQueryDatabase>): A {
+function read<A, E>(
+  scenario: ScenarioDatabase,
+  effect: Effect.Effect<A, E, ItemQueryDatabase>,
+): A {
   return Effect.runSync(
-    Effect.provideService(effect, ItemQueryDatabase, { client: scenario!.db }),
+    Effect.provideService(effect, ItemQueryDatabase, { client: scenario.db }),
   );
 }
 
 describe("seedBulkLibrary", () => {
   it("adds one Library of top-level Items in key order, with titles and Tags", () => {
-    scenario = openScenarioDatabase();
+    using scenario = openScenarioDatabase();
     seedBulkLibrary(scenario.sqlite, 12);
     const { libraryID } = BULK_LIBRARY;
 
-    const page = read(readScanPage({ libraryID, afterKey: null }));
+    const page = read(scenario, readScanPage({ libraryID, afterKey: null }));
     const tagged = (name: string) =>
       read(
+        scenario,
         readCandidateSet({
           libraryID,
           leaf: { kind: "tag", name },
@@ -50,6 +47,7 @@ describe("seedBulkLibrary", () => {
         }),
       );
     const hydrated = read(
+      scenario,
       Effect.gen(function* () {
         return yield* readHydrateChunk({
           vocabulary: yield* readFieldVocabulary(),
@@ -59,7 +57,7 @@ describe("seedBulkLibrary", () => {
       }),
     );
 
-    expect(read(readLibraryRowCount(libraryID))).toBe(12);
+    expect(read(scenario, readLibraryRowCount(libraryID))).toBe(12);
     expect(page.map((row) => row.key)).toEqual(
       Array.from({ length: 12 }, (_, index) => bulkItemKey(index)),
     );
@@ -74,15 +72,19 @@ describe("seedBulkLibrary", () => {
   });
 
   it("leaves the scenario Libraries as they are", () => {
-    scenario = openScenarioDatabase();
+    using scenario = openScenarioDatabase();
     const before = read(
+      scenario,
       readLibraryRowCount(SCENARIO_LIBRARIES.personal.libraryID),
     );
 
     seedBulkLibrary(scenario.sqlite, 12);
 
     expect(
-      read(readLibraryRowCount(SCENARIO_LIBRARIES.personal.libraryID)),
+      read(
+        scenario,
+        readLibraryRowCount(SCENARIO_LIBRARIES.personal.libraryID),
+      ),
     ).toBe(before);
   });
 });

@@ -13,20 +13,15 @@ import type {
 
 // The index loads every reader module, so every reader statement is defined.
 import {
-  checkLayout,
-  ITEM_QUERY_LAYOUT,
   ItemQueryDatabase,
   ItemQueryDatabaseError,
   ItemQueryLayoutError,
   readScanPage,
 } from ".";
-import { readerStatementSQL } from "./database";
-
-let scenario: ScenarioDatabase | undefined;
+import { checkLayout, readerStatementSQL } from "./database";
+import { ITEM_QUERY_LAYOUT } from "./layout";
 
 afterEach(async () => {
-  scenario?.close();
-  scenario = undefined;
   await reset();
 });
 
@@ -35,9 +30,9 @@ function openCopy(
   alter: (sqlite: DatabaseSync) => void = () => {},
   options: ScenarioDatabaseOptions = {},
 ): ScenarioDatabase {
-  scenario = openScenarioDatabase(options);
-  alter(scenario.sqlite);
-  return scenario;
+  const copy = openScenarioDatabase(options);
+  alter(copy.sqlite);
+  return copy;
 }
 
 function stamp(
@@ -104,7 +99,7 @@ function columnsRead(sqlite: DatabaseSync, sql: string): string[] {
 
 describe("ITEM_QUERY_LAYOUT", () => {
   it("lists every table and column that a reader statement reads", () => {
-    scenario = openScenarioDatabase();
+    using scenario = openScenarioDatabase();
     const statements = readerStatementSQL(scenario.db);
     const listed = new Set(
       Object.entries(ITEM_QUERY_LAYOUT).flatMap(([table, columns]) => [
@@ -114,7 +109,7 @@ describe("ITEM_QUERY_LAYOUT", () => {
     );
 
     const unlisted = statements.flatMap((sql) =>
-      columnsRead(scenario!.sqlite, sql)
+      columnsRead(scenario.sqlite, sql)
         .filter((read) => !listed.has(read))
         .map((read) => ({ read, sql })),
     );
@@ -126,7 +121,7 @@ describe("ITEM_QUERY_LAYOUT", () => {
 
 describe("the layout check", () => {
   it("fails a reader with the layout error when a copy stamped inside the supported range lacks a manifest column", () => {
-    const copy = openCopy((sqlite) => {
+    using copy = openCopy((sqlite) => {
       stamp(sqlite, { userdata: 129, compatibility: 9 });
       sqlite.exec('alter table "fieldsCombined" drop column "custom"');
     });
@@ -145,7 +140,7 @@ describe("the layout check", () => {
   });
 
   it("names a missing table once", () => {
-    const copy = openCopy((sqlite) => {
+    using copy = openCopy((sqlite) => {
       sqlite.exec('drop table "deletedItems"');
     });
 
@@ -156,7 +151,7 @@ describe("the layout check", () => {
   });
 
   it("reads a copy stamped outside the supported range that has the full layout", () => {
-    const copy = openCopy((sqlite) => {
+    using copy = openCopy((sqlite) => {
       stamp(sqlite, { userdata: 140, compatibility: 12 });
     });
 
@@ -166,7 +161,7 @@ describe("the layout check", () => {
   });
 
   it("reads the lowest supported layout", () => {
-    const copy = openCopy(undefined, { layout: "lowest" });
+    using copy = openCopy(undefined, { layout: "lowest" });
 
     const exit = run(copy, firstPage);
 
@@ -174,7 +169,7 @@ describe("the layout check", () => {
   });
 
   it("keeps the check result for the life of the copy", () => {
-    const passed = openCopy();
+    using passed = openCopy();
     expect(Exit.isSuccess(run(passed, checkLayout()))).toBe(true);
     // A column that goes away after the check is not checked again: the
     // statement itself fails.
@@ -184,7 +179,7 @@ describe("the layout check", () => {
     );
     passed.close();
 
-    const failed = openCopy((sqlite) => {
+    using failed = openCopy((sqlite) => {
       sqlite.exec('drop table "deletedItems"');
     });
     expect(failureOf(run(failed, checkLayout()))).toBeInstanceOf(
@@ -207,7 +202,7 @@ describe("the layout check", () => {
         { category: ["logtape", "meta"], sinks: [] },
       ],
     });
-    const copy = openCopy((sqlite) => {
+    using copy = openCopy((sqlite) => {
       stamp(sqlite, { userdata: 140, compatibility: 12 });
     });
 

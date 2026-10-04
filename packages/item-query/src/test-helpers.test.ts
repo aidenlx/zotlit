@@ -20,7 +20,8 @@ describe("runEffect", () => {
 
     expect(run.exit).toEqual(
       Exit.succeed({
-        millis: Date.UTC(2020, 0, 8, 2),
+        // 2020-01-08T02:00:00Z.
+        millis: 1_578_448_800_000,
         zone: "America/New_York",
       }),
     );

@@ -24,13 +24,15 @@ interface ItemSpec {
 }
 
 function item(spec: ItemSpec = {}): QueryItem {
-  const instant = Date.parse("2020-01-01T00:00:00Z");
+  const epochMilliseconds = (iso: string) =>
+    Temporal.Instant.from(iso).epochMilliseconds;
+  const instant = epochMilliseconds("2020-01-01T00:00:00Z");
   return {
     scan: {
       itemID: 1,
       key: spec.key ?? "ABCD2345",
       itemType: spec.itemType ?? "journalArticle",
-      dateAdded: spec.dateAdded ? Date.parse(spec.dateAdded) : instant,
+      dateAdded: spec.dateAdded ? epochMilliseconds(spec.dateAdded) : instant,
       dateModified: instant,
     },
     hydrated: {

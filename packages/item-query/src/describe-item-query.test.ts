@@ -1,5 +1,5 @@
 import { Cause, Exit } from "effect";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { ItemQueryLayoutError } from "@zotlit/db/item-query";
 import {
@@ -17,15 +17,7 @@ import type {
 } from ".";
 import { runEffect } from "./test-helpers";
 
-let scenario: ScenarioDatabase | undefined;
-
-afterEach(() => {
-  scenario?.close();
-  scenario = undefined;
-});
-
-async function schema(): Promise<ItemQuerySchema> {
-  scenario ??= openScenarioDatabase();
+async function schema(scenario: ScenarioDatabase): Promise<ItemQuerySchema> {
   const { exit } = await runEffect(describeItemQuery(), {
     client: scenario.db,
   });
@@ -35,7 +27,8 @@ async function schema(): Promise<ItemQuerySchema> {
 
 describe("describeItemQuery custom fields", () => {
   it("lists the custom fields of the source with their path and bare-name eligibility", async () => {
-    const { customFields } = await schema();
+    using scenario = openScenarioDatabase();
+    const { customFields } = await schema(scenario);
 
     expect(customFields).toEqual([
       {
@@ -80,7 +73,8 @@ describe("describeItemQuery custom fields", () => {
 
 describe("describeItemQuery fields", () => {
   it("reports the JSON type and the capabilities of each field and Projection Path", async () => {
-    const { fields } = await schema();
+    using scenario = openScenarioDatabase();
+    const { fields } = await schema(scenario);
     const entry = (path: string) => fields.find((field) => field.path === path);
 
     expect(entry("title")).toEqual({
@@ -163,7 +157,8 @@ describe("describeItemQuery fields", () => {
   });
 
   it("reports the defaults of an omitted argument", async () => {
-    const { defaults } = await schema();
+    using scenario = openScenarioDatabase();
+    const { defaults } = await schema(scenario);
 
     expect(defaults).toEqual({
       fields: ["itemType", "title", "creators", "date", "dateModified"],
@@ -175,7 +170,8 @@ describe("describeItemQuery fields", () => {
 
 describe("describeItemQuery functions", () => {
   it("reports each function, method, and property with its signature", async () => {
-    const { functions, methods, properties, types } = await schema();
+    using scenario = openScenarioDatabase();
+    const { functions, methods, properties, types } = await schema(scenario);
 
     expect(functions.find((entry) => entry.name === "if")).toEqual({
       name: "if",
@@ -237,7 +233,7 @@ describe("describeItemQuery functions", () => {
 
 describe("describeItemQuery on the layout of the Zotero database", () => {
   it("fails with ItemQueryLayoutError when the copy lacks a manifest column", async () => {
-    scenario = openScenarioDatabase();
+    using scenario = openScenarioDatabase();
     scenario.sqlite.exec('alter table "fieldsCombined" drop column "custom"');
 
     const { exit } = await runEffect(describeItemQuery(), {
@@ -290,9 +286,9 @@ describe("the Item Query Schema and queryItems", () => {
   const { personal } = SCENARIO_LIBRARIES;
 
   async function codeOf(
+    scenario: ScenarioDatabase,
     request: Omit<ItemQueryRequest, "library">,
   ): Promise<string | null> {
-    scenario ??= openScenarioDatabase();
     const { exit } = await runEffect(
       queryItems({ library: personal, limit: 1, ...request }),
       { client: scenario.db },
@@ -304,14 +300,15 @@ describe("the Item Query Schema and queryItems", () => {
   }
 
   it("accepts every field and Projection Path in the use its capabilities list, and rejects every other use", async () => {
-    const { fields, customFields } = await schema();
+    using scenario = openScenarioDatabase();
+    const { fields, customFields } = await schema(scenario);
     const failures: string[] = [];
     const expect_ = async (
       label: string,
       request: Omit<ItemQueryRequest, "library">,
       accepted: boolean,
     ) => {
-      const code = await codeOf(request);
+      const code = await codeOf(scenario, request);
       if ((code === null) !== accepted) {
         failures.push(`${label}: ${code ?? "accepted"}`);
       }
@@ -335,7 +332,8 @@ describe("the Item Query Schema and queryItems", () => {
   });
 
   it("accepts a call of every function, method, and property it lists", async () => {
-    const { functions, methods, properties } = await schema();
+    using scenario = openScenarioDatabase();
+    const { functions, methods, properties } = await schema(scenario);
     const failures: string[] = [];
     const filters = [
       ...functions.map((entry) => call(entry.name, entry)),
@@ -346,7 +344,7 @@ describe("the Item Query Schema and queryItems", () => {
     ];
 
     for (const filter of filters) {
-      const code = await codeOf({ filter });
+      const code = await codeOf(scenario, { filter });
       if (code !== null) failures.push(`${filter}: ${code}`);
     }
 
@@ -368,7 +366,8 @@ describe("the Item Query Schema and queryItems", () => {
   ] satisfies [Omit<ItemQueryRequest, "library">, string][])(
     "rejects a name outside it: %j",
     async (request, code) => {
-      expect(await codeOf(request)).toBe(code);
+      using scenario = openScenarioDatabase();
+      expect(await codeOf(scenario, request)).toBe(code);
     },
   );
 });
