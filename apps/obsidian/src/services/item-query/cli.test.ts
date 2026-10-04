@@ -130,8 +130,8 @@ describe("zotlit:item-query without arguments", () => {
 
 describe("zotlit:item-query answer", () => {
   /**
-   * A clock that moves 3 ms at each read: the third read of a step is over
-   * the budget of 8 ms, so a step of the answer holds three rows.
+   * A clock that moves 3 ms at each read: the second read of a step is over
+   * the budget of 4 ms, so a step of the answer holds two rows.
    */
   function fastClock() {
     let now = 0;
@@ -177,9 +177,9 @@ describe("zotlit:item-query answer", () => {
       onAnswerStep: (ms) => steps.push(ms),
     })({ limit: "all", fields: "[]" });
 
-    // Three steps of three rows; the last step has one row and the end.
+    // Five steps of two rows, and one step for the end of the envelope.
     expect(JSON.parse(answer)).toMatchObject({ returnedCount: 10 });
-    expect(steps).toHaveLength(4);
+    expect(steps).toHaveLength(6);
   });
 
   it("rejects with the abort reason when the cancel request comes while it builds the answer", async () => {

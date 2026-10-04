@@ -373,6 +373,14 @@ export async function answerExit(
   return answerFailure(exit.cause, ITEM_QUERY_COMMAND, context.signal);
 }
 
+/**
+ * The time one step of the answer takes rows. Half the slice budget of the
+ * engine: a step holds the rows and the text of the whole result, and a
+ * garbage collection in a step at the full budget took it past 16 ms in the
+ * measurement at 50,000 and 100,000 Items.
+ */
+const ANSWER_STEP_BUDGET_MS = SLICE_BUDGET_MS / 2;
+
 /** The end of the envelope of a result without rows. */
 const NO_ROWS = "[]\n}";
 /** The indentation of one row in the envelope: `rows` is a top-level key. */
@@ -381,7 +389,7 @@ const ROW_INDENT = "    ";
 /**
  * Build the envelope of a result: the pretty JSON of the complete envelope,
  * made in steps. A result of every match has no row limit, so one step takes
- * rows until the slice budget of the engine ends, then gives the window a
+ * rows until {@link ANSWER_STEP_BUDGET_MS} ends, then gives the window a
  * turn and stops when the run is cancelled.
  */
 async function answerResult(
@@ -416,7 +424,7 @@ async function answerResult(
       );
       text += `${index === 0 ? "" : ","}\n${ROW_INDENT}${wire.replaceAll("\n", `\n${ROW_INDENT}`)}`;
       const now = performance.now();
-      if (now - stepStart < SLICE_BUDGET_MS) continue;
+      if (now - stepStart < ANSWER_STEP_BUDGET_MS) continue;
       context.onAnswerStep?.(now - stepStart);
       await yieldToMain();
       context.signal.throwIfAborted();
