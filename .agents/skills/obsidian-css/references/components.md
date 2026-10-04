@@ -202,7 +202,7 @@ Workspace tab strip. Lots of state-aware variables — only override the ones yo
 | `--nav-heading-color` | Section label |
 | `--nav-heading-color-hover` | Hover |
 | `--nav-heading-color-collapsed` | Collapsed |
-| `--nav-heading-color-colapsed-hover` | Collapsed hover (sic — Obsidian variable name) |
+| `--nav-heading-color-collapsed-hover` | Collapsed hover |
 | `--nav-heading-weight` | Font weight |
 | `--nav-heading-weight-hover` | Hover font weight |
 

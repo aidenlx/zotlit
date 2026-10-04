@@ -44,7 +44,7 @@ Run `/i18n-ui-text` for wording style; `/inlang-i18n` for JSON format and runtim
 
 ## CSS
 
-Run `/obsidian-css` for styling tools, tokens, native components, and scoped preflight.
+**Tailwind-first.** Run `/obsidian-css` before you write a class list or a stylesheet rule.
 
 ## Debugging
 

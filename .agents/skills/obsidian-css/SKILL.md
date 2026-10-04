@@ -128,7 +128,9 @@ Catalogs of Obsidian variables — read on demand, one topic at a time.
 - `references/preflights.md` — which bare elements Obsidian styles, which unlayered rules survive `.zt-root`, and the no-preflight fallback.
 - `references/components.md` — buttons, inputs, dropdowns, checkboxes, toggles, sliders, modals, popovers, prompts, tabs, navigation, pills, color inputs, indentation guides, dragging.
 - `references/editor.md` — markdown content: headings, links, tables, callouts, code, blockquotes, lists, tags, embeds, footnotes, properties, bases, inline title.
-- `references/window.md` — workspace chrome: ribbon, sidebar, status bar, dividers, scrollbars, window frame, vault profile.
+- `references/window.md` — workspace chrome: ribbon, sidebar, status bar, dividers, scrollbars, scroll containers (overlay scrollbar, pane background, sticky edges), window frame, vault profile.
 - `references/plugins.md` — built-in plugin views: file explorer, search, graph, canvas, sync.
 
 When a catalog leaves a question open — exactly what Obsidian applies to an element, whether a rule is layered — read Obsidian's own stylesheet: `/obsidian-asar-extract` writes `app.css` next to `app.js` in `node_modules/.ob-rev-<version>/`, and `rg` over it answers against the exact version you build for.
+
+The catalogs drift as Obsidian renames or drops variables. After you extract a new Obsidian version, run `node .claude/skills/obsidian-css/check-references.mjs`; each `file:line` it lists names a variable that build no longer carries — correct the row against `app.css` or delete it.
