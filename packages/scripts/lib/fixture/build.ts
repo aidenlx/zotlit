@@ -240,6 +240,14 @@ export async function buildFixture(
       "a build takes one Stress Build: an additive Item count or a My Library Item count",
     );
   }
+  if (
+    options.stressLibraryItemCount !== undefined &&
+    options.vaultCase === "demo"
+  ) {
+    throw new Error(
+      'the "demo" vault case holds only its own Items: build the Stress Build of My Library with another vault case',
+    );
+  }
   const stressLibrary =
     options.stressLibraryItemCount === undefined
       ? undefined
