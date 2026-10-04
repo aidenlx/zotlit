@@ -175,6 +175,21 @@ function slicesOf(trace: Trace): { start: number; end: number }[] {
   return slices;
 }
 
+/**
+ * @throws {Error} when the text is not a finite number from 0: the run has no
+ *   envelope for an invalid argument, so the command rejects.
+ */
+function decodeCancelAfterMs(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const ms = raw.trim() === "" ? Number.NaN : Number(raw);
+  if (!Number.isFinite(ms) || ms < 0) {
+    throw new Error(
+      `cancelAfterMs '${raw}' is not a time in milliseconds: use a number from 0.`,
+    );
+  }
+  return ms;
+}
+
 export function registerItemQueryMeasureCli(
   plugin: Plugin,
   deps: Omit<ItemQueryCliDeps, "signal" | "instrument">,
@@ -184,7 +199,8 @@ export function registerItemQueryMeasureCli(
   const inFlight = new Set<AbortController>();
 
   const measure: CliHandler = async (params: CliData): Promise<string> => {
-    const { cancelAfterMs, heap, ...query } = params;
+    const { cancelAfterMs: cancelAfter, heap, ...query } = params;
+    const cancelAfterMs = decodeCancelAfterMs(cancelAfter);
     const own = new AbortController();
     inFlight.add(own);
     const signal = AbortSignal.any([unload.signal, own.signal]);
@@ -209,7 +225,7 @@ export function registerItemQueryMeasureCli(
     const timer =
       cancelAfterMs === undefined
         ? undefined
-        : window.setTimeout(() => own.abort(), Number(cancelAfterMs));
+        : window.setTimeout(() => own.abort(), cancelAfterMs);
 
     let outcome: ItemQueryMeasureReport["outcome"];
     let answer: string | undefined;
@@ -314,8 +330,7 @@ export function registerItemQueryMeasureCli(
         firedAt === undefined
           ? undefined
           : {
-              intendedAtMs:
-                cancelAfterMs === undefined ? undefined : Number(cancelAfterMs),
+              intendedAtMs: cancelAfterMs,
               firedAtMs: round(firedAt - startedAt),
               engineSettledAtMs:
                 trace.engineEnd === undefined
