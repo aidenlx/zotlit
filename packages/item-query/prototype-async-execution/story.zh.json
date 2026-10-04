@@ -1,0 +1,267 @@
+{
+  "question": "Item Query 与 Obsidian 的界面绘制运行在同一个线程上。本原型在三个 Library 上分块执行查询（9,232 个、24,352 个，以及复制 10 倍后的 92,320 个 Item），分别在 Node 和真实的 Obsidian 窗口中运行。它记录每一段同步执行、掉帧数、source lease 的持有时间，以及取消请求多快能停下查询。物理计划（#592）尚未确定，因此三种计划族共用同一个调度器。",
+  "verdict": {
+    "answer": "可以，但有条件",
+    "summary": "在最多 92,320 个 Item 的 Library 上，只要实现遵守以下七条规则，在 Obsidian 渲染线程上分块执行就能保持响应，并且可以取消。",
+    "rules": [
+      {
+        "title": "用 MessageChannel 暂停，不要用 scheduler.yield()。",
+        "body": "scheduler.yield() 让计时器在整个查询期间都无法运行，以计时器形式到达的取消请求始终没有生效。MessageChannel 总耗时多约 15%，6 次运行全部在 14–19 ms 内取消成功。"
+      },
+      {
+        "title": "每做约 8 ms 的工作暂停一次，每条语句读取 250–500 个 Item。",
+        "body": "这样最长阻塞为 8–12 ms。如果 16 ms 或更久才暂停一次，就会掉帧。"
+      },
+      {
+        "title": "让所有内存阶段都可以暂停。",
+        "body": "对 85k 行做一次排序最多阻塞 213 ms。有 limit 的查询使用 top-K 缓冲，无 limit 的查询使用可暂停的归并排序，可把每段阻塞压到 12 ms 以下。生成结果行的步骤也必须能暂停。"
+      },
+      {
+        "title": "接受一段 SQL 排序阻塞，并分块读取候选。",
+        "body": "按 dateModified 排序在 9k、24k、92k 个 Item 时分别耗时 4、13、29 ms，但有 limit 的查询可以提前停止（31 ms，内存排序要 72 ms）。"
+      },
+      {
+        "title": "请求 limit + 1 行来判断是否截断。",
+        "body": "只有查询带 limit 时，才只为返回的行读取显示字段。"
+      },
+      {
+        "title": "在最后一次数据库读取后释放 source lease。",
+        "body": "大型导出的 lease 持有时间因此缩短约 40%。"
+      },
+      {
+        "title": "取消请求大约在一个暂停间隔内生效。",
+        "body": "使用不阻挡计时器的暂停方式时为 2–23 ms。正在执行的 SQL 语句无法被中断。"
+      }
+    ],
+    "open": [
+      "#596：导出 85k 行且不设 limit 时，内存用到约 245 MB，原因是必须返回完整的 Query Result。",
+      "#592：物理计划族尚未确定；本调度方案适用于全部三种。"
+    ],
+    "notMeasured": [
+      "通过 Obsidian CLI 或点击、按键发出的取消请求（测试用的是计时器）。",
+      "Windows 和 Linux。",
+      "92k 规模下的真实数据分布（大 Library 是当前 Library 复制 10 倍而成）。"
+    ]
+  },
+  "findings": [
+    {
+      "title": "分块让每个片段都接近 8 ms 预算",
+      "verdict": "成立",
+      "tone": "good",
+      "body": "预算为 8 ms、每次读取 250–500 个 Item 时，所有 Library 上的最长片段都在 8–12 ms，85,080 行的导出也一样。每次只读 25 个 Item 会让查询耗时增加约 50%；超过 500 个则没有收益。预算达到 16 ms 或以上会大量掉帧（在 92k 个 Item 上，Node 中为 53 帧，对比 0 帧）。",
+      "show": {
+        "host": "node",
+        "lib": "scaled-10x",
+        "id": "slice-budget full-export sliceBudgetMs=16"
+      }
+    },
+    {
+      "title": "scheduler.yield() 让计时器和取消都无法执行",
+      "verdict": "不成立",
+      "tone": "bad",
+      "body": "在 Obsidian 窗口中，scheduler.yield() 是最快的暂停方式，但它的后续任务总在计时器任务之前运行。整个查询期间（92k 个 Item 时为 870 ms）计时器都无法运行，以计时器任务形式到达的取消请求始终没有停下查询。渲染线程中应改用 MessageChannel 暂停：耗时多约 15%，最长阻塞 20–24 ms，6 次运行全部在 14–19 ms 内取消成功。setTimeout(0) 同样能可靠取消，但耗时多约 60%。setImmediate 有 2 次（共 6 次）没能及时取消。",
+      "show": {
+        "host": "renderer",
+        "lib": "scaled-10x",
+        "id": "cancel-yield full-export yield=schedulerYield cancel@0.1"
+      }
+    },
+    {
+      "title": "一次内存排序最多阻塞 213 ms",
+      "verdict": "原型中已解决",
+      "tone": "warn",
+      "body": "用一次 Array.sort 按标题排序 85,080 行，线程被阻塞 182–213 ms。有 limit 的查询使用有界 top-K 缓冲，无 limit 的查询先分段排序再可暂停地归并，最长片段可保持在 12 ms 以下，总耗时持平或更低。生成结果行的步骤也必须能暂停。",
+      "show": {
+        "host": "renderer",
+        "lib": "scaled-10x",
+        "id": "sort-strategy full-export sortStrategy=whole"
+      }
+    },
+    {
+      "title": "SQL 排序是一整段阻塞，随 Library 变大而增长",
+      "verdict": "需要权衡",
+      "tone": "warn",
+      "body": "dateModified 没有索引，因此第一次读取游标就要完成全部排序：9k 个 Item 时 4 ms，24k 时 13 ms，92k 时 29 ms。换来的好处是，有 limit 的查询在 101 个匹配后就停止，31 ms 完成。在内存中用 top-K 排序，片段都在 9 ms 以下，但总耗时 72 ms。一次读取全部候选会让阻塞翻倍，达到 66 ms。",
+      "show": {
+        "host": "renderer",
+        "lib": "scaled-10x",
+        "id": "order-limit newest-100 sqlOrder=true candidateChunk=1000"
+      }
+    },
+    {
+      "title": "limit 与截断的判断成本很低",
+      "verdict": "成立",
+      "tone": "good",
+      "body": "每个带 limit 的查询都通过 limit + 1 行正确报告了截断。延迟投影（只为返回的行读取显示字段）让标题搜索快了 25%。对于不带 limit 的查询，它会把所有数据读两遍，因此原型只在带 limit 时使用它。在三个 Library 上，所有参数组合的一致性检查都返回了相同的 Query Result。",
+      "show": {
+        "host": "node",
+        "lib": "scaled-10x",
+        "id": "order-limit title-contains lateProjection=false"
+      }
+    },
+    {
+      "title": "在最后一次读取后释放 source lease",
+      "verdict": "成立",
+      "tone": "good",
+      "body": "在最后一次数据库读取之后、最终归并和投影之前释放 lease，92k 导出的 lease 持有时间在 Node 中从 1,098 ms 降到 660 ms，在渲染线程中降到 531 ms。数据库刷新因此可以提前约 40% 开始。对带 limit 的查询，无论哪种方式，lease 都几乎覆盖整个查询。",
+      "show": {
+        "host": "node",
+        "lib": "scaled-10x",
+        "id": "lease full-export releaseLeaseEarly=false"
+      }
+    },
+    {
+      "title": "取消延迟约等于一个片段",
+      "verdict": "成立",
+      "tone": "good",
+      "body": "使用允许计时器运行的暂停方式时，取消请求在 2–23 ms 内停下查询。预算为 100 ms 时，延迟升到 84 ms。取消无法中断单条 SQL 语句：一段 66 ms 的 SQL 排序会让取消同样推迟 66 ms。",
+      "show": {
+        "host": "node",
+        "lib": "scaled-10x",
+        "id": "cancel title-contains sliceBudgetMs=100 cancel@0.1"
+      }
+    },
+    {
+      "title": "无 limit 的导出把完整结果放在内存中",
+      "verdict": "留给 #596",
+      "tone": "warn",
+      "body": "导出 85,080 行、6 个字段时，Node 中的 JavaScript 堆达到约 245 MB。这是“返回完整 Query Result”这一约定造成的，与调度无关。性能标准应为这种情况规定 Library 规模或行数上限。",
+      "show": {
+        "host": "node",
+        "lib": "scaled-10x",
+        "id": "baseline full-export"
+      }
+    }
+  ],
+  "walkthroughs": [
+    {
+      "title": "保持响应的导出",
+      "intro": "一位研究者从 92k 个 Item 的 Library 中导出所有创建者包含 “a” 的 Item。查询耗时约一秒，请观察柱条始终低于一帧线。",
+      "steps": [
+        {
+          "label": "Obsidian 窗口中的基准导出",
+          "note": "所有片段都很短。但请看“最长线程阻塞”：整个查询期间计时器都无法运行。",
+          "host": "renderer",
+          "lib": "scaled-10x",
+          "id": "baseline full-export"
+        },
+        {
+          "label": "同一导出，改用 MessageChannel 暂停",
+          "note": "片段依然很短，最长线程阻塞降到约 23 ms。片段之间计时器和消息都能运行。",
+          "host": "renderer",
+          "lib": "scaled-10x",
+          "id": "yield-mechanism full-export yield=messageChannel"
+        },
+        {
+          "label": "同一导出，一次性排序",
+          "note": "末尾出现一根红柱：就是那一次 Array.sort。",
+          "host": "renderer",
+          "lib": "scaled-10x",
+          "id": "sort-strategy full-export sortStrategy=whole"
+        },
+        {
+          "label": "预算过大",
+          "note": "每个片段运行 100 ms。查询略快一些，但一直在掉帧。",
+          "host": "node",
+          "lib": "scaled-10x",
+          "id": "slice-budget full-export sliceBudgetMs=100"
+        }
+      ]
+    },
+    {
+      "title": "取消长查询",
+      "intro": "用户在导出开始不久后取消。黑线表示发出取消请求的时刻。",
+      "steps": [
+        {
+          "label": "使用 MessageChannel 暂停时取消",
+          "note": "查询在请求后约 19 ms 停止。",
+          "host": "renderer",
+          "lib": "scaled-10x",
+          "id": "cancel-yield full-export yield=messageChannel cancel@0.1"
+        },
+        {
+          "label": "使用 scheduler.yield() 时取消",
+          "note": "请求一直等到查询完成，取消没有生效。",
+          "host": "renderer",
+          "lib": "scaled-10x",
+          "id": "cancel-yield full-export yield=schedulerYield cancel@0.1"
+        },
+        {
+          "label": "预算为 100 ms 时取消",
+          "note": "请求要等当前的长片段结束。",
+          "host": "node",
+          "lib": "scaled-10x",
+          "id": "cancel title-contains sliceBudgetMs=100 cancel@0.1"
+        },
+        {
+          "label": "在 SQL 排序期间取消",
+          "note": "单条 SQL 语句无法被中断，请求只能等它结束。",
+          "host": "node",
+          "lib": "scaled-10x",
+          "id": "cancel newest-100 candidateChunk=0 cancel@0.1"
+        }
+      ]
+    },
+    {
+      "title": "最新的 100 个 Item",
+      "intro": "默认按修改时间排序。比较可以提前停止的 SQL 排序，与从不长时间阻塞的内存 top-K。",
+      "steps": [
+        {
+          "label": "SQL 排序，查询在 101 个匹配后停止",
+          "note": "总耗时短，但第一个片段包含完整的 SQL 排序。",
+          "host": "renderer",
+          "lib": "scaled-10x",
+          "id": "order-limit newest-100 sqlOrder=true candidateChunk=1000"
+        },
+        {
+          "label": "SQL 排序，一次读取全部候选",
+          "note": "阻塞翻倍：一步读完所有候选，叠加在排序之上。",
+          "host": "renderer",
+          "lib": "scaled-10x",
+          "id": "order-limit newest-100 sqlOrder=true candidateChunk=0"
+        },
+        {
+          "label": "内存 top-K",
+          "note": "每个片段都很短，但查询读取了全部 92,320 个 Item。",
+          "host": "renderer",
+          "lib": "scaled-10x",
+          "id": "order-limit newest-100 sqlOrder=false candidateChunk=1000"
+        },
+        {
+          "label": "9k 个 Item 的 Library",
+          "note": "在常见的 Library 规模下，SQL 排序阻塞约 4 ms。",
+          "host": "renderer",
+          "lib": "active",
+          "id": "order-limit newest-100 sqlOrder=true candidateChunk=1000"
+        }
+      ]
+    },
+    {
+      "title": "计划族",
+      "intro": "三种计划族使用同一个调度器。按使用最多的 Tag 过滤，比较各计划的工作量。",
+      "steps": [
+        {
+          "label": "Predicate-led：从 Tag 出发",
+          "note": "只读取带有该 Tag 的 Item。",
+          "host": "renderer",
+          "lib": "scaled-10x",
+          "id": "plan-family common-tag plan=predicate-led"
+        },
+        {
+          "label": "Item-led：在 SQL 中逐个 Item 检查 Tag",
+          "note": "一条 SQL 语句检查所有 Item 并排序。时间短，但随 Library 增长。",
+          "host": "renderer",
+          "lib": "scaled-10x",
+          "id": "baseline common-tag"
+        },
+        {
+          "label": "Snapshot：全部读取，在内存中过滤",
+          "note": "许多短片段。保持响应，但工作量最大。",
+          "host": "renderer",
+          "lib": "scaled-10x",
+          "id": "plan-family common-tag plan=snapshot"
+        }
+      ]
+    }
+  ]
+}

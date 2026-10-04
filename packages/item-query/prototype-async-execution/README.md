@@ -26,12 +26,12 @@ for each family.
 | `bench-renderer.ts` | Runs the same matrix inside a running Obsidian window through the Obsidian CLI. |
 | `parity.ts` | Confirms that every knob combination returns the same Query Result. |
 | `prepare-libraries.ts` | Copies Libraries into `.scratch/libraries/` and builds a 10× scaled Library. |
-| `render-report.ts` | Builds `prototype-item-query-async-execution.html` from `results/` and `story.json`. |
+| `render-report.ts` | Builds `prototype-item-query-async-execution.html` (`ui.en.json`, `story.json`) and the Chinese `prototype-item-query-async-execution.zh.html` (`ui.zh.json`, `story.zh.json`) from `results/`. |
 | `results/` | Measured timings and counts. They contain no Item data. |
 
 ## Run
 
-Open `prototype-item-query-async-execution.html` in a browser to explore the
+Open `prototype-item-query-async-execution.html` (or `.zh.html` for Chinese) in a browser to explore the
 recorded results. To measure again:
 
 ```sh

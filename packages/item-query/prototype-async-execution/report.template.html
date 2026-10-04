@@ -5,11 +5,11 @@
   injects the measured results into this template and writes
   `prototype-item-query-async-execution.html`.
 -->
-<html lang="en">
+<html lang="/*__LANG__*/">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Prototype · Item Query asynchronous execution</title>
+    <title>/*__TITLE__*/</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -44,8 +44,8 @@
         --good: #2f8f4e;
         --warn: #b7791f;
         --bad: #c2412d;
-        --font-display: "Schibsted Grotesk", ui-sans-serif, sans-serif;
-        --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+        --font-display: "Schibsted Grotesk", "PingFang SC", "Noto Sans SC", ui-sans-serif, sans-serif;
+        --font-body: "IBM Plex Sans", "PingFang SC", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
         --font-mono: "IBM Plex Mono", ui-monospace, monospace;
       }
       @media (prefers-color-scheme: dark) {
@@ -91,6 +91,9 @@
     <script type="application/json" id="data">
       /*__DATA__*/
     </script>
+    <script type="application/json" id="ui">
+      /*__UI__*/
+    </script>
     <script type="application/json" id="story">
       /*__STORY__*/
     </script>
@@ -104,30 +107,13 @@
       for (const libs of Object.values(DATA))
         for (const d of Object.values(libs)) for (const e of d.results) e.slices = e.slices.map(([a, b, i]) => [a, b, d.labels[i]]);
       const STORY = JSON.parse(document.getElementById("story").textContent);
+      const T = JSON.parse(document.getElementById("ui").textContent);
+      const fill = (s, vars) => s.replace(/\{(\w+)\}/g, (_, k) => vars[k]);
       const FRAME = 16.7;
 
-      const HOST_LABEL = { node: "Node (bench process)", renderer: "Obsidian window" };
-      const GROUP_LABEL = {
-        baseline: "Baseline for each query",
-        "batch-size": "Items per database read",
-        "slice-budget": "Work before each pause",
-        "yield-mechanism": "How the query pauses",
-        "order-limit": "Ordering, limit, and late projection",
-        "sort-strategy": "One sort or incremental sort",
-        "plan-family": "Plan family",
-        lease: "Source lease lifetime",
-        cancel: "Cancellation",
-        "cancel-yield": "Cancellation per pause method",
-        "ui-load": "With and without simulated UI work",
-      };
-      const QUERY_LABEL = {
-        "newest-100": "Newest 100 Items",
-        "title-contains": "Title contains “the”, by title",
-        "common-tag": "Most-used Tag",
-        "rare-tag": "A rarely used Tag",
-        "has-attachment": "Items with Attachments",
-        "full-export": "Creator contains “a”, all fields, no limit",
-      };
+      const HOST_LABEL = T.host;
+      const GROUP_LABEL = T.group;
+      const QUERY_LABEL = T.query;
 
       const ms = (v, d = 1) => (v === undefined || v === null || Number.isNaN(v) ? "—" : `${v.toFixed(d)} ms`);
       const sev = (v) => (v < FRAME ? "good" : v < 50 ? "warn" : "bad");
@@ -139,7 +125,7 @@
           o[k] = v;
           return o;
         }, {}));
-        return parts.length ? parts.map(([k, v]) => (v === undefined ? k : `${k}=${v}`)).join(" · ") : "baseline settings";
+        return parts.length ? parts.map(([k, v]) => (v === undefined ? k : `${k}=${v}`)).join(" · ") : T.baselineSettings;
       }
 
       function Pill({ tone, children }) {
@@ -187,13 +173,13 @@
         return (
           <div className="flex flex-col gap-2">
             <div className="overflow-x-auto">
-              <svg viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[640px]" role="img" aria-label="Timeline of synchronous slices">
+              <svg viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[640px]" role="img" aria-label={T.timelineAria}>
                 <line x1="0" x2={W} y1={120 - (FRAME / yScale) * 100} y2={120 - (FRAME / yScale) * 100} stroke="var(--good)" strokeDasharray="4 4" strokeWidth="1" />
-                <text x={W - 4} y={116 - (FRAME / yScale) * 100} textAnchor="end" fontSize="10" fill="var(--good)">one frame (16.7 ms)</text>
+                <text x={W - 4} y={116 - (FRAME / yScale) * 100} textAnchor="end" fontSize="10" fill="var(--good)">{T.oneFrame}</text>
                 <line x1="0" x2={W} y1={120 - (50 / yScale) * 100} y2={120 - (50 / yScale) * 100} stroke="var(--bad)" strokeDasharray="2 6" strokeWidth="1" />
-                <text x={W - 4} y={116 - (50 / yScale) * 100} textAnchor="end" fontSize="10" fill="var(--bad)">long task (50 ms)</text>
+                <text x={W - 4} y={116 - (50 / yScale) * 100} textAnchor="end" fontSize="10" fill="var(--bad)">{T.longTask}</text>
                 <rect x={x(Math.max(0, exp.leaseSpan[0]))} width={Math.max(1, x(exp.leaseSpan[1] - exp.leaseSpan[0]))} y="128" height="8" fill="var(--accent)" opacity="0.35" />
-                <text x={x(Math.max(0, exp.leaseSpan[0])) + 2} y="148" fontSize="10" fill="var(--muted)">source lease held</text>
+                <text x={x(Math.max(0, exp.leaseSpan[0])) + 2} y="148" fontSize="10" fill="var(--muted)">{T.leaseHeld}</text>
                 {exp.slices.map((s, i) => {
                   const d = s[1] - s[0];
                   return (
@@ -214,7 +200,7 @@
                 {cancelAt !== null && (
                   <g>
                     <line x1={x(cancelAt)} x2={x(cancelAt)} y1="0" y2="124" stroke="var(--ink)" strokeWidth="2" />
-                    <text x={x(cancelAt) + 4} y="12" fontSize="11" fill="var(--ink)">cancel requested</text>
+                    <text x={x(cancelAt) + 4} y="12" fontSize="11" fill="var(--ink)">{T.cancelRequested}</text>
                   </g>
                 )}
               </svg>
@@ -223,8 +209,8 @@
               <span>0 ms</span>
               <span>
                 {hover !== null
-                  ? `slice ${hover + 1}: ${ms(exp.slices[hover][1] - exp.slices[hover][0], 2)} — ${exp.slices[hover][2]}`
-                  : `${exp.slices.length} slices · hover a bar to see what ran`}
+                  ? `${fill(T.sliceN, { n: hover + 1 })}: ${ms(exp.slices[hover][1] - exp.slices[hover][0], 2)} — ${exp.slices[hover][2]}`
+                  : fill(T.sliceHint, { n: exp.slices.length })}
               </span>
               <span>{ms(total, 0)}</span>
             </div>
@@ -248,16 +234,16 @@
         return (
           <div className="flex flex-col gap-3">
             <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-              <Metric label="Query time" value={ms(m.totalMs, 0)} />
-              <Metric label="Longest query slice" value={ms(m.maxSliceMs)} tone={sev(m.maxSliceMs)} hint={longest[2]} />
-              <Metric label="Longest thread block" value={ms(m.maxGapMs)} tone={sev(m.maxGapMs)} hint="time a 4 ms heartbeat timer could not run" />
-              <Metric label="Dropped frames" value={m.droppedFrames} tone={m.droppedFrames === 0 ? "good" : m.droppedFrames < 5 ? "warn" : "bad"} />
-              <Metric label="Source lease held" value={ms(m.leaseMs, 0)} hint={`${((m.leaseMs / m.totalMs) * 100).toFixed(0)}% of query time`} />
-              <Metric label="First candidate read" value={ms(m.firstCandidateStepMs)} tone={sev(m.firstCandidateStepMs)} hint="a SQL sort runs here in one piece" />
-              <Metric label="Rows" value={`${m.returnedCount}${m.truncated ? "+" : ""}`} hint={`${m.truncated ? "truncated · " : ""}${m.matchedCount === null ? "stopped early" : `${m.matchedCount} matched`} · ${m.hydratedCount} hydrated`} />
-              <Metric label="Memory peak" value={`${m.heapPeakMB.toFixed(1)} MB`} hint={`${m.statements} SQL statements`} />
+              <Metric label={T.m.total} value={ms(m.totalMs, 0)} />
+              <Metric label={T.m.maxSlice} value={ms(m.maxSliceMs)} tone={sev(m.maxSliceMs)} hint={longest[2]} />
+              <Metric label={T.m.maxGap} value={ms(m.maxGapMs)} tone={sev(m.maxGapMs)} hint={T.m.maxGapHint} />
+              <Metric label={T.m.dropped} value={m.droppedFrames} tone={m.droppedFrames === 0 ? "good" : m.droppedFrames < 5 ? "warn" : "bad"} />
+              <Metric label={T.m.lease} value={ms(m.leaseMs, 0)} hint={fill(T.m.leaseHint, { p: ((m.leaseMs / m.totalMs) * 100).toFixed(0) })} />
+              <Metric label={T.m.first} value={ms(m.firstCandidateStepMs)} tone={sev(m.firstCandidateStepMs)} hint={T.m.firstHint} />
+              <Metric label={T.m.rows} value={`${m.returnedCount}${m.truncated ? "+" : ""}`} hint={`${m.truncated ? `${T.m.truncated} · ` : ""}${m.matchedCount === null ? T.m.stoppedEarly : fill(T.m.matched, { n: m.matchedCount })} · ${fill(T.m.hydrated, { n: m.hydratedCount })}`} />
+              <Metric label={T.m.heap} value={`${m.heapPeakMB.toFixed(1)} MB`} hint={fill(T.m.statements, { n: m.statements })} />
               {m.cancelLatencyMs !== undefined && (
-                <Metric label="Cancel latency" value={ms(m.cancelLatencyMs)} tone={sev(m.cancelLatencyMs)} hint={`abort event ran ${ms(m.abortFiredLateMs)} late`} />
+                <Metric label={T.m.cancel} value={ms(m.cancelLatencyMs)} tone={sev(m.cancelLatencyMs)} hint={fill(T.m.cancelHint, { t: ms(m.abortFiredLateMs) })} />
               )}
             </div>
           </div>
@@ -274,7 +260,7 @@
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wider text-muted">
-                  <th className="px-3 py-2">Query and settings</th>
+                  <th className="px-3 py-2">{T.table.query}</th>
                   {libs.map((l) => (
                     <th key={l} className="px-3 py-2" colSpan={showCancel ? 3 : 3}>
                       {l}
@@ -285,9 +271,9 @@
                   <th />
                   {libs.map((l) => (
                     <React.Fragment key={l}>
-                      <th className="px-3 font-normal">time</th>
-                      <th className="px-3 font-normal">longest block</th>
-                      <th className="px-3 font-normal">{showCancel ? "cancel" : "dropped"}</th>
+                      <th className="px-3 font-normal">{T.table.time}</th>
+                      <th className="px-3 font-normal">{T.table.block}</th>
+                      <th className="px-3 font-normal">{showCancel ? T.table.cancel : T.table.dropped}</th>
                     </React.Fragment>
                   ))}
                 </tr>
@@ -353,18 +339,46 @@
           <main className="font-body text-ink mx-auto flex max-w-6xl flex-col gap-10 px-6 py-10">
             <header className="flex flex-col gap-3">
               <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wider text-muted">
-                <Pill tone="warn">Prototype · throwaway</Pill>
-                <a className="hover:text-accent" href="https://github.com/aidenlx/zotlit/issues/593">#593 on map #591</a>
+                <Pill tone="warn">{T.badge}</Pill>
+                <a className="hover:text-accent" href="https://github.com/aidenlx/zotlit/issues/593">{T.issueLink}</a>
               </div>
-              <h1 className="font-display text-4xl font-bold text-balance">Can an Item Query stay responsive and cancellable on Obsidian’s main thread?</h1>
+              <h1 className="font-display text-4xl font-bold text-balance">{T.h1}</h1>
               <p className="max-w-[65ch] text-muted">{STORY.question}</p>
               <div className="flex flex-wrap gap-2 text-xs text-muted font-mono">
                 {hosts.map((h) => Object.values(DATA[h]).slice(0, 1).map((d) => <span key={h} className="rounded border border-line bg-panel px-2 py-1">{HOST_LABEL[h]}: {d.host} · SQLite {d.library.sqlite}</span>))}
               </div>
             </header>
 
+            <section className="flex flex-col gap-4 rounded-lg border border-accent bg-panel p-5">
+              <div className="flex flex-wrap items-center gap-3">
+                <h2 className="font-display text-2xl font-semibold">{T.conclusions}</h2>
+                <Pill tone="good">{STORY.verdict.answer}</Pill>
+              </div>
+              <p className="max-w-[65ch]">{STORY.verdict.summary}</p>
+              <ol className="flex flex-col gap-2">
+                {STORY.verdict.rules.map((r, i) => (
+                  <li key={i} className="grid grid-cols-[2rem_1fr] gap-2">
+                    <span className="font-mono text-accent tnum">{String(i + 1).padStart(2, "0")}</span>
+                    <span>
+                      <strong className="font-semibold">{r.title}</strong> <span className="text-muted">{r.body}</span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+              <div className="grid gap-3 md:grid-cols-2 text-sm">
+                <div>
+                  <div className="text-xs uppercase tracking-wider text-muted">{T.openItems}</div>
+                  <ul className="list-disc pl-5">{STORY.verdict.open.map((x) => <li key={x}>{x}</li>)}</ul>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wider text-muted">{T.notMeasured}</div>
+                  <ul className="list-disc pl-5">{STORY.verdict.notMeasured.map((x) => <li key={x}>{x}</li>)}</ul>
+                </div>
+              </div>
+            </section>
+
             <section className="flex flex-col gap-4">
-              <h2 className="font-display text-2xl font-semibold">What the measurements say</h2>
+              <h2 className="font-display text-2xl font-semibold">{T.findings}</h2>
               <div className="grid gap-3 md:grid-cols-2">
                 {STORY.findings.map((f) => (
                   <article key={f.title} className="flex flex-col gap-2 rounded-lg border border-line bg-panel p-4">
@@ -375,7 +389,7 @@
                     <p className="text-sm text-muted max-w-[65ch]">{f.body}</p>
                     {f.show && (
                       <button className="self-start text-sm text-accent hover:underline" onClick={() => go(f.show)}>
-                        Show the trace →
+                        {T.showTrace}
                       </button>
                     )}
                   </article>
@@ -384,7 +398,7 @@
             </section>
 
             <section className="flex flex-col gap-4">
-              <h2 className="font-display text-2xl font-semibold">Walkthroughs</h2>
+              <h2 className="font-display text-2xl font-semibold">{T.walkthroughs}</h2>
               <div className="flex flex-wrap gap-1 border-b border-line">
                 {STORY.walkthroughs.map((w, i) => (
                   <button
@@ -423,35 +437,33 @@
             </section>
 
             <section id="explorer" className="flex flex-col gap-4 scroll-mt-4">
-              <h2 className="font-display text-2xl font-semibold">Trace explorer</h2>
+              <h2 className="font-display text-2xl font-semibold">{T.explorer}</h2>
               <div className="flex flex-wrap gap-6">
-                <Segmented label="Where it ran" value={host} onChange={setHost} options={hosts.map((h) => ({ value: h, label: HOST_LABEL[h] }))} />
-                <Segmented label="Library" value={lib} onChange={setLib} options={libs.map((l) => ({ value: l, label: `${l} · ${DATA[host][l].library.topLevelItems.toLocaleString()} Items` }))} />
+                <Segmented label={T.whereRan} value={host} onChange={setHost} options={hosts.map((h) => ({ value: h, label: HOST_LABEL[h] }))} />
+                <Segmented label={T.library} value={lib} onChange={setLib} options={libs.map((l) => ({ value: l, label: fill(T.libOption, { l, n: DATA[host][l].library.topLevelItems.toLocaleString() }) }))} />
               </div>
-              <Segmented label="Experiment group" value={group} onChange={(g) => { setGroup(g); setExpId(null); }} options={groups.map((g) => ({ value: g, label: GROUP_LABEL[g] ?? g }))} />
+              <Segmented label={T.group_} value={group} onChange={(g) => { setGroup(g); setExpId(null); }} options={groups.map((g) => ({ value: g, label: GROUP_LABEL[g] ?? g }))} />
               {exp ? (
                 <div className="flex flex-col gap-4 rounded-lg border border-line bg-panel p-4">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <div>
                       <div className="font-semibold">{QUERY_LABEL[exp.query]}</div>
-                      <div className="text-xs text-muted font-mono">{knobLabel(exp)} · pause: {exp.yield} · simulated UI work: {exp.uiLoad ? "on" : "off"}</div>
+                      <div className="text-xs text-muted font-mono">{knobLabel(exp)} · {T.pause}: {exp.yield} · {T.uiWork}: {exp.uiLoad ? T.on : T.off}</div>
                     </div>
                     <div className="text-xs text-muted font-mono">
-                      plan {exp.opts.plan} · {exp.opts.hydrateBatch} Items/read · budget {exp.opts.sliceBudgetMs} ms · median of {exp.runs.length}
+                      {fill(T.expMeta, { plan: exp.opts.plan, batch: exp.opts.hydrateBatch, budget: exp.opts.sliceBudgetMs, runs: exp.runs.length })}
                     </div>
                   </div>
                   <Timeline exp={exp} />
                   <Metrics exp={exp} />
                 </div>
               ) : (
-                <p className="text-muted">This host has no result for this experiment.</p>
+                <p className="text-muted">{T.noResult}</p>
               )}
               <CompareTable host={host} group={group} libs={libs} select={setExpId} current={exp?.id} />
             </section>
 
-            <footer className="text-xs text-muted">
-              Slices are synchronous stretches between two pauses. Green fits in one frame, amber delays a frame, red is a long task. Results hold timings and counts only; no Item data.
-            </footer>
+            <footer className="text-xs text-muted">{T.footer}</footer>
           </main>
         );
       }

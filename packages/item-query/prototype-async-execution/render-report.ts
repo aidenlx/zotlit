@@ -1,6 +1,8 @@
 /**
  * PROTOTYPE — throwaway. Folds `results/*.json` and `story.json` into one
- * self-contained page: `prototype-item-query-async-execution.html`.
+ * self-contained page per language: `prototype-item-query-async-execution.html`
+ * (`ui.en.json`, `story.json`) and `prototype-item-query-async-execution.zh.html`
+ * (`ui.zh.json`, `story.zh.json`).
  *
  *   node render-report.ts
  */
@@ -30,10 +32,21 @@ for (const host of Object.keys(data)) {
     Object.entries(data[host]!).sort(([a], [b]) => order.indexOf(a) - order.indexOf(b)),
   );
 }
-const story = readFileSync(join(here, "story.json"), "utf8");
-const html = readFileSync(join(here, "report.template.html"), "utf8")
-  .replace("/*__DATA__*/", () => JSON.stringify(data).replaceAll("</", "<\\/"))
-  .replace("/*__STORY__*/", () => story.replaceAll("</", "<\\/"));
-const out = join(here, "prototype-item-query-async-execution.html");
-writeFileSync(out, html);
-console.log(`wrote ${out} (${(html.length / 1024).toFixed(0)} KiB)`);
+const template = readFileSync(join(here, "report.template.html"), "utf8");
+const dataJson = JSON.stringify(data).replaceAll("</", "<\\/");
+for (const [lang, suffix] of [
+  ["en", ""],
+  ["zh", ".zh"],
+] as const) {
+  const ui = JSON.parse(readFileSync(join(here, `ui.${lang}.json`), "utf8"));
+  const story = readFileSync(join(here, `story${suffix}.json`), "utf8");
+  const html = template
+    .replace("/*__LANG__*/", lang === "zh" ? "zh-CN" : "en")
+    .replace("/*__TITLE__*/", ui.title)
+    .replace("/*__DATA__*/", () => dataJson)
+    .replace("/*__UI__*/", () => JSON.stringify(ui).replaceAll("</", "<\\/"))
+    .replace("/*__STORY__*/", () => story.replaceAll("</", "<\\/"));
+  const out = join(here, `prototype-item-query-async-execution${suffix}.html`);
+  writeFileSync(out, html);
+  console.log(`wrote ${out} (${(html.length / 1024).toFixed(0)} KiB)`);
+}
