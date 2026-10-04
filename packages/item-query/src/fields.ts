@@ -126,6 +126,26 @@ function fromScan(
   };
 }
 
+/**
+ * A timestamp of the scan row. A stored value that SQLite cannot parse is
+ * null in projection, filter, and sort.
+ */
+function scanTimestamp(column: "dateAdded" | "dateModified"): FieldDefinition {
+  const instant = (row: ScanRow) => {
+    const milliseconds = row[column];
+    return milliseconds === null
+      ? null
+      : Temporal.Instant.fromEpochMilliseconds(milliseconds);
+  };
+  return fromScan(instant, (row) => row[column], {
+    type: "date",
+    read: (item) => {
+      const value = instant(item.scan);
+      return value && timestamp(value);
+    },
+  });
+}
+
 /** A built-in Zotero field; a base field resolves through its aliases. */
 function zoteroField(name: string): FieldDefinition {
   const builtIn = [name];
@@ -315,34 +335,8 @@ const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map([
       { type: "string", read: (item) => item.scan.itemType },
     ),
   ],
-  [
-    "dateAdded",
-    fromScan(
-      (row) => Temporal.Instant.fromEpochMilliseconds(row.dateAdded),
-      (row) => row.dateAdded,
-      {
-        type: "date",
-        read: (item) =>
-          timestamp(
-            Temporal.Instant.fromEpochMilliseconds(item.scan.dateAdded),
-          ),
-      },
-    ),
-  ],
-  [
-    "dateModified",
-    fromScan(
-      (row) => Temporal.Instant.fromEpochMilliseconds(row.dateModified),
-      (row) => row.dateModified,
-      {
-        type: "date",
-        read: (item) =>
-          timestamp(
-            Temporal.Instant.fromEpochMilliseconds(item.scan.dateModified),
-          ),
-      },
-    ),
-  ],
+  ["dateAdded", scanTimestamp("dateAdded")],
+  ["dateModified", scanTimestamp("dateModified")],
   ["custom", customField],
   ["creators", creatorsField],
   ["tags", tagsField],

@@ -28,15 +28,16 @@ export interface ScanRow {
   /**
    * The Unix time in milliseconds. A scan reads every Item of the Library, so
    * a row holds a number: a `Temporal.Instant` for each row fills the young
-   * heap, and its collections are long pauses in the Obsidian window.
+   * heap, and its collections are long pauses in the Obsidian window. Null
+   * for a stored value that SQLite cannot parse as a time.
    */
-  dateAdded: number;
-  dateModified: number;
+  dateAdded: number | null;
+  dateModified: number | null;
 }
 
 /** A timestamp column of `items` as its Unix time in milliseconds. */
-function epochMilliseconds(column: AnyColumn): SQL<number> {
-  return sql<number>`unixepoch(${column}) * 1000`;
+function epochMilliseconds(column: AnyColumn): SQL<number | null> {
+  return sql<number | null>`unixepoch(${column}) * 1000`;
 }
 
 const scanPageStatement = defineStatement<{

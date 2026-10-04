@@ -1428,6 +1428,27 @@ describe("queryItems with a filter", () => {
       ]);
       expect(await matching("number(volume) > 12")).toEqual([]);
     });
+
+    it("gives null for a timestamp that cannot be parsed, in projection, filter, and sort", async () => {
+      scenario = openScenarioDatabase();
+      scenario.sqlite.exec(
+        "update items set dateAdded = 'garbage', dateModified = 'garbage' where key = 'RPT2NDTE' and libraryID = 1",
+      );
+
+      const found = await result({
+        library: personal,
+        fields: ["dateAdded", "dateModified"],
+        sort: [{ field: "dateAdded", direction: "asc" }],
+      });
+      expect(found.rows.at(-1)).toEqual({
+        indexedKey: "RPT2NDTE",
+        values: { dateAdded: null, dateModified: null },
+      });
+      expect(await matching("dateAdded == null")).toEqual(["RPT2NDTE"]);
+      expect(await matching("dateModified == null")).toEqual(["RPT2NDTE"]);
+      expect(await matching('dateAdded < date("2000-01-01")')).toEqual([]);
+      expect(await matching('dateModified < date("2000-01-01")')).toEqual([]);
+    });
   });
 
   describe("dates and the Query Clock", () => {
