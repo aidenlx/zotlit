@@ -22,7 +22,7 @@ import type { BaseFieldTable } from "@/queries/_base-fields";
 
 import type { CollectionPaths } from "./collection-paths";
 import { defineStatement } from "./database";
-import type { ItemQueryDatabase, ItemQueryDatabaseError } from "./database";
+import type { ItemQueryDatabase, ItemQueryReaderError } from "./database";
 
 /** The Items one hydrate statement reads at most. */
 export const HYDRATE_CHUNK_SIZE = 250;
@@ -137,7 +137,7 @@ const baseFieldMappingsStatement = defineStatement<Record<string, never>>()(
  */
 export function readFieldVocabulary(): Effect.Effect<
   FieldVocabulary,
-  ItemQueryDatabaseError,
+  ItemQueryReaderError,
   ItemQueryDatabase
 > {
   return Effect.gen(function* () {
@@ -307,7 +307,7 @@ export function readHydrateChunk(chunk: {
   collectionPaths?: CollectionPaths;
 }): Effect.Effect<
   ReadonlyMap<number, HydratedItem>,
-  ItemQueryDatabaseError,
+  ItemQueryReaderError,
   ItemQueryDatabase
 > {
   const { vocabulary, itemIDs, fields, relations = [] } = chunk;

@@ -5,7 +5,7 @@ import type { Effect } from "effect";
 import { CHILD_ITEM_TYPES } from "@/lib/item-types";
 
 import { defineStatement } from "./database";
-import type { ItemQueryDatabase, ItemQueryDatabaseError } from "./database";
+import type { ItemQueryDatabase, ItemQueryReaderError } from "./database";
 
 /** The Items one scan statement reads at most. */
 export const SCAN_PAGE_SIZE = 500;
@@ -65,7 +65,7 @@ export function readScanPage(page: {
   afterKey: string | null;
   /** Defaults to {@link SCAN_PAGE_SIZE}, which is also its upper limit. */
   size?: number;
-}): Effect.Effect<ScanRow[], ItemQueryDatabaseError, ItemQueryDatabase> {
+}): Effect.Effect<ScanRow[], ItemQueryReaderError, ItemQueryDatabase> {
   return scanPageStatement.all({
     libraryID: page.libraryID,
     afterKey: page.afterKey ?? "",

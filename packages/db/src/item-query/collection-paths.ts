@@ -3,7 +3,7 @@ import { and, eq, notExists } from "drizzle-orm";
 import { Effect } from "effect";
 
 import { defineStatement } from "./database";
-import type { ItemQueryDatabase, ItemQueryDatabaseError } from "./database";
+import type { ItemQueryDatabase, ItemQueryReaderError } from "./database";
 
 /**
  * The root-first name path of each live Collection of one Library, by
@@ -42,7 +42,7 @@ const liveCollectionsStatement = defineStatement<{ libraryID: number }>()(
  */
 export function readCollectionPaths(library: {
   libraryID: number;
-}): Effect.Effect<CollectionPaths, ItemQueryDatabaseError, ItemQueryDatabase> {
+}): Effect.Effect<CollectionPaths, ItemQueryReaderError, ItemQueryDatabase> {
   return Effect.gen(function* () {
     const rows = yield* liveCollectionsStatement.all(library);
     return yield* Effect.sync(() => {

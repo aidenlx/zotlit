@@ -2,7 +2,11 @@ import { Cause, Effect, Exit } from "effect";
 import type { SQLInputValue } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { ItemQueryDatabase } from "@zotlit/db/item-query";
+import {
+  checkLayout,
+  ItemQueryDatabase,
+  ItemQueryLayoutError,
+} from "@zotlit/db/item-query";
 import {
   openScenarioDatabase,
   SCENARIO_LIBRARIES,
@@ -748,6 +752,8 @@ describe("queryItems failures", () => {
 
   it("fails with the tagged database error when a statement fails", async () => {
     scenario = openScenarioDatabase();
+    // The copy passes the layout check first, so the statement itself fails.
+    await runEffect(checkLayout(), { client: scenario.db });
     scenario.sqlite.exec("drop table deletedItems");
 
     const error = await failure({ library: personal });
@@ -758,6 +764,43 @@ describe("queryItems failures", () => {
       cause: expect.objectContaining({
         message: expect.stringContaining("deletedItems"),
       }),
+    });
+  });
+});
+
+describe("queryItems on the layout of the Zotero database", () => {
+  function stamp(versions: { userdata: number; compatibility: number }) {
+    const update = scenario!.sqlite.prepare(
+      "update version set version = ? where schema = ?",
+    );
+    update.run(versions.userdata, "userdata");
+    update.run(versions.compatibility, "compatibility");
+  }
+
+  it("fails with ItemQueryLayoutError when a copy stamped inside the supported range lacks a manifest column", async () => {
+    scenario = openScenarioDatabase();
+    stamp({ userdata: 129, compatibility: 9 });
+    scenario.sqlite.exec('alter table "fieldsCombined" drop column "custom"');
+
+    const error = await failure({ library: personal, fields: [] });
+
+    expect(error).toBeInstanceOf(ItemQueryLayoutError);
+    expect(error).toMatchObject({
+      _tag: "ItemQueryLayoutError",
+      missing: [{ table: "fieldsCombined", column: "custom" }],
+      message: expect.stringContaining("Update ZotLit"),
+    });
+  });
+
+  it("gives the oracle result on a copy stamped outside the supported range with the full layout", async () => {
+    scenario = openScenarioDatabase();
+    stamp({ userdata: 140, compatibility: 12 });
+
+    const found = await result({ library: personal, fields: ["title"] });
+
+    expect(keys(found)).toEqual(PERSONAL_BY_MODIFIED);
+    expect(found.rows[0]!.values).toEqual({
+      title: "Exact Matching in Literature Review",
     });
   });
 });

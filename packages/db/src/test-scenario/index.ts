@@ -22,6 +22,8 @@ export {
   type ScenarioLibraryName,
 } from "./seed";
 
+export type ScenarioLayout = "highest" | "lowest";
+
 export interface ScenarioDatabaseOptions {
   /**
    * `"memory"` (default) holds the copy in memory. `"temp-directory"` writes it
@@ -29,11 +31,13 @@ export interface ScenarioDatabaseOptions {
    */
   storage?: "memory" | "temp-directory";
   /**
-   * `"highest"` (default) keeps the pristine Zotero 10 layout. `"lowest"` gives
-   * the lowest supported layout: the columns Zotero added after `userdata` 125
-   * are dropped and the versions read `userdata` 125 / `compatibility` 7.
+   * `"highest"` keeps the pristine Zotero 10 layout. `"lowest"` gives the
+   * lowest supported layout: the columns Zotero added after `userdata` 125 are
+   * dropped and the versions read `userdata` 125 / `compatibility` 7. The
+   * default is the `ZOTLIT_SCENARIO_LAYOUT` environment variable, so a test
+   * project can run a whole scenario on the lowest layout; else `"highest"`.
    */
-  layout?: "highest" | "lowest";
+  layout?: ScenarioLayout;
 }
 
 export interface ScenarioDatabase extends Disposable {
@@ -91,7 +95,10 @@ export function openScenarioDatabase(
 
   try {
     seedScenario(sqlite);
-    if (options.layout === "lowest") toLowestLayout(sqlite);
+    const layout =
+      options.layout ??
+      (process.env.ZOTLIT_SCENARIO_LAYOUT as ScenarioLayout | undefined);
+    if (layout === "lowest") toLowestLayout(sqlite);
   } catch (error) {
     sqlite.close();
     if (directory) rmSync(directory, { recursive: true, force: true });
