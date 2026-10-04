@@ -2444,6 +2444,78 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
   });
 
+  it("describes Item Query through zotlit:item-query-schema", async () => {
+    const answer = JSON.parse(
+      await cliCommand(vaultId, "zotlit:item-query-schema"),
+    ) as ItemQuerySchemaReport;
+
+    expect(answer).toMatchObject({
+      contractVersion: 1,
+      command: "zotlit:item-query-schema",
+      ok: true,
+      schema: {
+        defaults: {
+          fields: ["itemType", "title", "creators", "date", "dateModified"],
+          sort: [{ field: "dateModified", direction: "desc" }],
+          limit: 100,
+          library: "personal",
+        },
+      },
+    });
+    expect(answer.schema!.fields).toContainEqual({
+      path: "title",
+      type: "string",
+      filter: "string",
+      projection: true,
+      sort: true,
+    });
+    expect(answer.schema!.customFields).toEqual(expect.any(Array));
+    expect(answer.schema!.functions.map(({ name }) => name)).toContain("today");
+  });
+
+  it("answers an invalid zotlit:item-query with the code, location, and hint", async () => {
+    const answer = JSON.parse(
+      await cliCommand(vaultId, "zotlit:item-query", {
+        filter: "title.startsWith(1)",
+      }),
+    ) as ItemQueryReport;
+
+    expect(answer).toMatchObject({
+      contractVersion: 1,
+      command: "zotlit:item-query",
+      ok: false,
+      diagnostic: {
+        code: "wrong-argument-type",
+        location: { argument: "filter", span: { from: 17, to: 18 } },
+        hint: "Call value.startsWith(prefix).",
+      },
+    });
+  });
+
+  it("sorts titles in the pinned Item Query string order", async () => {
+    // The order Node gives in the package tests; this run proves that the
+    // collator of Obsidian's Electron gives the same.
+    const answer = JSON.parse(
+      await cliCommand(vaultId, "zotlit:item-query", {
+        filter:
+          '["Zebra", "apple", "Éclair", "eclair", "10", "9"].contains(title)',
+        fields: '["title"]',
+        sort: '[{"field":"title","direction":"asc"}]',
+        limit: "all",
+      }),
+    ) as ItemQueryReport;
+
+    expect(answer.ok).toBe(true);
+    expect(answer.rows!.map((row) => row.values.title)).toEqual([
+      "10",
+      "9",
+      "apple",
+      "eclair",
+      "Éclair",
+      "Zebra",
+    ]);
+  });
+
   it("reflects a Scope Case switch through zotlit:library-scope", async () => {
     const availableCase = findScopeCase("available");
     const dataPath = join(
@@ -2532,6 +2604,31 @@ interface ItemQueryReport {
   returnedCount?: number;
   truncated?: boolean;
   rows?: { indexedKey: string; values: Record<string, unknown> }[];
+  diagnostic?: {
+    code: string;
+    hint: string;
+    location?: { argument: string; span?: { from: number; to: number } };
+  };
+}
+
+/** The `zotlit:item-query-schema` reply shape this suite reads (see
+ *  apps/obsidian/src/services/item-query/cli.ts). */
+interface ItemQuerySchemaReport {
+  contractVersion: number;
+  command: string;
+  ok: boolean;
+  schema?: {
+    fields: {
+      path: string;
+      type: string;
+      filter: string | null;
+      projection: boolean;
+      sort: boolean;
+    }[];
+    customFields: { name: string; path: string; bareName: boolean }[];
+    functions: { name: string }[];
+    defaults: object;
+  };
 }
 
 /** The `zotlit:library-scope` reply shape this suite reads (see

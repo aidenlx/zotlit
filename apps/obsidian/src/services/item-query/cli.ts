@@ -1,7 +1,9 @@
-// Registers the Item Query command with Obsidian's CLI: the only Promise edge
-// of `@zotlit/item-query` (ADR 0066). It decodes the flat arguments, takes the
-// source lease, resolves the Target Library, runs the query, and answers the
-// versioned envelope of ADR 0065.
+// Registers the Item Query commands with Obsidian's CLI: the only Promise edge
+// of `@zotlit/item-query` (ADR 0066). The query command decodes the flat
+// arguments, takes the source lease, resolves the Target Library, runs the
+// query, and answers the versioned envelope of ADR 0065. The schema command
+// answers the Item Query Schema of the source in the same envelope; the guide
+// command prints plain text.
 //
 // Command, flag, and diagnostic text is all hardcoded English: an
 // agent-facing contract surface, not localized UI. See
@@ -19,6 +21,7 @@ import type {
 } from "@zotlit/db/item-query";
 import type {
   ItemQueryError,
+  ItemQuerySchema,
   ProjectionValue,
   QueryResult,
   SortSpec,
@@ -28,7 +31,8 @@ import type {
 import { getLogger } from "@/lib/log";
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
-import { runItemQuery } from "./run";
+import { GUIDE_TOPIC_NAMES, parseGuideTopic, renderGuide } from "./guide";
+import { runDescribeItemQuery, runItemQuery } from "./run";
 
 const logger = getLogger(["item-query"]);
 
@@ -39,8 +43,13 @@ const logger = getLogger(["item-query"]);
 export const CONTRACT_VERSION = 1;
 
 export const ITEM_QUERY_COMMAND = "zotlit:item-query" as const;
+export const ITEM_QUERY_SCHEMA_COMMAND = "zotlit:item-query-schema" as const;
+export const ITEM_QUERY_GUIDE_COMMAND = "zotlit:item-query-guide" as const;
 
-type ItemQueryCommand = typeof ITEM_QUERY_COMMAND;
+type ItemQueryCommand =
+  | typeof ITEM_QUERY_COMMAND
+  | typeof ITEM_QUERY_SCHEMA_COMMAND
+  | typeof ITEM_QUERY_GUIDE_COMMAND;
 
 /** The rows a CLI query returns when the caller gives no limit. */
 export const DEFAULT_CLI_LIMIT = 100;
@@ -82,6 +91,13 @@ export const itemQueryFlags: CliFlags = {
       "Target Library: personal, or group:<groupID> (default: personal)",
   },
 } satisfies Record<ItemQueryParam, CliFlag>;
+
+export const itemQueryGuideFlags: CliFlags = {
+  topic: {
+    value: `<${GUIDE_TOPIC_NAMES.join("|")}>`,
+    description: "Guide topic; omit it for the quickstart",
+  },
+} satisfies Record<"topic", CliFlag>;
 
 /**
  * The diagnostic codes this adapter raises itself, each defined with the
@@ -148,7 +164,16 @@ type EnvelopeTail =
       returnedCount: number;
       truncated: boolean;
       rows: readonly { indexedKey: string; values: object }[];
-    };
+    }
+  | { ok: true; identity: WorkbenchIdentity; schema: SchemaWire };
+
+/** The Item Query Schema with the defaults of the CLI in place of the package's. */
+type SchemaWire = Omit<ItemQuerySchema, "defaults"> & {
+  defaults: Omit<ItemQuerySchema["defaults"], "limit"> & {
+    limit: number;
+    library: "personal";
+  };
+};
 
 function envelope(command: ItemQueryCommand, tail: EnvelopeTail): string {
   return JSON.stringify(
@@ -158,8 +183,11 @@ function envelope(command: ItemQueryCommand, tail: EnvelopeTail): string {
   );
 }
 
-function failure(diagnostic: Diagnostic): string {
-  return envelope(ITEM_QUERY_COMMAND, { ok: false, diagnostic });
+function failure(
+  diagnostic: Diagnostic,
+  command: ItemQueryCommand = ITEM_QUERY_COMMAND,
+): string {
+  return envelope(command, { ok: false, diagnostic });
 }
 
 /** A pinned read of the active Zotero source, released on dispose. */
@@ -186,6 +214,94 @@ export function registerItemQueryCli(
     itemQueryFlags,
     createItemQueryHandler({ ...deps, signal: unload.signal }),
   );
+  plugin.registerCliHandler(
+    ITEM_QUERY_SCHEMA_COMMAND,
+    "Describe the fields, functions, and defaults of Item Query as JSON",
+    null,
+    createItemQuerySchemaHandler({ ...deps, signal: unload.signal }),
+  );
+  plugin.registerCliHandler(
+    ITEM_QUERY_GUIDE_COMMAND,
+    "Print the ZotLit Item Query guide",
+    itemQueryGuideFlags,
+    itemQueryGuideHandler,
+  );
+}
+
+/**
+ * The schema handler answers the envelope for the schema and for every typed
+ * failure. Cancellation and a defect reject, as in the query handler.
+ */
+export function createItemQuerySchemaHandler(
+  deps: ItemQueryCliDeps,
+): CliHandler {
+  return async (params: CliData): Promise<string> => {
+    const rejected = rejectParameters(params, []);
+    if (rejected) return failure(rejected, ITEM_QUERY_SCHEMA_COMMAND);
+
+    deps.signal.throwIfAborted();
+
+    let lease: ItemQueryLease;
+    try {
+      lease = await deps.acquireRead();
+    } catch (error) {
+      logger.warn("Item Query could not read the Zotero source", { error });
+      return failure(
+        diagnostic(
+          "source-unavailable",
+          `The connected Zotero source is not readable: ${messageOf(error)}`,
+        ),
+        ITEM_QUERY_SCHEMA_COMMAND,
+      );
+    }
+    let exit: Exit.Exit<
+      ItemQuerySchema,
+      ItemQueryLayoutError | ItemQueryDatabaseError
+    >;
+    try {
+      exit = await runDescribeItemQuery({
+        client: lease.client,
+        signal: deps.signal,
+      });
+    } finally {
+      lease[Symbol.dispose]();
+    }
+
+    if (Exit.isSuccess(exit)) {
+      const schema = exit.value;
+      return envelope(ITEM_QUERY_SCHEMA_COMMAND, {
+        ok: true,
+        identity: await deps.identity(),
+        schema: {
+          ...schema,
+          defaults: {
+            ...schema.defaults,
+            limit: DEFAULT_CLI_LIMIT,
+            library: "personal",
+          },
+        },
+      });
+    }
+    return answerFailure(exit.cause, ITEM_QUERY_SCHEMA_COMMAND, deps.signal);
+  };
+}
+
+/** The guide is plain text; an unknown topic answers the diagnostic envelope. */
+export function itemQueryGuideHandler(params: CliData): string {
+  const rejected = rejectParameters(params, ["topic"]);
+  if (rejected) return failure(rejected, ITEM_QUERY_GUIDE_COMMAND);
+  if (params.topic === undefined) return renderGuide(null);
+  const topic = parseGuideTopic(params.topic);
+  if (topic === null) {
+    return failure(
+      invalid(
+        "topic",
+        `topic '${params.topic}' is not a guide topic: use ${GUIDE_TOPIC_NAMES.join(", ")}.`,
+      ),
+      ITEM_QUERY_GUIDE_COMMAND,
+    );
+  }
+  return renderGuide(topic);
 }
 
 /**
@@ -286,27 +402,47 @@ export async function answerExit(
     });
   }
 
-  const { cause } = exit;
+  return answerFailure(exit.cause, ITEM_QUERY_COMMAND, context.signal);
+}
+
+/**
+ * Map the failure of one run to the answer of `command`: every typed failure
+ * becomes the envelope, cancellation rejects with the abort reason, and a
+ * defect rejects with an `Error`.
+ */
+function answerFailure(
+  cause: Cause.Cause<
+    ItemQueryError | ItemQueryLayoutError | ItemQueryDatabaseError
+  >,
+  command: ItemQueryCommand,
+  signal: AbortSignal,
+): string {
   const error = Cause.findErrorOption(cause);
   if (error._tag === "Some") {
     const failed = error.value;
     if (failed._tag === "ItemQueryError") {
-      return failure({
-        code: failed.code,
-        message: failed.message,
-        hint: failed.hint,
-        location: failed.location,
-      });
+      return failure(
+        {
+          code: failed.code,
+          message: failed.message,
+          hint: failed.hint,
+          location: failed.location,
+        },
+        command,
+      );
     }
     if (failed._tag === "ItemQueryLayoutError") {
       // `@zotlit/db` logs the missing layout and the versions once per copy.
-      return failure(diagnostic("unsupported-database-layout", failed.message));
+      return failure(
+        diagnostic("unsupported-database-layout", failed.message),
+        command,
+      );
     }
-    return databaseFailure(failed.cause, failed);
+    return databaseFailure(failed.cause, failed, command);
   }
   if (Cause.hasInterruptsOnly(cause)) {
     throw (
-      context.signal.reason ??
+      signal.reason ??
       new DOMException("The query was cancelled.", "AbortError")
     );
   }
@@ -318,7 +454,11 @@ export async function answerExit(
   });
 }
 
-function databaseFailure(cause: unknown, logged: unknown = cause): string {
+function databaseFailure(
+  cause: unknown,
+  logged: unknown = cause,
+  command: ItemQueryCommand = ITEM_QUERY_COMMAND,
+): string {
   logger.error("Item Query failed to read the Zotero database", {
     error: logged,
   });
@@ -327,6 +467,7 @@ function databaseFailure(cause: unknown, logged: unknown = cause): string {
       "database-error",
       `Item Query could not read the Zotero database: ${messageOf(cause)}`,
     ),
+    command,
   );
 }
 
@@ -410,24 +551,8 @@ const sortSchema = v.array(
  * is rejected here too.
  */
 function decodeArguments(params: CliData): DecodedArguments | Diagnostic {
-  for (const key of Object.keys(params)) {
-    if (
-      key.startsWith("--") ||
-      (ITEM_QUERY_PARAMS as readonly string[]).includes(key)
-    ) {
-      continue;
-    }
-    if (key === "vault") {
-      return invalid(
-        "vault",
-        "vault must come before the command name (obsidian vault=<name> zotlit:...); placed after, Obsidian ignores it and routes the call by working directory or focused window instead.",
-      );
-    }
-    return invalid(
-      key,
-      `Unknown parameter '${key}': use ${ITEM_QUERY_PARAMS.join(", ")}.`,
-    );
-  }
+  const rejected = rejectParameters(params, ITEM_QUERY_PARAMS);
+  if (rejected) return rejected;
 
   let library: LibrarySelector = { type: "personal" };
   if (params.library !== undefined) {
@@ -514,6 +639,32 @@ function decodeJson<K extends JsonArgument>(
     return invalid(parameter, `${parameter} is not ${expected}.`);
   }
   return result.output as v.InferOutput<(typeof JSON_ARGUMENTS)[K]["schema"]>;
+}
+
+/**
+ * The diagnostic of the first parameter outside `accepted`. Obsidian passes
+ * every caller token through; its own `--` tokens pass.
+ */
+function rejectParameters(
+  params: CliData,
+  accepted: readonly string[],
+): Diagnostic | null {
+  for (const key of Object.keys(params)) {
+    if (key.startsWith("--") || accepted.includes(key)) continue;
+    if (key === "vault") {
+      return invalid(
+        "vault",
+        "vault must come before the command name (obsidian vault=<name> zotlit:...); placed after, Obsidian ignores it and routes the call by working directory or focused window instead.",
+      );
+    }
+    return invalid(
+      key,
+      accepted.length === 0
+        ? `Unknown parameter '${key}': this command takes no parameters.`
+        : `Unknown parameter '${key}': use ${accepted.join(", ")}.`,
+    );
+  }
+  return null;
 }
 
 function invalid(parameter: string, message: string): Diagnostic {

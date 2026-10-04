@@ -1484,8 +1484,10 @@ describe("a Stress Build", () => {
 });
 
 describe("a one-Library Stress Build", () => {
-  /** My Library at 2,038 Items: the 38 Fixture Spec Items and 2,000 synthetic ones. */
-  const LIBRARY_ITEMS = 2_038;
+  /** The Fixture Spec Items of My Library: the floor of the build. */
+  const SPEC_ITEMS = ITEMS.filter(({ libraryID }) => libraryID === 1).length;
+  /** My Library with the Fixture Spec Items and 2,000 synthetic ones. */
+  const LIBRARY_ITEMS = SPEC_ITEMS + 2_000;
   let libraryLayout: FixtureLayout;
 
   beforeAll(async () => {
@@ -1624,8 +1626,11 @@ describe("a one-Library Stress Build", () => {
 
   it("rejects a count below the Fixture Spec Items of My Library", async () => {
     await expect(
-      buildTemporaryLibraryStressFixture("fixture-stress-library-small-", 37),
-    ).rejects.toThrow(/at least 38/);
+      buildTemporaryLibraryStressFixture(
+        "fixture-stress-library-small-",
+        SPEC_ITEMS - 1,
+      ),
+    ).rejects.toThrow(`at least ${SPEC_ITEMS},`);
   });
 
   it("rejects a build that also asks for the additive corpus", async () => {

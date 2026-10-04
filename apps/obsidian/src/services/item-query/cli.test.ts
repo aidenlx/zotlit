@@ -13,10 +13,15 @@ import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 import {
   answerExit,
   createItemQueryHandler,
+  createItemQuerySchemaHandler,
   ITEM_QUERY_COMMAND,
+  ITEM_QUERY_GUIDE_COMMAND,
+  ITEM_QUERY_SCHEMA_COMMAND,
+  itemQueryGuideHandler,
   registerItemQueryCli,
 } from "./cli";
 import type { ItemQueryCliDeps } from "./cli";
+import { GUIDE_EXAMPLES, GUIDE_FILTERS, GUIDE_TOPIC_NAMES } from "./guide";
 
 let scenario: ScenarioDatabase | undefined;
 
@@ -106,6 +111,21 @@ describe("zotlit:item-query without arguments", () => {
       "command",
       "ok",
     ]);
+  });
+
+  it("answers pretty JSON", async () => {
+    const handler = createItemQueryHandler({
+      acquireRead: async () => {
+        scenario ??= openScenarioDatabase();
+        return { client: scenario.db, [Symbol.dispose]: () => {} };
+      },
+      identity: async () => IDENTITY,
+      signal: new AbortController().signal,
+    });
+
+    const answer = await handler({ limit: "1" });
+
+    expect(answer).toMatch(/^\{\n {2}"contractVersion": 1,\n/);
   });
 });
 
@@ -575,6 +595,222 @@ describe("answerExit", () => {
   });
 });
 
+function setupSchema(overrides: Partial<ItemQueryCliDeps> = {}) {
+  const events: string[] = [];
+  const acquireRead = vi.fn(async () => {
+    scenario ??= openScenarioDatabase();
+    events.push("acquire");
+    return {
+      client: scenario.db,
+      [Symbol.dispose]: () => events.push("release"),
+    };
+  });
+  const handler = createItemQuerySchemaHandler({
+    acquireRead,
+    identity: async () => IDENTITY,
+    signal: new AbortController().signal,
+    ...overrides,
+  });
+  return {
+    acquireRead,
+    events,
+    text: async (params: CliData = {}) => {
+      const answer = await handler(params);
+      events.push("answer");
+      return answer;
+    },
+    run: async (params: CliData = {}) => {
+      const answer = await handler(params);
+      events.push("answer");
+      return JSON.parse(answer) as Record<string, unknown>;
+    },
+  };
+}
+
+describe("zotlit:item-query-schema", () => {
+  it("answers the Item Query Schema of the source in the versioned envelope, as pretty JSON", async () => {
+    const { text, events } = setupSchema();
+
+    const output = await text();
+    const answer = JSON.parse(output) as Record<string, unknown>;
+
+    expect(output).toMatch(/^\{\n {2}"contractVersion": 1,\n/);
+    expect(Object.keys(answer).slice(0, 3)).toEqual([
+      "contractVersion",
+      "command",
+      "ok",
+    ]);
+    expect(answer).toMatchObject({
+      contractVersion: 1,
+      command: ITEM_QUERY_SCHEMA_COMMAND,
+      ok: true,
+      identity: IDENTITY,
+      schema: {
+        fields: expect.arrayContaining([
+          {
+            path: "title",
+            type: "string",
+            filter: "string",
+            projection: true,
+            sort: true,
+          },
+        ]),
+        customFields: expect.arrayContaining([
+          expect.objectContaining({ name: "mood", bareName: true }),
+          expect.objectContaining({ name: "review.status", bareName: false }),
+        ]),
+        functions: expect.arrayContaining([
+          expect.objectContaining({ name: "today" }),
+        ]),
+      },
+    });
+    expect(events).toEqual(["acquire", "release", "answer"]);
+  });
+
+  it("reports the CLI defaults: 100 rows of My Library, newest modification first", async () => {
+    const { run } = setupSchema();
+
+    const answer = await run();
+
+    expect((answer.schema as { defaults: unknown }).defaults).toEqual({
+      fields: ["itemType", "title", "creators", "date", "dateModified"],
+      sort: [{ field: "dateModified", direction: "desc" }],
+      limit: 100,
+      library: "personal",
+    });
+  });
+
+  it("rejects a parameter before it reads the source", async () => {
+    const { run, acquireRead } = setupSchema();
+
+    const answer = await run({ library: "personal" });
+
+    expect(answer).toMatchObject({
+      contractVersion: 1,
+      command: ITEM_QUERY_SCHEMA_COMMAND,
+      ok: false,
+      diagnostic: {
+        code: "invalid-argument",
+        details: { parameter: "library" },
+      },
+    });
+    expect(acquireRead).not.toHaveBeenCalled();
+  });
+
+  it("answers source-unavailable when the source cannot be leased", async () => {
+    const { run } = setupSchema({
+      acquireRead: async () => {
+        throw new Error("Zotero database not found");
+      },
+    });
+
+    const answer = await run();
+
+    expect(answer).toMatchObject({
+      command: ITEM_QUERY_SCHEMA_COMMAND,
+      ok: false,
+      diagnostic: { code: "source-unavailable" },
+    });
+  });
+
+  it("answers unsupported-database-layout for a copy that lacks a manifest column", async () => {
+    scenario = openScenarioDatabase();
+    scenario.sqlite.exec('alter table "fieldsCombined" drop column "custom"');
+    const { run } = setupSchema();
+
+    const answer = await run();
+
+    expect(answer).toMatchObject({
+      command: ITEM_QUERY_SCHEMA_COMMAND,
+      ok: false,
+      diagnostic: {
+        code: "unsupported-database-layout",
+        message: expect.stringContaining("fieldsCombined.custom"),
+      },
+    });
+  });
+
+  it("rejects with the abort reason and takes no lease when the signal is already aborted", async () => {
+    const controller = new AbortController();
+    const reason = new Error("plugin unloaded");
+    controller.abort(reason);
+    const { run, acquireRead } = setupSchema({ signal: controller.signal });
+
+    await expect(run()).rejects.toBe(reason);
+    expect(acquireRead).not.toHaveBeenCalled();
+  });
+});
+
+describe("zotlit:item-query-guide", () => {
+  it("prints the quickstart as plain text with every command and topic", () => {
+    const output = itemQueryGuideHandler({});
+
+    expect(() => JSON.parse(output)).toThrow();
+    for (const command of [
+      ITEM_QUERY_COMMAND,
+      ITEM_QUERY_SCHEMA_COMMAND,
+      ITEM_QUERY_GUIDE_COMMAND,
+    ]) {
+      expect(output).toContain(command);
+    }
+    for (const topic of GUIDE_TOPIC_NAMES) expect(output).toContain(topic);
+    expect(output).toContain("100 most recently modified Items");
+    expect(output).toContain("My Library");
+  });
+
+  it.each([
+    ["filter", ["key is the Zotero Key", "attachments", "lower()", "within"]],
+    ["fields", ['custom["<exact name>"]', "fields='[]'", "null"]],
+    ["sort", ["10 comes before 9", "first possible day", "limit", "all"]],
+    ["results", ["diagnostic.hint", "location", "span"]],
+  ])("prints topic=%s", (topic, facts) => {
+    const output = itemQueryGuideHandler({ topic });
+
+    expect(() => JSON.parse(output)).toThrow();
+    expect(facts.filter((fact) => !output.includes(fact))).toEqual([]);
+  });
+
+  it("answers an unknown topic with the diagnostic envelope", () => {
+    const answer = JSON.parse(itemQueryGuideHandler({ topic: "bogus" }));
+
+    expect(answer).toMatchObject({
+      contractVersion: 1,
+      command: ITEM_QUERY_GUIDE_COMMAND,
+      ok: false,
+      diagnostic: {
+        code: "invalid-argument",
+        details: { parameter: "topic" },
+      },
+    });
+  });
+
+  it("shows only commands and filters that run", async () => {
+    const { run } = setup();
+    const failures: string[] = [];
+
+    for (const args of GUIDE_EXAMPLES) {
+      const answer = await run(args);
+      if (!answer.ok) failures.push(JSON.stringify({ args, answer }));
+    }
+    for (const filter of GUIDE_FILTERS) {
+      const answer = await run({ filter, fields: "[]" });
+      if (!answer.ok) failures.push(JSON.stringify({ filter, answer }));
+    }
+
+    expect(GUIDE_EXAMPLES.length).toBeGreaterThan(0);
+    expect(GUIDE_FILTERS.length).toBeGreaterThan(0);
+    expect(failures).toEqual([]);
+  });
+
+  it("shows each example where a shell passes it through unchanged", () => {
+    const quoted = GUIDE_EXAMPLES.flatMap(Object.values).filter((value) =>
+      value.includes("'"),
+    );
+
+    expect(quoted).toEqual([]);
+  });
+});
+
 describe("registerItemQueryCli", () => {
   it("registers the command with its flags and cancels runs when the plugin unloads", async () => {
     const registerCliHandler = vi.fn();
@@ -600,6 +836,18 @@ describe("registerItemQueryCli", () => {
         limit: expect.any(Object),
         library: expect.any(Object),
       }),
+      expect.any(Function),
+    );
+    expect(registerCliHandler).toHaveBeenCalledWith(
+      ITEM_QUERY_SCHEMA_COMMAND,
+      expect.any(String),
+      null,
+      expect.any(Function),
+    );
+    expect(registerCliHandler).toHaveBeenCalledWith(
+      ITEM_QUERY_GUIDE_COMMAND,
+      expect.any(String),
+      expect.objectContaining({ topic: expect.any(Object) }),
       expect.any(Function),
     );
     const handler = registerCliHandler.mock.calls[0]![3] as CliHandler;
