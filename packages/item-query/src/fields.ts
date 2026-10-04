@@ -1,8 +1,14 @@
-import { parseItemDate } from "@zotlit/db";
-import type { HydratedItem, ScanRow } from "@zotlit/db/item-query";
+import { parseItemDate, tagTypeToName } from "@zotlit/db";
+import type {
+  HydratedCreator,
+  HydratedItem,
+  HydrateRelation,
+  ScanRow,
+} from "@zotlit/db/item-query";
 import { FIELD_ALIASES, ZOTERO_DATE_FIELDS } from "@zotlit/zotero-types";
 import { FIELD_LABELS } from "@zotlit/zotero-types/field-labels";
 
+import { compareStrings } from "./collation";
 import type { PathSegment } from "./projection-path";
 import type { ProjectionValue } from "./request";
 
@@ -37,6 +43,7 @@ export type ValueShape =
 export interface FieldNeeds {
   readonly builtIn?: readonly string[];
   readonly custom?: readonly string[] | "all";
+  readonly relations?: readonly HydrateRelation[];
 }
 
 /**
@@ -152,6 +159,83 @@ const customField: FieldDefinition = {
     ),
 };
 
+/** One Creator in the template vocabulary. */
+const CREATOR_SHAPE: ValueShape = {
+  kind: "object",
+  keys: {
+    family: SCALAR,
+    given: SCALAR,
+    literal: SCALAR,
+    role: SCALAR,
+    fullName: SCALAR,
+  },
+};
+
+const creatorsField: FieldDefinition = {
+  shape: { kind: "list", element: CREATOR_SHAPE },
+  needs: () => ({ relations: ["creators"] }),
+  read: (item) => (item.hydrated.creators ?? []).map(templateCreator),
+};
+
+/**
+ * A Creator as the template vocabulary gives it: a one-field name is
+ * `literal`, a two-field name is `given` and `family`.
+ */
+function templateCreator(creator: HydratedCreator): ProjectionValue {
+  if (creator.fieldMode === 1) {
+    return {
+      family: "",
+      given: "",
+      literal: creator.lastName,
+      role: creator.creatorType,
+      fullName: creator.lastName,
+    };
+  }
+  return {
+    family: creator.lastName,
+    given: creator.firstName,
+    literal: null,
+    role: creator.creatorType,
+    fullName: `${creator.firstName} ${creator.lastName}`.trim(),
+  };
+}
+
+/** One Tag in the template vocabulary. */
+const TAG_SHAPE: ValueShape = {
+  kind: "object",
+  keys: { name: SCALAR, type: SCALAR },
+};
+
+const tagsField: FieldDefinition = {
+  shape: { kind: "list", element: TAG_SHAPE },
+  needs: () => ({ relations: ["tags"] }),
+  read: (item) =>
+    (item.hydrated.tags ?? [])
+      .toSorted((a, b) => compareStrings(a.name, b.name))
+      .map((tag) => ({ name: tag.name, type: tagTypeToName(tag.type) })),
+};
+
+/**
+ * Each live Collection an Item is filed in directly, as its root-first path:
+ * the names from the top-level Collection down, joined by `/` without escaping
+ * (ADR 0040).
+ */
+const collectionsField: FieldDefinition = {
+  shape: { kind: "list", element: SCALAR },
+  needs: () => ({ relations: ["collections"] }),
+  read: (item) =>
+    (item.hydrated.collections ?? [])
+      .map((path) => path.join("/"))
+      .toSorted(compareStrings),
+};
+
+/** Attachment presence: the Item has at least one non-trashed Attachment. */
+const attachmentsField: FieldDefinition = {
+  shape: SCALAR,
+  needs: () => ({ relations: ["attachments"] }),
+  read: (item) => item.hydrated.hasAttachments ?? false,
+};
+
 const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map([
   // Every built-in Zotero field of the bundled schema, with its aliases.
   ...Object.keys(FIELD_LABELS["en-US"]).map(
@@ -179,12 +263,17 @@ const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map([
     ),
   ],
   ["custom", customField],
+  ["creators", creatorsField],
+  ["tags", tagsField],
+  ["collections", collectionsField],
+  ["attachments", attachmentsField],
 ]);
 
 /** The projection of a request that names no fields. */
 export const DEFAULT_FIELDS: readonly string[] = [
   "itemType",
   "title",
+  "creators",
   "date",
   "dateModified",
 ];
