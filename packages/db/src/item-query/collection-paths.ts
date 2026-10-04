@@ -12,28 +12,29 @@ import type { ItemQueryDatabase, ItemQueryReaderError } from "./database";
  */
 export type CollectionPaths = ReadonlyMap<number, readonly string[]>;
 
-const liveCollectionsStatement = defineStatement<{ libraryID: number }>()(
-  (db, { placeholder }) =>
-    db
-      .select({
-        collectionID: collections.collectionID,
-        name: collections.collectionName,
-        parentID: collections.parentCollectionID,
-      })
-      .from(collections)
-      .where(
-        and(
-          eq(collections.libraryID, placeholder("libraryID")),
-          notExists(
-            db
-              .select({ collectionID: deletedCollections.collectionID })
-              .from(deletedCollections)
-              .where(
-                eq(deletedCollections.collectionID, collections.collectionID),
-              ),
-          ),
+const liveCollectionsStatement = defineStatement<{ libraryID: number }>(
+  "collection-paths",
+)((db, { placeholder }) =>
+  db
+    .select({
+      collectionID: collections.collectionID,
+      name: collections.collectionName,
+      parentID: collections.parentCollectionID,
+    })
+    .from(collections)
+    .where(
+      and(
+        eq(collections.libraryID, placeholder("libraryID")),
+        notExists(
+          db
+            .select({ collectionID: deletedCollections.collectionID })
+            .from(deletedCollections)
+            .where(
+              eq(deletedCollections.collectionID, collections.collectionID),
+            ),
         ),
       ),
+    ),
 );
 
 /**

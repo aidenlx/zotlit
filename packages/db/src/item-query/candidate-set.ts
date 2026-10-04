@@ -12,12 +12,13 @@ import { Effect } from "effect";
 import { defineStatement } from "./database";
 import type { ItemQueryDatabase, ItemQueryReaderError } from "./database";
 
-const libraryRowCountStatement = defineStatement<{ libraryID: number }>()(
-  (db, { placeholder }) =>
-    db
-      .select({ rows: count() })
-      .from(items)
-      .where(eq(items.libraryID, placeholder("libraryID"))),
+const libraryRowCountStatement = defineStatement<{ libraryID: number }>(
+  "library-row-count",
+)((db, { placeholder }) =>
+  db
+    .select({ rows: count() })
+    .from(items)
+    .where(eq(items.libraryID, placeholder("libraryID"))),
 );
 
 /**
@@ -77,7 +78,7 @@ interface CollectionParams extends CandidateParams {
 }
 
 const candidateStatements = {
-  tag: defineStatement<ValueParams>()((db, { placeholder }) =>
+  tag: defineStatement<ValueParams>("candidate-set")((db, { placeholder }) =>
     db
       .select({ itemID: itemTags.itemID })
       .from(itemTags)
@@ -91,7 +92,7 @@ const candidateStatements = {
       )
       .limit(placeholder("limit")),
   ),
-  key: defineStatement<ValueParams>()((db, { placeholder }) =>
+  key: defineStatement<ValueParams>("candidate-set")((db, { placeholder }) =>
     db
       .select({ itemID: items.itemID })
       .from(items)
@@ -103,7 +104,7 @@ const candidateStatements = {
       )
       .limit(placeholder("limit")),
   ),
-  field: defineStatement<FieldParams>()((db, { placeholder }) =>
+  field: defineStatement<FieldParams>("candidate-set")((db, { placeholder }) =>
     db
       .selectDistinct({ itemID: items.itemID })
       .from(itemDataValues)
@@ -121,18 +122,19 @@ const candidateStatements = {
       )
       .limit(placeholder("limit")),
   ),
-  collection: defineStatement<CollectionParams>()((db, { placeholder }) =>
-    db
-      .selectDistinct({ itemID: items.itemID })
-      .from(collectionItems)
-      .innerJoin(items, eq(items.itemID, collectionItems.itemID))
-      .where(
-        and(
-          sql`${collectionItems.collectionID} in (select value from json_each(${placeholder("collectionIDs")}))`,
-          eq(items.libraryID, placeholder("libraryID")),
-        ),
-      )
-      .limit(placeholder("limit")),
+  collection: defineStatement<CollectionParams>("candidate-set")(
+    (db, { placeholder }) =>
+      db
+        .selectDistinct({ itemID: items.itemID })
+        .from(collectionItems)
+        .innerJoin(items, eq(items.itemID, collectionItems.itemID))
+        .where(
+          and(
+            sql`${collectionItems.collectionID} in (select value from json_each(${placeholder("collectionIDs")}))`,
+            eq(items.libraryID, placeholder("libraryID")),
+          ),
+        )
+        .limit(placeholder("limit")),
   ),
 } satisfies Record<CandidateLeaf["kind"], unknown>;
 

@@ -13,6 +13,7 @@ import { queryItems } from ".";
 import type { ItemQueryRequest, SortSpec } from ".";
 import { GENERATED_FILTER_PARTS, SCENARIO_QUERIES } from "./scenario-queries";
 import type { ScenarioQuery } from "./scenario-queries";
+import { ItemQueryScheduler } from "./scheduler";
 import { runEffect } from "./test-helpers";
 import type { RunOptions } from "./test-helpers";
 
@@ -58,6 +59,46 @@ const PLANS: readonly { name: string; tuning: Tuning }[] = [
   },
 ];
 
+/**
+ * The pause methods under test, each with small chunks so that a run has many
+ * operations. The oracle and the plans above run on the test scheduler, which
+ * pauses with a `MessageChannel` task after every operation.
+ */
+const PAUSE_METHODS: readonly {
+  name: string;
+  scheduler: () => ItemQueryScheduler;
+}[] = [
+  {
+    name: "the production scheduler on wall time",
+    scheduler: () => new ItemQueryScheduler(),
+  },
+  {
+    name: "no pause",
+    scheduler: () => new ItemQueryScheduler({ budgetMs: Infinity }),
+  },
+  {
+    name: "a setImmediate pause after every operation",
+    scheduler: () => {
+      // A counter in place of the clock, as in the test scheduler.
+      let ticks = 0;
+      return new ItemQueryScheduler({
+        budgetMs: 3,
+        now: () => ticks++,
+        pause: (resume) => {
+          const timer = setImmediate(resume);
+          return () => clearImmediate(timer);
+        },
+      });
+    },
+  },
+];
+const PAUSE_METHOD_TUNING: Tuning = {
+  capRatio: 1,
+  scanPageSize: 3,
+  hydrateChunkSize: 2,
+  mergeStepSize: 2,
+};
+
 let scenario: ScenarioDatabase;
 
 beforeAll(() => {
@@ -75,8 +116,9 @@ afterAll(() => {
 async function outcome(
   query: ScenarioQuery,
   tuning: Tuning,
-  database: ScenarioDatabase = scenario,
+  on: { database?: ScenarioDatabase; scheduler?: ItemQueryScheduler } = {},
 ): Promise<unknown> {
+  const { database = scenario, scheduler } = on;
   const request: ItemQueryRequest = {
     ...query.request,
     library: SCENARIO_LIBRARIES[query.library],
@@ -86,6 +128,7 @@ async function outcome(
     now: query.now,
     timeZone: query.timeZone,
     tuning,
+    scheduler,
   });
   if (Exit.isSuccess(exit)) return wire({ result: exit.value });
   const error = Cause.findErrorOption(exit.cause);
@@ -121,6 +164,20 @@ describe("parity of every plan with the forced scan", () => {
   });
 });
 
+describe("parity of every pause method with the forced scan", () => {
+  it.each(SCENARIO_QUERIES)("$name", async (query) => {
+    const oracle = await outcome(query, FORCED_SCAN);
+    for (const method of PAUSE_METHODS) {
+      expect(
+        await outcome(query, PAUSE_METHOD_TUNING, {
+          scheduler: method.scheduler(),
+        }),
+        `${query.name}: ${method.name} differs from the forced scan.`,
+      ).toEqual(oracle);
+    }
+  });
+});
+
 /**
  * The indexes of the pristine Zotero database that the Tag and field-value
  * candidate statements use. An index affects speed only.
@@ -145,7 +202,7 @@ describe("parity without the Tag and field-value indexes", () => {
     const oracle = await outcome(query, FORCED_SCAN);
     for (const plan of PLANS) {
       expect(
-        await outcome(query, plan.tuning, unindexed),
+        await outcome(query, plan.tuning, { database: unindexed }),
         `${query.name}: ${plan.name} without the indexes differs from the forced scan with them.`,
       ).toEqual(oracle);
     }

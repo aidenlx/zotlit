@@ -1,12 +1,16 @@
 import { Clock, Context, Effect } from "effect";
-import type { Exit } from "effect";
+import type { Exit, Scheduler } from "effect";
 
 // The test helper of the package: plain Vitest, no `@effect/vitest`.
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-import { ItemQueryDatabase } from "@zotlit/db/item-query";
+import {
+  ItemQueryDatabase,
+  ItemQueryStatementObserver,
+} from "@zotlit/db/item-query";
+import type { StatementRun } from "@zotlit/db/item-query";
 
 import { QueryTimeZone } from "./query-clock";
-import { ItemQueryScheduler, messageChannelPause } from "./scheduler";
+import { ItemQueryScheduler, ItemQuerySliceObserver } from "./scheduler";
 import { ItemQueryTuning, PRODUCTION_TUNING } from "./tuning";
 import type { Tuning } from "./tuning";
 
@@ -20,12 +24,28 @@ export interface RunOptions {
   signal?: AbortSignal;
   /** Values of the tuning reference that replace the production defaults. */
   tuning?: Partial<Tuning>;
+  /** The scheduler of the run, in place of the test scheduler. */
+  scheduler?: Scheduler.Scheduler;
+  /** Called with each event of the run, in the step that produces it. */
+  onEvent?: (event: RunEvent) => void;
+  /**
+   * `false` keeps no statement in `Run.events`, so the run holds no row that
+   * the engine has released. Defaults to `true`.
+   */
+  keepStatements?: boolean;
 }
+
+/** A statement of a reader, or a pause of the scheduler. */
+export type RunEvent =
+  | { readonly type: "statement"; readonly statement: StatementRun }
+  | { readonly type: "pause" };
 
 export interface Run<A, E> {
   exit: Exit.Exit<A, E>;
-  /** The times the test scheduler paused the fiber. */
+  /** The times the scheduler paused the fiber. */
   pauses: number;
+  /** The statements and the pauses of the run, in order. */
+  events: RunEvent[];
 }
 
 export const TEST_NOW = "2024-07-15T12:00:00Z";
@@ -39,7 +59,13 @@ export async function runEffect<A, E>(
   effect: Effect.Effect<A, E, ItemQueryDatabase>,
   options: RunOptions = {},
 ): Promise<Run<A, E>> {
-  const scheduler = testScheduler();
+  const events: RunEvent[] = [];
+  const record = (event: RunEvent) => {
+    if (event.type === "pause" || options.keepStatements !== false) {
+      events.push(event);
+    }
+    options.onEvent?.(event);
+  };
   const services = Context.make(
     Clock.Clock,
     fixedClock(options.now ?? TEST_NOW),
@@ -55,12 +81,24 @@ export async function runEffect<A, E>(
           throw new Error("the test passed no database client to runEffect.");
         },
       }),
+    )
+    .pipe(
+      Context.add(ItemQueryStatementObserver, (statement) =>
+        record({ type: "statement", statement }),
+      ),
+    )
+    .pipe(
+      Context.add(ItemQuerySliceObserver, {
+        paused: () => record({ type: "pause" }),
+        resumed: () => {},
+      }),
     );
   const exit = await Effect.runPromiseExit(
     Effect.provideContext(effect, services),
-    { scheduler: scheduler.scheduler, signal: options.signal },
+    { scheduler: options.scheduler ?? testScheduler(), signal: options.signal },
   );
-  return { exit, pauses: scheduler.pauses() };
+  const pauses = events.filter((event) => event.type === "pause").length;
+  return { exit, pauses, events };
 }
 
 /**
@@ -69,19 +107,9 @@ export async function runEffect<A, E>(
  * to return to its operation, so a budget of three ticks gives slices of one
  * operation.
  */
-function testScheduler() {
+function testScheduler(): ItemQueryScheduler {
   let ticks = 0;
-  let pauses = 0;
-  const pause = messageChannelPause();
-  const scheduler = new ItemQueryScheduler({
-    budgetMs: 3,
-    now: () => ticks++,
-    pause: (resume) => {
-      pauses += 1;
-      return pause(resume);
-    },
-  });
-  return { scheduler, pauses: () => pauses };
+  return new ItemQueryScheduler({ budgetMs: 3, now: () => ticks++ });
 }
 
 function fixedClock(now: string): Clock.Clock {

@@ -23,7 +23,7 @@ const scanPageStatement = defineStatement<{
   libraryID: number;
   afterKey: string;
   limit: number;
-}>()((db, { placeholder }) =>
+}>("scan-page")((db, { placeholder }) =>
   db
     .select({
       itemID: items.itemID,
@@ -78,38 +78,39 @@ const ID_SLOTS = Array.from(
   (_, i) => `id${i}` as const,
 );
 
-const universeRowsStatement = defineStatement<Record<string, number | null>>()(
-  (db, { placeholder }) =>
-    db
-      .select({
-        itemID: items.itemID,
-        key: items.key,
-        itemType: itemTypesCombined.typeName,
-        dateAdded: items.dateAdded,
-        dateModified: items.dateModified,
-      })
-      .from(items)
-      .innerJoin(
-        itemTypesCombined,
-        eq(itemTypesCombined.itemTypeID, items.itemTypeID),
-      )
-      .where(
-        and(
-          inArray(
-            items.itemID,
-            ID_SLOTS.map((slot) => placeholder(slot)),
-          ),
-          eq(items.libraryID, placeholder("libraryID")),
-          notInArray(itemTypesCombined.typeName, [...CHILD_ITEM_TYPES]),
-          notExists(
-            db
-              .select({ itemID: deletedItems.itemID })
-              .from(deletedItems)
-              .where(eq(deletedItems.itemID, items.itemID)),
-          ),
+const universeRowsStatement = defineStatement<Record<string, number | null>>(
+  "universe-rows",
+)((db, { placeholder }) =>
+  db
+    .select({
+      itemID: items.itemID,
+      key: items.key,
+      itemType: itemTypesCombined.typeName,
+      dateAdded: items.dateAdded,
+      dateModified: items.dateModified,
+    })
+    .from(items)
+    .innerJoin(
+      itemTypesCombined,
+      eq(itemTypesCombined.itemTypeID, items.itemTypeID),
+    )
+    .where(
+      and(
+        inArray(
+          items.itemID,
+          ID_SLOTS.map((slot) => placeholder(slot)),
         ),
-      )
-      .orderBy(asc(items.key)),
+        eq(items.libraryID, placeholder("libraryID")),
+        notInArray(itemTypesCombined.typeName, [...CHILD_ITEM_TYPES]),
+        notExists(
+          db
+            .select({ itemID: deletedItems.itemID })
+            .from(deletedItems)
+            .where(eq(deletedItems.itemID, items.itemID)),
+        ),
+      ),
+    )
+    .orderBy(asc(items.key)),
 );
 
 /**

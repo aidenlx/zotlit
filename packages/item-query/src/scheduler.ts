@@ -1,3 +1,5 @@
+import { Context } from "effect";
+import type { Fiber } from "effect";
 import { MixedScheduler } from "effect/Scheduler";
 
 /** The time one slice of a query may run before the fiber pauses. */
@@ -19,6 +21,33 @@ export interface ItemQuerySchedulerOptions {
 }
 
 /**
+ * Receives the end and the start of each slice. The times come from the clock
+ * of the scheduler, `performance.now` by default.
+ */
+export interface SliceObserver {
+  /** The fiber ends a slice and hands control back to the host. */
+  paused(at: number): void;
+  /** The fiber starts its next slice. */
+  resumed(at: number): void;
+}
+
+/**
+ * Receives each pause of `ItemQueryScheduler` in a run. The default does
+ * nothing. A test or a measurement provides an observer to count pauses and
+ * to time slices; the Obsidian adapter provides none.
+ */
+export const ItemQuerySliceObserver = Context.Reference<SliceObserver>(
+  "@zotlit/item-query/ItemQuerySliceObserver",
+  { defaultValue: () => ({ paused: () => {}, resumed: () => {} }) },
+);
+
+/** The slice in progress, and the observer of the fiber that paused last. */
+interface Slice {
+  start: number | undefined;
+  observer: SliceObserver | undefined;
+}
+
+/**
  * The scheduler every Item Query run uses: Effect's default scheduler, with its
  * operation-count yield test replaced by a time budget and its pause replaced
  * by a `MessageChannel` task. Pass it as the `scheduler` run option. The engine
@@ -33,15 +62,16 @@ export interface ItemQuerySchedulerOptions {
 export class ItemQueryScheduler extends MixedScheduler {
   readonly #budgetMs: number;
   readonly #now: () => number;
-  readonly #slice: { start: number | undefined };
+  readonly #slice: Slice;
 
   constructor(options: ItemQuerySchedulerOptions = {}) {
     const now = options.now ?? (() => performance.now());
     const pause = options.pause ?? messageChannelPause();
-    const slice: { start: number | undefined } = { start: undefined };
+    const slice: Slice = { start: undefined, observer: undefined };
     super("async", (resume) =>
       pause(() => {
         slice.start = now();
+        slice.observer?.resumed(slice.start);
         resume();
       }),
     );
@@ -50,37 +80,38 @@ export class ItemQueryScheduler extends MixedScheduler {
     this.#slice = slice;
   }
 
-  override shouldYield(): boolean {
+  override shouldYield(fiber: Fiber.Fiber<unknown, unknown>): boolean {
     const now = this.#now();
     if (this.#slice.start === undefined) {
       this.#slice.start = now;
       return false;
     }
-    return now - this.#slice.start >= this.#budgetMs;
+    if (now - this.#slice.start < this.#budgetMs) return false;
+    this.#slice.observer = fiber.getRef(ItemQuerySliceObserver);
+    this.#slice.observer.paused(now);
+    return true;
   }
 }
 
 /**
  * A pause that resumes in a `MessageChannel` task. The window handles input
  * and rendering before that task, and no timer clamp delays it.
+ *
+ * The channel is open only while a resume waits. An open port with a listener
+ * stays in memory in the Obsidian window and keeps a Node process alive.
  */
 export function messageChannelPause(): Pause {
   let channel: MessageChannel | undefined;
   const waiting: { resume: () => void; live: boolean }[] = [];
 
-  // Node keeps a process alive for a port that listens. Hold the port only
-  // while a resume waits; a browser port has no such handle.
-  const hold = (port: MessagePort, held: boolean) => {
-    const handle = port as { ref?(): void; unref?(): void };
-    if (held) handle.ref?.();
-    else handle.unref?.();
-  };
-
   const open = (): MessageChannel => {
     const opened = new MessageChannel();
     opened.port1.onmessage = () => {
       const next = waiting.shift();
-      if (waiting.length === 0) hold(opened.port1, false);
+      if (waiting.length === 0) {
+        opened.port1.close();
+        channel = undefined;
+      }
       if (next?.live) next.resume();
     };
     return opened;
@@ -90,7 +121,6 @@ export function messageChannelPause(): Pause {
     channel ??= open();
     const entry = { resume, live: true };
     waiting.push(entry);
-    hold(channel.port1, true);
     channel.port2.postMessage(0);
     return () => {
       entry.live = false;

@@ -112,34 +112,51 @@ export function queryItems(
       limit === null
         ? allMatches(compare, sizeWithin(tuning.mergeStepSize, Infinity))
         : firstMatches(limit + 1, compare);
+    // Each page and each chunk lives in the Effect that reads it, so the query
+    // holds no row of a page it has finished.
+    /** Hydrate one chunk of a page and keep its matches. */
+    const takeChunk = (chunk: readonly ScanRow[]) =>
+      Effect.gen(function* () {
+        const hydrated: ReadonlyMap<number, HydratedItem> =
+          vocabulary && sortFields
+            ? yield* readHydrateChunk({
+                vocabulary,
+                itemIDs: chunk.map((row) => row.itemID),
+                ...sortFields,
+                collectionPaths,
+              })
+            : new Map();
+        yield* Effect.sync(() => {
+          const matching: Match[] = [];
+          for (const scan of chunk) {
+            const item = itemOf(scan, hydrated);
+            if (filter && !isMatch(filter.root, item, clock)) continue;
+            matching.push({
+              scan,
+              keys: sorts.map((sort) => sort.key(item)),
+            });
+          }
+          matches.add(matching);
+        });
+      });
     /** Hydrate one page of the query universe and keep its matches. */
     const takePage = (page: readonly ScanRow[]) =>
       Effect.gen(function* () {
         const chunkSize = sortFields ? hydrateChunkSize : scanPageSize;
         for (let start = 0; start < page.length; start += chunkSize) {
-          const chunk = page.slice(start, start + chunkSize);
-          const hydrated: ReadonlyMap<number, HydratedItem> =
-            vocabulary && sortFields
-              ? yield* readHydrateChunk({
-                  vocabulary,
-                  itemIDs: chunk.map((row) => row.itemID),
-                  ...sortFields,
-                  collectionPaths,
-                })
-              : new Map();
-          yield* Effect.sync(() => {
-            const matching: Match[] = [];
-            for (const scan of chunk) {
-              const item = itemOf(scan, hydrated);
-              if (filter && !isMatch(filter.root, item, clock)) continue;
-              matching.push({
-                scan,
-                keys: sorts.map((sort) => sort.key(item)),
-              });
-            }
-            matches.add(matching);
-          });
+          yield* takeChunk(page.slice(start, start + chunkSize));
         }
+      });
+    /** Read and take the scan page after `afterKey`. Null: the last page. */
+    const takeScanPage = (afterKey: string | null) =>
+      Effect.gen(function* () {
+        const page = yield* readScanPage({
+          libraryID: library.libraryID,
+          afterKey,
+          size: scanPageSize,
+        });
+        yield* takePage(page);
+        return page.length < scanPageSize ? null : page.at(-1)!.key;
       });
 
     // The candidate pass reads the Items that the lowered leaves of the filter
@@ -170,16 +187,8 @@ export function queryItems(
       }
     } else {
       let afterKey: string | null = null;
-      for (;;) {
-        const page: ScanRow[] = yield* readScanPage({
-          libraryID: library.libraryID,
-          afterKey,
-          size: scanPageSize,
-        });
-        yield* takePage(page);
-        if (page.length < scanPageSize) break;
-        afterKey = page.at(-1)!.key;
-      }
+      do afterKey = yield* takeScanPage(afterKey);
+      while (afterKey !== null);
     }
 
     const ordered = yield* matches.ordered();

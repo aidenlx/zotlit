@@ -1,4 +1,5 @@
 import { Exit } from "effect";
+import { StatementSync } from "node:sqlite";
 import type { CliData, CliHandler, Plugin } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -19,7 +20,12 @@ import type { ItemQueryCliDeps } from "./cli";
 
 let scenario: ScenarioDatabase | undefined;
 
+/** The driver call under every statement of the leased client. */
+// oxlint-disable-next-line typescript/unbound-method -- applied to its statement in the test.
+const readRows = StatementSync.prototype.all;
+
 afterEach(() => {
+  vi.restoreAllMocks();
   scenario?.close();
   scenario = undefined;
 });
@@ -457,6 +463,43 @@ describe("zotlit:item-query cancellation", () => {
 
     await expect(running).rejects.toBe(reason);
     expect(events).toEqual(["acquire", "release"]);
+  });
+
+  it("releases the lease after the last database read and before a cancelled run settles", async () => {
+    const controller = new AbortController();
+    const reason = new Error("plugin unloaded");
+    const { run, events } = setup({ signal: controller.signal });
+    // Warm the copy, then count the reads of one complete run.
+    await run({ fields: '["title"]' });
+    const read = vi.spyOn(StatementSync.prototype, "all");
+    await run({ fields: '["title"]' });
+    const complete = read.mock.calls.length;
+    expect(complete).toBeGreaterThan(3);
+
+    // Every read of the clock is 3 ms later, so the scheduler ends a slice
+    // after each operation. Effect listens to the signal from the first pause.
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => (now += 3));
+    // Cancel inside the third database read of the query.
+    events.length = 0;
+    read.mockImplementation(function (this: StatementSync, ...values) {
+      if (events.push("read") === 4) controller.abort(reason);
+      return Reflect.apply(readRows, this, values) as ReturnType<
+        StatementSync["all"]
+      >;
+    });
+
+    await expect(run({ fields: '["title"]' })).rejects.toBe(reason);
+    events.push("settled");
+
+    expect(events).toEqual([
+      "acquire",
+      "read",
+      "read",
+      "read",
+      "release",
+      "settled",
+    ]);
   });
 });
 
