@@ -1,0 +1,11 @@
+# Item Query CLI is versioned and self-describing
+
+The Obsidian CLI exposes Item Query through flat arguments and returns the established ZotLit JSON envelope: an independent Item Query `contractVersion`, `command`, and `ok`, followed by command-specific top-level fields. Query success adds the existing Workbench source identity, a stable Target Library, the normalized request, `returnedCount`, `truncated`, and Query Rows. `fields` is a JSON array of Projection Path strings, and `sort` is a JSON array of `{ field, direction }` objects. These encodings preserve punctuation in custom field names without a second escaping grammar. A tiered guide and a machine-readable schema expose the current fields, relations, functions, and types from the same registries that the query command uses.
+
+The Item Query wire contract starts at version 1 and evolves independently from the Template Contract. The CLI defaults to 100 rows in descending modification order and accepts `limit=all` for a complete result; the normalized request represents this as `limit: null`. Supplied numeric limits are positive integers. The package interface remains unbounded when the caller omits a limit.
+
+An omitted filter matches all Items; an explicitly empty filter is invalid. An omitted `fields` argument uses the default projection, while `fields=[]` returns identity-only rows. A limited result reports `returnedCount` and `truncated` and does not compute an exact total. The engine orders every result in memory and keeps one extra matching Item to prove truncation.
+
+When `fields` is absent, each row projects `itemType`, `title`, `creators`, `date`, and `dateModified`; Indexed Key is always present as row identity. The query schema reports the JSON type and filter, projection, and sort capabilities of each field or path, including custom fields from the active Zotero source.
+
+The Target Library wire value is `{ type: "personal" }` or `{ type: "group", groupID, name }`; local database `libraryID` values never enter the CLI contract. The CLI converts request, source-readiness, Target Library, and known database-access failures into the standard diagnostic envelope. Cancellation and implementation defects remain distinct failures. The guide follows the Workbench convention of tiered literal-English text, while query and schema success always use pretty JSON.
