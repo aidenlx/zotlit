@@ -20,9 +20,14 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Tests
 - The string order of sort, ordered comparison, and relation lists: `compareStrings` in `src/collation.ts`.
 - The matches a query keeps: `src/matches.ts`. A limited query keeps `limit + 1` rows; an unlimited query keeps one sorted run for each chunk and merges the runs in steps of one Effect each.
 - Request validation and defaults: `planRequest` in `src/request.ts`.
+- The value of a field in a Filter Expression: the `filter` of its registry entry. An entry without `filter` fails a filter with `unfilterable-field`. A name only a filter reads (`key`) is in `FILTER_ONLY_FIELDS`.
+- A function, a method, or a property of the Filter Expression language: one entry in `src/filter-functions.ts`. Its parameters drive the argument checks of validation and execution.
+- Filter validation: `planFilter` in `src/filter-plan.ts`. It gives the typed tree (`FilterNode`) with every name resolved, the hydration needs, and the custom fields for the engine to check against the source. `hasBareForm` decides the bare form of a custom field.
+- Filter execution: `src/filter-evaluate.ts` over the values of `src/filter-values.ts`. The evaluator is the authority for every match. A failure that depends on the data of one Item gives null.
 - A database read: a reader in `packages/db/src/item-query/`.
 
 ## Tests
 
 - The seam is the package interface, run through the real readers on the scenario database (`@zotlit/db/test-scenario`). Assert the public Query Result or the typed failure.
+- Evaluator vectors (`src/filter.test.ts`) run a Filter Expression on one Item without a database: function semantics, the null and type matrix, and validation.
 - Run every Effect with `runEffect` from `src/test-helpers.ts`: fixed clock, fixed time zone, and a test scheduler that pauses after every operation and counts its pauses.

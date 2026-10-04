@@ -294,22 +294,30 @@ describe("zotlit:item-query filter and sort", () => {
       diagnostic: { code: "invalid-argument", details: { parameter } },
     });
   });
-  // Until the engine takes it (#1321): a query that dropped it would return
-  // Items the caller did not ask for.
-  it.each([["filter", 'tags.contains("to-read")']])(
-    "refuses a well-formed %s that the engine does not take yet",
-    async (parameter, value) => {
-      const { run, acquireRead } = setup();
+  it("passes a well-formed filter through to the engine and echoes it", async () => {
+    const { run } = setup();
+    const filter = 'tags.contains("to-read")';
 
-      const answer = await run({ [parameter]: value });
+    const answer = await run({ filter });
 
-      expect(answer).toMatchObject({
-        ok: false,
-        diagnostic: { code: "invalid-argument", details: { parameter } },
-      });
-      expect(acquireRead).not.toHaveBeenCalled();
-    },
-  );
+    expect(answer).toMatchObject({ ok: true, request: { filter } });
+    expect(keys(answer)).toEqual(["ART2FULL", "BK2MNTH2"]);
+  });
+
+  it("answers an invalid filter with the code, the location in the filter text, and the hint", async () => {
+    const { run } = setup();
+
+    const answer = await run({ filter: "title.startsWith(1)" });
+
+    expect(answer).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "wrong-argument-type",
+        location: { argument: "filter", span: { from: 17, to: 18 } },
+        hint: "Call value.startsWith(prefix).",
+      },
+    });
+  });
 
   it("passes a well-formed sort through to the engine and echoes it", async () => {
     const { run } = setup();
@@ -453,7 +461,6 @@ describe("answerExit", () => {
   const context = {
     identity: async () => IDENTITY,
     library: { type: "personal" } as const,
-    filter: undefined,
     signal: new AbortController().signal,
   };
 

@@ -3,6 +3,8 @@ import { Effect } from "effect";
 import { ItemQueryError } from "./error";
 import { DEFAULT_FIELDS, fieldDefinition } from "./fields";
 import type { FieldNeeds, QueryItem, SortKey } from "./fields";
+import { planFilter } from "./filter-plan";
+import type { FilterPlan } from "./filter-plan";
 import { planPath } from "./projection";
 import type { PlannedPath } from "./projection";
 
@@ -17,6 +19,11 @@ export interface TargetLibrary {
 
 export interface ItemQueryRequest {
   readonly library: TargetLibrary;
+  /**
+   * The Filter Expression that selects the Items. Omitted: every Item matches.
+   * An empty filter is invalid.
+   */
+  readonly filter?: string | undefined;
   /**
    * The Projection Paths of each Query Row. Omitted: the default projection.
    * Empty: identity-only rows.
@@ -38,6 +45,8 @@ export interface SortSpec {
 
 /** The Item Query after defaults: what the engine ran. */
 export interface ItemQuery {
+  /** `null`: every Item matches. */
+  readonly filter: string | null;
   readonly fields: readonly string[];
   readonly sort: readonly SortSpec[];
   readonly limit: number | null;
@@ -73,6 +82,8 @@ export interface QueryResult {
 /** The validated form of a request that the engine executes. */
 export interface ItemQueryPlan {
   readonly query: ItemQuery;
+  /** `null`: every Item matches. */
+  readonly filter: FilterPlan | null;
   readonly paths: readonly PlannedPath[];
   readonly sorts: readonly PlannedSort[];
 }
@@ -102,6 +113,20 @@ export function planRequest(
   request: ItemQueryRequest,
 ): Effect.Effect<ItemQueryPlan, ItemQueryError> {
   return Effect.gen(function* () {
+    let filter: FilterPlan | null = null;
+    if (request.filter !== undefined) {
+      const planned = planFilter(request.filter);
+      if ("code" in planned) {
+        return yield* new ItemQueryError({
+          code: planned.code,
+          location: { argument: "filter", span: planned.span },
+          message: planned.message,
+          hint: planned.hint,
+        });
+      }
+      filter = planned;
+    }
+
     const fields = request.fields ?? DEFAULT_FIELDS;
     const paths: PlannedPath[] = [];
     for (const [index, text] of fields.entries()) {
@@ -151,10 +176,12 @@ export function planRequest(
 
     return {
       query: {
+        filter: request.filter ?? null,
         fields: [...fields],
         sort: sort.map(({ field, direction }) => ({ field, direction })),
         limit,
       },
+      filter,
       paths,
       sorts,
     };

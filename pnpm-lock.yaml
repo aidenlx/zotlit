@@ -1015,6 +1015,9 @@ importers:
       '@zotlit/db':
         specifier: workspace:*
         version: link:../db
+      '@zotlit/filter-expression':
+        specifier: workspace:*
+        version: link:../filter-expression
       '@zotlit/zotero-types':
         specifier: workspace:*
         version: link:../zotero-types

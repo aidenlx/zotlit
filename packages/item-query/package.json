@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@zotlit/db": "workspace:*",
+    "@zotlit/filter-expression": "workspace:*",
     "@zotlit/zotero-types": "workspace:*",
     "effect": "catalog:"
   },

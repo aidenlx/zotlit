@@ -644,6 +644,7 @@ describe("queryItems normalized request", () => {
     const found = await result({ library: personal });
 
     expect(found.query).toEqual({
+      filter: null,
       fields: ["itemType", "title", "creators", "date", "dateModified"],
       sort: [{ field: "dateModified", direction: "desc" }],
       limit: null,
@@ -658,6 +659,7 @@ describe("queryItems normalized request", () => {
     });
 
     expect(found.query).toEqual({
+      filter: null,
       fields: ["dateAdded"],
       sort: [{ field: "dateModified", direction: "desc" }],
       limit: 4,
@@ -1197,4 +1199,493 @@ describe("queryItems sort failures", () => {
       });
     },
   );
+});
+
+describe("queryItems with a filter", () => {
+  /** The Indexed Keys the filter selects, in key order. */
+  const matching = async (
+    filter: string,
+    library: ItemQueryRequest["library"] = personal,
+  ) => keys(await result({ library, filter, fields: [], sort: [] }));
+
+  const EVERY_PERSONAL_ITEM = PERSONAL_BY_MODIFIED.toSorted();
+
+  it("returns only the Items the Filter Expression selects", async () => {
+    expect(await matching('itemType == "book"')).toEqual(["BK2MNTH2"]);
+    expect(await matching("true")).toEqual(EVERY_PERSONAL_ITEM);
+    expect(await matching("false")).toEqual([]);
+  });
+
+  it("reports the filter in the normalized request", async () => {
+    const filter = ' itemType == "book" ';
+    const found = await result({ library: personal, filter, limit: 1 });
+
+    expect(found.query.filter).toBe(filter);
+  });
+
+  it.each(["", "   ", "\n"])("fails the empty filter %j", async (filter) => {
+    const error = await failure({ library: personal, filter }, false);
+
+    expect(error).toMatchObject({
+      _tag: "ItemQueryError",
+      code: "invalid-filter",
+      location: { argument: "filter" },
+      hint: expect.stringContaining("Omit the filter"),
+    });
+  });
+
+  it("orders and limits the matches, and projects them", async () => {
+    const found = await result({
+      library: personal,
+      filter: 'tags.contains("tie")',
+      fields: ["title", "tags[0].name"],
+      sort: [{ field: "title", direction: "desc" }],
+      limit: 2,
+    });
+
+    expect(found.rows).toEqual([
+      {
+        indexedKey: "TIE2AAAA",
+        values: { title: "Same Title", "tags[0].name": "tie" },
+      },
+      {
+        indexedKey: "TIE2BBBB",
+        values: { title: "Same Title", "tags[0].name": "tie" },
+      },
+    ]);
+    expect(found.returnedCount).toBe(2);
+    expect(found.truncated).toBe(true);
+  });
+
+  it("does not report truncation when the limit equals the matches", async () => {
+    const found = await result({
+      library: personal,
+      filter: 'tags.contains("tie")',
+      limit: 3,
+    });
+
+    expect(found.returnedCount).toBe(3);
+    expect(found.truncated).toBe(false);
+  });
+
+  describe("exact matching", () => {
+    it("matches a Tag by its exact name and keeps the Libraries apart", async () => {
+      expect(await matching('tags.contains("to-read")')).toEqual([
+        "ART2FULL",
+        "BK2MNTH2",
+      ]);
+      expect(await matching('tags.contains("To-Read")')).toEqual(["ART2FULL"]);
+      expect(await matching('tags.contains("TO-READ")')).toEqual([]);
+      expect(await matching('tags.contains("to-read")', group)).toEqual([
+        "ART2FULLg4815",
+      ]);
+      expect(await matching('tags.contains("group-only")')).toEqual([]);
+    });
+
+    it("matches text with its case, and folds case only with lower()", async () => {
+      expect(await matching('title.contains("Exact")')).toEqual(["ART2FULL"]);
+      expect(await matching('title.contains("exact")')).toEqual([]);
+      expect(await matching('title.lower().contains("exact")')).toEqual([
+        "ART2FULL",
+      ]);
+      expect(await matching('title.startsWith("Lab")')).toEqual(["RPT2NDTE"]);
+      expect(await matching('title.endsWith("report")')).toEqual([]);
+      expect(await matching('title == "same title"')).toEqual([]);
+      expect(await matching('title == "Same Title"')).toEqual([
+        "TIE2AAAA",
+        "TIE2BBBB",
+      ]);
+    });
+
+    it("does not normalize Unicode and reads SQL wildcard characters as text", async () => {
+      // The scenario stores the Tag in its composed form.
+      expect(await matching('tags.contains("Éclair")')).toEqual(["UNI2CDE2"]);
+      expect(await matching('tags.contains("Éclair")')).toEqual([]);
+      expect(await matching('title.startsWith("Éclair")')).toEqual([]);
+      expect(await matching('title.contains("%_")')).toEqual(["UNI2CDE2"]);
+      expect(await matching('title.contains("_%")')).toEqual([]);
+      expect(await matching('title.contains("%")')).toEqual(["UNI2CDE2"]);
+      expect(await matching('tags.contains("100%_raw\\\\path")')).toEqual([
+        "UNI2CDE2",
+      ]);
+      expect(await matching('tags.contains("100__raw\\\\path")')).toEqual([]);
+      expect(await matching('title.contains("🧪")')).toEqual(["UNI2CDE2"]);
+      // `lower` gives the Turkish dotted capital I a combining dot.
+      expect(await matching('title.lower().contains("istanbul")')).toEqual([]);
+      expect(await matching('title.lower().contains("i̇stanbul")')).toEqual([
+        "UNI2CDE2",
+      ]);
+    });
+
+    it("compares a field value as a string, whether SQLite stores it as text or as a number", async () => {
+      expect(await matching('volume == "12"')).toEqual([
+        "ART2FULL",
+        "TIE2AAAA",
+        "TIE2BBBB",
+      ]);
+      expect(await matching("volume == 12")).toEqual([]);
+      expect(await matching("volume > 3")).toEqual([]);
+      expect(await matching('volume >= "12"')).toEqual([
+        "ART2FULL",
+        "TIE2AAAA",
+        "TIE2BBBB",
+      ]);
+    });
+  });
+
+  describe("null", () => {
+    it("gives a known field that an Item lacks the value null", async () => {
+      expect(await matching("title == null")).toEqual(["TIE2CCCC"]);
+      expect(await matching('title != "Same Title"')).toEqual(
+        EVERY_PERSONAL_ITEM.filter(
+          (key) => key !== "TIE2AAAA" && key !== "TIE2BBBB",
+        ),
+      );
+      expect(await matching("volume != null")).toEqual([
+        "ART2FULL",
+        "TIE2AAAA",
+        "TIE2BBBB",
+      ]);
+    });
+
+    it("treats a null result as no match", async () => {
+      // Null for every Item without a volume, in both directions.
+      expect(await matching('volume < "2"')).toEqual([
+        "ART2FULL",
+        "TIE2AAAA",
+        "TIE2BBBB",
+      ]);
+      expect(await matching('!(volume < "2")')).toEqual([]);
+      expect(await matching("!title")).toEqual([]);
+      expect(await matching("title.isEmpty()")).toEqual(["TIE2CCCC"]);
+    });
+
+    it("gives null for a value that one Item cannot convert, and does not fail the query", async () => {
+      scenario = openScenarioDatabase();
+      const { sqlite } = scenario;
+      sqlite
+        .prepare("insert or ignore into itemDataValues (value) values ('abc')")
+        .run();
+      sqlite
+        .prepare(
+          "insert into itemData (itemID, fieldID, valueID) select i.itemID, f.fieldID, v.valueID from items i, fieldsCombined f, itemDataValues v where i.key = 'RPT2NDTE' and i.libraryID = 1 and f.fieldName = 'volume' and f.custom = 0 and v.value = 'abc'",
+        )
+        .run();
+
+      expect(await matching("volume != null")).toEqual([
+        "ART2FULL",
+        "RPT2NDTE",
+        "TIE2AAAA",
+        "TIE2BBBB",
+      ]);
+      expect(await matching("number(volume) > 3")).toEqual([
+        "ART2FULL",
+        "TIE2AAAA",
+        "TIE2BBBB",
+      ]);
+      expect(await matching("number(volume) > 12")).toEqual([]);
+    });
+  });
+
+  describe("names", () => {
+    it("resolves a base field through the type-specific field of each item type", async () => {
+      expect(
+        await matching('publicationTitle == "Handbook of Methods"'),
+      ).toEqual(["CHP2YEAR"]);
+      expect(
+        await matching('publicationTitle == "Proceedings of Testing"'),
+      ).toEqual(["CNF2TEXT"]);
+      expect(await matching('bookTitle == "Handbook of Methods"')).toEqual([
+        "CHP2YEAR",
+      ]);
+      expect(await matching('publisher == "Lab Institute"')).toEqual([
+        "RPT2NDTE",
+      ]);
+      expect(await matching("proceedingsTitle != null")).toEqual(["CNF2TEXT"]);
+    });
+
+    it("reads the built-in field for a bare name that a custom field also has", async () => {
+      // The type-specific field wins over the stored base field; the custom
+      // field of the same name is reached only through custom[...].
+      expect(
+        await matching('publicationTitle == "Type-Specific Host"'),
+      ).toEqual(["ALS2CNFL"]);
+      expect(await matching('publicationTitle == "Custom Host"')).toEqual([]);
+      expect(
+        await matching('custom["publicationTitle"] == "Custom Host"'),
+      ).toEqual(["ALS2CNFL"]);
+      expect(await matching('title == "Custom Title Value"')).toEqual([]);
+      expect(await matching('custom["title"] == "Custom Title Value"')).toEqual(
+        ["ART2FULL"],
+      );
+    });
+
+    it("reaches a custom field by its exact name and by an eligible bare name", async () => {
+      expect(await matching('custom["review.status"] == "done"')).toEqual([
+        "ART2FULL",
+      ]);
+      expect(await matching('custom["review.status"] != null')).toEqual([
+        "ART2FULL",
+        "BK2MNTH2",
+      ]);
+      expect(await matching('custom["review.status"].isEmpty()')).toEqual(
+        EVERY_PERSONAL_ITEM.filter((key) => key !== "ART2FULL"),
+      );
+      expect(await matching('mood == "calm"')).toEqual(["ART2FULL"]);
+      expect(await matching('custom.mood == "calm"')).toEqual(["ART2FULL"]);
+      expect(await matching('custom["mood"] == "Calm"')).toEqual([]);
+    });
+
+    it.each([
+      // Field lookup is case-sensitive.
+      ['Mood == "calm"', [0, 4], "mood"],
+      ['Title == "x"', [0, 5], "case-sensitive"],
+      ['true && noSuchField == "x"', [8, 19], 'custom["exact name"]'],
+    ])(
+      "fails the unknown bare name in %j",
+      async (filter, [from, to], hint) => {
+        const error = await failure({ library: personal, filter });
+
+        expect(error).toMatchObject({
+          _tag: "ItemQueryError",
+          code: "unknown-field",
+          location: { argument: "filter", span: { from, to } },
+          hint: expect.stringContaining(hint),
+        });
+      },
+    );
+
+    it("fails a custom field that the source does not define", async () => {
+      const error = await failure({
+        library: personal,
+        filter: 'itemType == "book" || custom["Review.Status"] == "done"',
+      });
+
+      expect(error).toMatchObject({
+        _tag: "ItemQueryError",
+        code: "unknown-field",
+        location: { argument: "filter", span: { from: 22, to: 45 } },
+        message: expect.stringContaining('"Review.Status"'),
+        hint: expect.stringContaining('"review.status"'),
+      });
+    });
+  });
+
+  describe("relation lists", () => {
+    it("keeps one creator element for each source row", async () => {
+      expect(await matching("creators.length == 2")).toEqual([
+        "ART2FULL",
+        "BK2MNTH2",
+        "CHP2YEAR",
+      ]);
+      // The same person as author and as editor.
+      expect(
+        await matching('creators == ["Grace Hopper", "Grace Hopper"]'),
+      ).toEqual(["BK2MNTH2"]);
+      expect(await matching('creators == ["Grace Hopper"]')).toEqual([]);
+      expect(await matching('creators.contains("Grace Hopper")')).toEqual([
+        "BK2MNTH2",
+        "CHP2YEAR",
+      ]);
+      expect(
+        await matching('creators.contains("World Health Organization")'),
+      ).toEqual(["ART2FULL"]);
+      expect(await matching('creators[0] == "Alan Turing"')).toEqual([
+        "CHP2YEAR",
+      ]);
+      expect(await matching("creators.isEmpty()")).toEqual([
+        "ALS2CNFL",
+        "RPT2NDTE",
+        "TIE2CCCC",
+      ]);
+    });
+
+    it("matches a Collection by its root-first path", async () => {
+      expect(await matching('collections.contains("Thesis/Methods")')).toEqual([
+        "ART2FULL",
+        "CHP2YEAR",
+      ]);
+      expect(
+        await matching('collections.contains("Teaching/Methods")'),
+      ).toEqual(["BK2MNTH2"]);
+      // Two Collections share the leaf name; the leaf name alone is no path.
+      expect(await matching('collections.contains("Methods")')).toEqual([]);
+      expect(await matching('collections.contains("Thesis")')).toEqual([
+        "CHP2YEAR",
+      ]);
+      expect(await matching('collections.contains("Methods")', group)).toEqual([
+        "GRP2BK22g4815",
+      ]);
+      expect(await matching("collections.length == 2")).toEqual(["CHP2YEAR"]);
+    });
+
+    it("matches a subtree with within", async () => {
+      expect(await matching('collections.within("Thesis")')).toEqual([
+        "ART2FULL",
+        "CHP2YEAR",
+      ]);
+      expect(await matching('collections.within("Thesis/Methods")')).toEqual([
+        "ART2FULL",
+        "CHP2YEAR",
+      ]);
+      expect(await matching('collections.within("Teaching")')).toEqual([
+        "BK2MNTH2",
+      ]);
+      expect(await matching('collections.within("Methods")')).toEqual([]);
+      expect(await matching('collections.within("Thes")')).toEqual([]);
+    });
+
+    it("leaves out a trashed Collection and every Collection below it", async () => {
+      expect(await matching('collections.within("Archive")')).toEqual([]);
+      expect(await matching('collections.contains("Archive/Old")')).toEqual([]);
+      expect(await matching('collections.contains("Old")')).toEqual([]);
+    });
+
+    it("reads Attachment presence as a boolean", async () => {
+      expect(await matching("attachments")).toEqual(["ART2FULL"]);
+      expect(await matching("!attachments")).toEqual(
+        EVERY_PERSONAL_ITEM.filter((key) => key !== "ART2FULL"),
+      );
+    });
+
+    it("matches the Zotero Key inside the Target Library", async () => {
+      expect(await matching('key == "ART2FULL"')).toEqual(["ART2FULL"]);
+      expect(await matching('key == "ART2FULL"', group)).toEqual([
+        "ART2FULLg4815",
+      ]);
+      expect(await matching('key == "GRP2BK22"')).toEqual([]);
+      expect(await matching('key == "TRS2SHED"')).toEqual([]);
+    });
+  });
+
+  describe("validation", () => {
+    it.each([
+      ["title.startsWith(1)", "wrong-argument-type", [17, 18]],
+      ["title.startsWith()", "wrong-argument-count", [0, 18]],
+      ['noSuchFunction(title) == "a"', "unknown-function", [0, 14]],
+      ['tags.startsWith("a")', "unknown-function", [5, 15]],
+      ['title == "a', "invalid-filter", [11, 11]],
+      ["title.lenght > 3", "unknown-property", [6, 12]],
+      ['dateAdded > "2020"', "unfilterable-field", [0, 9]],
+      // A branch that never runs.
+      ["false && title.startsWith(1)", "wrong-argument-type", [26, 27]],
+      ["true || noSuchFunction()", "unknown-function", [8, 22]],
+      ["if(true, true, title.lower(1))", "wrong-argument-count", [15, 29]],
+    ])(
+      "fails %j with %s before it reads the database",
+      async (filter, code, [from, to]) => {
+        const error = await failure({ library: personal, filter }, false);
+
+        expect(error).toBeInstanceOf(ItemQueryError);
+        expect(error).toMatchObject({
+          code,
+          location: { argument: "filter", span: { from, to } },
+        });
+        expect(error.message).not.toBe("");
+        expect((error as ItemQueryError).hint).not.toBe("");
+      },
+    );
+
+    it("fails the regression case title.startsWith(1) on an empty Library", async () => {
+      scenario = openScenarioDatabase();
+      scenario.sqlite.exec("delete from items where libraryID = 2");
+
+      const error = await failure({
+        library: group,
+        filter: "title.startsWith(1)",
+      });
+
+      expect(error).toMatchObject({ code: "wrong-argument-type" });
+    });
+  });
+
+  describe("hydration", () => {
+    /** The relation tables and field IDs the statements of one run read. */
+    function recordReads(database: ScenarioDatabase) {
+      const tables = new Set<string>();
+      const fieldIDs = new Set<number>();
+      const { sqlite } = database;
+      const prepare = sqlite.prepare.bind(sqlite);
+      sqlite.prepare = (sql: string) => {
+        const statement = prepare(sql);
+        const all = statement.all.bind(statement);
+        statement.all = ((...params: SQLInputValue[]) => {
+          for (const table of [
+            "itemData",
+            "itemCreators",
+            "itemTags",
+            "collectionItems",
+            "itemAttachments",
+          ]) {
+            if (sql.includes(`from "${table}"`)) tables.add(table);
+          }
+          for (const param of params) {
+            if (typeof param === "string" && param.startsWith("[")) {
+              for (const id of JSON.parse(param) as number[]) fieldIDs.add(id);
+            }
+          }
+          return all(...params);
+        }) as typeof statement.all;
+        return statement;
+      };
+      return { tables, fieldIDs };
+    }
+
+    const fieldNames = (database: ScenarioDatabase, ids: Set<number>) =>
+      [...ids]
+        .map(
+          (id) =>
+            (
+              database.sqlite
+                .prepare(
+                  "select fieldName from fieldsCombined where fieldID = ?",
+                )
+                .get(id) as { fieldName: string }
+            ).fieldName,
+        )
+        .toSorted();
+
+    it("loads nothing for a filter on the scan row", async () => {
+      scenario = openScenarioDatabase();
+      const reads = recordReads(scenario);
+
+      await matching('itemType == "book" && key != "ART2FULL"');
+
+      expect([...reads.tables]).toEqual([]);
+    });
+
+    it("loads only the relation the filter reads", async () => {
+      scenario = openScenarioDatabase();
+      const reads = recordReads(scenario);
+
+      await matching('tags.contains("to-read")');
+
+      expect([...reads.tables]).toEqual(["itemTags"]);
+    });
+
+    it("loads only the fields the filter reads, with the aliases of a base field", async () => {
+      scenario = openScenarioDatabase();
+      const reads = recordReads(scenario);
+
+      await matching('publisher == "Sage" && custom["review.status"] == null');
+
+      expect([...reads.tables]).toEqual(["itemData"]);
+      const names = fieldNames(scenario, reads.fieldIDs);
+      expect(names).toContain("publisher");
+      expect(names).toContain("institution");
+      expect(names).toContain("review.status");
+      expect(names).not.toContain("title");
+      expect(names).not.toContain("mood");
+    });
+
+    it("loads the fields of a branch that does not run for an Item", async () => {
+      scenario = openScenarioDatabase();
+      const reads = recordReads(scenario);
+
+      expect(
+        await matching('itemType == "report" && creators.isEmpty()'),
+      ).toEqual(["RPT2NDTE"]);
+      expect([...reads.tables]).toEqual(["itemCreators"]);
+    });
+  });
 });

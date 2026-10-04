@@ -6,13 +6,21 @@ export type ItemQueryErrorCode =
   | "unknown-field"
   | "unknown-path"
   | "unsortable-field"
-  | "invalid-limit";
+  | "invalid-limit"
+  | "invalid-filter"
+  | "unfilterable-field"
+  | "unknown-function"
+  | "unknown-property"
+  | "wrong-argument-count"
+  | "wrong-argument-type";
 
 /** The part of the request an {@link ItemQueryError} points at. */
 export interface ItemQueryErrorLocation {
-  readonly argument: "fields" | "sort" | "limit";
+  readonly argument: "filter" | "fields" | "sort" | "limit";
   /** The position of the entry in a list argument. */
   readonly index?: number;
+  /** The part of the filter text, in UTF-16 offsets; `to` is exclusive. */
+  readonly span?: { readonly from: number; readonly to: number };
 }
 
 /**
