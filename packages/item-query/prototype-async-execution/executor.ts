@@ -112,7 +112,7 @@ export class QueryCancelled extends Error {
 
 // --- Hydrated Item shape used by the evaluator stand-in ---
 
-interface Hydrated {
+export interface Hydrated {
   itemID: number;
   key: string;
   dateModified: string;
@@ -123,9 +123,14 @@ interface Hydrated {
   hasAttachment?: boolean;
 }
 
-type Relation = "fields" | "creators" | "tags" | "collections" | "attachments";
+export type Relation =
+  | "fields"
+  | "creators"
+  | "tags"
+  | "collections"
+  | "attachments";
 
-const ITEM_COLUMNS = new Set<SortField>(["dateModified", "key"]);
+export const ITEM_COLUMNS = new Set<SortField>(["dateModified", "key"]);
 
 export function executeItemQuery(
   db: DatabaseSync,
@@ -233,7 +238,8 @@ export function executeItemQuery(
 
     const cmp = comparator(query.sort);
     // Bounded top-K: keep only `limit + 1` best rows while evaluating.
-    const topK = !sqlCanOrder && limit !== null && opts.sortStrategy === "incremental";
+    const topK =
+      !sqlCanOrder && limit !== null && opts.sortStrategy === "incremental";
     let matchedCount = 0;
     const matches: Hydrated[] = [];
     const want = limit === null ? Infinity : limit + 1;
@@ -314,10 +320,12 @@ export function executeItemQuery(
 
     // --- Phase 4: late projection for the returned rows only ---
     if (lateProjection) {
-      const lateFields = query.fields.filter((f) => f === "title" || f === "date");
-      const lateRel = uniq([
-        ...relationsForProjection(query.fields),
-      ]).filter((r) => r !== "fields" || lateFields.length > 0);
+      const lateFields = query.fields.filter(
+        (f) => f === "title" || f === "date",
+      );
+      const lateRel = uniq([...relationsForProjection(query.fields)]).filter(
+        (r) => r !== "fields" || lateFields.length > 0,
+      );
       for (let i = 0; i < winners.length; i += opts.hydrateBatch) {
         const batch = winners.slice(i, i + opts.hydrateBatch);
         const rows = new Map(batch.map((r) => [r.itemID, r]));
@@ -335,7 +343,8 @@ export function executeItemQuery(
     const out: QueryRow[] = [];
     for (const [i, row] of winners.entries()) {
       out.push({ indexedKey: row.key, values: project(query.fields, row) });
-      if (opts.sortStrategy === "incremental" && (i & 1023) === 1023) await maybeYield();
+      if (opts.sortStrategy === "incremental" && (i & 1023) === 1023)
+        await maybeYield();
     }
     releaseLease();
     closeSlice();
@@ -411,7 +420,7 @@ function orderSql(sort: SortKey[]): string {
   return `ORDER BY ${keys.join(", ")}`;
 }
 
-function candidateStatement(
+export function candidateStatement(
   db: DatabaseSync,
   query: Query,
   plan: PlanFamily,
@@ -452,9 +461,11 @@ function candidateStatement(
   };
 }
 
-function loadFieldIDs(db: DatabaseSync): Map<string, number> {
+export function loadFieldIDs(db: DatabaseSync): Map<string, number> {
   const rows = db
-    .prepare(`SELECT fieldID, fieldName FROM fields WHERE fieldName IN ('title', 'date')`)
+    .prepare(
+      `SELECT fieldID, fieldName FROM fields WHERE fieldName IN ('title', 'date')`,
+    )
     .all() as { fieldID: number; fieldName: string }[];
   return new Map(rows.map((r) => [r.fieldName, r.fieldID]));
 }
@@ -468,7 +479,7 @@ function cached(db: DatabaseSync, sql: string): StatementSync {
   return s;
 }
 
-function hydrate(
+export function hydrate(
   db: DatabaseSync,
   rel: Relation,
   rows: Map<number, Hydrated>,
@@ -488,8 +499,13 @@ function hydrate(
         `SELECT d.itemID, d.fieldID, v.value FROM itemData AS d
          JOIN itemDataValues AS v ON v.valueID = d.valueID
          WHERE d.itemID IN (${inList}) AND d.fieldID IN (${fids.map(() => "?").join(",")})`,
-      ).all(...ids, ...fids) as { itemID: number; fieldID: number; value: unknown }[];
-      for (const r of res) rows.get(r.itemID)!.fields.set(names.get(r.fieldID)!, String(r.value));
+      ).all(...ids, ...fids) as {
+        itemID: number;
+        fieldID: number;
+        value: unknown;
+      }[];
+      for (const r of res)
+        rows.get(r.itemID)!.fields.set(names.get(r.fieldID)!, String(r.value));
       return;
     }
     case "creators": {
@@ -499,7 +515,12 @@ function hydrate(
         `SELECT ic.itemID, c.firstName, c.lastName, c.fieldMode FROM itemCreators AS ic
          JOIN creators AS c ON c.creatorID = ic.creatorID
          WHERE ic.itemID IN (${inList}) ORDER BY ic.itemID, ic.orderIndex`,
-      ).all(...ids) as { itemID: number; firstName: string; lastName: string; fieldMode: number }[];
+      ).all(...ids) as {
+        itemID: number;
+        firstName: string;
+        lastName: string;
+        fieldMode: number;
+      }[];
       for (const r of res) rows.get(r.itemID)!.creators!.push(r);
       return;
     }
@@ -521,7 +542,8 @@ function hydrate(
          JOIN collections AS c ON c.collectionID = ci.collectionID
          WHERE ci.itemID IN (${inList})`,
       ).all(...ids) as { itemID: number; collectionName: string }[];
-      for (const r of res) rows.get(r.itemID)!.collections!.push(r.collectionName);
+      for (const r of res)
+        rows.get(r.itemID)!.collections!.push(r.collectionName);
       return;
     }
     case "attachments": {
@@ -540,7 +562,7 @@ function hydrate(
 
 // --- Evaluator / projection stand-ins ---
 
-function relationsForFilter(f: Filter | null): Relation[] {
+export function relationsForFilter(f: Filter | null): Relation[] {
   switch (f?.kind) {
     case "titleContains":
       return ["fields"];
@@ -555,7 +577,7 @@ function relationsForFilter(f: Filter | null): Relation[] {
   }
 }
 
-function relationsForProjection(fields: Projection[]): Relation[] {
+export function relationsForProjection(fields: Projection[]): Relation[] {
   const out: Relation[] = [];
   for (const f of fields) {
     if (f === "title" || f === "date") out.push("fields");
@@ -568,12 +590,14 @@ function relationsForProjection(fields: Projection[]): Relation[] {
 }
 
 /** Authoritative evaluation always runs, even when SQL already narrowed the set. */
-function evaluate(f: Filter | null, row: Hydrated): boolean {
+export function evaluate(f: Filter | null, row: Hydrated): boolean {
   switch (f?.kind) {
     case undefined:
       return true;
     case "titleContains":
-      return (row.fields.get("title") ?? "").toLocaleLowerCase().includes(f.needle);
+      return (row.fields.get("title") ?? "")
+        .toLocaleLowerCase()
+        .includes(f.needle);
     case "tagEquals":
       return row.tags!.includes(f.name);
     case "creatorContains":
@@ -585,7 +609,7 @@ function evaluate(f: Filter | null, row: Hydrated): boolean {
   }
 }
 
-function comparator(sort: SortKey[]) {
+export function comparator(sort: SortKey[]) {
   const collator = new Intl.Collator(undefined, { sensitivity: "base" });
   const get = (r: Hydrated, f: SortField) =>
     f === "title" ? (r.fields.get("title") ?? null) : r[f];
@@ -603,7 +627,10 @@ function comparator(sort: SortKey[]) {
   };
 }
 
-function project(fields: Projection[], row: Hydrated): Record<string, unknown> {
+export function project(
+  fields: Projection[],
+  row: Hydrated,
+): Record<string, unknown> {
   const v: Record<string, unknown> = {};
   for (const f of fields) {
     if (f === "title" || f === "date") v[f] = row.fields.get(f) ?? null;
@@ -612,7 +639,8 @@ function project(fields: Projection[], row: Hydrated): Record<string, unknown> {
       v[f] = row.creators!.map((c) => ({
         firstName: c.firstName,
         lastName: c.lastName,
-        fullName: c.fieldMode === 1 ? c.lastName : `${c.firstName} ${c.lastName}`,
+        fullName:
+          c.fieldMode === 1 ? c.lastName : `${c.firstName} ${c.lastName}`,
       }));
     else if (f === "tags") v[f] = row.tags;
     else if (f === "collections") v[f] = row.collections;
@@ -621,6 +649,6 @@ function project(fields: Projection[], row: Hydrated): Record<string, unknown> {
   return v;
 }
 
-function uniq<T>(xs: T[]): T[] {
+export function uniq<T>(xs: T[]): T[] {
   return [...new Set(xs)];
 }
