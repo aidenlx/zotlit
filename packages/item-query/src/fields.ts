@@ -40,6 +40,12 @@ export interface FieldNeeds {
 }
 
 /**
+ * The value of a Sortable Field for one Item. One field gives one type; `null`
+ * is a missing value. Strings compare in the Item Query string order.
+ */
+export type SortKey = string | number | null;
+
+/**
  * One entry of the field registry. Validation, execution, and the Item Query
  * Schema read the same entries, so a field exists only here.
  */
@@ -49,6 +55,11 @@ export interface FieldDefinition {
   readonly needs: (rest: readonly PathSegment[]) => FieldNeeds;
   /** Reads the complete value of the field. */
   readonly read: (item: QueryItem) => ProjectionValue;
+  /**
+   * Present on a Sortable Field: the value that orders the Item. Hydration
+   * loads `needs([])` before it runs.
+   */
+  readonly sortKey?: (item: QueryItem) => SortKey;
 }
 
 const SCALAR: ValueShape = { kind: "scalar" };
@@ -69,8 +80,16 @@ const DATE_SHAPE: ValueShape = {
 
 const NO_NEEDS = (): FieldNeeds => ({});
 
-function fromScan(read: (row: ScanRow) => ProjectionValue): FieldDefinition {
-  return { shape: SCALAR, needs: NO_NEEDS, read: (item) => read(item.scan) };
+function fromScan(
+  read: (row: ScanRow) => ProjectionValue,
+  sortKey: (row: ScanRow) => SortKey,
+): FieldDefinition {
+  return {
+    shape: SCALAR,
+    needs: NO_NEEDS,
+    read: (item) => read(item.scan),
+    sortKey: (item) => sortKey(item.scan),
+  };
 }
 
 /** A built-in Zotero field; a base field resolves through its aliases. */
@@ -78,12 +97,13 @@ function zoteroField(name: string): FieldDefinition {
   const builtIn = [name];
   const read = (item: QueryItem) => item.hydrated.fields.get(name) ?? null;
   if (!isDateField(name)) {
-    return { shape: SCALAR, needs: () => ({ builtIn }), read };
+    return { shape: SCALAR, needs: () => ({ builtIn }), read, sortKey: read };
   }
   return {
     shape: DATE_SHAPE,
     needs: () => ({ builtIn }),
     read: (item) => dateValue(read(item)),
+    sortKey: (item) => firstDay(read(item)),
   };
 }
 
@@ -109,6 +129,16 @@ function dateValue(raw: string | null): ProjectionValue {
   };
 }
 
+/**
+ * The first day a Zotero date can mean, as the number `yyyymmdd`: a year sorts
+ * as its 1 January. `null` for a text date and for no date.
+ */
+function firstDay(raw: string | null): SortKey {
+  const date = parseItemDate(raw);
+  if (!date || date.year === null) return null;
+  return date.year * 10000 + (date.month ?? 1) * 100 + (date.day ?? 1);
+}
+
 const customField: FieldDefinition = {
   shape: { kind: "custom-fields" },
   needs: (rest) =>
@@ -127,9 +157,27 @@ const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map([
   ...Object.keys(FIELD_LABELS["en-US"]).map(
     (name) => [name, zoteroField(name)] as const,
   ),
-  ["itemType", fromScan((row) => row.itemType)],
-  ["dateAdded", fromScan((row) => row.dateAdded)],
-  ["dateModified", fromScan((row) => row.dateModified)],
+  [
+    "itemType",
+    fromScan(
+      (row) => row.itemType,
+      (row) => row.itemType,
+    ),
+  ],
+  [
+    "dateAdded",
+    fromScan(
+      (row) => row.dateAdded,
+      (row) => row.dateAdded.epochMilliseconds,
+    ),
+  ],
+  [
+    "dateModified",
+    fromScan(
+      (row) => row.dateModified,
+      (row) => row.dateModified.epochMilliseconds,
+    ),
+  ],
   ["custom", customField],
 ]);
 

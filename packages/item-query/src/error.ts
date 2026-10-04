@@ -5,11 +5,12 @@ export type ItemQueryErrorCode =
   | "invalid-path"
   | "unknown-field"
   | "unknown-path"
+  | "unsortable-field"
   | "invalid-limit";
 
 /** The part of the request an {@link ItemQueryError} points at. */
 export interface ItemQueryErrorLocation {
-  readonly argument: "fields" | "limit";
+  readonly argument: "fields" | "sort" | "limit";
   /** The position of the entry in a list argument. */
   readonly index?: number;
 }

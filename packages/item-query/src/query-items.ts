@@ -17,12 +17,26 @@ import type {
   ScanRow,
 } from "@zotlit/db/item-query";
 
+import { compareStrings } from "./collation";
 import { ItemQueryError } from "./error";
+import type { FieldNeeds, QueryItem, SortKey } from "./fields";
 import { allMatches, firstMatches } from "./matches";
 import { readPath } from "./projection";
 import type { PlannedPath } from "./projection";
 import { planRequest } from "./request";
-import type { ItemQueryRequest, QueryResult, QueryRow } from "./request";
+import type {
+  ItemQueryRequest,
+  PlannedSort,
+  QueryResult,
+  QueryRow,
+} from "./request";
+
+/** One match while the query orders it: its scan row and its sort keys. */
+interface Match {
+  readonly scan: ScanRow;
+  /** One key for each entry of the sort list. */
+  readonly keys: readonly SortKey[];
+}
 
 /**
  * Run one Item Query over the top-level, non-trashed Items of the Target
@@ -38,38 +52,72 @@ export function queryItems(
 > {
   return Effect.gen(function* () {
     const { library } = request;
-    const { query, paths } = yield* planRequest(request);
+    const { query, paths, sorts } = yield* planRequest(request);
     const { limit } = query;
 
-    const needsHydration = paths.some(
-      ({ needs }) => needs.builtIn?.length || needs.custom?.length,
-    );
-    const vocabulary = needsHydration ? yield* readFieldVocabulary() : null;
+    const pathNeeds = paths.map((path) => path.needs);
+    const sortNeeds = sorts.map((sort) => sort.needs);
+    const vocabulary = [...pathNeeds, ...sortNeeds].some(needsHydration)
+      ? yield* readFieldVocabulary()
+      : null;
     if (vocabulary) yield* checkCustomFields(paths, vocabulary);
+    const itemOf = (
+      scan: ScanRow,
+      hydrated: ReadonlyMap<number, HydratedItem>,
+    ): QueryItem => ({
+      scan,
+      hydrated: hydrated.get(scan.itemID) ?? NOTHING_HYDRATED,
+      customFieldNames: vocabulary?.customFieldNames ?? [],
+    });
 
+    // The sort pass: every Item is hydrated with the sort fields only, and the
+    // query keeps the scan row and the sort keys of a match.
+    const sortFields =
+      vocabulary && sortNeeds.some(needsHydration)
+        ? hydrateFields(sortNeeds, vocabulary)
+        : null;
+    const compare = byKeysThenKey(sorts);
     const matches =
-      limit === null
-        ? allMatches(byModifiedThenKey)
-        : firstMatches(limit + 1, byModifiedThenKey);
+      limit === null ? allMatches(compare) : firstMatches(limit + 1, compare);
     let afterKey: string | null = null;
     for (;;) {
       const page: ScanRow[] = yield* readScanPage({
         libraryID: library.libraryID,
         afterKey,
       });
-      yield* Effect.sync(() => {
-        for (const row of page) matches.add(row);
-      });
+      const chunkSize = sortFields ? HYDRATE_CHUNK_SIZE : SCAN_PAGE_SIZE;
+      for (let start = 0; start < page.length; start += chunkSize) {
+        const chunk = page.slice(start, start + chunkSize);
+        const hydrated: ReadonlyMap<number, HydratedItem> =
+          vocabulary && sortFields
+            ? yield* readHydrateChunk({
+                vocabulary,
+                itemIDs: chunk.map((row) => row.itemID),
+                fields: sortFields,
+              })
+            : new Map();
+        yield* Effect.sync(() => {
+          matches.add(
+            chunk.map((scan): Match => {
+              const item = itemOf(scan, hydrated);
+              return { scan, keys: sorts.map((sort) => sort.key(item)) };
+            }),
+          );
+        });
+      }
       if (page.length < SCAN_PAGE_SIZE) break;
       afterKey = page.at(-1)!.key;
     }
 
-    const ordered = yield* Effect.sync(() => matches.ordered());
+    const ordered = yield* matches.ordered();
     const truncated = limit !== null && ordered.length > limit;
     const returned = truncated ? ordered.slice(0, limit) : ordered;
 
     // The projection pass: only the returned rows are hydrated.
-    const fields = vocabulary ? hydrateFields(paths, vocabulary) : null;
+    const fields =
+      vocabulary && pathNeeds.some(needsHydration)
+        ? hydrateFields(pathNeeds, vocabulary)
+        : null;
     const rows: QueryRow[] = [];
     for (let start = 0; start < returned.length; start += HYDRATE_CHUNK_SIZE) {
       const chunk = returned.slice(start, start + HYDRATE_CHUNK_SIZE);
@@ -77,17 +125,13 @@ export function queryItems(
         vocabulary && fields
           ? yield* readHydrateChunk({
               vocabulary,
-              itemIDs: chunk.map((row) => row.itemID),
+              itemIDs: chunk.map((row) => row.scan.itemID),
               fields,
             })
           : new Map();
       yield* Effect.sync(() => {
-        for (const scan of chunk) {
-          const item = {
-            scan,
-            hydrated: hydrated.get(scan.itemID) ?? NOTHING_HYDRATED,
-            customFieldNames: vocabulary?.customFieldNames ?? [],
-          };
+        for (const { scan } of chunk) {
+          const item = itemOf(scan, hydrated);
           rows.push({
             indexedKey: formatIndexedKey(scan.key, library.groupID),
             values: Object.fromEntries(
@@ -127,13 +171,17 @@ function checkCustomFields(
   );
 }
 
+function needsHydration(needs: FieldNeeds): boolean {
+  return Boolean(needs.builtIn?.length || needs.custom?.length);
+}
+
 function hydrateFields(
-  paths: readonly PlannedPath[],
+  allNeeds: readonly FieldNeeds[],
   vocabulary: FieldVocabulary,
 ): HydrateFields {
   const builtIn = new Set<string>();
   const custom = new Set<string>();
-  for (const { needs } of paths) {
+  for (const needs of allNeeds) {
     for (const name of needs.builtIn ?? []) builtIn.add(name);
     const names =
       needs.custom === "all" ? vocabulary.customFieldNames : needs.custom;
@@ -142,9 +190,27 @@ function hydrateFields(
   return { builtIn: [...builtIn], custom: [...custom] };
 }
 
-function byModifiedThenKey(a: ScanRow, b: ScanRow): number {
-  return (
-    Temporal.Instant.compare(b.dateModified, a.dateModified) ||
-    (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)
-  );
+/**
+ * The result order: each Sortable Field in turn, a missing value last in both
+ * directions, and the Indexed Key as the final tie-breaker.
+ */
+function byKeysThenKey(
+  sorts: readonly PlannedSort[],
+): (a: Match, b: Match) => number {
+  const descending = sorts.map((sort) => sort.direction === "desc");
+  return (a, b) => {
+    for (const [i, isDescending] of descending.entries()) {
+      const x = a.keys[i]!;
+      const y = b.keys[i]!;
+      if (x === y) continue;
+      if (x === null) return 1;
+      if (y === null) return -1;
+      const order =
+        typeof x === "string"
+          ? compareStrings(x, y as string)
+          : x - (y as number);
+      if (order !== 0) return isDescending ? -order : order;
+    }
+    return a.scan.key < b.scan.key ? -1 : a.scan.key > b.scan.key ? 1 : 0;
+  };
 }
