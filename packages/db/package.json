@@ -17,6 +17,7 @@
     "./client/web": "./dist/client/web.mjs",
     "./contract/ir": "./dist/contract/ir.mjs",
     "./path": "./dist/path.mjs",
+    "./test-scenario": "./dist/test-scenario.mjs",
     "./test-utils": "./dist/test-utils.mjs",
     "./package.json": "./package.json",
     "./contract/ir.json": "./src/contract/generated/ir.json",

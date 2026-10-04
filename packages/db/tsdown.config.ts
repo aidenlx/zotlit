@@ -10,6 +10,7 @@ export default defineConfig({
       "contract/ir": "./src/contract/ir.ts",
       path: "./src/lib/zt-path.ts",
       "test-utils": "./src/test-utils.ts",
+      "test-scenario": "./src/test-scenario/index.ts",
     },
   ],
   tsconfig: "./tsconfig.lib.json",
