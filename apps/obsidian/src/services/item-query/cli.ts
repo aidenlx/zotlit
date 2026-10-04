@@ -229,6 +229,7 @@ export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
         {
           library: library.target,
           fields: decoded.fields,
+          sort: decoded.sort,
           limit: decoded.limit,
         },
         { client: lease.client, signal: deps.signal },
@@ -463,16 +464,13 @@ function decodeArguments(params: CliData): DecodedArguments | Diagnostic {
     }
   }
 
-  // The package takes no filter or sort yet (#1321, #1323). Refuse them, so a
-  // query never returns Items or an order the caller did not ask for.
+  // The package takes no filter yet (#1321). Refuse it, so a query never
+  // returns Items the caller did not ask for.
   if (filter !== undefined) {
     return invalid(
       "filter",
       "filter is not available in this ZotLit build yet.",
     );
-  }
-  if (sort !== undefined) {
-    return invalid("sort", "sort is not available in this ZotLit build yet.");
   }
 
   return { library, filter, fields, sort, limit };

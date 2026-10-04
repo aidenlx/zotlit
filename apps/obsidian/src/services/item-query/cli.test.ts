@@ -294,12 +294,9 @@ describe("zotlit:item-query filter and sort", () => {
       diagnostic: { code: "invalid-argument", details: { parameter } },
     });
   });
-  // Until the engine takes them (#1321, #1323): a query that dropped them
-  // would return Items or an order the caller did not ask for.
-  it.each([
-    ["filter", 'tags.contains("to-read")'],
-    ["sort", '[{"field":"dateAdded","direction":"asc"}]'],
-  ])(
+  // Until the engine takes it (#1321): a query that dropped it would return
+  // Items the caller did not ask for.
+  it.each([["filter", 'tags.contains("to-read")']])(
     "refuses a well-formed %s that the engine does not take yet",
     async (parameter, value) => {
       const { run, acquireRead } = setup();
@@ -313,6 +310,31 @@ describe("zotlit:item-query filter and sort", () => {
       expect(acquireRead).not.toHaveBeenCalled();
     },
   );
+
+  it("passes a well-formed sort through to the engine and echoes it", async () => {
+    const { run } = setup();
+
+    const answer = await run({
+      sort: '[{"field":"title","direction":"asc"}]',
+    });
+
+    expect(answer).toMatchObject({
+      ok: true,
+      request: { sort: [{ field: "title", direction: "asc" }] },
+    });
+    expect(keys(answer)).toEqual([
+      "CHP2YEAR",
+      "ALS2CNFL",
+      "UNI2CDE2",
+      "ART2FULL",
+      "CNF2TEXT",
+      "RPT2NDTE",
+      "BK2MNTH2",
+      "TIE2AAAA",
+      "TIE2BBBB",
+      "TIE2CCCC",
+    ]);
+  });
 });
 
 describe("zotlit:item-query parameters", () => {
