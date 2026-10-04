@@ -62,6 +62,17 @@ export interface CancelMeasurement {
   worstSliceMs: number;
 }
 
+/**
+ * A cancel request that measured nothing: the run ended before the request
+ * arrived, or it gave no report.
+ */
+export interface MissedCancel {
+  delivery: CancelMeasurement["delivery"];
+  query: string;
+  /** How the run ended, such as `answered`. */
+  outcome: string;
+}
+
 export interface HeapMeasurement {
   query: string;
   class: QueryClass;
@@ -77,6 +88,7 @@ export interface TierMeasurement {
   items: number;
   queries: readonly QueryMeasurement[];
   cancels: readonly CancelMeasurement[];
+  missedCancels: readonly MissedCancel[];
   heaps: readonly HeapMeasurement[];
 }
 
@@ -181,6 +193,18 @@ export function evaluateTier(tier: TierMeasurement): Check[] {
       subject: `${cancel.delivery}: ${cancel.query}`,
       detail: `${ms(cancel.latencyMs)} ms (limit ${THRESHOLDS.cancelMs})`,
       status: cancel.latencyMs <= THRESHOLDS.cancelMs ? "passed" : "failed",
+    });
+  }
+  // A kind of request with no measured run proves nothing about the limit.
+  const missed = Map.groupBy(tier.missedCancels, (cancel) => cancel.delivery);
+  for (const [delivery, requests] of missed) {
+    if (tier.cancels.some((cancel) => cancel.delivery === delivery)) continue;
+    checks.push({
+      tier: tier.items,
+      kind: "cancel",
+      subject: `${delivery}: not measured`,
+      detail: `none of ${requests.length} cancel requests reached a running query (${requests.map((request) => request.outcome).join(", ")}); run the measurement again`,
+      status: "failed",
     });
   }
   return checks;

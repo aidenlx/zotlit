@@ -26,7 +26,14 @@ function query(
 }
 
 function tier(overrides: Partial<TierMeasurement> = {}): TierMeasurement {
-  return { items: 10_000, queries: [], cancels: [], heaps: [], ...overrides };
+  return {
+    items: 10_000,
+    queries: [],
+    cancels: [],
+    missedCancels: [],
+    heaps: [],
+    ...overrides,
+  };
 }
 
 const statuses = (measured: TierMeasurement) =>
@@ -196,6 +203,33 @@ describe("threshold evaluation", () => {
         }),
       ),
     ).toEqual(["cancel timer: export: passed", "cancel cli: export: failed"]);
+  });
+
+  it("fails a kind of cancel request of which no request reached a running query", () => {
+    const measured = tier({
+      cancels: [
+        { delivery: "timer", query: "export", latencyMs: 9, worstSliceMs: 9 },
+      ],
+      missedCancels: [
+        { delivery: "timer", query: "export at 90%", outcome: "answered" },
+        { delivery: "cli", query: "export", outcome: "answered" },
+        { delivery: "cli", query: "export", outcome: "failed" },
+      ],
+    });
+
+    expect(statuses(measured)).toEqual([
+      "cancel timer: export: passed",
+      "cancel cli: not measured: failed",
+    ]);
+    expect(
+      formatSummary({
+        startedAt: "2026-10-05T08:00:00Z",
+        environment: [],
+        notes: [],
+        rawPath: "raw.json",
+        tiers: [measured],
+      }),
+    ).toContain("**Result: FAILED.** 1 of 2 thresholds failed.");
   });
 });
 

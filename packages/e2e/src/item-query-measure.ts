@@ -57,6 +57,7 @@ import {
 import type {
   CancelMeasurement,
   HeapMeasurement,
+  MissedCancel,
   MeasurementRecord,
   QueryClass,
   QueryMeasurement,
@@ -464,6 +465,8 @@ interface RawTier {
     arrivedAtEpochMs?: number;
     report: MeasureReport;
   }[];
+  /** The cancel requests whose run gave no report. */
+  unreported: { delivery: CancelMeasurement["delivery"]; query: string }[];
   channels: ChannelCount;
 }
 
@@ -584,6 +587,8 @@ async function measureTier(raw: RawTier): Promise<void> {
         arrivedAtEpochMs,
         report,
       });
+    } else {
+      raw.unreported.push({ delivery: "unload", query: exportSpec.id });
     }
     // `disablePlugin` leaves the plugin in the enabled list, so the CLI
     // `plugin:enable` refuses; load it again in the same way.
@@ -625,6 +630,10 @@ function toTier(raw: RawTier, notes: string[]): TierMeasurement {
   });
 
   const cancels: CancelMeasurement[] = [];
+  const missedCancels: MissedCancel[] = raw.unreported.map((missed) => ({
+    ...missed,
+    outcome: "no report",
+  }));
   for (const {
     delivery,
     query,
@@ -636,6 +645,7 @@ function toTier(raw: RawTier, notes: string[]): TierMeasurement {
       notes.push(
         `${tier} Items: the ${delivery} cancel of \`${query}\` was not measured: the run ended (${report.outcome}) before the request arrived.`,
       );
+      missedCancels.push({ delivery, query, outcome: report.outcome });
       continue;
     }
     const settledAtEpochMs =
@@ -665,7 +675,7 @@ function toTier(raw: RawTier, notes: string[]): TierMeasurement {
       afterAnswerBytes: worst.heap!.afterAnswerBytes - worst.heap!.beforeBytes,
     };
   });
-  return { items: raw.items, queries, cancels, heaps };
+  return { items: raw.items, queries, cancels, missedCancels, heaps };
 }
 
 /** The statements each record makes from its own data. */
@@ -750,6 +760,7 @@ try {
       queries: [],
       heaps: [],
       cancels: [],
+      unreported: [],
       channels: { created: 0, closed: 0, open: [] },
     };
     rawTiers.push(raw);
