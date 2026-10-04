@@ -17,6 +17,8 @@ export type {
 export {
   ItemQueryScheduler,
   type ItemQuerySchedulerOptions,
+  ItemQuerySliceObserver,
   type Pause,
   SLICE_BUDGET_MS,
+  type SliceObserver,
 } from "./scheduler";

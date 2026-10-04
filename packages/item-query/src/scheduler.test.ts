@@ -1,9 +1,10 @@
 import { Effect } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ItemQueryScheduler } from "./scheduler";
+import { ItemQueryScheduler, ItemQuerySliceObserver } from "./scheduler";
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
@@ -71,5 +72,58 @@ describe("ItemQueryScheduler", () => {
     expect(post.mock.calls.length).toBeGreaterThanOrEqual(10);
     expect(immediate).not.toHaveBeenCalled();
     expect(timeout).not.toHaveBeenCalled();
+  });
+
+  it("reports each pause and each resume to the slice observer of the run", async () => {
+    const clock = { now: 0 };
+    const events: [string, number][] = [];
+    const scheduler = new ItemQueryScheduler({
+      now: () => clock.now,
+      pause: (resume) => {
+        const timer = setImmediate(() => {
+          // The host takes 5 ms between two slices.
+          clock.now += 5;
+          resume();
+        });
+        return () => clearImmediate(timer);
+      },
+    });
+
+    // 6 operations of 3 ms: the budget ends after the third and the sixth.
+    await Effect.runPromise(
+      Effect.provideService(work(6, 3, clock), ItemQuerySliceObserver, {
+        paused: (at) => events.push(["paused", at]),
+        resumed: (at) => events.push(["resumed", at]),
+      }),
+      { scheduler },
+    );
+
+    expect(events).toEqual([
+      ["paused", 9],
+      ["resumed", 14],
+      ["paused", 23],
+      ["resumed", 28],
+    ]);
+  });
+
+  it("closes each MessageChannel it opens when no resume waits", async () => {
+    const clock = { now: 0 };
+    let opened = 0;
+    vi.stubGlobal(
+      "MessageChannel",
+      class extends MessageChannel {
+        constructor() {
+          super();
+          opened += 1;
+        }
+      },
+    );
+    const close = vi.spyOn(MessagePort.prototype, "close");
+    const scheduler = new ItemQueryScheduler({ now: () => clock.now });
+
+    await Effect.runPromise(work(40, 3, clock), { scheduler });
+
+    expect(opened).toBeGreaterThanOrEqual(1);
+    expect(close).toHaveBeenCalledTimes(opened);
   });
 });
