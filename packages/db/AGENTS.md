@@ -33,6 +33,10 @@ The `zt` types plus their doc comments are the single source of truth for the te
 - The extractor parses with ts-morph's vendored frozen TypeScript 6, not the repo's TypeScript 7. See [ADR 0015](../../docs/adr/0015-template-contract-artifacts-generate-from-ts-types.md).
 - Three doc tags on a contract member carry emitter data: `@ztFilter <name>` names the Liquid filter of a helper member, `@ztInert` (empty tag) marks a helper the resolver can leave inert, and `@example` holds exactly one fenced code block. Any other content in any tag fails the extractor.
 
+## Item Query readers
+
+`src/item-query/` holds every SQL statement of Item Query, behind the `@zotlit/db/item-query` export. It is the only entry that loads `effect`; keep `effect` imports inside it. Define each statement with `defineStatement` in `src/item-query/database.ts`: it is the one place where a driver call becomes an Effect and a thrown value becomes `ItemQueryDatabaseError`. Test readers on the scenario database (`src/test-scenario/`).
+
 ## Logging
 
 Logging uses `@logtape/logtape`; configuration belongs to the consuming app.
