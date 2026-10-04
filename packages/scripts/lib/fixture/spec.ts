@@ -2455,6 +2455,174 @@ export function createStressItems(count: number): readonly FixtureItem[] {
   });
 }
 
+/** Fixture Spec Items in My Library, the floor of a one-Library Stress Build. */
+export const STRESS_LIBRARY_MIN_ITEM_COUNT = ITEMS.filter(
+  ({ libraryID }) => libraryID === USER_LIBRARY_ID,
+).length;
+export const STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT = `a safe integer of at least ${STRESS_LIBRARY_MIN_ITEM_COUNT}`;
+/** My Library sizes the Item Query performance tiers measure. */
+export const STRESS_LIBRARY_TIERS = [10_000, 50_000, 100_000] as const;
+
+/**
+ * Query targets of a one-Library Stress Build. Every synthetic Item draws each
+ * value from its index `i` in the corpus: rare values recur every 1,000 Items,
+ * common values every 10, and dominant values cover more than a quarter of the
+ * Library, so a selective and a non-selective query each have a target.
+ */
+export const STRESS_LIBRARY_VALUES = {
+  tags: {
+    /** `i % 1000 == 0`: 0.1% of the corpus. */
+    rare: "stress-rare",
+    /** `i % 10 == 5`: 10%. */
+    common: "stress-common",
+    /** `i % 5 < 3`: 60%. */
+    dominant: "stress-dominant",
+  },
+  collections: {
+    /** Top-level; files no Item directly, so its subtree is the other three. */
+    root: { key: "STRESSRT", name: "Stress Build" },
+    /** Under `root`; `i % 10 == 6`: 10%. */
+    common: { key: "STRESSCM", name: "Common" },
+    /** Under `common`; `i % 1000 == 1`: 0.1%. */
+    rare: { key: "STRESSRR", name: "Rare" },
+    /** Under `root`; `i % 5 >= 2`: 60%. */
+    dominant: { key: "STRESSDM", name: "Dominant" },
+  },
+  itemTypes: {
+    /** `i % 1000 == 2`, with Venue "Stress Build University". */
+    rare: "thesis",
+    /** `i % 10 == 7`, with Venue "Stress Build Press". */
+    common: "book",
+    /** Every other Item: about 90%. */
+    dominant: "journalArticle",
+  },
+  /** `publicationTitle` of the journal articles. */
+  venues: {
+    /** `i % 1000 == 3`. */
+    rare: "Stress Rare Journal",
+    /** `i % 10 == 8`. */
+    common: "Stress Common Journal",
+    /** Every other journal article. */
+    dominant: "Stress Dominant Journal",
+  },
+  /** Title of the Item at `i == floor(count / 2)`; every other title is unique too. */
+  uniqueTitle: "Stress Build unique title",
+} as const;
+
+/** Data a one-Library Stress Build adds to the Fixture Spec. */
+export interface StressLibraryCorpus {
+  items: readonly FixtureItem[];
+  collections: readonly FixtureCollection[];
+}
+
+const STRESS_LIBRARY_MODIFIED_EPOCH = Date.UTC(2020, 0, 1);
+
+/**
+ * Synthetic corpus that fills My Library to exactly `itemCount` Items, with
+ * the distributions of {@link STRESS_LIBRARY_VALUES}.
+ */
+export function createStressLibraryCorpus(
+  itemCount: number,
+): StressLibraryCorpus {
+  if (
+    !Number.isSafeInteger(itemCount) ||
+    itemCount < STRESS_LIBRARY_MIN_ITEM_COUNT
+  ) {
+    throw new Error(
+      `stress Library item count must be ${STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT}, got ${itemCount}`,
+    );
+  }
+  const count = itemCount - STRESS_LIBRARY_MIN_ITEM_COUNT;
+  const { tags, itemTypes, venues } = STRESS_LIBRARY_VALUES;
+
+  const firstCollectionID =
+    Math.max(...COLLECTIONS.map(({ collectionID }) => collectionID)) + 1;
+  const [root, common, rare, dominant] = (
+    ["root", "common", "rare", "dominant"] as const
+  ).map((role, offset) => ({
+    collectionID: firstCollectionID + offset,
+    libraryID: USER_LIBRARY_ID,
+    ...STRESS_LIBRARY_VALUES.collections[role],
+  })) as [
+    FixtureCollection,
+    FixtureCollection,
+    FixtureCollection,
+    FixtureCollection,
+  ];
+  const collections: FixtureCollection[] = [
+    root,
+    { ...common, parentCollectionID: root.collectionID },
+    { ...rare, parentCollectionID: common.collectionID },
+    { ...dominant, parentCollectionID: root.collectionID },
+  ];
+
+  const firstItemID =
+    Math.max(
+      ...ITEMS.map(({ itemID }) => itemID),
+      ...NOTES.map(({ itemID }) => itemID),
+      ...ATTACHMENTS.map(({ itemID }) => itemID),
+      ...ANNOTATIONS.map(({ itemID }) => itemID),
+    ) + 1;
+  const uniqueTitleIndex = Math.floor(count / 2);
+
+  const items = Array.from({ length: count }, (_, i): FixtureItem => {
+    const ordinal = i + 1;
+    const itemType =
+      i % 1000 === 2
+        ? itemTypes.rare
+        : i % 10 === 7
+          ? itemTypes.common
+          : itemTypes.dominant;
+    const venue =
+      itemType === "thesis"
+        ? "Stress Build University"
+        : itemType === "book"
+          ? "Stress Build Press"
+          : i % 1000 === 3
+            ? venues.rare
+            : i % 10 === 8
+              ? venues.common
+              : venues.dominant;
+    const itemTags = [
+      ...(i % 1000 === 0 ? [tags.rare] : []),
+      ...(i % 10 === 5 ? [tags.common] : []),
+      ...(i % 5 < 3 ? [tags.dominant] : []),
+    ].map((name) => ({ name, type: 0 as const }));
+    const collectionIDs = [
+      ...(i % 10 === 6 ? [common.collectionID] : []),
+      ...(i % 1000 === 1 ? [rare.collectionID] : []),
+      ...(i % 5 >= 2 ? [dominant.collectionID] : []),
+    ];
+    // A multiplicative scramble by a prime keeps modification order apart
+    // from key order, one second apart for each Item.
+    const modifiedOffset = (i * 7919) % Math.max(count, 1);
+    const dateModified = new Date(
+      STRESS_LIBRARY_MODIFIED_EPOCH + modifiedOffset * 1000,
+    )
+      .toISOString()
+      .replace("T", " ")
+      .slice(0, 19);
+    return {
+      itemID: firstItemID + i,
+      libraryID: USER_LIBRARY_ID,
+      key: stressItemKey(STRESS_BUILD_SEED + i),
+      itemType,
+      citationKey: `stress${String(ordinal).padStart(7, "0")}`,
+      title:
+        i === uniqueTitleIndex
+          ? STRESS_LIBRARY_VALUES.uniqueTitle
+          : `Synthetic stress item ${ordinal}`,
+      venue,
+      date: String(2000 + (i % 25)),
+      creators: [author("Stress", `Author ${ordinal}`)],
+      tags: itemTags,
+      dateModified,
+      collectionIDs,
+    };
+  });
+  return { items, collections };
+}
+
 /**
  * Persisted Library Scope, in the shape the specification fixes: All Libraries,
  * or a non-empty set of stable selectors in canonical order (My Library first,
@@ -2646,12 +2814,13 @@ export interface FixtureZoteroData {
 export function vaultCaseZoteroData(
   vaultCaseId: string,
   items: readonly FixtureItem[],
+  collections: readonly FixtureCollection[] = COLLECTIONS,
 ): FixtureZoteroData {
   if (findVaultCase(vaultCaseId).id !== "demo") {
     return {
       items,
       libraries: LIBRARIES,
-      collections: COLLECTIONS,
+      collections,
       notes: NOTES,
       attachments: ATTACHMENTS,
       annotations: ANNOTATIONS,
