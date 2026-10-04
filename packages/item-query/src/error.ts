@@ -1,7 +1,11 @@
 import { Data } from "effect";
 
 /** Stable codes of an invalid Item Query request. */
-export type ItemQueryErrorCode = "unknown-field" | "invalid-limit";
+export type ItemQueryErrorCode =
+  | "invalid-path"
+  | "unknown-field"
+  | "unknown-path"
+  | "invalid-limit";
 
 /** The part of the request an {@link ItemQueryError} points at. */
 export interface ItemQueryErrorLocation {

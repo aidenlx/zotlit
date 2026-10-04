@@ -1,8 +1,9 @@
 import { Effect } from "effect";
 
 import { ItemQueryError } from "./error";
-import { DEFAULT_FIELDS, FIELD_NAMES, isFieldName } from "./fields";
-import type { FieldName } from "./fields";
+import { DEFAULT_FIELDS } from "./fields";
+import { planPath } from "./projection";
+import type { PlannedPath } from "./projection";
 
 /**
  * The Target Library, resolved by the caller. `libraryID` is local to the
@@ -43,6 +44,8 @@ export type ProjectionValue =
   | number
   | boolean
   | Temporal.Instant
+  | Temporal.PlainDate
+  | Temporal.PlainYearMonth
   | readonly ProjectionValue[]
   | { readonly [key: string]: ProjectionValue };
 
@@ -64,8 +67,16 @@ export interface QueryResult {
 /** The validated form of a request that the engine executes. */
 export interface ItemQueryPlan {
   readonly query: ItemQuery;
-  readonly fields: readonly FieldName[];
+  readonly paths: readonly PlannedPath[];
 }
+
+const PATH_HINTS = {
+  "invalid-path":
+    'Write the path in the template accessor grammar, such as date.year or custom["review.status"].',
+  "unknown-field": `Use a field of the Item Query Schema, such as ${DEFAULT_FIELDS.join(", ")}. Reach a custom field with custom["exact name"].`,
+  "unknown-path":
+    "Select the complete field, or a path below it that the Item Query Schema lists.",
+} as const;
 
 const DEFAULT_SORT: readonly SortSpec[] = [
   { field: "dateModified", direction: "desc" },
@@ -76,17 +87,19 @@ export function planRequest(
   request: ItemQueryRequest,
 ): Effect.Effect<ItemQueryPlan, ItemQueryError> {
   return Effect.gen(function* () {
-    const fields: FieldName[] = [];
-    for (const [index, name] of (request.fields ?? DEFAULT_FIELDS).entries()) {
-      if (!isFieldName(name)) {
+    const fields = request.fields ?? DEFAULT_FIELDS;
+    const paths: PlannedPath[] = [];
+    for (const [index, text] of fields.entries()) {
+      const path = planPath(text);
+      if ("code" in path) {
         return yield* new ItemQueryError({
-          code: "unknown-field",
+          code: path.code,
           location: { argument: "fields", index },
-          message: `"${name}" is not a field of Item Query.`,
-          hint: `Use one of these fields: ${FIELD_NAMES.join(", ")}.`,
+          message: path.message,
+          hint: PATH_HINTS[path.code],
         });
       }
-      fields.push(name);
+      paths.push(path);
     }
 
     const limit = request.limit ?? null;
@@ -99,6 +112,6 @@ export function planRequest(
       });
     }
 
-    return { query: { fields, sort: DEFAULT_SORT, limit }, fields };
+    return { query: { fields: [...fields], sort: DEFAULT_SORT, limit }, paths };
   });
 }
