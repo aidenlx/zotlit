@@ -4,4 +4,5 @@
 - Wrap with `defineQuery(...)` from `src/queries/_shared.ts`; prefer `.prepared` (cached). See `defineQuery` JSDoc for cached vs one-shot variants.
 - Add an `…Async` twin only when a web consumer actually needs it — not for parity.
 - Default to single-row `.prepared` query + consumer loop. Use dynamic `IN (...)` via `.prepare` only when round trips dominate.
+- Item Query readers use chunked `IN (...)` at a fixed chunk size with a reused prepared statement; pad the last chunk with null IDs.
 - `.prepared(db)` is cache-keyed on `(query, db)` — call inline, don't hoist.
