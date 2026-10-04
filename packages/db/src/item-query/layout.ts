@@ -21,6 +21,20 @@ export const ITEM_QUERY_LAYOUT = {
   baseFieldMappingsCombined: ["itemTypeID", "fieldID", "baseFieldID"],
   itemData: ["itemID", "fieldID", "valueID"],
   itemDataValues: ["valueID", "value"],
+  creators: ["creatorID", "firstName", "lastName", "fieldMode"],
+  creatorTypes: ["creatorTypeID", "creatorType"],
+  itemCreators: ["itemID", "creatorID", "creatorTypeID", "orderIndex"],
+  tags: ["tagID", "name"],
+  itemTags: ["itemID", "tagID", "type"],
+  collections: [
+    "collectionID",
+    "collectionName",
+    "parentCollectionID",
+    "libraryID",
+  ],
+  deletedCollections: ["collectionID"],
+  collectionItems: ["itemID", "collectionID"],
+  itemAttachments: ["itemID", "parentItemID"],
 } as const satisfies Readonly<Record<string, readonly string[]>>;
 
 /** A table, or one column of a table, that the copy lacks. */
