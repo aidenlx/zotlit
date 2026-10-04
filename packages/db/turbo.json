@@ -1,0 +1,13 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      // The scenario database copies the Fixture's pristine Zotero template.
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/packages/scripts/lib/fixture/pristine-zotero.sqlite.gz"
+      ]
+    }
+  }
+}
