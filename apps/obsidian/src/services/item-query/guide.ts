@@ -92,7 +92,8 @@ const FIELDS_SECTION = `FIELDS AND PROJECTION PATHS
 
 DESCRIPTION
   fields is a JSON array of Projection Paths: the values each row returns.
-  Omit fields for itemType, title, creators, date, and dateModified.
+  Without fields, each row has itemType, title, creators, date, and
+  dateModified.
   Use fields='[]' to return only the Indexed Keys.
     ${example({ fields: "[]", limit: "all" })}
 
@@ -122,9 +123,9 @@ SORT
   Items that tie on every entry.
 
 ORDER OF TEXT
-  Text sorts in one alphabetical order on every computer: digits before
-  letters, digit by digit (10 before 9), then case and accents as tie-breaks
-  (eclair, Éclair, Zebra).
+  Text sorts in one alphabetical order on every computer. Digits come before
+  letters and compare digit by digit, so 10 comes before 9. Case and accents
+  only break ties: eclair comes before Éclair, and both come before Zebra.
 
 ORDER OF DATES
   A date sorts as its first possible day: 2020 sorts as 1 January 2020.
