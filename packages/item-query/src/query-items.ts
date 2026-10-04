@@ -143,7 +143,9 @@ export function queryItems(
     // name; the Library scan reads every Item. The evaluator decides the match
     // on both paths.
     const candidatePlan =
-      filter && !tuning.forceScan ? planCandidates(filter.root) : null;
+      filter && !tuning.forceScan
+        ? planCandidates(filter.root, { vocabulary, collectionPaths })
+        : null;
     const candidates = candidatePlan
       ? yield* readCandidates(
           candidatePlan,

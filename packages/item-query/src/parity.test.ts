@@ -72,13 +72,17 @@ afterAll(() => {
  * The complete outcome of one run in its wire form: the Query Result, or the
  * typed failure. A defect or an interruption fails the test.
  */
-async function outcome(query: ScenarioQuery, tuning: Tuning): Promise<unknown> {
+async function outcome(
+  query: ScenarioQuery,
+  tuning: Tuning,
+  database: ScenarioDatabase = scenario,
+): Promise<unknown> {
   const request: ItemQueryRequest = {
     ...query.request,
     library: SCENARIO_LIBRARIES[query.library],
   };
   const { exit } = await runEffect(queryItems(request), {
-    client: scenario.db,
+    client: database.db,
     now: query.now,
     timeZone: query.timeZone,
     tuning,
@@ -114,6 +118,37 @@ describe("parity of every plan with the forced scan", () => {
 
   it.each(SCENARIO_QUERIES)("$name", async (query) => {
     await expectParity(query);
+  });
+});
+
+/**
+ * The indexes of the pristine Zotero database that the Tag and field-value
+ * candidate statements use. An index affects speed only.
+ */
+const LEAF_INDEXES = ["itemTags_tagID", "itemData_fieldID", "itemData_valueID"];
+
+describe("parity without the Tag and field-value indexes", () => {
+  let unindexed: ScenarioDatabase;
+
+  beforeAll(() => {
+    unindexed = openScenarioDatabase();
+    // `drop index` fails for a name the database does not have.
+    for (const index of LEAF_INDEXES)
+      unindexed.sqlite.exec(`drop index "${index}"`);
+  });
+
+  afterAll(() => {
+    unindexed.close();
+  });
+
+  it.each(SCENARIO_QUERIES)("$name", async (query) => {
+    const oracle = await outcome(query, FORCED_SCAN);
+    for (const plan of PLANS) {
+      expect(
+        await outcome(query, plan.tuning, unindexed),
+        `${query.name}: ${plan.name} without the indexes differs from the forced scan with them.`,
+      ).toEqual(oracle);
+    }
   });
 });
 

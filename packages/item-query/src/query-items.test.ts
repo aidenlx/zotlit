@@ -1737,29 +1737,38 @@ describe("queryItems with a filter", () => {
 describe("queryItems candidate sets", () => {
   /** The marker of the statement that loads the Tags of a hydrate chunk. */
   const TAG_HYDRATION = '"itemTags"."itemID" in (';
+  /** The marker of the statement that loads the field values of a chunk. */
+  const FIELD_HYDRATION = '"itemData"."itemID" in (';
+  /** The marker of the statement that loads the Collections of a chunk. */
+  const COLLECTION_HYDRATION = '"collectionItems"."itemID" in (';
 
   /**
    * Run a filter on the personal Library, and give its Indexed Keys in key
-   * order and the keys of the Items whose Tags the run loaded.
+   * order and the keys of the Items that the statement with `marker` loaded.
    */
-  async function tagReads(filter: string, tuning?: RunOptions["tuning"]) {
-    scenario = openScenarioDatabase();
-    const loaded = recordHydratedItemIDs(scenario, TAG_HYDRATION);
-    const { exit } = await runEffect(
-      queryItems({ library: personal, filter, fields: [], sort: [] }),
-      { client: scenario.db, tuning },
-    );
-    if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
-    const keyOf = scenario.sqlite.prepare(
-      "select key from items where itemID = ?",
-    );
-    return {
-      matched: keys(exit.value),
-      read: [...new Set(loaded())]
-        .map((itemID) => (keyOf.get(itemID) as { key: string }).key)
-        .toSorted(),
+  const hydratedReads =
+    (marker: string) =>
+    async (filter: string, tuning?: RunOptions["tuning"]) => {
+      scenario = openScenarioDatabase();
+      const loaded = recordHydratedItemIDs(scenario, marker);
+      const { exit } = await runEffect(
+        queryItems({ library: personal, filter, fields: [], sort: [] }),
+        { client: scenario.db, tuning },
+      );
+      if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
+      const keyOf = scenario.sqlite.prepare(
+        "select key from items where itemID = ?",
+      );
+      return {
+        matched: keys(exit.value),
+        read: [...new Set(loaded())]
+          .map((itemID) => (keyOf.get(itemID) as { key: string }).key)
+          .toSorted(),
+      };
     };
-  }
+  const tagReads = hydratedReads(TAG_HYDRATION);
+  const fieldReads = hydratedReads(FIELD_HYDRATION);
+  const collectionReads = hydratedReads(COLLECTION_HYDRATION);
 
   const EVERY_PERSONAL_ITEM = PERSONAL_BY_MODIFIED.toSorted();
   const TIE_ITEMS = ["TIE2AAAA", "TIE2BBBB", "TIE2CCCC"];
@@ -1812,7 +1821,7 @@ describe("queryItems candidate sets", () => {
 
   it("uses the lowered side of && when the other side gives no set", async () => {
     expect(
-      await tagReads('title == "Same Title" && tags.contains("tie")'),
+      await tagReads('title.startsWith("Same") && tags.contains("tie")'),
     ).toEqual({ matched: ["TIE2AAAA", "TIE2BBBB"], read: TIE_ITEMS });
   });
 
@@ -1832,6 +1841,99 @@ describe("queryItems candidate sets", () => {
       matched: ["RPT2NDTE", "UNI2CDE2"],
       read: EVERY_PERSONAL_ITEM,
     });
+  });
+
+  it("reads only the Items that store the value for a field-value filter", async () => {
+    // `volume` is the integer 12 on ART2FULL and TIE2AAAA, text on TIE2BBBB.
+    expect(await fieldReads('volume == "12"')).toEqual({
+      matched: ["ART2FULL", "TIE2AAAA", "TIE2BBBB"],
+      read: ["ART2FULL", "TIE2AAAA", "TIE2BBBB"],
+    });
+    expect(await fieldReads('"Same Title" == title')).toEqual({
+      matched: ["TIE2AAAA", "TIE2BBBB"],
+      read: ["TIE2AAAA", "TIE2BBBB"],
+    });
+  });
+
+  it("reads the Items of every alias of a base field for a field-value filter", async () => {
+    expect(
+      await fieldReads('publicationTitle == "Handbook of Methods"'),
+    ).toEqual({ matched: ["CHP2YEAR"], read: ["CHP2YEAR"] });
+    expect(await fieldReads('publisher == "Lab Institute"')).toEqual({
+      matched: ["RPT2NDTE"],
+      read: ["RPT2NDTE"],
+    });
+    // ALS2CNFL stores both: the type-specific value is the field's value.
+    expect(await fieldReads('publicationTitle == "Base Field Host"')).toEqual({
+      matched: [],
+      read: ["ALS2CNFL"],
+    });
+  });
+
+  it("reads only the Items filed in the Collection for a Collection filter", async () => {
+    // The trashed Item TRS2SHED is also filed in Thesis/Methods.
+    expect(
+      await collectionReads('collections.contains("Thesis/Methods")'),
+    ).toEqual({
+      matched: ["ART2FULL", "CHP2YEAR"],
+      read: ["ART2FULL", "CHP2YEAR"],
+    });
+    expect(await collectionReads('collections.contains("Thesis")')).toEqual({
+      matched: ["CHP2YEAR"],
+      read: ["CHP2YEAR"],
+    });
+  });
+
+  it("reads the Items of the whole subtree for within", async () => {
+    expect(await collectionReads('collections.within("Thesis")')).toEqual({
+      matched: ["ART2FULL", "CHP2YEAR"],
+      read: ["ART2FULL", "CHP2YEAR"],
+    });
+    expect(await collectionReads('collections.within("Thes")')).toEqual({
+      matched: [],
+      read: [],
+    });
+  });
+
+  it("reads separate sets for two Collections with the same name", async () => {
+    expect(
+      await collectionReads('collections.contains("Teaching/Methods")'),
+    ).toEqual({ matched: ["BK2MNTH2"], read: ["BK2MNTH2"] });
+    expect(await collectionReads('collections.contains("Methods")')).toEqual({
+      matched: [],
+      read: [],
+    });
+  });
+
+  it("reads no Item for a trashed Collection and the Collections below it", async () => {
+    expect(await collectionReads('collections.within("Archive")')).toEqual({
+      matched: [],
+      read: [],
+    });
+    expect(
+      await collectionReads('collections.contains("Archive/Old")'),
+    ).toEqual({ matched: [], read: [] });
+  });
+
+  it.each([
+    "volume == 12",
+    'volume != "12"',
+    '!(volume == "12")',
+    'volume.lower() == "12"',
+    'custom["review.status"] == "done"',
+    'mood == "calm"',
+  ])("reads every Item's fields for %j", async (filter) => {
+    expect((await fieldReads(filter)).read).toEqual(EVERY_PERSONAL_ITEM);
+  });
+
+  it.each([
+    "collections.contains(title)",
+    "collections.contains(12)",
+    'collections == ["Thesis"]',
+    'collections.containsAny("Thesis")',
+    '!collections.within("Thesis")',
+  ])("reads every Item's Collections for %j", async (filter) => {
+    expect((await collectionReads(filter)).read).toEqual(EVERY_PERSONAL_ITEM);
   });
 
   it.each([
