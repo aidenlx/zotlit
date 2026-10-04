@@ -1,7 +1,8 @@
 import { Effect } from "effect";
 
 import { ItemQueryError } from "./error";
-import { DEFAULT_FIELDS } from "./fields";
+import { DEFAULT_FIELDS, fieldDefinition } from "./fields";
+import type { FieldNeeds, QueryItem, SortKey } from "./fields";
 import { planPath } from "./projection";
 import type { PlannedPath } from "./projection";
 
@@ -21,6 +22,11 @@ export interface ItemQueryRequest {
    * Empty: identity-only rows.
    */
   readonly fields?: readonly string[] | undefined;
+  /**
+   * The Sortable Fields that order the result, the first one first. Omitted:
+   * modification time, descending. Indexed Key always breaks the last tie.
+   */
+  readonly sort?: readonly SortSpec[] | undefined;
   /** The most rows to return. Omitted or `null`: every match. */
   readonly limit?: number | null | undefined;
 }
@@ -68,6 +74,15 @@ export interface QueryResult {
 export interface ItemQueryPlan {
   readonly query: ItemQuery;
   readonly paths: readonly PlannedPath[];
+  readonly sorts: readonly PlannedSort[];
+}
+
+/** A validated entry of the sort list. */
+export interface PlannedSort {
+  readonly direction: SortSpec["direction"];
+  /** What hydration loads before {@link PlannedSort.key} runs. */
+  readonly needs: FieldNeeds;
+  readonly key: (item: QueryItem) => SortKey;
 }
 
 const PATH_HINTS = {
@@ -102,6 +117,28 @@ export function planRequest(
       paths.push(path);
     }
 
+    const sort = request.sort ?? DEFAULT_SORT;
+    const sorts: PlannedSort[] = [];
+    for (const [index, { field, direction }] of sort.entries()) {
+      const definition = fieldDefinition(field);
+      if (!definition?.sortKey) {
+        const known = definition !== undefined || !("code" in planPath(field));
+        return yield* new ItemQueryError({
+          code: known ? "unsortable-field" : "unknown-field",
+          location: { argument: "sort", index },
+          message: known
+            ? `"${field}" is not a Sortable Field: a sort takes a top-level field with one value.`
+            : `"${field}" is not a field of Item Query.`,
+          hint: "Sort by a field that the Item Query Schema lists as sortable, such as title, date, or dateModified.",
+        });
+      }
+      sorts.push({
+        direction,
+        needs: definition.needs([]),
+        key: definition.sortKey,
+      });
+    }
+
     const limit = request.limit ?? null;
     if (limit !== null && !(Number.isSafeInteger(limit) && limit > 0)) {
       return yield* new ItemQueryError({
@@ -112,6 +149,14 @@ export function planRequest(
       });
     }
 
-    return { query: { fields: [...fields], sort: DEFAULT_SORT, limit }, paths };
+    return {
+      query: {
+        fields: [...fields],
+        sort: sort.map(({ field, direction }) => ({ field, direction })),
+        limit,
+      },
+      paths,
+      sorts,
+    };
   });
 }

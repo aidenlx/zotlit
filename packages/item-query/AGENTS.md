@@ -15,6 +15,9 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Tests
 ## Where things go
 
 - A field: one entry in the registry of `src/fields.ts`. Validation, execution, and the Item Query Schema read that registry. The entry's `shape` decides the Projection Paths below it; its `needs` names what the hydrate reader loads.
+- A Sortable Field: the `sortKey` of its registry entry, which gives a string, a number, or null. An entry without `sortKey` fails a sort with `unsortable-field`.
+- The string order of sort, ordered comparison, and relation lists: `compareStrings` in `src/collation.ts`.
+- The matches a query keeps: `src/matches.ts`. A limited query keeps `limit + 1` rows; an unlimited query keeps one sorted run for each chunk and merges the runs in steps of one Effect each.
 - Request validation and defaults: `planRequest` in `src/request.ts`.
 - A database read: a reader in `packages/db/src/item-query/`.
 

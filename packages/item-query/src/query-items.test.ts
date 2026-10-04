@@ -580,3 +580,423 @@ describe("queryItems under a scheduler", () => {
     expect(stepped.exit).toEqual(production);
   });
 });
+
+describe("queryItems sort", () => {
+  const sortedKeys = async (
+    sort: ItemQueryRequest["sort"],
+    limit?: number,
+  ): Promise<string[]> =>
+    keys(await result({ library: personal, fields: [], sort, limit }));
+
+  it("orders by a string field in ascending order, with a missing value last and a tie in Indexed Key order", async () => {
+    expect(await sortedKeys([{ field: "title", direction: "asc" }])).toEqual([
+      "CHP2YEAR",
+      "ALS2CNFL",
+      "UNI2CDE2",
+      "ART2FULL",
+      "CNF2TEXT",
+      "RPT2NDTE",
+      "BK2MNTH2",
+      "TIE2AAAA",
+      "TIE2BBBB",
+      "TIE2CCCC",
+    ]);
+  });
+
+  it("orders in descending order, still with a missing value last and a tie in Indexed Key order", async () => {
+    expect(await sortedKeys([{ field: "title", direction: "desc" }])).toEqual([
+      "TIE2AAAA",
+      "TIE2BBBB",
+      "BK2MNTH2",
+      "RPT2NDTE",
+      "CNF2TEXT",
+      "ART2FULL",
+      "UNI2CDE2",
+      "ALS2CNFL",
+      "CHP2YEAR",
+      "TIE2CCCC",
+    ]);
+  });
+
+  it("orders a null-heavy field by the next Sortable Field inside each tie group", async () => {
+    expect(
+      await sortedKeys([
+        { field: "volume", direction: "asc" },
+        { field: "dateModified", direction: "asc" },
+      ]),
+    ).toEqual([
+      "TIE2AAAA",
+      "TIE2BBBB",
+      "ART2FULL",
+      "CNF2TEXT",
+      "BK2MNTH2",
+      "CHP2YEAR",
+      "RPT2NDTE",
+      "TIE2CCCC",
+      "ALS2CNFL",
+      "UNI2CDE2",
+    ]);
+  });
+
+  it("orders the Items without a value by Indexed Key in both directions", async () => {
+    const missing = [
+      "ALS2CNFL",
+      "BK2MNTH2",
+      "CHP2YEAR",
+      "CNF2TEXT",
+      "RPT2NDTE",
+      "TIE2CCCC",
+      "UNI2CDE2",
+    ];
+    const valued = ["ART2FULL", "TIE2AAAA", "TIE2BBBB"];
+
+    expect(await sortedKeys([{ field: "volume", direction: "asc" }])).toEqual([
+      ...valued,
+      ...missing,
+    ]);
+    expect(await sortedKeys([{ field: "volume", direction: "desc" }])).toEqual([
+      ...valued,
+      ...missing,
+    ]);
+  });
+
+  it("orders by Indexed Key alone for an empty sort list", async () => {
+    expect(await sortedKeys([])).toEqual(PERSONAL_BY_MODIFIED.toSorted());
+  });
+
+  it("orders a date field by the first day each date can mean, with a text date and a missing date last", async () => {
+    expect(await sortedKeys([{ field: "date", direction: "asc" }])).toEqual([
+      "CHP2YEAR",
+      "BK2MNTH2",
+      "ART2FULL",
+      "TIE2AAAA",
+      "TIE2BBBB",
+      "TIE2CCCC",
+      "ALS2CNFL",
+      "UNI2CDE2",
+      "CNF2TEXT",
+      "RPT2NDTE",
+    ]);
+  });
+
+  it("orders by a field of the scan row", async () => {
+    expect(
+      await sortedKeys([
+        { field: "itemType", direction: "asc" },
+        { field: "dateAdded", direction: "desc" },
+      ]),
+    ).toEqual([
+      "BK2MNTH2",
+      "ALS2CNFL",
+      "CHP2YEAR",
+      "CNF2TEXT",
+      "UNI2CDE2",
+      "TIE2AAAA",
+      "TIE2BBBB",
+      "TIE2CCCC",
+      "ART2FULL",
+      "RPT2NDTE",
+    ]);
+  });
+
+  it("reports the sort the caller gave in the normalized request", async () => {
+    const sort = [{ field: "title", direction: "desc" }] as const;
+    const found = await result({ library: personal, sort, limit: 1 });
+
+    expect(found.query.sort).toEqual(sort);
+  });
+
+  it("sorts strings in the pinned collation order: digits lexically, then letters with case and accents as the last difference", async () => {
+    scenario = openScenarioDatabase();
+    const { sqlite } = scenario;
+    const insertItem = sqlite.prepare(
+      "insert into items (itemTypeID, libraryID, key) select itemTypeID, 2, ? from itemTypesCombined where typeName = 'book'",
+    );
+    const insertValue = sqlite.prepare(
+      "insert or ignore into itemDataValues (value) values (?)",
+    );
+    const insertTitle = sqlite.prepare(
+      "insert into itemData (itemID, fieldID, valueID) select ?, fieldID, (select valueID from itemDataValues where value = ?) from fieldsCombined where fieldName = 'title' and custom = 0",
+    );
+    const titles = ["Zebra", "apple", "Éclair", "eclair", "10", "9"];
+    for (const [i, title] of titles.entries()) {
+      const item = insertItem.run(`CLT${i}AAAA`).lastInsertRowid;
+      insertValue.run(title);
+      insertTitle.run(item, title);
+    }
+
+    const found = await result({
+      library: group,
+      fields: ["title"],
+      sort: [{ field: "title", direction: "asc" }],
+    });
+
+    expect(
+      found.rows
+        .map((row) => row.values["title"])
+        .filter((title) => titles.includes(title as string)),
+    ).toEqual(["10", "9", "apple", "eclair", "Éclair", "Zebra"]);
+  });
+
+  it("hydrates the sort field for every Item and the projection for the returned rows only", async () => {
+    scenario = openScenarioDatabase();
+    const { sqlite } = scenario;
+    const fieldID = (name: string) =>
+      (
+        sqlite
+          .prepare(
+            "select fieldID from fieldsCombined where fieldName = ? and custom = 0",
+          )
+          .get(name) as { fieldID: number }
+      ).fieldID;
+    // The Items each field-value statement reads, by the fields it reads.
+    const reads: { fieldIDs: number[]; itemIDs: number[] }[] = [];
+    const prepare = sqlite.prepare.bind(sqlite);
+    sqlite.prepare = (sql: string) => {
+      const statement = prepare(sql);
+      if (!sql.includes("json_each")) return statement;
+      const all = statement.all.bind(statement);
+      statement.all = ((...params: SQLInputValue[]) => {
+        reads.push({
+          fieldIDs: params.flatMap((param) =>
+            typeof param === "string" ? (JSON.parse(param) as number[]) : [],
+          ),
+          itemIDs: params.filter((param) => typeof param === "number"),
+        });
+        return all(...params);
+      }) as typeof statement.all;
+      return statement;
+    };
+
+    const found = await result({
+      library: personal,
+      fields: ["DOI"],
+      sort: [{ field: "title", direction: "asc" }],
+      limit: 2,
+    });
+
+    expect(found.rows).toEqual([
+      { indexedKey: "CHP2YEAR", values: { DOI: null } },
+      { indexedKey: "ALS2CNFL", values: { DOI: null } },
+    ]);
+    const byNumber = (a: number, b: number) => a - b;
+    const itemsRead = (name: string) =>
+      reads
+        .filter((read) => read.fieldIDs.includes(fieldID(name)))
+        .flatMap((read) => read.itemIDs)
+        .toSorted(byNumber);
+    expect(itemsRead("title")).toEqual(
+      itemIDsOf(scenario, PERSONAL_BY_MODIFIED).toSorted(byNumber),
+    );
+    expect(itemsRead("DOI")).toEqual(
+      itemIDsOf(scenario, ["CHP2YEAR", "ALS2CNFL"]).toSorted(byNumber),
+    );
+  });
+});
+
+describe("queryItems sort with a limit", () => {
+  const byTitle = [{ field: "title", direction: "asc" }] as const;
+  const BY_TITLE = [
+    "CHP2YEAR",
+    "ALS2CNFL",
+    "UNI2CDE2",
+    "ART2FULL",
+    "CNF2TEXT",
+    "RPT2NDTE",
+    "BK2MNTH2",
+    "TIE2AAAA",
+    "TIE2BBBB",
+    "TIE2CCCC",
+  ];
+
+  it("returns no rows from a Library without Items", async () => {
+    const found = await result({
+      library: { libraryID: 9999, groupID: null },
+      sort: byTitle,
+      limit: 3,
+    });
+
+    expect(found).toMatchObject({
+      rows: [],
+      returnedCount: 0,
+      truncated: false,
+    });
+  });
+
+  it.each([
+    ["exactly `limit` Items match", 10, false],
+    ["`limit + 1` Items match", 9, true],
+  ])(
+    "returns the first rows of the sort when %s",
+    async (_, limit, truncated) => {
+      const found = await result({ library: personal, sort: byTitle, limit });
+
+      expect(keys(found)).toEqual(BY_TITLE.slice(0, limit));
+      expect(found.returnedCount).toBe(limit);
+      expect(found.truncated).toBe(truncated);
+    },
+  );
+
+  it("cuts a tie group at the limit in Indexed Key order", async () => {
+    const found = await result({ library: personal, sort: byTitle, limit: 8 });
+
+    expect(keys(found).slice(-2)).toEqual(["BK2MNTH2", "TIE2AAAA"]);
+    expect(found.truncated).toBe(true);
+  });
+
+  it("cuts the Items without a value at the limit in Indexed Key order", async () => {
+    const found = await result({
+      library: personal,
+      sort: [{ field: "volume", direction: "desc" }],
+      limit: 5,
+    });
+
+    expect(keys(found)).toEqual([
+      "ART2FULL",
+      "TIE2AAAA",
+      "TIE2BBBB",
+      "ALS2CNFL",
+      "BK2MNTH2",
+    ]);
+    expect(found.truncated).toBe(true);
+  });
+
+  it("gives the same rows for every limit as the start of the unlimited result", async () => {
+    const sort = [
+      { field: "publicationTitle", direction: "desc" },
+      { field: "date", direction: "asc" },
+    ] as const;
+    const all = await result({ library: personal, sort });
+
+    for (let limit = 1; limit <= 11; limit++) {
+      const limited = await result({ library: personal, sort, limit });
+      expect(limited.rows).toEqual(all.rows.slice(0, limit));
+      expect(limited.truncated).toBe(limit < 10);
+    }
+  });
+});
+
+describe("queryItems sort of a large Library", () => {
+  /** 1,200 more Items whose titles run against their key order. */
+  function seedLargeLibrary(database: ScenarioDatabase) {
+    const insertItem = database.sqlite.prepare(
+      "insert into items (itemTypeID, libraryID, key) select itemTypeID, ?, ? from itemTypesCombined where typeName = 'book'",
+    );
+    const insertValue = database.sqlite.prepare(
+      "insert into itemDataValues (value) values (?)",
+    );
+    const insertTitle = database.sqlite.prepare(
+      "insert into itemData (itemID, fieldID, valueID) select ?, fieldID, ? from fieldsCombined where fieldName = 'title' and custom = 0",
+    );
+    for (let i = 0; i < 1200; i++) {
+      const item = insertItem.run(
+        personal.libraryID,
+        `ZZ${String(i).padStart(6, "0")}`,
+      ).lastInsertRowid;
+      // Every third Item shares its title with two others.
+      const title = `zz ${String(9999 - Math.floor(i / 3)).padStart(4, "0")}`;
+      const value =
+        i % 3 === 0
+          ? insertValue.run(title).lastInsertRowid
+          : (
+              database.sqlite
+                .prepare("select valueID from itemDataValues where value = ?")
+                .get(title) as { valueID: number }
+            ).valueID;
+      insertTitle.run(item, value);
+    }
+  }
+
+  const byTitle = [{ field: "title", direction: "asc" }] as const;
+
+  it("orders every match of an unlimited query across scan pages and hydrate chunks", async () => {
+    scenario = openScenarioDatabase();
+    seedLargeLibrary(scenario);
+
+    const found = await result({
+      library: personal,
+      fields: [],
+      sort: byTitle,
+    });
+
+    expect(found.returnedCount).toBe(1210);
+    expect(keys(found).slice(0, 9)).toEqual([
+      "CHP2YEAR",
+      "ALS2CNFL",
+      "UNI2CDE2",
+      "ART2FULL",
+      "CNF2TEXT",
+      "RPT2NDTE",
+      "BK2MNTH2",
+      "TIE2AAAA",
+      "TIE2BBBB",
+    ]);
+    // "zz 9600" is the least of the added titles, on the last three keys.
+    expect(keys(found).slice(9, 15)).toEqual([
+      "ZZ001197",
+      "ZZ001198",
+      "ZZ001199",
+      "ZZ001194",
+      "ZZ001195",
+      "ZZ001196",
+    ]);
+    expect(keys(found).slice(-4)).toEqual([
+      "ZZ000000",
+      "ZZ000001",
+      "ZZ000002",
+      "TIE2CCCC",
+    ]);
+  });
+
+  it("merges the sorted runs of an unlimited query in steps between which the scheduler pauses", async () => {
+    scenario = openScenarioDatabase();
+    seedLargeLibrary(scenario);
+    const request = { library: personal, fields: [], sort: byTitle };
+
+    // A limit that every Item fits in reads and hydrates the same chunks, and
+    // keeps its rows in order as it reads: the extra pauses are in the merge.
+    // Five hydrate chunks give five runs, which takes four merges.
+    const limited = await run({ ...request, limit: 1210 });
+    const unlimited = await run(request);
+
+    if (!Exit.isSuccess(limited.exit) || !Exit.isSuccess(unlimited.exit)) {
+      throw new Error("a query did not succeed.");
+    }
+    expect(unlimited.exit.value.rows).toEqual(limited.exit.value.rows);
+    expect(unlimited.pauses).toBeGreaterThanOrEqual(limited.pauses + 4);
+  });
+});
+
+describe("queryItems sort failures", () => {
+  it.each([
+    ["noSuchField", "unknown-field"],
+    ["Title", "unknown-field"],
+    ["", "unknown-field"],
+    ["custom", "unsortable-field"],
+    ['custom["mood"]', "unsortable-field"],
+    ["date.year", "unsortable-field"],
+  ])(
+    "fails the sort field %j with ItemQueryError before it reads the database",
+    async (field, code) => {
+      const error = await failure(
+        {
+          library: personal,
+          sort: [
+            { field: "title", direction: "asc" },
+            { field, direction: "asc" },
+          ],
+        },
+        false,
+      );
+
+      expect(error).toBeInstanceOf(ItemQueryError);
+      expect(error).toMatchObject({
+        _tag: "ItemQueryError",
+        code,
+        location: { argument: "sort", index: 1 },
+        message: expect.stringContaining(field),
+        hint: expect.stringContaining("dateModified"),
+      });
+    },
+  );
+});
