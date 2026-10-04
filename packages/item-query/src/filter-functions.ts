@@ -345,7 +345,8 @@ const PROPERTIES: Readonly<
   duration: properties({}),
 };
 
-const VALUE_TYPES = Object.keys(METHODS) as FilterValueType[];
+/** The value types of the Filter Expression language. */
+export const VALUE_TYPES = Object.keys(METHODS) as FilterValueType[];
 
 /** The method `name` of a value of `type`. */
 export function methodOf(
@@ -401,6 +402,32 @@ export const METHOD_NAMES: readonly string[] = [
 export const PROPERTY_NAMES: readonly string[] = [
   ...new Set(VALUE_TYPES.flatMap((type) => [...PROPERTIES[type].keys()])),
 ];
+
+/**
+ * Every method with the value type it belongs to, for the Item Query Schema.
+ * `any`: a method of every value, null included.
+ */
+export const METHOD_ENTRIES: readonly (readonly [
+  FilterValueType | "any",
+  string,
+  FunctionDefinition,
+])[] = [
+  ...[...ANY_METHODS].map(([name, method]) => ["any", name, method] as const),
+  ...VALUE_TYPES.flatMap((type) =>
+    [...METHODS[type]].map(([name, method]) => [type, name, method] as const),
+  ),
+];
+
+/** Every property with the value type it belongs to, for the Item Query Schema. */
+export const PROPERTY_ENTRIES: readonly (readonly [
+  FilterValueType,
+  string,
+  PropertyDefinition,
+])[] = VALUE_TYPES.flatMap((type) =>
+  [...PROPERTIES[type]].map(
+    ([name, property]) => [type, name, property] as const,
+  ),
+);
 
 /**
  * Call a function with evaluated arguments. A null or wrongly typed argument

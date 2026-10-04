@@ -72,7 +72,7 @@ function step(shape: ValueShape, segment: PathSegment): ValueShape | null {
     case "list":
       return typeof segment === "number" ? shape.element : null;
     case "custom-fields":
-      return typeof segment === "string" ? { kind: "scalar" } : null;
+      return typeof segment === "string" ? shape.value : null;
   }
 }
 

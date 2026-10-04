@@ -104,7 +104,8 @@ const PATH_HINTS = {
     "Select the complete field, or a path below it that the Item Query Schema lists.",
 } as const;
 
-const DEFAULT_SORT: readonly SortSpec[] = [
+/** The sort of a request that names no sort. */
+export const DEFAULT_SORT: readonly SortSpec[] = [
   { field: "dateModified", direction: "desc" },
 ];
 

@@ -1,4 +1,17 @@
 export {
+  describeItemQuery,
+  type FilterType,
+  type ItemQuerySchema,
+  type JsonType,
+  type SchemaCapabilities,
+  type SchemaCustomField,
+  type SchemaField,
+  type SchemaFunction,
+  type SchemaMethod,
+  type SchemaParameter,
+  type SchemaProperty,
+} from "./describe-item-query";
+export {
   ItemQueryError,
   type ItemQueryErrorCode,
   type ItemQueryErrorLocation,

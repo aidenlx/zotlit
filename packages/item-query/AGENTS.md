@@ -15,7 +15,8 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Tests
 
 ## Where things go
 
-- A field: one entry in the registry of `src/fields.ts`. Validation, execution, and the Item Query Schema read that registry. The entry's `shape` decides the Projection Paths below it; its `needs` names what the hydrate reader loads.
+- A field: one entry in the registry of `src/fields.ts`. Validation, execution, and the Item Query Schema read that registry. The entry's `shape` decides the Projection Paths below it and their JSON types; its `needs` names what the hydrate reader loads.
+- The Item Query Schema: `describeItemQuery` in `src/describe-item-query.ts`. It reads the field and function registries and the custom fields of the source, so a new field, function, method, or property appears in the schema with no change there. `src/describe-item-query.test.ts` runs every entry of the schema through `queryItems`.
 - A relation list (`creators`, `tags`, `collections`) or Attachment presence: the entry names a `HydrateRelation` of `@zotlit/db/item-query` in `needs.relations`; the hydrate reader runs one statement for each named relation.
 - A Sortable Field: the `sortKey` of its registry entry, which gives a string, a number, or null. An entry without `sortKey` fails a sort with `unsortable-field`.
 - The string order of sort, ordered comparison, and relation lists: `compareStrings` in `src/collation.ts`.

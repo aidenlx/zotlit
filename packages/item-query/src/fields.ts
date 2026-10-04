@@ -25,18 +25,22 @@ export interface QueryItem {
   readonly customFieldNames: readonly string[];
 }
 
+/** The JSON type of a scalar value in a Query Row. */
+export type ScalarType = "string" | "number" | "boolean";
+
 /**
- * The structure of a value, which decides the Projection Paths below a field.
- * `custom-fields` is an object whose keys are the custom fields of the source.
+ * The structure of a value, which decides the Projection Paths below a field
+ * and the JSON types of the Item Query Schema. `custom-fields` is an object
+ * whose keys are the custom fields of the source, each one a `value`.
  */
 export type ValueShape =
-  | { readonly kind: "scalar" }
+  | { readonly kind: "scalar"; readonly type: ScalarType }
   | {
       readonly kind: "object";
       readonly keys: Readonly<Record<string, ValueShape>>;
     }
   | { readonly kind: "list"; readonly element: ValueShape }
-  | { readonly kind: "custom-fields" };
+  | { readonly kind: "custom-fields"; readonly value: ValueShape };
 
 /**
  * What hydration loads for a field. `custom: "all"` loads every custom field
@@ -86,19 +90,22 @@ export interface FilterValueDefinition {
   readonly read: (item: QueryItem) => FilterValue;
 }
 
-const SCALAR: ValueShape = { kind: "scalar" };
+const STRING: ValueShape = { kind: "scalar", type: "string" };
+const NUMBER: ValueShape = { kind: "scalar", type: "number" };
+const BOOLEAN: ValueShape = { kind: "scalar", type: "boolean" };
 
 /** The structured value of a Zotero date field, from the template vocabulary. */
 const DATE_SHAPE: ValueShape = {
   kind: "object",
   keys: {
-    kind: SCALAR,
-    value: SCALAR,
-    year: SCALAR,
-    month: SCALAR,
-    day: SCALAR,
-    text: SCALAR,
-    raw: SCALAR,
+    kind: STRING,
+    // The ISO date or year-month; null for a year-only or text date.
+    value: STRING,
+    year: NUMBER,
+    month: NUMBER,
+    day: NUMBER,
+    text: STRING,
+    raw: STRING,
   },
 };
 
@@ -110,7 +117,8 @@ function fromScan(
   filter?: FilterValueDefinition,
 ): FieldDefinition {
   return {
-    shape: SCALAR,
+    // The item type name, or a timestamp as an ISO string on the wire.
+    shape: STRING,
     needs: NO_NEEDS,
     read: (item) => read(item.scan),
     sortKey: (item) => sortKey(item.scan),
@@ -124,7 +132,7 @@ function zoteroField(name: string): FieldDefinition {
   const read = (item: QueryItem) => item.hydrated.fields.get(name) ?? null;
   if (!isDateField(name)) {
     return {
-      shape: SCALAR,
+      shape: STRING,
       needs: () => ({ builtIn }),
       read,
       sortKey: read,
@@ -180,7 +188,7 @@ function firstDay(raw: string | null): SortKey {
 }
 
 const customField: FieldDefinition = {
-  shape: { kind: "custom-fields" },
+  shape: { kind: "custom-fields", value: STRING },
   needs: (rest) =>
     typeof rest[0] === "string" ? { custom: [rest[0]] } : { custom: "all" },
   read: (item) =>
@@ -196,11 +204,11 @@ const customField: FieldDefinition = {
 const CREATOR_SHAPE: ValueShape = {
   kind: "object",
   keys: {
-    family: SCALAR,
-    given: SCALAR,
-    literal: SCALAR,
-    role: SCALAR,
-    fullName: SCALAR,
+    family: STRING,
+    given: STRING,
+    literal: STRING,
+    role: STRING,
+    fullName: STRING,
   },
 };
 
@@ -247,7 +255,7 @@ function templateCreator(creator: HydratedCreator): ProjectionValue {
 /** One Tag in the template vocabulary. */
 const TAG_SHAPE: ValueShape = {
   kind: "object",
-  keys: { name: SCALAR, type: SCALAR },
+  keys: { name: STRING, type: STRING },
 };
 
 const tagsField: FieldDefinition = {
@@ -277,7 +285,7 @@ const collectionPaths = (item: QueryItem): string[] =>
     .toSorted(compareStrings);
 
 const collectionsField: FieldDefinition = {
-  shape: { kind: "list", element: SCALAR },
+  shape: { kind: "list", element: STRING },
   needs: () => ({ relations: ["collections"] }),
   read: collectionPaths,
   filter: { type: "list", read: collectionPaths },
@@ -285,7 +293,7 @@ const collectionsField: FieldDefinition = {
 
 /** Attachment presence: the Item has at least one non-trashed Attachment. */
 const attachmentsField: FieldDefinition = {
-  shape: SCALAR,
+  shape: BOOLEAN,
   needs: () => ({ relations: ["attachments"] }),
   read: (item) => item.hydrated.hasAttachments ?? false,
   filter: {
