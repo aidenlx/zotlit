@@ -62,6 +62,7 @@ When the check is done, close what the check opened, in this order:
 | `obsidian-cli.ts vault=<id> command id=zotlit:<cmd>` | Run a command |
 | `obsidian-cli.ts vault=<id> eval code='<js>'` | Run JS in the app, returns the value |
 | `obsidian-cli.ts --js <file.js> vault=<id>` | Run a JS file in the app; use it for multi-line probes |
+| `obsidian-cli.ts --shot <file> --selector <css> vault=<id>` | Capture one element; `--sample x,y` reads a pixel's colour |
 | `obsidian-cli.ts vault=<id> dev:screenshot path=<abs>` | Capture the window (absolute path required) |
 | `obsidian-cli.ts vault=<id> dev:errors` | Captured errors |
 | `obsidian-cli.ts vault=<id> dev:console` | Console output |
@@ -80,7 +81,10 @@ Read the output text: `=> ` prefixes a result, and command failures come back as
    `el.getBoundingClientRect()` to assert what actually rendered. A computed-style assertion is
    worth more than eyeballing a screenshot, and it is the only way to catch a state that expires
    on its own — a flash class is gone by the time the capture lands.
-5. **Screenshot** — `obsidian-cli.ts vault=<id> dev:screenshot path=<absolute-path>`. Save inside the workspace.
+5. **Screenshot** — `obsidian-cli.ts --shot <file> --selector <css> vault=<id>` for the surface under test;
+   `dev:screenshot` when the whole window matters. Save inside the workspace. A colour question —
+   a fade, a blend, a border — is answered by `--sample`, not by eye. `obsidian-cli.ts --help` has the
+   options.
 6. **Errors** — `obsidian-cli.ts vault=<id> dev:errors` / `dev:console`.
 
 ## Driving state
@@ -138,16 +142,8 @@ from. `data.json` edits target that same path.
 
 A hidden, minimized, or covered window is throttled: `requestAnimationFrame` never fires, so an
 eval that awaits one never answers; scroll events never dispatch; and screenshots lag one frame
-behind the DOM. Turn throttling off for the vault's main window and its open popouts before you
-probe:
-
-```bash
-packages/scripts/scripts/obsidian-cli.ts vault=<id> eval \
-  code='(()=>{const r=require("@electron/remote"),m=r.getCurrentWebContents();for(const c of r.webContents.getAllWebContents())if(c===m||(c.opener?.top?.processId===m.mainFrame.processId&&c.opener?.top?.routingId===m.mainFrame.routingId))c.setBackgroundThrottling(false);return "off"})()'
-```
-
-Done when it prints `=> off`. Run it again after you open a popout, and once more with `true` in
-place of `false` when you are done. The setting lasts until Obsidian restarts.
+behind the DOM. Pass `--no-throttle` to every call that probes, scrolls, or captures: it lifts
+throttling from the main window and its popouts for that call and puts it back after.
 `document.visibilityState` can still read `hidden` — judge by frames and events.
 
 ### Full-scale Fixture data
