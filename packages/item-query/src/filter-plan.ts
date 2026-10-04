@@ -270,10 +270,16 @@ function describeMismatch(
 }
 
 class Validator {
+  readonly #needs: FieldNeeds[];
+  readonly #customFields: (Span & { name: string; bare: boolean })[];
+
   constructor(
-    private readonly needs: FieldNeeds[],
-    private readonly customFields: (Span & { name: string; bare: boolean })[],
-  ) {}
+    needs: FieldNeeds[],
+    customFields: (Span & { name: string; bare: boolean })[],
+  ) {
+    this.#needs = needs;
+    this.#customFields = customFields;
+  }
 
   node(ast: ExpressionNode): FilterNode {
     const { from, to } = ast;
@@ -303,7 +309,7 @@ class Validator {
           valueType: "list",
         };
       case "identifier":
-        return this.identifier(ast.name, span);
+        return this.#identifier(ast.name, span);
       case "unary": {
         const operand = this.node(ast.operand);
         return {
@@ -328,9 +334,9 @@ class Validator {
       }
       case "object-access":
         if (isCustomRoot(ast.object)) {
-          return this.customField(ast.property, span, false);
+          return this.#customField(ast.property, span, false);
         }
-        return this.property(this.node(ast.object), ast.property, span);
+        return this.#property(this.node(ast.object), ast.property, span);
       case "array-access": {
         if (isCustomRoot(ast.object)) {
           if (ast.index.type !== "string") {
@@ -340,7 +346,7 @@ class Validator {
               hint: HINTS.custom,
             });
           }
-          return this.customField(ast.index.value, span, false);
+          return this.#customField(ast.index.value, span, false);
         }
         return {
           ...span,
@@ -351,14 +357,14 @@ class Validator {
         };
       }
       case "call":
-        return this.call(ast, span);
+        return this.#call(ast, span);
     }
   }
 
-  private identifier(name: string, span: Span): FilterNode {
+  #identifier(name: string, span: Span): FilterNode {
     const field = filterField(name);
     if (field?.filterable) {
-      this.needs.push(field.needs);
+      this.#needs.push(field.needs);
       return {
         ...span,
         kind: "field",
@@ -387,13 +393,13 @@ class Validator {
       });
     }
     // Outside the built-in names: the bare form of a custom field.
-    return this.customField(name, span, true);
+    return this.#customField(name, span, true);
   }
 
-  private customField(name: string, span: Span, bare: boolean): FilterNode {
+  #customField(name: string, span: Span, bare: boolean): FilterNode {
     const { value, needs } = customFilterValue(name);
-    this.needs.push(needs);
-    this.customFields.push({ ...span, name, bare });
+    this.#needs.push(needs);
+    this.#customFields.push({ ...span, name, bare });
     return {
       ...span,
       kind: "custom-field",
@@ -404,7 +410,7 @@ class Validator {
     };
   }
 
-  private property(subject: FilterNode, name: string, span: Span): FilterNode {
+  #property(subject: FilterNode, name: string, span: Span): FilterNode {
     const named = propertiesNamed(name);
     const nameSpan = { from: span.to - name.length, to: span.to };
     if (named.length === 0) {
@@ -429,13 +435,13 @@ class Validator {
     };
   }
 
-  private call(
+  #call(
     ast: Extract<ExpressionNode, { type: "call" }>,
     span: Span,
   ): FilterNode {
     const { callee } = ast;
     if (callee.type === "identifier") {
-      return this.globalCall(
+      return this.#globalCall(
         { name: callee.name, nameSpan: callee, args: ast.args },
         span,
       );
@@ -449,7 +455,7 @@ class Validator {
       // read; the subject reports it.
       const subject = this.node(callee.object);
       const args = ast.args.map((arg) => this.node(arg));
-      return this.methodCall(
+      return this.#methodCall(
         { name: callee.property, nameSpan, subject, args },
         span,
       );
@@ -460,7 +466,7 @@ class Validator {
     });
   }
 
-  private globalCall(
+  #globalCall(
     call: { name: string; nameSpan: Span; args: readonly ExpressionNode[] },
     span: Span,
   ): FilterNode {
@@ -515,7 +521,7 @@ class Validator {
     };
   }
 
-  private methodCall(
+  #methodCall(
     call: {
       name: string;
       nameSpan: Span;

@@ -101,9 +101,26 @@ export function queryItems(
       customFieldNames: vocabulary?.customFieldNames ?? [],
     });
 
+    /**
+     * Load what one pass needs for the Items of a chunk. A pass that reads
+     * only scan rows runs no statement.
+     */
+    const hydrate = function* (
+      needs: ReturnType<typeof hydrateFields> | null,
+      itemIDs: readonly number[],
+    ) {
+      if (!vocabulary || !needs) return NOTHING_HYDRATED_CHUNK;
+      return yield* readHydrateChunk({
+        vocabulary,
+        itemIDs,
+        ...needs,
+        collectionPaths,
+      });
+    };
+
     // The scan pass: every Item is hydrated with the filter and sort fields
     // only, and the query keeps the scan row and the sort keys of a match.
-    const sortFields =
+    const scanFields =
       vocabulary && scanNeeds.some(needsHydration)
         ? hydrateFields(scanNeeds, vocabulary)
         : null;
@@ -117,15 +134,10 @@ export function queryItems(
     /** Hydrate one chunk of a page and keep its matches. */
     const takeChunk = (chunk: readonly ScanRow[]) =>
       Effect.gen(function* () {
-        const hydrated: ReadonlyMap<number, HydratedItem> =
-          vocabulary && sortFields
-            ? yield* readHydrateChunk({
-                vocabulary,
-                itemIDs: chunk.map((row) => row.itemID),
-                ...sortFields,
-                collectionPaths,
-              })
-            : new Map();
+        const hydrated = yield* hydrate(
+          scanFields,
+          chunk.map((row) => row.itemID),
+        );
         yield* Effect.sync(() => {
           const matching: Match[] = [];
           for (const scan of chunk) {
@@ -142,7 +154,7 @@ export function queryItems(
     /** Hydrate one page of the query universe and keep its matches. */
     const takePage = (page: readonly ScanRow[]) =>
       Effect.gen(function* () {
-        const chunkSize = sortFields ? hydrateChunkSize : scanPageSize;
+        const chunkSize = scanFields ? hydrateChunkSize : scanPageSize;
         for (let start = 0; start < page.length; start += chunkSize) {
           yield* takeChunk(page.slice(start, start + chunkSize));
         }
@@ -203,15 +215,10 @@ export function queryItems(
     const rows: QueryRow[] = [];
     for (let start = 0; start < returned.length; start += hydrateChunkSize) {
       const chunk = returned.slice(start, start + hydrateChunkSize);
-      const hydrated: ReadonlyMap<number, HydratedItem> =
-        vocabulary && fields
-          ? yield* readHydrateChunk({
-              vocabulary,
-              itemIDs: chunk.map((row) => row.scan.itemID),
-              ...fields,
-              collectionPaths,
-            })
-          : new Map();
+      const hydrated = yield* hydrate(
+        fields,
+        chunk.map((row) => row.scan.itemID),
+      );
       yield* Effect.sync(() => {
         for (const { scan } of chunk) {
           const item = itemOf(scan, hydrated);
@@ -234,6 +241,7 @@ function sizeWithin(size: number, limit: number): number {
 }
 
 const NOTHING_HYDRATED: HydratedItem = { fields: new Map(), custom: new Map() };
+const NOTHING_HYDRATED_CHUNK: ReadonlyMap<number, HydratedItem> = new Map();
 
 /** A custom field that the source does not define fails the query. */
 function checkCustomFields(

@@ -88,8 +88,8 @@ function yearDate(year: number): CalendarDate {
   );
 }
 
-const SQL_DATE_TIME = regex("^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$");
-const ISO_DAY = regex("^\\d{4}-\\d{2}-\\d{2}$");
+const SQL_DATE_TIME = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * Zotero's `accessDate`: a UTC timestamp as `YYYY-MM-DD HH:MM:SS`, or a
@@ -113,8 +113,8 @@ export function fromAccessDate(raw: string | null): DateValue | null {
 const DATE_TIME = regex(
   "^\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,9})?)?(?<offset>Z|[+-]\\d{2}(?::?\\d{2})?)?$",
 );
-const YEAR_MONTH = regex("^\\d{4}-\\d{2}$");
-const YEAR = regex("^\\d{4}$");
+const YEAR_MONTH = /^\d{4}-\d{2}$/;
+const YEAR = /^\d{4}$/;
 const COMPACT_DAY = regex(
   "^(?<year>\\d{4})(?<month>\\d{2})(?<day>\\d{2})(?:(?<hour>\\d{2})(?<minute>\\d{2}))?$",
 );
@@ -241,7 +241,12 @@ function dayInterval(
   return [dayKey(first), dayKey(last)];
 }
 
-function dayKey(day: Temporal.PlainDate): number {
+/** A calendar day as the number `yyyymmdd`, which orders days. */
+export function dayKey(day: {
+  readonly year: number;
+  readonly month: number;
+  readonly day: number;
+}): number {
   return day.year * 10_000 + day.month * 100 + day.day;
 }
 
@@ -316,11 +321,7 @@ export function addDuration(
     if (date.precision !== "instant" && !hasTimeOfDay(duration)) {
       return calendarDate(date.first.add(duration), date.precision);
     }
-    const start =
-      date.precision === "instant"
-        ? date.instant.toZonedDateTimeISO(clock.timeZone)
-        : date.first.toZonedDateTime(clock.timeZone);
-    return timestamp(start.add(duration).toInstant());
+    return timestamp(startOf(date, clock).add(duration).toInstant());
   } catch {
     // A result outside the range of dates.
     return null;
@@ -386,7 +387,7 @@ export function timeOfDay(date: DateValue, clock: QueryClock): string {
     .toString({ smallestUnit: "second" });
 }
 
-const FORMAT_TOKENS = regex("YYYY|MM|DD|HH|mm|ss", "g");
+const FORMAT_TOKENS = /YYYY|MM|DD|HH|mm|ss/g;
 
 /**
  * `date.format(pattern)`: the tokens `YYYY`, `MM`, `DD`, `HH`, `mm`, and `ss`

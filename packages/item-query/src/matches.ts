@@ -1,3 +1,5 @@
+// The matches a query keeps: a bounded buffer for a limited query, sorted runs
+// with a stepwise merge for an unlimited one.
 import { Effect } from "effect";
 
 /** The matching rows a query keeps while it reads the Library. */

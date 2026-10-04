@@ -17,9 +17,17 @@ import type { Tuning } from "./tuning";
 export interface RunOptions {
   /** The leased client the readers use. Omit it for an Effect that reads no database. */
   client?: NodeDatabaseClient;
-  /** The instant of the Query Clock, as an ISO string. Defaults to {@link TEST_NOW}. */
+  /**
+   * The instant of the Query Clock, as an ISO string.
+   *
+   * @default TEST_NOW
+   */
   now?: string;
-  /** The zone of the Query Clock. Defaults to `UTC`. */
+  /**
+   * The zone of the Query Clock.
+   *
+   * @default "UTC"
+   */
   timeZone?: string;
   signal?: AbortSignal;
   /** Values of the tuning reference that replace the production defaults. */
@@ -30,7 +38,9 @@ export interface RunOptions {
   onEvent?: (event: RunEvent) => void;
   /**
    * `false` keeps no statement in `Run.events`, so the run holds no row that
-   * the engine has released. Defaults to `true`.
+   * the engine has released.
+   *
+   * @default true
    */
   keepStatements?: boolean;
 }

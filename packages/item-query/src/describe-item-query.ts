@@ -9,6 +9,7 @@ import type {
 
 import {
   BUILT_IN_NAMES,
+  CUSTOM_FIELD_VALUE_SHAPE,
   customFilterValue,
   DEFAULT_FIELDS,
   fieldDefinition,
@@ -240,10 +241,7 @@ function customSchemaField(name: string): SchemaCustomField {
     name,
     path: `custom[${JSON.stringify(name)}]`,
     bareName: hasBareForm(name),
-    type:
-      custom.shape.kind === "custom-fields"
-        ? jsonType(custom.shape.value)
-        : "string",
+    type: jsonType(CUSTOM_FIELD_VALUE_SHAPE),
     filter: value.type,
     projection: true,
     sort: custom.sortKey !== undefined,
