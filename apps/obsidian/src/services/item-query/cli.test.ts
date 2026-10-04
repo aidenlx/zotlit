@@ -718,7 +718,7 @@ describe("zotlit:item-query-guide", () => {
   it.each([
     ["filter", ["key is the Zotero Key", "attachments", "lower()", "within"]],
     ["fields", ['custom["<exact name>"]', "fields='[]'", "null"]],
-    ["sort", ["10 before 9", "first possible day", "limit", "all"]],
+    ["sort", ["10 comes before 9", "first possible day", "limit", "all"]],
     ["results", ["diagnostic.hint", "location", "span"]],
   ])("prints topic=%s", (topic, facts) => {
     const output = itemQueryGuideHandler({ topic });
