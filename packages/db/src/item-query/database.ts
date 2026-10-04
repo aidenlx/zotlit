@@ -50,6 +50,36 @@ export type ItemQueryReaderError =
   | ItemQueryLayoutError
   | ItemQueryDatabaseError;
 
+/** The reader a statement belongs to. */
+export type ItemQueryReader =
+  | "layout"
+  | "library-row-count"
+  | "scan-page"
+  | "candidate-set"
+  | "universe-rows"
+  | "field-vocabulary"
+  | "collection-paths"
+  | "hydrate-chunk";
+
+/** One statement that ran to its end. */
+export interface StatementRun {
+  readonly reader: ItemQueryReader;
+  /** The bound values, by placeholder name. */
+  readonly params: Readonly<Record<string, unknown>>;
+  /** The rows the statement returned, as the reader gets them. */
+  readonly rows: readonly unknown[];
+}
+
+/**
+ * Receives each statement of the Item Query readers when the driver returns
+ * its rows, in the same synchronous step as the statement. The default does
+ * nothing. A test or a measurement provides a function to count statements
+ * and rows; the Obsidian adapter provides none.
+ */
+export const ItemQueryStatementObserver = Context.Reference<
+  (run: StatementRun) => void
+>("@zotlit/db/ItemQueryStatementObserver", { defaultValue: () => () => {} });
+
 /** One reader statement. `all` runs it when the fiber reaches it. */
 export interface Statement<TParams, TRow> {
   all(
@@ -95,13 +125,11 @@ type Build<TParams, TRow> = (
  * ({@link checkLayout}): every table and column it reads belongs in
  * `ITEM_QUERY_LAYOUT`, and the manifest test fails when one is outside.
  */
-export function defineStatement<TParams extends Record<string, unknown>>(): <
-  TRow,
->(
-  build: Build<TParams, TRow>,
-) => Statement<TParams, TRow> {
+export function defineStatement<TParams extends Record<string, unknown>>(
+  reader: ItemQueryReader,
+): <TRow>(build: Build<TParams, TRow>) => Statement<TParams, TRow> {
   return <TRow>(build: Build<TParams, TRow>) => {
-    const statement = uncheckedStatement<TParams, TRow>(build);
+    const statement = uncheckedStatement<TParams, TRow>(reader, build);
     readerStatements.push(statement.sql);
     return {
       all: (params) => Effect.andThen(checkLayout(), statement.all(params)),
@@ -115,6 +143,7 @@ export function defineStatement<TParams extends Record<string, unknown>>(): <
  * directly; every other statement comes from {@link defineStatement}.
  */
 function uncheckedStatement<TParams extends Record<string, unknown>, TRow>(
+  reader: ItemQueryReader,
   build: Build<TParams, TRow>,
 ): UncheckedStatement<TParams, TRow> {
   const query = defineQuery<TParams>()(build);
@@ -133,15 +162,24 @@ function uncheckedStatement<TParams extends Record<string, unknown>, TRow>(
   return {
     sql: (client) => query(client).toSQL().sql,
     all: (params) =>
-      ItemQueryDatabase.use(({ client }) =>
-        Effect.try({
-          try: () =>
-            (
+      Effect.gen(function* () {
+        const { client } = yield* ItemQueryDatabase;
+        const observe = yield* ItemQueryStatementObserver;
+        // One synchronous step: no interruption comes between the statement
+        // and its report.
+        return yield* Effect.suspend(() => {
+          let rows: TRow[];
+          try {
+            rows = (
               query.prepared(client) as ReturnType<Builder<TRow>["prepare"]>
-            ).all(params),
-          catch: (cause) => failure(client, params, cause),
-        }),
-      ),
+            ).all(params);
+          } catch (cause) {
+            return Effect.fail(failure(client, params, cause));
+          }
+          observe({ reader, params, rows });
+          return Effect.succeed(rows);
+        });
+      }),
   };
 }
 
@@ -151,7 +189,7 @@ function uncheckedStatement<TParams extends Record<string, unknown>, TRow>(
 const columnsStatement = uncheckedStatement<
   Record<string, never>,
   { table: string; column: string }
->((db) =>
+>("layout", (db) =>
   db
     .select({
       table: sql<string>`m.name`,
@@ -168,7 +206,7 @@ const versionsStatement = uncheckedStatement<
     schema: string;
     version: number;
   }
->((db) =>
+>("layout", (db) =>
   db
     .select({ schema: version.schema, version: version.version })
     .from(version)

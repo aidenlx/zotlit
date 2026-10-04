@@ -10,8 +10,11 @@ export {
   checkLayout,
   ItemQueryDatabase,
   ItemQueryDatabaseError,
+  type ItemQueryReader,
   type ItemQueryReaderError,
+  ItemQueryStatementObserver,
   type Statement,
+  type StatementRun,
 } from "./database";
 export {
   type FieldVocabulary,

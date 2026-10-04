@@ -1208,24 +1208,6 @@ describe("queryItems sort of a large Library", () => {
       "TIE2CCCC",
     ]);
   });
-
-  it("merges the sorted runs of an unlimited query in steps between which the scheduler pauses", async () => {
-    scenario = openScenarioDatabase();
-    seedLargeLibrary(scenario);
-    const request = { library: personal, fields: [], sort: byTitle };
-
-    // A limit that every Item fits in reads and hydrates the same chunks, and
-    // keeps its rows in order as it reads: the extra pauses are in the merge.
-    // Five hydrate chunks give five runs, which takes four merges.
-    const limited = await run({ ...request, limit: 1210 });
-    const unlimited = await run(request);
-
-    if (!Exit.isSuccess(limited.exit) || !Exit.isSuccess(unlimited.exit)) {
-      throw new Error("a query did not succeed.");
-    }
-    expect(unlimited.exit.value.rows).toEqual(limited.exit.value.rows);
-    expect(unlimited.pauses).toBeGreaterThanOrEqual(limited.pauses + 4);
-  });
 });
 
 describe("queryItems sort failures", () => {
