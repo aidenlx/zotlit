@@ -8,16 +8,16 @@ export interface Matches<T> {
   ordered(): Effect.Effect<T[]>;
 }
 
-/** The rows one merge step moves at most. */
-export const MERGE_STEP_SIZE = 500;
-
 /**
  * Keeps every match; an unlimited query returns them all. Each added chunk
  * becomes one sorted run, and `ordered` merges the runs two at a time. One
- * merge step is one Effect of at most {@link MERGE_STEP_SIZE} rows, so the
+ * merge step is one Effect of at most `mergeStepSize` rows, so the
  * scheduler can end a slice, or interrupt the query, between two steps.
  */
-export function allMatches<T>(compare: (a: T, b: T) => number): Matches<T> {
+export function allMatches<T>(
+  compare: (a: T, b: T) => number,
+  mergeStepSize: number,
+): Matches<T> {
   let runs: T[][] = [];
   return {
     add: (rows) => void runs.push(rows.sort(compare)),
@@ -28,7 +28,11 @@ export function allMatches<T>(compare: (a: T, b: T) => number): Matches<T> {
           for (let i = 0; i < runs.length; i += 2) {
             const left = runs[i]!;
             const right = runs[i + 1];
-            merged.push(right ? yield* mergeRuns(left, right, compare) : left);
+            merged.push(
+              right
+                ? yield* mergeRuns(left, right, { compare, mergeStepSize })
+                : left,
+            );
           }
           runs = merged;
         }
@@ -40,8 +44,9 @@ export function allMatches<T>(compare: (a: T, b: T) => number): Matches<T> {
 function mergeRuns<T>(
   left: readonly T[],
   right: readonly T[],
-  compare: (a: T, b: T) => number,
+  options: { compare: (a: T, b: T) => number; mergeStepSize: number },
 ): Effect.Effect<T[]> {
+  const { compare, mergeStepSize } = options;
   return Effect.gen(function* () {
     const merged: T[] = [];
     const total = left.length + right.length;
@@ -49,7 +54,7 @@ function mergeRuns<T>(
     let r = 0;
     while (merged.length < total) {
       yield* Effect.sync(() => {
-        const end = Math.min(total, merged.length + MERGE_STEP_SIZE);
+        const end = Math.min(total, merged.length + mergeStepSize);
         while (merged.length < end) {
           const fromLeft =
             r >= right.length ||

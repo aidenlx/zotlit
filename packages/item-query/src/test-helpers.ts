@@ -7,6 +7,7 @@ import { ItemQueryDatabase } from "@zotlit/db/item-query";
 
 import { QueryTimeZone } from "./query-clock";
 import { ItemQueryScheduler, messageChannelPause } from "./scheduler";
+import { ItemQueryTuning, PRODUCTION_TUNING } from "./tuning";
 
 export interface RunOptions {
   /** The leased client the readers use. Omit it for an Effect that reads no database. */
@@ -16,6 +17,8 @@ export interface RunOptions {
   /** The zone of the Query Clock. Defaults to `UTC`. */
   timeZone?: string;
   signal?: AbortSignal;
+  /** Values of the tuning reference that replace the production defaults. */
+  tuning?: Partial<ItemQueryTuning>;
 }
 
 export interface Run<A, E> {
@@ -41,6 +44,9 @@ export async function runEffect<A, E>(
     fixedClock(options.now ?? TEST_NOW),
   )
     .pipe(Context.add(QueryTimeZone, options.timeZone ?? "UTC"))
+    .pipe(
+      Context.add(ItemQueryTuning, { ...PRODUCTION_TUNING, ...options.tuning }),
+    )
     .pipe(
       Context.add(ItemQueryDatabase, {
         get client(): NodeDatabaseClient {
