@@ -1,11 +1,10 @@
 import { Cause, Effect, Exit } from "effect";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { openScenarioDatabase, SCENARIO_LIBRARIES } from "@/test-scenario";
 import type { ScenarioDatabase } from "@/test-scenario";
 
 import {
-  checkLayout,
   ItemQueryDatabase,
   ItemQueryDatabaseError,
   readScanPage,
@@ -13,23 +12,22 @@ import {
   SCAN_PAGE_SIZE,
 } from ".";
 import type { ScanRow } from ".";
+import { checkLayout } from "./database";
 
-let scenario: ScenarioDatabase | undefined;
-
-afterEach(() => {
-  scenario?.close();
-  scenario = undefined;
-});
-
-function run<A, E>(effect: Effect.Effect<A, E, ItemQueryDatabase>) {
-  scenario ??= openScenarioDatabase();
+function run<A, E>(
+  scenario: ScenarioDatabase,
+  effect: Effect.Effect<A, E, ItemQueryDatabase>,
+) {
   return Effect.runSyncExit(
     Effect.provideService(effect, ItemQueryDatabase, { client: scenario.db }),
   );
 }
 
-function runOk<A, E>(effect: Effect.Effect<A, E, ItemQueryDatabase>): A {
-  const exit = run(effect);
+function runOk<A, E>(
+  scenario: ScenarioDatabase,
+  effect: Effect.Effect<A, E, ItemQueryDatabase>,
+): A {
+  const exit = run(scenario, effect);
   if (exit._tag === "Failure") throw new Error(String(exit.cause));
   return exit.value;
 }
@@ -38,7 +36,9 @@ const { personal, group } = SCENARIO_LIBRARIES;
 
 describe("readScanPage", () => {
   it("reads the live top-level Items of one Library in key order", () => {
+    using scenario = openScenarioDatabase();
     const rows = runOk(
+      scenario,
       readScanPage({ libraryID: personal.libraryID, afterKey: null }),
     );
 
@@ -55,14 +55,17 @@ describe("readScanPage", () => {
       "UNI2CDE2",
     ]);
     expect(
-      runOk(readScanPage({ libraryID: group.libraryID, afterKey: null })).map(
-        (row) => row.key,
-      ),
+      runOk(
+        scenario,
+        readScanPage({ libraryID: group.libraryID, afterKey: null }),
+      ).map((row) => row.key),
     ).toEqual(["ART2FULL", "GRP2BK22"]);
   });
 
   it("gives each row its item type and its two timestamps", () => {
+    using scenario = openScenarioDatabase();
     const rows = runOk(
+      scenario,
       readScanPage({
         libraryID: personal.libraryID,
         afterKey: "ALS2CNFL",
@@ -75,17 +78,21 @@ describe("readScanPage", () => {
         itemID: expect.any(Number),
         key: "ART2FULL",
         itemType: "journalArticle",
-        dateAdded: Date.parse("2020-03-16T09:30:00Z"),
-        dateModified: Date.parse("2024-06-01T10:00:00Z"),
+        dateAdded: Temporal.Instant.from("2020-03-16T09:30:00Z")
+          .epochMilliseconds,
+        dateModified: Temporal.Instant.from("2024-06-01T10:00:00Z")
+          .epochMilliseconds,
       },
     ]);
   });
 
   it("continues after a key, so pages cover the Library without overlap", () => {
+    using scenario = openScenarioDatabase();
     const keys: string[] = [];
     let afterKey: string | null = null;
     for (;;) {
       const page: ScanRow[] = runOk(
+        scenario,
         readScanPage({ libraryID: personal.libraryID, afterKey, size: 3 }),
       );
       keys.push(...page.map((row) => row.key));
@@ -108,7 +115,7 @@ describe("readScanPage", () => {
   });
 
   it("reads at most 500 Items in one page, whatever size the caller asks for", () => {
-    scenario = openScenarioDatabase();
+    using scenario = openScenarioDatabase();
     const insert = scenario.sqlite.prepare(
       "insert into items (itemTypeID, libraryID, key) select itemTypeID, ?, ? from itemTypesCombined where typeName = 'book'",
     );
@@ -118,10 +125,14 @@ describe("readScanPage", () => {
 
     expect(SCAN_PAGE_SIZE).toBe(500);
     expect(
-      runOk(readScanPage({ libraryID: personal.libraryID, afterKey: null })),
+      runOk(
+        scenario,
+        readScanPage({ libraryID: personal.libraryID, afterKey: null }),
+      ),
     ).toHaveLength(500);
     expect(
       runOk(
+        scenario,
         readScanPage({
           libraryID: personal.libraryID,
           afterKey: null,
@@ -132,12 +143,13 @@ describe("readScanPage", () => {
   });
 
   it("fails with the tagged database error that carries the statement", () => {
-    scenario = openScenarioDatabase();
+    using scenario = openScenarioDatabase();
     // The copy passes the layout check first, so the statement itself fails.
-    runOk(checkLayout());
+    runOk(scenario, checkLayout());
     scenario.sqlite.exec("alter table items rename column dateAdded to added");
 
     const exit = run(
+      scenario,
       readScanPage({ libraryID: group.libraryID, afterKey: "ART2FULL" }),
     );
 
@@ -158,8 +170,11 @@ describe("readScanPage", () => {
 
 describe("readUniverseRows", () => {
   /** The ID of the `items` row with a key in a Library. */
-  function idOf(key: string, library: { libraryID: number } = personal) {
-    scenario ??= openScenarioDatabase();
+  function idOf(
+    scenario: ScenarioDatabase,
+    key: string,
+    library: { libraryID: number } = personal,
+  ) {
     return (
       scenario.sqlite
         .prepare("select itemID from items where key = ? and libraryID = ?")
@@ -168,43 +183,53 @@ describe("readUniverseRows", () => {
   }
 
   it("keeps the IDs that are live top-level Items of the Target Library, as scan rows in key order", () => {
+    using scenario = openScenarioDatabase();
     const rows = runOk(
+      scenario,
       readUniverseRows({
         libraryID: personal.libraryID,
         itemIDs: [
-          idOf("UNI2CDE2"),
+          idOf(scenario, "UNI2CDE2"),
           // A trashed Item, an Attachment, a Child Note, an Annotation, an Item
           // of the other Library, and an ID that no row has.
-          idOf("TRS2SHED"),
-          idOf("PDF2LIVE"),
-          idOf("NTE2CHLD"),
-          idOf("ANN2HGHT"),
-          idOf("GRP2BK22", group),
+          idOf(scenario, "TRS2SHED"),
+          idOf(scenario, "PDF2LIVE"),
+          idOf(scenario, "NTE2CHLD"),
+          idOf(scenario, "ANN2HGHT"),
+          idOf(scenario, "GRP2BK22", group),
           987_654,
-          idOf("ART2FULL"),
+          idOf(scenario, "ART2FULL"),
         ],
       }),
     );
 
     expect(rows).toEqual([
       {
-        itemID: idOf("ART2FULL"),
+        itemID: idOf(scenario, "ART2FULL"),
         key: "ART2FULL",
         itemType: "journalArticle",
-        dateAdded: Date.parse("2020-03-16T09:30:00Z"),
-        dateModified: Date.parse("2024-06-01T10:00:00Z"),
+        dateAdded: Temporal.Instant.from("2020-03-16T09:30:00Z")
+          .epochMilliseconds,
+        dateModified: Temporal.Instant.from("2024-06-01T10:00:00Z")
+          .epochMilliseconds,
       },
-      expect.objectContaining({ itemID: idOf("UNI2CDE2"), key: "UNI2CDE2" }),
+      expect.objectContaining({
+        itemID: idOf(scenario, "UNI2CDE2"),
+        key: "UNI2CDE2",
+      }),
     ]);
   });
 
   it("gives the same row as the scan for each Item", () => {
+    using scenario = openScenarioDatabase();
     const scanned = runOk(
+      scenario,
       readScanPage({ libraryID: personal.libraryID, afterKey: null }),
     );
 
     expect(
       runOk(
+        scenario,
         readUniverseRows({
           libraryID: personal.libraryID,
           itemIDs: scanned.map((row) => row.itemID).toReversed(),
@@ -214,23 +239,30 @@ describe("readUniverseRows", () => {
   });
 
   it("gives one row for an ID that the chunk names twice, and no row for no IDs", () => {
-    const id = idOf("ART2FULL", group);
+    using scenario = openScenarioDatabase();
+    const id = idOf(scenario, "ART2FULL", group);
 
     expect(
       runOk(
+        scenario,
         readUniverseRows({ libraryID: group.libraryID, itemIDs: [id, id] }),
       ).map((row) => row.key),
     ).toEqual(["ART2FULL"]);
     expect(
-      runOk(readUniverseRows({ libraryID: group.libraryID, itemIDs: [] })),
+      runOk(
+        scenario,
+        readUniverseRows({ libraryID: group.libraryID, itemIDs: [] }),
+      ),
     ).toEqual([]);
   });
 
   it("takes at most 500 IDs in one chunk", () => {
-    const id = idOf("ART2FULL");
+    using scenario = openScenarioDatabase();
+    const id = idOf(scenario, "ART2FULL");
 
     expect(
       runOk(
+        scenario,
         readUniverseRows({
           libraryID: personal.libraryID,
           itemIDs: Array.from({ length: 500 }, (_, i) => id + i * 1000),
@@ -238,6 +270,7 @@ describe("readUniverseRows", () => {
       ).map((row) => row.key),
     ).toEqual(["ART2FULL"]);
     const exit = run(
+      scenario,
       readUniverseRows({
         libraryID: personal.libraryID,
         itemIDs: Array.from({ length: 501 }, (_, i) => i),

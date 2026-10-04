@@ -11,11 +11,13 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/yargs": "catalog:",
     "@zotlit/config": "workspace:*",
     "@zotlit/protocol": "workspace:*",
     "@zotlit/scripts": "workspace:*",
     "typescript": "catalog:",
     "vitest": "catalog:",
+    "yargs": "catalog:",
     "zx": "catalog:"
   }
 }

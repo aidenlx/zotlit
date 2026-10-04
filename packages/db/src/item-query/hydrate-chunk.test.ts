@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { openScenarioDatabase, SCENARIO_ITEMS } from "@/test-scenario";
 import type { ScenarioDatabase, ScenarioItemName } from "@/test-scenario";
@@ -7,21 +7,17 @@ import type { ScenarioDatabase, ScenarioItemName } from "@/test-scenario";
 import {
   HYDRATE_CHUNK_SIZE,
   ItemQueryDatabase,
+  ItemQueryStatementObserver,
   readCollectionPaths,
   readFieldVocabulary,
   readHydrateChunk,
 } from ".";
 import type { HydrateFields, HydratedItem, HydrateRelation } from ".";
 
-let scenario: ScenarioDatabase | undefined;
-
-afterEach(() => {
-  scenario?.close();
-  scenario = undefined;
-});
-
-function runOk<A, E>(effect: Effect.Effect<A, E, ItemQueryDatabase>): A {
-  scenario ??= openScenarioDatabase();
+function runOk<A, E>(
+  scenario: ScenarioDatabase,
+  effect: Effect.Effect<A, E, ItemQueryDatabase>,
+): A {
   const exit = Effect.runSyncExit(
     Effect.provideService(effect, ItemQueryDatabase, { client: scenario.db }),
   );
@@ -29,8 +25,7 @@ function runOk<A, E>(effect: Effect.Effect<A, E, ItemQueryDatabase>): A {
   return exit.value;
 }
 
-function itemID(name: ScenarioItemName): number {
-  scenario ??= openScenarioDatabase();
+function itemID(scenario: ScenarioDatabase, name: ScenarioItemName): number {
   const { key, library } = SCENARIO_ITEMS[name];
   const row = scenario.sqlite
     .prepare("select itemID from items where key = ? and libraryID = ?")
@@ -39,11 +34,13 @@ function itemID(name: ScenarioItemName): number {
 }
 
 function hydrate(
+  scenario: ScenarioDatabase,
   names: readonly ScenarioItemName[],
   fields: HydrateFields,
 ): Map<ScenarioItemName, HydratedItem> {
-  const ids = names.map(itemID);
+  const ids = names.map((name) => itemID(scenario, name));
   const hydrated = runOk(
+    scenario,
     Effect.flatMap(readFieldVocabulary(), (vocabulary) =>
       readHydrateChunk({ vocabulary, itemIDs: ids, fields }),
     ),
@@ -52,11 +49,13 @@ function hydrate(
 }
 
 function hydrateRelations(
+  scenario: ScenarioDatabase,
   names: readonly ScenarioItemName[],
   relations: readonly HydrateRelation[],
 ): Map<ScenarioItemName, HydratedItem> {
-  const ids = names.map(itemID);
+  const ids = names.map((name) => itemID(scenario, name));
   const hydrated = runOk(
+    scenario,
     Effect.gen(function* () {
       const vocabulary = yield* readFieldVocabulary();
       const collectionPaths = yield* readCollectionPaths({ libraryID: 1 });
@@ -80,7 +79,8 @@ const plain = (item: HydratedItem | undefined) =>
 
 describe("readFieldVocabulary", () => {
   it("lists the custom fields of the source by exact name", () => {
-    const vocabulary = runOk(readFieldVocabulary());
+    using scenario = openScenarioDatabase();
+    const vocabulary = runOk(scenario, readFieldVocabulary());
 
     expect(vocabulary.customFieldNames).toEqual([
       "review.status",
@@ -93,8 +93,12 @@ describe("readFieldVocabulary", () => {
 
 describe("readCollectionPaths", () => {
   it("gives the root-first path of each live Collection of one Library", () => {
-    const personalPaths = runOk(readCollectionPaths({ libraryID: 1 }));
-    const groupPaths = runOk(readCollectionPaths({ libraryID: 2 }));
+    using scenario = openScenarioDatabase();
+    const personalPaths = runOk(
+      scenario,
+      readCollectionPaths({ libraryID: 1 }),
+    );
+    const groupPaths = runOk(scenario, readCollectionPaths({ libraryID: 2 }));
 
     // Archive is trashed; Archive/Old is live below it.
     expect([...personalPaths.values()]).toHaveLength(4);
@@ -112,7 +116,8 @@ describe("readCollectionPaths", () => {
 
 describe("readHydrateChunk", () => {
   it("loads only the requested built-in and custom fields of each Item", () => {
-    const items = hydrate(["fullDateArticle", "missingDateReport"], {
+    using scenario = openScenarioDatabase();
+    const items = hydrate(scenario, ["fullDateArticle", "missingDateReport"], {
       builtIn: ["title", "DOI"],
       custom: ["review.status"],
     });
@@ -130,8 +135,37 @@ describe("readHydrateChunk", () => {
     });
   });
 
+  it("reads the stored values of the requested fields only", () => {
+    using scenario = openScenarioDatabase();
+    const rows: unknown[] = [];
+    const id = itemID(scenario, "yearOnlyChapter");
+
+    runOk(
+      scenario,
+      Effect.flatMap(readFieldVocabulary(), (vocabulary) =>
+        readHydrateChunk({
+          vocabulary,
+          itemIDs: [id],
+          fields: { builtIn: ["title"], custom: [] },
+        }),
+      ).pipe(
+        Effect.provideService(ItemQueryStatementObserver, (run) => {
+          if (run.reader === "hydrate-chunk") rows.push(...run.rows);
+        }),
+      ),
+    );
+
+    // The chapter also stores `bookTitle`, a type-specific field of another
+    // base field.
+    expect(rows).toEqual([
+      expect.objectContaining({ itemID: id, value: "A Chapter on Sampling" }),
+    ]);
+  });
+
   it("resolves a base field through the type-specific field of the item type", () => {
+    using scenario = openScenarioDatabase();
     const items = hydrate(
+      scenario,
       ["yearOnlyChapter", "textDateConference", "missingDateReport"],
       { builtIn: ["publicationTitle", "publisher"], custom: [] },
     );
@@ -149,7 +183,8 @@ describe("readHydrateChunk", () => {
   });
 
   it("prefers the type-specific field in an alias conflict and keeps custom fields apart", () => {
-    const items = hydrate(["aliasConflictChapter"], {
+    using scenario = openScenarioDatabase();
+    const items = hydrate(scenario, ["aliasConflictChapter"], {
       builtIn: ["publicationTitle", "bookTitle"],
       custom: ["publicationTitle"],
     });
@@ -164,7 +199,8 @@ describe("readHydrateChunk", () => {
   });
 
   it("gives a value stored as an integer as a string", () => {
-    const items = hydrate(["tieFirst", "tieSecond"], {
+    using scenario = openScenarioDatabase();
+    const items = hydrate(scenario, ["tieFirst", "tieSecond"], {
       builtIn: ["volume"],
       custom: [],
     });
@@ -174,13 +210,19 @@ describe("readHydrateChunk", () => {
   });
 
   it("gives an entry for every Item of the chunk, also one with no values", () => {
-    const items = hydrate(["tieUntitled"], { builtIn: ["title"], custom: [] });
+    using scenario = openScenarioDatabase();
+    const items = hydrate(scenario, ["tieUntitled"], {
+      builtIn: ["title"],
+      custom: [],
+    });
 
     expect(plain(items.get("tieUntitled"))).toEqual({ fields: {}, custom: {} });
   });
 
   it("loads the Creators of each Item in Zotero's creator order, one for each row", () => {
+    using scenario = openScenarioDatabase();
     const items = hydrateRelations(
+      scenario,
       ["yearMonthBook", "fullDateArticle", "missingDateReport"],
       ["creators"],
     );
@@ -217,7 +259,9 @@ describe("readHydrateChunk", () => {
   });
 
   it("loads every Tag of each Item with its type", () => {
+    using scenario = openScenarioDatabase();
     const items = hydrateRelations(
+      scenario,
       ["fullDateArticle", "missingDateReport"],
       ["tags"],
     );
@@ -234,7 +278,9 @@ describe("readHydrateChunk", () => {
   });
 
   it("loads the root-first path of each live Collection an Item is filed in", () => {
+    using scenario = openScenarioDatabase();
     const items = hydrateRelations(
+      scenario,
       ["fullDateArticle", "yearMonthBook", "yearOnlyChapter", "tieFirst"],
       ["collections"],
     );
@@ -255,7 +301,9 @@ describe("readHydrateChunk", () => {
   });
 
   it("reports whether an Item has a live child Attachment", () => {
+    using scenario = openScenarioDatabase();
     const items = hydrateRelations(
+      scenario,
       ["fullDateArticle", "missingDateReport"],
       ["attachments"],
     );
@@ -266,24 +314,30 @@ describe("readHydrateChunk", () => {
 
   it("ignores a trashed Attachment", () => {
     // ART2FULL keeps only its trashed Attachment.
-    scenario = openScenarioDatabase();
+    using scenario = openScenarioDatabase();
     scenario.sqlite
       .prepare(
         "insert into deletedItems (itemID, dateDeleted) values (?, '2024-01-01 00:00:00')",
       )
-      .run(itemID("liveAttachment"));
+      .run(itemID(scenario, "liveAttachment"));
 
-    const items = hydrateRelations(["fullDateArticle"], ["attachments"]);
+    const items = hydrateRelations(
+      scenario,
+      ["fullDateArticle"],
+      ["attachments"],
+    );
 
     expect(items.get("fullDateArticle")?.hasAttachments).toBe(false);
   });
 
   it("rejects a chunk larger than the chunk size", () => {
+    using scenario = openScenarioDatabase();
     expect(HYDRATE_CHUNK_SIZE).toBe(250);
     const ids = Array.from({ length: 251 }, (_, i) => i + 1);
 
     expect(() =>
       runOk(
+        scenario,
         Effect.flatMap(readFieldVocabulary(), (vocabulary) =>
           readHydrateChunk({
             vocabulary,

@@ -16,8 +16,10 @@ export {
   type ItemQueryErrorCode,
   type ItemQueryErrorLocation,
 } from "./error";
+export { DEFAULT_FIELDS } from "./fields";
 export { QueryTimeZone } from "./query-clock";
 export { queryItems } from "./query-items";
+export { DEFAULT_SORT } from "./request";
 export type {
   ItemQuery,
   ItemQueryRequest,
@@ -29,9 +31,7 @@ export type {
 } from "./request";
 export {
   ItemQueryScheduler,
-  type ItemQuerySchedulerOptions,
   ItemQuerySliceObserver,
-  type Pause,
   SLICE_BUDGET_MS,
   type SliceObserver,
 } from "./scheduler";

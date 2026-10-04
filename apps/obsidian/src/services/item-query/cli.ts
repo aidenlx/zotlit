@@ -9,28 +9,39 @@
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 
+import { regex } from "arkregex";
 import { Cause, Exit } from "effect";
 import type { CliData, CliFlag, CliFlags, CliHandler, Plugin } from "obsidian";
 import * as v from "valibot";
 
-import { getLibraries, getLibraryByGroupID } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import type {
   ItemQueryDatabaseError,
   ItemQueryLayoutError,
+  TargetLibrarySelector,
 } from "@zotlit/db/item-query";
+import { SLICE_BUDGET_MS } from "@zotlit/item-query";
 import type {
   ItemQueryError,
   ItemQuerySchema,
   ProjectionValue,
   QueryResult,
   SortSpec,
-  TargetLibrary,
 } from "@zotlit/item-query";
 
 import { getLogger } from "@/lib/log";
+import { yieldToMain } from "@/lib/yield-to-main";
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
+import {
+  DEFAULT_CLI_LIMIT,
+  ITEM_QUERY_COMMAND,
+  ITEM_QUERY_GUIDE_COMMAND,
+  ITEM_QUERY_PARAMS,
+  ITEM_QUERY_SCHEMA_COMMAND,
+  itemQueryFlags,
+} from "./contract";
+import type { ItemQueryCommand } from "./contract";
 import { GUIDE_TOPIC_NAMES, parseGuideTopic, renderGuide } from "./guide";
 import { runDescribeItemQuery, runItemQuery } from "./run";
 import type { ItemQueryInstrument } from "./run";
@@ -43,55 +54,13 @@ const logger = getLogger(["item-query"]);
  */
 export const CONTRACT_VERSION = 1;
 
-export const ITEM_QUERY_COMMAND = "zotlit:item-query" as const;
-export const ITEM_QUERY_SCHEMA_COMMAND = "zotlit:item-query-schema" as const;
-export const ITEM_QUERY_GUIDE_COMMAND = "zotlit:item-query-guide" as const;
-
-type ItemQueryCommand =
-  | typeof ITEM_QUERY_COMMAND
-  | typeof ITEM_QUERY_SCHEMA_COMMAND
-  | typeof ITEM_QUERY_GUIDE_COMMAND;
-
-/** The rows a CLI query returns when the caller gives no limit. */
-export const DEFAULT_CLI_LIMIT = 100;
-
-const ITEM_QUERY_PARAMS = [
-  "filter",
-  "fields",
-  "sort",
-  "limit",
-  "library",
-] as const;
-
-type ItemQueryParam = (typeof ITEM_QUERY_PARAMS)[number];
-
-export const itemQueryFlags: CliFlags = {
-  filter: {
-    value: "<expression>",
-    description:
-      "Filter Expression that selects the Items; omit it to match every Item",
-  },
-  fields: {
-    value: "<json>",
-    description:
-      'JSON array of Projection Paths, such as ["title","date.year"]; [] returns only Indexed Keys',
-  },
-  sort: {
-    value: "<json>",
-    description:
-      'JSON array of {"field","direction"} objects; direction is "asc" or "desc"',
-  },
-  limit: {
-    value: "<n|all>",
-    description:
-      "Most rows to return: a positive integer, or all (default 100)",
-  },
-  library: {
-    value: "<personal|group:id>",
-    description:
-      "Target Library: personal, or group:<groupID> (default: personal)",
-  },
-} satisfies Record<ItemQueryParam, CliFlag>;
+export {
+  DEFAULT_CLI_LIMIT,
+  ITEM_QUERY_COMMAND,
+  ITEM_QUERY_GUIDE_COMMAND,
+  ITEM_QUERY_SCHEMA_COMMAND,
+  itemQueryFlags,
+};
 
 export const itemQueryGuideFlags: CliFlags = {
   topic: {
@@ -132,9 +101,14 @@ interface Diagnostic {
 function diagnostic(
   code: AdapterDiagnosticCode,
   message: string,
-  details?: Diagnostic["details"],
+  options: { details?: Diagnostic["details"] } = {},
 ): Diagnostic {
-  return { code, message, hint: DIAGNOSTIC_HINTS[code], details };
+  return {
+    code,
+    message,
+    hint: DIAGNOSTIC_HINTS[code],
+    details: options.details,
+  };
 }
 
 /** The Target Library on the wire: local `libraryID` values stay inside. */
@@ -142,13 +116,9 @@ type LibraryWire =
   | { type: "personal" }
   | { type: "group"; groupID: number; name: string };
 
-type LibrarySelector =
-  | { type: "personal" }
-  | { type: "group"; groupID: number };
-
 /** The flat arguments after decoding. */
 interface DecodedArguments {
-  library: LibrarySelector;
+  library: TargetLibrarySelector;
   filter: string | undefined;
   fields: readonly string[] | undefined;
   sort: readonly SortSpec[] | undefined;
@@ -184,10 +154,7 @@ function envelope(command: ItemQueryCommand, tail: EnvelopeTail): string {
   );
 }
 
-function failure(
-  diagnostic: Diagnostic,
-  command: ItemQueryCommand = ITEM_QUERY_COMMAND,
-): string {
+function failure(command: ItemQueryCommand, diagnostic: Diagnostic): string {
   return envelope(command, { ok: false, diagnostic });
 }
 
@@ -203,6 +170,11 @@ export interface ItemQueryCliDeps {
   signal: AbortSignal;
   /** Observes the engine of each query run; the measurement command sets it. */
   instrument?: ItemQueryInstrument;
+  /**
+   * Receives the duration of each step of the answer of a query, in
+   * milliseconds; the measurement command sets it.
+   */
+  onAnswerStep?: (ms: number) => void;
 }
 
 export function registerItemQueryCli(
@@ -240,41 +212,21 @@ export function createItemQuerySchemaHandler(
 ): CliHandler {
   return async (params: CliData): Promise<string> => {
     const rejected = rejectParameters(params, []);
-    if (rejected) return failure(rejected, ITEM_QUERY_SCHEMA_COMMAND);
+    if (rejected) return failure(ITEM_QUERY_SCHEMA_COMMAND, rejected);
 
     deps.signal.throwIfAborted();
 
-    let lease: ItemQueryLease;
-    try {
-      lease = await deps.acquireRead();
-    } catch (error) {
-      logger.warn("Item Query could not read the Zotero source", { error });
-      return failure(
-        diagnostic(
-          "source-unavailable",
-          `The connected Zotero source is not readable: ${messageOf(error)}`,
-        ),
-        ITEM_QUERY_SCHEMA_COMMAND,
-      );
-    }
-    let exit: Exit.Exit<
-      ItemQuerySchema,
-      ItemQueryLayoutError | ItemQueryDatabaseError
-    >;
-    try {
-      exit = await runDescribeItemQuery({
-        client: lease.client,
-        signal: deps.signal,
-      });
-    } finally {
-      lease[Symbol.dispose]();
-    }
+    const read = await withLease(deps, ITEM_QUERY_SCHEMA_COMMAND, (client) =>
+      runDescribeItemQuery({ client, signal: deps.signal }),
+    );
+    if ("answer" in read) return read.answer;
+    const exit = read.value;
 
     if (Exit.isSuccess(exit)) {
       const schema = exit.value;
       return envelope(ITEM_QUERY_SCHEMA_COMMAND, {
         ok: true,
-        identity: await deps.identity(),
+        identity: read.identity,
         schema: {
           ...schema,
           defaults: {
@@ -292,16 +244,16 @@ export function createItemQuerySchemaHandler(
 /** The guide is plain text; an unknown topic answers the diagnostic envelope. */
 export function itemQueryGuideHandler(params: CliData): string {
   const rejected = rejectParameters(params, ["topic"]);
-  if (rejected) return failure(rejected, ITEM_QUERY_GUIDE_COMMAND);
+  if (rejected) return failure(ITEM_QUERY_GUIDE_COMMAND, rejected);
   if (params.topic === undefined) return renderGuide(null);
   const topic = parseGuideTopic(params.topic);
   if (topic === null) {
     return failure(
+      ITEM_QUERY_GUIDE_COMMAND,
       invalid(
         "topic",
         `topic '${params.topic}' is not a guide topic: use ${GUIDE_TOPIC_NAMES.join(", ")}.`,
       ),
-      ITEM_QUERY_GUIDE_COMMAND,
     );
   }
   return renderGuide(topic);
@@ -315,64 +267,86 @@ export function itemQueryGuideHandler(params: CliData): string {
 export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
   return async (params: CliData): Promise<string> => {
     const decoded = decodeArguments(params);
-    if ("code" in decoded) return failure(decoded);
+    if ("code" in decoded) return failure(ITEM_QUERY_COMMAND, decoded);
 
     deps.signal.throwIfAborted();
 
-    let lease: ItemQueryLease;
-    try {
-      lease = await deps.acquireRead();
-    } catch (error) {
-      logger.warn("Item Query could not read the Zotero source", { error });
-      return failure(
-        diagnostic(
-          "source-unavailable",
-          `The connected Zotero source is not readable: ${messageOf(error)}`,
-        ),
-      );
-    }
-
-    let library: ResolvedLibrary | null;
-    let exit: ItemQueryExit;
-    try {
-      try {
-        library = resolveLibrary(lease.client, decoded.library);
-      } catch (error) {
-        return databaseFailure(error);
-      }
-      if (library === null) {
-        return failure(
-          diagnostic(
-            "library-not-found",
-            `The connected Zotero source holds no ${describeSelector(decoded.library)}.`,
-            { parameter: "library" },
-          ),
-        );
-      }
-      exit = await runItemQuery(
+    const read = await withLease(deps, ITEM_QUERY_COMMAND, (client) =>
+      runItemQuery(
+        decoded.library,
         {
-          library: library.target,
           filter: decoded.filter,
           fields: decoded.fields,
           sort: decoded.sort,
           limit: decoded.limit,
         },
-        {
-          client: lease.client,
-          signal: deps.signal,
-          instrument: deps.instrument,
-        },
-      );
-    } finally {
-      lease[Symbol.dispose]();
-    }
+        { client, signal: deps.signal, instrument: deps.instrument },
+      ),
+    );
+    if ("answer" in read) return read.answer;
+    const exit = read.value;
 
-    return answerExit(exit, {
-      identity: () => deps.identity(),
-      library: library.wire,
+    if (Exit.isFailure(exit)) {
+      return answerFailure(exit.cause, ITEM_QUERY_COMMAND, deps.signal);
+    }
+    const { library } = exit.value;
+    if (library === null) {
+      return failure(
+        ITEM_QUERY_COMMAND,
+        diagnostic(
+          "library-not-found",
+          `The connected Zotero source holds no ${describeSelector(decoded.library)}.`,
+          { details: { parameter: "library" } },
+        ),
+      );
+    }
+    return answerExit(Exit.succeed(exit.value.result), {
+      identity: read.identity,
+      library:
+        library.groupID === null
+          ? { type: "personal" }
+          : {
+              type: "group",
+              groupID: library.groupID,
+              name: library.name ?? "",
+            },
       signal: deps.signal,
+      onAnswerStep: deps.onAnswerStep,
     });
   };
+}
+
+/**
+ * Run `read` under one source lease. The lease ends when `read` settles, so
+ * it ends after the last database read and before the caller answers or
+ * rejects. A source that gives no lease answers `source-unavailable`.
+ *
+ * The identity is read while the lease holds the client, so the answer names
+ * the source its rows come from when the user connects another one in the run.
+ */
+async function withLease<T>(
+  deps: ItemQueryCliDeps,
+  command: ItemQueryCommand,
+  read: (client: NodeDatabaseClient) => Promise<T>,
+): Promise<{ answer: string } | { value: T; identity: WorkbenchIdentity }> {
+  let acquired: ItemQueryLease;
+  try {
+    acquired = await deps.acquireRead();
+  } catch (error) {
+    logger.warn("Item Query could not read the Zotero source", { error });
+    return {
+      answer: failure(
+        command,
+        diagnostic(
+          "source-unavailable",
+          `The connected Zotero source is not readable: ${messageOf(error)}`,
+        ),
+      ),
+    };
+  }
+  using lease = acquired;
+  const identity = await deps.identity();
+  return { value: await read(lease.client), identity };
 }
 
 type ItemQueryExit = Exit.Exit<
@@ -388,28 +362,78 @@ type ItemQueryExit = Exit.Exit<
 export async function answerExit(
   exit: ItemQueryExit,
   context: {
-    identity: () => Promise<WorkbenchIdentity>;
+    /** The identity of the source the run leased. */
+    identity: WorkbenchIdentity;
     library: LibraryWire;
     signal: AbortSignal;
+    onAnswerStep?: (ms: number) => void;
   },
 ): Promise<string> {
-  if (Exit.isSuccess(exit)) {
-    const result = exit.value;
-    return envelope(ITEM_QUERY_COMMAND, {
-      ok: true,
-      identity: await context.identity(),
-      library: context.library,
-      request: result.query,
-      returnedCount: result.returnedCount,
-      truncated: result.truncated,
-      rows: result.rows.map((row) => ({
-        indexedKey: row.indexedKey,
-        values: toWire(row.values) as object,
-      })),
-    });
-  }
-
+  if (Exit.isSuccess(exit)) return answerResult(exit.value, context);
   return answerFailure(exit.cause, ITEM_QUERY_COMMAND, context.signal);
+}
+
+/**
+ * The time one step of the answer takes rows. Half the slice budget of the
+ * engine: a step holds the rows and the text of the whole result, and a
+ * garbage collection in a step at the full budget took it past 16 ms in the
+ * measurement at 50,000 and 100,000 Items.
+ */
+const ANSWER_STEP_BUDGET_MS = SLICE_BUDGET_MS / 2;
+
+/** The end of the envelope of a result without rows. */
+const NO_ROWS = "[]\n}";
+/** The indentation of one row in the envelope: `rows` is a top-level key. */
+const ROW_INDENT = "    ";
+
+/**
+ * Build the envelope of a result: the pretty JSON of the complete envelope,
+ * made in steps. A result of every match has no row limit, so one step takes
+ * rows until {@link ANSWER_STEP_BUDGET_MS} ends, then gives the window a
+ * turn and stops when the run is cancelled.
+ */
+async function answerResult(
+  result: QueryResult,
+  context: {
+    identity: WorkbenchIdentity;
+    library: LibraryWire;
+    signal: AbortSignal;
+    onAnswerStep?: (ms: number) => void;
+  },
+): Promise<string> {
+  let stepStart = performance.now();
+  const head = envelope(ITEM_QUERY_COMMAND, {
+    ok: true,
+    identity: context.identity,
+    library: context.library,
+    request: result.query,
+    returnedCount: result.returnedCount,
+    truncated: result.truncated,
+    rows: [],
+  });
+  // `text` grows by concatenation, which V8 keeps as a rope: no step copies
+  // the rows before it.
+  let text = head;
+  if (result.rows.length > 0) {
+    text = `${head.slice(0, -NO_ROWS.length)}[`;
+    for (const [index, row] of result.rows.entries()) {
+      const wire = JSON.stringify(
+        { indexedKey: row.indexedKey, values: toWire(row.values) },
+        null,
+        2,
+      );
+      text += `${index === 0 ? "" : ","}\n${ROW_INDENT}${wire.replaceAll("\n", `\n${ROW_INDENT}`)}`;
+      const now = performance.now();
+      if (now - stepStart < ANSWER_STEP_BUDGET_MS) continue;
+      context.onAnswerStep?.(now - stepStart);
+      await yieldToMain();
+      context.signal.throwIfAborted();
+      stepStart = performance.now();
+    }
+    text += "\n  ]\n}";
+  }
+  context.onAnswerStep?.(performance.now() - stepStart);
+  return text;
 }
 
 /**
@@ -428,24 +452,21 @@ function answerFailure(
   if (error._tag === "Some") {
     const failed = error.value;
     if (failed._tag === "ItemQueryError") {
-      return failure(
-        {
-          code: failed.code,
-          message: failed.message,
-          hint: failed.hint,
-          location: failed.location,
-        },
-        command,
-      );
+      return failure(command, {
+        code: failed.code,
+        message: failed.message,
+        hint: failed.hint,
+        location: failed.location,
+      });
     }
     if (failed._tag === "ItemQueryLayoutError") {
       // `@zotlit/db` logs the missing layout and the versions once per copy.
       return failure(
-        diagnostic("unsupported-database-layout", failed.message),
         command,
+        diagnostic("unsupported-database-layout", failed.message),
       );
     }
-    return databaseFailure(failed.cause, failed, command);
+    return databaseFailure(command, failed.cause, { logged: failed });
   }
   if (Cause.hasInterruptsOnly(cause)) {
     throw (
@@ -462,57 +483,29 @@ function answerFailure(
 }
 
 function databaseFailure(
+  command: ItemQueryCommand,
   cause: unknown,
-  logged: unknown = cause,
-  command: ItemQueryCommand = ITEM_QUERY_COMMAND,
+  options: {
+    /** @default cause */
+    logged?: unknown;
+  } = {},
 ): string {
   logger.error("Item Query failed to read the Zotero database", {
-    error: logged,
+    error: options.logged ?? cause,
   });
   return failure(
+    command,
     diagnostic(
       "database-error",
       `Item Query could not read the Zotero database: ${messageOf(cause)}`,
     ),
-    command,
   );
 }
 
-function describeSelector(selector: LibrarySelector): string {
+function describeSelector(selector: TargetLibrarySelector): string {
   return selector.type === "group"
     ? `group Library with the group ID ${selector.groupID}`
     : "personal Library";
-}
-
-interface ResolvedLibrary {
-  target: TargetLibrary;
-  wire: LibraryWire;
-}
-
-function resolveLibrary(
-  client: NodeDatabaseClient,
-  selector: LibrarySelector,
-): ResolvedLibrary | null {
-  if (selector.type === "personal") {
-    const personal = getLibraries(client).find(
-      (library) => library.type === "user",
-    );
-    if (!personal) return null;
-    return {
-      target: { libraryID: personal.libraryID, groupID: null },
-      wire: { type: "personal" },
-    };
-  }
-  const group = getLibraryByGroupID(client, selector.groupID);
-  if (!group) return null;
-  return {
-    target: { libraryID: group.libraryID, groupID: selector.groupID },
-    wire: {
-      type: "group",
-      groupID: selector.groupID,
-      name: group.name ?? "",
-    },
-  };
 }
 
 /** Temporal values become ISO strings; every other value is JSON already. */
@@ -541,7 +534,7 @@ function messageOf(error: unknown): string {
 // ---------------------------------------------------------------------------
 // Argument decoding
 
-const GROUP_SELECTOR = /^group:([1-9]\d*)$/;
+const GROUP_SELECTOR = regex("^group:([1-9]\\d*)$");
 const POSITIVE_INTEGER = /^[1-9]\d*$/;
 
 const fieldsSchema = v.array(v.string());
@@ -561,7 +554,7 @@ function decodeArguments(params: CliData): DecodedArguments | Diagnostic {
   const rejected = rejectParameters(params, ITEM_QUERY_PARAMS);
   if (rejected) return rejected;
 
-  let library: LibrarySelector = { type: "personal" };
+  let library: TargetLibrarySelector = { type: "personal" };
   if (params.library !== undefined) {
     const group = GROUP_SELECTOR.exec(params.library);
     if (params.library === "personal") library = { type: "personal" };
@@ -675,5 +668,5 @@ function rejectParameters(
 }
 
 function invalid(parameter: string, message: string): Diagnostic {
-  return diagnostic("invalid-argument", message, { parameter });
+  return diagnostic("invalid-argument", message, { details: { parameter } });
 }

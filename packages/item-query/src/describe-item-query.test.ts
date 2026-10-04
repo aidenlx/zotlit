@@ -1,5 +1,5 @@
 import { Cause, Exit } from "effect";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { ItemQueryLayoutError } from "@zotlit/db/item-query";
 import {
@@ -8,7 +8,7 @@ import {
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
-import { describeItemQuery, queryItems } from ".";
+import { describeItemQuery, ItemQueryScheduler, queryItems } from ".";
 import type {
   ItemQueryRequest,
   ItemQuerySchema,
@@ -17,15 +17,7 @@ import type {
 } from ".";
 import { runEffect } from "./test-helpers";
 
-let scenario: ScenarioDatabase | undefined;
-
-afterEach(() => {
-  scenario?.close();
-  scenario = undefined;
-});
-
-async function schema(): Promise<ItemQuerySchema> {
-  scenario ??= openScenarioDatabase();
+async function schema(scenario: ScenarioDatabase): Promise<ItemQuerySchema> {
   const { exit } = await runEffect(describeItemQuery(), {
     client: scenario.db,
   });
@@ -35,7 +27,8 @@ async function schema(): Promise<ItemQuerySchema> {
 
 describe("describeItemQuery custom fields", () => {
   it("lists the custom fields of the source with their path and bare-name eligibility", async () => {
-    const { customFields } = await schema();
+    using scenario = openScenarioDatabase();
+    const { customFields } = await schema(scenario);
 
     expect(customFields).toEqual([
       {
@@ -80,7 +73,8 @@ describe("describeItemQuery custom fields", () => {
 
 describe("describeItemQuery fields", () => {
   it("reports the JSON type and the capabilities of each field and Projection Path", async () => {
-    const { fields } = await schema();
+    using scenario = openScenarioDatabase();
+    const { fields } = await schema(scenario);
     const entry = (path: string) => fields.find((field) => field.path === path);
 
     expect(entry("title")).toEqual({
@@ -100,7 +94,7 @@ describe("describeItemQuery fields", () => {
     expect(entry("date.year")).toEqual({
       path: "date.year",
       type: "number",
-      filter: null,
+      filter: "number",
       projection: true,
       sort: false,
     });
@@ -125,8 +119,18 @@ describe("describeItemQuery fields", () => {
       projection: true,
       sort: false,
     });
-    expect(entry("tags[0].name")?.type).toBe("string");
-    expect(entry("collections[0]")?.type).toBe("string");
+    // A filter has no property `kind` on a date and reads a list element by
+    // its index; the type of the element depends on the Item.
+    expect(entry("date.kind")?.filter).toBeNull();
+    expect(entry("creators[0]")?.filter).toBe("any");
+    expect(entry("tags[0].name")).toMatchObject({
+      type: "string",
+      filter: null,
+    });
+    expect(entry("collections[0]")).toMatchObject({
+      type: "string",
+      filter: "any",
+    });
     expect(entry("attachments")).toEqual({
       path: "attachments",
       type: "boolean",
@@ -153,7 +157,8 @@ describe("describeItemQuery fields", () => {
   });
 
   it("reports the defaults of an omitted argument", async () => {
-    const { defaults } = await schema();
+    using scenario = openScenarioDatabase();
+    const { defaults } = await schema(scenario);
 
     expect(defaults).toEqual({
       fields: ["itemType", "title", "creators", "date", "dateModified"],
@@ -165,7 +170,8 @@ describe("describeItemQuery fields", () => {
 
 describe("describeItemQuery functions", () => {
   it("reports each function, method, and property with its signature", async () => {
-    const { functions, methods, properties, types } = await schema();
+    using scenario = openScenarioDatabase();
+    const { functions, methods, properties, types } = await schema(scenario);
 
     expect(functions.find((entry) => entry.name === "if")).toEqual({
       name: "if",
@@ -179,7 +185,7 @@ describe("describeItemQuery functions", () => {
     });
     expect(functions.find((entry) => entry.name === "date")).toEqual({
       name: "date",
-      parameters: [{ name: "text", type: "string" }],
+      parameters: [{ name: "text", type: ["string", "date"] }],
       optional: [],
       rest: null,
       returns: "date",
@@ -206,6 +212,10 @@ describe("describeItemQuery functions", () => {
       on: "any",
       returns: "string",
     });
+    expect(methods.find((entry) => entry.name === "isType")).toMatchObject({
+      on: "any",
+      parameters: [{ name: "type", type: "string", values: ["any", ...types] }],
+    });
     expect(
       properties.filter((entry) => entry.name === "length").map((e) => e.on),
     ).toEqual(["string", "list"]);
@@ -223,7 +233,7 @@ describe("describeItemQuery functions", () => {
 
 describe("describeItemQuery on the layout of the Zotero database", () => {
   it("fails with ItemQueryLayoutError when the copy lacks a manifest column", async () => {
-    scenario = openScenarioDatabase();
+    using scenario = openScenarioDatabase();
     scenario.sqlite.exec('alter table "fieldsCombined" drop column "custom"');
 
     const { exit } = await runEffect(describeItemQuery(), {
@@ -239,10 +249,11 @@ describe("describeItemQuery on the layout of the Zotero database", () => {
 });
 
 /** A literal of each parameter type, for a call that validation accepts. */
-const ARGUMENT: Record<SchemaParameter["type"], string> = {
+const ARGUMENT: Record<Extract<SchemaParameter["type"], string>, string> = {
   string: '"2024-01-02"',
   number: "1",
   list: '["a"]',
+  date: "now()",
   any: '"a"',
 };
 
@@ -263,7 +274,16 @@ function call(name: string, entry: Omit<SchemaFunction, "name">): string {
     ...entry.parameters,
     ...entry.optional,
     ...(entry.rest ? [entry.rest] : []),
-  ].map((parameter) => ARGUMENT[parameter.type]);
+  ].map((parameter) =>
+    // A parameter with a closed set of values takes one of them.
+    parameter.values
+      ? JSON.stringify(parameter.values[0])
+      : ARGUMENT[
+          typeof parameter.type === "string"
+            ? parameter.type
+            : parameter.type[0]!
+        ],
+  );
   return `${name}(${args.join(", ")})`;
 }
 
@@ -271,12 +291,15 @@ describe("the Item Query Schema and queryItems", () => {
   const { personal } = SCENARIO_LIBRARIES;
 
   async function codeOf(
+    scenario: ScenarioDatabase,
     request: Omit<ItemQueryRequest, "library">,
   ): Promise<string | null> {
-    scenario ??= openScenarioDatabase();
     const { exit } = await runEffect(
       queryItems({ library: personal, limit: 1, ...request }),
-      { client: scenario.db },
+      // The production scheduler: these tests run several hundred queries,
+      // and a pause after every operation makes each one a long chain of
+      // tasks that a busy machine runs slowly.
+      { client: scenario.db, scheduler: new ItemQueryScheduler() },
     );
     if (Exit.isSuccess(exit)) return null;
     const error = Cause.findErrorOption(exit.cause);
@@ -285,14 +308,15 @@ describe("the Item Query Schema and queryItems", () => {
   }
 
   it("accepts every field and Projection Path in the use its capabilities list, and rejects every other use", async () => {
-    const { fields, customFields } = await schema();
+    using scenario = openScenarioDatabase();
+    const { fields, customFields } = await schema(scenario);
     const failures: string[] = [];
     const expect_ = async (
       label: string,
       request: Omit<ItemQueryRequest, "library">,
       accepted: boolean,
     ) => {
-      const code = await codeOf(request);
+      const code = await codeOf(scenario, request);
       if ((code === null) !== accepted) {
         failures.push(`${label}: ${code ?? "accepted"}`);
       }
@@ -306,15 +330,7 @@ describe("the Item Query Schema and queryItems", () => {
         { sort: [{ field: path, direction: "asc" }] },
         field.sort,
       );
-      // A filter reads a field by name or a custom field by its path; a
-      // filter reaches a part of a value through properties and methods.
-      if (!/[.[]/.test(path) || "name" in field) {
-        await expect_(
-          `filter ${path}`,
-          { filter: path },
-          field.filter !== null,
-        );
-      }
+      await expect_(`filter ${path}`, { filter: path }, field.filter !== null);
     }
     for (const field of customFields.filter((entry) => entry.bareName)) {
       await expect_(`filter ${field.name}`, { filter: field.name }, true);
@@ -324,7 +340,8 @@ describe("the Item Query Schema and queryItems", () => {
   });
 
   it("accepts a call of every function, method, and property it lists", async () => {
-    const { functions, methods, properties } = await schema();
+    using scenario = openScenarioDatabase();
+    const { functions, methods, properties } = await schema(scenario);
     const failures: string[] = [];
     const filters = [
       ...functions.map((entry) => call(entry.name, entry)),
@@ -335,7 +352,7 @@ describe("the Item Query Schema and queryItems", () => {
     ];
 
     for (const filter of filters) {
-      const code = await codeOf({ filter });
+      const code = await codeOf(scenario, { filter });
       if (code !== null) failures.push(`${filter}: ${code}`);
     }
 
@@ -353,10 +370,12 @@ describe("the Item Query Schema and queryItems", () => {
     [{ filter: "notAFunction()" }, "unknown-function"],
     [{ filter: "title.notAMethod()" }, "unknown-function"],
     [{ filter: "title.notAProperty" }, "unknown-property"],
+    [{ filter: 'title.isType("notAType")' }, "wrong-argument-type"],
   ] satisfies [Omit<ItemQueryRequest, "library">, string][])(
     "rejects a name outside it: %j",
     async (request, code) => {
-      expect(await codeOf(request)).toBe(code);
+      using scenario = openScenarioDatabase();
+      expect(await codeOf(scenario, request)).toBe(code);
     },
   );
 });

@@ -94,18 +94,28 @@ export async function clearNotices(vaultId: string): Promise<void> {
  * `=> ` prefix, so this returns it as-is — the caller's own parsing (e.g.
  * `JSON.parse`) is what tells a reply from an error sentence.
  *
- * Each entry of `args` goes after the command as one `name=value` token.
+ * Each entry of `options.args` goes after the command as one `name=value`
+ * token.
  */
 export async function cliCommand(
   vaultId: string,
   command: string,
-  args: Readonly<Record<string, string>> = {},
+  options: {
+    args?: Readonly<Record<string, string>>;
+    /** @default the bounded call of {@link cli} */
+    timeoutMs?: number;
+  } = {},
 ): Promise<string> {
-  return cli([
-    `vault=${vaultId}`,
-    command,
-    ...Object.entries(args).map(([name, value]) => `${name}=${value}`),
-  ]);
+  return cli(
+    [
+      `vault=${vaultId}`,
+      command,
+      ...Object.entries(options.args ?? {}).map(
+        ([name, value]) => `${name}=${value}`,
+      ),
+    ],
+    options.timeoutMs,
+  );
 }
 
 /** Bounded polling — mirrors `waitFor` in obsidian-vault.ts. */

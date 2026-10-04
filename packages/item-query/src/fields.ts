@@ -1,4 +1,10 @@
-import { parseItemDate, tagTypeToName } from "@zotlit/db";
+// The field registry of Item Query: each built-in field with its shape, its
+// hydration needs, and its projection, sort, and filter readers.
+import {
+  creatorFieldModeToName,
+  parseItemDate,
+  tagTypeToName,
+} from "@zotlit/db";
 import type {
   HydratedCreator,
   HydratedItem,
@@ -9,7 +15,12 @@ import { FIELD_ALIASES, ZOTERO_DATE_FIELDS } from "@zotlit/zotero-types";
 import { FIELD_LABELS } from "@zotlit/zotero-types/field-labels";
 
 import { compareStrings } from "./collation";
-import { fromAccessDate, fromItemDate, timestamp } from "./filter-dates";
+import {
+  dayKey,
+  fromAccessDate,
+  fromItemDate,
+  timestamp,
+} from "./filter-dates";
 import type { FilterValue, FilterValueType } from "./filter-values";
 import type { PathSegment } from "./projection-path";
 import type { ProjectionValue } from "./request";
@@ -111,19 +122,45 @@ const DATE_SHAPE: ValueShape = {
 
 const NO_NEEDS = (): FieldNeeds => ({});
 
-function fromScan(
-  read: (row: ScanRow) => ProjectionValue,
-  sortKey: (row: ScanRow) => SortKey,
-  filter?: FilterValueDefinition,
-): FieldDefinition {
+/** A field that the scan row holds: hydration loads nothing for it. */
+function fromScan(readers: {
+  read: (row: ScanRow) => ProjectionValue;
+  sortKey: (row: ScanRow) => SortKey;
+  filter: FilterValueDefinition;
+}): FieldDefinition {
+  const { read, sortKey, filter } = readers;
   return {
     // The item type name, or a timestamp as an ISO string on the wire.
     shape: STRING,
     needs: NO_NEEDS,
     read: (item) => read(item.scan),
     sortKey: (item) => sortKey(item.scan),
-    ...(filter && { filter }),
+    filter,
   };
+}
+
+/**
+ * A timestamp of the scan row. A stored value that SQLite cannot parse is
+ * null in projection, filter, and sort.
+ */
+function scanTimestamp(column: "dateAdded" | "dateModified"): FieldDefinition {
+  const instant = (row: ScanRow) => {
+    const milliseconds = row[column];
+    return milliseconds === null
+      ? null
+      : Temporal.Instant.fromEpochMilliseconds(milliseconds);
+  };
+  return fromScan({
+    read: instant,
+    sortKey: (row) => row[column],
+    filter: {
+      type: "date",
+      read: (item) => {
+        const value = instant(item.scan);
+        return value && timestamp(value);
+      },
+    },
+  });
 }
 
 /** A built-in Zotero field; a base field resolves through its aliases. */
@@ -179,16 +216,23 @@ function dateValue(raw: string | null): ProjectionValue {
 
 /**
  * The first day a Zotero date can mean, as the number `yyyymmdd`: a year sorts
- * as its 1 January. `null` for a text date and for no date.
+ * as its 1 January. `null` for a date without a year and for no date.
  */
 function firstDay(raw: string | null): SortKey {
   const date = parseItemDate(raw);
   if (!date || date.year === null) return null;
-  return date.year * 10000 + (date.month ?? 1) * 100 + (date.day ?? 1);
+  return dayKey({
+    year: date.year,
+    month: date.month ?? 1,
+    day: date.day ?? 1,
+  });
 }
 
+/** The shape of the value of one custom field. */
+export const CUSTOM_FIELD_VALUE_SHAPE: ValueShape = STRING;
+
 const customField: FieldDefinition = {
-  shape: { kind: "custom-fields", value: STRING },
+  shape: { kind: "custom-fields", value: CUSTOM_FIELD_VALUE_SHAPE },
   needs: (rest) =>
     typeof rest[0] === "string" ? { custom: [rest[0]] } : { custom: "all" },
   read: (item) =>
@@ -222,9 +266,14 @@ const creatorsField: FieldDefinition = {
   },
 };
 
+/** The Creator has a one-field (institutional) name, held in `lastName`. */
+function isOneFieldName(creator: HydratedCreator): boolean {
+  return creatorFieldModeToName(creator.fieldMode) === "nameOnly";
+}
+
 /** The display name of a Creator: the one-field name, or given then family. */
 function fullName(creator: HydratedCreator): string {
-  return creator.fieldMode === 1
+  return isOneFieldName(creator)
     ? creator.lastName
     : `${creator.firstName} ${creator.lastName}`.trim();
 }
@@ -234,7 +283,7 @@ function fullName(creator: HydratedCreator): string {
  * `literal`, a two-field name is `given` and `family`.
  */
 function templateCreator(creator: HydratedCreator): ProjectionValue {
-  if (creator.fieldMode === 1) {
+  if (isOneFieldName(creator)) {
     return {
       family: "",
       given: "",
@@ -309,40 +358,14 @@ const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map([
   ),
   [
     "itemType",
-    fromScan(
-      (row) => row.itemType,
-      (row) => row.itemType,
-      { type: "string", read: (item) => item.scan.itemType },
-    ),
+    fromScan({
+      read: (row) => row.itemType,
+      sortKey: (row) => row.itemType,
+      filter: { type: "string", read: (item) => item.scan.itemType },
+    }),
   ],
-  [
-    "dateAdded",
-    fromScan(
-      (row) => Temporal.Instant.fromEpochMilliseconds(row.dateAdded),
-      (row) => row.dateAdded,
-      {
-        type: "date",
-        read: (item) =>
-          timestamp(
-            Temporal.Instant.fromEpochMilliseconds(item.scan.dateAdded),
-          ),
-      },
-    ),
-  ],
-  [
-    "dateModified",
-    fromScan(
-      (row) => Temporal.Instant.fromEpochMilliseconds(row.dateModified),
-      (row) => row.dateModified,
-      {
-        type: "date",
-        read: (item) =>
-          timestamp(
-            Temporal.Instant.fromEpochMilliseconds(item.scan.dateModified),
-          ),
-      },
-    ),
-  ],
+  ["dateAdded", scanTimestamp("dateAdded")],
+  ["dateModified", scanTimestamp("dateModified")],
   ["custom", customField],
   ["creators", creatorsField],
   ["tags", tagsField],

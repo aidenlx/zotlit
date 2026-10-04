@@ -30,9 +30,12 @@ const BULK_CAP = 650;
 
 let scenario: ScenarioDatabase;
 
-beforeAll(() => {
+beforeAll(async () => {
   scenario = openScenarioDatabase();
   seedBulkLibrary(scenario.sqlite, BULK_ITEMS);
+  // The first statement on a copy runs the layout check. Its two statements
+  // are in the events of that run only, so each test starts after it.
+  resultOf(await run({ fields: [], limit: 1 }));
 });
 
 afterAll(() => {
@@ -269,25 +272,43 @@ describe("a cancel request", () => {
     hydrateChunkSize: 2,
     mergeStepSize: 2,
   };
-  const QUERIES: readonly { name: string; request: Request }[] = [
+  const QUERIES: readonly {
+    name: string;
+    request: Request;
+    /** The plan reads a candidate set in place of the Library scan. */
+    candidates: boolean;
+  }[] = [
     {
       name: "a limited scan",
+      candidates: false,
       request: { fields: ["title", "creators"], sort: byTitle, limit: 4 },
     },
     {
       name: "an unlimited scan with a merge",
+      candidates: false,
       request: { fields: ["title"], sort: byTitle, limit: null },
     },
     {
       name: "candidate sets",
+      candidates: true,
       request: {
-        filter: 'tags.contains("methods") || itemType == "book"',
+        // Each branch lowers to a candidate set.
+        filter:
+          'tags.contains("methods") || collections.contains("Thesis/Methods")',
         fields: ["title", "tags"],
         sort: byTitle,
         limit: null,
       },
     },
   ];
+
+  /**
+   * The pause test runs the query once for each of its pauses, about 400 to
+   * 550, and each run takes every pause before its own as a real
+   * `MessageChannel` task: about 75,000 to 150,000 tasks. That is 1 second on
+   * an idle machine and 16 seconds when every core is busy four times over.
+   */
+  const PAUSE_CANCEL_TIMEOUT_MS = 60_000;
 
   /** Run the query and cancel it at the event at `index`. */
   async function cancelAt(
@@ -310,9 +331,12 @@ describe("a cancel request", () => {
 
   it.each(QUERIES)(
     "starts no statement after a cancel request that comes in a statement of $name",
-    async ({ request }) => {
+    async ({ request, candidates }) => {
       const complete = await run(request, { library: personal, tuning });
       resultOf(complete);
+      expect(itemsRead(complete.events, "candidate-set").length > 0).toBe(
+        candidates,
+      );
       const statements = complete.events.flatMap((event, index) =>
         event.type === "statement" ? [index] : [],
       );
@@ -354,5 +378,6 @@ describe("a cancel request", () => {
         expect(after.length).toBeLessThanOrEqual(1);
       }
     },
+    PAUSE_CANCEL_TIMEOUT_MS,
   );
 });

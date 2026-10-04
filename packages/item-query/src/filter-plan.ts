@@ -20,9 +20,11 @@ import {
   methodOf,
   methodsNamed,
   parameterAt,
+  parameterTypes,
   propertiesNamed,
   PROPERTY_NAMES,
   propertyOf,
+  takesType,
 } from "./filter-functions";
 import type { FunctionDefinition } from "./filter-functions";
 import type { FilterValue, FilterValueType } from "./filter-values";
@@ -227,26 +229,61 @@ function isDefinite(
   return type !== "unknown" && type !== "null";
 }
 
-/** The argument at `index` has a type that the parameter does not take. */
+/**
+ * The argument at `index` has a type that the parameter does not take, or is
+ * a string literal outside the texts that the parameter takes.
+ */
 function mismatch(
   definition: Pick<FunctionDefinition, "parameters" | "optional" | "rest">,
   args: readonly FilterNode[],
-): { index: number; expected: string } | null {
+): { index: number; found: string; expected: string } | null {
   for (const [index, arg] of args.entries()) {
     const parameter = parameterAt(definition, index);
-    if (!parameter || parameter.type === "any") continue;
-    if (isDefinite(arg.valueType) && arg.valueType !== parameter.type) {
-      return { index, expected: parameter.type };
+    if (!parameter) continue;
+    if (isDefinite(arg.valueType) && !takesType(parameter, arg.valueType)) {
+      return {
+        index,
+        found: `a ${arg.valueType}`,
+        expected: parameterTypes(parameter)
+          .map((type) => `a ${type}`)
+          .join(" or "),
+      };
+    }
+    if (
+      parameter.values &&
+      arg.kind === "literal" &&
+      typeof arg.value === "string" &&
+      !parameter.values.includes(arg.value)
+    ) {
+      return {
+        index,
+        found: quote(arg.value),
+        expected: `one of ${parameter.values.map(quote).join(", ")}`,
+      };
     }
   }
   return null;
 }
 
+/** The message of a {@link mismatch} in a call of `name`. */
+function describeMismatch(
+  name: string,
+  wrong: { index: number; found: string; expected: string },
+): string {
+  return `Argument ${wrong.index + 1} of ${name} is ${wrong.found}; ${name} takes ${wrong.expected} there.`;
+}
+
 class Validator {
+  readonly #needs: FieldNeeds[];
+  readonly #customFields: (Span & { name: string; bare: boolean })[];
+
   constructor(
-    private readonly needs: FieldNeeds[],
-    private readonly customFields: (Span & { name: string; bare: boolean })[],
-  ) {}
+    needs: FieldNeeds[],
+    customFields: (Span & { name: string; bare: boolean })[],
+  ) {
+    this.#needs = needs;
+    this.#customFields = customFields;
+  }
 
   node(ast: ExpressionNode): FilterNode {
     const { from, to } = ast;
@@ -276,7 +313,7 @@ class Validator {
           valueType: "list",
         };
       case "identifier":
-        return this.identifier(ast.name, span);
+        return this.#identifier(ast.name, span);
       case "unary": {
         const operand = this.node(ast.operand);
         return {
@@ -301,9 +338,9 @@ class Validator {
       }
       case "object-access":
         if (isCustomRoot(ast.object)) {
-          return this.customField(ast.property, span, false);
+          return this.#customField(ast.property, span, false);
         }
-        return this.property(this.node(ast.object), ast.property, span);
+        return this.#property(this.node(ast.object), ast.property, span);
       case "array-access": {
         if (isCustomRoot(ast.object)) {
           if (ast.index.type !== "string") {
@@ -313,7 +350,7 @@ class Validator {
               hint: HINTS.custom,
             });
           }
-          return this.customField(ast.index.value, span, false);
+          return this.#customField(ast.index.value, span, false);
         }
         return {
           ...span,
@@ -324,14 +361,14 @@ class Validator {
         };
       }
       case "call":
-        return this.call(ast, span);
+        return this.#call(ast, span);
     }
   }
 
-  private identifier(name: string, span: Span): FilterNode {
+  #identifier(name: string, span: Span): FilterNode {
     const field = filterField(name);
     if (field?.filterable) {
-      this.needs.push(field.needs);
+      this.#needs.push(field.needs);
       return {
         ...span,
         kind: "field",
@@ -360,13 +397,13 @@ class Validator {
       });
     }
     // Outside the built-in names: the bare form of a custom field.
-    return this.customField(name, span, true);
+    return this.#customField(name, span, true);
   }
 
-  private customField(name: string, span: Span, bare: boolean): FilterNode {
+  #customField(name: string, span: Span, bare: boolean): FilterNode {
     const { value, needs } = customFilterValue(name);
-    this.needs.push(needs);
-    this.customFields.push({ ...span, name, bare });
+    this.#needs.push(needs);
+    this.#customFields.push({ ...span, name, bare });
     return {
       ...span,
       kind: "custom-field",
@@ -377,7 +414,7 @@ class Validator {
     };
   }
 
-  private property(subject: FilterNode, name: string, span: Span): FilterNode {
+  #property(subject: FilterNode, name: string, span: Span): FilterNode {
     const named = propertiesNamed(name);
     const nameSpan = { from: span.to - name.length, to: span.to };
     if (named.length === 0) {
@@ -402,13 +439,13 @@ class Validator {
     };
   }
 
-  private call(
+  #call(
     ast: Extract<ExpressionNode, { type: "call" }>,
     span: Span,
   ): FilterNode {
     const { callee } = ast;
     if (callee.type === "identifier") {
-      return this.globalCall(
+      return this.#globalCall(
         { name: callee.name, nameSpan: callee, args: ast.args },
         span,
       );
@@ -422,7 +459,7 @@ class Validator {
       // read; the subject reports it.
       const subject = this.node(callee.object);
       const args = ast.args.map((arg) => this.node(arg));
-      return this.methodCall(
+      return this.#methodCall(
         { name: callee.property, nameSpan, subject, args },
         span,
       );
@@ -433,7 +470,7 @@ class Validator {
     });
   }
 
-  private globalCall(
+  #globalCall(
     call: { name: string; nameSpan: Span; args: readonly ExpressionNode[] },
     span: Span,
   ): FilterNode {
@@ -459,7 +496,7 @@ class Validator {
     const wrong = mismatch(definition, args);
     if (wrong) {
       return fail("wrong-argument-type", args[wrong.index]!, {
-        message: `Argument ${wrong.index + 1} of ${name} is a ${args[wrong.index]!.valueType}; ${name} takes a ${wrong.expected} there.`,
+        message: describeMismatch(name, wrong),
         hint: `Call ${signature(name, definition)}.`,
       });
     }
@@ -488,7 +525,7 @@ class Validator {
     };
   }
 
-  private methodCall(
+  #methodCall(
     call: {
       name: string;
       nameSpan: Span;
@@ -534,7 +571,7 @@ class Validator {
     if (fitting.every((method) => mismatch(method, args) !== null)) {
       const wrong = mismatch(fitting[0]!, args)!;
       return fail("wrong-argument-type", args[wrong.index]!, {
-        message: `Argument ${wrong.index + 1} of ${name} is a ${args[wrong.index]!.valueType}; ${name} takes a ${wrong.expected} there.`,
+        message: describeMismatch(name, wrong),
         hint: `Call ${signature(`value.${name}`, fitting[0]!)}.`,
       });
     }

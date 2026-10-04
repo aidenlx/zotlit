@@ -1,6 +1,6 @@
-// The Item Query scenario: a small, deterministic set of Items that the
-// correctness-oracle research names (docs/research/item-query-correctness-oracle.md
-// on the research/item-query branch). Each row says which behavior it supports.
+// The Item Query scenario: a small, deterministic set of Items for the
+// adversarial cases of the Item Query spec. Each row says which behavior it
+// supports.
 // Rows reference Zotero's own lookup tables by name, so the pristine database
 // decides every item type, field, and creator type ID.
 import type { DatabaseSync } from "node:sqlite";
@@ -458,16 +458,29 @@ export function seedScenario(sqlite: DatabaseSync): void {
   }
 }
 
+/**
+ * The `id` column of the row that `sql` selects for `name` in one of Zotero's
+ * lookup tables.
+ *
+ * @throws {Error} when the pristine database has no such row.
+ */
+export function lookupID(
+  sqlite: DatabaseSync,
+  sql: string,
+  name: string,
+): number {
+  const row = sqlite.prepare(sql).get(name) as { id: number } | undefined;
+  if (!row) {
+    throw new Error(
+      `the pristine database carries no "${name}" in its global schema.`,
+    );
+  }
+  return row.id;
+}
+
 function insertScenario(sqlite: DatabaseSync): void {
-  const idOf = (sql: string, name: string): number => {
-    const row = sqlite.prepare(sql).get(name) as { id: number } | undefined;
-    if (!row) {
-      throw new Error(
-        `the pristine database carries no "${name}" in its global schema.`,
-      );
-    }
-    return row.id;
-  };
+  const idOf = (sql: string, name: string): number =>
+    lookupID(sqlite, sql, name);
   const itemTypeID = (name: string) =>
     idOf(
       "select itemTypeID as id from itemTypesCombined where typeName = ?",

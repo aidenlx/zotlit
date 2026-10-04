@@ -121,6 +121,10 @@ export {
 } from "./lib/zt-tag";
 export { type Attachment } from "./lib/zt-attach";
 export {
+  type CreatorFieldMode,
+  creatorFieldModeToName,
+} from "./lib/zt-creator";
+export {
   getCollectionIDByKey,
   getIndexedItemIDsByCollection,
   getNoteItemIDsByCollection,

@@ -13,23 +13,30 @@ import {
   today,
 } from "./filter-dates";
 import type { DateValue } from "./filter-dates";
-import { equals, isList, toText, typeOf } from "./filter-values";
+import { equals, isDate, isList, toText, typeOf } from "./filter-values";
 import type { FilterValue, FilterValueType } from "./filter-values";
 import type { QueryClock } from "./query-clock";
 
 /** The type a parameter takes. `any` also takes null. */
-export type ParameterType = "string" | "number" | "list" | "any";
+export type ParameterType = "string" | "number" | "list" | "date" | "any";
 
 export interface FunctionParameter {
   readonly name: string;
-  readonly type: ParameterType;
+  /** One type, or each type the parameter takes. */
+  readonly type: ParameterType | readonly ParameterType[];
+  /** Present on a typed parameter that also takes null. */
+  readonly nullable?: true;
+  /** Present on a string parameter that takes only these texts. */
+  readonly values?: readonly string[];
 }
 
 /**
  * One function or method. A call with a wrong argument count, or with an
  * argument whose type is known before execution and differs from the
- * parameter, fails the query. At execution, a null or wrongly typed argument
- * of a typed parameter gives null and `call` does not run.
+ * parameter, fails the query; so does a string literal outside the `values`
+ * of its parameter. At execution, a null or wrongly typed argument of a typed
+ * parameter, or a text outside its `values`, gives null and `call` does not
+ * run.
  */
 export interface FunctionDefinition {
   /** The required parameters, in order. */
@@ -80,12 +87,16 @@ export function finite(value: number): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+/** `min` and `max`: the pick among the numbers; null without a number. */
 function extreme(pick: (...values: number[]) => number): FunctionDefinition {
   return {
-    parameters: [number("value")],
-    rest: number("values"),
+    parameters: NONE,
+    rest: { ...number("values"), nullable: true },
     returns: "number",
-    call: (_subject, args) => pick(...(args as readonly number[])),
+    call: (_subject, args) => {
+      const numbers = args.filter((value) => typeof value === "number");
+      return numbers.length === 0 ? null : pick(...numbers);
+    },
   };
 }
 
@@ -97,10 +108,12 @@ export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
   number: {
     parameters: [any("value")],
     returns: "number",
-    call: (_subject, [value = null]) => {
+    call: (_subject, [value = null], clock) => {
       if (typeof value === "number") return value;
       if (typeof value === "boolean") return value ? 1 : 0;
       if (typeof value === "string") return finite(Number.parseFloat(value));
+      // A date is its Unix time in milliseconds, as its `timestamp` property.
+      if (isDate(value)) return datePart(value, "timestamp", clock);
       return null;
     },
   },
@@ -118,9 +131,11 @@ export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
     call: (_subject, _args, clock) => today(clock),
   },
   date: {
-    parameters: [string("text")],
+    parameters: [{ name: "text", type: ["string", "date"] }],
     returns: "date",
-    call: (_subject, [text], clock) => parseDate(text as string, clock),
+    // A date stays as it is.
+    call: (_subject, [text], clock) =>
+      typeof text === "string" ? parseDate(text, clock) : text!,
   },
   duration: {
     parameters: [string("text")],
@@ -158,29 +173,6 @@ const includes = (
 /** One list argument means its elements; otherwise the arguments themselves. */
 const candidates = (args: readonly FilterValue[]): readonly FilterValue[] =>
   args.length === 1 && isList(args[0]!) ? args[0] : args;
-
-/** The methods of every value, null included, called as `value.name(...)`. */
-const ANY_METHODS: Registry<FunctionDefinition> = new Map<
-  string,
-  FunctionDefinition
->([
-  [
-    "toString",
-    {
-      parameters: NONE,
-      returns: "string",
-      call: (subject) => toText(subject),
-    },
-  ],
-  [
-    "isType",
-    {
-      parameters: [string("type")],
-      returns: "boolean",
-      call: (subject, [type]) => type === "any" || type === typeOf(subject),
-    },
-  ],
-]);
 
 /** The methods of each value type. A type also has {@link ANY_METHODS}. */
 const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
@@ -311,6 +303,32 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
     duration: functions({}),
   };
 
+/** The value types of the Filter Expression language. */
+export const VALUE_TYPES = Object.keys(METHODS) as FilterValueType[];
+
+/** The methods of every value, null included, called as `value.name(...)`. */
+const ANY_METHODS: Registry<FunctionDefinition> = new Map<
+  string,
+  FunctionDefinition
+>([
+  [
+    "toString",
+    {
+      parameters: NONE,
+      returns: "string",
+      call: (subject) => toText(subject),
+    },
+  ],
+  [
+    "isType",
+    {
+      parameters: [{ ...string("type"), values: ["any", ...VALUE_TYPES] }],
+      returns: "boolean",
+      call: (subject, [type]) => type === "any" || type === typeOf(subject),
+    },
+  ],
+]);
+
 const length: PropertyDefinition = {
   returns: "number",
   read: (subject) => (subject as string | readonly FilterValue[]).length,
@@ -344,9 +362,6 @@ const PROPERTIES: Readonly<
   }),
   duration: properties({}),
 };
-
-/** The value types of the Filter Expression language. */
-export const VALUE_TYPES = Object.keys(METHODS) as FilterValueType[];
 
 /** The method `name` of a value of `type`. */
 export function methodOf(
@@ -444,12 +459,32 @@ export function invoke(
   for (const [index, value] of args.entries()) {
     const parameter = parameterAt(definition, index);
     if (!parameter) return null;
-    if (parameter.type !== "any" && typeOf(value) !== parameter.type) {
+    if (value === null && parameter.nullable) continue;
+    if (!takesType(parameter, typeOf(value))) return null;
+    if (parameter.values && !parameter.values.includes(value as string)) {
       return null;
     }
   }
   const result = definition.call(subject, args, clock);
   return typeof result === "number" ? finite(result) : result;
+}
+
+/** Whether the parameter takes a value of `type`. */
+export function takesType(
+  parameter: FunctionParameter,
+  type: FilterValueType,
+): boolean {
+  if (type === "null" && parameter.nullable) return true;
+  return parameterTypes(parameter).some(
+    (taken) => taken === "any" || taken === type,
+  );
+}
+
+/** Each type the parameter takes. */
+export function parameterTypes(
+  parameter: FunctionParameter,
+): readonly ParameterType[] {
+  return typeof parameter.type === "string" ? [parameter.type] : parameter.type;
 }
 
 /** The parameter that the argument at `index` fills. */

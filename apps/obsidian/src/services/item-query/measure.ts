@@ -56,13 +56,15 @@ export interface ItemQueryMeasureReport {
   truncated?: boolean;
   /** The handler, from its call to its answer or rejection. */
   totalMs: number;
-  /** Argument decoding, the source lease, and Target Library resolution. */
+  /** Argument decoding and the source lease. */
   leaseMs?: number;
-  /** The Effect run of `queryItems`. */
+  /** The Effect run: Target Library resolution and `queryItems`. */
   engineMs?: number;
-  /** The envelope: one synchronous step after the engine settles. */
+  /** The envelope, built in steps after the engine settles. */
   answerMs?: number;
   answerBytes?: number;
+  /** The duration of each step in which the handler built the answer. */
+  answerSteps: number[];
   /** The duration of each slice, in run order. */
   slices: number[];
   worstSlice?: SliceRecord;
@@ -175,24 +177,42 @@ function slicesOf(trace: Trace): { start: number; end: number }[] {
   return slices;
 }
 
+/**
+ * @throws {Error} when the text is not a finite number from 0: the run has no
+ *   envelope for an invalid argument, so the command rejects.
+ */
+function decodeCancelAfterMs(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const ms = raw.trim() === "" ? Number.NaN : Number(raw);
+  if (!Number.isFinite(ms) || ms < 0) {
+    throw new Error(
+      `cancelAfterMs '${raw}' is not a time in milliseconds: use a number from 0.`,
+    );
+  }
+  return ms;
+}
+
 export function registerItemQueryMeasureCli(
   plugin: Plugin,
-  deps: Omit<ItemQueryCliDeps, "signal" | "instrument">,
+  deps: Omit<ItemQueryCliDeps, "signal" | "instrument" | "onAnswerStep">,
 ): void {
   const unload = new AbortController();
   plugin.register(() => unload.abort());
   const inFlight = new Set<AbortController>();
 
   const measure: CliHandler = async (params: CliData): Promise<string> => {
-    const { cancelAfterMs, heap, ...query } = params;
+    const { cancelAfterMs: cancelAfter, heap, ...query } = params;
+    const cancelAfterMs = decodeCancelAfterMs(cancelAfter);
     const own = new AbortController();
     inFlight.add(own);
     const signal = AbortSignal.any([unload.signal, own.signal]);
     const trace = createTrace(heap === "true");
+    const answerSteps: number[] = [];
     const handler = createItemQueryHandler({
       ...deps,
       signal,
       instrument: trace.instrument,
+      onAnswerStep: (ms) => answerSteps.push(round(ms)),
     });
 
     let hiddenDuringRun = document.visibilityState !== "visible";
@@ -209,7 +229,7 @@ export function registerItemQueryMeasureCli(
     const timer =
       cancelAfterMs === undefined
         ? undefined
-        : window.setTimeout(() => own.abort(), Number(cancelAfterMs));
+        : window.setTimeout(() => own.abort(), cancelAfterMs);
 
     let outcome: ItemQueryMeasureReport["outcome"];
     let answer: string | undefined;
@@ -291,6 +311,7 @@ export function registerItemQueryMeasureCli(
           ? undefined
           : round(settledAt - trace.engineEnd),
       answerBytes: answer?.length,
+      answerSteps,
       slices: durations,
       worstSlice,
       pauses: trace.paused.length,
@@ -314,8 +335,7 @@ export function registerItemQueryMeasureCli(
         firedAt === undefined
           ? undefined
           : {
-              intendedAtMs:
-                cancelAfterMs === undefined ? undefined : Number(cancelAfterMs),
+              intendedAtMs: cancelAfterMs,
               firedAtMs: round(firedAt - startedAt),
               engineSettledAtMs:
                 trace.engineEnd === undefined

@@ -2401,8 +2401,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // calls it. The default Target Library is My Library.
     const limited = JSON.parse(
       await cliCommand(vaultId, "zotlit:item-query", {
-        fields: "[]",
-        limit: "3",
+        args: {
+          fields: "[]",
+          limit: "3",
+        },
       }),
     ) as ItemQueryReport;
 
@@ -2421,9 +2423,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     const group = JSON.parse(
       await cliCommand(vaultId, "zotlit:item-query", {
-        library: `group:${sharedReading!.groupID}`,
-        fields: "[]",
-        limit: "all",
+        args: {
+          library: `group:${sharedReading!.groupID}`,
+          fields: "[]",
+          limit: "all",
+        },
       }),
     ) as ItemQueryReport;
 
@@ -2476,7 +2480,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   it("answers an invalid zotlit:item-query with the code, location, and hint", async () => {
     const answer = JSON.parse(
       await cliCommand(vaultId, "zotlit:item-query", {
-        filter: "title.startsWith(1)",
+        args: {
+          filter: "title.startsWith(1)",
+        },
       }),
     ) as ItemQueryReport;
 
@@ -2497,11 +2503,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // collator of Obsidian's Electron gives the same.
     const answer = JSON.parse(
       await cliCommand(vaultId, "zotlit:item-query", {
-        filter:
-          '["Zebra", "apple", "Éclair", "eclair", "10", "9"].contains(title)',
-        fields: '["title"]',
-        sort: '[{"field":"title","direction":"asc"}]',
-        limit: "all",
+        args: {
+          filter:
+            '["Zebra", "apple", "Éclair", "eclair", "10", "9"].contains(title)',
+          fields: '["title"]',
+          sort: '[{"field":"title","direction":"asc"}]',
+          limit: "all",
+        },
       }),
     ) as ItemQueryReport;
 

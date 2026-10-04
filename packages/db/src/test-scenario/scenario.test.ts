@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { parseItemDate } from "@/lib/zt-date";
 import { getAnnotationsByParent } from "@/queries/annotations";
@@ -18,16 +18,9 @@ import { getTagsByItemIDs } from "@/queries/tags";
 import { openScenarioDatabase, SCENARIO_ITEMS, SCENARIO_LIBRARIES } from ".";
 import type { ScenarioDatabase, ScenarioItemName } from ".";
 
-let scenario: ScenarioDatabase | undefined;
-
-afterEach(() => {
-  scenario?.close();
-  scenario = undefined;
-});
-
 describe("openScenarioDatabase", () => {
   it("opens an in-memory copy of the pristine Zotero 10 database", () => {
-    scenario = openScenarioDatabase();
+    using scenario = openScenarioDatabase();
 
     expect(scenario.path).toBe(":memory:");
     expect(getSchemaVersions(scenario.db)).toEqual({
@@ -38,7 +31,7 @@ describe("openScenarioDatabase", () => {
   });
 
   it("keeps Zotero's own lookup tables for fields, item types, and base-field mappings", () => {
-    scenario = openScenarioDatabase();
+    using scenario = openScenarioDatabase();
     const { sqlite } = scenario;
 
     const bookSectionContainer = sqlite
@@ -62,7 +55,7 @@ describe("openScenarioDatabase", () => {
   });
 
   it("holds only the live top-level Items in the personal Library universe", () => {
-    scenario = openScenarioDatabase();
+    using scenario = openScenarioDatabase();
 
     const items = getItemsByLibrary(
       scenario.db,
@@ -84,7 +77,7 @@ describe("openScenarioDatabase", () => {
   });
 
   it("holds the group Library's live top-level Items under group Indexed Keys", () => {
-    scenario = openScenarioDatabase();
+    using scenario = openScenarioDatabase();
 
     const items = getItemsByLibrary(
       scenario.db,
@@ -101,11 +94,7 @@ describe("openScenarioDatabase", () => {
 });
 
 describe("scenario seed", () => {
-  const open = () => {
-    scenario = openScenarioDatabase();
-    return scenario;
-  };
-  const item = (name: ScenarioItemName): Item => {
+  const item = (scenario: ScenarioDatabase, name: ScenarioItemName): Item => {
     const { db } = scenario!;
     const { key, library } = SCENARIO_ITEMS[name];
     const [found] = getItemsByKey(db, SCENARIO_LIBRARIES[library].libraryID, [
@@ -116,9 +105,12 @@ describe("scenario seed", () => {
   };
   const fieldOf = (found: Item, name: string): string | null =>
     (found.fields as object as Partial<Record<string, string>>)[name] ?? null;
-  const isTrashed = (name: ScenarioItemName): boolean => {
+  const isTrashed = (
+    scenario: ScenarioDatabase,
+    name: ScenarioItemName,
+  ): boolean => {
     const { key, library } = SCENARIO_ITEMS[name];
-    const row = scenario!.sqlite
+    const row = scenario.sqlite
       .prepare(
         "select exists(select 1 from deletedItems d join items i using (itemID) where i.key = ? and i.libraryID = ?) as trashed",
       )
@@ -127,20 +119,21 @@ describe("scenario seed", () => {
   };
 
   it("has trashed top-level Items in both Libraries", () => {
-    open();
+    using scenario = openScenarioDatabase();
 
-    expect(isTrashed("trashedArticle")).toBe(true);
-    expect(isTrashed("groupTrashed")).toBe(true);
-    expect(isTrashed("fullDateArticle")).toBe(false);
+    expect(isTrashed(scenario, "trashedArticle")).toBe(true);
+    expect(isTrashed(scenario, "groupTrashed")).toBe(true);
+    expect(isTrashed(scenario, "fullDateArticle")).toBe(false);
   });
 
   it("has a live and a trashed Attachment, an Annotation, and a Child Note", () => {
-    const { db } = open();
-    const parent = item("fullDateArticle");
+    using scenario = openScenarioDatabase();
+    const { db } = scenario;
+    const parent = item(scenario, "fullDateArticle");
 
     const attachments = getAttachmentsByParents(db, [parent.itemID]);
     expect(attachments.map((a) => a.indexedKey)).toEqual(["PDF2LIVE"]);
-    expect(isTrashed("trashedAttachment")).toBe(true);
+    expect(isTrashed(scenario, "trashedAttachment")).toBe(true);
 
     const annotations = getAnnotationsByParent(db, attachments[0]!.itemID);
     expect(annotations.map((a) => [a.key, a.text])).toEqual([
@@ -152,9 +145,9 @@ describe("scenario seed", () => {
   });
 
   it("has full, partial, text, and missing dates", () => {
-    open();
+    using scenario = openScenarioDatabase();
     const dateKind = (name: ScenarioItemName) =>
-      parseItemDate(fieldOf(item(name), "date"))?.kind ?? null;
+      parseItemDate(fieldOf(item(scenario, name), "date"))?.kind ?? null;
 
     expect(dateKind("fullDateArticle")).toBe("date");
     expect(dateKind("yearMonthBook")).toBe("yearMonth");
@@ -164,22 +157,23 @@ describe("scenario seed", () => {
   });
 
   it("stores type-specific alias fields under their base fields", () => {
-    open();
+    using scenario = openScenarioDatabase();
 
-    expect(item("yearOnlyChapter").baseFields.publicationTitle).toBe(
+    expect(item(scenario, "yearOnlyChapter").baseFields.publicationTitle).toBe(
       "Handbook of Methods",
     );
-    expect(item("textDateConference").baseFields.publicationTitle).toBe(
-      "Proceedings of Testing",
-    );
-    expect(item("missingDateReport").baseFields.publisher).toBe(
+    expect(
+      item(scenario, "textDateConference").baseFields.publicationTitle,
+    ).toBe("Proceedings of Testing");
+    expect(item(scenario, "missingDateReport").baseFields.publisher).toBe(
       "Lab Institute",
     );
   });
 
   it("has an alias conflict: base field, type-specific variant, and a same-named custom field", () => {
-    const { sqlite } = open();
-    const conflict = item("aliasConflictChapter");
+    using scenario = openScenarioDatabase();
+    const { sqlite } = scenario;
+    const conflict = item(scenario, "aliasConflictChapter");
 
     const stored = sqlite
       .prepare(
@@ -199,8 +193,8 @@ describe("scenario seed", () => {
   });
 
   it("has custom fields apart from the built-in field of the same name", () => {
-    open();
-    const article = item("fullDateArticle");
+    using scenario = openScenarioDatabase();
+    const article = item(scenario, "fullDateArticle");
 
     expect(fieldOf(article, "title")).toBe(
       "Exact Matching in Literature Review",
@@ -213,9 +207,9 @@ describe("scenario seed", () => {
   });
 
   it("has both creator modes and the same person as author and editor", () => {
-    open();
+    using scenario = openScenarioDatabase();
 
-    expect(item("fullDateArticle").creators).toEqual([
+    expect(item(scenario, "fullDateArticle").creators).toEqual([
       {
         firstName: "Ada",
         lastName: "Lovelace",
@@ -230,7 +224,7 @@ describe("scenario seed", () => {
       },
     ]);
     expect(
-      item("yearMonthBook").creators.map((c) => [
+      item(scenario, "yearMonthBook").creators.map((c) => [
         c.firstName,
         c.lastName,
         c.creatorType,
@@ -242,16 +236,20 @@ describe("scenario seed", () => {
   });
 
   it("has Tags that differ only in case", () => {
-    const { db } = open();
+    using scenario = openScenarioDatabase();
+    const { db } = scenario;
 
-    const tags = getTagsByItemIDs(db, [item("fullDateArticle").itemID]);
+    const tags = getTagsByItemIDs(db, [
+      item(scenario, "fullDateArticle").itemID,
+    ]);
     expect(
       tags.map((t) => `${t.tag.name} (type ${t.type})`).toSorted(),
     ).toEqual(["To-Read (type 1)", "methods (type 0)", "to-read (type 0)"]);
   });
 
   it("has two live Collections with the same leaf name under different parents", () => {
-    const { db } = open();
+    using scenario = openScenarioDatabase();
+    const { db } = scenario;
 
     const nodes = getCollectionNodesByLibrary(
       db,
@@ -279,15 +277,15 @@ describe("scenario seed", () => {
 
     const memberships = getCollectionIDsByItem(
       db,
-      item("yearMonthBook").itemID,
+      item(scenario, "yearMonthBook").itemID,
     ).map((id) => nameOf.get(id)?.key);
     expect(memberships).toEqual(["CL2TCMTH"]);
   });
 
   it("has tie-heavy Items that share title, date, and timestamps", () => {
-    open();
+    using scenario = openScenarioDatabase();
     const tie = (name: ScenarioItemName) => {
-      const found = item(name);
+      const found = item(scenario, name);
       const { dateAdded, dateModified } = found;
       return {
         title: fieldOf(found, "title"),
@@ -308,7 +306,8 @@ describe("scenario seed", () => {
   });
 
   it("stores one field value as an SQLite integer and an equal one as text", () => {
-    const { sqlite } = open();
+    using scenario = openScenarioDatabase();
+    const { sqlite } = scenario;
     const storage = (name: ScenarioItemName) =>
       sqlite
         .prepare(
@@ -328,7 +327,7 @@ describe("scenario seed", () => {
 
 describe("openScenarioDatabase storage", () => {
   it("writes the copy into a temporary directory and removes it on close", () => {
-    scenario = openScenarioDatabase({ storage: "temp-directory" });
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
     const { path } = scenario;
 
     expect(path).toMatch(/zotero\.sqlite$/);
@@ -343,9 +342,9 @@ describe("openScenarioDatabase storage", () => {
 });
 
 describe("openScenarioDatabase lowest layout", () => {
-  const columnsOf = (table: string) =>
+  const columnsOf = (scenario: ScenarioDatabase, table: string) =>
     (
-      scenario!.sqlite.prepare(`pragma table_info("${table}")`).all() as {
+      scenario.sqlite.prepare(`pragma table_info("${table}")`).all() as {
         name: string;
       }[]
     ).map((c) => c.name);
@@ -365,20 +364,20 @@ describe("openScenarioDatabase lowest layout", () => {
   ] as const;
 
   it("keeps the columns added after userdata 125 in the highest layout", () => {
-    scenario = openScenarioDatabase();
+    using scenario = openScenarioDatabase();
 
     for (const [table, column] of added) {
-      expect(columnsOf(table)).toContain(column);
+      expect(columnsOf(scenario, table)).toContain(column);
     }
   });
 
   it("drops the columns added after userdata 125 and reads as userdata 125", () => {
-    scenario = openScenarioDatabase({ layout: "lowest" });
+    using scenario = openScenarioDatabase({ layout: "lowest" });
 
     for (const [table, column] of added) {
-      expect(columnsOf(table)).not.toContain(column);
+      expect(columnsOf(scenario, table)).not.toContain(column);
     }
-    expect(columnsOf("items")).toContain("clientDateModified");
+    expect(columnsOf(scenario, "items")).toContain("clientDateModified");
     expect(getSchemaVersions(scenario.db)).toEqual({
       userdata: 125,
       compatibility: 7,
@@ -387,7 +386,7 @@ describe("openScenarioDatabase lowest layout", () => {
   });
 
   it("keeps the same scenario rows in the lowest layout", () => {
-    scenario = openScenarioDatabase({ layout: "lowest" });
+    using scenario = openScenarioDatabase({ layout: "lowest" });
     const { db } = scenario;
 
     const personal = getItemsByLibrary(

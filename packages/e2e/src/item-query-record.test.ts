@@ -20,13 +20,27 @@ function query(
     class: "other",
     args: { limit: "100" },
     returnedCount: 100,
-    runs: [{ totalMs: 10, slices: [4, 8], worstSliceReaders: ["scan-page"] }],
+    runs: [
+      {
+        totalMs: 10,
+        slices: [4, 8],
+        worstSliceReaders: ["scan-page"],
+        answerSteps: [1],
+      },
+    ],
     ...overrides,
   };
 }
 
 function tier(overrides: Partial<TierMeasurement> = {}): TierMeasurement {
-  return { items: 10_000, queries: [], cancels: [], heaps: [], ...overrides };
+  return {
+    items: 10_000,
+    queries: [],
+    cancels: [],
+    missedCancels: [],
+    heaps: [],
+    ...overrides,
+  };
 }
 
 const statuses = (measured: TierMeasurement) =>
@@ -79,6 +93,7 @@ describe("threshold evaluation", () => {
         totalMs,
         slices: [1],
         worstSliceReaders: [],
+        answerSteps: [1],
       }));
     expect(
       statuses(
@@ -103,7 +118,9 @@ describe("threshold evaluation", () => {
   });
 
   it("records a total at 100,000 Items and of limit=all", () => {
-    const slow = [{ totalMs: 9000, slices: [1], worstSliceReaders: [] }];
+    const slow = [
+      { totalMs: 9000, slices: [1], worstSliceReaders: [], answerSteps: [1] },
+    ];
     expect(
       statuses(
         tier({ items: 100_000, queries: [query({ id: "scan", runs: slow })] }),
@@ -127,11 +144,17 @@ describe("threshold evaluation", () => {
               id: "export",
               class: "all",
               runs: [
-                { totalMs: 1, slices: steady, worstSliceReaders: [] },
+                {
+                  totalMs: 1,
+                  slices: steady,
+                  worstSliceReaders: [],
+                  answerSteps: [1],
+                },
                 {
                   totalMs: 1,
                   slices: [...steady, 32.5],
                   worstSliceReaders: [],
+                  answerSteps: [1],
                 },
               ],
             }),
@@ -150,7 +173,9 @@ describe("threshold evaluation", () => {
           queries: [
             query({
               id: "scan",
-              runs: [{ totalMs: 1, slices, worstSliceReaders: [] }],
+              runs: [
+                { totalMs: 1, slices, worstSliceReaders: [], answerSteps: [1] },
+              ],
             }),
           ],
         }),
@@ -166,12 +191,35 @@ describe("threshold evaluation", () => {
           queries: [
             query({
               id: "scan",
-              runs: [{ totalMs: 1, slices, worstSliceReaders: [] }],
+              runs: [
+                { totalMs: 1, slices, worstSliceReaders: [], answerSteps: [1] },
+              ],
             }),
           ],
         }),
       ),
     ).toContain("slices scan: passed");
+  });
+
+  it("holds the steps of the answer to the slice limits", () => {
+    const answer = (longest: number) => [
+      {
+        totalMs: 10,
+        slices: [1],
+        worstSliceReaders: [],
+        answerSteps: [...Array.from({ length: 99 }, () => 8), longest],
+      },
+    ];
+    expect(
+      statuses(
+        tier({
+          queries: [
+            query({ id: "short", class: "all", runs: answer(32) }),
+            query({ id: "long", class: "all", runs: answer(32.1) }),
+          ],
+        }),
+      ).filter((status) => status.startsWith("answer")),
+    ).toEqual(["answer short: passed", "answer long: failed"]);
   });
 
   it("judges each cancel against 50 ms from request to settlement", () => {
@@ -197,6 +245,33 @@ describe("threshold evaluation", () => {
       ),
     ).toEqual(["cancel timer: export: passed", "cancel cli: export: failed"]);
   });
+
+  it("fails a kind of cancel request of which no request reached a running query", () => {
+    const measured = tier({
+      cancels: [
+        { delivery: "timer", query: "export", latencyMs: 9, worstSliceMs: 9 },
+      ],
+      missedCancels: [
+        { delivery: "timer", query: "export at 90%", outcome: "answered" },
+        { delivery: "cli", query: "export", outcome: "answered" },
+        { delivery: "cli", query: "export", outcome: "failed" },
+      ],
+    });
+
+    expect(statuses(measured)).toEqual([
+      "cancel timer: export: passed",
+      "cancel cli: not measured: failed",
+    ]);
+    expect(
+      formatSummary({
+        startedAt: "2026-10-05T08:00:00Z",
+        environment: [],
+        notes: [],
+        rawPath: "raw.json",
+        tiers: [measured],
+      }),
+    ).toContain("**Result: FAILED.** 1 of 2 thresholds failed.");
+  });
 });
 
 describe("summary", () => {
@@ -213,9 +288,24 @@ describe("summary", () => {
             class: "selective",
             returnedCount: 10,
             runs: [
-              { totalMs: 12, slices: [3, 9.25], worstSliceReaders: [] },
-              { totalMs: 60, slices: [2, 40], worstSliceReaders: [] },
-              { totalMs: 14, slices: [5], worstSliceReaders: [] },
+              {
+                totalMs: 12,
+                slices: [3, 9.25],
+                worstSliceReaders: [],
+                answerSteps: [1],
+              },
+              {
+                totalMs: 60,
+                slices: [2, 40],
+                worstSliceReaders: [],
+                answerSteps: [1],
+              },
+              {
+                totalMs: 14,
+                slices: [5],
+                worstSliceReaders: [],
+                answerSteps: [1],
+              },
             ],
           }),
         ],
@@ -250,7 +340,7 @@ describe("summary", () => {
   });
 
   it("leads with the verdict and lists each failed threshold", () => {
-    expect(summary).toContain("**Result: FAILED.** 1 of 3 thresholds failed.");
+    expect(summary).toContain("**Result: FAILED.** 1 of 4 thresholds failed.");
     expect(summary).toContain(
       "- 10,000 Items, slices, `tag-rare`: p99 40.0 ms (limit 16), max 40.0 ms (limit 32)",
     );
@@ -265,7 +355,7 @@ describe("summary", () => {
       ...record,
       tiers: [tier({ queries: [query({ id: "scan" })] })],
     });
-    expect(passed).toContain("**Result: passed.** All 2 thresholds hold.");
+    expect(passed).toContain("**Result: passed.** All 3 thresholds hold.");
     expect(passed).toContain("- Keyset paging meets the budgets.");
     expect(passed).toContain(
       "Raw output: `.scratch/item-query-measure/raw.json`",

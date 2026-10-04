@@ -2542,7 +2542,9 @@ export interface StressLibraryCorpus {
   collections: readonly FixtureCollection[];
 }
 
-const STRESS_LIBRARY_MODIFIED_EPOCH = Date.UTC(2020, 0, 1);
+const STRESS_LIBRARY_MODIFIED_EPOCH = Temporal.Instant.from(
+  "2020-01-01T00:00:00Z",
+);
 
 /**
  * Synthetic corpus that fills My Library to exactly `itemCount` Items, with
@@ -2623,10 +2625,10 @@ export function createStressLibraryCorpus(
     // A multiplicative scramble by a prime keeps modification order apart
     // from key order, one second apart for each Item.
     const modifiedOffset = (i * 7919) % Math.max(count, 1);
-    const dateModified = new Date(
-      STRESS_LIBRARY_MODIFIED_EPOCH + modifiedOffset * 1000,
-    )
-      .toISOString()
+    const dateModified = STRESS_LIBRARY_MODIFIED_EPOCH.add({
+      seconds: modifiedOffset,
+    })
+      .toString()
       .replace("T", " ")
       .slice(0, 19);
     return {

@@ -17,12 +17,18 @@ import { and, asc, eq, inArray, notExists, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { Effect } from "effect";
 
+import type { CreatorFieldMode } from "@/lib/zt-creator";
+import type { TagType } from "@/lib/zt-tag";
 import { buildTable } from "@/queries/_base-fields";
 import type { BaseFieldTable } from "@/queries/_base-fields";
 
 import type { CollectionPaths } from "./collection-paths";
-import { defineStatement } from "./database";
-import type { ItemQueryDatabase, ItemQueryReaderError } from "./database";
+import { defineStatement, idSlots } from "./database";
+import type {
+  IdSlot,
+  ItemQueryDatabase,
+  ItemQueryReaderError,
+} from "./database";
 
 /** The Items one hydrate statement reads at most. */
 export const HYDRATE_CHUNK_SIZE = 250;
@@ -71,10 +77,10 @@ export type HydrateRelation =
 export interface HydratedCreator {
   /** Empty for a one-field (institutional) name. */
   readonly firstName: string;
-  /** The complete name of a one-field creator (`fieldMode` 1). */
+  /** The complete name of a one-field creator. */
   readonly lastName: string;
-  /** `0` two-field name, `1` one-field name. */
-  readonly fieldMode: number;
+  /** Raw `creators.fieldMode`; resolve it with `creatorFieldModeToName`. */
+  readonly fieldMode: CreatorFieldMode;
   /** Zotero creator type: `"author"`, `"editor"`, … */
   readonly creatorType: string;
 }
@@ -82,8 +88,8 @@ export interface HydratedCreator {
 /** One `itemTags` row of an Item. */
 export interface HydratedTag {
   readonly name: string;
-  /** Raw `itemTags.type`: `0` manual, `1` automatic. */
-  readonly type: number;
+  /** Raw `itemTags.type`; resolve it with `tagTypeToName`. */
+  readonly type: TagType;
 }
 
 /**
@@ -154,46 +160,41 @@ export function readFieldVocabulary(): Effect.Effect<
     return yield* Effect.sync(() => {
       const builtIn = fields.filter((row) => row.custom === 0);
       const custom = fields.filter((row) => row.custom !== 0);
-      const aliasRows = mappings.map((row) => ({
-        itemTypeID: row.itemTypeID,
-        fieldID: row.fieldID,
-        baseField: { fieldName: row.baseFieldName },
-      }));
       const tables = new Map<string, BaseFieldTable<string>>();
+      /**
+       * The table of one built-in field, from the mapping rows of that field
+       * alone: its field IDs are the field and the fields that alias it.
+       */
+      const tableOf = (name: string) => {
+        let table = tables.get(name);
+        if (!table) {
+          table = buildTable(
+            builtIn,
+            mappings
+              .filter((row) => row.baseFieldName === name)
+              .map((row) => ({
+                itemTypeID: row.itemTypeID,
+                fieldID: row.fieldID,
+                baseField: { fieldName: name },
+              })),
+            [name],
+          );
+          tables.set(name, table);
+        }
+        return table;
+      };
       return {
         customFieldNames: custom.map((row) => row.fieldName),
-        fieldIDsOf: (name: string) => {
-          const own = builtIn.find((row) => row.fieldName === name);
-          return [
-            ...new Set([
-              ...(own ? [own.fieldID] : []),
-              ...mappings
-                .filter((row) => row.baseFieldName === name)
-                .flatMap((row) => (row.fieldID === null ? [] : [row.fieldID])),
-            ]),
-          ];
-        },
+        fieldIDsOf: (name: string) => tableOf(name).fieldIDs,
         builtInID: new Map(builtIn.map((row) => [row.fieldName, row.fieldID])),
         customID: new Map(custom.map((row) => [row.fieldName, row.fieldID])),
-        tableOf: (name: string) => {
-          let table = tables.get(name);
-          if (!table) {
-            table = buildTable(builtIn, aliasRows, [name]);
-            tables.set(name, table);
-          }
-          return table;
-        },
+        tableOf,
       };
     });
   });
 }
 
-const ID_SLOTS = Array.from(
-  { length: HYDRATE_CHUNK_SIZE },
-  (_, i) => `id${i}` as const,
-);
-
-type IdSlot = (typeof ID_SLOTS)[number];
+const ID_SLOTS = idSlots(HYDRATE_CHUNK_SIZE);
 
 /** The values of one Item while the reader loads them. */
 interface LoadingItem {
@@ -222,7 +223,7 @@ const fieldValuesStatement = defineStatement<
       and(
         inArray(
           itemData.itemID,
-          ID_SLOTS.map((slot) => placeholder(slot)),
+          ID_SLOTS.names.map((slot) => placeholder(slot)),
         ),
         sql`${itemData.fieldID} in (select value from json_each(${placeholder("fieldIDs")}))`,
       ),
@@ -249,7 +250,7 @@ const creatorsStatement = defineStatement<Record<IdSlot, number | null>>(
     .where(
       inArray(
         itemCreators.itemID,
-        ID_SLOTS.map((slot) => placeholder(slot)),
+        ID_SLOTS.names.map((slot) => placeholder(slot)),
       ),
     )
     .orderBy(asc(itemCreators.itemID), asc(itemCreators.orderIndex)),
@@ -265,7 +266,7 @@ const tagsStatement = defineStatement<Record<IdSlot, number | null>>(
     .where(
       inArray(
         itemTags.itemID,
-        ID_SLOTS.map((slot) => placeholder(slot)),
+        ID_SLOTS.names.map((slot) => placeholder(slot)),
       ),
     ),
 );
@@ -282,7 +283,7 @@ const membershipsStatement = defineStatement<Record<IdSlot, number | null>>(
     .where(
       inArray(
         collectionItems.itemID,
-        ID_SLOTS.map((slot) => placeholder(slot)),
+        ID_SLOTS.names.map((slot) => placeholder(slot)),
       ),
     ),
 );
@@ -297,7 +298,7 @@ const attachmentParentsStatement = defineStatement<
       and(
         inArray(
           itemAttachments.parentItemID,
-          ID_SLOTS.map((slot) => placeholder(slot)),
+          ID_SLOTS.names.map((slot) => placeholder(slot)),
         ),
         notExists(
           db
@@ -351,9 +352,7 @@ export function readHydrateChunk(chunk: {
       result.set(id, item);
     }
     if (itemIDs.length === 0) return result;
-    const slots: Record<IdSlot, number | null> = Object.fromEntries(
-      ID_SLOTS.map((slot, i) => [slot, itemIDs[i] ?? null]),
-    ) as Record<IdSlot, number | null>;
+    const slots = ID_SLOTS.bind(itemIDs);
 
     const tables = fields.builtIn.map(
       (name) => [name, vocabulary.tableOf(name)] as const,

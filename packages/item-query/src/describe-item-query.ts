@@ -9,6 +9,7 @@ import type {
 
 import {
   BUILT_IN_NAMES,
+  CUSTOM_FIELD_VALUE_SHAPE,
   customFilterValue,
   DEFAULT_FIELDS,
   fieldDefinition,
@@ -23,7 +24,7 @@ import {
   VALUE_TYPES,
 } from "./filter-functions";
 import type { FunctionDefinition, FunctionParameter } from "./filter-functions";
-import { hasBareForm } from "./filter-plan";
+import { hasBareForm, planFilter } from "./filter-plan";
 import type { FilterValueType } from "./filter-values";
 import { DEFAULT_SORT } from "./request";
 import type { SortSpec } from "./request";
@@ -36,8 +37,11 @@ export type FilterType = Exclude<FilterValueType, "null">;
 
 /** What a caller can do with one name or Projection Path. */
 export interface SchemaCapabilities {
-  /** The type a Filter Expression reads; `null` when a filter cannot read it. */
-  readonly filter: FilterType | null;
+  /**
+   * The type a Filter Expression reads when it names the path. `any`: a filter
+   * reads it and the type depends on the Item. `null`: a filter cannot read it.
+   */
+  readonly filter: FilterType | "any" | null;
   /** The `fields` argument takes it. */
   readonly projection: boolean;
   /** The `sort` argument takes it. */
@@ -61,8 +65,12 @@ export interface SchemaCustomField extends SchemaField {
 
 export interface SchemaParameter {
   readonly name: string;
-  /** `any` also takes null. */
+  /** One type, or each type the parameter takes. `any` also takes null. */
   readonly type: FunctionParameter["type"];
+  /** Present on a typed parameter that also takes null. */
+  readonly nullable?: true;
+  /** Present on a string parameter that takes only these texts. */
+  readonly values?: readonly string[];
 }
 
 /** A global function of the Filter Expression language. */
@@ -168,6 +176,17 @@ const BUILT_IN_FIELDS: readonly SchemaField[] = BUILT_IN_NAMES.flatMap(
 );
 
 /**
+ * What a Filter Expression reads when its text is the path: the answer of the
+ * validation that every filter passes through.
+ */
+function filterCapability(path: string): SchemaCapabilities["filter"] {
+  const plan = planFilter(path);
+  if (!("root" in plan)) return null;
+  const type = plan.root.valueType;
+  return type === "unknown" ? "any" : type === "null" ? null : type;
+}
+
+/**
  * The Projection Paths below a value. A list element is written at index 0;
  * every other index reaches the element at that position.
  */
@@ -176,7 +195,7 @@ function pathsBelow(path: string, shape: ValueShape): SchemaField[] {
     {
       path: child,
       type: jsonType(childShape),
-      filter: null,
+      filter: filterCapability(child),
       projection: true,
       sort: false,
     },
@@ -224,19 +243,23 @@ function customSchemaField(name: string): SchemaCustomField {
     name,
     path: `custom[${JSON.stringify(name)}]`,
     bareName: hasBareForm(name),
-    type:
-      custom.shape.kind === "custom-fields"
-        ? jsonType(custom.shape.value)
-        : "string",
+    type: jsonType(CUSTOM_FIELD_VALUE_SHAPE),
     filter: value.type,
     projection: true,
     sort: custom.sortKey !== undefined,
   };
 }
 
-const parameter = ({ name, type }: FunctionParameter): SchemaParameter => ({
+const parameter = ({
   name,
   type,
+  nullable,
+  values,
+}: FunctionParameter): SchemaParameter => ({
+  name,
+  type,
+  ...(nullable && { nullable }),
+  ...(values && { values }),
 });
 
 function signature(

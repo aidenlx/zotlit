@@ -35,6 +35,8 @@ export const ITEM_QUERY_LAYOUT = {
   deletedCollections: ["collectionID"],
   collectionItems: ["itemID", "collectionID"],
   itemAttachments: ["itemID", "parentItemID"],
+  libraries: ["libraryID", "type"],
+  groups: ["groupID", "libraryID", "name"],
 } as const satisfies Readonly<Record<string, readonly string[]>>;
 
 /** A table, or one column of a table, that the copy lacks. */

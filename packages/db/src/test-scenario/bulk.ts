@@ -3,6 +3,8 @@
 // scenario Items, whose tests pin exact rows.
 import type { DatabaseSync } from "node:sqlite";
 
+import { lookupID } from "./seed";
+
 /** The Library that {@link seedBulkLibrary} fills. */
 export const BULK_LIBRARY = {
   libraryID: 3,
@@ -35,13 +37,13 @@ export function bulkItemKey(index: number): string {
  * Item also carries {@link BULK_FIFTH_TAG}.
  */
 export function seedBulkLibrary(sqlite: DatabaseSync, count: number): void {
-  const idOf = (sql: string, name: string): number =>
-    (sqlite.prepare(sql).get(name) as { id: number }).id;
-  const itemTypeID = idOf(
+  const itemTypeID = lookupID(
+    sqlite,
     "select itemTypeID as id from itemTypesCombined where typeName = ?",
     "journalArticle",
   );
-  const titleID = idOf(
+  const titleID = lookupID(
+    sqlite,
     "select fieldID as id from fieldsCombined where fieldName = ? and custom = 0",
     "title",
   );
@@ -78,10 +80,11 @@ export function seedBulkLibrary(sqlite: DatabaseSync, count: number): void {
     const everyTagID = Number(insertTag.run(BULK_TAG).lastInsertRowid);
     const fifthTagID = Number(insertTag.run(BULK_FIFTH_TAG).lastInsertRowid);
 
-    const start = Date.UTC(2021, 0, 1);
+    const start = Temporal.Instant.from("2021-01-01T00:00:00Z");
     for (let index = 0; index < count; index++) {
-      const stamp = new Date(start + index * 1000)
-        .toISOString()
+      const stamp = start
+        .add({ seconds: index })
+        .toString()
         .slice(0, 19)
         .replace("T", " ");
       const itemID = Number(

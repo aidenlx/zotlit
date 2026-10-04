@@ -24,7 +24,10 @@ export type DateValue =
   | {
       readonly type: "date";
       readonly precision: DatePrecision;
-      /** The first day of the interval. */
+      /**
+       * A day of the interval: its first day, or after date arithmetic a
+       * later day of the same year or month.
+       */
       readonly first: Temporal.PlainDate;
     };
 
@@ -88,8 +91,8 @@ function yearDate(year: number): CalendarDate {
   );
 }
 
-const SQL_DATE_TIME = regex("^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$");
-const ISO_DAY = regex("^\\d{4}-\\d{2}-\\d{2}$");
+const SQL_DATE_TIME = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * Zotero's `accessDate`: a UTC timestamp as `YYYY-MM-DD HH:MM:SS`, or a
@@ -113,8 +116,8 @@ export function fromAccessDate(raw: string | null): DateValue | null {
 const DATE_TIME = regex(
   "^\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,9})?)?(?<offset>Z|[+-]\\d{2}(?::?\\d{2})?)?$",
 );
-const YEAR_MONTH = regex("^\\d{4}-\\d{2}$");
-const YEAR = regex("^\\d{4}$");
+const YEAR_MONTH = /^\d{4}-\d{2}$/;
+const YEAR = /^\d{4}$/;
 const COMPACT_DAY = regex(
   "^(?<year>\\d{4})(?<month>\\d{2})(?<day>\\d{2})(?:(?<hour>\\d{2})(?<minute>\\d{2}))?$",
 );
@@ -230,18 +233,31 @@ function dayInterval(
   date: DateValue,
   clock: QueryClock,
 ): readonly [number, number] {
-  const calendar = dateOnly(date, clock);
-  const { first } = calendar;
-  const last =
-    calendar.precision === "year"
-      ? first.with({ month: 12, day: 31 })
-      : calendar.precision === "month"
-        ? first.with({ day: first.daysInMonth })
-        : first;
-  return [dayKey(first), dayKey(last)];
+  const { first, precision } = dateOnly(date, clock);
+  // The year or the month that holds `first`: arithmetic on a partial date
+  // can move `first` off the first day of its precision.
+  switch (precision) {
+    case "year":
+      return [
+        dayKey(first.with({ month: 1, day: 1 })),
+        dayKey(first.with({ month: 12, day: 31 })),
+      ];
+    case "month":
+      return [
+        dayKey(first.with({ day: 1 })),
+        dayKey(first.with({ day: first.daysInMonth })),
+      ];
+    case "day":
+      return [dayKey(first), dayKey(first)];
+  }
 }
 
-function dayKey(day: Temporal.PlainDate): number {
+/** A calendar day as the number `yyyymmdd`, which orders days. */
+export function dayKey(day: {
+  readonly year: number;
+  readonly month: number;
+  readonly day: number;
+}): number {
   return day.year * 10_000 + day.month * 100 + day.day;
 }
 
@@ -316,11 +332,7 @@ export function addDuration(
     if (date.precision !== "instant" && !hasTimeOfDay(duration)) {
       return calendarDate(date.first.add(duration), date.precision);
     }
-    const start =
-      date.precision === "instant"
-        ? date.instant.toZonedDateTimeISO(clock.timeZone)
-        : date.first.toZonedDateTime(clock.timeZone);
-    return timestamp(start.add(duration).toInstant());
+    return timestamp(startOf(date, clock).add(duration).toInstant());
   } catch {
     // A result outside the range of dates.
     return null;
@@ -386,7 +398,7 @@ export function timeOfDay(date: DateValue, clock: QueryClock): string {
     .toString({ smallestUnit: "second" });
 }
 
-const FORMAT_TOKENS = regex("YYYY|MM|DD|HH|mm|ss", "g");
+const FORMAT_TOKENS = /YYYY|MM|DD|HH|mm|ss/g;
 
 /**
  * `date.format(pattern)`: the tokens `YYYY`, `MM`, `DD`, `HH`, `mm`, and `ss`

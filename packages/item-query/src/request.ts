@@ -1,3 +1,5 @@
+// The request and the result of one Item Query, with the validation that
+// applies the defaults and resolves each name against the registries.
 import { Effect } from "effect";
 
 import { ItemQueryError } from "./error";

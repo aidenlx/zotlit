@@ -34,6 +34,8 @@ export interface RunSample {
   slices: readonly number[];
   /** The readers of the statements in the longest slice. */
   worstSliceReaders: readonly string[];
+  /** The steps in which the handler built the answer, after the engine. */
+  answerSteps: readonly number[];
 }
 
 export interface QueryMeasurement {
@@ -62,6 +64,17 @@ export interface CancelMeasurement {
   worstSliceMs: number;
 }
 
+/**
+ * A cancel request that measured nothing: the run ended before the request
+ * arrived, or it gave no report.
+ */
+export interface MissedCancel {
+  delivery: CancelMeasurement["delivery"];
+  query: string;
+  /** How the run ended, such as `answered`. */
+  outcome: string;
+}
+
 export interface HeapMeasurement {
   query: string;
   class: QueryClass;
@@ -77,6 +90,7 @@ export interface TierMeasurement {
   items: number;
   queries: readonly QueryMeasurement[];
   cancels: readonly CancelMeasurement[];
+  missedCancels: readonly MissedCancel[];
   heaps: readonly HeapMeasurement[];
 }
 
@@ -97,7 +111,7 @@ export type Status = "passed" | "failed" | "recorded";
 
 export interface Check {
   tier: number;
-  kind: "slices" | "total" | "cancel";
+  kind: "slices" | "answer" | "total" | "cancel";
   subject: string;
   /** The measured values with their limits, as text. */
   detail: string;
@@ -156,6 +170,21 @@ export function evaluateTier(tier: TierMeasurement): Check[] {
           ? "passed"
           : "failed",
     });
+    // The answer is work in the window as the slices are: the same limits.
+    const answerSteps = query.runs.flatMap((run) => run.answerSteps);
+    const answerP99 = percentile(answerSteps, 99);
+    const answerMax = Math.max(0, ...answerSteps);
+    checks.push({
+      tier: tier.items,
+      kind: "answer",
+      subject: query.id,
+      detail: `p99 ${ms(answerP99)} ms (limit ${THRESHOLDS.slice.p99Ms}), max ${ms(answerMax)} ms (limit ${THRESHOLDS.slice.maxMs})`,
+      status:
+        answerP99 <= THRESHOLDS.slice.p99Ms &&
+        answerMax <= THRESHOLDS.slice.maxMs
+          ? "passed"
+          : "failed",
+    });
     const total = median(query.runs.map((run) => run.totalMs));
     const budget = totalBudgetMs(query.class, tier.items);
     checks.push({
@@ -181,6 +210,18 @@ export function evaluateTier(tier: TierMeasurement): Check[] {
       subject: `${cancel.delivery}: ${cancel.query}`,
       detail: `${ms(cancel.latencyMs)} ms (limit ${THRESHOLDS.cancelMs})`,
       status: cancel.latencyMs <= THRESHOLDS.cancelMs ? "passed" : "failed",
+    });
+  }
+  // A kind of request with no measured run proves nothing about the limit.
+  const missed = Map.groupBy(tier.missedCancels, (cancel) => cancel.delivery);
+  for (const [delivery, requests] of missed) {
+    if (tier.cancels.some((cancel) => cancel.delivery === delivery)) continue;
+    checks.push({
+      tier: tier.items,
+      kind: "cancel",
+      subject: `${delivery}: not measured`,
+      detail: `none of ${requests.length} cancel requests reached a running query (${requests.map((request) => request.outcome).join(", ")}); run the measurement again`,
+      status: "failed",
     });
   }
   return checks;
@@ -223,9 +264,13 @@ function tierSection(tier: TierMeasurement): string {
       "Max slice (ms)",
       "Slice limits",
       "Worst slice of each run (ms)",
+      "Answer steps",
+      "Longest answer step (ms)",
+      "Answer limits",
     ],
     tier.queries.map((query) => {
       const slices = pooledSlices(query);
+      const answerSteps = query.runs.flatMap((run) => run.answerSteps);
       const budget = totalBudgetMs(query.class, tier.items);
       return [
         `\`${query.id}\``,
@@ -239,6 +284,9 @@ function tierSection(tier: TierMeasurement): string {
         ms(Math.max(0, ...slices)),
         MARK[statusOf("slices", query.id)],
         query.runs.map((run) => ms(Math.max(0, ...run.slices))).join(", "),
+        count(answerSteps.length),
+        ms(Math.max(0, ...answerSteps)),
+        MARK[statusOf("answer", query.id)],
       ];
     }),
   );
@@ -311,7 +359,7 @@ export function formatSummary(record: MeasurementRecord): string {
       ...record.environment,
     ].join("\n"),
     verdict,
-    `Thresholds: 99th percentile slice at most ${THRESHOLDS.slice.p99Ms} ms and no slice above ${THRESHOLDS.slice.maxMs} ms; cancel request to settlement within ${THRESHOLDS.cancelMs} ms; median \`limit 100\` total of five runs within ${THRESHOLDS.totalMs.selective[10_000]} ms for selective queries, and ${THRESHOLDS.totalMs.other[10_000]} ms (10,000 Items) or ${THRESHOLDS.totalMs.other[50_000]} ms (50,000 Items) for the others. Totals at 100,000 Items and of \`limit=all\` are recorded.`,
+    `Thresholds: 99th percentile slice at most ${THRESHOLDS.slice.p99Ms} ms and no slice above ${THRESHOLDS.slice.maxMs} ms, for the slices of the engine and for the steps in which the handler builds the answer; cancel request to settlement within ${THRESHOLDS.cancelMs} ms; median \`limit 100\` total of five runs within ${THRESHOLDS.totalMs.selective[10_000]} ms for selective queries, and ${THRESHOLDS.totalMs.other[10_000]} ms (10,000 Items) or ${THRESHOLDS.totalMs.other[50_000]} ms (50,000 Items) for the others. Totals at 100,000 Items and of \`limit=all\` are recorded.`,
   ];
   if (failed.length > 0) {
     parts.push(

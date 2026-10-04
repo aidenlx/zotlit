@@ -1642,6 +1642,17 @@ describe("a one-Library Stress Build", () => {
     ).rejects.toThrow(/one Stress Build/);
   });
 
+  it("rejects the demo vault case, which keeps none of the Stress Build Items", async () => {
+    await expect(
+      buildFixture(getFixtureLayout(join(dirname(layout.root), "unused")), {
+        vaultCase: "demo",
+        stressLibraryItemCount: 10_000,
+      }),
+    ).rejects.toThrow(
+      'the "demo" vault case holds only its own Items: build the Stress Build of My Library with another vault case',
+    );
+  });
+
   it(
     "builds and opens the 10,000-Item tier",
     { timeout: 120_000 },

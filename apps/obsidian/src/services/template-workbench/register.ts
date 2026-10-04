@@ -41,7 +41,7 @@ import {
 } from "./cli";
 import { loadCitationData, loadTemplateData, withSelectedNote } from "./data";
 import { diagnostic, envelope } from "./envelope";
-import type { WorkbenchCommand } from "./envelope";
+import type { WorkbenchCommand, WorkbenchIdentity } from "./envelope";
 import { GUIDE_TOPIC_NAMES } from "./guide";
 import {
   createInspectHandler,
@@ -290,22 +290,34 @@ function frontmatterReorderFlags(): CliFlags {
   } satisfies Record<(typeof FRONTMATTER_REORDER_PARAMS)[number], CliFlag>;
 }
 
+/**
+ * The identity of the vault and the connected Zotero source that an envelope
+ * carries, read once the source is known.
+ */
+export async function readWorkbenchIdentity(deps: {
+  app: App;
+  zoteroPref: ZoteroPrefService;
+}): Promise<WorkbenchIdentity> {
+  await deps.zoteroPref.ready;
+  return {
+    vault: {
+      name: deps.app.vault.getName(),
+      path: (deps.app.vault.adapter as FileSystemAdapter).getBasePath(),
+    },
+    source: {
+      id: deps.zoteroPref.sourceId,
+      databasePath: deps.zoteroPref.databasePath,
+    },
+  };
+}
+
 export function registerTemplateWorkbench(
   plugin: Plugin,
   deps: TemplateWorkbenchRegistrationDeps,
 ): void {
   const getIdentity = async () => {
-    await Promise.all([deps.zoteroPref.ready, deps.profile.ready]);
-    return {
-      vault: {
-        name: deps.app.vault.getName(),
-        path: (deps.app.vault.adapter as FileSystemAdapter).getBasePath(),
-      },
-      source: {
-        id: deps.zoteroPref.sourceId,
-        databasePath: deps.zoteroPref.databasePath,
-      },
-    };
+    await deps.profile.ready;
+    return readWorkbenchIdentity(deps);
   };
   plugin.registerCliHandler(
     TEMPLATE_INSPECT_COMMAND,

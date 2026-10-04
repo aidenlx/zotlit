@@ -12,11 +12,15 @@ export const SLICE_BUDGET_MS = 8;
 export type Pause = (resume: () => void) => () => void;
 
 export interface ItemQuerySchedulerOptions {
-  /** Defaults to {@link SLICE_BUDGET_MS}. */
+  /** @default SLICE_BUDGET_MS */
   budgetMs?: number;
-  /** A monotonic time in milliseconds. Defaults to `performance.now`. */
+  /**
+   * A monotonic time in milliseconds.
+   *
+   * @default performance.now
+   */
   now?: () => number;
-  /** Defaults to a `MessageChannel` task. */
+  /** @default messageChannelPause() */
   pause?: Pause;
 }
 

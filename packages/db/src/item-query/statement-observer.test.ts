@@ -1,5 +1,5 @@
 import { Effect, Exit } from "effect";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { openScenarioDatabase, SCENARIO_LIBRARIES } from "@/test-scenario";
 import type { ScenarioDatabase } from "@/test-scenario";
@@ -17,18 +17,13 @@ import {
 } from ".";
 import type { StatementRun } from ".";
 
-let scenario: ScenarioDatabase | undefined;
-
-afterEach(() => {
-  scenario?.close();
-  scenario = undefined;
-});
-
 const { personal } = SCENARIO_LIBRARIES;
 
 /** Run a reader and collect the statements it runs. */
-function observe<A, E>(effect: Effect.Effect<A, E, ItemQueryDatabase>) {
-  scenario ??= openScenarioDatabase();
+function observe<A, E>(
+  scenario: ScenarioDatabase,
+  effect: Effect.Effect<A, E, ItemQueryDatabase>,
+) {
   const runs: StatementRun[] = [];
   const exit = Effect.runSyncExit(
     effect.pipe(
@@ -44,7 +39,9 @@ function observe<A, E>(effect: Effect.Effect<A, E, ItemQueryDatabase>) {
 
 describe("ItemQueryStatementObserver", () => {
   it("reports each statement with its reader and the rows it read", () => {
+    using scenario = openScenarioDatabase();
     const { value, runs } = observe(
+      scenario,
       readScanPage({ libraryID: personal.libraryID, afterKey: null, size: 4 }),
     );
 
@@ -60,7 +57,9 @@ describe("ItemQueryStatementObserver", () => {
   });
 
   it("names the reader of every statement", () => {
+    using scenario = openScenarioDatabase();
     const { runs } = observe(
+      scenario,
       Effect.gen(function* () {
         const { libraryID } = personal;
         const page = yield* readScanPage({ libraryID, afterKey: null });

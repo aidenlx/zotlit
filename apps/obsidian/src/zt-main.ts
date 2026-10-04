@@ -53,7 +53,10 @@ import { registerPandocResolve } from "./services/pandoc/register";
 import { addProfileActions } from "./services/profile/actions";
 import { registerProtocolHandlers } from "./services/protocol/register";
 import { addReleaseActions } from "./services/release/actions";
-import { registerTemplateWorkbench } from "./services/template-workbench/register";
+import {
+  readWorkbenchIdentity,
+  registerTemplateWorkbench,
+} from "./services/template-workbench/register";
 import { addCitationTemplateActions } from "./services/template/actions";
 import { ZotLitSettingTab } from "./setting-tab";
 import { registerAnnotView } from "./views/annot-view/register";
@@ -539,19 +542,11 @@ export default class ZotLitPlugin extends Plugin {
 
     const itemQueryCliDeps = {
       acquireRead: () => services.db.acquireRead(),
-      identity: async () => {
-        await services.zoteroPref.ready;
-        return {
-          vault: {
-            name: this.app.vault.getName(),
-            path: (this.app.vault.adapter as FileSystemAdapter).getBasePath(),
-          },
-          source: {
-            id: services.zoteroPref.sourceId,
-            databasePath: services.zoteroPref.databasePath,
-          },
-        };
-      },
+      identity: () =>
+        readWorkbenchIdentity({
+          app: this.app,
+          zoteroPref: services.zoteroPref,
+        }),
     };
     registerItemQueryCli(this, itemQueryCliDeps);
 
