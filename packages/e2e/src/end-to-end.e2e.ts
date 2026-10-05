@@ -2397,15 +2397,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const byModified = (libraries: readonly (typeof LIBRARIES)[number][]) =>
       libraries
         .flatMap((library) =>
-          [...ITEMS, ...DEMO_ITEMS]
-            .filter((item) => item.libraryID === library.libraryID)
-            .map((item) => ({
+          ITEMS.filter((item) => item.libraryID === library.libraryID).map(
+            (item) => ({
               dateModified: item.dateModified,
               indexedKey:
                 library.groupID === null
                   ? item.key
                   : `${item.key}g${library.groupID}`,
-            })),
+            }),
+          ),
         )
         .toSorted(
           (a, b) =>
