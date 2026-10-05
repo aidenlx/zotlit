@@ -49,11 +49,7 @@ interface Match {
   readonly scan: ScanRow;
   /** One key for each entry of the sort list. */
   readonly keys: readonly SortKey[];
-  /**
-   * The Library of the match, as its index in the Target Libraries. An
-   * unlimited query holds every match, and a match that refers to an object
-   * moves the major collection of V8 into the engine's slices.
-   */
+  /** The Library of the match, as its index in the Target Libraries. */
   readonly library: number;
 }
 
