@@ -129,7 +129,8 @@ DATES
   date and the other Zotero date fields are calendar dates at the precision
   the Item gives: a year, a month, or a day. dateAdded and dateModified are
   timestamps. accessDate is a timestamp, or a day when Zotero stores only a
-  day. Calendar days follow the time zone of this computer.
+  day; another stored accessDate is null. Calendar days follow the time zone
+  of this computer.
     ${filter("date.year >= 2020")}
     ${filter('date == date("2020")')}
     ${filter('dateAdded >= today() - duration("7 days")')}
@@ -193,7 +194,8 @@ ORDER OF TEXT
 
 ORDER OF DATES
   A date sorts as its first possible day: 2020 sorts as 1 January 2020.
-  A date without a year comes last.
+  A date without a year comes last. accessDate sorts by time; a day sorts
+  from its start in the time zone of this computer.
 
 LIMIT
   limit is the most rows to return: a positive integer, or all for every

@@ -1354,80 +1354,152 @@ describe("queryItems sort failures", () => {
 });
 
 describe("queryItems accessDate", () => {
-  // New York is UTC-5 in January, so 7 January starts at 05:00Z there.
+  // The scenario stores 2020-01-07 04:00:00 (UTC) on RPT2NDTE, the calendar
+  // day 2020-01-07 on CHP2YEAR, and "yesterday" on UNI2CDE2. New York is
+  // UTC-5 in January, so 7 January starts there at 05:00Z.
   const NEW_YORK = {
     now: "2020-01-08T02:00:00Z",
     timeZone: "America/New_York",
   };
   const MISSING = [
     "ALS2CNFL",
+    "ART2FULL",
     "BK2MNTH2",
-    "CHP2YEAR",
     "CNF2TEXT",
-    "RPT2NDTE",
+    "TIE2AAAA",
     "TIE2CCCC",
     "UNI2CDE2",
   ];
 
-  /** A timestamp, a calendar day, two values that do not parse. */
+  /** A later timestamp and an impossible date beside the scenario values. */
   function withAccessDates(scenario: ScenarioDatabase): void {
-    setField(scenario, "ART2FULL", ["accessDate", "2020-01-07 04:00:00"]);
-    setField(scenario, "TIE2AAAA", ["accessDate", "2020-01-07"]);
     setField(scenario, "TIE2BBBB", ["accessDate", "2020-01-07 05:30:00"]);
-    setField(scenario, "BK2MNTH2", ["accessDate", "yesterday"]);
-    setField(scenario, "CHP2YEAR", ["accessDate", "2021-02-30 10:00:00"]);
+    setField(scenario, "BK2MNTH2", ["accessDate", "2021-02-30 10:00:00"]);
   }
 
   async function query(
     scenario: ScenarioDatabase,
     request: Omit<ItemQueryRequest, "libraries">,
+    clock: { now: string; timeZone: string } = NEW_YORK,
   ): Promise<QueryResult> {
     const { exit } = await runEffect(
       queryItems({ libraries: [personal], ...request }),
-      { client: scenario.db, ...NEW_YORK },
+      { client: scenario.db, ...clock },
     );
     if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
     return exit.value;
   }
 
+  const sorted = async (
+    scenario: ScenarioDatabase,
+    direction: "asc" | "desc",
+    clock?: { now: string; timeZone: string },
+  ) =>
+    keys(
+      await query(
+        scenario,
+        { fields: [], sort: [{ field: "accessDate", direction }] },
+        clock,
+      ),
+    );
+
   it("projects the value the filter reads: a timestamp, a calendar day, or null", async () => {
     using scenario = openScenarioDatabase();
     withAccessDates(scenario);
-    const found = await query(scenario, { fields: ["accessDate"], sort: [] });
+    const found = await query(scenario, {
+      filter: 'key != "TIE2AAAA" && key != "TIE2CCCC"',
+      fields: ["accessDate"],
+      sort: [],
+    });
 
-    expect(valuesByKey(found)).toMatchObject({
-      ART2FULL: { accessDate: Temporal.Instant.from("2020-01-07T04:00:00Z") },
-      TIE2AAAA: { accessDate: Temporal.PlainDate.from("2020-01-07") },
-      TIE2BBBB: { accessDate: Temporal.Instant.from("2020-01-07T05:30:00Z") },
-      BK2MNTH2: { accessDate: null },
-      CHP2YEAR: { accessDate: null },
+    expect(valuesByKey(found)).toEqual({
       ALS2CNFL: { accessDate: null },
+      ART2FULL: { accessDate: null },
+      BK2MNTH2: { accessDate: null },
+      CHP2YEAR: { accessDate: Temporal.PlainDate.from("2020-01-07") },
+      CNF2TEXT: { accessDate: null },
+      RPT2NDTE: { accessDate: Temporal.Instant.from("2020-01-07T04:00:00Z") },
+      TIE2BBBB: { accessDate: Temporal.Instant.from("2020-01-07T05:30:00Z") },
+      UNI2CDE2: { accessDate: null },
     });
   });
 
   it("orders by time, a calendar day from its start in the query time zone, with a value that does not parse last", async () => {
     using scenario = openScenarioDatabase();
     withAccessDates(scenario);
-    const sorted = async (direction: "asc" | "desc") =>
-      keys(
-        await query(scenario, {
-          fields: [],
-          sort: [{ field: "accessDate", direction }],
-        }),
-      );
 
     // 04:00Z is 23:00 on 6 January in New York, before 7 January starts.
-    expect(await sorted("asc")).toEqual([
-      "ART2FULL",
-      "TIE2AAAA",
+    expect(await sorted(scenario, "asc")).toEqual([
+      "RPT2NDTE",
+      "CHP2YEAR",
       "TIE2BBBB",
       ...MISSING,
     ]);
-    expect(await sorted("desc")).toEqual([
+    expect(await sorted(scenario, "desc")).toEqual([
       "TIE2BBBB",
-      "TIE2AAAA",
-      "ART2FULL",
+      "CHP2YEAR",
+      "RPT2NDTE",
       ...MISSING,
+    ]);
+  });
+
+  it("keeps the time order under a limit", async () => {
+    using scenario = openScenarioDatabase();
+    withAccessDates(scenario);
+    const limited = await query(scenario, {
+      fields: [],
+      sort: [{ field: "accessDate", direction: "desc" }],
+      limit: 2,
+    });
+
+    expect(keys(limited)).toEqual(["TIE2BBBB", "CHP2YEAR"]);
+    expect(limited.truncated).toBe(true);
+  });
+
+  it("starts a calendar day before a timestamp of the same date in a zone east of UTC", async () => {
+    using scenario = openScenarioDatabase();
+    // 7 January starts at 15:00Z on 6 January in Tokyo (UTC+9).
+    const tokyo = { now: "2020-01-08T02:00:00Z", timeZone: "Asia/Tokyo" };
+
+    expect(await sorted(scenario, "asc", tokyo)).toEqual([
+      "CHP2YEAR",
+      "RPT2NDTE",
+      "ALS2CNFL",
+      "ART2FULL",
+      "BK2MNTH2",
+      "CNF2TEXT",
+      "TIE2AAAA",
+      "TIE2BBBB",
+      "TIE2CCCC",
+      "UNI2CDE2",
+    ]);
+  });
+
+  it("starts a calendar day after a daylight-saving change at the offset of that day", async () => {
+    using scenario = openScenarioDatabase();
+    // Daylight-saving time starts in New York on 8 March 2020: 9 March starts
+    // at 04:00Z (UTC-4), 8 March at 05:00Z (UTC-5).
+    setField(scenario, "TIE2AAAA", ["accessDate", "2020-03-09"]);
+    setField(scenario, "TIE2BBBB", ["accessDate", "2020-03-09 04:30:00"]);
+    setField(scenario, "BK2MNTH2", ["accessDate", "2020-03-08 04:30:00"]);
+    setField(scenario, "ART2FULL", ["accessDate", "2020-03-08"]);
+
+    expect(
+      await sorted(scenario, "asc", {
+        now: "2020-03-10T00:00:00Z",
+        timeZone: "America/New_York",
+      }),
+    ).toEqual([
+      "RPT2NDTE",
+      "CHP2YEAR",
+      "BK2MNTH2",
+      "ART2FULL",
+      "TIE2AAAA",
+      "TIE2BBBB",
+      "ALS2CNFL",
+      "CNF2TEXT",
+      "TIE2CCCC",
+      "UNI2CDE2",
     ]);
   });
 

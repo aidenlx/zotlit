@@ -744,6 +744,7 @@ describe("date fields", () => {
     ["2020-01-07", "accessDate == dateAdded", true],
     ["yesterday", "accessDate", null],
     ["2021-02-30 10:00:00", "accessDate", null],
+    ["2020-01-07 04:00:60", "accessDate", null],
   ])("reads the accessDate %j: %s gives %j", (stored, expression, expected) => {
     expect(valueOf(expression, dated({ accessDate: stored }))).toEqual(
       expected,

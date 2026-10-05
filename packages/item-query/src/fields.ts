@@ -83,8 +83,8 @@ export interface FieldDefinition {
   readonly read: (item: QueryItem) => ProjectionValue;
   /**
    * Present on a Sortable Field: the value that orders the Item. Hydration
-   * loads `needs([])` before it runs. A calendar day reads its start in the
-   * time zone of the Query Clock.
+   * loads `needs([])` before it runs. The Query Clock places a calendar-day
+   * `accessDate` at its start in the query time zone.
    */
   readonly sortKey?: (item: QueryItem, clock: QueryClock) => SortKey;
   /**
@@ -170,7 +170,7 @@ function scanTimestamp(column: "dateAdded" | "dateModified"): FieldDefinition {
 function zoteroField(name: string): FieldDefinition {
   const builtIn = [name];
   const read = (item: QueryItem) => item.hydrated.fields.get(name) ?? null;
-  if (name === "accessDate") return accessDateField(read);
+  if (name === "accessDate") return accessDateField(builtIn, read);
   if (!isDateField(name)) {
     return {
       shape: STRING,
@@ -195,22 +195,22 @@ function zoteroField(name: string): FieldDefinition {
 
 /**
  * Zotero's `accessDate`: one date in projection, sort, and filter, a timestamp
- * or a calendar day. A stored value that does not parse is null in all three.
+ * or a calendar day. A calendar day sorts from its start in the query time
+ * zone. A stored value that does not parse is null in all three.
  */
 function accessDateField(
+  builtIn: readonly string[],
   read: (item: QueryItem) => string | null,
 ): FieldDefinition {
   const value = (item: QueryItem) => fromAccessDate(read(item));
   return {
-    // A timestamp or a calendar day as an ISO string on the wire.
     shape: STRING,
-    needs: () => ({ builtIn: ["accessDate"] }),
+    needs: () => ({ builtIn }),
     read: (item) => {
       const date = value(item);
       if (!date) return null;
       return date.precision === "instant" ? date.instant : date.first;
     },
-    // Time order: a calendar day orders from its start in the zone.
     sortKey: (item, clock) => {
       const date = value(item);
       return date && datePart(date, "timestamp", clock);
