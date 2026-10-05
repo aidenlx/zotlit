@@ -96,6 +96,8 @@ export interface TwoLibraryMeasurement {
   queries: readonly QueryMeasurement[];
   cancels: readonly CancelMeasurement[];
   missedCancels: readonly MissedCancel[];
+  /** The run measured every query and every cancel of the part. */
+  complete: boolean;
 }
 
 export interface TierMeasurement {
@@ -105,7 +107,8 @@ export interface TierMeasurement {
   cancels: readonly CancelMeasurement[];
   missedCancels: readonly MissedCancel[];
   heaps: readonly HeapMeasurement[];
-  twoLibraries?: TwoLibraryMeasurement;
+  /** Undefined: the run stopped before the queries over two Libraries. */
+  twoLibraries: TwoLibraryMeasurement | undefined;
 }
 
 export interface MeasurementRecord {
@@ -125,7 +128,8 @@ export type Status = "passed" | "failed" | "recorded";
 
 export interface Check {
   tier: number;
-  kind: "slices" | "answer" | "total" | "cancel";
+  /** `complete`: the run measured the part that the subject names. */
+  kind: "slices" | "answer" | "total" | "cancel" | "complete";
   subject: string;
   /** The measured values with their limits, as text. */
   detail: string;
@@ -167,31 +171,71 @@ function pooledSlices(query: QueryMeasurement): number[] {
   return query.runs.flatMap((run) => run.slices);
 }
 
+/**
+ * The queries of a tier that read one set of Libraries, with their cancels:
+ * those of one Library, or those of two Libraries.
+ */
+interface TierPart {
+  /** The words that mark a subject of this part, when it needs a mark. */
+  mark: string;
+  queries: readonly QueryMeasurement[];
+  cancels: readonly CancelMeasurement[];
+  missedCancels: readonly MissedCancel[];
+  /** The total-time budget of a query, when it has one. */
+  budgetOf: (query: QueryMeasurement) => number | undefined;
+}
+
+function oneLibraryPart(tier: TierMeasurement): TierPart {
+  return {
+    mark: "",
+    queries: tier.queries,
+    cancels: tier.cancels,
+    missedCancels: tier.missedCancels,
+    budgetOf: (query) => totalBudgetMs(query.class, tier.items),
+  };
+}
+
+function twoLibraryPart(measured: TwoLibraryMeasurement): TierPart {
+  return {
+    mark: ", two Libraries",
+    queries: measured.queries,
+    cancels: measured.cancels,
+    missedCancels: measured.missedCancels,
+    budgetOf: () => undefined,
+  };
+}
+
 /** Every threshold of one tier, each passed, failed, or recorded. */
 export function evaluateTier(tier: TierMeasurement): Check[] {
+  const { items, twoLibraries } = tier;
   return [
-    ...evaluatePart(tier, false),
-    ...(tier.twoLibraries
-      ? evaluatePart({ ...tier.twoLibraries, items: tier.items }, true)
-      : []),
+    ...evaluatePart(items, oneLibraryPart(tier)),
+    ...(twoLibraries ? evaluatePart(items, twoLibraryPart(twoLibraries)) : []),
+    // A record without these queries proves nothing about two Libraries.
+    ...(twoLibraries?.complete
+      ? []
+      : [
+          {
+            tier: items,
+            kind: "complete",
+            subject: "two Libraries",
+            detail:
+              "the run stopped before it measured every query and cancel over two Libraries; run the measurement again",
+            status: "failed",
+          } satisfies Check,
+        ]),
   ];
 }
 
-/** The checks of the queries of one Library, or of those of two Libraries. */
-function evaluatePart(
-  tier: Pick<
-    TierMeasurement,
-    "items" | "queries" | "cancels" | "missedCancels"
-  >,
-  twoLibraries: boolean,
-): Check[] {
+/** The checks of one part of the tier with `items` Items. */
+function evaluatePart(items: number, part: TierPart): Check[] {
   const checks: Check[] = [];
-  for (const query of tier.queries) {
+  for (const query of part.queries) {
     const slices = pooledSlices(query);
     const p99 = percentile(slices, 99);
     const max = Math.max(0, ...slices);
     checks.push({
-      tier: tier.items,
+      tier: items,
       kind: "slices",
       subject: query.id,
       detail: `p99 ${ms(p99)} ms (limit ${THRESHOLDS.slice.p99Ms}), max ${ms(max)} ms (limit ${THRESHOLDS.slice.maxMs})`,
@@ -205,7 +249,7 @@ function evaluatePart(
     const answerP99 = percentile(answerSteps, 99);
     const answerMax = Math.max(0, ...answerSteps);
     checks.push({
-      tier: tier.items,
+      tier: items,
       kind: "answer",
       subject: query.id,
       detail: `p99 ${ms(answerP99)} ms (limit ${THRESHOLDS.slice.p99Ms}), max ${ms(answerMax)} ms (limit ${THRESHOLDS.slice.maxMs})`,
@@ -216,11 +260,9 @@ function evaluatePart(
           : "failed",
     });
     const total = median(query.runs.map((run) => run.totalMs));
-    const budget = twoLibraries
-      ? undefined
-      : totalBudgetMs(query.class, tier.items);
+    const budget = part.budgetOf(query);
     checks.push({
-      tier: tier.items,
+      tier: items,
       kind: "total",
       subject: query.id,
       detail:
@@ -235,9 +277,9 @@ function evaluatePart(
             : "failed",
     });
   }
-  for (const cancel of tier.cancels) {
+  for (const cancel of part.cancels) {
     checks.push({
-      tier: tier.items,
+      tier: items,
       kind: "cancel",
       subject: `${cancel.delivery}: ${cancel.query}`,
       detail: `${ms(cancel.latencyMs)} ms (limit ${THRESHOLDS.cancelMs})`,
@@ -245,13 +287,13 @@ function evaluatePart(
     });
   }
   // A kind of request with no measured run proves nothing about the limit.
-  const missed = Map.groupBy(tier.missedCancels, (cancel) => cancel.delivery);
+  const missed = Map.groupBy(part.missedCancels, (cancel) => cancel.delivery);
   for (const [delivery, requests] of missed) {
-    if (tier.cancels.some((cancel) => cancel.delivery === delivery)) continue;
+    if (part.cancels.some((cancel) => cancel.delivery === delivery)) continue;
     checks.push({
-      tier: tier.items,
+      tier: items,
       kind: "cancel",
-      subject: `${delivery}: not measured${twoLibraries ? ", two Libraries" : ""}`,
+      subject: `${delivery}: not measured${part.mark}`,
       detail: `none of ${requests.length} cancel requests reached a running query (${requests.map((request) => request.outcome).join(", ")}); run the measurement again`,
       status: "failed",
     });
@@ -294,17 +336,14 @@ function table(header: readonly string[], rows: readonly string[][]): string {
   ].join("\n");
 }
 
-function tierSection(tier: TierMeasurement): string {
-  const checks = evaluateTier(tier);
+/** The query table and the cancel table of one part of a tier. */
+function partTables(items: number, part: TierPart): string[] {
+  const checks = evaluatePart(items, part);
   const statusOf = (kind: Check["kind"], subject: string): Status =>
     checks.find((check) => check.kind === kind && check.subject === subject)!
       .status;
 
-  /** `budgetOf`: the total-time budget of a query, when it has one. */
-  const queryTable = (
-    queries: readonly QueryMeasurement[],
-    budgetOf: (query: QueryMeasurement) => number | undefined,
-  ): string =>
+  const tables = [
     table(
       [
         "Query",
@@ -322,10 +361,10 @@ function tierSection(tier: TierMeasurement): string {
         "Longest answer step (ms)",
         "Answer limits",
       ],
-      queries.map((query) => {
+      part.queries.map((query) => {
         const slices = pooledSlices(query);
         const answerSteps = query.runs.flatMap((run) => run.answerSteps);
-        const budget = budgetOf(query);
+        const budget = part.budgetOf(query);
         return [
           `\`${query.id}\``,
           query.class,
@@ -343,33 +382,38 @@ function tierSection(tier: TierMeasurement): string {
           MARK[statusOf("answer", query.id)],
         ];
       }),
+    ),
+  ];
+  if (part.cancels.length > 0) {
+    tables.push(
+      table(
+        [
+          "Cancel request",
+          "Query",
+          "Request to settlement (ms)",
+          `Limit ${THRESHOLDS.cancelMs} ms`,
+          "CLI transport (ms)",
+          "Worst slice (ms)",
+        ],
+        part.cancels.map((cancel) => [
+          cancel.delivery,
+          `\`${cancel.query}\``,
+          ms(cancel.latencyMs),
+          MARK[statusOf("cancel", `${cancel.delivery}: ${cancel.query}`)],
+          cancel.transportMs === undefined ? "-" : ms(cancel.transportMs),
+          ms(cancel.worstSliceMs),
+        ]),
+      ),
     );
-  const cancelTable = (cancels: readonly CancelMeasurement[]): string =>
-    table(
-      [
-        "Cancel request",
-        "Query",
-        "Request to settlement (ms)",
-        `Limit ${THRESHOLDS.cancelMs} ms`,
-        "CLI transport (ms)",
-        "Worst slice (ms)",
-      ],
-      cancels.map((cancel) => [
-        cancel.delivery,
-        `\`${cancel.query}\``,
-        ms(cancel.latencyMs),
-        MARK[statusOf("cancel", `${cancel.delivery}: ${cancel.query}`)],
-        cancel.transportMs === undefined ? "-" : ms(cancel.transportMs),
-        ms(cancel.worstSliceMs),
-      ]),
-    );
+  }
+  return tables;
+}
 
+function tierSection(tier: TierMeasurement): string {
   const parts = [
     `### ${count(tier.items)} Items`,
-    queryTable(tier.queries, (query) => totalBudgetMs(query.class, tier.items)),
+    ...partTables(tier.items, oneLibraryPart(tier)),
   ];
-
-  if (tier.cancels.length > 0) parts.push(cancelTable(tier.cancels));
 
   if (tier.heaps.length > 0) {
     parts.push(
@@ -394,13 +438,12 @@ function tierSection(tier: TierMeasurement): string {
     );
   }
 
-  const two = tier.twoLibraries;
-  if (two) {
+  const { twoLibraries } = tier;
+  if (twoLibraries) {
     parts.push(
-      `#### Two Libraries: ${count(tier.items)} Items in My Library and ${count(two.groupItems)} Items in the group Library`,
-      queryTable(two.queries, () => undefined),
+      `#### Two Libraries: ${count(tier.items)} Items in My Library and ${count(twoLibraries.groupItems)} Items in the group Library`,
+      ...partTables(tier.items, twoLibraryPart(twoLibraries)),
     );
-    if (two.cancels.length > 0) parts.push(cancelTable(two.cancels));
   }
   return parts.join("\n\n");
 }

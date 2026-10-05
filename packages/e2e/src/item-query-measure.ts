@@ -545,7 +545,12 @@ interface RawTier {
   unreported: { delivery: CancelMeasurement["delivery"]; query: string }[];
   channels: ChannelCount;
   /** The queries over two Libraries, each with the Items of the tier. */
-  twoLibraries: { queries: RawQuery[]; cancels: RawCancel[] };
+  twoLibraries: {
+    queries: RawQuery[];
+    cancels: RawCancel[];
+    /** The run measured every query and every cancel of the part. */
+    complete: boolean;
+  };
 }
 
 /** One warm-up run and the measured runs of one query. */
@@ -734,6 +739,7 @@ async function measureTwoLibraries(raw: RawTier): Promise<void> {
   two.cancels.push(
     await cancelThroughCli(TWO_LIBRARY_ALL, Math.min(allMs * 0.3, 300)),
   );
+  two.complete = true;
 }
 
 function toQuery(
@@ -835,13 +841,15 @@ function toTier(raw: RawTier, notes: string[]): TierMeasurement {
     missedCancels,
     heaps,
     // A run that stopped before the queries of two Libraries has no part.
-    ...(two.queries.length > 0 && {
-      twoLibraries: {
-        groupItems: raw.items,
-        queries: two.queries.map((query) => toQuery(query, tier, notes)),
-        ...toCancels(two.cancels, tier, notes),
-      },
-    }),
+    twoLibraries:
+      two.queries.length > 0
+        ? {
+            groupItems: raw.items,
+            queries: two.queries.map((query) => toQuery(query, tier, notes)),
+            ...toCancels(two.cancels, tier, notes),
+            complete: two.complete,
+          }
+        : undefined,
   };
 }
 
@@ -941,7 +949,7 @@ try {
       cancels: [],
       unreported: [],
       channels: { created: 0, closed: 0, open: [] },
-      twoLibraries: { queries: [], cancels: [] },
+      twoLibraries: { queries: [], cancels: [], complete: false },
     };
     rawTiers.push(raw);
     await measureTier(raw);

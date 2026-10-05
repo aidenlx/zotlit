@@ -12,6 +12,7 @@ import type {
   MeasurementRecord,
   QueryMeasurement,
   TierMeasurement,
+  TwoLibraryMeasurement,
 } from "./item-query-record.ts";
 
 function query(
@@ -33,6 +34,20 @@ function query(
   };
 }
 
+/** A complete part over two Libraries with no query: it adds no check. */
+function twoLibraryPart(
+  overrides: Partial<TwoLibraryMeasurement> = {},
+): TwoLibraryMeasurement {
+  return {
+    groupItems: 10_000,
+    queries: [],
+    cancels: [],
+    missedCancels: [],
+    complete: true,
+    ...overrides,
+  };
+}
+
 function tier(overrides: Partial<TierMeasurement> = {}): TierMeasurement {
   return {
     items: 10_000,
@@ -40,6 +55,7 @@ function tier(overrides: Partial<TierMeasurement> = {}): TierMeasurement {
     cancels: [],
     missedCancels: [],
     heaps: [],
+    twoLibraries: twoLibraryPart(),
     ...overrides,
   };
 }
@@ -302,8 +318,7 @@ describe("queries over two Libraries", () => {
 
   it("holds them to the slice limits and records their totals", () => {
     const measured = tier({
-      twoLibraries: {
-        groupItems: 10_000,
+      twoLibraries: twoLibraryPart({
         queries: [
           // Above the 150 ms budget of a limited query of one Library.
           query({ id: "two-scan", runs: run(9000, [8, 16]) }),
@@ -311,7 +326,7 @@ describe("queries over two Libraries", () => {
         ],
         cancels: [],
         missedCancels: [],
-      },
+      }),
     });
 
     expect(statuses(measured)).toEqual([
@@ -334,12 +349,11 @@ describe("queries over two Libraries", () => {
     expect(
       statuses(
         tier({
-          twoLibraries: {
-            groupItems: 10_000,
+          twoLibraries: twoLibraryPart({
             queries: [],
             cancels: [cancel(50), cancel(50.1)],
             missedCancels: [],
-          },
+          }),
         }),
       ),
     ).toEqual([
@@ -355,20 +369,36 @@ describe("queries over two Libraries", () => {
           cancels: [
             { delivery: "timer", query: "all", latencyMs: 9, worstSliceMs: 9 },
           ],
-          twoLibraries: {
-            groupItems: 10_000,
+          twoLibraries: twoLibraryPart({
             queries: [],
             cancels: [],
             missedCancels: [
               { delivery: "timer", query: "two-all", outcome: "answered" },
             ],
-          },
+          }),
         }),
       ),
     ).toEqual([
       "cancel timer: all: passed",
       "cancel timer: not measured, two Libraries: failed",
     ]);
+  });
+
+  it("fails a tier that has no part over two Libraries, or a part that the run did not end", () => {
+    const incomplete = ["complete two Libraries: failed"];
+    expect(statuses(tier({ twoLibraries: undefined }))).toEqual(incomplete);
+    expect(
+      statuses(tier({ twoLibraries: twoLibraryPart({ complete: false }) })),
+    ).toEqual(incomplete);
+    expect(
+      formatSummary({
+        startedAt: "2026-10-05T08:00:00Z",
+        environment: [],
+        notes: [],
+        rawPath: "raw.json",
+        tiers: [tier({ twoLibraries: undefined })],
+      }),
+    ).toContain("**Result: FAILED.** 1 of 1 thresholds failed.");
   });
 
   it("stand in the summary under their own heading, with the verdict over both parts", () => {
@@ -381,7 +411,7 @@ describe("queries over two Libraries", () => {
         tier({
           items: 50_000,
           queries: [query({ id: "scan" })],
-          twoLibraries: {
+          twoLibraries: twoLibraryPart({
             groupItems: 50_000,
             queries: [
               query({
@@ -400,7 +430,7 @@ describe("queries over two Libraries", () => {
               },
             ],
             missedCancels: [],
-          },
+          }),
         }),
       ],
     });
