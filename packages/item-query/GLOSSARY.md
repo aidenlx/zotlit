@@ -21,7 +21,7 @@ A documented template-style accessor that selects data from a Query Row, such as
 _Avoid_: column expression, property expression
 
 **Sortable Field**:
-A top-level scalar Item field that can order a Query Result. Null values sort last, and Indexed Key is the stable final tie-breaker, also between Items of two Target Libraries.
+A top-level scalar Item field that can order a Query Result. Null values sort last, and Indexed Key is the stable final tie-breaker, also between Items of two Target Libraries: Indexed Keys compare as text, so the same Zotero Key in the groups 10 and 9 gives the order `g10`, `g9`.
 _Avoid_: sort expression, sort path
 
 **Item Query Schema**:

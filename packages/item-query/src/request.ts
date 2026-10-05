@@ -22,7 +22,8 @@ export interface TargetLibrary {
 export interface ItemQueryRequest {
   /**
    * The Target Libraries: each Library once, in any order. Their Items make
-   * one result set. An empty list gives an empty Query Result.
+   * one result set. An empty list gives an empty Query Result; a Library that
+   * the list names twice is invalid.
    */
   readonly libraries: readonly TargetLibrary[];
   /**
@@ -120,6 +121,19 @@ export function planRequest(
   request: ItemQueryRequest,
 ): Effect.Effect<ItemQueryPlan, ItemQueryError> {
   return Effect.gen(function* () {
+    const libraryIDs = request.libraries.map((library) => library.libraryID);
+    const repeated = libraryIDs.findIndex(
+      (libraryID, index) => libraryIDs.indexOf(libraryID) !== index,
+    );
+    if (repeated !== -1) {
+      return yield* new ItemQueryError({
+        code: "duplicate-library",
+        location: { argument: "libraries", index: repeated },
+        message: `The request names the Library with the local ID ${libraryIDs[repeated]} twice.`,
+        hint: "Name each Target Library once.",
+      });
+    }
+
     let filter: FilterPlan | null = null;
     if (request.filter !== undefined) {
       const planned = planFilter(request.filter);

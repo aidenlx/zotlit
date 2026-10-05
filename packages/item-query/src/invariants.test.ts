@@ -294,10 +294,40 @@ describe("the rows a limited query projects", () => {
     );
     expect(hydrated).toHaveLength(10);
   });
+
+  it("hydrates the returned rows of two Libraries only", async () => {
+    const libraries = [SCENARIO_LIBRARIES.personal, BULK_LIBRARY];
+    const limited = await run(
+      { fields: ["title"], sort: byTitle, limit: 4 },
+      { libraries },
+    );
+
+    const result = resultOf(limited);
+    expect(result).toMatchObject({ returnedCount: 4, truncated: true });
+    // Two personal titles come before the bulk titles.
+    expect(result.rows.map((row) => row.values.title)).toEqual([
+      "A Chapter on Sampling",
+      "Alias Conflict",
+      "Bulk item 00000",
+      "Bulk item 00001",
+    ]);
+    // The sort hydrates every Item; the last statement is the projection.
+    const projected = limited.events
+      .flatMap((event) =>
+        event.type === "statement" && event.statement.reader === "hydrate-chunk"
+          ? [event.statement.rows as { value: string }[]]
+          : [],
+      )
+      .at(-1)!;
+    expect(new Set(projected.map((row) => row.value))).toEqual(
+      new Set(result.rows.map((row) => row.values.title)),
+    );
+    expect(projected).toHaveLength(4);
+  });
 });
 
 describe("a cancel request", () => {
-  const { personal } = SCENARIO_LIBRARIES;
+  const { personal, group } = SCENARIO_LIBRARIES;
   /** Small chunks: many statements and pauses on the scenario Library. */
   const tuning = {
     capRatio: 1,
@@ -310,6 +340,8 @@ describe("a cancel request", () => {
     request: Request;
     /** The plan reads a candidate set in place of the Library scan. */
     candidates: boolean;
+    /** @default the personal Library */
+    libraries?: ItemQueryRequest["libraries"];
   }[] = [
     {
       name: "a limited scan",
@@ -333,6 +365,24 @@ describe("a cancel request", () => {
         limit: null,
       },
     },
+    {
+      name: "a limited scan of two Libraries",
+      candidates: false,
+      libraries: [personal, group],
+      request: { fields: ["title", "creators"], sort: byTitle, limit: 4 },
+    },
+    {
+      name: "candidate sets of two Libraries",
+      candidates: true,
+      libraries: [personal, group],
+      request: {
+        // `to-read` and `Methods` are in both Libraries.
+        filter: 'tags.contains("to-read") || collections.contains("Methods")',
+        fields: ["title", "tags"],
+        sort: byTitle,
+        limit: null,
+      },
+    },
   ];
 
   /**
@@ -345,14 +395,14 @@ describe("a cancel request", () => {
 
   /** Run the query and cancel it at the event at `index`. */
   async function cancelAt(
-    request: Request,
+    { request, libraries = [personal] }: (typeof QUERIES)[number],
     index: number,
     cancel: (controller: AbortController) => void,
   ) {
     const controller = new AbortController();
     let seen = 0;
     const cancelled = await run(request, {
-      libraries: [personal],
+      libraries,
       tuning,
       signal: controller.signal,
       onEvent: () => {
@@ -364,8 +414,9 @@ describe("a cancel request", () => {
 
   it.each(QUERIES)(
     "starts no statement after a cancel request that comes in a statement of $name",
-    async ({ request, candidates }) => {
-      const complete = await run(request, { libraries: [personal], tuning });
+    async (query) => {
+      const { request, candidates, libraries = [personal] } = query;
+      const complete = await run(request, { libraries, tuning });
       resultOf(complete);
       expect(itemsRead(complete.events, "candidate-set").length > 0).toBe(
         candidates,
@@ -376,7 +427,7 @@ describe("a cancel request", () => {
       expect(statements.length).toBeGreaterThan(8);
 
       for (const index of statements) {
-        const { exit, after } = await cancelAt(request, index, (controller) =>
+        const { exit, after } = await cancelAt(query, index, (controller) =>
           controller.abort(),
         );
 
@@ -390,8 +441,9 @@ describe("a cancel request", () => {
 
   it.each(QUERIES)(
     "starts no statement after a cancel request that comes in a pause of $name",
-    async ({ request }) => {
-      const complete = await run(request, { libraries: [personal], tuning });
+    async (query) => {
+      const { request, libraries = [personal] } = query;
+      const complete = await run(request, { libraries, tuning });
       const pauses = complete.events.flatMap((event, index) =>
         event.type === "pause" ? [index] : [],
       );
@@ -399,7 +451,7 @@ describe("a cancel request", () => {
 
       for (const index of pauses) {
         // The microtask runs when the slice has ended and the fiber waits.
-        const { exit, after } = await cancelAt(request, index, (controller) =>
+        const { exit, after } = await cancelAt(query, index, (controller) =>
           queueMicrotask(() => controller.abort()),
         );
 

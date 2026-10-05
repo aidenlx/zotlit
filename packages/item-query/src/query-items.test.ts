@@ -2687,31 +2687,63 @@ describe("queryItems over several Libraries", () => {
 
   it("measures a candidate set against the cap of its own Library", async () => {
     using scenario = openScenarioDatabase();
-    const loaded = recordHydratedItemIDs(scenario, '"itemTags"."itemID" in (');
     // `to-read`: 3 of the 15 personal `items` rows, within the cap of 3; 1 of
     // the 3 group rows, above the cap of 0.
-    const found = await result(scenario, {
+    const { exit, events } = await run(scenario, {
       libraries: both,
       filter: 'tags.contains("to-read")',
       fields: [],
       sort: [],
     });
 
-    expect(keys(found)).toEqual(["ART2FULL", "ART2FULLg4815", "BK2MNTH2"]);
-    const keyOf = scenario.sqlite.prepare(
-      "select key, libraryID from items where itemID = ?",
-    );
-    const read = [...new Set(loaded())].map((itemID) => {
-      const row = keyOf.get(itemID) as { key: string; libraryID: number };
-      return `${row.libraryID}/${row.key}`;
+    if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
+    expect(keys(exit.value)).toEqual(["ART2FULL", "ART2FULLg4815", "BK2MNTH2"]);
+    /** The Items that the statements of one reader read, by Library. */
+    const itemsOf = (reader: string) =>
+      events.flatMap((event) =>
+        event.type === "statement" && event.statement.reader === reader
+          ? (event.statement.rows as { key: string }[]).map(
+              (row) => `${String(event.statement.params.libraryID)}/${row.key}`,
+            )
+          : [],
+      );
+    // The live personal candidates, and every live top-level group Item.
+    expect(itemsOf("universe-rows")).toEqual(["1/ART2FULL", "1/BK2MNTH2"]);
+    expect(itemsOf("scan-page")).toEqual(["2/ART2FULL", "2/GRP2BK22"]);
+  });
+
+  it("orders the same Zotero Key of two groups by the text of the Indexed Key", async () => {
+    using scenario = openScenarioDatabase();
+    // Two more groups that hold ART2FULL: the group IDs 9 and 10.
+    const groups = [9, 10].map((groupID) => {
+      const libraryID = 100 + groupID;
+      scenario.sqlite.exec(
+        `insert into libraries (libraryID, type, editable, filesEditable) values (${libraryID}, 'group', 1, 1);
+         insert into groups (groupID, libraryID, name, description, version) values (${groupID}, ${libraryID}, 'Group ${groupID}', '', 0);
+         insert into items (itemTypeID, libraryID, key) select itemTypeID, ${libraryID}, 'ART2FULL' from itemTypesCombined where typeName = 'book'`,
+      );
+      return { libraryID, groupID };
     });
-    // The personal candidates and every live top-level group Item.
-    expect(read.toSorted()).toEqual([
-      "1/ART2FULL",
-      "1/BK2MNTH2",
-      "2/ART2FULL",
-      "2/GRP2BK22",
-    ]);
+
+    // In text order, `g10` comes before `g4815` and `g9`.
+    expect(
+      await matching(scenario, 'key == "ART2FULL"', [...groups, ...both]),
+    ).toEqual(["ART2FULL", "ART2FULLg10", "ART2FULLg4815", "ART2FULLg9"]);
+  });
+
+  it("fails a request that names one Library twice", async () => {
+    using scenario = openScenarioDatabase();
+    const error = await failure(
+      scenario,
+      { libraries: [personal, group, { ...personal }], limit: 1 },
+      false,
+    );
+
+    expect(error).toBeInstanceOf(ItemQueryError);
+    expect(error).toMatchObject({
+      code: "duplicate-library",
+      location: { argument: "libraries", index: 2 },
+    });
   });
 
   it("reads no Item of a Library outside the request", async () => {

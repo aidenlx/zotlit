@@ -136,7 +136,7 @@ const universeRowsStatement = defineStatement<
 
 /**
  * Restrict a chunk of Item IDs to the query universe: the row of each ID that
- * is a top-level, non-trashed Item of the Target Library, in key order and in
+ * is a top-level, non-trashed Item of the one Library, in key order and in
  * the form of {@link readScanPage}. A chunk holds at most
  * {@link SCAN_PAGE_SIZE} IDs.
  */
