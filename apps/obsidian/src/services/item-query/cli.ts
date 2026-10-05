@@ -1,6 +1,6 @@
 // Registers the Item Query commands with Obsidian's CLI: the only Promise edge
 // of `@zotlit/item-query` (ADR 0066). The query command decodes the flat
-// arguments, takes the source lease, resolves the Target Library, runs the
+// arguments, takes the source lease, resolves the Target Libraries, runs the
 // query, and answers the versioned envelope of ADR 0065. The schema command
 // answers the Item Query Schema of the source in the same envelope; the guide
 // command prints plain text.
@@ -18,7 +18,6 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import type {
   ItemQueryDatabaseError,
   ItemQueryLayoutError,
-  TargetLibrarySelector,
 } from "@zotlit/db/item-query";
 import { SLICE_BUDGET_MS } from "@zotlit/item-query";
 import type {
@@ -30,6 +29,11 @@ import type {
 
 import { getLogger } from "@/lib/log";
 import { yieldToMain } from "@/lib/yield-to-main";
+import { selectorKey } from "@/services/library-scope/scope";
+import type {
+  LibraryScope,
+  LibrarySelector,
+} from "@/services/library-scope/scope";
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
 import {
@@ -43,7 +47,7 @@ import {
 import type { ItemQueryCommand } from "./contract";
 import { GUIDE_TOPIC_NAMES, parseGuideTopic, renderGuide } from "./guide";
 import { runDescribeItemQuery, runItemQuery } from "./run";
-import type { ItemQueryInstrument } from "./run";
+import type { ItemQueryInstrument, LibrarySelection } from "./run";
 
 const logger = getLogger(["item-query"]);
 
@@ -79,7 +83,9 @@ const DIAGNOSTIC_HINTS = {
   "source-unavailable":
     "Run the command again once the connected Zotero source is readable; when the message reports a failure, ask the user to check the plugin log.",
   "library-not-found":
-    "Use library=personal, or the group ID of a group Library that the connected Zotero source holds.",
+    "Use personal, or group:<groupID> with the group ID of a group Library that the connected Zotero source holds. libraries=all reads every Library of the source.",
+  "no-library-available":
+    "Name the Libraries with libraries=<JSON array>, such as libraries='[\"personal\"]', or use libraries=all. To change the default, ask the user to select an available Library in the Library scope setting of ZotLit.",
   "database-error":
     "Run the command again; if it fails again, ask the user to check the plugin log.",
   "unsupported-database-layout":
@@ -110,14 +116,25 @@ function diagnostic(
   };
 }
 
-/** The Target Library on the wire: local `libraryID` values stay inside. */
+/** A Target Library on the wire: local `libraryID` values stay inside. */
 type LibraryWire =
   | { type: "personal" }
   | { type: "group"; groupID: number; name: string };
 
+/** The Libraries the caller asks for; `scope`: the Library Scope default. */
+type DecodedLibraries =
+  | { from: "scope" }
+  | { from: "all" }
+  | {
+      from: "named";
+      selectors: readonly LibrarySelector[];
+      /** The argument that names them. */
+      parameter: "library" | "libraries";
+    };
+
 /** The flat arguments after decoding. */
 interface DecodedArguments {
-  library: TargetLibrarySelector;
+  libraries: DecodedLibraries;
   filter: string | undefined;
   fields: readonly string[] | undefined;
   sort: readonly SortSpec[] | undefined;
@@ -129,7 +146,7 @@ type EnvelopeTail =
   | {
       ok: true;
       identity: WorkbenchIdentity;
-      library: LibraryWire;
+      libraries: readonly LibraryWire[];
       request: object;
       returnedCount: number;
       truncated: boolean;
@@ -141,7 +158,8 @@ type EnvelopeTail =
 type SchemaWire = Omit<ItemQuerySchema, "defaults"> & {
   defaults: Omit<ItemQuerySchema["defaults"], "limit"> & {
     limit: number;
-    library: "personal";
+    /** The available Libraries of the Library Scope. */
+    libraries: "library-scope";
   };
 };
 
@@ -165,6 +183,11 @@ export interface ItemQueryLease extends Disposable {
 export interface ItemQueryCliDeps {
   acquireRead(): Promise<ItemQueryLease>;
   identity(): Promise<WorkbenchIdentity>;
+  /**
+   * The Library Scope in force: the default Target Libraries of a query are
+   * its available Libraries.
+   */
+  libraryScope(): Promise<LibraryScope>;
   /** Cancels every run, such as when the plugin unloads. */
   signal: AbortSignal;
   /** Observes the engine of each query run; the measurement command sets it. */
@@ -184,7 +207,7 @@ export function registerItemQueryCli(
   plugin.register(() => unload.abort());
   plugin.registerCliHandler(
     ITEM_QUERY_COMMAND,
-    "Query the Items of one Zotero Library and return the matches as JSON",
+    "Query the Items of Zotero Libraries and return the matches as JSON",
     itemQueryFlags,
     createItemQueryHandler({ ...deps, signal: unload.signal }),
   );
@@ -231,7 +254,7 @@ export function createItemQuerySchemaHandler(
           defaults: {
             ...schema.defaults,
             limit: DEFAULT_CLI_LIMIT,
-            library: "personal",
+            libraries: "library-scope",
           },
         },
       });
@@ -270,9 +293,13 @@ export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
 
     deps.signal.throwIfAborted();
 
+    const selection: LibrarySelection =
+      decoded.libraries.from === "scope"
+        ? { from: "scope", scope: await deps.libraryScope() }
+        : decoded.libraries;
     const read = await withLease(deps, ITEM_QUERY_COMMAND, (client) =>
       runItemQuery(
-        decoded.library,
+        selection,
         {
           filter: decoded.filter,
           fields: decoded.fields,
@@ -288,20 +315,31 @@ export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
     if (Exit.isFailure(exit)) {
       return answerFailure(exit.cause, ITEM_QUERY_COMMAND, deps.signal);
     }
-    const { library } = exit.value;
-    if (library === null) {
+    const ran = exit.value;
+    if (ran.outcome === "library-not-found") {
       return failure(
         ITEM_QUERY_COMMAND,
         diagnostic(
           "library-not-found",
-          `The connected Zotero source holds no ${describeSelector(decoded.library)}.`,
-          { details: { parameter: "library" } },
+          `The connected Zotero source holds no ${describeSelector(ran.selector)}.`,
+          decoded.libraries.from === "named"
+            ? { details: { parameter: decoded.libraries.parameter } }
+            : {},
         ),
       );
     }
-    return answerExit(Exit.succeed(exit.value.result), {
+    if (ran.outcome === "no-library-available") {
+      return failure(
+        ITEM_QUERY_COMMAND,
+        diagnostic(
+          "no-library-available",
+          "The connected Zotero source holds no Library of the Library Scope.",
+        ),
+      );
+    }
+    return answerExit(Exit.succeed(ran.result), {
       identity: read.identity,
-      library:
+      libraries: ran.libraries.map((library) =>
         library.groupID === null
           ? { type: "personal" }
           : {
@@ -309,6 +347,7 @@ export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
               groupID: library.groupID,
               name: library.name ?? "",
             },
+      ),
       signal: deps.signal,
       onAnswerStep: deps.onAnswerStep,
     });
@@ -363,7 +402,8 @@ export async function answerExit(
   context: {
     /** The identity of the source the run leased. */
     identity: WorkbenchIdentity;
-    library: LibraryWire;
+    /** The Target Libraries of the run, in the canonical order. */
+    libraries: readonly LibraryWire[];
     signal: AbortSignal;
     onAnswerStep?: (ms: number) => void;
   },
@@ -405,7 +445,7 @@ async function answerResult(
   result: QueryResult,
   context: {
     identity: WorkbenchIdentity;
-    library: LibraryWire;
+    libraries: readonly LibraryWire[];
     signal: AbortSignal;
     onAnswerStep?: (ms: number) => void;
   },
@@ -414,8 +454,13 @@ async function answerResult(
   const head = envelope(ITEM_QUERY_COMMAND, {
     ok: true,
     identity: context.identity,
-    library: context.library,
-    request: result.query,
+    libraries: context.libraries,
+    // The Libraries as the `libraries` argument takes them, so the request
+    // shows how the default, `all`, or `library` was applied.
+    request: {
+      libraries: context.libraries.map(selectorKey),
+      ...result.query,
+    },
     returnedCount: result.returnedCount,
     truncated: result.truncated,
     rows: [],
@@ -519,7 +564,7 @@ function databaseFailure(
   );
 }
 
-function describeSelector(selector: TargetLibrarySelector): string {
+function describeSelector(selector: LibrarySelector): string {
   return selector.type === "group"
     ? `group Library with the group ID ${selector.groupID}`
     : "personal Library";
@@ -535,6 +580,7 @@ function messageOf(error: unknown): string {
 const GROUP_SELECTOR = regex("^group:([1-9]\\d*)$");
 const POSITIVE_INTEGER = /^[1-9]\d*$/;
 
+const librariesSchema = v.pipe(v.array(v.string()), v.minLength(1));
 const fieldsSchema = v.array(v.string());
 const sortSchema = v.array(
   v.strictObject({
@@ -552,17 +598,19 @@ function decodeArguments(params: CliData): DecodedArguments | Diagnostic {
   const rejected = rejectParameters(params, ITEM_QUERY_PARAMS);
   if (rejected) return rejected;
 
-  let library: TargetLibrarySelector = { type: "personal" };
-  if (params.library !== undefined) {
-    const group = GROUP_SELECTOR.exec(params.library);
-    if (params.library === "personal") library = { type: "personal" };
-    else if (group) library = { type: "group", groupID: Number(group[1]) };
-    else {
+  // `libraries` wins over `library`; with neither, the Library Scope decides.
+  const named = decodeLibraries(params);
+  if (named !== undefined && "code" in named) return named;
+  let libraries: DecodedLibraries = named ?? { from: "scope" };
+  if (named === undefined && params.library !== undefined) {
+    const selector = parseSelector(params.library);
+    if (selector === null) {
       return invalid(
         "library",
         `'${params.library}' is not a Library: use personal or group:<groupID>.`,
       );
     }
+    libraries = { from: "named", selectors: [selector], parameter: "library" };
   }
 
   const filter = params.filter;
@@ -595,11 +643,52 @@ function decodeArguments(params: CliData): DecodedArguments | Diagnostic {
     }
   }
 
-  return { library, filter, fields, sort, limit };
+  return { libraries, filter, fields, sort, limit };
+}
+
+/** The Library that `personal` or `group:<groupID>` names. */
+function parseSelector(text: string): LibrarySelector | null {
+  if (text === "personal") return { type: "personal" };
+  const group = GROUP_SELECTOR.exec(text);
+  return group ? { type: "group", groupID: Number(group[1]) } : null;
+}
+
+/** Decode `libraries`: the word `all`, or a JSON array of selector texts. */
+function decodeLibraries(
+  params: CliData,
+): DecodedLibraries | Diagnostic | undefined {
+  if (params.libraries === "all") return { from: "all" };
+  const texts = decodeJson(params, "libraries");
+  if (texts === undefined || "code" in texts) return texts;
+  const selectors: LibrarySelector[] = [];
+  const seen = new Set<string>();
+  for (const text of texts) {
+    const selector = parseSelector(text);
+    if (selector === null) {
+      return invalid(
+        "libraries",
+        `'${text}' in libraries is not a Library: use "personal" or "group:<groupID>".`,
+      );
+    }
+    if (seen.has(text)) {
+      return invalid(
+        "libraries",
+        `libraries names '${text}' twice: name each Library once.`,
+      );
+    }
+    seen.add(text);
+    selectors.push(selector);
+  }
+  return { from: "named", selectors, parameter: "libraries" };
 }
 
 /** The JSON-encoded arguments, with the form each one takes. */
 const JSON_ARGUMENTS = {
+  libraries: {
+    schema: librariesSchema,
+    expected:
+      'all, or a JSON array of at least one Library, each "personal" or "group:<groupID>"',
+  },
   fields: {
     schema: fieldsSchema,
     expected: "a JSON array of Projection Path strings",

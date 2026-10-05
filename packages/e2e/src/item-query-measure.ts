@@ -362,12 +362,18 @@ async function requireVisible(): Promise<void> {
   );
 }
 
+/**
+ * The Library every query reads: the Stress Build fills My Library, and the
+ * thresholds are those of one Library.
+ */
+const STRESS_LIBRARY = { library: "personal" };
+
 /** One measured run. A run with a hidden window is repeated. */
 async function measure(args: Record<string, string>): Promise<MeasureReport> {
   for (let attempt = 0; ; attempt++) {
     const report = JSON.parse(
       await cliCommand(vaultId, MEASURE_COMMAND, {
-        args,
+        args: { ...STRESS_LIBRARY, ...args },
         timeoutMs: CALL_TIMEOUT_MS,
       }),
     ) as MeasureReport;
@@ -427,6 +433,7 @@ async function pluginReady(): Promise<boolean> {
   return waitFor(async () => {
     const answer = await cliCommand(vaultId, MEASURE_COMMAND, {
       args: {
+        ...STRESS_LIBRARY,
         limit: "1",
         fields: "[]",
       },
@@ -482,6 +489,7 @@ async function measureTier(raw: RawTier): Promise<void> {
   const located = JSON.parse(
     await cliCommand(vaultId, "zotlit:item-query", {
       args: {
+        ...STRESS_LIBRARY,
         filter: `title == ${quote(uniqueTitle)}`,
         fields: "[]",
       },

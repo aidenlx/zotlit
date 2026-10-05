@@ -1,4 +1,4 @@
-// The reader that resolves the Target Library of an Item Query. It reads the
+// The reader that lists the Libraries an Item Query can read. It reads the
 // columns of the layout manifest only, so it runs on every copy that passes
 // the layout check, whatever its version stamps are.
 import { groups, libraries } from "@drizzle/schema";
@@ -7,11 +7,6 @@ import { Effect } from "effect";
 
 import { defineStatement } from "./database";
 import type { ItemQueryDatabase, ItemQueryReaderError } from "./database";
-
-/** The Library a caller names: the personal Library, or a group by its ID. */
-export type TargetLibrarySelector =
-  | { readonly type: "personal" }
-  | { readonly type: "group"; readonly groupID: number };
 
 /** A Library of the copy. `libraryID` is local to the copy. */
 export interface TargetLibraryRow {
@@ -33,30 +28,37 @@ const personalLibraryStatement = defineStatement<Record<string, never>>(
     .limit(1),
 );
 
-const groupLibraryStatement = defineStatement<{ groupID: number }>(
+const groupLibrariesStatement = defineStatement<Record<string, never>>(
   "target-library",
-)((db, { placeholder }) =>
+)((db) =>
   db
-    .select({ libraryID: groups.libraryID, name: groups.name })
+    .select({
+      libraryID: groups.libraryID,
+      groupID: groups.groupID,
+      name: groups.name,
+    })
     .from(groups)
-    .where(eq(groups.groupID, placeholder("groupID"))),
+    .orderBy(asc(groups.groupID)),
 );
 
-/** Read the Library that the selector names; `null` when the copy has none. */
-export function readTargetLibrary(
-  selector: TargetLibrarySelector,
-): Effect.Effect<
-  TargetLibraryRow | null,
+/**
+ * Read the personal Library and every group Library of the copy, in the
+ * canonical order: the personal Library first, then the groups by ascending
+ * group ID.
+ */
+export function readTargetLibraries(): Effect.Effect<
+  TargetLibraryRow[],
   ItemQueryReaderError,
   ItemQueryDatabase
 > {
-  if (selector.type === "personal") {
-    return Effect.map(personalLibraryStatement.all({}), ([row]) =>
-      row ? { libraryID: row.libraryID, groupID: null, name: null } : null,
-    );
-  }
-  const { groupID } = selector;
-  return Effect.map(groupLibraryStatement.all({ groupID }), ([row]) =>
-    row ? { libraryID: row.libraryID, groupID, name: row.name } : null,
-  );
+  return Effect.gen(function* () {
+    const [personal] = yield* personalLibraryStatement.all({});
+    const groupRows = yield* groupLibrariesStatement.all({});
+    return [
+      ...(personal
+        ? [{ libraryID: personal.libraryID, groupID: null, name: null }]
+        : []),
+      ...groupRows,
+    ];
+  });
 }

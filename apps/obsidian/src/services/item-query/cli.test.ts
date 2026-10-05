@@ -15,6 +15,12 @@ import {
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
 import {
+  DEFAULT_LIBRARY_SCOPE,
+  MY_LIBRARY_SCOPE,
+} from "@/services/library-scope/scope";
+import type { LibraryScope } from "@/services/library-scope/scope";
+
+import {
   answerExit,
   createItemQueryHandler,
   createItemQuerySchemaHandler,
@@ -69,6 +75,7 @@ function setup(
   const deps: ItemQueryCliDeps = {
     acquireRead,
     identity: async () => IDENTITY,
+    libraryScope: async () => MY_LIBRARY_SCOPE,
     signal: new AbortController().signal,
     ...overrides,
   };
@@ -88,7 +95,7 @@ const keys = (answer: Record<string, unknown>) =>
   (answer.rows as { indexedKey: string }[]).map((row) => row.indexedKey);
 
 describe("zotlit:item-query without arguments", () => {
-  it("answers the versioned envelope for the personal Library with the CLI defaults", async () => {
+  it("answers the versioned envelope for the Library Scope with the CLI defaults", async () => {
     using scenario = openScenarioDatabase();
     const { run } = setup(scenario);
 
@@ -99,8 +106,9 @@ describe("zotlit:item-query without arguments", () => {
       command: ITEM_QUERY_COMMAND,
       ok: true,
       identity: IDENTITY,
-      library: { type: "personal" },
+      libraries: [{ type: "personal" }],
       request: {
+        libraries: ["personal"],
         filter: null,
         sort: [{ field: "dateModified", direction: "desc" }],
         limit: 100,
@@ -109,10 +117,16 @@ describe("zotlit:item-query without arguments", () => {
       truncated: false,
     });
     expect(keys(answer)).toEqual(PERSONAL_BY_MODIFIED);
-    expect(Object.keys(answer).slice(0, 3)).toEqual([
+    expect(Object.keys(answer)).toEqual([
       "contractVersion",
       "command",
       "ok",
+      "identity",
+      "libraries",
+      "request",
+      "returnedCount",
+      "truncated",
+      "rows",
     ]);
   });
 
@@ -123,6 +137,7 @@ describe("zotlit:item-query without arguments", () => {
         return { client: scenario.db, [Symbol.dispose]: () => {} };
       },
       identity: async () => IDENTITY,
+      libraryScope: async () => MY_LIBRARY_SCOPE,
       signal: new AbortController().signal,
     });
 
@@ -155,6 +170,7 @@ describe("zotlit:item-query answer", () => {
         [Symbol.dispose]: () => {},
       }),
       identity: async () => IDENTITY,
+      libraryScope: async () => MY_LIBRARY_SCOPE,
       signal: new AbortController().signal,
       ...overrides,
     });
@@ -270,28 +286,47 @@ describe("zotlit:item-query limit", () => {
   );
 });
 
-describe("zotlit:item-query Target Library", () => {
+/** Both Libraries of the scenario, most recently modified first. */
+const BOTH_BY_MODIFIED = [
+  "ART2FULLg4815",
+  "ART2FULL",
+  "GRP2BK22g4815",
+  ...PERSONAL_BY_MODIFIED.slice(1),
+];
+const PERSONAL_WIRE = { type: "personal" };
+const METHODS_GROUP_WIRE = {
+  type: "group",
+  groupID: 4815,
+  name: "Methods Reading Group",
+};
+const BULK_GROUP_WIRE = {
+  type: "group",
+  groupID: BULK_LIBRARY.groupID,
+  name: BULK_LIBRARY.name,
+};
+
+describe("zotlit:item-query library", () => {
   it("reads a group Library by its group ID and reports it with its name", async () => {
     using scenario = openScenarioDatabase();
     const { run } = setup(scenario);
 
     const answer = await run({ library: "group:4815" });
 
-    expect(answer.library).toEqual({
-      type: "group",
-      groupID: 4815,
-      name: "Methods Reading Group",
-    });
+    expect(answer.libraries).toEqual([METHODS_GROUP_WIRE]);
+    expect(answer.request).toMatchObject({ libraries: ["group:4815"] });
     expect(keys(answer)).toEqual(["ART2FULLg4815", "GRP2BK22g4815"]);
   });
 
-  it("accepts library=personal", async () => {
+  it("reads the personal Library alone for library=personal, whatever the Library Scope is", async () => {
     using scenario = openScenarioDatabase();
-    const { run } = setup(scenario);
+    const { run } = setup(scenario, {
+      libraryScope: async () => DEFAULT_LIBRARY_SCOPE,
+    });
 
     const answer = await run({ library: "personal" });
 
-    expect(answer.library).toEqual({ type: "personal" });
+    expect(answer.libraries).toEqual([PERSONAL_WIRE]);
+    expect(answer.request).toMatchObject({ libraries: ["personal"] });
     expect(keys(answer)).toEqual(PERSONAL_BY_MODIFIED);
   });
 
@@ -305,17 +340,18 @@ describe("zotlit:item-query Target Library", () => {
       ok: false,
       diagnostic: {
         code: "library-not-found",
+        message: expect.stringContaining("999"),
         details: { parameter: "library" },
       },
     });
     expect(events).toEqual(["acquire", "release", "answer"]);
   });
 
-  it.each(["group:", "group:abc", "group:0", "My Library", "1"])(
+  it.each(["group:", "group:abc", "group:0", "My Library", "1", "all"])(
     "rejects library=%j",
     async (library) => {
       using scenario = openScenarioDatabase();
-      const { run } = setup(scenario);
+      const { run, acquireRead } = setup(scenario);
 
       const answer = await run({ library });
 
@@ -326,8 +362,275 @@ describe("zotlit:item-query Target Library", () => {
           details: { parameter: "library" },
         },
       });
+      expect(acquireRead).not.toHaveBeenCalled();
     },
   );
+});
+
+describe("zotlit:item-query libraries", () => {
+  it("reads the named Libraries as one result set", async () => {
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
+
+    const answer = await run({ libraries: '["personal","group:4815"]' });
+
+    expect(answer).toMatchObject({
+      ok: true,
+      libraries: [PERSONAL_WIRE, METHODS_GROUP_WIRE],
+      request: { libraries: ["personal", "group:4815"] },
+      returnedCount: 12,
+      truncated: false,
+    });
+    expect(keys(answer)).toEqual(BOTH_BY_MODIFIED);
+  });
+
+  it("limits the one result set, not each Library", async () => {
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
+
+    const answer = await run({
+      libraries: '["personal","group:4815"]',
+      limit: "3",
+    });
+
+    expect(answer).toMatchObject({ returnedCount: 3, truncated: true });
+    expect(keys(answer)).toEqual(BOTH_BY_MODIFIED.slice(0, 3));
+  });
+
+  it("reports the Libraries in the canonical order, whatever order the caller gives", async () => {
+    using scenario = openScenarioDatabase();
+    seedBulkLibrary(scenario.sqlite, 1);
+    const { run } = setup(scenario);
+
+    const answer = await run({
+      libraries: `["group:4815","group:${BULK_LIBRARY.groupID}","personal"]`,
+      fields: "[]",
+    });
+
+    // My Library first, then the groups by ascending group ID.
+    expect(answer.libraries).toEqual([
+      PERSONAL_WIRE,
+      BULK_GROUP_WIRE,
+      METHODS_GROUP_WIRE,
+    ]);
+    expect(answer.request).toMatchObject({
+      libraries: ["personal", `group:${BULK_LIBRARY.groupID}`, "group:4815"],
+    });
+    expect(answer.returnedCount).toBe(13);
+  });
+
+  it("reads a Library outside the Library Scope when the caller names it", async () => {
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
+
+    const answer = await run({ libraries: '["group:4815"]' });
+
+    expect(answer.libraries).toEqual([METHODS_GROUP_WIRE]);
+    expect(keys(answer)).toEqual(["ART2FULLg4815", "GRP2BK22g4815"]);
+  });
+
+  it("reads every Library of the source for libraries=all, whatever the Library Scope is", async () => {
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
+
+    const answer = await run({ libraries: "all" });
+
+    expect(answer.libraries).toEqual([PERSONAL_WIRE, METHODS_GROUP_WIRE]);
+    expect(answer.request).toMatchObject({
+      libraries: ["personal", "group:4815"],
+    });
+    expect(keys(answer)).toEqual(BOTH_BY_MODIFIED);
+  });
+
+  it("keeps local library IDs out of the answer", async () => {
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
+
+    const answer = await run({ libraries: "all", limit: "1" });
+
+    expect(JSON.stringify(answer)).not.toContain("libraryID");
+  });
+
+  it("answers library-not-found for a Library the source does not hold, and names it", async () => {
+    using scenario = openScenarioDatabase();
+    const { run, events } = setup(scenario);
+
+    const answer = await run({ libraries: '["personal","group:999"]' });
+
+    expect(answer).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "library-not-found",
+        message: expect.stringContaining("999"),
+        details: { parameter: "libraries" },
+      },
+    });
+    expect(events).toEqual(["acquire", "release", "answer"]);
+  });
+
+  it.each([
+    ["no JSON", "personal"],
+    ["no array", '"personal"'],
+    ["an empty array", "[]"],
+    ["a selector that is no text", "[1]"],
+    ["a selector object", '[{"type":"personal"}]'],
+    ["an unknown selector", '["My Library"]'],
+    ["a group without a positive ID", '["group:0"]'],
+    ["the word all inside the array", '["all"]'],
+    ["a Library twice", '["personal","personal"]'],
+    ["a group twice", '["group:4815","personal","group:4815"]'],
+  ])("rejects libraries with %s", async (_name, libraries) => {
+    using scenario = openScenarioDatabase();
+    const { run, acquireRead } = setup(scenario);
+
+    const answer = await run({ libraries });
+
+    expect(answer).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "invalid-argument",
+        details: { parameter: "libraries" },
+      },
+    });
+    expect(acquireRead).not.toHaveBeenCalled();
+  });
+});
+
+describe("zotlit:item-query library and libraries together", () => {
+  it("reads the Libraries of libraries and ignores library", async () => {
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
+
+    const answer = await run({
+      library: "personal",
+      libraries: '["group:4815"]',
+    });
+
+    expect(answer.libraries).toEqual([METHODS_GROUP_WIRE]);
+    expect(answer.request).toMatchObject({ libraries: ["group:4815"] });
+    expect(keys(answer)).toEqual(["ART2FULLg4815", "GRP2BK22g4815"]);
+  });
+
+  it("ignores a library that the source does not hold, and a malformed one", async () => {
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
+
+    for (const library of ["group:999", "My Library"]) {
+      const answer = await run({ library, libraries: "all" });
+
+      expect(answer).toMatchObject({ ok: true, returnedCount: 12 });
+    }
+  });
+
+  it("answers the diagnostic of a malformed libraries beside a valid library", async () => {
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
+
+    const answer = await run({ library: "personal", libraries: "[]" });
+
+    expect(answer).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "invalid-argument",
+        details: { parameter: "libraries" },
+      },
+    });
+  });
+});
+
+describe("zotlit:item-query default Libraries", () => {
+  const scoped = (scope: LibraryScope) => ({
+    libraryScope: async () => scope,
+  });
+  const selected = (
+    ...libraries: Extract<LibraryScope, { mode: "selected" }>["libraries"]
+  ): LibraryScope => ({ mode: "selected", libraries });
+
+  it("reads every Library of the source when the Library Scope is All Libraries", async () => {
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario, scoped(DEFAULT_LIBRARY_SCOPE));
+
+    const answer = await run();
+
+    expect(answer).toMatchObject({
+      ok: true,
+      libraries: [PERSONAL_WIRE, METHODS_GROUP_WIRE],
+      request: { libraries: ["personal", "group:4815"], limit: 100 },
+      returnedCount: 12,
+    });
+    expect(keys(answer)).toEqual(BOTH_BY_MODIFIED);
+  });
+
+  it("reads the Selected Libraries", async () => {
+    using scenario = openScenarioDatabase();
+    seedBulkLibrary(scenario.sqlite, 1);
+    const { run } = setup(
+      scenario,
+      scoped(selected({ type: "group", groupID: 4815 })),
+    );
+
+    const answer = await run();
+
+    expect(answer.libraries).toEqual([METHODS_GROUP_WIRE]);
+    expect(answer.request).toMatchObject({ libraries: ["group:4815"] });
+    expect(keys(answer)).toEqual(["ART2FULLg4815", "GRP2BK22g4815"]);
+  });
+
+  it("leaves out a Selected Library that the source does not hold", async () => {
+    using scenario = openScenarioDatabase();
+    const { run } = setup(
+      scenario,
+      scoped(
+        selected(
+          { type: "personal" },
+          { type: "group", groupID: 999 },
+          { type: "group", groupID: 4815 },
+        ),
+      ),
+    );
+
+    const answer = await run();
+
+    expect(answer).toMatchObject({
+      ok: true,
+      libraries: [PERSONAL_WIRE, METHODS_GROUP_WIRE],
+      request: { libraries: ["personal", "group:4815"] },
+      returnedCount: 12,
+    });
+  });
+
+  it("answers no-library-available when the source holds no Selected Library, and releases the lease", async () => {
+    using scenario = openScenarioDatabase();
+    const { run, events } = setup(
+      scenario,
+      scoped(selected({ type: "group", groupID: 999 })),
+    );
+
+    const answer = await run();
+
+    expect(answer).toMatchObject({
+      contractVersion: 1,
+      command: ITEM_QUERY_COMMAND,
+      ok: false,
+      diagnostic: {
+        code: "no-library-available",
+        hint: expect.stringContaining("libraries="),
+      },
+    });
+    expect(events).toEqual(["acquire", "release", "answer"]);
+  });
+
+  it("resolves the Library Scope on the leased source", async () => {
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario, scoped(DEFAULT_LIBRARY_SCOPE));
+    // The group leaves the source: the copy under the lease decides.
+    scenario.sqlite.exec("delete from groups where groupID = 4815");
+
+    const answer = await run();
+
+    expect(answer.libraries).toEqual([PERSONAL_WIRE]);
+    expect(keys(answer)).toEqual(PERSONAL_BY_MODIFIED);
+  });
 });
 
 describe("zotlit:item-query fields", () => {
@@ -613,20 +916,22 @@ describe("zotlit:item-query on the layout of the Zotero database", () => {
 
       const personal = await run({ fields: "[]" });
       const group = await run({ fields: "[]", library: "group:4815" });
+      const all = await run({ fields: "[]", libraries: "all" });
 
       expect(personal).toMatchObject({
         ok: true,
-        library: { type: "personal" },
+        libraries: [PERSONAL_WIRE],
         returnedCount: 10,
       });
       expect(group).toMatchObject({
         ok: true,
-        library: {
-          type: "group",
-          groupID: 4815,
-          name: "Methods Reading Group",
-        },
+        libraries: [METHODS_GROUP_WIRE],
         returnedCount: 2,
+      });
+      expect(all).toMatchObject({
+        ok: true,
+        libraries: [PERSONAL_WIRE, METHODS_GROUP_WIRE],
+        returnedCount: 12,
       });
     },
   );
@@ -699,7 +1004,7 @@ describe("zotlit:item-query cancellation", () => {
 describe("answerExit", () => {
   const context = {
     identity: IDENTITY,
-    library: { type: "personal" } as const,
+    libraries: [{ type: "personal" }] as const,
     signal: new AbortController().signal,
   };
 
@@ -783,6 +1088,7 @@ function setupSchema(
   const handler = createItemQuerySchemaHandler({
     acquireRead,
     identity: async () => IDENTITY,
+    libraryScope: async () => MY_LIBRARY_SCOPE,
     signal: new AbortController().signal,
     ...overrides,
   });
@@ -843,7 +1149,7 @@ describe("zotlit:item-query-schema", () => {
     expect(events).toEqual(["acquire", "release", "answer"]);
   });
 
-  it("reports the CLI defaults: 100 rows of My Library, newest modification first", async () => {
+  it("reports the CLI defaults: 100 rows of the Library Scope, newest modification first", async () => {
     using scenario = openScenarioDatabase();
     const { run } = setupSchema(scenario);
 
@@ -853,7 +1159,7 @@ describe("zotlit:item-query-schema", () => {
       fields: ["itemType", "title", "creators", "date", "dateModified"],
       sort: [{ field: "dateModified", direction: "desc" }],
       limit: 100,
-      library: "personal",
+      libraries: "library-scope",
     });
   });
 
@@ -963,10 +1269,12 @@ describe("zotlit:item-query-guide", () => {
       "obsidian zotlit:item-query [filter=<expression>] [fields=<json>]",
     );
     expect(output).toContain("[limit=<n|all>] [library=<personal|group:id>]");
+    expect(output).toContain("[libraries=<json|all>]");
     expect(output).toContain(
       "returns at most\n  100 rows, sorted by dateModified descending.\n  Each row has itemType, title, creators, date, and dateModified.",
     );
-    expect(output).toContain("My Library");
+    expect(output).toContain("Library scope");
+    expect(output).toContain("libraries wins");
   });
 
   it.each([
@@ -1036,6 +1344,7 @@ describe("registerItemQueryCli", () => {
     registerItemQueryCli(plugin, {
       acquireRead,
       identity: async () => IDENTITY,
+      libraryScope: async () => MY_LIBRARY_SCOPE,
     });
 
     expect(registerCliHandler).toHaveBeenCalledWith(
@@ -1047,6 +1356,7 @@ describe("registerItemQueryCli", () => {
         sort: expect.any(Object),
         limit: expect.any(Object),
         library: expect.any(Object),
+        libraries: expect.any(Object),
       }),
       expect.any(Function),
     );

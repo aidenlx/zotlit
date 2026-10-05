@@ -58,7 +58,7 @@ export interface ItemQueryMeasureReport {
   totalMs: number;
   /** Argument decoding and the source lease. */
   leaseMs?: number;
-  /** The Effect run: Target Library resolution and `queryItems`. */
+  /** The Effect run: the resolution of the Target Libraries and `queryItems`. */
   engineMs?: number;
   /** The envelope, built in steps after the engine settles. */
   answerMs?: number;

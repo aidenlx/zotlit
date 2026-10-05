@@ -3,12 +3,11 @@
 import { Effect, Exit } from "effect";
 
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-import { ItemQueryDatabase, readTargetLibrary } from "@zotlit/db/item-query";
+import { ItemQueryDatabase, readTargetLibraries } from "@zotlit/db/item-query";
 import type {
   ItemQueryDatabaseError,
   ItemQueryLayoutError,
   TargetLibraryRow,
-  TargetLibrarySelector,
 } from "@zotlit/db/item-query";
 import {
   describeItemQuery,
@@ -21,6 +20,12 @@ import type {
   ItemQuerySchema,
   QueryResult,
 } from "@zotlit/item-query";
+
+import { selectorKey } from "@/services/library-scope/scope";
+import type {
+  LibraryScope,
+  LibrarySelector,
+} from "@/services/library-scope/scope";
 
 /**
  * Wraps the operation of one run before it starts, to provide the observer
@@ -36,13 +41,41 @@ interface RunOptions {
   instrument?: ItemQueryInstrument;
 }
 
-/** The Library a run resolved and its result; no result without the Library. */
-export type ItemQueryRun =
-  | { readonly library: null }
-  | { readonly library: TargetLibraryRow; readonly result: QueryResult };
+/** How a run chooses its Target Libraries among the Libraries of the source. */
+export type LibrarySelection =
+  /** The available Libraries of the Library Scope. */
+  | { readonly from: "scope"; readonly scope: LibraryScope }
+  /** Every Library of the source. */
+  | { readonly from: "all" }
+  /** The Libraries the caller names; each one must be in the source. */
+  | { readonly from: "named"; readonly selectors: readonly LibrarySelector[] };
 
 /**
- * Resolve the Target Library and run one Item Query on the leased client to
+ * The Target Libraries a run resolved, in the canonical order, and its result;
+ * no result without a Library.
+ */
+export type ItemQueryRun =
+  | {
+      readonly outcome: "result";
+      readonly libraries: readonly TargetLibraryRow[];
+      readonly result: QueryResult;
+    }
+  /** The source has no Library for a selector the caller named. */
+  | {
+      readonly outcome: "library-not-found";
+      readonly selector: LibrarySelector;
+    }
+  /** The source has no Library of the Library Scope. */
+  | { readonly outcome: "no-library-available" };
+
+function selectorOf(library: TargetLibraryRow): LibrarySelector {
+  return library.groupID === null
+    ? { type: "personal" }
+    : { type: "group", groupID: library.groupID };
+}
+
+/**
+ * Resolve the Target Libraries and run one Item Query on the leased client to
  * its `Exit`. Each run gets its own time-budget scheduler; the Query Clock is
  * the system clock and zone. The caller holds the lease until the returned
  * promise settles.
@@ -51,8 +84,8 @@ export type ItemQueryRun =
  * comes first.
  */
 export function runItemQuery(
-  selector: TargetLibrarySelector,
-  request: Omit<ItemQueryRequest, "library">,
+  selection: LibrarySelection,
+  request: Omit<ItemQueryRequest, "libraries">,
   options: RunOptions,
 ): Promise<
   Exit.Exit<
@@ -62,10 +95,35 @@ export function runItemQuery(
 > {
   return run(
     Effect.gen(function* () {
-      const library = yield* readTargetLibrary(selector);
-      if (library === null) return { library };
-      const result = yield* queryItems({ ...request, library });
-      return { library, result };
+      // The Libraries of the source, in the canonical order.
+      const source = yield* readTargetLibraries();
+      let libraries = source;
+      if (selection.from !== "all") {
+        const selectors =
+          selection.from === "named"
+            ? selection.selectors
+            : selection.scope.mode === "selected"
+              ? selection.scope.libraries
+              : source.map(selectorOf);
+        const named = new Set(selectors.map(selectorKey));
+        libraries = source.filter((library) =>
+          named.has(selectorKey(selectorOf(library))),
+        );
+        if (selection.from === "named" && libraries.length < named.size) {
+          const held = new Set(
+            libraries.map((library) => selectorKey(selectorOf(library))),
+          );
+          const selector = selectors.find(
+            (entry) => !held.has(selectorKey(entry)),
+          )!;
+          return { outcome: "library-not-found", selector } as const;
+        }
+      }
+      if (libraries.length === 0) {
+        return { outcome: "no-library-available" } as const;
+      }
+      const result = yield* queryItems({ ...request, libraries });
+      return { outcome: "result", libraries, result } as const;
     }),
     options,
   );

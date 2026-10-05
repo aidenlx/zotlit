@@ -25,6 +25,7 @@ export const ITEM_QUERY_PARAMS = [
   "sort",
   "limit",
   "library",
+  "libraries",
 ] as const;
 
 type ItemQueryParam = (typeof ITEM_QUERY_PARAMS)[number];
@@ -52,6 +53,11 @@ export const itemQueryFlags: CliFlags = {
   library: {
     value: "<personal|group:id>",
     description:
-      "Target Library: personal, or group:<groupID> (default: personal)",
+      "One Library to read: personal, or group:<groupID>; libraries overrides it",
+  },
+  libraries: {
+    value: "<json|all>",
+    description:
+      'Libraries to read as one result set: a JSON array such as ["personal","group:123"], or all for every Library (default: the available Libraries of the Library scope setting)',
   },
 } satisfies Record<ItemQueryParam, CliFlag>;

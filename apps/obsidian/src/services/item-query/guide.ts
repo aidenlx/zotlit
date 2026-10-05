@@ -82,7 +82,8 @@ FIELDS
   gives the type a filter reads). Examples:
     ${filter('itemType == "book"')}
     ${filter('title.startsWith("The")')}
-  key is the Zotero Key of the Item inside the Target Library:
+  key is the Zotero Key of the Item inside its Library. Two Libraries can
+  hold the same key; the Indexed Key of a row names one Item:
     ${filter('key == "ABCD2345"')}
   attachments is true when the Item has an Attachment outside the trash:
     ${filter("!attachments")}
@@ -97,7 +98,8 @@ TAGS, COLLECTIONS, AND CREATORS
   tags, collections, and creators are lists of text.
     ${filter('tags.contains("to-read")')}
     ${filter('tags.containsAny("to-read", "cited")')}
-  A Collection is its full path from the top-level Collection, joined by /.
+  A Collection is its full path from the top-level Collection of its
+  Library, joined by /. A path matches in each Library that has it.
   within matches that Collection and every Collection below it:
     ${filter('collections.contains("Thesis/Methods")')}
     ${filter('collections.within("Thesis")')}
@@ -160,7 +162,7 @@ SORT
     ${example({ sort: '[{"field":"date","direction":"desc"},{"field":"title","direction":"asc"}]' })}
   The default is ${DEFAULT_SORT_TEXT}.
   Items without a value come last in both directions. The Indexed Key orders
-  Items that tie on every entry.
+  Items that tie on every entry, also Items of two Libraries.
 
 ORDER OF TEXT
   Text sorts in one alphabetical order on every computer. Digits come before
@@ -174,6 +176,7 @@ ORDER OF DATES
 LIMIT
   limit is the most rows to return: a positive integer, or all for every
   match. The default is ${DEFAULT_CLI_LIMIT}. truncated is true when more Items match.
+  The Items of all the Libraries of a query are sorted and limited together.
     ${example({ sort: '[{"field":"title","direction":"asc"}]', limit: "all" })}`;
 
 const RESULTS_SECTION = `RESULTS AND DIAGNOSTICS
@@ -181,10 +184,14 @@ const RESULTS_SECTION = `RESULTS AND DIAGNOSTICS
 ENVELOPE
   Each answer is JSON with contractVersion, command, and ok.
   On success, the query answer has identity (the vault and the Zotero
-  source), library, request (the query after defaults), returnedCount,
+  source), libraries, request (the query after defaults), returnedCount,
   truncated, and rows. Each row is {"indexedKey","values"}; values has one
   entry for each path in request.fields.
-  library is {"type":"personal"} or {"type":"group","groupID","name"}.
+  libraries lists each Library the query read, My Library first and then
+  the groups by group ID. Each entry is {"type":"personal"} or
+  {"type":"group","groupID","name"}. request.libraries has the same
+  Libraries in the form of the libraries argument.
+  The Indexed Key of an Item in a group ends with g and the group ID.
 
 DIAGNOSTICS
   On failure, ok is false and diagnostic holds code, message, and hint.
@@ -193,7 +200,10 @@ DIAGNOSTICS
   or sort; span gives the characters of the filter text, from (inclusive)
   to to (exclusive).
   unsupported-database-layout means this ZotLit version cannot read the
-  Zotero database: ask the user to update ZotLit.`;
+  Zotero database: ask the user to update ZotLit.
+  library-not-found means the Zotero source has no Library for a name in
+  library or libraries. no-library-available means it has none of the
+  Libraries of the Library scope setting: name the Libraries.`;
 
 /** Canonical topic registry shared by parsing, generated help, and the index. */
 export const GUIDE_TOPICS = {
@@ -214,7 +224,7 @@ export function parseGuideTopic(value: string): GuideTopic | null {
 
 const QUICKSTART = `ZOTLIT ITEM QUERY
 
-Item Query finds Items in one Zotero Library and returns the values you
+Item Query finds Items in your Zotero Libraries and returns the values you
 select as JSON. It reads the top-level Items outside the trash and changes
 nothing in Zotero.
 
@@ -229,11 +239,19 @@ SYNOPSIS
   obsidian ${ITEM_QUERY_GUIDE_COMMAND} [topic=<${GUIDE_TOPIC_NAMES.join("|")}>]
 
 DEFAULTS
-  Without arguments, a query reads My Library and returns at most
+  Without arguments, a query reads the Libraries that ZotLit searches (the
+  Library scope setting) as one result set and returns at most
   ${DEFAULT_CLI_LIMIT} rows, sorted by ${DEFAULT_SORT_TEXT}.
   Each row has ${DEFAULT_FIELD_LIST}.
-  library=group:<groupID> reads a group Library; the group ID is the number
-  in the group's address on zotero.org.
+
+LIBRARIES
+  library names one Library: personal (My Library), or group:<groupID>.
+  The group ID is the number in the group's address on zotero.org.
+    ${example({ library: "personal", limit: "5" })}
+  libraries names a set as a JSON array, or all for every Library:
+    ${example({ libraries: '["personal"]', limit: "5" })}
+    ${example({ libraries: "all", limit: "5" })}
+  When a query has both, libraries wins and library has no effect.
 
 EXAMPLES
   ${example({ filter: 'tags.contains("to-read")', fields: '["title","date.year","creators[0].fullName"]', limit: "20" })}

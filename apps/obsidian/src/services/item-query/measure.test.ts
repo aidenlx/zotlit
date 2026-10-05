@@ -17,6 +17,9 @@ function measureHandler(): CliHandler {
       identity: async () => {
         throw new Error("the run read the identity.");
       },
+      libraryScope: async () => {
+        throw new Error("the run read the Library Scope.");
+      },
     },
   );
   const call = registerCliHandler.mock.calls.find(
