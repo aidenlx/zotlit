@@ -6,7 +6,7 @@ The evaluator adopts the proof of concept's ZotLit-owned semantics for field ali
 
 Query Rows use ZotLit's template base-data vocabulary. Item Query extends it with collections, attachment presence, and a `custom` object that preserves exact custom-field names without colliding with reserved fields. Its wire adapter serializes Temporal values as ISO strings. This preserves source values such as `date.raw` while allowing precise Projection Paths such as `date.year`.
 
-Filtering, projection, and sorting have explicit capability vocabularies. Filters retain the proof of concept's evaluator values, including string lists for creators, tags, and collections. Projection exposes the richer template base-data structures. Sorting accepts top-level scalar fields only. The query schema states which operations each field or path supports.
+Filtering, projection, and sorting have explicit capability vocabularies. Filters retain the proof of concept's evaluator values, including string lists for creators, tags, and collections. Projection exposes the richer template base-data structures. Sorting accepts top-level scalar fields only. `accessDate` has one value in all three: a timestamp, or a calendar day when Zotero stores only a day, and a calendar day sorts from its start in the query time zone. The query schema states which operations each field or path supports.
 
 Filter requests are validated against that schema before database execution. An unknown field, function, or unsupported capability fails the complete query, while a known field that one Item lacks evaluates as null. Arbitrary custom-field names use `custom["exact source name"]`; identifier-safe, non-colliding custom fields can also retain their bare-name filter form.
 
