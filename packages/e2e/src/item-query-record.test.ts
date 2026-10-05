@@ -295,6 +295,132 @@ describe("threshold evaluation", () => {
   });
 });
 
+describe("queries over two Libraries", () => {
+  const run = (totalMs: number, slices: number[]) => [
+    { totalMs, slices, worstSliceReaders: [], answerSteps: [1] },
+  ];
+
+  it("holds them to the slice limits and records their totals", () => {
+    const measured = tier({
+      twoLibraries: {
+        groupItems: 10_000,
+        queries: [
+          // Above the 150 ms budget of a limited query of one Library.
+          query({ id: "two-scan", runs: run(9000, [8, 16]) }),
+          query({ id: "two-all", class: "all", runs: run(9000, [8, 32.5]) }),
+        ],
+        cancels: [],
+        missedCancels: [],
+      },
+    });
+
+    expect(statuses(measured)).toEqual([
+      "slices two-scan: passed",
+      "answer two-scan: passed",
+      "total two-scan: recorded",
+      "slices two-all: failed",
+      "answer two-all: passed",
+      "total two-all: recorded",
+    ]);
+  });
+
+  it("judges their cancels against 50 ms from request to settlement", () => {
+    const cancel = (latencyMs: number) => ({
+      delivery: "timer" as const,
+      query: `two-all at ${latencyMs}`,
+      latencyMs,
+      worstSliceMs: 9,
+    });
+    expect(
+      statuses(
+        tier({
+          twoLibraries: {
+            groupItems: 10_000,
+            queries: [],
+            cancels: [cancel(50), cancel(50.1)],
+            missedCancels: [],
+          },
+        }),
+      ),
+    ).toEqual([
+      "cancel timer: two-all at 50: passed",
+      "cancel timer: two-all at 50.1: failed",
+    ]);
+  });
+
+  it("fails when no cancel request reached a running query of two Libraries, whatever the cancels of one Library measured", () => {
+    expect(
+      statuses(
+        tier({
+          cancels: [
+            { delivery: "timer", query: "all", latencyMs: 9, worstSliceMs: 9 },
+          ],
+          twoLibraries: {
+            groupItems: 10_000,
+            queries: [],
+            cancels: [],
+            missedCancels: [
+              { delivery: "timer", query: "two-all", outcome: "answered" },
+            ],
+          },
+        }),
+      ),
+    ).toEqual([
+      "cancel timer: all: passed",
+      "cancel timer: not measured, two Libraries: failed",
+    ]);
+  });
+
+  it("stand in the summary under their own heading, with the verdict over both parts", () => {
+    const summary = formatSummary({
+      startedAt: "2026-10-05T08:00:00Z",
+      environment: [],
+      notes: [],
+      rawPath: "raw.json",
+      tiers: [
+        tier({
+          items: 50_000,
+          queries: [query({ id: "scan" })],
+          twoLibraries: {
+            groupItems: 50_000,
+            queries: [
+              query({
+                id: "two-all",
+                class: "all",
+                returnedCount: 100_000,
+                runs: [...run(900, [8, 40]), ...run(1100, [9])],
+              }),
+            ],
+            cancels: [
+              {
+                delivery: "timer",
+                query: "two-all at 50%",
+                latencyMs: 12.34,
+                worstSliceMs: 9,
+              },
+            ],
+            missedCancels: [],
+          },
+        }),
+      ],
+    });
+
+    expect(summary).toContain("**Result: FAILED.** 1 of 6 thresholds failed.");
+    expect(summary).toContain(
+      "- 50,000 Items, slices, `two-all`: p99 40.0 ms (limit 16), max 40.0 ms (limit 32)",
+    );
+    expect(summary).toContain(
+      "#### Two Libraries: 50,000 Items in My Library and 50,000 Items in the group Library",
+    );
+    expect(summary).toContain(
+      "| `two-all` | all | 100,000 | 1000 | - | recorded | 3 | 40.0 | 40.0 | **FAIL** | 40.0, 9.0 |",
+    );
+    expect(summary).toContain(
+      "| timer | `two-all at 50%` | 12.3 | pass | - | 9.0 |",
+    );
+  });
+});
+
 describe("summary", () => {
   const record: MeasurementRecord = {
     startedAt: "2026-10-05T08:00:00Z",

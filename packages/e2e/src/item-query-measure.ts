@@ -8,7 +8,10 @@
 // does (packages/e2e/AGENTS.md). It opens one vault of its own, builds the
 // Stress Build Library of each tier, and measures every query through the
 // dev-build command `zotlit:item-query-measure`, which runs the handler of
-// `zotlit:item-query` with the observers of the engine.
+// `zotlit:item-query` with the observers of the engine. After the queries of
+// one Library, each tier takes the Stress Build of two Libraries (the group
+// Library gets the Item count of the tier too) and measures the queries that
+// read both as one result set.
 //
 // THE VAULT WINDOW MUST STAY VISIBLE: on screen, not minimized, and not fully
 // covered by another window. Chromium throttles a hidden window, which changes
@@ -41,6 +44,7 @@ import {
   getFixtureLayout,
 } from "@zotlit/scripts/fixture";
 import {
+  STRESS_GROUP_LIBRARY,
   STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT,
   STRESS_LIBRARY_MIN_ITEM_COUNT,
   STRESS_LIBRARY_TIERS,
@@ -232,6 +236,54 @@ function querySpecs(uniqueKey: string): QuerySpec[] {
   ];
 }
 
+/**
+ * The queries over two large Libraries: My Library and the group Library of
+ * the Stress Build, as one result set. An unlimited query holds a match for
+ * every Item of both.
+ */
+const TWO_LIBRARIES = {
+  libraries: JSON.stringify([
+    "personal",
+    `group:${STRESS_GROUP_LIBRARY.groupID}`,
+  ]),
+};
+const TWO_LIBRARY_ALL: QuerySpec = {
+  id: "two-all",
+  class: "all",
+  args: { ...TWO_LIBRARIES, limit: "all" },
+};
+const TWO_LIBRARY_SPECS: readonly QuerySpec[] = [
+  TWO_LIBRARY_ALL,
+  {
+    id: "two-all-sort-title",
+    class: "all",
+    args: {
+      ...TWO_LIBRARIES,
+      limit: "all",
+      sort: JSON.stringify([{ field: "title", direction: "asc" }]),
+    },
+  },
+  {
+    id: "two-all-keys",
+    class: "all",
+    args: { ...TWO_LIBRARIES, limit: "all", fields: "[]" },
+  },
+  {
+    id: "two-scan-no-filter",
+    class: "other",
+    args: { ...TWO_LIBRARIES, limit: "100" },
+  },
+  {
+    id: "two-scan-sort-title",
+    class: "other",
+    args: {
+      ...TWO_LIBRARIES,
+      limit: "100",
+      sort: JSON.stringify([{ field: "title", direction: "asc" }]),
+    },
+  },
+];
+
 /** The runs of each query; the record takes their median. */
 const DEFAULT_RUNS = 5;
 
@@ -252,6 +304,9 @@ function renderReference(): string {
     `  Default: ${STRESS_LIBRARY_TIERS.join(", ")} Items in My Library.`,
     `  A tier is ${STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT}.`,
     "  A tier without a time threshold is recorded only.",
+    `  Two Libraries: each tier also fills the group Library ${STRESS_GROUP_LIBRARY.name} to its`,
+    `  Item count and measures ${TWO_LIBRARY_SPECS.map(({ id }) => id).join(", ")} over both,`,
+    "  with the slice and cancel thresholds; their totals are recorded only.",
     "",
     "Thresholds:",
     `  slices: 99th percentile at most ${THRESHOLDS.slice.p99Ms} ms, longest at most ${THRESHOLDS.slice.maxMs} ms`,
@@ -446,11 +501,15 @@ async function pluginReady(): Promise<boolean> {
   }, 240);
 }
 
-/** Replace the Fixture database with the Stress Build of `items` Items. */
-async function loadTier(items: number): Promise<void> {
+/**
+ * Replace the Fixture database with the Stress Build of `items` Items. With
+ * `groupItems`, the group Library of the Stress Build has that Item count.
+ */
+async function loadTier(items: number, groupItems?: number): Promise<void> {
   await cli([`vault=${vaultId}`, "plugin:disable", "id=zotlit"]);
   await buildFixture(fixture, {
     stressLibraryItemCount: items,
+    stressGroupLibraryItemCount: groupItems,
     pluginBundleDir,
     linkedAttachmentVaultDir: vaultPath,
   });
@@ -460,23 +519,72 @@ async function loadTier(items: number): Promise<void> {
   }
 }
 
+interface RawQuery {
+  spec: QuerySpec;
+  warmUp: MeasureReport;
+  runs: MeasureReport[];
+}
+
+interface RawCancel {
+  delivery: CancelMeasurement["delivery"];
+  query: string;
+  /** When the terminal sent the cancel call. */
+  sentAtEpochMs?: number;
+  /** When the request reached the window. */
+  arrivedAtEpochMs?: number;
+  report: MeasureReport;
+}
+
 interface RawTier {
   items: number;
   uniqueKey: string;
-  queries: { spec: QuerySpec; warmUp: MeasureReport; runs: MeasureReport[] }[];
+  queries: RawQuery[];
   heaps: { spec: QuerySpec; runs: MeasureReport[] }[];
-  cancels: {
-    delivery: CancelMeasurement["delivery"];
-    query: string;
-    /** When the terminal sent the cancel call. */
-    sentAtEpochMs?: number;
-    /** When the request reached the window. */
-    arrivedAtEpochMs?: number;
-    report: MeasureReport;
-  }[];
+  cancels: RawCancel[];
   /** The cancel requests whose run gave no report. */
   unreported: { delivery: CancelMeasurement["delivery"]; query: string }[];
   channels: ChannelCount;
+  /** The queries over two Libraries, each with the Items of the tier. */
+  twoLibraries: { queries: RawQuery[]; cancels: RawCancel[] };
+}
+
+/** One warm-up run and the measured runs of one query. */
+async function measureQuery(spec: QuerySpec): Promise<RawQuery> {
+  const warmUp = expectAnswered(spec.id, await measure(spec.args));
+  const runs: MeasureReport[] = [];
+  for (let run = 0; run < runCount; run++) {
+    runs.push(expectAnswered(spec.id, await measure(spec.args)));
+  }
+  log(
+    `${spec.id}: median ${median(runs.map((run) => run.totalMs)).toFixed(1)} ms, worst slices ${runs.map((run) => run.worstSlice?.ms ?? 0).join(", ")} ms`,
+  );
+  return { spec, warmUp, runs };
+}
+
+/** The time a cancel can interrupt: the handler up to the end of the engine. */
+function cancellableMs({ runs }: RawQuery): number {
+  return median(runs.map((run) => (run.leaseMs ?? 0) + (run.engineMs ?? 0)));
+}
+
+/** Cancel one run of a query by a second CLI call that arrives in the run. */
+async function cancelThroughCli(
+  spec: QuerySpec,
+  delayMs: number,
+): Promise<RawCancel> {
+  const running = measure(spec.args);
+  await delay(delayMs);
+  const sentAtEpochMs = Temporal.Now.instant().epochMilliseconds;
+  const cancelled = JSON.parse(await cliCommand(vaultId, CANCEL_COMMAND)) as {
+    cancelled: number;
+    arrivedAtEpochMs: number;
+  };
+  return {
+    delivery: "cli",
+    query: spec.id,
+    sentAtEpochMs,
+    arrivedAtEpochMs: cancelled.arrivedAtEpochMs,
+    report: await running,
+  };
 }
 
 /** Measure one tier into `raw`, so a run that stops early keeps its part. */
@@ -500,17 +608,7 @@ async function measureTier(raw: RawTier): Promise<void> {
   raw.uniqueKey = uniqueKey;
   const specs = querySpecs(uniqueKey);
 
-  for (const spec of specs) {
-    const warmUp = expectAnswered(spec.id, await measure(spec.args));
-    const runs: MeasureReport[] = [];
-    for (let run = 0; run < runCount; run++) {
-      runs.push(expectAnswered(spec.id, await measure(spec.args)));
-    }
-    raw.queries.push({ spec, warmUp, runs });
-    log(
-      `${spec.id}: median ${median(runs.map((run) => run.totalMs)).toFixed(1)} ms, worst slices ${runs.map((run) => run.worstSlice?.ms ?? 0).join(", ")} ms`,
-    );
-  }
+  for (const spec of specs) raw.queries.push(await measureQuery(spec));
 
   // Peak heap: a limited query and `limit=all`, each from a collected heap.
   const byId = (id: string): QuerySpec => specs.find((spec) => spec.id === id)!;
@@ -527,11 +625,8 @@ async function measureTier(raw: RawTier): Promise<void> {
 
   // Cancel: the longest query, cancelled at five points of its run by a timer.
   const exportSpec = byId("all");
-  // The time a cancel can interrupt: the handler up to the end of the engine.
-  const exportMs = median(
-    raw.queries
-      .find(({ spec }) => spec === exportSpec)!
-      .runs.map((run) => (run.leaseMs ?? 0) + (run.engineMs ?? 0)),
+  const exportMs = cancellableMs(
+    raw.queries.find(({ spec }) => spec === exportSpec)!,
   );
   for (const fraction of [0.1, 0.3, 0.5, 0.7, 0.9]) {
     raw.cancels.push({
@@ -547,20 +642,7 @@ async function measureTier(raw: RawTier): Promise<void> {
   // Cancel through a second CLI call, which arrives while the run is in progress.
   const cancelDelayMs = Math.min(exportMs * 0.3, 300);
   for (let run = 0; run < 3; run++) {
-    const running = measure(exportSpec.args);
-    await delay(cancelDelayMs);
-    const sentAtEpochMs = Temporal.Now.instant().epochMilliseconds;
-    const cancelled = JSON.parse(await cliCommand(vaultId, CANCEL_COMMAND)) as {
-      cancelled: number;
-      arrivedAtEpochMs: number;
-    };
-    raw.cancels.push({
-      delivery: "cli",
-      query: exportSpec.id,
-      sentAtEpochMs,
-      arrivedAtEpochMs: cancelled.arrivedAtEpochMs,
-      report: await running,
-    });
+    raw.cancels.push(await cancelThroughCli(exportSpec, cancelDelayMs));
   }
 
   // The MessageChannel of the scheduler: a limited run, an unlimited run, and
@@ -610,48 +692,94 @@ async function measureTier(raw: RawTier): Promise<void> {
       throw new Error("ZotLit did not load again after the unload cancel");
     }
   }
+
+  await measureTwoLibraries(raw);
 }
 
-/** The measurements of one tier, with the notes on runs that gave none. */
-function toTier(raw: RawTier, notes: string[]): TierMeasurement {
-  const tier = raw.items.toLocaleString("en-US");
-  const queries = raw.queries.map(({ spec, runs }): QueryMeasurement => {
-    const counts = new Set(runs.map((run) => run.returnedCount));
-    if (counts.size !== 1) {
-      notes.push(
-        `${tier} Items: \`${spec.id}\` returned different row counts in its runs (${[...counts].join(", ")}).`,
-      );
-    }
-    return {
-      id: spec.id,
-      class: spec.class,
-      args: spec.args,
-      returnedCount: runs[0]!.returnedCount ?? 0,
-      runs: runs.map((run) => ({
-        totalMs: run.totalMs,
-        slices: run.slices,
-        answerSteps: run.answerSteps,
-        worstSliceReaders: [
-          ...new Set(
-            run.worstSlice?.statements.map(({ reader }) => reader) ?? [],
-          ),
-        ],
-      })),
-    };
-  });
+/**
+ * Measure the queries over two Libraries into `raw`, on the Stress Build that
+ * gives the group Library the Item count of the tier too. The queries of one
+ * Library ran before, on the Stress Build of My Library alone.
+ */
+async function measureTwoLibraries(raw: RawTier): Promise<void> {
+  const { items, twoLibraries: two } = raw;
+  log(
+    `\n== ${items.toLocaleString("en-US")} Items in each of two Libraries ==`,
+  );
+  await loadTier(items, items);
+  await requireVisible();
 
+  for (const spec of TWO_LIBRARY_SPECS) {
+    two.queries.push(await measureQuery(spec));
+  }
+  const all = two.queries.find(({ spec }) => spec === TWO_LIBRARY_ALL)!;
+  const rows = all.runs[0]!.returnedCount;
+  if (rows !== items * 2) {
+    throw new Error(
+      `${TWO_LIBRARY_ALL.id} returned ${rows} rows: the two Libraries hold ${items * 2} Items`,
+    );
+  }
+
+  const allMs = cancellableMs(all);
+  for (const fraction of [0.3, 0.7]) {
+    two.cancels.push({
+      delivery: "timer",
+      query: `${TWO_LIBRARY_ALL.id} at ${fraction * 100}%`,
+      report: await measure({
+        ...TWO_LIBRARY_ALL.args,
+        cancelAfterMs: String(Math.round(allMs * fraction)),
+      }),
+    });
+  }
+  two.cancels.push(
+    await cancelThroughCli(TWO_LIBRARY_ALL, Math.min(allMs * 0.3, 300)),
+  );
+}
+
+function toQuery(
+  { spec, runs }: RawQuery,
+  tier: string,
+  notes: string[],
+): QueryMeasurement {
+  const counts = new Set(runs.map((run) => run.returnedCount));
+  if (counts.size !== 1) {
+    notes.push(
+      `${tier} Items: \`${spec.id}\` returned different row counts in its runs (${[...counts].join(", ")}).`,
+    );
+  }
+  return {
+    id: spec.id,
+    class: spec.class,
+    args: spec.args,
+    returnedCount: runs[0]!.returnedCount ?? 0,
+    runs: runs.map((run) => ({
+      totalMs: run.totalMs,
+      slices: run.slices,
+      answerSteps: run.answerSteps,
+      worstSliceReaders: [
+        ...new Set(
+          run.worstSlice?.statements.map(({ reader }) => reader) ?? [],
+        ),
+      ],
+    })),
+  };
+}
+
+/** The measured cancels, and the requests that measured nothing. */
+function toCancels(
+  rawCancels: readonly RawCancel[],
+  tier: string,
+  notes: string[],
+): { cancels: CancelMeasurement[]; missedCancels: MissedCancel[] } {
   const cancels: CancelMeasurement[] = [];
-  const missedCancels: MissedCancel[] = raw.unreported.map((missed) => ({
-    ...missed,
-    outcome: "no report",
-  }));
+  const missedCancels: MissedCancel[] = [];
   for (const {
     delivery,
     query,
     sentAtEpochMs,
     arrivedAtEpochMs,
     report,
-  } of raw.cancels) {
+  } of rawCancels) {
     if (report.outcome !== "cancelled" || !report.cancel) {
       notes.push(
         `${tier} Items: the ${delivery} cancel of \`${query}\` was not measured: the run ended (${report.outcome}) before the request arrived.`,
@@ -673,6 +801,19 @@ function toTier(raw: RawTier, notes: string[]): TierMeasurement {
       worstSliceMs: report.worstSlice?.ms ?? 0,
     });
   }
+  return { cancels, missedCancels };
+}
+
+/** The measurements of one tier, with the notes on runs that gave none. */
+function toTier(raw: RawTier, notes: string[]): TierMeasurement {
+  const tier = raw.items.toLocaleString("en-US");
+  const queries = raw.queries.map((query) => toQuery(query, tier, notes));
+  const measuredCancels = toCancels(raw.cancels, tier, notes);
+  const cancels = measuredCancels.cancels;
+  const missedCancels: MissedCancel[] = [
+    ...raw.unreported.map((missed) => ({ ...missed, outcome: "no report" })),
+    ...measuredCancels.missedCancels,
+  ];
 
   const heaps = raw.heaps.map(({ spec, runs }): HeapMeasurement => {
     const peak = (run: MeasureReport) =>
@@ -686,7 +827,22 @@ function toTier(raw: RawTier, notes: string[]): TierMeasurement {
       afterAnswerBytes: worst.heap!.afterAnswerBytes - worst.heap!.beforeBytes,
     };
   });
-  return { items: raw.items, queries, cancels, missedCancels, heaps };
+  const two = raw.twoLibraries;
+  return {
+    items: raw.items,
+    queries,
+    cancels,
+    missedCancels,
+    heaps,
+    // A run that stopped before the queries of two Libraries has no part.
+    ...(two.queries.length > 0 && {
+      twoLibraries: {
+        groupItems: raw.items,
+        queries: two.queries.map((query) => toQuery(query, tier, notes)),
+        ...toCancels(two.cancels, tier, notes),
+      },
+    }),
+  };
 }
 
 /** The statements each record makes from its own data. */
@@ -732,6 +888,20 @@ function findings(rawTiers: RawTier[], tiers: TierMeasurement[]): string[] {
   notes.push(
     `MessageChannel of the scheduler, over one limited, one unlimited, and one cancelled run: ${each((raw) => `${raw.channels.created} opened, ${raw.channels.closed} closed, ${raw.channels.open.length} left open`)}.`,
   );
+  const twoLibraries = rawTiers.filter(
+    (raw) => raw.twoLibraries.queries.length > 0,
+  );
+  if (twoLibraries.length > 0) {
+    const stats = (query: RawQuery | undefined): string =>
+      query
+        ? `${(query.runs[0]!.returnedCount ?? 0).toLocaleString("en-US")} rows, median ${median(query.runs.map((run) => run.totalMs)).toFixed(0)} ms, longest slice ${Math.max(0, ...query.runs.flatMap((run) => run.slices)).toFixed(1)} ms`
+        : "not measured";
+    const byId = (queries: RawQuery[], id: string): RawQuery | undefined =>
+      queries.find(({ spec }) => spec.id === id);
+    notes.push(
+      `Two Libraries: after the queries of one Library, each tier takes the Stress Build that also fills the group Library ${STRESS_GROUP_LIBRARY.name} to the Item count of the tier, and the \`two-\` queries read both Libraries as one result set. \`limit=all\` with the default fields, two Libraries against one: ${twoLibraries.map((raw) => `${raw.items.toLocaleString("en-US")} Items: ${stats(byId(raw.twoLibraries.queries, TWO_LIBRARY_ALL.id))} against ${stats(byId(raw.queries, "all"))}`).join("; ")}.`,
+    );
+  }
   return notes;
 }
 
@@ -771,6 +941,7 @@ try {
       cancels: [],
       unreported: [],
       channels: { created: 0, closed: 0, open: [] },
+      twoLibraries: { queries: [], cancels: [] },
     };
     rawTiers.push(raw);
     await measureTier(raw);

@@ -85,6 +85,19 @@ export interface HeapMeasurement {
   afterAnswerBytes: number;
 }
 
+/**
+ * The queries of a tier that read two large Libraries as one result set: My
+ * Library with the Items of the tier, and a group Library. They have the slice
+ * limits and the cancel limit; their totals are recorded.
+ */
+export interface TwoLibraryMeasurement {
+  /** Top-level Items in the group Library. */
+  groupItems: number;
+  queries: readonly QueryMeasurement[];
+  cancels: readonly CancelMeasurement[];
+  missedCancels: readonly MissedCancel[];
+}
+
 export interface TierMeasurement {
   /** Top-level Items in the Library. */
   items: number;
@@ -92,6 +105,7 @@ export interface TierMeasurement {
   cancels: readonly CancelMeasurement[];
   missedCancels: readonly MissedCancel[];
   heaps: readonly HeapMeasurement[];
+  twoLibraries?: TwoLibraryMeasurement;
 }
 
 export interface MeasurementRecord {
@@ -155,6 +169,22 @@ function pooledSlices(query: QueryMeasurement): number[] {
 
 /** Every threshold of one tier, each passed, failed, or recorded. */
 export function evaluateTier(tier: TierMeasurement): Check[] {
+  return [
+    ...evaluatePart(tier, false),
+    ...(tier.twoLibraries
+      ? evaluatePart({ ...tier.twoLibraries, items: tier.items }, true)
+      : []),
+  ];
+}
+
+/** The checks of the queries of one Library, or of those of two Libraries. */
+function evaluatePart(
+  tier: Pick<
+    TierMeasurement,
+    "items" | "queries" | "cancels" | "missedCancels"
+  >,
+  twoLibraries: boolean,
+): Check[] {
   const checks: Check[] = [];
   for (const query of tier.queries) {
     const slices = pooledSlices(query);
@@ -186,7 +216,9 @@ export function evaluateTier(tier: TierMeasurement): Check[] {
           : "failed",
     });
     const total = median(query.runs.map((run) => run.totalMs));
-    const budget = totalBudgetMs(query.class, tier.items);
+    const budget = twoLibraries
+      ? undefined
+      : totalBudgetMs(query.class, tier.items);
     checks.push({
       tier: tier.items,
       kind: "total",
@@ -219,7 +251,7 @@ export function evaluateTier(tier: TierMeasurement): Check[] {
     checks.push({
       tier: tier.items,
       kind: "cancel",
-      subject: `${delivery}: not measured`,
+      subject: `${delivery}: not measured${twoLibraries ? ", two Libraries" : ""}`,
       detail: `none of ${requests.length} cancel requests reached a running query (${requests.map((request) => request.outcome).join(", ")}); run the measurement again`,
       status: "failed",
     });
@@ -268,70 +300,76 @@ function tierSection(tier: TierMeasurement): string {
     checks.find((check) => check.kind === kind && check.subject === subject)!
       .status;
 
-  const queries = table(
-    [
-      "Query",
-      "Class",
-      "Rows",
-      "Median total (ms)",
-      "Budget (ms)",
-      "Total",
-      "Slices",
-      "p99 slice (ms)",
-      "Max slice (ms)",
-      "Slice limits",
-      "Worst slice of each run (ms)",
-      "Answer steps",
-      "Longest answer step (ms)",
-      "Answer limits",
-    ],
-    tier.queries.map((query) => {
-      const slices = pooledSlices(query);
-      const answerSteps = query.runs.flatMap((run) => run.answerSteps);
-      const budget = totalBudgetMs(query.class, tier.items);
-      return [
-        `\`${query.id}\``,
-        query.class,
-        count(query.returnedCount),
-        ms(median(query.runs.map((run) => run.totalMs))),
-        budget === undefined ? "-" : String(budget),
-        MARK[statusOf("total", query.id)],
-        count(slices.length),
-        ms(percentile(slices, 99)),
-        ms(Math.max(0, ...slices)),
-        MARK[statusOf("slices", query.id)],
-        query.runs.map((run) => ms(Math.max(0, ...run.slices))).join(", "),
-        count(answerSteps.length),
-        ms(Math.max(0, ...answerSteps)),
-        MARK[statusOf("answer", query.id)],
-      ];
-    }),
-  );
-
-  const parts = [`### ${count(tier.items)} Items`, queries];
-
-  if (tier.cancels.length > 0) {
-    parts.push(
-      table(
-        [
-          "Cancel request",
-          "Query",
-          "Request to settlement (ms)",
-          `Limit ${THRESHOLDS.cancelMs} ms`,
-          "CLI transport (ms)",
-          "Worst slice (ms)",
-        ],
-        tier.cancels.map((cancel) => [
-          cancel.delivery,
-          `\`${cancel.query}\``,
-          ms(cancel.latencyMs),
-          MARK[statusOf("cancel", `${cancel.delivery}: ${cancel.query}`)],
-          cancel.transportMs === undefined ? "-" : ms(cancel.transportMs),
-          ms(cancel.worstSliceMs),
-        ]),
-      ),
+  /** `budgetOf`: the total-time budget of a query, when it has one. */
+  const queryTable = (
+    queries: readonly QueryMeasurement[],
+    budgetOf: (query: QueryMeasurement) => number | undefined,
+  ): string =>
+    table(
+      [
+        "Query",
+        "Class",
+        "Rows",
+        "Median total (ms)",
+        "Budget (ms)",
+        "Total",
+        "Slices",
+        "p99 slice (ms)",
+        "Max slice (ms)",
+        "Slice limits",
+        "Worst slice of each run (ms)",
+        "Answer steps",
+        "Longest answer step (ms)",
+        "Answer limits",
+      ],
+      queries.map((query) => {
+        const slices = pooledSlices(query);
+        const answerSteps = query.runs.flatMap((run) => run.answerSteps);
+        const budget = budgetOf(query);
+        return [
+          `\`${query.id}\``,
+          query.class,
+          count(query.returnedCount),
+          ms(median(query.runs.map((run) => run.totalMs))),
+          budget === undefined ? "-" : String(budget),
+          MARK[statusOf("total", query.id)],
+          count(slices.length),
+          ms(percentile(slices, 99)),
+          ms(Math.max(0, ...slices)),
+          MARK[statusOf("slices", query.id)],
+          query.runs.map((run) => ms(Math.max(0, ...run.slices))).join(", "),
+          count(answerSteps.length),
+          ms(Math.max(0, ...answerSteps)),
+          MARK[statusOf("answer", query.id)],
+        ];
+      }),
     );
-  }
+  const cancelTable = (cancels: readonly CancelMeasurement[]): string =>
+    table(
+      [
+        "Cancel request",
+        "Query",
+        "Request to settlement (ms)",
+        `Limit ${THRESHOLDS.cancelMs} ms`,
+        "CLI transport (ms)",
+        "Worst slice (ms)",
+      ],
+      cancels.map((cancel) => [
+        cancel.delivery,
+        `\`${cancel.query}\``,
+        ms(cancel.latencyMs),
+        MARK[statusOf("cancel", `${cancel.delivery}: ${cancel.query}`)],
+        cancel.transportMs === undefined ? "-" : ms(cancel.transportMs),
+        ms(cancel.worstSliceMs),
+      ]),
+    );
+
+  const parts = [
+    `### ${count(tier.items)} Items`,
+    queryTable(tier.queries, (query) => totalBudgetMs(query.class, tier.items)),
+  ];
+
+  if (tier.cancels.length > 0) parts.push(cancelTable(tier.cancels));
 
   if (tier.heaps.length > 0) {
     parts.push(
@@ -355,6 +393,15 @@ function tierSection(tier: TierMeasurement): string {
       ),
     );
   }
+
+  const two = tier.twoLibraries;
+  if (two) {
+    parts.push(
+      `#### Two Libraries: ${count(tier.items)} Items in My Library and ${count(two.groupItems)} Items in the group Library`,
+      queryTable(two.queries, () => undefined),
+    );
+    if (two.cancels.length > 0) parts.push(cancelTable(two.cancels));
+  }
   return parts.join("\n\n");
 }
 
@@ -376,7 +423,7 @@ export function formatSummary(record: MeasurementRecord): string {
       ...record.environment,
     ].join("\n"),
     verdict,
-    `Thresholds: 99th percentile slice at most ${THRESHOLDS.slice.p99Ms} ms and no slice above ${THRESHOLDS.slice.maxMs} ms, for the slices of the engine and for the steps in which the handler builds the answer; cancel request to settlement within ${THRESHOLDS.cancelMs} ms; median \`limit 100\` total of five runs within ${THRESHOLDS.totalMs.selective[10_000]} ms for selective queries, and ${THRESHOLDS.totalMs.other[10_000]} ms (10,000 Items) or ${THRESHOLDS.totalMs.other[50_000]} ms (50,000 Items) for the others. Totals at 100,000 Items and of \`limit=all\` are recorded.`,
+    `Thresholds: 99th percentile slice at most ${THRESHOLDS.slice.p99Ms} ms and no slice above ${THRESHOLDS.slice.maxMs} ms, for the slices of the engine and for the steps in which the handler builds the answer; cancel request to settlement within ${THRESHOLDS.cancelMs} ms; median \`limit 100\` total of five runs within ${THRESHOLDS.totalMs.selective[10_000]} ms for selective queries, and ${THRESHOLDS.totalMs.other[10_000]} ms (10,000 Items) or ${THRESHOLDS.totalMs.other[50_000]} ms (50,000 Items) for the others. Totals at 100,000 Items, of \`limit=all\`, and of the queries over two Libraries are recorded.`,
   ];
   if (failed.length > 0) {
     parts.push(
