@@ -2,6 +2,7 @@ import { Data } from "effect";
 
 /** Stable codes of an invalid Item Query request. */
 export type ItemQueryErrorCode =
+  | "duplicate-library"
   | "invalid-path"
   | "unknown-field"
   | "unknown-path"
@@ -16,7 +17,7 @@ export type ItemQueryErrorCode =
 
 /** The part of the request an {@link ItemQueryError} points at. */
 export interface ItemQueryErrorLocation {
-  readonly argument: "filter" | "fields" | "sort" | "limit";
+  readonly argument: "libraries" | "filter" | "fields" | "sort" | "limit";
   /** The position of the entry in a list argument. */
   readonly index?: number;
   /** The part of the filter text, in UTF-16 offsets; `to` is exclusive. */

@@ -157,7 +157,7 @@ export function planCandidates(
 }
 
 /**
- * Read the candidate set of a plan: Item IDs of the Target Library, not yet
+ * Read the candidate set of a plan: Item IDs of one Target Library, not yet
  * restricted to the query universe. Null: the set is above `cap`, and the
  * query uses the scan. Each statement reads `cap + 1` IDs at most.
  */

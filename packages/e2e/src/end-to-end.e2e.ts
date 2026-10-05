@@ -2385,20 +2385,51 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
   });
 
-  it("answers a limited zotlit:item-query with the Fixture's Indexed Keys", async () => {
+  it("answers zotlit:item-query over the Library Scope and over named Libraries with the Fixture's Indexed Keys", async () => {
     const [myLibrary, sharedReading] = LIBRARIES;
-    const byModified = (libraryID: number) =>
-      [...ITEMS, ...DEMO_ITEMS]
-        .filter((item) => item.libraryID === libraryID)
+    const wireOf = (library: (typeof LIBRARIES)[number]) =>
+      library.groupID === null
+        ? { type: "personal" }
+        : { type: "group", groupID: library.groupID, name: library.name };
+    const selectorOf = (library: (typeof LIBRARIES)[number]) =>
+      library.groupID === null ? "personal" : `group:${library.groupID}`;
+    /** The Indexed Keys of the Libraries, most recently modified first. */
+    const byModified = (libraries: readonly (typeof LIBRARIES)[number][]) =>
+      libraries
+        .flatMap((library) =>
+          ITEMS.filter((item) => item.libraryID === library.libraryID).map(
+            (item) => ({
+              dateModified: item.dateModified,
+              indexedKey:
+                library.groupID === null
+                  ? item.key
+                  : `${item.key}g${library.groupID}`,
+            }),
+          ),
+        )
         .toSorted(
           (a, b) =>
             b.dateModified.localeCompare(a.dateModified) ||
-            (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
+            (a.indexedKey < b.indexedKey
+              ? -1
+              : a.indexedKey > b.indexedKey
+                ? 1
+                : 0),
         )
-        .map((item) => item.key);
+        .map((item) => item.indexedKey);
 
     // Dispatched as a registered CLI command with arguments, the way an agent
-    // calls it. The default Target Library is My Library.
+    // calls it. Without a Library argument, the query reads the available
+    // Libraries of the Library Scope, which `zotlit:library-scope` reports.
+    const scope = JSON.parse(
+      await cliCommand(vaultId, "zotlit:library-scope"),
+    ) as LibraryScopeReport;
+    const inScope = (scope.available ?? []).map(
+      (entry) =>
+        LIBRARIES.find((library) => library.libraryID === entry.libraryID)!,
+    );
+    expect(inScope.length).toBeGreaterThan(1);
+
     const limited = JSON.parse(
       await cliCommand(vaultId, "zotlit:item-query", {
         args: {
@@ -2412,19 +2443,46 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       contractVersion: 1,
       command: "zotlit:item-query",
       ok: true,
-      library: { type: "personal" },
-      request: { fields: [], limit: 3 },
+      libraries: inScope.map(wireOf),
+      request: { libraries: inScope.map(selectorOf), fields: [], limit: 3 },
       returnedCount: 3,
       truncated: true,
     });
     expect(limited.rows!.map((row) => row.indexedKey)).toEqual(
-      byModified(myLibrary!.libraryID).slice(0, 3),
+      byModified(inScope).slice(0, 3),
+    );
+
+    // A named range, in another order than the canonical one.
+    const range = JSON.parse(
+      await cliCommand(vaultId, "zotlit:item-query", {
+        args: {
+          libraries: JSON.stringify([
+            selectorOf(sharedReading!),
+            selectorOf(myLibrary!),
+          ]),
+          fields: "[]",
+          limit: "all",
+        },
+      }),
+    ) as ItemQueryReport;
+
+    expect(range).toMatchObject({
+      ok: true,
+      libraries: [wireOf(myLibrary!), wireOf(sharedReading!)],
+      request: {
+        libraries: [selectorOf(myLibrary!), selectorOf(sharedReading!)],
+        limit: null,
+      },
+      truncated: false,
+    });
+    expect(range.rows!.map((row) => row.indexedKey)).toEqual(
+      byModified([myLibrary!, sharedReading!]),
     );
 
     const group = JSON.parse(
       await cliCommand(vaultId, "zotlit:item-query", {
         args: {
-          library: `group:${sharedReading!.groupID}`,
+          library: selectorOf(sharedReading!),
           fields: "[]",
           limit: "all",
         },
@@ -2433,18 +2491,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     expect(group).toMatchObject({
       ok: true,
-      library: {
-        type: "group",
-        groupID: sharedReading!.groupID,
-        name: sharedReading!.name,
-      },
-      request: { limit: null },
+      libraries: [wireOf(sharedReading!)],
+      request: { libraries: [selectorOf(sharedReading!)], limit: null },
       truncated: false,
     });
     expect(group.rows!.map((row) => row.indexedKey)).toEqual(
-      byModified(sharedReading!.libraryID).map(
-        (key) => `${key}g${sharedReading!.groupID}`,
-      ),
+      byModified([sharedReading!]),
     );
   });
 
@@ -2462,7 +2514,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           fields: ["itemType", "title", "creators", "date", "dateModified"],
           sort: [{ field: "dateModified", direction: "desc" }],
           limit: 100,
-          library: "personal",
+          libraries: { source: "library-scope" },
         },
       },
     });
@@ -2605,10 +2657,11 @@ interface ItemQueryReport {
   contractVersion: number;
   command: string;
   ok: boolean;
-  library?:
+  libraries?: (
     | { type: "personal" }
-    | { type: "group"; groupID: number; name: string };
-  request?: { fields: string[]; limit: number | null };
+    | { type: "group"; groupID: number; name: string }
+  )[];
+  request?: { libraries: string[]; fields: string[]; limit: number | null };
   returnedCount?: number;
   truncated?: boolean;
   rows?: { indexedKey: string; values: Record<string, unknown> }[];

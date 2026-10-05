@@ -9,8 +9,9 @@ import type { ItemQueryRequest, SortSpec } from "./request";
 export interface ScenarioQuery {
   /** A unique name; it names the test. */
   readonly name: string;
-  readonly library: ScenarioLibraryName;
-  readonly request: Omit<ItemQueryRequest, "library">;
+  /** The Target Libraries of the request. */
+  readonly libraries: readonly ScenarioLibraryName[];
+  readonly request: Omit<ItemQueryRequest, "libraries">;
   /** The instant of the Query Clock, as an ISO string. Omitted: the test default. */
   readonly now?: string;
   /** The zone of the Query Clock. Omitted: the test default. */
@@ -18,9 +19,10 @@ export interface ScenarioQuery {
 }
 
 /**
- * The Filter Expressions of the scenario. Each one runs in both Libraries as
- * an unlimited identity-only query in key order, and in the personal Library
- * as a limited, sorted query with a projection.
+ * The Filter Expressions of the scenario. Each one runs in each Library and
+ * in both Libraries together as an unlimited identity-only query in key order,
+ * and in the personal Library and in both Libraries together as a limited,
+ * sorted query with a projection.
  */
 const FILTERS: readonly string[] = [
   "true",
@@ -194,23 +196,69 @@ const byTitleThenVolume: readonly SortSpec[] = [
   { field: "volume", direction: "asc" },
 ];
 
+/** ART2FULL has one date in both Libraries: the Indexed Key breaks the tie. */
+const byDateThenTitle: readonly SortSpec[] = [
+  { field: "date", direction: "asc" },
+  { field: "title", direction: "desc" },
+];
+
 /** The scenario requests that the filter list does not give. */
 const REQUESTS: readonly ScenarioQuery[] = [
-  { name: "no filter, defaults", library: "personal", request: {} },
-  { name: "no filter, defaults, group", library: "group", request: {} },
+  { name: "no filter, defaults", libraries: ["personal"], request: {} },
+  { name: "no filter, defaults, group", libraries: ["group"], request: {} },
+  {
+    name: "no filter, defaults, both Libraries",
+    libraries: ["personal", "group"],
+    request: {},
+  },
+  {
+    name: "no filter, both Libraries, limit inside the first Library",
+    libraries: ["personal", "group"],
+    request: { fields: [], sort: [], limit: 2 },
+  },
+  {
+    name: "no filter, both Libraries, limit equal to the Items",
+    libraries: ["personal", "group"],
+    request: { fields: ["dateModified"], limit: 12 },
+  },
+  {
+    name: "no filter, both Libraries, every relation, tie-heavy sort",
+    libraries: ["group", "personal"],
+    request: {
+      fields: ["creators", "tags", "collections", "attachments", "custom"],
+      sort: [
+        { field: "itemType", direction: "asc" },
+        { field: "date", direction: "desc" },
+      ],
+    },
+  },
+  {
+    name: "Tag in both Libraries, default projection, limit 2",
+    libraries: ["personal", "group"],
+    request: { filter: 'tags.contains("to-read")', limit: 2 },
+  },
+  {
+    name: "Collection leaf name of both Libraries, both Libraries",
+    libraries: ["personal", "group"],
+    request: {
+      filter: 'collections.contains("Methods") || collections.within("Thesis")',
+      fields: ["collections"],
+      limit: null,
+    },
+  },
   {
     name: "no filter, identity-only, limit 2",
-    library: "personal",
+    libraries: ["personal"],
     request: { fields: [], limit: 2 },
   },
   {
     name: "no filter, limit equal to the Library",
-    library: "personal",
+    libraries: ["personal"],
     request: { fields: ["dateAdded", "itemType"], limit: 10 },
   },
   {
     name: "no filter, structured dates in key order",
-    library: "personal",
+    libraries: ["personal"],
     request: {
       fields: ["date", "date.year", "date.month", "date.day", "date.raw"],
       sort: [],
@@ -218,7 +266,7 @@ const REQUESTS: readonly ScenarioQuery[] = [
   },
   {
     name: "no filter, every relation, tie-heavy sort",
-    library: "personal",
+    libraries: ["personal"],
     request: {
       fields: ["creators", "tags", "collections", "attachments", "custom"],
       sort: [
@@ -229,7 +277,7 @@ const REQUESTS: readonly ScenarioQuery[] = [
   },
   {
     name: "no filter, null-heavy sort, limit 4",
-    library: "personal",
+    libraries: ["personal"],
     request: {
       fields: ["volume"],
       sort: [{ field: "volume", direction: "desc" }],
@@ -238,7 +286,7 @@ const REQUESTS: readonly ScenarioQuery[] = [
   },
   {
     name: "Tag filter, sort, limit, and projection",
-    library: "personal",
+    libraries: ["personal"],
     request: {
       filter: 'tags.contains("tie")',
       fields: ["title", "tags[0].name"],
@@ -248,22 +296,22 @@ const REQUESTS: readonly ScenarioQuery[] = [
   },
   {
     name: "Tag filter, limit equal to the matches",
-    library: "personal",
+    libraries: ["personal"],
     request: { filter: 'tags.contains("tie")', limit: 3 },
   },
   {
     name: "Tag filter, limit above the matches",
-    library: "personal",
+    libraries: ["personal"],
     request: { filter: 'tags.contains("tie")', limit: 4 },
   },
   {
     name: "key filter, default projection, group",
-    library: "group",
+    libraries: ["group"],
     request: { filter: 'key == "ART2FULL"' },
   },
   {
     name: "key filter, unknown custom field in the projection",
-    library: "personal",
+    libraries: ["personal"],
     request: {
       filter: 'key == "ART2FULL"',
       fields: ['custom["Review.Status"]'],
@@ -271,7 +319,7 @@ const REQUESTS: readonly ScenarioQuery[] = [
   },
   {
     name: "one Item through several aliases, Tags, and Collections",
-    library: "personal",
+    libraries: ["personal"],
     request: {
       filter:
         'publicationTitle == "Type-Specific Host" || publicationTitle == "Base Field Host" || tags.contains("to-read") || tags.contains("To-Read") || collections.within("Thesis") || collections.contains("Thesis/Methods")',
@@ -281,7 +329,7 @@ const REQUESTS: readonly ScenarioQuery[] = [
   },
   {
     name: "field-value filter, sort, limit, and projection",
-    library: "personal",
+    libraries: ["personal"],
     request: {
       filter: 'publicationTitle == "Tie Journal"',
       fields: ["title", "volume"],
@@ -291,7 +339,7 @@ const REQUESTS: readonly ScenarioQuery[] = [
   },
   {
     name: "Tag filter, unsortable field",
-    library: "personal",
+    libraries: ["personal"],
     request: {
       filter: 'tags.contains("tie")',
       sort: [{ field: "tags", direction: "asc" }],
@@ -299,14 +347,14 @@ const REQUESTS: readonly ScenarioQuery[] = [
   },
   {
     name: "today() on the calendar day of New York",
-    library: "personal",
+    libraries: ["personal"],
     request: { filter: "dateAdded >= today()", fields: [], sort: [] },
     now: "2020-01-08T02:00:00Z",
     timeZone: "America/New_York",
   },
   {
     name: "Tag filter and a timestamp window, limit 1",
-    library: "personal",
+    libraries: ["personal"],
     request: {
       filter: 'tags.contains("to-read") && dateAdded > now() - duration("1d")',
       fields: ["dateAdded"],
@@ -328,21 +376,36 @@ export const SCENARIO_QUERIES: readonly ScenarioQuery[] = [
   ...FILTERS.flatMap((filter): ScenarioQuery[] => [
     {
       name: `${filter} [personal, key order]`,
-      library: "personal",
+      libraries: ["personal"],
       request: { filter, fields: [], sort: [] },
     },
     {
       name: `${filter} [group, key order]`,
-      library: "group",
+      libraries: ["group"],
       request: { filter, fields: [], sort: [] },
     },
     {
       name: `${filter} [personal, sorted, limit 2]`,
-      library: "personal",
+      libraries: ["personal"],
       request: {
         filter,
         fields: ["title", "tags", "date.year"],
         sort: byTitleThenVolume,
+        limit: 2,
+      },
+    },
+    {
+      name: `${filter} [both Libraries, key order]`,
+      libraries: ["personal", "group"],
+      request: { filter, fields: [], sort: [] },
+    },
+    {
+      name: `${filter} [both Libraries, sorted, limit 2]`,
+      libraries: ["group", "personal"],
+      request: {
+        filter,
+        fields: ["title", "tags", "collections"],
+        sort: byDateThenTitle,
         limit: 2,
       },
     },

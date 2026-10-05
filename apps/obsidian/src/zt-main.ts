@@ -547,6 +547,10 @@ export default class ZotLitPlugin extends Plugin {
           app: this.app,
           zoteroPref: services.zoteroPref,
         }),
+      libraryScope: async () => {
+        await services.settings.loaded;
+        return services.libraryScope.effective;
+      },
     };
     registerItemQueryCli(this, itemQueryCliDeps);
 

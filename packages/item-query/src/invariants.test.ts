@@ -42,16 +42,16 @@ afterAll(() => {
   scenario.close();
 });
 
-type Request = Omit<ItemQueryRequest, "library">;
+type Request = Omit<ItemQueryRequest, "libraries">;
 
 function run(
   request: Request,
   options: Omit<RunOptions, "client"> & {
-    library?: ItemQueryRequest["library"];
+    libraries?: ItemQueryRequest["libraries"];
   } = {},
 ) {
-  const { library = BULK_LIBRARY, ...rest } = options;
-  return runEffect(queryItems({ ...request, library }), {
+  const { libraries = [BULK_LIBRARY], ...rest } = options;
+  return runEffect(queryItems({ ...request, libraries }), {
     client: scenario.db,
     ...rest,
   });
@@ -82,6 +82,8 @@ const byTitle = [{ field: "title", direction: "asc" }] as const;
 const PLAN_PATHS: readonly {
   name: string;
   request: Request;
+  /** @default the bulk Library */
+  libraries?: ItemQueryRequest["libraries"];
   /** The Items that each statement of a reader reads, in order. */
   reads: Record<string, number[]>;
 }[] = [
@@ -159,13 +161,44 @@ const PLAN_PATHS: readonly {
       "hydrate-chunk": [1, 1],
     },
   },
+  {
+    name: "a limited scan of two Libraries",
+    libraries: [SCENARIO_LIBRARIES.personal, BULK_LIBRARY],
+    request: { fields: ["title"], limit: 10 },
+    reads: {
+      // The 10 Items of the personal Library, then the bulk Library.
+      "scan-page": [10, 500, 500, 500, 500, 500, 100],
+      // The 10 newest Items are the personal ones; one of them has no title.
+      "hydrate-chunk": [9],
+    },
+  },
+  {
+    name: "a candidate set in one Library and the scan in the other",
+    libraries: [SCENARIO_LIBRARIES.personal, BULK_LIBRARY],
+    request: {
+      filter: `tags.contains("to-read") || tags.contains("${BULK_TAG}")`,
+      fields: [],
+      limit: 10,
+    },
+    reads: {
+      // The personal Library has 15 `items` rows and a cap of 3: its union of
+      // 3 and 0 Items is within it. The bulk union of 0 and 651 is above 650.
+      "candidate-set": [3, 0, 0, BULK_CAP + 1],
+      // One of the three personal candidates is in the trash.
+      "universe-rows": [2],
+      "scan-page": [500, 500, 500, 500, 500, 100],
+      "hydrate-chunk": [
+        2, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 100,
+      ],
+    },
+  },
 ];
 
 describe("the Items one statement reads", () => {
   it.each(PLAN_PATHS)(
     "reads at most 500 Item rows in $name",
-    async ({ request, reads }) => {
-      const { events } = await run(request);
+    async ({ request, libraries, reads }) => {
+      const { events } = await run(request, { libraries });
 
       for (const reader of [
         "scan-page",
@@ -191,8 +224,8 @@ describe("the Items one statement reads", () => {
 describe("the pauses between two chunks", () => {
   it.each(PLAN_PATHS)(
     "pauses between every two statements of $name",
-    async ({ request }) => {
-      const { events } = await run(request);
+    async ({ request, libraries }) => {
+      const { events } = await run(request, { libraries });
 
       const statements = events.filter((event) => event.type === "statement");
       const withoutPause = events.filter(
@@ -261,10 +294,40 @@ describe("the rows a limited query projects", () => {
     );
     expect(hydrated).toHaveLength(10);
   });
+
+  it("hydrates the returned rows of two Libraries only", async () => {
+    const libraries = [SCENARIO_LIBRARIES.personal, BULK_LIBRARY];
+    const limited = await run(
+      { fields: ["title"], sort: byTitle, limit: 4 },
+      { libraries },
+    );
+
+    const result = resultOf(limited);
+    expect(result).toMatchObject({ returnedCount: 4, truncated: true });
+    // Two personal titles come before the bulk titles.
+    expect(result.rows.map((row) => row.values.title)).toEqual([
+      "A Chapter on Sampling",
+      "Alias Conflict",
+      "Bulk item 00000",
+      "Bulk item 00001",
+    ]);
+    // The sort hydrates every Item; the last statement is the projection.
+    const projected = limited.events
+      .flatMap((event) =>
+        event.type === "statement" && event.statement.reader === "hydrate-chunk"
+          ? [event.statement.rows as { value: string }[]]
+          : [],
+      )
+      .at(-1)!;
+    expect(new Set(projected.map((row) => row.value))).toEqual(
+      new Set(result.rows.map((row) => row.values.title)),
+    );
+    expect(projected).toHaveLength(4);
+  });
 });
 
 describe("a cancel request", () => {
-  const { personal } = SCENARIO_LIBRARIES;
+  const { personal, group } = SCENARIO_LIBRARIES;
   /** Small chunks: many statements and pauses on the scenario Library. */
   const tuning = {
     capRatio: 1,
@@ -277,6 +340,8 @@ describe("a cancel request", () => {
     request: Request;
     /** The plan reads a candidate set in place of the Library scan. */
     candidates: boolean;
+    /** @default the personal Library */
+    libraries?: ItemQueryRequest["libraries"];
   }[] = [
     {
       name: "a limited scan",
@@ -300,6 +365,24 @@ describe("a cancel request", () => {
         limit: null,
       },
     },
+    {
+      name: "a limited scan of two Libraries",
+      candidates: false,
+      libraries: [personal, group],
+      request: { fields: ["title", "creators"], sort: byTitle, limit: 4 },
+    },
+    {
+      name: "candidate sets of two Libraries",
+      candidates: true,
+      libraries: [personal, group],
+      request: {
+        // `to-read` and `Methods` are in both Libraries.
+        filter: 'tags.contains("to-read") || collections.contains("Methods")',
+        fields: ["title", "tags"],
+        sort: byTitle,
+        limit: null,
+      },
+    },
   ];
 
   /**
@@ -312,14 +395,14 @@ describe("a cancel request", () => {
 
   /** Run the query and cancel it at the event at `index`. */
   async function cancelAt(
-    request: Request,
+    { request, libraries = [personal] }: (typeof QUERIES)[number],
     index: number,
     cancel: (controller: AbortController) => void,
   ) {
     const controller = new AbortController();
     let seen = 0;
     const cancelled = await run(request, {
-      library: personal,
+      libraries,
       tuning,
       signal: controller.signal,
       onEvent: () => {
@@ -331,8 +414,9 @@ describe("a cancel request", () => {
 
   it.each(QUERIES)(
     "starts no statement after a cancel request that comes in a statement of $name",
-    async ({ request, candidates }) => {
-      const complete = await run(request, { library: personal, tuning });
+    async (query) => {
+      const { request, candidates, libraries = [personal] } = query;
+      const complete = await run(request, { libraries, tuning });
       resultOf(complete);
       expect(itemsRead(complete.events, "candidate-set").length > 0).toBe(
         candidates,
@@ -343,7 +427,7 @@ describe("a cancel request", () => {
       expect(statements.length).toBeGreaterThan(8);
 
       for (const index of statements) {
-        const { exit, after } = await cancelAt(request, index, (controller) =>
+        const { exit, after } = await cancelAt(query, index, (controller) =>
           controller.abort(),
         );
 
@@ -357,8 +441,9 @@ describe("a cancel request", () => {
 
   it.each(QUERIES)(
     "starts no statement after a cancel request that comes in a pause of $name",
-    async ({ request }) => {
-      const complete = await run(request, { library: personal, tuning });
+    async (query) => {
+      const { request, libraries = [personal] } = query;
+      const complete = await run(request, { libraries, tuning });
       const pauses = complete.events.flatMap((event, index) =>
         event.type === "pause" ? [index] : [],
       );
@@ -366,7 +451,7 @@ describe("a cancel request", () => {
 
       for (const index of pauses) {
         // The microtask runs when the slice has ended and the fiber waits.
-        const { exit, after } = await cancelAt(request, index, (controller) =>
+        const { exit, after } = await cancelAt(query, index, (controller) =>
           queueMicrotask(() => controller.abort()),
         );
 

@@ -185,8 +185,8 @@ function leafRows(
 }
 
 /**
- * Read the candidate set of one leaf: the IDs of the `items` rows of the
- * Target Library that the leaf can match, at most `limit` of them and in no
+ * Read the candidate set of one leaf: the IDs of the `items` rows of one
+ * Library that the leaf can match, at most `limit` of them and in no
  * defined order. The set holds every Item of the query universe that matches
  * the leaf. It may hold more rows: a trashed Item, a child row. Restrict it
  * with {@link readUniverseRows} and decide each match with the evaluator.

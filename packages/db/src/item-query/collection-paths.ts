@@ -38,8 +38,9 @@ const liveCollectionsStatement = defineStatement<{ libraryID: number }>(
 );
 
 /**
- * Read the Collection paths of one Library. Read them once for each query and
- * pass them to every hydrate chunk that loads `collections`.
+ * Read the Collection paths of one Library. Read them once for each Target
+ * Library of a query and pass them to every hydrate chunk that loads
+ * `collections`.
  */
 export function readCollectionPaths(library: {
   libraryID: number;

@@ -3,12 +3,10 @@
 import { Effect, Exit } from "effect";
 
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-import { ItemQueryDatabase, readTargetLibrary } from "@zotlit/db/item-query";
+import { ItemQueryDatabase, readSourceLibraries } from "@zotlit/db/item-query";
 import type {
   ItemQueryDatabaseError,
   ItemQueryLayoutError,
-  TargetLibraryRow,
-  TargetLibrarySelector,
 } from "@zotlit/db/item-query";
 import {
   describeItemQuery,
@@ -21,6 +19,12 @@ import type {
   ItemQuerySchema,
   QueryResult,
 } from "@zotlit/item-query";
+
+import { resolveLibraryScope } from "@/services/library-scope/scope";
+import type {
+  LibraryScope,
+  ResolvedLibraryScope,
+} from "@/services/library-scope/scope";
 
 /**
  * Wraps the operation of one run before it starts, to provide the observer
@@ -36,13 +40,29 @@ interface RunOptions {
   instrument?: ItemQueryInstrument;
 }
 
-/** The Library a run resolved and its result; no result without the Library. */
-export type ItemQueryRun =
-  | { readonly library: null }
-  | { readonly library: TargetLibraryRow; readonly result: QueryResult };
+/** The Libraries a run reads. */
+export interface RunLibraries {
+  /** The Library Scope in force, or the scope that the caller names. */
+  readonly scope: LibraryScope;
+  /** The run needs each Library of `scope`: the caller named them. */
+  readonly requireEach: boolean;
+}
+
+export interface ItemQueryRun {
+  /**
+   * `scope` on the Libraries of the leased source. The Target Libraries are
+   * its available ones, in the canonical order.
+   */
+  readonly libraries: ResolvedLibraryScope;
+  /**
+   * `null`: the run read no Item, because the source has no Library of the
+   * scope, or lacks one that the run needs.
+   */
+  readonly result: QueryResult | null;
+}
 
 /**
- * Resolve the Target Library and run one Item Query on the leased client to
+ * Resolve the Target Libraries and run one Item Query on the leased client to
  * its `Exit`. Each run gets its own time-budget scheduler; the Query Clock is
  * the system clock and zone. The caller holds the lease until the returned
  * promise settles.
@@ -51,8 +71,8 @@ export type ItemQueryRun =
  * comes first.
  */
 export function runItemQuery(
-  selector: TargetLibrarySelector,
-  request: Omit<ItemQueryRequest, "library">,
+  { scope, requireEach }: RunLibraries,
+  request: Omit<ItemQueryRequest, "libraries">,
   options: RunOptions,
 ): Promise<
   Exit.Exit<
@@ -62,10 +82,26 @@ export function runItemQuery(
 > {
   return run(
     Effect.gen(function* () {
-      const library = yield* readTargetLibrary(selector);
-      if (library === null) return { library };
-      const result = yield* queryItems({ ...request, library });
-      return { library, result };
+      // The resolution of the Library Scope service, on Library rows from the
+      // layout-checked reader. `LibraryScopeService.resolveWith` loads its
+      // rows with `getLibraries`, which selects columns by the version stamp
+      // and fails on a copy that Item Query can read.
+      const libraries = resolveLibraryScope(
+        yield* readSourceLibraries(),
+        scope,
+      );
+      const { available, unavailable } = libraries;
+      if (available.length === 0 || (requireEach && unavailable.length > 0)) {
+        return { libraries, result: null };
+      }
+      const result = yield* queryItems({
+        ...request,
+        libraries: available.map(({ libraryID, selector }) => ({
+          libraryID,
+          groupID: selector.type === "group" ? selector.groupID : null,
+        })),
+      });
+      return { libraries, result };
     }),
     options,
   );

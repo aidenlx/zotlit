@@ -12,6 +12,7 @@ import {
   SCAN_PAGE_SIZE,
 } from "@zotlit/db/item-query";
 import type {
+  CollectionPaths,
   FieldVocabulary,
   HydratedItem,
   HydrateFields,
@@ -39,6 +40,7 @@ import type {
   PlannedSort,
   QueryResult,
   QueryRow,
+  TargetLibrary,
 } from "./request";
 import { ItemQueryTuning } from "./tuning";
 
@@ -47,12 +49,18 @@ interface Match {
   readonly scan: ScanRow;
   /** One key for each entry of the sort list. */
   readonly keys: readonly SortKey[];
+  /**
+   * The Library of the match, in a query of several Libraries. A query of one
+   * Library keeps no reference: an unlimited query holds every match, and a
+   * larger match moves the major collection of V8 into the engine's slices.
+   */
+  readonly library?: TargetLibrary;
 }
 
 /**
  * Run one Item Query over the top-level, non-trashed Items of the Target
- * Library. Run the Effect with `ItemQueryScheduler`; cancellation is fiber
- * interruption.
+ * Libraries, as one result set. Run the Effect with `ItemQueryScheduler`;
+ * cancellation is fiber interruption.
  */
 export function queryItems(
   request: ItemQueryRequest,
@@ -62,7 +70,7 @@ export function queryItems(
   ItemQueryDatabase
 > {
   return Effect.gen(function* () {
-    const { library } = request;
+    const { libraries } = request;
     const { query, filter, paths, sorts } = yield* planRequest(request);
     const { limit } = query;
     // One instant and one time zone for every date in the query.
@@ -87,11 +95,23 @@ export function queryItems(
       if (filter) yield* checkFilterCustomFields(filter, vocabulary);
       yield* checkCustomFields(paths, vocabulary);
     }
-    const collectionPaths = [...pathNeeds, ...scanNeeds].some((needs) =>
-      needs.relations?.includes("collections"),
-    )
-      ? yield* readCollectionPaths(library)
-      : undefined;
+    // A Collection path belongs to one Library: a leaf of the filter reads
+    // the paths of the Library it runs in. A Collection ID names one
+    // Collection of the copy, so hydration reads the paths of them all.
+    const pathsOf = new Map<TargetLibrary, CollectionPaths>();
+    if (
+      [...pathNeeds, ...scanNeeds].some((needs) =>
+        needs.relations?.includes("collections"),
+      )
+    ) {
+      for (const library of libraries) {
+        pathsOf.set(library, yield* readCollectionPaths(library));
+      }
+    }
+    const collectionPaths: CollectionPaths | undefined =
+      pathsOf.size > 0
+        ? new Map([...pathsOf.values()].flatMap((paths) => [...paths]))
+        : undefined;
     const itemOf = (
       scan: ScanRow,
       hydrated: ReadonlyMap<number, HydratedItem>,
@@ -131,8 +151,9 @@ export function queryItems(
         : firstMatches(limit + 1, compare);
     // Each page and each chunk lives in the Effect that reads it, so the query
     // holds no row of a page it has finished.
+    const several = libraries.length > 1;
     /** Hydrate one chunk of a page and keep its matches. */
-    const takeChunk = (chunk: readonly ScanRow[]) =>
+    const takeChunk = (library: TargetLibrary, chunk: readonly ScanRow[]) =>
       Effect.gen(function* () {
         const hydrated = yield* hydrate(
           scanFields,
@@ -143,64 +164,71 @@ export function queryItems(
           for (const scan of chunk) {
             const item = itemOf(scan, hydrated);
             if (filter && !isMatch(filter.root, item, clock)) continue;
-            matching.push({
-              scan,
-              keys: sorts.map((sort) => sort.key(item)),
-            });
+            const keys = sorts.map((sort) => sort.key(item));
+            matching.push(several ? { scan, keys, library } : { scan, keys });
           }
           matches.add(matching);
         });
       });
     /** Hydrate one page of the query universe and keep its matches. */
-    const takePage = (page: readonly ScanRow[]) =>
+    const takePage = (library: TargetLibrary, page: readonly ScanRow[]) =>
       Effect.gen(function* () {
         const chunkSize = scanFields ? hydrateChunkSize : scanPageSize;
         for (let start = 0; start < page.length; start += chunkSize) {
-          yield* takeChunk(page.slice(start, start + chunkSize));
+          yield* takeChunk(library, page.slice(start, start + chunkSize));
         }
       });
     /** Read and take the scan page after `afterKey`. Null: the last page. */
-    const takeScanPage = (afterKey: string | null) =>
+    const takeScanPage = (library: TargetLibrary, afterKey: string | null) =>
       Effect.gen(function* () {
         const page = yield* readScanPage({
           libraryID: library.libraryID,
           afterKey,
           size: scanPageSize,
         });
-        yield* takePage(page);
+        yield* takePage(library, page);
         return page.length < scanPageSize ? null : page.at(-1)!.key;
       });
 
-    // The candidate pass reads the Items that the lowered leaves of the filter
-    // name; the Library scan reads every Item. The evaluator decides the match
-    // on both paths.
-    const candidatePlan =
-      filter && !tuning.forceScan
-        ? planCandidates(filter.root, { vocabulary, collectionPaths })
+    // Each Library has its own plan. The candidate pass reads the Items that
+    // the lowered leaves of the filter name in the Library, against the cap of
+    // that Library; the Library scan reads every Item. The evaluator decides
+    // the match on both paths, and the matches of every Library go to the one
+    // result order.
+    for (const library of libraries) {
+      const { libraryID } = library;
+      const candidatePlan =
+        filter && !tuning.forceScan
+          ? planCandidates(filter.root, {
+              vocabulary,
+              collectionPaths: pathsOf.get(library),
+            })
+          : null;
+      const candidates = candidatePlan
+        ? yield* readCandidates(
+            candidatePlan,
+            libraryID,
+            Math.floor(
+              (yield* readLibraryRowCount(libraryID)) * tuning.capRatio,
+            ),
+          )
         : null;
-    const candidates = candidatePlan
-      ? yield* readCandidates(
-          candidatePlan,
-          library.libraryID,
-          Math.floor(
-            (yield* readLibraryRowCount(library.libraryID)) * tuning.capRatio,
-          ),
-        )
-      : null;
-    if (candidates) {
-      const itemIDs = [...candidates];
-      for (let start = 0; start < itemIDs.length; start += scanPageSize) {
-        yield* takePage(
-          yield* readUniverseRows({
-            libraryID: library.libraryID,
-            itemIDs: itemIDs.slice(start, start + scanPageSize),
-          }),
-        );
+      if (candidates) {
+        const itemIDs = [...candidates];
+        for (let start = 0; start < itemIDs.length; start += scanPageSize) {
+          yield* takePage(
+            library,
+            yield* readUniverseRows({
+              libraryID,
+              itemIDs: itemIDs.slice(start, start + scanPageSize),
+            }),
+          );
+        }
+      } else {
+        let afterKey: string | null = null;
+        do afterKey = yield* takeScanPage(library, afterKey);
+        while (afterKey !== null);
       }
-    } else {
-      let afterKey: string | null = null;
-      do afterKey = yield* takeScanPage(afterKey);
-      while (afterKey !== null);
     }
 
     const ordered = yield* matches.ordered();
@@ -220,7 +248,7 @@ export function queryItems(
         chunk.map((row) => row.scan.itemID),
       );
       yield* Effect.sync(() => {
-        for (const { scan } of chunk) {
+        for (const { library = libraries[0]!, scan } of chunk) {
           const item = itemOf(scan, hydrated);
           rows.push({
             indexedKey: formatIndexedKey(scan.key, library.groupID),
@@ -330,7 +358,9 @@ function hydrateFields(
 
 /**
  * The result order: each Sortable Field in turn, a missing value last in both
- * directions, and the Indexed Key as the final tie-breaker.
+ * directions, and the Indexed Key as the final tie-breaker. Every Zotero Key
+ * has one length, so the order of the Zotero Keys is the order of the Indexed
+ * Keys; the same Zotero Key in two Libraries compares by the Indexed Key.
  */
 function byKeysThenKey(
   sorts: readonly PlannedSort[],
@@ -349,6 +379,10 @@ function byKeysThenKey(
           : x - (y as number);
       if (order !== 0) return isDescending ? -order : order;
     }
-    return a.scan.key < b.scan.key ? -1 : a.scan.key > b.scan.key ? 1 : 0;
+    if (a.scan.key !== b.scan.key) return a.scan.key < b.scan.key ? -1 : 1;
+    if (a.library === b.library) return 0;
+    const x = formatIndexedKey(a.scan.key, a.library?.groupID);
+    const y = formatIndexedKey(b.scan.key, b.library?.groupID);
+    return x < y ? -1 : x > y ? 1 : 0;
   };
 }

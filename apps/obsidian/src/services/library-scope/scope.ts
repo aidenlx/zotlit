@@ -68,6 +68,12 @@ export const MY_LIBRARY_SCOPE: LibraryScope = Object.freeze({
   libraries: Object.freeze([Object.freeze({ type: "personal" as const })]),
 });
 
+/** What a scope reads of a Library row; any reader of the rows can give it. */
+export type ScopeLibrary = Pick<
+  Library,
+  "libraryID" | "type" | "groupID" | "name"
+>;
+
 /** One Library of the active database that the saved scope resolved onto. */
 export interface AvailableLibrary {
   selector: LibrarySelector;
@@ -127,7 +133,7 @@ function isCanonicalOrder(selectors: LibrarySelector[]): boolean {
 }
 
 /** The selector naming `library`, whatever local `libraryID` it currently has. */
-export function selectorOf(library: Library): LibrarySelector | null {
+export function selectorOf(library: ScopeLibrary): LibrarySelector | null {
   if (library.type === "user") return { type: "personal" };
   return library.groupID === null
     ? null
@@ -143,7 +149,7 @@ export function selectorOf(library: Library): LibrarySelector | null {
  * `invalid: true`.
  */
 export function resolveLibraryScope(
-  libraries: readonly Library[],
+  libraries: readonly ScopeLibrary[],
   scope: LibraryScope | null,
 ): ResolvedLibraryScope {
   const invalid = scope === null;
@@ -180,7 +186,10 @@ export function resolveLibraryScope(
   return { mode: "selected", invalid, available, unavailable };
 }
 
-function matchesSelector(library: Library, selector: LibrarySelector): boolean {
+function matchesSelector(
+  library: ScopeLibrary,
+  selector: LibrarySelector,
+): boolean {
   return selector.type === "personal"
     ? library.type === "user"
     : library.type === "group" && library.groupID === selector.groupID;

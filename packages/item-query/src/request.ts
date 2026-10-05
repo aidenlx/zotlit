@@ -11,7 +11,7 @@ import { planPath } from "./projection";
 import type { PlannedPath } from "./projection";
 
 /**
- * The Target Library, resolved by the caller. `libraryID` is local to the
+ * One Target Library, resolved by the caller. `libraryID` is local to the
  * database copy; `groupID` is `null` for the personal Library.
  */
 export interface TargetLibrary {
@@ -20,7 +20,12 @@ export interface TargetLibrary {
 }
 
 export interface ItemQueryRequest {
-  readonly library: TargetLibrary;
+  /**
+   * The Target Libraries: each Library once, in any order. Their Items make
+   * one result set. An empty list gives an empty Query Result; a Library that
+   * the list names twice is invalid.
+   */
+  readonly libraries: readonly TargetLibrary[];
   /**
    * The Filter Expression that selects the Items. Omitted: every Item matches.
    * An empty filter is invalid.
@@ -116,6 +121,19 @@ export function planRequest(
   request: ItemQueryRequest,
 ): Effect.Effect<ItemQueryPlan, ItemQueryError> {
   return Effect.gen(function* () {
+    const libraryIDs = request.libraries.map((library) => library.libraryID);
+    const repeated = libraryIDs.findIndex(
+      (libraryID, index) => libraryIDs.indexOf(libraryID) !== index,
+    );
+    if (repeated !== -1) {
+      return yield* new ItemQueryError({
+        code: "duplicate-library",
+        location: { argument: "libraries", index: repeated },
+        message: `The request names the Library with the local ID ${libraryIDs[repeated]} twice.`,
+        hint: "Name each Target Library once.",
+      });
+    }
+
     let filter: FilterPlan | null = null;
     if (request.filter !== undefined) {
       const planned = planFilter(request.filter);

@@ -25,12 +25,16 @@ const FORCED_SCAN: Tuning = { forceScan: true };
 /**
  * The plans and chunk sizes under test. The personal Library of the scenario
  * has 15 `items` rows and the group Library has 3, so the cap ratios give
- * caps of 3 and 0 Items (default), 15 and 3 (every set), and 1 and 0.
+ * caps of 3 and 0 Items (default), 15 and 3 (every set), 1 and 0, and 5 and 1.
+ * Each Library has its own cap: a query of both Libraries reads a candidate
+ * set in one Library and scans the other when a set is within one cap only,
+ * as the Tag `to-read` is at the default ratio.
  */
 const PLANS: readonly { name: string; tuning: Tuning }[] = [
   { name: "the default plan", tuning: {} },
   { name: "every candidate set within the cap", tuning: { capRatio: 1 } },
   { name: "a cap of one Item", tuning: { capRatio: 0.1 } },
+  { name: "caps of five Items and of one Item", tuning: { capRatio: 0.34 } },
   {
     name: "chunks of one Item",
     tuning: { scanPageSize: 1, hydrateChunkSize: 1, mergeStepSize: 1 },
@@ -121,7 +125,7 @@ async function outcome(
   const { database = scenario, scheduler } = on;
   const request: ItemQueryRequest = {
     ...query.request,
-    library: SCENARIO_LIBRARIES[query.library],
+    libraries: query.libraries.map((name) => SCENARIO_LIBRARIES[name]),
   };
   const { exit } = await runEffect(queryItems(request), {
     client: database.db,
@@ -237,6 +241,13 @@ const SORTS: readonly (readonly SortSpec[] | undefined)[] = [
   ],
 ];
 const LIMITS = [undefined, null, 1, 2, 3] as const;
+const LIBRARIES: readonly ScenarioQuery["libraries"][] = [
+  ["personal"],
+  ["personal"],
+  ["group"],
+  ["personal", "group"],
+  ["group", "personal"],
+];
 const FIELDS: readonly (readonly string[] | undefined)[] = [
   undefined,
   [],
@@ -274,7 +285,7 @@ function generateQueries(seed: number, count: number): ScenarioQuery[] {
   };
   return Array.from({ length: count }, (_, index) => ({
     name: `generated ${seed}/${index}`,
-    library: next() < 0.75 ? "personal" : "group",
+    libraries: pick(LIBRARIES),
     request: {
       filter: combination(3),
       fields: pick(FIELDS),
