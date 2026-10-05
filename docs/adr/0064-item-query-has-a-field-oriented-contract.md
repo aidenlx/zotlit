@@ -1,6 +1,6 @@
 # Item Query has a field-oriented contract
 
-`@zotlit/item-query` accepts one full Filter Expression for selection. Projection accepts documented template-style accessors, sorting accepts top-level scalar Item fields, and each result row contains only the selected values plus the Item's Indexed Key. This contract gives human and agent callers predictable data without exposing the database Item structure or introducing computed-column syntax.
+`@zotlit/item-query` accepts one full Filter Expression for selection and one or more Target Libraries. The Items of all Target Libraries are filtered, sorted, and limited as one result set; each Zotero Key, Tag, and Collection path matches inside the Library of its Item. Projection accepts documented template-style accessors, sorting accepts top-level scalar Item fields, and each result row contains only the selected values plus the Item's Indexed Key. This contract gives human and agent callers predictable data without exposing the database Item structure or introducing computed-column syntax.
 
 The evaluator adopts the proof of concept's ZotLit-owned semantics for field aliases, custom fields, relations, partial dates, Temporal values, null propagation, and functions. Obsidian Bases compatibility is not part of the contract.
 

@@ -1,11 +1,11 @@
 # Item Query
 
-The field-oriented query capability for Zotero Items. It evaluates ZotLit Filter Expressions and returns one result set from one Library.
+The field-oriented query capability for Zotero Items. It evaluates ZotLit Filter Expressions and returns one result set from one or more Libraries.
 
 ## Language
 
 **Item Query**:
-A query over the top-level, non-trashed Items in one Library. It contains one optional Filter Expression, selected fields, sort fields, and an optional result limit.
+A query over the top-level, non-trashed Items of its Target Libraries. It contains one optional Filter Expression, selected fields, sort fields, and an optional result limit. The Items of all its Target Libraries are filtered, sorted, and limited as one set.
 _Avoid_: Base Query, Zotero Query, DB Query
 
 **Query Result**:
@@ -21,7 +21,7 @@ A documented template-style accessor that selects data from a Query Row, such as
 _Avoid_: column expression, property expression
 
 **Sortable Field**:
-A top-level scalar Item field that can order a Query Result. Null values sort last, and Indexed Key is the stable final tie-breaker.
+A top-level scalar Item field that can order a Query Result. Null values sort last, and Indexed Key is the stable final tie-breaker, also between Items of two Target Libraries.
 _Avoid_: sort expression, sort path
 
 **Item Query Schema**:
@@ -29,8 +29,8 @@ The source-aware description of fields, Projection Paths, functions, value shape
 _Avoid_: field list, query metadata
 
 **Target Library**:
-The one Library that an Item Query reads. It defaults to ZotLit's configured citation Library and can be overridden with `personal` or `group:<groupID>`.
-_Avoid_: active library, library ID
+A Library that an Item Query reads. An Item Query has one or more Target Libraries: by default the available Libraries of Library Scope, or the Libraries that the caller names, each as `personal` or `group:<groupID>`. A named Target Library can be outside Library Scope. Target Libraries have the canonical order of Library Scope: My Library first, then groups by ascending group ID.
+_Avoid_: active library, library ID, query scope
 
 **Query Clock**:
 The one instant and one time zone that an Item Query uses for every date function and every calendar-day comparison.
