@@ -554,13 +554,13 @@ pnpm fixture stress --library-items 10000
 
 The count includes the Fixture Spec Items of My Library, so it must be at least that number. Synthetic Items fill the rest. `--library-items` and an Item count are alternatives: give one of them.
 
-For Item Query over two large Libraries, add `--group-library-items` to fill the group Library Shared Reading (group ID 4200309) to an exact Item count too:
+For Item Query over two large Libraries, add `--group-library-items` to fill one group Library to an exact Item count too. `pnpm fixture --help` names that Library, its group ID, and the Item counts it takes:
 
 ```sh
 pnpm fixture stress --library-items 100000 --group-library-items 100000
 ```
 
-This count includes the Fixture Spec Items of Shared Reading. Its synthetic Items follow the rules of My Library, with Collections, Zotero Keys (a second fixed seed), and Citation Keys (`stressg…`) of their own. An Item of the group Library has the title of the My Library Item at the same position, as a copy has. Each group Library without an Item count keeps its Fixture Spec content.
+This count includes the Fixture Spec Items of the group Library. Its synthetic Items follow the rules of My Library, with Collections, Zotero Keys (a second fixed seed), and Citation Keys (`stressg…`) of their own. An Item of the group Library has the title of the My Library Item at the same position, as a copy has. Each group Library without an Item count keeps its Fixture Spec content.
 
 Each query target in the synthetic Items has a rare value (0.1% of the Items), a common value (10%), and a dominant value (60% or more). A query on a rare or common value is selective; a query on a dominant value reads most of the Library:
 
