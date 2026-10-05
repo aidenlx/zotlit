@@ -33,6 +33,6 @@ Each suite file builds its own Fixture and new purged vaults under `.scratch/e2e
 
 `src/item-query-measure.ts` proves the performance acceptance criteria of Item Query in a visible Obsidian window, on the Stress Build Libraries of 10,000, 50,000, and 100,000 Items. Each tier has two parts: the queries of one Library on the Stress Build of My Library, then the `two-` queries over My Library and the group Library on the Stress Build that fills both to the Item count of the tier. Run it before a release and after a planner change; its header has the usage. The vault window must stay visible for the whole run.
 
-- Thresholds, their evaluation, and the summary format: `src/item-query-record.ts`, with unit tests beside it. The queries over two Libraries (`twoLibraries` of a tier) have the slice limits and the cancel limit, and their totals are recorded.
+- Thresholds, their evaluation, and the summary format: `src/item-query-record.ts`, with unit tests beside it. The queries over two Libraries (`twoLibraries` of a tier) have the slice limits and the cancel limit, and their totals are recorded. A tier whose run did not end that part has a failed check.
 - The numbers come from the dev-build commands `zotlit:item-query-measure` and `zotlit:item-query-measure-cancel` (`apps/obsidian/src/services/item-query/measure.ts`).
 - Output goes to `.scratch/item-query-measure/<time>/`: `raw.json` and `summary.md`, the comment for the release pull request.
