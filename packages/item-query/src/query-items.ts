@@ -44,15 +44,17 @@ import type {
 } from "./request";
 import { ItemQueryTuning } from "./tuning";
 
-/**
- * One match while the query orders it: its Library, its scan row, and its
- * sort keys.
- */
+/** One match while the query orders it: its scan row and its sort keys. */
 interface Match {
-  readonly library: TargetLibrary;
   readonly scan: ScanRow;
   /** One key for each entry of the sort list. */
   readonly keys: readonly SortKey[];
+  /**
+   * The Library of the match, in a query of several Libraries. A query of one
+   * Library keeps no reference: an unlimited query holds every match, and a
+   * larger match moves the major collection of V8 into the engine's slices.
+   */
+  readonly library?: TargetLibrary;
 }
 
 /**
@@ -149,6 +151,7 @@ export function queryItems(
         : firstMatches(limit + 1, compare);
     // Each page and each chunk lives in the Effect that reads it, so the query
     // holds no row of a page it has finished.
+    const several = libraries.length > 1;
     /** Hydrate one chunk of a page and keep its matches. */
     const takeChunk = (library: TargetLibrary, chunk: readonly ScanRow[]) =>
       Effect.gen(function* () {
@@ -161,11 +164,8 @@ export function queryItems(
           for (const scan of chunk) {
             const item = itemOf(scan, hydrated);
             if (filter && !isMatch(filter.root, item, clock)) continue;
-            matching.push({
-              library,
-              scan,
-              keys: sorts.map((sort) => sort.key(item)),
-            });
+            const keys = sorts.map((sort) => sort.key(item));
+            matching.push(several ? { scan, keys, library } : { scan, keys });
           }
           matches.add(matching);
         });
@@ -248,7 +248,7 @@ export function queryItems(
         chunk.map((row) => row.scan.itemID),
       );
       yield* Effect.sync(() => {
-        for (const { library, scan } of chunk) {
+        for (const { library = libraries[0]!, scan } of chunk) {
           const item = itemOf(scan, hydrated);
           rows.push({
             indexedKey: formatIndexedKey(scan.key, library.groupID),
@@ -381,8 +381,8 @@ function byKeysThenKey(
     }
     if (a.scan.key !== b.scan.key) return a.scan.key < b.scan.key ? -1 : 1;
     if (a.library === b.library) return 0;
-    const x = formatIndexedKey(a.scan.key, a.library.groupID);
-    const y = formatIndexedKey(b.scan.key, b.library.groupID);
+    const x = formatIndexedKey(a.scan.key, a.library?.groupID);
+    const y = formatIndexedKey(b.scan.key, b.library?.groupID);
     return x < y ? -1 : x > y ? 1 : 0;
   };
 }
