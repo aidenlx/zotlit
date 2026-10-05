@@ -145,7 +145,9 @@ ERRORS AND EMPTY VALUES
   A wrong function name, argument count, or argument type fails the query
   with a diagnostic that points at the text, also inside an if branch.
   A value that is missing or unreadable for one Item is null for that Item.
-  null is false in a filter.
+  null is false in a filter, so !x is true when x is null. This selects the
+  Items from 2000 on and the Items without a year:
+    ${filter("!(date.year < 2000)")}
 
 SEE ALSO
   schema.functions, schema.methods, and schema.properties list every call
