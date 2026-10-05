@@ -16,6 +16,7 @@ import { FIELD_LABELS } from "@zotlit/zotero-types/field-labels";
 
 import { compareStrings } from "./collation";
 import {
+  datePart,
   dayKey,
   fromAccessDate,
   fromItemDate,
@@ -23,6 +24,7 @@ import {
 } from "./filter-dates";
 import type { FilterValue, FilterValueType } from "./filter-values";
 import type { PathSegment } from "./projection-path";
+import type { QueryClock } from "./query-clock";
 import type { ProjectionValue } from "./request";
 
 /**
@@ -81,9 +83,10 @@ export interface FieldDefinition {
   readonly read: (item: QueryItem) => ProjectionValue;
   /**
    * Present on a Sortable Field: the value that orders the Item. Hydration
-   * loads `needs([])` before it runs.
+   * loads `needs([])` before it runs. A calendar day reads its start in the
+   * time zone of the Query Clock.
    */
-  readonly sortKey?: (item: QueryItem) => SortKey;
+  readonly sortKey?: (item: QueryItem, clock: QueryClock) => SortKey;
   /**
    * Present on a field that a Filter Expression can read. Hydration loads
    * `needs([])` before it runs.
@@ -167,16 +170,14 @@ function scanTimestamp(column: "dateAdded" | "dateModified"): FieldDefinition {
 function zoteroField(name: string): FieldDefinition {
   const builtIn = [name];
   const read = (item: QueryItem) => item.hydrated.fields.get(name) ?? null;
+  if (name === "accessDate") return accessDateField(read);
   if (!isDateField(name)) {
     return {
       shape: STRING,
       needs: () => ({ builtIn }),
       read,
       sortKey: read,
-      filter:
-        name === "accessDate"
-          ? { type: "date", read: (item) => fromAccessDate(read(item)) }
-          : { type: "string", read },
+      filter: { type: "string", read },
     };
   }
   return {
@@ -189,6 +190,32 @@ function zoteroField(name: string): FieldDefinition {
       type: "date",
       read: (item) => fromItemDate(parseItemDate(read(item))),
     },
+  };
+}
+
+/**
+ * Zotero's `accessDate`: one date in projection, sort, and filter, a timestamp
+ * or a calendar day. A stored value that does not parse is null in all three.
+ */
+function accessDateField(
+  read: (item: QueryItem) => string | null,
+): FieldDefinition {
+  const value = (item: QueryItem) => fromAccessDate(read(item));
+  return {
+    // A timestamp or a calendar day as an ISO string on the wire.
+    shape: STRING,
+    needs: () => ({ builtIn: ["accessDate"] }),
+    read: (item) => {
+      const date = value(item);
+      if (!date) return null;
+      return date.precision === "instant" ? date.instant : date.first;
+    },
+    // Time order: a calendar day orders from its start in the zone.
+    sortKey: (item, clock) => {
+      const date = value(item);
+      return date && datePart(date, "timestamp", clock);
+    },
+    filter: { type: "date", read: value },
   };
 }
 

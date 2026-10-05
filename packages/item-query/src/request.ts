@@ -9,6 +9,7 @@ import { planFilter } from "./filter-plan";
 import type { FilterPlan } from "./filter-plan";
 import { planPath } from "./projection";
 import type { PlannedPath } from "./projection";
+import type { QueryClock } from "./query-clock";
 
 /**
  * One Target Library, resolved by the caller. `libraryID` is local to the
@@ -100,7 +101,7 @@ export interface PlannedSort {
   readonly direction: SortSpec["direction"];
   /** What hydration loads before {@link PlannedSort.key} runs. */
   readonly needs: FieldNeeds;
-  readonly key: (item: QueryItem) => SortKey;
+  readonly key: (item: QueryItem, clock: QueryClock) => SortKey;
 }
 
 const PATH_HINTS = {

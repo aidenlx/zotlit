@@ -128,7 +128,8 @@ TAGS, COLLECTIONS, AND CREATORS
 DATES
   date and the other Zotero date fields are calendar dates at the precision
   the Item gives: a year, a month, or a day. dateAdded and dateModified are
-  timestamps. Calendar days follow the time zone of this computer.
+  timestamps. accessDate is a timestamp, or a day when Zotero stores only a
+  day. Calendar days follow the time zone of this computer.
     ${filter("date.year >= 2020")}
     ${filter('date == date("2020")')}
     ${filter('dateAdded >= today() - duration("7 days")')}

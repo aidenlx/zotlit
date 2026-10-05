@@ -1353,6 +1353,97 @@ describe("queryItems sort failures", () => {
   );
 });
 
+describe("queryItems accessDate", () => {
+  // New York is UTC-5 in January, so 7 January starts at 05:00Z there.
+  const NEW_YORK = {
+    now: "2020-01-08T02:00:00Z",
+    timeZone: "America/New_York",
+  };
+  const MISSING = [
+    "ALS2CNFL",
+    "BK2MNTH2",
+    "CHP2YEAR",
+    "CNF2TEXT",
+    "RPT2NDTE",
+    "TIE2CCCC",
+    "UNI2CDE2",
+  ];
+
+  /** A timestamp, a calendar day, two values that do not parse. */
+  function withAccessDates(scenario: ScenarioDatabase): void {
+    setField(scenario, "ART2FULL", ["accessDate", "2020-01-07 04:00:00"]);
+    setField(scenario, "TIE2AAAA", ["accessDate", "2020-01-07"]);
+    setField(scenario, "TIE2BBBB", ["accessDate", "2020-01-07 05:30:00"]);
+    setField(scenario, "BK2MNTH2", ["accessDate", "yesterday"]);
+    setField(scenario, "CHP2YEAR", ["accessDate", "2021-02-30 10:00:00"]);
+  }
+
+  async function query(
+    scenario: ScenarioDatabase,
+    request: Omit<ItemQueryRequest, "libraries">,
+  ): Promise<QueryResult> {
+    const { exit } = await runEffect(
+      queryItems({ libraries: [personal], ...request }),
+      { client: scenario.db, ...NEW_YORK },
+    );
+    if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
+    return exit.value;
+  }
+
+  it("projects the value the filter reads: a timestamp, a calendar day, or null", async () => {
+    using scenario = openScenarioDatabase();
+    withAccessDates(scenario);
+    const found = await query(scenario, { fields: ["accessDate"], sort: [] });
+
+    expect(valuesByKey(found)).toMatchObject({
+      ART2FULL: { accessDate: Temporal.Instant.from("2020-01-07T04:00:00Z") },
+      TIE2AAAA: { accessDate: Temporal.PlainDate.from("2020-01-07") },
+      TIE2BBBB: { accessDate: Temporal.Instant.from("2020-01-07T05:30:00Z") },
+      BK2MNTH2: { accessDate: null },
+      CHP2YEAR: { accessDate: null },
+      ALS2CNFL: { accessDate: null },
+    });
+  });
+
+  it("orders by time, a calendar day from its start in the query time zone, with a value that does not parse last", async () => {
+    using scenario = openScenarioDatabase();
+    withAccessDates(scenario);
+    const sorted = async (direction: "asc" | "desc") =>
+      keys(
+        await query(scenario, {
+          fields: [],
+          sort: [{ field: "accessDate", direction }],
+        }),
+      );
+
+    // 04:00Z is 23:00 on 6 January in New York, before 7 January starts.
+    expect(await sorted("asc")).toEqual([
+      "ART2FULL",
+      "TIE2AAAA",
+      "TIE2BBBB",
+      ...MISSING,
+    ]);
+    expect(await sorted("desc")).toEqual([
+      "TIE2BBBB",
+      "TIE2AAAA",
+      "ART2FULL",
+      ...MISSING,
+    ]);
+  });
+
+  it("reads a value that does not parse as null in a filter", async () => {
+    using scenario = openScenarioDatabase();
+    withAccessDates(scenario);
+    const found = await query(scenario, {
+      filter: "accessDate == null",
+      fields: [],
+      sort: [],
+    });
+
+    expect(keys(found)).toEqual(MISSING);
+  });
+});
+
 describe("queryItems with a filter", () => {
   /** The Indexed Keys the filter selects, in key order. */
   const matching = async (
@@ -2356,6 +2447,8 @@ describe("queryItems candidate sets", () => {
     'volume.lower() == "12"',
     'custom["review.status"] == "done"',
     'mood == "calm"',
+    // accessDate is a date, not stored text.
+    'accessDate == "2020-01-07"',
   ])("reads every Item's fields for %j", async (filter) => {
     expect((await fieldReads(filter)).read).toEqual(EVERY_PERSONAL_ITEM);
   });

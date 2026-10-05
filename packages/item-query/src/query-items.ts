@@ -164,7 +164,7 @@ export function queryItems(
           for (const scan of chunk) {
             const item = itemOf(scan, hydrated);
             if (filter && !isMatch(filter.root, item, clock)) continue;
-            const keys = sorts.map((sort) => sort.key(item));
+            const keys = sorts.map((sort) => sort.key(item, clock));
             matching.push(several ? { scan, keys, library } : { scan, keys });
           }
           matches.add(matching);
