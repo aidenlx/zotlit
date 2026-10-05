@@ -1544,16 +1544,21 @@ describe("queryItems with a filter", () => {
       ]);
     });
 
-    it("treats a null result as no match", async () => {
+    it("treats a null result as no match, and its negation as a match", async () => {
       using scenario = openScenarioDatabase();
-      // Null for every Item without a volume, in both directions.
+      // Null for every Item without a volume.
       expect(await matching(scenario, 'volume < "2"')).toEqual([
         "ART2FULL",
         "TIE2AAAA",
         "TIE2BBBB",
       ]);
-      expect(await matching(scenario, '!(volume < "2")')).toEqual([]);
-      expect(await matching(scenario, "!title")).toEqual([]);
+      // `!` reads null as falsy.
+      expect(await matching(scenario, '!(volume < "2")')).toEqual(
+        EVERY_PERSONAL_ITEM.filter(
+          (key) => !["ART2FULL", "TIE2AAAA", "TIE2BBBB"].includes(key),
+        ),
+      );
+      expect(await matching(scenario, "!title")).toEqual(["TIE2CCCC"]);
       expect(await matching(scenario, "title.isEmpty()")).toEqual(["TIE2CCCC"]);
     });
 
