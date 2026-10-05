@@ -61,3 +61,23 @@ export const itemQueryFlags: CliFlags = {
       'Libraries to read as one result set: a JSON array such as ["personal","group:123"], or all for every Library (default: the available Libraries of the Library scope setting)',
   },
 } satisfies Record<ItemQueryParam, CliFlag>;
+
+/**
+ * The diagnostic codes this adapter raises itself, each defined with the
+ * recovery action its diagnostic carries. An invalid query keeps the code and
+ * hint of its `ItemQueryError`.
+ */
+export const DIAGNOSTIC_HINTS = {
+  "invalid-argument":
+    "Correct the parameter named in details.parameter, then run the command again.",
+  "source-unavailable":
+    "Run the command again once the connected Zotero source is readable; when the message reports a failure, ask the user to check the plugin log.",
+  "library-not-found":
+    "Use personal, or group:<groupID> with the group ID of a group Library that the connected Zotero source holds; libraries=all reads every Library of the source.",
+  "no-library-available":
+    "Name the Libraries with libraries=<JSON array> or use libraries=all; to change the default, ask the user to select an available Library in the Library scope setting of ZotLit.",
+  "database-error":
+    "Run the command again; if it fails again, ask the user to check the plugin log.",
+  "unsupported-database-layout":
+    "Ask the user to update ZotLit: this ZotLit version cannot read the way their Zotero version stores its data. Running the command again gives the same result until then.",
+} as const satisfies Record<string, string>;

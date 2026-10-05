@@ -26,7 +26,7 @@ export {
   readHydrateChunk,
 } from "./hydrate-chunk";
 export { ItemQueryLayoutError, type LayoutVersions } from "./layout";
-export { readTargetLibraries, type TargetLibraryRow } from "./target-library";
+export { readSourceLibraries, type SourceLibrary } from "./source-libraries";
 export {
   readScanPage,
   readUniverseRows,

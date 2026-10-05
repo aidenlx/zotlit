@@ -55,7 +55,7 @@ export type ItemQueryReaderError =
 /** The reader a statement belongs to. */
 export type ItemQueryReader =
   | "layout"
-  | "target-library"
+  | "source-libraries"
   | "library-row-count"
   | "scan-page"
   | "candidate-set"

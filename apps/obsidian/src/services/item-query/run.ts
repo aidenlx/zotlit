@@ -3,11 +3,10 @@
 import { Effect, Exit } from "effect";
 
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-import { ItemQueryDatabase, readTargetLibraries } from "@zotlit/db/item-query";
+import { ItemQueryDatabase, readSourceLibraries } from "@zotlit/db/item-query";
 import type {
   ItemQueryDatabaseError,
   ItemQueryLayoutError,
-  TargetLibraryRow,
 } from "@zotlit/db/item-query";
 import {
   describeItemQuery,
@@ -21,10 +20,10 @@ import type {
   QueryResult,
 } from "@zotlit/item-query";
 
-import { selectorKey } from "@/services/library-scope/scope";
+import { resolveLibraryScope } from "@/services/library-scope/scope";
 import type {
   LibraryScope,
-  LibrarySelector,
+  ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
 
 /**
@@ -41,37 +40,25 @@ interface RunOptions {
   instrument?: ItemQueryInstrument;
 }
 
-/** How a run chooses its Target Libraries among the Libraries of the source. */
-export type LibrarySelection =
-  /** The available Libraries of the Library Scope. */
-  | { readonly from: "scope"; readonly scope: LibraryScope }
-  /** Every Library of the source. */
-  | { readonly from: "all" }
-  /** The Libraries the caller names; each one must be in the source. */
-  | { readonly from: "named"; readonly selectors: readonly LibrarySelector[] };
+/** The Libraries a run reads. */
+export interface RunLibraries {
+  /** The Library Scope in force, or the scope that the caller names. */
+  readonly scope: LibraryScope;
+  /** The run needs each Library of `scope`: the caller named them. */
+  readonly requireEach: boolean;
+}
 
-/**
- * The Target Libraries a run resolved, in the canonical order, and its result;
- * no result without a Library.
- */
-export type ItemQueryRun =
-  | {
-      readonly outcome: "result";
-      readonly libraries: readonly TargetLibraryRow[];
-      readonly result: QueryResult;
-    }
-  /** The source has no Library for a selector the caller named. */
-  | {
-      readonly outcome: "library-not-found";
-      readonly selector: LibrarySelector;
-    }
-  /** The source has no Library of the Library Scope. */
-  | { readonly outcome: "no-library-available" };
-
-function selectorOf(library: TargetLibraryRow): LibrarySelector {
-  return library.groupID === null
-    ? { type: "personal" }
-    : { type: "group", groupID: library.groupID };
+export interface ItemQueryRun {
+  /**
+   * `scope` on the Libraries of the leased source. The Target Libraries are
+   * its available ones, in the canonical order.
+   */
+  readonly libraries: ResolvedLibraryScope;
+  /**
+   * `null`: the run read no Item, because the source has no Library of the
+   * scope, or lacks one that the run needs.
+   */
+  readonly result: QueryResult | null;
 }
 
 /**
@@ -84,7 +71,7 @@ function selectorOf(library: TargetLibraryRow): LibrarySelector {
  * comes first.
  */
 export function runItemQuery(
-  selection: LibrarySelection,
+  { scope, requireEach }: RunLibraries,
   request: Omit<ItemQueryRequest, "libraries">,
   options: RunOptions,
 ): Promise<
@@ -95,35 +82,26 @@ export function runItemQuery(
 > {
   return run(
     Effect.gen(function* () {
-      // The Libraries of the source, in the canonical order.
-      const source = yield* readTargetLibraries();
-      let libraries = source;
-      if (selection.from !== "all") {
-        const selectors =
-          selection.from === "named"
-            ? selection.selectors
-            : selection.scope.mode === "selected"
-              ? selection.scope.libraries
-              : source.map(selectorOf);
-        const named = new Set(selectors.map(selectorKey));
-        libraries = source.filter((library) =>
-          named.has(selectorKey(selectorOf(library))),
-        );
-        if (selection.from === "named" && libraries.length < named.size) {
-          const held = new Set(
-            libraries.map((library) => selectorKey(selectorOf(library))),
-          );
-          const selector = selectors.find(
-            (entry) => !held.has(selectorKey(entry)),
-          )!;
-          return { outcome: "library-not-found", selector } as const;
-        }
+      // The resolution of the Library Scope service, on Library rows from the
+      // layout-checked reader. `LibraryScopeService.resolveWith` loads its
+      // rows with `getLibraries`, which selects columns by the version stamp
+      // and fails on a copy that Item Query can read.
+      const libraries = resolveLibraryScope(
+        yield* readSourceLibraries(),
+        scope,
+      );
+      const { available, unavailable } = libraries;
+      if (available.length === 0 || (requireEach && unavailable.length > 0)) {
+        return { libraries, result: null };
       }
-      if (libraries.length === 0) {
-        return { outcome: "no-library-available" } as const;
-      }
-      const result = yield* queryItems({ ...request, libraries });
-      return { outcome: "result", libraries, result } as const;
+      const result = yield* queryItems({
+        ...request,
+        libraries: available.map(({ libraryID, selector }) => ({
+          libraryID,
+          groupID: selector.type === "group" ? selector.groupID : null,
+        })),
+      });
+      return { libraries, result };
     }),
     options,
   );

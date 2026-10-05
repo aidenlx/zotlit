@@ -2514,7 +2514,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           fields: ["itemType", "title", "creators", "date", "dateModified"],
           sort: [{ field: "dateModified", direction: "desc" }],
           limit: 100,
-          libraries: "library-scope",
+          libraries: { source: "library-scope" },
         },
       },
     });

@@ -8,6 +8,7 @@ import { DEFAULT_FIELDS, DEFAULT_SORT } from "@zotlit/item-query";
 
 import {
   DEFAULT_CLI_LIMIT,
+  DIAGNOSTIC_HINTS,
   ITEM_QUERY_COMMAND,
   ITEM_QUERY_GUIDE_COMMAND,
   ITEM_QUERY_SCHEMA_COMMAND,
@@ -61,6 +62,24 @@ function querySynopsis(): string {
     }
   }
   return lines.join("\n  ");
+}
+
+/** Each diagnostic code of the handlers with its recovery text, wrapped. */
+function diagnosticCodes(): string {
+  return Object.entries(DIAGNOSTIC_HINTS)
+    .map(([code, hint]) => {
+      const lines = [""];
+      for (const word of `${code}: ${hint}`.split(" ")) {
+        const last = lines.at(-1)!;
+        if (last.length + word.length < 72) {
+          lines[lines.length - 1] = last === "" ? word : `${last} ${word}`;
+        } else {
+          lines.push(word);
+        }
+      }
+      return lines.join("\n    ");
+    })
+    .join("\n  ");
 }
 
 /** A Filter Expression shown on its own line. */
@@ -199,11 +218,9 @@ DIAGNOSTICS
   diagnostic.location names the argument; index is the position in fields
   or sort; span gives the characters of the filter text, from (inclusive)
   to to (exclusive).
-  unsupported-database-layout means this ZotLit version cannot read the
-  Zotero database: ask the user to update ZotLit.
-  library-not-found means the Zotero source has no Library for a name in
-  library or libraries. no-library-available means it has none of the
-  Libraries of the Library scope setting: name the Libraries.`;
+  An invalid query has a code of its own, such as unknown-field. The other
+  codes, each with its hint:
+  ${diagnosticCodes()}`;
 
 /** Canonical topic registry shared by parsing, generated help, and the index. */
 export const GUIDE_TOPICS = {
@@ -243,6 +260,8 @@ DEFAULTS
   Library scope setting) as one result set and returns at most
   ${DEFAULT_CLI_LIMIT} rows, sorted by ${DEFAULT_SORT_TEXT}.
   Each row has ${DEFAULT_FIELD_LIST}.
+  schema.defaults.libraries names the source of the default Libraries, the
+  Library scope setting; it is no value of the libraries argument.
 
 LIBRARIES
   library names one Library: personal (My Library), or group:<groupID>.

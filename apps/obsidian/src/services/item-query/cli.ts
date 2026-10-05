@@ -29,7 +29,7 @@ import type {
 
 import { getLogger } from "@/lib/log";
 import { yieldToMain } from "@/lib/yield-to-main";
-import { selectorKey } from "@/services/library-scope/scope";
+import { compareSelectors, selectorKey } from "@/services/library-scope/scope";
 import type {
   LibraryScope,
   LibrarySelector,
@@ -38,6 +38,7 @@ import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
 import {
   DEFAULT_CLI_LIMIT,
+  DIAGNOSTIC_HINTS,
   ITEM_QUERY_COMMAND,
   ITEM_QUERY_GUIDE_COMMAND,
   ITEM_QUERY_PARAMS,
@@ -47,7 +48,7 @@ import {
 import type { ItemQueryCommand } from "./contract";
 import { GUIDE_TOPIC_NAMES, parseGuideTopic, renderGuide } from "./guide";
 import { runDescribeItemQuery, runItemQuery } from "./run";
-import type { ItemQueryInstrument, LibrarySelection } from "./run";
+import type { ItemQueryInstrument } from "./run";
 
 const logger = getLogger(["item-query"]);
 
@@ -71,26 +72,6 @@ export const itemQueryGuideFlags: CliFlags = {
     description: "Guide topic; omit it for the quickstart",
   },
 } satisfies Record<"topic", CliFlag>;
-
-/**
- * The diagnostic codes this adapter raises itself, each defined with the
- * recovery action its diagnostic carries. An invalid query keeps the code and
- * hint of its `ItemQueryError`.
- */
-const DIAGNOSTIC_HINTS = {
-  "invalid-argument":
-    "Correct the parameter named in details.parameter, then run the command again.",
-  "source-unavailable":
-    "Run the command again once the connected Zotero source is readable; when the message reports a failure, ask the user to check the plugin log.",
-  "library-not-found":
-    "Use personal, or group:<groupID> with the group ID of a group Library that the connected Zotero source holds. libraries=all reads every Library of the source.",
-  "no-library-available":
-    "Name the Libraries with libraries=<JSON array>, such as libraries='[\"personal\"]', or use libraries=all. To change the default, ask the user to select an available Library in the Library scope setting of ZotLit.",
-  "database-error":
-    "Run the command again; if it fails again, ask the user to check the plugin log.",
-  "unsupported-database-layout":
-    "Ask the user to update ZotLit: this ZotLit version cannot read the way their Zotero version stores its data. Running the command again gives the same result until then.",
-} as const satisfies Record<string, string>;
 
 type AdapterDiagnosticCode = keyof typeof DIAGNOSTIC_HINTS;
 
@@ -121,20 +102,17 @@ type LibraryWire =
   | { type: "personal" }
   | { type: "group"; groupID: number; name: string };
 
-/** The Libraries the caller asks for; `scope`: the Library Scope default. */
-type DecodedLibraries =
-  | { from: "scope" }
-  | { from: "all" }
-  | {
-      from: "named";
-      selectors: readonly LibrarySelector[];
-      /** The argument that names them. */
-      parameter: "library" | "libraries";
-    };
+/** The Libraries the caller names, as a scope that needs each of them. */
+interface NamedLibraries {
+  scope: LibraryScope;
+  /** The argument that names them. */
+  parameter: "library" | "libraries";
+}
 
 /** The flat arguments after decoding. */
 interface DecodedArguments {
-  libraries: DecodedLibraries;
+  /** `null`: the Library Scope in force decides. */
+  libraries: NamedLibraries | null;
   filter: string | undefined;
   fields: readonly string[] | undefined;
   sort: readonly SortSpec[] | undefined;
@@ -158,8 +136,8 @@ type EnvelopeTail =
 type SchemaWire = Omit<ItemQuerySchema, "defaults"> & {
   defaults: Omit<ItemQuerySchema["defaults"], "limit"> & {
     limit: number;
-    /** The available Libraries of the Library Scope. */
-    libraries: "library-scope";
+    /** The available Libraries of the Library Scope; no argument value. */
+    libraries: { source: "library-scope" };
   };
 };
 
@@ -254,7 +232,7 @@ export function createItemQuerySchemaHandler(
           defaults: {
             ...schema.defaults,
             limit: DEFAULT_CLI_LIMIT,
-            libraries: "library-scope",
+            libraries: { source: "library-scope" },
           },
         },
       });
@@ -293,13 +271,28 @@ export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
 
     deps.signal.throwIfAborted();
 
-    const selection: LibrarySelection =
-      decoded.libraries.from === "scope"
-        ? { from: "scope", scope: await deps.libraryScope() }
-        : decoded.libraries;
+    const named = decoded.libraries;
+    let scope: LibraryScope;
+    if (named) scope = named.scope;
+    else {
+      try {
+        scope = await deps.libraryScope();
+      } catch (error) {
+        deps.signal.throwIfAborted();
+        logger.warn("Item Query could not read the Library Scope", { error });
+        return failure(
+          ITEM_QUERY_COMMAND,
+          diagnostic(
+            "source-unavailable",
+            `The Library Scope of ZotLit is not readable: ${messageOf(error)}`,
+          ),
+        );
+      }
+      deps.signal.throwIfAborted();
+    }
     const read = await withLease(deps, ITEM_QUERY_COMMAND, (client) =>
       runItemQuery(
-        selection,
+        { scope, requireEach: named !== null },
         {
           filter: decoded.filter,
           fields: decoded.fields,
@@ -315,38 +308,34 @@ export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
     if (Exit.isFailure(exit)) {
       return answerFailure(exit.cause, ITEM_QUERY_COMMAND, deps.signal);
     }
-    const ran = exit.value;
-    if (ran.outcome === "library-not-found") {
+    const { libraries, result } = exit.value;
+    if (result === null) {
+      const [missing] = libraries.unavailable;
       return failure(
         ITEM_QUERY_COMMAND,
-        diagnostic(
-          "library-not-found",
-          `The connected Zotero source holds no ${describeSelector(ran.selector)}.`,
-          decoded.libraries.from === "named"
-            ? { details: { parameter: decoded.libraries.parameter } }
-            : {},
-        ),
+        named && missing
+          ? diagnostic(
+              "library-not-found",
+              `The connected Zotero source holds no ${describeSelector(missing)}.`,
+              { details: { parameter: named.parameter } },
+            )
+          : named
+            ? diagnostic(
+                "source-unavailable",
+                "The connected Zotero source holds no Library.",
+              )
+            : diagnostic(
+                "no-library-available",
+                "The connected Zotero source holds no Library of the Library Scope.",
+              ),
       );
     }
-    if (ran.outcome === "no-library-available") {
-      return failure(
-        ITEM_QUERY_COMMAND,
-        diagnostic(
-          "no-library-available",
-          "The connected Zotero source holds no Library of the Library Scope.",
-        ),
-      );
-    }
-    return answerExit(Exit.succeed(ran.result), {
+    return answerExit(Exit.succeed(result), {
       identity: read.identity,
-      libraries: ran.libraries.map((library) =>
-        library.groupID === null
-          ? { type: "personal" }
-          : {
-              type: "group",
-              groupID: library.groupID,
-              name: library.name ?? "",
-            },
+      libraries: libraries.available.map(({ selector, name }) =>
+        selector.type === "group"
+          ? { ...selector, name: name ?? "" }
+          : selector,
       ),
       signal: deps.signal,
       onAnswerStep: deps.onAnswerStep,
@@ -601,7 +590,7 @@ function decodeArguments(params: CliData): DecodedArguments | Diagnostic {
   // `libraries` wins over `library`; with neither, the Library Scope decides.
   const named = decodeLibraries(params);
   if (named !== undefined && "code" in named) return named;
-  let libraries: DecodedLibraries = named ?? { from: "scope" };
+  let libraries = named ?? null;
   if (named === undefined && params.library !== undefined) {
     const selector = parseSelector(params.library);
     if (selector === null) {
@@ -610,7 +599,10 @@ function decodeArguments(params: CliData): DecodedArguments | Diagnostic {
         `'${params.library}' is not a Library: use personal or group:<groupID>.`,
       );
     }
-    libraries = { from: "named", selectors: [selector], parameter: "library" };
+    libraries = {
+      scope: { mode: "selected", libraries: [selector] },
+      parameter: "library",
+    };
   }
 
   const filter = params.filter;
@@ -656,8 +648,10 @@ function parseSelector(text: string): LibrarySelector | null {
 /** Decode `libraries`: the word `all`, or a JSON array of selector texts. */
 function decodeLibraries(
   params: CliData,
-): DecodedLibraries | Diagnostic | undefined {
-  if (params.libraries === "all") return { from: "all" };
+): NamedLibraries | Diagnostic | undefined {
+  if (params.libraries === "all") {
+    return { scope: { mode: "all" }, parameter: "libraries" };
+  }
   const texts = decodeJson(params, "libraries");
   if (texts === undefined || "code" in texts) return texts;
   const selectors: LibrarySelector[] = [];
@@ -679,7 +673,13 @@ function decodeLibraries(
     seen.add(text);
     selectors.push(selector);
   }
-  return { from: "named", selectors, parameter: "libraries" };
+  return {
+    scope: {
+      mode: "selected",
+      libraries: selectors.toSorted(compareSelectors),
+    },
+    parameter: "libraries",
+  };
 }
 
 /** The JSON-encoded arguments, with the form each one takes. */

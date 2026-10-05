@@ -442,6 +442,25 @@ describe("zotlit:item-query libraries", () => {
     expect(keys(answer)).toEqual(BOTH_BY_MODIFIED);
   });
 
+  it("answers source-unavailable for libraries=all on a source without a Library", async () => {
+    using scenario = openScenarioDatabase();
+    scenario.sqlite.exec(
+      "pragma foreign_keys = off; delete from groups; delete from libraries",
+    );
+    const { run } = setup(scenario);
+
+    const answer = await run({ libraries: "all" });
+
+    expect(answer).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "source-unavailable",
+        message: "The connected Zotero source holds no Library.",
+      },
+    });
+    expect(JSON.stringify(answer)).not.toContain("libraries=all");
+  });
+
   it("keeps local library IDs out of the answer", async () => {
     using scenario = openScenarioDatabase();
     const { run } = setup(scenario);
@@ -618,6 +637,43 @@ describe("zotlit:item-query default Libraries", () => {
       },
     });
     expect(events).toEqual(["acquire", "release", "answer"]);
+  });
+
+  it("answers source-unavailable when the Library Scope cannot be read, and takes no lease", async () => {
+    using scenario = openScenarioDatabase();
+    const { run, acquireRead } = setup(scenario, {
+      libraryScope: async () => {
+        throw new Error("settings did not load");
+      },
+    });
+
+    const answer = await run();
+
+    expect(answer).toMatchObject({
+      contractVersion: 1,
+      command: ITEM_QUERY_COMMAND,
+      ok: false,
+      diagnostic: {
+        code: "source-unavailable",
+        message: expect.stringContaining("settings did not load"),
+      },
+    });
+    expect(acquireRead).not.toHaveBeenCalled();
+  });
+
+  it("rejects with the abort reason when the run is cancelled while it reads the Library Scope", async () => {
+    using scenario = openScenarioDatabase();
+    const controller = new AbortController();
+    const { run, acquireRead } = setup(scenario, {
+      signal: controller.signal,
+      libraryScope: async () => {
+        controller.abort();
+        throw new Error("the plugin unloaded");
+      },
+    });
+
+    await expect(run()).rejects.toMatchObject({ name: "AbortError" });
+    expect(acquireRead).not.toHaveBeenCalled();
   });
 
   it("resolves the Library Scope on the leased source", async () => {
@@ -955,7 +1011,8 @@ describe("zotlit:item-query cancellation", () => {
     const reason = new Error("plugin unloaded");
     const { run, events } = setup(scenario, { signal: controller.signal });
 
-    const running = run();
+    // A named Library: the handler takes the lease in its first step.
+    const running = run({ library: "personal" });
     controller.abort(reason);
 
     await expect(running).rejects.toBe(reason);
@@ -1159,7 +1216,7 @@ describe("zotlit:item-query-schema", () => {
       fields: ["itemType", "title", "creators", "date", "dateModified"],
       sort: [{ field: "dateModified", direction: "desc" }],
       limit: 100,
-      libraries: "library-scope",
+      libraries: { source: "library-scope" },
     });
   });
 
@@ -1275,6 +1332,27 @@ describe("zotlit:item-query-guide", () => {
     );
     expect(output).toContain("Library scope");
     expect(output).toContain("libraries wins");
+  });
+
+  it("prints the recovery text of each diagnostic code that the handlers answer", async () => {
+    using scenario = openScenarioDatabase();
+    const output = itemQueryGuideHandler({ topic: "results" });
+    const flat = output.replaceAll(/\s+/g, " ");
+    const { run } = setup(scenario, {
+      libraryScope: async () => ({
+        mode: "selected",
+        libraries: [{ type: "group", groupID: 999 }],
+      }),
+    });
+
+    const failing: CliData[] = [{}, { library: "group:999" }, { limit: "0" }];
+    for (const params of failing) {
+      const { diagnostic } = (await run(params)) as {
+        diagnostic: { code: string; hint: string };
+      };
+
+      expect(flat).toContain(`${diagnostic.code}: ${diagnostic.hint}`);
+    }
   });
 
   it.each([

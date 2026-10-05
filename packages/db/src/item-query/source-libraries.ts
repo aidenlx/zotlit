@@ -1,4 +1,5 @@
-// The reader that lists the Libraries an Item Query can read. It reads the
+// The reader that lists the Libraries of the source: the ones an Item Query
+// can read. It reads the
 // columns of the layout manifest only, so it runs on every copy that passes
 // the layout check, whatever its version stamps are.
 import { groups, libraries } from "@drizzle/schema";
@@ -9,8 +10,9 @@ import { defineStatement } from "./database";
 import type { ItemQueryDatabase, ItemQueryReaderError } from "./database";
 
 /** A Library of the copy. `libraryID` is local to the copy. */
-export interface TargetLibraryRow {
+export interface SourceLibrary {
   readonly libraryID: number;
+  readonly type: "user" | "group";
   /** `null` for the personal Library. */
   readonly groupID: number | null;
   /** The name of a group Library; `null` for the personal Library. */
@@ -18,7 +20,7 @@ export interface TargetLibraryRow {
 }
 
 const personalLibraryStatement = defineStatement<Record<string, never>>(
-  "target-library",
+  "source-libraries",
 )((db) =>
   db
     .select({ libraryID: libraries.libraryID })
@@ -29,7 +31,7 @@ const personalLibraryStatement = defineStatement<Record<string, never>>(
 );
 
 const groupLibrariesStatement = defineStatement<Record<string, never>>(
-  "target-library",
+  "source-libraries",
 )((db) =>
   db
     .select({
@@ -46,8 +48,8 @@ const groupLibrariesStatement = defineStatement<Record<string, never>>(
  * canonical order: the personal Library first, then the groups by ascending
  * group ID.
  */
-export function readTargetLibraries(): Effect.Effect<
-  TargetLibraryRow[],
+export function readSourceLibraries(): Effect.Effect<
+  SourceLibrary[],
   ItemQueryReaderError,
   ItemQueryDatabase
 > {
@@ -56,9 +58,9 @@ export function readTargetLibraries(): Effect.Effect<
     const groupRows = yield* groupLibrariesStatement.all({});
     return [
       ...(personal
-        ? [{ libraryID: personal.libraryID, groupID: null, name: null }]
+        ? [{ ...personal, type: "user" as const, groupID: null, name: null }]
         : []),
-      ...groupRows,
+      ...groupRows.map((group) => ({ ...group, type: "group" as const })),
     ];
   });
 }
