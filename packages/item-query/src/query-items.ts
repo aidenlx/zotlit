@@ -50,11 +50,11 @@ interface Match {
   /** One key for each entry of the sort list. */
   readonly keys: readonly SortKey[];
   /**
-   * The Library of the match, in a query of several Libraries. A query of one
-   * Library keeps no reference: an unlimited query holds every match, and a
-   * larger match moves the major collection of V8 into the engine's slices.
+   * The Library of the match, as its index in the Target Libraries. An
+   * unlimited query holds every match, and a match that refers to an object
+   * moves the major collection of V8 into the engine's slices.
    */
-  readonly library?: TargetLibrary;
+  readonly library: number;
 }
 
 /**
@@ -144,16 +144,15 @@ export function queryItems(
       vocabulary && scanNeeds.some(needsHydration)
         ? hydrateFields(scanNeeds, vocabulary)
         : null;
-    const compare = byKeysThenKey(sorts);
+    const compare = byKeysThenKey(sorts, libraries);
     const matches =
       limit === null
         ? allMatches(compare, sizeWithin(tuning.mergeStepSize, Infinity))
         : firstMatches(limit + 1, compare);
     // Each page and each chunk lives in the Effect that reads it, so the query
     // holds no row of a page it has finished.
-    const several = libraries.length > 1;
     /** Hydrate one chunk of a page and keep its matches. */
-    const takeChunk = (library: TargetLibrary, chunk: readonly ScanRow[]) =>
+    const takeChunk = (library: number, chunk: readonly ScanRow[]) =>
       Effect.gen(function* () {
         const hydrated = yield* hydrate(
           scanFields,
@@ -165,13 +164,13 @@ export function queryItems(
             const item = itemOf(scan, hydrated);
             if (filter && !isMatch(filter.root, item, clock)) continue;
             const keys = sorts.map((sort) => sort.key(item));
-            matching.push(several ? { scan, keys, library } : { scan, keys });
+            matching.push({ scan, keys, library });
           }
           matches.add(matching);
         });
       });
     /** Hydrate one page of the query universe and keep its matches. */
-    const takePage = (library: TargetLibrary, page: readonly ScanRow[]) =>
+    const takePage = (library: number, page: readonly ScanRow[]) =>
       Effect.gen(function* () {
         const chunkSize = scanFields ? hydrateChunkSize : scanPageSize;
         for (let start = 0; start < page.length; start += chunkSize) {
@@ -179,10 +178,14 @@ export function queryItems(
         }
       });
     /** Read and take the scan page after `afterKey`. Null: the last page. */
-    const takeScanPage = (library: TargetLibrary, afterKey: string | null) =>
+    const takeScanPage = (
+      library: number,
+      libraryID: number,
+      afterKey: string | null,
+    ) =>
       Effect.gen(function* () {
         const page = yield* readScanPage({
-          libraryID: library.libraryID,
+          libraryID,
           afterKey,
           size: scanPageSize,
         });
@@ -195,7 +198,7 @@ export function queryItems(
     // that Library; the Library scan reads every Item. The evaluator decides
     // the match on both paths, and the matches of every Library go to the one
     // result order.
-    for (const library of libraries) {
+    for (const [index, library] of libraries.entries()) {
       const { libraryID } = library;
       const candidatePlan =
         filter && !tuning.forceScan
@@ -217,7 +220,7 @@ export function queryItems(
         const itemIDs = [...candidates];
         for (let start = 0; start < itemIDs.length; start += scanPageSize) {
           yield* takePage(
-            library,
+            index,
             yield* readUniverseRows({
               libraryID,
               itemIDs: itemIDs.slice(start, start + scanPageSize),
@@ -226,7 +229,7 @@ export function queryItems(
         }
       } else {
         let afterKey: string | null = null;
-        do afterKey = yield* takeScanPage(library, afterKey);
+        do afterKey = yield* takeScanPage(index, libraryID, afterKey);
         while (afterKey !== null);
       }
     }
@@ -248,10 +251,10 @@ export function queryItems(
         chunk.map((row) => row.scan.itemID),
       );
       yield* Effect.sync(() => {
-        for (const { library = libraries[0]!, scan } of chunk) {
+        for (const { library, scan } of chunk) {
           const item = itemOf(scan, hydrated);
           rows.push({
-            indexedKey: formatIndexedKey(scan.key, library.groupID),
+            indexedKey: formatIndexedKey(scan.key, libraries[library]!.groupID),
             values: Object.fromEntries(
               paths.map((path) => [path.text, readPath(path, item)]),
             ),
@@ -364,6 +367,7 @@ function hydrateFields(
  */
 function byKeysThenKey(
   sorts: readonly PlannedSort[],
+  libraries: readonly TargetLibrary[],
 ): (a: Match, b: Match) => number {
   const descending = sorts.map((sort) => sort.direction === "desc");
   return (a, b) => {
@@ -381,8 +385,8 @@ function byKeysThenKey(
     }
     if (a.scan.key !== b.scan.key) return a.scan.key < b.scan.key ? -1 : 1;
     if (a.library === b.library) return 0;
-    const x = formatIndexedKey(a.scan.key, a.library?.groupID);
-    const y = formatIndexedKey(b.scan.key, b.library?.groupID);
+    const x = formatIndexedKey(a.scan.key, libraries[a.library]!.groupID);
+    const y = formatIndexedKey(b.scan.key, libraries[b.library]!.groupID);
     return x < y ? -1 : x > y ? 1 : 0;
   };
 }
