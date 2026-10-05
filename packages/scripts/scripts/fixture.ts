@@ -276,18 +276,15 @@ const cli = yargs(hideBin(process.argv))
           describe: `with --library-items, also fill the group Library ${STRESS_GROUP_LIBRARY.name} (${STRESS_GROUP_LIBRARY.groupID}) to exactly this many Items, for Item Query over two large Libraries; must be ${STRESS_GROUP_LIBRARY_ITEM_COUNT_CONSTRAINT}`,
           type: "number",
         })
-        .conflicts("item-count", "library-items")
-        .implies("group-library-items", "library-items"),
+        .conflicts("item-count", "library-items"),
     async (argv) => {
       const stressLibraryItemCount = argv["library-items"];
       await build({
         scopeCase: DEFAULT_SCOPE_CASE,
         ...(stressLibraryItemCount === undefined
           ? { stressItemCount: argv["item-count"] ?? DEFAULT_STRESS_ITEM_COUNT }
-          : {
-              stressLibraryItemCount,
-              stressGroupLibraryItemCount: argv["group-library-items"],
-            }),
+          : { stressLibraryItemCount }),
+        stressGroupLibraryItemCount: argv["group-library-items"],
       });
     },
   )
