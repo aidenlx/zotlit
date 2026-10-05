@@ -44,7 +44,7 @@ import type {
 } from "./request";
 import { ItemQueryTuning } from "./tuning";
 
-/** One match while the query orders it: its scan row and its sort keys. */
+/** One match while the query orders it. */
 interface Match {
   readonly scan: ScanRow;
   /** One key for each entry of the sort list. */
