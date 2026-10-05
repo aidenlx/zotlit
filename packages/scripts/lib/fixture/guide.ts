@@ -14,6 +14,8 @@ import {
   NOTES,
   PERSONAL_SELECTOR,
   SCOPE_CASES,
+  STRESS_GROUP_LIBRARY,
+  STRESS_GROUP_LIBRARY_ITEM_COUNT_CONSTRAINT,
   STRESS_ITEM_COUNT_CONSTRAINT,
   STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT,
   STRESS_LIBRARY_TIERS,
@@ -411,11 +413,17 @@ For Item Query performance work, fill My Library to an exact Item count. The tie
 
   pnpm fixture stress --library-items 10000
 
-The group Libraries keep their Fixture Spec content. In the synthetic Items, each query target has a rare (0.1%), a common (10%), and a dominant (60% or more) value:
+For Item Query over two large Libraries, also fill the group Library ${STRESS_GROUP_LIBRARY.name} (group ID ${STRESS_GROUP_LIBRARY.groupID}); pass ${STRESS_GROUP_LIBRARY_ITEM_COUNT_CONSTRAINT} together with --library-items:
+
+  pnpm fixture stress --library-items 100000 --group-library-items 100000
+
+Its synthetic Items follow the rules of My Library, with Collections, Zotero Keys (a second fixed seed), and Citation Keys (stressg…) of their own. An Item of the group Library has the title of the My Library Item at the same position, as a copy has.
+
+Each group Library without an Item count keeps its Fixture Spec content. In the synthetic Items, each query target has a rare (0.1%), a common (10%), and a dominant (60% or more) value:
 
 ${stressLibraryRows()}
 
-The ${C.root.name} Collection holds the other three Collections and no Items of its own. One Item has the title "${STRESS_LIBRARY_VALUES.uniqueTitle}". STRESS_LIBRARY_VALUES in packages/scripts/lib/fixture/spec.ts states the exact rule for each value.
+The ${C.root.name} Collection holds the other three Collections and no Items of its own. One Item of each filled Library has the title "${STRESS_LIBRARY_VALUES.uniqueTitle}". STRESS_LIBRARY_VALUES in packages/scripts/lib/fixture/spec.ts states the exact rule for each value.
 
 The ordinary pnpm fixture command keeps the Fixture at its committed Fixture Spec size.`;
 
