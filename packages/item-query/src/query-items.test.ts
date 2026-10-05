@@ -4,8 +4,10 @@ import { describe, expect, it } from "vitest";
 
 import { ItemQueryDatabase, ItemQueryLayoutError } from "@zotlit/db/item-query";
 import {
+  BULK_TAG,
   openScenarioDatabase,
   SCENARIO_LIBRARIES,
+  seedBulkLibrary,
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
@@ -116,7 +118,7 @@ const PERSONAL_BY_MODIFIED = [
 describe("queryItems without a filter", () => {
   it("returns the live top-level Items of the Library, most recently modified first", async () => {
     using scenario = openScenarioDatabase();
-    const found = await result(scenario, { library: personal });
+    const found = await result(scenario, { libraries: [personal] });
 
     expect(keys(found)).toEqual(PERSONAL_BY_MODIFIED);
     expect(found.returnedCount).toBe(10);
@@ -125,7 +127,7 @@ describe("queryItems without a filter", () => {
 
   it("keeps the two Libraries apart and gives group Items their group Indexed Key", async () => {
     using scenario = openScenarioDatabase();
-    const found = await result(scenario, { library: group });
+    const found = await result(scenario, { libraries: [group] });
 
     expect(keys(found)).toEqual(["ART2FULLg4815", "GRP2BK22g4815"]);
   });
@@ -147,8 +149,8 @@ describe("queryItems without a filter", () => {
       );
     }
 
-    const all = await result(scenario, { library: personal });
-    const newest = await result(scenario, { library: personal, limit: 2 });
+    const all = await result(scenario, { libraries: [personal] });
+    const newest = await result(scenario, { libraries: [personal], limit: 2 });
 
     expect(all.returnedCount).toBe(1210);
     expect(keys(all).slice(0, 2)).toEqual(["ZZ008800", "ZZ008801"]);
@@ -161,7 +163,7 @@ describe("queryItems without a filter", () => {
 describe("queryItems with a limit", () => {
   it("returns the first rows of the order and reports that more Items match", async () => {
     using scenario = openScenarioDatabase();
-    const found = await result(scenario, { library: personal, limit: 3 });
+    const found = await result(scenario, { libraries: [personal], limit: 3 });
 
     expect(keys(found)).toEqual(PERSONAL_BY_MODIFIED.slice(0, 3));
     expect(found.returnedCount).toBe(3);
@@ -170,7 +172,7 @@ describe("queryItems with a limit", () => {
 
   it("breaks a tie inside the limit by Indexed Key", async () => {
     using scenario = openScenarioDatabase();
-    const found = await result(scenario, { library: personal, limit: 5 });
+    const found = await result(scenario, { libraries: [personal], limit: 5 });
 
     expect(keys(found).slice(3)).toEqual(["TIE2AAAA", "TIE2BBBB"]);
     expect(found.truncated).toBe(true);
@@ -178,7 +180,7 @@ describe("queryItems with a limit", () => {
 
   it("is not truncated when exactly `limit` Items match", async () => {
     using scenario = openScenarioDatabase();
-    const found = await result(scenario, { library: personal, limit: 10 });
+    const found = await result(scenario, { libraries: [personal], limit: 10 });
 
     expect(keys(found)).toEqual(PERSONAL_BY_MODIFIED);
     expect(found.truncated).toBe(false);
@@ -186,7 +188,7 @@ describe("queryItems with a limit", () => {
 
   it("returns every match when the limit is above the match count", async () => {
     using scenario = openScenarioDatabase();
-    const found = await result(scenario, { library: personal, limit: 11 });
+    const found = await result(scenario, { libraries: [personal], limit: 11 });
 
     expect(found.returnedCount).toBe(10);
     expect(found.truncated).toBe(false);
@@ -196,7 +198,7 @@ describe("queryItems with a limit", () => {
     "returns every match with the limit %s",
     async (limit) => {
       using scenario = openScenarioDatabase();
-      const found = await result(scenario, { library: personal, limit });
+      const found = await result(scenario, { libraries: [personal], limit });
 
       expect(found.returnedCount).toBe(10);
       expect(found.truncated).toBe(false);
@@ -207,7 +209,7 @@ describe("queryItems with a limit", () => {
 describe("queryItems projection", () => {
   it("projects the item type, title, creators, date, and modification time when the caller names no fields", async () => {
     using scenario = openScenarioDatabase();
-    const found = await result(scenario, { library: personal, limit: 1 });
+    const found = await result(scenario, { libraries: [personal], limit: 1 });
 
     expect(found.rows).toEqual([
       {
@@ -249,7 +251,7 @@ describe("queryItems projection", () => {
   it("returns identity-only rows for an empty field list", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       fields: [],
       limit: 2,
     });
@@ -263,7 +265,7 @@ describe("queryItems projection", () => {
   it("puts every requested field in each row", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
-      library: group,
+      libraries: [group],
       fields: ["dateAdded", "itemType"],
     });
 
@@ -288,7 +290,7 @@ describe("queryItems Projection Paths", () => {
   it("projects full, partial, text, and missing dates as structured values", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       fields: ["date", "date.year", "date.month", "date.day", "date.raw"],
     });
     const values = valuesByKey(found);
@@ -350,7 +352,7 @@ describe("queryItems Projection Paths", () => {
   it("resolves an alias conflict to the type-specific field and keeps the custom field apart", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       fields: [
         "publicationTitle",
         "bookTitle",
@@ -379,7 +381,7 @@ describe("queryItems Projection Paths", () => {
   it("resolves a base field through the type-specific field of each item type", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       fields: ["publicationTitle", "publisher", "institution"],
     });
     const values = valuesByKey(found);
@@ -402,7 +404,7 @@ describe("queryItems Projection Paths", () => {
   it("gives a field value as a string whether SQLite stores it as text or as a number", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       fields: ["volume"],
     });
     const values = valuesByKey(found);
@@ -415,7 +417,7 @@ describe("queryItems Projection Paths", () => {
   it("reaches custom fields by exact source name, in bracket or dotted form", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       fields: ['custom["review.status"]', "custom.mood", "custom"],
     });
     const values = valuesByKey(found);
@@ -449,7 +451,7 @@ describe("queryItems Projection Paths", () => {
   it("puts every requested path in every row, with null for a missing value", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       fields: ["title", "DOI", "date.year"],
     });
 
@@ -468,7 +470,7 @@ describe("queryItems Projection Paths", () => {
     const hydratedIDs = recordHydratedItemIDs(scenario);
 
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       fields: ["title"],
       limit: 2,
     });
@@ -497,7 +499,7 @@ describe("queryItems Projection Paths", () => {
     }
 
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       fields: ["title"],
     });
 
@@ -512,7 +514,7 @@ describe("queryItems relation lists", () => {
   it("projects Creators in Zotero's creator order, one element for each row", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       fields: ["creators"],
     });
     const values = valuesByKey(found);
@@ -560,7 +562,7 @@ describe("queryItems relation lists", () => {
   it("projects Tags in the Item Query string order, with their type", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       fields: ["tags", "tags[0].name"],
     });
     const values = valuesByKey(found);
@@ -584,7 +586,7 @@ describe("queryItems relation lists", () => {
   it("projects each live Collection as its root-first path, in the Item Query string order", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       fields: ["collections", "collections[1]"],
     });
     const values = valuesByKey(found);
@@ -606,7 +608,7 @@ describe("queryItems relation lists", () => {
   it("gives the Collection paths of the Target Library", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
-      library: group,
+      libraries: [group],
       fields: ["collections"],
     });
 
@@ -619,7 +621,7 @@ describe("queryItems relation lists", () => {
   it("projects Attachment presence as true for an Item with a live Attachment", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       fields: ["attachments"],
     });
 
@@ -635,7 +637,7 @@ describe("queryItems relation lists", () => {
     );
 
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       fields: ["attachments"],
     });
 
@@ -655,7 +657,7 @@ describe("queryItems relation lists", () => {
     );
 
     await result(scenario, {
-      library: personal,
+      libraries: [personal],
       fields: ["creators", "tags", "collections", "attachments"],
       limit: 2,
     });
@@ -674,7 +676,7 @@ describe("queryItems relation lists", () => {
     );
 
     await result(scenario, {
-      library: personal,
+      libraries: [personal],
       fields: ["title", "attachments"],
     });
 
@@ -684,7 +686,7 @@ describe("queryItems relation lists", () => {
   it("reaches one Creator by index, with null past the end", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       fields: ["creators[0].fullName", "creators[1].role", "creators[2]"],
     });
     const values = valuesByKey(found);
@@ -705,7 +707,7 @@ describe("queryItems relation lists", () => {
 describe("queryItems normalized request", () => {
   it("reports the defaults it applied", async () => {
     using scenario = openScenarioDatabase();
-    const found = await result(scenario, { library: personal });
+    const found = await result(scenario, { libraries: [personal] });
 
     expect(found.query).toEqual({
       filter: null,
@@ -718,7 +720,7 @@ describe("queryItems normalized request", () => {
   it("reports the fields and the limit the caller gave", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       fields: ["dateAdded"],
       limit: 4,
     });
@@ -737,7 +739,7 @@ describe("queryItems failures", () => {
     using scenario = openScenarioDatabase();
     const error = await failure(
       scenario,
-      { library: personal, fields: ["itemType", "noSuchField"] },
+      { libraries: [personal], fields: ["itemType", "noSuchField"] },
       false,
     );
 
@@ -775,7 +777,7 @@ describe("queryItems failures", () => {
       using scenario = openScenarioDatabase();
       const error = await failure(
         scenario,
-        { library: personal, fields: ["title", path] },
+        { libraries: [personal], fields: ["title", path] },
         false,
       );
 
@@ -790,7 +792,7 @@ describe("queryItems failures", () => {
   it("fails a custom field that the source does not define", async () => {
     using scenario = openScenarioDatabase();
     const error = await failure(scenario, {
-      library: personal,
+      libraries: [personal],
       fields: ['custom["Review.Status"]'],
     });
 
@@ -809,7 +811,7 @@ describe("queryItems failures", () => {
       using scenario = openScenarioDatabase();
       const error = await failure(
         scenario,
-        { library: personal, limit },
+        { libraries: [personal], limit },
         false,
       );
 
@@ -824,10 +826,10 @@ describe("queryItems failures", () => {
   it("fails with the tagged database error when a statement fails", async () => {
     using scenario = openScenarioDatabase();
     // The copy passes the layout check first, so the statement itself fails.
-    await result(scenario, { library: personal, limit: 1 });
+    await result(scenario, { libraries: [personal], limit: 1 });
     scenario.sqlite.exec("drop table deletedItems");
 
-    const error = await failure(scenario, { library: personal });
+    const error = await failure(scenario, { libraries: [personal] });
 
     expect(error).toMatchObject({
       _tag: "ItemQueryDatabaseError",
@@ -856,7 +858,10 @@ describe("queryItems on the layout of the Zotero database", () => {
     stamp(scenario, { userdata: 129, compatibility: 9 });
     scenario.sqlite.exec('alter table "fieldsCombined" drop column "custom"');
 
-    const error = await failure(scenario, { library: personal, fields: [] });
+    const error = await failure(scenario, {
+      libraries: [personal],
+      fields: [],
+    });
 
     expect(error).toBeInstanceOf(ItemQueryLayoutError);
     expect(error).toMatchObject({
@@ -871,7 +876,7 @@ describe("queryItems on the layout of the Zotero database", () => {
     stamp(scenario, { userdata: 140, compatibility: 12 });
 
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       fields: ["title"],
     });
 
@@ -885,7 +890,7 @@ describe("queryItems on the layout of the Zotero database", () => {
 describe("queryItems under a scheduler", () => {
   it("pauses between operations and gives the result of the exported scheduler", async () => {
     using scenario = openScenarioDatabase();
-    const request: ItemQueryRequest = { library: personal, limit: 4 };
+    const request: ItemQueryRequest = { libraries: [personal], limit: 4 };
 
     const stepped = await run(scenario, request);
     const production = await Effect.runPromiseExit(
@@ -908,7 +913,12 @@ describe("queryItems sort", () => {
     limit?: number,
   ): Promise<string[]> =>
     keys(
-      await result(scenario, { library: personal, fields: [], sort, limit }),
+      await result(scenario, {
+        libraries: [personal],
+        fields: [],
+        sort,
+        limit,
+      }),
     );
 
   it("orders by a string field in ascending order, with a missing value last and a tie in Indexed Key order", async () => {
@@ -1038,7 +1048,11 @@ describe("queryItems sort", () => {
   it("reports the sort the caller gave in the normalized request", async () => {
     using scenario = openScenarioDatabase();
     const sort = [{ field: "title", direction: "desc" }] as const;
-    const found = await result(scenario, { library: personal, sort, limit: 1 });
+    const found = await result(scenario, {
+      libraries: [personal],
+      sort,
+      limit: 1,
+    });
 
     expect(found.query.sort).toEqual(sort);
   });
@@ -1063,7 +1077,7 @@ describe("queryItems sort", () => {
     }
 
     const found = await result(scenario, {
-      library: group,
+      libraries: [group],
       fields: ["title"],
       sort: [{ field: "title", direction: "asc" }],
     });
@@ -1106,7 +1120,7 @@ describe("queryItems sort", () => {
     };
 
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       fields: ["DOI"],
       sort: [{ field: "title", direction: "asc" }],
       limit: 2,
@@ -1149,7 +1163,7 @@ describe("queryItems sort with a limit", () => {
   it("returns no rows from a Library without Items", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
-      library: { libraryID: 9999, groupID: null },
+      libraries: [{ libraryID: 9999, groupID: null }],
       sort: byTitle,
       limit: 3,
     });
@@ -1169,7 +1183,7 @@ describe("queryItems sort with a limit", () => {
     async (_, limit, truncated) => {
       using scenario = openScenarioDatabase();
       const found = await result(scenario, {
-        library: personal,
+        libraries: [personal],
         sort: byTitle,
         limit,
       });
@@ -1183,7 +1197,7 @@ describe("queryItems sort with a limit", () => {
   it("cuts a tie group at the limit in Indexed Key order", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       sort: byTitle,
       limit: 8,
     });
@@ -1195,7 +1209,7 @@ describe("queryItems sort with a limit", () => {
   it("cuts the Items without a value at the limit in Indexed Key order", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       sort: [{ field: "volume", direction: "desc" }],
       limit: 5,
     });
@@ -1216,11 +1230,11 @@ describe("queryItems sort with a limit", () => {
       { field: "publicationTitle", direction: "desc" },
       { field: "date", direction: "asc" },
     ] as const;
-    const all = await result(scenario, { library: personal, sort });
+    const all = await result(scenario, { libraries: [personal], sort });
 
     for (let limit = 1; limit <= 11; limit++) {
       const limited = await result(scenario, {
-        library: personal,
+        libraries: [personal],
         sort,
         limit,
       });
@@ -1268,7 +1282,7 @@ describe("queryItems sort of a large Library", () => {
     seedLargeLibrary(scenario);
 
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       fields: [],
       sort: byTitle,
     });
@@ -1318,7 +1332,7 @@ describe("queryItems sort failures", () => {
       const error = await failure(
         scenario,
         {
-          library: personal,
+          libraries: [personal],
           sort: [
             { field: "title", direction: "asc" },
             { field, direction: "asc" },
@@ -1344,8 +1358,9 @@ describe("queryItems with a filter", () => {
   const matching = async (
     scenario: ScenarioDatabase,
     filter: string,
-    library: ItemQueryRequest["library"] = personal,
-  ) => keys(await result(scenario, { library, filter, fields: [], sort: [] }));
+    libraries: ItemQueryRequest["libraries"] = [personal],
+  ) =>
+    keys(await result(scenario, { libraries, filter, fields: [], sort: [] }));
 
   const EVERY_PERSONAL_ITEM = PERSONAL_BY_MODIFIED.toSorted();
 
@@ -1362,7 +1377,7 @@ describe("queryItems with a filter", () => {
     using scenario = openScenarioDatabase();
     const filter = ' itemType == "book" ';
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       filter,
       limit: 1,
     });
@@ -1372,7 +1387,11 @@ describe("queryItems with a filter", () => {
 
   it.each(["", "   ", "\n"])("fails the empty filter %j", async (filter) => {
     using scenario = openScenarioDatabase();
-    const error = await failure(scenario, { library: personal, filter }, false);
+    const error = await failure(
+      scenario,
+      { libraries: [personal], filter },
+      false,
+    );
 
     expect(error).toMatchObject({
       _tag: "ItemQueryError",
@@ -1385,7 +1404,7 @@ describe("queryItems with a filter", () => {
   it("orders and limits the matches, and projects them", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       filter: 'tags.contains("tie")',
       fields: ["title", "tags[0].name"],
       sort: [{ field: "title", direction: "desc" }],
@@ -1409,7 +1428,7 @@ describe("queryItems with a filter", () => {
   it("does not report truncation when the limit equals the matches", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       filter: 'tags.contains("tie")',
       limit: 3,
     });
@@ -1430,7 +1449,7 @@ describe("queryItems with a filter", () => {
       ]);
       expect(await matching(scenario, 'tags.contains("TO-READ")')).toEqual([]);
       expect(
-        await matching(scenario, 'tags.contains("to-read")', group),
+        await matching(scenario, 'tags.contains("to-read")', [group]),
       ).toEqual(["ART2FULLg4815"]);
       expect(await matching(scenario, 'tags.contains("group-only")')).toEqual(
         [],
@@ -1571,7 +1590,7 @@ describe("queryItems with a filter", () => {
       );
 
       const found = await result(scenario, {
-        library: personal,
+        libraries: [personal],
         fields: ["dateAdded", "dateModified"],
         sort: [{ field: "dateAdded", direction: "asc" }],
       });
@@ -1602,7 +1621,7 @@ describe("queryItems with a filter", () => {
       clock: { now: string; timeZone: string },
     ) => {
       const { exit } = await runEffect(
-        queryItems({ library: personal, filter, fields: [], sort: [] }),
+        queryItems({ libraries: [personal], filter, fields: [], sort: [] }),
         { client: scenario.db, ...clock },
       );
       if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
@@ -1655,7 +1674,7 @@ describe("queryItems with a filter", () => {
       const { exit } = await runEffect(
         Effect.provideService(
           queryItems({
-            library: personal,
+            libraries: [personal],
             filter: "now() == now() && today() == now().date()",
             fields: [],
             sort: [],
@@ -1858,7 +1877,10 @@ describe("queryItems with a filter", () => {
       "fails the unknown bare name in %j",
       async (filter, [from, to], hint) => {
         using scenario = openScenarioDatabase();
-        const error = await failure(scenario, { library: personal, filter });
+        const error = await failure(scenario, {
+          libraries: [personal],
+          filter,
+        });
 
         expect(error).toMatchObject({
           _tag: "ItemQueryError",
@@ -1872,7 +1894,7 @@ describe("queryItems with a filter", () => {
     it("fails a custom field that the source does not define", async () => {
       using scenario = openScenarioDatabase();
       const error = await failure(scenario, {
-        library: personal,
+        libraries: [personal],
         filter: 'itemType == "book" || custom["Review.Status"] == "done"',
       });
 
@@ -1939,7 +1961,7 @@ describe("queryItems with a filter", () => {
         await matching(scenario, 'collections.contains("Thesis")'),
       ).toEqual(["CHP2YEAR"]);
       expect(
-        await matching(scenario, 'collections.contains("Methods")', group),
+        await matching(scenario, 'collections.contains("Methods")', [group]),
       ).toEqual(["GRP2BK22g4815"]);
       expect(await matching(scenario, "collections.length == 2")).toEqual([
         "CHP2YEAR",
@@ -1992,7 +2014,7 @@ describe("queryItems with a filter", () => {
       expect(await matching(scenario, 'key == "ART2FULL"')).toEqual([
         "ART2FULL",
       ]);
-      expect(await matching(scenario, 'key == "ART2FULL"', group)).toEqual([
+      expect(await matching(scenario, 'key == "ART2FULL"', [group])).toEqual([
         "ART2FULLg4815",
       ]);
       expect(await matching(scenario, 'key == "GRP2BK22"')).toEqual([]);
@@ -2020,7 +2042,7 @@ describe("queryItems with a filter", () => {
         using scenario = openScenarioDatabase();
         const error = await failure(
           scenario,
-          { library: personal, filter },
+          { libraries: [personal], filter },
           false,
         );
 
@@ -2039,7 +2061,7 @@ describe("queryItems with a filter", () => {
       scenario.sqlite.exec("delete from items where libraryID = 2");
 
       const error = await failure(scenario, {
-        library: group,
+        libraries: [group],
         filter: "title.startsWith(1)",
       });
 
@@ -2159,7 +2181,7 @@ describe("queryItems candidate sets", () => {
       using scenario = openScenarioDatabase();
       const loaded = recordHydratedItemIDs(scenario, marker);
       const { exit } = await runEffect(
-        queryItems({ library: personal, filter, fields: [], sort: [] }),
+        queryItems({ libraries: [personal], filter, fields: [], sort: [] }),
         { client: scenario.db, tuning },
       );
       if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
@@ -2381,7 +2403,7 @@ describe("queryItems candidate sets", () => {
     const loaded = recordHydratedItemIDs(scenario, TAG_HYDRATION);
 
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       filter: 'tags.contains("methods") && tags.contains("tie")',
       fields: [],
       sort: [],
@@ -2415,30 +2437,32 @@ describe("queryItems candidate sets", () => {
     const matching = async (
       scenario: ScenarioDatabase,
       filter: string,
-      library: ItemQueryRequest["library"],
+      libraries: ItemQueryRequest["libraries"],
     ) =>
-      keys(await result(scenario, { library, filter, fields: [], sort: [] }));
+      keys(await result(scenario, { libraries, filter, fields: [], sort: [] }));
 
     // `to-read` and the key ART2FULL exist in both Libraries.
-    expect(await matching(scenario, 'tags.contains("to-read")', group)).toEqual(
-      ["ART2FULLg4815"],
-    );
-    expect(await matching(scenario, 'key == "ART2FULL"', group)).toEqual([
+    expect(
+      await matching(scenario, 'tags.contains("to-read")', [group]),
+    ).toEqual(["ART2FULLg4815"]);
+    expect(await matching(scenario, 'key == "ART2FULL"', [group])).toEqual([
       "ART2FULLg4815",
     ]);
-    expect(await matching(scenario, 'key == "ART2FULL"', personal)).toEqual([
+    expect(await matching(scenario, 'key == "ART2FULL"', [personal])).toEqual([
       "ART2FULL",
     ]);
     // `group-only` and GRP2BK22 exist in the group Library only.
     expect(
-      await matching(scenario, 'tags.contains("group-only")', personal),
+      await matching(scenario, 'tags.contains("group-only")', [personal]),
     ).toEqual([]);
-    expect(await matching(scenario, 'key == "GRP2BK22"', personal)).toEqual([]);
+    expect(await matching(scenario, 'key == "GRP2BK22"', [personal])).toEqual(
+      [],
+    );
     expect(
       await matching(
         scenario,
         'tags.contains("group-only") || key == "GRP2BK22"',
-        group,
+        [group],
       ),
     ).toEqual(["GRP2BK22g4815"]);
   });
@@ -2460,7 +2484,7 @@ describe("queryItems candidate sets", () => {
     const loaded = recordHydratedItemIDs(scenario, TAG_HYDRATION);
 
     const found = await result(scenario, {
-      library: personal,
+      libraries: [personal],
       filter: 'tags.contains("group-only")',
       fields: [],
       sort: [],
@@ -2470,5 +2494,233 @@ describe("queryItems candidate sets", () => {
     expect(keys(found).at(0)).toBe("ZZ000000");
     expect(keys(found).at(-1)).toBe("ZZ000699");
     expect(new Set(loaded()).size).toBe(700);
+  });
+});
+
+describe("queryItems over several Libraries", () => {
+  const both = [personal, group];
+  /** Both Libraries, most recently modified first. */
+  const BOTH_BY_MODIFIED = [
+    "ART2FULLg4815",
+    "ART2FULL",
+    "GRP2BK22g4815",
+    ...PERSONAL_BY_MODIFIED.slice(1),
+  ];
+  /** The Indexed Keys the filter selects in the Libraries, in key order. */
+  const matching = async (
+    scenario: ScenarioDatabase,
+    filter: string,
+    libraries: ItemQueryRequest["libraries"] = both,
+  ) =>
+    keys(await result(scenario, { libraries, filter, fields: [], sort: [] }));
+
+  /** File the personal Item RPT2NDTE in a top-level Collection `Methods`. */
+  function filePersonalMethods(scenario: ScenarioDatabase): void {
+    scenario.sqlite.exec(
+      `insert into collections (collectionName, parentCollectionID, clientDateModified, libraryID, key)
+       values ('Methods', null, '2024-01-01 00:00:00', 1, 'CL2PRMTH');
+       insert into collectionItems (collectionID, itemID, orderIndex)
+       select c.collectionID, i.itemID, 0 from collections c, items i
+       where c.key = 'CL2PRMTH' and i.key = 'RPT2NDTE' and i.libraryID = 1`,
+    );
+  }
+
+  it("orders the Items of the Libraries as one result set", async () => {
+    using scenario = openScenarioDatabase();
+    const found = await result(scenario, { libraries: both });
+
+    expect(keys(found)).toEqual(BOTH_BY_MODIFIED);
+    expect(found.returnedCount).toBe(12);
+    expect(found.truncated).toBe(false);
+  });
+
+  it("gives the same result for each order of the Libraries in the request", async () => {
+    using scenario = openScenarioDatabase();
+    const request = { fields: ["title", "collections"], limit: 5 };
+
+    expect(
+      await result(scenario, { ...request, libraries: [group, personal] }),
+    ).toEqual(await result(scenario, { ...request, libraries: both }));
+  });
+
+  it("breaks a tie between two Libraries by the Indexed Key", async () => {
+    using scenario = openScenarioDatabase();
+    const inKeyOrder = await result(scenario, {
+      libraries: [group, personal],
+      fields: [],
+      sort: [],
+    });
+    // ART2FULL has the same date in both Libraries.
+    const byDate = await result(scenario, {
+      libraries: [group, personal],
+      filter: 'date == date("2020-03-15")',
+      fields: [],
+      sort: [{ field: "date", direction: "desc" }],
+    });
+
+    expect(keys(inKeyOrder)).toEqual([
+      "ALS2CNFL",
+      "ART2FULL",
+      "ART2FULLg4815",
+      "BK2MNTH2",
+      "CHP2YEAR",
+      "CNF2TEXT",
+      "GRP2BK22g4815",
+      "RPT2NDTE",
+      "TIE2AAAA",
+      "TIE2BBBB",
+      "TIE2CCCC",
+      "UNI2CDE2",
+    ]);
+    expect(keys(byDate)).toEqual(["ART2FULL", "ART2FULLg4815"]);
+  });
+
+  it.each([
+    [1, true],
+    [2, true],
+    [3, true],
+    [11, true],
+    [12, false],
+    [13, false],
+  ])(
+    "takes the first %i rows of the one result set and reports truncated %j",
+    async (limit, truncated) => {
+      using scenario = openScenarioDatabase();
+      const found = await result(scenario, { libraries: both, limit });
+
+      expect(keys(found)).toEqual(BOTH_BY_MODIFIED.slice(0, limit));
+      expect(found.returnedCount).toBe(Math.min(limit, 12));
+      expect(found.truncated).toBe(truncated);
+    },
+  );
+
+  it("matches a Zotero Key in each Library that holds it", async () => {
+    using scenario = openScenarioDatabase();
+
+    expect(await matching(scenario, 'key == "ART2FULL"')).toEqual([
+      "ART2FULL",
+      "ART2FULLg4815",
+    ]);
+    expect(await matching(scenario, 'key == "GRP2BK22"')).toEqual([
+      "GRP2BK22g4815",
+    ]);
+  });
+
+  it("matches a Tag in each Library that holds it", async () => {
+    using scenario = openScenarioDatabase();
+
+    expect(await matching(scenario, 'tags.contains("to-read")')).toEqual([
+      "ART2FULL",
+      "ART2FULLg4815",
+      "BK2MNTH2",
+    ]);
+    expect(await matching(scenario, 'tags.contains("group-only")')).toEqual([
+      "GRP2BK22g4815",
+    ]);
+  });
+
+  it("matches a Collection path in each Library that holds it", async () => {
+    using scenario = openScenarioDatabase();
+    filePersonalMethods(scenario);
+    const filter = 'collections.contains("Methods")';
+
+    expect(await matching(scenario, filter)).toEqual([
+      "GRP2BK22g4815",
+      "RPT2NDTE",
+    ]);
+    expect(await matching(scenario, filter, [personal])).toEqual(["RPT2NDTE"]);
+    expect(await matching(scenario, filter, [group])).toEqual([
+      "GRP2BK22g4815",
+    ]);
+    // `Thesis/Methods` is a path of the personal Library only.
+    expect(await matching(scenario, 'collections.within("Thesis")')).toEqual([
+      "ART2FULL",
+      "CHP2YEAR",
+    ]);
+  });
+
+  it("projects the Collections of each Item from its own Library", async () => {
+    using scenario = openScenarioDatabase();
+    filePersonalMethods(scenario);
+    const found = await result(scenario, {
+      libraries: both,
+      filter: 'key == "ART2FULL" || key == "GRP2BK22" || key == "RPT2NDTE"',
+      fields: ["title", "collections", "tags[0].name"],
+      sort: [],
+    });
+
+    expect(found.rows).toEqual([
+      {
+        indexedKey: "ART2FULL",
+        values: {
+          title: "Exact Matching in Literature Review",
+          collections: ["Thesis/Methods"],
+          "tags[0].name": "methods",
+        },
+      },
+      {
+        indexedKey: "ART2FULLg4815",
+        values: {
+          title: "Group Copy of Exact Matching",
+          collections: [],
+          "tags[0].name": "to-read",
+        },
+      },
+      {
+        indexedKey: "GRP2BK22g4815",
+        values: {
+          title: "Group Methods Book",
+          collections: ["Methods"],
+          "tags[0].name": "group-only",
+        },
+      },
+      {
+        indexedKey: "RPT2NDTE",
+        values: {
+          title: "Lab Report",
+          collections: ["Methods"],
+          "tags[0].name": null,
+        },
+      },
+    ]);
+  });
+
+  it("measures a candidate set against the cap of its own Library", async () => {
+    using scenario = openScenarioDatabase();
+    const loaded = recordHydratedItemIDs(scenario, '"itemTags"."itemID" in (');
+    // `to-read`: 3 of the 15 personal `items` rows, within the cap of 3; 1 of
+    // the 3 group rows, above the cap of 0.
+    const found = await result(scenario, {
+      libraries: both,
+      filter: 'tags.contains("to-read")',
+      fields: [],
+      sort: [],
+    });
+
+    expect(keys(found)).toEqual(["ART2FULL", "ART2FULLg4815", "BK2MNTH2"]);
+    const keyOf = scenario.sqlite.prepare(
+      "select key, libraryID from items where itemID = ?",
+    );
+    const read = [...new Set(loaded())].map((itemID) => {
+      const row = keyOf.get(itemID) as { key: string; libraryID: number };
+      return `${row.libraryID}/${row.key}`;
+    });
+    // The personal candidates and every live top-level group Item.
+    expect(read.toSorted()).toEqual([
+      "1/ART2FULL",
+      "1/BK2MNTH2",
+      "2/ART2FULL",
+      "2/GRP2BK22",
+    ]);
+  });
+
+  it("reads no Item of a Library outside the request", async () => {
+    using scenario = openScenarioDatabase();
+    seedBulkLibrary(scenario.sqlite, 3);
+
+    expect(await matching(scenario, "true")).toHaveLength(12);
+    expect(await matching(scenario, `tags.contains("${BULK_TAG}")`)).toEqual(
+      [],
+    );
   });
 });

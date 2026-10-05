@@ -292,10 +292,10 @@ describe("the Item Query Schema and queryItems", () => {
 
   async function codeOf(
     scenario: ScenarioDatabase,
-    request: Omit<ItemQueryRequest, "library">,
+    request: Omit<ItemQueryRequest, "libraries">,
   ): Promise<string | null> {
     const { exit } = await runEffect(
-      queryItems({ library: personal, limit: 1, ...request }),
+      queryItems({ libraries: [personal], limit: 1, ...request }),
       // The production scheduler: these tests run several hundred queries,
       // and a pause after every operation makes each one a long chain of
       // tasks that a busy machine runs slowly.
@@ -313,7 +313,7 @@ describe("the Item Query Schema and queryItems", () => {
     const failures: string[] = [];
     const expect_ = async (
       label: string,
-      request: Omit<ItemQueryRequest, "library">,
+      request: Omit<ItemQueryRequest, "libraries">,
       accepted: boolean,
     ) => {
       const code = await codeOf(scenario, request);
@@ -371,7 +371,7 @@ describe("the Item Query Schema and queryItems", () => {
     [{ filter: "title.notAMethod()" }, "unknown-function"],
     [{ filter: "title.notAProperty" }, "unknown-property"],
     [{ filter: 'title.isType("notAType")' }, "wrong-argument-type"],
-  ] satisfies [Omit<ItemQueryRequest, "library">, string][])(
+  ] satisfies [Omit<ItemQueryRequest, "libraries">, string][])(
     "rejects a name outside it: %j",
     async (request, code) => {
       using scenario = openScenarioDatabase();

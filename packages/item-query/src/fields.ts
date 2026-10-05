@@ -388,7 +388,7 @@ export function fieldDefinition(name: string): FieldDefinition | undefined {
 
 /**
  * The names a Filter Expression reads that are outside the projection
- * vocabulary. `key` is the Zotero Key of the Item inside the Target Library.
+ * vocabulary. `key` is the Zotero Key of the Item inside its Library.
  */
 const FILTER_ONLY_FIELDS: ReadonlyMap<string, FilterValueDefinition> = new Map([
   ["key", { type: "string", read: (item: QueryItem) => item.scan.key }],

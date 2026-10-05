@@ -16,6 +16,7 @@ import {
   BULK_FIFTH_TAG,
   BULK_LIBRARY,
   openScenarioDatabase,
+  SCENARIO_LIBRARIES,
   seedBulkLibrary,
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
@@ -43,7 +44,9 @@ afterAll(() => {
   scenario.close();
 });
 
-type Request = Omit<ItemQueryRequest, "library">;
+/** A request of the bulk Library, or of the Libraries it names. */
+type Request = Omit<ItemQueryRequest, "libraries"> &
+  Partial<Pick<ItemQueryRequest, "libraries">>;
 
 const byTitle = [{ field: "title", direction: "asc" }] as const;
 
@@ -74,6 +77,17 @@ describe("the rows a limited query retains", () => {
         },
         items: 520,
       },
+      {
+        name: "a scan of two Libraries",
+        // Each of the first rows by title has a title.
+        request: {
+          libraries: [SCENARIO_LIBRARIES.personal, BULK_LIBRARY],
+          fields: ["title"],
+          sort: byTitle,
+          limit: LIMIT,
+        },
+        items: 10 + BULK_ITEMS,
+      },
     ];
 
   it.each(QUERIES)(
@@ -86,7 +100,7 @@ describe("the rows a limited query retains", () => {
       const samples: { at: string; rows: number; hydratedItems: number }[] = [];
 
       const limited = await runEffect(
-        queryItems({ ...request, library: BULK_LIBRARY }),
+        queryItems({ libraries: [BULK_LIBRARY], ...request }),
         {
           client: scenario.db,
           keepStatements: false,

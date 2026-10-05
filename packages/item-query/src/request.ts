@@ -11,7 +11,7 @@ import { planPath } from "./projection";
 import type { PlannedPath } from "./projection";
 
 /**
- * The Target Library, resolved by the caller. `libraryID` is local to the
+ * One Target Library, resolved by the caller. `libraryID` is local to the
  * database copy; `groupID` is `null` for the personal Library.
  */
 export interface TargetLibrary {
@@ -20,7 +20,11 @@ export interface TargetLibrary {
 }
 
 export interface ItemQueryRequest {
-  readonly library: TargetLibrary;
+  /**
+   * The Target Libraries: each Library once, in any order. Their Items make
+   * one result set. An empty list gives an empty Query Result.
+   */
+  readonly libraries: readonly TargetLibrary[];
   /**
    * The Filter Expression that selects the Items. Omitted: every Item matches.
    * An empty filter is invalid.
