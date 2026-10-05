@@ -174,14 +174,10 @@ export function queryItems(
         }
       });
     /** Read and take the scan page after `afterKey`. Null: the last page. */
-    const takeScanPage = (
-      library: number,
-      libraryID: number,
-      afterKey: string | null,
-    ) =>
+    const takeScanPage = (library: number, afterKey: string | null) =>
       Effect.gen(function* () {
         const page = yield* readScanPage({
-          libraryID,
+          libraryID: libraries[library]!.libraryID,
           afterKey,
           size: scanPageSize,
         });
@@ -225,7 +221,7 @@ export function queryItems(
         }
       } else {
         let afterKey: string | null = null;
-        do afterKey = yield* takeScanPage(index, libraryID, afterKey);
+        do afterKey = yield* takeScanPage(index, afterKey);
         while (afterKey !== null);
       }
     }
