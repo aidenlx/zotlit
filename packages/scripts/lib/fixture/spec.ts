@@ -2423,11 +2423,15 @@ frontmatter:
 const STRESS_ITEM_KEY_ALPHABET = "23456789ABCDEFGHIJKLMNPQRSTUVWXYZ";
 const STRESS_BUILD_SEED = 0x5eed_0000;
 /**
- * Seed of the group Library of a two-Library Stress Build. It is further from
- * {@link STRESS_BUILD_SEED} than any Item count, so the two Libraries share no
+ * Seed of the group Library of a two-Library Stress Build. The Item count of
+ * a Library is at most the distance between the two seeds
+ * ({@link STRESS_LIBRARY_MAX_ITEM_COUNT}), so the two Libraries share no
  * Zotero Key.
  */
 const STRESS_GROUP_LIBRARY_SEED = 0x6eed_0000;
+/** The largest Item count of one Library in a Stress Build of whole Libraries. */
+const STRESS_LIBRARY_MAX_ITEM_COUNT =
+  STRESS_GROUP_LIBRARY_SEED - STRESS_BUILD_SEED;
 
 /** Synthetic Item count used by `pnpm fixture stress`. */
 export const DEFAULT_STRESS_ITEM_COUNT = 25_000;
@@ -2492,18 +2496,24 @@ export function createStressItems(count: number): readonly FixtureItem[] {
 export const STRESS_LIBRARY_MIN_ITEM_COUNT = ITEMS.filter(
   ({ libraryID }) => libraryID === USER_LIBRARY_ID,
 ).length;
-export const STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT = `a safe integer of at least ${STRESS_LIBRARY_MIN_ITEM_COUNT}`;
+/** The Item counts a Library with `floor` Fixture Spec Items takes. */
+function stressLibraryItemCountConstraint(floor: number): string {
+  return `a safe integer of at least ${floor}, and at most ${STRESS_LIBRARY_MAX_ITEM_COUNT}`;
+}
+export const STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT =
+  stressLibraryItemCountConstraint(STRESS_LIBRARY_MIN_ITEM_COUNT);
 /** My Library sizes the Item Query performance tiers measure. */
 export const STRESS_LIBRARY_TIERS = [10_000, 50_000, 100_000] as const;
-/** The group Library that a two-Library Stress Build fills. */
+/** The group Library that a two-Library Stress Build fills: Shared Reading. */
 export const STRESS_GROUP_LIBRARY = LIBRARIES.find(
-  ({ type }) => type === "group",
+  ({ groupID }) => groupID === 4200309,
 )!;
 /** Fixture Spec Items in that group Library, the floor of its Item count. */
 export const STRESS_GROUP_LIBRARY_MIN_ITEM_COUNT = ITEMS.filter(
   ({ libraryID }) => libraryID === STRESS_GROUP_LIBRARY.libraryID,
 ).length;
-export const STRESS_GROUP_LIBRARY_ITEM_COUNT_CONSTRAINT = `a safe integer of at least ${STRESS_GROUP_LIBRARY_MIN_ITEM_COUNT}`;
+export const STRESS_GROUP_LIBRARY_ITEM_COUNT_CONSTRAINT =
+  stressLibraryItemCountConstraint(STRESS_GROUP_LIBRARY_MIN_ITEM_COUNT);
 
 /**
  * Query targets of a one-Library Stress Build. Every synthetic Item draws each
@@ -2571,23 +2581,17 @@ export function createStressLibraryCorpus(
   itemCount: number,
   groupItemCount?: number,
 ): StressLibraryCorpus {
-  if (
-    !Number.isSafeInteger(itemCount) ||
-    itemCount < STRESS_LIBRARY_MIN_ITEM_COUNT
-  ) {
-    throw new Error(
-      `stress Library item count must be ${STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT}, got ${itemCount}`,
-    );
-  }
-  if (
-    groupItemCount !== undefined &&
-    (!Number.isSafeInteger(groupItemCount) ||
-      groupItemCount < STRESS_GROUP_LIBRARY_MIN_ITEM_COUNT)
-  ) {
-    throw new Error(
-      `stress group Library item count must be ${STRESS_GROUP_LIBRARY_ITEM_COUNT_CONSTRAINT}, got ${groupItemCount}`,
-    );
-  }
+  const count = syntheticItemCount("Library", {
+    itemCount,
+    floor: STRESS_LIBRARY_MIN_ITEM_COUNT,
+  });
+  const groupCount =
+    groupItemCount === undefined
+      ? undefined
+      : syntheticItemCount("group Library", {
+          itemCount: groupItemCount,
+          floor: STRESS_GROUP_LIBRARY_MIN_ITEM_COUNT,
+        });
   const firstCollectionID =
     Math.max(...COLLECTIONS.map(({ collectionID }) => collectionID)) + 1;
   const firstItemID =
@@ -2599,16 +2603,16 @@ export function createStressLibraryCorpus(
     ) + 1;
   const personal = fillStressLibrary({
     libraryID: USER_LIBRARY_ID,
-    count: itemCount - STRESS_LIBRARY_MIN_ITEM_COUNT,
+    count,
     seed: STRESS_BUILD_SEED,
     citationKeyPrefix: "stress",
     firstItemID,
     firstCollectionID,
   });
-  if (groupItemCount === undefined) return personal;
+  if (groupCount === undefined) return personal;
   const group = fillStressLibrary({
     libraryID: STRESS_GROUP_LIBRARY.libraryID,
-    count: groupItemCount - STRESS_GROUP_LIBRARY_MIN_ITEM_COUNT,
+    count: groupCount,
     seed: STRESS_GROUP_LIBRARY_SEED,
     citationKeyPrefix: "stressg",
     firstItemID: firstItemID + personal.items.length,
@@ -2618,6 +2622,28 @@ export function createStressLibraryCorpus(
     items: [...personal.items, ...group.items],
     collections: [...personal.collections, ...group.collections],
   };
+}
+
+/**
+ * The synthetic Items that fill a Library with `floor` Fixture Spec Items to
+ * `itemCount` Items.
+ *
+ * @throws {Error} when the Library does not take the Item count.
+ */
+function syntheticItemCount(
+  library: "Library" | "group Library",
+  { itemCount, floor }: { itemCount: number; floor: number },
+): number {
+  if (
+    !Number.isSafeInteger(itemCount) ||
+    itemCount < floor ||
+    itemCount > STRESS_LIBRARY_MAX_ITEM_COUNT
+  ) {
+    throw new Error(
+      `stress ${library} item count must be ${stressLibraryItemCountConstraint(floor)}, got ${itemCount}`,
+    );
+  }
+  return itemCount - floor;
 }
 
 /** The synthetic Items and Collections of one Library of a Stress Build. */

@@ -66,6 +66,7 @@ import {
   SEEDED_CITATION_KEYS,
   seededCitationKeyDrift,
   selectScopeCase,
+  STRESS_GROUP_LIBRARY,
   UPGRADER_FRONTMATTER_FIELDS,
   UPGRADER_LEGACY_PARTIAL_NAME,
   UPGRADER_LEGACY_TEMPLATES,
@@ -142,9 +143,10 @@ function indexedItemCount(db: NodeDatabaseClient): number {
   );
 }
 
-async function buildTemporaryStressFixture(
+/** Build a Fixture in a new directory that the suite removes at its end. */
+async function buildTemporaryFixture(
   prefix: string,
-  stressItemCount: number,
+  options: BuildOptions,
 ): Promise<FixtureLayout> {
   const generatedLayout = getFixtureLayout(
     await mkdtemp(join(dirname(layout.root), prefix)),
@@ -152,8 +154,15 @@ async function buildTemporaryStressFixture(
   fixture.defer(() =>
     rm(generatedLayout.root, { recursive: true, force: true }),
   );
-  await buildFixture(generatedLayout, { stressItemCount });
+  await buildFixture(generatedLayout, options);
   return generatedLayout;
+}
+
+function buildTemporaryStressFixture(
+  prefix: string,
+  stressItemCount: number,
+): Promise<FixtureLayout> {
+  return buildTemporaryFixture(prefix, { stressItemCount });
 }
 
 /** Public-query snapshot of every discoverable Item's generated semantics. */
@@ -1512,18 +1521,11 @@ describe("a one-Library Stress Build", () => {
     );
   });
 
-  async function buildTemporaryLibraryStressFixture(
+  function buildTemporaryLibraryStressFixture(
     prefix: string,
     stressLibraryItemCount: number,
   ): Promise<FixtureLayout> {
-    const generatedLayout = getFixtureLayout(
-      await mkdtemp(join(dirname(layout.root), prefix)),
-    );
-    fixture.defer(() =>
-      rm(generatedLayout.root, { recursive: true, force: true }),
-    );
-    await buildFixture(generatedLayout, { stressLibraryItemCount });
-    return generatedLayout;
+    return buildTemporaryFixture(prefix, { stressLibraryItemCount });
   }
 
   it("holds exactly the requested Item count in My Library and leaves the group Libraries as specified", () => {
@@ -1669,8 +1671,8 @@ describe("a one-Library Stress Build", () => {
 });
 
 describe("a two-Library Stress Build", () => {
-  /** The group Library the build fills: Shared Reading. */
-  const GROUP_LIBRARY_ID = 2;
+  /** The group Library the build fills. */
+  const GROUP_LIBRARY_ID = STRESS_GROUP_LIBRARY.libraryID;
   const itemsOf = (libraryID: number) =>
     ITEMS.filter((item) => item.libraryID === libraryID).length;
   /** My Library with the Fixture Spec Items and 2,000 synthetic ones. */
@@ -1691,27 +1693,17 @@ describe("a two-Library Stress Build", () => {
     // Two builds of 2,000 and 3,000 Items: about 1 s on an idle machine.
   }, 60_000);
 
-  async function buildTemporaryFixture(
-    prefix: string,
-    options: BuildOptions,
-  ): Promise<FixtureLayout> {
-    const generatedLayout = getFixtureLayout(
-      await mkdtemp(join(dirname(layout.root), prefix)),
-    );
-    fixture.defer(() =>
-      rm(generatedLayout.root, { recursive: true, force: true }),
-    );
-    await buildFixture(generatedLayout, options);
-    return generatedLayout;
-  }
-
   it("holds exactly the requested Item counts in My Library and in the group Library, and leaves the other Libraries as specified", () => {
     using db = openClientAt(bothLayout.databasePath);
     expect(getIndexedItemIDsByLibrary(db, 1)).toHaveLength(LIBRARY_ITEMS);
     expect(getIndexedItemIDsByLibrary(db, GROUP_LIBRARY_ID)).toHaveLength(
       GROUP_LIBRARY_ITEMS,
     );
-    for (const libraryID of [3, 4]) {
+    const others = LIBRARIES.map(({ libraryID }) => libraryID).filter(
+      (libraryID) => libraryID !== 1 && libraryID !== GROUP_LIBRARY_ID,
+    );
+    expect(others).toHaveLength(2);
+    for (const libraryID of others) {
       expect(getIndexedItemIDsByLibrary(db, libraryID)).toHaveLength(
         itemsOf(libraryID),
       );
@@ -1830,6 +1822,26 @@ describe("a two-Library Stress Build", () => {
         stressGroupLibraryItemCount: itemsOf(GROUP_LIBRARY_ID) - 1,
       }),
     ).rejects.toThrow(`at least ${itemsOf(GROUP_LIBRARY_ID)},`);
+  });
+
+  it("fills Shared Reading, the group Library with the ID 4200309", () => {
+    expect(STRESS_GROUP_LIBRARY).toMatchObject({
+      groupID: 4200309,
+      name: "Shared Reading",
+    });
+  });
+
+  it("rejects an Item count above the distance of the two seeds, which keeps the Zotero Keys of the Libraries apart", async () => {
+    const unused = getFixtureLayout(join(dirname(layout.root), "unused"));
+    await expect(
+      buildFixture(unused, { stressLibraryItemCount: 0x1000_0001 }),
+    ).rejects.toThrow("at most 268435456, got 268435457");
+    await expect(
+      buildFixture(unused, {
+        stressLibraryItemCount: LIBRARY_ITEMS,
+        stressGroupLibraryItemCount: 0x1000_0001,
+      }),
+    ).rejects.toThrow("at most 268435456, got 268435457");
   });
 
   it("rejects a group Library count without a My Library count", async () => {
