@@ -183,6 +183,8 @@ const FILTERS: readonly string[] = [
   'dateAdded.format("YYYY") == "2021" || tags.contains("to-read")',
   "today() == now().date()",
   "accessDate == null",
+  "!accessDate",
+  'accessDate.date() == date("2020-01-07")',
   "date(title) == null",
   // Typed failures: every plan gives the same failure.
   "title.startsWith(1)",
@@ -200,6 +202,17 @@ const byTitleThenVolume: readonly SortSpec[] = [
 const byDateThenTitle: readonly SortSpec[] = [
   { field: "date", direction: "asc" },
   { field: "title", direction: "desc" },
+];
+
+/**
+ * RPT2NDTE was accessed at 04:00Z on 2020-01-07 and CHP2YEAR on the calendar
+ * day 2020-01-07; UNI2CDE2 stores an access date that does not parse. The
+ * day starts after the timestamp in New York and before it in UTC and Tokyo.
+ */
+const NEW_YORK = { now: "2020-01-08T02:00:00Z", timeZone: "America/New_York" };
+const TOKYO = { now: "2020-01-08T02:00:00Z", timeZone: "Asia/Tokyo" };
+const byAccessDate = (direction: SortSpec["direction"]): SortSpec[] => [
+  { field: "accessDate", direction },
 ];
 
 /** The scenario requests that the filter list does not give. */
@@ -362,6 +375,39 @@ const REQUESTS: readonly ScenarioQuery[] = [
     },
     now: "2020-01-08T02:00:00Z",
     timeZone: "America/New_York",
+  },
+  {
+    name: "accessDate ascending in New York, with its projection",
+    libraries: ["personal"],
+    request: { fields: ["accessDate"], sort: byAccessDate("asc") },
+    ...NEW_YORK,
+  },
+  {
+    name: "accessDate descending in New York, limit 2",
+    libraries: ["personal"],
+    request: { fields: ["accessDate"], sort: byAccessDate("desc"), limit: 2 },
+    ...NEW_YORK,
+  },
+  {
+    name: "accessDate ascending in Tokyo, limit 1",
+    libraries: ["personal"],
+    request: { fields: ["accessDate"], sort: byAccessDate("asc"), limit: 1 },
+    ...TOKYO,
+  },
+  {
+    name: "accessDate descending in UTC, both Libraries",
+    libraries: ["personal", "group"],
+    request: { fields: ["accessDate"], sort: byAccessDate("desc") },
+  },
+  {
+    name: "accessDate on or after a calendar day in New York",
+    libraries: ["personal"],
+    request: {
+      filter: 'accessDate >= date("2020-01-07")',
+      fields: ["accessDate"],
+      sort: byAccessDate("asc"),
+    },
+    ...NEW_YORK,
   },
 ];
 

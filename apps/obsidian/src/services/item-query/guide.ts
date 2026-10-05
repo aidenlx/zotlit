@@ -128,7 +128,9 @@ TAGS, COLLECTIONS, AND CREATORS
 DATES
   date and the other Zotero date fields are calendar dates at the precision
   the Item gives: a year, a month, or a day. dateAdded and dateModified are
-  timestamps. Calendar days follow the time zone of this computer.
+  timestamps. accessDate is a timestamp, or a day when Zotero stores only a
+  day; another stored accessDate is null. Calendar days follow the time zone
+  of this computer.
     ${filter("date.year >= 2020")}
     ${filter('date == date("2020")')}
     ${filter('dateAdded >= today() - duration("7 days")')}
@@ -144,7 +146,9 @@ ERRORS AND EMPTY VALUES
   A wrong function name, argument count, or argument type fails the query
   with a diagnostic that points at the text, also inside an if branch.
   A value that is missing or unreadable for one Item is null for that Item.
-  null is false in a filter.
+  null is false in a filter, so !x is true when x is null. This selects the
+  Items from 2000 on and the Items without a year:
+    ${filter("!(date.year < 2000)")}
 
 SEE ALSO
   schema.functions, schema.methods, and schema.properties list every call
@@ -190,7 +194,8 @@ ORDER OF TEXT
 
 ORDER OF DATES
   A date sorts as its first possible day: 2020 sorts as 1 January 2020.
-  A date without a year comes last.
+  A date without a year comes last. accessDate sorts by time; a day sorts
+  from its start in the time zone of this computer.
 
 LIMIT
   limit is the most rows to return: a positive integer, or all for every

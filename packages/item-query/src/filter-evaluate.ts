@@ -45,7 +45,7 @@ export function evaluate(
       return node.value.read(item);
     case "unary": {
       const operand = evaluate(node.operand, item, clock);
-      if (operand === null) return null;
+      // Null is falsy, so `!` of null is true.
       if (node.operator === "!") return !truthy(operand);
       return typeof operand === "number" ? -operand : null;
     }

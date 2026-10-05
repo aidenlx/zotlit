@@ -105,6 +105,14 @@ describe("describeItemQuery fields", () => {
       projection: true,
       sort: true,
     });
+    // A timestamp or a calendar day, as ISO text in a Query Row.
+    expect(entry("accessDate")).toEqual({
+      path: "accessDate",
+      type: "string",
+      filter: "date",
+      projection: true,
+      sort: true,
+    });
     expect(entry("creators")).toEqual({
       path: "creators",
       type: "array",
