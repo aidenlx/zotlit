@@ -143,6 +143,8 @@ const collectionPath = (...names: string[]): string =>
   [collections.root.name, ...names].join("/");
 const quote = (value: string): string => JSON.stringify(value);
 
+const SORT_BY_TITLE = JSON.stringify([{ field: "title", direction: "asc" }]);
+
 /**
  * The queries of each tier. `selective`: one exact leaf that 0.1% of the
  * Library has, or one key. `other`: every other `limit 100` query, with the
@@ -214,7 +216,7 @@ function querySpecs(uniqueKey: string): QuerySpec[] {
       class: "other",
       args: {
         limit: "100",
-        sort: JSON.stringify([{ field: "title", direction: "asc" }]),
+        sort: SORT_BY_TITLE,
       },
     },
     limited("scan-no-match", "other", 'title.contains("no such title")'),
@@ -230,57 +232,56 @@ function querySpecs(uniqueKey: string): QuerySpec[] {
       class: "all",
       args: {
         limit: "all",
-        sort: JSON.stringify([{ field: "title", direction: "asc" }]),
+        sort: SORT_BY_TITLE,
       },
     },
   ];
 }
 
-/**
- * The queries over two large Libraries: My Library and the group Library of
- * the Stress Build, as one result set. An unlimited query holds a match for
- * every Item of both.
- */
-const TWO_LIBRARIES = {
+/** The arguments that name My Library and the group Library of the Stress Build. */
+const TWO_LIBRARY_ARGS = {
   libraries: JSON.stringify([
     "personal",
     `group:${STRESS_GROUP_LIBRARY.groupID}`,
   ]),
 };
+/**
+ * The queries over two large Libraries as one result set. An unlimited query
+ * holds a match for every Item of both. A query that names no sort has the
+ * default sort, `dateModified` descending; `two-all-no-sort` gives an empty
+ * sort list, so the Indexed Key alone orders its matches.
+ */
 const TWO_LIBRARY_ALL: QuerySpec = {
   id: "two-all",
   class: "all",
-  args: { ...TWO_LIBRARIES, limit: "all" },
+  args: { ...TWO_LIBRARY_ARGS, limit: "all" },
 };
 const TWO_LIBRARY_SPECS: readonly QuerySpec[] = [
   TWO_LIBRARY_ALL,
   {
     id: "two-all-sort-title",
     class: "all",
-    args: {
-      ...TWO_LIBRARIES,
-      limit: "all",
-      sort: JSON.stringify([{ field: "title", direction: "asc" }]),
-    },
+    args: { ...TWO_LIBRARY_ARGS, limit: "all", sort: SORT_BY_TITLE },
+  },
+  {
+    id: "two-all-no-sort",
+    class: "all",
+    args: { ...TWO_LIBRARY_ARGS, limit: "all", sort: "[]" },
   },
   {
     id: "two-all-keys",
     class: "all",
-    args: { ...TWO_LIBRARIES, limit: "all", fields: "[]" },
+    args: { ...TWO_LIBRARY_ARGS, limit: "all", fields: "[]" },
   },
   {
     id: "two-scan-no-filter",
     class: "other",
-    args: { ...TWO_LIBRARIES, limit: "100" },
+    args: { ...TWO_LIBRARY_ARGS, limit: "100" },
   },
   {
     id: "two-scan-sort-title",
     class: "other",
-    args: {
-      ...TWO_LIBRARIES,
-      limit: "100",
-      sort: JSON.stringify([{ field: "title", direction: "asc" }]),
-    },
+    args: { ...TWO_LIBRARY_ARGS, limit: "100", sort: SORT_BY_TITLE },
   },
 ];
 
@@ -571,6 +572,26 @@ function cancellableMs({ runs }: RawQuery): number {
   return median(runs.map((run) => (run.leaseMs ?? 0) + (run.engineMs ?? 0)));
 }
 
+/** Cancel one run of a query by a timer at a fraction of `cancellable`. */
+async function cancelByTimer(
+  spec: QuerySpec,
+  { cancellable, fraction }: { cancellable: number; fraction: number },
+): Promise<RawCancel> {
+  return {
+    delivery: "timer",
+    query: `${spec.id} at ${fraction * 100}%`,
+    report: await measure({
+      ...spec.args,
+      cancelAfterMs: String(Math.round(cancellable * fraction)),
+    }),
+  };
+}
+
+/** The wait before a cancel that comes from outside the window. */
+function outsideCancelDelayMs(cancellable: number): number {
+  return Math.min(cancellable * 0.3, 300);
+}
+
 /** Cancel one run of a query by a second CLI call that arrives in the run. */
 async function cancelThroughCli(
   spec: QuerySpec,
@@ -634,18 +655,13 @@ async function measureTier(raw: RawTier): Promise<void> {
     raw.queries.find(({ spec }) => spec === exportSpec)!,
   );
   for (const fraction of [0.1, 0.3, 0.5, 0.7, 0.9]) {
-    raw.cancels.push({
-      delivery: "timer",
-      query: `${exportSpec.id} at ${fraction * 100}%`,
-      report: await measure({
-        ...exportSpec.args,
-        cancelAfterMs: String(Math.round(exportMs * fraction)),
-      }),
-    });
+    raw.cancels.push(
+      await cancelByTimer(exportSpec, { cancellable: exportMs, fraction }),
+    );
   }
 
   // Cancel through a second CLI call, which arrives while the run is in progress.
-  const cancelDelayMs = Math.min(exportMs * 0.3, 300);
+  const cancelDelayMs = outsideCancelDelayMs(exportMs);
   for (let run = 0; run < 3; run++) {
     raw.cancels.push(await cancelThroughCli(exportSpec, cancelDelayMs));
   }
@@ -707,7 +723,7 @@ async function measureTier(raw: RawTier): Promise<void> {
  * Library ran before, on the Stress Build of My Library alone.
  */
 async function measureTwoLibraries(raw: RawTier): Promise<void> {
-  const { items, twoLibraries: two } = raw;
+  const { items, twoLibraries: part } = raw;
   log(
     `\n== ${items.toLocaleString("en-US")} Items in each of two Libraries ==`,
   );
@@ -715,9 +731,9 @@ async function measureTwoLibraries(raw: RawTier): Promise<void> {
   await requireVisible();
 
   for (const spec of TWO_LIBRARY_SPECS) {
-    two.queries.push(await measureQuery(spec));
+    part.queries.push(await measureQuery(spec));
   }
-  const all = two.queries.find(({ spec }) => spec === TWO_LIBRARY_ALL)!;
+  const all = part.queries.find(({ spec }) => spec === TWO_LIBRARY_ALL)!;
   const rows = all.runs[0]!.returnedCount;
   if (rows !== items * 2) {
     throw new Error(
@@ -727,19 +743,14 @@ async function measureTwoLibraries(raw: RawTier): Promise<void> {
 
   const allMs = cancellableMs(all);
   for (const fraction of [0.3, 0.7]) {
-    two.cancels.push({
-      delivery: "timer",
-      query: `${TWO_LIBRARY_ALL.id} at ${fraction * 100}%`,
-      report: await measure({
-        ...TWO_LIBRARY_ALL.args,
-        cancelAfterMs: String(Math.round(allMs * fraction)),
-      }),
-    });
+    part.cancels.push(
+      await cancelByTimer(TWO_LIBRARY_ALL, { cancellable: allMs, fraction }),
+    );
   }
-  two.cancels.push(
-    await cancelThroughCli(TWO_LIBRARY_ALL, Math.min(allMs * 0.3, 300)),
+  part.cancels.push(
+    await cancelThroughCli(TWO_LIBRARY_ALL, outsideCancelDelayMs(allMs)),
   );
-  two.complete = true;
+  part.complete = true;
 }
 
 function toQuery(
@@ -833,7 +844,7 @@ function toTier(raw: RawTier, notes: string[]): TierMeasurement {
       afterAnswerBytes: worst.heap!.afterAnswerBytes - worst.heap!.beforeBytes,
     };
   });
-  const two = raw.twoLibraries;
+  const rawPart = raw.twoLibraries;
   return {
     items: raw.items,
     queries,
@@ -842,12 +853,14 @@ function toTier(raw: RawTier, notes: string[]): TierMeasurement {
     heaps,
     // A run that stopped before the queries of two Libraries has no part.
     twoLibraries:
-      two.queries.length > 0
+      rawPart.queries.length > 0
         ? {
             groupItems: raw.items,
-            queries: two.queries.map((query) => toQuery(query, tier, notes)),
-            ...toCancels(two.cancels, tier, notes),
-            complete: two.complete,
+            queries: rawPart.queries.map((query) =>
+              toQuery(query, tier, notes),
+            ),
+            ...toCancels(rawPart.cancels, tier, notes),
+            complete: rawPart.complete,
           }
         : undefined,
   };
@@ -907,7 +920,7 @@ function findings(rawTiers: RawTier[], tiers: TierMeasurement[]): string[] {
     const byId = (queries: RawQuery[], id: string): RawQuery | undefined =>
       queries.find(({ spec }) => spec.id === id);
     notes.push(
-      `Two Libraries: after the queries of one Library, each tier takes the Stress Build that also fills the group Library ${STRESS_GROUP_LIBRARY.name} to the Item count of the tier, and the \`two-\` queries read both Libraries as one result set. \`limit=all\` with the default fields, two Libraries against one: ${twoLibraries.map((raw) => `${raw.items.toLocaleString("en-US")} Items: ${stats(byId(raw.twoLibraries.queries, TWO_LIBRARY_ALL.id))} against ${stats(byId(raw.queries, "all"))}`).join("; ")}.`,
+      `Two Libraries: after the queries of one Library, each tier takes the Stress Build that also fills the group Library ${STRESS_GROUP_LIBRARY.name} to the Item count of the tier, and the \`two-\` queries read both Libraries as one result set. \`limit=all\` with the default fields and the default sort (\`dateModified\` descending), two Libraries against one: ${twoLibraries.map((raw) => `${raw.items.toLocaleString("en-US")} Items: ${stats(byId(raw.twoLibraries.queries, TWO_LIBRARY_ALL.id))} against ${stats(byId(raw.queries, "all"))}`).join("; ")}.`,
     );
   }
   return notes;
