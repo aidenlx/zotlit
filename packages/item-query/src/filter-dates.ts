@@ -91,7 +91,7 @@ function yearDate(year: number): CalendarDate {
   );
 }
 
-const SQL_DATE_TIME = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+const SQL_DATE_TIME = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:[0-5]\d$/;
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**

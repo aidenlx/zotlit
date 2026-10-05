@@ -246,9 +246,10 @@ describe("logic and truthiness", () => {
     ["![]", true],
     ['!"a"', false],
     ["!0", true],
-    // `!` of null is null.
-    ["!null", null],
-    ["!publisher", null],
+    // Null is falsy, so `!` of null is true.
+    ["!null", true],
+    ["!publisher", true],
+    ['!(publisher > "a")', true],
     ["!attachments", false],
     // The right side does not run when the left side decides.
     ["false && (1 / 0) > 0", false],
@@ -256,7 +257,7 @@ describe("logic and truthiness", () => {
 
   it("treats a null filter value as no match", () => {
     expect(matches(plan('publisher > "a"').root, ARTICLE, CLOCK)).toBe(false);
-    expect(matches(plan("!publisher").root, ARTICLE, CLOCK)).toBe(false);
+    expect(matches(plan("!publisher").root, ARTICLE, CLOCK)).toBe(true);
     expect(matches(plan("title").root, ARTICLE, CLOCK)).toBe(true);
     expect(matches(plan("shortTitle").root, ARTICLE, CLOCK)).toBe(false);
   });
@@ -743,6 +744,7 @@ describe("date fields", () => {
     ["2020-01-07", "accessDate == dateAdded", true],
     ["yesterday", "accessDate", null],
     ["2021-02-30 10:00:00", "accessDate", null],
+    ["2020-01-07 04:00:60", "accessDate", null],
   ])("reads the accessDate %j: %s gives %j", (stored, expression, expected) => {
     expect(valueOf(expression, dated({ accessDate: stored }))).toEqual(
       expected,

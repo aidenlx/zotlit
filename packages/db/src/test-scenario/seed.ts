@@ -172,7 +172,8 @@ const ITEMS = {
     collections: ["teachingMethods", "archive"],
   },
   // Year-only date; `bookTitle` aliases the `publicationTitle` base field;
-  // filed in a parent Collection and its child.
+  // filed in a parent Collection and its child; accessed on the calendar day
+  // 2020-01-07.
   yearOnlyChapter: {
     library: "personal",
     key: "CHP2YEAR",
@@ -184,6 +185,7 @@ const ITEMS = {
       date: "2018-00-00 2018",
       bookTitle: "Handbook of Methods",
       publisher: "Sage",
+      accessDate: "2020-01-07",
     },
     creators: [
       { firstName: "Alan", lastName: "Turing", creatorType: "author" },
@@ -209,7 +211,7 @@ const ITEMS = {
     ],
   },
   // No date, no creators, no Tags, no Collections; `institution` aliases
-  // `publisher`.
+  // `publisher`; accessed at 04:00Z on 2020-01-07.
   missingDateReport: {
     library: "personal",
     key: "RPT2NDTE",
@@ -219,6 +221,7 @@ const ITEMS = {
     fields: {
       title: "Lab Report",
       institution: "Lab Institute",
+      accessDate: "2020-01-07 04:00:00",
     },
   },
   // Alias conflict: the base field and its type-specific variant are both
@@ -238,7 +241,8 @@ const ITEMS = {
     custom: { publicationTitle: "Custom Host" },
     tags: [{ name: "methods", type: 0 }],
   },
-  // Unicode and SQL wildcard hazards; a leap-day date.
+  // Unicode and SQL wildcard hazards; a leap-day date; an access date that
+  // does not parse.
   unicodeArticle: {
     library: "personal",
     key: "UNI2CDE2",
@@ -249,6 +253,7 @@ const ITEMS = {
       title: "Éclair İstanbul K 50%_off \\ é 🧪",
       date: "2024-02-29 2024-02-29",
       publicationTitle: "Revue d'Études",
+      accessDate: "yesterday",
     },
     creators: [{ firstName: "Zoë", lastName: "Ünal", creatorType: "author" }],
     tags: [
