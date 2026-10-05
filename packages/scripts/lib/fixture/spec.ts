@@ -2422,6 +2422,12 @@ frontmatter:
 
 const STRESS_ITEM_KEY_ALPHABET = "23456789ABCDEFGHIJKLMNPQRSTUVWXYZ";
 const STRESS_BUILD_SEED = 0x5eed_0000;
+/**
+ * Seed of the group Library of a two-Library Stress Build. It is further from
+ * {@link STRESS_BUILD_SEED} than any Item count, so the two Libraries share no
+ * Zotero Key.
+ */
+const STRESS_GROUP_LIBRARY_SEED = 0x6eed_0000;
 
 /** Synthetic Item count used by `pnpm fixture stress`. */
 export const DEFAULT_STRESS_ITEM_COUNT = 25_000;
@@ -2489,6 +2495,15 @@ export const STRESS_LIBRARY_MIN_ITEM_COUNT = ITEMS.filter(
 export const STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT = `a safe integer of at least ${STRESS_LIBRARY_MIN_ITEM_COUNT}`;
 /** My Library sizes the Item Query performance tiers measure. */
 export const STRESS_LIBRARY_TIERS = [10_000, 50_000, 100_000] as const;
+/** The group Library that a two-Library Stress Build fills. */
+export const STRESS_GROUP_LIBRARY = LIBRARIES.find(
+  ({ type }) => type === "group",
+)!;
+/** Fixture Spec Items in that group Library, the floor of its Item count. */
+export const STRESS_GROUP_LIBRARY_MIN_ITEM_COUNT = ITEMS.filter(
+  ({ libraryID }) => libraryID === STRESS_GROUP_LIBRARY.libraryID,
+).length;
+export const STRESS_GROUP_LIBRARY_ITEM_COUNT_CONSTRAINT = `a safe integer of at least ${STRESS_GROUP_LIBRARY_MIN_ITEM_COUNT}`;
 
 /**
  * Query targets of a one-Library Stress Build. Every synthetic Item draws each
@@ -2536,7 +2551,7 @@ export const STRESS_LIBRARY_VALUES = {
   uniqueTitle: "Stress Build unique title",
 } as const;
 
-/** Data a one-Library Stress Build adds to the Fixture Spec. */
+/** Data a Stress Build of whole Libraries adds to the Fixture Spec. */
 export interface StressLibraryCorpus {
   items: readonly FixtureItem[];
   collections: readonly FixtureCollection[];
@@ -2548,10 +2563,13 @@ const STRESS_LIBRARY_MODIFIED_EPOCH = Temporal.Instant.from(
 
 /**
  * Synthetic corpus that fills My Library to exactly `itemCount` Items, with
- * the distributions of {@link STRESS_LIBRARY_VALUES}.
+ * the distributions of {@link STRESS_LIBRARY_VALUES}. With `groupItemCount`,
+ * it also fills {@link STRESS_GROUP_LIBRARY} to that Item count by the same
+ * rules, with Collections, Zotero Keys, and Citation Keys of its own.
  */
 export function createStressLibraryCorpus(
   itemCount: number,
+  groupItemCount?: number,
 ): StressLibraryCorpus {
   if (
     !Number.isSafeInteger(itemCount) ||
@@ -2561,16 +2579,72 @@ export function createStressLibraryCorpus(
       `stress Library item count must be ${STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT}, got ${itemCount}`,
     );
   }
-  const count = itemCount - STRESS_LIBRARY_MIN_ITEM_COUNT;
-  const { tags, itemTypes, venues } = STRESS_LIBRARY_VALUES;
-
+  if (
+    groupItemCount !== undefined &&
+    (!Number.isSafeInteger(groupItemCount) ||
+      groupItemCount < STRESS_GROUP_LIBRARY_MIN_ITEM_COUNT)
+  ) {
+    throw new Error(
+      `stress group Library item count must be ${STRESS_GROUP_LIBRARY_ITEM_COUNT_CONSTRAINT}, got ${groupItemCount}`,
+    );
+  }
   const firstCollectionID =
     Math.max(...COLLECTIONS.map(({ collectionID }) => collectionID)) + 1;
+  const firstItemID =
+    Math.max(
+      ...ITEMS.map(({ itemID }) => itemID),
+      ...NOTES.map(({ itemID }) => itemID),
+      ...ATTACHMENTS.map(({ itemID }) => itemID),
+      ...ANNOTATIONS.map(({ itemID }) => itemID),
+    ) + 1;
+  const personal = fillStressLibrary({
+    libraryID: USER_LIBRARY_ID,
+    count: itemCount - STRESS_LIBRARY_MIN_ITEM_COUNT,
+    seed: STRESS_BUILD_SEED,
+    citationKeyPrefix: "stress",
+    firstItemID,
+    firstCollectionID,
+  });
+  if (groupItemCount === undefined) return personal;
+  const group = fillStressLibrary({
+    libraryID: STRESS_GROUP_LIBRARY.libraryID,
+    count: groupItemCount - STRESS_GROUP_LIBRARY_MIN_ITEM_COUNT,
+    seed: STRESS_GROUP_LIBRARY_SEED,
+    citationKeyPrefix: "stressg",
+    firstItemID: firstItemID + personal.items.length,
+    firstCollectionID: firstCollectionID + personal.collections.length,
+  });
+  return {
+    items: [...personal.items, ...group.items],
+    collections: [...personal.collections, ...group.collections],
+  };
+}
+
+/** The synthetic Items and Collections of one Library of a Stress Build. */
+function fillStressLibrary({
+  libraryID,
+  count,
+  seed,
+  citationKeyPrefix,
+  firstItemID,
+  firstCollectionID,
+}: {
+  libraryID: number;
+  /** Synthetic Items to make. */
+  count: number;
+  /** Start of the Zotero Keys. */
+  seed: number;
+  citationKeyPrefix: string;
+  firstItemID: number;
+  firstCollectionID: number;
+}): StressLibraryCorpus {
+  const { tags, itemTypes, venues } = STRESS_LIBRARY_VALUES;
+
   const [root, common, rare, dominant] = (
     ["root", "common", "rare", "dominant"] as const
   ).map((role, offset) => ({
     collectionID: firstCollectionID + offset,
-    libraryID: USER_LIBRARY_ID,
+    libraryID,
     ...STRESS_LIBRARY_VALUES.collections[role],
   })) as [
     FixtureCollection,
@@ -2585,13 +2659,6 @@ export function createStressLibraryCorpus(
     { ...dominant, parentCollectionID: root.collectionID },
   ];
 
-  const firstItemID =
-    Math.max(
-      ...ITEMS.map(({ itemID }) => itemID),
-      ...NOTES.map(({ itemID }) => itemID),
-      ...ATTACHMENTS.map(({ itemID }) => itemID),
-      ...ANNOTATIONS.map(({ itemID }) => itemID),
-    ) + 1;
   const uniqueTitleIndex = Math.floor(count / 2);
 
   const items = Array.from({ length: count }, (_, i): FixtureItem => {
@@ -2633,10 +2700,10 @@ export function createStressLibraryCorpus(
       .slice(0, 19);
     return {
       itemID: firstItemID + i,
-      libraryID: USER_LIBRARY_ID,
-      key: stressItemKey(STRESS_BUILD_SEED + i),
+      libraryID,
+      key: stressItemKey(seed + i),
       itemType,
-      citationKey: `stress${String(ordinal).padStart(7, "0")}`,
+      citationKey: `${citationKeyPrefix}${String(ordinal).padStart(7, "0")}`,
       title:
         i === uniqueTitleIndex
           ? STRESS_LIBRARY_VALUES.uniqueTitle

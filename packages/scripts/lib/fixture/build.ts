@@ -126,6 +126,9 @@ export {
 } from "./spec.ts";
 export {
   DEFAULT_STRESS_ITEM_COUNT,
+  STRESS_GROUP_LIBRARY,
+  STRESS_GROUP_LIBRARY_ITEM_COUNT_CONSTRAINT,
+  STRESS_GROUP_LIBRARY_MIN_ITEM_COUNT,
   STRESS_ITEM_COUNT_CONSTRAINT,
   STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT,
   STRESS_LIBRARY_MIN_ITEM_COUNT,
@@ -180,6 +183,12 @@ export interface BuildOptions {
    * {@link BuildOptions.stressItemCount}.
    */
   stressLibraryItemCount?: number;
+  /**
+   * Exact Item count of the group Library `STRESS_GROUP_LIBRARY` in a
+   * two-Library Stress Build, filled by the rules of My Library. Needs
+   * {@link BuildOptions.stressLibraryItemCount}.
+   */
+  stressGroupLibraryItemCount?: number;
   /**
    * Built plugin bundle to copy into the vault (`apps/obsidian/dist-dev`).
    * Absent, the vault carries the Fixture's data with ZotLit neither installed
@@ -248,10 +257,21 @@ export async function buildFixture(
       'the "demo" vault case holds only its own Items: build the Stress Build of My Library with another vault case',
     );
   }
+  if (
+    options.stressGroupLibraryItemCount !== undefined &&
+    options.stressLibraryItemCount === undefined
+  ) {
+    throw new Error(
+      "a Stress Build fills the group Library together with My Library: give both Item counts",
+    );
+  }
   const stressLibrary =
     options.stressLibraryItemCount === undefined
       ? undefined
-      : createStressLibraryCorpus(options.stressLibraryItemCount);
+      : createStressLibraryCorpus(
+          options.stressLibraryItemCount,
+          options.stressGroupLibraryItemCount,
+        );
   const items =
     options.stressItemCount !== undefined
       ? [...ITEMS, ...createStressItems(options.stressItemCount)]

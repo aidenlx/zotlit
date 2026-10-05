@@ -26,6 +26,8 @@ import {
   PERSONAL_SELECTOR,
   SCOPE_CASES,
   selectScopeCase,
+  STRESS_GROUP_LIBRARY,
+  STRESS_GROUP_LIBRARY_ITEM_COUNT_CONSTRAINT,
   STRESS_ITEM_COUNT_CONSTRAINT,
   STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT,
   STRESS_LIBRARY_TIERS,
@@ -137,12 +139,14 @@ async function build({
   vaultCase = DEFAULT_VAULT_CASE,
   stressItemCount,
   stressLibraryItemCount,
+  stressGroupLibraryItemCount,
   localApi = false,
 }: {
   scopeCase: string;
   vaultCase?: string;
   stressItemCount?: number;
   stressLibraryItemCount?: number;
+  stressGroupLibraryItemCount?: number;
   localApi?: boolean;
 }): Promise<void> {
   const pluginBundleDir = await findPluginBundle();
@@ -157,6 +161,7 @@ async function build({
     vaultCase,
     stressItemCount,
     stressLibraryItemCount,
+    stressGroupLibraryItemCount,
     pluginBundleDir,
     zoteroHttpPort,
     localApi,
@@ -164,7 +169,11 @@ async function build({
   await installBetterBibtex(layout.profileDir);
   console.log(
     stressLibraryItemCount !== undefined
-      ? `Built a Stress Build with ${stressLibraryItemCount.toLocaleString("en-US")} Items in My Library at ${layout.root}`
+      ? `Built a Stress Build with ${stressLibraryItemCount.toLocaleString("en-US")} Items in My Library${
+          stressGroupLibraryItemCount === undefined
+            ? ""
+            : ` and ${stressGroupLibraryItemCount.toLocaleString("en-US")} Items in ${STRESS_GROUP_LIBRARY.name}`
+        } at ${layout.root}`
       : stressItemCount === undefined
         ? `Built the Fixture at ${layout.root}`
         : `Built a Stress Build with ${stressItemCount.toLocaleString("en-US")} synthetic Items at ${layout.root}`,
@@ -263,14 +272,22 @@ const cli = yargs(hideBin(process.argv))
           describe: `fill My Library to exactly this many Items instead, for Item Query performance tiers (${STRESS_LIBRARY_TIERS.join(", ")}); must be ${STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT}`,
           type: "number",
         })
-        .conflicts("item-count", "library-items"),
+        .option("group-library-items", {
+          describe: `with --library-items, also fill the group Library ${STRESS_GROUP_LIBRARY.name} (${STRESS_GROUP_LIBRARY.groupID}) to exactly this many Items, for Item Query over two large Libraries; must be ${STRESS_GROUP_LIBRARY_ITEM_COUNT_CONSTRAINT}`,
+          type: "number",
+        })
+        .conflicts("item-count", "library-items")
+        .implies("group-library-items", "library-items"),
     async (argv) => {
       const stressLibraryItemCount = argv["library-items"];
       await build({
         scopeCase: DEFAULT_SCOPE_CASE,
         ...(stressLibraryItemCount === undefined
           ? { stressItemCount: argv["item-count"] ?? DEFAULT_STRESS_ITEM_COUNT }
-          : { stressLibraryItemCount }),
+          : {
+              stressLibraryItemCount,
+              stressGroupLibraryItemCount: argv["group-library-items"],
+            }),
       });
     },
   )
