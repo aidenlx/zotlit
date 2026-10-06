@@ -1,6 +1,6 @@
-import { hashKey } from "@tanstack/query-core";
-import { createHash } from "node:crypto";
 // The plugin-wide cache of whole-bibliography renders every consumer of rendered citation text reads.
+
+import { hashKey } from "@tanstack/query-core";
 
 import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
@@ -480,21 +480,9 @@ function enginePresentation(style: RenderStyle): {
 }
 
 /**
- * The identity of one render: the style and Citation Locale that format it, the
- * independent parent the style resolved through, the very CSL content it is
- * formatted by, the CSL data of the works in citation order, and — for an
- * in-text render — the citations it formats.
- *
- * The parent belongs to that identity because a dependent style that starts
- * naming another parent renders another way under the same style ID, and the
- * content belongs to it because a style edited in Zotero renders another way
- * under the same style ID and the same parent.
- *
- * The item-data digest separates a cancelled render's captured inputs from
- * updated data for those same Items. Property order leaves the digest unchanged.
- * A CSL id names one Item — a Zotero item URI, an Indexed Key, or a citation
- * key — and none of the three can carry the separator, so the empty line
- * between the two lists keeps them apart.
+ * Full style and item content separate a cancelled render's captured inputs
+ * from updated data under the same IDs. Query Core's stable JSON serialization
+ * ignores object property order while preserving item and citation order.
  */
 function renderKey({
   request,
@@ -507,30 +495,17 @@ function renderKey({
   items: readonly CslItemData[];
   citations?: readonly string[];
 }): string {
-  return [
+  return hashKey([
     request.styleId ?? "",
     style.kind === "installed" ? (style.parentId ?? "") : "",
     request.locale ?? "",
-    contentIdentity(style),
-    createHash("sha256").update(hashKey(items)).digest("base64"),
-    ...items.map((item) => item.id),
-    ...(citations.length > 0 ? ["", ...citations] : []),
-  ].join("\n");
+    style.kind === "installed" ? style.xml : "",
+    items,
+    citations,
+  ]);
 }
 
 /** The {@link renderKey} a held render's query key carries. */
 function renderKeyOf(key: readonly unknown[]): string {
   return String(key[1]);
-}
-
-/**
- * What the resolved style formats with, as a value that changes with it: the
- * digest of the CSL content the engine is handed. The embedded default style
- * ships with the engine and carries no content of its own here, so it stands
- * on the request alone.
- */
-function contentIdentity(style: RenderStyle): string {
-  return style.kind === "installed"
-    ? createHash("sha256").update(style.xml).digest("base64")
-    : "";
 }
