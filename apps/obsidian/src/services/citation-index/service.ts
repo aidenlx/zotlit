@@ -501,7 +501,7 @@ export class CitationIndex extends Service<void> {
   async whenResolved(): Promise<void> {
     await this.ready;
     if (this.#stopped) return;
-    await this.#waitForRead(this.readSnapshot());
+    await this.#waitForRead(this.readSnapshot().catch(() => undefined));
   }
 
   /**
@@ -510,13 +510,20 @@ export class CitationIndex extends Service<void> {
    *
    * @param signal ends the wait; the shared rebuild runs on for every other
    *   caller that joined it.
-   * @returns null where the rebuild failed.
+   * @throws a failed rebuild, including during its retry cooldown. Composing
+   *   reads retain that failure; {@link whenResolved} only waits for settlement.
    */
-  readSnapshot({
+  async readSnapshot({
     signal,
-  }: { signal?: AbortSignal } = {}): Promise<CitekeySnapshot | null> {
-    if (this.#stopped) return Promise.resolve(null);
-    return this.#queries.read(SNAPSHOT_KEY, () => this.#readSnapshot(), signal);
+  }: { signal?: AbortSignal } = {}): Promise<CitekeySnapshot> {
+    await this.ready;
+    if (this.#stopped)
+      throw new DOMException("The citation index stopped", "AbortError");
+    return await this.#queries.readFresh(
+      SNAPSHOT_KEY,
+      () => this.#readSnapshot(),
+      signal,
+    );
   }
 
   /** Settles a first snapshot read or disposal, whichever comes first. */

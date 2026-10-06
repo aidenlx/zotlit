@@ -23,6 +23,11 @@ export abstract class Service<TReady = void> implements AsyncDisposable {
   /** Resolves when startup finished, or rejects with the startup failure. */
   abstract ready: Promise<TReady>;
 
+  /** Whether cleanup has been requested, including while startup is finishing. */
+  protected get disposing(): boolean {
+    return this.#disposal !== undefined;
+  }
+
   /**
    * Take ownership of the resources acquired during startup. Call exactly once
    * on the success path of `#load()`. Throws on double-commit or

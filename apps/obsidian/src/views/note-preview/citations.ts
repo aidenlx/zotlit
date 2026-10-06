@@ -154,11 +154,9 @@ export async function renderDraftCitations(
   );
   const formatted =
     outcome.kind === "held"
-      ? await deps.bibliographyRender.readCitations(
-          sources,
-          [...items.values()],
-          { presentation },
-        )
+      ? await deps.bibliographyRender
+          .readCitations(sources, [...items.values()], { presentation })
+          .catch(() => null)
       : null;
   if (formatted === null)
     return {
@@ -179,10 +177,9 @@ export async function renderDraftCitations(
     };
   const serials = new Map<string, number>();
   if (formatted.some(({ content }) => holdsNote(content))) {
-    const bibliography = await deps.bibliographyRender.readBibliography(
-      [...items.values()],
-      { presentation },
-    );
+    const bibliography = await deps.bibliographyRender
+      .readBibliography([...items.values()], { presentation })
+      .catch(() => null);
     bibliography?.entries.forEach(({ id }, index) =>
       serials.set(id, index + 1),
     );

@@ -38,8 +38,12 @@ export interface Held<T> {
  */
 export const FAILURE_COOLDOWN = Temporal.Duration.from({ seconds: 5 });
 
-/** A read that an invalidation cancelled, which the asker resolves again. */
-const CANCELLED = Symbol("cancelled");
+/** The attempt's outcome, retained before a display caller chooses a held value. */
+type ReadResult<T> =
+  | { kind: "value"; value: T }
+  | { kind: "failed"; error: unknown; held: T | null; cooldown: boolean }
+  | { kind: "cancelled"; held: T | null }
+  | { kind: "released" };
 
 /** What one key prefix's owner is told about the reads under it. */
 interface HeldReadEvents<T> {
@@ -194,8 +198,9 @@ export class QueryClientService extends Service {
    * @returns the value the read committed, or null where it failed.
    */
   async ask<T>(key: QueryKey, queryFn: QueryFunction<T>): Promise<T | null> {
-    const value = await this.#settle(key, queryFn, undefined);
-    return value === CANCELLED ? null : value;
+    const result = await this.#settle(key, queryFn, undefined);
+    if (result.kind === "value") return result.value;
+    return result.kind === "failed" && result.cooldown ? result.held : null;
   }
 
   /**
@@ -214,9 +219,28 @@ export class QueryClientService extends Service {
     queryFn: QueryFunction<T>,
     signal?: AbortSignal,
   ): Promise<T | null> {
-    const value = await this.#settle(key, queryFn, signal);
-    if (value !== null && value !== CANCELLED) return value;
-    return this.peek<T>(key)?.value ?? null;
+    const result = await this.#settle(key, queryFn, signal);
+    if (result.kind === "value") return result.value;
+    return result.kind === "released" ? null : result.held;
+  }
+
+  /**
+   * Reads a dependency for composition. A failed dependency stays failed in
+   * the parent Held Read instead of committing stale input as fresh output.
+   *
+   * Shares joining, cooldown and cancellation with {@link read}; the original
+   * error rejects even during cooldown. Removal or disposal rejects with
+   * AbortError. The caller's signal ends its wait alone.
+   */
+  async readFresh<T>(
+    key: QueryKey,
+    queryFn: QueryFunction<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    const result = await this.#settle(key, queryFn, signal);
+    if (result.kind === "value") return result.value;
+    if (result.kind === "failed") throw result.error;
+    throw new DOMException(`Held read ${result.kind}`, "AbortError");
   }
 
   /**
@@ -276,18 +300,26 @@ export class QueryClientService extends Service {
    * One ask, and one more where an invalidation cancelled the read this joined:
    * that second ask reads what the invalidation asked for.
    *
-   * @returns the committed value, null where the read failed or the client
-   *   released it, or {@link CANCELLED} where the second ask was cancelled too.
+   * Each attempt belongs to the same query lifetime. A later query using the
+   * same key is a separate read, and disposal ends every lifetime.
    */
   async #settle<T>(
     key: QueryKey,
     queryFn: QueryFunction<T>,
     signal: AbortSignal | undefined,
-  ): Promise<T | null | typeof CANCELLED> {
-    const joined = await this.#attempt(key, queryFn, signal);
-    if (joined !== CANCELLED) return joined;
+  ): Promise<ReadResult<T>> {
+    if (this.disposing) return { kind: "released" };
+    const reading = this.#attempt(key, queryFn, signal);
+    const cache = this.#client.getQueryCache();
+    const query = cache.find({ queryKey: key, exact: true });
+    const released = () =>
+      this.disposing || cache.find({ queryKey: key, exact: true }) !== query;
+    const joined = await reading;
+    if (released()) return { kind: "released" };
+    if (joined.kind !== "cancelled") return joined;
     logger.debug("Held read cancelled, asking again", { queryKey: key });
-    return await this.#attempt(key, queryFn, signal);
+    const retried = await this.#attempt(key, queryFn, signal);
+    return released() ? { kind: "released" } : retried;
   }
 
   /** One ask, raced against the caller's signal where it brought one. */
@@ -295,7 +327,7 @@ export class QueryClientService extends Service {
     key: QueryKey,
     queryFn: QueryFunction<T>,
     signal: AbortSignal | undefined,
-  ): Promise<T | null | typeof CANCELLED> {
+  ): Promise<ReadResult<T>> {
     const reading = this.#fetch(key, queryFn);
     return signal === undefined ? reading : abortable(reading, signal);
   }
@@ -307,13 +339,10 @@ export class QueryClientService extends Service {
    * names is gone — is cancelled silently, and answers nothing rather than
    * arming an ask the released client would run again.
    *
-   * @returns the committed value, null where the read failed or was released,
-   *   or {@link CANCELLED} where an invalidation superseded it.
+   * Keeps failure and held data together so composition and display share the
+   * same attempt without sharing their error policy.
    */
-  #fetch<T>(
-    key: QueryKey,
-    queryFn: QueryFunction<T>,
-  ): Promise<T | null | typeof CANCELLED> {
+  #fetch<T>(key: QueryKey, queryFn: QueryFunction<T>): Promise<ReadResult<T>> {
     const state = this.#client.getQueryState<T>(key);
     if (
       state?.status === "error" &&
@@ -324,21 +353,31 @@ export class QueryClientService extends Service {
         queryKey: key,
         held: state.data !== undefined,
       });
-      return Promise.resolve(state.data ?? null);
+      return Promise.resolve({
+        kind: "failed",
+        error: state.error,
+        held: state.data ?? null,
+        cooldown: true,
+      });
     }
     return this.#client.fetchQuery<T>({ queryKey: key, queryFn }).then(
       // A read the invalidation reverted resolves with the value it reverted
       // to, and the stale mark it left is what tells that value apart from one
       // this read committed.
-      () =>
-        this.#client.getQueryState(key)?.isInvalidated === true
-          ? CANCELLED
-          : (this.#client.getQueryData<T>(key) ?? null),
+      () => {
+        const settled = this.#client.getQueryState<T>(key);
+        if (settled === undefined) return { kind: "released" };
+        return settled.isInvalidated
+          ? { kind: "cancelled", held: settled.data ?? null }
+          : { kind: "value", value: settled.data! };
+      },
       (error: unknown) => {
-        if (!(error instanceof CancelledError)) return null;
-        if (error.silent !== true) return CANCELLED;
+        const held = this.#client.getQueryData<T>(key) ?? null;
+        if (!(error instanceof CancelledError))
+          return { kind: "failed", error, held, cooldown: false };
+        if (error.silent !== true) return { kind: "cancelled", held };
         logger.debug("Held read released before it settled", { queryKey: key });
-        return null;
+        return { kind: "released" };
       },
     );
   }

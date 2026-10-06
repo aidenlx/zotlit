@@ -13,6 +13,7 @@ import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
 import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
 import type { Citation } from "@/services/citation-index/service";
+import { CitekeySnapshot } from "@/services/citation-index/snapshot";
 import {
   ALPHA,
   ALPHA_KEY,
@@ -173,7 +174,8 @@ async function makeHarness({
         getDocumentCitationSet: () =>
           Promise.resolve({ occurrences, citations: cited }),
         citekeyOf: () => null,
-        whenResolved: () => Promise.resolve(),
+        readSnapshot: () =>
+          Promise.resolve(CitekeySnapshot.from([], new Set())),
         on: (event: string, cb: () => void) => {
           indexListeners.set(event, cb);
           return () => undefined;

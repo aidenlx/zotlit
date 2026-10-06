@@ -82,7 +82,7 @@ export interface CitationTextDeps {
   db: Pick<DatabaseService, "state" | "client">;
   citationIndex: Pick<
     CitationIndex,
-    "getDocumentCitationSet" | "citekeyOf" | "whenResolved" | "on"
+    "getDocumentCitationSet" | "citekeyOf" | "readSnapshot" | "on"
   >;
   /** What a citekey resolves to, which decides what a Citation can say. */
   noteIndex: Pick<NoteIndex, "on" | "whenIndexed">;
@@ -309,8 +309,8 @@ export class CitationText extends Service<void> {
    * author wrote.
    *
    * The read waits for the Note Index to finish its first scan and for the
-   * citekey resolution snapshot to run its first rebuild, so a document opened
-   * during startup is never answered against an index or a snapshot that still
+   * citekey resolution snapshot to complete a successful rebuild. A document
+   * opened during startup is never answered against an index or snapshot that still
    * resolves nothing. That wait is what lets the drops below listen for moved
    * mappings alone rather than for every rescan.
    */
@@ -318,7 +318,7 @@ export class CitationText extends Service<void> {
     await Promise.all([
       this.#noteIndex.whenIndexed(),
       this.#profile.ready,
-      this.#citationIndex.whenResolved(),
+      this.#citationIndex.readSnapshot(),
     ]);
     const body = await this.#app.vault.cachedRead(file);
     const set = await this.#citationIndex.getDocumentCitationSet(file);
@@ -543,10 +543,13 @@ export class CitationText extends Service<void> {
    * @param cited the Indexed Key of each work the document cites, in the order
    *   the document cites them; repeats are read once.
    * @returns the readable works by Indexed Key, in first-cited order.
+   * @throws a database read failure, so the document retains its failure and retry cooldown.
    */
   #readCited(cited: readonly string[]): Map<string, CitedItem> {
     const works = new Map<string, CitedItem>();
-    if (this.#db.state !== "ready" || cited.length === 0) return works;
+    if (cited.length === 0) return works;
+    if (this.#db.state !== "ready")
+      throw new Error("The Zotero database cannot be read");
 
     try {
       const client = this.#db.client;
@@ -570,6 +573,7 @@ export class CitationText extends Service<void> {
       }
     } catch (error) {
       logger.warn("Cannot read the cited items", { error });
+      throw error;
     }
     return works;
   }

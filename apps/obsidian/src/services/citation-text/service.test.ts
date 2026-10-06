@@ -13,7 +13,16 @@ import type {
   CitationOccurrence,
   DocumentCitationSet,
 } from "@/services/citation-index/service";
-import type { RenderedCitation } from "@/services/pandoc/engine";
+import { CitekeySnapshot } from "@/services/citation-index/snapshot";
+import {
+  createCitationIndexHarness,
+  DatabaseStub,
+} from "@/services/citation-index/test-harness";
+import type {
+  BibliographyRequest,
+  RenderedCitation,
+} from "@/services/pandoc/engine";
+import { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { Held } from "@/services/query-client/service";
 import { QueryClientService } from "@/services/query-client/service";
@@ -33,6 +42,7 @@ import {
 import { citationKey, literalSummaryOf } from "./present";
 import type { DocumentCitations, FormattedOccurrence } from "./present";
 import { CitationText } from "./service";
+import type { CitationTextDeps } from "./service";
 
 vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();
@@ -91,6 +101,8 @@ async function makeHarness({
   frontmatter = {},
   settings = {},
   documentCitationSet,
+  bibliographyRender,
+  queryClient = new QueryClientService(),
 }: {
   body: string;
   cited?: Citation[];
@@ -114,6 +126,8 @@ async function makeHarness({
   frontmatter?: Record<string, unknown>;
   settings?: Partial<Settings>;
   documentCitationSet?: DocumentCitationSet;
+  bibliographyRender?: CitationTextDeps["bibliographyRender"];
+  queryClient?: QueryClientService;
 }): Promise<Harness> {
   const citationRequests: { citations: readonly string[] }[] = [];
   const bibliographyRequests: string[][] = [];
@@ -149,7 +163,6 @@ async function makeHarness({
         : { frontmatter: { "zotero-key": LIT_KEY } },
   };
 
-  const queryClient = new QueryClientService();
   let present = true;
   const service = new CitationText({
     app: {
@@ -179,14 +192,14 @@ async function makeHarness({
         indexedKey === LIT_KEY
           ? (Object.values(notes)[0]?.citekey ?? null)
           : null,
-      whenResolved: () => Promise.resolve(),
+      readSnapshot: () => Promise.resolve(CitekeySnapshot.from([], new Set())),
       on: listen("index"),
     },
     noteIndex: {
       on: listen("notes"),
       whenIndexed: () => Promise.resolve(),
     },
-    bibliographyRender: {
+    bibliographyRender: bibliographyRender ?? {
       vaultPresentation: { styleId: null, locale: null },
       readCitations: async (citations: readonly string[]) => {
         citationRequests.push({ citations });
@@ -270,6 +283,206 @@ async function readText(service: CitationText): Promise<DocumentCitations> {
 }
 
 describe("CitationText", () => {
+  it("retries a failed resolution snapshot through a document read after the cooldown", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    cleanup.defer(() => {
+      vi.useRealTimers();
+    });
+    let now = Temporal.Instant.from("2026-10-06T00:00:00Z");
+    vi.setSystemTime(now.epochMilliseconds);
+    const clock = vi
+      .spyOn(Temporal.Now, "instant")
+      .mockImplementation(() => now);
+    cleanup.defer(() => {
+      clock.mockRestore();
+    });
+    const db = new DatabaseStub({ readyImmediately: false });
+    const h = cleanup.use(
+      await createCitationIndexHarness(
+        { "draft.md": "@doe2024" },
+        { db, notes: false },
+      ),
+    );
+    h.citekeys.error = new Error("snapshot database locked");
+    db.settle();
+    await h.index.whenResolved();
+    await h.index.getDocumentCitationSet(h.draft);
+    const service = cleanup.use(
+      new CitationText({
+        app: h.app,
+        db,
+        citationIndex: h.index,
+        noteIndex: h.noteIndex,
+        profile: profileReader(),
+        queryClient: h.queryClient,
+        bibliographyRender: {
+          vaultPresentation: { styleId: null, locale: null },
+          readCitations: async (sources: readonly string[]) =>
+            sources.map((source) => rendered(source)),
+          readBibliography: async () => ({
+            entries: [],
+            hasEntryMarkers: false,
+          }),
+          on: () => () => {},
+        } as never,
+      }),
+    );
+    await service.ready;
+
+    expect(await service.read(h.draft.path)).toBeNull();
+    const reads = h.citekeys.calls.length;
+    h.citekeys.error = null;
+    expect(await service.read(h.draft.path)).toBeNull();
+    expect(h.citekeys.calls).toHaveLength(reads);
+    now = now.add({ milliseconds: 5001 });
+    vi.setSystemTime(now.epochMilliseconds);
+
+    expect((await service.read(h.draft.path))?.formatted.size).toBe(1);
+    expect(service.peek(h.draft.path)?.status).toBe("fresh");
+    expect(h.citekeys.calls).toHaveLength(reads + 1);
+  });
+
+  it.each(["first read", "replacement"] as const)(
+    "retries a failed item read after the cooldown for a %s",
+    async (kind) => {
+      await using cleanup = new AsyncDisposableStack();
+      vi.useFakeTimers({ toFake: ["Date"] });
+      cleanup.defer(() => {
+        vi.useRealTimers();
+      });
+      let now = Temporal.Instant.from("2026-10-06T00:00:00Z");
+      vi.setSystemTime(now.epochMilliseconds);
+      const queryClient = cleanup.use(
+        new QueryClientService({ now: () => now }),
+      );
+      const h = cleanup.adopt(
+        await makeHarness({ body: "@alpha", queryClient }),
+        (h) => h.dispose(),
+      );
+      const first =
+        kind === "replacement" ? await h.service.read(NOTE.path) : null;
+      vi.mocked(getItemsByKey).mockImplementationOnce(() => {
+        throw new Error("database is locked");
+      });
+      if (kind === "replacement") h.metadataChanged(NOTE.path);
+
+      expect(await h.service.read(NOTE.path)).toBe(first);
+      expect(h.service.peek(NOTE.path)?.status ?? null).toBe(
+        kind === "replacement" ? "failed" : null,
+      );
+      await h.service.read(NOTE.path);
+      expect(getItemsByKey).toHaveBeenCalledTimes(
+        kind === "replacement" ? 2 : 1,
+      );
+      now = now.add({ milliseconds: 5001 });
+      vi.setSystemTime(now.epochMilliseconds);
+
+      expect((await h.service.read(NOTE.path))?.formatted.size).toBe(1);
+      expect(h.service.peek(NOTE.path)?.status).toBe("fresh");
+      expect(getItemsByKey).toHaveBeenCalledTimes(
+        kind === "replacement" ? 3 : 2,
+      );
+    },
+  );
+
+  it.each([
+    { kind: "first read", format: "citation" },
+    { kind: "replacement", format: "citation" },
+    { kind: "first read", format: "bibliography" },
+    { kind: "replacement", format: "bibliography" },
+  ] as const)(
+    "retries a failed $format render after the cooldown for a $kind",
+    async ({ kind, format }) => {
+      await using cleanup = new AsyncDisposableStack();
+      vi.useFakeTimers({ toFake: ["Date"] });
+      cleanup.defer(() => {
+        vi.useRealTimers();
+      });
+      let now = Temporal.Instant.from("2026-10-06T00:00:00Z");
+      vi.setSystemTime(now.epochMilliseconds);
+      const queryClient = cleanup.use(
+        new QueryClientService({
+          now: () => now,
+        }),
+      );
+      let fails = kind === "first read";
+      const renderCitations = vi.fn(async () => {
+        if (fails && format === "citation")
+          throw new Error("temporary render failure");
+        return [
+          format === "citation"
+            ? rendered("Recovered citation")
+            : noted(`@${ALPHA_KEY}`),
+        ];
+      });
+      const renderBibliography = vi.fn(
+        async ({ items }: BibliographyRequest) => {
+          if (fails && format === "bibliography")
+            throw new Error("temporary render failure");
+          return items.map(({ id }) => ({
+            id,
+            marker: undefined,
+            content: [],
+          }));
+        },
+      );
+      const failedRender =
+        format === "citation" ? renderCitations : renderBibliography;
+      const bibliographyRender = cleanup.use(
+        new BibliographyRenderCache({
+          queryClient,
+          profile: { ready: Promise.resolve(), on: () => () => {} },
+          db: { on: () => () => {} },
+          zoteroPref: { dataDir: "/unused", on: () => () => {} },
+          settings: { ready: Promise.resolve(), subscribe: () => () => {} },
+          pandocEngine: {
+            getStatus: () => ({ kind: "installed", version: "3.10" }),
+            subscribe: () => () => {},
+            getEngine: async () =>
+              ({ renderCitations, renderBibliography }) as never,
+          },
+        }),
+      );
+      const h = cleanup.adopt(
+        await makeHarness({
+          body: "@alpha",
+          bibliographyRender,
+          queryClient,
+        }),
+        (h) => h.dispose(),
+      );
+      const first =
+        kind === "replacement" ? await h.service.read(NOTE.path) : null;
+      if (kind === "replacement") {
+        fails = true;
+        queryClient.invalidate(["citation-render"]);
+        queryClient.invalidate(["bibliography-render"]);
+        h.metadataChanged(NOTE.path);
+      }
+
+      expect(await h.service.read(NOTE.path)).toBe(first);
+      expect(h.service.peek(NOTE.path)?.status ?? null).toBe(
+        kind === "replacement" ? "failed" : null,
+      );
+      fails = false;
+      await h.service.read(NOTE.path);
+      expect(failedRender).toHaveBeenCalledTimes(
+        kind === "replacement" ? 2 : 1,
+      );
+      now = now.add({ milliseconds: 5001 });
+      vi.setSystemTime(now.epochMilliseconds);
+
+      const recovered = await h.service.read(NOTE.path);
+      expect(recovered?.formatted.size).toBe(1);
+      expect(recovered?.entrySerials).toBe(format === "bibliography");
+      expect(h.service.peek(NOTE.path)?.status).toBe("fresh");
+      expect(failedRender).toHaveBeenCalledTimes(
+        kind === "replacement" ? 3 : 2,
+      );
+    },
+  );
+
   it("formats every citation the document writes", async () => {
     const { service, citationRequests, dispose } = await makeHarness({
       body: "First @alpha.\n\nThen [see @alpha, p. 3].",
