@@ -174,6 +174,39 @@ describe("QueryClientService", () => {
     expect(queries.peek(KEY)).toMatchObject({ value: "new", status: "fresh" });
   });
 
+  it.each(["remove", "dispose"] as const)(
+    "keeps a cancelled read released after %s",
+    async (release) => {
+      await using queries = openQueries();
+      const gate = Promise.withResolvers<string>();
+      const read = vi.fn(() => gate.promise);
+      const reading = queries.read(KEY, read);
+
+      queries.invalidate(KEY);
+      if (release === "dispose") await queries[Symbol.asyncDispose]();
+      else queries.client.removeQueries({ queryKey: KEY });
+      gate.resolve("released");
+
+      expect(await reading).toBeNull();
+      expect(read).toHaveBeenCalledOnce();
+      expect(queries.peek(KEY)).toBeNull();
+    },
+  );
+
+  it("keeps a released reader separate from a new query with the same key", async () => {
+    await using queries = openQueries();
+    const gate = Promise.withResolvers<string>();
+    const reading = queries.read(KEY, () => gate.promise);
+    queries.invalidate(KEY);
+    queries.client.removeQueries({ queryKey: KEY });
+    const replacement = queries.read(KEY, () => Promise.resolve("new file"));
+    gate.resolve("deleted file");
+
+    expect(await reading).toBeNull();
+    expect(await replacement).toBe("new file");
+    expect(queries.peek(KEY)?.value).toBe("new file");
+  });
+
   it("keeps a failed first read pending and reads again after the cooldown", async () => {
     await using queries = openQueries();
     const failing = vi.fn(() => Promise.reject(new Error("unreadable")));
@@ -196,6 +229,57 @@ describe("QueryClientService", () => {
       null,
       expect.objectContaining({ value: "new", status: "fresh" }),
     ]);
+  });
+
+  it("shares one failed attempt between display and composing reads", async () => {
+    await using queries = openQueries();
+    await queries.ask(KEY, () => Promise.resolve("old"));
+    queries.invalidate(KEY);
+    const error = new Error("unreadable");
+    const gate = Promise.withResolvers<string>();
+    const read = vi.fn(() => gate.promise);
+    const composed = queries.readFresh(KEY, read);
+    const rejected = expect(composed).rejects.toBe(error);
+    const displayed = queries.read(KEY, read);
+    gate.reject(error);
+
+    await rejected;
+    expect(await displayed).toBe("old");
+    await expect(queries.readFresh(KEY, read)).rejects.toBe(error);
+    expect(read).toHaveBeenCalledOnce();
+    queries.passCooldown();
+    expect(await queries.readFresh(KEY, () => Promise.resolve("new"))).toBe(
+      "new",
+    );
+  });
+
+  it("aborts a composing caller without cancelling the shared read", async () => {
+    await using queries = openQueries();
+    const controller = new AbortController();
+    const gate = Promise.withResolvers<string>();
+    const read = vi.fn(() => gate.promise);
+    const rejected = expect(
+      queries.readFresh(KEY, read, controller.signal),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    const displayed = queries.read(KEY, read);
+    controller.abort();
+    await rejected;
+    gate.resolve("shared");
+    expect(await displayed).toBe("shared");
+    expect(read).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a composing read when its query is released", async () => {
+    await using queries = openQueries();
+    const gate = Promise.withResolvers<string>();
+    const rejected = expect(
+      queries.readFresh(KEY, () => gate.promise),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    queries.invalidate(KEY);
+    queries.client.removeQueries({ queryKey: KEY });
+    gate.resolve("released");
+    await rejected;
+    expect(queries.peek(KEY)).toBeNull();
   });
 
   it("keeps the identity of an equal value and reports the settlement alone", async () => {

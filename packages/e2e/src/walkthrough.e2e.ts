@@ -310,6 +310,62 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     ).toEqual({ count: 1, active: leafId });
   });
 
+  it("recovers a failed citation render after cooldown while keeping the displayed text", async () => {
+    const result = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{
+      await using cleanup=new AsyncDisposableStack();
+      const services=app.plugins.plugins.zotlit.services;
+      const file=cleanup.adopt(await app.vault.create('Held read recovery.md','Before [@rougier2014].\\n\\nEnd'),file=>app.vault.delete(file));
+      const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());
+      if(!app.metadataCache.getFileCache(file))await new Promise(resolve=>{
+        const event=app.metadataCache.on('changed',changed=>{
+          if(changed.path===file.path){app.metadataCache.offref(event);resolve();}
+        });
+        cleanup.defer(()=>app.metadataCache.offref(event));
+      });
+      await leaf.openFile(file);
+      leaf.view.editor.setCursor({line:2,ch:3});
+      const first=await services.citationText.read(file.path);
+      if(!first?.formatted.size)throw new Error('Initial citations were not formatted');
+      const engine=await services.pandocEngine.getEngine();
+      const original=engine.renderCitations;
+      cleanup.defer(()=>{engine.renderCitations=original;});
+      let fail=true,reads=0;
+      engine.renderCitations=function(...args){
+        reads++;
+        return fail?Promise.reject(new Error('Simulated render failure')):original.apply(this,args);
+      };
+      services.queryClient.invalidate(['citation-render']);
+      services.queryClient.invalidate(['citation-text',file.path]);
+      const failed=await services.citationText.read(file.path);
+      const failedStatus=services.citationText.peek(file.path)?.status;
+      fail=false;
+      await services.citationText.read(file.path);
+      const duringCooldown=reads;
+      const instant=Temporal.Now.instant;
+      const afterCooldown=instant().add({seconds:6});
+      Temporal.Now.instant=()=>afterCooldown;
+      cleanup.defer(()=>{Temporal.Now.instant=instant;});
+      const recovered=await services.citationText.read(file.path);
+      const status=services.citationText.peek(file.path)?.status;
+      await new Promise(resolve=>leaf.view.editor.cm.requestMeasure({read:()=>null,write:resolve}));
+      return JSON.stringify({failedStatus,keptText:failed===first,duringCooldown,reads,recovered:recovered===first,status,widget:!!leaf.view.contentEl.querySelector('.zt-citation')});
+    })()`,
+      ),
+    );
+    expect(result).toEqual({
+      failedStatus: "failed",
+      keptText: true,
+      duringCooldown: 1,
+      reads: 2,
+      recovered: true,
+      status: "fresh",
+      widget: true,
+    });
+  });
+
   it("places a plain-click caret inside a formatted citation and keeps selections", async () => {
     const source = "Before [@rougier2014, p. 1] after\n\nEnd";
     await obEval(
