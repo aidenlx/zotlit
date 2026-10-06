@@ -13,6 +13,11 @@ import type {
   CitationOccurrence,
   DocumentCitationSet,
 } from "@/services/citation-index/service";
+import { CitekeySnapshot } from "@/services/citation-index/snapshot";
+import {
+  createCitationIndexHarness,
+  DatabaseStub,
+} from "@/services/citation-index/test-harness";
 import type {
   BibliographyRequest,
   RenderedCitation,
@@ -187,7 +192,7 @@ async function makeHarness({
         indexedKey === LIT_KEY
           ? (Object.values(notes)[0]?.citekey ?? null)
           : null,
-      whenResolved: () => Promise.resolve(),
+      readSnapshot: () => Promise.resolve(CitekeySnapshot.from([], new Set())),
       on: listen("index"),
     },
     noteIndex: {
@@ -278,6 +283,109 @@ async function readText(service: CitationText): Promise<DocumentCitations> {
 }
 
 describe("CitationText", () => {
+  it("retries a failed resolution snapshot through a document read after the cooldown", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    cleanup.defer(() => {
+      vi.useRealTimers();
+    });
+    let now = Temporal.Instant.from("2026-10-06T00:00:00Z");
+    vi.setSystemTime(now.epochMilliseconds);
+    const clock = vi
+      .spyOn(Temporal.Now, "instant")
+      .mockImplementation(() => now);
+    cleanup.defer(() => {
+      clock.mockRestore();
+    });
+    const db = new DatabaseStub({ readyImmediately: false });
+    const h = cleanup.use(
+      await createCitationIndexHarness(
+        { "draft.md": "@doe2024" },
+        { db, notes: false },
+      ),
+    );
+    h.citekeys.error = new Error("snapshot database locked");
+    db.settle();
+    await h.index.whenResolved();
+    await h.index.getDocumentCitationSet(h.draft);
+    const service = cleanup.use(
+      new CitationText({
+        app: h.app,
+        db,
+        citationIndex: h.index,
+        noteIndex: h.noteIndex,
+        profile: profileReader(),
+        queryClient: h.queryClient,
+        bibliographyRender: {
+          vaultPresentation: { styleId: null, locale: null },
+          readCitations: async (sources: readonly string[]) =>
+            sources.map((source) => rendered(source)),
+          readBibliography: async () => ({
+            entries: [],
+            hasEntryMarkers: false,
+          }),
+          on: () => () => {},
+        } as never,
+      }),
+    );
+    await service.ready;
+
+    expect(await service.read(h.draft.path)).toBeNull();
+    const reads = h.citekeys.calls.length;
+    h.citekeys.error = null;
+    expect(await service.read(h.draft.path)).toBeNull();
+    expect(h.citekeys.calls).toHaveLength(reads);
+    now = now.add({ milliseconds: 5001 });
+    vi.setSystemTime(now.epochMilliseconds);
+
+    expect((await service.read(h.draft.path))?.formatted.size).toBe(1);
+    expect(service.peek(h.draft.path)?.status).toBe("fresh");
+    expect(h.citekeys.calls).toHaveLength(reads + 1);
+  });
+
+  it.each(["first read", "replacement"] as const)(
+    "retries a failed item read after the cooldown for a %s",
+    async (kind) => {
+      await using cleanup = new AsyncDisposableStack();
+      vi.useFakeTimers({ toFake: ["Date"] });
+      cleanup.defer(() => {
+        vi.useRealTimers();
+      });
+      let now = Temporal.Instant.from("2026-10-06T00:00:00Z");
+      vi.setSystemTime(now.epochMilliseconds);
+      const queryClient = cleanup.use(
+        new QueryClientService({ now: () => now }),
+      );
+      const h = cleanup.adopt(
+        await makeHarness({ body: "@alpha", queryClient }),
+        (h) => h.dispose(),
+      );
+      const first =
+        kind === "replacement" ? await h.service.read(NOTE.path) : null;
+      vi.mocked(getItemsByKey).mockImplementationOnce(() => {
+        throw new Error("database is locked");
+      });
+      if (kind === "replacement") h.metadataChanged(NOTE.path);
+
+      expect(await h.service.read(NOTE.path)).toBe(first);
+      expect(h.service.peek(NOTE.path)?.status ?? null).toBe(
+        kind === "replacement" ? "failed" : null,
+      );
+      await h.service.read(NOTE.path);
+      expect(getItemsByKey).toHaveBeenCalledTimes(
+        kind === "replacement" ? 2 : 1,
+      );
+      now = now.add({ milliseconds: 5001 });
+      vi.setSystemTime(now.epochMilliseconds);
+
+      expect((await h.service.read(NOTE.path))?.formatted.size).toBe(1);
+      expect(h.service.peek(NOTE.path)?.status).toBe("fresh");
+      expect(getItemsByKey).toHaveBeenCalledTimes(
+        kind === "replacement" ? 3 : 2,
+      );
+    },
+  );
+
   it.each([
     { kind: "first read", format: "citation" },
     { kind: "replacement", format: "citation" },
@@ -291,10 +399,11 @@ describe("CitationText", () => {
       cleanup.defer(() => {
         vi.useRealTimers();
       });
-      vi.setSystemTime(new Date("2026-10-06T00:00:00Z"));
+      let now = Temporal.Instant.from("2026-10-06T00:00:00Z");
+      vi.setSystemTime(now.epochMilliseconds);
       const queryClient = cleanup.use(
         new QueryClientService({
-          now: () => Temporal.Instant.fromEpochMilliseconds(Date.now()),
+          now: () => now,
         }),
       );
       let fails = kind === "first read";
@@ -361,7 +470,8 @@ describe("CitationText", () => {
       expect(failedRender).toHaveBeenCalledTimes(
         kind === "replacement" ? 2 : 1,
       );
-      vi.advanceTimersByTime(5001);
+      now = now.add({ milliseconds: 5001 });
+      vi.setSystemTime(now.epochMilliseconds);
 
       const recovered = await h.service.read(NOTE.path);
       expect(recovered?.formatted.size).toBe(1);
