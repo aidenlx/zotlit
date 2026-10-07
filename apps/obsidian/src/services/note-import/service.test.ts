@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { stringifyYaml } from "obsidian";
 import type { App, TFile } from "obsidian";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { formatIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
 
@@ -117,8 +117,9 @@ const SEED = `
 `;
 
 /** The reads every write in this suite runs on: the in-process adapter over {@link SEED}. */
-const { reads } = await inProcessReadsService(memoryOpener(() => SEED).open)
-  .ready;
+const suiteReads = inProcessReadsService(memoryOpener(() => SEED).open);
+afterAll(() => suiteReads[Symbol.asyncDispose]());
+const { reads } = await suiteReads.ready;
 
 function makeNote(overrides: Partial<ReturnType<typeof baseNote>> = {}) {
   const base = baseNote({

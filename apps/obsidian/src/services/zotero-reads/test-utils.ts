@@ -202,7 +202,8 @@ export interface SeededAttachment {
 
 /** The regular item types {@link seedWorksSql} declares, by type id from 1. */
 const SEEDED_ITEM_TYPES = ["journalArticle", "letter", "book"] as const;
-const ATTACHMENT_TYPE_ID = 99;
+/** The item type id {@link seedWorksSql} gives Attachments. */
+export const ATTACHMENT_TYPE_ID = 99;
 const SEEDED_FIELD_IDS = { title: 10, citationKey: 11, date: 12 } as const;
 
 const quoteSql = (value: string) => `'${value.replaceAll("'", "''")}'`;

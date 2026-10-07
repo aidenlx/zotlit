@@ -197,6 +197,9 @@ function collectionHolds(libraryID: number, itemIDs: readonly number[]): void {
   `);
 }
 
+/** The read services the current case opened; they close before {@link db}. */
+let openServices: AsyncDisposableStack;
+
 function makeDeps(
   dbState: "loading" | "ready" = "ready",
   wrap: (client: ZoteroReadsClient) => ZoteroReadsClient = (client) => client,
@@ -206,9 +209,11 @@ function makeDeps(
     profile: profileReader(),
     app: {} as SingleUpdateDeps["app"],
     zoteroReads: withState(
-      inProcessReadsService(sharedClientOpener(client), {
-        wrap: (reads) => wrap(itemsAtInterface(reads)),
-      }),
+      openServices.use(
+        inProcessReadsService(sharedClientOpener(client), {
+          wrap: (reads) => wrap(itemsAtInterface(reads)),
+        }),
+      ),
       dbState,
     ),
     settings: {
@@ -260,7 +265,11 @@ beforeEach(() => {
   openedModals.length = 0;
   currentScope = scopeOf([PERSONAL_LIBRARY]);
   db = seedDatabase();
-  return () => db.$client.close();
+  openServices = new AsyncDisposableStack();
+  return async () => {
+    await openServices.disposeAsync();
+    db.$client.close();
+  };
 });
 
 /** The libraries (and collection keys) a run's scope read asked for. */

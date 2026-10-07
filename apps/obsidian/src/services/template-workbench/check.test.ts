@@ -108,7 +108,8 @@ async function fixture(
       db: client && {
         acquireRead: async () => ({ client, [Symbol.dispose]() {} }),
       },
-      zoteroReads: client && inProcessReadsService(sharedClientOpener(client)),
+      zoteroReads:
+        client && stack.use(inProcessReadsService(sharedClientOpener(client))),
     } as never,
   );
   const cleanup = stack.move();

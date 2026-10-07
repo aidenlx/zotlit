@@ -16,22 +16,16 @@ import {
   TFolder,
 } from "obsidian";
 import type { App } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildNoteContextFromSource,
   citekeysToCiteTemplateData,
-  fetchNoteSource,
-  getChildNotesByParentIDs,
-  getItemsByID,
-  getItemsByKey,
   itemBaseFields,
-  resolveIndexedKeyLibrary,
   resolveVenue,
 } from "@zotlit/db";
 import type {
   BaseItem,
-  ChildNote,
   Item,
   NoteResolvers,
   NoteTemplateContext,
@@ -100,11 +94,13 @@ import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
-import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
 import {
+  ATTACHMENT_TYPE_ID,
   inProcessReadsService,
   recordCalls,
+  seedWorksSql,
   sharedClientOpener,
+  worksSql,
 } from "@/services/zotero-reads/test-utils";
 
 import type { NoteFeatureDeps } from "./context";
@@ -124,7 +120,8 @@ function createNoteFeature(deps: TestDeps) {
         deps.app.metadataCache,
       ),
   });
-  const know = (item: Item) => void knownItems.set(item.itemID, item);
+  // The caller hands over an Item it read from Zotero, so the database holds it.
+  const know = (item: Item) => seedItem(deps.db.client, item);
   return {
     ...feature,
     createNote: (...args) => {
@@ -138,10 +135,6 @@ function createNoteFeature(deps: TestDeps) {
     prepareBatchCreationProfiles: (...args) => {
       args[0].forEach(know);
       return feature.prepareBatchCreationProfiles(...args);
-    },
-    writeNoteUpdate: (...args) => {
-      know(args[1].item);
-      return feature.writeNoteUpdate(...args);
     },
   } satisfies NoteFeature;
 }
@@ -174,67 +167,15 @@ const blockedAttachmentImport = {
   }),
 };
 
-/**
- * The `NoteSource` read runs in the in-process handlers over a fixture
- * database that holds no Items. It looks its Item up by id among the Items the
- * operation under test named (`knownItems`), and returns that Item with no
- * related rows; each test stubs the pure build instead.
- */
-const { knownItems, knownItemsByID, itemOnlySource } = vi.hoisted(() => {
-  const knownItems = new Map<number, import("@zotlit/db").Item>();
-  return {
-    knownItems,
-    knownItemsByID: (_client: unknown, ids: readonly number[]) =>
-      ids.flatMap((id) => knownItems.get(id) ?? []),
-    itemOnlySource: (
-      _client: unknown,
-      item: import("@zotlit/db").Item,
-    ): import("@zotlit/db").NoteSource => ({
-      item,
-      username: null,
-      attachments: [],
-      annotationsByAttachment: new Map(),
-      tagsByItemID: new Map(),
-      collectionsByItemID: new Map(),
-      relatedItems: [],
-      childNotes: [],
-    }),
-  };
-});
-
+// Every read runs in the in-process handlers over seeded fixture rows. Only
+// the pure build stays a stub: `buildNoteContextFromSource` runs in the
+// consumer, after the read, and each test stubs it to apply the caller's
+// resolvers to a small fixture context, so resolver wiring (notePath /
+// noteLink resolution) is exercised apart from the template data the
+// @zotlit/db suites cover.
 vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();
-  return {
-    ...actual,
-    getItemsByID: vi.fn(knownItemsByID),
-    fetchNoteSource: vi.fn(itemOnlySource),
-    // The mock DB client can't run real queries; stub the caches so the
-    // note-feature flow under test stays DB-free.
-    CollectionCache: class {
-      byItemIDs() {
-        return new Map();
-      }
-    },
-    resolveItemTags: () => [],
-    // The single-item create / update paths resolve the account identity from
-    // the pinned client; stub it so the note-feature flow under test stays
-    // DB-free.
-    getZoteroIdentity: () => ({
-      userID: null,
-      localUserKey: null,
-      username: null,
-    }),
-    // `buildNoteContextFromSource` normally builds the context from the read
-    // bundle; each test stubs it to apply the caller's resolvers to a small
-    // fixture instead, so resolver wiring (notePath / noteLink resolution) is
-    // exercised without a real DB.
-    buildNoteContextFromSource: vi.fn(),
-    // `overwriteNote`'s indexedKey lookup path; stubbed per-test so it doesn't
-    // need a real Zotero item table.
-    resolveIndexedKeyLibrary: vi.fn(),
-    getItemsByKey: vi.fn(),
-    getChildNotesByParentIDs: vi.fn(),
-  };
+  return { ...actual, buildNoteContextFromSource: vi.fn() };
 });
 
 /**
@@ -766,18 +707,12 @@ describe("createNote", () => {
           };
         },
       };
-      cleanup.defer(() => client.$client.close());
+      // The create seeds the Item "Paper" (RTKEY234) itself; its PDF holds an
+      // image and an ink annotation.
       client.$client.exec(`
-        insert into itemTypes (itemTypeID, typeName) values
-          (1, 'journalArticle'), (2, 'attachment'), (4, 'annotation');
-        insert into fieldsCombined (fieldID, fieldName, custom) values
-          (1, 'title', 0), (2, 'citationKey', 0);
-        insert into itemDataValues (valueID, value) values
-          (1, 'Paper'), (2, 'paper2026');
-        insert into itemData (itemID, fieldID, valueID) values (1, 1, 1), (1, 2, 2);
+        insert into itemTypes (itemTypeID, typeName) values (4, 'annotation');
         insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key) values
-          (1, 1, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'RTKEY234'),
-          (90, 2, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'RGRPDF24'),
+          (90, ${ATTACHMENT_TYPE_ID}, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'RGRPDF24'),
           (91, 4, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'FDRFQ7C2'),
           (92, 4, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'TYY6Z6ZF');
         insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path) values
@@ -788,16 +723,10 @@ describe("createNote", () => {
       `);
       const actual =
         await vi.importActual<typeof import("@zotlit/db")>("@zotlit/db");
-      // This case reads the seeded rows for real.
-      vi.mocked(getItemsByID).mockImplementation(actual.getItemsByID);
-      vi.mocked(fetchNoteSource).mockImplementation(actual.fetchNoteSource);
+      // This case builds its template data from the seeded rows for real.
       vi.mocked(buildNoteContextFromSource).mockImplementation(
         actual.buildNoteContextFromSource,
       );
-      cleanup.defer(() => {
-        vi.mocked(getItemsByID).mockImplementation(knownItemsByID);
-        vi.mocked(fetchNoteSource).mockImplementation(itemOnlySource);
-      });
       const app = makeApp();
       app.vault.createFolder = vi.fn(async (path: string) => {
         await mkdir(`${root}/${path}`, { recursive: true });
@@ -1070,18 +999,6 @@ describe("createNote", () => {
         Object.assign(app.metadataCache, {
           getFirstLinkpathDest: (path: string) => makeFile(path),
         });
-        vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-          key: "RTKEY234",
-          libraryID: 1,
-        });
-        vi.mocked(getItemsByKey).mockReturnValue([
-          makeItem({
-            key: "RTKEY234",
-            indexedKey: "RTKEY234",
-            title: "Paper",
-            citationKey: "paper2026",
-          }),
-        ]);
         engine.define(
           "content",
           `<% zt.countRender() %><% for (const a of zt.annotations) { %><%= ${mode === "retain-link" ? "a.imgLink()" : "embed(a.imgLink)"} %>\n<% } %>`,
@@ -1459,7 +1376,7 @@ describe("createNote", () => {
     ]);
     await using zoteroReads = inProcessReadsService(
       sharedClientOpener(db.client),
-      { wrap: (client) => wrap(knowReadItems(client)) },
+      { wrap },
     );
     const deps: TestDeps = {
       app: makeApp(),
@@ -1581,7 +1498,7 @@ describe("createNote", () => {
   });
 
   it("refuses creation after the index settles when the item already has a literature note", async () => {
-    const item = { indexedKey: "RTKEY234" } as Item;
+    const item = makeCreateGateItem();
     const existing = makeFile("Literature/Existing.md");
     const app = makeApp();
     let indexed = false;
@@ -1635,7 +1552,7 @@ describe("createNote", () => {
   });
 
   it("returns a diagnostic that lists every duplicate literature note", async () => {
-    const item = { indexedKey: "RTKEY234" } as Item;
+    const item = makeCreateGateItem();
     const app = makeApp();
     const deps: TestDeps = {
       app,
@@ -2505,11 +2422,6 @@ describe("overwriteNote", () => {
       title: "Root",
       citationKey: null,
     });
-    vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-      key: item.key,
-      libraryID: item.libraryID,
-    });
-    vi.mocked(getItemsByKey).mockReturnValue([item]);
     vi.mocked(buildNoteContextFromSource).mockReturnValue(updateContext());
     const harness = makeUpdateHarness({
       content: "Old body content",
@@ -2521,6 +2433,7 @@ describe("overwriteNote", () => {
         profiles: [{ id: profileId, label: "Books" }],
       },
     });
+    seedItem(harness.deps.db.client, item);
 
     const result = await createNoteFeature(harness.deps).overwriteNote(
       harness.file("Books/Root.md"),
@@ -2541,11 +2454,6 @@ describe("overwriteNote", () => {
       title: "Root",
       citationKey: null,
     });
-    vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-      key: item.key,
-      libraryID: item.libraryID,
-    });
-    vi.mocked(getItemsByKey).mockReturnValue([item]);
     vi.mocked(buildNoteContextFromSource).mockReturnValue(
       updateContext({ indexedKey: "RTKEY234" }),
     );
@@ -2553,6 +2461,7 @@ describe("overwriteNote", () => {
       content: "\n\nOld body content",
       frontmatter: { [FIELD_ZOTERO_KEY]: "RTKEY234" },
     });
+    seedItem(harness.deps.db.client, item);
     harness.deps.template.render = ((name: string) =>
       name === "note"
         ? "New body content"
@@ -2576,11 +2485,6 @@ describe("overwriteNote", () => {
       title: "Root",
       citationKey: null,
     });
-    vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-      key: item.key,
-      libraryID: item.libraryID,
-    });
-    vi.mocked(getItemsByKey).mockReturnValue([item]);
     vi.mocked(buildNoteContextFromSource).mockReturnValue(updateContext());
     const harness = makeUpdateHarness({
       content: "Old body content",
@@ -2589,6 +2493,7 @@ describe("overwriteNote", () => {
         profiles: [{ id: profileId, label: "Books", document: "books.md" }],
       },
     });
+    seedItem(harness.deps.db.client, item);
     harness.deps.template.getLiteratureNoteTemplate = () =>
       makeDocumentTemplate({
         frontmatter: compileDocumentFrontmatter([
@@ -2619,16 +2524,12 @@ describe("overwriteNote", () => {
       title: "Root",
       citationKey: null,
     });
-    vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-      key: item.key,
-      libraryID: item.libraryID,
-    });
-    vi.mocked(getItemsByKey).mockReturnValue([item]);
     vi.mocked(buildNoteContextFromSource).mockReturnValue(
       updateContext({ indexedKey: "RTKEY234" }),
     );
 
     const harness = makeUpdateHarness({ content: "" });
+    seedItem(harness.deps.db.client, item);
     harness.deps.template.render = ((name: string) =>
       name === "note"
         ? "New body content"
@@ -2684,10 +2585,11 @@ function makeUpdateHarness(options: {
 }): UpdateHarness {
   // The note file as the vault holds it: a Properties block, stamped with its
   // Zotero key like any Literature Note, then `options.content` as the body.
-  const text = `---\n${stringifyYaml({
+  const properties = {
     [FIELD_ZOTERO_KEY]: "ABC23456",
     ...options.frontmatter,
-  })}---\n${options.content}`;
+  };
+  const text = `---\n${stringifyYaml(properties)}---\n${options.content}`;
   const host = createObsidianHost();
   const processMock = vi.fn(host.vault.process.bind(host.vault));
   host.vault.process = processMock;
@@ -2744,6 +2646,19 @@ function makeUpdateHarness(options: {
     },
   };
 
+  // Zotero holds the Item the note is stamped with: "A Study" (smith2024).
+  const stamped = properties[FIELD_ZOTERO_KEY];
+  if (typeof stamped === "string")
+    seedItem(
+      deps.db.client,
+      makeItem({
+        key: stamped,
+        indexedKey: stamped,
+        title: "A Study",
+        citationKey: "smith2024",
+      }),
+    );
+
   return {
     deps,
     host,
@@ -2774,20 +2689,8 @@ function updateContext(
   } as unknown as NoteTemplateContext;
 }
 
-/** Point the indexedKey lookup path at a resolvable item returning `context`. */
+/** Build `context` from the Item a note update reads. */
 function stubIndexedKeyUpdate(context: NoteTemplateContext): void {
-  vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-    key: "ABC23456",
-    libraryID: 1,
-  });
-  vi.mocked(getItemsByKey).mockReturnValue([
-    makeItem({
-      key: "ABC23456",
-      indexedKey: "ABC23456",
-      title: "A Study",
-      citationKey: "smith2024",
-    }),
-  ]);
   vi.mocked(buildNoteContextFromSource).mockReturnValue(context);
 }
 
@@ -2799,9 +2702,6 @@ describe("updateNote", () => {
         content: formatManagedRegion("OLD"),
       });
       stubIndexedKeyUpdate(updateContext());
-      using _database = {
-        [Symbol.dispose]: () => harness.deps.db.client.$client.close(),
-      };
       const failed = Promise.withResolvers<void>();
       const finishChild = Promise.withResolvers<void>();
       const copyError = new Error("attachment copy failed");
@@ -2917,6 +2817,16 @@ describe("updateNote", () => {
           title: "Personal title",
         },
       });
+      seedItem(
+        harness.deps.db.client,
+        makeItem({
+          itemID: 2,
+          key: "ABC23456",
+          indexedKey: "ABC23456",
+          title: "A Study",
+          citationKey: "smith2024",
+        }),
+      );
       stubIndexedKeyUpdate(updateContext());
       const result = await createNoteFeature(harness.deps).updateNote(
         harness.file("Literature/Original.md"),
@@ -3940,12 +3850,12 @@ describe("updateNote", () => {
     const first = makeFile("Imported/First.md");
     const second = makeFile("Imported/Second.md");
     stubIndexedKeyUpdate(updateContext());
-    vi.mocked(getChildNotesByParentIDs).mockReturnValueOnce([
-      childNote("NTEB2345"),
-      childNote("NTEC2345"),
-      childNote("NTEGNE23"),
-    ]);
     const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
+    seedChildNotes(harness.deps.db.client, 1, [
+      "NTEB2345",
+      "NTEC2345",
+      "NTEGNE23",
+    ]);
     harness.deps.noteIndex.getImportedNoteByNoteKey = (key) =>
       key === "NTEB2345" ? [first] : key === "NTEC2345" ? [second] : [];
 
@@ -3959,10 +3869,6 @@ describe("updateNote", () => {
     const papers = "Rz9Wm4YfH6Kd" as ProfileId;
     const imported = makeFile("Imported/First.md");
     stubIndexedKeyUpdate(updateContext());
-    vi.mocked(getChildNotesByParentIDs).mockReturnValueOnce([
-      childNote("NTEB2345"),
-      childNote("NTEGNE23"),
-    ]);
     const harness = makeUpdateHarness({
       content: "My content",
       frontmatter: {
@@ -3987,6 +3893,7 @@ describe("updateNote", () => {
         ],
       },
     });
+    seedChildNotes(harness.deps.db.client, 1, ["NTEB2345", "NTEGNE23"]);
     harness.deps.noteIndex.getImportedNoteByNoteKey = (key) =>
       key === "NTEB2345" ? [imported] : [];
     const plan = await createNoteFeature(harness.deps).prepareProfileSwitch(
@@ -4025,7 +3932,7 @@ describe("updateNote", () => {
         settings: { profiles: [{ id: target, label: "Papers" }] },
       });
       if (failure === "missing item")
-        vi.mocked(getItemsByKey).mockReturnValueOnce([]);
+        forgetItem(harness.deps.db.client, "ABCD2345");
       else
         harness.deps.zoteroReads.acquireRead = async () => {
           throw new Error("Database unavailable");
@@ -4635,7 +4542,6 @@ describe("updateNote", () => {
   });
 
   it("rejects without touching the file when the indexed key resolves to no item", async () => {
-    vi.mocked(resolveIndexedKeyLibrary).mockReturnValue(null);
     const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
 
     await expect(
@@ -4649,8 +4555,19 @@ describe("updateNote", () => {
 });
 
 // The batch's reads for `writeNoteUpdate`: an unbound interface over its own
-// fixture database.
-const { reads } = await makeDbDeps().zoteroReads.ready;
+// fixture database, which holds the Item the batch hands over.
+const writeFixture = openDbDeps();
+afterAll(() => writeFixture.dispose());
+seedItem(
+  writeFixture.db.client,
+  makeItem({
+    key: "ABC23456",
+    indexedKey: "ABC23456",
+    title: "A Study",
+    citationKey: "smith2024",
+  }),
+);
+const { reads } = await writeFixture.zoteroReads.ready;
 
 describe("writeNoteUpdate", () => {
   const writeOptions = (
@@ -5175,46 +5092,101 @@ function compileDocumentFrontmatter(
   });
 }
 
-/** Record the Items a read returns, so a later `NoteSource` read finds them. */
-function knowReadItems(client: ZoteroReadsClient): ZoteroReadsClient {
-  return {
-    ...client,
-    ItemsByIndexedKeys: ((payload: object, options?: object) =>
-      (
-        client.ItemsByIndexedKeys as unknown as (
-          payload: object,
-          options?: object,
-        ) => Effect.Effect<ReadonlyMap<string, Item>>
-      )(payload, options).pipe(
-        Effect.tap((items) =>
-          Effect.sync(() => {
-            for (const item of items.values())
-              knownItems.set(item.itemID, item);
-          }),
-        ),
-      )) as unknown as ZoteroReadsClient["ItemsByIndexedKeys"],
-  };
-}
+/** The fixture databases and services the current case opened. */
+const openFixtures: { dispose: () => Promise<void> }[] = [];
+afterEach(async () => {
+  for (const fixture of openFixtures.splice(0).reverse())
+    await fixture.dispose();
+});
 
-/** A fixture database and the ZoteroReads service over the same client. */
-function makeDbDeps() {
+/**
+ * A fixture database and the ZoteroReads service over the same client, with
+ * the disposal that closes both.
+ */
+function openDbDeps() {
   const db = makeDb();
+  const zoteroReads = inProcessReadsService(sharedClientOpener(db.client));
   return {
     db,
-    zoteroReads: inProcessReadsService(sharedClientOpener(db.client), {
-      wrap: knowReadItems,
-    }),
+    zoteroReads,
+    async dispose() {
+      await zoteroReads[Symbol.asyncDispose]();
+      db.client.$client.close();
+    },
   };
 }
 
+/** {@link openDbDeps} for one case: both close after it. */
+function makeDbDeps() {
+  const fixture = openDbDeps();
+  openFixtures.push(fixture);
+  return { db: fixture.db, zoteroReads: fixture.zoteroReads };
+}
+
+/**
+ * A fixture database holding My Library (1) and the group library 2 of group
+ * 118, with no Items and no memberships.
+ */
 function makeDb(): TestDeps["db"] {
   const client = createClient(":memory:");
-  // Known Libraries with no memberships.
   createFixtureSchema(client.$client);
-  client.$client.exec(
-    "insert into libraries (libraryID, type) values (1, 'user'), (2, 'group'); insert into groups (groupID, libraryID, name) values (118, 2, 'Team');",
-  );
+  client.$client.exec(`
+    ${seedWorksSql([])}
+    insert into libraries (libraryID, type) values (2, 'group');
+    insert into groups (groupID, libraryID, name) values (118, 2, 'Team');
+  `);
   return { client };
+}
+
+/**
+ * Write `item` into the fixture database as a regular Item with its title and
+ * citation key. It replaces any Item that holds the same id, or the same key
+ * in the same library.
+ */
+function seedItem(client: NodeDatabaseClient, item: Item): void {
+  const fields = item.fields as unknown as Record<string, string | null>;
+  const held = `select itemID from items where itemID = ${item.itemID} or (libraryID = ${item.libraryID} and key = '${item.key}')`;
+  client.$client.exec(`
+    delete from itemDataValues where valueID in (select valueID from itemData where itemID in (${held}));
+    delete from itemData where itemID in (${held});
+    delete from items where itemID in (${held});
+    ${worksSql([
+      {
+        itemID: item.itemID,
+        key: item.key,
+        libraryID: item.libraryID,
+        title: fields.title ?? undefined,
+        citationKey: fields.citationKey ?? undefined,
+      },
+    ])}
+  `);
+}
+
+/** Remove the Item `key` of My Library from the fixture database. */
+function forgetItem(client: NodeDatabaseClient, key: string): void {
+  client.$client.exec(
+    `delete from items where libraryID = 1 and key = '${key}';`,
+  );
+}
+
+/** Child Notes of Item `parentItemID`, one per key, in key order. */
+function seedChildNotes(
+  client: NodeDatabaseClient,
+  parentItemID: number,
+  keys: readonly string[],
+): void {
+  client.$client.exec(`
+    insert into itemTypes (itemTypeID, typeName) values (98, 'note');
+    ${keys
+      .map(
+        (key, index) => `
+          insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+            values (${50 + index}, 98, '2024-01-15 10:00:00', '2024-01-15 10:00:00', 1, '${key}');
+          insert into itemNotes (itemID, parentItemID, note, title)
+            values (${50 + index}, ${parentItemID}, '<p>Note</p>', null);`,
+      )
+      .join("\n")}
+  `);
 }
 
 function makeSettings(
@@ -5365,20 +5337,6 @@ function makeItem(
     fields,
     baseFields,
     venue: resolveVenue(baseFields),
-  };
-}
-
-/** A Child Note row of item 1, named by its Indexed Key. */
-function childNote(indexedKey: string): ChildNote {
-  return {
-    groupID: null,
-    itemID: 50,
-    libraryID: 1,
-    key: indexedKey,
-    indexedKey,
-    parentItemID: 1,
-    title: null,
-    dateModified: Temporal.Instant.from("2024-01-15T10:00:00Z"),
   };
 }
 
