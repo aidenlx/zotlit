@@ -76,6 +76,7 @@ import { WikilinkReading } from "./wikilink-reading/service";
 import { ZoteroLocalApiClient } from "./zotero-local-api/service";
 import { SecretWriteAuthorizationStore } from "./zotero-local-api/write-authorization";
 import { ZoteroPrefService } from "./zotero-pref/service";
+import { ZoteroReadsWorker } from "./zotero-reads/worker-service";
 
 /**
  * Construct and wire all Obsidian plugin services.
@@ -152,6 +153,10 @@ export function buildServices(
     .use({
       db: ({ settings, zoteroPref }) =>
         new DatabaseService({ settings, zoteroPref }),
+    })
+    .use({
+      zoteroReadsWorker: ({ settings, zoteroPref }) =>
+        new ZoteroReadsWorker({ settings, zoteroPref, storage: plugin.app }),
     })
     .use({
       excerptImage: () =>
