@@ -1,3 +1,4 @@
+// An in-memory ItemSource with the controls an Item Index test drives.
 import { Effect, Latch, Layer, PubSub, Stream } from "effect";
 
 import type { IndexedItem, IndexSignature } from "@zotlit/db";

@@ -4,6 +4,7 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
+import type { BinaryPin } from "../src/services/managed-binary/service.ts";
 import { readVerifiedPin, sha256Hex, writeVerifiedPin } from "./binary-pin.ts";
 
 const packageRoot = resolve(import.meta.dirname, "..");
@@ -19,20 +20,6 @@ const BINARY_PATH = "pkg/web/jieba_rs_wasm_bg.wasm";
  * npm tarball holds, as jsDelivr serves it: the bare `.wasm`, no archive.
  */
 const CDN_ROOT = "https://cdn.jsdelivr.net/npm/jieba-wasm";
-
-/**
- * The segmenter download a build commits to. The plugin never ships the
- * binary; it downloads {@link url} at runtime and admits it only once it
- * hashes to {@link sha256}.
- */
-export interface ChineseSegmenterPin {
-  /** Installed `jieba-wasm` version, e.g. `2.4.0`. */
-  version: string;
-  /** Exact URL of the web-target `jieba_rs_wasm_bg.wasm` for that version. */
-  url: string;
-  /** Lowercase hex SHA-256 of that `.wasm` file. */
-  sha256: string;
-}
 
 export interface ResolveChineseSegmenterPinOptions {
   /**
@@ -60,7 +47,7 @@ export interface ResolveChineseSegmenterPinOptions {
  */
 export async function resolveChineseSegmenterPin(
   options: ResolveChineseSegmenterPinOptions = {},
-): Promise<ChineseSegmenterPin> {
+): Promise<BinaryPin> {
   const {
     packageDir = join(packageRoot, "node_modules", "jieba-wasm"),
     cachePath = join(
@@ -78,7 +65,7 @@ export async function resolveChineseSegmenterPin(
   ) as { version: string };
   const sha256 = sha256Hex(await readFile(join(packageDir, BINARY_PATH)));
 
-  const cached = await readVerifiedPin<ChineseSegmenterPin>(cachePath, {
+  const cached = await readVerifiedPin<BinaryPin>(cachePath, {
     version,
     sha256,
   });
@@ -98,7 +85,7 @@ export async function resolveChineseSegmenterPin(
     );
   }
 
-  const pin: ChineseSegmenterPin = { version, url, sha256 };
+  const pin: BinaryPin = { version, url, sha256 };
   await writeVerifiedPin(cachePath, pin);
   return pin;
 }

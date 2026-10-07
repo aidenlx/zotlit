@@ -44,6 +44,18 @@ export class Connection extends Context.Service<
   }
 >()("zotlit/zotero-reads/Connection") {}
 
+/** The database file each client opened from, for `Connection.databaseFile`. */
+export function makeDatabaseFiles() {
+  const files = new WeakMap<NodeDatabaseClient, string | null>();
+  return {
+    record: (client: NodeDatabaseClient, file: string | null): void => {
+      files.set(client, file);
+    },
+    databaseFile: (client: NodeDatabaseClient): string | null =>
+      files.get(client) ?? null,
+  };
+}
+
 /**
  * Opens a client for the configured source. Throws when the source cannot
  * open; the provider then validates the client before it serves.
@@ -162,12 +174,12 @@ export function layerRcRef(opener: ConnectionOpener): Layer.Layer<Connection> {
       let config: ReadsConfig | null = null;
       let state: "loading" | "ready" | "degraded" = "loading";
       let lastError: DbUnavailable | null = null;
-      const databaseFiles = new WeakMap<NodeDatabaseClient, string | null>();
+      const databaseFiles = makeDatabaseFiles();
       /** Open and validate a client, recording the file it opened from. */
       const openRecorded = Effect.suspend(() => {
         const opened = config?.databasePath ?? null;
         return Effect.tap(openValidated(opener, config), (client) =>
-          Effect.sync(() => databaseFiles.set(client, opened)),
+          Effect.sync(() => databaseFiles.record(client, opened)),
         );
       });
       const { publish, changes } = yield* makeChangeFeed(() => [
@@ -225,7 +237,7 @@ export function layerRcRef(opener: ConnectionOpener): Layer.Layer<Connection> {
             config = next;
             return Effect.ignore(refresh);
           }),
-        databaseFile: (client) => databaseFiles.get(client) ?? null,
+        databaseFile: databaseFiles.databaseFile,
       });
     }),
   );

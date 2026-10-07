@@ -5,6 +5,7 @@ import { unzipSync } from "fflate";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
+import type { BinaryPin } from "../src/services/managed-binary/service.ts";
 import { readVerifiedPin, sha256Hex, writeVerifiedPin } from "./binary-pin.ts";
 
 const packageRoot = resolve(import.meta.dirname, "..");
@@ -12,20 +13,6 @@ const packageRoot = resolve(import.meta.dirname, "..");
 /** Name the official WASM asset carries the binary under, inside its archive. */
 const BINARY_ENTRY = "pandoc.wasm";
 const RELEASE_API = "https://api.github.com/repos/jgm/pandoc/releases/tags";
-
-/**
- * The engine download a build commits to. The plugin never ships the binary; it
- * downloads {@link url} at runtime and admits it only once it hashes to
- * {@link sha256}.
- */
-export interface PandocEnginePin {
-  /** Upstream Pandoc release tag, e.g. `3.10`. */
-  version: string;
-  /** Exact `jgm/pandoc` release asset carrying the WASM binary. */
-  url: string;
-  /** Lowercase hex SHA-256 of the uncompressed `pandoc.wasm` inside that asset. */
-  sha256: string;
-}
 
 export interface ResolvePandocEnginePinOptions {
   /**
@@ -62,7 +49,7 @@ interface ReleaseAsset {
  */
 export async function resolvePandocEnginePin(
   options: ResolvePandocEnginePinOptions = {},
-): Promise<PandocEnginePin> {
+): Promise<BinaryPin> {
   const {
     packageDir = join(packageRoot, "node_modules", "pandoc-wasm"),
     cachePath = join(
@@ -82,7 +69,7 @@ export async function resolvePandocEnginePin(
     await readFile(join(packageDir, "src", BINARY_ENTRY)),
   );
 
-  const cached = await readVerifiedPin<PandocEnginePin>(cachePath, {
+  const cached = await readVerifiedPin<BinaryPin>(cachePath, {
     version,
     sha256,
   });
@@ -91,7 +78,7 @@ export async function resolvePandocEnginePin(
   const asset = selectBinaryAsset(await fetchReleaseAssets(fetch, version));
   await verifyAsset(fetch, asset, sha256);
 
-  const pin: PandocEnginePin = {
+  const pin: BinaryPin = {
     version,
     url: asset.browser_download_url,
     sha256,

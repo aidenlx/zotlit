@@ -4,7 +4,6 @@ import type { LanguagePackLifecycle } from "@/lib/i18n";
 import type { CapabilityNotices } from "@/services/annotation-repository/notices";
 import type { AnnotationRepository } from "@/services/annotation-repository/service";
 import type { AttachmentImportService } from "@/services/attachment-import/service";
-import type { ChineseSegmenterService } from "@/services/chinese-segmenter/service";
 import type { CitationIndex } from "@/services/citation-index/service";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import type { ExcerptImageService } from "@/services/excerpt-image/service";
@@ -12,7 +11,7 @@ import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import type { LocalBridgeService } from "@/services/local-bridge/service";
 import type { LocalServerService } from "@/services/local-server/service";
-import type { PandocEngineService } from "@/services/pandoc/service";
+import type { ManagedBinaryService } from "@/services/managed-binary/service";
 import type { ProfileService } from "@/services/profile/service";
 import type { ReleaseService } from "@/services/release/service";
 import type { Settings } from "@/services/settings/schema";
@@ -36,15 +35,9 @@ export type ReleaseTabActions = Pick<
   "openReleaseNote" | "acknowledgeMigration"
 >;
 
-/** The Pandoc engine surface the setting tab needs: report, watch, and move its status. */
-export type PandocEngineActions = Pick<
-  PandocEngineService,
-  "getStatus" | "subscribe" | "install" | "uninstall"
->;
-
-/** The Chinese Segmenter surface the setting tab needs: report, watch, and move its status. */
-export type ChineseSegmenterActions = Pick<
-  ChineseSegmenterService,
+/** The Managed Binary surface the setting tab needs: report, watch, and move its status. */
+export type ManagedBinaryActions = Pick<
+  ManagedBinaryService,
   "getStatus" | "subscribe" | "install" | "uninstall"
 >;
 
@@ -138,9 +131,9 @@ export interface SettingTabContext {
    */
   template: TemplateService;
   /** The device-wide Pandoc engine binary, installed and uninstalled from here. */
-  pandocEngine: PandocEngineActions;
+  pandocEngine: ManagedBinaryActions;
   /** The device-wide Chinese Segmenter binary, installed and uninstalled from here. */
-  chineseSegmenter: ChineseSegmenterActions;
+  chineseSegmenter: ManagedBinaryActions;
   languagePack: LanguagePackLifecycle;
   /** Rebuild the tab's definitions (e.g. after a list mutation or eject). */
   requestUpdate: () => void;

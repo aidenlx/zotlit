@@ -1,3 +1,4 @@
+// The renderer's Item search facade over the ZoteroReads SearchItems operation.
 /**
  * The renderer's Item search: a thin facade over the ZoteroReads `SearchItems`
  * operation. The worker owns the Item Index (building, refresh, scope

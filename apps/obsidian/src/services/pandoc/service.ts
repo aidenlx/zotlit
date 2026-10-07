@@ -8,17 +8,14 @@ import {
   obsidianBinaryPorts,
 } from "@/services/managed-binary/service";
 import type {
-  BinaryStore,
   ManagedBinary,
   ManagedBinaryFailure,
-  ManagedBinaryPorts,
   ManagedBinaryStatus,
 } from "@/services/managed-binary/service";
 
 import { createCitationEngine } from "./engine";
 import type { CitationEngine } from "./engine";
 import { PINNED_PANDOC_ENGINE } from "./pinned-engine";
-import type { PinnedPandocEngine } from "./pinned-engine";
 
 /** Name the official WASM asset carries the binary under, inside its archive. */
 const BINARY_ENTRY = "pandoc.wasm";
@@ -39,42 +36,11 @@ export const PANDOC_ENGINE: ManagedBinary<CitationEngine> = {
   createEngine: createCitationEngine,
 };
 
-export interface PandocEnginePorts extends Omit<
-  ManagedBinaryPorts,
-  "openStore"
-> {
-  /** The device-wide binary cache. */
-  store: BinaryStore;
-  /** @default PINNED_PANDOC_ENGINE */
-  pin?: PinnedPandocEngine;
-  /** @default createCitationEngine */
-  createEngine?: (binary: Blob) => Promise<CitationEngine>;
-}
-
-/** Owns the Pandoc engine binary and the engine instantiated from it. */
-export class PandocEngineService extends ManagedBinaryService<CitationEngine> {
-  constructor({
-    store,
-    download,
-    consent,
-    pin = PANDOC_ENGINE.pin,
-    createEngine = PANDOC_ENGINE.createEngine,
-  }: PandocEnginePorts) {
-    super(
-      { ...PANDOC_ENGINE, pin, createEngine },
-      { openStore: () => store, download, consent },
-    );
-  }
-}
+export type PandocEngineService = ManagedBinaryService<CitationEngine>;
 
 /** The service over Obsidian's own ports: `requestUrl` and the origin's OPFS. */
 export function createPandocEngineService(app: App): PandocEngineService {
-  const { openStore, download, consent } = obsidianBinaryPorts(app);
-  return new PandocEngineService({
-    store: openStore(PANDOC_ENGINE.id),
-    download,
-    consent,
-  });
+  return new ManagedBinaryService(PANDOC_ENGINE, obsidianBinaryPorts(app));
 }
 
 /** The official asset nests the binary under a release-named directory. */

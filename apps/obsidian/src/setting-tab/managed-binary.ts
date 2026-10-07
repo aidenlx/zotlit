@@ -5,17 +5,10 @@ import type { Setting, SettingDefinition } from "obsidian";
 import * as toast from "@/lib/toast";
 import type {
   ManagedBinaryFailure,
-  ManagedBinaryService,
   ManagedBinaryStatus,
 } from "@/services/managed-binary/service";
 
-import type { SettingsKey } from "./context";
-
-/** The binary surface a row needs: report its status and move it. */
-export type ManagedBinaryActions = Pick<
-  ManagedBinaryService<AsyncDisposable>,
-  "getStatus" | "install" | "uninstall"
->;
+import type { ManagedBinaryActions, SettingsKey } from "./context";
 
 /** The words one binary's row carries, already in the user's language. */
 export interface ManagedBinaryCopy {

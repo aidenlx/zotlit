@@ -1,4 +1,4 @@
-import { getLogger } from "@logtape/logtape";
+// The Item Index: item search over the Libraries a caller names, built from an ItemSource.
 /**
  * The Item Index: one search index per Library list, built from an
  * {@link ItemSource} and kept fresh by its generation stream.
@@ -21,6 +21,7 @@ import { getLogger } from "@logtape/logtape";
  * - A locale or Segmenter change in {@link IndexConfig} rebuilds every held
  *   list.
  */
+import { getLogger } from "@logtape/logtape";
 import {
   Cause,
   Context,
@@ -290,7 +291,7 @@ export const layerItemIndex: Layer.Layer<
       Effect.suspend(() => {
         const replaced = entry.built?.binding;
         entry.built = built;
-        return replaced === built.binding ? Effect.void : retire(replaced);
+        return retire(replaced);
       });
 
     /** Drop the entry's index and retire its binding. */
@@ -404,7 +405,7 @@ export const layerItemIndex: Layer.Layer<
           config: version,
           binding,
         });
-        logger.info("Item index built", {
+        logger.debug("Item index built", {
           libraries: entry.libraries,
           count: engine.size,
           durationMs: performance.now() - startedAt,

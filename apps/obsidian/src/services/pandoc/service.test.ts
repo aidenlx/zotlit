@@ -2,11 +2,15 @@ import { zipSync } from "fflate";
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
-import type { BinaryStore } from "@/services/managed-binary/service";
+import { ManagedBinaryService } from "@/services/managed-binary/service";
+import type {
+  BinaryPin,
+  BinaryStore,
+  ManagedBinaryPorts,
+} from "@/services/managed-binary/service";
 
 import type { CitationEngine, PreparedDocument } from "./engine";
-import { PandocEngineService } from "./service";
-import type { PandocEnginePorts } from "./service";
+import { PANDOC_ENGINE } from "./service";
 
 /** Node's own typings hand back `ArrayBufferLike` views; the ports take `ArrayBuffer` ones. */
 function bytes(source: Uint8Array): Uint8Array<ArrayBuffer> {
@@ -64,7 +68,7 @@ function memoryStore(initial: BinaryFiles = {}): MemoryStore {
   };
 }
 
-type MemoryConsent = PandocEnginePorts["consent"];
+type MemoryConsent = ManagedBinaryPorts["consent"];
 
 function memoryConsent(): MemoryConsent {
   const values = new Map<string, unknown>();
@@ -100,7 +104,7 @@ function fakeEngine(dispose = vi.fn()): CitationEngine {
 interface HarnessOptions {
   files?: BinaryFiles;
   consent?: MemoryConsent;
-  pin?: PandocEnginePorts["pin"];
+  pin?: BinaryPin;
   /** The store comes along, so a download can act out what another vault does meanwhile. */
   download?: (
     url: string,
@@ -117,13 +121,10 @@ function harness(options: HarnessOptions = {}) {
   const createEngine = vi.fn(
     options.createEngine ?? (() => Promise.resolve(fakeEngine())),
   );
-  const service = new PandocEngineService({
-    store,
-    consent,
-    download,
-    createEngine,
-    pin: options.pin ?? PIN,
-  });
+  const service = new ManagedBinaryService(
+    { ...PANDOC_ENGINE, pin: options.pin ?? PIN, createEngine },
+    { openStore: () => store, consent, download },
+  );
   return { service, store, consent, download, createEngine };
 }
 
