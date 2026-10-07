@@ -288,7 +288,7 @@ describe("Companion note target", () => {
       const file = harness.file("Paper.md");
       harness.deps.noteIndex.getNotesByItemKey = () => [file];
       await expect(
-        createNoteFeature(harness.deps).resolveCompanionNote("ABC12345", {
+        createNoteFeature(harness.deps).resolveCompanionNote("ABC23456", {
           profile,
         }),
       ).resolves.toMatchObject({
@@ -317,7 +317,7 @@ describe("Companion note target", () => {
     const feature = createNoteFeature(harness.deps);
     for (const profile of [undefined, books]) {
       await expect(
-        feature.resolveCompanionNote("ABC12345", { profile }),
+        feature.resolveCompanionNote("ABC23456", { profile }),
       ).resolves.toEqual({
         outcome: "existing",
         files: [file, duplicate],
@@ -329,7 +329,7 @@ describe("Companion note target", () => {
   it("offers creation only when there is no existing note and the requested Profile resolves", async () => {
     const { deps } = makeUpdateHarness({ content: "" });
     await expect(
-      createNoteFeature(deps).resolveCompanionNote("ABC12345", {
+      createNoteFeature(deps).resolveCompanionNote("ABC23456", {
         profile: "default",
       }),
     ).resolves.toEqual({ outcome: "create" });
@@ -346,7 +346,7 @@ describe("Companion note target", () => {
       harness.deps.noteIndex.getNotesByItemKey = () =>
         existing ? [harness.file("Paper.md")] : [];
       await expect(
-        createNoteFeature(harness.deps).resolveCompanionNote("ABC12345", {
+        createNoteFeature(harness.deps).resolveCompanionNote("ABC23456", {
           profile: missing,
         }),
       ).resolves.toMatchObject({
@@ -354,7 +354,7 @@ describe("Companion note target", () => {
         diagnostic: {
           code: "unknown-literature-note-profile",
           stamp: missing,
-          indexedKey: "ABC12345",
+          indexedKey: "ABC23456",
         },
       });
       expect(harness.processMock).not.toHaveBeenCalled();
@@ -379,7 +379,7 @@ describe("Companion note target", () => {
     const feature = createNoteFeature(harness.deps);
 
     await expect(
-      feature.resolveCompanionNote("ABC12345", { profile: papers }),
+      feature.resolveCompanionNote("ABC23456", { profile: papers }),
     ).resolves.toEqual({
       outcome: "existing",
       files: [file],
@@ -487,7 +487,7 @@ describe("Profile source selection", () => {
     });
     expect(preview.path).not.toBe("Reading/Paper.md");
     expect(preview.properties).toEqual({
-      "zotero-key": "ABC12345",
+      "zotero-key": "ABC23456",
       "zotlit-profile": "Reading (Bk3Qn7XvT2Lp)",
       topic: "Research",
     });
@@ -776,7 +776,7 @@ describe("createNote", () => {
           (1, 'Paper'), (2, 'paper2026');
         insert into itemData (itemID, fieldID, valueID) values (1, 1, 1), (1, 2, 2);
         insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key) values
-          (1, 1, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'ROOT1234'),
+          (1, 1, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'RTKEY234'),
           (90, 2, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'RGRPDF24'),
           (91, 4, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'FDRFQ7C2'),
           (92, 4, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'TYY6Z6ZF');
@@ -895,8 +895,8 @@ describe("createNote", () => {
       feature.on("excerpt-images-reported", (summary) => notices.push(summary));
       const result = await feature.createNote(
         makeItem({
-          key: "ROOT1234",
-          indexedKey: "ROOT1234",
+          key: "RTKEY234",
+          indexedKey: "RTKEY234",
           title: "Paper",
           citationKey: "paper2026",
         }),
@@ -1031,7 +1031,7 @@ describe("createNote", () => {
       ) {
         const file = app.host.file("Literature/Paper.md");
         const priorAssets = await readdir(`${root}/Images`);
-        const properties = "---\nzotero-key: ROOT1234\n---\n";
+        const properties = "---\nzotero-key: RTKEY234\n---\n";
         const body = `User introduction\n${formatManagedRegion(markdown)}\nUser conclusion`;
         const original = `${properties}${body}`;
         let current =
@@ -1071,13 +1071,13 @@ describe("createNote", () => {
           getFirstLinkpathDest: (path: string) => makeFile(path),
         });
         vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-          key: "ROOT1234",
+          key: "RTKEY234",
           libraryID: 1,
         });
         vi.mocked(getItemsByKey).mockReturnValue([
           makeItem({
-            key: "ROOT1234",
-            indexedKey: "ROOT1234",
+            key: "RTKEY234",
+            indexedKey: "RTKEY234",
             title: "Paper",
             citationKey: "paper2026",
           }),
@@ -1131,8 +1131,8 @@ describe("createNote", () => {
             },
           });
         leaseReleased = false;
-        if (mode === "overwrite") await feature.overwriteNote(file, "ROOT1234");
-        else await feature.updateNote(file, { indexedKey: "ROOT1234" });
+        if (mode === "overwrite") await feature.overwriteNote(file, "RTKEY234");
+        else await feature.updateNote(file, { indexedKey: "RTKEY234" });
         current = app.host.text(file.path)!;
         expect(runs).toBe(2);
         expect(await readFile(otherNote, "utf8")).toBe(original);
@@ -1174,29 +1174,29 @@ describe("createNote", () => {
   it("resolves note helpers by item key, then filename fallback", async () => {
     const root = makeItem({
       itemID: 1,
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
+      key: "RTKEY234",
+      indexedKey: "RTKEY234",
       title: "Root",
       citationKey: "root2024",
     });
     const byItemKey = makeItem({
       itemID: 2,
-      key: "RELKEY01",
-      indexedKey: "RELKEY01",
+      key: "RELKEY23",
+      indexedKey: "RELKEY23",
       title: "B Related",
       citationKey: "relkey2024",
     });
     const byCitekey = makeItem({
       itemID: 3,
-      key: "RELCITE1",
-      indexedKey: "RELCITE1",
+      key: "RELCITE2",
+      indexedKey: "RELCITE2",
       title: "C Related",
       citationKey: "relcite2024",
     });
     const fallback = makeItem({
       itemID: 4,
-      key: "RELFALL1",
-      indexedKey: "RELFALL1",
+      key: "RELFALL2",
+      indexedKey: "RELFALL2",
       title: "A Related",
       citationKey: "relfallback2024",
     });
@@ -1282,8 +1282,8 @@ describe("createNote", () => {
   it("feeds the filename template the same item-own shape in creation and synthetic fallback", async () => {
     const root = makeItem({
       itemID: 1,
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
+      key: "RTKEY234",
+      indexedKey: "RTKEY234",
       title: "Root",
       citationKey: null,
     });
@@ -1291,8 +1291,8 @@ describe("createNote", () => {
     // miss and resolution falls through to the synthetic fallback.
     const related = makeItem({
       itemID: 2,
-      key: "RELFALL1",
-      indexedKey: "RELFALL1",
+      key: "RELFALL2",
+      indexedKey: "RELFALL2",
       title: "Related",
       citationKey: null,
     });
@@ -1377,8 +1377,8 @@ describe("createNote", () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const item = makeItem({
       itemID: 1,
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
+      key: "RTKEY234",
+      indexedKey: "RTKEY234",
       title: "Root",
       citationKey: null,
     });
@@ -1486,7 +1486,7 @@ describe("createNote", () => {
           }),
           flush: async () => {
             await Effect.runPromise(
-              reads.NoteBodies({ libraryID: 1, keys: ["NOTE1234"] }),
+              reads.NoteBodies({ libraryID: 1, keys: ["NTED2345"] }),
             );
             return { created: 0, skipped: 0, failed: 0 };
           },
@@ -1513,8 +1513,8 @@ describe("createNote", () => {
     // stronger gate that actually waits for the scan.
     const item = makeItem({
       itemID: 1,
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
+      key: "RTKEY234",
+      indexedKey: "RTKEY234",
       title: "Root",
       citationKey: null,
     });
@@ -1581,7 +1581,7 @@ describe("createNote", () => {
   });
 
   it("refuses creation after the index settles when the item already has a literature note", async () => {
-    const item = { indexedKey: "ROOT1234" } as Item;
+    const item = { indexedKey: "RTKEY234" } as Item;
     const existing = makeFile("Literature/Existing.md");
     const app = makeApp();
     let indexed = false;
@@ -1626,7 +1626,7 @@ describe("createNote", () => {
       diagnostic: {
         code: "literature-note-exists",
         hint: "Open the existing Literature Note instead of creating another.",
-        indexedKey: "ROOT1234",
+        indexedKey: "RTKEY234",
         paths: ["Literature/Existing.md"],
       },
     });
@@ -1635,7 +1635,7 @@ describe("createNote", () => {
   });
 
   it("returns a diagnostic that lists every duplicate literature note", async () => {
-    const item = { indexedKey: "ROOT1234" } as Item;
+    const item = { indexedKey: "RTKEY234" } as Item;
     const app = makeApp();
     const deps: TestDeps = {
       app,
@@ -1674,7 +1674,7 @@ describe("createNote", () => {
       diagnostic: {
         code: "duplicate-literature-notes",
         hint: "Resolve the duplicate Literature Notes, then run create again.",
-        indexedKey: "ROOT1234",
+        indexedKey: "RTKEY234",
         paths: ["Literature/Newer.md", "Archive/Older.md"],
       },
     });
@@ -1732,7 +1732,7 @@ describe("createNote", () => {
       diagnostic: {
         code: "literature-note-exists",
         hint: "Open the existing Literature Note instead of creating another.",
-        indexedKey: "ROOT1234",
+        indexedKey: "RTKEY234",
         paths: ["Literature/Root.md"],
       },
     });
@@ -1882,8 +1882,8 @@ describe("createNote", () => {
       // Protocol-driven creation waits for both document compilation and Profile discovery.
       const item = makeItem({
         itemID: 1,
-        key: "ROOT1234",
-        indexedKey: "ROOT1234",
+        key: "RTKEY234",
+        indexedKey: "RTKEY234",
         title: "Root",
         citationKey: null,
       });
@@ -1956,8 +1956,8 @@ describe("createNote", () => {
   it("creates under an explicit Profile with its folder, stamp, and citation style", async () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const item = makeItem({
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
+      key: "RTKEY234",
+      indexedKey: "RTKEY234",
       title: "Root",
       citationKey: "root2024",
     });
@@ -2076,7 +2076,7 @@ describe("createNote", () => {
         code: "literature-note-template-conversion-required",
         hint: expect.stringContaining("Convert"),
         profileId,
-        indexedKey: "ROOT1234",
+        indexedKey: "RTKEY234",
       },
     });
     expect(app.vault.create).not.toHaveBeenCalled();
@@ -2201,7 +2201,7 @@ describe("createNote", () => {
     expect(content.indexOf("__proto__: safe")).toBeLessThan(
       content.indexOf('"1": one'),
     );
-    expect(content).toContain(`${FIELD_ZOTERO_KEY}: ROOT1234`);
+    expect(content).toContain(`${FIELD_ZOTERO_KEY}: RTKEY234`);
     expect(content).toContain(
       `${FIELD_LITERATURE_NOTE_PROFILE}: Books (Bk3Qn7XvT2Lp)`,
     );
@@ -2370,7 +2370,7 @@ describe("createNote", () => {
         code: "missing-literature-note-template",
         hint: expect.stringContaining("Restore"),
         document: "missing.md",
-        indexedKey: "ROOT1234",
+        indexedKey: "RTKEY234",
       },
     });
     expect(app.vault.create).not.toHaveBeenCalled();
@@ -2416,7 +2416,7 @@ describe("createNote", () => {
       diagnostic: {
         code: "literature-note-profile-conflict",
         hint: expect.stringContaining("Keep"),
-        indexedKey: "ROOT1234",
+        indexedKey: "RTKEY234",
         path: "Books/Root.md",
         existingProfile: existingProfileId,
         requestedProfile: requestedProfileId,
@@ -2427,8 +2427,8 @@ describe("createNote", () => {
   it("runs the created note and its Child Note import under one outcome scope", async () => {
     const root = makeItem({
       itemID: 1,
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
+      key: "RTKEY234",
+      indexedKey: "RTKEY234",
       title: "Root",
       citationKey: "root2024",
     });
@@ -2500,8 +2500,8 @@ describe("overwriteNote", () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const item = makeItem({
       itemID: 1,
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
+      key: "RTKEY234",
+      indexedKey: "RTKEY234",
       title: "Root",
       citationKey: null,
     });
@@ -2514,7 +2514,7 @@ describe("overwriteNote", () => {
     const harness = makeUpdateHarness({
       content: "Old body content",
       frontmatter: {
-        [FIELD_ZOTERO_KEY]: "ROOT1234",
+        [FIELD_ZOTERO_KEY]: "RTKEY234",
         [FIELD_LITERATURE_NOTE_PROFILE]: `Reading notes (${profileId})`,
       },
       settings: {
@@ -2536,8 +2536,8 @@ describe("overwriteNote", () => {
   it("writes the new body right after the Properties block, as create does", async () => {
     const item = makeItem({
       itemID: 1,
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
+      key: "RTKEY234",
+      indexedKey: "RTKEY234",
       title: "Root",
       citationKey: null,
     });
@@ -2547,11 +2547,11 @@ describe("overwriteNote", () => {
     });
     vi.mocked(getItemsByKey).mockReturnValue([item]);
     vi.mocked(buildNoteContextFromSource).mockReturnValue(
-      updateContext({ indexedKey: "ROOT1234" }),
+      updateContext({ indexedKey: "RTKEY234" }),
     );
     const harness = makeUpdateHarness({
       content: "\n\nOld body content",
-      frontmatter: { [FIELD_ZOTERO_KEY]: "ROOT1234" },
+      frontmatter: { [FIELD_ZOTERO_KEY]: "RTKEY234" },
     });
     harness.deps.template.render = ((name: string) =>
       name === "note"
@@ -2571,8 +2571,8 @@ describe("overwriteNote", () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const item = makeItem({
       itemID: 1,
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
+      key: "RTKEY234",
+      indexedKey: "RTKEY234",
       title: "Root",
       citationKey: null,
     });
@@ -2614,8 +2614,8 @@ describe("overwriteNote", () => {
     // bytes and writes the Properties between them with `stringifyYaml`.
     const item = makeItem({
       itemID: 1,
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
+      key: "RTKEY234",
+      indexedKey: "RTKEY234",
       title: "Root",
       citationKey: null,
     });
@@ -2625,7 +2625,7 @@ describe("overwriteNote", () => {
     });
     vi.mocked(getItemsByKey).mockReturnValue([item]);
     vi.mocked(buildNoteContextFromSource).mockReturnValue(
-      updateContext({ indexedKey: "ROOT1234" }),
+      updateContext({ indexedKey: "RTKEY234" }),
     );
 
     const harness = makeUpdateHarness({ content: "" });
@@ -2635,14 +2635,14 @@ describe("overwriteNote", () => {
         : "") as typeof harness.deps.template.render;
     harness.host.vault.createFile(
       "Literature/Root.md",
-      "---\r\nzotero-key: ROOT1234\r\n---\r\nOld body content",
+      "---\r\nzotero-key: RTKEY234\r\n---\r\nOld body content",
     );
     const file = harness.file("Literature/Root.md");
 
     await createNoteFeature(harness.deps).overwriteNote(file, item.indexedKey);
 
     expect(harness.host.text(file.path)).toBe(
-      "---\r\nzotero-key: ROOT1234\n---\r\nNew body content",
+      "---\r\nzotero-key: RTKEY234\n---\r\nNew body content",
     );
   });
 });
@@ -2685,7 +2685,7 @@ function makeUpdateHarness(options: {
   // The note file as the vault holds it: a Properties block, stamped with its
   // Zotero key like any Literature Note, then `options.content` as the body.
   const text = `---\n${stringifyYaml({
-    [FIELD_ZOTERO_KEY]: "ABC12345",
+    [FIELD_ZOTERO_KEY]: "ABC23456",
     ...options.frontmatter,
   })}---\n${options.content}`;
   const host = createObsidianHost();
@@ -2766,7 +2766,7 @@ function updateContext(
   overrides: Partial<NoteTemplateContext> = {},
 ): NoteTemplateContext {
   return {
-    indexedKey: "ABC12345",
+    indexedKey: "ABC23456",
     citationKey: "smith2024",
     title: "A Study",
     relatedItems: [],
@@ -2777,13 +2777,13 @@ function updateContext(
 /** Point the indexedKey lookup path at a resolvable item returning `context`. */
 function stubIndexedKeyUpdate(context: NoteTemplateContext): void {
   vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-    key: "ABC12345",
+    key: "ABC23456",
     libraryID: 1,
   });
   vi.mocked(getItemsByKey).mockReturnValue([
     makeItem({
-      key: "ABC12345",
-      indexedKey: "ABC12345",
+      key: "ABC23456",
+      indexedKey: "ABC23456",
       title: "A Study",
       citationKey: "smith2024",
     }),
@@ -2829,8 +2829,8 @@ describe("updateNote", () => {
       const file = harness.file("Literature/Test.md");
       const pending =
         operation === "update"
-          ? feature.updateNote(file, { indexedKey: "ABC12345", scope: "full" })
-          : feature.overwriteNote(file, "ABC12345");
+          ? feature.updateNote(file, { indexedKey: "ABC23456", scope: "full" })
+          : feature.overwriteNote(file, "ABC23456");
       const rejected = expect(pending).rejects.toBe(copyError);
       await failed.promise;
       expect(report).not.toHaveBeenCalled();
@@ -2863,7 +2863,7 @@ describe("updateNote", () => {
       };
       const unavailable = new Error("Originating note changed");
       const updating = createNoteFeature(harness.deps).updateNote(original, {
-        indexedKey: "ABC12345",
+        indexedKey: "ABC23456",
         scope,
         beforeWrite: () => {
           if (currentFile !== original) throw unavailable;
@@ -2876,7 +2876,7 @@ describe("updateNote", () => {
       await refused;
       expect(harness.content()).toBe(replacementBody);
       expect(harness.frontmatter()).toEqual({
-        [FIELD_ZOTERO_KEY]: "ABC12345",
+        [FIELD_ZOTERO_KEY]: "ABC23456",
         title: "Replacement",
       });
     },
@@ -2893,7 +2893,7 @@ describe("updateNote", () => {
       createNoteFeature(harness.deps).updateNote(
         harness.file("Literature/Original.md"),
         {
-          indexedKey: "ABC12345",
+          indexedKey: "ABC23456",
           beforeWrite: () => {
             throw unavailable;
           },
@@ -2902,7 +2902,7 @@ describe("updateNote", () => {
     ).rejects.toBe(unavailable);
     expect(harness.content()).toBe(formatManagedRegion("BODY"));
     expect(harness.frontmatter()).toEqual({
-      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_ZOTERO_KEY]: "ABC23456",
       title: "Personal title",
     });
   });
@@ -2913,14 +2913,14 @@ describe("updateNote", () => {
       const harness = makeUpdateHarness({
         content: formatManagedRegion("BODY"),
         frontmatter: {
-          [FIELD_ZOTERO_KEY]: "OTHER234",
+          [FIELD_ZOTERO_KEY]: "QTHER234",
           title: "Personal title",
         },
       });
       stubIndexedKeyUpdate(updateContext());
       const result = await createNoteFeature(harness.deps).updateNote(
         harness.file("Literature/Original.md"),
-        { indexedKey: "ABC12345", scope },
+        { indexedKey: "ABC23456", scope },
       );
       expect(result).toEqual({
         bodyUpdated: false,
@@ -2928,13 +2928,13 @@ describe("updateNote", () => {
         diagnostic: {
           code: "literature-note-key-changed",
           hint: expect.any(String),
-          indexedKey: "ABC12345",
+          indexedKey: "ABC23456",
           path: "Literature/Original.md",
         },
       });
       expect(harness.content()).toBe(formatManagedRegion("BODY"));
       expect(harness.frontmatter()).toEqual({
-        [FIELD_ZOTERO_KEY]: "OTHER234",
+        [FIELD_ZOTERO_KEY]: "QTHER234",
         title: "Personal title",
       });
     },
@@ -2953,7 +2953,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result).toEqual({
@@ -2982,7 +2982,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345", profile: requestedId },
+      { indexedKey: "ABC23456", profile: requestedId },
     );
 
     expect(result).toEqual({
@@ -2991,7 +2991,7 @@ describe("updateNote", () => {
       diagnostic: {
         code: "literature-note-profile-conflict",
         hint: expect.stringContaining("Follow"),
-        indexedKey: "ABC12345",
+        indexedKey: "ABC23456",
         path: "Books/Root.md",
         existingProfile: stampedId,
         requestedProfile: requestedId,
@@ -3022,11 +3022,11 @@ describe("updateNote", () => {
 
     await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.frontmatter()).toMatchObject({
-      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_ZOTERO_KEY]: "ABC23456",
       [FIELD_LITERATURE_NOTE_PROFILE]: "Books (Bk3Qn7XvT2Lp)",
       [FIELD_CITATION_STYLE]: "apa",
     });
@@ -3053,7 +3053,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result.diagnostic).toBeUndefined();
@@ -3093,7 +3093,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result.diagnostic).toBeUndefined();
@@ -3117,7 +3117,7 @@ describe("updateNote", () => {
     await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
       {
-        indexedKey: "ABC12345",
+        indexedKey: "ABC23456",
       },
     );
 
@@ -3137,7 +3137,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result).toEqual({
@@ -3165,7 +3165,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result.diagnostic).toMatchObject({
@@ -3190,7 +3190,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result.diagnostic).toMatchObject({
@@ -3223,7 +3223,7 @@ describe("updateNote", () => {
 
     await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.frontmatter()).not.toHaveProperty(FIELD_CITATION_STYLE);
@@ -3251,7 +3251,7 @@ describe("updateNote", () => {
 
     await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(prepare).toHaveBeenCalledWith(
@@ -3287,7 +3287,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.content()).toBe(
@@ -3305,7 +3305,7 @@ describe("updateNote", () => {
       run: (harness: UpdateHarness) =>
         createNoteFeature(harness.deps).updateNote(
           harness.file("Books/Root.md"),
-          { indexedKey: "ABC12345" },
+          { indexedKey: "ABC23456" },
         ),
       render: "renderForUpdate" as const,
     },
@@ -3314,7 +3314,7 @@ describe("updateNote", () => {
       run: (harness: UpdateHarness) =>
         createNoteFeature(harness.deps).overwriteNote(
           harness.file("Books/Root.md"),
-          "ABC12345",
+          "ABC23456",
         ),
       render: "renderForCreate" as const,
     },
@@ -3353,7 +3353,7 @@ describe("updateNote", () => {
       // block nor the body may carry a render that never finished.
       expect(harness.content()).toBe(original);
       expect(harness.frontmatter()).toEqual({
-        [FIELD_ZOTERO_KEY]: "ABC12345",
+        [FIELD_ZOTERO_KEY]: "ABC23456",
         [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
         title: "Old title",
       });
@@ -3394,7 +3394,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result.diagnostic).toBeUndefined();
@@ -3404,7 +3404,7 @@ describe("updateNote", () => {
       [FIELD_LITERATURE_NOTE_PROFILE]: "Books (Bk3Qn7XvT2Lp)",
       tags: ["A Study"],
       label: "A Study!",
-      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_ZOTERO_KEY]: "ABC23456",
     });
     expect(harness.frontmatter()).not.toHaveProperty("legacy-only");
   });
@@ -3429,7 +3429,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345", scope: "metadata" },
+      { indexedKey: "ABC23456", scope: "metadata" },
     );
 
     expect(result).toEqual({ bodyUpdated: false, duplicateRegionCount: 0 });
@@ -3437,7 +3437,7 @@ describe("updateNote", () => {
     expect(harness.processMock).toHaveBeenCalledOnce();
     expect(harness.frontmatter()).toMatchObject({
       title: "A Study",
-      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_ZOTERO_KEY]: "ABC23456",
       [FIELD_LITERATURE_NOTE_PROFILE]: "Books (Bk3Qn7XvT2Lp)",
     });
   });
@@ -3472,7 +3472,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result.diagnostic).toMatchObject({
@@ -3491,7 +3491,7 @@ describe("updateNote", () => {
       ],
     });
     expect(harness.frontmatter()).toEqual({
-      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_ZOTERO_KEY]: "ABC23456",
       status: "reading",
       [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
     });
@@ -3529,7 +3529,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result.diagnostic).toMatchObject({
@@ -3563,7 +3563,7 @@ describe("updateNote", () => {
       ],
     });
     expect(harness.frontmatter()).toEqual({
-      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_ZOTERO_KEY]: "ABC23456",
       status: "reading",
       [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
     });
@@ -3602,7 +3602,7 @@ describe("updateNote", () => {
 
       const result = await createNoteFeature(harness.deps).updateNote(
         harness.file("Books/Root.md"),
-        { indexedKey: "ABC12345" },
+        { indexedKey: "ABC23456" },
       );
 
       expect(result.diagnostic).toBeUndefined();
@@ -3634,12 +3634,12 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.content()).toBe("Static user-owned body");
     expect(harness.frontmatter()).toMatchObject({
-      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_ZOTERO_KEY]: "ABC23456",
     });
     expect(harness.processMock).toHaveBeenCalledOnce();
     expect(document.renderForUpdate).not.toHaveBeenCalled();
@@ -3669,7 +3669,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result).toEqual({
@@ -3694,7 +3694,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result).toEqual({
@@ -3719,7 +3719,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result).toEqual({
@@ -3941,16 +3941,16 @@ describe("updateNote", () => {
     const second = makeFile("Imported/Second.md");
     stubIndexedKeyUpdate(updateContext());
     vi.mocked(getChildNotesByParentIDs).mockReturnValueOnce([
-      childNote("NOTE0001"),
-      childNote("NOTE0002"),
-      childNote("NOTEGONE"),
+      childNote("NTEB2345"),
+      childNote("NTEC2345"),
+      childNote("NTEGNE23"),
     ]);
     const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
     harness.deps.noteIndex.getImportedNoteByNoteKey = (key) =>
-      key === "NOTE0001" ? [first] : key === "NOTE0002" ? [second] : [];
+      key === "NTEB2345" ? [first] : key === "NTEC2345" ? [second] : [];
 
     await expect(
-      createNoteFeature(harness.deps).getImportedNotesForItem("ABC12345"),
+      createNoteFeature(harness.deps).getImportedNotesForItem("ABC23456"),
     ).resolves.toEqual([first, second]);
   });
 
@@ -3960,8 +3960,8 @@ describe("updateNote", () => {
     const imported = makeFile("Imported/First.md");
     stubIndexedKeyUpdate(updateContext());
     vi.mocked(getChildNotesByParentIDs).mockReturnValueOnce([
-      childNote("NOTE0001"),
-      childNote("NOTEGONE"),
+      childNote("NTEB2345"),
+      childNote("NTEGNE23"),
     ]);
     const harness = makeUpdateHarness({
       content: "My content",
@@ -3988,7 +3988,7 @@ describe("updateNote", () => {
       },
     });
     harness.deps.noteIndex.getImportedNoteByNoteKey = (key) =>
-      key === "NOTE0001" ? [imported] : [];
+      key === "NTEB2345" ? [imported] : [];
     const plan = await createNoteFeature(harness.deps).prepareProfileSwitch(
       harness.file("Books/My title.md"),
     );
@@ -4260,7 +4260,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.content()).toBe(
@@ -4285,7 +4285,7 @@ describe("updateNote", () => {
 
     await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.content()).toBe(
@@ -4305,7 +4305,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345", scope: "metadata" },
+      { indexedKey: "ABC23456", scope: "metadata" },
     );
 
     expect(harness.content()).toBe(original);
@@ -4313,7 +4313,7 @@ describe("updateNote", () => {
     expect(harness.processMock).toHaveBeenCalledOnce();
     expect(harness.frontmatter()).toEqual({
       status: "reading",
-      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_ZOTERO_KEY]: "ABC23456",
     });
     expect(result).toEqual({ bodyUpdated: false, duplicateRegionCount: 0 });
   });
@@ -4339,13 +4339,13 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result).toEqual({ bodyUpdated: true, duplicateRegionCount: 0 });
     expect(harness.content()).toBe(formatManagedRegion("NEW BODY"));
     expect(harness.frontmatter()).toMatchObject({
-      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_ZOTERO_KEY]: "ABC23456",
       title: "A Study",
     });
     expect(harness.processMock).toHaveBeenCalledOnce();
@@ -4360,7 +4360,7 @@ describe("updateNote", () => {
     const save = vi.spyOn(view, "save");
 
     const result = await createNoteFeature(harness.deps).updateNote(file, {
-      indexedKey: "ABC12345",
+      indexedKey: "ABC23456",
     });
 
     expect(result).toEqual({ bodyUpdated: true, duplicateRegionCount: 0 });
@@ -4376,12 +4376,12 @@ describe("updateNote", () => {
     const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
     const file = harness.file("Literature/Root.md");
     const view = harness.host.openInEditor(file);
-    view.edit(view.getViewData().replace("ABC12345", "OTHER234"));
+    view.edit(view.getViewData().replace("ABC23456", "QTHER234"));
     const save = vi.spyOn(view, "save");
     const edited = view.getViewData();
 
     const result = await createNoteFeature(harness.deps).updateNote(file, {
-      indexedKey: "ABC12345",
+      indexedKey: "ABC23456",
     });
 
     expect(result.diagnostic?.code).toBe("literature-note-key-changed");
@@ -4425,7 +4425,7 @@ describe("updateNote", () => {
       const save = vi.spyOn(view, "save");
 
       const result = await createNoteFeature(harness.deps).updateNote(file, {
-        indexedKey: "ABC12345",
+        indexedKey: "ABC23456",
       });
 
       expect(result.diagnostic?.code).toBe("literature-note-profile-changed");
@@ -4448,7 +4448,7 @@ describe("updateNote", () => {
       const switched = harness.host.text(file.path);
 
       const result = await createNoteFeature(harness.deps).updateNote(file, {
-        indexedKey: "ABC12345",
+        indexedKey: "ABC23456",
       });
 
       expect(result.diagnostic?.code).toBe("literature-note-profile-changed");
@@ -4468,7 +4468,7 @@ describe("updateNote", () => {
         );
 
       const result = await createNoteFeature(harness.deps).updateNote(file, {
-        indexedKey: "ABC12345",
+        indexedKey: "ABC23456",
       });
 
       expect(result.diagnostic).toBeUndefined();
@@ -4484,7 +4484,7 @@ describe("updateNote", () => {
       content: formatManagedRegion("OLD"),
       frontmatter: {
         status: "reading",
-        [FIELD_ZOTERO_KEY]: "ABC12345",
+        [FIELD_ZOTERO_KEY]: "ABC23456",
         title: "Old title",
       },
       frontmatterFields: compileFrontmatterFields(
@@ -4502,13 +4502,13 @@ describe("updateNote", () => {
 
     await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.frontmatter()).toEqual({
       status: "reading",
       title: "A Study",
-      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_ZOTERO_KEY]: "ABC23456",
     });
   });
 
@@ -4536,10 +4536,10 @@ describe("updateNote", () => {
     feature.on("frontmatter-eval-failed", (payload) => events.push(payload));
 
     await feature.updateNote(harness.file("Literature/Root.md"), {
-      indexedKey: "ABC12345",
+      indexedKey: "ABC23456",
     });
 
-    expect(events).toEqual([{ itemKey: "ABC12345", fields: ["broken"] }]);
+    expect(events).toEqual([{ itemKey: "ABC23456", fields: ["broken"] }]);
   });
 
   it("defers the content render and reports no update when the note has no managed region", async () => {
@@ -4551,7 +4551,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.content()).toBe(original);
@@ -4569,7 +4569,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.content()).toBe(original);
@@ -4586,7 +4586,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.content()).toBe(original);
@@ -4606,7 +4606,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.content()).toBe(
@@ -4627,11 +4627,11 @@ describe("updateNote", () => {
 
     await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.frontmatter()[FIELD_CITEKEY]).toBe("stale2020");
-    expect(harness.frontmatter()[FIELD_ZOTERO_KEY]).toBe("ABC12345");
+    expect(harness.frontmatter()[FIELD_ZOTERO_KEY]).toBe("ABC23456");
   });
 
   it("rejects without touching the file when the indexed key resolves to no item", async () => {
@@ -4641,9 +4641,9 @@ describe("updateNote", () => {
     await expect(
       createNoteFeature(harness.deps).updateNote(
         harness.file("Literature/Root.md"),
-        { indexedKey: "MISSING1" },
+        { indexedKey: "MSSNG234" },
       ),
-    ).rejects.toThrow("Zotero item not found: MISSING1");
+    ).rejects.toThrow("Zotero item not found: MSSNG234");
     expect(harness.processMock).not.toHaveBeenCalled();
   });
 });
@@ -4658,8 +4658,8 @@ describe("writeNoteUpdate", () => {
   ): Parameters<NoteFeature["writeNoteUpdate"]>[1] => ({
     reads,
     item: makeItem({
-      key: "ABC12345",
-      indexedKey: "ABC12345",
+      key: "ABC23456",
+      indexedKey: "ABC23456",
       title: "A Study",
       citationKey: "smith2024",
     }),
@@ -4818,7 +4818,7 @@ describe("writeNoteUpdate", () => {
     expect(harness.processMock).toHaveBeenCalledOnce();
     expect(harness.frontmatter()).toMatchObject({
       title: "A Study",
-      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_ZOTERO_KEY]: "ABC23456",
       [FIELD_LITERATURE_NOTE_PROFILE]: "Books (Bk3Qn7XvT2Lp)",
     });
   });
@@ -5016,8 +5016,8 @@ describe("renderCitation", () => {
     };
 
     const item = makeItem({
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
+      key: "RTKEY234",
+      indexedKey: "RTKEY234",
       title: "Stated choice methods",
       citationKey: "root2024",
     });
@@ -5386,8 +5386,8 @@ function makeCreateGateItem(): Item {
   return {
     itemID: 1,
     libraryID: 1,
-    key: "ROOT1234",
-    indexedKey: "ROOT1234",
+    key: "RTKEY234",
+    indexedKey: "RTKEY234",
     dateAdded: Temporal.Instant.from("2024-01-15T10:00:00Z"),
     dateModified: Temporal.Instant.from("2024-01-15T10:00:00Z"),
     creators: [],
@@ -5412,7 +5412,7 @@ function makeCreateGateItem(): Item {
 
 function createGateContext(): NoteTemplateContext {
   return {
-    indexedKey: "ROOT1234",
+    indexedKey: "RTKEY234",
     notePath: "Literature/Root.md",
     noteLink: () => "[[Literature/Root.md]]",
     relatedItems: [],
