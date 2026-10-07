@@ -258,7 +258,7 @@ export interface AnnotActionDeps {
    *
    * @see apps/obsidian/docs/adr/0033-zotero-object-identity-is-the-indexed-key-server-id-is-source-data.md
    */
-  resolveAnnotationID: (indexedKey: string) => number | null;
+  resolveAnnotationID: (indexedKey: string) => Promise<number | null>;
   libraryTagNames: AnnotActions["libraryTagNames"];
   /**
    * What the view is showing right now. A native menu is built at the moment
@@ -534,8 +534,8 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
       item
         .setTitle(m.annot_view_menu_copy_citation())
         .setIcon("quote")
-        .onClick(() => {
-          const annotationID = deps.resolveAnnotationID(annot.key);
+        .onClick(async () => {
+          const annotationID = await deps.resolveAnnotationID(annot.key);
           if (annotationID === null) {
             new BaseNotice(m.annot_view_annotation_not_in_database());
             return;

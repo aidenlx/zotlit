@@ -22,11 +22,16 @@ export interface ZoteroReaderSessionDeps {
   /**
    * Names the Attachment, its parent Item, and the selected Annotations a
    * reader push points at; `null` while the Zotero database cannot answer.
-   * The numeric ids the wire carries stop here.
+   * The numeric ids the wire carries stop here. The session keeps its
+   * previous target until the answer arrives, and aborts `signal` once a
+   * later push or its disposal supersedes the read.
    *
    * @see apps/obsidian/docs/adr/0033-zotero-object-identity-is-the-indexed-key-server-id-is-source-data.md
    */
-  resolve: (target: ReaderTarget) => ZoteroReaderResolution | null;
+  resolve: (
+    target: ReaderTarget,
+    signal: AbortSignal,
+  ) => Promise<ZoteroReaderResolution | null>;
   /** Opens an Annotation in Zotero, which owns every gesture on its own reader. */
   navigate: (annotationKey: string) => void;
 }
@@ -44,6 +49,8 @@ export class ZoteroReaderSession extends ReaderSessionHost {
   readonly #liveUpdate;
   readonly #resolve;
   readonly #stopTracking: () => void;
+  /** Aborts the resolution that runs; a later push supersedes it. */
+  #resolving: AbortController | null = null;
 
   constructor({ liveUpdate, resolve, navigate }: ZoteroReaderSessionDeps) {
     super({
@@ -72,12 +79,25 @@ export class ZoteroReaderSession extends ReaderSessionHost {
   }
 
   override [Symbol.dispose](): void {
+    this.#resolving?.abort();
     this.#stopTracking();
     super[Symbol.dispose]();
   }
 
   #track(pushed: ReaderTarget | null): void {
-    const resolution = pushed && this.#resolve(pushed);
+    this.#resolving?.abort();
+    const resolving = new AbortController();
+    this.#resolving = resolving;
+    if (!pushed) {
+      this.#apply(null);
+      return;
+    }
+    void this.#resolve(pushed, resolving.signal).then((resolution) => {
+      if (!resolving.signal.aborted) this.#apply(resolution);
+    });
+  }
+
+  #apply(resolution: ZoteroReaderResolution | null): void {
     this.setTarget(resolution?.target ?? null);
     this.reportSelection(resolution?.selected ?? []);
   }
