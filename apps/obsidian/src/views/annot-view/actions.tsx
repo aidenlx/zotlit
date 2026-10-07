@@ -207,9 +207,10 @@ export interface AnnotActions {
   openExcerptImage(): ExcerptDisplayDemand;
   /**
    * The request one card's target resolves, or `null` where nothing can: no
-   * Annotation Source, another Zotero data directory, or an unready database.
+   * Annotation Source, another Zotero data directory, or a database that
+   * cannot answer.
    */
-  excerptImageRequest(target: ExcerptImageTarget): ExcerptRequest | null;
+  excerptImageRequest(target: ExcerptImageTarget): Promise<ExcerptRequest | null>;
   getBacklink(annot: AnnotationRecord): string | undefined;
   /** Render a comment's Zotero HTML as Markdown; returns a disposer. */
   renderComment: CommentRenderer;
@@ -809,7 +810,7 @@ export const NOOP_ACTIONS: AnnotActions = {
   onDiscardConflict: () => {},
   onRefresh: () => {},
   openExcerptImage: () => NOOP_DEMAND,
-  excerptImageRequest: () => null,
+  excerptImageRequest: async () => null,
   getBacklink: () => undefined,
   renderComment: () => () => {},
 };

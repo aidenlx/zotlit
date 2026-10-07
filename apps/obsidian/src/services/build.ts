@@ -208,14 +208,14 @@ export function buildServices(
     })
     .use({
       annotationRepository: ({
-        db,
+        zoteroReads,
         queryClient,
         zoteroLocalApi,
         zoteroPref,
         excerptImage,
       }) =>
         new AnnotationRepository({
-          db,
+          db: zoteroReads,
           queryClient,
           localApi: zoteroLocalApi,
           // A session's first read of an Attachment has no list that stood
@@ -224,11 +224,11 @@ export function buildServices(
           // stored-outcome read, so an Annotation this device never cached has
           // no baseline here exactly as it has no image to replace there.
           persistedExcerpt: async (annotation, source) => {
-            const request = savedExcerptRequest({
+            const request = await savedExcerptRequest({
               annotation,
               source,
               sourceScope: zoteroPref.dataDir,
-              db,
+              zoteroReads,
               paths: zoteroPref,
             });
             if (!request) return null;

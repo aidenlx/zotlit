@@ -12,6 +12,7 @@ import * as confirmation from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
+import { useFakeTimers } from "@/services/annotation-repository/__fixtures__";
 import {
   libraryReadOnly,
   staleVersionPatch,
@@ -94,7 +95,7 @@ async function setup(
   capability: EditingCapability = { kind: "writable" },
   { external }: { external?: readonly string[] } = {},
 ) {
-  vi.useFakeTimers();
+  useFakeTimers();
   const stack = new AsyncDisposableStack();
   const containerEl = document.body.appendChild(document.createElement("div"));
   stack.defer(() => containerEl.remove());

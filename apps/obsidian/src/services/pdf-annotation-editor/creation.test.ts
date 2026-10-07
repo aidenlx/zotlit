@@ -23,6 +23,7 @@ import {
   MAX_POSITION_LENGTH,
   writePosition,
 } from "@/services/annotation-repository/write";
+import { useFakeTimers } from "@/services/annotation-repository/__fixtures__";
 import { createRefused } from "@/services/zotero-local-api/__fixtures__";
 import type { ZoteroRequest } from "@/services/zotero-local-api/__fixtures__";
 import { pressSubmit } from "@/views/annot-view/__fixtures__/editor-app";
@@ -176,7 +177,7 @@ async function reader(
   });
   // The repository reads Zotero on real time; the reader's own timers are
   // driven by hand from here on.
-  vi.useFakeTimers();
+  useFakeTimers();
   const { app, creation, store: surfaceState, revealed, zotero } = reader;
 
   return {
@@ -944,7 +945,7 @@ async function imageReader(
   });
   // The repository reads Zotero on real time; the reader's own timers are
   // driven by hand from here on.
-  vi.useFakeTimers();
+  useFakeTimers();
   const slot = document.body.createDiv();
   surfaces.creation.mountToolbar(slot);
   // Armed as a researcher arms it, from the toolbar; the arm itself stands

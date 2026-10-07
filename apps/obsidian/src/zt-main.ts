@@ -401,7 +401,6 @@ export default class ZotLitPlugin extends Plugin {
 
     registerAnnotView(this, {
       app: this.app,
-      db: services.db,
       reads: services.zoteroReads,
       libraryScope: services.libraryScope,
       liveUpdate: services.localServer,
@@ -615,14 +614,15 @@ export default class ZotLitPlugin extends Plugin {
       services.annotationRepository.on(
         "excerpt-pixels-changed",
         (record, source) => {
-          const request = savedExcerptRequest({
+          void savedExcerptRequest({
             annotation: record,
             source,
             sourceScope: services.zoteroPref.dataDir,
-            db: services.db,
+            zoteroReads: services.zoteroReads,
             paths: services.zoteroPref,
+          }).then((request) => {
+            if (request) services.excerptDisplay.revalidate(request);
           });
-          if (request) services.excerptDisplay.revalidate(request);
         },
       ),
     );

@@ -2,15 +2,17 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createClient } from "@zotlit/db/client/node";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
+import { readsOverClient } from "@/services/zotero-reads/test-utils";
 
 import { PNG_FORMAT } from "./format";
+import { savedExcerptRequest } from "./request";
 import { ExcerptImageService, excerptKey, excerptRequest } from "./service";
 import type { ExcerptEntry } from "./service";
 
@@ -58,10 +60,10 @@ const groupRecord: AnnotationRecord = {
 };
 
 /** One Attachment, in each of the user Library and a group Library. */
-function fixture(serverID: string | null = SERVER_ID): DisposableStack & {
-  client: NodeDatabaseClient;
-} {
-  const stack = new DisposableStack();
+async function fixture(
+  serverID: string | null = SERVER_ID,
+): Promise<AsyncDisposableStack & { reads: ZoteroReadsApi }> {
+  const stack = new AsyncDisposableStack();
   const client = stack.adopt(createClient(":memory:"), (db) =>
     db.$client.close(),
   );
@@ -81,22 +83,41 @@ function fixture(serverID: string | null = SERVER_ID): DisposableStack & {
       (1, null, 0, 'application/pdf', 'storage:paper.pdf'),
       (2, null, 0, 'application/pdf', 'storage:paper.pdf');
   `);
-  return Object.assign(stack, { client });
+  const { reads } = await stack.use(readsOverClient(client)).ready;
+  return Object.assign(stack, { reads });
 }
 
+describe("Saved excerpt request", () => {
+  it("resolves to nothing where the database cannot answer", async () => {
+    const closed = createClient(":memory:");
+    closed.$client.close();
+    await using zoteroReads = readsOverClient(closed);
+
+    expect(
+      await savedExcerptRequest({
+        annotation,
+        source: apiSource,
+        sourceScope: paths.dataDir,
+        zoteroReads,
+        paths,
+      }),
+    ).toBeNull();
+  });
+});
+
 describe("Excerpt request verification", () => {
-  it("gives one identity to the API and database representations of an Annotation", () => {
-    using db = fixture();
-    const fromDatabase = excerptRequest({
+  it("gives one identity to the API and database representations of an Annotation", async () => {
+    await using db = await fixture();
+    const fromDatabase = await excerptRequest({
       annotation,
       source: databaseSource,
-      client: db.client,
+      reads: db.reads,
       paths,
     });
-    const fromApi = excerptRequest({
+    const fromApi = await excerptRequest({
       annotation,
       source: apiSource,
-      client: db.client,
+      reads: db.reads,
       paths,
     });
     expect(fromApi).not.toBeNull();
@@ -106,19 +127,19 @@ describe("Excerpt request verification", () => {
   });
 
   it("reuses one render for an API request followed by a database request", async () => {
-    using db = fixture();
-    const fromApi = excerptRequest({
+    await using db = await fixture();
+    const fromApi = (await excerptRequest({
       annotation,
       source: apiSource,
-      client: db.client,
+      reads: db.reads,
       paths,
-    })!;
-    const fromDatabase = excerptRequest({
+    }))!;
+    const fromDatabase = (await excerptRequest({
       annotation,
       source: databaseSource,
-      client: db.client,
+      reads: db.reads,
       paths,
-    })!;
+    }))!;
     const bytes = new Uint8Array([1, 2, 3]);
     const entries = new Map<string, ExcerptEntry>();
     const render = vi.fn(async () => ({ bytes, format: PNG_FORMAT }));
@@ -157,19 +178,19 @@ describe("Excerpt request verification", () => {
   });
 
   it("isolates an identical key in another Library", async () => {
-    using db = fixture();
-    const group = excerptRequest({
+    await using db = await fixture();
+    const group = (await excerptRequest({
       annotation: groupRecord,
       source: apiSource,
-      client: db.client,
+      reads: db.reads,
       paths,
-    })!;
-    const user = excerptRequest({
+    }))!;
+    const user = (await excerptRequest({
       annotation,
       source: apiSource,
-      client: db.client,
+      reads: db.reads,
       paths,
-    })!;
+    }))!;
     const bytes = new Uint8Array([1, 2, 3]);
     const entries = new Map<string, ExcerptEntry>();
     const render = vi.fn(async () => ({ bytes, format: PNG_FORMAT }));
@@ -190,43 +211,43 @@ describe("Excerpt request verification", () => {
     expect(render).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps a database with no Server ID on a local identity", () => {
-    using db = fixture(null);
+  it("keeps a database with no Server ID on a local identity", async () => {
+    await using db = await fixture(null);
     const standalone = {
       annotation,
       source: {
         ...databaseSource,
         database: { ...databaseSource.database, serverID: null },
       },
-      client: db.client,
+      reads: db.reads,
       paths,
     };
-    const request = excerptRequest(standalone);
+    const request = await excerptRequest(standalone);
     expect(request).not.toBeNull();
     // No Local API session can be verified against this database, so no API
     // source may claim its pixels.
-    expect(excerptRequest({ ...standalone, source: apiSource })).toBeNull();
+    expect(await excerptRequest({ ...standalone, source: apiSource })).toBeNull();
     // A copy of the database keeps its own identity through its source scope.
     expect(excerptKey(request!)).not.toBe(
       excerptKey(
-        excerptRequest({
+        (await excerptRequest({
           ...standalone,
           paths: { ...paths, dataDir: "/copied-zotero" },
-        })!,
+        }))!,
       ),
     );
   });
 
-  it("refuses a source that names another database or Library", () => {
-    using db = fixture();
+  it("refuses a source that names another database or Library", async () => {
+    await using db = await fixture();
     const options = {
       annotation,
       source: databaseSource,
-      client: db.client,
+      reads: db.reads,
       paths,
     };
     expect(
-      excerptRequest({
+      await excerptRequest({
         ...options,
         source: { ...apiSource, serverID: "OTHER1234567" },
       }),
@@ -238,19 +259,19 @@ describe("Excerpt request verification", () => {
       { ...databaseSource.database, userID: null },
     ])
       expect(
-        excerptRequest({
+        await excerptRequest({
           ...options,
           source: { ...databaseSource, database },
         }),
       ).toBeNull();
     expect(
-      excerptRequest({
+      await excerptRequest({
         ...options,
         source: { ...databaseSource, libraryID: 2 },
       }),
     ).toBeNull();
     expect(
-      excerptRequest({
+      await excerptRequest({
         ...options,
         annotation: { ...annotation, key: "ANNOT001" },
       }),

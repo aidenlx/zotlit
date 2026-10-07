@@ -45,7 +45,6 @@ import {
   createPdfReader,
   toObsidianOpenable,
 } from "@/services/attachment-open/actions";
-import type { DatabaseService } from "@/services/database/service";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import { savedExcerptRequest } from "@/services/excerpt-image/request";
 import type { ExcerptRequest } from "@/services/excerpt-image/service";
@@ -146,8 +145,6 @@ const FILTER_STORAGE_KEY_PREFIX = "zotlit-annot-filter-";
  */
 export interface AnnotViewDeps {
   app: App;
-  /** What an Excerpt Image request resolves its files through. */
-  db: Pick<DatabaseService, "state" | "client">;
   reads: Pick<ZoteroReadsService, "ready" | "state" | "on">;
   libraryScope: Pick<LibraryScopeService, "libraryRows" | "on">;
   liveUpdate: Pick<
@@ -1327,10 +1324,10 @@ export class AnnotationView extends ItemView implements HistorySurface {
     annotation: AnnotationRecord;
     source: AnnotationSource | null;
     sourceScope: string | null;
-  }): ExcerptRequest | null {
+  }): Promise<ExcerptRequest | null> {
     return savedExcerptRequest({
       ...input,
-      db: this.#deps.db,
+      zoteroReads: this.#deps.reads,
       paths: this.#deps.zoteroPref,
     });
   }
