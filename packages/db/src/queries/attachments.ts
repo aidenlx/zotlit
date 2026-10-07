@@ -159,8 +159,8 @@ export function getAttachmentsByParents(
       attachmentsByParentQuery.prepared(db).all({ parentItemID }),
     many: (ids) =>
       attachmentsByParentsQuery.prepare(db, { parentItemIDs: ids }).all(),
-    // `IN` matches only a non-null parent.
-    idOf: (row) => row.parentItemID ?? 0,
+    // Both queries match only a non-null parent.
+    idOf: (row) => row.parentItemID!,
   }).map((row) =>
     toAttachment(row, resolveGroupID(db, row.item_itemID.libraryID, memo)),
   );
@@ -192,7 +192,9 @@ export function getAttachmentByKey(
   key: string,
   libraryID: number,
 ): Attachment | null {
-  return getAttachmentsByKey(db, libraryID, [key])[0] ?? null;
+  const row = attachmentByKeyQuery.prepared(db).all({ libraryID, key })[0];
+  if (!row) return null;
+  return toAttachment(row, groupIDForLibrary(db, libraryID));
 }
 
 export interface AttachmentWithParentKey extends Attachment {
