@@ -113,6 +113,9 @@ catalogs:
     '@codemirror/commands':
       specifier: 6.11.0
       version: 6.11.0
+    '@effect/platform-browser':
+      specifier: 4.0.0
+      version: 4.0.0
     '@hono/node-server':
       specifier: ^2.0.10
       version: 2.0.10
@@ -194,6 +197,9 @@ catalogs:
     drizzle-orm:
       specifier: 1.0.0-rc.4
       version: 1.0.0-rc.4
+    effect:
+      specifier: 4.0.0
+      version: 4.0.0
     eta:
       specifier: 4.6.0
       version: 4.6.0
@@ -551,6 +557,9 @@ importers:
       '@bjorn3/browser_wasi_shim':
         specifier: ^0.4.2
         version: 0.4.2
+      '@effect/platform-browser':
+        specifier: 'catalog:'
+        version: 4.0.0(effect@4.0.0)
       '@hono/node-server':
         specifier: 'catalog:'
         version: 2.0.10(hono@4.13.0)
@@ -618,7 +627,7 @@ importers:
         specifier: 'catalog:'
         version: 8.0.4
       effect:
-        specifier: ^4.0.0
+        specifier: 'catalog:'
         version: 4.0.0
       eta:
         specifier: 'catalog:'
@@ -1755,6 +1764,11 @@ packages:
 
   '@drizzle-team/brocli@0.12.0':
     resolution: {integrity: sha512-mlUE+rZ8CatQekLhnaiN91Iemdd+e2gFKooGlnRB3oPTL3VghLfX24dx7HrzMNeC1JrIB/0kpsfyty3f5HNfxQ==}
+
+  '@effect/platform-browser@4.0.0':
+    resolution: {integrity: sha512-OHo7EPpF3RVPiI+mjoU9yd05LdCdKPjzDXqs5wRgF9CsdVvwN76B0zgt54DxPUcvMYri1tVJOtLCVnK0tRkNQQ==}
+    peerDependencies:
+      effect: ^4.0.0
 
   '@electron-internal/extract-zip@1.0.5':
     resolution: {integrity: sha512-+bqFCP98pLI0Tt0XQo1TmlXtwjWchISndDOxCkEcIuUgXWpBnLyRI+2DU+mesvnMMX6L1XDqYNA0lXNDHd/yiA==}
@@ -9181,6 +9195,10 @@ snapshots:
   '@dotenvx/primitives@0.8.0': {}
 
   '@drizzle-team/brocli@0.12.0': {}
+
+  '@effect/platform-browser@4.0.0(effect@4.0.0)':
+    dependencies:
+      effect: 4.0.0
 
   '@electron-internal/extract-zip@1.0.5': {}
 

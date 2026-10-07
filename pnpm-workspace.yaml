@@ -17,6 +17,7 @@ allowBuilds:
 
 catalog:
   "@base-ui/react": ^1.7.0
+  "@effect/platform-browser": 4.0.0
   "@inlang/plugin-message-format": 4.4.1
   nanoid: ^5.1.16
   "@hono/node-server": ^2.0.10
@@ -52,6 +53,7 @@ catalog:
   arkregex: ^0.0.5
   cross-env: ^10.1.0
   diff: 8.0.4
+  effect: 4.0.0
   eta: 4.6.0
   drizzle-kit: 1.0.0-rc.4
   drizzle-orm: 1.0.0-rc.4
