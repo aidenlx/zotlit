@@ -550,7 +550,7 @@ export class CitationText extends Service<void> {
       throw new Error("The Zotero database cannot be read");
 
     try {
-      using lease = await this.#db.acquireRead();
+      await using lease = await this.#db.acquireRead();
       const { reads } = lease;
       const [user, items] = await Effect.runPromise(
         Effect.all(

@@ -1,6 +1,6 @@
+// The production Connection: owns the Zotero database source — Read Mode, fingerprints, watchers, and the refresh lane.
 import { Deferred, Effect, FiberSet, Layer } from "effect";
 import type { Fiber } from "effect";
-// The production Connection: owns the Zotero database source — Read Mode, fingerprints, watchers, and the refresh lane.
 import { existsSync, watch } from "node:fs";
 import type { WatchListener, WatchOptionsWithStringEncoding } from "node:fs";
 import { dirname, join } from "node:path";
@@ -28,7 +28,7 @@ import type {
 } from "@/services/database/read-source";
 import { reapReadClones } from "@/services/database/reap-temps";
 
-import { makeChangeFeed } from "./change-feed";
+import { makeStateFeed } from "./change-feed";
 import {
   Connection,
   makeClientRef,
@@ -37,7 +37,7 @@ import {
 } from "./connection";
 import type { OpenClient } from "./connection";
 import { DbUnavailable } from "./rpc";
-import type { ChangeEvent, ReadsConfig } from "./rpc";
+import type { ReadsConfig } from "./rpc";
 
 const logger = getLogger("zotero-reads");
 
@@ -172,19 +172,12 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
       // handing its client over), then the client ref closes every client,
       // and the watchers close last, so nothing binds or opens behind them.
       yield* Effect.addFinalizer(() => Effect.sync(() => disposeWatchers()));
-      // A subscriber that arrives after the missing-file signal (the
-      // renderer subscribes once the worker is up) still gets it.
-      const stateEvent = (): ChangeEvent => ({
-        _tag: "state",
+      const { publish, changes } = yield* makeStateFeed(() => ({
         state,
         error: lastError,
-        ...(state === "ready" && readMode && { readMode }),
-      });
-      const { publish, changes } = yield* makeChangeFeed(() =>
-        missingDbSignalled && state !== "ready"
-          ? [stateEvent(), { _tag: "db-file-missing" }]
-          : [stateEvent()],
-      );
+        readMode,
+        missing: missingDbSignalled,
+      }));
       const clients = yield* makeClientRef(
         Effect.suspend(() =>
           Effect.fail(
@@ -218,9 +211,13 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
         logger.debug("Sweeping read snapshots beside the database", {
           parent,
         });
-        void ports.reapReadClones({ parent }).catch((error: unknown) => {
-          logger.debug("Read snapshot sweep failed", { error });
-        });
+        run(
+          Effect.promise(() =>
+            ports.reapReadClones({ parent }).catch((error: unknown) => {
+              logger.debug("Read snapshot sweep failed", { error });
+            }),
+          ),
+        );
       };
 
       /** Fail-soft {@link snapshotSource}: `null` where that function would throw. */

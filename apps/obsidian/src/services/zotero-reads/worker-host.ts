@@ -16,7 +16,7 @@ import { RpcClient, RpcClientError, RpcSchema, RpcWorker } from "effect/rpc";
 import { getLogger } from "@/lib/log";
 import type { EffectiveReadMode } from "@/services/database/read-source";
 
-import { makeChangeFeed } from "./change-feed";
+import { makeStateFeed } from "./change-feed";
 import type { ZoteroReadsClient } from "./in-process";
 import { DbUnavailable, ReadsConfigSchema, ZoteroReads } from "./rpc";
 import type { ChangeEvent, ReadsConfig } from "./rpc";
@@ -33,7 +33,7 @@ const logger = getLogger("zotero-reads");
 const WORKER_CONCURRENCY = 1024;
 
 /** How long unload waits for a worker to remove its snapshots. */
-const WORKER_CLOSE_TIMEOUT_MS = 5000;
+const WORKER_CLOSE_TIMEOUT = Duration.seconds(5);
 
 /** How often the renderer asks a live worker to answer. */
 const HEARTBEAT_INTERVAL = Duration.seconds(10);
@@ -78,19 +78,16 @@ export const connectWorker = Effect.fnUntraced(function* (
   // each worker gets to remove its snapshots before it is terminated.
   // A worker that never answers is terminated after a bounded wait.
   yield* Effect.addFinalizer(() =>
-    Effect.promise(async () => {
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      await Promise.race([
-        Promise.all(workers.values()),
-        new Promise<void>((resolve) => {
-          timer = setTimeout(resolve, WORKER_CLOSE_TIMEOUT_MS);
+    Effect.promise(() => Promise.all(workers.values())).pipe(
+      Effect.timeoutOption(WORKER_CLOSE_TIMEOUT),
+      Effect.andThen(
+        Effect.sync(() => {
+          for (const worker of workers.keys()) worker.terminate();
+          workers.clear();
+          URL.revokeObjectURL(url);
         }),
-      ]);
-      clearTimeout(timer);
-      for (const worker of workers.keys()) worker.terminate();
-      workers.clear();
-      URL.revokeObjectURL(url);
-    }),
+      ),
+    ),
   );
 
   const spawn = () => {
@@ -168,20 +165,14 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
   let lastError: DbUnavailable | null = null;
   /** `db-file-missing` is raised once per launch, whichever worker saw it. */
   let missingSignalled = false;
-  // A subscriber that arrives after the missing-file signal still gets it.
   /** The Read Mode of the live worker's connection, while it serves. */
   let readMode: EffectiveReadMode | undefined;
-  const stateEvent = (): ChangeEvent => ({
-    _tag: "state",
+  const { publish, changes } = yield* makeStateFeed(() => ({
     state,
     error: lastError,
-    ...(state === "ready" && readMode && { readMode }),
-  });
-  const { publish, changes } = yield* makeChangeFeed(() =>
-    missingSignalled && state !== "ready"
-      ? [stateEvent(), { _tag: "db-file-missing" }]
-      : [stateEvent()],
-  );
+    readMode,
+    missing: missingSignalled,
+  }));
   const connecting = yield* Semaphore.make(1);
 
   /**

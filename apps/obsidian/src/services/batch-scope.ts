@@ -161,7 +161,7 @@ export async function planBatchScope(
   // resolving against the Snapshot's Libraries.
   await deps.settings.loaded;
 
-  using lease = await deps.zoteroReads.acquireRead();
+  await using lease = await deps.zoteroReads.acquireRead();
   const libraries = await Effect.runPromise(lease.reads.Libraries({}));
   const libraryScope = deps.libraryScope.resolveLibraries(libraries);
   let unavailableLibraries = 0;

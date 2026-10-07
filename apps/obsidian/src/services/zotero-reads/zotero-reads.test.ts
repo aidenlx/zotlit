@@ -14,8 +14,9 @@ import type { Connection, ConnectionOpener } from "./connection";
 import type { HandlersOptions } from "./handlers";
 import { makeInProcessClient } from "./in-process";
 import type { ZoteroReadsClient } from "./in-process";
-import { DbUnavailable, SnapshotExpired } from "./rpc";
+import { DbUnavailable, SnapshotExpired, SnapshotId } from "./rpc";
 import type { ChangeEvent, ReadsConfig } from "./rpc";
+import { inProcessReadsService } from "./test-utils";
 
 /**
  * Rows every contract test reads: a user library (1) and a group library (2,
@@ -180,7 +181,7 @@ function withReads<A, E>(
 }
 
 /** The library-1 version a read saw: which connection answered. */
-const connectionSeen = (reads: ZoteroReadsClient, snapshot?: string) =>
+const connectionSeen = (reads: ZoteroReadsClient, snapshot?: SnapshotId) =>
   Effect.map(
     reads.Libraries(snapshot === undefined ? {} : { snapshot }),
     (libraries) => libraries.find((l) => l.libraryID === 1)!.version,
@@ -252,8 +253,10 @@ describe("ZoteroReads operations", () => {
 
   it("IndexItems streams the library in slices, with Instants decoded", async () => {
     const { open } = fixtureOpener();
-    const slices = await withReads(open, (reads) =>
-      Stream.runCollect(reads.IndexItems({ libraryID: 1, sliceSize: 2 })),
+    const slices = await withReads(
+      open,
+      (reads) => Stream.runCollect(reads.IndexItems({ libraryID: 1 })),
+      { sliceSize: 2 },
     );
     expect(slices.map((slice) => slice.map((item) => item.key))).toEqual([
       ["MAIN2345", "RELA2345"],
@@ -415,10 +418,11 @@ describe("ZoteroReads operations", () => {
 
   it("DisplayRefs streams one entry per id, null for an id with no live item", async () => {
     const { open } = fixtureOpener();
-    const slices = await withReads(open, (reads) =>
-      Stream.runCollect(
-        reads.DisplayRefs({ itemIDs: [1, 300, 999], sliceSize: 2 }),
-      ),
+    const slices = await withReads(
+      open,
+      (reads) =>
+        Stream.runCollect(reads.DisplayRefs({ itemIDs: [1, 300, 999] })),
+      { sliceSize: 2 },
     );
     expect(slices).toEqual([
       [
@@ -496,8 +500,10 @@ describe("ZoteroReads operations", () => {
           values (11, null, 0, 'storage:loose.pdf');
       `,
     );
-    const slices = await withReads(open, (reads) =>
-      Stream.runCollect(reads.AttachmentPathIndex({ sliceSize: 1 })),
+    const slices = await withReads(
+      open,
+      (reads) => Stream.runCollect(reads.AttachmentPathIndex({})),
+      { sliceSize: 1 },
     );
     expect(
       slices.map((slice) =>
@@ -513,19 +519,37 @@ describe("ZoteroReads operations", () => {
     ]);
   });
 
-  it("CitekeySnapshot lists the citation keys of one library", async () => {
-    const { open } = fixtureOpener();
-    const citekeys = await withReads(open, (reads) =>
-      reads.CitekeySnapshot({ libraryID: 1 }),
+  it("CitekeySnapshot streams the citation keys of one library, a slice per query", async () => {
+    const { open } = fixtureOpener(
+      () => `
+        insert into itemDataValues (valueID, value) values (40, 'rela2024');
+        insert into itemData (itemID, fieldID, valueID) values (3, 11, 40);
+      `,
     );
-    expect(citekeys).toEqual([
-      {
-        itemID: 1,
-        libraryID: 1,
-        key: "MAIN2345",
-        indexedKey: "MAIN2345",
-        citekey: "main2024",
-      },
+    const slices = await withReads(
+      open,
+      (reads) => Stream.runCollect(reads.CitekeySnapshot({ libraryID: 1 })),
+      { sliceSize: 1 },
+    );
+    expect(slices).toEqual([
+      [
+        {
+          itemID: 1,
+          libraryID: 1,
+          key: "MAIN2345",
+          indexedKey: "MAIN2345",
+          citekey: "main2024",
+        },
+      ],
+      [
+        {
+          itemID: 3,
+          libraryID: 1,
+          key: "RELA2345",
+          indexedKey: "RELA2345",
+          citekey: "rela2024",
+        },
+      ],
     ]);
   });
 
@@ -751,10 +775,10 @@ describe("ZoteroReads operations", () => {
         insert into deletedItems (itemID) values (201);
       `,
     );
-    const slices = await withReads(open, (reads) =>
-      Stream.runCollect(
-        reads.NoteRefs({ itemIDs: [200, 201, 1], sliceSize: 2 }),
-      ),
+    const slices = await withReads(
+      open,
+      (reads) => Stream.runCollect(reads.NoteRefs({ itemIDs: [200, 201, 1] })),
+      { sliceSize: 2 },
     );
     expect(slices).toMatchObject([
       [
@@ -777,10 +801,11 @@ describe("ZoteroReads operations", () => {
 
   it("ChildNoteRefs streams each parent's display ref beside its child notes", async () => {
     const { open } = fixtureOpener();
-    const slices = await withReads(open, (reads) =>
-      Stream.runCollect(
-        reads.ChildNoteRefs({ itemIDs: [1, 2, 999], sliceSize: 2 }),
-      ),
+    const slices = await withReads(
+      open,
+      (reads) =>
+        Stream.runCollect(reads.ChildNoteRefs({ itemIDs: [1, 2, 999] })),
+      { sliceSize: 2 },
     );
     expect(slices).toMatchObject([
       [
@@ -959,50 +984,53 @@ describe("ZoteroReads connection lifetime", () => {
     const { open, log, closed } = fixtureOpener((id) =>
       id === 2 ? "delete from items where itemID = 3;" : "",
     );
-    const result = await withReads(open, (reads) =>
-      Effect.gen(function* () {
-        const snapshotScope = yield* Scope.make();
-        const snapshot = yield* Stream.toPull(reads.Snapshot()).pipe(
-          Scope.provide(snapshotScope),
-        );
-        const [id] = yield* take(snapshot, 1);
+    const result = await withReads(
+      open,
+      (reads) =>
+        Effect.gen(function* () {
+          const snapshotScope = yield* Scope.make();
+          const snapshot = yield* Stream.toPull(reads.Snapshot()).pipe(
+            Scope.provide(snapshotScope),
+          );
+          const [id] = yield* take(snapshot, 1);
 
-        const streamed = yield* Effect.scoped(
-          Effect.gen(function* () {
-            // Started before the swap. A one-slot buffer keeps the server
-            // from reading ahead, so the last slice is read after the swap.
-            const slices = yield* Stream.toPull(
-              reads.DisplayRefs(
-                { itemIDs: [1, 1, 1, 1, 3], sliceSize: 1, snapshot: id },
-                { streamBufferSize: 1 },
-              ),
-            );
-            const first = yield* take(slices, 1);
-            yield* reads.Refresh();
-            // Started after the swap, naming the Snapshot.
-            const indexed = yield* Stream.runCollect(
-              reads.IndexItems({ libraryID: 1, snapshot: id }),
-            );
+          const streamed = yield* Effect.scoped(
+            Effect.gen(function* () {
+              // Started before the swap. A one-slot buffer keeps the server
+              // from reading ahead, so the last slice is read after the swap.
+              const slices = yield* Stream.toPull(
+                reads.DisplayRefs(
+                  { itemIDs: [1, 1, 1, 1, 3], snapshot: id },
+                  { streamBufferSize: 1 },
+                ),
+              );
+              const first = yield* take(slices, 1);
+              yield* reads.Refresh();
+              // Started after the swap, naming the Snapshot.
+              const indexed = yield* Stream.runCollect(
+                reads.IndexItems({ libraryID: 1, snapshot: id }),
+              );
 
-            // End the Snapshot; its id stops answering once the server has
-            // ended it, while the stream still holds the connection.
-            yield* Scope.close(snapshotScope, Exit.void);
-            yield* reads
-              .Libraries({ snapshot: id })
-              .pipe(Effect.flip, Effect.retry({ times: 100 }));
-            const logAfterSnapshotEnd = [...log];
+              // End the Snapshot; its id stops answering once the server has
+              // ended it, while the stream still holds the connection.
+              yield* Scope.close(snapshotScope, Exit.void);
+              yield* reads
+                .Libraries({ snapshot: id })
+                .pipe(Effect.flip, Effect.retry({ times: 100 }));
+              const logAfterSnapshotEnd = [...log];
 
-            const rest = yield* take(slices, 4);
-            return {
-              refs: [...first, ...rest].flat(),
-              indexed: indexed.flat().map((item) => item.key),
-              logAfterSnapshotEnd,
-            };
-          }),
-        );
-        yield* closed(1);
-        return streamed;
-      }),
+              const rest = yield* take(slices, 4);
+              return {
+                refs: [...first, ...rest].flat(),
+                indexed: indexed.flat().map((item) => item.key),
+                logAfterSnapshotEnd,
+              };
+            }),
+          );
+          yield* closed(1);
+          return streamed;
+        }),
+      { sliceSize: 1 },
     );
     expect(result.refs.at(-1)).toMatchObject({
       itemID: 3,
@@ -1015,7 +1043,9 @@ describe("ZoteroReads connection lifetime", () => {
   it("a read naming an unknown Snapshot fails with SnapshotExpired", async () => {
     const { open } = fixtureOpener();
     const error = await withReads(open, (reads) =>
-      Effect.flip(reads.Libraries({ snapshot: "snapshot-404" })),
+      Effect.flip(
+        reads.Libraries({ snapshot: SnapshotId.make("snapshot-404") }),
+      ),
     );
     expect(error).toBeInstanceOf(SnapshotExpired);
     expect(error).toMatchObject({
@@ -1024,89 +1054,136 @@ describe("ZoteroReads connection lifetime", () => {
     });
   });
 
-  it("an idle Snapshot ends one idle timeout after its last read and releases its connection", async () => {
+  it("a held Snapshot stays readable however long it is quiet, and ending its stream releases its connection", async () => {
     const { open, closed } = fixtureOpener();
     const result = await Effect.runPromise(
       Effect.gen(function* () {
-        const reads = yield* makeInProcessClient({
-          snapshotIdleTimeout: "1 minute",
-        });
-        const pull = yield* Stream.toPull(reads.Snapshot());
+        const reads = yield* makeInProcessClient();
+        const snapshotScope = yield* Scope.make();
+        const pull = yield* Stream.toPull(reads.Snapshot()).pipe(
+          Scope.provide(snapshotScope),
+        );
         const [id] = yield* take(pull, 1);
         yield* reads.Refresh();
 
-        // Each read restarts the idle timeout.
-        yield* TestClock.adjust("59 seconds");
-        const at59s = yield* connectionSeen(reads, id);
-        yield* TestClock.adjust("59 seconds");
-        const at118s = yield* connectionSeen(reads, id);
+        yield* TestClock.adjust("1 day");
+        const afterADay = yield* connectionSeen(reads, id);
 
-        yield* TestClock.adjust("60 seconds");
+        yield* Scope.close(snapshotScope, Exit.void);
         yield* closed(1);
-        const expired = yield* Effect.flip(reads.Libraries({ snapshot: id }));
-        return { at59s, at118s, expired };
+        const expired = yield* reads
+          .Libraries({ snapshot: id })
+          .pipe(Effect.flip, Effect.retry({ times: 100 }));
+        return { afterADay, expired };
       }).pipe(
         Effect.scoped,
         Effect.provide(layerRcRef(open)),
         Effect.provide(TestClock.layer()),
       ),
     );
-    expect(result.at59s).toBe(1);
-    expect(result.at118s).toBe(1);
+    expect(result.afterADay).toBe(1);
     expect(result.expired).toBeInstanceOf(SnapshotExpired);
   });
 
   it("a request completes while a stream is open", async () => {
     const { open } = fixtureOpener();
-    const order = await withReads(open, (reads) =>
-      Effect.gen(function* () {
-        const order: string[] = [];
-        // A one-slot buffer holds the server mid-stream until the client pulls.
-        const slices = yield* Stream.toPull(
-          reads.DisplayRefs(
-            { itemIDs: Array.from({ length: 10 }, () => 1), sliceSize: 1 },
-            { streamBufferSize: 1 },
-          ),
-        );
-        yield* take(slices, 1);
-        order.push("first slice");
-        yield* reads.Libraries({});
-        order.push("libraries");
-        yield* take(slices, 9);
-        order.push("stream drained");
-        return order;
-      }).pipe(Effect.scoped),
+    const order = await withReads(
+      open,
+      (reads) =>
+        Effect.gen(function* () {
+          const order: string[] = [];
+          // A one-slot buffer holds the server mid-stream until the client pulls.
+          const slices = yield* Stream.toPull(
+            reads.DisplayRefs(
+              { itemIDs: Array.from({ length: 10 }, () => 1) },
+              { streamBufferSize: 1 },
+            ),
+          );
+          yield* take(slices, 1);
+          order.push("first slice");
+          yield* reads.Libraries({});
+          order.push("libraries");
+          yield* take(slices, 9);
+          order.push("stream drained");
+          return order;
+        }).pipe(Effect.scoped),
+      { sliceSize: 1 },
     );
     expect(order).toEqual(["first slice", "libraries", "stream drained"]);
   });
 
   it("interrupting a stream stops its reads and releases its borrow", async () => {
     const { open, closed, statements } = fixtureOpener();
-    const result = await withReads(open, (reads) =>
-      Effect.gen(function* () {
-        yield* reads.Libraries({});
-        const before = statements();
-        // Fifty one-item slices behind a one-slot buffer: the server is
-        // still mid-stream, waiting on the client, when the take ends it.
-        const first = yield* Stream.runCollect(
-          Stream.take(
-            reads.DisplayRefs(
-              { itemIDs: Array.from({ length: 50 }, () => 1), sliceSize: 1 },
-              { streamBufferSize: 1 },
+    const result = await withReads(
+      open,
+      (reads) =>
+        Effect.gen(function* () {
+          yield* reads.Libraries({});
+          const before = statements();
+          // Fifty one-item slices behind a one-slot buffer: the server is
+          // still mid-stream, waiting on the client, when the take ends it.
+          const first = yield* Stream.runCollect(
+            Stream.take(
+              reads.DisplayRefs(
+                { itemIDs: Array.from({ length: 50 }, () => 1) },
+                { streamBufferSize: 1 },
+              ),
+              1,
             ),
-            1,
-          ),
-        );
-        // The swap closes #1 only once the interrupted stream let go of it.
-        yield* reads.Refresh();
-        yield* closed(1);
-        return { first, ran: statements() - before };
-      }),
+          );
+          // The swap closes #1 only once the interrupted stream let go of it.
+          yield* reads.Refresh();
+          yield* closed(1);
+          return { first, ran: statements() - before };
+        }),
+      { sliceSize: 1 },
     );
     expect(result.first).toHaveLength(1);
     // One statement per slice read, plus the refresh's validation: far from
     // the fifty slices an uninterrupted stream would read.
     expect(result.ran).toBeLessThan(10);
+  });
+
+  it("a stream read through the service reads no slice ahead of its consumer", async () => {
+    const { open, statements } = fixtureOpener();
+    await using service = inProcessReadsService(open, {
+      handlers: { sliceSize: 1 },
+    });
+    const { reads } = await service.ready;
+    const { oneSlice, held } = await Effect.runPromise(
+      Effect.gen(function* () {
+        const cost = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) =>
+          Effect.gen(function* () {
+            const before = statements();
+            yield* effect;
+            return statements() - before;
+          });
+        const items = Array.from({ length: 50 }, () => 1);
+        yield* Stream.runDrain(reads.DisplayRefs({ itemIDs: [1] }));
+        const oneSlice = yield* cost(
+          Stream.runDrain(reads.DisplayRefs({ itemIDs: [1] })),
+        );
+        // The consumer holds the first slice while other requests complete;
+        // each round trip gives a server that reads ahead the chance to.
+        const roundTrips = Effect.gen(function* () {
+          for (let i = 0; i < 20; i++) yield* reads.Libraries({});
+        });
+        const alone = yield* cost(roundTrips);
+        const held = yield* cost(
+          Effect.gen(function* () {
+            const slices = yield* Stream.toPull(
+              reads.DisplayRefs({ itemIDs: items }),
+            );
+            yield* take(slices, 1);
+            yield* roundTrips;
+          }),
+        );
+        return { oneSlice, held: held - alone };
+      }).pipe(Effect.scoped),
+    );
+    // The pulled slice, and at most the one the server read before it
+    // waits for the next pull.
+    expect(held).toBeLessThanOrEqual(2 * oneSlice);
   });
 
   it("Configure hands the new settings to the opener and swaps the connection", async () => {

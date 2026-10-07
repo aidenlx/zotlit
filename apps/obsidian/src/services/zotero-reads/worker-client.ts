@@ -1,6 +1,6 @@
 // The Web Worker adapter as a ZoteroReadsService client: spawn with the current settings, push every change.
 
-import { Effect } from "effect";
+import { Effect, FiberSet } from "effect";
 import type { Scope } from "effect";
 import workerSource from "virtual:zotero-reads-worker";
 
@@ -50,6 +50,8 @@ export const workerClient = Effect.fnUntraced(function* ({
     }),
     zoteroPref,
   );
+  // Pushes run in this scope, so the scope's end interrupts one in flight.
+  const run = yield* FiberSet.runtime(yield* FiberSet.make())();
   const reads = yield* makeWorkerReads(
     connectWorker(
       workerSource,
@@ -63,7 +65,7 @@ export const workerClient = Effect.fnUntraced(function* ({
     const next = readsConfig(current, zoteroPref);
     if (sameConfig(next, config)) return;
     config = next;
-    Effect.runFork(Effect.ignore(reads.Configure(next)));
+    run(Effect.ignore(reads.Configure(next)));
   };
   const unsubscribes = [
     settings.subscribe(push),

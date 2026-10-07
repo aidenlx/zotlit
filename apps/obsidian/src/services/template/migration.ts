@@ -103,7 +103,7 @@ export async function loadLiteratureNoteTemplateMigrationData(
   options: { annotation: boolean },
 ): Promise<MigrationVerificationData | null> {
   await deps.libraryScope.ready;
-  using lease = await deps.zoteroReads.acquireRead();
+  await using lease = await deps.zoteroReads.acquireRead();
   const scope = deps.libraryScope.resolveLibraries(
     await Effect.runPromise(lease.reads.Libraries({})),
   );

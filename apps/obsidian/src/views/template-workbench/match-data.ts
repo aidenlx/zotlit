@@ -18,11 +18,11 @@ export function createMatchData(
 ): WorkbenchHost["matchData"] {
   return {
     async tags() {
-      using lease = await db.acquireRead();
+      await using lease = await db.acquireRead();
       return [...(await Effect.runPromise(lease.reads.TagNames({})))];
     },
     async collections() {
-      using lease = await db.acquireRead();
+      await using lease = await db.acquireRead();
       const libraries = resolveLibraryScope(
         await Effect.runPromise(lease.reads.Libraries({})),
         { mode: "all" },
@@ -35,7 +35,7 @@ export function createMatchData(
       return paths.map((path) => [...path]);
     },
     async libraries() {
-      using lease = await db.acquireRead();
+      await using lease = await db.acquireRead();
       return resolveLibraryScope(
         await Effect.runPromise(lease.reads.Libraries({})),
         { mode: "all" },
@@ -54,7 +54,7 @@ export async function loadMatchFacts(
 ): Promise<MatchItemFacts | null> {
   const sample = getSampleItem(indexedKey);
   if (sample) return snapshotMatchFacts(sample);
-  using lease = await db.acquireRead();
+  await using lease = await db.acquireRead();
   const items = await Effect.runPromise(
     lease.reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
   );

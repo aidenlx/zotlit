@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect";
+import { Effect } from "effect";
 // Materializes a literature note's child Zotero notes into flat Markdown mirrors.
 import { normalizePath, stringifyYaml } from "obsidian";
 import type {
@@ -67,6 +67,7 @@ import type {
 import type { ProfileService } from "@/services/profile/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 import { noteAnnotationKeys, noteReferences, parseNote } from "./note-parser";
@@ -674,12 +675,7 @@ async function parentLiteratureNote(
   options: Pick<ImportNoteOptions, "reads">,
 ): Promise<TFile | undefined> {
   if (note.parentItemID === null) return undefined;
-  const slices = await Effect.runPromise(
-    Stream.runCollect(
-      options.reads.DisplayRefs({ itemIDs: [note.parentItemID] }),
-    ),
-  );
-  const parent = slices.flat()[0]?.ref;
+  const parent = await readDisplayRef(options.reads, note.parentItemID);
   if (!parent) return undefined;
   return ctx.noteIndex.getNotesByItemKey(parent.indexedKey)[0];
 }

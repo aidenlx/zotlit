@@ -30,7 +30,7 @@
  *
  * No fixed Library or Item limit applies.
  */
-import { Effect, Exit, Fiber, FiberHandle, Scope, Stream } from "effect";
+import { Effect, Fiber, FiberHandle, Scope, Stream } from "effect";
 import { getLanguage } from "obsidian";
 
 import { createLanguageLookup } from "@zotlit/db";
@@ -43,6 +43,7 @@ import type {
   TokenizerOptions,
 } from "@zotlit/item-lookup";
 
+import { openScope } from "@/lib/effect-scope";
 import { getLogger } from "@/lib/log";
 import { availableKey } from "@/services/library-scope/scope";
 import type {
@@ -174,8 +175,8 @@ export class ItemLookup extends Service<ItemLookupReady> {
 
   async #load(): Promise<ItemLookupReady> {
     await using stack = new AsyncDisposableStack();
-    const buildScope = Effect.runSync(Scope.make());
-    stack.defer(() => Effect.runPromise(Scope.close(buildScope, Exit.void)));
+    const { scope: buildScope, close } = openScope();
+    stack.defer(close);
     const builds = Effect.runSync(
       Scope.provide(FiberHandle.make<void, never>(), buildScope),
     );

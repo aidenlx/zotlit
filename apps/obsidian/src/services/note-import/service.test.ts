@@ -501,9 +501,9 @@ describe("createNoteImporter", () => {
           : "update itemNotes set note = '<p>refreshed</p>' where itemID = 50;"),
     );
     const { wrap, calls, snapshots } = recordCalls(["NoteBodies"]);
-    await using readsService = inProcessReadsService(open, wrap);
+    await using readsService = inProcessReadsService(open, { wrap });
     const { app, create } = makeApp();
-    using lease = await readsService.acquireRead();
+    await using lease = await readsService.acquireRead();
     const batch = await makeService(app).prepare({
       ...PREPARE,
       reads: lease.reads,

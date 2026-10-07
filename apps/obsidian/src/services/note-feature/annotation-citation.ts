@@ -37,7 +37,7 @@ export async function renderAnnotationCitation(
   annotationKey: string,
 ): Promise<AnnotationCitation> {
   await Promise.all([ctx.template.ready, ctx.profile.ready]);
-  using lease = await ctx.zoteroReads.acquireRead();
+  await using lease = await ctx.zoteroReads.acquireRead();
   const { reads } = lease;
   const sources = await Effect.runPromise(
     Effect.flatMap(reads.Libraries({}), (libraries) => {

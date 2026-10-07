@@ -126,7 +126,7 @@ export async function readReferenceSources(
   try {
     // One Snapshot: the Attachment read names Items by the itemIDs the Item
     // read answered with, so both must see one database.
-    using lease = await db.acquireRead();
+    await using lease = await db.acquireRead();
     const { reads } = lease;
     const indexedKeys = [
       ...new Set(

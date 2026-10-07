@@ -71,7 +71,7 @@ export class DbUnavailable extends Schema.TaggedError<DbUnavailable>()(
   { message: Schema.String },
 ) {}
 
-/** The Snapshot id names no open Snapshot: it ended, timed out, or never existed. */
+/** The Snapshot id names no open Snapshot: it ended or never existed. */
 export class SnapshotExpired extends Schema.TaggedError<SnapshotExpired>()(
   "SnapshotExpired",
   { snapshot: Schema.String },
@@ -425,13 +425,11 @@ export type ChangeEvent = typeof ChangeEventSchema.Type;
  * Pins one connection: an operation that names this id reads that connection
  * instead of the current one.
  */
-export const SnapshotId = Schema.String;
+export const SnapshotId = Schema.String.pipe(Schema.brand("SnapshotId"));
+export type SnapshotId = typeof SnapshotId.Type;
 
 /** The optional Snapshot every read accepts. */
 const snapshot = { snapshot: Schema.optionalKey(SnapshotId) };
-
-/** Items per stream slice; one slice is one emission and one cancel point. */
-const sliceSize = { sliceSize: Schema.optionalKey(Schema.Number) };
 
 export class ZoteroReads extends RpcGroup.make(
   Rpc.make("Libraries", {
@@ -446,7 +444,7 @@ export class ZoteroReads extends RpcGroup.make(
     error: ReadError,
   }),
   Rpc.make("IndexItems", {
-    payload: { libraryID: Schema.Number, ...sliceSize, ...snapshot },
+    payload: { libraryID: Schema.Number, ...snapshot },
     success: Schema.Array(IndexedItemSchema),
     error: ReadError,
     stream: true,
@@ -507,7 +505,6 @@ export class ZoteroReads extends RpcGroup.make(
   Rpc.make("DisplayRefs", {
     payload: {
       itemIDs: Schema.Array(Schema.Number),
-      ...sliceSize,
       ...snapshot,
     },
     success: Schema.Array(
@@ -536,15 +533,17 @@ export class ZoteroReads extends RpcGroup.make(
     error: ReadError,
   }),
   Rpc.make("AttachmentPathIndex", {
-    payload: { ...sliceSize, ...snapshot },
+    payload: snapshot,
     success: Schema.Array(AttachmentWithParentKeySchema),
     error: ReadError,
     stream: true,
   }),
+  /** The live items of one library that carry a citation key, in slices. */
   Rpc.make("CitekeySnapshot", {
     payload: { libraryID: Schema.Number, ...snapshot },
     success: Schema.Array(LibraryCitekeySchema),
     error: ReadError,
+    stream: true,
   }),
   Rpc.make("Changes", {
     success: ChangeEventSchema,
@@ -552,7 +551,7 @@ export class ZoteroReads extends RpcGroup.make(
   }),
   /**
    * Emits one Snapshot id and holds its connection until the caller ends the
-   * stream, or until no read names it for the idle timeout.
+   * stream or goes away.
    */
   Rpc.make("Snapshot", {
     success: SnapshotId,
@@ -676,7 +675,6 @@ export class ZoteroReads extends RpcGroup.make(
   Rpc.make("NoteRefs", {
     payload: {
       itemIDs: Schema.Array(Schema.Number),
-      ...sliceSize,
       ...snapshot,
     },
     success: Schema.Array(
@@ -693,7 +691,6 @@ export class ZoteroReads extends RpcGroup.make(
   Rpc.make("ChildNoteRefs", {
     payload: {
       itemIDs: Schema.Array(Schema.Number),
-      ...sliceSize,
       ...snapshot,
     },
     success: Schema.Array(

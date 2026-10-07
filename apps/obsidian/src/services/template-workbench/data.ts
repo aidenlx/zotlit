@@ -1,6 +1,6 @@
 // Resolves an Indexed Key and builds side-effect-free Template data.
 
-import { Effect, Stream } from "effect";
+import { Effect } from "effect";
 import type { App } from "obsidian";
 
 import {
@@ -38,6 +38,7 @@ import {
 } from "@/services/template/inert-resolver-host";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import type {
   ZoteroReadsApi,
   ZoteroReadsService,
@@ -119,7 +120,7 @@ export async function loadTemplateData(
     deps.templates.ready,
   ]);
   if (root === "annotation") {
-    using lease = await deps.zoteroReads.acquireRead();
+    await using lease = await deps.zoteroReads.acquireRead();
     const selected = await readAnnotationSources(lease.reads, indexedKey);
     if (selected.kind !== "sources") return selected;
     const { sources, item } = selected;
@@ -137,7 +138,7 @@ export async function loadTemplateData(
   }
 
   const selected = await (async () => {
-    using lease = await deps.zoteroReads.acquireRead();
+    await using lease = await deps.zoteroReads.acquireRead();
     return await readNoteItemSource(lease.reads, indexedKey);
   })();
   if (selected.kind !== "source") return selected;
@@ -182,7 +183,7 @@ export async function loadCitationData(
     };
   }
   await deps.settings.loaded;
-  using lease = await deps.zoteroReads.acquireRead();
+  await using lease = await deps.zoteroReads.acquireRead();
   const selected = await readNoteItem(lease.reads, selector.key);
   if (selected.kind !== "item") return selected;
   const { item } = selected;
@@ -369,17 +370,13 @@ async function readNoteItem(
   const target = await resolveNoteItemID(reads, indexedKey);
   if (target.kind !== "target") return target;
   if (target.item) return { kind: "item", item: target.item };
-  const [ref] = (
-    await Effect.runPromise(
-      Stream.runCollect(reads.DisplayRefs({ itemIDs: [target.itemID] })),
-    )
-  ).flat();
+  const ref = await readDisplayRef(reads, target.itemID);
   const item =
-    ref?.ref &&
+    ref &&
     (
       await Effect.runPromise(
-        reads.ItemsByIndexedKeys({ indexedKeys: [ref.ref.indexedKey] }),
+        reads.ItemsByIndexedKeys({ indexedKeys: [ref.indexedKey] }),
       )
-    ).get(ref.ref.indexedKey);
+    ).get(ref.indexedKey);
   return item ? { kind: "item", item } : { kind: target.missing };
 }

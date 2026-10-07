@@ -3670,7 +3670,7 @@ export class AnnotationRepository extends Service<void> {
     const generation = this.#databaseGeneration;
     let annotations: readonly AnnotationRecord[];
     try {
-      using lease = await this.#db.acquireRead();
+      await using lease = await this.#db.acquireRead();
       annotations = toRecords(
         attachmentKey,
         await Effect.runPromise(
@@ -3735,7 +3735,7 @@ export class AnnotationRepository extends Service<void> {
 
   async #readFromDatabase(attachmentKey: string): Promise<AnnotationList> {
     const generation = this.#databaseGeneration;
-    using lease = await this.#db.acquireRead();
+    await using lease = await this.#db.acquireRead();
     const [found, libraries, database] = await Effect.runPromise(
       Effect.all(
         [

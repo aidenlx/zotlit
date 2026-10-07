@@ -547,6 +547,8 @@ describe("independent native Note Preview", () => {
       );
     });
     const preview = await test.open();
+    // The linked render of the open settles before the restore lands.
+    await advance();
     vi.mocked(activeTemplateWorkbench).mockReturnValue(test.editor);
     const saved = {
       source: { builtin: true },

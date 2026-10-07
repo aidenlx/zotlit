@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 import { basename } from "node:path/posix";
 import { TFile } from "obsidian";
 import type {
@@ -266,10 +266,9 @@ export class DatabaseStub implements AsyncDisposable {
 
   constructor({ readyImmediately = true } = {}) {
     if (readyImmediately) this.#ready.resolve();
-    this.#service = inProcessReadsService(
-      memoryOpener(() => "").open,
-      (client) => ({ ...client, CitekeySnapshot: this.citekeys.read }),
-    );
+    this.#service = inProcessReadsService(memoryOpener(() => "").open, {
+      wrap: (client) => ({ ...client, CitekeySnapshot: this.citekeys.read }),
+    });
   }
 
   get ready(): Promise<ZoteroReadsReady> {
@@ -321,16 +320,16 @@ export class CitekeysStub {
   }
 
   read = (({ libraryID }: { libraryID: number }) =>
-    Effect.suspend(() => {
+    Stream.suspend(() => {
       this.calls.push(libraryID);
       if (this.error)
-        return Effect.fail(
+        return Stream.fail(
           new DbUnavailable({
             message:
               this.error instanceof Error ? this.error.message : "read failed",
           }),
         );
-      return Effect.succeed(
+      return Stream.make(
         this.rows.filter((row) => row.libraryID === libraryID),
       );
     })) as unknown as ZoteroReadsClient["CitekeySnapshot"];

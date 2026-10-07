@@ -17,61 +17,44 @@
  * runtime (`inProcessClient` in `test-utils.ts`).
  */
 import { Cause, Effect, Exit, Pull, Scope, Stream } from "effect";
+import { RpcSchema } from "effect/rpc";
 import type { RpcClientError } from "effect/rpc";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import { openScope } from "@/lib/effect-scope";
 import { getLogger } from "@/lib/log";
 import type { EffectiveReadMode } from "@/services/database/read-source";
 import { Service } from "@/services/service-base";
 
 import type { ZoteroReadsClient } from "./in-process";
-import { DbUnavailable } from "./rpc";
-import type { ChangeEvent } from "./rpc";
+import { DbUnavailable, ZoteroReads } from "./rpc";
+import type { ChangeEvent, SnapshotId } from "./rpc";
 
 const logger = getLogger(["zotero-reads"]);
 
-/** The operations that read the database; each accepts an optional Snapshot. */
-const READ_OPERATIONS = [
-  "Libraries",
-  "ConnectionReadout",
-  "IndexItems",
-  "IndexSignature",
-  "ItemsByIndexedKeys",
-  "ItemFamily",
-  "NoteSource",
-  "AnnotationSources",
-  "AnnotationsOfAttachment",
-  "AttachmentsOf",
-  "DisplayRefs",
-  "NoteBodies",
-  "WorkLabels",
-  "AttachmentPathIndex",
-  "CitekeySnapshot",
-  "AttachmentsByKeys",
-  "DatabaseIdentity",
-  "ItemSnapshot",
-  "ItemType",
-  "AnnotViewAttachments",
-  "ReaderTargetKeys",
-  "AttachmentsAt",
-  "AttachmentSources",
-  "ScopeItemIDs",
-  "NoteRefs",
-  "ChildNoteRefs",
-  "TagNames",
-  "CollectionPaths",
-  "MembershipFacts",
-] as const satisfies readonly (keyof ZoteroReadsClient)[];
+/** The operations that do not read the database. */
+const LIFECYCLE_OPERATIONS = new Set([
+  "Changes",
+  "Snapshot",
+  "Refresh",
+  "NotifyExternalChange",
+  "Configure",
+  "Ping",
+] as const satisfies readonly (keyof ZoteroReadsClient)[]);
 
-/** The read operations of ZoteroReads. */
-export type ZoteroReadsApi = Pick<
-  ZoteroReadsClient,
-  (typeof READ_OPERATIONS)[number]
->;
+type LifecycleOperation =
+  typeof LIFECYCLE_OPERATIONS extends Set<infer T> ? T : never;
 
-/** A Snapshot held by the renderer: `reads` all see one database state. */
-export interface ZoteroReadLease extends Disposable {
+/** The read operations of ZoteroReads; each accepts an optional Snapshot. */
+export type ZoteroReadsApi = Omit<ZoteroReadsClient, LifecycleOperation>;
+
+/**
+ * A Snapshot held by the renderer: `reads` all see one database state.
+ * Disposal ends the Snapshot's stream; the worker hears of it within about
+ * a second.
+ */
+export interface ZoteroReadLease extends AsyncDisposable {
   readonly reads: ZoteroReadsApi;
 }
 
@@ -93,22 +76,37 @@ export interface ZoteroReadsServiceDeps {
   client: Effect.Effect<ZoteroReadsClient, never, Scope.Scope>;
 }
 
-/** `client`'s read operations, each bound to the Snapshot `snapshot`. */
-function bindReads(client: ZoteroReadsClient, snapshot?: string) {
+/**
+ * `client`'s read operations, each bound to the Snapshot `snapshot`. A stream
+ * read buffers no slice ahead: the worker reads the next slice only after the
+ * consumer pulled the last, so an abandoned stream wastes at most one slice.
+ */
+function bindReads(client: ZoteroReadsClient, snapshot?: SnapshotId) {
   const reads: Record<string, unknown> = {};
-  for (const operation of READ_OPERATIONS) {
-    const call = client[operation] as (
+  for (const [tag, rpc] of ZoteroReads.requests) {
+    if (LIFECYCLE_OPERATIONS.has(tag as LifecycleOperation)) continue;
+    const call = client[tag as keyof ZoteroReadsApi] as (
       payload: object,
       options?: object,
     ) => unknown;
-    reads[operation] =
-      snapshot === undefined
-        ? call
-        : (payload: object, options?: object) =>
-            call({ ...payload, snapshot }, options);
+    const stream = RpcSchema.isStreamSchema(rpc.successSchema);
+    reads[tag] = (payload: object, options?: object) =>
+      call(
+        snapshot === undefined ? payload : { ...payload, snapshot },
+        stream ? { streamBufferSize: 0, ...options } : options,
+      );
   }
   return reads as unknown as ZoteroReadsApi;
 }
+
+/**
+ * Ends the Snapshot of a lease that was never disposed once the garbage
+ * collector reclaims its reads, so a leaked lease cannot pin a connection
+ * for the plugin's life.
+ */
+const leakedLeases = new FinalizationRegistry<() => Promise<void>>(
+  (close) => void close(),
+);
 
 /** What {@link ZoteroReadsService.ready} resolves with. */
 export interface ZoteroReadsReady {
@@ -182,19 +180,27 @@ export class ZoteroReadsService extends Service<ZoteroReadsReady> {
   /**
    * Open a Snapshot and hold it until the lease is disposed.
    *
-   * @throws {@link DbUnavailable} when no connection can serve.
+   * @throws {@link DbUnavailable} when no connection can serve, or a client
+   *   error when the worker does not answer.
    */
   async acquireRead(): Promise<ZoteroReadLease> {
     await this.ready;
-    const scope = Effect.runSync(Scope.make());
-    const release = () => Effect.runPromise(Scope.close(scope, Exit.void));
+    const { scope, close } = openScope();
     try {
       const reads = await Effect.runPromise(
         Scope.provide(this.snapshot, scope),
       );
-      return { reads, [Symbol.dispose]: () => void release() };
+      const token = {};
+      leakedLeases.register(reads, close, token);
+      return {
+        reads,
+        [Symbol.asyncDispose]: () => {
+          leakedLeases.unregister(token);
+          return close();
+        },
+      };
     } catch (error) {
-      await release();
+      await close();
       throw error;
     }
   }
@@ -228,8 +234,8 @@ export class ZoteroReadsService extends Service<ZoteroReadsReady> {
 
   async #load(): Promise<ZoteroReadsReady> {
     await using stack = new AsyncDisposableStack();
-    const scope = Effect.runSync(Scope.make());
-    stack.defer(() => Effect.runPromise(Scope.close(scope, Exit.void)));
+    const { scope, close } = openScope();
+    stack.defer(close);
 
     const client = await Effect.runPromise(
       Scope.provide(this.#makeClient, scope),

@@ -210,7 +210,7 @@ export async function runBatchWrite<T extends BatchRunTask>(opts: {
   onTaskFailed?: (task: T, error: unknown) => void;
   haltOn?: (error: unknown) => boolean;
 }): Promise<BatchRunResult> {
-  using lease = await opts.zoteroReads.acquireRead();
+  await using lease = await opts.zoteroReads.acquireRead();
   // Awaited inside the `using` scope so the lease stays pinned until every task
   // settles; returning the pending promise would dispose the lease early.
   const result = await executeBatchRun({

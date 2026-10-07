@@ -335,7 +335,7 @@ export class NativePreviewSession implements Disposable {
           this.state.setState({ status: "error" });
           return;
         }
-        using lease = await this.#deps.zoteroReads.acquireRead();
+        await using lease = await this.#deps.zoteroReads.acquireRead();
         if (generation !== this.#dataGeneration || this.#closed) return;
         snapshot = await Effect.runPromise(
           lease.reads.ItemSnapshot({

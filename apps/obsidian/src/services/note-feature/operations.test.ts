@@ -759,9 +759,9 @@ describe("createNote", () => {
           const lease = await zoteroReads.acquireRead();
           return {
             reads: lease.reads,
-            [Symbol.dispose]() {
+            [Symbol.asyncDispose]() {
               leaseReleased = true;
-              lease[Symbol.dispose]();
+              return lease[Symbol.asyncDispose]();
             },
           };
         },
@@ -1459,7 +1459,7 @@ describe("createNote", () => {
     ]);
     await using zoteroReads = inProcessReadsService(
       sharedClientOpener(db.client),
-      (client) => wrap(knowReadItems(client)),
+      { wrap: (client) => wrap(knowReadItems(client)) },
     );
     const deps: TestDeps = {
       app: makeApp(),
@@ -5201,10 +5201,9 @@ function makeDbDeps() {
   const db = makeDb();
   return {
     db,
-    zoteroReads: inProcessReadsService(
-      sharedClientOpener(db.client),
-      knowReadItems,
-    ),
+    zoteroReads: inProcessReadsService(sharedClientOpener(db.client), {
+      wrap: knowReadItems,
+    }),
   };
 }
 

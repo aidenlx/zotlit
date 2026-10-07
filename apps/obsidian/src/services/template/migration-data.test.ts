@@ -47,9 +47,8 @@ const SEED = `
 
 it("verifies against the first in-scope item that renders, its Citation read before the render", async () => {
   const events: string[] = [];
-  await using reads = inProcessReadsService(
-    memoryOpener(() => SEED).open,
-    (client) => ({
+  await using reads = inProcessReadsService(memoryOpener(() => SEED).open, {
+    wrap: (client) => ({
       ...client,
       ItemsByIndexedKeys: ((payload: {
         readonly indexedKeys: readonly string[];
@@ -58,7 +57,7 @@ it("verifies against the first in-scope item that renders, its Citation read bef
         return client.ItemsByIndexedKeys(payload);
       }) as unknown as ZoteroReadsClient["ItemsByIndexedKeys"],
     }),
-  );
+  });
   vi.mocked(loadTemplateData).mockImplementation(async (_deps, key, root) => {
     if (root === "note") events.push(`render ${key}`);
     // The item modified last cannot render; the next one can.

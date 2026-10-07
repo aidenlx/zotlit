@@ -131,8 +131,7 @@ describe("LibraryScopeService", () => {
     f.failLibraries(true);
 
     await f.refresh([MY_LIBRARY]);
-    await f.service.ready;
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await expect.poll(() => f.librariesFailed).toBeGreaterThan(0);
 
     expect(f.service.current).toBe(before);
     f.failLibraries(false);
@@ -248,31 +247,39 @@ async function makeService(
   let gate: PromiseWithResolvers<void> | null = null;
   let waiting = false;
   let librariesRead = 0;
+  let librariesFailed = 0;
   let failing = false;
   let now = Temporal.Now.instant();
   const { open } = memoryOpener((n) => librariesSql(opens[n - 1] ?? null));
   const reads = stack.use(
-    inProcessReadsService(open, (client) => ({
-      ...client,
-      Libraries: ((...args: Parameters<typeof client.Libraries>) =>
-        Effect.andThen(
+    inProcessReadsService(open, {
+      wrap: (client) => ({
+        ...client,
+        Libraries: ((...args: Parameters<typeof client.Libraries>) =>
           Effect.andThen(
-            Effect.promise(async () => {
-              if (gate === null) return;
-              waiting = true;
-              await gate.promise;
+            Effect.andThen(
+              Effect.promise(async () => {
+                if (gate === null) return;
+                waiting = true;
+                await gate.promise;
+              }),
+              () =>
+                failing
+                  ? Effect.suspend(() => {
+                      librariesFailed += 1;
+                      return Effect.fail(
+                        new DbUnavailable({ message: "the read failed" }),
+                      );
+                    })
+                  : Effect.void,
+            ),
+            Effect.map(client.Libraries(...args), (libraries) => {
+              librariesRead += 1;
+              return libraries;
             }),
-            () =>
-              failing
-                ? Effect.fail(new DbUnavailable({ message: "the read failed" }))
-                : Effect.void,
-          ),
-          Effect.map(client.Libraries(...args), (libraries) => {
-            librariesRead += 1;
-            return libraries;
-          }),
-        )) as typeof client.Libraries,
-    })),
+          )) as typeof client.Libraries,
+      }),
+    }),
   );
   const queries = stack.use(new QueryClientService({ now: () => now }));
   const settings = new FakeSettings(
@@ -297,6 +304,10 @@ async function makeService(
     /** How many `Libraries` reads have answered. */
     get librariesRead() {
       return librariesRead;
+    },
+    /** How many `Libraries` reads have failed. */
+    get librariesFailed() {
+      return librariesFailed;
     },
     /** A database refresh onto a source holding `libraries`; `null` fails it. */
     refresh: async (libraries: readonly Library[] | null) => {

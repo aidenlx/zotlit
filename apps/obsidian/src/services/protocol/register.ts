@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect";
+import { Effect } from "effect";
 import type { ObsidianProtocolData, PaneType, Plugin } from "obsidian";
 
 import type { ItemRef } from "@zotlit/db";
@@ -58,6 +58,7 @@ import {
   batchImportToast,
 } from "@/services/note-import/batch-import-notices";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
@@ -455,10 +456,7 @@ async function resolveProtocolItem(
   }
 
   const { reads } = await deps.zoteroReads.ready;
-  const slices = await Effect.runPromise(
-    Stream.runCollect(reads.DisplayRefs({ itemIDs: [query.item] })),
-  );
-  const ref = slices.flat()[0]?.ref ?? null;
+  const ref = await readDisplayRef(reads, query.item);
   if (!ref) {
     logger.warn("Protocol handler: item not found", {
       action,

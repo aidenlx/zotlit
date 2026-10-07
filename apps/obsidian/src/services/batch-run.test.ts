@@ -42,15 +42,15 @@ const sentinelReads = { $sentinel: true } as unknown as ZoteroReadsApi;
 /** Lease stub whose dispose is observable, matching ZoteroReadLease's shape. */
 function makeLeasingReads(reads: ZoteroReadsApi = sentinelReads): {
   zoteroReads: {
-    acquireRead: () => Promise<Disposable & { reads: ZoteroReadsApi }>;
+    acquireRead: () => Promise<AsyncDisposable & { reads: ZoteroReadsApi }>;
   };
   acquireRead: ReturnType<typeof vi.fn>;
   dispose: ReturnType<typeof vi.fn>;
 } {
-  const dispose = vi.fn();
+  const dispose = vi.fn(async () => {});
   const acquireRead = vi.fn(async () => ({
     reads,
-    [Symbol.dispose]: dispose,
+    [Symbol.asyncDispose]: dispose,
   }));
   return { zoteroReads: { acquireRead }, acquireRead, dispose };
 }

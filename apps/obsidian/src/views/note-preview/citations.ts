@@ -123,7 +123,7 @@ export async function renderDraftCitations(
     const keys = [...new Set(placed.flatMap(({ works }) => works))].filter(
       (key) => key !== null,
     );
-    using lease = await deps.zoteroReads.acquireRead();
+    await using lease = await deps.zoteroReads.acquireRead();
     const { reads } = lease;
     const [user, found] = await Effect.runPromise(
       Effect.all(

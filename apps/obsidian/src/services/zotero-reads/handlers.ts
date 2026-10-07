@@ -1,6 +1,6 @@
 // The ZoteroReads handler layer: each operation composes @zotlit/db query functions over a borrowed Connection.
 import { chunk } from "@std/collections/chunk";
-import { Clock, Duration, Effect, Exit, Scope, Stream } from "effect";
+import { Effect, Exit, Scope, Stream } from "effect";
 
 import {
   CollectionCache,
@@ -17,13 +17,14 @@ import {
   getAttachmentPage,
   getAttachmentsByParents,
   getChildNotesByParentIDs,
-  getCitekeysByLibrary,
+  getAllTagNames,
+  getCitekeyPage,
   getCollectionIDByKey,
   getIndexedItemIDsByCollection,
   getIndexedItemIDsByLibrary,
   getIndexedItemsByID,
   getIndexSignature,
-  getItemDisplayRefByID,
+  getItemDisplayRefsByIDs,
   getItemRefByID,
   getItemsByID,
   getItemsByKey,
@@ -47,7 +48,7 @@ import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 
 import { Connection, toDbUnavailable } from "./connection";
 import { listCollectionChoices, resolveMembershipFacts } from "./membership";
-import { SnapshotExpired, ZoteroReads } from "./rpc";
+import { SnapshotExpired, SnapshotId, ZoteroReads } from "./rpc";
 import type { DbUnavailable } from "./rpc";
 import type { WorkLabelSource } from "./rpc";
 
@@ -66,12 +67,14 @@ const SCOPE_QUERIES = {
 /** Items per stream slice: a cancel point about every 300 ms on a large library. */
 export const DEFAULT_SLICE_SIZE = 500;
 
-/** How long a Snapshot may go unused before the worker ends it. */
-export const DEFAULT_SNAPSHOT_IDLE_TIMEOUT = Duration.minutes(5);
-
 export interface HandlersOptions {
-  /** @default {@link DEFAULT_SNAPSHOT_IDLE_TIMEOUT} */
-  snapshotIdleTimeout?: Duration.Input;
+  /**
+   * Items per stream slice; one slice is one emission and one cancel point.
+   * Tests shrink it to see several slices from a small fixture.
+   *
+   * @default {@link DEFAULT_SLICE_SIZE}
+   */
+  sliceSize?: number;
 }
 
 /** Run a synchronous read; a SQLite throw becomes a {@link DbUnavailable}. */
@@ -82,15 +85,11 @@ function read<A>(
   return Effect.try({ try: () => f(client), catch: toDbUnavailable });
 }
 
-/** Cut `inputs` into stream slices of `size` (default {@link DEFAULT_SLICE_SIZE}). */
-function slicesOf<I>(inputs: readonly I[], size: number | undefined): I[][] {
-  return chunk(inputs, size ?? DEFAULT_SLICE_SIZE);
-}
-
 /**
  * One slice per element: each slice is its own query and its own message, and
- * an interrupt lands between slices. The server reads ahead only as far as the
- * client's stream buffer, so other requests interleave with a long stream.
+ * an interrupt lands between slices. The server reads the next slice only once
+ * the client acknowledged the last, so other requests interleave with a long
+ * stream.
  */
 function sliced<I, O>(
   client: NodeDatabaseClient,
@@ -133,14 +132,6 @@ function itemsByIndexedKeys(
   return items;
 }
 
-/** Every distinct tag name across the database, sorted. */
-function allTagNames(client: NodeDatabaseClient): string[] {
-  const rows = client.query.tags.findMany({ columns: { name: true } }).sync();
-  return [...new Set(rows.map((row) => row.name))].sort((a, b) =>
-    a.localeCompare(b),
-  );
-}
-
 function workLabelSource(
   item: Item,
   fields: {
@@ -159,7 +150,6 @@ function workLabelSource(
   };
 }
 
-/** A connection a Snapshot pinned, with the reads using it right now. */
 /** Lookup memos that stay valid for one database state. */
 interface NoteMemos {
   readonly collectionCache: CollectionCache;
@@ -177,6 +167,7 @@ function noteMemos(): NoteMemos {
   };
 }
 
+/** A connection a Snapshot pinned, with the reads using it right now. */
 interface Pinned {
   readonly client: NodeDatabaseClient;
   /** Shared by the Snapshot's reads: a batch resolves each tag and collection once. */
@@ -185,25 +176,22 @@ interface Pinned {
   readonly scope: Scope.Closeable;
   active: number;
   ended: boolean;
-  /** Clock time when a read last named this Snapshot, or when it opened. */
-  lastUsed: number;
 }
 
 export function handlersLayer(options?: HandlersOptions) {
-  const idleTimeout = options?.snapshotIdleTimeout
-    ? Duration.fromInputUnsafe(options.snapshotIdleTimeout)
-    : DEFAULT_SNAPSHOT_IDLE_TIMEOUT;
+  const sliceSize = options?.sliceSize ?? DEFAULT_SLICE_SIZE;
+  /** Cut `inputs` into stream slices. */
+  const slicesOf = <I>(inputs: readonly I[]): I[][] => chunk(inputs, sliceSize);
 
   return ZoteroReads.toLayer(
     Effect.gen(function* () {
       const connection = yield* Connection;
-      const pinned = new Map<string, Pinned>();
+      const pinned = new Map<SnapshotId, Pinned>();
       let snapshots = 0;
 
       const releasePinned = (entry: Pinned) =>
-        Effect.flatMap(Clock.currentTimeMillis, (now) => {
+        Effect.suspend(() => {
           entry.active -= 1;
-          entry.lastUsed = now;
           return entry.ended && entry.active === 0
             ? Scope.close(entry.scope, Exit.void)
             : Effect.void;
@@ -214,7 +202,7 @@ export function handlersLayer(options?: HandlersOptions) {
        * one is named, the current connection otherwise.
        */
       const borrow = (
-        snapshot: string | undefined,
+        snapshot: SnapshotId | undefined,
       ): Effect.Effect<
         NodeDatabaseClient,
         DbUnavailable | SnapshotExpired,
@@ -222,11 +210,10 @@ export function handlersLayer(options?: HandlersOptions) {
       > => {
         if (snapshot === undefined) return connection.borrow;
         return Effect.acquireRelease(
-          Effect.flatMap(Clock.currentTimeMillis, (now) => {
+          Effect.suspend(() => {
             const entry = pinned.get(snapshot);
             if (!entry) return Effect.fail(new SnapshotExpired({ snapshot }));
             entry.active += 1;
-            entry.lastUsed = now;
             return Effect.succeed(entry);
           }),
           releasePinned,
@@ -235,7 +222,7 @@ export function handlersLayer(options?: HandlersOptions) {
 
       /** Borrow for one request and run `f` on the client. */
       const withClient = <A>(
-        snapshot: string | undefined,
+        snapshot: SnapshotId | undefined,
         f: (client: NodeDatabaseClient) => A,
       ) =>
         Effect.scoped(
@@ -244,20 +231,9 @@ export function handlersLayer(options?: HandlersOptions) {
 
       /** Borrow for a stream's whole life and build the stream on the client. */
       const withClientStream = <A>(
-        snapshot: string | undefined,
+        snapshot: SnapshotId | undefined,
         f: (client: NodeDatabaseClient) => Stream.Stream<A, DbUnavailable>,
       ) => Stream.unwrap(Effect.map(borrow(snapshot), f));
-
-      /** Ends once no read has named `entry` for one idle timeout. */
-      const idle = Effect.fnUntraced(function* (entry: Pinned) {
-        const timeout = Duration.toMillis(idleTimeout);
-        for (;;) {
-          const now = yield* Clock.currentTimeMillis;
-          const due = entry.lastUsed + timeout;
-          if (entry.active === 0 && now >= due) return;
-          yield* Effect.sleep(entry.active > 0 ? timeout : due - now);
-        }
-      });
 
       return ZoteroReads.of({
         Libraries: ({ snapshot }) => withClient(snapshot, getLibraries),
@@ -271,13 +247,12 @@ export function handlersLayer(options?: HandlersOptions) {
             ),
           })),
 
-        IndexItems: ({ libraryID, sliceSize, snapshot }) =>
+        IndexItems: ({ libraryID, snapshot }) =>
           withClientStream(snapshot, (client) =>
             Stream.unwrap(
               Effect.map(
                 read(client, (c) => getIndexedItemIDsByLibrary(c, libraryID)),
-                (ids) =>
-                  sliced(client, slicesOf(ids, sliceSize), getIndexedItemsByID),
+                (ids) => sliced(client, slicesOf(ids), getIndexedItemsByID),
               ),
             ),
           ),
@@ -354,15 +329,16 @@ export function handlersLayer(options?: HandlersOptions) {
             getAttachmentsByParents(client, itemIDs),
           ),
 
-        DisplayRefs: ({ itemIDs, sliceSize, snapshot }) =>
+        DisplayRefs: ({ itemIDs, snapshot }) =>
           withClientStream(snapshot, (client) => {
             const memo: GroupIDMemo = new Map();
-            return sliced(client, slicesOf(itemIDs, sliceSize), (c, ids) =>
-              ids.map((itemID) => ({
+            return sliced(client, slicesOf(itemIDs), (c, ids) => {
+              const refs = getItemDisplayRefsByIDs(c, ids, { memo });
+              return ids.map((itemID) => ({
                 itemID,
-                ref: getItemDisplayRefByID(c, itemID, { memo }),
-              })),
-            );
+                ref: refs.get(itemID) ?? null,
+              }));
+            });
           }),
 
         NoteBodies: ({ libraryID, keys, snapshot }) =>
@@ -388,14 +364,17 @@ export function handlersLayer(options?: HandlersOptions) {
           }),
 
         // Keyset pages in itemID order: one statement per slice.
-        AttachmentPathIndex: ({ sliceSize, snapshot }) =>
+        AttachmentPathIndex: ({ snapshot }) =>
           withClientStream(snapshot, (client) => {
-            const limit = sliceSize ?? DEFAULT_SLICE_SIZE;
             const memo: GroupIDMemo = new Map();
             return Stream.unfold(0, (afterItemID) =>
               Effect.map(
                 read(client, (c) =>
-                  getAttachmentPage(c, { afterItemID, limit }, { memo }),
+                  getAttachmentPage(
+                    c,
+                    { afterItemID, limit: sliceSize },
+                    { memo },
+                  ),
                 ),
                 (page) =>
                   page.length === 0
@@ -405,9 +384,22 @@ export function handlersLayer(options?: HandlersOptions) {
             );
           }),
 
+        // Keyset pages in itemID order: one statement per slice.
         CitekeySnapshot: ({ libraryID, snapshot }) =>
-          withClient(snapshot, (client) =>
-            getCitekeysByLibrary(client, libraryID),
+          withClientStream(snapshot, (client) =>
+            Stream.unfold(0, (afterItemID) =>
+              Effect.map(
+                read(client, (c) =>
+                  getCitekeyPage(c, {
+                    libraryID,
+                    afterItemID,
+                    limit: sliceSize,
+                  }),
+                ),
+                ({ citekeys, next }) =>
+                  next === null ? undefined : ([citekeys, next] as const),
+              ),
+            ),
           ),
 
         Changes: () => connection.changes,
@@ -422,19 +414,18 @@ export function handlersLayer(options?: HandlersOptions) {
                 const client = yield* restore(
                   Scope.provide(connection.borrow, scope),
                 ).pipe(Effect.onError(() => Scope.close(scope, Exit.void)));
-                const id = `snapshot-${++snapshots}`;
+                const id = SnapshotId.make(`snapshot-${++snapshots}`);
                 const entry: Pinned = {
                   client,
                   memos: noteMemos(),
                   scope,
                   active: 0,
                   ended: false,
-                  lastUsed: yield* Clock.currentTimeMillis,
                 };
                 pinned.set(id, entry);
-                // The stream's scope ends when the caller ends the stream or
-                // the idle check runs out; the pinned borrow ends after the
-                // Snapshot's last read.
+                // The Snapshot lives as long as its stream: the stream's scope
+                // ends when the caller ends the stream or its client goes
+                // away. The pinned borrow ends after the Snapshot's last read.
                 yield* Effect.addFinalizer(() =>
                   Effect.suspend(() => {
                     pinned.delete(id);
@@ -444,10 +435,7 @@ export function handlersLayer(options?: HandlersOptions) {
                       : Effect.void;
                   }),
                 );
-                return Stream.concat(
-                  Stream.make(id),
-                  Stream.drain(Stream.fromEffect(idle(entry))),
-                );
+                return Stream.concat(Stream.make(id), Stream.never);
               }),
             ),
           ),
@@ -561,10 +549,10 @@ export function handlersLayer(options?: HandlersOptions) {
             return queries.byCollection(client, collection);
           }),
 
-        NoteRefs: ({ itemIDs, sliceSize, snapshot }) =>
+        NoteRefs: ({ itemIDs, snapshot }) =>
           withClientStream(snapshot, (client) => {
             const memo: GroupIDMemo = new Map();
-            return sliced(client, slicesOf(itemIDs, sliceSize), (c, ids) => {
+            return sliced(client, slicesOf(itemIDs), (c, ids) => {
               const notes = new Map(
                 getNoteRefsByItemIDs(c, ids, { memo }).map((note) => [
                   note.itemID,
@@ -583,22 +571,27 @@ export function handlersLayer(options?: HandlersOptions) {
             });
           }),
 
-        ChildNoteRefs: ({ itemIDs, sliceSize, snapshot }) =>
+        ChildNoteRefs: ({ itemIDs, snapshot }) =>
           withClientStream(snapshot, (client) => {
             const memo: GroupIDMemo = new Map();
-            return sliced(client, slicesOf(itemIDs, sliceSize), (c, ids) =>
-              ids.map((itemID) => ({
+            return sliced(client, slicesOf(itemIDs), (c, ids) => {
+              const refs = getItemDisplayRefsByIDs(c, ids, { memo });
+              const notes = Map.groupBy(
+                getChildNotesByParentIDs(c, ids, { memo }),
+                (note) => note.parentItemID,
+              );
+              return ids.map((itemID) => ({
                 itemID,
-                ref: getItemDisplayRefByID(c, itemID, { memo }),
-                notes: getChildNotesByParentIDs(c, [itemID], { memo }),
-              })),
-            );
+                ref: refs.get(itemID) ?? null,
+                notes: notes.get(itemID) ?? [],
+              }));
+            });
           }),
 
         TagNames: ({ libraryID, snapshot }) =>
           withClient(snapshot, (client) =>
             libraryID === undefined
-              ? allTagNames(client)
+              ? getAllTagNames(client)
               : getLibraryTagNames(client, libraryID),
           ),
 

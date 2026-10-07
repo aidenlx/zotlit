@@ -34,9 +34,9 @@ it("includes Libraries outside the chosen paper and keeps automatic Tags and dir
       const lease = await service.acquireRead();
       return {
         reads: lease.reads,
-        [Symbol.dispose]: () => {
+        [Symbol.asyncDispose]: () => {
           dispose();
-          lease[Symbol.dispose]();
+          return lease[Symbol.asyncDispose]();
         },
       };
     },

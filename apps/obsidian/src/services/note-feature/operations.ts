@@ -612,7 +612,7 @@ async function prepareCreationProfiles(
   ]);
   let source: NoteSource | null;
   {
-    using lease = await ctx.zoteroReads.acquireRead();
+    await using lease = await ctx.zoteroReads.acquireRead();
     source = await readNoteSource(lease.reads, item.itemID);
   }
   const { itemTags, itemCollections } = source
@@ -868,7 +868,9 @@ async function createNote(
   // One Snapshot across the render, the vault write, and the child-note import
   // flush: every read of this create sees one database state. A batch hands
   // in its own.
-  using lease = options.reads ? undefined : await ctx.zoteroReads.acquireRead();
+  await using lease = options.reads
+    ? undefined
+    : await ctx.zoteroReads.acquireRead();
   const reads = options.reads ?? lease!.reads;
   const source = await readNoteSource(reads, item.itemID, {
     username: options.username,
@@ -1067,7 +1069,7 @@ async function updateNote(
     return refusedUpdateMissingDocument(profile.document!, file.path);
   }
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
-  using lease = await ctx.zoteroReads.acquireRead();
+  await using lease = await ctx.zoteroReads.acquireRead();
   await using stack = new AsyncDisposableStack();
   // One initiating batch: this note's own excerpts and the Child Notes it
   // imports share one retention until both settle.
@@ -1133,13 +1135,17 @@ function prepareProfileNote(
     body,
     properties,
     create: async () => {
-      let item: Item | undefined;
-      {
-        using lease = await ctx.zoteroReads.acquireRead();
-        item = await readItem(lease.reads, note.indexedKey);
-      }
+      // One Snapshot for the Item lookup, the body, and the Child Notes; the
+      // filename is the one the preview showed.
+      await using lease = await ctx.zoteroReads.acquireRead();
+      const item = await readItem(lease.reads, note.indexedKey);
       if (!item) throw new Error(m.notice_protocol_item_not_found());
-      return create(item, { profile: profile.selector, preparedPath });
+      // Awaited inside the lease's scope, which the create reads through.
+      return await create(item, {
+        profile: profile.selector,
+        preparedPath,
+        reads: lease.reads,
+      });
     },
   };
 }
@@ -1269,7 +1275,7 @@ async function getImportedNotesForItem(
   indexedKey: string,
 ): Promise<TFile[]> {
   await ctx.noteIndex.whenIndexed();
-  using lease = await ctx.zoteroReads.acquireRead();
+  await using lease = await ctx.zoteroReads.acquireRead();
   const item = await readItem(lease.reads, indexedKey);
   if (!item) throw new Error(`Zotero item not found: ${indexedKey}`);
   const { childNotes } = await Effect.runPromise(
@@ -1538,7 +1544,7 @@ async function overwriteNote(
     return refusedUpdateMissingDocument(profile.document!, file.path);
   }
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
-  using lease = await ctx.zoteroReads.acquireRead();
+  await using lease = await ctx.zoteroReads.acquireRead();
   await using stack = new AsyncDisposableStack();
   // One initiating batch: this note's own excerpts and the Child Notes it
   // imports share one retention until both settle.

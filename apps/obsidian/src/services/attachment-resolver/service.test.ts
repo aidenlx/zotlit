@@ -445,30 +445,32 @@ async function setup(stack: AsyncDisposableStack, options: SetupOptions = {}) {
   let failing = false;
   let failures = 0;
   const reads = stack.use(
-    inProcessReadsService(open, (client) => ({
-      ...client,
-      AttachmentPathIndex: ((
-        ...args: Parameters<typeof client.AttachmentPathIndex>
-      ) =>
-        Stream.unwrap(
-          Effect.promise(async () => {
-            if (held !== null) {
-              waiting = true;
-              await held.promise;
-            }
-            if (failing) {
-              failures += 1;
-              return Stream.fail(
-                new DbUnavailable({ message: "the read failed" }),
-              ) as Stream.Stream<unknown, unknown>;
-            }
-            return client.AttachmentPathIndex(...args) as Stream.Stream<
-              unknown,
-              unknown
-            >;
-          }),
-        )) as typeof client.AttachmentPathIndex,
-    })),
+    inProcessReadsService(open, {
+      wrap: (client) => ({
+        ...client,
+        AttachmentPathIndex: ((
+          ...args: Parameters<typeof client.AttachmentPathIndex>
+        ) =>
+          Stream.unwrap(
+            Effect.promise(async () => {
+              if (held !== null) {
+                waiting = true;
+                await held.promise;
+              }
+              if (failing) {
+                failures += 1;
+                return Stream.fail(
+                  new DbUnavailable({ message: "the read failed" }),
+                ) as Stream.Stream<unknown, unknown>;
+              }
+              return client.AttachmentPathIndex(...args) as Stream.Stream<
+                unknown,
+                unknown
+              >;
+            }),
+          )) as typeof client.AttachmentPathIndex,
+      }),
+    }),
   );
   let now = Temporal.Now.instant();
   const queries = stack.use(new QueryClientService({ now: () => now }));

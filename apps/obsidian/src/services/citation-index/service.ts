@@ -1,6 +1,6 @@
 // The vault-wide Citation Index: literal-citekey occurrences per file, wikilinks derived at query time.
 
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 import { TFile } from "obsidian";
 import type { App, LinkCache, TAbstractFile } from "obsidian";
 
@@ -832,13 +832,15 @@ export class CitationIndex extends Service<void> {
         Effect.scoped(
           Effect.flatMap(this.#reads.snapshot, (reads) =>
             Effect.forEach(libraries, (library) =>
-              reads.CitekeySnapshot({ libraryID: library.libraryID }),
+              Stream.runCollect(
+                reads.CitekeySnapshot({ libraryID: library.libraryID }),
+              ),
             ),
           ),
         ),
         { signal },
       );
-      const rows = perLibrary.flat();
+      const rows = perLibrary.flat(2);
       logger.debug("Resolution snapshot rebuilt", {
         libraries: libraries.length,
         inScope: inScope.size,

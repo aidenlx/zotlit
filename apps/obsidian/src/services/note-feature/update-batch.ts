@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect";
+import { Effect } from "effect";
 import type { TFile } from "obsidian";
 
 import type { Item, ItemRef } from "@zotlit/db";
@@ -34,6 +34,7 @@ import type { ResolvedProfile } from "@/services/profile/bindings";
 import type { LiteratureNoteProfile } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 import { InertTemplateError } from "@/services/template/errors";
+import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 import { BatchModal, FlatManifest } from "@/views/batch-modal";
 import type {
@@ -324,7 +325,7 @@ export async function runBatchUpdate(
       let profileChoices: BatchProfileChoice[] | undefined;
       if (profilesEnabled && creations().length > 0) {
         {
-          using lease = await deps.zoteroReads.acquireRead();
+          await using lease = await deps.zoteroReads.acquireRead();
           const items = await Effect.runPromise(
             lease.reads.ItemsByIndexedKeys({
               indexedKeys: creations().map((action) => action.indexedKey),
@@ -482,11 +483,8 @@ async function displayRef(
   deps: Pick<SingleUpdateDeps, "zoteroReads">,
   itemID: number,
 ): Promise<ItemRef | null> {
-  using lease = await deps.zoteroReads.acquireRead();
-  const slices = await Effect.runPromise(
-    Stream.runCollect(lease.reads.DisplayRefs({ itemIDs: [itemID] })),
-  );
-  return slices.flat()[0]?.ref ?? null;
+  await using lease = await deps.zoteroReads.acquireRead();
+  return await readDisplayRef(lease.reads, itemID);
 }
 
 /**
@@ -524,7 +522,7 @@ async function classifyActions(
   kept: { label: string; profile: string; reason: string }[];
 }> {
   // One Snapshot for the refs and the Libraries they are grouped by.
-  using lease = await deps.zoteroReads.acquireRead();
+  await using lease = await deps.zoteroReads.acquireRead();
   const actions: BatchAction[] = [];
   const skipped: NotFoundEntry[] = [];
   const notFound: NotFoundEntry[] = [];

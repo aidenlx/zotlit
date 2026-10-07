@@ -94,7 +94,7 @@ export async function resolveLiteratureNoteAttachments(
   indexedKey: string,
 ): Promise<ObsidianOpenableAttachment[]> {
   try {
-    using lease = await deps.reads.acquireRead();
+    await using lease = await deps.reads.acquireRead();
     const { reads } = lease;
     const items = await Effect.runPromise(
       reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),

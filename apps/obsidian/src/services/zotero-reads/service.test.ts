@@ -35,7 +35,7 @@ describe("ZoteroReadsService", () => {
     await service.ready;
 
     {
-      using lease = await service.acquireRead();
+      await using lease = await service.acquireRead();
       await expect.poll(() => service.state).toBe("ready");
       const changed: string[] = [];
       service.on("changed", () => changed.push("changed"));
@@ -89,15 +89,17 @@ describe("ZoteroReadsService", () => {
 
   it("degrades when the change stream is lost", async () => {
     const { open } = memoryOpener(versioned);
-    await using service = inProcessReadsService(open, (client) => ({
-      ...client,
-      // The seed arrives, then the stream ends as a lost worker's would.
-      Changes: ((...args: Parameters<typeof client.Changes>) =>
-        Stream.take(
-          client.Changes(...args) as Stream.Stream<unknown>,
-          1,
-        )) as typeof client.Changes,
-    }));
+    await using service = inProcessReadsService(open, {
+      wrap: (client) => ({
+        ...client,
+        // The seed arrives, then the stream ends as a lost worker's would.
+        Changes: ((...args: Parameters<typeof client.Changes>) =>
+          Stream.take(
+            client.Changes(...args) as Stream.Stream<unknown>,
+            1,
+          )) as typeof client.Changes,
+      }),
+    });
     const degraded: DbUnavailable[] = [];
     service.on("degraded", (error) => degraded.push(error));
     await service.ready;
@@ -110,19 +112,21 @@ describe("ZoteroReadsService", () => {
   it("names the Read Mode of the serving connection, none before one serves", async () => {
     const { open } = memoryOpener(versioned);
     let mode: "copy" | "immutable" = "copy";
-    await using service = inProcessReadsService(open, (client) => ({
-      ...client,
-      // The source reports the mode each new connection opened with.
-      Changes: ((...args: Parameters<typeof client.Changes>) =>
-        Stream.map(
-          client.Changes(...args) as Stream.Stream<ChangeEvent, unknown>,
-          (event) =>
-            event._tag === "changed" ||
-            (event._tag === "state" && event.state === "ready")
-              ? { ...event, readMode: mode }
-              : event,
-        )) as typeof client.Changes,
-    }));
+    await using service = inProcessReadsService(open, {
+      wrap: (client) => ({
+        ...client,
+        // The source reports the mode each new connection opened with.
+        Changes: ((...args: Parameters<typeof client.Changes>) =>
+          Stream.map(
+            client.Changes(...args) as Stream.Stream<ChangeEvent, unknown>,
+            (event) =>
+              event._tag === "changed" ||
+              (event._tag === "state" && event.state === "ready")
+                ? { ...event, readMode: mode }
+                : event,
+          )) as typeof client.Changes,
+      }),
+    });
     await service.ready;
     expect(service.activeReadMode).toBeNull();
 

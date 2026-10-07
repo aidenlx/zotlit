@@ -54,7 +54,7 @@ export async function savedExcerptRequest(options: {
   if (!source || sourceScope !== paths.dataDir) return null;
   try {
     // One Snapshot, so the identity and the attachment come from one database.
-    using lease = await options.zoteroReads.acquireRead();
+    await using lease = await options.zoteroReads.acquireRead();
     const request = await excerptRequest({
       annotation,
       source,

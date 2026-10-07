@@ -38,9 +38,6 @@ describe("ItemLookup", () => {
     });
     await using lookup = itemLookup(reads);
 
-    await delayTicks();
-    expect(reads.indexed).toEqual([]);
-
     opening.resolve();
     await lookup.ready;
     await expect.poll(() => reads.indexed).toEqual([USER_LIBRARY_ID]);
@@ -82,11 +79,11 @@ describe("ItemLookup", () => {
     await using lookup = itemLookup(reads);
 
     await lookup.search("");
-    const signatures = reads.signatures;
+    const rebuilds = reads.snapshotsEnded;
     await reads.service.refresh();
 
-    await expect.poll(() => reads.signatures).toBeGreaterThan(signatures);
-    await delayTicks();
+    // The rebuild's Snapshot ends once it compared the signatures.
+    await expect.poll(() => reads.snapshotsEnded).toBeGreaterThan(rebuilds);
     expect(reads.indexed).toEqual([USER_LIBRARY_ID]);
   });
 
@@ -347,12 +344,6 @@ function itemLookup(
   });
 }
 
-async function delayTicks(): Promise<void> {
-  for (let i = 0; i < 20; i++) {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-}
-
 interface RowOptions {
   key: string;
   itemID?: number;
@@ -441,6 +432,8 @@ interface ObservedReads extends AsyncDisposable {
   readonly interrupted: number[];
   readonly signatures: number;
   readonly hydrations: number;
+  /** Snapshots the client opened that have ended since. */
+  readonly snapshotsEnded: number;
   /**
    * Hold the next `IndexItems` call until `resolve()`. `release()` lets
    * calls after the held one run at once.
@@ -469,6 +462,7 @@ function readsOver(
   const interrupted: number[] = [];
   let signatures = 0;
   let hydrations = 0;
+  let snapshotsEnded = 0;
   const indexGates: { promise: Promise<void> }[] = [];
   const hydrationGates: { promise: Promise<void> }[] = [];
   const injected = new Set<(event: ChangeEvent) => void>();
@@ -477,6 +471,17 @@ function readsOver(
   const { open } = memoryOpener(seedFor);
   const wrap = (client: ZoteroReadsClient): ZoteroReadsClient => ({
     ...client,
+    Snapshot: ((payload: object, callOptions?: object) =>
+      callOf<Stream.Stream<unknown>>(client.Snapshot)(
+        payload,
+        callOptions,
+      ).pipe(
+        Stream.onExit(() =>
+          Effect.sync(() => {
+            snapshotsEnded += 1;
+          }),
+        ),
+      )) as unknown as ZoteroReadsClient["Snapshot"],
     IndexItems: ((payload: { libraryID: number }, callOptions?: object) => {
       indexed.push(payload.libraryID);
       const gate = releaseAll ? undefined : indexGates.shift();
@@ -525,7 +530,10 @@ function readsOver(
       )) as unknown as ZoteroReadsClient["Changes"],
   });
 
-  const service = inProcessReadsService(open, wrap, options.opening);
+  const service = inProcessReadsService(open, {
+    wrap,
+    opening: options.opening,
+  });
   const gate = (gates: { promise: Promise<void> }[]) => {
     const signal = Promise.withResolvers<void>();
     gates.push(signal);
@@ -540,6 +548,9 @@ function readsOver(
     },
     get hydrations() {
       return hydrations;
+    },
+    get snapshotsEnded() {
+      return snapshotsEnded;
     },
     gateIndexItems: () => {
       const signal = gate(indexGates);

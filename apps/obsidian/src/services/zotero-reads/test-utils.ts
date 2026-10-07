@@ -8,16 +8,19 @@ import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import { layerRcRef } from "./connection";
 import type { Connection, ConnectionOpener } from "./connection";
+import type { HandlersOptions } from "./handlers";
 import { makeInProcessClient } from "./in-process";
 import type { ZoteroReadsClient } from "./in-process";
+import type { SnapshotId } from "./rpc";
 import { ZoteroReadsService } from "./service";
 
 /** The handler layer on this runtime over `connection`, for the caller's scope. */
 export const inProcessClient = Effect.fnUntraced(function* (
   connection: Layer.Layer<Connection>,
+  options?: HandlersOptions,
 ): Effect.fn.Return<ZoteroReadsClient, never, Scope.Scope> {
   const services = yield* Layer.build(connection);
-  return yield* Effect.provideContext(makeInProcessClient(), services);
+  return yield* Effect.provideContext(makeInProcessClient(options), services);
 });
 
 /**
@@ -60,20 +63,28 @@ export function sharedClientOpener(
   return () => shared;
 }
 
-/**
- * A {@link ZoteroReadsService} on the in-process adapter over `opener`.
- * `wrap` lets a test observe or gate the client its consumers call; the
- * client opens once `opening` settles.
- */
+export interface InProcessReadsOptions {
+  /** Lets a test observe or gate the client its consumers call. */
+  wrap?: (client: ZoteroReadsClient) => ZoteroReadsClient;
+  /** The client opens once this settles. */
+  opening?: Promise<void>;
+  /** Options for the handler layer. */
+  handlers?: HandlersOptions;
+}
+
+/** A {@link ZoteroReadsService} on the in-process adapter over `opener`. */
 export function inProcessReadsService(
   opener: ConnectionOpener,
-  wrap: (client: ZoteroReadsClient) => ZoteroReadsClient = (client) => client,
-  opening: Promise<void> = Promise.resolve(),
+  {
+    wrap = (client) => client,
+    opening = Promise.resolve(),
+    handlers,
+  }: InProcessReadsOptions = {},
 ): ZoteroReadsService {
   return new ZoteroReadsService({
     client: Effect.andThen(
       Effect.promise(() => opening),
-      Effect.map(inProcessClient(layerRcRef(opener)), wrap),
+      Effect.map(inProcessClient(layerRcRef(opener), handlers), wrap),
     ),
   });
 }
@@ -130,10 +141,10 @@ export interface RecordedCall {
 export function recordCalls(operations: readonly (keyof ZoteroReadsClient)[]): {
   wrap: (client: ZoteroReadsClient) => ZoteroReadsClient;
   calls: RecordedCall[];
-  snapshots: string[];
+  snapshots: SnapshotId[];
 } {
   const calls: RecordedCall[] = [];
-  const snapshots: string[] = [];
+  const snapshots: SnapshotId[] = [];
   const wrap = (client: ZoteroReadsClient): ZoteroReadsClient => {
     const wrapped: Record<string, unknown> = {
       ...client,
@@ -142,7 +153,7 @@ export function recordCalls(operations: readonly (keyof ZoteroReadsClient)[]): {
           client.Snapshot as (
             payload?: object,
             options?: object,
-          ) => Stream.Stream<string, unknown>
+          ) => Stream.Stream<SnapshotId, unknown>
         )(payload, options).pipe(
           Stream.tap((id) => Effect.sync(() => snapshots.push(id))),
         ),

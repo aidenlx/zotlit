@@ -116,7 +116,7 @@ export function createLocalBridgeReads(
     async selectedItem(item) {
       await Promise.all([deps.noteIndex.whenIndexed(), deps.zoteroPref.ready]);
       // One Snapshot: the vault targets and the export read one state.
-      using lease = await deps.zoteroReads.acquireRead();
+      await using lease = await deps.zoteroReads.acquireRead();
       const selected = await resolveSelection(lease.reads, item.key);
       const vaultTargets = await collectVaultTargets(
         lease.reads,

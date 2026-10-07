@@ -40,6 +40,7 @@ import type { NoteIndex } from "@/services/note-index/service";
 import type { ProfileReader } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
+import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import type {
   ZoteroReadsApi,
   ZoteroReadsService,
@@ -330,7 +331,7 @@ async function prepareImportProfiles(
   const cache = new Map<ProfileSelector, Map<number, PreparedExplicitImport>>();
   const initial = new Map<number, PreparedExplicitImport>();
   {
-    using lease = await deps.zoteroReads.acquireRead();
+    await using lease = await deps.zoteroReads.acquireRead();
     for (const action of actions) {
       signal.throwIfAborted();
       try {
@@ -359,19 +360,15 @@ async function prepareImportProfiles(
 
   let indexedKey: string | undefined;
   if (first.note.parentItemID !== null) {
-    using lease = await deps.zoteroReads.acquireRead();
-    const slices = await Effect.runPromise(
-      Stream.runCollect(
-        lease.reads.DisplayRefs({ itemIDs: [first.note.parentItemID] }),
-      ),
-    );
-    indexedKey = slices.flat()[0]?.ref?.indexedKey;
+    await using lease = await deps.zoteroReads.acquireRead();
+    indexedKey = (await readDisplayRef(lease.reads, first.note.parentItemID))
+      ?.indexedKey;
   }
   const plansFor = async (selector: ProfileSelector) => {
     let plans = cache.get(selector);
     if (plans) return plans;
     plans = new Map();
-    using lease = await deps.zoteroReads.acquireRead();
+    await using lease = await deps.zoteroReads.acquireRead();
     for (const action of orphans) {
       plans.set(
         action.note.itemID,
@@ -542,7 +539,7 @@ async function classifyNoteImport(
   libraries: BatchLibrary[];
 }> {
   // One Snapshot for the refs and the Libraries they are grouped by.
-  using lease = await deps.zoteroReads.acquireRead();
+  await using lease = await deps.zoteroReads.acquireRead();
   const actions: ImportAction[] = [];
   const notFound: NotFoundEntry[] = [];
   await classifyStream(lease.reads.NoteRefs({ itemIDs }), controls, (slice) => {
@@ -660,7 +657,7 @@ async function classifyChildImport(
   parentItemIDs: readonly number[],
   controls: BatchClassifyControls,
 ): Promise<ChildGroup[]> {
-  using lease = await deps.zoteroReads.acquireRead();
+  await using lease = await deps.zoteroReads.acquireRead();
   const parents: ChildGroup[] = [];
   await classifyStream(
     lease.reads.ChildNoteRefs({ itemIDs: parentItemIDs }),
@@ -695,7 +692,7 @@ async function importSingleNote(
 ): Promise<BatchImportResult> {
   let ref: ChildNote | null | undefined;
   {
-    using lease = await deps.zoteroReads.acquireRead();
+    await using lease = await deps.zoteroReads.acquireRead();
     const slices = await Effect.runPromise(
       Stream.runCollect(lease.reads.NoteRefs({ itemIDs: [itemID] })),
     );
@@ -730,7 +727,7 @@ async function importOne(
     deps.template.ready,
   ]);
   // One Snapshot for the read and the write it feeds.
-  using lease = await deps.zoteroReads.acquireRead();
+  await using lease = await deps.zoteroReads.acquireRead();
   const [note] = await Effect.runPromise(
     lease.reads.NoteBodies({ libraryID: ref.libraryID, keys: [ref.key] }),
   );
@@ -868,7 +865,7 @@ async function runChildImportByKey(
   }
   let itemID: number | undefined;
   {
-    using lease = await deps.zoteroReads.acquireRead();
+    await using lease = await deps.zoteroReads.acquireRead();
     const items = await Effect.runPromise(
       lease.reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
     );
@@ -900,7 +897,7 @@ async function reimportNoteByKey(
   await Promise.all([deps.noteIndex.whenIndexed(), deps.template.ready]);
 
   // One Snapshot for the read and the write it feeds.
-  using lease = await deps.zoteroReads.acquireRead();
+  await using lease = await deps.zoteroReads.acquireRead();
   const note = await readNoteByIndexedKey(lease.reads, noteKey);
   if (!note) return { outcome: "not-found" };
 

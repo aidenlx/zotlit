@@ -21,7 +21,7 @@ export async function libraryTagNames(
 ): Promise<readonly string[]> {
   if (db.state === "degraded") return [];
   try {
-    using lease = await db.acquireRead();
+    await using lease = await db.acquireRead();
     const library = resolveIndexedKeyLibraryIn(
       await Effect.runPromise(lease.reads.Libraries({})),
       annotationKey,
