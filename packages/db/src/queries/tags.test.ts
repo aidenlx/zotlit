@@ -8,6 +8,7 @@ import { tagTypeToName } from "@/lib/zt-tag";
 import { createFixtureSchema } from "@/test-utils";
 
 import {
+  getAllTagNames,
   getLibraryTagNames,
   getTagsByItemIDs,
   resolveItemTags,
@@ -100,6 +101,12 @@ describe("getLibraryTagNames", () => {
   it("leaves out the tags of other libraries", () => {
     expect(getLibraryTagNames(db, 2)).toEqual(["alpha"]);
     expect(getLibraryTagNames(db, 3)).toEqual([]);
+  });
+});
+
+describe("getAllTagNames", () => {
+  it("names every tag the database holds once, in name order", () => {
+    expect(getAllTagNames(db)).toEqual(["alpha", "beta", "delta", "gamma"]);
   });
 });
 

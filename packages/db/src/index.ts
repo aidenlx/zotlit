@@ -43,6 +43,7 @@ export {
 export {
   getItemDisplayInfoByID,
   getItemDisplayRefByID,
+  getItemDisplayRefsByIDs,
   getItemRefByID,
   type ItemDisplayInfo,
   type ItemRef,
@@ -93,11 +94,13 @@ export {
 } from "./queries/notes";
 export {
   getCitekeyByItemKey,
+  getCitekeyPage,
   getCitekeysByLibrary,
   getItemIDByCitekey,
   type LibraryCitekey,
 } from "./queries/citekey";
 export {
+  getAllTagNames,
   getLibraryTagNames,
   resolveItemTags,
   type TagMemo,

@@ -113,6 +113,23 @@ export function resolveItemTagsByIDs(
   return result;
 }
 
+const allTagNamesQuery = defineQuery<void>()((db) =>
+  db.query.tags.findMany({ columns: { name: true } }),
+);
+
+/**
+ * Every Tag name across the database, each name once, in name order. A name
+ * counts while the `tags` table holds it, whether or not an item carries it.
+ */
+export function getAllTagNames(db: NodeDatabaseClient): string[] {
+  return distinct(
+    allTagNamesQuery
+      .prepared(db)
+      .all()
+      .map((row) => row.name),
+  ).toSorted((a, b) => a.localeCompare(b));
+}
+
 const libraryTagNamesQuery = defineQuery<{ libraryID: number }>()(
   (db, { placeholder }) =>
     db.query.itemTags.findMany({

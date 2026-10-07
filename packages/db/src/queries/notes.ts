@@ -195,17 +195,44 @@ export function getTrashedNoteItemIDs(
   );
 }
 
+const childNotesByParentsQuery = defineQuery<void>()(
+  (db, _operators, args: { parentItemIDs: readonly number[] }) =>
+    db.query.itemNotes.findMany({
+      columns: { title: true, itemID: true, parentItemID: true },
+      with: {
+        item: { columns: { key: true, libraryID: true, dateModified: true } },
+      },
+      where: {
+        parentItemID: { in: [...args.parentItemIDs] },
+        item: { deletedItem: false },
+      },
+      orderBy: { itemID: "asc" },
+    }),
+);
+
 /**
- * Fetch child notes of multiple parent items (`mode=child`). Generalizes
- * {@link getChildNotes} to accept multiple parent IDs, flattening the results.
+ * Fetch child notes of multiple parent items (`mode=child`) in one statement:
+ * {@link getChildNotes} for each parent, in `parentItemIDs` order. The ids
+ * inline into the SQL, so the statement is not cached.
  */
 export function getChildNotesByParentIDs(
   db: NodeDatabaseClient,
   parentItemIDs: readonly number[],
   opts?: { memo?: GroupIDMemo },
 ): ChildNote[] {
+  if (parentItemIDs.length === 0) return [];
   const memo = opts?.memo ?? new Map();
-  return parentItemIDs.flatMap((id) => getChildNotes(db, id, { memo }));
+  const byParent = Map.groupBy(
+    childNotesByParentsQuery
+      .prepare(db, { parentItemIDs: [...new Set(parentItemIDs)] })
+      .all(),
+    (row) => row.parentItemID,
+  );
+  return parentItemIDs.flatMap((id) =>
+    (byParent.get(id) ?? []).map((row) =>
+      toChildNote(row, resolveGroupID(db, row.item.libraryID, memo)),
+    ),
+  );
 }
 
 /**
