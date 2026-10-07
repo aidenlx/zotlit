@@ -2058,6 +2058,29 @@ describe("ZoteroReads SearchItems", () => {
       expect(result.builds).toBe(6);
     });
 
+    it("a Configure that changes the locale and installs the binary rebuilds every held index once", async () => {
+      const bytes = await jiebaBytes();
+      const result = await withSegmenter(
+        { readSegmenter: async () => bytes },
+        (reads, ran) =>
+          Effect.gen(function* () {
+            yield* reads.SearchItems(JIEBA_ONLY);
+            yield* reads.SearchItems(everything);
+            yield* reads.Configure({ ...config(INSTALLED), locale: "zh" });
+            // A jieba hit shows only after a build with both settings.
+            for (const list of [JIEBA_ONLY, { ...everything, query: "流域" }]) {
+              yield* eventually(
+                reads.SearchItems(list),
+                (hits) => hits.length > 0,
+              );
+            }
+            return ran(ID_READ);
+          }),
+      );
+      // One ids read per Library per build: [1] and [1, 2], each built twice.
+      expect(result).toBe(6);
+    });
+
     it("a Configure that uninstalls the binary falls back to Intl.Segmenter and still answers", async () => {
       const bytes = await jiebaBytes();
       const result = await withSegmenter(
@@ -2128,6 +2151,34 @@ describe("ZoteroReads SearchItems", () => {
           }),
       );
       expect(keysOf(hits)).toEqual([]);
+    });
+
+    it("a Configure with the same binary after a failed load tries it again", async () => {
+      const bytes = await jiebaBytes();
+      let reads = 0;
+      const result = await withSegmenter(
+        {
+          chineseSegmenter: INSTALLED,
+          readSegmenter: async () => {
+            reads++;
+            if (reads === 1) throw new Error("NotFoundError");
+            return bytes;
+          },
+        },
+        (client) =>
+          Effect.gen(function* () {
+            const failed = yield* client.SearchItems(JIEBA_ONLY);
+            yield* client.Configure(config(INSTALLED));
+            const retried = yield* eventually(
+              client.SearchItems(JIEBA_ONLY),
+              (hits) => hits.length > 0,
+            );
+            return { failed, retried };
+          }),
+      );
+      expect(reads).toBe(2);
+      expect(keysOf(result.failed)).toEqual([]);
+      expect(keysOf(result.retried)).toEqual(["RELA2345"]);
     });
 
     it("a corrupt binary through Configure keeps search answering", async () => {

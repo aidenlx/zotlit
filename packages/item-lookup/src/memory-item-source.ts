@@ -37,9 +37,9 @@ export interface MemoryItemSource {
     libraryID: number,
     items: readonly IndexedItem[],
   ) => Effect.Effect<void>;
-  /** Emit the current generation, as a change on an unswapped source does. */
+  /** Emit a change on an unswapped source. */
   readonly notify: Effect.Effect<void>;
-  /** Raise the generation and emit it, as a swap of the source does. */
+  /** Raise the generation and emit a change, as a swap of the source does. */
   readonly swap: Effect.Effect<void>;
   /** Make every later read fail with {@link SourceUnavailable}, or recover. */
   readonly setUnavailable: (unavailable: boolean) => Effect.Effect<void>;
@@ -70,7 +70,7 @@ export const makeMemoryItemSource = (
     let unavailable = false;
     let gateClosed = false;
     let waiting = 0;
-    const generations = yield* PubSub.unbounded<number>();
+    const generations = yield* PubSub.unbounded<void>();
     const gate = yield* Latch.make(true);
     const arrived = yield* Latch.make(false);
 
@@ -164,12 +164,10 @@ export const makeMemoryItemSource = (
         Effect.sync(() => {
           libraries.set(libraryID, items);
         }),
-      notify: Effect.suspend(() =>
-        PubSub.publish(generations, generation),
-      ).pipe(Effect.asVoid),
+      notify: PubSub.publish(generations, undefined).pipe(Effect.asVoid),
       swap: Effect.suspend(() => {
         generation++;
-        return PubSub.publish(generations, generation);
+        return PubSub.publish(generations, undefined);
       }).pipe(Effect.asVoid),
       setUnavailable: (value) =>
         Effect.sync(() => {

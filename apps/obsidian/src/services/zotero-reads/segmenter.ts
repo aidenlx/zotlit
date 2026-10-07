@@ -1,17 +1,18 @@
 // The Chinese Segmenter in the worker: the Item Index cuts CJK text with the installed binary, or with `Intl.Segmenter`.
 import { Effect } from "effect";
+import type { Layer } from "effect";
 
 import {
-  IndexConfig,
   layerSegmenterJieba,
   layerSegmenterNone,
+  Segmenter,
   SegmenterUnavailable,
-  switchSegmenter,
 } from "@zotlit/item-lookup";
 
 import { getLogger } from "@/lib/log";
 import { createOpfsBinaryStore } from "@/services/managed-binary/store";
 
+import { sameBinary } from "./rpc";
 import type { SegmenterBinary } from "./rpc";
 
 const logger = getLogger(["zotero-reads", "segmenter"]);
@@ -39,32 +40,24 @@ const noStore: ReadSegmenter = ({ name }) =>
     new Error(`No store holds the Chinese Segmenter binary ${name}`),
   );
 
-const sameBinary = (
-  a: SegmenterBinary | null,
-  b: SegmenterBinary | null,
-): boolean =>
-  a === b ||
-  (a !== null &&
-    b !== null &&
-    a.directory === b.directory &&
-    a.name === b.name);
-
 /**
  * The Item Index's Segmenter, driven by the installed binary that
- * `Configure` names. `set` switches only on a real change, so a `Configure`
- * for another setting rebuilds no index. A binary that cannot be read or does
- * not start logs a warning and leaves the index on `Intl.Segmenter`; search
- * keeps answering.
- * The caller applies one `set` at a time.
+ * `Configure` names. `resolve` answers the Segmenter to switch to, and
+ * `undefined` when the index keeps its own, so a `Configure` for another
+ * setting rebuilds no index. A binary that cannot be read or does not start
+ * logs a warning and leaves the index on `Intl.Segmenter`; search keeps
+ * answering, and the next `resolve` with that binary tries it again.
+ * The caller applies each answer before the next `resolve`.
  *
  * `jieba-wasm` holds one instance per worker: an uninstall stops its use but
  * keeps its memory, and a later binary with another name runs on the bytes
  * that loaded first until the worker restarts.
  */
-export const makeSegmenterSwitch = Effect.fnUntraced(function* (
-  read: ReadSegmenter = noStore,
-) {
-  const config = yield* IndexConfig;
+export function makeSegmenterSwitch(read: ReadSegmenter = noStore): {
+  readonly resolve: (
+    next: SegmenterBinary | null,
+  ) => Effect.Effect<SegmenterService | undefined>;
+} {
   /** The binary `Configure` named last. */
   let requested: SegmenterBinary | null = null;
   /** Whether the index cuts with jieba now. */
@@ -73,9 +66,9 @@ export const makeSegmenterSwitch = Effect.fnUntraced(function* (
   let loaded: SegmenterBinary | null = null;
 
   const toNone = Effect.suspend(() => {
-    if (!jieba) return Effect.void;
+    if (!jieba) return Effect.undefined;
     jieba = false;
-    return switchSegmenter(layerSegmenterNone);
+    return segmenterOf(layerSegmenterNone);
   });
 
   const install = (binary: SegmenterBinary) =>
@@ -86,7 +79,7 @@ export const makeSegmenterSwitch = Effect.fnUntraced(function* (
           message: cause instanceof Error ? cause.message : String(cause),
         }),
     }).pipe(
-      Effect.flatMap((bytes) => switchSegmenter(layerSegmenterJieba(bytes))),
+      Effect.flatMap((bytes) => segmenterOf(layerSegmenterJieba(bytes))),
       Effect.tap(() =>
         Effect.sync(() => {
           if (loaded && !sameBinary(loaded, binary)) {
@@ -104,27 +97,38 @@ export const makeSegmenterSwitch = Effect.fnUntraced(function* (
       ),
       Effect.catchTag("SegmenterUnavailable", (error) =>
         Effect.andThen(
-          Effect.sync(() =>
+          Effect.sync(() => {
+            // The next `Configure` with the same binary tries it again.
+            requested = null;
             logger.warn(
               "The Chinese Segmenter did not start; CJK text uses Intl.Segmenter",
               { binary: binary.name, error: error.message },
-            ),
-          ),
+            );
+          }),
           toNone,
         ),
       ),
     );
 
-  const set = (next: SegmenterBinary | null): Effect.Effect<void> =>
+  const resolve = (
+    next: SegmenterBinary | null,
+  ): Effect.Effect<SegmenterService | undefined> =>
     Effect.suspend(() => {
-      if (sameBinary(next, requested)) return Effect.void;
+      if (sameBinary(next, requested)) return Effect.undefined;
       requested = next;
       if (next) return install(next);
       logger.info(
         "The Chinese Segmenter is uninstalled; CJK text uses Intl.Segmenter",
       );
       return toNone;
-    }).pipe(Effect.provideService(IndexConfig, config));
+    });
 
-  return { set };
-});
+  return { resolve };
+}
+
+type SegmenterService = (typeof Segmenter)["Service"];
+
+const segmenterOf = <E>(
+  layer: Layer.Layer<Segmenter, E>,
+): Effect.Effect<SegmenterService, E> =>
+  Effect.provide(Effect.service(Segmenter), layer);

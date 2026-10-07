@@ -76,12 +76,12 @@ export class ItemSource extends Context.Service<
   ItemSource,
   {
     /**
-     * Emits the current generation each time the source may have changed. The
-     * generation rises when the source behind the port is swapped. The stream
-     * emits only changes after the subscription, never a replay of the current
-     * state.
+     * Emits each time the source may have changed. The next pinned source
+     * reports the generation after the change; it rises when the source behind
+     * the port is swapped. The stream emits only changes after the
+     * subscription, never a replay of the current state.
      */
-    readonly generation: Stream.Stream<number>;
+    readonly generation: Stream.Stream<void>;
     /** A source bound to one state until the caller's scope closes. */
     readonly pinned: Effect.Effect<
       PinnedItemSource,
@@ -91,17 +91,21 @@ export class ItemSource extends Context.Service<
   }
 >()("zotlit/item-lookup/ItemSource") {}
 
-/** The settings an index is built with; a change rebuilds every held list. */
+/** The settings an index is built with. */
+export interface IndexSettings {
+  /** The UI locale, for creator-name language lookup; `null` for none. */
+  readonly locale: string | null;
+  /** The word splitter for indexing and queries. */
+  readonly segmenter: (typeof Segmenter)["Service"];
+}
+
+/**
+ * The settings an index is built with; each change rebuilds every held list,
+ * so one change of both settings rebuilds each list once.
+ */
 export class IndexConfig extends Context.Service<
   IndexConfig,
-  {
-    /** The UI locale, for creator-name language lookup; `null` for none. */
-    readonly locale: SubscriptionRef.SubscriptionRef<string | null>;
-    /** The word splitter for indexing and queries. */
-    readonly segmenter: SubscriptionRef.SubscriptionRef<
-      (typeof Segmenter)["Service"]
-    >;
-  }
+  { readonly settings: SubscriptionRef.SubscriptionRef<IndexSettings> }
 >()("zotlit/item-lookup/IndexConfig") {}
 
 /** An {@link IndexConfig} that starts with `locale` and the provided Segmenter. */
@@ -112,11 +116,38 @@ export const layerIndexConfig = (options: {
     Effect.gen(function* () {
       const segmenter = yield* Effect.service(Segmenter);
       return {
-        locale: yield* SubscriptionRef.make(options.locale),
-        segmenter: yield* SubscriptionRef.make(segmenter),
+        settings: yield* SubscriptionRef.make({
+          locale: options.locale,
+          segmenter,
+        }),
       };
     }),
   );
+
+/**
+ * Apply `patch` to the {@link IndexConfig} in one change; an absent or
+ * `undefined` field keeps its setting. A patch that changes nothing sets
+ * nothing, so it rebuilds no index.
+ */
+export const updateIndexSettings = (patch: {
+  readonly locale?: string | null | undefined;
+  readonly segmenter?: (typeof Segmenter)["Service"] | undefined;
+}): Effect.Effect<void, never, IndexConfig> =>
+  Effect.gen(function* () {
+    const config = yield* Effect.service(IndexConfig);
+    const current = yield* SubscriptionRef.get(config.settings);
+    const next: IndexSettings = {
+      locale: patch.locale === undefined ? current.locale : patch.locale,
+      segmenter: patch.segmenter ?? current.segmenter,
+    };
+    if (
+      next.locale === current.locale &&
+      next.segmenter === current.segmenter
+    ) {
+      return;
+    }
+    yield* SubscriptionRef.set(config.settings, next);
+  });
 
 /**
  * Build `layer` and make its Segmenter the one every held list is rebuilt
@@ -126,11 +157,10 @@ export const layerIndexConfig = (options: {
 export const switchSegmenter = <E>(
   layer: Layer.Layer<Segmenter, E>,
 ): Effect.Effect<void, E, IndexConfig> =>
-  Effect.gen(function* () {
-    const config = yield* Effect.service(IndexConfig);
-    const segmenter = yield* Effect.provide(Effect.service(Segmenter), layer);
-    yield* SubscriptionRef.set(config.segmenter, segmenter);
-  });
+  Effect.flatMap(
+    Effect.provide(Effect.service(Segmenter), layer),
+    (segmenter) => updateIndexSettings({ segmenter }),
+  );
 
 /** Item search over the Libraries a caller names. */
 export class ItemIndex extends Context.Service<
@@ -352,8 +382,9 @@ export const layerItemIndex: Layer.Layer<
                   : "signature",
         });
         const startedAt = performance.now();
-        const locale = yield* SubscriptionRef.get(config.locale);
-        const segmenter = yield* SubscriptionRef.get(config.segmenter);
+        const { locale, segmenter } = yield* SubscriptionRef.get(
+          config.settings,
+        );
         const builder = yield* makeEngineIndexBuilder({
           libraries: entry.libraries,
           languageLookup: lookupFor(locale),
@@ -456,10 +487,7 @@ export const layerItemIndex: Layer.Layer<
     yield* Stream.runForEach(source.generation, () => onGeneration).pipe(
       Effect.forkScoped({ startImmediately: true }),
     );
-    yield* Stream.merge(
-      Stream.drop(SubscriptionRef.changes(config.locale), 1),
-      Stream.drop(SubscriptionRef.changes(config.segmenter), 1),
-    ).pipe(
+    yield* Stream.drop(SubscriptionRef.changes(config.settings), 1).pipe(
       Stream.runForEach(() => onConfig),
       Effect.forkScoped({ startImmediately: true }),
     );

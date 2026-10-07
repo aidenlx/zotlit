@@ -63,7 +63,6 @@ export const layerConnectionItemSource: Layer.Layer<
     const generations = new Map<string, number>();
     /** The generation of each client seen so far. */
     const clientGenerations = new WeakMap<NodeDatabaseClient, number>();
-    let current = 0;
 
     const generationOf = (client: NodeDatabaseClient) =>
       Effect.suspend(() => {
@@ -82,7 +81,6 @@ export const layerConnectionItemSource: Layer.Layer<
             generations.set(identity, generation);
           }
           clientGenerations.set(client, generation);
-          current = generation;
           return generation;
         });
       });
@@ -92,7 +90,7 @@ export const layerConnectionItemSource: Layer.Layer<
         Stream.filter(
           (event) => event._tag === "changed" || event._tag === "degraded",
         ),
-        Stream.map(() => current),
+        Stream.as(undefined),
       ),
       pinned: Effect.gen(function* () {
         const client = yield* connection.borrow.pipe(

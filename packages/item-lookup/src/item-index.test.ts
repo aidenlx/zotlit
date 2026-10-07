@@ -7,7 +7,6 @@ import {
   Layer,
   Scheduler,
   Scope,
-  SubscriptionRef,
 } from "effect";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -24,6 +23,7 @@ import {
   layerItemIndex,
   SourceUnavailable,
   switchSegmenter,
+  updateIndexSettings,
 } from "./item-index";
 import { makeMemoryItemSource } from "./memory-item-source";
 import type { MemoryItemSource } from "./memory-item-source";
@@ -351,7 +351,9 @@ describe("Item Index", () => {
       Effect.gen(function* () {
         yield* search(USER, "");
         yield* search(GROUP, "");
-        yield* SubscriptionRef.set(config.locale, "zh");
+        yield* updateIndexSettings({ locale: "zh" }).pipe(
+          Effect.provideService(IndexConfig, config),
+        );
         yield* eventually(() => source.reads.released === 2);
         return source.reads.itemIDs;
       }),
