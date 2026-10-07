@@ -402,6 +402,8 @@ export default class ZotLitPlugin extends Plugin {
     registerAnnotView(this, {
       app: this.app,
       db: services.db,
+      reads: services.zoteroReads,
+      libraryScope: services.libraryScope,
       liveUpdate: services.localServer,
       pdfReaders: services.pdfAnnotationEditor,
       annotations: services.annotationRepository,

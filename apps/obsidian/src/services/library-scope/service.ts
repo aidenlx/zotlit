@@ -133,6 +133,14 @@ export class LibraryScopeService extends Service<void> {
   }
 
   /**
+   * The Library rows the last read of the database returned, whatever the
+   * saved scope names; `null` while no read is held.
+   */
+  get libraryRows(): readonly Library[] | null {
+    return this.#queries.peek<Library[]>(LIBRARIES_KEY)?.value ?? null;
+  }
+
+  /**
    * The saved value failed validation and the runtime fallback — Selected
    * My Library — is in force. Independent of database availability, so the
    * recovery UI reports it even while no Library can be listed.
