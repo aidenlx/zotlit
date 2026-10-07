@@ -76,6 +76,8 @@ import { WikilinkReading } from "./wikilink-reading/service";
 import { ZoteroLocalApiClient } from "./zotero-local-api/service";
 import { SecretWriteAuthorizationStore } from "./zotero-local-api/write-authorization";
 import { ZoteroPrefService } from "./zotero-pref/service";
+import { layerDatabaseService } from "./zotero-reads/database-connection";
+import { inProcessClient, ZoteroReadsService } from "./zotero-reads/service";
 
 /**
  * Construct and wire all Obsidian plugin services.
@@ -152,6 +154,14 @@ export function buildServices(
     .use({
       db: ({ settings, zoteroPref }) =>
         new DatabaseService({ settings, zoteroPref }),
+    })
+    .use({
+      // The handler layer runs in-process over the DatabaseService, so the
+      // service stays the one database owner.
+      zoteroReads: ({ db }) =>
+        new ZoteroReadsService({
+          client: inProcessClient(layerDatabaseService(db)),
+        }),
     })
     .use({
       excerptImage: () =>
@@ -369,9 +379,9 @@ export function buildServices(
         }),
     })
     .use({
-      itemLookup: ({ db, libraryScope }) =>
+      itemLookup: ({ zoteroReads, libraryScope }) =>
         new ItemLookup({
-          db,
+          reads: zoteroReads,
           libraryScope,
           getChsSegmenter: () => getChsSegmenter(plugin.app),
         }),

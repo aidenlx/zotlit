@@ -11,6 +11,7 @@ import type {
   Creator,
   getItemDisplayRefByID,
   IndexedItem,
+  IndexSignature,
   Item,
   ItemBaseFields,
   ItemTag,
@@ -300,6 +301,15 @@ export const WorkLabelSourceSchema = Schema.Struct({
 });
 export type WorkLabelSource = typeof WorkLabelSourceSchema.Type;
 
+/** A library's change-detection signature for the item index. */
+export const IndexSignatureSchema = Schema.Struct({
+  count: Schema.Number,
+  checksum: Schema.Number,
+});
+type _IndexSignature = Expect<
+  Equals<typeof IndexSignatureSchema.Type, IndexSignature>
+>;
+
 // --- Lifecycle ------------------------------------------------------------
 
 /** Settings that drive the source; `Configure` pushes them. */
@@ -473,4 +483,10 @@ export class ZoteroReads extends RpcGroup.make(
   Rpc.make("Refresh", { error: DbUnavailable }),
   Rpc.make("NotifyExternalChange", {}),
   Rpc.make("Configure", { payload: ReadsConfigSchema }),
+  /** The item index signature of one library; an unknown library counts zero. */
+  Rpc.make("IndexSignature", {
+    payload: { libraryID: Schema.Number, ...snapshot },
+    success: IndexSignatureSchema,
+    error: ReadError,
+  }),
 ) {}

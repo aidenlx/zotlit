@@ -528,6 +528,23 @@ describe("ZoteroReads operations", () => {
     ]);
   });
 
+  it("IndexSignature counts and checksums the top-level items of one library", async () => {
+    const { open } = fixtureOpener();
+    const signatures = await withReads(open, (reads) =>
+      Effect.all([
+        reads.IndexSignature({ libraryID: 1 }),
+        reads.IndexSignature({ libraryID: 2 }),
+        reads.IndexSignature({ libraryID: 99 }),
+      ]),
+    );
+    // Seconds of each dateModified plus the itemID, summed per library.
+    expect(signatures).toEqual([
+      { count: 3, checksum: 1706745601 + 1704153602 + 1704240003 },
+      { count: 1, checksum: 1704326700 },
+      { count: 0, checksum: 0 },
+    ]);
+  });
+
   it("a source that cannot open fails with a tagged DbUnavailable", async () => {
     const { open } = fixtureOpener(() => null);
     const error = await withReads(open, (reads) =>
