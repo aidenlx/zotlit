@@ -1,5 +1,5 @@
 // The Chinese Segmenter in the worker: the Item Index cuts CJK text with the installed binary, or with `Intl.Segmenter`.
-import { Effect, Semaphore } from "effect";
+import { Effect } from "effect";
 
 import {
   IndexConfig,
@@ -55,6 +55,7 @@ const sameBinary = (
  * for another setting rebuilds no index. A binary that cannot be read or does
  * not start logs a warning and leaves the index on `Intl.Segmenter`; search
  * keeps answering.
+ * The caller applies one `set` at a time.
  *
  * `jieba-wasm` holds one instance per worker: an uninstall stops its use but
  * keeps its memory, and a later binary with another name runs on the bytes
@@ -64,8 +65,6 @@ export const makeSegmenterSwitch = Effect.fnUntraced(function* (
   read: ReadSegmenter = noStore,
 ) {
   const config = yield* IndexConfig;
-  /** One change at a time, in arrival order: a later uninstall waits for an install that reads its binary. */
-  const changing = yield* Semaphore.make(1);
   /** The binary `Configure` named last. */
   let requested: SegmenterBinary | null = null;
   /** Whether the index cuts with jieba now. */
@@ -125,10 +124,7 @@ export const makeSegmenterSwitch = Effect.fnUntraced(function* (
         "The Chinese Segmenter is uninstalled; CJK text uses Intl.Segmenter",
       );
       return toNone;
-    }).pipe(
-      changing.withPermits(1),
-      Effect.provideService(IndexConfig, config),
-    );
+    }).pipe(Effect.provideService(IndexConfig, config));
 
   return { set };
 });

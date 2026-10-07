@@ -1,6 +1,14 @@
 // The ZoteroReads handler layer: each operation composes @zotlit/db query functions over a borrowed Connection.
 import { chunk } from "@std/collections/chunk";
-import { Effect, Exit, Layer, Scope, Stream, SubscriptionRef } from "effect";
+import {
+  Effect,
+  Exit,
+  Layer,
+  Scope,
+  Semaphore,
+  Stream,
+  SubscriptionRef,
+} from "effect";
 
 import {
   CollectionCache,
@@ -295,6 +303,9 @@ export function handlersLayer(options?: HandlersOptions) {
       const indexConfig = yield* IndexConfig;
       const segmenter = yield* makeSegmenterSwitch(options?.readSegmenter);
       yield* segmenter.set(options?.chineseSegmenter ?? null);
+      // One Configure at a time, in arrival order: a later one waits for an
+      // earlier one that reads its Chinese Segmenter binary.
+      const configuring = yield* Semaphore.make(1);
       const pinned = new Map<SnapshotId, Pinned>();
       let snapshots = 0;
 
@@ -555,6 +566,7 @@ export function handlersLayer(options?: HandlersOptions) {
           setLocale(indexConfig, config.locale).pipe(
             Effect.andThen(segmenter.set(config.chineseSegmenter)),
             Effect.andThen(connection.configure(config)),
+            configuring.withPermits(1),
           ),
         Ping: () => Effect.void,
 
