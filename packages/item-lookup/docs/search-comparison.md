@@ -105,7 +105,7 @@ This is the closest analog to ZotLit's `ItemLookup`. Key behaviors:
 | -------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `service.ts`         | `ItemLookup` `Service` — owns the cache lifecycle, debounces parallel loads, reacts to DB and settings changes.       |
 | `engine.ts`          | Pure: `buildIndex(items, …)` and `searchIndex(index, query, …)`. BM25 via MiniSearch + recency multiplier + highlights. |
-| `tokenizer.ts`       | Pure: `tokenize`, `normalize`, `normalizeWithIndexMap`. Uses `Intl.Segmenter` + optional cm-chs-patch CJK segmenter.   |
+| `tokenizer.ts`       | Pure: `tokenize`, `normalize`, `normalizeWithIndexMap`. Uses `Intl.Segmenter`; the `Segmenter` port (`segmenter.ts`) adds jieba for CJK runs. |
 | `format-creator.ts`  | Pure: replicates Zotero `citeproc` `ROMANESQUE_REGEXP` for given/family name ordering, with CJK exception.           |
 | `creator-summary.ts` | Pure: "Smith", "Smith and Doe", "Smith et al." for the journalArticle suggestion meta line.                          |
 | `render-hit.ts`      | Obsidian-side: `renderSuggestion(settings, hit, el)` paints title + journalArticle meta into the suggester row.       |
@@ -127,7 +127,7 @@ interface IndexedItem {
 
 …and feeds it into MiniSearch with:
 
-- **`tokenize`** — the custom Unicode-aware `tokenize` that goes through `Intl.Segmenter` for word boundaries, optionally hands CJK runs to the `cm-chs-patch` Obsidian plugin, then splits hyphenated tokens.
+- **`tokenize`** — the custom Unicode-aware `tokenize` that goes through `Intl.Segmenter` for word boundaries, then splits hyphenated tokens. With the Chinese Segmenter (a Managed Binary) installed, the `Segmenter` port hands each CJK run to jieba's `cut_for_search` instead.
 - **`processTerm: normalize`** — lower-case, NFD-decompose, strip `\p{Diacritic}`, plus a manual `ł → l` patch (NFD doesn't decompose Polish ł).
 - **`storeFields: []`** — items aren't kept inside MiniSearch; the engine keeps its own `byId: Map<number, Item>` so hits can be reattached to the original `Item` shape.
 
@@ -161,7 +161,7 @@ The two-pass design (score+slice first, highlight only the survivors) is deliber
   - `settings.subscribe(…)` → reload when `zotero.citation-library` changes.
 - `#loadIfNeeded()` deduplicates parallel callers via `#loadInFlight`. If the DB transitions to non-`"ready"` it drops the cache and returns `null` (so the suggester silently returns `[]` instead of throwing while the DB is reloading).
 - `DatabaseError` from `#loadLibrary` is downgraded to a `debug` log; any other error propagates so the service errors out.
-- Tokenizer options (`Intl.Segmenter` + optional CJK segmenter) are recomputed at every reload; the segmenter plugin may have been enabled mid-session.
+- The Item Index rebuilds every held list when the Chinese Segmenter is installed or removed, so indexing and queries use the same words.
 
 ### 3.5 Consumers
 
@@ -188,7 +188,7 @@ The two-pass design (score+slice first, highlight only the survivors) is deliber
 | Fuzzy / typo tolerance                  | None inherent. (`contains` is substring; full-text is exact-word.)                                                    | MiniSearch fuzzy with length-scaled edit distance.                                                  |
 | Prefix matching                         | `beginsWith` operator on specific fields; `quicksearch` is `contains` (substring).                                    | MiniSearch `prefix: true` on every token.                                                           |
 | Diacritic folding                       | Whatever SQLite collation provides (locale-dependent, not used uniformly).                                            | Explicit NFD + diacritic strip + Polish ł patch in both index and query.                            |
-| CJK segmentation                        | `semanticSplitter` emits one token per Han character.                                                                 | Delegates to the user's `cm-chs-patch` Obsidian plugin when present; otherwise treats CJK as words. |
+| CJK segmentation                        | `semanticSplitter` emits one token per Han character.                                                                 | Cuts CJK runs with jieba when the Chinese Segmenter (a Managed Binary) is installed; otherwise `Intl.Segmenter` cuts them. |
 | Ranking                                 | None from `Zotero.Search`; caller sorts (collation + left-bound creator match in citation dialog).                    | BM25 × field boosts × recency multiplier; empty query falls back to `dateModified DESC`.            |
 | Recency bias                            | None.                                                                                                                 | Soft (≤1.1×) exp-decay with 30-day half-life — tie-breaks only.                                     |
 | Highlighting                            | Caller's responsibility; no offsets returned.                                                                         | Engine returns `SearchMatches` ranges in original-glyph offsets.                                    |
