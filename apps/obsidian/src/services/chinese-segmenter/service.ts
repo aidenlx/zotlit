@@ -13,7 +13,7 @@ import type { ManagedBinary } from "@/services/managed-binary/service";
  * segmenter itself from the bytes in the device-wide store; the renderer
  * compiles them only to prove they start.
  */
-export interface ChineseSegmenterModule extends AsyncDisposable {
+export interface ChineseSegmenterModule extends Disposable {
   readonly module: WebAssembly.Module;
 }
 
@@ -27,7 +27,8 @@ export const CHINESE_SEGMENTER: ManagedBinary<ChineseSegmenterModule> = {
     module: await WebAssembly.compileStreaming(
       new Response(binary, { headers: { "content-type": "application/wasm" } }),
     ),
-    [Symbol.asyncDispose]: () => Promise.resolve(),
+    // A compiled module holds no instance and no memory to release.
+    [Symbol.dispose]: () => undefined,
   }),
 };
 

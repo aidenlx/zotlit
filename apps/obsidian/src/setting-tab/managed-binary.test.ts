@@ -138,9 +138,11 @@ describe("chineseSegmenterDefinition", () => {
 
     expect(row).toMatchObject({
       id: "settings_chinese_segmenter",
-      name: "Chinese segmenter",
+      name: m.settings_chinese_segmenter_name(),
       desc: `${m.settings_chinese_segmenter_desc()} ${m.settings_chinese_segmenter_status_absent()}`,
     });
-    expect(button(render(row)).text).toBe("Install");
+    expect(button(render(row)).text).toBe(
+      m.settings_chinese_segmenter_install(),
+    );
   });
 });

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { resolveChineseSegmenterPin } from "./chinese-segmenter.ts";
 
@@ -12,7 +12,6 @@ const BINARY = new TextEncoder().encode("\0asm pretend jieba");
 /** Writes the layout `resolveChineseSegmenterPin` reads an installed package as. */
 async function installedPackage() {
   const packageDir = await mkdtemp(join(tmpdir(), "zotlit-jieba-wasm-"));
-  onTestFinished(() => rm(packageDir, { recursive: true, force: true }));
   await mkdir(join(packageDir, "pkg", "web"), { recursive: true });
   await writeFile(
     join(packageDir, "package.json"),
@@ -25,6 +24,8 @@ async function installedPackage() {
   return {
     packageDir,
     cachePath: join(packageDir, "cache", "chinese-segmenter.json"),
+    [Symbol.asyncDispose]: () =>
+      rm(packageDir, { recursive: true, force: true }),
   };
 }
 
@@ -45,7 +46,8 @@ function upstream(asset: Uint8Array | Response = BINARY) {
 
 describe("resolveChineseSegmenterPin", () => {
   it("pins the installed version and web binary hash to the published asset", async () => {
-    const { packageDir, cachePath } = await installedPackage();
+    await using installed = await installedPackage();
+    const { packageDir, cachePath } = installed;
     const { fetch, requests } = upstream();
 
     await expect(
@@ -59,7 +61,8 @@ describe("resolveChineseSegmenterPin", () => {
   });
 
   it("reuses a cached pin for unchanged bytes instead of downloading again", async () => {
-    const { packageDir, cachePath } = await installedPackage();
+    await using installed = await installedPackage();
+    const { packageDir, cachePath } = installed;
     const pin = await resolveChineseSegmenterPin({
       packageDir,
       cachePath,
@@ -79,7 +82,8 @@ describe("resolveChineseSegmenterPin", () => {
   });
 
   it("fails when the published asset carries a different binary", async () => {
-    const { packageDir, cachePath } = await installedPackage();
+    await using installed = await installedPackage();
+    const { packageDir, cachePath } = installed;
     const { fetch } = upstream(new TextEncoder().encode("other"));
 
     await expect(
@@ -88,7 +92,8 @@ describe("resolveChineseSegmenterPin", () => {
   });
 
   it("fails when the asset cannot be downloaded", async () => {
-    const { packageDir, cachePath } = await installedPackage();
+    await using installed = await installedPackage();
+    const { packageDir, cachePath } = installed;
     const { fetch } = upstream(
       new Response("Not found", { status: 404, statusText: "Not Found" }),
     );

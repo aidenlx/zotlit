@@ -32,7 +32,7 @@ export interface BinaryPin {
  * it starts once verified. Two declarations with distinct `id`s share no cache
  * entry and no consent record.
  */
-export interface ManagedBinary<Engine extends AsyncDisposable> {
+export interface ManagedBinary<Engine extends AsyncDisposable | Disposable> {
   /**
    * Names the binary on the device: its cache directory `zotlit/<id>` and its
    * vault-scoped consent record `zotlit-<id>-declined`.
@@ -96,7 +96,7 @@ export function cachedBinaryName(pin: BinaryPin): string {
  * network, and startup only reads which binary is already cached.
  */
 export class ManagedBinaryService<
-  Engine extends AsyncDisposable,
+  Engine extends AsyncDisposable | Disposable,
 > extends Service<void> {
   readonly #binary: ManagedBinary<Engine>;
   readonly #store: BinaryStore;
@@ -361,8 +361,7 @@ export class ManagedBinaryService<
   async #dropEngine(): Promise<void> {
     const pending = this.#engine;
     this.#engine = undefined;
-    const engine = await pending?.catch(() => undefined);
-    await engine?.[Symbol.asyncDispose]();
+    await using _engine = await pending?.catch(() => undefined);
   }
 
   #setStatus(status: ManagedBinaryStatus): void {

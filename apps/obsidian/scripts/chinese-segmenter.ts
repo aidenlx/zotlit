@@ -1,9 +1,10 @@
 // Release-build pin for the Chinese Segmenter: version and hash come from the installed
 // `jieba-wasm` package, the download URL from that same package version on the npm CDN.
 
-import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+
+import { readVerifiedPin, sha256Hex, writeVerifiedPin } from "./binary-pin.ts";
 
 const packageRoot = resolve(import.meta.dirname, "..");
 
@@ -77,8 +78,11 @@ export async function resolveChineseSegmenterPin(
   ) as { version: string };
   const sha256 = sha256Hex(await readFile(join(packageDir, BINARY_PATH)));
 
-  const cached = await readCache(cachePath);
-  if (cached?.version === version && cached.sha256 === sha256) return cached;
+  const cached = await readVerifiedPin<ChineseSegmenterPin>(cachePath, {
+    version,
+    sha256,
+  });
+  if (cached) return cached;
 
   const url = `${CDN_ROOT}@${version}/${BINARY_PATH}`;
   const response = await fetch(url);
@@ -95,22 +99,6 @@ export async function resolveChineseSegmenterPin(
   }
 
   const pin: ChineseSegmenterPin = { version, url, sha256 };
-  await mkdir(dirname(cachePath), { recursive: true });
-  await writeFile(cachePath, JSON.stringify(pin, null, 2));
+  await writeVerifiedPin(cachePath, pin);
   return pin;
-}
-
-/** An unreadable or stale cache is a miss; the pin is re-resolved and rewritten. */
-async function readCache(
-  cachePath: string,
-): Promise<ChineseSegmenterPin | undefined> {
-  try {
-    return JSON.parse(await readFile(cachePath, "utf8")) as ChineseSegmenterPin;
-  } catch {
-    return undefined;
-  }
-}
-
-function sha256Hex(bytes: Uint8Array): string {
-  return createHash("sha256").update(bytes).digest("hex");
 }

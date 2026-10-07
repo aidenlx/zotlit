@@ -1599,7 +1599,7 @@
   "settings_chinese_segmenter_status_installing": "正在下载分词器，需要一些时间。",
   "settings_chinese_segmenter_status_installed": "已安装版本 {version}。",
   "settings_chinese_segmenter_status_download_failed": "下载失败：{detail}",
-  "settings_chinese_segmenter_status_hash_mismatch": "下载内容与内置校验和不符，ZotLit 已将其丢弃。请重试。",
+  "settings_chinese_segmenter_status_hash_mismatch": "下载内容未通过完整性检查，ZotLit 已将其丢弃。请重试。",
   "settings_chinese_segmenter_status_init_failed": "分词器未能启动：{detail}",
   "settings_chinese_segmenter_install": "安装",
   "settings_chinese_segmenter_installing": "正在安装…",

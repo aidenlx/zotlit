@@ -2,9 +2,10 @@
 // `pandoc-wasm` package, the download URL from the matching official upstream release.
 
 import { unzipSync } from "fflate";
-import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+
+import { readVerifiedPin, sha256Hex, writeVerifiedPin } from "./binary-pin.ts";
 
 const packageRoot = resolve(import.meta.dirname, "..");
 
@@ -81,8 +82,11 @@ export async function resolvePandocEnginePin(
     await readFile(join(packageDir, "src", BINARY_ENTRY)),
   );
 
-  const cached = await readCache(cachePath);
-  if (cached?.version === version && cached.sha256 === sha256) return cached;
+  const cached = await readVerifiedPin<PandocEnginePin>(cachePath, {
+    version,
+    sha256,
+  });
+  if (cached) return cached;
 
   const asset = selectBinaryAsset(await fetchReleaseAssets(fetch, version));
   await verifyAsset(fetch, asset, sha256);
@@ -92,8 +96,7 @@ export async function resolvePandocEnginePin(
     url: asset.browser_download_url,
     sha256,
   };
-  await mkdir(dirname(cachePath), { recursive: true });
-  await writeFile(cachePath, JSON.stringify(pin, null, 2));
+  await writeVerifiedPin(cachePath, pin);
   return pin;
 }
 
@@ -168,19 +171,4 @@ async function verifyAsset(
       `The installed pandoc-wasm binary hashes to ${binarySha256}, but ${asset.name} carries ${assetSha256}`,
     );
   }
-}
-
-/** An unreadable or stale cache is a miss; the pin is re-resolved and rewritten. */
-async function readCache(
-  cachePath: string,
-): Promise<PandocEnginePin | undefined> {
-  try {
-    return JSON.parse(await readFile(cachePath, "utf8")) as PandocEnginePin;
-  } catch {
-    return undefined;
-  }
-}
-
-function sha256Hex(bytes: Uint8Array): string {
-  return createHash("sha256").update(bytes).digest("hex");
 }

@@ -497,7 +497,7 @@
   "settings_chinese_segmenter_status_installing": "Downloading the segmenter. This takes a moment.",
   "settings_chinese_segmenter_status_installed": "Version {version} is installed.",
   "settings_chinese_segmenter_status_download_failed": "The download failed: {detail}",
-  "settings_chinese_segmenter_status_hash_mismatch": "The download did not match the pinned checksum, so ZotLit discarded it. Try again.",
+  "settings_chinese_segmenter_status_hash_mismatch": "The download failed the integrity check, so ZotLit discarded it. Try again.",
   "settings_chinese_segmenter_status_init_failed": "The segmenter did not start: {detail}",
   "settings_chinese_segmenter_install": "Install",
   "settings_chinese_segmenter_installing": "Installing…",
