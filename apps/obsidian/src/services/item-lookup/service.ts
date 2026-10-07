@@ -51,6 +51,8 @@ interface ItemLookupReady {
 export class ItemLookup extends Service<ItemLookupReady> {
   readonly #reads;
   readonly #libraryScope;
+  /** The answer of the newest search the handle runs. */
+  #latest: Promise<SearchHit[]> = Promise.resolve([]);
 
   ready: Promise<ItemLookupReady>;
 
@@ -63,20 +65,23 @@ export class ItemLookup extends Service<ItemLookupReady> {
 
   /**
    * The Items in Library Scope that match `query`, best first, at most
-   * `limit`. A later call interrupts this one, which then answers empty.
+   * `limit`. A later call interrupts this one, which then answers with the
+   * later call's list, so a list drawn from either matches the newest query.
    */
   async search(query: string, opts?: { limit?: number }): Promise<SearchHit[]> {
     const { runSearch } = await this.ready;
     const limit = opts?.limit ?? DEFAULT_LIMIT;
     const libraries = this.#libraryScope.current?.available ?? [];
     if (limit <= 0 || libraries.length === 0) return [];
-    try {
-      return await runSearch(this.#searchItems(libraries, query, limit));
-    } catch (error) {
-      // The search handle interrupted it for a newer search, or closed.
+    const answer: Promise<SearchHit[]> = runSearch(
+      this.#searchItems(libraries, query, limit),
+    ).catch((error: unknown) => {
+      // A newer search interrupted this one, or the search handle closed.
       logger.debug("Search interrupted", { error, queryLength: query.length });
-      return [];
-    }
+      return this.#latest === answer ? [] : this.#latest;
+    });
+    this.#latest = answer;
+    return answer;
   }
 
   async #load(): Promise<ItemLookupReady> {

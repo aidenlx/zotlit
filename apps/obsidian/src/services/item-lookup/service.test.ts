@@ -16,6 +16,7 @@ import {
 } from "@/services/zotero-reads/test-utils";
 
 import { ItemLookup } from "./service";
+import type { SearchHit } from "./service";
 
 describe("ItemLookup", () => {
   it("answers through SearchItems with the Library Scope's ids", async () => {
@@ -108,22 +109,51 @@ describe("ItemLookup", () => {
     expect(reads.searches).toHaveLength(before);
   });
 
-  it("interrupts the previous request when the next keystroke searches", async () => {
+  it("interrupts the previous request when the next keystroke searches, and answers both with the newest list", async () => {
     await using reads = readsOver(() => seed(perLibraryRows()));
-    await using lookup = itemLookup(reads);
+    await using lookup = itemLookup(
+      reads,
+      new FakeLibraryScope([library(USER_LIBRARY_ID), library(2)]),
+    );
     await lookup.search("");
     const gate = reads.gateSearch();
 
-    const first = lookup.search("Alp");
+    const first = lookup.search("Alpha");
     await expect.poll(() => reads.held).toBe(1);
-    const second = lookup.search("Alpha");
+    const second = lookup.search("LIBRARY3");
 
-    await expect(first).resolves.toEqual([]);
-    expect(reads.interrupted).toEqual(["Alp"]);
-    await expect(second).resolves.toMatchObject([
-      { item: { key: "LIBRARY2" } },
-    ]);
+    const keys = async (answer: Promise<SearchHit[]>) =>
+      (await answer).map((hit) => hit.item.key);
+    expect(await keys(second)).toEqual(["LIBRARY3"]);
+    // A list drawn from the interrupted answer still matches the box.
+    expect(await keys(first)).toEqual(["LIBRARY3"]);
+    expect(reads.interrupted).toEqual(["Alpha"]);
     gate.resolve();
+  });
+
+  it("answers a chain of interrupted keystrokes with the newest list", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
+    await using lookup = itemLookup(
+      reads,
+      new FakeLibraryScope([library(USER_LIBRARY_ID), library(2)]),
+    );
+    await lookup.search("");
+    const gates = [reads.gateSearch(), reads.gateSearch()];
+
+    const first = lookup.search("A");
+    await expect.poll(() => reads.held).toBe(1);
+    const second = lookup.search("Al");
+    await expect.poll(() => reads.searches.at(-1)?.query).toBe("Al");
+    const third = lookup.search("LIBRARY2");
+
+    const answers = await Promise.all([first, second, third]);
+    expect(answers.map((answer) => answer.map((hit) => hit.item.key))).toEqual([
+      ["LIBRARY2"],
+      ["LIBRARY2"],
+      ["LIBRARY2"],
+    ]);
+    expect(reads.interrupted).toEqual(["A", "Al"]);
+    for (const gate of gates) gate.resolve();
   });
 
   it("prewarms with an empty query and a limit of one on ready", async () => {
