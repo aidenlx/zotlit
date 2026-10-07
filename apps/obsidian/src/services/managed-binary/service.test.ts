@@ -113,6 +113,47 @@ describe("ManagedBinaryService with a bare .wasm pin", () => {
     );
   });
 
+  it("shares one install, its engine start included, with an install during the start", async () => {
+    const device = memoryDevice();
+    const download = serve(SEGMENTER);
+    const starting = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let disposed = 0;
+    const createEngine = vi.fn(async (_binary: Blob) => {
+      starting.resolve();
+      await release.promise;
+      return {
+        [Symbol.asyncDispose]: () => {
+          disposed++;
+          return Promise.resolve();
+        },
+      };
+    });
+    await using service = open(
+      { ...SEGMENTER, createEngine, startOnInstall: true },
+      device,
+      download,
+    );
+    await service.ready;
+
+    const first = service.install();
+    await starting.promise;
+    const second = service.install();
+    const during = service.getStatus().kind;
+    release.resolve();
+    await Promise.all([first, second]);
+
+    expect(second).toBe(first);
+    expect(during).toBe("installing");
+    expect(download).toHaveBeenCalledOnce();
+    expect(createEngine).toHaveBeenCalledOnce();
+    expect(disposed).toBe(1);
+    expect(service.getStatus()).toEqual({
+      kind: "installed",
+      version: SEGMENTER.pin.version,
+    });
+  });
+
   it("reports a binary that does not match the pin, and caches nothing", async () => {
     const device = memoryDevice();
     const expected = "f".repeat(64);
