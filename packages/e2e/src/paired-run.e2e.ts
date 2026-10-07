@@ -792,21 +792,18 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         // elsewhere, which draws no marks. And Live Updates must be connected,
         // because the Companion's Freshness Signal is the only thing that
         // invalidates the Zotero Local API partition.
-        const resolveAttachment = `app.plugins.plugins.zotlit.services.attachmentResolver.resolve(app.vault.adapter.getFullPath(${JSON.stringify(attachmentPath)}))`;
         // The attachment path index is a Held Read: the first lookup starts
-        // its build and answers `pending` until the index arrives. A wait
-        // that runs out leaves `pending` for the assertion below to report.
-        await obEvalUntil(
-          vaultId!,
-          `String(${resolveAttachment}.kind!=='pending')`,
-          {
-            expected: "true",
-          },
-        );
-        const resolution = await obJson<{
-          kind: string;
-          attachmentKey?: string;
-        }>(vaultId!, `JSON.stringify(${resolveAttachment})`);
+        // its build and answers `pending` until the index arrives. The
+        // assertion reads the last answer, so a wait that runs out reports
+        // `pending`.
+        let resolution: { kind: string; attachmentKey?: string } | undefined;
+        await waitFor(async () => {
+          resolution = await obJson<{ kind: string; attachmentKey?: string }>(
+            vaultId!,
+            `JSON.stringify(app.plugins.plugins.zotlit.services.attachmentResolver.resolve(app.vault.adapter.getFullPath(${JSON.stringify(attachmentPath)})))`,
+          ).catch(() => resolution);
+          return resolution !== undefined && resolution.kind !== "pending";
+        });
         expect(
           resolution,
           "the Fixture PDF does not resolve inside the run's vault",
