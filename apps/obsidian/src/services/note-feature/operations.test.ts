@@ -105,6 +105,7 @@ import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
 import {
   inProcessReadsService,
+  recordCalls,
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
 
@@ -1452,6 +1453,61 @@ describe("createNote", () => {
     expect(update).not.toHaveBeenCalled();
     expect(create).toHaveBeenCalledTimes(2);
     expect(document.renderForCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders and flushes Child Notes under one Snapshot", async () => {
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
+    const { db } = makeDbDeps();
+    const { wrap, calls, snapshots } = recordCalls([
+      "NoteSource",
+      "NoteBodies",
+    ]);
+    await using zoteroReads = inProcessReadsService(
+      sharedClientOpener(db.client),
+      (client) => wrap(knowReadItems(client)),
+    );
+    const deps: SyncRenderDeps = {
+      app: makeApp(),
+      template: makeTemplate(),
+      db,
+      zoteroReads,
+      noteIndex: {
+        getImportedNoteByNoteKey: () => [],
+        ready: Promise.resolve(),
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings(),
+      attachmentImport: blockedAttachmentImport,
+      noteImport: {
+        // The Child Note flush reads through the reads the create handed it.
+        prepare: async ({ reads }) => ({
+          resolveChildNote: () => ({
+            key: "",
+            indexedKey: "",
+            title: null,
+            noteLink: () => "",
+          }),
+          flush: async () => {
+            await Effect.runPromise(
+              reads.NoteBodies({ libraryID: 1, keys: ["NOTE1234"] }),
+            );
+            return { created: 0, skipped: 0, failed: 0 };
+          },
+        }),
+      },
+    };
+
+    createdFile(await createNoteFeature(deps).createNote(makeCreateGateItem()));
+
+    expect(snapshots).toHaveLength(1);
+    expect(
+      calls.map(({ operation, payload }) => [operation, payload.snapshot]),
+    ).toEqual([
+      ["NoteSource", snapshots[0]],
+      ["NoteBodies", snapshots[0]],
+    ]);
   });
 
   it("awaits noteIndex.whenIndexed (not just ready) before writing the note", async () => {
