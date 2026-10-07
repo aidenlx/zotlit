@@ -344,14 +344,19 @@ export function getItemTypeByKey(
  * {@link rowsByID}: one statement per {@link IN_BATCH_SIZE} distinct keys. A
  * key that names no live regular item has no entry; a repeated key repeats its
  * item.
+ *
+ * @param opts.memo caller-owned `libraryID → groupID` cache, as in
+ *   {@link getItemsByID}. A caller that already knows the library's group
+ *   seeds it and saves the group read.
  */
 export function getItemsByKey(
   db: NodeDatabaseClient,
-  libraryID: number,
   keys: readonly string[],
+  opts: { libraryID: number; memo?: GroupIDMemo },
 ): Item[] {
   if (keys.length === 0) return [];
 
+  const { libraryID } = opts;
   const rows = rowsByID(keys, {
     one: (key) => itemByKeyQuery.prepared(db).all({ libraryID, key }),
     many: (batch) =>
@@ -359,7 +364,7 @@ export function getItemsByKey(
     idOf: (row) => row.key,
   });
   if (rows.size === 0) return [];
-  const groupId = groupIDForLibrary(db, libraryID);
+  const groupId = resolveGroupID(db, libraryID, opts.memo ?? new Map());
   const baseFieldTable = getBaseFieldTable(db, ITEM_BASE_FIELDS);
   return keys.flatMap((key) => {
     const row = rows.get(key);

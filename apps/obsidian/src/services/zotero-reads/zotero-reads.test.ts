@@ -947,6 +947,8 @@ describe("ZoteroReads operations", () => {
       [...userFifty, ...groupFifty],
     ]);
     expect(both).toBe(user! + group!);
+    // The user Library needs no resolution: its hydration is the one statement.
+    expect(user).toBe(1);
   });
 
   it("a source that cannot open fails with a tagged DbUnavailable", async () => {

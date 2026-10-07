@@ -103,15 +103,17 @@ function sliced<I, O>(
 
 /**
  * Live items for Indexed Keys, keyed by Indexed Key in request order. Each
- * Library the keys span resolves once and reads its items in one batched
- * statement, whatever the number of keys.
+ * Library the keys span resolves once and reads its items through
+ * `getItemsByKey`: one statement per `IN_BATCH_SIZE` distinct keys.
  */
 function itemsByIndexedKeys(
   client: NodeDatabaseClient,
   indexedKeys: readonly string[],
 ): Map<string, Item> {
-  // Each requested spelling (`g7` or `g007`) with the Library and item key it resolves to.
   const libraryByGroupID = new Map<number | null, number | null>();
+  // The group of each resolved Library, so hydration skips the group read.
+  const groupIDMemo: GroupIDMemo = new Map();
+  // Each requested spelling (`g7` or `g007`) with the Library and item key it resolves to.
   const requested: { indexedKey: string; libraryID: number; key: string }[] =
     [];
   const keysByLibrary = new Map<number, string[]>();
@@ -126,18 +128,20 @@ function itemsByIndexedKeys(
     }
     const libraryID = libraryByGroupID.get(parsed.groupID);
     if (libraryID == null) continue;
+    groupIDMemo.set(libraryID, parsed.groupID);
     requested.push({ indexedKey, libraryID, key: parsed.key });
-    keysByLibrary.set(libraryID, [
-      ...(keysByLibrary.get(libraryID) ?? []),
-      parsed.key,
-    ]);
+    const keys = keysByLibrary.get(libraryID);
+    if (keys) keys.push(parsed.key);
+    else keysByLibrary.set(libraryID, [parsed.key]);
   }
   const found = new Map<number, Map<string, Item>>();
   for (const [libraryID, keys] of keysByLibrary) {
     found.set(
       libraryID,
       new Map(
-        getItemsByKey(client, libraryID, keys).map((item) => [item.key, item]),
+        getItemsByKey(client, keys, { libraryID, memo: groupIDMemo }).map(
+          (item) => [item.key, item],
+        ),
       ),
     );
   }
@@ -318,8 +322,8 @@ export function handlersLayer(options?: HandlersOptions) {
             return {
               relatedItems: getItemsByKey(
                 client,
-                item.libraryID,
                 getRelatedKeysByItemID(client, itemID),
+                { libraryID: item.libraryID },
               ),
               childNotes: getChildNotesByParentIDs(client, [itemID]),
             };
