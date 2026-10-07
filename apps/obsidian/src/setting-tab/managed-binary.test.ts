@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ManagedBinaryStatus } from "@/services/managed-binary/service";
 
+import { chineseSegmenterDefinition } from "./chinese-segmenter";
 import type { SettingsKey, SettingTabContext } from "./context";
 import { managedBinaryDefinition } from "./managed-binary";
 import type { ManagedBinaryCopy } from "./managed-binary";
@@ -125,5 +126,21 @@ describe("pandocEngineDefinition", () => {
     expect(button(render(row)).text).toBe(
       m.settings_citation_engine_uninstall(),
     );
+  });
+});
+
+describe("chineseSegmenterDefinition", () => {
+  it("renders the Chinese segmenter row from its own messages", () => {
+    const ctx = {
+      chineseSegmenter: binary({ kind: "absent" }),
+    } as unknown as SettingTabContext;
+    const row = chineseSegmenterDefinition(ctx);
+
+    expect(row).toMatchObject({
+      id: "settings_chinese_segmenter",
+      name: "Chinese segmenter",
+      desc: `${m.settings_chinese_segmenter_desc()} ${m.settings_chinese_segmenter_status_absent()}`,
+    });
+    expect(button(render(row)).text).toBe("Install");
   });
 });
