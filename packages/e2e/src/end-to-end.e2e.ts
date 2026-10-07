@@ -2577,6 +2577,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       rendererHeapGrowthMB: Math.round(heapGrowth / 1e5) / 10,
     });
     expect(rebuild.builtMs).not.toBeNull();
+    // A search that misses the new Items answered before the build ended, so
+    // the held index answered at least once.
+    expect(rebuild.polls).toBeGreaterThan(0);
     expect(rebuild.staleMisses).toBe(0);
     expect(painted.frames).toBeGreaterThan(1);
     // The renderer may take a short long task of its own; none blocks it
