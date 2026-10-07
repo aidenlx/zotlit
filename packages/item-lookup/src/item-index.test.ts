@@ -94,6 +94,8 @@ function withIndex<A>(
     [USER_LIBRARY_ID, [alpha, beta]],
     [GROUP_LIBRARY_ID, [gamma]],
   ]),
+  /** Yield every few steps, so concurrent fibers interleave finely. */
+  maxOpsBeforeYield?: number,
 ): Promise<A> {
   return Effect.gen(function* () {
     const source = yield* makeMemoryItemSource(rows);
@@ -120,7 +122,18 @@ function withIndex<A>(
           })),
         ),
     });
-  }).pipe(Effect.scoped, Effect.runPromise);
+  }).pipe(
+    Effect.scoped,
+    (program) =>
+      maxOpsBeforeYield === undefined
+        ? program
+        : Effect.provideService(
+            program,
+            Scheduler.MaxOpsBeforeYield,
+            maxOpsBeforeYield,
+          ),
+    Effect.runPromise,
+  );
 }
 
 describe("Item Index", () => {
@@ -303,6 +316,36 @@ describe("Item Index", () => {
     expect(result.answer).toEqual(["DELTA", "BETA", "ALPHA"]);
     expect(result.itemIDs).toBe(2);
     expect(result.interrupted).toBe(0);
+  });
+
+  it("runs the trailing rebuild for changes that land as a build ends", async () => {
+    const epsilon = item({
+      key: "EPSILON",
+      itemID: 5,
+      title: "Epsilon transit atlas",
+      dateModified: "2027-01-01T00:00:00Z",
+    });
+    const answer = await withIndex(
+      ({ source, search }) =>
+        Effect.gen(function* () {
+          yield* search(USER, "");
+          // The second swap lands as the first rebuild replaces the index,
+          // after the lane's last check for a trailing request.
+          yield* source.onNextRelease(
+            Effect.andThen(
+              source.setItems(USER_LIBRARY_ID, [alpha, beta, delta, epsilon]),
+              source.swap,
+            ),
+          );
+          yield* source.setItems(USER_LIBRARY_ID, [alpha, beta, delta]);
+          yield* source.swap;
+          return yield* until(search(USER, ""), (keys) => keys.length === 4);
+        }),
+      undefined,
+      4,
+    );
+
+    expect(answer).toEqual(["EPSILON", "DELTA", "BETA", "ALPHA"]);
   });
 
   it("keeps the build running when its first waiter is interrupted", async () => {

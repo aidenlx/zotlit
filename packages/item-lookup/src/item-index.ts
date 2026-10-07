@@ -420,12 +420,23 @@ export const layerItemIndex: Layer.Layer<
     const startLane = (entry: Entry): Lane => {
       const done = Deferred.makeUnsafe<void, SourceUnavailable>();
       const lane: Lane = { fiber: null, done };
-      const run = Effect.suspend(() => {
-        entry.rerun = false;
-        return rebuildOnce(entry);
-      }).pipe(
-        Effect.repeat({ while: () => entry.rerun }),
-        Effect.asVoid,
+      // The check for a trailing request and the lane's release are one
+      // synchronous step, so a request cannot land between them and be lost.
+      const loop: Effect.Effect<void, SourceUnavailable> = Effect.suspend(
+        () => {
+          entry.rerun = false;
+          return rebuildOnce(entry);
+        },
+      ).pipe(
+        Effect.andThen(
+          Effect.suspend(() => {
+            if (entry.rerun) return loop;
+            if (entry.lane === lane) entry.lane = null;
+            return Effect.void;
+          }),
+        ),
+      );
+      const run = loop.pipe(
         Effect.onExit((exit) =>
           Effect.suspend(() => {
             if (entry.lane === lane) entry.lane = null;
