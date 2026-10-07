@@ -148,17 +148,11 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
     setActiveLeaf: vi.fn(),
   };
   Object.assign(app.workspace, workspace);
-  using lease = await fixture.deps.db.acquireRead();
   const editorLeaf = { app } as unknown as WorkspaceLeaf;
   const editor = new Editor(editorLeaf, {
     app,
     settings: fixture.deps.settings,
-    db: {
-      ...fixture.deps.db,
-      ready: Promise.resolve(),
-      state: "ready",
-      client: lease.client,
-    },
+    zoteroReads: fixture.deps.zoteroReads,
     zoteroPref: { ready: Promise.resolve(), dataDir: null },
     templates: fixture.deps.templates,
     nativePreview: fixture.deps,
@@ -426,9 +420,8 @@ describe("independent native Note Preview", () => {
       vi.mocked(pickItem).mockResolvedValueOnce(null);
       await act(async () => choose().click());
       expect(preview.getState()["item"]).toBe(item);
-      using lease = await test.fixture.deps.db.acquireRead();
       const hit = {
-        item: getItemsByKey(lease.client, 1, ["MAIN2345"])[0]!,
+        item: getItemsByKey(test.fixture.client, 1, ["MAIN2345"])[0]!,
         score: 1,
         matches: [],
         library: null,
@@ -461,9 +454,8 @@ describe("independent native Note Preview", () => {
         (button) =>
           button.textContent === m.template_data_explorer_choose_item(),
       )!;
-    using lease = await test.fixture.deps.db.acquireRead();
     const hit = {
-      item: getItemsByKey(lease.client, 1, ["MAIN2345"])[0]!,
+      item: getItemsByKey(test.fixture.client, 1, ["MAIN2345"])[0]!,
       score: 1,
       matches: [],
       library: null,
@@ -774,7 +766,7 @@ Annotation`,
   it("rolls back failed binding resources and can retry the same view", async () => {
     await using test = await setup();
     const released = vi.fn();
-    vi.spyOn(test.fixture.deps.db, "on").mockReturnValue(released);
+    vi.spyOn(test.fixture.deps.zoteroReads, "on").mockReturnValue(released);
     vi.mocked(createTemplateWorkbenchHost).mockImplementationOnce(() => {
       throw new Error("Host unavailable");
     });

@@ -195,7 +195,7 @@ export interface AnnotViewDeps {
    */
   reportBlockedGesture: (attachmentKey: string) => void;
   /** The tag names of an Annotation's Library, which the tag editor suggests. */
-  libraryTagNames: (annotationKey: string) => readonly string[];
+  libraryTagNames: (annotationKey: string) => Promise<readonly string[]>;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
   /** The plugin's live display surface for Excerpt Images. */
   excerptDisplay: Pick<

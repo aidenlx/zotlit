@@ -159,7 +159,7 @@ export async function runBatchUpdate(
   opts: BatchUpdateOptions = {},
 ): Promise<BatchUpdateResult> {
   const { scope = "full", unavailableLibraries = 0, profile } = opts;
-  if (deps.db.state !== "ready") {
+  if (deps.zoteroReads.state !== "ready") {
     logger.warn("Batch update: database not ready", { count: itemIDs.length });
     return { outcome: "db-unavailable" };
   }
@@ -786,7 +786,7 @@ export async function runBatchUpdateAll(
   deps: BatchUpdateDeps,
   target: BatchTarget = {},
 ): Promise<BatchUpdateResult> {
-  if (deps.db.state !== "ready") {
+  if (deps.zoteroReads.state !== "ready") {
     logger.warn("Batch update all: database not ready");
     return { outcome: "db-unavailable" };
   }

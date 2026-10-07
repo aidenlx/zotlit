@@ -23,7 +23,6 @@ import { CitationPopover } from "./citation-popover/service";
 import { CitationText } from "./citation-text/service";
 import { CitekeyEditor } from "./citekey-editor/service";
 import { CitekeyReading } from "./citekey-reading/service";
-import { DatabaseService } from "./database/service";
 import { ExcerptDisplayService } from "./excerpt-image/display";
 import { createExcerptPreparation } from "./excerpt-image/prepare";
 import { prepareSingleExcerpt } from "./excerpt-image/prepare-single";
@@ -76,12 +75,8 @@ import { WikilinkReading } from "./wikilink-reading/service";
 import { ZoteroLocalApiClient } from "./zotero-local-api/service";
 import { SecretWriteAuthorizationStore } from "./zotero-local-api/write-authorization";
 import { ZoteroPrefService } from "./zotero-pref/service";
-import { layerDatabaseService } from "./zotero-reads/database-connection";
-import { inProcessClient, ZoteroReadsService } from "./zotero-reads/service";
-import {
-  workerAdapterEnabled,
-  workerClient,
-} from "./zotero-reads/worker-client";
+import { ZoteroReadsService } from "./zotero-reads/service";
+import { workerClient } from "./zotero-reads/worker-client";
 
 /**
  * Construct and wire all Obsidian plugin services.
@@ -156,18 +151,11 @@ export function buildServices(
         new LocalServerService({ settings, zoteroPref, noteIndex }),
     })
     .use({
-      db: ({ settings, zoteroPref }) =>
-        new DatabaseService({ settings, zoteroPref }),
-    })
-    .use({
-      // The handler layer runs in-process over the DatabaseService, so the
-      // service stays the one database owner. The dev toggle runs it in the
-      // Web Worker instead, which owns its own connection.
-      zoteroReads: ({ db, settings, zoteroPref }) =>
+      // The Zotero database lives in a Web Worker, which owns the connection;
+      // the renderer reads it only through ZoteroReads.
+      zoteroReads: ({ settings, zoteroPref }) =>
         new ZoteroReadsService({
-          client: workerAdapterEnabled(plugin.app)
-            ? workerClient({ settings, zoteroPref })
-            : inProcessClient(layerDatabaseService(db)),
+          client: workerClient({ settings, zoteroPref }),
         }),
     })
     .use({
@@ -260,7 +248,7 @@ export function buildServices(
         attachmentResolver,
         annotationRepository,
         capabilityNotices,
-        db,
+        zoteroReads,
         noteIndex,
         settings,
       }) => {
@@ -270,7 +258,7 @@ export function buildServices(
           annotations: annotationRepository,
           noteIndex,
           libraryTagNames: (annotationKey) =>
-            libraryTagNames(db, annotationKey),
+            libraryTagNames(zoteroReads, annotationKey),
           settings,
           capabilityGestures: {
             reportBlockedGesture: (attachmentKey) =>
@@ -366,7 +354,6 @@ export function buildServices(
     })
     .use({
       templateMigration: ({
-        db,
         zoteroReads,
         libraryScope,
         noteIndex,
@@ -382,7 +369,6 @@ export function buildServices(
             loadLiteratureNoteTemplateMigrationData(
               {
                 app: plugin.app,
-                db,
                 zoteroReads,
                 libraryScope,
                 noteIndex,
@@ -408,7 +394,6 @@ export function buildServices(
         excerptImage,
         profile,
         template,
-        db,
         zoteroReads,
         noteIndex,
         zoteroPref,
@@ -435,7 +420,6 @@ export function buildServices(
           profile,
           app: plugin.app,
           template,
-          db,
           zoteroReads,
           noteIndex,
           zoteroPref,
@@ -448,7 +432,6 @@ export function buildServices(
       createProfile: ({
         profile,
         template,
-        db,
         zoteroReads,
         noteIndex,
         zoteroPref,
@@ -460,7 +443,6 @@ export function buildServices(
           app: plugin.app,
           profile,
           template,
-          db,
           zoteroReads,
           noteIndex,
           zoteroPref,
@@ -473,7 +455,6 @@ export function buildServices(
       importProfile: ({
         profile,
         template,
-        db,
         zoteroReads,
         noteIndex,
         zoteroPref,
@@ -485,7 +466,6 @@ export function buildServices(
           app: plugin.app,
           profile,
           template,
-          db,
           zoteroReads,
           noteIndex,
           zoteroPref,
@@ -501,7 +481,6 @@ export function buildServices(
         createProfile,
         importProfile,
         zoteroPref,
-        db,
         zoteroReads,
         settings,
         libraryScope,
@@ -517,7 +496,6 @@ export function buildServices(
           }),
           profile,
           noteFeature,
-          db,
           zoteroReads,
           settings,
           libraryScope,
@@ -549,7 +527,7 @@ export function buildServices(
     })
     .use({
       bibliographyRender: ({
-        db,
+        zoteroReads,
         pandocEngine,
         zoteroPref,
         settings,
@@ -558,7 +536,7 @@ export function buildServices(
       }) =>
         new BibliographyRenderCache({
           profile,
-          db,
+          db: zoteroReads,
           pandocEngine,
           zoteroPref,
           settings,

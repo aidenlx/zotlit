@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
+import { Effect } from "effect";
 import { ButtonComponent } from "obsidian";
 import type { App, TFile } from "obsidian";
 import { expect, it, vi } from "vitest";
 
-import { getItemsByID } from "@zotlit/db";
 import type { Item, ItemRef } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -17,11 +17,6 @@ import type {
   CompanionNoteTarget,
   CreationProfileSelection,
 } from "./index";
-
-vi.mock("@zotlit/db", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@zotlit/db")>()),
-  getItemsByID: vi.fn(),
-}));
 
 vi.mock("@/views/quick-switch/profile-picker", () => ({
   chooseLiteratureNoteProfile: vi.fn(),
@@ -40,12 +35,9 @@ const PAPERS = "Rz9Wm4YfH6Kd" as ProfileId;
 function creationHarness(selection: CreationProfileSelection) {
   const file = { path: "Papers/Study.md" } as TFile;
   const item = { ...REF, fields: { title: "A Study" } } as Item;
-  vi.mocked(getItemsByID).mockReturnValue([item]);
-  const released = vi.fn();
-  const acquireRead = vi.fn(async () => ({
-    client: {},
-    [Symbol.dispose]: released,
-  }));
+  const readItems = vi.fn(() =>
+    Effect.succeed(new Map([[REF.indexedKey, item]])),
+  );
   const create = vi.fn(async () => ({ outcome: "created" as const, file }));
   const openLinkText = vi.fn(async () => {});
   const resolveCreationProfile = vi.fn(async () => selection);
@@ -61,7 +53,9 @@ function creationHarness(selection: CreationProfileSelection) {
   ]);
   const deps = {
     app: { workspace: { openLinkText } },
-    db: { acquireRead },
+    zoteroReads: {
+      ready: Promise.resolve({ reads: { ItemsByIndexedKeys: readItems } }),
+    },
     zoteroPref: { dataDir: null },
     noteFeature: {
       resolveCompanionNote: vi.fn(
@@ -80,8 +74,7 @@ function creationHarness(selection: CreationProfileSelection) {
     deps,
     file,
     item,
-    acquireRead,
-    released,
+    readItems,
     create,
     openLinkText,
     resolveCreationProfile,
@@ -90,7 +83,7 @@ function creationHarness(selection: CreationProfileSelection) {
 }
 
 it.each(["open", "update"] as const)(
-  "%s creates directly under the link's Profile, releases the DB before preparing, and opens the path",
+  "%s creates directly under the link's Profile and opens the path",
   async (action) => {
     const harness = creationHarness({
       selector: PAPERS,
@@ -99,7 +92,7 @@ it.each(["open", "update"] as const)(
     });
     vi.mocked(chooseLiteratureNoteProfile).mockClear();
     harness.prepareCreationProfiles.mockImplementation(async () => {
-      expect(harness.released).toHaveBeenCalledOnce();
+      expect(harness.readItems).toHaveBeenCalledOnce();
       return [
         {
           selector: PAPERS,
@@ -212,7 +205,7 @@ it("keeps metadata-only missing-note updates outside the create flow", async () 
     action: "update",
     scope: "metadata",
   });
-  expect(harness.acquireRead).not.toHaveBeenCalled();
+  expect(harness.readItems).not.toHaveBeenCalled();
   expect(harness.resolveCreationProfile).not.toHaveBeenCalled();
   expect(harness.create).not.toHaveBeenCalled();
   expect(harness.openLinkText).not.toHaveBeenCalled();
@@ -236,7 +229,7 @@ it("refuses an unknown URL Profile without opening or starting creation", async 
     profile: PAPERS,
   });
   expect(harness.openLinkText).not.toHaveBeenCalled();
-  expect(harness.acquireRead).not.toHaveBeenCalled();
+  expect(harness.readItems).not.toHaveBeenCalled();
   expect(companionNoteNotice(harness.deps.app, target)).toBe(
     m.notice_literature_note_profile_unknown({ stamp: PAPERS }),
   );

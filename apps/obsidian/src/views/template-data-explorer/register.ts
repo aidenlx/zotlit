@@ -3,7 +3,6 @@ import { TFile } from "obsidian";
 import type { App, PaneType, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
-import type { DatabaseService } from "@/services/database/service";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { NoteIndex } from "@/services/note-index/service";
@@ -25,7 +24,6 @@ type ExplorerPlugin = Pick<
 
 export interface ExplorerRegistrationDeps {
   app: App;
-  db: DatabaseService;
   zoteroReads: ZoteroReadsService;
   noteIndex: NoteIndex;
   zoteroPref: ZoteroPrefService;

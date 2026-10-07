@@ -1,6 +1,6 @@
+import { Effect } from "effect";
 import type { App, TFile } from "obsidian";
 
-import { getItemsByID } from "@zotlit/db";
 import type { Item, ItemRef } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -9,7 +9,6 @@ import { profileRecoveryNotice } from "@/lib/profile-recovery";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
 import { missingPartialNotice } from "@/lib/workbench-recovery";
-import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { EmptyFilenameError } from "@/services/note-feature/filename";
 import type {
@@ -33,9 +32,11 @@ import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 export interface SingleUpdateDeps {
   profile: ProfileReader;
   app: App;
-  db: DatabaseService;
-  /** The batch run's Snapshot, which its note updates read through. */
-  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
+  /**
+   * The database reads. A batch run opens its Snapshot here, and its note
+   * updates read through it.
+   */
+  zoteroReads: Pick<ZoteroReadsService, "acquireRead" | "ready" | "state">;
   settings: SettingsService;
   noteFeature: NoteFeature;
   noteIndex: NoteIndex;
@@ -137,7 +138,11 @@ export async function createAndOpen(
   ref: ItemRef,
   profile?: ProfileSelector,
 ): Promise<void> {
-  const [item] = getItemsByID(deps.db.client, [ref.itemID]);
+  const { reads } = await deps.zoteroReads.ready;
+  const items = await Effect.runPromise(
+    reads.ItemsByIndexedKeys({ indexedKeys: [ref.indexedKey] }),
+  );
+  const item = items.get(ref.indexedKey);
   if (!item) return;
 
   const file = await createNoteWithToast(deps.noteFeature, item, {

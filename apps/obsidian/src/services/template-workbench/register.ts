@@ -12,7 +12,6 @@ import { apiVersion } from "obsidian";
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 
-import type { DatabaseService } from "@/services/database/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { ProfileService } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
@@ -75,7 +74,6 @@ import { choices } from "./vocabulary";
 
 interface TemplateWorkbenchRegistrationDeps {
   app: App;
-  db: DatabaseService;
   zoteroReads: ZoteroReadsService;
   noteIndex: NoteIndex;
   settings: SettingsService;

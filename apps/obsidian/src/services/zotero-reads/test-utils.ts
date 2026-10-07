@@ -1,14 +1,24 @@
 // Test support: ZoteroReads over `:memory:` fixture databases, for the service and its consumers.
-import { Effect, Stream } from "effect";
+import { Effect, Layer, Stream } from "effect";
+import type { Scope } from "effect";
 
 import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import { layerRcRef } from "./connection";
-import type { ConnectionOpener } from "./connection";
+import type { Connection, ConnectionOpener } from "./connection";
+import { makeInProcessClient } from "./in-process";
 import type { ZoteroReadsClient } from "./in-process";
-import { inProcessClient, ZoteroReadsService } from "./service";
+import { ZoteroReadsService } from "./service";
+
+/** The handler layer on this runtime over `connection`, for the caller's scope. */
+export const inProcessClient = Effect.fnUntraced(function* (
+  connection: Layer.Layer<Connection>,
+): Effect.fn.Return<ZoteroReadsClient, never, Scope.Scope> {
+  const services = yield* Layer.build(connection);
+  return yield* Effect.provideContext(makeInProcessClient(), services);
+});
 
 /**
  * An opener over fresh `:memory:` fixture databases. Open #N runs `seed(N)`;
@@ -87,6 +97,23 @@ export function stubbedReads(): Pick<
     acquireRead: () => service.acquireRead(),
     [Symbol.asyncDispose]: () => service[Symbol.asyncDispose](),
   };
+}
+
+/**
+ * `service` with `state` fixed, for a suite that tests a consumer's state
+ * gate. Every other member is the service's own.
+ */
+export function withState<S extends ZoteroReadsService>(
+  service: S,
+  state: ZoteroReadsService["state"],
+): S {
+  return new Proxy(service, {
+    get(target, property) {
+      if (property === "state") return state;
+      const value: unknown = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
 }
 
 /** One recorded call: the operation and the payload it carried. */

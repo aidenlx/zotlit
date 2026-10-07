@@ -161,6 +161,7 @@ async function mountCard({
       onBlockedPress,
       onApplyAgain,
       onDiscardConflict,
+      libraryTagNames: async () => [],
     } as Partial<AnnotActions>,
     {
       get: (target, name: keyof AnnotActions) =>

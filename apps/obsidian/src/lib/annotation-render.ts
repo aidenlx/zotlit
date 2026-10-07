@@ -4,25 +4,20 @@ import { basename } from "node:path";
 
 import {
   buildAnnotationsTemplateData,
-  fetchAnnotationsTemplateData,
   formatAnnotationSubpath,
   narrowBaseDataToCiteItemData,
   withAnnotationCitation,
 } from "@zotlit/db";
 import type {
-  Annotation,
   AnnotationFileLinkAnchor,
   AnnotationResolvers,
   AnnotationSources,
   AnnotationTemplateContext,
   Attachment,
   FallibleTemplateLink,
-  GroupIDMemo,
-  TagMemo,
   TemplateAnnotation,
   TemplateParentItemData,
 } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
 
@@ -62,8 +57,8 @@ export function attachmentFileLink(
 /**
  * Resolvers for direct attachment file paths and annotation rendering (comment
  * conversion, import-capable excerpt images). Shared by the full note context
- * (`buildNoteResolvers`) and the single-annotation drag/paragraph paths
- * ({@link renderAnnotations}), so both render annotations identically.
+ * (`buildNoteResolvers`) and the annotation paths
+ * ({@link renderAnnotationSources}), so both render annotations identically.
  */
 export function buildAnnotationResolvers(options: {
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
@@ -100,7 +95,7 @@ export function buildAnnotationResolvers(options: {
   };
 }
 
-/** How {@link renderAnnotations} and {@link renderAnnotationSources} render. */
+/** How {@link renderAnnotationSources} renders. */
 interface RenderAnnotationsOptions {
   template: Pick<TemplateService, "render" | "renderCitation">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
@@ -110,30 +105,10 @@ interface RenderAnnotationsOptions {
 }
 
 /**
- * Resolve already-fetched annotations to their template data and render each
- * through the `annotation` template, returning a `key → rendered string` map.
- * `attachmentImport` decides each excerpt-cache image and copies an approved
- * one into the target note's attachment folder.
- */
-export function renderAnnotations(
-  client: NodeDatabaseClient,
-  annotations: readonly Annotation[],
-  options: RenderAnnotationsOptions & {
-    groupIdMemo?: GroupIDMemo;
-    tagMemo?: TagMemo;
-  },
-): Map<string, string> {
-  const dataByKey = fetchAnnotationsTemplateData(client, annotations, {
-    resolvers: annotationResolvers(options),
-    groupIdMemo: options.groupIdMemo,
-    tagMemo: options.tagMemo,
-  });
-  return renderTemplateData(dataByKey, options);
-}
-
-/**
- * {@link renderAnnotations} over already-read {@link AnnotationSources}: reads
- * no database.
+ * Resolve already-read {@link AnnotationSources} to their template data and
+ * render each through the `annotation` template, returning a `key → rendered
+ * string` map. `attachmentImport` decides each excerpt-cache image and copies
+ * an approved one into the target note's attachment folder. Reads no database.
  */
 export function renderAnnotationSources(
   sources: AnnotationSources,

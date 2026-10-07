@@ -111,7 +111,7 @@ export class NativePreviewSession implements Disposable {
     this.state = options.state ?? createNativePreviewStore();
     if (options.item !== undefined) this.state.setState({ item: options.item });
     using cleanup = new DisposableStack();
-    cleanup.defer(deps.db.on("changed", () => this.refresh()));
+    cleanup.defer(deps.zoteroReads.on("changed", () => this.refresh()));
     cleanup.defer(
       deps.templates.on("compile-status-changed", () => scheduler.invalidate()),
     );

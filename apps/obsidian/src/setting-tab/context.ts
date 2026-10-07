@@ -5,7 +5,6 @@ import type { CapabilityNotices } from "@/services/annotation-repository/notices
 import type { AnnotationRepository } from "@/services/annotation-repository/service";
 import type { AttachmentImportService } from "@/services/attachment-import/service";
 import type { CitationIndex } from "@/services/citation-index/service";
-import type { DatabaseService } from "@/services/database/service";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import type { ExcerptImageService } from "@/services/excerpt-image/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
@@ -20,6 +19,7 @@ import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroLocalApiClient } from "@/services/zotero-local-api/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import type { ImportProfile } from "./import-profile-modal";
 
@@ -100,7 +100,7 @@ export interface SettingTabContext {
   manifest: PluginManifest;
   settings: SettingsService;
   profile: ProfileService;
-  db: DatabaseService;
+  db: ZoteroReadsService;
   /** The live Library Scope the Library scope rows read and repair. */
   libraryScope: LibraryScopeService;
   zoteroPref: ZoteroPrefService;

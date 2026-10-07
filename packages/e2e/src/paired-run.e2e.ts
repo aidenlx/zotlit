@@ -6655,7 +6655,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         restore.defer(async () => {
           await obEval(
             vaultId!,
-            `(async()=>{const services=app.plugins.plugins.zotlit.services;await services.annotationRepository.patchColor('TYY6Z6ZF',${JSON.stringify(originalInk.color)});await services.db.refresh();services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':${JSON.stringify(notePaths.live)}});const literature=app.vault.getFileByPath(${JSON.stringify(notePaths.literature)});const imported=app.vault.getFileByPath(${JSON.stringify(notePaths.imported)});if(literature)await app.vault.modify(literature,${JSON.stringify(originalLiterature)});if(imported)await app.vault.modify(imported,${JSON.stringify(originalImported)});const keep=new Set(${JSON.stringify(notePaths.assets)});for(const file of app.vault.getFiles().filter(file=>file.name.startsWith('zotlit-excerpt-')))if(!keep.has(file.path))await app.vault.delete(file);return true;})()`,
+            `(async()=>{const services=app.plugins.plugins.zotlit.services;await services.annotationRepository.patchColor('TYY6Z6ZF',${JSON.stringify(originalInk.color)});await services.zoteroReads.refresh();services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':${JSON.stringify(notePaths.live)}});const literature=app.vault.getFileByPath(${JSON.stringify(notePaths.literature)});const imported=app.vault.getFileByPath(${JSON.stringify(notePaths.imported)});if(literature)await app.vault.modify(literature,${JSON.stringify(originalLiterature)});if(imported)await app.vault.modify(imported,${JSON.stringify(originalImported)});const keep=new Set(${JSON.stringify(notePaths.assets)});for(const file of app.vault.getFiles().filter(file=>file.name.startsWith('zotlit-excerpt-')))if(!keep.has(file.path))await app.vault.delete(file);return true;})()`,
           );
           expect(
             await waitFor(
@@ -6721,7 +6721,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         ).toBe(true);
         await obEval(
           vaultId!,
-          "(async()=>{await app.plugins.plugins.zotlit.services.db.refresh();return true;})()",
+          "(async()=>{await app.plugins.plugins.zotlit.services.zoteroReads.refresh();return true;})()",
         );
         expect(
           await obJson<unknown>(

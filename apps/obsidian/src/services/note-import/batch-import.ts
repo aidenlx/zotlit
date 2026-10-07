@@ -27,7 +27,6 @@ import {
   withUnavailableLibraries,
 } from "@/services/batch-scope";
 import type { BatchLibrary, BatchTarget } from "@/services/batch-scope";
-import type { DatabaseService } from "@/services/database/service";
 import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import { collectExcerptSummary } from "@/services/excerpt-image/prepare";
 import type { LibraryScopeService } from "@/services/library-scope/service";
@@ -75,9 +74,8 @@ export interface NoteImportDeps {
   >;
   /** UI port for the classify/confirm modals; keeps `App` out of the runners. */
   view: NoteImportView;
-  db: Pick<DatabaseService, "state">;
   /** A note write's reads: one lease spans the write and what it imports. */
-  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
+  zoteroReads: Pick<ZoteroReadsService, "acquireRead" | "state">;
   settings: Pick<SettingsService, "loaded" | "update">;
   /** Which Libraries an unqualified library-wide import covers. */
   libraryScope: Pick<LibraryScopeService, "resolveLibraries">;
@@ -181,7 +179,7 @@ async function runBatchImport(
   },
 ): Promise<BatchImportResult> {
   const { mode, itemIDs, unavailableLibraries = 0 } = request;
-  if (deps.db.state !== "ready") {
+  if (deps.zoteroReads.state !== "ready") {
     logger.warn("Batch import: database not ready", { count: itemIDs.length });
     return { outcome: "db-unavailable" };
   }
@@ -222,7 +220,7 @@ async function runBatchImportAll(
   deps: NoteImportDeps,
   target: BatchTarget = {},
 ): Promise<BatchImportResult> {
-  if (deps.db.state !== "ready") {
+  if (deps.zoteroReads.state !== "ready") {
     logger.warn("Batch import all: database not ready");
     return { outcome: "db-unavailable" };
   }
@@ -864,7 +862,7 @@ async function runChildImportByKey(
   deps: NoteImportDeps,
   indexedKey: string,
 ): Promise<BatchImportResult | null> {
-  if (deps.db.state !== "ready") {
+  if (deps.zoteroReads.state !== "ready") {
     logger.warn("Child-note import: database not ready", { indexedKey });
     return { outcome: "db-unavailable" };
   }
@@ -894,7 +892,7 @@ async function reimportNoteByKey(
   noteKey: string,
   targetFile: TFile,
 ): Promise<ReimportResult> {
-  if (deps.db.state !== "ready") {
+  if (deps.zoteroReads.state !== "ready") {
     logger.warn("Imported note reimport: database not ready", { noteKey });
     return { outcome: "db-unavailable" };
   }

@@ -12,10 +12,11 @@
  * - The lifecycle surface: `state`, `error`, the events, `refresh()`, and
  *   `notifyExternalChange()`, all derived from the `Changes` stream.
  *
- * The adapter that makes the client is a dependency: {@link inProcessClient}
- * runs the handler layer on this runtime; a worker adapter can replace it.
+ * The adapter that makes the client is a dependency: the plugin runs the
+ * handler layer in a Web Worker (`workerClient`); tests run it on this
+ * runtime (`inProcessClient` in `test-utils.ts`).
  */
-import { Cause, Effect, Exit, Layer, Pull, Scope, Stream } from "effect";
+import { Cause, Effect, Exit, Pull, Scope, Stream } from "effect";
 import type { RpcClientError } from "effect/rpc";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
@@ -24,8 +25,6 @@ import { getLogger } from "@/lib/log";
 import type { EffectiveReadMode } from "@/services/database/read-source";
 import { Service } from "@/services/service-base";
 
-import type { Connection } from "./connection";
-import { makeInProcessClient } from "./in-process";
 import type { ZoteroReadsClient } from "./in-process";
 import { DbUnavailable } from "./rpc";
 import type { ChangeEvent } from "./rpc";
@@ -93,14 +92,6 @@ export interface ZoteroReadsServiceDeps {
   /** Makes the client; it lives until the service's scope closes. */
   client: Effect.Effect<ZoteroReadsClient, never, Scope.Scope>;
 }
-
-/** The handler layer on this runtime over `connection`, for the caller's scope. */
-export const inProcessClient = Effect.fnUntraced(function* (
-  connection: Layer.Layer<Connection>,
-): Effect.fn.Return<ZoteroReadsClient, never, Scope.Scope> {
-  const services = yield* Layer.build(connection);
-  return yield* Effect.provideContext(makeInProcessClient(), services);
-});
 
 /** `client`'s read operations, each bound to the Snapshot `snapshot`. */
 function bindReads(client: ZoteroReadsClient, snapshot?: string) {

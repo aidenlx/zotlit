@@ -674,7 +674,7 @@ export function readerSurfaces({
       el.setText(html);
       return () => el.empty();
     },
-    libraryTagNames: () => [],
+    libraryTagNames: async () => [],
     containerEl,
     popup,
     selectionSurfaces: session,

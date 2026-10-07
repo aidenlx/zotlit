@@ -111,7 +111,7 @@ it("binds copied context to its editor, addresses field requests, and releases w
     { app } as unknown as WorkspaceLeaf,
     {
       app,
-      db: { ready: Promise.resolve(), on: () => unsubscribeDb },
+      zoteroReads: { ready: Promise.resolve(), on: () => unsubscribeDb },
       templates: { javascriptTemplatesEnabled: true },
     } as unknown as ExplorerViewDeps,
   );
@@ -267,7 +267,7 @@ it("restores independent Explorer navigation after delayed data and keeps search
     { app } as unknown as WorkspaceLeaf,
     {
       app,
-      db: { ready: Promise.resolve(), on: () => () => {} },
+      zoteroReads: { ready: Promise.resolve(), on: () => () => {} },
       templates: { javascriptTemplatesEnabled: true },
     } as unknown as ExplorerViewDeps,
   );
@@ -342,7 +342,7 @@ it("restores independent Explorer navigation after delayed data and keeps search
     { app } as unknown as WorkspaceLeaf,
     {
       app,
-      db: { ready: Promise.resolve(), on: () => () => {} },
+      zoteroReads: { ready: Promise.resolve(), on: () => () => {} },
       templates: { javascriptTemplatesEnabled: true },
     } as unknown as ExplorerViewDeps,
   );
@@ -425,7 +425,7 @@ it("applies an explicit Item choice to the requesting pinned Explorer and leaves
       { app, pinned: true } as unknown as WorkspaceLeaf,
       {
         app,
-        db: { ready: Promise.resolve(), on: () => () => {} },
+        zoteroReads: { ready: Promise.resolve(), on: () => () => {} },
         templates: { javascriptTemplatesEnabled: true },
       } as unknown as ExplorerViewDeps,
     );
@@ -522,7 +522,7 @@ it("keeps pinned Explorer navigation and insertion when its Profile is renamed",
     { app, pinned: true } as unknown as WorkspaceLeaf,
     {
       app,
-      db: { ready: Promise.resolve(), on: () => () => {} },
+      zoteroReads: { ready: Promise.resolve(), on: () => () => {} },
       templates: { javascriptTemplatesEnabled: true },
     } as unknown as ExplorerViewDeps,
   );

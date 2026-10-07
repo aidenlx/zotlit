@@ -207,7 +207,7 @@ export interface PdfViewBindingDeps {
   /** The Literature Notes a rendered comment's links resolve against. */
   noteIndex: CommentNotes;
   /** The tag names of an Annotation's Library, which the tag editor suggests. */
-  libraryTagNames: (annotationKey: string) => readonly string[];
+  libraryTagNames: (annotationKey: string) => Promise<readonly string[]>;
   /** The clock the affordance's cooldown countdown is read against. */
   now?: () => Temporal.Instant;
 }

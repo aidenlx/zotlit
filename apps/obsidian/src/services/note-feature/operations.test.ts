@@ -21,9 +21,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildNoteContextFromSource,
   citekeysToCiteTemplateData,
-  fetchAnnotationsTemplateData,
   fetchNoteSource,
-  getAnnotationsByItemId,
   getChildNotesByParentIDs,
   getItemsByID,
   getItemsByKey,
@@ -41,6 +39,7 @@ import type {
   TemplateItemData,
 } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import {
@@ -100,7 +99,6 @@ import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fi
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
-import { ProfileAnnotationError } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
 import {
@@ -109,14 +107,14 @@ import {
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
 
-import type {
-  NoteFeatureDeps,
-  SyncRenderDeps as RuntimeSyncRenderDeps,
-} from "./context";
-type SyncRenderDeps = Omit<RuntimeSyncRenderDeps, "profile"> &
-  Partial<Pick<RuntimeSyncRenderDeps, "profile">>;
+import type { NoteFeatureDeps } from "./context";
+/** The note feature's deps, with the fixture database its reads serve. */
+type TestDeps = Omit<NoteFeatureDeps, "profile"> &
+  Partial<Pick<NoteFeatureDeps, "profile">> & {
+    db: { client: NodeDatabaseClient };
+  };
 import { createNoteFeature as createFeature } from "./operations";
-function createNoteFeature(deps: SyncRenderDeps) {
+function createNoteFeature(deps: TestDeps) {
   const feature = createFeature({
     ...deps,
     profile:
@@ -236,10 +234,6 @@ vi.mock("@zotlit/db", async (importOriginal) => {
     resolveIndexedKeyLibrary: vi.fn(),
     getItemsByKey: vi.fn(),
     getChildNotesByParentIDs: vi.fn(),
-    // renderAnnotation's drag-insert path; stubbed per-test so the annotation
-    // template data (parent item + page label) is supplied without a real DB.
-    getAnnotationsByItemId: vi.fn(),
-    fetchAnnotationsTemplateData: vi.fn(),
   };
 });
 
@@ -760,6 +754,7 @@ describe("createNote", () => {
       let leaseReleased = false;
       const zoteroReads = deps.zoteroReads;
       deps.zoteroReads = {
+        ready: zoteroReads.ready,
         acquireRead: async () => {
           const lease = await zoteroReads.acquireRead();
           return {
@@ -1216,7 +1211,7 @@ describe("createNote", () => {
 
     const existingByItemKey = makeFile("Notes/Existing by item.md");
     const app = makeApp();
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app,
       template: makeTemplate(),
       ...makeDbDeps(),
@@ -1307,7 +1302,7 @@ describe("createNote", () => {
     );
 
     const app = makeApp();
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app,
       template: {
         ready: Promise.resolve(),
@@ -1407,7 +1402,7 @@ describe("createNote", () => {
       filename: `Root${filenameSuffix()}`,
     });
 
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app,
       template: {
         ...makeTemplate(),
@@ -1466,7 +1461,7 @@ describe("createNote", () => {
       sharedClientOpener(db.client),
       (client) => wrap(knowReadItems(client)),
     );
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app: makeApp(),
       template: makeTemplate(),
       db,
@@ -1539,7 +1534,7 @@ describe("createNote", () => {
       createCalledBeforeSignal = true;
       return create(path, content);
     });
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app,
       template: {
         ready: Promise.resolve(),
@@ -1590,7 +1585,7 @@ describe("createNote", () => {
     const existing = makeFile("Literature/Existing.md");
     const app = makeApp();
     let indexed = false;
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app,
       template: makeTemplate(),
       ...makeDbDeps(),
@@ -1642,7 +1637,7 @@ describe("createNote", () => {
   it("returns a diagnostic that lists every duplicate literature note", async () => {
     const item = { indexedKey: "ROOT1234" } as Item;
     const app = makeApp();
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app,
       template: makeTemplate(),
       ...makeDbDeps(),
@@ -1903,7 +1898,7 @@ describe("createNote", () => {
       let renderFilenameCalledBeforeSignal = false;
 
       const app = makeApp();
-      const deps: SyncRenderDeps = {
+      const deps: TestDeps = {
         app,
         profile: {
           ...profileReader(makeSettings().current!),
@@ -1968,7 +1963,7 @@ describe("createNote", () => {
     });
     vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
     const app = makeApp();
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app,
       template: makeTemplate(),
       ...makeDbDeps(),
@@ -2146,13 +2141,13 @@ describe("createNote", () => {
         { key: "1", merge: "replace", value: "one" },
       ]),
     });
-    const template: SyncRenderDeps["template"] = {
+    const template: TestDeps["template"] = {
       ...makeTemplate(),
       getLiteratureNoteTemplate: (reference) =>
         reference === "books.md" ? document : undefined,
     };
     const renderLegacy = vi.spyOn(template, "render");
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app,
       template,
       ...makeDbDeps(),
@@ -2227,7 +2222,7 @@ describe("createNote", () => {
     document.renderForCreate.mockImplementation(() => {
       throw new MissingTemplateError("venue-line");
     });
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app,
       template: {
         ...makeTemplate(),
@@ -2337,7 +2332,7 @@ describe("createNote", () => {
   it("refuses create when a Profile document is missing", async () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const app = makeApp();
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app,
       template: {
         ...makeTemplate(),
@@ -2388,7 +2383,7 @@ describe("createNote", () => {
       "Books/Root.md": `---\n${FIELD_LITERATURE_NOTE_PROFILE}: ${existingProfileId}\n---\n`,
     });
     const existing = app.host.file("Books/Root.md");
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app,
       template: makeTemplate(),
       ...makeDbDeps(),
@@ -2443,7 +2438,7 @@ describe("createNote", () => {
     const excerptScopes: (ExcerptOutcomeScope | undefined)[] = [];
     const importScopes: (ExcerptOutcomeScope | undefined)[] = [];
     await using probe = excerptReuseProbe();
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app: makeApp(),
       template: makeTemplate(),
       ...makeDbDeps(),
@@ -2658,7 +2653,7 @@ describe("overwriteNote", () => {
  * test can assert on the rewritten body and frontmatter after an update.
  */
 interface UpdateHarness {
-  deps: SyncRenderDeps;
+  deps: TestDeps;
   host: ObsidianHost;
   /**
    * The note at `path`, placed on first use. The first path placed is the note
@@ -2705,7 +2700,7 @@ function makeUpdateHarness(options: {
     () => options.renderedRegion ?? formatManagedRegion("NEW BODY"),
   );
 
-  const template: SyncRenderDeps["template"] = {
+  const template: TestDeps["template"] = {
     ready: Promise.resolve(),
     loaded: true,
     frontmatterFields: options.frontmatterFields ?? [],
@@ -2717,7 +2712,7 @@ function makeUpdateHarness(options: {
       name === "content" ? renderContent() : "",
   };
 
-  const deps: SyncRenderDeps = {
+  const deps: TestDeps = {
     app: {
       ...host.app,
       fileManager: {
@@ -4900,7 +4895,7 @@ describe("renderCitation", () => {
     // cold-start citation insert returns null instead of throwing
     // TemplateService's "service is not ready" through the handler.
     const render = vi.fn();
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app: makeApp(),
       template: {
         ready: Promise.resolve(),
@@ -4982,7 +4977,7 @@ describe("renderCitation", () => {
     // Citation-suggest passes the selected search hit's full item alongside
     // its citationKey; a data-driven (author-year) Citation Template should see
     // the item's title/date, not just a citekey-only stub.
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app: makeApp(),
       template: {
         ready: Promise.resolve(),
@@ -5036,181 +5031,11 @@ describe("renderCitation", () => {
   });
 });
 
-describe("renderAnnotation", () => {
-  it("returns null instead of throwing when the template isn't loaded yet", () => {
-    // renderAnnotation runs inside the annot-view's dragstart handler, which
-    // can't await `template.ready`; drag-insert.ts already falls back to
-    // plain text when this returns null.
-    const deps: SyncRenderDeps = {
-      app: makeApp(),
-      template: {
-        ready: Promise.resolve(),
-        loaded: false,
-        frontmatterFields: [],
-        getLiteratureNoteTemplate: () => undefined,
-        renderProfileAnnotation: vi.fn(),
-        renderCitation: () => "",
-        renderFilename: () => "",
-        render: vi.fn(),
-      },
-      ...makeDbDeps(),
-      noteIndex: {
-        getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
-        whenIndexed: async () => {},
-        getNotesByItemKey: () => [],
-      },
-      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
-      settings: makeSettings(),
-      attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        prepare: async () => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
-          }),
-          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-        }),
-      },
-    };
-
-    const result = createNoteFeature(deps).renderAnnotation(1, {
-      attachmentImport: { decide: blockedDecide, resolveLink: () => () => "" },
-    });
-
-    expect(result).toBeNull();
-  });
-
-  it("uses the annotation parent item's stamped Profile at drag start", () => {
-    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
-    vi.mocked(getAnnotationsByItemId).mockReturnValue([
-      { key: "ANN1" } as never,
-    ]);
-    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
-      new Map([["ANN1", annData("Hensher2011", "62", "PARENT1")]]),
-    );
-    const app = makeApp({
-      "Literature/Parent.md": `---\n${FIELD_LITERATURE_NOTE_PROFILE}: ${profileId}\n---\n`,
-    });
-    const file = app.host.file("Literature/Parent.md");
-    const template = citationTemplate();
-    template.renderProfileAnnotation = vi.fn(() => "PROFILE ANNOTATION");
-    const deps = {
-      ...annotDeps(template),
-      app,
-      noteIndex: {
-        getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
-        whenIndexed: async () => {},
-        getNotesByItemKey: (indexedKey: string) =>
-          indexedKey === "PARENT1" ? [file] : [],
-      },
-      settings: makeSettings({
-        profiles: [
-          {
-            id: profileId,
-            label: "Books",
-            document: "books.md",
-          },
-        ],
-      }),
-    };
-
-    createNoteFeature(deps).renderAnnotation(1, {
-      attachmentImport: { decide: blockedDecide, resolveLink: () => () => "" },
-    });
-
-    expect(template.renderProfileAnnotation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        parentItem: expect.objectContaining({ indexedKey: "PARENT1" }),
-      }),
-      expect.objectContaining({
-        profile: expect.objectContaining({
-          selector: profileId,
-          label: "Books",
-          stamp: `Books (${profileId})`,
-        }),
-      }),
-    );
-  });
-
-  it("uses the default Profile when the annotation parent has no stamped note", () => {
-    vi.mocked(getAnnotationsByItemId).mockReturnValue([
-      { key: "ANN1" } as never,
-    ]);
-    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
-      new Map([["ANN1", annData("Hensher2011", "62", "PARENT1")]]),
-    );
-    const template = citationTemplate();
-    template.renderProfileAnnotation = vi.fn(() => "DEFAULT ANNOTATION");
-    const deps = annotDeps(template);
-
-    createNoteFeature(deps).renderAnnotation(1, {
-      attachmentImport: { decide: blockedDecide, resolveLink: () => () => "" },
-    });
-
-    expect(template.renderProfileAnnotation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        profile: expect.objectContaining({ selector: "default" }),
-      }),
-    );
-  });
-
-  it("throws when the annotation parent's stamped Profile names none configured", () => {
-    vi.mocked(getAnnotationsByItemId).mockReturnValue([
-      { key: "ANN1" } as never,
-    ]);
-    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
-      new Map([["ANN1", annData("Hensher2011", "62", "PARENT1")]]),
-    );
-    const app = makeApp({
-      "Literature/Parent.md": `---\n${FIELD_LITERATURE_NOTE_PROFILE}: Deleted (Nn4Pp6Qq8Rr0)\n---\n`,
-    });
-    const file = app.host.file("Literature/Parent.md");
-    const template = citationTemplate();
-    template.renderProfileAnnotation = vi.fn(() => "PROFILE ANNOTATION");
-    const deps = {
-      ...annotDeps(template),
-      app,
-      noteIndex: {
-        getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
-        whenIndexed: async () => {},
-        getNotesByItemKey: (indexedKey: string) =>
-          indexedKey === "PARENT1" ? [file] : [],
-      },
-    };
-
-    let thrown: unknown;
-    try {
-      createNoteFeature(deps).renderAnnotation(1, {
-        attachmentImport: {
-          decide: blockedDecide,
-          resolveLink: () => () => "",
-        },
-      });
-    } catch (error) {
-      thrown = error;
-    }
-
-    expect(thrown).toBeInstanceOf(ProfileAnnotationError);
-    expect((thrown as ProfileAnnotationError).diagnostic).toMatchObject({
-      code: "unknown-literature-note-profile",
-      recovery: { action: "switch-profile" },
-      stamp: "Deleted (Nn4Pp6Qq8Rr0)",
-      path: "Literature/Parent.md",
-    });
-  });
-});
-
 /** A template service backed by the real engine, with a `citation` + optional `annotation` pair. */
 function citationTemplate(
   citationSource = defaultCitation,
   opts?: { annotation?: string; language?: TemplateLanguage },
-): SyncRenderDeps["template"] {
+): TestDeps["template"] {
   const facade = new TemplateFacade();
   facade.define("citation", citationSource, opts?.language ?? "liquid");
   if (opts?.annotation !== undefined) {
@@ -5233,20 +5058,7 @@ function citationTemplate(
   };
 }
 
-/** One annotation's template data with a parent item carrying `citekey`. */
-const annData = (
-  citekey: string | null,
-  pageLabel: string | null,
-  indexedKey = "PARENT1",
-) =>
-  ({
-    key: "ANN1",
-    pageLabel,
-    parentItem:
-      citekey === null ? null : { citationKey: citekey, citekey, indexedKey },
-  }) as never;
-
-function annotDeps(template: SyncRenderDeps["template"]): SyncRenderDeps {
+function annotDeps(template: TestDeps["template"]): TestDeps {
   return {
     app: makeApp(),
     template,
@@ -5273,65 +5085,6 @@ function annotDeps(template: SyncRenderDeps["template"]): SyncRenderDeps {
     },
   };
 }
-
-describe("renderAnnotation — zt.citation (9.2-CSL #05)", () => {
-  const render = (deps: SyncRenderDeps) =>
-    createNoteFeature(deps).renderAnnotation(1, {
-      attachmentImport: { decide: blockedDecide, resolveLink: () => () => "" },
-    });
-
-  it("renders a page-pinned Pandoc cite from the parent item + page label", () => {
-    vi.mocked(getAnnotationsByItemId).mockReturnValue([
-      { key: "ANN1" } as never,
-    ]);
-    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
-      new Map([["ANN1", annData("Hensher2011", "62")]]),
-    );
-    const result = render(
-      annotDeps(
-        citationTemplate(defaultCitation, { annotation: "<%= zt.citation %>" }),
-      ),
-    );
-    expect(result).toContain("[@Hensher2011, {p. 62}]");
-  });
-
-  it("routes the annotation citation through the user's Citation Template (locator = page label)", () => {
-    vi.mocked(getAnnotationsByItemId).mockReturnValue([
-      { key: "ANN1" } as never,
-    ]);
-    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
-      new Map([["ANN1", annData("Hensher2011", "62")]]),
-    );
-    const cite =
-      "<%= zt.citations.map(c => `{{${c.item.citationKey}|${c.locator}}}`).join('') %>";
-    const result = render(
-      annotDeps(
-        citationTemplate(cite, {
-          annotation: "<%= zt.citation %>",
-          language: "eta",
-        }),
-      ),
-    );
-    expect(result).toContain("{{Hensher2011|62}}");
-  });
-
-  it("leaves zt.citation null when the parent item has no citation key", () => {
-    vi.mocked(getAnnotationsByItemId).mockReturnValue([
-      { key: "ANN1" } as never,
-    ]);
-    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
-      new Map([["ANN1", annData(null, "62")]]),
-    );
-    const result = render(
-      annotDeps(
-        citationTemplate(defaultCitation, {
-          annotation: "<%= JSON.stringify(zt.citation) %>",
-        }),
-      ),
-    );
-    expect(result).toBe("null");
-  });
-});
 
 // `render` / `renderFilename` are generic (`<T extends object>`) on the real
 // service, so the mocks mirror that signature and narrow the erased payload to
@@ -5455,21 +5208,14 @@ function makeDbDeps() {
   };
 }
 
-function makeDb(): SyncRenderDeps["db"] {
+function makeDb(): TestDeps["db"] {
   const client = createClient(":memory:");
   // Known Libraries with no memberships.
   createFixtureSchema(client.$client);
   client.$client.exec(
     "insert into libraries (libraryID, type) values (1, 'user'), (2, 'group'); insert into groups (groupID, libraryID, name) values (118, 2, 'Team');",
   );
-  return {
-    state: "ready",
-    client,
-    acquireRead: async () => ({
-      client,
-      [Symbol.dispose]() {},
-    }),
-  };
+  return { client };
 }
 
 function makeSettings(

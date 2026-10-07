@@ -3,7 +3,7 @@ import { basename, dirname, join } from "node:path/posix";
 import { getFrontMatterInfo } from "obsidian";
 import type { TFile } from "obsidian";
 
-import { buildNoteContextFromSource, getAnnotationsByItemId } from "@zotlit/db";
+import { buildNoteContextFromSource } from "@zotlit/db";
 import type {
   CitationVariant,
   CiteRef,
@@ -16,7 +16,6 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import type { Emitter } from "@zotlit/shared/nanoevents";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
-import { renderAnnotations } from "@/lib/annotation-render";
 import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
@@ -55,17 +54,12 @@ import {
   itemKeyFromFrontmatter,
   noteKeyFromFrontmatter,
 } from "@/services/note-index/service";
-import {
-  resolveMembershipFacts,
-  matchItem,
-  selectProfileByMatch,
-} from "@/services/profile-selection";
+import { matchItem, selectProfileByMatch } from "@/services/profile-selection";
 import { noteProfileSelector } from "@/services/profile/bindings";
 import type { NoteProfile, ResolvedProfile } from "@/services/profile/bindings";
 import { relocatedNotePath } from "@/services/profile/relocation";
 import type { LiteratureNoteProfile } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
-import { ProfileAnnotationError } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
@@ -79,7 +73,7 @@ import {
   resolveNotePath,
   resolveRenderedNotePath,
 } from "./context";
-import type { NoteFeatureDeps, SyncRenderDeps } from "./context";
+import type { NoteFeatureDeps } from "./context";
 import { prepareManagedFrontmatter } from "./frontmatter";
 import type {
   ManagedFrontmatterPreparationFailure,
@@ -422,13 +416,6 @@ export interface NoteFeature {
     items: readonly CiteRef[],
     variant: CitationVariant,
   ): string | null;
-  /** @see renderAnnotation */
-  renderAnnotation(
-    annotationItemId: number,
-    options: {
-      attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
-    },
-  ): string | null;
   /** @see renderAnnotationCitation */
   renderAnnotationCitation(annotationKey: string): Promise<AnnotationCitation>;
   prepareAnnotationInsert(
@@ -448,9 +435,9 @@ export interface NoteFeature {
  * retains newly created files until the Note Index observes them. Compiled
  * template artifacts live in {@link TemplateService}.
  */
-export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
+export function createNoteFeature(deps: NoteFeatureDeps): NoteFeature {
   const events = createNanoEvents<NoteFeatureEvents>();
-  const ctx: SyncRenderDeps & OpsContext = { ...deps, events };
+  const ctx: NoteFeatureDeps & OpsContext = { ...deps, events };
   const pendingCreates = new Map<string, Promise<CreateNoteResult>>();
   const createdBeforeIndex = new Map<string, TFile>();
 
@@ -543,8 +530,6 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
       overwriteNote(ctx, file, { ...options, indexedKey }),
     writeNoteUpdate: (file, options) => writeNoteUpdate(ctx, file, options),
     renderCitation: (items, variant) => renderCitation(ctx, items, variant),
-    renderAnnotation: (annotationItemId, options) =>
-      renderAnnotation(ctx, annotationItemId, options),
     renderAnnotationCitation: (annotationKey) =>
       renderAnnotationCitation(ctx, annotationKey),
     prepareAnnotationInsert: (options) => prepareAnnotationInsert(ctx, options),
@@ -765,13 +750,16 @@ async function resolveCreationProfile(
     return { selector, source, shouldAsk };
   }
   if (sources.item) {
-    using lease = await ctx.db.acquireRead();
+    const { reads } = await ctx.zoteroReads.ready;
+    const facts = await Effect.runPromise(
+      reads.MembershipFacts({
+        itemID: sources.item.itemID,
+        libraryID: sources.item.libraryID,
+      }),
+    );
     const result = selectProfileByMatch(
       ctx.profile.profiles,
-      matchItem(
-        sources.item,
-        resolveMembershipFacts(lease.client, sources.item),
-      ),
+      matchItem(sources.item, facts),
     );
     if (result.outcome === "overlap")
       return stopped({ kind: "overlap", candidates: result.candidates });
@@ -1649,60 +1637,6 @@ function renderCitation(
 ): string | null {
   if (!ctx.template.loaded || !ctx.profile.loaded) return null;
   return ctx.template.renderCitation(items, variant);
-}
-
-/**
- * Render a single annotation through the `annotation` template for the annot
- * view's drag-insert. Synchronous (so it can populate `dataTransfer` during
- * `dragstart`): reads the sync `db` view off `ctx` and needs a pre-prepared
- * `attachmentImport` handle whose `flush()` the caller runs on drop. Only the
- * dragged annotation's template is rendered, so only its excerpt image is
- * queued for import. Returns `null` when the item or annotation can't be
- * resolved, the database is not ready, or the template is not ready.
- */
-function renderAnnotation(
-  ctx: SyncRenderDeps,
-  annotationItemId: number,
-  options: {
-    attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
-  },
-): string | null {
-  const { db } = ctx;
-  if (db.state !== "ready") return null;
-  if (!ctx.template.loaded || !ctx.profile.loaded) return null;
-  const settings = ctx.settings.current;
-  if (!settings) return null;
-
-  const [annotation] = getAnnotationsByItemId(db.client, [annotationItemId]);
-  if (!annotation) return null;
-
-  return (
-    renderAnnotations(db.client, [annotation], {
-      template: ctx.template,
-      zoteroPref: ctx.zoteroPref,
-      attachmentImport: options.attachmentImport,
-      renderAnnotation: (data) => {
-        const indexedKey = data.parentItem?.indexedKey;
-        const file = indexedKey
-          ? ctx.noteIndex.getNotesByItemKey(indexedKey)[0]
-          : undefined;
-        const resolved: NoteProfile = file
-          ? ctx.profile.profileOf(file)
-          : ctx.profile.profileOf();
-        if (!resolved.ok) {
-          throw new ProfileAnnotationError(
-            unknownProfileDiagnostic(resolved.stamped.stamp, {
-              path: file?.path,
-              indexedKey,
-            }),
-          );
-        }
-        return ctx.template.renderProfileAnnotation(data, {
-          profile: resolved.profile,
-        });
-      },
-    }).get(annotation.key) ?? null
-  );
 }
 
 /**

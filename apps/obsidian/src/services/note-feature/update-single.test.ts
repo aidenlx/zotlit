@@ -29,12 +29,11 @@ function noteLessDeps(): SingleUpdateDeps {
   return {
     profile: profileReader(),
     app: {} as SingleUpdateDeps["app"],
-    db: {
-      get client(): never {
-        throw new Error("create path reached: db.client read");
-      },
-    } as unknown as SingleUpdateDeps["db"],
     zoteroReads: {
+      state: "ready",
+      get ready(): never {
+        throw new Error("create path reached: ZoteroReads read");
+      },
       acquireRead: () => {
         throw new Error("create path reached: ZoteroReads lease acquired");
       },

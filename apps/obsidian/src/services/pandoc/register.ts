@@ -16,7 +16,6 @@ import type {
 } from "obsidian";
 
 import { getLogger } from "@/lib/log";
-import type { DatabaseService } from "@/services/database/service";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import type { ProfileReader } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
@@ -52,8 +51,7 @@ export { CSL_COMMAND };
 
 export interface PandocResolveDeps {
   app: App;
-  db: Pick<DatabaseService, "activeReadMode">;
-  reads: Pick<ZoteroReadsService, "ready">;
+  reads: Pick<ZoteroReadsService, "ready" | "activeReadMode">;
   zoteroPref: Pick<ZoteroPrefService, "ready" | "dataDir">;
   settings: Pick<SettingsService, "current">;
   profile: ProfileReader;
@@ -113,7 +111,7 @@ export function registerPandocResolve(
         database: {
           describe: () => ({
             dataDir: deps.zoteroPref.dataDir,
-            readMode: deps.db.activeReadMode,
+            readMode: deps.reads.activeReadMode,
           }),
           read: (indexedKeys) =>
             readItems(deps.reads, indexedKeys).catch((error: unknown) => {

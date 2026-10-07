@@ -165,7 +165,7 @@ export interface AnnotActions {
   /** Drop a held tag draft and keep the tags Zotero holds. */
   onDiscardTags(annot: AnnotationRecord): void;
   /** The tag names of the Annotation's Library, which the editor suggests. */
-  libraryTagNames(annot: AnnotationRecord): readonly string[];
+  libraryTagNames(annot: AnnotationRecord): Promise<readonly string[]>;
   /**
    * Erase every Selected Card's Annotation, from Delete or Backspace on the
    * view: after a confirmation, which names the count for two or more.
@@ -807,7 +807,7 @@ export const NOOP_ACTIONS: AnnotActions = {
   onEditTags: () => {},
   onSaveTags: () => {},
   onDiscardTags: () => {},
-  libraryTagNames: () => [],
+  libraryTagNames: async () => [],
   onDeleteSelection: () => null,
   onRecolorSelection: () => null,
   onCopySelection: () => false,

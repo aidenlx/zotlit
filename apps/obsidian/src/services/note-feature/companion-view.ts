@@ -1,7 +1,7 @@
 // Companion navigation decides whether to open, update, or ask before creation.
+import { Effect } from "effect";
 import type { App, PaneType } from "obsidian";
 
-import { getItemsByID } from "@zotlit/db";
 import type { Item, ItemRef } from "@zotlit/db";
 import type { ProtocolAction } from "@zotlit/protocol";
 
@@ -9,7 +9,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
-import type { DatabaseService } from "@/services/database/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { createNoteInteractively } from "./creation-view";
 import type { InteractiveCreationDeps } from "./creation-view";
@@ -25,7 +25,7 @@ import {
 } from "./update-single";
 
 export interface CompanionNoteDeps extends InteractiveCreationDeps {
-  db: Pick<DatabaseService, "acquireRead">;
+  zoteroReads: Pick<ZoteroReadsService, "ready">;
   noteFeature: InteractiveCreationDeps["noteFeature"] &
     Pick<NoteFeature, "resolveCompanionNote" | "updateNote">;
 }
@@ -73,11 +73,12 @@ export async function openCompanionNote(
     new BaseNotice(m.notice_update_metadata_no_note());
     return;
   }
-  let item: Item | undefined;
-  {
-    using lease = await deps.db.acquireRead();
-    item = getItemsByID(lease.client, [ref.itemID])[0];
-  }
+  const { reads } = await deps.zoteroReads.ready;
+  const item: Item | undefined = (
+    await Effect.runPromise(
+      reads.ItemsByIndexedKeys({ indexedKeys: [ref.indexedKey] }),
+    )
+  ).get(ref.indexedKey);
   if (!item) return;
   const file = await createNoteInteractively(deps, item, {
     headless: options.profile,

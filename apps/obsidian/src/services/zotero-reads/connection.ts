@@ -1,18 +1,12 @@
 // The Connection the ZoteroReads handlers borrow, and its RcRef-backed provider.
-import {
-  Context,
-  Duration,
-  Effect,
-  Layer,
-  PubSub,
-  RcRef,
-  Stream,
-} from "effect";
+import { Context, Duration, Effect, Layer, RcRef } from "effect";
+import type { Stream } from "effect";
 import type { Scope } from "effect";
 
 import { getLibraries } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
+import { makeChangeFeed } from "./change-feed";
 import { DbUnavailable } from "./rpc";
 import type { ChangeEvent, ReadsConfig } from "./rpc";
 
@@ -148,30 +142,6 @@ export const makeClientRef = Effect.fnUntraced(function* (
           replaced ? replaced.close : Effect.void,
         );
       }),
-  };
-});
-
-/**
- * The `Changes` feed: lifecycle events, each subscriber first getting the
- * events that `seed` builds, starting with the `state` event.
- */
-export const makeChangeFeed = Effect.fnUntraced(function* (
-  seed: () => readonly [ChangeEvent, ...ChangeEvent[]],
-) {
-  const events = yield* PubSub.unbounded<ChangeEvent>();
-  return {
-    publish: (event: ChangeEvent) =>
-      PubSub.publish(events, event).pipe(Effect.asVoid),
-    // Subscribe before reading the state, so no event falls between the
-    // seed and the live feed.
-    changes: Stream.unwrap(
-      Effect.map(PubSub.subscribe(events), (subscription) =>
-        Stream.concat(
-          Stream.fromIterable(seed()),
-          Stream.fromSubscription(subscription),
-        ),
-      ),
-    ),
   };
 });
 

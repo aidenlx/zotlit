@@ -7,13 +7,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
-import type { DatabaseEvents } from "@/services/database/service";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import type { Held } from "@/services/query-client/service";
 import { QueryClientService } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 import type { ZoteroPrefEvents } from "@/services/zotero-pref/service";
+import type { ZoteroReadsEvents } from "@/services/zotero-reads/service";
 
 import type { Inlines } from "./ast";
 import type {
@@ -128,9 +128,9 @@ class PandocEngineStub {
 class DatabaseStub {
   readonly #listeners = new Set<() => void>();
 
-  on<K extends keyof DatabaseEvents>(
+  on<K extends keyof ZoteroReadsEvents>(
     event: K,
-    cb: DatabaseEvents[K],
+    cb: ZoteroReadsEvents[K],
   ): () => void {
     const listener = cb as () => void;
     if (event === "changed") this.#listeners.add(listener);

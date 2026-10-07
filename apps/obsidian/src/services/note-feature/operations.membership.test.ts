@@ -19,14 +19,12 @@ import {
 } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
-import { DatabaseError } from "@/services/database/service";
-import type { DatabaseEvents } from "@/services/database/service";
+import { matchItem } from "@/services/profile-selection";
+import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import {
   listCollectionChoices,
   resolveMembershipFacts,
-  matchItem,
-} from "@/services/profile-selection";
-import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
+} from "@/services/zotero-reads/membership";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import type {
   ZoteroReadsEvents,
@@ -37,7 +35,7 @@ import {
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
 
-import type { SyncRenderDeps } from "./context";
+import type { NoteFeatureDeps } from "./context";
 import { createNoteFeature } from "./operations";
 
 vi.mock("@zotlit/db", async (importOriginal) => {
@@ -195,7 +193,6 @@ async function harness(
   const client = createClient(":memory:");
   stack.defer(() => client.$client.close());
   seed(client);
-  const events = createNanoEvents<DatabaseEvents>();
   const zoteroEvents = createNanoEvents<ZoteroReadsEvents>();
   // Library Scope reads the Libraries through ZoteroReads, over the same client.
   const readsEvents = {
@@ -212,15 +209,6 @@ async function harness(
     on: zoteroEvents.on.bind(zoteroEvents),
   } as unknown as ZoteroReadsService;
   let readable = true;
-  const db = {
-    ready: Promise.resolve(),
-    get state() {
-      return readable ? ("ready" as const) : ("degraded" as const);
-    },
-    client,
-    acquireRead: async () => ({ client, [Symbol.dispose]() {} }),
-    on: events.on.bind(events),
-  };
   const fixture = stack.use(
     await profileServiceFixture(
       {
@@ -247,9 +235,8 @@ async function harness(
     return file;
   };
   app.fileManager.generateMarkdownLink = () => "";
-  const deps: SyncRenderDeps = {
+  const deps: NoteFeatureDeps = {
     app,
-    db,
     zoteroReads: inProcessReadsService(sharedClientOpener(client)),
     profile,
     template,
@@ -299,17 +286,14 @@ async function harness(
     deps,
     feature: createNoteFeature(deps),
     refreshLibraries: async () => {
-      events.emit("changed");
       zoteroEvents.emit("changed");
       await vi.advanceTimersByTimeAsync(0);
     },
     setReadable: async (next: boolean) => {
       readable = next;
       if (next) {
-        events.emit("changed");
         zoteroEvents.emit("changed");
       } else {
-        events.emit("degraded", new DatabaseError("Unavailable"));
         zoteroEvents.emit(
           "degraded",
           new DbUnavailable({ message: "Unavailable" }),

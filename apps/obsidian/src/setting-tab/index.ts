@@ -3,7 +3,6 @@ import type { SettingDefinitionItem } from "obsidian";
 
 import type { LanguagePackLifecycle } from "@/lib/i18n";
 import * as m from "@/lib/i18n/generated/messages";
-import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import type { ProfileService } from "@/services/profile/service";
@@ -13,6 +12,7 @@ import type {
 } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import type ZotLitPlugin from "@/zt-main";
 
 import {
@@ -55,7 +55,7 @@ export interface ZotLitSettingTabOptions {
   plugin: ZotLitPlugin;
   settings: SettingsService;
   profile: ProfileService;
-  db: DatabaseService;
+  db: ZoteroReadsService;
   libraryScope: LibraryScopeService;
   zoteroPref: ZoteroPrefService;
   localServer: LocalServerActions;
@@ -78,7 +78,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #importProfile: SettingTabContext["importProfile"];
   readonly #plugin: ZotLitPlugin;
   readonly #settings: SettingsService;
-  readonly #db: DatabaseService;
+  readonly #db: ZoteroReadsService;
   readonly #libraryScope: LibraryScopeService;
   readonly #zoteroPref: ZoteroPrefService;
   readonly #localServer: LocalServerActions;

@@ -9,7 +9,6 @@ import {
 } from "@zotlit/templates/facade";
 
 import { getLogger } from "@/lib/log";
-import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
@@ -90,7 +89,6 @@ export interface MigrationVerificationData {
 
 export interface LiteratureNoteTemplateMigrationDataDeps {
   app: Parameters<typeof loadTemplateData>[0]["app"];
-  db: DatabaseService;
   zoteroReads: ZoteroReadsService;
   libraryScope: Pick<LibraryScopeService, "ready" | "resolveLibraries">;
   noteIndex: NoteIndex;
@@ -126,7 +124,6 @@ export async function loadLiteratureNoteTemplateMigrationData(
 
   const dataDeps = {
     app: deps.app,
-    db: deps.db,
     zoteroReads: deps.zoteroReads,
     noteIndex: deps.noteIndex,
     settings: deps.settings,

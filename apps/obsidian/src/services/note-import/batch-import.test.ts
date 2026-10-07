@@ -37,6 +37,7 @@ import { ProfileAnnotationError } from "@/services/template/service";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
 import {
   inProcessReadsService,
+  withState,
   recordCalls,
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
@@ -232,10 +233,9 @@ function makeDeps(
         shouldAsk: false,
       }),
     },
-    db: { state: options.dbState ?? "ready" },
-    zoteroReads: inProcessReadsService(
-      sharedClientOpener(client),
-      options.wrap,
+    zoteroReads: withState(
+      inProcessReadsService(sharedClientOpener(client), options.wrap),
+      options.dbState ?? "ready",
     ),
     settings: {
       loaded: Promise.resolve({ ...defaults, ...settings }),

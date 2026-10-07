@@ -101,8 +101,7 @@ describe("native preview data", () => {
     });
     await vi.advanceTimersByTimeAsync(0);
     {
-      using lease = await fixture.deps.db.acquireRead();
-      lease.client.$client.exec(
+      fixture.client.$client.exec(
         "update itemDataValues set value = 'Updated figures' where valueID = 1",
       );
     }
@@ -237,8 +236,7 @@ describe("native preview load boundaries", () => {
     const { scheduler } = scheduling(false);
     using _scheduler = scheduler;
     {
-      using lease = await fixture.deps.db.acquireRead();
-      lease.client.$client.exec(
+      fixture.client.$client.exec(
         "delete from itemAnnotations; delete from items where itemID = 3",
       );
     }

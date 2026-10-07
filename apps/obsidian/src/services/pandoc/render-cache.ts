@@ -6,13 +6,13 @@ import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
-import type { DatabaseService } from "@/services/database/service";
 import type { ProfileService } from "@/services/profile/service";
 import type { Held, QueryClientService } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import {
   effectivePresentation,
@@ -53,7 +53,7 @@ interface BibliographyRenderEvents {
 
 export interface BibliographyRenderCacheOptions {
   profile: Pick<ProfileService, "ready" | "on">;
-  db: Pick<DatabaseService, "on">;
+  db: Pick<ZoteroReadsService, "on">;
   pandocEngine: Pick<
     PandocEngineService,
     "getStatus" | "subscribe" | "getEngine"

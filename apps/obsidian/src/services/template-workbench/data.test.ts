@@ -803,13 +803,6 @@ function createFixture(options?: {
             },
           },
         } as never,
-        db: {
-          acquireRead: async () =>
-            ({
-              client,
-              [Symbol.dispose]() {},
-            }) as never,
-        },
         zoteroReads: inProcessReadsService(sharedClientOpener(client)),
         noteIndex: {
           getNotesByItemKey: () => [],

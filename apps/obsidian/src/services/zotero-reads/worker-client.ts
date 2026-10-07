@@ -2,7 +2,6 @@
 
 import { Effect } from "effect";
 import type { Scope } from "effect";
-import type { App } from "obsidian";
 import workerSource from "virtual:zotero-reads-worker";
 
 import type { Settings } from "@/services/settings/schema";
@@ -12,19 +11,6 @@ import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type { ZoteroReadsClient } from "./in-process";
 import type { ReadsConfig } from "./rpc";
 import { connectWorker, makeWorkerReads } from "./worker-host";
-
-/**
- * Vault-scoped localStorage key of the dev toggle: `"worker"` runs
- * ZoteroReads on the Web Worker adapter instead of in-process.
- */
-export const READS_ADAPTER_STORAGE_KEY = "zotlit-reads-adapter";
-
-/** Whether the dev toggle asks for the Web Worker adapter. */
-export function workerAdapterEnabled(
-  storage: Pick<App, "loadLocalStorage">,
-): boolean {
-  return storage.loadLocalStorage(READS_ADAPTER_STORAGE_KEY) === "worker";
-}
 
 export interface WorkerClientDeps {
   settings: SettingsService;

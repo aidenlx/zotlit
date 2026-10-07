@@ -268,7 +268,7 @@ export default class ZotLitPlugin extends Plugin {
         profile: services.profile,
         plugin: this,
         settings: services.settings,
-        db: services.db,
+        db: services.zoteroReads,
         libraryScope: services.libraryScope,
         zoteroPref: services.zoteroPref,
         localServer: services.localServer,
@@ -299,7 +299,7 @@ export default class ZotLitPlugin extends Plugin {
     });
     addCitationTemplateActions(this, { template: services.template });
     addProfileActions(this, { importProfile: services.importProfile });
-    addDatabaseActions(this, { db: services.db });
+    addDatabaseActions(this, { db: services.zoteroReads });
     addReleaseActions(this, { release: services.release });
     addIndexedKeyActions(this);
     addCitekeyEditorActions(this, { citekeyEditor: services.citekeyEditor });
@@ -341,7 +341,6 @@ export default class ZotLitPlugin extends Plugin {
         zoteroPref: services.zoteroPref,
         profile: services.profile,
         app: this.app,
-        db: services.db,
         zoteroReads: services.zoteroReads,
         settings: services.settings,
         libraryScope: services.libraryScope,
@@ -390,7 +389,6 @@ export default class ZotLitPlugin extends Plugin {
         profile: services.profile,
         app: this.app,
         settings: services.settings,
-        db: services.db,
         zoteroReads: services.zoteroReads,
         libraryScope: services.libraryScope,
         zoteroPref: services.zoteroPref,
@@ -413,7 +411,7 @@ export default class ZotLitPlugin extends Plugin {
       reportBlockedGesture: (attachmentKey) =>
         services.capabilityNotices.reportBlockedGesture(attachmentKey),
       libraryTagNames: (annotationKey) =>
-        libraryTagNames(services.db, annotationKey),
+        libraryTagNames(services.zoteroReads, annotationKey),
       zoteroPref: services.zoteroPref,
       noteFeature: services.noteFeature,
       noteIndex: services.noteIndex,
@@ -444,7 +442,6 @@ export default class ZotLitPlugin extends Plugin {
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
       customize,
       app: this.app,
-      db: services.db,
       zoteroReads: services.zoteroReads,
       noteIndex: services.noteIndex,
       zoteroPref: services.zoteroPref,
@@ -454,7 +451,6 @@ export default class ZotLitPlugin extends Plugin {
       profile: services.profile,
       nativePreview: {
         app: this.app,
-        db: services.db,
         zoteroReads: services.zoteroReads,
         noteIndex: services.noteIndex,
         zoteroPref: services.zoteroPref,
@@ -468,7 +464,6 @@ export default class ZotLitPlugin extends Plugin {
 
     registerTemplateDataExplorer(this, {
       app: this.app,
-      db: services.db,
       zoteroReads: services.zoteroReads,
       noteIndex: services.noteIndex,
       zoteroPref: services.zoteroPref,
@@ -481,7 +476,6 @@ export default class ZotLitPlugin extends Plugin {
       app: this.app,
       itemLookup: services.itemLookup,
       profile: services.profile,
-      db: services.db,
       zoteroReads: services.zoteroReads,
       noteIndex: services.noteIndex,
       zoteroPref: services.zoteroPref,
@@ -535,7 +529,6 @@ export default class ZotLitPlugin extends Plugin {
     registerTemplateWorkbench(this, {
       profile: services.profile,
       app: this.app,
-      db: services.db,
       zoteroReads: services.zoteroReads,
       noteIndex: services.noteIndex,
       settings: services.settings,
@@ -545,7 +538,6 @@ export default class ZotLitPlugin extends Plugin {
 
     registerPandocResolve(this, {
       app: this.app,
-      db: services.db,
       reads: services.zoteroReads,
       zoteroPref: services.zoteroPref,
       settings: services.settings,
@@ -574,7 +566,6 @@ export default class ZotLitPlugin extends Plugin {
 
     registerWelcomeView(this, {
       app: this.app,
-      db: services.db,
       reads: services.zoteroReads,
       queries: services.queryClient,
       zoteroPref: services.zoteroPref,
@@ -610,7 +601,7 @@ export default class ZotLitPlugin extends Plugin {
     // lane as the filesystem watchers.
     stack.defer(
       services.localServer.on("db/updated", () => {
-        services.db.notifyExternalChange();
+        services.zoteroReads.notifyExternalChange();
       }),
     );
 

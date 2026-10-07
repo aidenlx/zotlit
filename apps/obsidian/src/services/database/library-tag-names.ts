@@ -1,11 +1,12 @@
 // The tag names in use in one Annotation's Library, as the Zotero database
 // answers them.
 
-import { getLibraryTagNames, resolveIndexedKeyLibrary } from "@zotlit/db";
+import { Effect } from "effect";
+
+import { resolveIndexedKeyLibraryIn } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
-
-import type { DatabaseService } from "./service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 const logger = getLogger(["database", "library-tag-names"]);
 
@@ -14,15 +15,22 @@ const logger = getLogger(["database", "library-tag-names"]);
  * suggests. The Zotero database answers them, so a tag saved moments ago
  * joins once the database has caught up.
  */
-export function libraryTagNames(
-  db: Pick<DatabaseService, "state" | "client">,
+export async function libraryTagNames(
+  db: Pick<ZoteroReadsService, "state" | "acquireRead">,
   annotationKey: string,
-): readonly string[] {
-  if (db.state !== "ready") return [];
+): Promise<readonly string[]> {
+  if (db.state === "degraded") return [];
   try {
-    const client = db.client;
-    const library = resolveIndexedKeyLibrary(client, annotationKey);
-    return library ? getLibraryTagNames(client, library.libraryID) : [];
+    using lease = await db.acquireRead();
+    const library = resolveIndexedKeyLibraryIn(
+      await Effect.runPromise(lease.reads.Libraries({})),
+      annotationKey,
+    );
+    return library
+      ? await Effect.runPromise(
+          lease.reads.TagNames({ libraryID: library.libraryID }),
+        )
+      : [];
   } catch (error) {
     logger.warn("Failed to read a library's tag names", {
       annotationKey,

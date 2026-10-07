@@ -130,7 +130,7 @@ function setup(deps: Partial<TemplateWorkbenchDeps> = {}, sharedApp?: App) {
     app,
     settings: { subscribe: () => () => {} },
     pluginVersion: "2.1.3",
-    db: { ready: Promise.resolve(), state: "ready" },
+    zoteroReads: { ready: Promise.resolve(), state: "ready" },
     zoteroPref: { ready: Promise.resolve(), dataDir: null },
     templates: {
       loaded: true,
@@ -1105,11 +1105,11 @@ An annotation.
   });
   it("keeps authoring and restored state available when the database fails", async () => {
     const { view, requestSave } = setup({
-      db: {
+      zoteroReads: {
         get ready() {
           return Promise.reject(new Error("Unavailable"));
         },
-      } as unknown as TemplateWorkbenchDeps["db"],
+      } as unknown as TemplateWorkbenchDeps["zoteroReads"],
     });
     await expect(
       view.setState(
@@ -2759,7 +2759,7 @@ language: liquid
     const harness = setup({
       nativePreview: {
         app: { vault: { on: () => ({}), offref: () => {} } },
-        db: { on: () => () => {}, acquireRead: vi.fn() },
+        zoteroReads: { on: () => () => {}, acquireRead: vi.fn() },
         templates: { on: () => () => {} },
         bibliographyRender: { on: () => () => {} },
       } as unknown as TemplateWorkbenchDeps["nativePreview"],

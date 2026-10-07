@@ -16,7 +16,7 @@ import { RpcClient, RpcClientError, RpcSchema, RpcWorker } from "effect/rpc";
 import { getLogger } from "@/lib/log";
 import type { EffectiveReadMode } from "@/services/database/read-source";
 
-import { makeChangeFeed } from "./connection";
+import { makeChangeFeed } from "./change-feed";
 import type { ZoteroReadsClient } from "./in-process";
 import { DbUnavailable, ReadsConfigSchema, ZoteroReads } from "./rpc";
 import type { ChangeEvent, ReadsConfig } from "./rpc";

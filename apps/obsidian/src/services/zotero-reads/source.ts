@@ -28,9 +28,9 @@ import type {
 } from "@/services/database/read-source";
 import { reapReadClones } from "@/services/database/reap-temps";
 
+import { makeChangeFeed } from "./change-feed";
 import {
   Connection,
-  makeChangeFeed,
   makeClientRef,
   toDbUnavailable,
   validateClient,

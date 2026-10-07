@@ -1,52 +1,45 @@
 // Match vocabulary spans every Library in the pinned live database.
-import {
-  getItemsByKey,
-  resolveIndexedKeyLibrary,
-  getLibraries,
-} from "@zotlit/db";
+import { Effect } from "effect";
+
 import type { MatchItemFacts } from "@zotlit/workbench/match";
 import { snapshotMatchFacts } from "@zotlit/workbench/match";
 import type { WorkbenchHost, WorkbenchLibrary } from "@zotlit/workbench/ui";
 
-import type { DatabaseService } from "@/services/database/service";
 import {
   resolveLibraryScope,
   selectorKey,
 } from "@/services/library-scope/scope";
-import {
-  listCollectionChoices,
-  resolveMembershipFacts,
-} from "@/services/profile-selection/facts";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { getSampleItem } from "./selection-data";
 
 export function createMatchData(
-  db: Pick<DatabaseService, "acquireRead">,
+  db: Pick<ZoteroReadsService, "acquireRead">,
 ): WorkbenchHost["matchData"] {
   return {
     async tags() {
       using lease = await db.acquireRead();
-      const rows = lease.client.query.tags
-        .findMany({ columns: { name: true } })
-        .sync();
-      return [...new Set(rows.map((row) => row.name))].sort((a, b) =>
-        a.localeCompare(b),
-      );
+      return [...(await Effect.runPromise(lease.reads.TagNames({})))];
     },
     async collections() {
       using lease = await db.acquireRead();
-      const libraries = resolveLibraryScope(getLibraries(lease.client), {
-        mode: "all",
-      }).available;
-      return listCollectionChoices(lease.client, libraries).map(
-        ({ path }) => path,
+      const libraries = resolveLibraryScope(
+        await Effect.runPromise(lease.reads.Libraries({})),
+        { mode: "all" },
+      ).available;
+      const paths = await Effect.runPromise(
+        lease.reads.CollectionPaths({
+          libraryIDs: libraries.map(({ libraryID }) => libraryID),
+        }),
       );
+      return paths.map((path) => [...path]);
     },
     async libraries() {
       using lease = await db.acquireRead();
-      return resolveLibraryScope(getLibraries(lease.client), {
-        mode: "all",
-      }).available.map((library) => ({
+      return resolveLibraryScope(
+        await Effect.runPromise(lease.reads.Libraries({})),
+        { mode: "all" },
+      ).available.map((library) => ({
         id: selectorKey(library.selector) as WorkbenchLibrary["id"],
         ...(library.name === null ? {} : { name: library.name }),
       }));
@@ -56,23 +49,32 @@ export function createMatchData(
 
 /** The Item's real memberships, including automatic Tags and direct Collections. */
 export async function loadMatchFacts(
-  db: Pick<DatabaseService, "acquireRead">,
+  db: Pick<ZoteroReadsService, "acquireRead">,
   indexedKey: string,
 ): Promise<MatchItemFacts | null> {
   const sample = getSampleItem(indexedKey);
   if (sample) return snapshotMatchFacts(sample);
   using lease = await db.acquireRead();
-  const key = resolveIndexedKeyLibrary(lease.client, indexedKey);
-  if (!key) return null;
-  const item = getItemsByKey(lease.client, key.libraryID, [key.key])[0];
+  const items = await Effect.runPromise(
+    lease.reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
+  );
+  const item = items.get(indexedKey);
   if (!item) return null;
-  const library = resolveLibraryScope(getLibraries(lease.client), {
-    mode: "all",
-  }).available.find((entry) => entry.libraryID === item.libraryID);
+  const library = resolveLibraryScope(
+    await Effect.runPromise(lease.reads.Libraries({})),
+    { mode: "all" },
+  ).available.find((entry) => entry.libraryID === item.libraryID);
   if (!library) return null;
+  const facts = await Effect.runPromise(
+    lease.reads.MembershipFacts({
+      itemID: item.itemID,
+      libraryID: item.libraryID,
+    }),
+  );
   return {
     library: library.selector,
     itemType: item.fields.itemType,
-    ...resolveMembershipFacts(lease.client, item),
+    tags: [...facts.tags],
+    collections: facts.collections.map((path) => [...path]),
   };
 }

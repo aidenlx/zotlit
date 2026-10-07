@@ -433,7 +433,7 @@ async function copySource(
  * same main-file and WAL bytes, including a reused WAL tail whose header and
  * size did not change.
  *
- * @see DatabaseService's `#sourceMoved` for the gate this feeds.
+ * @see `sourceMoved` in `layerSource` (zotero-reads/source.ts) for the gate this feeds.
  */
 export async function snapshotSource(
   sourcePath: string,

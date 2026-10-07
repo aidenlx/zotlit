@@ -25,7 +25,6 @@ import type {
   AttachmentImport,
   AttachmentImportService,
 } from "@/services/attachment-import/service";
-import type { DatabaseService } from "@/services/database/service";
 import type {
   ExcerptPreparation,
   PreparedExcerpts,
@@ -83,17 +82,10 @@ export interface NoteFeatureDeps {
     | "getLiteratureNoteTemplate"
   >;
   /**
-   * Lease-only. The sync `state`/`client` accessors are omitted so async
-   * operations must pin a snapshot via `acquireRead()` and read through the
-   * lease, rather than touching a `client` a refresh swap could close mid-read.
-   * The synchronous `renderAnnotation` path takes {@link SyncRenderDeps}.
-   */
-  db: Pick<DatabaseService, "acquireRead">;
-  /**
    * The note write pipeline's reads: an operation holds one lease, so the
    * Literature Note and the Child Notes it imports read one database state.
    */
-  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
+  zoteroReads: Pick<ZoteroReadsService, "acquireRead" | "ready">;
   noteIndex: Pick<
     NoteIndex,
     "ready" | "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
@@ -110,15 +102,6 @@ export interface NoteFeatureDeps {
     >,
   ) => ReturnType<typeof prepareSingleExcerpt>;
 }
-
-/**
- * `renderAnnotation` runs synchronously during `dragstart`, so it reads a live
- * `state`/`client` snapshot off `db` in one uninterrupted tick instead of
- * awaiting a lease — no `await` boundary a refresh swap could interleave with.
- */
-export type SyncRenderDeps = NoteFeatureDeps & {
-  db: Pick<DatabaseService, "acquireRead" | "state" | "client">;
-};
 
 interface NoteTarget {
   path: string;

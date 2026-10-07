@@ -30,6 +30,7 @@ import { defaults } from "@/services/settings/schema";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
 import {
   inProcessReadsService,
+  withState,
   recordCalls,
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
@@ -167,13 +168,11 @@ function makeDeps(
   return {
     profile: profileReader(),
     app: {} as SingleUpdateDeps["app"],
-    db: {
-      state: dbState,
-      client,
-      acquireRead: async () => ({ client, [Symbol.dispose]() {} }),
-    },
-    zoteroReads: inProcessReadsService(sharedClientOpener(client), (reads) =>
-      wrap(itemsAtInterface(reads)),
+    zoteroReads: withState(
+      inProcessReadsService(sharedClientOpener(client), (reads) =>
+        wrap(itemsAtInterface(reads)),
+      ),
+      dbState,
     ),
     settings: {
       current: defaults,

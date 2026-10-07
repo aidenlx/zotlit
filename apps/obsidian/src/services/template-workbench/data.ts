@@ -8,17 +8,9 @@ import {
   buildFilenameContext,
   buildNoteContextFromSource,
   citekeysToCiteTemplateData,
-  getAnnotationsByKey,
-  getAttachmentByKey,
-  getItemsByID,
-  getItemTypeByKey,
-  getItemsByKey,
-  getNoteByKey,
-  resolveIndexedKeyLibrary,
   withAnnotationCitation,
 } from "@zotlit/db";
 import type {
-  Annotation,
   AnnotationSources,
   CitationTemplateData,
   CitationVariant,
@@ -27,14 +19,12 @@ import type {
   NoteResolvers,
   NoteSource,
 } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { TemplateError } from "@zotlit/templates/facade";
 import { citationExampleData } from "@zotlit/workbench/render";
 import type { CitationExampleId } from "@zotlit/workbench/render";
 
 import { annotationCitation } from "@/lib/annotation-render";
 import { creatorSummary } from "@/lib/item-summary";
-import type { DatabaseService } from "@/services/database/service";
 import { itemFacets } from "@/services/note-feature/context";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { Settings } from "@/services/settings/schema";
@@ -75,8 +65,7 @@ export type CitationDataLoadResult =
 
 export interface TemplateDataDeps {
   app: App;
-  db: Pick<DatabaseService, "acquireRead">;
-  /** The note and filename roots read their Item's bundle through a lease. */
+  /** Each root reads its Item's bundle through a lease. */
   zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   noteIndex: Pick<
     NoteIndex,
@@ -182,7 +171,7 @@ export async function loadTemplateData(
  * database.
  */
 export async function loadCitationData(
-  deps: Pick<TemplateDataDeps, "db" | "settings">,
+  deps: Pick<TemplateDataDeps, "zoteroReads" | "settings">,
   selector: CitationSelector,
   variant: CitationVariant,
 ): Promise<CitationDataLoadResult> {
@@ -193,10 +182,10 @@ export async function loadCitationData(
     };
   }
   await deps.settings.loaded;
-  using lease = await deps.db.acquireRead();
-  const selected = resolveNoteItem(lease.client, selector.key);
-  if (selected.kind !== "item") return selected;
-  const { item } = selected;
+  using lease = await deps.zoteroReads.acquireRead();
+  const selected = await readNoteItemSource(lease.reads, selector.key);
+  if (selected.kind !== "source") return selected;
+  const { item } = selected.source;
   const citationKey =
     "citationKey" in item.fields ? (item.fields.citationKey ?? null) : null;
   return {
@@ -258,47 +247,6 @@ async function createInertResolvers(
   });
 }
 
-type ClassifiedObject =
-  | { kind: "item"; item: Item }
-  | { kind: "annotation"; annotation: Annotation }
-  | { kind: "attachment"; parentItemID: number | null }
-  | { kind: "note"; parentItemID: number | null }
-  | { kind: "not-found" }
-  | { kind: "annotation-attachment-missing" };
-
-function classifyObject(
-  client: NodeDatabaseClient,
-  indexedKey: string,
-): ClassifiedObject {
-  const selector = resolveIndexedKeyLibrary(client, indexedKey);
-  if (!selector) return { kind: "not-found" };
-  const { key, libraryID } = selector;
-  const itemType = getItemTypeByKey(client, libraryID, key);
-  if (itemType === null) return { kind: "not-found" };
-
-  if (itemType === "annotation") {
-    const annotation = getAnnotationsByKey(client, [key], libraryID)[0];
-    return annotation
-      ? { kind: "annotation", annotation }
-      : { kind: "annotation-attachment-missing" };
-  }
-  if (itemType === "attachment") {
-    const attachment = getAttachmentByKey(client, key, libraryID);
-    return attachment
-      ? { kind: "attachment", parentItemID: attachment.parentItemID }
-      : { kind: "not-found" };
-  }
-  if (itemType === "note") {
-    const note = getNoteByKey(client, key, { libraryID });
-    return note
-      ? { kind: "note", parentItemID: note.parentItemID }
-      : { kind: "not-found" };
-  }
-
-  const item = getItemsByKey(client, libraryID, [key])[0];
-  return item ? { kind: "item", item } : { kind: "not-found" };
-}
-
 type AnnotationResult =
   | { kind: "sources"; sources: AnnotationSources; item: Item | null }
   | { kind: "not-found" }
@@ -338,34 +286,10 @@ type NoteItemResult =
   | { kind: "no-parent-item" }
   | { kind: "annotation-attachment-missing" };
 
-function resolveNoteItem(
-  client: NodeDatabaseClient,
-  indexedKey: string,
-): NoteItemResult {
-  const selected = classifyObject(client, indexedKey);
-  if (
-    selected.kind === "not-found" ||
-    selected.kind === "annotation-attachment-missing" ||
-    selected.kind === "item"
-  ) {
-    return selected;
-  }
-  if (selected.kind === "annotation") {
-    const attachment = getAttachmentByKey(
-      client,
-      selected.annotation.parentKey,
-      selected.annotation.libraryID,
-    );
-    if (!attachment) return { kind: "annotation-attachment-missing" };
-    return resolveParentItem(client, attachment.parentItemID);
-  }
-  return resolveParentItem(client, selected.parentItemID);
-}
-
 /**
- * {@link resolveNoteItem} through ZoteroReads under one Snapshot: the Item an
- * Indexed Key names, or the parent Item of the attachment, note, or annotation
- * it names, read as a {@link NoteSource}.
+ * The Item an Indexed Key names, or the parent Item of the attachment, note,
+ * or annotation it names, read as a {@link NoteSource}. Pass Snapshot-bound
+ * reads, so every step reads one database state.
  */
 async function readNoteItemSource(
   reads: ZoteroReadsApi,
@@ -408,13 +332,4 @@ async function readNoteItemSource(
   if (!parentItemID) return { kind: "no-parent-item" };
   const source = await run(reads.NoteSource({ itemID: parentItemID }));
   return source ? { kind: "source", source } : { kind: "no-parent-item" };
-}
-
-function resolveParentItem(
-  client: NodeDatabaseClient,
-  parentItemID: number | null,
-): NoteItemResult {
-  if (!parentItemID) return { kind: "no-parent-item" };
-  const item = getItemsByID(client, [parentItemID])[0];
-  return item ? { kind: "item", item } : { kind: "no-parent-item" };
 }
