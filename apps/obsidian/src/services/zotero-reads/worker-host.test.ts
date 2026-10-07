@@ -1,5 +1,5 @@
 // The worker adapter's lifetime: degraded on a worker death, a new worker on Refresh, termination on scope end.
-import { Deferred, Effect, Layer, Option, Stream } from "effect";
+import { Deferred, Effect, Layer, Option, Queue, Stream } from "effect";
 import type { Scope } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it, vi } from "vitest";
@@ -152,6 +152,26 @@ describe("ZoteroReads worker adapter", () => {
     });
     expect(result.read).toMatchObject({ _tag: "RpcClientError" });
     expect(result.ended).toBe(true);
+  });
+
+  it("answers a stream read asked as a queue from the live worker, and fails it while no worker serves", async () => {
+    const workers = fakeWorkers();
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const reads = yield* makeWorkerReads(workers.connect);
+        const snapshots = yield* reads.Snapshot(undefined, { asQueue: true });
+        const snapshot = yield* Queue.take(snapshots);
+        const changes = yield* Stream.toPull(reads.Changes());
+        yield* workers.kill(1);
+        yield* until(changes, "degraded");
+        const failed = yield* Effect.flip(
+          reads.Snapshot(undefined, { asQueue: true }),
+        );
+        return { snapshot, failed };
+      }).pipe(Effect.scoped),
+    );
+    expect(result.snapshot).toEqual(expect.any(String));
+    expect(result.failed).toMatchObject({ _tag: "RpcClientError" });
   });
 
   it("Refresh after a worker death spawns a new worker that serves", async () => {
