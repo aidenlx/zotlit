@@ -424,7 +424,6 @@ describe("independent native Note Preview", () => {
         item: getItemsByKey(test.fixture.client, ["MAIN2345"], {
           libraryID: 1,
         })[0]!,
-        score: 1,
         matches: [],
         library: null,
       };
@@ -460,7 +459,6 @@ describe("independent native Note Preview", () => {
       item: getItemsByKey(test.fixture.client, ["MAIN2345"], {
         libraryID: 1,
       })[0]!,
-      score: 1,
       matches: [],
       library: null,
     };

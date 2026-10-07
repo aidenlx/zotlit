@@ -22,7 +22,6 @@ import {
   getCollectionIDByKey,
   getIndexedItemIDsByCollection,
   getIndexedItemIDsByLibrary,
-  getIndexedItemsByID,
   getIndexSignature,
   getItemDisplayRefsByIDs,
   getItemRefByID,
@@ -339,20 +338,6 @@ export function handlersLayer(options?: HandlersOptions) {
             ),
           })),
 
-        IndexItems: ({ libraryID, snapshot }) =>
-          withClientStream(snapshot, (client) => {
-            const memo: GroupIDMemo = new Map();
-            return Stream.unwrap(
-              Effect.map(
-                read(client, (c) => getIndexedItemIDsByLibrary(c, libraryID)),
-                (ids) =>
-                  sliced(client, slicesOf(ids), (c, slice) =>
-                    getIndexedItemsByID(c, slice, { memo }),
-                  ),
-              ),
-            );
-          }),
-
         ItemsByIndexedKeys: ({ indexedKeys, snapshot }) =>
           withClient(snapshot, (client) =>
             itemsByIndexedKeys(client, indexedKeys),
@@ -540,11 +525,6 @@ export function handlersLayer(options?: HandlersOptions) {
             connection.configure(config),
           ),
         Ping: () => Effect.void,
-
-        IndexSignature: ({ libraryID, snapshot }) =>
-          withClient(snapshot, (client) =>
-            getIndexSignature(client, libraryID),
-          ),
 
         AttachmentsByKeys: ({ libraryID, keys, snapshot }) =>
           withClient(snapshot, (client) =>

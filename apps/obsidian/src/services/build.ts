@@ -32,7 +32,6 @@ import { savedExcerptRequest } from "./excerpt-image/request";
 import { ExcerptImageService } from "./excerpt-image/service";
 import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
-import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
 import { LibraryScopeService } from "./library-scope/service";
 import { LocalBridgeService } from "./local-bridge/service";
@@ -384,11 +383,7 @@ export function buildServices(
     })
     .use({
       itemLookup: ({ zoteroReads, libraryScope }) =>
-        new ItemLookup({
-          reads: zoteroReads,
-          libraryScope,
-          getChsSegmenter: () => getChsSegmenter(plugin.app),
-        }),
+        new ItemLookup({ reads: zoteroReads, libraryScope }),
     })
     .useValue({
       noteFeature: ({
