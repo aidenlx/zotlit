@@ -175,3 +175,151 @@ export function recordCalls(operations: readonly (keyof ZoteroReadsClient)[]): {
   };
   return { wrap, calls, snapshots };
 }
+
+/** A regular Item {@link seedWorksSql} writes into My Library. */
+export interface SeededWork {
+  readonly itemID: number;
+  readonly key: string;
+  /** My Library (1) when omitted; seed any other library's rows first. */
+  readonly libraryID?: number;
+  /** One of {@link SEEDED_ITEM_TYPES}; a journal article when omitted. */
+  readonly itemType?: (typeof SEEDED_ITEM_TYPES)[number];
+  readonly title?: string;
+  readonly citationKey?: string;
+  readonly date?: string;
+  /** Authors as `[firstName, lastName]`, in order. */
+  readonly creators?: readonly (readonly [string, string])[];
+}
+
+/** An Attachment {@link seedWorksSql} hangs from a seeded Item. */
+export interface SeededAttachment {
+  readonly itemID: number;
+  readonly key: string;
+  readonly parentItemID: number;
+  readonly path: string | null;
+  readonly linkMode: number;
+}
+
+/** The regular item types {@link seedWorksSql} declares, by type id from 1. */
+const SEEDED_ITEM_TYPES = ["journalArticle", "letter", "book"] as const;
+const ATTACHMENT_TYPE_ID = 99;
+const SEEDED_FIELD_IDS = { title: 10, citationKey: 11, date: 12 } as const;
+
+const quoteSql = (value: string) => `'${value.replaceAll("'", "''")}'`;
+
+/**
+ * SQL for a fixture database (after `createFixtureSchema`) holding My Library
+ * with `works` and `attachments` beneath them, for a suite that reads works
+ * through ZoteroReads over seeded rows.
+ */
+export function seedWorksSql(
+  works: readonly SeededWork[],
+  attachments: readonly SeededAttachment[] = [],
+): string {
+  const types = SEEDED_ITEM_TYPES.map(
+    (name, index) => `(${index + 1}, '${name}')`,
+  ).join(", ");
+  const primaries = SEEDED_ITEM_TYPES.map(
+    (_, index) => `(${index + 1}, 1, 1)`,
+  ).join(", ");
+  return [
+    "insert into libraries (libraryID, type) values (1, 'user');",
+    `insert into itemTypes (itemTypeID, typeName) values ${types}, (${ATTACHMENT_TYPE_ID}, 'attachment');`,
+    "insert into fieldsCombined (fieldID, fieldName, custom) values (10, 'title', 0), (11, 'citationKey', 0), (12, 'date', 0);",
+    "insert into creatorTypes (creatorTypeID, creatorType) values (1, 'author');",
+    `insert into itemTypeCreatorTypes (itemTypeID, creatorTypeID, primaryField) values ${primaries};`,
+    worksSql(works, attachments),
+  ].join("\n");
+}
+
+/**
+ * SQL that adds `works` and `attachments` to a database {@link seedWorksSql}
+ * seeded. Row ids derive from each Item's id, so works added apart never clash.
+ */
+export function worksSql(
+  works: readonly SeededWork[],
+  attachments: readonly SeededAttachment[] = [],
+): string {
+  const stamp = "'2024-01-01 00:00:00'";
+  const sql: string[] = [];
+  for (const work of works) {
+    const typeID =
+      SEEDED_ITEM_TYPES.indexOf(work.itemType ?? "journalArticle") + 1;
+    sql.push(
+      `insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key) values (${work.itemID}, ${typeID}, ${stamp}, ${stamp}, ${work.libraryID ?? 1}, ${quoteSql(work.key)});`,
+    );
+    for (const field of ["title", "citationKey", "date"] as const) {
+      const value = work[field];
+      if (value === undefined) continue;
+      const valueID = work.itemID * 10 + SEEDED_FIELD_IDS[field] - 10;
+      sql.push(
+        `insert into itemDataValues (valueID, value) values (${valueID}, ${quoteSql(value)});`,
+        `insert into itemData (itemID, fieldID, valueID) values (${work.itemID}, ${SEEDED_FIELD_IDS[field]}, ${valueID});`,
+      );
+    }
+    for (const [index, [firstName, lastName]] of (
+      work.creators ?? []
+    ).entries()) {
+      const creatorID = work.itemID * 10 + index;
+      sql.push(
+        `insert into creators (creatorID, firstName, lastName, fieldMode) values (${creatorID}, ${quoteSql(firstName)}, ${quoteSql(lastName)}, 0);`,
+        `insert into itemCreators (itemID, creatorID, creatorTypeID, orderIndex) values (${work.itemID}, ${creatorID}, 1, ${index});`,
+      );
+    }
+  }
+  for (const attachment of attachments) {
+    sql.push(
+      `insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key) values (${attachment.itemID}, ${ATTACHMENT_TYPE_ID}, ${stamp}, ${stamp}, 1, ${quoteSql(attachment.key)});`,
+      `insert into itemAttachments (itemID, parentItemID, linkMode, path) values (${attachment.itemID}, ${attachment.parentItemID}, ${attachment.linkMode}, ${attachment.path === null ? "null" : quoteSql(attachment.path)});`,
+    );
+  }
+  return sql.join("\n");
+}
+
+/** SQL that removes every work and attachment {@link worksSql} added. */
+export const CLEAR_WORKS_SQL = `
+  delete from itemAttachments;
+  delete from itemCreators;
+  delete from creators;
+  delete from itemData;
+  delete from itemDataValues;
+  delete from items;
+`;
+
+/**
+ * SQL for a fixture database whose user library holds one journal article per
+ * key: "A study of nothing" (2020) by Ann Zeta, account user 1. Every key
+ * names the same work, for a suite that cites works by Indexed Key.
+ */
+export function citedWorkSeed(keys: readonly string[]): string {
+  const items = keys
+    .map(
+      (key, i) =>
+        `(${i + 1}, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, '${key}')`,
+    )
+    .join(", ");
+  const data = keys
+    .map((_, i) => `(${i + 1}, 10, 1), (${i + 1}, 12, 2)`)
+    .join(", ");
+  const creators = keys.map((_, i) => `(${i + 1}, 1, 1, 0)`).join(", ");
+  return `
+    insert into libraries (libraryID, type, version, clientVersion)
+      values (1, 'user', 1, 1);
+    insert into settings (setting, key, value) values ('account', 'userID', 1);
+    insert into itemTypes (itemTypeID, typeName) values (1, 'journalArticle');
+    insert into fieldsCombined (fieldID, fieldName, custom)
+      values (10, 'title', 0), (12, 'date', 0);
+    insert into itemDataValues (valueID, value)
+      values (1, 'A study of nothing'), (2, '2020');
+    insert into creators (creatorID, firstName, lastName, fieldMode)
+      values (1, 'Ann', 'Zeta', 0);
+    insert into creatorTypes (creatorTypeID, creatorType) values (1, 'author');
+    insert into itemTypeCreatorTypes (itemTypeID, creatorTypeID, primaryField)
+      values (1, 1, 1);
+    insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+      values ${items};
+    insert into itemData (itemID, fieldID, valueID) values ${data};
+    insert into itemCreators (itemID, creatorID, creatorTypeID, orderIndex)
+      values ${creators};
+  `;
+}

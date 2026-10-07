@@ -3,9 +3,6 @@ import type { HoverParent, TFile } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getItemsByKey } from "@zotlit/db";
-import { makeItem } from "@zotlit/item-lookup/fixtures";
-
 import * as m from "@/lib/i18n/generated/messages";
 import { wrapNodeHover } from "@/services/graph-citations/hover";
 import type { GraphLeafMembers } from "@/services/graph-citations/install";
@@ -14,7 +11,12 @@ import type {
   BibliographyRenderResult,
 } from "@/services/pandoc/render-cache";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
-import { stubbedReads } from "@/services/zotero-reads/test-utils";
+import {
+  inProcessReadsService,
+  memoryOpener,
+  seedWorksSql,
+  withState,
+} from "@/services/zotero-reads/test-utils";
 
 import { CitationPopover } from "./service";
 import type { WorkHoverRequest } from "./service";
@@ -25,23 +27,18 @@ afterEach(async () => {
   for (const reads of opened.splice(0)) await reads[Symbol.asyncDispose]();
 });
 
-/** ZoteroReads on the in-process adapter; its handlers run the stubs below. */
-function reads() {
-  const stub = stubbedReads();
-  opened.push(stub);
-  return stub;
-}
+/** The works a hover can show, as Zotero holds them. */
+const WORKS_SQL = seedWorksSql([
+  { itemID: 1, key: "ABCD2345", title: "Alpha" },
+  { itemID: 2, key: "BCDE3456", title: "Beta" },
+]);
 
-vi.mock("@zotlit/db", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@zotlit/db")>()),
-  getZoteroDatabaseIdentity: () => ({
-    userID: null,
-    localUserKey: null,
-    serverID: null,
-  }),
-  getItemsByKey: vi.fn(() => []),
-  getAttachmentsByParents: () => [],
-}));
+/** ZoteroReads on the in-process adapter over the seeded works. */
+function reads() {
+  const service = inProcessReadsService(memoryOpener(() => WORKS_SQL).open);
+  opened.push(service);
+  return withState(service, "ready");
+}
 
 function harness() {
   const parent: HoverParent = { hoverPopover: null };
@@ -269,9 +266,6 @@ describe("Citation Popover visits", () => {
     await using run = harness();
     const old = Promise.withResolvers<BibliographyRenderResult | null>();
     const next = Promise.withResolvers<BibliographyRenderResult | null>();
-    vi.mocked(getItemsByKey).mockReturnValue([
-      makeItem({ key: "ABCD2345", title: "Alpha" }),
-    ]);
     await run.show({ kind: "item", indexedKey: "ABCD2345" });
     await vi.advanceTimersByTimeAsync(300);
     const card = run.parent.hoverPopover!.hoverEl;
@@ -281,9 +275,6 @@ describe("Citation Popover visits", () => {
     for (const listener of run.listeners.get("invalidated") ?? []) listener();
     await act(async () => {});
     run.readBibliography.mockReturnValueOnce(next.promise);
-    vi.mocked(getItemsByKey).mockReturnValue([
-      makeItem({ key: "BCDE3456", title: "Beta" }),
-    ]);
     await run.show({ kind: "item", indexedKey: "BCDE3456" }, run.second);
     expect(card.textContent).not.toContain("Alpha");
     expect(card.querySelector('[role="button"]')).toBeNull();

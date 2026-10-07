@@ -1,8 +1,5 @@
 // The one cited work, and the Citation Index answer naming it, that the citation-text suites read against.
 
-import type { Item } from "@zotlit/db";
-import { makeItem } from "@zotlit/item-lookup/fixtures";
-
 import { scanDocumentCitations } from "@/services/citation-index/service";
 import type {
   Citation,
@@ -15,31 +12,6 @@ import type { FormattedOccurrence, PresentedCitation } from "./present";
 
 /** The Indexed Key of the cited work, which is also the CSL id a render names it by. */
 export const ALPHA_KEY = "ALPHA234";
-
-/**
- * The Item the stubbed database answers with. A suite mocks `@zotlit/db` so
- * `resolveIndexedKeyLibrary` and `getItemsByKey` hand this back to the
- * ZoteroReads handlers, since the in-process database holds no rows;
- * `itemSummary` reads it as `Zeta (2020)`.
- */
-export const ALPHA: Item = {
-  ...makeItem({
-    key: "ALPHA123",
-    itemID: 1,
-    title: "A study of nothing",
-    date: "2020",
-    creators: [
-      {
-        creatorType: "author",
-        lastName: "Zeta",
-        firstName: "Ann",
-        fieldMode: 0,
-      },
-    ],
-    primaryCreatorType: "author",
-  }),
-  indexedKey: ALPHA_KEY,
-};
 
 /**
  * One Citation Index answer.

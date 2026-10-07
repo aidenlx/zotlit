@@ -1,8 +1,7 @@
 // @vitest-environment happy-dom
+import { Effect } from "effect";
 import type { LinkCache, TFile } from "obsidian";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   FIELD_LITERATURE_NOTE_PROFILE,
@@ -17,6 +16,7 @@ import { CitekeySnapshot } from "@/services/citation-index/snapshot";
 import {
   createCitationIndexHarness,
   DatabaseStub,
+  KEY_A,
 } from "@/services/citation-index/test-harness";
 import type {
   BibliographyRequest,
@@ -28,13 +28,15 @@ import type { Held } from "@/services/query-client/service";
 import { QueryClientService } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import {
+  citedWorkSeed,
   inProcessReadsService,
   memoryOpener,
 } from "@/services/zotero-reads/test-utils";
 
 import {
-  ALPHA,
   ALPHA_KEY,
   citation,
   firstText,
@@ -47,22 +49,6 @@ import { citationKey, literalSummaryOf } from "./present";
 import type { DocumentCitations, FormattedOccurrence } from "./present";
 import { CitationText } from "./service";
 import type { CitationTextDeps } from "./service";
-
-vi.mock("@zotlit/db", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@zotlit/db")>();
-  return {
-    ...actual,
-    // The in-process reads run over an empty database; these three are the
-    // whole read path from an Indexed Key to the Item the citation names.
-    getZoteroDatabaseIdentity: () => ({
-      userID: 1,
-      localUserKey: null,
-      serverID: null,
-    }),
-    resolveIndexedKeyLibrary: vi.fn(),
-    getItemsByKey: vi.fn(),
-  };
-});
 
 const NOTE = { path: "note.md" } as TFile;
 
@@ -91,6 +77,10 @@ interface Harness {
   deleteNote: () => void;
   /** The client the text is held on, for reading what one path holds. */
   queryClient: QueryClientService;
+  /** How many cited-item reads the database answered or failed. */
+  readonly itemReads: number;
+  /** Fails the next cited-item read, as a locked database would. */
+  failNextItemRead: () => void;
   dispose: () => Promise<void>;
 }
 
@@ -168,7 +158,28 @@ async function makeHarness({
   };
 
   let present = true;
-  const reads = inProcessReadsService(memoryOpener(() => "").open);
+  let itemReads = 0;
+  let failNextItemRead = false;
+  // The cited work and the Literature Note stand-in are two copies of one work.
+  const reads = inProcessReadsService(
+    memoryOpener(() => citedWorkSeed([ALPHA_KEY, LIT_KEY])).open,
+    {
+      wrap: (client) => ({
+        ...client,
+        ItemsByIndexedKeys: ((
+          ...args: Parameters<ZoteroReadsClient["ItemsByIndexedKeys"]>
+        ) =>
+          Effect.suspend(() => {
+            itemReads += 1;
+            if (!failNextItemRead) return client.ItemsByIndexedKeys(...args);
+            failNextItemRead = false;
+            return Effect.fail(
+              new DbUnavailable({ message: "database is locked" }),
+            );
+          })) as ZoteroReadsClient["ItemsByIndexedKeys"],
+      }),
+    },
+  );
   const service = new CitationText({
     app: {
       vault: {
@@ -255,6 +266,12 @@ async function makeHarness({
       fire("metadata:deleted", NOTE);
     },
     queryClient,
+    get itemReads() {
+      return itemReads;
+    },
+    failNextItemRead: () => {
+      failNextItemRead = true;
+    },
     dispose: async () => {
       await service[Symbol.asyncDispose]();
       await queryClient[Symbol.asyncDispose]();
@@ -262,15 +279,6 @@ async function makeHarness({
     },
   };
 }
-
-beforeEach(() => {
-  // Every Indexed Key reads as ALPHA.
-  vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-    libraryID: 1,
-    key: "ALPHA123",
-  });
-  vi.mocked(getItemsByKey).mockReturnValue([ALPHA]);
-});
 
 async function readText(service: CitationText): Promise<DocumentCitations> {
   let held = service.peek(NOTE.path);
@@ -315,10 +323,14 @@ describe("CitationText", () => {
     db.settle();
     await h.index.whenResolved();
     await h.index.getDocumentCitationSet(h.draft);
+    // The work the citekey resolves to, read from its own database.
+    const items = cleanup.use(
+      inProcessReadsService(memoryOpener(() => citedWorkSeed([KEY_A])).open),
+    );
     const service = cleanup.use(
       new CitationText({
         app: h.app,
-        db,
+        db: items,
         citationIndex: h.index,
         noteIndex: h.noteIndex,
         profile: profileReader(),
@@ -369,9 +381,7 @@ describe("CitationText", () => {
       );
       const first =
         kind === "replacement" ? await h.service.read(NOTE.path) : null;
-      vi.mocked(getItemsByKey).mockImplementationOnce(() => {
-        throw new Error("database is locked");
-      });
+      h.failNextItemRead();
       if (kind === "replacement") h.metadataChanged(NOTE.path);
 
       expect(await h.service.read(NOTE.path)).toBe(first);
@@ -379,17 +389,13 @@ describe("CitationText", () => {
         kind === "replacement" ? "failed" : null,
       );
       await h.service.read(NOTE.path);
-      expect(getItemsByKey).toHaveBeenCalledTimes(
-        kind === "replacement" ? 2 : 1,
-      );
+      expect(h.itemReads).toBe(kind === "replacement" ? 2 : 1);
       now = now.add({ milliseconds: 5001 });
       vi.setSystemTime(now.epochMilliseconds);
 
       expect((await h.service.read(NOTE.path))?.formatted.size).toBe(1);
       expect(h.service.peek(NOTE.path)?.status).toBe("fresh");
-      expect(getItemsByKey).toHaveBeenCalledTimes(
-        kind === "replacement" ? 3 : 2,
-      );
+      expect(h.itemReads).toBe(kind === "replacement" ? 3 : 2);
     },
   );
 
@@ -1206,30 +1212,10 @@ function firstSerials(
   return held[0]?.serials;
 }
 
-/**
- * Two Items, so a cluster names two works the bibliography numbers apart. Every
- * other suite reads one Item for whatever Indexed Key it asks about.
- */
-function readTwoItems(): void {
-  vi.mocked(resolveIndexedKeyLibrary).mockImplementation(
-    (_client, indexedKey) => ({
-      libraryID: 1,
-      key: indexedKey === LIT_KEY ? "BETA123" : "ALPHA123",
-    }),
-  );
-  vi.mocked(getItemsByKey).mockImplementation((_client, _libraryID, keys) =>
-    keys.map((key) => ({ ...ALPHA, key })),
-  );
-}
-
 describe("CitationText Entry Serials", () => {
   /** `Both [@alpha; @beta].` under a style whose citations are footnotes. */
   const CLUSTER = "[@alpha; @beta]";
   const TWO_WORKS = [citation("alpha", ALPHA_KEY), citation("beta", LIT_KEY)];
-
-  beforeEach(() => {
-    readTwoItems();
-  });
 
   it("stands one serial per cited work in for the note a style writes", async () => {
     const { service, bibliographyRequests, dispose } = await makeHarness({

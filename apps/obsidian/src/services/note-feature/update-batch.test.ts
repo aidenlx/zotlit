@@ -2,16 +2,11 @@ import { Effect, Exit, Stream } from "effect";
 import type { TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  getCollectionIDByKey,
-  getIndexedItemIDsByCollection,
-  getIndexedItemIDsByLibrary,
-  getItemDisplayRefByID,
-  getLibraries,
-  USER_LIBRARY_ID,
-} from "@zotlit/db";
+import { USER_LIBRARY_ID } from "@zotlit/db";
 import type { Item, Library } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
@@ -54,18 +49,6 @@ import {
 } from "./update-batch";
 import type { BatchUpdateResult, BatchUpdateDeps } from "./update-batch";
 import type { SingleUpdateDeps } from "./update-single";
-
-vi.mock("@zotlit/db", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@zotlit/db")>();
-  return {
-    ...actual,
-    getLibraries: vi.fn(),
-    getItemDisplayRefByID: vi.fn(),
-    getCollectionIDByKey: vi.fn(),
-    getIndexedItemIDsByLibrary: vi.fn(),
-    getIndexedItemIDsByCollection: vi.fn(),
-  };
-});
 
 vi.mock("@/services/batch-profile-choice", () => ({
   chooseBatchProfile: vi.fn(),
@@ -142,8 +125,8 @@ function scopeOf(
 let currentScope: ResolvedLibraryScope = scopeOf([PERSONAL_LIBRARY]);
 
 /**
- * Answers `ItemsByIndexedKeys` at the interface: every key `ITEM<n>` names
- * item `n`. The item shape stays partial, as the stubbed note writes need.
+ * Answers `ItemsByIndexedKeys` at the interface: every key `ITEM<n>`, or
+ * `ITEM<n>g<groupID>`, names item `n`. The item shape stays partial, as the stubbed note writes need.
  */
 function itemsAtInterface(client: ZoteroReadsClient): ZoteroReadsClient {
   return {
@@ -153,25 +136,79 @@ function itemsAtInterface(client: ZoteroReadsClient): ZoteroReadsClient {
         new Map(
           indexedKeys.map((indexedKey) => [
             indexedKey,
-            { itemID: Number(indexedKey.slice(4)), indexedKey } as Item,
+            {
+              itemID: Number.parseInt(indexedKey.slice(4)),
+              indexedKey,
+            } as Item,
           ]),
         ),
       )) as unknown as ZoteroReadsClient["ItemsByIndexedKeys"],
   };
 }
 
+/**
+ * The Zotero database each case seeds: My Library, the Reading group's
+ * library 12, and an empty collection `COLLECTION` in My Library.
+ */
+let db: NodeDatabaseClient;
+
+function seedDatabase(): NodeDatabaseClient {
+  const client = createClient(":memory:");
+  createFixtureSchema(client.$client);
+  client.$client.exec(`
+    insert into libraries (libraryID, type) values
+      (${USER_LIBRARY_ID}, 'user'), (${GROUP_LIBRARY.libraryID}, 'group');
+    insert into groups (groupID, libraryID, name) values
+      (${GROUP_LIBRARY.groupID}, ${GROUP_LIBRARY.libraryID}, '${GROUP_LIBRARY.name}');
+    insert into itemTypes (itemTypeID, typeName) values (1, 'journalArticle');
+    insert into fieldsCombined (fieldID, fieldName) values (1, 'title');
+    insert into collections (collectionID, collectionName, libraryID, key)
+      values (100, 'Reading list', ${USER_LIBRARY_ID}, '${COLLECTION}');
+  `);
+  return client;
+}
+
+/**
+ * Live items `ITEM<n>` titled `Item <n>`, each in its library. A lower id
+ * is modified later, so a library lists its items in ascending id order.
+ */
+function itemsIn(byLibrary: ReadonlyMap<number, number>): void {
+  for (const [itemID, libraryID] of byLibrary) {
+    const modified = new Date(Date.UTC(2024, 0, 1, 0, 1000 - itemID))
+      .toISOString()
+      .replace("T", " ")
+      .slice(0, 19);
+    db.$client.exec(`
+      insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+        values (${itemID}, 1, '${modified}', '${modified}', ${libraryID}, 'ITEM${itemID}');
+      insert into itemDataValues (valueID, value) values (${itemID}, 'Item ${itemID}');
+      insert into itemData (itemID, fieldID, valueID) values (${itemID}, 1, ${itemID});
+    `);
+  }
+}
+
+/** Put items in the collection `COLLECTION` of `libraryID`, creating it there. */
+function collectionHolds(libraryID: number, itemIDs: readonly number[]): void {
+  db.$client.exec(`
+    delete from collections where libraryID = ${libraryID};
+    insert into collections (collectionID, collectionName, libraryID, key)
+      values (200, 'Shared', ${libraryID}, '${COLLECTION}');
+    ${itemIDs.map((id) => `insert into collectionItems (collectionID, itemID) values (200, ${id});`).join("\n")}
+  `);
+}
+
 function makeDeps(
   dbState: "loading" | "ready" = "ready",
   wrap: (client: ZoteroReadsClient) => ZoteroReadsClient = (client) => client,
 ): BatchUpdateDeps {
-  const client = createClient(":memory:");
+  const client = db;
   return {
     profile: profileReader(),
     app: {} as SingleUpdateDeps["app"],
     zoteroReads: withState(
-      inProcessReadsService(sharedClientOpener(client), (reads) =>
-        wrap(itemsAtInterface(reads)),
-      ),
+      inProcessReadsService(sharedClientOpener(client), {
+        wrap: (reads) => wrap(itemsAtInterface(reads)),
+      }),
       dbState,
     ),
     settings: {
@@ -219,33 +256,29 @@ async function classifyLastModal(): Promise<{
   };
 }
 
-/** Every classified id resolves to a live item of `libraryID`. */
-function itemsIn(byLibrary: ReadonlyMap<number, number>): void {
-  vi.mocked(getItemDisplayRefByID).mockImplementation((_client, itemID) => {
-    const libraryID = byLibrary.get(itemID);
-    if (libraryID === undefined) return null;
-    return {
-      itemID,
-      key: `ITEM${itemID}`,
-      libraryID,
-      groupID: libraryID === USER_LIBRARY_ID ? null : 7,
-      indexedKey: `ITEM${itemID}`,
-      title: `Item ${itemID}`,
-    };
-  });
-}
-
 beforeEach(() => {
   openedModals.length = 0;
   currentScope = scopeOf([PERSONAL_LIBRARY]);
-  vi.mocked(getLibraries)
-    .mockReset()
-    .mockReturnValue([PERSONAL_LIBRARY, GROUP_LIBRARY]);
-  vi.mocked(getItemDisplayRefByID).mockReset().mockReturnValue(null);
-  vi.mocked(getCollectionIDByKey).mockReset().mockReturnValue(100);
-  vi.mocked(getIndexedItemIDsByLibrary).mockReset().mockReturnValue([]);
-  vi.mocked(getIndexedItemIDsByCollection).mockReset().mockReturnValue([]);
+  db = seedDatabase();
+  return () => db.$client.close();
 });
+
+/** The libraries (and collection keys) a run's scope read asked for. */
+function scopeReads() {
+  const recorded = recordCalls(["ScopeItemIDs"]);
+  return {
+    wrap: recorded.wrap,
+    asked: () =>
+      recorded.calls.map(({ payload }) =>
+        payload["collectionKey"] === undefined
+          ? payload["libraryID"]
+          : {
+              libraryID: payload["libraryID"],
+              collectionKey: payload["collectionKey"],
+            },
+      ),
+  };
+}
 
 describe("classify through the DisplayRefs stream", () => {
   it("classifies from one DisplayRefs stream and writes each item under the run's Snapshot", async () => {
@@ -1054,40 +1087,50 @@ describe("mixed batch", () => {
 
 describe("runBatchUpdateAll", () => {
   it("returns db-unavailable when the database is closed", async () => {
-    await expect(runBatchUpdateAll(makeDeps("loading"))).resolves.toEqual({
+    const scope = scopeReads();
+    await expect(
+      runBatchUpdateAll(makeDeps("loading", scope.wrap)),
+    ).resolves.toEqual({
       outcome: "db-unavailable",
     } satisfies BatchUpdateResult);
-    expect(getIndexedItemIDsByLibrary).not.toHaveBeenCalled();
+    expect(scope.asked()).toEqual([]);
   });
 
   it("reports an empty library scope before querying any item", async () => {
     currentScope = scopeOf([], [{ type: "group", groupID: 7 }]);
+    const scope = scopeReads();
 
-    await expect(runBatchUpdateAll(makeDeps())).resolves.toEqual({
+    await expect(
+      runBatchUpdateAll(makeDeps("ready", scope.wrap)),
+    ).resolves.toEqual({
       outcome: "no-library-in-scope",
     });
-    expect(getIndexedItemIDsByLibrary).not.toHaveBeenCalled();
+    expect(scope.asked()).toEqual([]);
     expect(openedModals).toHaveLength(0);
   });
 
   it("updates every item of every library in scope, in canonical order", async () => {
     currentScope = scopeOf([PERSONAL_LIBRARY, GROUP_LIBRARY]);
-    vi.mocked(getIndexedItemIDsByLibrary).mockImplementation(
-      (_client, libraryID) => (libraryID === USER_LIBRARY_ID ? [1, 2] : [3]),
+    itemsIn(
+      new Map([
+        [1, USER_LIBRARY_ID],
+        [2, USER_LIBRARY_ID],
+        [3, GROUP_LIBRARY.libraryID],
+      ]),
     );
+    const scope = scopeReads();
 
-    await expect(runBatchUpdateAll(makeDeps())).resolves.toEqual({
+    await expect(
+      runBatchUpdateAll(makeDeps("ready", scope.wrap)),
+    ).resolves.toEqual({
       outcome: "batch-modal",
     });
-    expect(
-      vi.mocked(getIndexedItemIDsByLibrary).mock.calls.map(([, id]) => id),
-    ).toEqual([USER_LIBRARY_ID, GROUP_LIBRARY.libraryID]);
+    expect(scope.asked()).toEqual([USER_LIBRARY_ID, GROUP_LIBRARY.libraryID]);
     expect(openedModals[0]?.total).toBe(3);
   });
 
   it("runs the available subset and states the unavailable library count", async () => {
     currentScope = scopeOf([PERSONAL_LIBRARY], [{ type: "group", groupID: 9 }]);
-    vi.mocked(getIndexedItemIDsByLibrary).mockReturnValue([1, 2]);
     itemsIn(
       new Map([
         [1, USER_LIBRARY_ID],
@@ -1103,9 +1146,6 @@ describe("runBatchUpdateAll", () => {
 
   it("keeps action-only headings while one library contributes", async () => {
     currentScope = scopeOf([PERSONAL_LIBRARY, GROUP_LIBRARY]);
-    vi.mocked(getIndexedItemIDsByLibrary).mockImplementation(
-      (_client, libraryID) => (libraryID === USER_LIBRARY_ID ? [1, 2] : []),
-    );
     itemsIn(
       new Map([
         [1, USER_LIBRARY_ID],
@@ -1125,9 +1165,6 @@ describe("runBatchUpdateAll", () => {
 
   it("groups rows by library and action when several libraries contribute", async () => {
     currentScope = scopeOf([PERSONAL_LIBRARY, GROUP_LIBRARY]);
-    vi.mocked(getIndexedItemIDsByLibrary).mockImplementation(
-      (_client, libraryID) => (libraryID === USER_LIBRARY_ID ? [1] : [3]),
-    );
     itemsIn(
       new Map([
         [1, USER_LIBRARY_ID],
@@ -1152,11 +1189,23 @@ describe("runBatchUpdateAll", () => {
 
   it("routes a one-item multi-library expansion to the single-item path", async () => {
     currentScope = scopeOf([PERSONAL_LIBRARY, GROUP_LIBRARY]);
-    vi.mocked(getIndexedItemIDsByLibrary).mockImplementation(
-      (_client, libraryID) => (libraryID === USER_LIBRARY_ID ? [] : [3]),
-    );
+    itemsIn(new Map([[3, GROUP_LIBRARY.libraryID]]));
+    // The one item goes to the trash between the library listing and its
+    // lookup, so the single-item path answers not-found.
+    const deps = makeDeps("ready", (client) => ({
+      ...client,
+      DisplayRefs: ((payload: object, options?: object) => {
+        db.$client.exec("insert into deletedItems (itemID) values (3)");
+        return (
+          client.DisplayRefs as unknown as (
+            payload: object,
+            options?: object,
+          ) => unknown
+        )(payload, options);
+      }) as unknown as ZoteroReadsClient["DisplayRefs"],
+    }));
 
-    await expect(runBatchUpdateAll(makeDeps())).resolves.toEqual({
+    await expect(runBatchUpdateAll(deps)).resolves.toEqual({
       outcome: "not-found",
     });
     expect(openedModals).toHaveLength(0);
@@ -1165,57 +1214,71 @@ describe("runBatchUpdateAll", () => {
   describe("exact target", () => {
     it("resolves the named group outside library scope", async () => {
       currentScope = scopeOf([PERSONAL_LIBRARY]);
-      vi.mocked(getIndexedItemIDsByLibrary).mockReturnValue([1, 2]);
+      itemsIn(
+        new Map([
+          [1, GROUP_LIBRARY.libraryID],
+          [2, GROUP_LIBRARY.libraryID],
+        ]),
+      );
+      const scope = scopeReads();
 
       await expect(
-        runBatchUpdateAll(makeDeps(), { groupID: 7 }),
+        runBatchUpdateAll(makeDeps("ready", scope.wrap), { groupID: 7 }),
       ).resolves.toEqual({ outcome: "batch-modal" });
-      expect(getIndexedItemIDsByLibrary).toHaveBeenCalledExactlyOnceWith(
-        expect.anything(),
-        GROUP_LIBRARY.libraryID,
-      );
+      expect(scope.asked()).toEqual([GROUP_LIBRARY.libraryID]);
     });
 
     it("resolves an absent library parameter to My Library", async () => {
       currentScope = scopeOf([GROUP_LIBRARY]);
-      vi.mocked(getIndexedItemIDsByLibrary).mockReturnValue([1, 2]);
-
-      await runBatchUpdateAll(makeDeps(), { groupID: 0 });
-
-      expect(getIndexedItemIDsByLibrary).toHaveBeenCalledExactlyOnceWith(
-        expect.anything(),
-        USER_LIBRARY_ID,
+      itemsIn(
+        new Map([
+          [1, USER_LIBRARY_ID],
+          [2, USER_LIBRARY_ID],
+        ]),
       );
+      const scope = scopeReads();
+
+      await runBatchUpdateAll(makeDeps("ready", scope.wrap), { groupID: 0 });
+
+      expect(scope.asked()).toEqual([USER_LIBRARY_ID]);
     });
 
     it("reports an unavailable group instead of a settings mismatch", async () => {
+      const scope = scopeReads();
       await expect(
-        runBatchUpdateAll(makeDeps(), { groupID: 99 }),
+        runBatchUpdateAll(makeDeps("ready", scope.wrap), { groupID: 99 }),
       ).resolves.toEqual({ outcome: "unavailable-target" });
-      expect(getIndexedItemIDsByLibrary).not.toHaveBeenCalled();
+      expect(scope.asked()).toEqual([]);
     });
 
     it("resolves a collection inside the named library only", async () => {
-      vi.mocked(getIndexedItemIDsByCollection).mockReturnValue([4, 5]);
+      itemsIn(
+        new Map([
+          [4, GROUP_LIBRARY.libraryID],
+          [5, GROUP_LIBRARY.libraryID],
+        ]),
+      );
+      collectionHolds(GROUP_LIBRARY.libraryID, [4, 5]);
+      const scope = scopeReads();
 
       await expect(
-        runBatchUpdateAll(makeDeps(), {
+        runBatchUpdateAll(makeDeps("ready", scope.wrap), {
           groupID: 7,
           collectionKey: COLLECTION,
         }),
       ).resolves.toEqual({ outcome: "batch-modal" });
-      expect(getCollectionIDByKey).toHaveBeenCalledExactlyOnceWith(
-        expect.anything(),
+      expect(scope.asked()).toEqual([
         { libraryID: GROUP_LIBRARY.libraryID, collectionKey: COLLECTION },
-      );
-      expect(getIndexedItemIDsByCollection).toHaveBeenCalledExactlyOnceWith(
-        expect.anything(),
-        { libraryID: GROUP_LIBRARY.libraryID, collectionKey: COLLECTION },
-      );
+      ]);
+      expect(openedModals.at(-1)?.total).toBe(2);
     });
 
     it("reports an unknown collection key instead of an empty scope", async () => {
-      vi.mocked(getCollectionIDByKey).mockReturnValue(undefined);
+      // The key names a collection of another library only.
+      collectionHolds(GROUP_LIBRARY.libraryID, []);
+      db.$client.exec(
+        `delete from collections where libraryID = ${USER_LIBRARY_ID}`,
+      );
 
       await expect(
         runBatchUpdateAll(makeDeps(), {
@@ -1223,7 +1286,7 @@ describe("runBatchUpdateAll", () => {
           collectionKey: COLLECTION,
         }),
       ).resolves.toEqual({ outcome: "collection-not-found" });
-      expect(getIndexedItemIDsByCollection).not.toHaveBeenCalled();
+      expect(openedModals).toHaveLength(0);
     });
 
     it("reports an empty selection for a collection that holds no items", async () => {

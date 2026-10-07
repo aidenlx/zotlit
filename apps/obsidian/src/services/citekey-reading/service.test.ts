@@ -6,16 +6,13 @@ import type {
   MarkdownRenderChild,
   TFile,
 } from "obsidian";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
+import { describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
 import type { Citation } from "@/services/citation-index/service";
 import { CitekeySnapshot } from "@/services/citation-index/snapshot";
 import {
-  ALPHA,
   ALPHA_KEY,
   citation,
   literalOccurrences,
@@ -29,27 +26,12 @@ import { QueryClientService } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import {
+  citedWorkSeed,
   inProcessReadsService,
   memoryOpener,
 } from "@/services/zotero-reads/test-utils";
 
 import { CitekeyReading } from "./service";
-
-vi.mock("@zotlit/db", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@zotlit/db")>();
-  return {
-    ...actual,
-    // The in-process reads run over an empty database; these three are the
-    // whole read path from an Indexed Key to the Item the citation names.
-    getZoteroDatabaseIdentity: () => ({
-      userID: 1,
-      localUserKey: null,
-      serverID: null,
-    }),
-    resolveIndexedKeyLibrary: vi.fn(),
-    getItemsByKey: vi.fn(),
-  };
-});
 
 /** One rendered section, as a Markdown post-processor receives it. */
 function section(html: string): HTMLElement {
@@ -155,7 +137,9 @@ async function makeHarness({
   const children: MarkdownRenderChild[] = [];
   let ambiguous = ambiguousKeys;
 
-  const reads = stack.use(inProcessReadsService(memoryOpener(() => "").open));
+  const reads = stack.use(
+    inProcessReadsService(memoryOpener(() => citedWorkSeed([ALPHA_KEY])).open),
+  );
   const citationText = stack.use(
     new CitationText({
       profile: profileReader(defaults, {
@@ -296,15 +280,6 @@ async function makeHarness({
     [Symbol.asyncDispose]: () => resources.disposeAsync(),
   };
 }
-
-beforeEach(() => {
-  // Every Indexed Key reads as ALPHA.
-  vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-    libraryID: 1,
-    key: "ALPHA123",
-  });
-  vi.mocked(getItemsByKey).mockReturnValue([ALPHA]);
-});
 
 describe("CitekeyReading", () => {
   it("rerenders open reading views when Pandoc navigation changes", async () => {
