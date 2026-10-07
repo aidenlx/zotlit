@@ -51,6 +51,12 @@ export interface ManagedBinary<Engine extends AsyncDisposable | Disposable> {
   ) => Uint8Array<ArrayBuffer>;
   /** Starts the engine over the verified binary, streamed rather than materialized. */
   readonly createEngine: (binary: Blob) => Promise<Engine>;
+  /**
+   * Start the engine once after each install, then release it, so a binary
+   * that does not start reports `init-failed` before its first use.
+   * @default false
+   */
+  readonly startOnInstall?: boolean;
 }
 
 /** Why a binary is unusable, in the terms the fallback surface guides out of. */
@@ -96,7 +102,7 @@ export function cachedBinaryName(pin: BinaryPin): string {
  * network, and startup only reads which binary is already cached.
  */
 export class ManagedBinaryService<
-  Engine extends AsyncDisposable | Disposable,
+  Engine extends AsyncDisposable | Disposable = AsyncDisposable | Disposable,
 > extends Service<void> {
   readonly #binary: ManagedBinary<Engine>;
   readonly #store: BinaryStore;
@@ -311,6 +317,12 @@ export class ManagedBinaryService<
       });
       this.#setStatus({ kind: "failed", failure });
       throw error;
+    }
+    if (!this.#binary.startOnInstall) return;
+    try {
+      await this.getEngine();
+    } finally {
+      await this.#dropEngine();
     }
   }
 

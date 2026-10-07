@@ -30,6 +30,7 @@ export const CHINESE_SEGMENTER: ManagedBinary<ChineseSegmenterModule> = {
     // A compiled module holds no instance and no memory to release.
     [Symbol.dispose]: () => undefined,
   }),
+  startOnInstall: true,
 };
 
 export type ChineseSegmenterService =

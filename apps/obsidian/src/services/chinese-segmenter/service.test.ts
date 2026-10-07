@@ -155,7 +155,7 @@ describe("Chinese Segmenter", () => {
     expect(other.getStatus()).toEqual({ kind: "absent" });
   });
 
-  it("reports a cached binary that does not start as init-failed", async () => {
+  it("reports a downloaded binary that does not start as init-failed at install", async () => {
     const device = memoryDevice();
     const garbage = new Uint8Array(new TextEncoder().encode("not wasm"));
     const pin = {
@@ -164,9 +164,8 @@ describe("Chinese Segmenter", () => {
     };
     await using segmenter = open(device, { download: serve(garbage), pin });
     await segmenter.ready;
-    await segmenter.install();
 
-    await expect(segmenter.getEngine()).rejects.toThrow();
+    await expect(segmenter.install()).rejects.toThrow();
 
     expect(segmenter.getStatus()).toMatchObject({
       kind: "failed",
