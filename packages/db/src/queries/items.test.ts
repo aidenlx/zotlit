@@ -349,6 +349,40 @@ describe("getItemsByKey", () => {
   it("returns an empty array when no key matches", () => {
     expect(getItemsByKey(db, USER_LIBRARY_ID, ["NOPE"])).toEqual([]);
   });
+
+  it("returns items in request order, repeating a repeated key and leaving misses out", () => {
+    expect(
+      getItemsByKey(db, USER_LIBRARY_ID, [
+        "USER2",
+        "NOPE",
+        "USER1",
+        "USER2",
+      ]).map((item) => item.key),
+    ).toEqual(["USER2", "USER1", "USER2"]);
+  });
+
+  it("reads more keys than one statement can bind", () => {
+    const misses = Array.from({ length: 40_000 }, (_, i) => `MISS${i}`);
+    expect(
+      getItemsByKey(db, USER_LIBRARY_ID, ["USER2", ...misses, "USER1"]).map(
+        (item) => item.key,
+      ),
+    ).toEqual(["USER2", "USER1"]);
+  });
+
+  it("runs the same statements for one key as for fifty", () => {
+    const statements = countStatements(sqlite);
+    const cost = (keys: string[]) => {
+      const before = statements();
+      getItemsByKey(db, USER_LIBRARY_ID, keys);
+      return statements() - before;
+    };
+    cost(["USER1"]);
+    const fifty = Array.from({ length: 50 }, (_, i) =>
+      i % 2 === 0 ? "USER1" : `MISS${i}`,
+    );
+    expect(cost(["USER2", ...fifty.slice(1)])).toBe(cost(["USER1"]));
+  });
 });
 
 function seedFixture(sqlite: DatabaseSync): void {

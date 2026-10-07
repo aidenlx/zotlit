@@ -177,6 +177,19 @@ const itemByKeyQuery = defineQuery<{ libraryID: number; key: string }>()(
     }),
 );
 
+const itemsByKeysQuery = defineQuery<void>()(
+  (db, _operators, args: { libraryID: number; keys: readonly string[] }) =>
+    db.query.items.findMany({
+      where: {
+        libraryID: args.libraryID,
+        key: { in: [...args.keys] },
+        itemType: { typeName: { notIn: [...CHILD_ITEM_TYPES] } },
+        deletedItem: false,
+      },
+      ...itemFindOptions,
+    }),
+);
+
 const itemTypeByKeyQuery = defineQuery<{
   libraryID: number;
   key: string;
@@ -326,6 +339,12 @@ export function getItemTypeByKey(
   );
 }
 
+/**
+ * Fetch regular items of one library by key, in `keys` order, through
+ * {@link rowsByID}: one statement per {@link IN_BATCH_SIZE} distinct keys. A
+ * key that names no live regular item has no entry; a repeated key repeats its
+ * item.
+ */
 export function getItemsByKey(
   db: NodeDatabaseClient,
   libraryID: number,
@@ -333,12 +352,17 @@ export function getItemsByKey(
 ): Item[] {
   if (keys.length === 0) return [];
 
+  const rows = rowsByID(keys, {
+    one: (key) => itemByKeyQuery.prepared(db).all({ libraryID, key }),
+    many: (batch) =>
+      itemsByKeysQuery.prepare(db, { libraryID, keys: batch }).all(),
+    idOf: (row) => row.key,
+  });
+  if (rows.size === 0) return [];
   const groupId = groupIDForLibrary(db, libraryID);
   const baseFieldTable = getBaseFieldTable(db, ITEM_BASE_FIELDS);
-  return keys.flatMap((key) =>
-    itemByKeyQuery
-      .prepared(db)
-      .all({ libraryID, key })
-      .map((r) => toItem(r, groupId, baseFieldTable)),
-  );
+  return keys.flatMap((key) => {
+    const row = rows.get(key);
+    return row ? [toItem(row, groupId, baseFieldTable)] : [];
+  });
 }
