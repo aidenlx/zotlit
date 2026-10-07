@@ -735,6 +735,14 @@ _Avoid_: allowed folder, trusted directory (implies a broader grant than one Att
 
 ### Database access
 
+**ZoteroReads**:
+The plugin's one interface to the Zotero database: a set of use-case operations that a Web Worker answers. The worker owns the connection, the Read Mode, the file watchers, and refreshes; the renderer only calls operations and receives plain data. Every operation is asynchronous, and two operations read one database state only when they share a Snapshot.
+_Avoid_: database service, DB client (the renderer holds no client)
+
+**Snapshot** _(ZoteroReads)_:
+One database state pinned for as long as its holder keeps it open. Every read that names the Snapshot sees that state, also after a refresh swaps in a newer one; closing it releases the state. A note write holds one Snapshot, so the Literature Note and the Child Notes it imports come from one moment.
+_Avoid_: lease, read lease, Item Snapshot (the Workbench's export of one Item)
+
 **Read Mode**:
 The strategy ZotLit uses to open `zotero.sqlite` while Zotero is running and holds the file exclusively. Configured per vault (synced) as one of four values: Auto, Reflink clone, Full copy, Immutable source. Auto resolves to one of the three concrete modes at runtime.
 
