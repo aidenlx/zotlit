@@ -39,6 +39,7 @@ import {
   getZoteroIdentity,
   getZoteroDatabaseIdentity,
   isChildItemFields,
+  parseIndexedKey,
   resolveIndexedKeyLibrary,
 } from "@zotlit/db";
 import type { GroupIDMemo, Item, TagMemo } from "@zotlit/db";
@@ -100,33 +101,54 @@ function sliced<I, O>(
   );
 }
 
-/** Live items for Indexed Keys, keyed by Indexed Key. */
+/**
+ * Live items for Indexed Keys, keyed by Indexed Key in request order. Each
+ * Library the keys span resolves once and reads its items through
+ * `getItemsByKey`: one statement per `IN_BATCH_SIZE` distinct keys.
+ */
 function itemsByIndexedKeys(
   client: NodeDatabaseClient,
   indexedKeys: readonly string[],
 ): Map<string, Item> {
-  // Each requested spelling (`g7` or `g007`) by the item key it resolves to.
-  const requestedByLibrary = new Map<number, Map<string, string[]>>();
+  const libraryByGroupID = new Map<number | null, number | null>();
+  // The group of each resolved Library, so hydration skips the group read.
+  const groupIDMemo: GroupIDMemo = new Map();
+  // Each requested spelling (`g7` or `g007`) with the Library and item key it resolves to.
+  const requested: { indexedKey: string; libraryID: number; key: string }[] =
+    [];
+  const keysByLibrary = new Map<number, string[]>();
   for (const indexedKey of indexedKeys) {
-    const selector = resolveIndexedKeyLibrary(client, indexedKey);
-    if (!selector) continue;
-    const requested =
-      requestedByLibrary.get(selector.libraryID) ?? new Map<string, string[]>();
-    requested.set(selector.key, [
-      ...(requested.get(selector.key) ?? []),
-      indexedKey,
-    ]);
-    requestedByLibrary.set(selector.libraryID, requested);
+    const parsed = parseIndexedKey(indexedKey);
+    if (!parsed) continue;
+    if (!libraryByGroupID.has(parsed.groupID)) {
+      libraryByGroupID.set(
+        parsed.groupID,
+        resolveIndexedKeyLibrary(client, indexedKey)?.libraryID ?? null,
+      );
+    }
+    const libraryID = libraryByGroupID.get(parsed.groupID);
+    if (libraryID == null) continue;
+    groupIDMemo.set(libraryID, parsed.groupID);
+    requested.push({ indexedKey, libraryID, key: parsed.key });
+    const keys = keysByLibrary.get(libraryID);
+    if (keys) keys.push(parsed.key);
+    else keysByLibrary.set(libraryID, [parsed.key]);
+  }
+  const found = new Map<number, Map<string, Item>>();
+  for (const [libraryID, keys] of keysByLibrary) {
+    found.set(
+      libraryID,
+      new Map(
+        getItemsByKey(client, keys, { libraryID, memo: groupIDMemo }).map(
+          (item) => [item.key, item],
+        ),
+      ),
+    );
   }
   const items = new Map<string, Item>();
-  for (const [libraryID, requested] of requestedByLibrary) {
-    for (const item of getItemsByKey(client, libraryID, [
-      ...requested.keys(),
-    ])) {
-      for (const indexedKey of requested.get(item.key) ?? []) {
-        items.set(indexedKey, item);
-      }
-    }
+  for (const { indexedKey, libraryID, key } of requested) {
+    const item = found.get(libraryID)?.get(key);
+    if (item) items.set(indexedKey, item);
   }
   return items;
 }
@@ -300,8 +322,8 @@ export function handlersLayer(options?: HandlersOptions) {
             return {
               relatedItems: getItemsByKey(
                 client,
-                item.libraryID,
                 getRelatedKeysByItemID(client, itemID),
+                { libraryID: item.libraryID },
               ),
               childNotes: getChildNotesByParentIDs(client, [itemID]),
             };

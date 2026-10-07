@@ -897,6 +897,60 @@ describe("ZoteroReads operations", () => {
     },
   );
 
+  /** Fifty Indexed Keys of one Library: its live items, misses, and a repeat. */
+  const fiftyKeys = (live: string[], suffix: string) => {
+    const alphabet = "23456789ABCDEFGHIJKLMNPQRSTUVWXYZ";
+    const misses = Array.from(
+      { length: 50 - live.length - 1 },
+      (_, i) => `MISS22${alphabet[Math.floor(i / 33)]}${alphabet[i % 33]}`,
+    );
+    return [...live, ...misses, live[0]!].map((key) => `${key}${suffix}`);
+  };
+  const userFifty = fiftyKeys(["MAIN2345", "RELA2345", "RELB2345"], "");
+  const groupFifty = fiftyKeys(["GRPITEMS"], "g900");
+
+  /** Statements each `ItemsByIndexedKeys` request runs, read warm. */
+  const keyReadCosts = (requests: (readonly string[])[]) => {
+    const { open, statements } = fixtureOpener();
+    return withReads(open, (reads) =>
+      Effect.gen(function* () {
+        const cost = (indexedKeys: readonly string[]) =>
+          Effect.gen(function* () {
+            const before = statements();
+            yield* reads.ItemsByIndexedKeys({ indexedKeys });
+            return statements() - before;
+          });
+        for (const request of requests) yield* cost(request);
+        const costs: number[] = [];
+        for (const request of requests) costs.push(yield* cost(request));
+        return costs;
+      }),
+    );
+  };
+
+  it.each([
+    ["the user Library", ["MAIN2345"], userFifty],
+    ["a group Library", ["GRPITEMSg900"], groupFifty],
+  ])(
+    "ItemsByIndexedKeys runs the same statements for one key of %s as for fifty",
+    async (_library, one, fifty) => {
+      expect(fifty).toHaveLength(50);
+      const [oneCost, fiftyCost] = await keyReadCosts([one, fifty]);
+      expect(fiftyCost).toBe(oneCost);
+    },
+  );
+
+  it("ItemsByIndexedKeys keys spanning two Libraries run each Library's statements once", async () => {
+    const [user, group, both] = await keyReadCosts([
+      ["MAIN2345"],
+      ["GRPITEMSg900"],
+      [...userFifty, ...groupFifty],
+    ]);
+    expect(both).toBe(user! + group!);
+    // The user Library needs no resolution: its hydration is the one statement.
+    expect(user).toBe(1);
+  });
+
   it("a source that cannot open fails with a tagged DbUnavailable", async () => {
     const { open } = fixtureOpener(() => null);
     const error = await withReads(open, (reads) =>
@@ -1307,6 +1361,16 @@ describe("ZoteroReads citation operations", () => {
     expect(own).toMatchObject([{ itemID: 10, key: "ATCH2345" }]);
     expect(children).toMatchObject([{ itemID: 10, key: "ATCH2345" }]);
     expect(none).toEqual([]);
+  });
+
+  it("ItemsByIndexedKeys answers in the order of the requested keys", async () => {
+    const { open } = fixtureOpener();
+    const items = await withReads(open, (reads) =>
+      reads.ItemsByIndexedKeys({
+        indexedKeys: ["RELB2345", "GRPITEMSg900", "MISS2345", "MAIN2345"],
+      }),
+    );
+    expect([...items.keys()]).toEqual(["RELB2345", "GRPITEMSg900", "MAIN2345"]);
   });
 
   it("ItemsByIndexedKeys answers each key under the spelling it was asked by", async () => {

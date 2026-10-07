@@ -135,7 +135,9 @@ async function realCreate(
     },
   } as unknown as NoteFeatureDeps;
 
-  const item = getItemsByKey(fixture.client, 1, ["MAIN2345"])[0]!;
+  const item = getItemsByKey(fixture.client, ["MAIN2345"], {
+    libraryID: 1,
+  })[0]!;
   const result = await createNoteFeature(deps).createNote(item, {
     profile: entry.id,
   });

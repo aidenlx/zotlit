@@ -70,7 +70,9 @@ const noteResolvers: NoteResolvers = {
 
 describe("fetchNoteContext", () => {
   it("fetches attachments, annotations, related items, and child notes into the assembled context", () => {
-    const [main] = getItemsByKey(db, USER_LIBRARY_ID, ["MAIN0001"]);
+    const [main] = getItemsByKey(db, ["MAIN0001"], {
+      libraryID: USER_LIBRARY_ID,
+    });
 
     const ctx = fetchNoteContext(db, main!, {
       resolvers: noteResolvers,
@@ -106,7 +108,9 @@ describe("fetchNoteContext", () => {
   });
 
   it("reuses a caller-supplied TagMemo/CollectionCache instead of re-querying", () => {
-    const [main] = getItemsByKey(db, USER_LIBRARY_ID, ["MAIN0001"]);
+    const [main] = getItemsByKey(db, ["MAIN0001"], {
+      libraryID: USER_LIBRARY_ID,
+    });
 
     const tagMemo: TagMemo = new Map();
     const collectionCache = new CollectionCache();
@@ -134,7 +138,9 @@ describe("fetchNoteContext", () => {
 
 describe("fetchNoteSource + buildNoteContextFromSource", () => {
   it("returns a bundle that holds no functions", () => {
-    const [main] = getItemsByKey(db, USER_LIBRARY_ID, ["MAIN0001"]);
+    const [main] = getItemsByKey(db, ["MAIN0001"], {
+      libraryID: USER_LIBRARY_ID,
+    });
 
     const source = fetchNoteSource(db, main!, {
       username: "aidenlx",
@@ -145,7 +151,9 @@ describe("fetchNoteSource + buildNoteContextFromSource", () => {
   });
 
   it("builds the same context from a bundle that crossed the wire", () => {
-    const [main] = getItemsByKey(db, USER_LIBRARY_ID, ["MAIN0001"]);
+    const [main] = getItemsByKey(db, ["MAIN0001"], {
+      libraryID: USER_LIBRARY_ID,
+    });
 
     const source = fetchNoteSource(db, main!, {
       username: "aidenlx",
@@ -176,7 +184,9 @@ describe("fetchNoteSource + buildNoteContextFromSource", () => {
     sqlite.exec(
       "insert into settings (setting, key, value) values ('account', 'username', 'fromdb')",
     );
-    const [main] = getItemsByKey(db, USER_LIBRARY_ID, ["MAIN0001"]);
+    const [main] = getItemsByKey(db, ["MAIN0001"], {
+      libraryID: USER_LIBRARY_ID,
+    });
 
     const source = fetchNoteSource(db, main!, {
       collectionCache: new CollectionCache(),

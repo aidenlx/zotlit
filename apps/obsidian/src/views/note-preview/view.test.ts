@@ -421,7 +421,9 @@ describe("independent native Note Preview", () => {
       await act(async () => choose().click());
       expect(preview.getState()["item"]).toBe(item);
       const hit = {
-        item: getItemsByKey(test.fixture.client, 1, ["MAIN2345"])[0]!,
+        item: getItemsByKey(test.fixture.client, ["MAIN2345"], {
+          libraryID: 1,
+        })[0]!,
         score: 1,
         matches: [],
         library: null,
@@ -455,7 +457,9 @@ describe("independent native Note Preview", () => {
           button.textContent === m.template_data_explorer_choose_item(),
       )!;
     const hit = {
-      item: getItemsByKey(test.fixture.client, 1, ["MAIN2345"])[0]!,
+      item: getItemsByKey(test.fixture.client, ["MAIN2345"], {
+        libraryID: 1,
+      })[0]!,
       score: 1,
       matches: [],
       library: null,
