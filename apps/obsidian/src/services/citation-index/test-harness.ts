@@ -253,9 +253,9 @@ export class NoteIndexStub {
 
 /**
  * The ZoteroReads stand-in. The test drives its lifecycle (`state`, `ready`,
- * the `changed` event); its reads run through the in-process adapter over an
- * empty `:memory:` fixture database, and the citation-key read answers from
- * {@link citekeys}.
+ * the `changed` event); its reads run through the in-process adapter over a
+ * `:memory:` fixture database that holds the `seed` rows (none by default),
+ * and the citation-key read answers from {@link citekeys}.
  */
 export class DatabaseStub implements AsyncDisposable {
   state: "loading" | "ready" | "degraded" = "ready";
@@ -264,9 +264,9 @@ export class DatabaseStub implements AsyncDisposable {
   readonly #listeners = new Set<() => void>();
   readonly #ready = Promise.withResolvers<void>();
 
-  constructor({ readyImmediately = true } = {}) {
+  constructor({ readyImmediately = true, seed = "" } = {}) {
     if (readyImmediately) this.#ready.resolve();
-    this.#service = inProcessReadsService(memoryOpener(() => "").open, {
+    this.#service = inProcessReadsService(memoryOpener(() => seed).open, {
       wrap: (client) => ({ ...client, CitekeySnapshot: this.citekeys.read }),
     });
   }
@@ -555,6 +555,8 @@ export interface CitationIndexHarnessOptions {
   store?: MemoryStore;
   citekeys?: LibraryCitekey[];
   db?: DatabaseStub;
+  /** SQL for the rows the default {@link DatabaseStub}'s database holds. */
+  zoteroRows?: string;
   notes?: boolean;
   settingsService?: SettingsStub;
   awaitReady?: boolean;
@@ -571,7 +573,9 @@ export async function createCitationIndexHarness(
   const workspace = new MockWorkspace();
   const noteIndex = new NoteIndexStub();
   const store = options.store ?? new MemoryStore();
-  const db = stack.use(options.db ?? new DatabaseStub());
+  const db = stack.use(
+    options.db ?? new DatabaseStub({ seed: options.zoteroRows }),
+  );
   const { citekeys } = db;
   if (options.citekeys) citekeys.rows = options.citekeys;
   const libraryScope = options.libraryScope ?? new LibraryScopeStub();
