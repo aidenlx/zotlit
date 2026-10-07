@@ -181,7 +181,12 @@ async function harness(
       return readable ? ("ready" as const) : ("degraded" as const);
     },
     client,
-    acquireRead: async () => ({ client, [Symbol.dispose]() {} }),
+    acquireRead: async () => ({
+      client,
+      uri: ":memory:",
+      source: { id: null, databasePath: ":memory:" },
+      [Symbol.dispose]() {},
+    }),
     on: events.on.bind(events),
   };
   const fixture = stack.use(

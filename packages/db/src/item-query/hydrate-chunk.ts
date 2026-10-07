@@ -214,7 +214,12 @@ const fieldValuesStatement = defineStatement<
       itemID: itemData.itemID,
       itemTypeID: items.itemTypeID,
       fieldID: itemData.fieldID,
-      value: itemDataValues.value,
+      // SQLite INTEGER has 64 bits; node:sqlite otherwise converts it to a
+      // Number before hydration can preserve it as text. REAL keeps the
+      // existing JavaScript string form (for example, 1.0 becomes "1").
+      value: sql<
+        string | number | null
+      >`case typeof(${itemDataValues.value}) when 'integer' then cast(${itemDataValues.value} as text) else ${itemDataValues.value} end`,
     })
     .from(itemData)
     .innerJoin(items, eq(items.itemID, itemData.itemID))

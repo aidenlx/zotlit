@@ -11,8 +11,13 @@ import {
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
-import { ItemQueryError, ItemQueryScheduler, queryItems } from ".";
-import type { ItemQueryRequest, QueryResult } from ".";
+import {
+  consumeQueryItems,
+  ItemQueryError,
+  ItemQueryScheduler,
+  queryItems,
+} from ".";
+import type { ItemQueryRequest, QueryResult, QueryRow } from ".";
 import { runEffect } from "./test-helpers";
 import type { RunOptions } from "./test-helpers";
 
@@ -77,7 +82,7 @@ function recordHydratedItemIDs(
 function setField(
   database: ScenarioDatabase,
   key: string,
-  [field, value]: readonly [string, string],
+  [field, value]: readonly [string, string | number | bigint],
 ): void {
   const { sqlite } = database;
   sqlite
@@ -413,6 +418,39 @@ describe("queryItems Projection Paths", () => {
     expect(values["TIE2BBBB"]).toEqual({ volume: "12" });
     expect(values["TIE2CCCC"]).toEqual({ volume: null });
   });
+
+  it.each([
+    9007199254740993n,
+    9223372036854775807n,
+    -9223372036854775808n,
+    // A REAL whose JavaScript string denotes a different exact integer.
+    1_000_000_000_000_000_100,
+  ])(
+    "preserves the stored number %s in projection and both filter plans",
+    async (value) => {
+      using scenario = openScenarioDatabase();
+      setField(scenario, "ART2FULL", ["volume", value]);
+      const request = {
+        libraries: [personal],
+        fields: ["volume"],
+        sort: [],
+      };
+      const projected = await result(scenario, request);
+      expect(valuesByKey(projected)["ART2FULL"]).toEqual({
+        volume: String(value),
+      });
+      for (const forceScan of [false, true]) {
+        const { exit } = await runEffect(
+          queryItems({ ...request, filter: `volume == "${value}"` }),
+          { client: scenario.db, tuning: { forceScan } },
+        );
+        if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
+        expect(exit.value.rows).toEqual([
+          { indexedKey: "ART2FULL", values: { volume: String(value) } },
+        ]);
+      }
+    },
+  );
 
   it("reaches custom fields by exact source name, in bracket or dotted form", async () => {
     using scenario = openScenarioDatabase();
@@ -2924,5 +2962,85 @@ describe("queryItems over several Libraries", () => {
     expect(await matching(scenario, `tags.contains("${BULK_TAG}")`)).toEqual(
       [],
     );
+  });
+});
+
+// Delivery failure modes: reordered/missing rows, shared state on rerun,
+// incorrect empty/truncated metadata, and reads continuing after a failed write.
+describe("incremental query consumption", () => {
+  it.each([
+    { libraries: [personal, group], limit: null },
+    { libraries: [personal, group], limit: 2 },
+    { libraries: [personal], filter: "false" },
+  ])(
+    "matches the complete result for %j on every execution",
+    async (request) => {
+      using scenario = openScenarioDatabase();
+      const expected = await result(scenario, request);
+      const operation = consumeQueryItems(request, (summary) =>
+        Effect.sync(() => {
+          const rows: QueryRow[] = [];
+          return {
+            write: (chunk) =>
+              Effect.sync(() => {
+                expect(chunk.length).toBeLessThanOrEqual(2);
+                rows.push(...chunk);
+              }),
+            end: () => Effect.succeed({ ...summary, rows }),
+          };
+        }),
+      );
+      for (let run = 0; run < 2; run++) {
+        const { exit } = await runEffect(operation, {
+          client: scenario.db,
+          tuning: { hydrateChunkSize: 2 },
+        });
+        expect(Exit.isSuccess(exit) && exit.value).toEqual(expected);
+      }
+    },
+  );
+
+  it("awaits a write and stops projection when that write fails", async () => {
+    using scenario = openScenarioDatabase();
+    const hydrated = recordHydratedItemIDs(scenario);
+    const failed = { reason: "destination is full" };
+    let finishWrite!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      finishWrite = resolve;
+    });
+    let beganWrite!: () => void;
+    const writing = new Promise<void>((resolve) => {
+      beganWrite = resolve;
+    });
+    let ended = false;
+    const running = runEffect(
+      consumeQueryItems(
+        { libraries: [personal], fields: ["title"], sort: [], limit: null },
+        () =>
+          Effect.succeed({
+            write: () =>
+              Effect.promise(async () => {
+                beganWrite();
+                await blocked;
+              }).pipe(Effect.andThen(Effect.fail(failed))),
+            end: () =>
+              Effect.sync(() => {
+                ended = true;
+              }),
+          }),
+      ),
+      { client: scenario.db, tuning: { hydrateChunkSize: 1 } },
+    );
+    await writing;
+    const reads = hydrated();
+    expect(reads).toHaveLength(1);
+    expect(hydrated()).toEqual(reads);
+    finishWrite();
+    const { exit } = await running;
+    expect(
+      Exit.isFailure(exit) && Cause.findErrorOption(exit.cause),
+    ).toMatchObject({ _tag: "Some", value: failed });
+    expect(hydrated()).toEqual(reads);
+    expect(ended).toBe(false);
   });
 });

@@ -30,7 +30,7 @@ export class ItemQueryDatabaseError extends Data.TaggedError(
   readonly cause: unknown;
 }> {
   override get message(): string {
-    return `Failed query: ${this.query}\nparams: ${JSON.stringify(this.params)}`;
+    return `Failed query: ${this.query}\nparams: ${JSON.stringify(this.params, (_, value: unknown) => (typeof value === "bigint" ? String(value) : value))}`;
   }
 }
 

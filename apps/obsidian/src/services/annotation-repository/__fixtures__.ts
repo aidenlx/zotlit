@@ -196,7 +196,12 @@ export async function setup(
 
   const dbEvents = createNanoEvents<DatabaseEvents>();
   const acquireRead = vi.fn(() =>
-    Promise.resolve({ client, [Symbol.dispose]: () => undefined }),
+    Promise.resolve({
+      client,
+      uri: ":memory:",
+      source: { id: null, databasePath: ":memory:" },
+      [Symbol.dispose]: () => undefined,
+    }),
   );
   const db = {
     acquireRead,

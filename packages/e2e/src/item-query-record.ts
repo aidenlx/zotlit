@@ -32,9 +32,11 @@ export type QueryClass = "selective" | "other" | "all";
 export interface RunSample {
   totalMs: number;
   slices: readonly number[];
+  /** Present for worker execution: renderer timer gaps across the entire call. */
+  uiGaps?: readonly number[];
   /** The readers of the statements in the longest slice. */
   worstSliceReaders: readonly string[];
-  /** The steps in which the handler built the answer, after the engine. */
+  /** Synchronous encoding steps within query execution. */
   answerSteps: readonly number[];
 }
 
@@ -61,7 +63,8 @@ export interface CancelMeasurement {
   latencyMs: number;
   /** From the CLI call in the terminal to its arrival in the window. */
   transportMs?: number;
-  worstSliceMs: number;
+  /** Absent when cancellation ends the worker before a complete trace exists. */
+  worstSliceMs?: number;
 }
 
 /**
@@ -79,9 +82,10 @@ export interface HeapMeasurement {
   query: string;
   class: QueryClass;
   returnedCount: number;
-  /** Peak heap of the engine above the heap before the run, largest of the runs. */
+  /** Absolute worker heap peak, largest of the runs. */
   peakBytes: number;
-  /** Heap above the start after the handler built its answer. */
+  beforeBytes?: number;
+  /** Absolute worker heap after the handler built its answer. */
   afterAnswerBytes: number;
 }
 
@@ -129,7 +133,7 @@ export type Status = "passed" | "failed" | "recorded";
 export interface Check {
   tier: number;
   /** `complete`: the run measured the part that the subject names. */
-  kind: "slices" | "answer" | "total" | "cancel" | "complete";
+  kind: "slices" | "answer" | "ui" | "total" | "cancel" | "complete";
   subject: string;
   /** The measured values with their limits, as text. */
   detail: string;
@@ -231,6 +235,7 @@ export function evaluateTier(tier: TierMeasurement): Check[] {
 function evaluatePart(items: number, part: TierPart): Check[] {
   const checks: Check[] = [];
   for (const query of part.queries) {
+    const worker = query.runs.some((run) => run.uiGaps !== undefined);
     const slices = pooledSlices(query);
     const p99 = percentile(slices, 99);
     const max = Math.max(0, ...slices);
@@ -244,7 +249,7 @@ function evaluatePart(items: number, part: TierPart): Check[] {
           ? "passed"
           : "failed",
     });
-    // The answer is work in the window as the slices are: the same limits.
+    // Execution and encoding retain the spec's limits in either process.
     const answerSteps = query.runs.flatMap((run) => run.answerSteps);
     const answerP99 = percentile(answerSteps, 99);
     const answerMax = Math.max(0, ...answerSteps);
@@ -259,6 +264,24 @@ function evaluatePart(items: number, part: TierPart): Check[] {
           ? "passed"
           : "failed",
     });
+    if (worker) {
+      const gaps = query.runs.flatMap((run) => run.uiGaps ?? []);
+      const complete = query.runs.every((run) => (run.uiGaps?.length ?? 0) > 0);
+      const p99 = percentile(gaps, 99);
+      const max = Math.max(0, ...gaps);
+      checks.push({
+        tier: items,
+        kind: "ui",
+        subject: query.id,
+        detail: `renderer p99 ${ms(p99)} ms (limit ${THRESHOLDS.slice.p99Ms}), max ${ms(max)} ms (limit ${THRESHOLDS.slice.maxMs})${complete ? "" : "; missing samples"}`,
+        status:
+          complete &&
+          p99 <= THRESHOLDS.slice.p99Ms &&
+          max <= THRESHOLDS.slice.maxMs
+            ? "passed"
+            : "failed",
+      });
+    }
     const total = median(query.runs.map((run) => run.totalMs));
     const budget = part.budgetOf(query);
     checks.push({
@@ -302,9 +325,8 @@ function evaluatePart(items: number, part: TierPart): Check[] {
 }
 
 /**
- * The failed checks of the engine for some queries of a tier: their slices and
- * their total time. A step of the answer is the handler's work, after the
- * engine.
+ * The failed execution-slice, renderer-gap, and total-time checks for some
+ * queries of a tier. Encoding steps have their own check.
  */
 export function failedEngineChecks(
   tier: TierMeasurement,
@@ -313,7 +335,9 @@ export function failedEngineChecks(
   return evaluateTier(tier).filter(
     (check) =>
       check.status === "failed" &&
-      (check.kind === "slices" || check.kind === "total") &&
+      (check.kind === "slices" ||
+        check.kind === "ui" ||
+        check.kind === "total") &&
       queryIDs.has(check.subject),
   );
 }
@@ -360,6 +384,9 @@ function partTables(items: number, part: TierPart): string[] {
         "Answer steps",
         "Longest answer step (ms)",
         "Answer limits",
+        "UI p99 (ms)",
+        "UI max (ms)",
+        "UI limits",
       ],
       part.queries.map((query) => {
         const slices = pooledSlices(query);
@@ -380,6 +407,18 @@ function partTables(items: number, part: TierPart): string[] {
           count(answerSteps.length),
           ms(Math.max(0, ...answerSteps)),
           MARK[statusOf("answer", query.id)],
+          query.runs[0]?.uiGaps
+            ? ms(
+                percentile(
+                  query.runs.flatMap((run) => run.uiGaps ?? []),
+                  99,
+                ),
+              )
+            : "-",
+          query.runs[0]?.uiGaps
+            ? ms(Math.max(0, ...query.runs.flatMap((run) => run.uiGaps ?? [])))
+            : "-",
+          query.runs[0]?.uiGaps ? MARK[statusOf("ui", query.id)] : "-",
         ];
       }),
     ),
@@ -401,7 +440,7 @@ function partTables(items: number, part: TierPart): string[] {
           ms(cancel.latencyMs),
           MARK[statusOf("cancel", `${cancel.delivery}: ${cancel.query}`)],
           cancel.transportMs === undefined ? "-" : ms(cancel.transportMs),
-          ms(cancel.worstSliceMs),
+          cancel.worstSliceMs === undefined ? "-" : ms(cancel.worstSliceMs),
         ]),
       ),
     );
@@ -421,13 +460,15 @@ function tierSection(tier: TierMeasurement): string {
         [
           "Peak heap",
           "Rows",
-          "Engine peak above start (MB)",
+          "Worker baseline (MB)",
+          "Worker peak (MB)",
           "MB for each 10,000 rows",
           "After the answer (MB)",
         ],
         tier.heaps.map((heap) => [
           `\`${heap.query}\``,
           count(heap.returnedCount),
+          heap.beforeBytes === undefined ? "-" : megabytes(heap.beforeBytes),
           megabytes(heap.peakBytes),
           heap.class === "all" && heap.returnedCount > 0
             ? megabytes((heap.peakBytes / heap.returnedCount) * 10_000)
@@ -466,7 +507,7 @@ export function formatSummary(record: MeasurementRecord): string {
       ...record.environment,
     ].join("\n"),
     verdict,
-    `Thresholds: 99th percentile slice at most ${THRESHOLDS.slice.p99Ms} ms and no slice above ${THRESHOLDS.slice.maxMs} ms, for the slices of the engine and for the steps in which the handler builds the answer; cancel request to settlement within ${THRESHOLDS.cancelMs} ms; median \`limit 100\` total of five runs within ${THRESHOLDS.totalMs.selective[10_000]} ms for selective queries, and ${THRESHOLDS.totalMs.other[10_000]} ms (10,000 Items) or ${THRESHOLDS.totalMs.other[50_000]} ms (50,000 Items) for the others. Totals at 100,000 Items, of \`limit=all\`, and of the queries over two Libraries are recorded.`,
+    `Thresholds: 99th percentile slice at most ${THRESHOLDS.slice.p99Ms} ms and no slice above ${THRESHOLDS.slice.maxMs} ms, for renderer timer gaps when execution uses workers (worker slices and encoding steps are recorded), or for engine slices and answer steps in older renderer records; cancel request to settlement within ${THRESHOLDS.cancelMs} ms; median \`limit 100\` total of five runs within ${THRESHOLDS.totalMs.selective[10_000]} ms for selective queries, and ${THRESHOLDS.totalMs.other[10_000]} ms (10,000 Items) or ${THRESHOLDS.totalMs.other[50_000]} ms (50,000 Items) for the others. Totals at 100,000 Items, of \`limit=all\`, and of the queries over two Libraries are recorded.`,
   ];
   if (failed.length > 0) {
     parts.push(

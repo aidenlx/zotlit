@@ -24,7 +24,12 @@ it("includes Libraries outside the chosen paper and keeps automatic Tags and dir
   `);
   const dispose = vi.fn();
   const db = {
-    acquireRead: async () => ({ client, [Symbol.dispose]: dispose }),
+    acquireRead: async () => ({
+      client,
+      uri: ":memory:",
+      source: { id: null, databasePath: ":memory:" },
+      [Symbol.dispose]: dispose,
+    }),
   };
   const data = createMatchData(db);
   await expect(data.tags()).resolves.toEqual([

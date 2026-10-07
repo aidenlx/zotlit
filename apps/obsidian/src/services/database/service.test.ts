@@ -235,11 +235,36 @@ describe("DatabaseService", () => {
     await service.ready;
 
     prepareMock.mockRejectedValueOnce(new Error("busy"));
+    zoteroPref.setDatabasePath("/next/zotero.sqlite");
     await service.refresh();
 
     expect(service.state).toBe("ready");
     expect(service.client).toBe(firstClient);
     expect(firstClient.$client.close).not.toHaveBeenCalled();
+    using lease = await service.acquireRead();
+    expect(lease.source).toEqual({
+      id: "source:/zotero/zotero.sqlite",
+      databasePath: "/zotero/zotero.sqlite",
+    });
+  });
+
+  it("captures the source identity before copying its database", async () => {
+    const startup = Promise.withResolvers<PreparedRead>();
+    prepareMock.mockImplementationOnce(() => startup.promise);
+    createClientMock.mockReturnValueOnce(fakeClient());
+    await using service = new DatabaseService(deps(settings, zoteroPref));
+    await waitForCallCount(prepareMock, 1);
+
+    // The preferences move while the first copy is in progress. Its identity
+    // belongs to the source passed to prepareRead, not the latest preference.
+    zoteroPref.setDatabasePath("/next/zotero.sqlite");
+    startup.resolve(prepared("/clone/one.sqlite", "copy"));
+    await service.ready;
+    using lease = await service.acquireRead();
+    expect(lease.source).toEqual({
+      id: "source:/zotero/zotero.sqlite",
+      databasePath: "/zotero/zotero.sqlite",
+    });
   });
 
   it("refreshes when read mode or database path changes", async () => {
@@ -368,11 +393,21 @@ describe("DatabaseService", () => {
     const lease = await service.acquireRead();
     expect(lease.client).toBe(client1);
 
+    zoteroPref.setDatabasePath("/next/zotero.sqlite");
+
     const refreshDone = service.refresh();
     await Promise.resolve();
     expect(prepareMock).toHaveBeenCalledTimes(1);
     expect(service.client).toBe(client1);
     expect(lease.client).toBe(client1);
+
+    {
+      using overlapping = await service.acquireRead();
+      expect(overlapping.source).toEqual({
+        id: "source:/zotero/zotero.sqlite",
+        databasePath: "/zotero/zotero.sqlite",
+      });
+    }
 
     lease[Symbol.dispose]();
     await refreshDone;
@@ -381,6 +416,12 @@ describe("DatabaseService", () => {
     expect(service.client).toBe(client2);
     // The pinned lease stays on the snapshot it captured.
     expect(lease.client).toBe(client1);
+    expect(lease.source.databasePath).toBe("/zotero/zotero.sqlite");
+    using refreshed = await service.acquireRead();
+    expect(refreshed.source).toEqual({
+      id: "source:/next/zotero.sqlite",
+      databasePath: "/next/zotero.sqlite",
+    });
   });
 
   it("defers refresh until the last of overlapping leases releases", async () => {
@@ -494,6 +535,12 @@ describe("DatabaseService", () => {
     const refreshDone = service.refresh();
     await waitForCallCount(prepareMock, 2);
 
+    const cancelled = new AbortController();
+    const pending = service.acquireRead(cancelled.signal);
+    await vi.advanceTimersByTimeAsync(0);
+    cancelled.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+
     const leasePromise = service.acquireRead();
     refreshRead.resolve(prepared("/clone/two.sqlite", "copy"));
 
@@ -501,6 +548,9 @@ describe("DatabaseService", () => {
     await refreshDone;
     expect(lease.client).toBe(client2);
     lease[Symbol.dispose]();
+    // The aborted acquisition left no reservation that can defer this refresh.
+    await service.refresh();
+    expect(prepareMock).toHaveBeenCalledTimes(3);
   });
 
   it("collapses watcher events during a lease into one post-drain refresh", async () => {
@@ -1035,6 +1085,10 @@ class FakeZoteroPref {
 
   get databasePath(): string {
     return this.#databasePath;
+  }
+
+  get sourceId(): string {
+    return `source:${this.#databasePath}`;
   }
 
   on(event: "resolved-changed", cb: () => void): () => void {

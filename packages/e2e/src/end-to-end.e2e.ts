@@ -11,15 +11,18 @@
 // its database and this suite starts from the Fixture Spec every time.
 
 import {
+  copyFile,
   cp,
   mkdir,
   readFile,
   readdir,
   rename,
+  rm,
   writeFile,
 } from "node:fs/promises";
 import { createServer } from "node:net";
 import { basename, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -2498,6 +2501,125 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(group.rows!.map((row) => row.indexedKey)).toEqual(
       byModified([sharedReading!]),
     );
+
+    // The production command exports the same response and keeps an existing file.
+    const exportPath = join(e2eFixture.root, "query-export.json");
+    await using exportCleanup = new AsyncDisposableStack();
+    exportCleanup.defer(() => rm(exportPath, { force: true }));
+    const exportArgs = {
+      library: selectorOf(sharedReading!),
+      fields: "[]",
+      limit: "all",
+      output: exportPath,
+    };
+    const receipt = JSON.parse(
+      await cliCommand(vaultId, "zotlit:item-query", { args: exportArgs }),
+    );
+    const exportedText = await readFile(exportPath, "utf8");
+    expect(receipt).toMatchObject({
+      ok: true,
+      returnedCount: group.returnedCount,
+      file: {
+        path: exportPath,
+        bytes: Buffer.byteLength(exportedText),
+        format: "json",
+      },
+    });
+    expect(receipt).not.toHaveProperty("rows");
+    expect(JSON.parse(exportedText)).toEqual(group);
+    const repeated = JSON.parse(
+      await cliCommand(vaultId, "zotlit:item-query", { args: exportArgs }),
+    );
+    expect(repeated).toMatchObject({
+      ok: false,
+      diagnostic: { code: "output-error" },
+    });
+    expect(await readFile(exportPath, "utf8")).toBe(exportedText);
+
+    // A held read keeps its source when preferences change. The next copy
+    // also carries a numeric field beyond JavaScript's exact integer range.
+    const otherDir = join(e2eFixture.root, "query-other-source");
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(() => rm(otherDir, { recursive: true, force: true }));
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{
+        const state=window.__zotlitQuerySource;
+        if(!state)return true;
+        const services=app.plugins.plugins.zotlit.services;
+        services.zoteroPref.setDataDir(state.previous);
+        state.lease?.[Symbol.dispose]();
+        delete window.__zotlitQuerySource;
+        await services.db.refresh();
+        return true;
+      })()`,
+      );
+    });
+    await mkdir(otherDir, { recursive: true });
+    const otherPath = join(otherDir, "zotero.sqlite");
+    await copyFile(limited.identity!.source.databasePath, otherPath);
+    {
+      using sqlite = new DatabaseSync(otherPath);
+      sqlite.exec(`
+        insert into itemDataValues (value) values (9007199254740993);
+        insert or replace into itemData (itemID, fieldID, valueID)
+          select ${targetItem.itemID}, fieldID, last_insert_rowid()
+          from fieldsCombined where fieldName = 'volume' and custom = 0;
+      `);
+    }
+    await obEval(
+      vaultId,
+      `(async()=>{
+      const services=app.plugins.plugins.zotlit.services;
+      const lease=await services.db.acquireRead();
+      window.__zotlitQuerySource={lease,previous:services.zoteroPref.dataDirOverride};
+      services.zoteroPref.setDataDir(${JSON.stringify(otherDir)});
+      return true;
+    })()`,
+    );
+    const integerQuery = {
+      library: "personal",
+      filter: 'volume == "9007199254740993"',
+      fields: '["volume"]',
+    };
+    const pinned = JSON.parse(
+      await cliCommand(vaultId, "zotlit:item-query", { args: integerQuery }),
+    ) as ItemQueryReport;
+    expect(pinned).toMatchObject({
+      ok: true,
+      identity: limited.identity,
+      rows: [],
+    });
+    await obEval(
+      vaultId,
+      `(async()=>{
+      window.__zotlitQuerySource.lease[Symbol.dispose]();
+      window.__zotlitQuerySource.lease=null;
+      await app.plugins.plugins.zotlit.services.db.refresh();
+      return true;
+    })()`,
+    );
+    for (const filter of [
+      integerQuery.filter,
+      'volume.lower() == "9007199254740993"',
+    ]) {
+      const changed = JSON.parse(
+        await cliCommand(vaultId, "zotlit:item-query", {
+          args: { ...integerQuery, filter },
+        }),
+      ) as ItemQueryReport;
+      expect(changed).toMatchObject({
+        ok: true,
+        identity: { source: { databasePath: otherPath } },
+        rows: [
+          {
+            indexedKey: targetItem.key,
+            values: { volume: "9007199254740993" },
+          },
+        ],
+      });
+    }
   });
 
   it("describes Item Query through zotlit:item-query-schema", async () => {
@@ -2657,6 +2779,7 @@ interface ItemQueryReport {
   contractVersion: number;
   command: string;
   ok: boolean;
+  identity?: { source: { id: string | null; databasePath: string } };
   libraries?: (
     | { type: "personal" }
     | { type: "group"; groupID: number; name: string }

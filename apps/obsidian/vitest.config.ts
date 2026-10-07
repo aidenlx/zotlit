@@ -4,6 +4,7 @@ import { configDefaults, defineConfig } from "vitest/config";
 
 import { testDefaults } from "@zotlit/config/vitest";
 
+import { itemQueryWorker } from "./scripts/item-query-worker.ts";
 import { pandocFilterVariants } from "./scripts/lua-filter.ts";
 
 const packageRoot = import.meta.dirname;
@@ -42,7 +43,7 @@ export default defineConfig({
       sha256: "0".repeat(64),
     }),
   },
-  plugins: [preact(), pandocFilterVariants()],
+  plugins: [preact(), pandocFilterVariants(), itemQueryWorker()],
   test: {
     ...testDefaults,
     // `include`/`exclude` live on the two projects below, not here: Vite's

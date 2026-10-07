@@ -104,6 +104,38 @@ describe("total-time budget", () => {
 });
 
 describe("threshold evaluation", () => {
+  it("keeps slice and encoding limits for worker runs, adds UI checks, and fails missing samples", () => {
+    const worker = query({
+      id: "worker",
+      runs: [
+        {
+          totalMs: 10,
+          slices: [80],
+          answerSteps: [50],
+          worstSliceReaders: [],
+          uiGaps: [4, 5],
+        },
+      ],
+    });
+    expect(statuses(tier({ queries: [worker] }))).toContain(
+      "ui worker: passed",
+    );
+    expect(statuses(tier({ queries: [worker] }))).toContain(
+      "slices worker: failed",
+    );
+    expect(statuses(tier({ queries: [worker] }))).toContain(
+      "answer worker: failed",
+    );
+    for (const uiGaps of [[40], []]) {
+      expect(
+        statuses(
+          tier({
+            queries: [{ ...worker, runs: [{ ...worker.runs[0]!, uiGaps }] }],
+          }),
+        ),
+      ).toContain("ui worker: failed");
+    }
+  });
   it("judges the median total of the runs against the budget of the class", () => {
     const totals = (...values: number[]) =>
       values.map((totalMs) => ({
@@ -500,6 +532,7 @@ describe("summary", () => {
             query: "export",
             class: "all",
             returnedCount: 20_000,
+            beforeBytes: 12 * 1024 * 1024,
             peakBytes: 40 * 1024 * 1024,
             afterAnswerBytes: 64 * 1024 * 1024,
           },
@@ -524,7 +557,9 @@ describe("summary", () => {
   });
 
   it("gives the heap of limit=all for each 10,000 rows", () => {
-    expect(summary).toContain("| `export` | 20,000 | 40.0 | 20.0 | 64.0 |");
+    expect(summary).toContain(
+      "| `export` | 20,000 | 12.0 | 40.0 | 20.0 | 64.0 |",
+    );
   });
 
   it("states the passed verdict, the findings, and the raw output path", () => {

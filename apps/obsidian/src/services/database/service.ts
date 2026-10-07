@@ -1,3 +1,4 @@
+import { abortable } from "@std/async/abortable";
 import { existsSync, watch } from "node:fs";
 import type { FSWatcher, WatchOptions } from "node:fs";
 import { dirname, join } from "node:path";
@@ -89,9 +90,15 @@ export interface DatabaseServiceDeps {
  * captured at acquire time and stays stable for the lease's whole life, so a
  * long-running read (e.g. a batch) sees one snapshot instead of a torn one.
  */
-interface DatabaseReadLease extends Disposable {
+interface DatabaseRead {
   readonly client: NodeDatabaseClient;
+  /** Reopen this read in another thread while its lease remains held. */
+  readonly uri: string;
+  /** The source captured when this database copy was opened. */
+  readonly source: Readonly<{ id: string | null; databasePath: string }>;
 }
+
+export interface DatabaseReadLease extends DatabaseRead, Disposable {}
 
 /** A change signal travelling from a watcher or a push to the refresh gate. */
 interface WatchSignal {
@@ -109,8 +116,7 @@ export class DatabaseService extends Service<void> {
 
   #state: "loading" | "ready" | "degraded" = "loading";
   #error: DatabaseError | null = null;
-  #client: NodeDatabaseClient | null = null;
-  #sourcePath: string | null = null;
+  #read: DatabaseRead | null = null;
   #readMode: EffectiveReadMode | null = null;
   #activeReadStack: AsyncDisposableStack | null = null;
   #watchers: FSWatcher[] = [];
@@ -160,10 +166,10 @@ export class DatabaseService extends Service<void> {
   }
 
   get client(): NodeDatabaseClient {
-    if (!this.#client) {
+    if (!this.#read) {
       throw new DatabaseError("degraded", this.#error);
     }
-    return this.#client;
+    return this.#read.client;
   }
 
   on<K extends keyof DatabaseEvents>(
@@ -186,33 +192,41 @@ export class DatabaseService extends Service<void> {
    * lifetime. Use for reads that span a long async lifetime (e.g. a batch run)
    * and would otherwise observe a mid-flight client swap as a closed-connection
    * throw or a torn snapshot. Dispose the lease (via `using`) to let any
-   * deferred refresh run.
+   * deferred refresh run. A signal can cancel acquisition during startup or a
+   * refresh; cancellation releases the reservation before it rejects.
    *
    * @throws {@link DatabaseError} when the service is degraded.
    */
-  async acquireRead(): Promise<DatabaseReadLease> {
-    await this.ready;
+  async acquireRead(signal?: AbortSignal): Promise<DatabaseReadLease> {
+    signal?.throwIfAborted();
+    await (signal ? abortable(this.ready, signal) : this.ready);
+    signal?.throwIfAborted();
     // Increment first (synchronous) so the refresh gate sees the lease before
     // any future trigger can start a swap.
     this.#leaseCount += 1;
     try {
       // A refresh that started before this increment is not gated; await it so
       // the lease pins the post-swap client rather than a client about to close.
-      if (this.#refreshInFlight) await this.#refreshInFlight;
-      if (this.#state === "degraded" || !this.#client) {
+      if (this.#refreshInFlight) {
+        await (signal
+          ? abortable(this.#refreshInFlight, signal)
+          : this.#refreshInFlight);
+      }
+      signal?.throwIfAborted();
+      if (this.#state === "degraded" || !this.#read) {
         throw new DatabaseError("degraded", this.#error);
       }
-      return this.#createLease(this.#client);
+      return this.#createLease(this.#read);
     } catch (error) {
       this.#releaseLease();
       throw error;
     }
   }
 
-  #createLease(client: NodeDatabaseClient): DatabaseReadLease {
+  #createLease(read: DatabaseRead): DatabaseReadLease {
     let released = false;
     return {
-      client,
+      ...read,
       [Symbol.dispose]: () => {
         if (released) return;
         released = true;
@@ -259,7 +273,7 @@ export class DatabaseService extends Service<void> {
     stack.defer(async () => {
       await this.#activeReadStack?.disposeAsync();
       this.#activeReadStack = null;
-      this.#client = null;
+      this.#read = null;
     });
 
     this.#lastSourcePath = this.#zoteroPref.databasePath;
@@ -384,6 +398,10 @@ export class DatabaseService extends Service<void> {
       await using refreshStack = new AsyncDisposableStack();
       const settings = this.#settings.current ?? (await this.#settings.loaded);
       const sourcePath = this.#zoteroPref.databasePath;
+      const source = Object.freeze({
+        id: this.#zoteroPref.sourceId,
+        databasePath: sourcePath,
+      });
       const configuredMode = settings["zotero.read-mode"];
       this.#reapReadParent(sourcePath);
       // Fingerprinted before the read, never after: a Zotero write that lands
@@ -410,9 +428,8 @@ export class DatabaseService extends Service<void> {
 
       const previousReadStack = this.#activeReadStack;
       // Commit the new client before releasing the old read stack.
-      this.#client = client;
+      this.#read = { client, source, uri };
       this.#activeReadStack = refreshStack.move();
-      this.#sourcePath = sourcePath;
       this.#readMode = prepared.effectiveMode;
       this.#sourceFingerprint = fingerprint;
       this.#state = "ready";
@@ -450,7 +467,7 @@ export class DatabaseService extends Service<void> {
       // Keep serving the previous client on a failed refresh; only go degraded
       // (and tear down watchers) when there was never a working client to fall
       // back to. Fallback notices are kept separate from refresh-failure events.
-      if (this.#client) {
+      if (this.#read) {
         this.#error = error;
       } else {
         this.#state = "degraded";
@@ -567,11 +584,12 @@ export class DatabaseService extends Service<void> {
       if (!this.#watchTrusted) this.#cancelWatchTimer();
       return;
     }
-    if (!this.#sourcePath || !this.#readMode) return;
+    if (!this.#read || !this.#readMode) return;
 
-    const parent = dirname(this.#sourcePath);
+    const sourcePath = this.#read.source.databasePath;
+    const parent = dirname(sourcePath);
     logger.debug("Binding database watchers", {
-      sourcePath: this.#sourcePath,
+      sourcePath,
       readMode: this.#readMode,
       parent,
     });
@@ -590,7 +608,7 @@ export class DatabaseService extends Service<void> {
       }),
     );
     this.#watchers.push(
-      watch(this.#sourcePath, WATCH_OPTIONS, (event) => {
+      watch(sourcePath, WATCH_OPTIONS, (event) => {
         logger.trace("Database file watcher event", { event });
         this.#scheduleWatchedRefresh({ trusted: false });
       }),
@@ -606,11 +624,14 @@ export class DatabaseService extends Service<void> {
   }
 
   #syncWalWatcher(): void {
-    if (!this.#sourcePath || this.#readMode === "immutable") {
+    if (!this.#read || this.#readMode === "immutable") {
       this.#closeWalWatcher();
       return;
     }
-    const walPath = join(dirname(this.#sourcePath), ZOTERO_WAL_FILENAME);
+    const walPath = join(
+      dirname(this.#read.source.databasePath),
+      ZOTERO_WAL_FILENAME,
+    );
     if (!existsSync(walPath)) {
       logger.debug("WAL file absent, closing WAL watcher", { walPath });
       this.#closeWalWatcher();

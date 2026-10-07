@@ -69,12 +69,14 @@ function setup(
     events.push("acquire");
     return {
       client: scenario.db,
+      source: IDENTITY.source,
+      uri: ":memory:",
       [Symbol.dispose]: () => events.push("release"),
     };
   });
   const deps: ItemQueryCliDeps = {
     acquireRead,
-    identity: async () => IDENTITY,
+    vault: () => IDENTITY.vault,
     libraryScope: async () => MY_LIBRARY_SCOPE,
     signal: new AbortController().signal,
     ...overrides,
@@ -134,9 +136,14 @@ describe("zotlit:item-query without arguments", () => {
     using scenario = openScenarioDatabase();
     const handler = createItemQueryHandler({
       acquireRead: async () => {
-        return { client: scenario.db, [Symbol.dispose]: () => {} };
+        return {
+          client: scenario.db,
+          source: IDENTITY.source,
+          uri: ":memory:",
+          [Symbol.dispose]: () => {},
+        };
       },
-      identity: async () => IDENTITY,
+      vault: () => IDENTITY.vault,
       libraryScope: async () => MY_LIBRARY_SCOPE,
       signal: new AbortController().signal,
     });
@@ -167,9 +174,11 @@ describe("zotlit:item-query answer", () => {
     return createItemQueryHandler({
       acquireRead: async () => ({
         client: scenario.db,
+        source: IDENTITY.source,
+        uri: ":memory:",
         [Symbol.dispose]: () => {},
       }),
-      identity: async () => IDENTITY,
+      vault: () => IDENTITY.vault,
       libraryScope: async () => MY_LIBRARY_SCOPE,
       signal: new AbortController().signal,
       ...overrides,
@@ -204,10 +213,9 @@ describe("zotlit:item-query answer", () => {
       onAnswerStep: (ms) => steps.push(ms),
     })({ ...BULK, fields: '["title"]' });
 
-    // One step with the first chunk of 64 rows and the chunk of the other
-    // rows, and one step for the end of the envelope.
+    // Each projection batch is encoded before the next batch is read.
     expect(JSON.parse(answer)).toMatchObject({ returnedCount: 600 });
-    expect(steps).toHaveLength(2);
+    expect(steps.length).toBeGreaterThan(1);
   });
 
   it("rejects with the abort reason when the cancel request comes while it builds the answer", async () => {
@@ -221,6 +229,8 @@ describe("zotlit:item-query answer", () => {
     const answering = handlerOf(scenario, {
       acquireRead: async () => ({
         client: scenario.db,
+        source: IDENTITY.source,
+        uri: ":memory:",
         [Symbol.dispose]: () => events.push("release"),
       }),
       signal: controller.signal,
@@ -231,7 +241,7 @@ describe("zotlit:item-query answer", () => {
     })({ ...BULK, fields: "[]" });
 
     await expect(answering).rejects.toBe(reason);
-    expect(events).toEqual(["release", "step"]);
+    expect(events).toEqual(["step", "release"]);
   });
 });
 
@@ -890,27 +900,27 @@ describe("zotlit:item-query source and lease", () => {
     expect(events).toEqual(["acquire", "release", "answer"]);
   });
 
-  it("answers the identity of the source it leased when the user connects another source in the run", async () => {
+  it("answers the source identity carried by its lease", async () => {
     using scenario = openScenarioDatabase();
-    const other = {
-      vault: IDENTITY.vault,
-      source: { id: "source-2", databasePath: "/other/zotero.sqlite" },
+    const source = {
+      id: "leased-source",
+      databasePath: "/leased/zotero.sqlite",
     };
-    let connected = IDENTITY;
     const { run } = setup(scenario, {
       acquireRead: async () => ({
         client: scenario.db,
-        // The switch comes while the run holds the lease.
-        [Symbol.dispose]: () => {
-          connected = other;
-        },
+        source,
+        uri: ":memory:",
+        [Symbol.dispose]: () => {},
       }),
-      identity: async () => connected,
     });
 
     const answer = await run();
 
-    expect(answer).toMatchObject({ ok: true, identity: IDENTITY });
+    expect(answer).toMatchObject({
+      ok: true,
+      identity: { ...IDENTITY, source },
+    });
   });
 
   it("answers source-unavailable when the source cannot be leased", async () => {
@@ -941,7 +951,12 @@ describe("zotlit:item-query source and lease", () => {
     const { run, events } = setup(scenario, {
       acquireRead: async () => {
         events.push("acquire");
-        return { client, [Symbol.dispose]: () => events.push("release") };
+        return {
+          client,
+          source: IDENTITY.source,
+          uri: ":memory:",
+          [Symbol.dispose]: () => events.push("release"),
+        };
       },
     });
 
@@ -1139,12 +1154,14 @@ function setupSchema(
     events.push("acquire");
     return {
       client: scenario.db,
+      source: IDENTITY.source,
+      uri: ":memory:",
       [Symbol.dispose]: () => events.push("release"),
     };
   });
   const handler = createItemQuerySchemaHandler({
     acquireRead,
-    identity: async () => IDENTITY,
+    vault: () => IDENTITY.vault,
     libraryScope: async () => MY_LIBRARY_SCOPE,
     signal: new AbortController().signal,
     ...overrides,
@@ -1238,27 +1255,27 @@ describe("zotlit:item-query-schema", () => {
     expect(acquireRead).not.toHaveBeenCalled();
   });
 
-  it("answers the identity of the source it leased when the user connects another source in the run", async () => {
+  it("answers the source identity carried by its lease", async () => {
     using scenario = openScenarioDatabase();
-    const other = {
-      vault: IDENTITY.vault,
-      source: { id: "source-2", databasePath: "/other/zotero.sqlite" },
+    const source = {
+      id: "leased-source",
+      databasePath: "/leased/zotero.sqlite",
     };
-    let connected = IDENTITY;
     const { run } = setupSchema(scenario, {
       acquireRead: async () => ({
         client: scenario.db,
-        // The switch comes while the run holds the lease.
-        [Symbol.dispose]: () => {
-          connected = other;
-        },
+        source,
+        uri: ":memory:",
+        [Symbol.dispose]: () => {},
       }),
-      identity: async () => connected,
     });
 
     const answer = await run();
 
-    expect(answer).toMatchObject({ ok: true, identity: IDENTITY });
+    expect(answer).toMatchObject({
+      ok: true,
+      identity: { ...IDENTITY, source },
+    });
   });
 
   it("answers source-unavailable when the source cannot be leased", async () => {
@@ -1419,11 +1436,18 @@ describe("registerItemQueryCli", () => {
     } as unknown as Plugin;
     const acquireRead = vi.fn();
 
-    registerItemQueryCli(plugin, {
-      acquireRead,
-      identity: async () => IDENTITY,
-      libraryScope: async () => MY_LIBRARY_SCOPE,
-    });
+    registerItemQueryCli(
+      plugin,
+      {
+        acquireRead,
+        vault: () => IDENTITY.vault,
+        libraryScope: async () => MY_LIBRARY_SCOPE,
+      },
+      async (_params, signal) => {
+        signal.throwIfAborted();
+        return "";
+      },
+    );
 
     expect(registerCliHandler).toHaveBeenCalledWith(
       ITEM_QUERY_COMMAND,

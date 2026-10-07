@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 // The release-time measurement of Item Query (spec #1314, "Performance
 // acceptance criteria"). Run it before a release and after a planner change:
 //
@@ -16,8 +17,8 @@
 // THE VAULT WINDOW MUST STAY VISIBLE: on screen, not minimized, and not fully
 // covered by another window. Chromium throttles a hidden window, which changes
 // every number. The script waits for a visible window before each tier, and it
-// repeats a run in which the window was hidden. It leaves background
-// throttling on: the numbers are those of the window a user works in.
+// repeats a run in which the window was hidden. The E2E window setup disables
+// background throttling and emulates focus while leaving OS focus unchanged.
 //
 // "Cancel through the Obsidian CLI" here is a second CLI call
 // (`zotlit:item-query-measure-cancel`) that aborts the measured run. Obsidian
@@ -30,8 +31,7 @@
 // `item-query-record.ts`.
 //
 // `--help` prints the options and the thresholds.
-
-import { cp, mkdir, writeFile } from "node:fs/promises";
+import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { arch, cpus, release, totalmem } from "node:os";
 import { join, relative } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -52,6 +52,7 @@ import {
 } from "@zotlit/scripts/fixture/spec";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
+import { keepRendering } from "./background-throttling.ts";
 import {
   evaluateTier,
   failedEngineChecks,
@@ -92,12 +93,14 @@ interface MeasureReport {
   returnedCount?: number;
   truncated?: boolean;
   totalMs: number;
-  leaseMs?: number;
+  adapterMs?: number;
   engineMs?: number;
   answerMs?: number;
+  channels?: { created: number; closed: number; open: number };
   answerBytes?: number;
   answerSteps: number[];
   slices: number[];
+  uiGaps: number[];
   worstSlice?: {
     ms: number;
     index: number;
@@ -118,9 +121,9 @@ interface MeasureReport {
   cancel?: {
     intendedAtMs?: number;
     firedAtMs: number;
-    engineSettledAtMs?: number;
     settledAtMs: number;
     firedAtEpochMs: number;
+    events?: { phase: string; atEpochMs: number }[];
   };
   window: {
     visibleAtStart: boolean;
@@ -381,6 +384,8 @@ const outDir = join(
   startedAt.toString().replaceAll(":", "-").slice(0, 19),
 );
 
+await mkdir(outDir, { recursive: true });
+
 const log = (message: string): void => console.error(message);
 
 if (!(await isObsidianReachable(workspaceRoot))) {
@@ -427,12 +432,21 @@ const STRESS_LIBRARY = { library: "personal" };
 /** One measured run. A run with a hidden window is repeated. */
 async function measure(args: Record<string, string>): Promise<MeasureReport> {
   for (let attempt = 0; ; attempt++) {
-    const report = JSON.parse(
-      await cliCommand(vaultId, MEASURE_COMMAND, {
-        args: { ...STRESS_LIBRARY, ...args },
-        timeoutMs: CALL_TIMEOUT_MS,
-      }),
-    ) as MeasureReport;
+    const output =
+      args.limit === "all"
+        ? join(outDir, `export-${randomUUID()}.json`)
+        : undefined;
+    let report: MeasureReport;
+    try {
+      report = JSON.parse(
+        await cliCommand(vaultId, MEASURE_COMMAND, {
+          args: { ...STRESS_LIBRARY, ...args, ...(output ? { output } : {}) },
+          timeoutMs: CALL_TIMEOUT_MS,
+        }),
+      ) as MeasureReport;
+    } finally {
+      if (output) await rm(output, { force: true });
+    }
     if (!report.window.hiddenDuringRun && report.window.visibleAtEnd) {
       return report;
     }
@@ -452,37 +466,6 @@ function expectAnswered(id: string, report: MeasureReport): MeasureReport {
     );
   }
   return report;
-}
-
-/** A garbage collection in the window, through the DevTools protocol. */
-async function collectGarbage(): Promise<void> {
-  await obEval(
-    vaultId,
-    "(async()=>{const debug=require('@electron/remote').getCurrentWebContents().debugger;const attached=debug.isAttached();if(!attached)debug.attach('1.3');await debug.sendCommand('HeapProfiler.collectGarbage');if(!attached)debug.detach();return true;})()",
-  );
-}
-
-/** Count the `MessageChannel` objects the window opens and closes. */
-const CHANNEL_COUNTER = "__ztItemQueryMeasureChannels";
-async function countChannels(): Promise<void> {
-  await obEval(
-    vaultId,
-    `(()=>{if(window.${CHANNEL_COUNTER})return true;const Original=window.MessageChannel;const counter={created:0,closed:0,open:new Map(),Original};window.${CHANNEL_COUNTER}=counter;window.MessageChannel=class extends Original{constructor(){super();counter.created++;counter.open.set(this,new Error().stack);const close=this.port1.close.bind(this.port1);this.port1.close=()=>{if(counter.open.delete(this))counter.closed++;close();};}};return true;})()`,
-  );
-}
-interface ChannelCount {
-  created: number;
-  closed: number;
-  /** The creation stack of each channel that is still open. */
-  open: string[];
-}
-async function readChannels(): Promise<ChannelCount> {
-  return JSON.parse(
-    await obEval(
-      vaultId,
-      `(()=>{const counter=window.${CHANNEL_COUNTER};window.MessageChannel=counter.Original;delete window.${CHANNEL_COUNTER};return JSON.stringify({created:counter.created,closed:counter.closed,open:[...counter.open.values()]});})()`,
-    ),
-  ) as ChannelCount;
 }
 
 async function pluginReady(): Promise<boolean> {
@@ -518,6 +501,14 @@ async function loadTier(items: number, groupItems?: number): Promise<void> {
   if (!(await pluginReady())) {
     throw new Error(`ZotLit did not answer a query on the ${items}-Item tier`);
   }
+  // Initial fuzzy-search indexing is a separate renderer job. Wait for its
+  // normal completion so this record measures Item Query rather than startup.
+  log("Waiting for the search index of this Fixture to finish...");
+  await obEval(
+    vaultId,
+    '(async()=>{await app.plugins.plugins.zotlit.services.itemLookup.search("",{limit:1});return true;})()',
+    600_000,
+  );
 }
 
 interface RawQuery {
@@ -544,7 +535,6 @@ interface RawTier {
   cancels: RawCancel[];
   /** The cancel requests whose run gave no report. */
   unreported: { delivery: CancelMeasurement["delivery"]; query: string }[];
-  channels: ChannelCount;
   /** The queries over two Libraries, each with the Items of the tier. */
   twoLibraries: {
     queries: RawQuery[];
@@ -569,7 +559,7 @@ async function measureQuery(spec: QuerySpec): Promise<RawQuery> {
 
 /** The time a cancel can interrupt: the handler up to the end of the engine. */
 function cancellableMs({ runs }: RawQuery): number {
-  return median(runs.map((run) => (run.leaseMs ?? 0) + (run.engineMs ?? 0)));
+  return median(runs.map((run) => (run.adapterMs ?? 0) + (run.engineMs ?? 0)));
 }
 
 /** Cancel one run of a query by a timer at a fraction of `cancellable`. */
@@ -636,12 +626,11 @@ async function measureTier(raw: RawTier): Promise<void> {
 
   for (const spec of specs) raw.queries.push(await measureQuery(spec));
 
-  // Peak heap: a limited query and `limit=all`, each from a collected heap.
+  // Absolute worker heap: a limited query and unlimited projections.
   const byId = (id: string): QuerySpec => specs.find((spec) => spec.id === id)!;
   for (const spec of [byId("scan-no-filter"), byId("all"), byId("all-keys")]) {
     const runs: MeasureReport[] = [];
     for (let run = 0; run < 3; run++) {
-      await collectGarbage();
       runs.push(
         expectAnswered(spec.id, await measure({ ...spec.args, heap: "true" })),
       );
@@ -666,17 +655,6 @@ async function measureTier(raw: RawTier): Promise<void> {
     raw.cancels.push(await cancelThroughCli(exportSpec, cancelDelayMs));
   }
 
-  // The MessageChannel of the scheduler: a limited run, an unlimited run, and
-  // a cancelled run leave no open channel.
-  await countChannels();
-  await measure(byId("scan-no-filter").args);
-  await measure(exportSpec.args);
-  await measure({
-    ...exportSpec.args,
-    cancelAfterMs: String(Math.round(exportMs * 0.5)),
-  });
-  raw.channels = await readChannels();
-
   // The cancel the product has for a CLI run: the plugin unloads.
   {
     const running = measure(exportSpec.args);
@@ -685,7 +663,7 @@ async function measureTier(raw: RawTier): Promise<void> {
     const arrivedAtEpochMs = Number(
       await obEval(
         vaultId,
-        "(async()=>{const at=performance.timeOrigin+performance.now();await app.plugins.disablePlugin('zotlit');return String(at);})()",
+        "(async()=>{const at=Date.now();await app.plugins.disablePlugin('zotlit');return String(at);})()",
       ),
     );
     const report = await running.catch((error: unknown) => {
@@ -773,6 +751,7 @@ function toQuery(
       totalMs: run.totalMs,
       slices: run.slices,
       answerSteps: run.answerSteps,
+      uiGaps: run.uiGaps,
       worstSliceReaders: [
         ...new Set(
           run.worstSlice?.statements.map(({ reader }) => reader) ?? [],
@@ -815,7 +794,7 @@ function toCancels(
           : settledAtEpochMs - arrivedAtEpochMs!,
       transportMs:
         delivery === "timer" ? undefined : arrivedAtEpochMs! - sentAtEpochMs!,
-      worstSliceMs: report.worstSlice?.ms ?? 0,
+      worstSliceMs: report.worstSlice?.ms,
     });
   }
   return { cancels, missedCancels };
@@ -833,15 +812,15 @@ function toTier(raw: RawTier, notes: string[]): TierMeasurement {
   ];
 
   const heaps = raw.heaps.map(({ spec, runs }): HeapMeasurement => {
-    const peak = (run: MeasureReport) =>
-      run.heap!.peakBytes - run.heap!.beforeBytes;
+    const peak = (run: MeasureReport) => run.heap!.peakBytes;
     const worst = runs.toSorted((a, b) => peak(b) - peak(a))[0]!;
     return {
       query: spec.id,
       class: spec.class,
       returnedCount: worst.returnedCount ?? 0,
       peakBytes: peak(worst),
-      afterAnswerBytes: worst.heap!.afterAnswerBytes - worst.heap!.beforeBytes,
+      beforeBytes: worst.heap!.beforeBytes,
+      afterAnswerBytes: worst.heap!.afterAnswerBytes,
     };
   });
   const rawPart = raw.twoLibraries;
@@ -891,23 +870,26 @@ function findings(rawTiers: RawTier[], tiers: TierMeasurement[]): string[] {
     return failedEngineChecks(tier, scanning);
   });
   notes.push(
-    `Keyset paging for the scan ${scanFailures.length === 0 ? "meets the budgets: every query that reads scan pages holds its slice limits and its total budget" : `misses the budgets in ${scanFailures.length} checks of queries that read scan pages (see the failed thresholds)`}. Longest slice with a scan page: ${each((raw) => `${longest(raw, "scan-page").toFixed(1)} ms`)}.`,
+    `Queries that read scan pages ${scanFailures.length === 0 ? "meet the execution-slice, renderer responsiveness, and total-time budgets" : `miss the budgets in ${scanFailures.length} checks (see the failed thresholds)`}. Longest worker slice with a scan page: ${each((raw) => `${longest(raw, "scan-page").toFixed(1)} ms`)}.`,
   );
   notes.push(
-    `Candidate statements: the largest one returned ${each((raw) => `${Math.max(0, ...allRuns(raw).map((run) => run.statements["candidate-set"]?.maxRows ?? 0)).toLocaleString("en-US")} IDs, longest slice with a candidate statement ${longest(raw, "candidate-set").toFixed(1)} ms`)}. The limit of one slice is ${THRESHOLDS.slice.maxMs} ms.`,
+    `Candidate statements: the largest one returned ${each((raw) => `${Math.max(0, ...allRuns(raw).map((run) => run.statements["candidate-set"]?.maxRows ?? 0)).toLocaleString("en-US")} IDs, longest slice with a candidate statement ${longest(raw, "candidate-set").toFixed(1)} ms`)}. Renderer responsiveness is evaluated separately.`,
   );
   notes.push(
-    `The answer of the CLI handler (the JSON envelope) is built in steps after the engine settles; the tables hold each step to the slice limits. Its longest total time: ${each((raw) => `${Math.max(0, ...raw.queries.filter(({ spec }) => spec.class !== "all").flatMap(({ runs }) => runs.map((run) => run.answerMs ?? 0))).toFixed(1)} ms for \`limit 100\`, ${Math.max(0, ...raw.queries.filter(({ spec }) => spec.class === "all").flatMap(({ runs }) => runs.map((run) => run.answerMs ?? 0))).toFixed(1)} ms for \`limit=all\``)}.`,
+    `JSON encoding runs inside query execution, one projection chunk at a time. Its largest cumulative synchronous encoding time: ${each((raw) => `${Math.max(0, ...raw.queries.filter(({ spec }) => spec.class !== "all").flatMap(({ runs }) => runs.map((run) => run.answerMs ?? 0))).toFixed(1)} ms for \`limit 100\`, ${Math.max(0, ...raw.queries.filter(({ spec }) => spec.class === "all").flatMap(({ runs }) => runs.map((run) => run.answerMs ?? 0))).toFixed(1)} ms for \`limit=all\``)}. File I/O and scheduler waits are included in total query time.`,
   );
   notes.push(
     "Cancel, timer: a timer in the window aborts the run; the time is from the moment the timer was due to the rejection of the handler. Cancel, cli: a second Obsidian CLI call (`zotlit:item-query-measure-cancel`, dev build) aborts the run; the time is from the arrival of that call in the window to the rejection, and the transport from the terminal to the window is given apart. Cancel, unload: the plugin unloads, which is the only cancel `zotlit:item-query` has in the product, because Obsidian gives a CLI handler no `AbortSignal`; the time is from the start of the unload to the rejection.",
   );
   const megabytes = (bytes: number): string => (bytes / 1024 / 1024).toFixed(1);
   notes.push(
-    `Peak heap of the limited scan above its start: ${each((raw) => `${megabytes(Math.max(0, ...raw.heaps.filter(({ spec }) => spec.class !== "all").flatMap(({ runs }) => runs.map((run) => run.heap!.peakBytes - run.heap!.beforeBytes))))} MB`)}. The engine keeps \`limit + 1\` rows, one page, and one hydrate chunk, which the retention test proves in CI. The heap in the window is above that bound: it counts the rows that V8 has not collected yet, and V8 with its optimizing compilers can keep a finished page or chunk for a short time.`,
+    `Absolute worker heap peak of the limited scan: ${each((raw) => `${megabytes(Math.max(0, ...raw.heaps.filter(({ spec }) => spec.class !== "all").flatMap(({ runs }) => runs.map((run) => run.heap!.peakBytes))))} MB`)}. Baseline and final heap are recorded separately; these runs do not force garbage collection. The retention tests check live rows independently of V8 collection timing.`,
   );
   notes.push(
-    `MessageChannel of the scheduler, over one limited, one unlimited, and one cancelled run: ${each((raw) => `${raw.channels.created} opened, ${raw.channels.closed} closed, ${raw.channels.open.length} left open`)}.`,
+    `Scheduler channels in completed worker runs: ${each((raw) => {
+      const counts = allRuns(raw).flatMap((run) => run.channels ?? []);
+      return `${counts.reduce((n, count) => n + count.created, 0)} opened, ${counts.reduce((n, count) => n + count.closed, 0)} closed, ${Math.max(0, ...counts.map((count) => count.open))} maximum left open`;
+    })}. Cancelled jobs acknowledge closed files and SQLite connections, or await process exit when a forced stop is needed.`,
   );
   const twoLibraries = rawTiers.filter(
     (raw) => raw.twoLibraries.queries.length > 0,
@@ -952,6 +934,7 @@ let environmentLines: string[] = [];
 try {
   const created = await runVaultScript(["create", vaultPath]);
   vaultId = created.stdout.trim().split("\n")[0]!.trim();
+  await keepRendering(vaultId);
   environmentLines = await environment();
   for (const items of tiers) {
     const raw: RawTier = {
@@ -961,7 +944,6 @@ try {
       heaps: [],
       cancels: [],
       unreported: [],
-      channels: { created: 0, closed: 0, open: [] },
       twoLibraries: { queries: [], cancels: [], complete: false },
     };
     rawTiers.push(raw);
@@ -981,7 +963,9 @@ try {
 
 await mkdir(outDir, { recursive: true });
 const rawPath = join(outDir, "raw.json");
-const notes: string[] = [];
+const notes: string[] = [
+  "Queries run in Electron utility processes. The measurement vault uses the E2E window setup: background throttling is disabled and focus is emulated without moving OS focus. Execution slices and encoding steps retain the spec's 16 ms p99 / 32 ms maximum limits. Renderer timer gaps (4 ms sampling) are an additional check against those limits. All limit=all runs write complete JSON files and return small receipts. These measurements include worker transfer and export publication. Fixture startup and initial search indexing finish before timing begins.",
+];
 const measured = rawTiers.map((raw) => toTier(raw, notes));
 if (failure) {
   notes.push(

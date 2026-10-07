@@ -124,7 +124,14 @@ async function fixture(mode: string) {
     }),
   );
   const ctx: Parameters<typeof prepareAnnotationInsert>[0] = {
-    db: { acquireRead: async () => ({ client, [Symbol.dispose]() {} }) },
+    db: {
+      acquireRead: async () => ({
+        client,
+        uri: ":memory:",
+        source: { id: null, databasePath: ":memory:" },
+        [Symbol.dispose]() {},
+      }),
+    },
     zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
     settings: {
       current: settings,

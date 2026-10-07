@@ -10,7 +10,8 @@
 // apps/obsidian/policies/cli-text.md.
 
 import { regex } from "arkregex";
-import { Cause, Exit } from "effect";
+import { Cause, Data, Effect, Exit } from "effect";
+import { isAbsolute } from "node:path";
 import type { CliData, CliFlag, CliFlags, CliHandler, Plugin } from "obsidian";
 import * as v from "valibot";
 
@@ -24,11 +25,14 @@ import type {
   ItemQueryError,
   ItemQuerySchema,
   QueryResult,
+  QueryRow,
+  QuerySummary,
   SortSpec,
 } from "@zotlit/item-query";
 
 import { getLogger } from "@/lib/log";
 import { yieldToMain } from "@/lib/yield-to-main";
+import type { DatabaseReadLease } from "@/services/database/service";
 import { compareSelectors, selectorKey } from "@/services/library-scope/scope";
 import type {
   LibraryScope,
@@ -40,6 +44,7 @@ import {
   DEFAULT_CLI_LIMIT,
   DIAGNOSTIC_HINTS,
   ITEM_QUERY_COMMAND,
+  INLINE_MAX_BYTES,
   ITEM_QUERY_GUIDE_COMMAND,
   ITEM_QUERY_PARAMS,
   ITEM_QUERY_SCHEMA_COMMAND,
@@ -47,7 +52,7 @@ import {
 } from "./contract";
 import type { ItemQueryCommand } from "./contract";
 import { GUIDE_TOPIC_NAMES, parseGuideTopic, renderGuide } from "./guide";
-import { runDescribeItemQuery, runItemQuery } from "./run";
+import { runDescribeItemQuery, runItemQueryTo } from "./run";
 import type { ItemQueryInstrument } from "./run";
 
 const logger = getLogger(["item-query"]);
@@ -84,7 +89,7 @@ interface Diagnostic {
   details?: { parameter: string };
 }
 
-function diagnostic(
+export function diagnostic(
   code: AdapterDiagnosticCode,
   message: string,
   options: { details?: Diagnostic["details"] } = {},
@@ -117,6 +122,7 @@ interface DecodedArguments {
   fields: readonly string[] | undefined;
   sort: readonly SortSpec[] | undefined;
   limit: number | null;
+  output: string | undefined;
 }
 
 type EnvelopeTail =
@@ -128,7 +134,8 @@ type EnvelopeTail =
       request: object;
       returnedCount: number;
       truncated: boolean;
-      rows: readonly { indexedKey: string; values: object }[];
+      rows?: readonly { indexedKey: string; values: object }[];
+      file?: { path: string; bytes: number; format: "json" };
     }
   | { ok: true; identity: WorkbenchIdentity; schema: SchemaWire };
 
@@ -149,18 +156,19 @@ function envelope(command: ItemQueryCommand, tail: EnvelopeTail): string {
   );
 }
 
-function failure(command: ItemQueryCommand, diagnostic: Diagnostic): string {
+export function failure(
+  command: ItemQueryCommand,
+  diagnostic: Diagnostic,
+): string {
   return envelope(command, { ok: false, diagnostic });
 }
 
 /** A pinned read of the active Zotero source, released on dispose. */
-export interface ItemQueryLease extends Disposable {
-  readonly client: NodeDatabaseClient;
-}
+export type ItemQueryLease = DatabaseReadLease;
 
 export interface ItemQueryCliDeps {
   acquireRead(): Promise<ItemQueryLease>;
-  identity(): Promise<WorkbenchIdentity>;
+  vault(): WorkbenchIdentity["vault"];
   /**
    * The Library Scope in force: the default Target Libraries of a query are
    * its available Libraries.
@@ -175,11 +183,17 @@ export interface ItemQueryCliDeps {
    * milliseconds; the measurement command sets it.
    */
   onAnswerStep?: (ms: number) => void;
+  /** Open an unpublished file owned by the job; close on failure or disposal too. */
+  openOutput?: (path: string) => Promise<{
+    write(text: string): Promise<void>;
+    close(): Promise<void>;
+  }>;
 }
 
 export function registerItemQueryCli(
   plugin: Plugin,
   deps: Omit<ItemQueryCliDeps, "signal">,
+  query: (params: CliData, signal: AbortSignal) => Promise<string>,
 ): void {
   const unload = new AbortController();
   plugin.register(() => unload.abort());
@@ -187,7 +201,7 @@ export function registerItemQueryCli(
     ITEM_QUERY_COMMAND,
     "Query the Items of Zotero Libraries and return the matches as JSON",
     itemQueryFlags,
-    createItemQueryHandler({ ...deps, signal: unload.signal }),
+    (params) => query(params, unload.signal),
   );
   plugin.registerCliHandler(
     ITEM_QUERY_SCHEMA_COMMAND,
@@ -259,6 +273,12 @@ export function itemQueryGuideHandler(params: CliData): string {
   return renderGuide(topic);
 }
 
+/** Reject malformed CLI parameters before the host acquires a database lease. */
+export function itemQueryArgumentFailure(params: CliData): string | undefined {
+  const decoded = decodeArguments(params);
+  return "code" in decoded ? failure(ITEM_QUERY_COMMAND, decoded) : undefined;
+}
+
 /**
  * The handler answers the envelope for a result and for every typed failure.
  * It rejects with the abort reason when the run is cancelled, and with an
@@ -290,8 +310,8 @@ export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
       }
       deps.signal.throwIfAborted();
     }
-    const read = await withLease(deps, ITEM_QUERY_COMMAND, (client) =>
-      runItemQuery(
+    const read = await withLease(deps, ITEM_QUERY_COMMAND, (client, identity) =>
+      runItemQueryTo(
         { scope, requireEach: named !== null },
         {
           filter: decoded.filter,
@@ -299,7 +319,31 @@ export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
           sort: decoded.sort,
           limit: decoded.limit,
         },
-        { client, signal: deps.signal, instrument: deps.instrument },
+        {
+          client,
+          signal: deps.signal,
+          instrument: deps.instrument,
+          begin: (summary, libraries) =>
+            outputStep(() =>
+              createAnswer(summary, {
+                identity,
+                libraries: libraries.available.map(({ selector, name }) =>
+                  selector.type === "group"
+                    ? { ...selector, name: name ?? "" }
+                    : selector,
+                ),
+                signal: deps.signal,
+                onAnswerStep: deps.onAnswerStep,
+                output: decoded.output,
+                openOutput: deps.openOutput,
+              }),
+            ).pipe(
+              Effect.map((answer) => ({
+                write: (rows) => outputStep(() => answer.write(rows)),
+                end: () => outputStep(() => answer.end()),
+              })),
+            ),
+        },
       ),
     );
     if ("answer" in read) return read.answer;
@@ -330,16 +374,7 @@ export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
               ),
       );
     }
-    return answerExit(Exit.succeed(result), {
-      identity: read.identity,
-      libraries: libraries.available.map(({ selector, name }) =>
-        selector.type === "group"
-          ? { ...selector, name: name ?? "" }
-          : selector,
-      ),
-      signal: deps.signal,
-      onAnswerStep: deps.onAnswerStep,
-    });
+    return result;
   };
 }
 
@@ -348,13 +383,13 @@ export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
  * it ends after the last database read and before the caller answers or
  * rejects. A source that gives no lease answers `source-unavailable`.
  *
- * The identity is read while the lease holds the client, so the answer names
- * the source its rows come from when the user connects another one in the run.
+ * The lease carries the source identity of its copy. Preferences can name a
+ * newer source while another lease still pins this copy.
  */
 async function withLease<T>(
   deps: ItemQueryCliDeps,
   command: ItemQueryCommand,
-  read: (client: NodeDatabaseClient) => Promise<T>,
+  read: (client: NodeDatabaseClient, identity: WorkbenchIdentity) => Promise<T>,
 ): Promise<{ answer: string } | { value: T; identity: WorkbenchIdentity }> {
   let acquired: ItemQueryLease;
   try {
@@ -372,8 +407,8 @@ async function withLease<T>(
     };
   }
   using lease = acquired;
-  const identity = await deps.identity();
-  return { value: await read(lease.client), identity };
+  const identity = { vault: deps.vault(), source: lease.source };
+  return { value: await read(lease.client, identity), identity };
 }
 
 type ItemQueryExit = Exit.Exit<
@@ -395,96 +430,145 @@ export async function answerExit(
     libraries: readonly LibraryWire[];
     signal: AbortSignal;
     onAnswerStep?: (ms: number) => void;
+    output?: string;
+    openOutput?: ItemQueryCliDeps["openOutput"];
   },
 ): Promise<string> {
   if (Exit.isSuccess(exit)) return answerResult(exit.value, context);
   return answerFailure(exit.cause, ITEM_QUERY_COMMAND, context.signal);
 }
 
-/**
- * The time one step of the answer takes rows: half the slice budget of the
- * engine, which leaves room for a garbage collection of V8 in the step.
- */
+/** Keep cancellation observable between serialization chunks in the worker. */
 const ANSWER_STEP_BUDGET_MS = SLICE_BUDGET_MS / 2;
-
-/** The end of the envelope of a result without rows. */
 const NO_ROWS = "[]\n}";
-/** The text around the rows of one chunk: `rows` is a top-level key. */
 const CHUNK_START = '{\n  "rows": [';
 const CHUNK_END = "\n  ]\n}";
-/** The rows of the first chunk, which measures the size of a row. */
 const FIRST_CHUNK_ROWS = 64;
-/**
- * The text of one chunk. One `JSON.stringify` call makes it, so it bounds the
- * work between two reads of the clock. A string of this size is outside the
- * young generation of V8: a scavenge does not copy it, and the answer makes a
- * few hundred strings for 100,000 rows in place of several for each row.
- */
 const CHUNK_TEXT_LENGTH = 256 * 1024;
 
-/**
- * Build the envelope of a result: the pretty JSON of the complete envelope,
- * made in steps. A result of every match has no row limit, so one step takes
- * chunks of rows until {@link ANSWER_STEP_BUDGET_MS} ends, then gives the
- * window a turn and stops when the run is cancelled.
- *
- * `JSON.stringify` writes a Temporal value as its ISO text.
- */
+type AnswerContext = Parameters<typeof answerExit>[1];
+
+class ItemQueryOutputError extends Data.TaggedError("ItemQueryOutputError")<{
+  diagnostic: Diagnostic;
+}> {}
+
+function outputFailure(error: unknown): ItemQueryOutputError | undefined {
+  if (error instanceof ItemQueryOutputError) return error;
+  if (error instanceof Error && "code" in error)
+    return new ItemQueryOutputError({
+      diagnostic: diagnostic("output-error", error.message),
+    });
+}
+
+function outputStep<A>(
+  step: () => Promise<A>,
+): Effect.Effect<A, ItemQueryOutputError> {
+  return Effect.tryPromise({ try: step, catch: (error) => error }).pipe(
+    Effect.catch((error) => {
+      const failed = outputFailure(error);
+      return failed ? Effect.fail(failed) : Effect.die(error);
+    }),
+    // File acquisition/writes must settle before the job disposes its files.
+    // The parent can still stop the whole process if native I/O blocks.
+    Effect.uninterruptible,
+  );
+}
+
+/** The materialized-result adapter shares the incremental wire encoder. */
 async function answerResult(
   result: QueryResult,
-  context: {
-    identity: WorkbenchIdentity;
-    libraries: readonly LibraryWire[];
-    signal: AbortSignal;
-    onAnswerStep?: (ms: number) => void;
-  },
+  context: AnswerContext,
 ): Promise<string> {
-  let stepStart = performance.now();
-  const head = envelope(ITEM_QUERY_COMMAND, {
-    ok: true,
+  try {
+    const answer = await createAnswer(result, context);
+    await answer.write(result.rows);
+    return await answer.end();
+  } catch (error) {
+    context.signal.throwIfAborted();
+    const failed = outputFailure(error);
+    if (failed) return failure(ITEM_QUERY_COMMAND, failed.diagnostic);
+    throw error;
+  }
+}
+
+/** Byte-identical pretty JSON; only the current projection chunk is retained. */
+async function createAnswer(result: QuerySummary, context: AnswerContext) {
+  const summary = {
+    ok: true as const,
     identity: context.identity,
     libraries: context.libraries,
-    // The Libraries as the `libraries` argument takes them, so the request
-    // shows how the default, `all`, or `library` was applied.
-    request: {
-      libraries: context.libraries.map(selectorKey),
-      ...result.query,
-    },
+    request: { libraries: context.libraries.map(selectorKey), ...result.query },
     returnedCount: result.returnedCount,
     truncated: result.truncated,
-    rows: [],
-  });
-  const { rows } = result;
-  // `text` grows by concatenation, which V8 keeps as a rope: no step copies
-  // the rows before it.
-  let text = head;
-  if (rows.length > 0) {
-    text = `${head.slice(0, -NO_ROWS.length)}[`;
-    let chunkRows = FIRST_CHUNK_ROWS;
-    for (let start = 0; start < rows.length; ) {
-      const chunk = rows.slice(start, start + chunkRows);
-      // The rows at the depth they have in the envelope.
-      const wire = JSON.stringify({ rows: chunk }, null, 2).slice(
-        CHUNK_START.length,
-        -CHUNK_END.length,
-      );
-      text += start === 0 ? wire : `,${wire}`;
-      start += chunk.length;
-      chunkRows = Math.max(
-        1,
-        Math.ceil(CHUNK_TEXT_LENGTH / (wire.length / chunk.length)),
-      );
-      const now = performance.now();
-      if (now - stepStart < ANSWER_STEP_BUDGET_MS) continue;
-      context.onAnswerStep?.(now - stepStart);
-      await yieldToMain();
-      context.signal.throwIfAborted();
-      stepStart = performance.now();
+  };
+  const head = envelope(ITEM_QUERY_COMMAND, { ...summary, rows: [] });
+  let text = "";
+  let bytes = 0;
+  let first = true;
+  let chunkRows = FIRST_CHUNK_ROWS;
+  // Open only after query validation and Library resolution succeed.
+  const file =
+    context.output === undefined
+      ? undefined
+      : await context.openOutput?.(context.output);
+  if (context.output !== undefined && !file)
+    throw new Error("Item Query export has no file writer");
+  const append = async (chunk: string) => {
+    context.signal.throwIfAborted();
+    bytes += Buffer.byteLength(chunk);
+    if (file) await file.write(chunk);
+    else {
+      if (bytes > INLINE_MAX_BYTES)
+        throw new ItemQueryOutputError({
+          diagnostic: diagnostic(
+            "result-too-large",
+            `The JSON response exceeds the inline limit of ${INLINE_MAX_BYTES} bytes.`,
+          ),
+        });
+      text += chunk;
     }
-    text += CHUNK_END;
-  }
-  context.onAnswerStep?.(performance.now() - stepStart);
-  return text;
+  };
+  await append(
+    result.returnedCount === 0 ? head : `${head.slice(0, -NO_ROWS.length)}[`,
+  );
+  return {
+    write: async (rows: readonly QueryRow[]) => {
+      let stepMs = 0;
+      for (let start = 0; start < rows.length; ) {
+        context.signal.throwIfAborted();
+        const stepStart = performance.now();
+        const chunk = rows.slice(start, start + chunkRows);
+        const wire = JSON.stringify({ rows: chunk }, null, 2).slice(
+          CHUNK_START.length,
+          -CHUNK_END.length,
+        );
+        const part = first ? wire : `,${wire}`;
+        first = false;
+        start += chunk.length;
+        chunkRows = Math.max(
+          1,
+          Math.ceil(CHUNK_TEXT_LENGTH / (wire.length / chunk.length)),
+        );
+        stepMs += performance.now() - stepStart;
+        await append(part);
+        if (stepMs < ANSWER_STEP_BUDGET_MS) continue;
+        context.onAnswerStep?.(stepMs);
+        await yieldToMain();
+        context.signal.throwIfAborted();
+        stepMs = 0;
+      }
+      context.onAnswerStep?.(stepMs);
+    },
+    end: async () => {
+      if (result.returnedCount > 0) await append(CHUNK_END);
+      if (!file) return text;
+      await file.close();
+      return envelope(ITEM_QUERY_COMMAND, {
+        ...summary,
+        file: { path: context.output!, bytes, format: "json" },
+      });
+    },
+  };
 }
 
 /**
@@ -494,14 +578,22 @@ async function answerResult(
  */
 function answerFailure(
   cause: Cause.Cause<
-    ItemQueryError | ItemQueryLayoutError | ItemQueryDatabaseError
+    | ItemQueryError
+    | ItemQueryLayoutError
+    | ItemQueryDatabaseError
+    | ItemQueryOutputError
   >,
   command: ItemQueryCommand,
   signal: AbortSignal,
 ): string {
+  // A masked file operation can finish with the abort reason as a defect.
+  // The caller's cancelled signal remains the authority at this Promise edge.
+  signal.throwIfAborted();
   const error = Cause.findErrorOption(cause);
   if (error._tag === "Some") {
     const failed = error.value;
+    if (failed._tag === "ItemQueryOutputError")
+      return failure(command, failed.diagnostic);
     if (failed._tag === "ItemQueryError") {
       return failure(command, {
         code: failed.code,
@@ -635,7 +727,14 @@ function decodeArguments(params: CliData): DecodedArguments | Diagnostic {
     }
   }
 
-  return { libraries, filter, fields, sort, limit };
+  const output = params.output;
+  if (output !== undefined && (!isAbsolute(output) || output.includes("\0"))) {
+    return invalid(
+      "output",
+      "output must be an absolute path to a new JSON file.",
+    );
+  }
+  return { libraries, filter, fields, sort, limit, output };
 }
 
 /** The Library that `personal` or `group:<groupID>` names. */

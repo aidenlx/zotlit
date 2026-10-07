@@ -18,7 +18,12 @@ export {
 } from "./error";
 export { DEFAULT_FIELDS } from "./fields";
 export { QueryTimeZone } from "./query-clock";
-export { queryItems } from "./query-items";
+export {
+  queryItems,
+  consumeQueryItems,
+  type QueryConsumer,
+  type QuerySummary,
+} from "./query-items";
 export { DEFAULT_SORT } from "./request";
 export type {
   ItemQuery,

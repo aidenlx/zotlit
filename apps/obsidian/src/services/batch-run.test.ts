@@ -42,7 +42,13 @@ const sentinelClient = { $sentinel: true } as unknown as NodeDatabaseClient;
 /** Lease stub whose dispose is observable, matching DatabaseReadLease's shape. */
 function makeLeasingDb(client: NodeDatabaseClient = sentinelClient): {
   db: {
-    acquireRead: () => Promise<Disposable & { client: NodeDatabaseClient }>;
+    acquireRead: () => Promise<
+      Disposable & {
+        client: NodeDatabaseClient;
+        uri: string;
+        source: { id: null; databasePath: string };
+      }
+    >;
   };
   acquireRead: ReturnType<typeof vi.fn>;
   dispose: ReturnType<typeof vi.fn>;
@@ -50,6 +56,8 @@ function makeLeasingDb(client: NodeDatabaseClient = sentinelClient): {
   const dispose = vi.fn();
   const acquireRead = vi.fn(async () => ({
     client,
+    uri: ":memory:",
+    source: { id: null, databasePath: ":memory:" },
     [Symbol.dispose]: dispose,
   }));
   return { db: { acquireRead }, acquireRead, dispose };

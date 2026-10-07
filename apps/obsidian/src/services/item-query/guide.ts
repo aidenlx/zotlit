@@ -10,6 +10,7 @@ import {
   DEFAULT_CLI_LIMIT,
   DIAGNOSTIC_HINTS,
   ITEM_QUERY_COMMAND,
+  INLINE_MAX_BYTES,
   ITEM_QUERY_GUIDE_COMMAND,
   ITEM_QUERY_SCHEMA_COMMAND,
   itemQueryFlags,
@@ -216,6 +217,17 @@ ENVELOPE
   {"type":"group","groupID","name"}. request.libraries has the same
   Libraries in the form of the libraries argument.
   The Indexed Key of an Item in a group ends with g and the group ID.
+
+FILE EXPORTS
+  Inline responses contain at most ${INLINE_MAX_BYTES} UTF-8 bytes. For a large
+  result, add output=<absolute-path> with a new filename in an existing
+  directory. The file contains the complete JSON envelope described above.
+  The CLI returns the same metadata with file instead of rows:
+  file.path is the absolute path, file.bytes is the UTF-8 byte count, and
+  file.format is json. Read that file to get the Query Rows.
+  The export becomes available when the complete file is written. An existing
+  file is kept intact. Cancellation removes the unpublished file.
+  Example: add output=/absolute/path/items.json to a limit=all query.
 
 DIAGNOSTICS
   On failure, ok is false and diagnostic holds code, message, and hint.

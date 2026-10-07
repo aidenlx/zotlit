@@ -703,6 +703,8 @@ describe("createNote", () => {
       let leaseReleased = false;
       deps.db.acquireRead = async () => ({
         client,
+        uri: ":memory:",
+        source: { id: null, databasePath: ":memory:" },
         [Symbol.dispose]() {
           leaseReleased = true;
         },
@@ -5368,6 +5370,8 @@ function makeDb(): SyncRenderDeps["db"] {
     client,
     acquireRead: async () => ({
       client,
+      uri: ":memory:",
+      source: { id: null, databasePath: ":memory:" },
       [Symbol.dispose]() {},
     }),
   };

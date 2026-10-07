@@ -1,3 +1,4 @@
+import { getLogger } from "@logtape/logtape";
 import { Effect } from "effect";
 
 import { formatIndexedKey } from "@zotlit/db";
@@ -44,6 +45,8 @@ import type {
 } from "./request";
 import { ItemQueryTuning } from "./tuning";
 
+const logger = getLogger(["zotlit", "item-query"]);
+
 /** One match while the query orders it. */
 interface Match {
   readonly scan: ScanRow;
@@ -51,6 +54,15 @@ interface Match {
   readonly keys: readonly SortKey[];
   /** The Library of the match, as its index in the Target Libraries. */
   readonly library: number;
+}
+
+/** Metadata known before the projection pass begins. */
+export type QuerySummary = Omit<QueryResult, "rows">;
+
+/** Each write completes before the engine projects the next chunk. */
+export interface QueryConsumer<A, E = never, R = never> {
+  write(rows: readonly QueryRow[]): Effect.Effect<void, E, R>;
+  end(): Effect.Effect<A, E, R>;
 }
 
 /**
@@ -64,6 +76,34 @@ export function queryItems(
   QueryResult,
   ItemQueryError | ItemQueryLayoutError | ItemQueryDatabaseError,
   ItemQueryDatabase
+> {
+  return consumeQueryItems(request, (summary) =>
+    Effect.sync(() => {
+      const rows: QueryRow[] = [];
+      return {
+        write: (chunk) =>
+          Effect.sync(() => {
+            for (const row of chunk) rows.push(row);
+          }),
+        end: () => Effect.succeed({ ...summary, rows }),
+      };
+    }),
+  );
+}
+
+/**
+ * Deliver the same query in final-order projection chunks. Begin runs once
+ * after ordering, including for an empty result. Failure or interruption stops
+ * delivery; end runs only after every write succeeds. Consumer state belongs
+ * inside begin, so each execution is independent.
+ */
+export function consumeQueryItems<A, E, R>(
+  request: ItemQueryRequest,
+  begin: (summary: QuerySummary) => Effect.Effect<QueryConsumer<A, E, R>, E, R>,
+): Effect.Effect<
+  A,
+  ItemQueryError | ItemQueryLayoutError | ItemQueryDatabaseError | E,
+  ItemQueryDatabase | R
 > {
   return Effect.gen(function* () {
     const { libraries } = request;
@@ -199,15 +239,29 @@ export function queryItems(
               collectionPaths: pathsOf.get(library),
             })
           : null;
-      const candidates = candidatePlan
-        ? yield* readCandidates(
-            candidatePlan,
-            libraryID,
-            Math.floor(
-              (yield* readLibraryRowCount(libraryID)) * tuning.capRatio,
-            ),
-          )
+      const candidateCap = candidatePlan
+        ? Math.floor((yield* readLibraryRowCount(libraryID)) * tuning.capRatio)
         : null;
+      const candidates = candidatePlan
+        ? yield* readCandidates(candidatePlan, libraryID, candidateCap!)
+        : null;
+      logger.debug("Item Query uses {plan} for Library {libraryID}", {
+        libraryID,
+        groupID: library.groupID,
+        plan: candidates === null ? "scan" : "candidates",
+        reason:
+          candidates !== null
+            ? null
+            : !filter
+              ? "no-filter"
+              : tuning.forceScan
+                ? "forced-scan"
+                : candidatePlan
+                  ? "candidate-cap-exceeded"
+                  : "unsupported-filter",
+        candidateCount: candidates?.size ?? null,
+        candidateCap,
+      });
       if (candidates) {
         const itemIDs = [...candidates];
         for (let start = 0; start < itemIDs.length; start += scanPageSize) {
@@ -235,14 +289,19 @@ export function queryItems(
       vocabulary && pathNeeds.some(needsHydration)
         ? hydrateFields(pathNeeds, vocabulary)
         : null;
-    const rows: QueryRow[] = [];
+    const consumer = yield* begin({
+      query,
+      returnedCount: returned.length,
+      truncated,
+    });
     for (let start = 0; start < returned.length; start += hydrateChunkSize) {
       const chunk = returned.slice(start, start + hydrateChunkSize);
       const hydrated = yield* hydrate(
         fields,
         chunk.map((row) => row.scan.itemID),
       );
-      yield* Effect.sync(() => {
+      const rows = yield* Effect.sync(() => {
+        const rows: QueryRow[] = [];
         for (const { library, scan } of chunk) {
           const item = itemOf(scan, hydrated);
           rows.push({
@@ -252,9 +311,11 @@ export function queryItems(
             ),
           });
         }
+        return rows;
       });
+      yield* consumer.write(rows);
     }
-    return { query, rows, returnedCount: rows.length, truncated };
+    return yield* consumer.end();
   });
 }
 

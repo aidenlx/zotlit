@@ -21,6 +21,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@logtape/logtape": "catalog:",
     "@zotlit/db": "workspace:*",
     "@zotlit/filter-expression": "workspace:*",
     "@zotlit/zotero-types": "workspace:*",

@@ -948,6 +948,8 @@ it("rejects a late database read from the prior configured database", async () =
   );
   const oldLease = Promise.withResolvers<{
     client: NodeDatabaseClient;
+    uri: string;
+    source: { id: null; databasePath: string };
     [Symbol.dispose](): undefined;
   }>();
   acquireRead.mockImplementationOnce(() => oldLease.promise);
@@ -959,7 +961,12 @@ it("rejects a late database read from the prior configured database", async () =
   );
   dbEvents.emit("changed");
   const current = await repository.read("RGRPDF24");
-  oldLease.resolve({ client: oldClient, [Symbol.dispose]: () => undefined });
+  oldLease.resolve({
+    client: oldClient,
+    uri: ":memory:",
+    source: { id: null, databasePath: ":memory:" },
+    [Symbol.dispose]: () => undefined,
+  });
   await late;
 
   answering = true;
@@ -2902,6 +2909,8 @@ it.each(["patch", "create"] as const)(
     const verifying = Promise.withResolvers<void>();
     const lease = Promise.withResolvers<{
       client: NodeDatabaseClient;
+      uri: string;
+      source: { id: null; databasePath: string };
       [Symbol.dispose](): undefined;
     }>();
     const { repository, client, acquireRead, dbEvents } = await writable(
@@ -2934,7 +2943,12 @@ it.each(["patch", "create"] as const)(
     await verifying.promise;
     dbEvents.emit("changed");
     await repository.read("RGRPDF24");
-    lease.resolve({ client, [Symbol.dispose]: () => undefined });
+    lease.resolve({
+      client,
+      uri: ":memory:",
+      source: { id: null, databasePath: ":memory:" },
+      [Symbol.dispose]: () => undefined,
+    });
 
     await expect(running).resolves.toEqual(
       operation === "patch"
@@ -2951,6 +2965,8 @@ it("rejects verification from an old database generation", async () => {
   const verification = Promise.withResolvers<void>();
   const oldLease = Promise.withResolvers<{
     client: NodeDatabaseClient;
+    uri: string;
+    source: { id: null; databasePath: string };
     [Symbol.dispose](): undefined;
   }>();
   const { repository, client, acquireRead, dbEvents } = await writable(stack, {
@@ -2984,7 +3000,12 @@ it("rejects verification from an old database generation", async () => {
   );
   dbEvents.emit("changed");
   const current = await repository.read("RGRPDF24");
-  oldLease.resolve({ client: oldClient, [Symbol.dispose]: () => undefined });
+  oldLease.resolve({
+    client: oldClient,
+    uri: ":memory:",
+    source: { id: null, databasePath: ":memory:" },
+    [Symbol.dispose]: () => undefined,
+  });
 
   await expect(running).resolves.toEqual({
     kind: "failed",

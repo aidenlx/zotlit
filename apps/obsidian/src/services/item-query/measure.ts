@@ -9,16 +9,13 @@
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 
-import { Effect } from "effect";
 import type { CliData, CliFlags, CliHandler, Plugin } from "obsidian";
 
-import { ItemQueryStatementObserver } from "@zotlit/db/item-query";
 import type { ItemQueryReader } from "@zotlit/db/item-query";
-import { ItemQuerySliceObserver } from "@zotlit/item-query";
 
-import { createItemQueryHandler, itemQueryFlags } from "./cli";
-import type { ItemQueryCliDeps } from "./cli";
-import type { ItemQueryInstrument } from "./run";
+import { itemQueryFlags } from "./cli";
+import type { ItemQueryService } from "./service";
+import type { CancellationEvent, WorkerMeasurement } from "./trace";
 
 export const ITEM_QUERY_MEASURE_COMMAND = "zotlit:item-query-measure" as const;
 export const ITEM_QUERY_MEASURE_CANCEL_COMMAND =
@@ -56,20 +53,23 @@ export interface ItemQueryMeasureReport {
   truncated?: boolean;
   /** The handler, from its call to its answer or rejection. */
   totalMs: number;
-  /** Argument decoding and the source lease. */
-  leaseMs?: number;
-  /** The Effect run: the resolution of the Target Libraries and `queryItems`. */
+  /** Time outside the worker: the source lease, queue, transfer, and publication. */
+  adapterMs?: number;
+  /** The Effect run: Library resolution, query execution, encoding, and file writes. */
   engineMs?: number;
-  /** The envelope, built in steps after the engine settles. */
+  /** Cumulative synchronous encoding time, included in engineMs. */
   answerMs?: number;
+  channels?: { created: number; closed: number; open: number };
   answerBytes?: number;
   /** The duration of each step in which the handler built the answer. */
   answerSteps: number[];
   /** The duration of each slice, in run order. */
   slices: number[];
+  /** Renderer timer gaps across the complete worker call, including result transfer. */
+  uiGaps: number[];
   worstSlice?: SliceRecord;
   pauses: number;
-  /** The longest time the window kept the fiber paused. */
+  /** The longest time the worker kept the fiber paused. */
   longestPauseMs: number;
   /** By reader: its statements, their rows, and the longest slice that ran one. */
   statements: Partial<
@@ -91,9 +91,9 @@ export interface ItemQueryMeasureReport {
     intendedAtMs?: number;
     /** When the abort signal fired. */
     firedAtMs: number;
-    engineSettledAtMs?: number;
     settledAtMs: number;
     firedAtEpochMs: number;
+    events: CancellationEvent[];
   };
   window: {
     visibleAtStart: boolean;
@@ -107,75 +107,6 @@ export interface ItemQueryMeasureReport {
 
 const now = (): number => performance.now();
 const round = (ms: number): number => Math.round(ms * 100) / 100;
-
-interface Trace {
-  instrument: ItemQueryInstrument;
-  engineStart: number | undefined;
-  engineEnd: number | undefined;
-  paused: number[];
-  resumed: number[];
-  statements: { reader: ItemQueryReader; rows: number; at: number }[];
-  heapSamples: number[];
-}
-
-function createTrace(sampleHeap: boolean): Trace {
-  const sample = sampleHeap
-    ? () => trace.heapSamples.push(process.memoryUsage().heapUsed)
-    : () => {};
-  const trace: Trace = {
-    engineStart: undefined,
-    engineEnd: undefined,
-    paused: [],
-    resumed: [],
-    statements: [],
-    heapSamples: [],
-    instrument: (operation) =>
-      Effect.suspend(() => {
-        trace.engineStart = now();
-        sample();
-        return operation;
-      }).pipe(
-        Effect.onExit(() =>
-          Effect.sync(() => {
-            trace.engineEnd = now();
-            sample();
-          }),
-        ),
-        Effect.provideService(ItemQuerySliceObserver, {
-          paused: (at) => {
-            trace.paused.push(at);
-            sample();
-          },
-          resumed: (at) => {
-            trace.resumed.push(at);
-          },
-        }),
-        Effect.provideService(ItemQueryStatementObserver, (run) => {
-          trace.statements.push({
-            reader: run.reader,
-            rows: run.rows.length,
-            at: now(),
-          });
-        }),
-      ),
-  };
-  return trace;
-}
-
-/** The slices of a run: from its start or a resume to the next pause or its end. */
-function slicesOf(trace: Trace): { start: number; end: number }[] {
-  if (trace.engineStart === undefined || trace.engineEnd === undefined) {
-    return [];
-  }
-  const slices: { start: number; end: number }[] = [];
-  let start: number | undefined = trace.engineStart;
-  for (const [index, pausedAt] of trace.paused.entries()) {
-    if (start !== undefined) slices.push({ start, end: pausedAt });
-    start = trace.resumed[index];
-  }
-  if (start !== undefined) slices.push({ start, end: trace.engineEnd });
-  return slices;
-}
 
 /**
  * @throws {Error} when the text is not a finite number from 0: the run has no
@@ -194,7 +125,7 @@ function decodeCancelAfterMs(raw: string | undefined): number | undefined {
 
 export function registerItemQueryMeasureCli(
   plugin: Plugin,
-  deps: Omit<ItemQueryCliDeps, "signal" | "instrument" | "onAnswerStep">,
+  queryService: Pick<ItemQueryService, "answer">,
 ): void {
   const unload = new AbortController();
   plugin.register(() => unload.abort());
@@ -206,14 +137,16 @@ export function registerItemQueryMeasureCli(
     const own = new AbortController();
     inFlight.add(own);
     const signal = AbortSignal.any([unload.signal, own.signal]);
-    const trace = createTrace(heap === "true");
-    const answerSteps: number[] = [];
-    const handler = createItemQueryHandler({
-      ...deps,
-      signal,
-      instrument: trace.instrument,
-      onAnswerStep: (ms) => answerSteps.push(round(ms)),
-    });
+    let measurement: WorkerMeasurement | undefined;
+    const cancellationEvents: CancellationEvent[] = [];
+    const uiGaps: number[] = [];
+    let lastTick = now();
+    const sampleUi = () => {
+      const at = now();
+      uiGaps.push(round(at - lastTick));
+      lastTick = at;
+    };
+    const uiTimer = window.setInterval(sampleUi, 4);
 
     let hiddenDuringRun = document.visibilityState !== "visible";
     const visibleAtStart = !hiddenDuringRun;
@@ -222,8 +155,8 @@ export function registerItemQueryMeasureCli(
     };
     document.addEventListener("visibilitychange", onVisibility);
 
-    const heapBefore = process.memoryUsage().heapUsed;
     const startedAt = now();
+    const startedAtEpochMs = Date.now();
     let firedAt: number | undefined;
     signal.addEventListener("abort", () => (firedAt = now()), { once: true });
     const timer =
@@ -235,51 +168,25 @@ export function registerItemQueryMeasureCli(
     let answer: string | undefined;
     let error: string | undefined;
     try {
-      answer = await handler(query);
+      answer = await queryService.answer(query, signal, {
+        completed: (report) => {
+          measurement = report;
+        },
+        cancelled: (event) => cancellationEvents.push(event),
+        heap: heap === "true",
+      });
       outcome = "answered";
     } catch (caught) {
       outcome = signal.aborted ? "cancelled" : "failed";
       error = caught instanceof Error ? caught.message : String(caught);
     }
+    sampleUi();
+    window.clearInterval(uiTimer);
     const settledAt = now();
-    const heapAfterAnswer = process.memoryUsage().heapUsed;
     window.clearTimeout(timer);
     inFlight.delete(own);
     document.removeEventListener("visibilitychange", onVisibility);
 
-    const slices = slicesOf(trace);
-    const durations = slices.map((slice) => round(slice.end - slice.start));
-    let worstSlice: SliceRecord | undefined;
-    for (const [index, slice] of slices.entries()) {
-      const ms = durations[index]!;
-      if (worstSlice && worstSlice.ms >= ms) continue;
-      worstSlice = {
-        ms,
-        index,
-        statements: trace.statements
-          .filter(({ at }) => at >= slice.start && at <= slice.end)
-          .map(({ reader, rows }) => ({ reader, rows })),
-      };
-    }
-    const statements: ItemQueryMeasureReport["statements"] = {};
-    for (const { reader, rows, at } of trace.statements) {
-      const total = (statements[reader] ??= {
-        count: 0,
-        rows: 0,
-        maxRows: 0,
-        longestSliceMs: 0,
-      });
-      total.count += 1;
-      total.rows += rows;
-      total.maxRows = Math.max(total.maxRows, rows);
-      const slice = slices.findIndex(
-        ({ start, end }) => at >= start && at <= end,
-      );
-      total.longestSliceMs = Math.max(
-        total.longestSliceMs,
-        durations[slice] ?? 0,
-      );
-    }
     const envelope =
       answer === undefined
         ? undefined
@@ -298,51 +205,31 @@ export function registerItemQueryMeasureCli(
       returnedCount: envelope?.returnedCount,
       truncated: envelope?.truncated,
       totalMs: round(settledAt - startedAt),
-      leaseMs:
-        trace.engineStart === undefined
+      adapterMs:
+        measurement === undefined
           ? undefined
-          : round(trace.engineStart - startedAt),
-      engineMs:
-        trace.engineStart === undefined || trace.engineEnd === undefined
-          ? undefined
-          : round(trace.engineEnd - trace.engineStart),
-      answerMs:
-        trace.engineEnd === undefined
-          ? undefined
-          : round(settledAt - trace.engineEnd),
+          : round(settledAt - startedAt - measurement.workerMs),
+      engineMs: measurement?.engineMs,
+      answerMs: measurement?.answerMs,
       answerBytes: answer?.length,
-      answerSteps,
-      slices: durations,
-      worstSlice,
-      pauses: trace.paused.length,
-      longestPauseMs: round(
-        Math.max(
-          0,
-          ...trace.resumed.map((at, index) => at - trace.paused[index]!),
-        ),
-      ),
-      statements,
-      heap:
-        heap === "true"
-          ? {
-              beforeBytes: heapBefore,
-              peakBytes: Math.max(heapBefore, ...trace.heapSamples),
-              afterAnswerBytes: heapAfterAnswer,
-              samples: trace.heapSamples.length,
-            }
-          : undefined,
+      answerSteps: measurement?.answerSteps ?? [],
+      uiGaps,
+      slices: measurement?.slices ?? [],
+      worstSlice: measurement?.worstSlice,
+      pauses: measurement?.pauses ?? 0,
+      longestPauseMs: measurement?.longestPauseMs ?? 0,
+      statements: measurement?.statements ?? {},
+      heap: measurement?.heap,
+      channels: measurement?.channels,
       cancel:
         firedAt === undefined
           ? undefined
           : {
               intendedAtMs: cancelAfterMs,
               firedAtMs: round(firedAt - startedAt),
-              engineSettledAtMs:
-                trace.engineEnd === undefined
-                  ? undefined
-                  : round(trace.engineEnd - startedAt),
               settledAtMs: round(settledAt - startedAt),
-              firedAtEpochMs: round(performance.timeOrigin + firedAt),
+              firedAtEpochMs: round(startedAtEpochMs + firedAt - startedAt),
+              events: cancellationEvents,
             },
       window: {
         visibleAtStart,
@@ -350,7 +237,7 @@ export function registerItemQueryMeasureCli(
         hiddenDuringRun,
         focused: document.hasFocus(),
       },
-      startedAtEpochMs: round(performance.timeOrigin + startedAt),
+      startedAtEpochMs,
     };
     return JSON.stringify(report);
   };
@@ -366,12 +253,12 @@ export function registerItemQueryMeasureCli(
     "Request a cancel of every measured Item Query run in progress (dev build)",
     null,
     () => {
-      const arrivedAt = now();
+      const arrivedAtEpochMs = Date.now();
       const cancelled = inFlight.size;
       for (const controller of inFlight) controller.abort();
       return JSON.stringify({
         cancelled,
-        arrivedAtEpochMs: round(performance.timeOrigin + arrivedAt),
+        arrivedAtEpochMs,
       });
     },
   );

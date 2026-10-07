@@ -53,10 +53,7 @@ import { registerPandocResolve } from "./services/pandoc/register";
 import { addProfileActions } from "./services/profile/actions";
 import { registerProtocolHandlers } from "./services/protocol/register";
 import { addReleaseActions } from "./services/release/actions";
-import {
-  readWorkbenchIdentity,
-  registerTemplateWorkbench,
-} from "./services/template-workbench/register";
+import { registerTemplateWorkbench } from "./services/template-workbench/register";
 import { addCitationTemplateActions } from "./services/template/actions";
 import { ZotLitSettingTab } from "./setting-tab";
 import { registerAnnotView } from "./views/annot-view/register";
@@ -542,23 +539,24 @@ export default class ZotLitPlugin extends Plugin {
 
     const itemQueryCliDeps = {
       acquireRead: () => services.db.acquireRead(),
-      identity: () =>
-        readWorkbenchIdentity({
-          app: this.app,
-          zoteroPref: services.zoteroPref,
-        }),
+      vault: () => ({
+        name: this.app.vault.getName(),
+        path: (this.app.vault.adapter as FileSystemAdapter).getBasePath(),
+      }),
       libraryScope: async () => {
         await services.settings.loaded;
         return services.libraryScope.effective;
       },
     };
-    registerItemQueryCli(this, itemQueryCliDeps);
+    registerItemQueryCli(this, itemQueryCliDeps, (params, signal) =>
+      services.itemQuery.answer(params, signal),
+    );
 
     // Measurement-only: lets packages/e2e/src/item-query-measure.ts read the
     // slices, statements, heap, and cancel times of a run. A dev-build port,
     // never registered in a production build.
     if (__DEV__) {
-      registerItemQueryMeasureCli(this, itemQueryCliDeps);
+      registerItemQueryMeasureCli(this, services.itemQuery);
     }
 
     registerPandocResolve(this, {

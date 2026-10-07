@@ -7,7 +7,7 @@
 // holds its rows, so with the compilers on a finished page can stay in memory
 // for the time of one job. That time depends on the load of the machine; it is
 // not a reference of the engine.
-import { Exit } from "effect";
+import { Effect, Exit } from "effect";
 import { setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -21,7 +21,7 @@ import {
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
-import { queryItems } from ".";
+import { consumeQueryItems, queryItems } from ".";
 import type { ItemQueryRequest } from ".";
 import { runEffect } from "./test-helpers";
 
@@ -153,4 +153,42 @@ describe("the rows a limited query retains", () => {
       });
     },
   );
+});
+
+it("incremental delivery retains one projected batch instead of the complete result", async () => {
+  const projected: WeakRef<object>[] = [];
+  let peak = 0;
+  const run = await runEffect(
+    consumeQueryItems(
+      {
+        libraries: [BULK_LIBRARY],
+        fields: ["title", "tags"],
+        limit: null,
+      },
+      (summary) =>
+        Effect.succeed({
+          write: (rows) =>
+            Effect.sync(() => {
+              collectGarbage();
+              collectGarbage();
+              for (const row of rows) projected.push(new WeakRef(row));
+              peak = Math.max(
+                peak,
+                projected.filter((row) => row.deref()).length,
+              );
+            }),
+          end: () => Effect.succeed(summary),
+        }),
+    ),
+    {
+      client: scenario.db,
+      keepStatements: false,
+      tuning: { hydrateChunkSize: 100 },
+    },
+  );
+  expect(Exit.isSuccess(run.exit) && run.exit.value.returnedCount).toBe(
+    BULK_ITEMS,
+  );
+  expect(projected).toHaveLength(BULK_ITEMS);
+  expect(peak).toBeLessThanOrEqual(100);
 });

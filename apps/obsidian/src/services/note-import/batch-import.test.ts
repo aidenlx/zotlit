@@ -229,7 +229,12 @@ function makeDeps(
     db: {
       state: options.dbState ?? "ready",
       client,
-      acquireRead: async () => ({ client, [Symbol.dispose]() {} }),
+      acquireRead: async () => ({
+        client,
+        uri: ":memory:",
+        source: { id: null, databasePath: ":memory:" },
+        [Symbol.dispose]() {},
+      }),
     },
     settings: {
       loaded: Promise.resolve({ ...defaults, ...settings }),

@@ -11,14 +11,8 @@ function measureHandler(): CliHandler {
   registerItemQueryMeasureCli(
     { registerCliHandler, register: () => {} } as unknown as Plugin,
     {
-      acquireRead: async () => {
-        throw new Error("the run took a lease.");
-      },
-      identity: async () => {
-        throw new Error("the run read the identity.");
-      },
-      libraryScope: async () => {
-        throw new Error("the run read the Library Scope.");
+      answer: async () => {
+        throw new Error("the run started.");
       },
     },
   );

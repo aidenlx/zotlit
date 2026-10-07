@@ -18,6 +18,7 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import packageJson from "./package.json" with { type: "json" };
 import { deriveDevVersion } from "./scripts/dev-version.ts";
+import { itemQueryWorker } from "./scripts/item-query-worker.ts";
 import { pandocFilterVariants } from "./scripts/lua-filter.ts";
 import { resolvePandocEnginePin } from "./scripts/pandoc-engine.ts";
 
@@ -127,6 +128,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     plugins: [
+      itemQueryWorker(),
       obsidianI18n({
         project: join(workspaceRoot, "project.inlang"),
         output: "src/lib/i18n/generated",

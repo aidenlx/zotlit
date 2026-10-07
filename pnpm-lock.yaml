@@ -1024,6 +1024,9 @@ importers:
 
   packages/item-query:
     dependencies:
+      '@logtape/logtape':
+        specifier: 'catalog:'
+        version: 2.1.0
       '@zotlit/db':
         specifier: workspace:*
         version: link:../db

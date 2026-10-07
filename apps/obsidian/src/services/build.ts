@@ -34,6 +34,7 @@ import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
 import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
+import { ItemQueryService } from "./item-query/service";
 import { LibraryScopeService } from "./library-scope/service";
 import { LocalBridgeService } from "./local-bridge/service";
 import { LocalServerService } from "./local-server/service";
@@ -278,6 +279,10 @@ export function buildServices(
     .use({
       libraryScope: ({ db, settings }) =>
         new LibraryScopeService({ db, settings }),
+    })
+    .use({
+      itemQuery: ({ db, libraryScope }) =>
+        new ItemQueryService({ db, libraryScope, vault: plugin.app.vault }),
     })
     .use({
       profile: ({ settings, template, noteIndex, libraryScope }) =>

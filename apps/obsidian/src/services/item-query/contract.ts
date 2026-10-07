@@ -18,6 +18,8 @@ export type ItemQueryCommand =
 
 /** The rows a CLI query returns when the caller gives no limit. */
 export const DEFAULT_CLI_LIMIT = 100;
+/** Bounds the string transferred through Obsidian's renderer and CLI. */
+export const INLINE_MAX_BYTES = 1024 * 1024;
 
 export const ITEM_QUERY_PARAMS = [
   "filter",
@@ -26,6 +28,7 @@ export const ITEM_QUERY_PARAMS = [
   "limit",
   "library",
   "libraries",
+  "output",
 ] as const;
 
 type ItemQueryParam = (typeof ITEM_QUERY_PARAMS)[number];
@@ -60,6 +63,11 @@ export const itemQueryFlags: CliFlags = {
     description:
       'Libraries to read as one result set: a JSON array such as ["personal","group:123"], or all for every Library (default: the available Libraries of the Library scope setting)',
   },
+  output: {
+    value: "<absolute-path>",
+    description:
+      "Write the complete JSON response to a new file and return its path and counts",
+  },
 } satisfies Record<ItemQueryParam, CliFlag>;
 
 /**
@@ -68,6 +76,10 @@ export const itemQueryFlags: CliFlags = {
  * hint of its `ItemQueryError`.
  */
 export const DIAGNOSTIC_HINTS = {
+  "result-too-large":
+    "Run the query with output=<absolute-path> to write the complete response to a new JSON file, or reduce the fields or limit.",
+  "output-error":
+    "Use an absolute output path in an existing writable directory, with a filename that does not exist.",
   "invalid-argument":
     "Correct the parameter named in details.parameter, then run the command again.",
   "source-unavailable":

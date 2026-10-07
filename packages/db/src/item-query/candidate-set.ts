@@ -68,8 +68,10 @@ interface ValueParams extends CandidateParams {
 interface FieldParams extends ValueParams {
   /** The field IDs as a JSON array. */
   fieldIDs: string;
-  /** The number that reads as `value`, or null. */
+  /** The REAL value that reads as `value`, or null. */
   number: number | null;
+  /** The exact INTEGER value that reads as `value`, or null. */
+  integer: bigint | null;
 }
 
 interface CollectionParams extends CandidateParams {
@@ -121,6 +123,7 @@ const candidateStatements = {
           or(
             eq(itemDataValues.value, placeholder("value")),
             eq(itemDataValues.value, placeholder("number")),
+            eq(itemDataValues.value, placeholder("integer")),
           ),
           // The value names the `itemData` rows; the field list checks them.
           sql`${unindexed(itemData.fieldID)} in (select value from json_each(${placeholder("fieldIDs")}))`,
@@ -155,6 +158,24 @@ function storedNumberOf(value: string): number | null {
   return Number.isNaN(number) || String(number) !== value ? null : number;
 }
 
+function storedIntegerOf(value: string): bigint | null {
+  // Preserve the full SQLite INTEGER range; Number loses digits before the
+  // index lookup. The round trip keeps spelling such as "012" text-only.
+  try {
+    const integer = BigInt(value);
+    if (
+      String(integer) === value &&
+      integer >= -(2n ** 63n) &&
+      integer < 2n ** 63n
+    ) {
+      return integer;
+    }
+  } catch {
+    // The text does not name an INTEGER.
+  }
+  return null;
+}
+
 /** The rows of one leaf's statement. */
 function leafRows(
   leaf: CandidateLeaf,
@@ -174,6 +195,7 @@ function leafRows(
         ...scope,
         value: leaf.value,
         number: storedNumberOf(leaf.value),
+        integer: storedIntegerOf(leaf.value),
         fieldIDs: JSON.stringify(leaf.fieldIDs),
       });
     case "collection":
