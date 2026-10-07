@@ -5,7 +5,8 @@ import type {
   ItemView as MockItemView,
   Scope as MockScope,
 } from "@mock/obsidian";
-import { TFile } from "obsidian";
+import { Effect } from "effect";
+import { SuggestModal, TFile } from "obsidian";
 import type { App, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 // @vitest-environment happy-dom
@@ -25,6 +26,12 @@ import {
 } from "@zotlit/workbench/render";
 
 import * as m from "@/lib/i18n/generated/messages";
+import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
+import {
+  inProcessReadsService,
+  memoryOpener,
+  seedWorksSql,
+} from "@/services/zotero-reads/test-utils";
 import { renderNativeTemplate } from "@/views/note-preview/render";
 
 import { createSharedPartial } from "./new-partial";
@@ -2816,5 +2823,93 @@ language: liquid
       source: CITATION_SOURCE,
       citation: { variant: "main", example: "one-item" },
     });
+  });
+});
+
+describe("Template Workbench Item choice", () => {
+  const FIRST = "FIRST234";
+  const LATER = "LATER234";
+
+  it("keeps a later selection and leaves the outrun choice unpublished", async () => {
+    // The read that confirms the chosen Item holds until the test lets it go.
+    const firstRead = Promise.withResolvers<void>();
+    const firstReading = Promise.withResolvers<void>();
+    await using zoteroReads = inProcessReadsService(
+      memoryOpener(() =>
+        seedWorksSql([
+          { itemID: 1, key: FIRST, title: "First paper" },
+          { itemID: 2, key: LATER, title: "Later paper" },
+        ]),
+      ).open,
+      {
+        wrap: (client) => ({
+          ...client,
+          ItemsByIndexedKeys: ((
+            payload: { readonly indexedKeys: readonly string[] },
+            options?: object,
+          ) => {
+            const read = (
+              client.ItemsByIndexedKeys as unknown as (
+                payload: object,
+                options?: object,
+              ) => Effect.Effect<unknown>
+            )(payload, options);
+            return payload.indexedKeys.includes(FIRST)
+              ? Effect.andThen(
+                  Effect.promise(() => {
+                    firstReading.resolve();
+                    return firstRead.promise;
+                  }),
+                  read,
+                )
+              : read;
+          }) as unknown as ZoteroReadsClient["ItemsByIndexedKeys"],
+        }),
+      },
+    );
+    const { reads } = await zoteroReads.ready;
+    const items = await Effect.runPromise(
+      reads.ItemsByIndexedKeys({ indexedKeys: [LATER] }),
+    );
+    const later = items.get(LATER)!;
+    const { view, app } = setup({
+      zoteroReads,
+      itemLookup: {
+        // The chooser lists the first paper among the recently updated Items.
+        search: async () => [
+          {
+            item: { ...later, key: FIRST, indexedKey: FIRST },
+            score: 1,
+            matches: [],
+            library: null,
+          },
+        ],
+      },
+    } as unknown as Partial<TemplateWorkbenchDeps>);
+    using open = vi.spyOn(SuggestModal.prototype, "open");
+    using trigger = vi.spyOn(app.workspace, "trigger");
+
+    const chosen = view.chooseItem();
+    await vi.waitFor(() => expect(open).toHaveBeenCalledOnce());
+    const modal = open.mock.contexts[0] as SuggestModal<{ id: string }>;
+    const rows = await modal.getSuggestions("");
+    modal.selectSuggestion(
+      rows.find((row) => row.id === FIRST)!,
+      new KeyboardEvent("keydown", { key: "Enter" }),
+    );
+    modal.close();
+    // The reader picks the later paper while the first choice still reads.
+    await firstReading.promise;
+    await expect(
+      view.selectItem({ id: LATER, title: "Later paper" }),
+    ).resolves.toBe(true);
+    firstRead.resolve();
+
+    await expect(chosen).resolves.toBe(false);
+    expect(view.store.getState().item).toMatchObject({ id: LATER });
+    expect(trigger).not.toHaveBeenCalledWith(
+      "zotlit:workbench-selection",
+      expect.objectContaining({ item: expect.objectContaining({ id: FIRST }) }),
+    );
   });
 });
