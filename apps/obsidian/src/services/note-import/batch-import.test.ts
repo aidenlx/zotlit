@@ -1,3 +1,4 @@
+import { Effect, Exit, Stream } from "effect";
 import type { TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -8,7 +9,6 @@ import {
   getItemDisplayRefByID,
   getItemsByKey,
   getLibraries,
-  getLibraryByGroupID,
   getNoteByItemID,
   getNoteByKey,
   getNoteItemIDsByCollection,
@@ -17,7 +17,7 @@ import {
   getTrashedNoteItemIDs,
   USER_LIBRARY_ID,
 } from "@zotlit/db";
-import type { ChildNote, Library, Note } from "@zotlit/db";
+import type { ChildNote, Item, Library, Note } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -34,8 +34,10 @@ import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import { ProfileAnnotationError } from "@/services/template/service";
+import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
 import {
   inProcessReadsService,
+  recordCalls,
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
 import type {
@@ -65,10 +67,8 @@ vi.mock("@zotlit/db", async (importOriginal) => {
     getItemDisplayRefByID: vi.fn(),
     getNoteByItemID: vi.fn(),
     getItemsByKey: vi.fn(),
-    getItemsByID: vi.fn(() => []),
     getNoteByKey: vi.fn(),
     getLibraries: vi.fn(),
-    getLibraryByGroupID: vi.fn(),
     getCollectionIDByKey: vi.fn(),
     getNoteItemIDsByLibrary: vi.fn(),
     getNoteItemIDsByCollection: vi.fn(),
@@ -211,6 +211,8 @@ function makeDeps(
     existing?: TFile[];
     /** Per-file frontmatter cache for metadataCache.getFileCache. */
     frontmatter?: Map<TFile, Record<string, unknown>>;
+    /** Observes or replaces operations at the ZoteroReads interface. */
+    wrap?: (client: ZoteroReadsClient) => ZoteroReadsClient;
   } = {},
 ): {
   deps: NoteImportDeps;
@@ -230,17 +232,16 @@ function makeDeps(
         shouldAsk: false,
       }),
     },
-    db: {
-      state: options.dbState ?? "ready",
-      client,
-      acquireRead: async () => ({ client, [Symbol.dispose]() {} }),
-    },
-    zoteroReads: inProcessReadsService(sharedClientOpener(client)),
+    db: { state: options.dbState ?? "ready" },
+    zoteroReads: inProcessReadsService(
+      sharedClientOpener(client),
+      options.wrap,
+    ),
     settings: {
       loaded: Promise.resolve({ ...defaults, ...settings }),
       update: vi.fn(),
     },
-    libraryScope: { resolveWith: () => currentScope },
+    libraryScope: { resolveLibraries: () => currentScope },
     noteImport: {
       importNote,
       prepareExplicitImport: vi.fn<NoteImporter["prepareExplicitImport"]>(),
@@ -469,7 +470,7 @@ beforeEach(() => {
   vi.mocked(getNoteRefsByItemIDs).mockReset();
   vi.mocked(getTrashedNoteItemIDs).mockReset().mockReturnValue(new Set());
   vi.mocked(getChildNotesByParentIDs).mockReset();
-  vi.mocked(getItemDisplayRefByID).mockReset();
+  vi.mocked(getItemDisplayRefByID).mockReset().mockReturnValue(null);
   vi.mocked(getNoteByItemID).mockReset();
   vi.mocked(getItemsByKey).mockReset();
   // The single-note paths read `NoteBodies`, whose handler looks a note up by
@@ -483,15 +484,96 @@ beforeEach(() => {
   vi.mocked(getLibraries)
     .mockReset()
     .mockReturnValue([PERSONAL_LIBRARY, GROUP_LIBRARY]);
-  vi.mocked(getLibraryByGroupID)
-    .mockReset()
-    .mockImplementation((_client, groupID) =>
-      groupID === GROUP_LIBRARY.groupID ? GROUP_LIBRARY : null,
-    );
   vi.mocked(getCollectionIDByKey).mockReset().mockReturnValue(100);
   vi.mocked(getNoteItemIDsByLibrary).mockReset().mockReturnValue([]);
   vi.mocked(getNoteItemIDsByCollection).mockReset().mockReturnValue([]);
   confirmMock.mockReset();
+});
+
+describe("classify through the NoteRefs stream", () => {
+  it("classifies from one NoteRefs stream and loads each note under the run's Snapshot", async () => {
+    const recorded = recordCalls(["NoteRefs", "NoteBodies"]);
+    const { deps, importNote } = makeDeps({}, { wrap: recorded.wrap });
+    vi.mocked(getNoteRefsByItemIDs).mockImplementation((_client, ids) =>
+      ids.filter((id) => id !== 3).map((id) => makeRef(id)),
+    );
+    vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
+      makeNote(itemID),
+    );
+    const progress: number[] = [];
+
+    await createBatchImport(deps).runBatchImport("note", [1, 2, 3]);
+    const modal = openedModals.at(-1)!;
+    const manifest = (await modal.onClassify({
+      onProgress: (classified) => progress.push(classified),
+      signal: new AbortController().signal,
+    })) as any;
+    const result = await modal.onRun({
+      onItemSettled: vi.fn(),
+      signal: new AbortController().signal,
+    });
+
+    expect(progress).toEqual([3]);
+    expect(manifest.options.notFound).toEqual([
+      { itemID: 3, label: m.batch_import_item_not_note({ id: 3 }) },
+    ]);
+    expect(result).toMatchObject({ created: 2, failed: 0 });
+    expect(importNote).toHaveBeenCalledTimes(2);
+    const [classify, ...loads] = recorded.calls;
+    expect(classify).toMatchObject({
+      operation: "NoteRefs",
+      payload: { itemIDs: [1, 2, 3] },
+    });
+    expect(loads.map(({ operation }) => operation)).toEqual([
+      "NoteBodies",
+      "NoteBodies",
+    ]);
+    // Classify reads its own Snapshot; the run's note loads share another.
+    const [classifySnapshot, runSnapshot] = recorded.snapshots;
+    expect(classify!.payload.snapshot).toBe(classifySnapshot);
+    for (const load of loads) expect(load.payload.snapshot).toBe(runSnapshot);
+    expect(runSnapshot).not.toBe(classifySnapshot);
+  });
+
+  it("interrupts the NoteRefs stream when Cancel lands during classify", async () => {
+    let interrupted = false;
+    const { deps } = makeDeps(
+      {},
+      {
+        wrap: (client) => ({
+          ...client,
+          // The first slice arrives; the next one never does until interrupted.
+          NoteRefs: ((payload: object, options?: object) =>
+            Stream.concat(
+              (
+                client.NoteRefs as unknown as (
+                  payload: object,
+                  options?: object,
+                ) => Stream.Stream<unknown>
+              )(payload, options),
+              Stream.never,
+            ).pipe(
+              Stream.onExit((exit) =>
+                Effect.sync(() => {
+                  interrupted = Exit.hasInterrupts(exit);
+                }),
+              ),
+            )) as unknown as ZoteroReadsClient["NoteRefs"],
+        }),
+      },
+    );
+    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(1)]);
+    const abort = new AbortController();
+
+    await createBatchImport(deps).runBatchImport("note", [1, 2]);
+    const classified = openedModals.at(-1)!.onClassify({
+      onProgress: () => abort.abort(),
+      signal: abort.signal,
+    });
+
+    await expect(classified).rejects.toThrow();
+    expect(interrupted).toBe(true);
+  });
 });
 
 describe("runBatchImportAll", () => {
@@ -1263,13 +1345,22 @@ describe("runChildImportByKey", () => {
   });
 
   it("opens the child-import modal when the key resolves", async () => {
-    vi.mocked(getItemsByKey).mockReturnValue([
-      { itemID: 7, key: "ABCD2345", libraryID: USER_LIBRARY_ID },
-    ] as any);
     vi.mocked(getChildNotesByParentIDs).mockReturnValue([makeRef(50)]);
     vi.mocked(getItemDisplayRefByID).mockReturnValue(null);
     vi.mocked(getNoteByItemID).mockReturnValue(makeNote(50));
-    const { deps, importNote } = makeDeps({});
+    const indexedKey = formatIndexedKey("ABCD2345", null);
+    const { deps, importNote } = makeDeps(
+      {},
+      {
+        wrap: (client) => ({
+          ...client,
+          ItemsByIndexedKeys: (() =>
+            Effect.succeed(
+              new Map([[indexedKey, { itemID: 7, indexedKey } as Item]]),
+            )) as unknown as ZoteroReadsClient["ItemsByIndexedKeys"],
+        }),
+      },
+    );
 
     const result = await createBatchImport(deps).runChildImportByKey(
       formatIndexedKey("ABCD2345", null),

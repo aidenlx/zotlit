@@ -204,15 +204,15 @@ describe("LibraryScopeService", () => {
     expect(changed).toHaveBeenCalledOnce();
   });
 
-  it("resolves against a caller-pinned client rather than the held Libraries", async () => {
-    await using f = await makeService({
-      loadLibraries: () => [MY_LIBRARY, GROUP_200, GROUP_100],
-    });
+  it("resolves against a caller's Snapshot Libraries rather than the held Libraries", async () => {
+    await using f = await makeService();
 
     await f.refresh([MY_LIBRARY]);
     await expect.poll(() => f.service.current?.available).toHaveLength(1);
 
-    expect(f.service.resolveWith({} as never).available).toHaveLength(3);
+    expect(
+      f.service.resolveLibraries([MY_LIBRARY, GROUP_200, GROUP_100]).available,
+    ).toHaveLength(3);
   });
 });
 
@@ -236,7 +236,6 @@ async function makeService(
     libraries?: readonly Library[] | null;
     scope?: LibraryScope | null;
     broken?: boolean;
-    loadLibraries?: () => Library[];
   } = {},
 ) {
   const stack = new AsyncDisposableStack();
@@ -285,7 +284,6 @@ async function makeService(
       reads,
       queries,
       settings: settings as unknown as SettingsService,
-      ...(options.loadLibraries && { loadLibraries: options.loadLibraries }),
     }),
   );
   await service.ready;

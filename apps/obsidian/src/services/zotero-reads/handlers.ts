@@ -17,6 +17,8 @@ import {
   getAttachmentsByParents,
   getChildNotesByParentIDs,
   getCitekeysByLibrary,
+  getCollectionIDByKey,
+  getIndexedItemIDsByCollection,
   getIndexedItemIDsByLibrary,
   getIndexedItemsByID,
   getIndexSignature,
@@ -27,7 +29,11 @@ import {
   getItemTypeByKey,
   getLibraries,
   getNoteByKey,
+  getNoteItemIDsByCollection,
+  getNoteItemIDsByLibrary,
+  getNoteRefsByItemIDs,
   getRelatedKeysByItemID,
+  getTrashedNoteItemIDs,
   getZoteroDatabaseIdentity,
   isChildItemFields,
   resolveIndexedKeyLibrary,
@@ -40,6 +46,18 @@ import { Connection, toDbUnavailable } from "./connection";
 import { SnapshotExpired, ZoteroReads } from "./rpc";
 import type { DbUnavailable } from "./rpc";
 import type { WorkLabelSource } from "./rpc";
+
+/** The id queries {@link ZoteroReads} `ScopeItemIDs` runs, per kind. */
+const SCOPE_QUERIES = {
+  "literature-items": {
+    byLibrary: getIndexedItemIDsByLibrary,
+    byCollection: getIndexedItemIDsByCollection,
+  },
+  notes: {
+    byLibrary: getNoteItemIDsByLibrary,
+    byCollection: getNoteItemIDsByCollection,
+  },
+} as const;
 
 /** Items per stream slice: a cancel point about every 300 ms on a large library. */
 export const DEFAULT_SLICE_SIZE = 500;
@@ -476,6 +494,51 @@ export function handlersLayer(options?: HandlersOptions) {
                 .filter((annotation) => selected.includes(annotation.itemID))
                 .map((annotation) => annotation.indexedKey),
             };
+          }),
+
+        ScopeItemIDs: ({ kind, libraryID, collectionKey, snapshot }) =>
+          withClient(snapshot, (client) => {
+            const queries = SCOPE_QUERIES[kind];
+            if (collectionKey === undefined)
+              return queries.byLibrary(client, libraryID);
+            const collection = { libraryID, collectionKey };
+            if (getCollectionIDByKey(client, collection) === undefined)
+              return null;
+            return queries.byCollection(client, collection);
+          }),
+
+        NoteRefs: ({ itemIDs, sliceSize, snapshot }) =>
+          withClientStream(snapshot, (client) => {
+            const memo: GroupIDMemo = new Map();
+            return sliced(client, slicesOf(itemIDs, sliceSize), (c, ids) => {
+              const notes = new Map(
+                getNoteRefsByItemIDs(c, ids, { memo }).map((note) => [
+                  note.itemID,
+                  note,
+                ]),
+              );
+              const trashed = getTrashedNoteItemIDs(
+                c,
+                ids.filter((id) => !notes.has(id)),
+              );
+              return ids.map((itemID) => ({
+                itemID,
+                note: notes.get(itemID) ?? null,
+                trashed: trashed.has(itemID),
+              }));
+            });
+          }),
+
+        ChildNoteRefs: ({ itemIDs, sliceSize, snapshot }) =>
+          withClientStream(snapshot, (client) => {
+            const memo: GroupIDMemo = new Map();
+            return sliced(client, slicesOf(itemIDs, sliceSize), (c, ids) =>
+              ids.map((itemID) => ({
+                itemID,
+                ref: getItemDisplayRefByID(c, itemID, { memo }),
+                notes: getChildNotesByParentIDs(c, [itemID], { memo }),
+              })),
+            );
           }),
       });
     }),

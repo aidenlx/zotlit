@@ -1,21 +1,10 @@
 import { distinct } from "@std/collections";
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 // Batch import runner for Zotero notes into standalone Markdown mirrors.
 import type { MetadataCache, TFile } from "obsidian";
 
-import {
-  getChildNotesByParentIDs,
-  getItemDisplayRefByID,
-  getItemsByKey,
-  getItemsByID,
-  getNoteByItemID,
-  getNoteRefsByItemIDs,
-  getTrashedNoteItemIDs,
-  parseIndexedKey,
-  resolveIndexedKeyLibrary,
-  USER_LIBRARY_ID,
-} from "@zotlit/db";
-import type { ChildNote, GroupIDMemo, Note } from "@zotlit/db";
+import { parseIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
+import type { ChildNote, Note } from "@zotlit/db";
 import type { ImportMode } from "@zotlit/protocol";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -24,7 +13,7 @@ import type { ProfileSelector } from "@/lib/profile-stamp";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import { batchProfileSummary } from "@/services/batch-profile-summary";
 import type { BatchProfileCount } from "@/services/batch-profile-summary";
-import { classifyChunked, runBatchWrite } from "@/services/batch-run";
+import { classifyStream, runBatchWrite } from "@/services/batch-run";
 import type {
   BatchClassifyControls,
   BatchRunControls,
@@ -86,12 +75,12 @@ export interface NoteImportDeps {
   >;
   /** UI port for the classify/confirm modals; keeps `App` out of the runners. */
   view: NoteImportView;
-  db: Pick<DatabaseService, "state" | "client" | "acquireRead">;
+  db: Pick<DatabaseService, "state">;
   /** A note write's reads: one lease spans the write and what it imports. */
   zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   settings: Pick<SettingsService, "loaded" | "update">;
   /** Which Libraries an unqualified library-wide import covers. */
-  libraryScope: Pick<LibraryScopeService, "resolveWith">;
+  libraryScope: Pick<LibraryScopeService, "resolveLibraries">;
   noteImport: Pick<NoteImporter, "importNote" | "prepareExplicitImport">;
   noteIndex: Pick<NoteIndex, "whenIndexed" | "getImportedNoteByNoteKey">;
   metadataCache: Pick<MetadataCache, "getFileCache">;
@@ -372,9 +361,13 @@ async function prepareImportProfiles(
 
   let indexedKey: string | undefined;
   if (first.note.parentItemID !== null) {
-    using lease = await deps.db.acquireRead();
-    indexedKey = getItemsByID(lease.client, [first.note.parentItemID])[0]
-      ?.indexedKey;
+    using lease = await deps.zoteroReads.acquireRead();
+    const slices = await Effect.runPromise(
+      Stream.runCollect(
+        lease.reads.DisplayRefs({ itemIDs: [first.note.parentItemID] }),
+      ),
+    );
+    indexedKey = slices.flat()[0]?.ref?.indexedKey;
   }
   const plansFor = async (selector: ProfileSelector) => {
     let plans = cache.get(selector);
@@ -534,9 +527,10 @@ function openNoteImportModal(
 }
 
 /**
- * Resolve note `itemIDs` into create/overwrite actions, chunked so the
- * synchronous per-id queries yield between slices (the one UI-freeze risk).
- * Ids that don't resolve to a note land in `notFound`.
+ * Resolve note `itemIDs` into create/overwrite actions from the `NoteRefs`
+ * stream, matched against the Note Index here. Each streamed slice advances
+ * the loading bar; Cancel interrupts the stream. Ids that don't resolve to a
+ * note land in `notFound`.
  *
  * @throws when {@link BatchClassifyControls.signal} aborts.
  */
@@ -549,28 +543,24 @@ async function classifyNoteImport(
   notFound: NotFoundEntry[];
   libraries: BatchLibrary[];
 }> {
-  using lease = await deps.db.acquireRead();
-  const client = lease.client;
-  const memo: GroupIDMemo = new Map();
+  // One Snapshot for the refs and the Libraries they are grouped by.
+  using lease = await deps.zoteroReads.acquireRead();
   const actions: ImportAction[] = [];
   const notFound: NotFoundEntry[] = [];
-  await classifyChunked(itemIDs, controls, (slice) => {
-    const refs = getNoteRefsByItemIDs(client, slice, { memo });
-    const resolved = new Set(refs.map((ref) => ref.itemID));
-    for (const ref of refs) actions.push(toAction(deps, ref));
-    const unresolved = slice.filter((id) => !resolved.has(id));
-    const trashed = getTrashedNoteItemIDs(client, unresolved);
-    for (const id of unresolved) {
+  await classifyStream(lease.reads.NoteRefs({ itemIDs }), controls, (slice) => {
+    for (const { note } of slice) if (note) actions.push(toAction(deps, note));
+    for (const { itemID: id, note, trashed } of slice) {
+      if (note) continue;
       notFound.push({
         itemID: id,
-        label: trashed.has(id)
+        label: trashed
           ? m.batch_import_item_trashed({ id })
           : m.batch_import_item_not_note({ id }),
       });
     }
   });
   const libraries = batchLibraries(
-    client,
+    await Effect.runPromise(lease.reads.Libraries({})),
     new Set(actions.filter(needsImport).map((action) => action.note.libraryID)),
   );
   logClassified("note", actions, {
@@ -660,9 +650,10 @@ interface ChildGroup {
 }
 
 /**
- * Expand each lit item into its child notes, chunked over parents. Parents with
- * no child notes are dropped; the modal's empty confirm state then reports
- * "no child notes to import".
+ * Expand each lit item into its child notes from the `ChildNoteRefs` stream.
+ * Each streamed slice advances the loading bar; Cancel interrupts the stream.
+ * Parents with no child notes are dropped; the modal's empty confirm state
+ * then reports "no child notes to import".
  *
  * @throws when {@link BatchClassifyControls.signal} aborts.
  */
@@ -671,23 +662,23 @@ async function classifyChildImport(
   parentItemIDs: readonly number[],
   controls: BatchClassifyControls,
 ): Promise<ChildGroup[]> {
-  using lease = await deps.db.acquireRead();
-  const client = lease.client;
-  const memo: GroupIDMemo = new Map();
+  using lease = await deps.zoteroReads.acquireRead();
   const parents: ChildGroup[] = [];
-  await classifyChunked(parentItemIDs, controls, (slice) => {
-    for (const parentID of slice) {
-      const children = getChildNotesByParentIDs(client, [parentID], { memo });
-      if (children.length === 0) continue;
-      const display = getItemDisplayRefByID(client, parentID, { memo });
-      const label =
-        display?.title?.trim() || m.batch_update_untitled({ id: parentID });
-      parents.push({
-        label,
-        actions: children.map((child) => toAction(deps, child)),
-      });
-    }
-  });
+  await classifyStream(
+    lease.reads.ChildNoteRefs({ itemIDs: parentItemIDs }),
+    controls,
+    (slice) => {
+      for (const { itemID: parentID, ref, notes } of slice) {
+        if (notes.length === 0) continue;
+        const label =
+          ref?.title?.trim() || m.batch_update_untitled({ id: parentID });
+        parents.push({
+          label,
+          actions: notes.map((child) => toAction(deps, child)),
+        });
+      }
+    },
+  );
   const childActions = parents.flatMap((parent) => parent.actions);
   logClassified("child", childActions, {
     total: parentItemIDs.length,
@@ -704,10 +695,13 @@ async function importSingleNote(
   deps: NoteImportDeps,
   itemID: number,
 ): Promise<BatchImportResult> {
-  let ref: ChildNote | undefined;
+  let ref: ChildNote | null | undefined;
   {
-    using lease = await deps.db.acquireRead();
-    ref = getNoteRefsByItemIDs(lease.client, [itemID])[0];
+    using lease = await deps.zoteroReads.acquireRead();
+    const slices = await Effect.runPromise(
+      Stream.runCollect(lease.reads.NoteRefs({ itemIDs: [itemID] })),
+    );
+    ref = slices.flat()[0]?.note;
   }
   if (!ref) return { outcome: "not-found", count: 1 };
 
@@ -778,22 +772,26 @@ async function executeImportRun(
     deps.settings.loaded,
     deps.template.ready,
   ]);
-  const memo: GroupIDMemo = new Map();
   const attachmentFolderCache = new Map<string, string>();
   using excerpts = collectExcerptSummary(deps.noteFeature.reportExcerptImages);
   // One run is one initiating batch: every note it writes reuses one retention,
   // released as soon as the run's last admitted consumer settles.
   await using outcomes = new ExcerptOutcomeScope();
-  // The run's writes read one Snapshot, held until the run settles.
-  using readLease = await deps.zoteroReads.acquireRead();
 
+  // The run's note loads and writes read one Snapshot, held until the run
+  // settles.
   const result = await runBatchWrite({
-    db: deps.db,
+    zoteroReads: deps.zoteroReads,
     tasks: actions.map((a) => ({ ...a, id: a.note.itemID })),
     controls,
     concurrency: IMPORT_CONCURRENCY,
-    run: async (task, client) => {
-      const note = getNoteByItemID(client, task.note.itemID, { memo });
+    run: async (task, reads) => {
+      const [note] = await Effect.runPromise(
+        reads.NoteBodies({
+          libraryID: task.note.libraryID,
+          keys: [task.note.key],
+        }),
+      );
       if (!note) {
         logger.warn("Imported note vanished before import; skipped", {
           noteKey: task.note.indexedKey,
@@ -801,7 +799,7 @@ async function executeImportRun(
         return "skipped";
       }
       const options = {
-        reads: readLease.reads,
+        reads,
         settings,
         attachmentFolderCache,
         reportExcerpts: excerpts.add,
@@ -870,11 +868,14 @@ async function runChildImportByKey(
     logger.warn("Child-note import: database not ready", { indexedKey });
     return { outcome: "db-unavailable" };
   }
-  const resolved = resolveIndexedKeyLibrary(deps.db.client, indexedKey);
-  const itemID = resolved
-    ? getItemsByKey(deps.db.client, resolved.libraryID, [resolved.key])[0]
-        ?.itemID
-    : undefined;
+  let itemID: number | undefined;
+  {
+    using lease = await deps.zoteroReads.acquireRead();
+    const items = await Effect.runPromise(
+      lease.reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
+    );
+    itemID = items.get(indexedKey)?.itemID;
+  }
   if (itemID == null) return null;
   return runBatchImport(deps, { mode: "child", itemIDs: [itemID] });
 }

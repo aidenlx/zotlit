@@ -1,12 +1,12 @@
+import { Effect, Exit, Stream } from "effect";
 import { describe, expect, it, vi } from "vitest";
-
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import { BatchUpdateRefusedError } from "@/services/note-feature/update-batch";
 import { NoteImportProfileError } from "@/services/note-import/service";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
-import { classifyChunked, executeBatchRun, runBatchWrite } from "./batch-run";
+import { classifyStream, executeBatchRun, runBatchWrite } from "./batch-run";
 import type {
   BatchClassifyControls,
   BatchRunControls,
@@ -37,22 +37,22 @@ function task(id: number): BatchRunTask {
   return { id, label: `Item ${id}` };
 }
 
-const sentinelClient = { $sentinel: true } as unknown as NodeDatabaseClient;
+const sentinelReads = { $sentinel: true } as unknown as ZoteroReadsApi;
 
-/** Lease stub whose dispose is observable, matching DatabaseReadLease's shape. */
-function makeLeasingDb(client: NodeDatabaseClient = sentinelClient): {
-  db: {
-    acquireRead: () => Promise<Disposable & { client: NodeDatabaseClient }>;
+/** Lease stub whose dispose is observable, matching ZoteroReadLease's shape. */
+function makeLeasingReads(reads: ZoteroReadsApi = sentinelReads): {
+  zoteroReads: {
+    acquireRead: () => Promise<Disposable & { reads: ZoteroReadsApi }>;
   };
   acquireRead: ReturnType<typeof vi.fn>;
   dispose: ReturnType<typeof vi.fn>;
 } {
   const dispose = vi.fn();
   const acquireRead = vi.fn(async () => ({
-    client,
+    reads,
     [Symbol.dispose]: dispose,
   }));
-  return { db: { acquireRead }, acquireRead, dispose };
+  return { zoteroReads: { acquireRead }, acquireRead, dispose };
 }
 
 describe("executeBatchRun", () => {
@@ -299,55 +299,51 @@ describe("executeBatchRun", () => {
 });
 
 describe("runBatchWrite", () => {
-  it("pins one lease for the whole run and threads its client to each task", async () => {
-    const { db, acquireRead, dispose } = makeLeasingDb();
+  it("pins one Snapshot for the whole run and threads its reads to each task", async () => {
+    const { zoteroReads, acquireRead, dispose } = makeLeasingReads();
     const { controls } = makeRunControls();
-    const seenClients: NodeDatabaseClient[] = [];
+    const seenReads: ZoteroReadsApi[] = [];
 
     const result = await runBatchWrite({
-      db,
+      zoteroReads,
       tasks: [task(1), task(2), task(3)],
       controls,
       concurrency: 4,
-      run: async (_t, client) => {
-        seenClients.push(client);
+      run: async (_t, reads) => {
+        seenReads.push(reads);
         return "updated";
       },
     });
 
     expect(acquireRead).toHaveBeenCalledTimes(1);
-    expect(seenClients).toEqual([
-      sentinelClient,
-      sentinelClient,
-      sentinelClient,
-    ]);
+    expect(seenReads).toEqual([sentinelReads, sentinelReads, sentinelReads]);
     expect(result).toMatchObject({ updated: 3 });
     expect(dispose).toHaveBeenCalledTimes(1);
   });
 
   it("memoizes a shared fetch once per run across items sharing a key", async () => {
-    const { db } = makeLeasingDb();
+    const { zoteroReads } = makeLeasingReads();
     const { controls } = makeRunControls();
-    const fetchSpy = vi.fn((_client: NodeDatabaseClient, key: string) => key);
+    const fetchSpy = vi.fn((_reads: ZoteroReadsApi, key: string) => key);
     // A per-run cache the caller closes over, mirroring the real tagMemo /
     // collectionCache threading.
     const memo = new Map<string, string>();
-    const cachedFetch = (client: NodeDatabaseClient, key: string): string => {
+    const cachedFetch = (reads: ZoteroReadsApi, key: string): string => {
       const hit = memo.get(key);
       if (hit !== undefined) return hit;
-      const value = fetchSpy(client, key);
+      const value = fetchSpy(reads, key);
       memo.set(key, value);
       return value;
     };
 
     await runBatchWrite({
-      db,
+      zoteroReads,
       // Three tasks, two of which resolve to the same shared "author:1" key.
       tasks: [task(1), task(2), task(3)],
       controls,
       concurrency: 1,
-      run: async (t, client) => {
-        cachedFetch(client, t.id === 3 ? "author:2" : "author:1");
+      run: async (t, reads) => {
+        cachedFetch(reads, t.id === 3 ? "author:2" : "author:1");
         return "updated";
       },
     });
@@ -356,7 +352,7 @@ describe("runBatchWrite", () => {
   });
 
   it("holds the lease until every task settles", async () => {
-    const { db, dispose } = makeLeasingDb();
+    const { zoteroReads, dispose } = makeLeasingReads();
     const { controls } = makeRunControls();
     let release!: () => void;
     const inFlight = new Promise<void>((resolve) => {
@@ -364,7 +360,7 @@ describe("runBatchWrite", () => {
     });
 
     const pending = runBatchWrite({
-      db,
+      zoteroReads,
       tasks: [task(1)],
       controls,
       concurrency: 4,
@@ -384,11 +380,11 @@ describe("runBatchWrite", () => {
   });
 
   it("releases the lease after a successful run", async () => {
-    const { db, dispose } = makeLeasingDb();
+    const { zoteroReads, dispose } = makeLeasingReads();
     const { controls } = makeRunControls();
 
     await runBatchWrite({
-      db,
+      zoteroReads,
       tasks: [task(1)],
       controls,
       concurrency: 4,
@@ -399,13 +395,13 @@ describe("runBatchWrite", () => {
   });
 
   it("releases the lease when the signal aborts before any task runs", async () => {
-    const { db, dispose } = makeLeasingDb();
+    const { zoteroReads, dispose } = makeLeasingReads();
     const { controls, abort } = makeRunControls();
     abort.abort();
     const run = vi.fn(async () => "created" as const);
 
     const result = await runBatchWrite({
-      db,
+      zoteroReads,
       tasks: [task(1), task(2)],
       controls,
       concurrency: 4,
@@ -418,12 +414,12 @@ describe("runBatchWrite", () => {
   });
 
   it("releases the lease when the run throws after acquiring it", async () => {
-    const { db, dispose } = makeLeasingDb();
+    const { zoteroReads, dispose } = makeLeasingReads();
     const { controls } = makeRunControls();
 
     await expect(
       runBatchWrite({
-        db,
+        zoteroReads,
         tasks: [task(1)],
         controls,
         // Invalid concurrency makes executeBatchRun throw synchronously after
@@ -436,13 +432,13 @@ describe("runBatchWrite", () => {
   });
 
   it("releases the lease when the run halts", async () => {
-    const { db, dispose } = makeLeasingDb();
+    const { zoteroReads, dispose } = makeLeasingReads();
     const { controls } = makeRunControls();
     class ConfigError extends Error {}
 
     await expect(
       runBatchWrite({
-        db,
+        zoteroReads,
         tasks: [task(1)],
         controls,
         concurrency: 4,
@@ -463,7 +459,7 @@ describe("runBatchWrite", () => {
 
     await expect(
       runBatchWrite({
-        db: { acquireRead } as never,
+        zoteroReads: { acquireRead } as never,
         tasks: [task(1)],
         controls,
         concurrency: 4,
@@ -473,7 +469,7 @@ describe("runBatchWrite", () => {
   });
 });
 
-describe("classifyChunked", () => {
+describe("classifyStream", () => {
   function classifyControls(signal?: AbortSignal): {
     controls: BatchClassifyControls;
     progress: number[];
@@ -488,18 +484,20 @@ describe("classifyChunked", () => {
     };
   }
 
-  it("processes every id in fixed-size chunks and reports cumulative progress", async () => {
+  it("processes every slice in order and reports cumulative progress", async () => {
     const { controls, progress } = classifyControls();
-    const ids = Array.from({ length: 120 }, (_, i) => i);
     const seen: number[] = [];
 
-    await classifyChunked(ids, controls, (slice) => {
-      seen.push(...slice);
-    });
+    await classifyStream(
+      Stream.fromIterable([[1, 2], [3, 4], [5]], { chunkSize: 1 }),
+      controls,
+      (slice) => {
+        seen.push(...slice);
+      },
+    );
 
-    expect(seen).toEqual(ids);
-    // 120 ids at a 50-chunk stride: 50, 100, 120.
-    expect(progress).toEqual([50, 100, 120]);
+    expect(seen).toEqual([1, 2, 3, 4, 5]);
+    expect(progress).toEqual([2, 4, 5]);
   });
 
   it("throws and stops processing once aborted", async () => {
@@ -509,8 +507,41 @@ describe("classifyChunked", () => {
     const processSlice = vi.fn();
 
     await expect(
-      classifyChunked([1, 2, 3], controls, processSlice),
+      classifyStream(Stream.make([1, 2, 3]), controls, processSlice),
     ).rejects.toThrow();
     expect(processSlice).not.toHaveBeenCalled();
+  });
+
+  it("interrupts the stream when the signal aborts mid-classify", async () => {
+    const abort = new AbortController();
+    const { controls } = classifyControls(abort.signal);
+    const held = Promise.withResolvers<void>();
+    let interrupted = false;
+    const slices = Stream.concat(
+      Stream.make([1, 2]),
+      Stream.fromEffect(
+        Effect.as(
+          Effect.promise(() => held.promise),
+          [3],
+        ),
+      ),
+    ).pipe(
+      Stream.onExit((exit) =>
+        Effect.sync(() => {
+          interrupted = Exit.hasInterrupts(exit);
+        }),
+      ),
+    );
+    const seen: number[] = [];
+
+    const pending = classifyStream(slices, controls, (slice) => {
+      seen.push(...slice);
+      abort.abort();
+    });
+
+    await expect(pending).rejects.toThrow();
+    expect(interrupted).toBe(true);
+    expect(seen).toEqual([1, 2]);
+    held.resolve();
   });
 });

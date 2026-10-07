@@ -717,6 +717,84 @@ describe("ZoteroReads operations", () => {
     expect(unknown).toBeNull();
   });
 
+  it("ScopeItemIDs lists a library's or a collection's items or notes, null for an unknown collection", async () => {
+    const { open } = fixtureOpener();
+    const [items, filed, notes, unknown] = await withReads(open, (reads) =>
+      Effect.all([
+        reads.ScopeItemIDs({ kind: "literature-items", libraryID: 1 }),
+        reads.ScopeItemIDs({
+          kind: "literature-items",
+          libraryID: 1,
+          collectionKey: "CLL22345",
+        }),
+        reads.ScopeItemIDs({ kind: "notes", libraryID: 1 }),
+        reads.ScopeItemIDs({
+          kind: "notes",
+          libraryID: 1,
+          collectionKey: "MISS2345",
+        }),
+      ]),
+    );
+    expect(items).toEqual([1, 3, 2]);
+    expect(filed).toEqual([1, 2]);
+    expect(notes).toEqual([200]);
+    expect(unknown).toBeNull();
+  });
+
+  it("NoteRefs streams one entry per id, telling a trashed note from a non-note id", async () => {
+    const { open } = fixtureOpener(
+      () => `
+        insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+          values (201, 3, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'TRSH2345');
+        insert into itemNotes (itemID, parentItemID, note, title)
+          values (201, null, '<p>gone</p>', 'Gone');
+        insert into deletedItems (itemID) values (201);
+      `,
+    );
+    const slices = await withReads(open, (reads) =>
+      Stream.runCollect(
+        reads.NoteRefs({ itemIDs: [200, 201, 1], sliceSize: 2 }),
+      ),
+    );
+    expect(slices).toMatchObject([
+      [
+        {
+          itemID: 200,
+          note: {
+            itemID: 200,
+            key: "NTE22345",
+            parentItemID: 1,
+            title: "Methods",
+          },
+          trashed: false,
+        },
+        { itemID: 201, note: null, trashed: true },
+      ],
+      [{ itemID: 1, note: null, trashed: false }],
+    ]);
+    expect(slices[0]![0]!.note!.dateModified).toBeInstanceOf(Temporal.Instant);
+  });
+
+  it("ChildNoteRefs streams each parent's display ref beside its child notes", async () => {
+    const { open } = fixtureOpener();
+    const slices = await withReads(open, (reads) =>
+      Stream.runCollect(
+        reads.ChildNoteRefs({ itemIDs: [1, 2, 999], sliceSize: 2 }),
+      ),
+    );
+    expect(slices).toMatchObject([
+      [
+        {
+          itemID: 1,
+          ref: { indexedKey: "MAIN2345", title: "Main Study" },
+          notes: [{ itemID: 200, key: "NTE22345" }],
+        },
+        { itemID: 2, ref: { indexedKey: "RELB2345" }, notes: [] },
+      ],
+      [{ itemID: 999, ref: null, notes: [] }],
+    ]);
+  });
+
   it("a source that cannot open fails with a tagged DbUnavailable", async () => {
     const { open } = fixtureOpener(() => null);
     const error = await withReads(open, (reads) =>

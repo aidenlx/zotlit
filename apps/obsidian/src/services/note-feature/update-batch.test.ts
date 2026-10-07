@@ -1,3 +1,4 @@
+import { Effect, Exit, Stream } from "effect";
 import type { TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -6,10 +7,7 @@ import {
   getIndexedItemIDsByCollection,
   getIndexedItemIDsByLibrary,
   getItemDisplayRefByID,
-  getItemRefByID,
-  getItemsByID,
   getLibraries,
-  getLibraryByGroupID,
   USER_LIBRARY_ID,
 } from "@zotlit/db";
 import type { Item, Library } from "@zotlit/db";
@@ -29,8 +27,10 @@ import type {
 import { selectorOf } from "@/services/library-scope/scope";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
+import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
 import {
   inProcessReadsService,
+  recordCalls,
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
 import type {
@@ -59,11 +59,7 @@ vi.mock("@zotlit/db", async (importOriginal) => {
   return {
     ...actual,
     getLibraries: vi.fn(),
-    getLibraryByGroupID: vi.fn(),
     getItemDisplayRefByID: vi.fn(),
-    getItemRefByID: vi.fn(),
-    getItemsByID: vi.fn(),
-    getZoteroIdentity: vi.fn(() => ({ username: null })),
     getCollectionIDByKey: vi.fn(),
     getIndexedItemIDsByLibrary: vi.fn(),
     getIndexedItemIDsByCollection: vi.fn(),
@@ -144,7 +140,29 @@ function scopeOf(
 
 let currentScope: ResolvedLibraryScope = scopeOf([PERSONAL_LIBRARY]);
 
-function makeDeps(dbState: "loading" | "ready" = "ready"): BatchUpdateDeps {
+/**
+ * Answers `ItemsByIndexedKeys` at the interface: every key `ITEM<n>` names
+ * item `n`. The item shape stays partial, as the stubbed note writes need.
+ */
+function itemsAtInterface(client: ZoteroReadsClient): ZoteroReadsClient {
+  return {
+    ...client,
+    ItemsByIndexedKeys: (({ indexedKeys }: { indexedKeys: string[] }) =>
+      Effect.succeed(
+        new Map(
+          indexedKeys.map((indexedKey) => [
+            indexedKey,
+            { itemID: Number(indexedKey.slice(4)), indexedKey } as Item,
+          ]),
+        ),
+      )) as unknown as ZoteroReadsClient["ItemsByIndexedKeys"],
+  };
+}
+
+function makeDeps(
+  dbState: "loading" | "ready" = "ready",
+  wrap: (client: ZoteroReadsClient) => ZoteroReadsClient = (client) => client,
+): BatchUpdateDeps {
   const client = createClient(":memory:");
   return {
     profile: profileReader(),
@@ -154,13 +172,15 @@ function makeDeps(dbState: "loading" | "ready" = "ready"): BatchUpdateDeps {
       client,
       acquireRead: async () => ({ client, [Symbol.dispose]() {} }),
     },
-    zoteroReads: inProcessReadsService(sharedClientOpener(client)),
+    zoteroReads: inProcessReadsService(sharedClientOpener(client), (reads) =>
+      wrap(itemsAtInterface(reads)),
+    ),
     settings: {
       current: defaults,
       loaded: Promise.resolve({ ...defaults }),
       update: vi.fn(),
     },
-    libraryScope: { resolveWith: () => currentScope },
+    libraryScope: { resolveLibraries: () => currentScope },
     noteFeature: {
       resolveCreationProfile: async () => ({
         selector: "default",
@@ -222,16 +242,91 @@ beforeEach(() => {
   vi.mocked(getLibraries)
     .mockReset()
     .mockReturnValue([PERSONAL_LIBRARY, GROUP_LIBRARY]);
-  vi.mocked(getLibraryByGroupID)
-    .mockReset()
-    .mockImplementation((_client, groupID) =>
-      groupID === GROUP_LIBRARY.groupID ? GROUP_LIBRARY : null,
-    );
   vi.mocked(getItemDisplayRefByID).mockReset().mockReturnValue(null);
-  vi.mocked(getItemRefByID).mockReset().mockReturnValue(null);
   vi.mocked(getCollectionIDByKey).mockReset().mockReturnValue(100);
   vi.mocked(getIndexedItemIDsByLibrary).mockReset().mockReturnValue([]);
   vi.mocked(getIndexedItemIDsByCollection).mockReset().mockReturnValue([]);
+});
+
+describe("classify through the DisplayRefs stream", () => {
+  it("classifies from one DisplayRefs stream and loads each item under the run's Snapshot", async () => {
+    const recorded = recordCalls(["DisplayRefs", "ItemsByIndexedKeys"]);
+    const deps = makeDeps("ready", recorded.wrap);
+    deps.noteFeature.createNote = async () => ({
+      outcome: "created",
+      file: { path: "Literature/New.md" } as TFile,
+    });
+    itemsIn(
+      new Map([
+        [1, USER_LIBRARY_ID],
+        [2, USER_LIBRARY_ID],
+      ]),
+    );
+    const progress: number[] = [];
+
+    await runBatchUpdate(deps, [1, 2, 3]);
+    const modal = openedModals.at(-1)!;
+    await modal.onClassify({
+      onProgress: (classified) => progress.push(classified),
+      signal: new AbortController().signal,
+    });
+    const result = await modal.onRun({
+      onItemSettled: vi.fn(),
+      signal: new AbortController().signal,
+    });
+
+    expect(result).toMatchObject({ created: 2, failed: 0 });
+    expect(progress).toEqual([3]);
+    const [classify, ...loads] = recorded.calls;
+    expect(classify).toMatchObject({
+      operation: "DisplayRefs",
+      payload: { itemIDs: [1, 2, 3] },
+    });
+    expect(loads.map(({ operation }) => operation)).toEqual([
+      "ItemsByIndexedKeys",
+      "ItemsByIndexedKeys",
+    ]);
+    // Classify reads its own Snapshot; the run's item loads share another.
+    const [classifySnapshot, runSnapshot] = recorded.snapshots;
+    expect(classify!.payload.snapshot).toBe(classifySnapshot);
+    for (const load of loads) expect(load.payload.snapshot).toBe(runSnapshot);
+    expect(runSnapshot).not.toBe(classifySnapshot);
+  });
+
+  it("interrupts the DisplayRefs stream when Cancel lands during classify", async () => {
+    let interrupted = false;
+    const deps = makeDeps("ready", (client) => ({
+      ...client,
+      // The first slice arrives; the next one never does until interrupted.
+      DisplayRefs: ((payload: object, options?: object) =>
+        Stream.concat(
+          (
+            client.DisplayRefs as unknown as (
+              payload: object,
+              options?: object,
+            ) => Stream.Stream<unknown>
+          )(payload, options),
+          Stream.never,
+        ).pipe(
+          Stream.onExit((exit) =>
+            Effect.sync(() => {
+              interrupted = Exit.hasInterrupts(exit);
+            }),
+          ),
+        )) as unknown as ZoteroReadsClient["DisplayRefs"],
+    }));
+    itemsIn(new Map([[1, USER_LIBRARY_ID]]));
+    const abort = new AbortController();
+
+    await runBatchUpdate(deps, [1, 2]);
+    const classified = openedModals.at(-1)!.onClassify({
+      onProgress: () => abort.abort(),
+      signal: abort.signal,
+    });
+
+    await expect(classified).rejects.toThrow();
+    expect(interrupted).toBe(true);
+  });
 });
 
 describe("batchCreateOutcome", () => {
@@ -313,9 +408,6 @@ it.each([false, true])(
         [2, USER_LIBRARY_ID],
       ]),
     );
-    vi.mocked(getItemsByID).mockImplementation((_client, ids) =>
-      ids.map((id) => ({ itemID: id, indexedKey: `ITEM${id}` }) as Item),
-    );
     await runBatchUpdate(deps, [1, 2]);
     await classifyLastModal();
     const result = await openedModals.at(-1)!.onRun({
@@ -361,9 +453,6 @@ it("runs every row of one update batch under one outcome scope, released after t
       [1, USER_LIBRARY_ID],
       [2, USER_LIBRARY_ID],
     ]),
-  );
-  vi.mocked(getItemsByID).mockImplementation((_client, itemIDs) =>
-    itemIDs.map((itemID) => ({ itemID, indexedKey: `ITEM${itemID}` }) as Item),
   );
 
   await runBatchUpdate(deps, [1, 2]);
@@ -468,9 +557,6 @@ it("classifies conflicting Companion Profiles as kept rows before any write or p
       [3, USER_LIBRARY_ID],
     ]),
   );
-  vi.mocked(getItemsByID).mockReturnValue([
-    { itemID: 1, indexedKey: "ITEM1" } as any,
-  ]);
   vi.mocked(chooseBatchProfile).mockClear();
   await runBatchUpdate(deps, [1, 2, 3], { profile: books });
   const modal = openedModals.at(-1)!;
@@ -569,9 +655,6 @@ it.each([true, false])(
     );
     deps.noteIndex.getNotesByItemKey = () => [file];
     itemsIn(new Map([[1, USER_LIBRARY_ID]]));
-    vi.mocked(getItemsByID).mockReturnValue([
-      { itemID: 1, indexedKey: "ITEM1" } as any,
-    ]);
     deps.noteFeature.writeNoteUpdate = async () => ({
       bodyUpdated: false,
       duplicateRegionCount: 0,
@@ -715,9 +798,6 @@ function mixedBatch() {
   deps.noteIndex.getNotesByItemKey = (key) =>
     key in notes ? [{ path: notes[key] } as TFile] : [];
   itemsIn(new Map([1, 2, 3, 4, 5, 6, 7, 8].map((id) => [id, USER_LIBRARY_ID])));
-  vi.mocked(getItemsByID).mockImplementation((_client, ids) =>
-    ids.map((itemID) => ({ itemID, indexedKey: `ITEM${itemID}` }) as any),
-  );
   vi.mocked(chooseBatchProfile).mockReset();
   return { deps, resolveCreationProfile, created, updated, selections };
 }

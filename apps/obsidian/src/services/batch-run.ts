@@ -1,13 +1,13 @@
-// Lease-pinned batch write runner over the concurrent classify/execute primitives.
-import { chunk } from "@std/collections/chunk";
+// Snapshot-pinned batch write runner over the concurrent classify/execute primitives.
+import { Effect, Stream } from "effect";
 import PQueue from "p-queue";
-
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { AbortError } from "@/lib/abort-error";
 import { formatErrorMessage } from "@/lib/toast";
-import { yieldToMain } from "@/lib/yield-to-main";
-import type { DatabaseService } from "@/services/database/service";
+import type {
+  ZoteroReadsApi,
+  ZoteroReadsService,
+} from "@/services/zotero-reads/service";
 
 /** A failed-item payload the run reports; rendered by the modal's failure row. */
 export interface BatchFailure {
@@ -45,28 +45,33 @@ export interface BatchRunResult {
   cancelled: boolean;
 }
 
-const CLASSIFY_CHUNK_SIZE = 50;
-
 /**
- * Chunked classify loop: yields between fixed-size slices so the loading bar
- * paints and Cancel stays responsive. The caller's `processSlice` handles the
- * per-id logic; this scaffold owns the progress, abort, and yield plumbing.
+ * Classify loop over a stream of slices, one entry per classified id: each
+ * slice advances the loading bar. An abort of
+ * {@link BatchClassifyControls.signal} interrupts the stream, so no read runs
+ * after the slice in progress. The caller's `processSlice` handles the per-id
+ * logic; this scaffold owns the progress and abort plumbing.
  *
- * @throws when {@link BatchClassifyControls.signal} aborts.
+ * @throws when {@link BatchClassifyControls.signal} aborts or a read fails.
  */
-export async function classifyChunked(
-  ids: readonly number[],
+export async function classifyStream<A, E>(
+  slices: Stream.Stream<readonly A[], E>,
   controls: BatchClassifyControls,
-  processSlice: (slice: readonly number[]) => void,
+  processSlice: (slice: readonly A[]) => void,
 ): Promise<void> {
+  // A run started on an already-aborted signal completes, so check first.
+  controls.signal.throwIfAborted();
   let classified = 0;
-  for (const slice of chunk(ids, CLASSIFY_CHUNK_SIZE)) {
-    controls.signal.throwIfAborted();
-    processSlice(slice);
-    classified += slice.length;
-    controls.onProgress(classified);
-    await yieldToMain();
-  }
+  await Effect.runPromise(
+    Stream.runForEach(slices, (slice) =>
+      Effect.sync(() => {
+        processSlice(slice);
+        classified += slice.length;
+        controls.onProgress(classified);
+      }),
+    ),
+    { signal: controls.signal },
+  );
 }
 
 export interface BatchRunTask {
@@ -183,32 +188,32 @@ function profileRecovery(error: unknown): BatchFailure["recovery"] {
 }
 
 /**
- * Run a batch of write tasks under a single database read lease held for the
- * whole run, so every task's `run` sees one pinned client snapshot instead of a
- * client a refresh swap could close mid-run. The lease is released on success,
- * failure, and abort alike (scope-bound `using`). Callers create their per-run
- * memoized fetch caches before this call and close over them in `run`; the
- * pinned `client` is threaded to each task.
+ * Run a batch of write tasks under one ZoteroReads Snapshot held for the whole
+ * run, so every task's `run` reads one database state even when a refresh
+ * lands mid-run. The lease is released on success, failure, and abort alike
+ * (scope-bound `using`). Callers create their per-run caches before this call
+ * and close over them in `run`; the Snapshot-bound `reads` is threaded to each
+ * task.
  *
- * @throws {@link DatabaseError} when the service is degraded (no lease acquired).
+ * @throws when no Snapshot can be opened (no lease acquired).
  */
 export async function runBatchWrite<T extends BatchRunTask>(opts: {
-  db: Pick<DatabaseService, "acquireRead">;
+  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   tasks: readonly T[];
   controls: BatchRunControls;
   concurrency: number;
-  run: (task: T, client: NodeDatabaseClient) => Promise<RunOutcome>;
+  run: (task: T, reads: ZoteroReadsApi) => Promise<RunOutcome>;
   onTaskFailed?: (task: T, error: unknown) => void;
   haltOn?: (error: unknown) => boolean;
 }): Promise<BatchRunResult> {
-  using lease = await opts.db.acquireRead();
+  using lease = await opts.zoteroReads.acquireRead();
   // Awaited inside the `using` scope so the lease stays pinned until every task
   // settles; returning the pending promise would dispose the lease early.
   const result = await executeBatchRun({
     tasks: opts.tasks,
     controls: opts.controls,
     concurrency: opts.concurrency,
-    run: (task) => opts.run(task, lease.client),
+    run: (task) => opts.run(task, lease.reads),
     onTaskFailed: opts.onTaskFailed,
     haltOn: opts.haltOn,
   });

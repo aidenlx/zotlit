@@ -22,17 +22,15 @@
  * controls disable on the first and stay editable on the second, and the saved
  * value is untouched either way.
  *
- * ## Leases
+ * ## Snapshots
  *
- * A caller holding a database read lease resolves once
- * against its own pinned client through {@link LibraryScopeService.resolveWith},
- * so a refresh mid-read cannot move the Libraries under it.
+ * A caller holding a ZoteroReads Snapshot reads the Libraries from it and
+ * resolves once through {@link LibraryScopeService.resolveLibraries}, so a
+ * refresh mid-read cannot move the Libraries under it.
  */
 import { Effect } from "effect";
 
-import { getLibraries } from "@zotlit/db";
 import type { Library } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
@@ -79,15 +77,12 @@ export interface LibraryScopeDeps {
     "client" | "ask" | "invalidate" | "peek" | "watch"
   >;
   settings: SettingsService;
-  /** Reads the Libraries for {@link LibraryScopeService.resolveWith}. */
-  loadLibraries?: (client: NodeDatabaseClient) => Library[];
 }
 
 export class LibraryScopeService extends Service<void> {
   readonly #reads;
   readonly #queries;
   readonly #settings;
-  readonly #loadLibraries;
   readonly #emitter = createNanoEvents<LibraryScopeEvents>();
 
   #current: ResolvedLibraryScope | null = null;
@@ -101,7 +96,6 @@ export class LibraryScopeService extends Service<void> {
     this.#reads = deps.reads;
     this.#queries = deps.queries;
     this.#settings = deps.settings;
-    this.#loadLibraries = deps.loadLibraries ?? getLibraries;
     this.ready = this.#load();
   }
 
@@ -151,11 +145,6 @@ export class LibraryScopeService extends Service<void> {
     return this.#settings.diagnostics.some(
       (diagnostic) => diagnostic.key === LIBRARY_SCOPE_KEY,
     );
-  }
-
-  /** Resolve the saved scope against a caller-pinned database client. */
-  resolveWith(client: NodeDatabaseClient): ResolvedLibraryScope {
-    return this.resolveLibraries(this.#loadLibraries(client));
   }
 
   /** Resolve the saved scope against Libraries the caller read from one Snapshot. */

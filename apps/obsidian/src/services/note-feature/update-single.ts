@@ -40,7 +40,7 @@ export interface SingleUpdateDeps {
   noteFeature: NoteFeature;
   noteIndex: NoteIndex;
   /** Which Libraries an unqualified library-wide update covers. */
-  libraryScope: Pick<LibraryScopeService, "resolveWith">;
+  libraryScope: Pick<LibraryScopeService, "resolveLibraries">;
 }
 
 /**

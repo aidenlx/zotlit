@@ -54,6 +54,9 @@ const READ_OPERATIONS = [
   "ItemType",
   "AnnotViewAttachments",
   "ReaderTargetKeys",
+  "ScopeItemIDs",
+  "NoteRefs",
+  "ChildNoteRefs",
 ] as const satisfies readonly (keyof ZoteroReadsClient)[];
 
 /** The read operations of ZoteroReads. */

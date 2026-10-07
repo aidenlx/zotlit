@@ -322,8 +322,8 @@ export interface WriteNoteUpdateOptions {
   item: Item;
   settings: Readonly<Settings>;
   scope?: UpdateScope;
-  /** Once-resolved account username for the batch. */
-  username: string | null;
+  /** The account username; omitted, the update reads the signed-in account. */
+  username?: string | null;
   /** Headless explicit Profile. A different stamp is refused. */
   profile?: ProfileSelector;
   /**

@@ -41,7 +41,7 @@ function noteLessDeps(): SingleUpdateDeps {
     },
     settings: {} as SingleUpdateDeps["settings"],
     libraryScope: {
-      resolveWith: () => {
+      resolveLibraries: () => {
         throw new Error("create path reached: library scope resolved");
       },
     },

@@ -617,4 +617,56 @@ export class ZoteroReads extends RpcGroup.make(
     success: Schema.NullOr(ReaderTargetKeysSchema),
     error: ReadError,
   }),
+  /**
+   * The ids a batch run covers in one library, or in one collection and its
+   * descendants: regular items by `dateModified` descending, or live notes by
+   * id. `null` for a collection key the library does not hold.
+   */
+  Rpc.make("ScopeItemIDs", {
+    payload: {
+      kind: Schema.Literals(["literature-items", "notes"]),
+      libraryID: Schema.Number,
+      collectionKey: Schema.optionalKey(Schema.String),
+      ...snapshot,
+    },
+    success: Schema.NullOr(Schema.Array(Schema.Number)),
+    error: ReadError,
+  }),
+  /**
+   * One entry per requested id; `note` is `null` for an id with no live note,
+   * and `trashed` tells a note in the trash from an id that names no note.
+   */
+  Rpc.make("NoteRefs", {
+    payload: {
+      itemIDs: Schema.Array(Schema.Number),
+      ...sliceSize,
+      ...snapshot,
+    },
+    success: Schema.Array(
+      Schema.Struct({
+        itemID: Schema.Number,
+        note: Schema.NullOr(ChildNoteSchema),
+        trashed: Schema.Boolean,
+      }),
+    ),
+    error: ReadError,
+    stream: true,
+  }),
+  /** One entry per requested parent id: its display ref and its child notes. */
+  Rpc.make("ChildNoteRefs", {
+    payload: {
+      itemIDs: Schema.Array(Schema.Number),
+      ...sliceSize,
+      ...snapshot,
+    },
+    success: Schema.Array(
+      Schema.Struct({
+        itemID: Schema.Number,
+        ref: Schema.NullOr(ItemDisplayRefSchema),
+        notes: Schema.Array(ChildNoteSchema),
+      }),
+    ),
+    error: ReadError,
+    stream: true,
+  }),
 ) {}
