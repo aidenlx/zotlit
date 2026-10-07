@@ -2,7 +2,7 @@ import { zipSync } from "fflate";
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
-import type { BinaryStore } from "@/services/managed-binary/store";
+import type { BinaryStore } from "@/services/managed-binary/service";
 
 import type { CitationEngine, PreparedDocument } from "./engine";
 import { PandocEngineService } from "./service";

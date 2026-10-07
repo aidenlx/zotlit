@@ -8,12 +8,12 @@ import {
   obsidianBinaryPorts,
 } from "@/services/managed-binary/service";
 import type {
+  BinaryStore,
   ManagedBinary,
   ManagedBinaryFailure,
   ManagedBinaryPorts,
   ManagedBinaryStatus,
 } from "@/services/managed-binary/service";
-import type { BinaryStore } from "@/services/managed-binary/store";
 
 import { createCitationEngine } from "./engine";
 import type { CitationEngine } from "./engine";

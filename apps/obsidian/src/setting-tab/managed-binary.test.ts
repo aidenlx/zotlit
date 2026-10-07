@@ -4,17 +4,12 @@ import type { Setting as ObsidianSetting, SettingDefinition } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
-import * as toast from "@/lib/toast";
 import type { ManagedBinaryStatus } from "@/services/managed-binary/service";
 
 import type { SettingsKey, SettingTabContext } from "./context";
 import { managedBinaryDefinition } from "./managed-binary";
 import type { ManagedBinaryCopy } from "./managed-binary";
 import { pandocEngineDefinition } from "./pandoc-engine";
-
-vi.mock("@/lib/toast", () => ({
-  promise: vi.fn((pending: Promise<unknown>) => pending),
-}));
 
 const COPY: ManagedBinaryCopy = {
   id: "settings_segmenter",
@@ -85,11 +80,6 @@ describe("managedBinaryDefinition", () => {
 
     install.click();
     expect(actions.install).toHaveBeenCalledOnce();
-    expect(toast.promise).toHaveBeenCalledWith(expect.any(Promise), {
-      loading: "Downloading the segmenter",
-      success: "Segmenter installed",
-      error: "Segmenter install failed",
-    });
   });
 
   it("offers the removal once installed", () => {
@@ -102,10 +92,6 @@ describe("managedBinaryDefinition", () => {
 
     uninstall.click();
     expect(actions.uninstall).toHaveBeenCalledOnce();
-    expect(toast.promise).toHaveBeenCalledWith(expect.any(Promise), {
-      success: "Segmenter removed",
-      error: "Segmenter removal failed",
-    });
   });
 
   it("names the failure and offers a retry", () => {

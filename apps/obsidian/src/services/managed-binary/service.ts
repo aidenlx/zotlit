@@ -9,6 +9,8 @@ import { Service } from "@/services/service-base";
 import { createOpfsBinaryStore } from "./store";
 import type { BinaryStore } from "./store";
 
+export type { BinaryStore } from "./store";
+
 /** Suffix of a cached binary; a download still running writes `.part` instead. */
 const BINARY_SUFFIX = ".wasm";
 
@@ -205,7 +207,8 @@ export class ManagedBinaryService<
     await this.#dropEngine();
     await this.#store.clear();
     this.#consent.saveLocalStorage(this.#declinedKey, null);
-    this.#logger.info(`Removed the ${this.#binary.label} cache`, {
+    this.#logger.info("Removed the binary cache", {
+      binary: this.#binary.id,
       pin: this.#binary.pin,
     });
     this.#setStatus({ kind: "absent" });
@@ -226,7 +229,8 @@ export class ManagedBinaryService<
     try {
       return (await this.#store.list()).includes(this.#binaryName);
     } catch (error) {
-      this.#logger.warn(`Cannot read the ${this.#binary.label} cache`, {
+      this.#logger.warn("Cannot read the binary cache", {
+        binary: this.#binary.id,
         error,
       });
       return false;
@@ -261,7 +265,8 @@ export class ManagedBinaryService<
       // materializing the whole binary to hash it is fine here.
       const actual = await sha256Hex(await binary.arrayBuffer());
       if (actual !== pin.sha256) {
-        this.#logger.warn(`The cached ${label} binary is corrupt`, {
+        this.#logger.warn("The cached binary is corrupt", {
+          binary: this.#binary.id,
           name: this.#binaryName,
           actual,
           error,
@@ -280,7 +285,8 @@ export class ManagedBinaryService<
       code: "init-failed",
       detail: describe(error),
     };
-    this.#logger.error(`The ${this.#binary.label} did not start`, {
+    this.#logger.error("The binary did not start", {
+      binary: this.#binary.id,
       failure,
       error,
     });
@@ -288,17 +294,21 @@ export class ManagedBinaryService<
   }
 
   async #runInstall(): Promise<void> {
-    const { label, pin } = this.#binary;
+    const { id: binary, pin } = this.#binary;
     const { version, url, sha256 } = pin;
     try {
       // Another vault may have finished the very same download already.
       if (!(await this.#isCached())) await this.#fetchBinary();
       await this.#prune();
-      this.#logger.info(`Installed the ${label}`, { version, sha256 });
+      this.#logger.info("Installed the binary", { binary, version, sha256 });
       this.#setStatus({ kind: "installed", version });
     } catch (error) {
       const failure = toFailure(error, url);
-      this.#logger.error(`The ${label} install failed`, { failure, error });
+      this.#logger.error("The binary install failed", {
+        binary,
+        failure,
+        error,
+      });
       this.#setStatus({ kind: "failed", failure });
       throw error;
     }
@@ -310,9 +320,9 @@ export class ManagedBinaryService<
    * verified bytes.
    */
   async #fetchBinary(): Promise<void> {
-    const { label, pin, extract = (asset) => asset } = this.#binary;
+    const { id, pin, extract = (asset) => asset } = this.#binary;
     const { url, sha256 } = pin;
-    this.#logger.info(`Downloading the ${label}`, { url });
+    this.#logger.info("Downloading the binary", { binary: id, url });
     const binary = extract(await this.#download(url));
 
     const temp = `${sha256}.${crypto.randomUUID()}.part`;
@@ -341,10 +351,10 @@ export class ManagedBinaryService<
         await this.#store.remove(name);
       }
     } catch (error) {
-      this.#logger.warn(
-        `Cannot drop the superseded ${this.#binary.label} binaries`,
-        { error },
-      );
+      this.#logger.warn("Cannot drop the superseded binaries", {
+        binary: this.#binary.id,
+        error,
+      });
     }
   }
 

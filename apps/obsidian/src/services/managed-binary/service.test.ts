@@ -2,8 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import { ManagedBinaryService } from "./service";
-import type { ManagedBinary, ManagedBinaryPorts } from "./service";
-import type { BinaryStore } from "./store";
+import type { BinaryStore, ManagedBinary, ManagedBinaryPorts } from "./service";
 
 /** Node's own typings hand back `ArrayBufferLike` views; the ports take `ArrayBuffer` ones. */
 function bytes(text: string): Uint8Array<ArrayBuffer> {
