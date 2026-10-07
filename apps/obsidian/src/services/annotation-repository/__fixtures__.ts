@@ -273,7 +273,9 @@ export function leaseOver(
   stack: AsyncDisposableStack,
   client: ReturnType<typeof createClient>,
 ): Promise<ZoteroReadLease> {
-  return stack.use(inProcessReadsService(sharedClientOpener(client))).acquireRead();
+  return stack
+    .use(inProcessReadsService(sharedClientOpener(client)))
+    .acquireRead();
 }
 
 /**

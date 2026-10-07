@@ -1,11 +1,11 @@
 // Renders the captured card once, after its final image outcome is durable.
+import { Effect } from "effect";
+
 import {
   annotationColorToName,
   annotationOpenUri,
-  fetchAnnotationParentContext,
-  getAttachmentByKey,
+  buildAnnotationParents,
   parseIndexedKey,
-  resolveIndexedKeyLibrary,
 } from "@zotlit/db";
 import { TemplateError } from "@zotlit/templates/facade";
 
@@ -18,7 +18,7 @@ import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
-import { excerptRequest } from "@/services/excerpt-image/service";
+import { excerptRequestFrom } from "@/services/excerpt-image/request";
 import { ProfileAnnotationError } from "@/services/template/service";
 
 import type { NoteFeatureDeps } from "./context";
@@ -37,7 +37,7 @@ export async function prepareAnnotationInsert(
     NoteFeatureDeps,
     | "template"
     | "profile"
-    | "db"
+    | "zoteroReads"
     | "zoteroPref"
     | "settings"
     | "singleExcerpt"
@@ -46,7 +46,7 @@ export async function prepareAnnotationInsert(
   options: AnnotationInsertOptions,
 ) {
   await Promise.all([ctx.template.ready, ctx.profile.ready]);
-  using lease = await ctx.db.acquireRead();
+  using lease = await ctx.zoteroReads.acquireRead();
   const { annotation: a, source, signal } = options;
   const valid = () =>
     !signal.aborted &&
@@ -57,19 +57,30 @@ export async function prepareAnnotationInsert(
     dataDir: ctx.zoteroPref.dataDir,
     baseAttachmentPath: ctx.zoteroPref.baseAttachmentPath,
   };
-  const request = excerptRequest({
+  // The parent context, not the Annotation's own row: a card the Local API
+  // answered can precede its SQLite row.
+  const [identity, sources] = await Effect.runPromise(
+    Effect.all(
+      [
+        lease.reads.DatabaseIdentity({}),
+        lease.reads.AttachmentSources({ attachmentKeys: [a.parentKey] }),
+      ],
+      { concurrency: "unbounded" },
+    ),
+  );
+  const attachment =
+    sources.attachments.find(({ indexedKey }) => indexedKey === a.parentKey) ??
+    null;
+  const request = excerptRequestFrom({
     annotation: a,
     source,
-    client: lease.client,
+    identity,
+    attachment,
     paths,
   });
   // This also validates the captured source against the lease's database identity.
-  if (!request) return null;
-  const parent = resolveIndexedKeyLibrary(lease.client, a.parentKey);
   const key = parseIndexedKey(a.key);
-  const attachment =
-    parent && getAttachmentByKey(lease.client, parent.key, parent.libraryID);
-  if (!attachment || !key) return null;
+  if (!request || !attachment || !key) return null;
   const unusedImport = () => {
     throw new Error(
       "Captured annotation rendering uses prepared excerpt helpers",
@@ -80,11 +91,10 @@ export async function prepareAnnotationInsert(
     attachmentImport: { decide: unusedImport, resolveLink: unusedImport },
     annotationImageLink: () => null,
   });
-  const { parentItem, tplAttachment } = fetchAnnotationParentContext(
-    lease.client,
-    attachment,
+  const { parentItem, tplAttachment } = buildAnnotationParents(
+    sources,
     resolvers,
-  );
+  ).get(attachment.itemID)!;
   const file = parentItem
     ? ctx.noteIndex.getNotesByItemKey(parentItem.indexedKey)[0]
     : undefined;

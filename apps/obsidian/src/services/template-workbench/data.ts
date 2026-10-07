@@ -4,10 +4,10 @@ import { Effect } from "effect";
 import type { App } from "obsidian";
 
 import {
+  buildAnnotationsTemplateData,
   buildFilenameContext,
   buildNoteContextFromSource,
   citekeysToCiteTemplateData,
-  fetchAnnotationsTemplateData,
   getAnnotationsByKey,
   getAttachmentByKey,
   getItemsByID,
@@ -19,6 +19,7 @@ import {
 } from "@zotlit/db";
 import type {
   Annotation,
+  AnnotationSources,
   CitationTemplateData,
   CitationVariant,
   ContractRoot,
@@ -129,15 +130,14 @@ export async function loadTemplateData(
     deps.templates.ready,
   ]);
   if (root === "annotation") {
-    using lease = await deps.db.acquireRead();
-    const selected = resolveAnnotation(lease.client, indexedKey);
-    if (selected.kind !== "annotation") return selected;
-    const resolvers = await createInertResolvers(deps, settings, selected.item);
-    const data = fetchAnnotationsTemplateData(
-      lease.client,
-      [selected.annotation],
-      { resolvers: resolvers.annotation },
-    ).get(selected.annotation.key);
+    using lease = await deps.zoteroReads.acquireRead();
+    const selected = await readAnnotationSources(lease.reads, indexedKey);
+    if (selected.kind !== "sources") return selected;
+    const { sources, item } = selected;
+    const resolvers = await createInertResolvers(deps, settings, item);
+    const data = buildAnnotationsTemplateData(sources, resolvers.annotation)
+      .values()
+      .next().value;
     if (!data) return { kind: "not-found" };
     return {
       kind: "data",
@@ -300,29 +300,36 @@ function classifyObject(
 }
 
 type AnnotationResult =
-  | { kind: "annotation"; annotation: Annotation; item: Item | null }
+  | { kind: "sources"; sources: AnnotationSources; item: Item | null }
   | { kind: "not-found" }
   | { kind: "annotation-required" }
   | { kind: "annotation-attachment-missing" };
 
-function resolveAnnotation(
-  client: NodeDatabaseClient,
+/**
+ * The {@link AnnotationSources} of the Annotation an Indexed Key names, with
+ * its parent Item, `null` for a standalone attachment.
+ */
+async function readAnnotationSources(
+  reads: ZoteroReadsApi,
   indexedKey: string,
-): AnnotationResult {
-  const selected = classifyObject(client, indexedKey);
-  if (selected.kind === "annotation-attachment-missing") return selected;
-  if (selected.kind === "not-found") return selected;
-  if (selected.kind !== "annotation") return { kind: "annotation-required" };
-
-  const attachment = getAttachmentByKey(
-    client,
-    selected.annotation.parentKey,
-    selected.annotation.libraryID,
+): Promise<AnnotationResult> {
+  const selected = await Effect.runPromise(reads.ItemType({ indexedKey }));
+  if (!selected) return { kind: "not-found" };
+  if (selected.itemType !== "annotation")
+    return { kind: "annotation-required" };
+  const sources = await Effect.runPromise(
+    reads.AnnotationSources({
+      libraryID: selected.libraryID,
+      keys: [selected.key],
+    }),
   );
-  const item = attachment?.parentItemID
-    ? (getItemsByID(client, [attachment.parentItemID])[0] ?? null)
-    : null;
-  return { ...selected, item };
+  const [attachment] = sources.attachments;
+  if (!attachment) return { kind: "annotation-attachment-missing" };
+  const item =
+    sources.parentItems.find(
+      ({ itemID }) => itemID === attachment.parentItemID,
+    ) ?? null;
+  return { kind: "sources", sources, item };
 }
 
 type NoteItemResult =

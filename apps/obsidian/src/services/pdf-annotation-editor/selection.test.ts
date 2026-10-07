@@ -10,9 +10,9 @@ import { AbortError } from "@/lib/abort-error";
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import * as confirmation from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
+import { useFakeTimers } from "@/services/annotation-repository/__fixtures__";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
-import { useFakeTimers } from "@/services/annotation-repository/__fixtures__";
 import {
   libraryReadOnly,
   staleVersionPatch,

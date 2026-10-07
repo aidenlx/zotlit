@@ -345,7 +345,6 @@ export function buildServices(
         zoteroPref,
         attachmentImport,
         excerptImage,
-        db,
       }): NoteImporter =>
         createNoteImporter({
           profile,
@@ -354,10 +353,6 @@ export function buildServices(
           template,
           zoteroPref,
           attachmentImport,
-          // On the in-process adapter the write's Snapshot holds a DatabaseService
-          // lease, so `db.client` is the connection that Snapshot pinned. The
-          // worker adapter pins its own connection: this binding reads another
-          // until the preparation reads through ZoteroReads.
           excerptImages: (options) =>
             createExcerptPreparation({
               app: plugin.app,
@@ -366,7 +361,7 @@ export function buildServices(
                 dataDir: zoteroPref.dataDir,
                 baseAttachmentPath: zoteroPref.baseAttachmentPath,
               },
-            })({ ...options, client: db.client }),
+            })(options),
         }),
     })
     .use({
@@ -428,10 +423,6 @@ export function buildServices(
               app: plugin.app,
               resolver: excerptImage,
             }),
-          // On the in-process adapter the write's Snapshot holds a DatabaseService
-          // lease, so `db.client` is the connection that Snapshot pinned. The
-          // worker adapter pins its own connection: this binding reads another
-          // until the preparation reads through ZoteroReads.
           excerptImages: (options) =>
             createExcerptPreparation({
               app: plugin.app,
@@ -440,7 +431,7 @@ export function buildServices(
                 dataDir: zoteroPref.dataDir,
                 baseAttachmentPath: zoteroPref.baseAttachmentPath,
               },
-            })({ ...options, client: db.client }),
+            })(options),
           profile,
           app: plugin.app,
           template,

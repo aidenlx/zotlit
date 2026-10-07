@@ -13,6 +13,7 @@ import type {
 import { AbortError } from "@/lib/abort-error";
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
+import { useFakeTimers } from "@/services/annotation-repository/__fixtures__";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   TextPosition,
@@ -23,7 +24,6 @@ import {
   MAX_POSITION_LENGTH,
   writePosition,
 } from "@/services/annotation-repository/write";
-import { useFakeTimers } from "@/services/annotation-repository/__fixtures__";
 import { createRefused } from "@/services/zotero-local-api/__fixtures__";
 import type { ZoteroRequest } from "@/services/zotero-local-api/__fixtures__";
 import { pressSubmit } from "@/views/annot-view/__fixtures__/editor-app";

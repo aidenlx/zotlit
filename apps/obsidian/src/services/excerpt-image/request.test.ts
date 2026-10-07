@@ -86,7 +86,9 @@ async function fixture(
       (1, null, 0, 'application/pdf', 'storage:paper.pdf'),
       (2, null, 0, 'application/pdf', 'storage:paper.pdf');
   `);
-  const { reads } = await stack.use(inProcessReadsService(sharedClientOpener(client))).ready;
+  const { reads } = await stack.use(
+    inProcessReadsService(sharedClientOpener(client)),
+  ).ready;
   return Object.assign(stack, { reads });
 }
 
@@ -229,7 +231,9 @@ describe("Excerpt request verification", () => {
     expect(request).not.toBeNull();
     // No Local API session can be verified against this database, so no API
     // source may claim its pixels.
-    expect(await excerptRequest({ ...standalone, source: apiSource })).toBeNull();
+    expect(
+      await excerptRequest({ ...standalone, source: apiSource }),
+    ).toBeNull();
     // A copy of the database keeps its own identity through its source scope.
     expect(excerptKey(request!)).not.toBe(
       excerptKey(

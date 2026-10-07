@@ -12,12 +12,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppContext } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
-import type { ExcerptRequest } from "@/services/excerpt-image/contract";
 import type {
   AnnotationRecord,
   MutationState,
   TextFieldDraft,
 } from "@/services/annotation-repository/service";
+import type { ExcerptRequest } from "@/services/excerpt-image/contract";
 
 import { editorApp } from "./__fixtures__/editor-app";
 import { AnnotActionsContext } from "./actions";
@@ -718,7 +718,10 @@ describe("an image card's Excerpt Image demand", () => {
     );
     await act(() =>
       store.setState({
-        annotationSource: { kind: "zotero-local-api", serverID: "OTHER0000001" },
+        annotationSource: {
+          kind: "zotero-local-api",
+          serverID: "OTHER0000001",
+        },
       }),
     );
     expect(resolutions).toHaveLength(2);
