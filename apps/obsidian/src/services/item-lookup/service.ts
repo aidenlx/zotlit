@@ -88,12 +88,10 @@ export class ItemLookup extends Service<ItemLookupReady> {
     await using stack = new AsyncDisposableStack();
     const { scope, close } = openScope();
     stack.defer(close);
-    const runSearch = Effect.runSync(
-      Scope.provide(
-        FiberHandle.makeRuntimePromise<never, SearchHit[], never>(),
-        scope,
-      ),
+    const searches = Effect.runSync(
+      Scope.provide(FiberHandle.make<SearchHit[], never>(), scope),
     );
+    const runSearch = Effect.runSync(FiberHandle.runtimePromise(searches)());
     const runPrewarm = Effect.runSync(
       Scope.provide(FiberSet.makeRuntime<never, void, never>(), scope),
     );
@@ -102,12 +100,25 @@ export class ItemLookup extends Service<ItemLookupReady> {
       if (libraries.length === 0) return;
       runPrewarm(Effect.asVoid(this.#searchItems(libraries, "", 1)));
     };
-    stack.defer(this.#libraryScope.on("changed", prewarm));
+    let libraryIDs = libraryIDsOf(this.#libraryScope.current);
+    stack.defer(
+      this.#libraryScope.on("changed", (resolved) => {
+        // A pending answer covers the Libraries it asked with; once those
+        // change, it must not reach a picker. A rename keeps it.
+        const next = libraryIDsOf(resolved);
+        if (next !== libraryIDs) {
+          libraryIDs = next;
+          Effect.runFork(FiberHandle.clear(searches));
+        }
+        prewarm(resolved);
+      }),
+    );
 
     this.commit(stack.move());
 
     await Promise.all([this.#reads.ready, this.#libraryScope.ready]);
     logger.info("Item lookup ready");
+    libraryIDs = libraryIDsOf(this.#libraryScope.current);
     prewarm(this.#libraryScope.current);
     return { runSearch };
   }
@@ -166,4 +177,11 @@ export class ItemLookup extends Service<ItemLookupReady> {
       return [];
     });
   }
+}
+
+/** The local ids `resolved` covers, as one comparable value. */
+function libraryIDsOf(resolved: ResolvedLibraryScope | null): string {
+  return (resolved?.available ?? [])
+    .map((library) => library.libraryID)
+    .join(",");
 }

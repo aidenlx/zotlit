@@ -181,22 +181,50 @@ describe("ItemLookup", () => {
       .toEqual({ libraryIDs: [USER_LIBRARY_ID, 2], query: "", limit: 1 });
   });
 
-  it("keeps a search running while a prewarm runs", async () => {
+  it("keeps a pending search running through a rename and its prewarm", async () => {
     await using reads = readsOver(() => seed(perLibraryRows()));
-    const libraryScope = new FakeLibraryScope();
+    const libraryScope = new FakeLibraryScope([
+      library(USER_LIBRARY_ID),
+      library(2),
+    ]);
     await using lookup = itemLookup(reads, libraryScope);
     await lookup.search("");
     const gate = reads.gateSearch();
 
     const search = lookup.search("Alpha");
     await expect.poll(() => reads.held).toBe(1);
-    libraryScope.setLibraries([library(USER_LIBRARY_ID), library(2)]);
+    libraryScope.setLibraries([
+      library(USER_LIBRARY_ID),
+      { ...library(2), name: "Renamed" },
+    ]);
     await expect.poll(() => reads.searches.at(-1)?.limit).toBe(1);
     gate.resolve();
 
-    await expect(search).resolves.toHaveLength(1);
+    await expect(search).resolves.toHaveLength(2);
     expect(reads.interrupted).toEqual([]);
   });
+
+  it.each([
+    ["another Library", [library(2)]],
+    ["no Library", []],
+  ])(
+    "drops a pending search's answer when the scope changes to %s",
+    async (_case, libraries) => {
+      await using reads = readsOver(() => seed(perLibraryRows()));
+      const libraryScope = new FakeLibraryScope();
+      await using lookup = itemLookup(reads, libraryScope);
+      await lookup.search("");
+      const gate = reads.gateSearch();
+
+      const search = lookup.search("Alpha");
+      await expect.poll(() => reads.held).toBe(1);
+      libraryScope.setLibraries(libraries);
+
+      await expect(search).resolves.toEqual([]);
+      expect(reads.interrupted).toEqual(["Alpha"]);
+      gate.resolve();
+    },
+  );
 });
 
 function itemLookup(
