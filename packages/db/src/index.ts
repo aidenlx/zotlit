@@ -208,11 +208,17 @@ export {
   type TemplateNoteLink,
 } from "./lib/context/zt-template-note";
 export {
+  buildAnnotationsTemplateData,
+  buildNoteContextFromSource,
+  fetchAnnotationSources,
   fetchAnnotationsTemplateData,
   fetchAnnotationParentContext,
   fetchNoteContext,
+  fetchNoteSource,
   type AnnotationResolvers,
+  type AnnotationSources,
   type NoteResolvers,
+  type NoteSource,
 } from "./lib/context/note-context";
 export {
   CONTRACT_ROOTS,
