@@ -8,8 +8,7 @@ import type { IndexedItem, LanguageNameLookup } from "@zotlit/db";
 
 import { formatCreator } from "./format-creator";
 import { Segmenter } from "./segmenter";
-import { normalize, normalizeWithIndexMap, tokenize } from "./tokenizer";
-import type { TokenizerOptions } from "./tokenizer";
+import { normalize, normalizeWithIndexMap } from "./tokenizer";
 
 /** Structurally compatible with Obsidian's `SearchMatches`. */
 export type SearchMatches = [number, number][];
@@ -170,8 +169,7 @@ export const searchEngineIndex = (
   });
 
 // ---------------------------------------------------------------------------
-// Synchronous core, shared by the Effect API and the kept renderer entry
-// points below.
+// Synchronous core behind the Effect API.
 
 interface EngineCore {
   add(slice: readonly IndexedItem[]): void;
@@ -495,90 +493,4 @@ function highlightRanges(re: RegExp, title: string): SearchMatches {
     ]);
   }
   return ranges;
-}
-
-// ---------------------------------------------------------------------------
-// Kept entry points for the renderer `ItemLookup` until it moves to the
-// worker (#1362). They run the same engine synchronously.
-
-/** @deprecated Use {@link ItemHit} through {@link searchEngineIndex}. */
-export interface SearchHit<T> {
-  item: T;
-  /** Always `0`: the engine no longer scores hits. */
-  score: number;
-  matches: SearchMatches;
-}
-
-/** @deprecated Use {@link EngineIndex}. */
-export interface SearchIndex {
-  engine: EngineIndex;
-  /** Every indexed Item in global order: newest first, then Library, then item. */
-  items: readonly IndexedItem[];
-  byId: ReadonlyMap<number, IndexedItem>;
-}
-
-/** @deprecated Use {@link searchEngineIndex}. */
-export interface SearchIndexOptions {
-  tokenizer: TokenizerOptions;
-  limit: number;
-}
-
-/** @deprecated Use {@link EngineIndexOptions}. */
-export type BuildIndexOptions = EngineIndexOptions;
-
-/** @deprecated Use {@link EngineIndexBuilder}. */
-export interface SearchIndexBuilder {
-  /** Index a batch of items; {@link build} imposes the global order. */
-  add(items: readonly IndexedItem[]): void;
-  build(): SearchIndex;
-}
-
-/** @deprecated Use {@link makeEngineIndexBuilder}. */
-export function createIndexBuilder(
-  tokenizerOpts: TokenizerOptions,
-  options: BuildIndexOptions,
-): SearchIndexBuilder {
-  const core = createCore((text) => tokenize(text, tokenizerOpts), options);
-  const byId = new Map<number, IndexedItem>();
-  return {
-    add(batch) {
-      for (const item of batch) byId.set(item.itemID, item);
-      core.add(batch);
-    },
-    build() {
-      const engine = core.build();
-      return {
-        engine,
-        items: engine.ordered.map((record) => byId.get(record.itemID)!),
-        byId,
-      };
-    },
-  };
-}
-
-/** @deprecated Use {@link buildEngineIndex}. */
-export function buildIndex(
-  items: readonly IndexedItem[],
-  tokenizerOpts: TokenizerOptions,
-  options: BuildIndexOptions,
-): SearchIndex {
-  const builder = createIndexBuilder(tokenizerOpts, options);
-  builder.add(items);
-  return builder.build();
-}
-
-/** @deprecated Use {@link searchEngineIndex}. */
-export function searchIndex(
-  index: SearchIndex,
-  query: string,
-  opts: SearchIndexOptions,
-): SearchHit<IndexedItem>[] {
-  if (opts.limit <= 0) return [];
-  const lookup = lookupQuery(index.engine, query, (text) =>
-    tokenize(text, opts.tokenizer),
-  );
-  return finishLookup(index.engine, lookup, opts.limit).flatMap((hit) => {
-    const item = index.byId.get(hit.itemID);
-    return item ? [{ item, score: 0, matches: hit.matches }] : [];
-  });
 }

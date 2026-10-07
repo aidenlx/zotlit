@@ -275,28 +275,6 @@ describe("ZoteroReads operations", () => {
     expect(readout).toEqual({ itemCount: 4 });
   });
 
-  it("IndexItems streams the library in slices, with Instants decoded", async () => {
-    const { open } = fixtureOpener();
-    const slices = await withReads(
-      open,
-      (reads) => Stream.runCollect(reads.IndexItems({ libraryID: 1 })),
-      { sliceSize: 2 },
-    );
-    expect(slices.map((slice) => slice.map((item) => item.key))).toEqual([
-      ["MAIN2345", "RELA2345"],
-      ["RELB2345"],
-    ]);
-    const main = slices[0]![0]!;
-    expect(main.dateModified).toBeInstanceOf(Temporal.Instant);
-    expect(main.dateModified.toString()).toBe("2024-02-01T00:00:00Z");
-    expect(main).toMatchObject({
-      indexedKey: "MAIN2345",
-      title: "Main Study",
-      citationKey: "main2024",
-      primaryCreator: { firstName: "Ada", lastName: "Lovelace", fieldMode: 0 },
-    });
-  });
-
   it("ItemsByIndexedKeys answers user and group keys and leaves unknown keys out", async () => {
     const { open } = fixtureOpener();
     const items = await withReads(open, (reads) =>
@@ -577,23 +555,6 @@ describe("ZoteroReads operations", () => {
     ]);
   });
 
-  it("IndexSignature counts and checksums the top-level items of one library", async () => {
-    const { open } = fixtureOpener();
-    const signatures = await withReads(open, (reads) =>
-      Effect.all([
-        reads.IndexSignature({ libraryID: 1 }),
-        reads.IndexSignature({ libraryID: 2 }),
-        reads.IndexSignature({ libraryID: 99 }),
-      ]),
-    );
-    // Seconds of each dateModified plus the itemID, summed per library.
-    expect(signatures).toEqual([
-      { count: 3, checksum: 1706745601 + 1704153602 + 1704240003 },
-      { count: 1, checksum: 1704326700 },
-      { count: 0, checksum: 0 },
-    ]);
-  });
-
   it("AttachmentsByKeys returns one library's attachments by key and leaves unknown keys out", async () => {
     const { open } = fixtureOpener(
       () => `
@@ -869,14 +830,6 @@ describe("ZoteroReads operations", () => {
       "ChildNoteRefs",
       (reads, size) =>
         Stream.runDrain(reads.ChildNoteRefs({ itemIDs: sliceIDs[size] })),
-    ],
-    // Library 2 indexes one item; library 1 indexes three.
-    [
-      "IndexItems",
-      (reads, size) =>
-        Stream.runDrain(
-          reads.IndexItems({ libraryID: size === "one" ? 2 : 1 }),
-        ),
     ],
     // Live notes, a trashed note, a miss, and a repeat.
     [
@@ -1162,9 +1115,10 @@ describe("ZoteroReads connection lifetime", () => {
               const first = yield* take(slices, 1);
               yield* reads.Refresh();
               // Started after the swap, naming the Snapshot.
-              const indexed = yield* Stream.runCollect(
-                reads.IndexItems({ libraryID: 1, snapshot: id }),
-              );
+              const indexed = yield* reads.ItemsByIndexedKeys({
+                indexedKeys: ["MAIN2345", "RELA2345", "RELB2345"],
+                snapshot: id,
+              });
 
               // End the Snapshot; its id stops answering once the server has
               // ended it, while the stream still holds the connection.
@@ -1177,7 +1131,7 @@ describe("ZoteroReads connection lifetime", () => {
               const rest = yield* take(slices, 4);
               return {
                 refs: [...first, ...rest].flat(),
-                indexed: indexed.flat().map((item) => item.key),
+                indexed: [...indexed.keys()],
                 logAfterSnapshotEnd,
               };
             }),

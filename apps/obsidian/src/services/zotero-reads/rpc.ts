@@ -11,8 +11,6 @@ import type {
   ChildNote,
   Creator,
   getItemDisplayRefByID,
-  IndexedItem,
-  IndexSignature,
   Item,
   ItemBaseFields,
   ItemTag,
@@ -117,31 +115,6 @@ export const ItemSchema = Schema.Struct({
   groupID: Schema.NullOr(Schema.Number),
 });
 type _Item = Expect<Equals<typeof ItemSchema.Type, Item>>;
-
-const IndexedCreatorSchema = Schema.Struct({
-  firstName: Schema.NullOr(Schema.String),
-  lastName: Schema.NullOr(Schema.String),
-  fieldMode: rawInt<Creator["fieldMode"]>(),
-});
-
-export const IndexedItemSchema = Schema.Struct({
-  itemID: Schema.Number,
-  libraryID: Schema.Number,
-  key: Schema.String,
-  indexedKey: Schema.String,
-  dateModified: Instant,
-  itemType: Schema.String,
-  primaryCreator: Schema.NullOr(IndexedCreatorSchema),
-  creators: Schema.Array(IndexedCreatorSchema),
-  language: Schema.NullOr(Schema.String),
-  title: Schema.NullOr(Schema.String),
-  publicationTitle: Schema.NullOr(Schema.String),
-  shortTitle: Schema.NullOr(Schema.String),
-  court: Schema.NullOr(Schema.String),
-  citationKey: Schema.NullOr(Schema.String),
-  date: Schema.NullOr(Schema.String),
-});
-type _IndexedItem = Expect<Equals<typeof IndexedItemSchema.Type, IndexedItem>>;
 
 export const AttachmentSchema = Schema.Struct({
   itemID: Schema.Number,
@@ -326,15 +299,6 @@ export const ReaderTargetKeysSchema = Schema.Struct({
   selected: Schema.Array(Schema.String),
 });
 
-/** A library's change-detection signature for the item index. */
-export const IndexSignatureSchema = Schema.Struct({
-  count: Schema.Number,
-  checksum: Schema.Number,
-});
-type _IndexSignature = Expect<
-  Equals<typeof IndexSignatureSchema.Type, IndexSignature>
->;
-
 /**
  * One ranked answer of `SearchItems`: the hydrated Item and the ranges of its
  * title that matched the query, as `[start, end)` offsets into the title.
@@ -471,12 +435,6 @@ export class ZoteroReads extends RpcGroup.make(
     success: Schema.Struct({ itemCount: Schema.Number }),
     error: ReadError,
   }),
-  Rpc.make("IndexItems", {
-    payload: { libraryID: Schema.Number, ...snapshot },
-    success: Schema.Array(IndexedItemSchema),
-    error: ReadError,
-    stream: true,
-  }),
   /** Items keyed by the Indexed Key each was asked by; a key with no live item is absent. */
   Rpc.make("ItemsByIndexedKeys", {
     payload: { indexedKeys: Schema.Array(Schema.String), ...snapshot },
@@ -591,12 +549,6 @@ export class ZoteroReads extends RpcGroup.make(
   Rpc.make("Configure", { payload: ReadsConfigSchema }),
   /** Answers at once: the renderer's proof that the worker still runs. */
   Rpc.make("Ping", {}),
-  /** The item index signature of one library; an unknown library counts zero. */
-  Rpc.make("IndexSignature", {
-    payload: { libraryID: Schema.Number, ...snapshot },
-    success: IndexSignatureSchema,
-    error: ReadError,
-  }),
   /** Attachments of one library by key; a key with no live attachment is absent. */
   Rpc.make("AttachmentsByKeys", {
     payload: {
