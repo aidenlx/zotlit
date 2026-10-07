@@ -248,10 +248,15 @@ export class ManagedBinaryService<
   }
 
   async #loadEngine(): Promise<Engine> {
-    const { label, pin, createEngine } = this.#binary;
     if (this.#status.kind !== "installed") {
-      throw new Error(`The ${label} is not installed`);
+      throw new Error(`The ${this.#binary.label} is not installed`);
     }
+    return this.#startEngine();
+  }
+
+  /** Starts an engine over the cached binary, whatever the status says. */
+  async #startEngine(): Promise<Engine> {
+    const { label, pin, createEngine } = this.#binary;
     let binary: Blob;
     try {
       const read = await this.#store.read(this.#binaryName);
@@ -306,8 +311,6 @@ export class ManagedBinaryService<
       // Another vault may have finished the very same download already.
       if (!(await this.#isCached())) await this.#fetchBinary();
       await this.#prune();
-      this.#logger.info("Installed the binary", { binary, version, sha256 });
-      this.#setStatus({ kind: "installed", version });
     } catch (error) {
       const failure = toFailure(error, url);
       this.#logger.error("The binary install failed", {
@@ -318,12 +321,13 @@ export class ManagedBinaryService<
       this.#setStatus({ kind: "failed", failure });
       throw error;
     }
-    if (!this.#binary.startOnInstall) return;
-    try {
-      await this.getEngine();
-    } finally {
-      await this.#dropEngine();
+    if (this.#binary.startOnInstall) {
+      // The status stays `installing` through the start and its release, so
+      // a concurrent install() shares this whole operation.
+      await using _engine = await this.#startEngine();
     }
+    this.#logger.info("Installed the binary", { binary, version, sha256 });
+    this.#setStatus({ kind: "installed", version });
   }
 
   /**

@@ -2,7 +2,7 @@
 // `pnpm test` because it builds a 100,000-Item index and checks a time bound.
 import { Effect, Stream } from "effect";
 import MiniSearch from "minisearch";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { USER_LIBRARY_ID } from "@zotlit/db";
 import type { IndexedItem } from "@zotlit/db";
@@ -35,21 +35,25 @@ const WORDS = [
   "urban",
   "values",
 ];
+const MODIFIED_FROM = Temporal.Instant.from("2020-01-01T00:00:00Z");
 const NAMES = ["Smith", "Garcia", "Chen", "Müller", "Okafor", "Novak"];
 
 describe("search cost over 100,000 Items", () => {
   let index: EngineIndex;
 
+  beforeAll(async () => {
+    index = await buildEngineIndex(Stream.fromIterable(slices()), {
+      libraries: [USER_LIBRARY_ID],
+    }).pipe(Effect.provide(layerSegmenterNone), Effect.runPromise);
+  }, 120_000);
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("builds the index", async () => {
-    index = await buildEngineIndex(Stream.fromIterable(slices()), {
-      libraries: [USER_LIBRARY_ID],
-    }).pipe(Effect.provide(layerSegmenterNone), Effect.runPromise);
+  it("builds the index", () => {
     expect(index.size).toBe(ITEMS);
-  }, 120_000);
+  });
 
   it.each(["a", "s", "smith 20 his"])(
     "answers %j with one MiniSearch lookup within the bound",
@@ -89,6 +93,6 @@ function synthetic(id: number): IndexedItem {
     date: `${year}-01-01`,
     citationKey: `${name.toLowerCase()}${year}${word(0)}`,
     publicationTitle: `Journal of ${word(3)}`,
-    dateModified: new Date(Date.UTC(2020, 0, 1) + id * 60_000).toISOString(),
+    dateModified: MODIFIED_FROM.add({ minutes: id }).toString(),
   });
 }

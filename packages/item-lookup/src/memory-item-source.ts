@@ -51,6 +51,12 @@ export interface MemoryItemSource {
   readonly held: Effect.Effect<void>;
   /** `items` reads held at the gate now. */
   readonly waiting: number;
+  /**
+   * Run `run` once, in the closing fiber, when the next pinned source closes.
+   * A finished build closes the source of the index it replaces, so `run`
+   * lands at the end of that build.
+   */
+  readonly onNextRelease: (run: Effect.Effect<void>) => Effect.Effect<void>;
 }
 
 /** `rows` holds the Items of each Library; ids come back newest first. */
@@ -71,6 +77,7 @@ export const makeMemoryItemSource = (
     let unavailable = false;
     let gateClosed = false;
     let waiting = 0;
+    let onRelease: Effect.Effect<void> | null = null;
     const generations = yield* PubSub.unbounded<void>();
     const gate = yield* Latch.make(true);
     const arrived = yield* Latch.make(false);
@@ -146,8 +153,11 @@ export const makeMemoryItemSource = (
           }),
         ),
         () =>
-          Effect.sync(() => {
+          Effect.suspend(() => {
             reads.released++;
+            const run = onRelease;
+            onRelease = null;
+            return run ?? Effect.void;
           }),
       ),
     });
@@ -183,6 +193,10 @@ export const makeMemoryItemSource = (
         return gate.open;
       }).pipe(Effect.asVoid),
       held: arrived.await,
+      onNextRelease: (run) =>
+        Effect.sync(() => {
+          onRelease = run;
+        }),
     } satisfies MemoryItemSource;
   });
 
