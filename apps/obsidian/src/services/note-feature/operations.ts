@@ -294,8 +294,8 @@ export interface CreateNoteOptions {
    */
   reads?: ZoteroReadsApi;
   /**
-   * The batch supplies the once-resolved account username; a single-item create
-   * resolves it from its own lease when omitted.
+   * The account username; omitted, the create reads the signed-in account
+   * from its Snapshot.
    */
   username?: string | null;
   /**
