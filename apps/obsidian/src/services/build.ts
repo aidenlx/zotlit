@@ -670,7 +670,7 @@ export function buildServices(
     })
     .use({
       graphCitations: ({
-        db,
+        zoteroReads,
         libraryScope,
         citationIndex,
         noteIndex,
@@ -680,7 +680,7 @@ export function buildServices(
       }) =>
         new GraphCitations({
           app: plugin.app,
-          db,
+          reads: zoteroReads,
           libraryScope,
           citationIndex,
           noteIndex,
