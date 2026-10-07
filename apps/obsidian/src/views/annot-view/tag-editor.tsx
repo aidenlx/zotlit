@@ -247,12 +247,8 @@ function TagField({
       if (close) latest.current.onClose();
       else latest.current.onLeave?.();
     };
-    // The suggestions offer the Library's names once the read lands; until
-    // then they offer none.
-    let library: readonly string[] = [];
-    void latest.current.libraryNames().then((names) => {
-      library = names;
-    });
+    // Read once as the editor opens; the suggestions wait for it.
+    const library = latest.current.libraryNames();
     suggest.current = new TagSuggest(app, input, {
       names: () => library,
       taken: () => latest.current.value,
@@ -373,7 +369,7 @@ export function HeldTagsPanel({
 
 /** Where a {@link TagSuggest} reads its names and hands its pick. */
 interface TagSuggestSource {
-  names(): readonly string[];
+  names(): Promise<readonly string[]>;
   /** The names the Annotation already carries, which are no addition. */
   taken(): readonly string[];
   pick(name: string): void;
@@ -413,17 +409,16 @@ class TagSuggest extends AbstractInputSuggest<string> {
     this.#source.shown(null);
   }
 
-  override getSuggestions(query: string): string[] {
+  override async getSuggestions(query: string): Promise<string[]> {
     const text = query.trim();
     if (text === "") return [];
+    const names = await this.#source.names();
     this.#search = prepareSimpleSearch(text);
     const taken = this.#source.taken();
-    const matches = this.#source
-      .names()
-      .filter(
-        (name) =>
-          name !== text && !taken.includes(name) && this.#search(name) !== null,
-      );
+    const matches = names.filter(
+      (name) =>
+        name !== text && !taken.includes(name) && this.#search(name) !== null,
+    );
     return taken.includes(text) ? matches : [text, ...matches];
   }
 

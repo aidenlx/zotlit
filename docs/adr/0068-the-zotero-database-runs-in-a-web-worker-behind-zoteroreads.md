@@ -4,7 +4,7 @@ Amends [ADR 0050](0050-chunked-work-yields-via-messagechannel.md) for database r
 
 The Zotero database lives in one Web Worker. The worker owns the connection, Read Mode selection, the source fingerprint, the file watchers, the debounced single-flight refresh lane, and the Freshness Signal intake. The renderer reads the database only through **ZoteroReads**: an Effect RPC group of use-case operations such as `NoteSource`, `AnnotationSources`, `ItemsByIndexedKeys`, and `DisplayRefs`. Each operation composes the `@zotlit/db` queries inside the worker and returns a plain bundle; the renderer keeps the pure builds that need its resolvers. The renderer holds no database client type and opens no SQLite file.
 
-Obsidian runs Web Workers with Node integration, so `node:sqlite` and `node:fs` load in the worker unchanged. The plugin build bundles the worker entry and embeds it as a string; the renderer spawns it from a blob URL on load and terminates it on unload. One worker serves up to 16 requests at once, so a long stream never holds back a short read.
+Obsidian runs Web Workers with Node integration, so `node:sqlite` and `node:fs` load in the worker unchanged. The plugin build bundles the worker entry and embeds it as a string; the renderer spawns it from a blob URL on load and terminates it on unload. One worker serves every request at once: `Changes`, a held Snapshot, and an open stream each occupy a request for their whole life, so a cap on requests would let them hold back a short read or the liveness ping.
 
 ## Why
 

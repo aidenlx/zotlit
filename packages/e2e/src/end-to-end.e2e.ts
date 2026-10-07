@@ -93,6 +93,9 @@ const attachmentAnnotations = ANNOTATIONS.filter(
   ({ parentItemID }) => parentItemID === annotationAttachment.itemID,
 );
 const annotationKeys = attachmentAnnotations.map(({ key }) => key);
+/** The Annotation Copy citation copies, and the Item it cites. */
+const copiedAnnotation = ANNOTATIONS.find(({ key }) => key === "FDRFQ7C2")!;
+const annotationItem = ITEMS.find(({ key }) => key === "RUGIER24")!;
 /** The tag vocabulary those Annotations carry, which is what the tag Chooser lists. */
 const attachmentTags = [
   ...new Set(
@@ -755,6 +758,37 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     120000,
   );
 
+  it("copies an Annotation's citation after the database read, through Electron when the web clipboard refuses", async () => {
+    const citation = `[@${annotationItem.citationKey}, {p. ${copiedAnnotation.pageLabel}}]`;
+    const copy = (refuse: boolean) =>
+      obEval(
+        vaultId,
+        `(async()=>{
+          const leaf=app.workspace.getRightLeaf(false);
+          await leaf.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:${JSON.stringify(annotationItem.key)}}});
+          const view=leaf.view;await view.read;
+          let button=null;
+          for(let i=0;i<100&&!button;i++){button=view.contentEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(copiedAnnotation.key)}] [aria-label=${JSON.stringify(m.annot_view_more_tooltip())}]');if(!button)await new Promise(r=>setTimeout(r,50));}
+          if(!button)throw new Error('Annotation card menu missing');
+          await navigator.clipboard.writeText('');
+          const write=navigator.clipboard.writeText;
+          if(${refuse})navigator.clipboard.writeText=()=>Promise.reject(new Error('Clipboard write refused'));
+          try{
+            button.click();
+            let item=null;
+            for(let i=0;i<50&&!item;i++){item=Array.from(activeDocument.querySelectorAll('.menu .menu-item')).find(e=>e.textContent.trim()===${JSON.stringify(m.annot_view_menu_copy_citation())});if(!item)await new Promise(r=>setTimeout(r,50));}
+            if(!item)throw new Error('Copy citation missing from the card menu');
+            item.click();
+            let text='';
+            for(let i=0;i<50&&!text;i++){text=await navigator.clipboard.readText().catch(()=>'');if(!text)await new Promise(r=>setTimeout(r,100));}
+            return text;
+          }finally{navigator.clipboard.writeText=write;}
+        })()`,
+      );
+    expect(await copy(false)).toBe(citation);
+    expect(await copy(true)).toBe(citation);
+  });
+
   it.each([
     ["main", "main"],
     ["main", "popout"],
@@ -1387,8 +1421,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // from the command to the summary.
     const painted = await frames.read();
     console.info("update-all frame gaps", painted);
-    expect(painted.frames).toBeGreaterThan(0);
-    expect(painted.maxFrameGapMs).toBeLessThan(1000);
+    expect(painted.frames).toBeGreaterThan(1);
+    expect(painted.maxFrameGapMs).toBeLessThan(250);
+    expect(painted.longestTaskMs).toBeLessThan(250);
 
     // The seed file the Fixture Vault ships already carries the title
     // heading and the `zotero-key`/`citekey` frontmatter, so polling for
@@ -2406,11 +2441,52 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       sourceId: string;
       autoRefresh: boolean;
     };
+    await using cleanup = new AsyncDisposableStack();
     // Only the signal may refresh: the file watchers stay unbound.
     await obEval(
       vaultId,
-      `${services}.settings.update({'zotero.auto-refresh':false});window.zotlitE2EChanged=0;window.zotlitE2EOffChanged=${services}.zoteroReads.on('changed',function(){window.zotlitE2EChanged++;});true`,
+      `${services}.settings.update({'zotero.auto-refresh':false});true`,
     );
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `${services}.settings.update({'zotero.auto-refresh':${server.autoRefresh}});true`,
+      );
+    });
+    await obEval(
+      vaultId,
+      `window.zotlitE2EChanged=0;window.zotlitE2EOffChanged=${services}.zoteroReads.on('changed',function(){window.zotlitE2EChanged++;});true`,
+    );
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        "window.zotlitE2EOffChanged();delete window.zotlitE2EOffChanged;delete window.zotlitE2EChanged;true",
+      );
+    });
+    // The annotation sidebar keeps its cards while the refresh reads again.
+    expect(
+      await obEval(
+        vaultId,
+        `(async()=>{
+          const leaf=app.workspace.getRightLeaf(false);
+          await leaf.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:${JSON.stringify(annotationItem.key)}}});
+          const view=leaf.view;await view.read;
+          const count=()=>view.contentEl.querySelectorAll('.zt-annot-card').length;
+          for(let i=0;i<100&&count()===0;i++)await new Promise(r=>setTimeout(r,50));
+          const watch={before:count(),least:count()};
+          watch.observer=new MutationObserver(()=>{watch.least=Math.min(watch.least,count());});
+          watch.observer.observe(view.contentEl,{childList:true,subtree:true});
+          window.zotlitE2ESidebar=watch;
+          return String(watch.before);
+        })()`,
+      ),
+    ).toBe(String(attachmentAnnotations.length));
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        "window.zotlitE2ESidebar?.observer.disconnect();delete window.zotlitE2ESidebar;true",
+      );
+    });
     const signal = async () => {
       const response = await fetch(
         `http://${server.hostname}:${server.port}/notify`,
@@ -2450,24 +2526,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         `(async function(){var hits=await ${services}.itemLookup.search(${JSON.stringify(query)});return String(hits.some(function(hit){return hit.item.itemID===${targetItem.itemID};}));})()`,
         { expected: "true" },
       );
-    try {
-      edit("Freshness signal probe zqxv", "2031-01-01 00:00:00");
-      await signal();
-      expect(
-        await obEvalUntil(vaultId, "String(window.zotlitE2EChanged>=1)", {
-          expected: "true",
-        }),
-      ).toBe(true);
-      expect(await finds("zqxv")).toBe(true);
-    } finally {
+
+    edit("Freshness signal probe zqxv", "2031-01-01 00:00:00");
+    cleanup.defer(async () => {
       edit(targetItem.title, original.dateModified);
       await signal();
+      expect(await finds(targetItem.title)).toBe(true);
+    });
+    await signal();
+    expect(
+      await obEvalUntil(vaultId, "String(window.zotlitE2EChanged>=1)", {
+        expected: "true",
+      }),
+    ).toBe(true);
+    expect(await finds("zqxv")).toBe(true);
+    expect(
       await obEval(
         vaultId,
-        `window.zotlitE2EOffChanged();delete window.zotlitE2EOffChanged;delete window.zotlitE2EChanged;${services}.settings.update({'zotero.auto-refresh':${server.autoRefresh}});true`,
-      );
-    }
-    expect(await finds(targetItem.title)).toBe(true);
+        "JSON.stringify({least:window.zotlitE2ESidebar.least,now:window.zotlitE2ESidebar.observer&&document.querySelectorAll('.workspace-leaf .zt-annot-card').length>0})",
+      ),
+    ).toBe(JSON.stringify({ least: attachmentAnnotations.length, now: true }));
   });
 
   it("reflects a Scope Case switch through zotlit:library-scope", async () => {
@@ -2503,6 +2581,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     const workers = (expression: string) =>
       `(function(){var record=window.zotlitE2EWorkers;return ${expression};})()`;
+    await using restoreWorkers = new AsyncDisposableStack();
+    restoreWorkers.defer(async () => {
+      await obEval(
+        vaultId,
+        workers(
+          "(window.Worker=record.Original,record.Original.prototype.terminate=record.terminate,delete window.zotlitE2EWorkers,true)",
+        ),
+      );
+      await obEval(
+        vaultId,
+        "(app.plugins.plugins.zotlit?Promise.resolve():app.plugins.enablePlugin('zotlit')).then(function(){return true;})",
+      );
+    });
     // An ordinary user action (the Community Plugins toggle), not a bypass —
     // it makes the plugin re-read data.json from disk.
     const toggled = await obEvalUntil(
@@ -2551,7 +2642,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
     }
 
-    try {
+    {
       // The load spawned one database worker, and it serves.
       expect(
         await obEval(
@@ -2582,17 +2673,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           { expected: "true" },
         ),
       ).toBe(true);
-    } finally {
-      await obEval(
-        vaultId,
-        workers(
-          "(window.Worker=record.Original,record.Original.prototype.terminate=record.terminate,delete window.zotlitE2EWorkers,true)",
-        ),
-      );
-      await obEval(
-        vaultId,
-        "app.plugins.enablePlugin('zotlit').then(function(){return true;})",
-      );
     }
   });
 });

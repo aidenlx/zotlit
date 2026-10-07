@@ -206,17 +206,31 @@ describe("ZoteroReads worker adapter", () => {
       Effect.gen(function* () {
         const reads = yield* makeWorkerReads(workers.connect);
         yield* workerSeen(reads);
-        // Step the clock, so each wait the probe starts also runs out.
-        for (let step = 0; step < 6; step++)
-          yield* TestClock.adjust("10 seconds");
-        const seed = yield* Stream.runHead(reads.Changes());
+        const seed = Effect.map(
+          Stream.runHead(reads.Changes()),
+          Option.getOrThrow,
+        );
+        // The probe asks 10 s after the connect and waits 15 s for the answer.
+        yield* TestClock.adjust("10 seconds");
+        yield* TestClock.adjust("14999 millis");
+        const before = yield* seed;
+        yield* TestClock.adjust("1 millis");
+        // The death runs on its own fiber once the deadline passed.
+        let after = yield* seed;
+        const degraded = (event: ChangeEvent) =>
+          event._tag === "state" && event.state === "degraded";
+        for (let turn = 0; turn < 100 && !degraded(after); turn++) {
+          yield* Effect.yieldNow;
+          after = yield* seed;
+        }
         const read = yield* Effect.flip(reads.Libraries({}));
         const ended = workers.ended(1);
         yield* reads.Refresh();
-        return { seed, read, ended, seen: yield* workerSeen(reads) };
+        return { before, after, read, ended, seen: yield* workerSeen(reads) };
       }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
     );
-    expect(Option.getOrThrow(result.seed)).toMatchObject({
+    expect(result.before).toMatchObject({ _tag: "state", state: "ready" });
+    expect(result.after).toMatchObject({
       _tag: "state",
       state: "degraded",
       error: {
@@ -235,8 +249,9 @@ describe("ZoteroReads worker adapter", () => {
       Effect.gen(function* () {
         const reads = yield* makeWorkerReads(workers.connect);
         yield* workerSeen(reads);
-        for (let minute = 0; minute < 10; minute++)
-          yield* TestClock.adjust("1 minute");
+        // Ten minutes of probes, one probe interval at a time.
+        for (let probe = 0; probe < 60; probe++)
+          yield* TestClock.adjust("10 seconds");
         return yield* workerSeen(reads);
       }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
     );

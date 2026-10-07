@@ -25,10 +25,12 @@ import { WORKER_CLOSED } from "./worker-signal";
 const logger = getLogger("zotero-reads");
 
 /**
- * Requests one worker serves at once. Above one, so a long stream never
- * blocks every other read behind it.
+ * Requests one worker serves at once. A request holds its slot until it
+ * ends, so `Changes`, every held Snapshot, and every open stream each keep
+ * one for their whole life. The bound sits far above what the plugin holds
+ * at once, so neither a read nor the liveness ping waits behind them.
  */
-const WORKER_CONCURRENCY = 16;
+const WORKER_CONCURRENCY = 1024;
 
 /** How long unload waits for a worker to remove its snapshots. */
 const WORKER_CLOSE_TIMEOUT_MS = 5000;

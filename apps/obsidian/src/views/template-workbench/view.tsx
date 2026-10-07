@@ -1882,13 +1882,14 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           generation === this.#generation &&
           itemGeneration === this.#itemGeneration
         ) {
-          await this.selectItem(choice);
+          // A selection that a later one outran stays unpublished.
+          if (!(await this.selectItem(choice))) return false;
           publishWorkbenchSelection(
             this,
             { kind: "item", item: choice },
             this.leaf,
           );
-          return this.store.getState().item?.id === choice.id;
+          return true;
         }
         return false;
       })
@@ -1903,14 +1904,16 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     await this.chooseItem();
     return this.store.getState().item !== null;
   }
-  async selectItem(item: WorkbenchItemChoice): Promise<void> {
-    if (this.#closed) return;
+  /** Whether `item` became the selection; a later selection outranks it. */
+  async selectItem(item: WorkbenchItemChoice): Promise<boolean> {
+    if (this.#closed) return false;
     this.#itemGeneration++;
-    await this.#selectKey(item.id);
+    if (!(await this.#selectKey(item.id))) return false;
     // An Item the reader picked is the Citation set they asked to see, so the
     // built-in example that outranks it stands down.
     if (this.store.getState().root === "citation")
       this.preview?.setCitation({ citationExample: null });
+    return true;
   }
   async chooseAnnotation(): Promise<void> {
     const preview = this.preview;
@@ -1936,20 +1939,23 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       );
     }
   }
-  /** Select the Item `indexedKey` names once a read confirms it. */
-  async #selectKey(indexedKey: string): Promise<void> {
+  /**
+   * Select the Item `indexedKey` names once a read confirms it. Answers
+   * whether it became the selection.
+   */
+  async #selectKey(indexedKey: string): Promise<boolean> {
     const sample = getSampleItem(indexedKey);
     if (sample) {
       this.store
         .getState()
         .setItem({ id: indexedKey, title: sample.item.title ?? null });
-      return;
+      return true;
     }
     if (
       parseIndexedKey(indexedKey) === null ||
       this.#deps.zoteroReads.state === "degraded"
     )
-      return;
+      return false;
     const generation = this.#itemGeneration;
     try {
       const { reads } = await this.#deps.zoteroReads.ready;
@@ -1957,19 +1963,21 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
       );
       const item = items.get(indexedKey);
-      if (!item || isChildItemFields(item.fields)) return;
+      if (!item || isChildItemFields(item.fields)) return false;
       // A later selection or a closed view outranks this read.
-      if (this.#closed || generation !== this.#itemGeneration) return;
+      if (this.#closed || generation !== this.#itemGeneration) return false;
       this.store.getState().setItem({
         id: indexedKey,
         title: itemSummary(item, item.fields).formatted,
       });
       rememberTemplateItem(this.app, indexedKey);
+      return true;
     } catch (error) {
       logger.warn("Failed to restore Template Workbench Item {indexedKey}", {
         indexedKey,
         error,
       });
+      return false;
     }
   }
   #subscribe(): void {

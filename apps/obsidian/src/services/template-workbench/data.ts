@@ -1,6 +1,6 @@
 // Resolves an Indexed Key and builds side-effect-free Template data.
 
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 import type { App } from "obsidian";
 
 import {
@@ -183,9 +183,9 @@ export async function loadCitationData(
   }
   await deps.settings.loaded;
   using lease = await deps.zoteroReads.acquireRead();
-  const selected = await readNoteItemSource(lease.reads, selector.key);
-  if (selected.kind !== "source") return selected;
-  const { item } = selected.source;
+  const selected = await readNoteItem(lease.reads, selector.key);
+  if (selected.kind !== "item") return selected;
+  const { item } = selected;
   const citationKey =
     "citationKey" in item.fields ? (item.fields.citationKey ?? null) : null;
   return {
@@ -286,18 +286,27 @@ type NoteItemResult =
   | { kind: "no-parent-item" }
   | { kind: "annotation-attachment-missing" };
 
+/** Where {@link resolveNoteItemID} found the Item, and what its absence means. */
+type NoteItemTarget =
+  | {
+      kind: "target";
+      itemID: number;
+      /** The Item itself, when the Indexed Key named it directly. */
+      item?: Item;
+      /** The outcome when no live Item has the id. */
+      missing: "not-found" | "no-parent-item";
+    }
+  | Exclude<NoteItemResult, { kind: "item" }>;
+
 /**
- * The Item an Indexed Key names, or the parent Item of the attachment, note,
- * or annotation it names, read as a {@link NoteSource}. Pass Snapshot-bound
- * reads, so every step reads one database state.
+ * The id of the Item an Indexed Key names, or of the parent Item of the
+ * attachment, note, or annotation it names. Pass Snapshot-bound reads, so
+ * every step reads one database state.
  */
-async function readNoteItemSource(
+async function resolveNoteItemID(
   reads: ZoteroReadsApi,
   indexedKey: string,
-): Promise<
-  | { kind: "source"; source: NoteSource }
-  | Exclude<NoteItemResult, { kind: "item" }>
-> {
+): Promise<NoteItemTarget> {
   const run = Effect.runPromise;
   const selected = await run(reads.ItemType({ indexedKey }));
   if (!selected) return { kind: "not-found" };
@@ -325,11 +334,52 @@ async function readNoteItemSource(
       reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
     );
     const item = items.values().next().value;
-    const source =
-      item && (await run(reads.NoteSource({ itemID: item.itemID })));
-    return source ? { kind: "source", source } : { kind: "not-found" };
+    return item
+      ? { kind: "target", itemID: item.itemID, item, missing: "not-found" }
+      : { kind: "not-found" };
   }
   if (!parentItemID) return { kind: "no-parent-item" };
-  const source = await run(reads.NoteSource({ itemID: parentItemID }));
-  return source ? { kind: "source", source } : { kind: "no-parent-item" };
+  return { kind: "target", itemID: parentItemID, missing: "no-parent-item" };
+}
+
+/**
+ * {@link resolveNoteItemID}'s Item, read as a {@link NoteSource}. Pass
+ * Snapshot-bound reads.
+ */
+async function readNoteItemSource(
+  reads: ZoteroReadsApi,
+  indexedKey: string,
+): Promise<
+  | { kind: "source"; source: NoteSource }
+  | Exclude<NoteItemResult, { kind: "item" }>
+> {
+  const target = await resolveNoteItemID(reads, indexedKey);
+  if (target.kind !== "target") return target;
+  const source = await Effect.runPromise(
+    reads.NoteSource({ itemID: target.itemID }),
+  );
+  return source ? { kind: "source", source } : { kind: target.missing };
+}
+
+/** {@link resolveNoteItemID}'s Item alone. Pass Snapshot-bound reads. */
+async function readNoteItem(
+  reads: ZoteroReadsApi,
+  indexedKey: string,
+): Promise<NoteItemResult> {
+  const target = await resolveNoteItemID(reads, indexedKey);
+  if (target.kind !== "target") return target;
+  if (target.item) return { kind: "item", item: target.item };
+  const [ref] = (
+    await Effect.runPromise(
+      Stream.runCollect(reads.DisplayRefs({ itemIDs: [target.itemID] })),
+    )
+  ).flat();
+  const item =
+    ref?.ref &&
+    (
+      await Effect.runPromise(
+        reads.ItemsByIndexedKeys({ indexedKeys: [ref.ref.indexedKey] }),
+      )
+    ).get(ref.ref.indexedKey);
+  return item ? { kind: "item", item } : { kind: target.missing };
 }
