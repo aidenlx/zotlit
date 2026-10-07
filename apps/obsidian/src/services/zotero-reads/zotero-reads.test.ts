@@ -1514,13 +1514,15 @@ describe("ZoteroReads SearchItems", () => {
   /**
    * {@link layerRcRef} over `opener`, with controls: `degrade` makes later
    * borrows fail and reports `degraded`, as when no client can serve;
-   * `holdBorrows` holds every later borrow until `releaseBorrows`.
+   * `holdBorrows` holds every later borrow until `releaseBorrows`, and
+   * `borrowHeld` waits until a borrow waits there.
    */
   const controlledConnection = (opener: ConnectionOpener) => {
     let failure: DbUnavailable | null = null;
     let publish: (event: ChangeEvent) => Effect.Effect<void> = () =>
       Effect.void;
     const gate = Latch.makeUnsafe(true);
+    const arrived = Latch.makeUnsafe(false);
     const layer = Layer.effect(Connection)(
       Effect.gen(function* () {
         const base = yield* Connection;
@@ -1529,7 +1531,7 @@ describe("ZoteroReads SearchItems", () => {
         return Connection.of({
           ...base,
           borrow: Effect.andThen(
-            gate.await,
+            Effect.andThen(arrived.open, gate.await),
             Effect.suspend(() =>
               failure ? Effect.fail(failure) : base.borrow,
             ),
@@ -1545,8 +1547,9 @@ describe("ZoteroReads SearchItems", () => {
     return {
       layer,
       degrade,
-      holdBorrows: gate.close,
+      holdBorrows: Effect.andThen(gate.close, arrived.close),
       releaseBorrows: gate.open,
+      borrowHeld: arrived.await,
     };
   };
 
@@ -1921,23 +1924,25 @@ describe("ZoteroReads SearchItems", () => {
   });
 
   it("a request sent during a build is answered before the build ends", async () => {
-    const { open, ran } = fixtureOpener(() => bulkWorks(3000));
-    const result = await withReads(open, (reads) =>
+    const { open } = fixtureOpener();
+    const { layer, holdBorrows, releaseBorrows, borrowHeld } =
+      controlledConnection(open);
+    const result = await withConnection(layer, (reads) =>
       Effect.gen(function* () {
+        yield* connect(reads);
         const order: string[] = [];
+        // The build waits at its borrow until the release below.
+        yield* holdBorrows;
         const search = yield* Effect.forkChild(
           reads
             .SearchItems(inLibrary(1, "main"))
             .pipe(Effect.tap(() => Effect.sync(() => order.push("search")))),
         );
-        yield* eventually(
-          Effect.sync(() => ran(ID_READ)),
-          (count) => count > 0,
-        );
+        yield* borrowHeld;
         yield* reads.Ping();
         order.push("ping");
-        // The search waits for the build, so the build still runs here.
         const searching = search.pollUnsafe() === undefined;
+        yield* releaseBorrows;
         yield* Fiber.join(search);
         return { order, searching };
       }),

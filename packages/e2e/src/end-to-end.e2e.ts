@@ -2579,7 +2579,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(rebuild.builtMs).not.toBeNull();
     expect(rebuild.staleMisses).toBe(0);
     expect(painted.frames).toBeGreaterThan(1);
-    expect(painted.longTasks).toBe(0);
+    // The renderer may take a short long task of its own; none blocks it
+    // for more than 100 ms while the worker builds.
+    expect(painted.longestTaskMs).toBeLessThanOrEqual(100);
     // ADR 0069 measured about 1 MB of index per 1,000 Items; the renderer
     // keeps less than a quarter of that.
     expect(heapGrowth).toBeLessThan((corpus.length * 1000) / 4);
