@@ -1,5 +1,5 @@
 // The ZoteroReads contract: one RpcGroup and the Schema codecs both sides share.
-import { Schema, SchemaGetter } from "effect";
+import { Predicate, Schema, SchemaGetter } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
 
 import type {
@@ -47,7 +47,7 @@ export const Instant = Schema.String.pipe(
  * `@zotlit/db` name resolvers already answer `"unknown"` for it.
  */
 function rawInt<T extends number>() {
-  return Schema.declare((u: unknown): u is T => typeof u === "number");
+  return Schema.declare((u: unknown): u is T => Predicate.isNumber(u));
 }
 
 /**
@@ -55,9 +55,7 @@ function rawInt<T extends number>() {
  * fields, annotation position). It crosses the wire as JSON, unchanged.
  */
 function jsonObject<T extends object>() {
-  return Schema.declare(
-    (u: unknown): u is T => typeof u === "object" && u !== null,
-  );
+  return Schema.declare((u: unknown): u is T => Predicate.isObject(u));
 }
 
 // --- Errors ---------------------------------------------------------------

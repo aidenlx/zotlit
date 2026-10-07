@@ -80,18 +80,16 @@ const makeProtocolPair = Effect.gen(function* () {
  * provided {@link Connection}. The server and client live for the caller's
  * scope.
  */
-export function makeInProcessClient(
+export const makeInProcessClient = Effect.fnUntraced(function* (
   options?: HandlersOptions,
-): Effect.Effect<ZoteroReadsClient, never, Connection | Scope.Scope> {
-  return Effect.gen(function* () {
-    const protocols = yield* makeProtocolPair;
-    yield* RpcServer.make(ZoteroReads).pipe(
-      Effect.provide(handlersLayer(options)),
-      Effect.provideService(RpcServer.Protocol, protocols.server),
-      Effect.forkScoped,
-    );
-    return yield* RpcClient.make(ZoteroReads).pipe(
-      Effect.provideService(RpcClient.Protocol, protocols.client),
-    );
-  });
-}
+): Effect.fn.Return<ZoteroReadsClient, never, Connection | Scope.Scope> {
+  const protocols = yield* makeProtocolPair;
+  yield* RpcServer.make(ZoteroReads).pipe(
+    Effect.provide(handlersLayer(options)),
+    Effect.provideService(RpcServer.Protocol, protocols.server),
+    Effect.forkScoped,
+  );
+  return yield* RpcClient.make(ZoteroReads).pipe(
+    Effect.provideService(RpcClient.Protocol, protocols.client),
+  );
+});

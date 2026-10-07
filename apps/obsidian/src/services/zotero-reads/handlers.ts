@@ -184,16 +184,15 @@ export function handlersLayer(options?: HandlersOptions) {
       ) => Stream.unwrap(Effect.map(borrow(snapshot), f));
 
       /** Ends once no read has named `entry` for one idle timeout. */
-      const idle = (entry: Pinned) =>
-        Effect.gen(function* () {
-          const timeout = Duration.toMillis(idleTimeout);
-          for (;;) {
-            const now = yield* Clock.currentTimeMillis;
-            const due = entry.lastUsed + timeout;
-            if (entry.active === 0 && now >= due) return;
-            yield* Effect.sleep(entry.active > 0 ? timeout : due - now);
-          }
-        });
+      const idle = Effect.fnUntraced(function* (entry: Pinned) {
+        const timeout = Duration.toMillis(idleTimeout);
+        for (;;) {
+          const now = yield* Clock.currentTimeMillis;
+          const due = entry.lastUsed + timeout;
+          if (entry.active === 0 && now >= due) return;
+          yield* Effect.sleep(entry.active > 0 ? timeout : due - now);
+        }
+      });
 
       return ZoteroReads.of({
         Libraries: ({ snapshot }) => withClient(snapshot, getLibraries),
