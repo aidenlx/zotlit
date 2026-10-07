@@ -1,0 +1,727 @@
+import { Effect, Exit, Scope, Stream } from "effect";
+import { describe, expect, it } from "vitest";
+
+import { buildNoteContextFromSource } from "@zotlit/db";
+import type { NoteResolvers } from "@zotlit/db";
+import { createClient } from "@zotlit/db/client/node";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import { createFixtureSchema } from "@zotlit/db/test-utils";
+
+import { layerRcRef } from "./connection";
+import type { Connection, ConnectionOpener } from "./connection";
+import type { HandlersOptions } from "./handlers";
+import { makeInProcessClient } from "./in-process";
+import type { ZoteroReadsClient } from "./in-process";
+import { DbUnavailable, SnapshotExpired } from "./rpc";
+import type { ChangeEvent, ReadsConfig } from "./rpc";
+
+/**
+ * Rows every contract test reads: a user library (1) and a group library (2,
+ * group 900). MAIN2345 has an attachment with two annotations, a child note,
+ * two related items, tags, and a collection; GRPITEMS lives in the group.
+ */
+const SEED = `
+  insert into version (schema, version) values ('userdata', 129);
+  insert into libraries (libraryID, type, version, clientVersion)
+    values (1, 'user', 7, 3), (2, 'group', 4, 2);
+  insert into groups (groupID, libraryID, name) values (900, 2, 'Lab');
+  insert into settings (setting, key, value)
+    values ('account', 'userID', 42), ('account', 'username', 'reader');
+
+  insert into itemTypes (itemTypeID, typeName)
+    values (1, 'journalArticle'), (2, 'attachment'), (3, 'note'),
+           (4, 'annotation'), (5, 'book');
+
+  insert into fieldsCombined (fieldID, fieldName, custom)
+    values (10, 'title', 0), (11, 'citationKey', 0), (12, 'date', 0),
+           (13, 'shortTitle', 0);
+
+  insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+    values
+      (1, 1, '2024-01-01 00:00:00', '2024-02-01 00:00:00', 1, 'MAIN2345'),
+      (2, 5, '2024-01-01 00:00:00', '2024-01-02 00:00:00', 1, 'RELB2345'),
+      (3, 1, '2024-01-01 00:00:00', '2024-01-03 00:00:00', 1, 'RELA2345'),
+      (10, 2, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'ATCH2345'),
+      (100, 4, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'ANNT2345'),
+      (101, 4, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'ANNT2346'),
+      (200, 3, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'NTE22345'),
+      (300, 1, '2024-01-01 00:00:00', '2024-01-04 00:00:00', 2, 'GRPITEMS');
+
+  insert into itemDataValues (valueID, value)
+    values (1, 'Main Study'), (2, 'Beta Book'), (3, 'Alpha Paper'),
+           (4, 'main2024'), (5, '2024-05-06'), (6, 'Group Work'),
+           (7, 'Main');
+  insert into itemData (itemID, fieldID, valueID)
+    values (1, 10, 1), (1, 11, 4), (1, 12, 5), (1, 13, 7),
+           (2, 10, 2), (3, 10, 3), (300, 10, 6);
+
+  insert into creators (creatorID, firstName, lastName, fieldMode)
+    values (1, 'Ada', 'Lovelace', 0);
+  insert into creatorTypes (creatorTypeID, creatorType) values (1, 'author');
+  insert into itemCreators (itemID, creatorID, creatorTypeID, orderIndex)
+    values (1, 1, 1, 0);
+  insert into itemTypeCreatorTypes (itemTypeID, creatorTypeID, primaryField)
+    values (1, 1, 1);
+
+  insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path)
+    values (10, 1, 0, 'application/pdf', 'storage:paper.pdf');
+  insert into itemAnnotations (
+    itemID, parentItemID, type, text, comment, color, pageLabel, sortIndex,
+    position, isExternal
+  )
+    values
+      (100, 10, 1, 'excerpt', '<i>excerpt</i>', '#ffd400', '1',
+       '00000|000000|00000', '{"pageIndex":0,"rects":[[0,0,1,1]]}', 0),
+      (101, 10, 3, null, null, '#ffd400', '1',
+       '00000|000001|00000', '{"pageIndex":0,"rects":[[0,0,1,1]]}', 0);
+  insert into itemNotes (itemID, parentItemID, note, title)
+    values (200, 1, '<p>body</p>', 'Methods');
+
+  insert into tags (tagID, name) values (1, 'zt'), (2, 'method'), (3, 'claim');
+  insert into itemTags (itemID, tagID, type)
+    values (1, 1, 0), (2, 2, 0), (100, 3, 0);
+
+  insert into relationPredicates (predicateID, predicate)
+    values (1, 'dc:relation');
+  insert into itemRelations (itemID, predicateID, object)
+    values
+      (1, 1, 'http://zotero.org/users/local/AAAAAAAA/items/RELB2345'),
+      (1, 1, 'http://zotero.org/users/local/AAAAAAAA/items/RELA2345');
+
+  insert into collections (collectionID, collectionName, libraryID, key)
+    values (500, 'Reading', 1, 'CLL22345');
+  insert into collectionItems (collectionID, itemID) values (500, 1), (500, 2);
+`;
+
+/**
+ * An opener over fresh `:memory:` databases. Each open gets the next number;
+ * the log records opens and closes, so a test can watch a connection's
+ * lifetime. Open #N reports library 1 at `version: N`, so a read shows which
+ * connection answered. `extra` adds SQL per open, or `null` to fail the open.
+ */
+function fixtureOpener(extra: (open: number) => string | null = () => "") {
+  const log: string[] = [];
+  const configs: (ReadsConfig | null)[] = [];
+  let opened = 0;
+  const open: ConnectionOpener = (config) => {
+    const id = ++opened;
+    configs.push(config);
+    const sql = extra(id);
+    if (sql === null) throw new Error(`source #${id} is not readable`);
+    const client: NodeDatabaseClient = createClient(":memory:");
+    createFixtureSchema(client.$client);
+    client.$client.exec(SEED);
+    client.$client.exec(
+      `update libraries set version = ${id} where libraryID = 1; ${sql}`,
+    );
+    const close = client.$client.close.bind(client.$client);
+    client.$client.close = () => {
+      log.push(`close #${id}`);
+      close();
+    };
+    log.push(`open #${id}`);
+    return client;
+  };
+  return { open, log, configs };
+}
+
+/** Run `body` against an in-process client over `opener`. */
+function withReads<A, E>(
+  opener: ConnectionOpener,
+  body: (
+    reads: ZoteroReadsClient,
+  ) => Effect.Effect<A, E, Connection | Scope.Scope>,
+  options?: HandlersOptions,
+): Promise<A> {
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const reads = yield* makeInProcessClient(options);
+      return yield* body(reads);
+    }).pipe(Effect.scoped, Effect.provide(layerRcRef(opener))),
+  );
+}
+
+/** The library-1 version a read saw: which connection answered. */
+const connectionSeen = (reads: ZoteroReadsClient, snapshot?: string) =>
+  Effect.map(
+    reads.Libraries(snapshot === undefined ? {} : { snapshot }),
+    (libraries) => libraries.find((l) => l.libraryID === 1)!.version,
+  );
+
+/** Pull from `pull` until `n` elements arrived, whatever the chunking. */
+const take = <A, E>(
+  pull: Effect.Effect<readonly A[], E | import("effect").Cause.Done>,
+  n: number,
+) =>
+  Effect.gen(function* () {
+    const out: A[] = [];
+    while (out.length < n) out.push(...(yield* pull));
+    return out;
+  });
+
+const noteResolvers: NoteResolvers = {
+  item: {
+    notePath: (item) => `notes/${item.indexedKey}.md`,
+    noteLink: (item) => `[[notes/${item.indexedKey}]]`,
+    authorsShort: (item) => `short:${item.key}`,
+  },
+  annotation: {
+    filePath: (attachment) => `/abs/${attachment.key}`,
+    fileLink: (attachment) => () => `[[${attachment.key}]]`,
+    annotationImageLink: () => null,
+    commentToMarkdown: (html) => `md(${html})`,
+    authorsShort: (item) => `short:${item.key}`,
+  },
+  resolveChildNote: (note) => ({
+    key: note.key,
+    indexedKey: note.indexedKey,
+    title: note.title,
+    noteLink: () => `[[${note.key}]]`,
+  }),
+};
+
+describe("ZoteroReads operations", () => {
+  it("Libraries lists every library with its group", async () => {
+    const { open } = fixtureOpener();
+    const libraries = await withReads(open, (reads) => reads.Libraries({}));
+    expect(libraries).toEqual([
+      {
+        libraryID: 1,
+        type: "user",
+        version: 1,
+        clientVersion: 3,
+        groupID: null,
+        name: null,
+      },
+      {
+        libraryID: 2,
+        type: "group",
+        version: 4,
+        clientVersion: 2,
+        groupID: 900,
+        name: "Lab",
+      },
+    ]);
+  });
+
+  it("ConnectionReadout counts top-level items across every library", async () => {
+    const { open } = fixtureOpener();
+    const readout = await withReads(open, (reads) =>
+      reads.ConnectionReadout({}),
+    );
+    expect(readout).toEqual({ itemCount: 4 });
+  });
+
+  it("IndexItems streams the library in slices, with Instants decoded", async () => {
+    const { open } = fixtureOpener();
+    const slices = await withReads(open, (reads) =>
+      Stream.runCollect(reads.IndexItems({ libraryID: 1, sliceSize: 2 })),
+    );
+    expect(slices.map((slice) => slice.map((item) => item.key))).toEqual([
+      ["MAIN2345", "RELA2345"],
+      ["RELB2345"],
+    ]);
+    const main = slices[0]![0]!;
+    expect(main.dateModified).toBeInstanceOf(Temporal.Instant);
+    expect(main.dateModified.toString()).toBe("2024-02-01T00:00:00Z");
+    expect(main).toMatchObject({
+      indexedKey: "MAIN2345",
+      title: "Main Study",
+      citationKey: "main2024",
+      primaryCreator: { firstName: "Ada", lastName: "Lovelace", fieldMode: 0 },
+    });
+  });
+
+  it("ItemsByIndexedKeys answers user and group keys and leaves unknown keys out", async () => {
+    const { open } = fixtureOpener();
+    const items = await withReads(open, (reads) =>
+      reads.ItemsByIndexedKeys({
+        indexedKeys: ["MAIN2345", "GRPITEMSg900", "MISS2345", "GRPITEMSg1"],
+      }),
+    );
+    expect([...items.keys()]).toEqual(["MAIN2345", "GRPITEMSg900"]);
+    const main = items.get("MAIN2345")!;
+    expect(main.dateAdded.toString()).toBe("2024-01-01T00:00:00Z");
+    expect(main.customFields).toBeInstanceOf(Map);
+    expect(main.fields).toMatchObject({
+      itemType: "journalArticle",
+      title: "Main Study",
+    });
+    expect(main.creators).toEqual([
+      {
+        firstName: "Ada",
+        lastName: "Lovelace",
+        creatorType: "author",
+        fieldMode: 0,
+      },
+    ]);
+    expect(items.get("GRPITEMSg900")).toMatchObject({
+      libraryID: 2,
+      groupID: 900,
+    });
+  });
+
+  it("ItemFamily returns related items and child notes", async () => {
+    const { open } = fixtureOpener();
+    const [family, unknown] = await withReads(open, (reads) =>
+      Effect.all([
+        reads.ItemFamily({ itemID: 1 }),
+        reads.ItemFamily({ itemID: 999 }),
+      ]),
+    );
+    expect(family.relatedItems.map((item) => item.key).sort()).toEqual([
+      "RELA2345",
+      "RELB2345",
+    ]);
+    expect(family.childNotes).toMatchObject([
+      { key: "NTE22345", title: "Methods", parentItemID: 1 },
+    ]);
+    expect(family.childNotes[0]!.dateModified).toBeInstanceOf(Temporal.Instant);
+    expect(unknown).toEqual({ relatedItems: [], childNotes: [] });
+  });
+
+  it("NoteSource returns a bundle the renderer builds into the note context", async () => {
+    const { open } = fixtureOpener();
+    const [source, missing] = await withReads(open, (reads) =>
+      Effect.all([
+        reads.NoteSource({ itemID: 1 }),
+        reads.NoteSource({ itemID: 999 }),
+      ]),
+    );
+    expect(missing).toBeNull();
+    expect(source!.username).toBe("reader");
+    expect(
+      source!.annotationsByAttachment.get(10)![0]!.dateAdded,
+    ).toBeInstanceOf(Temporal.Instant);
+
+    const ctx = buildNoteContextFromSource(source!, noteResolvers);
+    expect(ctx.title).toBe("Main Study");
+    expect(ctx.weblink).toBe("https://www.zotero.org/reader/items/MAIN2345");
+    expect(ctx.tags.map(String)).toEqual(["zt"]);
+    expect(ctx.collections.map(String)).toEqual(["Reading"]);
+    expect(ctx.attachments.map((a) => a.key)).toEqual(["ATCH2345"]);
+    expect(ctx.annotations.map((a) => a.key)).toEqual(["ANNT2345", "ANNT2346"]);
+    expect(ctx.annotations[0]!.tags.map(String)).toEqual(["claim"]);
+    expect(ctx.relatedItems.map((r) => r.title)).toEqual([
+      "Alpha Paper",
+      "Beta Book",
+    ]);
+    expect(ctx.notes.map((n) => n.key)).toEqual(["NTE22345"]);
+  });
+
+  it("NoteSource takes the caller's username over the signed-in account", async () => {
+    const { open } = fixtureOpener();
+    const source = await withReads(open, (reads) =>
+      reads.NoteSource({ itemID: 1, username: null }),
+    );
+    expect(source!.username).toBeNull();
+  });
+
+  it("AnnotationSources returns annotations by key with their attachment, parent item, and tags", async () => {
+    const { open } = fixtureOpener();
+    const sources = await withReads(open, (reads) =>
+      reads.AnnotationSources({ libraryID: 1, keys: ["ANNT2345", "MISS2345"] }),
+    );
+    expect(sources.annotations.map((a) => a.key)).toEqual(["ANNT2345"]);
+    expect(sources.annotations[0]!.position).toEqual({
+      pageIndex: 0,
+      rects: [[0, 0, 1, 1]],
+    });
+    expect(sources.attachments.map((a) => a.key)).toEqual(["ATCH2345"]);
+    expect(sources.parentItems.map((i) => i.key)).toEqual(["MAIN2345"]);
+    expect(sources.tagsByItemID.get(100)!.map((tag) => tag.tag.name)).toEqual([
+      "claim",
+    ]);
+    expect(sources.username).toBe("reader");
+  });
+
+  it("AnnotationsOfAttachment returns the attachment's annotations and the account user", async () => {
+    const { open } = fixtureOpener();
+    const [found, unknown] = await withReads(open, (reads) =>
+      Effect.all([
+        reads.AnnotationsOfAttachment({ attachmentKey: "ATCH2345" }),
+        reads.AnnotationsOfAttachment({ attachmentKey: "MISS2345" }),
+      ]),
+    );
+    expect(found.attachment).toMatchObject({
+      key: "ATCH2345",
+      contentType: "application/pdf",
+    });
+    expect(found.annotations.map((a) => [a.key, a.type])).toEqual([
+      ["ANNT2345", 1],
+      ["ANNT2346", 3],
+    ]);
+    expect(found.accountUserID).toBe(42);
+    expect(unknown).toEqual({
+      attachment: null,
+      annotations: [],
+      accountUserID: 42,
+    });
+  });
+
+  it("AttachmentsOf lists the attachments of the given items", async () => {
+    const { open } = fixtureOpener();
+    const attachments = await withReads(open, (reads) =>
+      reads.AttachmentsOf({ itemIDs: [1, 2] }),
+    );
+    expect(attachments).toMatchObject([
+      {
+        key: "ATCH2345",
+        parentItemID: 1,
+        path: "storage:paper.pdf",
+        linkMode: 0,
+      },
+    ]);
+    expect(attachments[0]!.dateModified).toBeInstanceOf(Temporal.Instant);
+  });
+
+  it("DisplayRefs streams one entry per id, null for an id with no live item", async () => {
+    const { open } = fixtureOpener();
+    const slices = await withReads(open, (reads) =>
+      Stream.runCollect(
+        reads.DisplayRefs({ itemIDs: [1, 300, 999], sliceSize: 2 }),
+      ),
+    );
+    expect(slices).toEqual([
+      [
+        {
+          itemID: 1,
+          ref: {
+            itemID: 1,
+            libraryID: 1,
+            key: "MAIN2345",
+            groupID: null,
+            indexedKey: "MAIN2345",
+            title: "Main Study",
+          },
+        },
+        {
+          itemID: 300,
+          ref: {
+            itemID: 300,
+            libraryID: 2,
+            key: "GRPITEMS",
+            groupID: 900,
+            indexedKey: "GRPITEMSg900",
+            title: "Group Work",
+          },
+        },
+      ],
+      [{ itemID: 999, ref: null }],
+    ]);
+  });
+
+  it("NoteBodies returns notes with their bodies and leaves unknown keys out", async () => {
+    const { open } = fixtureOpener();
+    const notes = await withReads(open, (reads) =>
+      reads.NoteBodies({ libraryID: 1, keys: ["NTE22345", "MISS2345"] }),
+    );
+    expect(notes).toMatchObject([
+      { key: "NTE22345", note: "<p>body</p>", title: "Methods" },
+    ]);
+    expect(notes[0]!.dateAdded).toBeInstanceOf(Temporal.Instant);
+  });
+
+  it("WorkLabels returns label inputs for top-level items only", async () => {
+    const { open } = fixtureOpener();
+    const labels = await withReads(open, (reads) =>
+      reads.WorkLabels({ indexedKeys: ["MAIN2345", "ATCH2345", "MISS2345"] }),
+    );
+    expect([...labels]).toEqual([
+      [
+        "MAIN2345",
+        {
+          libraryID: 1,
+          creators: [
+            {
+              firstName: "Ada",
+              lastName: "Lovelace",
+              creatorType: "author",
+              fieldMode: 0,
+            },
+          ],
+          primaryCreatorType: "author",
+          title: "Main Study",
+          shortTitle: "Main",
+          date: "2024-05-06",
+        },
+      ],
+    ]);
+  });
+
+  it("AttachmentPathIndex streams every attachment beside its parent key", async () => {
+    const { open } = fixtureOpener();
+    const slices = await withReads(open, (reads) =>
+      Stream.runCollect(reads.AttachmentPathIndex({})),
+    );
+    expect(slices).toHaveLength(1);
+    expect(slices[0]).toMatchObject([
+      { key: "ATCH2345", parentIndexedKey: "MAIN2345" },
+    ]);
+  });
+
+  it("CitekeySnapshot lists the citation keys of one library", async () => {
+    const { open } = fixtureOpener();
+    const citekeys = await withReads(open, (reads) =>
+      reads.CitekeySnapshot({ libraryID: 1 }),
+    );
+    expect(citekeys).toEqual([
+      {
+        itemID: 1,
+        libraryID: 1,
+        key: "MAIN2345",
+        indexedKey: "MAIN2345",
+        citekey: "main2024",
+      },
+    ]);
+  });
+
+  it("a source that cannot open fails with a tagged DbUnavailable", async () => {
+    const { open } = fixtureOpener(() => null);
+    const error = await withReads(open, (reads) =>
+      Effect.flip(reads.Libraries({})),
+    );
+    expect(error).toBeInstanceOf(DbUnavailable);
+    expect(error).toMatchObject({
+      _tag: "DbUnavailable",
+      message: "source #1 is not readable",
+    });
+  });
+});
+
+describe("ZoteroReads connection lifetime", () => {
+  it("Changes starts with the current state and reports a refresh", async () => {
+    const { open, log } = fixtureOpener();
+    const events = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        yield* reads.Libraries({});
+        const changes = yield* Stream.toPull(reads.Changes());
+        const seed = yield* take(changes, 1);
+        yield* reads.Refresh();
+        return [...seed, ...(yield* take(changes, 3))];
+      }).pipe(Effect.scoped),
+    );
+    expect(events).toEqual<ChangeEvent[]>([
+      { _tag: "state", state: "ready", error: null },
+      { _tag: "refreshing", active: true },
+      { _tag: "changed" },
+      { _tag: "refreshing", active: false },
+    ]);
+    expect(log).toEqual(["open #1", "open #2", "close #1", "close #2"]);
+  });
+
+  it("a refresh whose new source fails validation keeps the current connection serving", async () => {
+    const { open, log } = fixtureOpener((id) =>
+      id === 2 ? "drop table libraries;" : "",
+    );
+    const result = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        const before = yield* connectionSeen(reads);
+        const changes = yield* Stream.toPull(reads.Changes());
+        const seed = yield* take(changes, 1);
+        const refresh = yield* Effect.flip(reads.Refresh());
+        const after = yield* connectionSeen(reads);
+        const rest = yield* take(changes, 3);
+        return { before, refresh, after, events: [...seed, ...rest] };
+      }).pipe(Effect.scoped),
+    );
+    expect(result.before).toBe(1);
+    expect(result.after).toBe(1);
+    expect(result.refresh).toMatchObject({ _tag: "DbUnavailable" });
+    expect(result.events.map((event) => event._tag)).toEqual([
+      "state",
+      "refreshing",
+      "refresh-failed",
+      "refreshing",
+    ]);
+    expect(result.events[2]).toMatchObject({
+      error: { _tag: "DbUnavailable" },
+    });
+    expect(result.events[2]!).toHaveProperty(
+      "error.message",
+      "no such table: libraries",
+    );
+    expect(log).toEqual(["open #1", "open #2", "close #2", "close #1"]);
+  });
+
+  it("a Snapshot keeps its connection across a refresh; the old one closes when the Snapshot ends", async () => {
+    const { open, log } = fixtureOpener();
+    const seen = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        const held = yield* Effect.scoped(
+          Effect.gen(function* () {
+            const pull = yield* Stream.toPull(reads.Snapshot());
+            const [id] = yield* take(pull, 1);
+            yield* reads.Refresh();
+            const pinned = yield* connectionSeen(reads, id);
+            const current = yield* connectionSeen(reads);
+            return { pinned, current, log: [...log] };
+          }),
+        );
+        // The interrupt reaches the server after the client scope closes.
+        yield* Effect.yieldNow;
+        return { ...held, logAfterEnd: [...log] };
+      }),
+    );
+    expect(seen).toEqual({
+      pinned: 1,
+      current: 2,
+      log: ["open #1", "open #2"],
+      logAfterEnd: ["open #1", "open #2", "close #1"],
+    });
+  });
+
+  it("a stream named by a Snapshot reads the pinned connection and holds it until the stream ends", async () => {
+    // Open #2 drops RELA2345 (item 3); the pinned connection still holds it.
+    const { open, log } = fixtureOpener((id) =>
+      id === 2 ? "delete from items where itemID = 3;" : "",
+    );
+    const result = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        const snapshotScope = yield* Scope.make();
+        const snapshot = yield* Stream.toPull(reads.Snapshot()).pipe(
+          Scope.provide(snapshotScope),
+        );
+        const [id] = yield* take(snapshot, 1);
+        yield* reads.Refresh();
+
+        const refs = yield* Effect.scoped(
+          Effect.gen(function* () {
+            // A one-slot buffer keeps the server from reading ahead.
+            const slices = yield* Stream.toPull(
+              reads.DisplayRefs(
+                { itemIDs: [1, 1, 1, 1, 3], sliceSize: 1, snapshot: id },
+                { streamBufferSize: 1 },
+              ),
+            );
+            const first = yield* take(slices, 1);
+            yield* Scope.close(snapshotScope, Exit.void);
+            yield* Effect.yieldNow;
+            const logAfterSnapshotEnd = [...log];
+            const rest = yield* take(slices, 4);
+            return { refs: [...first, ...rest].flat(), logAfterSnapshotEnd };
+          }),
+        );
+        yield* Effect.yieldNow;
+        return { ...refs, log: [...log] };
+      }),
+    );
+    expect(result.refs.at(-1)).toMatchObject({
+      itemID: 3,
+      ref: { key: "RELA2345" },
+    });
+    expect(result.logAfterSnapshotEnd).toEqual(["open #1", "open #2"]);
+    expect(result.log).toEqual(["open #1", "open #2", "close #1"]);
+  });
+
+  it("a read naming an unknown Snapshot fails with SnapshotExpired", async () => {
+    const { open } = fixtureOpener();
+    const error = await withReads(open, (reads) =>
+      Effect.flip(reads.Libraries({ snapshot: "snapshot-404" })),
+    );
+    expect(error).toBeInstanceOf(SnapshotExpired);
+    expect(error).toMatchObject({
+      _tag: "SnapshotExpired",
+      snapshot: "snapshot-404",
+    });
+  });
+
+  it("an idle Snapshot times out and releases its connection", async () => {
+    const { open, log } = fixtureOpener();
+    const result = await withReads(
+      open,
+      (reads) =>
+        Effect.gen(function* () {
+          const ids = yield* Stream.runCollect(reads.Snapshot());
+          yield* reads.Refresh();
+          const expired = yield* Effect.flip(
+            reads.Libraries({ snapshot: ids[0]! }),
+          );
+          return { ids, expired, log: [...log] };
+        }),
+      { snapshotIdleTimeout: "20 millis" },
+    );
+    expect(result.ids).toHaveLength(1);
+    expect(result.expired).toMatchObject({ _tag: "SnapshotExpired" });
+    expect(result.log).toEqual(["open #1", "open #2", "close #1"]);
+  });
+
+  it("a request completes while a stream is open", async () => {
+    const { open } = fixtureOpener();
+    const order = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        const order: string[] = [];
+        // A one-slot buffer holds the server mid-stream until the client pulls.
+        const slices = yield* Stream.toPull(
+          reads.DisplayRefs(
+            { itemIDs: Array.from({ length: 10 }, () => 1), sliceSize: 1 },
+            { streamBufferSize: 1 },
+          ),
+        );
+        yield* take(slices, 1);
+        order.push("first slice");
+        yield* reads.Libraries({});
+        order.push("libraries");
+        yield* take(slices, 9);
+        order.push("stream drained");
+        return order;
+      }).pipe(Effect.scoped),
+    );
+    expect(order).toEqual(["first slice", "libraries", "stream drained"]);
+  });
+
+  it("interrupting a stream releases its borrow", async () => {
+    const { open, log } = fixtureOpener();
+    const result = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        // Fifty one-item slices behind a one-slot buffer: the server is
+        // still mid-stream, waiting on the client, when the take ends it.
+        const first = yield* Stream.runCollect(
+          Stream.take(
+            reads.DisplayRefs(
+              { itemIDs: Array.from({ length: 50 }, () => 1), sliceSize: 1 },
+              { streamBufferSize: 1 },
+            ),
+            1,
+          ),
+        );
+        yield* Effect.yieldNow;
+        yield* reads.Refresh();
+        return { first, log: [...log] };
+      }),
+    );
+    expect(result.first).toHaveLength(1);
+    // The stream's borrow ended with the interrupt, so the swap closes #1 now.
+    expect(result.log).toEqual(["open #1", "open #2", "close #1"]);
+  });
+
+  it("Configure hands the new settings to the opener and swaps the connection", async () => {
+    const { open, configs } = fixtureOpener();
+    const config: ReadsConfig = {
+      databasePath: "/Zotero/zotero.sqlite",
+      readMode: "immutable",
+      autoRefresh: true,
+    };
+    const seen = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        yield* reads.Libraries({});
+        yield* reads.Configure(config);
+        return yield* connectionSeen(reads);
+      }),
+    );
+    expect(configs).toEqual([null, config]);
+    expect(seen).toBe(2);
+  });
+
+  it("NotifyExternalChange refreshes the connection", async () => {
+    const { open } = fixtureOpener();
+    const seen = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        yield* reads.Libraries({});
+        yield* reads.NotifyExternalChange();
+        return yield* connectionSeen(reads);
+      }),
+    );
+    expect(seen).toBe(2);
+  });
+});
