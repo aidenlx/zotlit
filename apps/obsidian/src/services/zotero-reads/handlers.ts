@@ -54,7 +54,7 @@ import {
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 
 import { Connection, toDbUnavailable } from "./connection";
-import { layerConnectionItemSource } from "./item-source";
+import { layerConnectionItemSource, pinnedClient } from "./item-source";
 import { listCollectionChoices, resolveMembershipFacts } from "./membership";
 import { DbUnavailable, SnapshotExpired, SnapshotId, ZoteroReads } from "./rpc";
 import type { SearchHit, WorkLabelSource } from "./rpc";
@@ -698,18 +698,23 @@ export function handlersLayer(options?: HandlersOptions) {
             resolveMembershipFacts(client, { itemID, libraryID }),
           ),
 
-        // Hydration reads the hits by Indexed Key, which names the same Item
-        // on any client of one database; a hit that no longer resolves drops.
+        // Hydration reads the client the answering index holds, so the rows
+        // and the highlight ranges describe one database state. A hit that no
+        // longer resolves there drops.
         SearchItems: ({ libraryIDs, query, limit }) =>
           Effect.scoped(
             Effect.gen(function* () {
-              const client = yield* connection.borrow;
-              const hits = yield* itemIndex
-                .search(libraryIDs, query, limit)
+              const { hits, source } = yield* itemIndex
+                .searchWithSource(libraryIDs, query, limit)
                 .pipe(
                   Effect.mapError(
                     (error) => new DbUnavailable({ message: error.message }),
                   ),
+                );
+              const client = pinnedClient(source);
+              if (!client)
+                return yield* Effect.die(
+                  new Error("The Item Index holds a source with no client"),
                 );
               const items = yield* read(client, (c) =>
                 itemsByIndexedKeys(

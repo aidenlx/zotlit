@@ -1,4 +1,13 @@
-import { Effect, Exit, Fiber, Layer, PubSub, Scope, Stream } from "effect";
+import {
+  Effect,
+  Exit,
+  Fiber,
+  Latch,
+  Layer,
+  PubSub,
+  Scope,
+  Stream,
+} from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 
@@ -1491,20 +1500,29 @@ describe("ZoteroReads SearchItems", () => {
   const keysOf = (hits: readonly { item: { indexedKey: string } }[]) =>
     hits.map((hit) => hit.item.indexedKey);
 
+  /**
+   * Open the connection. Its first open publishes `changed`; opened first,
+   * that event precedes every search, so a test counts only its own changes.
+   */
+  const connect = (reads: ZoteroReadsClient) => reads.Libraries({});
+
   /** The SQL `query` runs, read from a scratch fixture database. */
   function sqlOf(query: (client: NodeDatabaseClient) => unknown): string {
     const client = createClient(":memory:");
     const sqlite = client.$client;
-    createFixtureSchema(sqlite);
-    const prepare = sqlite.prepare.bind(sqlite);
-    let seen = "";
-    sqlite.prepare = (source: string) => {
-      seen = source;
-      return prepare(source);
-    };
-    query(client);
-    sqlite.close();
-    return seen;
+    try {
+      createFixtureSchema(sqlite);
+      const prepare = sqlite.prepare.bind(sqlite);
+      let seen = "";
+      sqlite.prepare = (source: string) => {
+        seen = source;
+        return prepare(source);
+      };
+      query(client);
+      return seen;
+    } finally {
+      sqlite.close();
+    }
   }
   /** A build reads each Library's ids once; nothing else runs this. */
   const ID_READ = sqlOf((client) => getIndexedItemIDsByLibrary(client, 1));
@@ -1512,19 +1530,20 @@ describe("ZoteroReads SearchItems", () => {
 
   /**
    * Run `effect` until `accept` holds for its value, at most 500 times a
-   * millisecond apart; answers the last value either way.
+   * millisecond apart, and answer that value; fail the test when it never
+   * holds.
    */
   const eventually = <A, E, R>(
     effect: Effect.Effect<A, E, R>,
     accept: (value: A) => boolean,
   ) =>
     Effect.gen(function* () {
-      let value = yield* effect;
-      for (let tries = 0; tries < 500 && !accept(value); tries++) {
+      for (let tries = 0; tries < 500; tries++) {
+        const value = yield* effect;
+        if (accept(value)) return value;
         yield* Effect.sleep("1 millis");
-        value = yield* effect;
       }
-      return value;
+      return yield* Effect.die(new Error("condition never held"));
     });
 
   /** SQL for `count` more journal articles in My Library, older than SEED's. */
@@ -1536,13 +1555,15 @@ describe("ZoteroReads SearchItems", () => {
     ).join("\n");
 
   /**
-   * {@link layerRcRef} over `opener`, with `degrade`: later borrows fail and
-   * the feed reports `degraded`, as when no client can serve.
+   * {@link layerRcRef} over `opener`, with controls: `degrade` makes later
+   * borrows fail and reports `degraded`, as when no client can serve;
+   * `holdBorrows` holds every later borrow until `releaseBorrows`.
    */
-  const degradableConnection = (opener: ConnectionOpener) => {
+  const controlledConnection = (opener: ConnectionOpener) => {
     let failure: DbUnavailable | null = null;
     let publish: (event: ChangeEvent) => Effect.Effect<void> = () =>
       Effect.void;
+    const gate = Latch.makeUnsafe(true);
     const layer = Layer.effect(Connection)(
       Effect.gen(function* () {
         const base = yield* Connection;
@@ -1550,8 +1571,11 @@ describe("ZoteroReads SearchItems", () => {
         publish = (event) => PubSub.publish(extra, event).pipe(Effect.asVoid);
         return Connection.of({
           ...base,
-          borrow: Effect.suspend(() =>
-            failure ? Effect.fail(failure) : base.borrow,
+          borrow: Effect.andThen(
+            gate.await,
+            Effect.suspend(() =>
+              failure ? Effect.fail(failure) : base.borrow,
+            ),
           ),
           changes: Stream.merge(base.changes, Stream.fromPubSub(extra)),
         });
@@ -1561,7 +1585,12 @@ describe("ZoteroReads SearchItems", () => {
       failure = new DbUnavailable({ message: "database gone" });
       return publish({ _tag: "degraded", error: failure });
     });
-    return { layer, degrade };
+    return {
+      layer,
+      degrade,
+      holdBorrows: gate.close,
+      releaseBorrows: gate.open,
+    };
   };
 
   /** Run `body` against an in-process client over the `connection` layer. */
@@ -1672,6 +1701,7 @@ describe("ZoteroReads SearchItems", () => {
     );
     const result = await withReads(open, (reads) =>
       Effect.gen(function* () {
+        yield* connect(reads);
         const before = yield* reads.SearchItems(inLibrary(1, "fresh"));
         yield* reads.Refresh();
         const after = yield* eventually(
@@ -1694,10 +1724,11 @@ describe("ZoteroReads SearchItems", () => {
     );
     const result = await withReads(open, (reads) =>
       Effect.gen(function* () {
+        yield* connect(reads);
         yield* reads.SearchItems(everything);
-        // The `changed` of #2 re-checks the index on #2; the swap to #3
-        // closes #2 once that re-check let go of it. The search between
-        // keeps the list from eviction at the second change.
+        // The `changed` of #2 re-checks the index on #2, and the index then
+        // holds #2; the re-check on #3 takes over, and #2 closes. The search
+        // between keeps the list from eviction at the second change.
         yield* reads.Refresh();
         yield* reads.SearchItems(everything);
         yield* reads.Refresh();
@@ -1724,6 +1755,7 @@ describe("ZoteroReads SearchItems", () => {
     );
     const renamed = await withReads(open, (reads) =>
       Effect.gen(function* () {
+        yield* connect(reads);
         yield* reads.SearchItems(everything);
         yield* reads.Refresh();
         return yield* eventually(
@@ -1736,10 +1768,37 @@ describe("ZoteroReads SearchItems", () => {
     expect(renamed[0]!.item.fields).toMatchObject({ title: "Quagga Study" });
   });
 
+  it("a Configure that points to another database file rebuilds, also with equal ids and signatures", async () => {
+    // Every open holds the same database; only the configured path differs.
+    const { open } = fixtureOpener((id) =>
+      id === 1
+        ? ""
+        : "update itemDataValues set value = 'Quagga Study' where valueID = 1;",
+    );
+    const renamed = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        yield* connect(reads);
+        yield* reads.SearchItems(everything);
+        yield* reads.Configure({
+          databasePath: "/Backup/zotero.sqlite",
+          readMode: "auto",
+          autoRefresh: true,
+          locale: null,
+        });
+        return yield* eventually(
+          reads.SearchItems({ ...everything, query: "quagga" }),
+          (hits) => hits.length > 0,
+        );
+      }),
+    );
+    expect(keysOf(renamed)).toEqual(["MAIN2345"]);
+  });
+
   it("a Library list no search asked for since the last change is evicted at the next", async () => {
     const { open, ran } = fixtureOpener();
     const result = await withReads(open, (reads) =>
       Effect.gen(function* () {
+        yield* connect(reads);
         yield* reads.SearchItems(inLibrary(1));
         yield* reads.SearchItems(inLibrary(2));
         yield* reads.Refresh();
@@ -1774,8 +1833,7 @@ describe("ZoteroReads SearchItems", () => {
           const after = yield* reads.SearchItems(inLibrary(1));
           return { before, after };
         }),
-    );
-    client.$client.close();
+    ).finally(() => client.$client.close());
     expect(keysOf(answers.before)).toEqual([
       "MAIN2345",
       "RELA2345",
@@ -1784,14 +1842,58 @@ describe("ZoteroReads SearchItems", () => {
     expect(keysOf(answers.after)).toEqual(["MAIN2345", "RELB2345"]);
   });
 
+  it("hydrates on the database state the answering index was built on while a rebuild waits", async () => {
+    // #2 renames the Item and moves its signature.
+    const { open } = fixtureOpener((id) =>
+      id === 1
+        ? ""
+        : `update itemDataValues set value = 'Quagga Study' where valueID = 1;
+           update items set dateModified = '2024-06-01 00:00:00' where itemID = 1;`,
+    );
+    const { layer, holdBorrows, releaseBorrows } = controlledConnection(open);
+    const result = await withConnection(layer, (reads) =>
+      Effect.gen(function* () {
+        yield* connect(reads);
+        yield* reads.SearchItems(everything);
+        // The rebuild on #2 waits at its borrow.
+        yield* holdBorrows;
+        yield* reads.Refresh();
+        const during = yield* reads.SearchItems({
+          ...everything,
+          query: "study",
+        });
+        yield* releaseBorrows;
+        const after = yield* eventually(
+          reads.SearchItems({ ...everything, query: "quagga" }),
+          (hits) => hits.length > 0,
+        );
+        return { during, after };
+      }),
+    );
+    expect(keysOf(result.during)).toEqual(["MAIN2345"]);
+    expect(result.during[0]!.item.fields).toMatchObject({
+      title: "Main Study",
+    });
+    expect(result.during[0]!.matches).toEqual([[5, 10]]);
+    expect(result.after[0]!.item.fields).toMatchObject({
+      title: "Quagga Study",
+    });
+    expect(result.after[0]!.matches).toEqual([[0, 6]]);
+  });
+
   it("a degraded connection fails the search with DbUnavailable", async () => {
     const { open } = fixtureOpener();
-    const { layer, degrade } = degradableConnection(open);
+    const { layer, degrade } = controlledConnection(open);
     const result = await withConnection(layer, (reads) =>
       Effect.gen(function* () {
         const before = yield* reads.SearchItems(everything);
         yield* degrade;
-        const error = yield* Effect.flip(reads.SearchItems(everything));
+        // The re-check the event starts finds no client and drops the index.
+        const exit = yield* eventually(
+          Effect.exit(reads.SearchItems(everything)),
+          Exit.isFailure,
+        );
+        const error = yield* Effect.flip(exit);
         return { before, error };
       }),
     );
@@ -1820,10 +1922,13 @@ describe("ZoteroReads SearchItems", () => {
           (count) => count > 0,
         );
         yield* Fiber.interrupt(first);
+        const exit = yield* Fiber.await(first);
         const next = yield* reads.SearchItems(inLibrary(1, "main"));
-        return { next, builds: ran(ID_READ) };
+        return { exit, next, builds: ran(ID_READ) };
       }),
     );
+    // The search was still waiting for the build when it was interrupted.
+    expect(Exit.hasInterrupts(result.exit)).toBe(true);
     expect(keysOf(result.next)).toEqual(["MAIN2345"]);
     expect(result.builds).toBe(1);
   });
@@ -1858,7 +1963,7 @@ describe("ZoteroReads SearchItems", () => {
 
   it("a request sent during a build is answered before the build ends", async () => {
     const { open, ran } = fixtureOpener(() => bulkWorks(3000));
-    const order = await withReads(open, (reads) =>
+    const result = await withReads(open, (reads) =>
       Effect.gen(function* () {
         const order: string[] = [];
         const search = yield* Effect.forkChild(
@@ -1872,10 +1977,13 @@ describe("ZoteroReads SearchItems", () => {
         );
         yield* reads.Ping();
         order.push("ping");
+        // The search waits for the build, so the build still runs here.
+        const searching = search.pollUnsafe() === undefined;
         yield* Fiber.join(search);
-        return order;
+        return { order, searching };
       }),
     );
-    expect(order).toEqual(["ping", "search"]);
+    expect(result.searching).toBe(true);
+    expect(result.order).toEqual(["ping", "search"]);
   });
 });

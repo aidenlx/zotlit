@@ -28,6 +28,7 @@ export {
   SourceUnavailable,
   switchSegmenter,
   type PinnedItemSource,
+  type SourcedHits,
 } from "./item-index";
 export {
   layerSegmenterJieba,

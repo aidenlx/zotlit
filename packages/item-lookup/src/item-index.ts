@@ -13,6 +13,10 @@ import { getLogger } from "@logtape/logtape";
  *   that no search waits on, is evicted and its build interrupted.
  * - A build reads one pinned source for its whole life, in slices, and yields
  *   to the scheduler after each slice.
+ * - A held index keeps the pinned source it was built on, or last verified
+ *   against with equal signatures, until a newer index replaces it or the list
+ *   leaves. A caller hydrates the hits on that source, so the rows and the
+ *   highlight ranges describe one state.
  * - A locale or Segmenter change in {@link IndexConfig} rebuilds every held
  *   list.
  */
@@ -26,10 +30,10 @@ import {
   FiberSet,
   Layer,
   Schema,
+  Scope,
   Stream,
   SubscriptionRef,
 } from "effect";
-import type { Scope } from "effect";
 
 import { createLanguageLookup } from "@zotlit/db";
 import type {
@@ -140,8 +144,23 @@ export class ItemIndex extends Context.Service<
       query: string,
       limit: number,
     ) => Effect.Effect<readonly ItemHit[], SourceUnavailable>;
+    /**
+     * {@link search}, with the pinned source the answering index holds, open
+     * until the caller's scope closes. Hydrate the hits on `source`.
+     */
+    readonly searchWithSource: (
+      libraries: readonly number[],
+      query: string,
+      limit: number,
+    ) => Effect.Effect<SourcedHits, SourceUnavailable, Scope.Scope>;
   }
 >()("zotlit/item-lookup/ItemIndex") {}
+
+/** Hits and the pinned source the index that ranked them holds. */
+export interface SourcedHits {
+  readonly hits: readonly ItemHit[];
+  readonly source: PinnedItemSource;
+}
 
 const logger = getLogger(["zotlit", "item-lookup", "item-index"]);
 
@@ -155,7 +174,29 @@ interface BuiltIndex {
   readonly signatures: readonly IndexSignature[];
   /** The configuration version the index was built with. */
   readonly config: number;
+  /** The pinned source the index was built on or last verified against. */
+  readonly binding: Binding;
 }
+
+/** A pinned source a held index keeps; it closes once retired and unused. */
+interface Binding {
+  readonly source: PinnedItemSource;
+  readonly scope: Scope.Closeable;
+  /** Searches that hold the source for hydration now. */
+  users: number;
+  /** No index holds the source any more. */
+  retired: boolean;
+}
+
+/** Retire `binding`; its source closes now, or after its last search. */
+const retire = (binding: Binding | undefined): Effect.Effect<void> =>
+  Effect.suspend(() => {
+    if (!binding || binding.retired) return Effect.void;
+    binding.retired = true;
+    return binding.users === 0
+      ? Scope.close(binding.scope, Exit.void)
+      : Effect.void;
+  });
 
 interface Lane {
   /** Set as soon as the lane is forked. */
@@ -184,8 +225,20 @@ export const layerItemIndex: Layer.Layer<
   Effect.gen(function* () {
     const source = yield* Effect.service(ItemSource);
     const config = yield* Effect.service(IndexConfig);
-    const fork = yield* FiberSet.makeRuntime<never, void, SourceUnavailable>();
     const entries = new Map<string, Entry>();
+    // Registered before the lanes' FiberSet, so it runs after every lane
+    // ended: no lane can bind a source after it.
+    yield* Effect.addFinalizer(() =>
+      Effect.forEach(
+        entries.values(),
+        (entry) =>
+          entry.built
+            ? Scope.close(entry.built.binding.scope, Exit.void)
+            : Effect.void,
+        { discard: true },
+      ),
+    );
+    const fork = yield* FiberSet.makeRuntime<never, void, SourceUnavailable>();
     let configVersion = 0;
     let languageLookup: {
       locale: string | null;
@@ -199,10 +252,71 @@ export const layerItemIndex: Layer.Layer<
       return languageLookup.lookup;
     };
 
+    /** Hold `built` for the entry and retire the binding it replaces. */
+    const hold = (entry: Entry, built: BuiltIndex) =>
+      Effect.suspend(() => {
+        const replaced = entry.built?.binding;
+        entry.built = built;
+        return replaced === built.binding ? Effect.void : retire(replaced);
+      });
+
+    /** Drop the entry's index and retire its binding. */
+    const drop = (entry: Entry) =>
+      Effect.suspend(() => {
+        const replaced = entry.built?.binding;
+        entry.built = null;
+        return retire(replaced);
+      });
+
+    /**
+     * Re-check the entry on a fresh pinned source: keep the index on equal
+     * signatures, build a new one otherwise. Either way the entry then holds
+     * the fresh source; a pinned source no index takes closes at the end.
+     */
     const rebuildOnce = (entry: Entry) =>
+      Effect.uninterruptibleMask((restore) =>
+        Effect.gen(function* () {
+          const scope = yield* Scope.make();
+          let held = false;
+          const holdOnce = (built: BuiltIndex) =>
+            Effect.suspend(() => {
+              held = true;
+              return hold(entry, built);
+            }).pipe(Effect.uninterruptible);
+          return yield* restore(checkAndBuild(entry, scope, holdOnce)).pipe(
+            Effect.onExit(() =>
+              held ? Effect.void : Scope.close(scope, Exit.void),
+            ),
+          );
+        }),
+      ).pipe(
+        Effect.tapError((error) =>
+          Effect.andThen(
+            drop(entry),
+            Effect.sync(() => {
+              logger.debug("Item index dropped; source unavailable", {
+                libraries: entry.libraries,
+                error,
+              });
+            }),
+          ),
+        ),
+      );
+
+    const checkAndBuild = (
+      entry: Entry,
+      scope: Scope.Closeable,
+      holdOnce: (built: BuiltIndex) => Effect.Effect<void>,
+    ) =>
       Effect.gen(function* () {
         const version = configVersion;
-        const pinned = yield* source.pinned;
+        const pinned = yield* Scope.provide(source.pinned, scope);
+        const binding: Binding = {
+          source: pinned,
+          scope,
+          users: 0,
+          retired: false,
+        };
         const signatures = yield* Effect.forEach(
           entry.libraries,
           pinned.signature,
@@ -218,6 +332,8 @@ export const layerItemIndex: Layer.Layer<
             libraries: entry.libraries,
             generation: pinned.generation,
           });
+          // Equal signatures: the fresh source holds what the index holds.
+          yield* holdOnce({ ...held, binding });
           return;
         }
         logger.debug("Item index build started", {
@@ -247,29 +363,19 @@ export const layerItemIndex: Layer.Layer<
           }
         }
         const engine = yield* builder.build;
-        entry.built = {
+        yield* holdOnce({
           engine,
           generation: pinned.generation,
           signatures,
           config: version,
-        };
+          binding,
+        });
         logger.info("Item index built", {
           libraries: entry.libraries,
           count: engine.size,
           durationMs: performance.now() - startedAt,
         });
-      }).pipe(
-        Effect.scoped,
-        Effect.tapError((error) =>
-          Effect.sync(() => {
-            entry.built = null;
-            logger.debug("Item index dropped; source unavailable", {
-              libraries: entry.libraries,
-              error,
-            });
-          }),
-        ),
-      );
+      });
 
     /**
      * Start the entry's lane: rebuild, then once more per trailing request.
@@ -327,6 +433,7 @@ export const layerItemIndex: Layer.Layer<
           });
           const fiber = entry.lane?.fiber;
           if (fiber) work.push(Fiber.interrupt(fiber));
+          work.push(drop(entry));
           continue;
         }
         entry.asked = false;
@@ -354,10 +461,10 @@ export const layerItemIndex: Layer.Layer<
       Effect.forkScoped({ startImmediately: true }),
     );
 
-    /** The list's held index, waiting for a build when there is none. */
+    /** The list's entry once it holds an index, waiting for a build when none. */
     const indexFor = (
       libraries: readonly number[],
-    ): Effect.Effect<EngineIndex, SourceUnavailable> =>
+    ): Effect.Effect<Entry, SourceUnavailable> =>
       Effect.gen(function* () {
         const entry = getEntry(libraries);
         entry.asked = true;
@@ -376,7 +483,7 @@ export const layerItemIndex: Layer.Layer<
               }),
           );
         }
-        if (entry.built) return entry.built.engine;
+        if (entry.built) return entry;
         // A waited-on entry is never evicted, so only the layer closing ends
         // its lane without an index.
         return yield* Effect.interrupt;
@@ -399,11 +506,50 @@ export const layerItemIndex: Layer.Layer<
       return entry;
     };
 
+    /**
+     * Hold the entry's index and its binding for the caller's scope. `null`
+     * when the index was dropped since `indexFor` answered.
+     */
+    const holdIndex = (entry: Entry) =>
+      Effect.acquireRelease(
+        Effect.sync(() => {
+          const built = entry.built;
+          if (built) built.binding.users++;
+          return built;
+        }),
+        (built) =>
+          Effect.suspend(() => {
+            if (!built) return Effect.void;
+            const binding = built.binding;
+            binding.users--;
+            return binding.retired && binding.users === 0
+              ? Scope.close(binding.scope, Exit.void)
+              : Effect.void;
+          }),
+      );
+
+    const searchWithSource = (
+      libraries: readonly number[],
+      query: string,
+      limit: number,
+    ): Effect.Effect<SourcedHits, SourceUnavailable, Scope.Scope> =>
+      Effect.gen(function* () {
+        const built = yield* holdIndex(yield* indexFor(libraries));
+        // Dropped in between: wait for the list's next index.
+        if (!built) return yield* searchWithSource(libraries, query, limit);
+        const hits = yield* searchEngineIndex(built.engine, query, limit);
+        return { hits, source: built.binding.source };
+      });
+
     return {
       search: (libraries, query, limit) =>
-        Effect.flatMap(indexFor(libraries), (engine) =>
-          searchEngineIndex(engine, query, limit),
+        Effect.scoped(
+          Effect.map(
+            searchWithSource(libraries, query, limit),
+            ({ hits }) => hits,
+          ),
         ),
+      searchWithSource,
     };
   }),
 );
