@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { NodeDatabaseClient } from "@/client/node";
 import { createFixtureSchema } from "@/test-utils";
 
-import { getChildNotesByParentIDs, getTrashedNoteItemIDs } from "./notes";
+import { getChildNotesByParentIDs, getNoteRefsByItemIDs } from "./notes";
 
 let sqlite: DatabaseSync;
 let db: NodeDatabaseClient;
@@ -21,21 +21,35 @@ afterEach(() => {
   sqlite.close();
 });
 
-describe("getTrashedNoteItemIDs", () => {
-  it("flags a note whose item is in the trash", () => {
-    expect(getTrashedNoteItemIDs(db, [200])).toEqual(new Set([200]));
+describe("getNoteRefsByItemIDs", () => {
+  it("maps each note id to its ref, flagging a note in the trash", () => {
+    const refs = getNoteRefsByItemIDs(db, [200, 300, 100, 999, 100]);
+    expect(
+      [...refs].map(([itemID, { note, trashed }]) => [
+        itemID,
+        note.key,
+        trashed,
+      ]),
+    ).toEqual([
+      [100, "LIVE", false],
+      [200, "TRASHED", true],
+    ]);
   });
 
-  it("excludes a live note", () => {
-    expect(getTrashedNoteItemIDs(db, [100])).toEqual(new Set());
+  it("carries the note's identity and title", () => {
+    expect(getNoteRefsByItemIDs(db, [402]).get(402)?.note).toMatchObject({
+      itemID: 402,
+      libraryID: 1,
+      groupID: null,
+      parentItemID: 301,
+      key: "CHILD003",
+      indexedKey: "CHILD003",
+      title: "Three",
+    });
   });
 
-  it("excludes an id that isn't a note at all", () => {
-    expect(getTrashedNoteItemIDs(db, [300])).toEqual(new Set());
-  });
-
-  it("returns an empty set for empty input", () => {
-    expect(getTrashedNoteItemIDs(db, [])).toEqual(new Set());
+  it("returns an empty map for empty input", () => {
+    expect(getNoteRefsByItemIDs(db, [])).toEqual(new Map());
   });
 });
 

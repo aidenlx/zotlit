@@ -74,17 +74,6 @@ const attachmentByItemIdQuery = defineQuery<{ itemID: number }>()(
     }),
 );
 
-const allAttachmentsQuery = defineQuery<void>()((db) =>
-  db.query.itemAttachments.findMany({
-    where: { item_itemID: { deletedItem: false } },
-    columns: attachmentFindOptions.columns,
-    with: {
-      ...attachmentFindOptions.with,
-      item_parentItemID: { columns: { key: true } },
-    },
-  }),
-);
-
 const attachmentPageQuery = defineQuery<{
   afterItemID: number;
   limit: number;
@@ -105,7 +94,7 @@ const attachmentPageQuery = defineQuery<{
 );
 
 type AttachmentRow = QueryRow<typeof attachmentsByParentQuery>;
-type AttachmentWithParentRow = QueryRow<typeof allAttachmentsQuery>;
+type AttachmentWithParentRow = QueryRow<typeof attachmentPageQuery>;
 
 function toAttachment(row: AttachmentRow, groupID: number | null): Attachment {
   const path =
@@ -162,26 +151,14 @@ export interface AttachmentWithParentKey extends Attachment {
 }
 
 /**
- * Every live Attachment, each beside its parent Item's Indexed Key — for a
- * consumer that indexes the whole table rather than asking per Item. The
- * attachment path index runs `attachmentAbsPath` across this.
+ * One page of the live Attachments, each beside its parent Item's Indexed
+ * Key — for a consumer that indexes the whole table rather than asking per
+ * Item. The attachment path index runs `attachmentAbsPath` across these.
+ * Pages run in `itemID` order: the live Attachments after `afterItemID`, at
+ * most `limit` of them. Pass the last page's final `itemID` to read the next;
+ * an empty page ends the table.
  *
  * @see ../lib/zt-path.ts — `attachmentAbsPath` and `attachmentPathKey`
- */
-export function getAllAttachments(
-  db: NodeDatabaseClient,
-): AttachmentWithParentKey[] {
-  const memo: GroupIDMemo = new Map();
-  return allAttachmentsQuery
-    .prepared(db)
-    .all()
-    .map((row) => toAttachmentWithParentKey(db, row, memo));
-}
-
-/**
- * One page of {@link getAllAttachments}, in `itemID` order: the live
- * Attachments after `afterItemID`, at most `limit` of them. Pass the last
- * page's final `itemID` to read the next; an empty page ends the table.
  */
 export function getAttachmentPage(
   db: NodeDatabaseClient,

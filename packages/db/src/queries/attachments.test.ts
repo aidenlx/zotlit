@@ -8,7 +8,6 @@ import { USER_LIBRARY_ID } from "@/lib/constants";
 import { createFixtureSchema } from "@/test-utils";
 
 import {
-  getAllAttachments,
   getAttachmentPage,
   getAttachmentByKey,
   getAttachmentsByParents,
@@ -103,7 +102,7 @@ describe("getAttachmentByKey", () => {
   });
 });
 
-describe("getAllAttachments", () => {
+describe("getAttachmentPage", () => {
   it("pairs every live attachment with its parent Item's Indexed Key, and a standalone one with null", () => {
     sqlite.exec(`
       insert into groups (groupID, libraryID, name)
@@ -117,11 +116,13 @@ describe("getAllAttachments", () => {
     `);
 
     expect(
-      getAllAttachments(db).map((attachment) => [
-        attachment.indexedKey,
-        attachment.parentIndexedKey,
-        attachment.path,
-      ]),
+      getAttachmentPage(db, { afterItemID: 0, limit: 100 }).map(
+        (attachment) => [
+          attachment.indexedKey,
+          attachment.parentIndexedKey,
+          attachment.path,
+        ],
+      ),
     ).toEqual([
       ["ATTA1", "PARA", "storage:paper.pdf"],
       ["ATTA2", "PARA", "/abs/path/book.epub"],
@@ -131,9 +132,7 @@ describe("getAllAttachments", () => {
       ["STANDALN", null, "storage:loose.pdf"],
     ]);
   });
-});
 
-describe("getAttachmentPage", () => {
   it("reads the live attachments after a cursor in item order, a page at a time", () => {
     sqlite.exec(`
       insert into groups (groupID, libraryID, name)

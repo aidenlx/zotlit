@@ -76,7 +76,6 @@ export {
   getAnnotationsByParent,
 } from "./queries/annotations";
 export {
-  getAllAttachments,
   getAttachmentByItemId,
   getAttachmentPage,
   getAttachmentByKey,
@@ -85,12 +84,11 @@ export {
 } from "./queries/attachments";
 export {
   getChildNotesByParentIDs,
-  getNoteByItemID,
   getNoteByKey,
   getNoteRefsByItemIDs,
-  getTrashedNoteItemIDs,
   type ChildNote,
   type Note,
+  type NoteRef,
 } from "./queries/notes";
 export {
   getCitekeyByItemKey,

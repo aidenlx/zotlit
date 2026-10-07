@@ -820,6 +820,61 @@ describe("ZoteroReads operations", () => {
     ]);
   });
 
+  /** Ids for one row, and for many: notes live and trashed, items with and without notes, a miss. */
+  const sliceIDs = { one: [200], many: [1, 2, 3, 10, 200, 201, 999] };
+  it.each<
+    [
+      string,
+      (
+        reads: ZoteroReadsClient,
+        size: "one" | "many",
+      ) => Stream.Stream<unknown, unknown>,
+    ]
+  >([
+    [
+      "DisplayRefs",
+      (reads, size) => reads.DisplayRefs({ itemIDs: sliceIDs[size] }),
+    ],
+    ["NoteRefs", (reads, size) => reads.NoteRefs({ itemIDs: sliceIDs[size] })],
+    [
+      "ChildNoteRefs",
+      (reads, size) => reads.ChildNoteRefs({ itemIDs: sliceIDs[size] }),
+    ],
+    // Library 2 indexes one item; library 1 indexes three.
+    [
+      "IndexItems",
+      (reads, size) => reads.IndexItems({ libraryID: size === "one" ? 2 : 1 }),
+    ],
+  ])(
+    "%s runs the same statements for a slice of one row as for a slice of many",
+    async (_operation, stream) => {
+      const { open, statements } = fixtureOpener(
+        () => `
+          insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+            values (201, 3, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'TRSH2345');
+          insert into itemNotes (itemID, parentItemID, note, title)
+            values (201, 1, '<p>gone</p>', 'Gone');
+          insert into deletedItems (itemID) values (201);
+        `,
+      );
+      const counts = await withReads(open, (reads) =>
+        Effect.gen(function* () {
+          const cost = (size: "one" | "many") =>
+            Effect.gen(function* () {
+              const before = statements();
+              yield* Stream.runDrain(stream(reads, size));
+              return statements() - before;
+            });
+          yield* cost("one");
+          yield* cost("many");
+          // Each read finds rows in one library, so each resolves one group.
+          return { one: yield* cost("one"), many: yield* cost("many") };
+        }),
+      );
+      expect(counts.many).toBe(counts.one);
+    },
+  );
+
   it("a source that cannot open fails with a tagged DbUnavailable", async () => {
     const { open } = fixtureOpener(() => null);
     const error = await withReads(open, (reads) =>
