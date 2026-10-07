@@ -148,10 +148,7 @@ describe("fetchNoteSource + buildNoteContextFromSource", () => {
       username: "aidenlx",
       collectionCache: new CollectionCache(),
     });
-    // The build reads nothing: the database is closed before it runs.
-    sqlite.close();
     const ctx = buildNoteContextFromSource(overTheWire(source), noteResolvers);
-    sqlite = new DatabaseSync(":memory:");
 
     expect(ctx.tags.map(String)).toEqual(["zt"]);
     expect(ctx.collections.map(String)).toEqual(["Reading"]);
@@ -207,13 +204,10 @@ describe("fetchAnnotationSources + buildAnnotationsTemplateData", () => {
       [nonStandalone!, standalone!],
       {},
     );
-    // The build reads nothing: the database is closed before it runs.
-    sqlite.close();
     const result = buildAnnotationsTemplateData(
       overTheWire(sources),
       annotationResolvers,
     );
-    sqlite = new DatabaseSync(":memory:");
 
     expect([...result.keys()]).toEqual(["ANNO0001", "ANNO0003"]);
     const first = result.get("ANNO0001")!;
