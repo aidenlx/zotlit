@@ -170,8 +170,9 @@ async function fixture(mode = "normal") {
         },
       })({ ...options, client }),
   });
-  const { reads } = await inProcessReadsService(sharedClientOpener(client))
-    .ready;
+  const { reads } = await stack.use(
+    inProcessReadsService(sharedClientOpener(client)),
+  ).ready;
   const priorTurndown = Object.getOwnPropertyDescriptor(
     globalThis,
     "TurndownService",

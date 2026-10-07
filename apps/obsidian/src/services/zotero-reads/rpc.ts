@@ -560,4 +560,16 @@ export class ZoteroReads extends RpcGroup.make(
     success: jsonObject<ItemSnapshot>(),
     error: ReadError,
   }),
+  /** The library, key, and type of any live Item, child Items included; `null` for none. */
+  Rpc.make("ItemType", {
+    payload: { indexedKey: Schema.String, ...snapshot },
+    success: Schema.NullOr(
+      Schema.Struct({
+        libraryID: Schema.Number,
+        key: Schema.String,
+        itemType: Schema.String,
+      }),
+    ),
+    error: ReadError,
+  }),
 ) {}

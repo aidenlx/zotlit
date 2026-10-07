@@ -632,6 +632,28 @@ describe("ZoteroReads operations", () => {
     expect(error).toBeInstanceOf(DbUnavailable);
   });
 
+  it("ItemType names the type of any live Item, child Items included", async () => {
+    const { open } = fixtureOpener();
+    const types = await withReads(open, (reads) =>
+      Effect.all([
+        reads.ItemType({ indexedKey: "MAIN2345" }),
+        reads.ItemType({ indexedKey: "ATCH2345" }),
+        reads.ItemType({ indexedKey: "NTE22345" }),
+        reads.ItemType({ indexedKey: "ANNT2345" }),
+        reads.ItemType({ indexedKey: "GRPITEMSg900" }),
+        reads.ItemType({ indexedKey: "MISS2345" }),
+      ]),
+    );
+    expect(types).toEqual([
+      { libraryID: 1, key: "MAIN2345", itemType: "journalArticle" },
+      { libraryID: 1, key: "ATCH2345", itemType: "attachment" },
+      { libraryID: 1, key: "NTE22345", itemType: "note" },
+      { libraryID: 1, key: "ANNT2345", itemType: "annotation" },
+      { libraryID: 2, key: "GRPITEMS", itemType: "journalArticle" },
+      null,
+    ]);
+  });
+
   it("a source that cannot open fails with a tagged DbUnavailable", async () => {
     const { open } = fixtureOpener(() => null);
     const error = await withReads(open, (reads) =>
@@ -758,6 +780,37 @@ describe("ZoteroReads connection lifetime", () => {
       current: 2,
       log: ["open #1", "open #2"],
     });
+  });
+
+  it("NoteSource reuses one Snapshot's tag and collection lookups across reads", async () => {
+    const { open, statements } = fixtureOpener();
+    const counts = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        const cost = (read: Effect.Effect<unknown, unknown>) =>
+          Effect.gen(function* () {
+            const before = statements();
+            yield* read;
+            return statements() - before;
+          });
+        const unbound = [
+          yield* cost(reads.NoteSource({ itemID: 1 })),
+          yield* cost(reads.NoteSource({ itemID: 1 })),
+        ];
+        const pinned = yield* Effect.scoped(
+          Effect.gen(function* () {
+            const pull = yield* Stream.toPull(reads.Snapshot());
+            const [snapshot] = yield* take(pull, 1);
+            return [
+              yield* cost(reads.NoteSource({ itemID: 1, snapshot })),
+              yield* cost(reads.NoteSource({ itemID: 1, snapshot })),
+            ];
+          }),
+        );
+        return { unbound, pinned };
+      }),
+    );
+    // The second read of each pair runs warm; only the Snapshot's reuses lookups.
+    expect(counts.pinned[1]).toBeLessThan(counts.unbound[1]!);
   });
 
   it("a Snapshot-bound stream keeps reading its connection after a swap and holds it until the stream ends", async () => {

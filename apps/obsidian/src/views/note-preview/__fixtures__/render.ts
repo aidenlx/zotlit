@@ -105,11 +105,12 @@ export async function createRenderFixture(options: { existing?: string; javascri
     const outcome = await renderCitations(sources, items, options?.presentation);
     return outcome.kind === "held" ? outcome.record.value : null;
   });
+  const zoteroReads = inProcessReadsService(sharedClientOpener(client));
   const deps: NativeRenderDeps = {
     app, settings, templates,
     profile: { resolveProfile: () => undefined },
     db: { on: () => () => {}, acquireRead: async () => ({ client, [Symbol.dispose]() {} }) as never },
-    zoteroReads: inProcessReadsService(sharedClientOpener(client)),
+    zoteroReads,
     noteIndex: { getNotesByItemKey: (key) => file && key === "MAIN2345" ? [file] : [], getImportedNoteByNoteKey: () => [], whenIndexed: async () => {} },
     zoteroPref: { ready: Promise.resolve(), dataDir: "/Zotero", baseAttachmentPath: null },
     citationIndex: {
@@ -120,5 +121,5 @@ export async function createRenderFixture(options: { existing?: string; javascri
   };
   const writes = { create: vi.spyOn(vault, "create"), process: vi.spyOn(vault, "process"), modify: vi.spyOn(vault, "modifyFile") };
   const snapshot = exportItemSnapshot(client, { key: "MAIN2345", library: { type: "personal" } }, { provenance: { kind: "connected", installationId: "fixture", vault: "preview" } });
-  return { deps, snapshot, host, vault, renderCitations, writes, async [Symbol.asyncDispose]() { await templates[Symbol.asyncDispose](); await settings[Symbol.asyncDispose](); sqlite.close(); } };
+  return { deps, snapshot, host, vault, renderCitations, writes, async [Symbol.asyncDispose]() { await templates[Symbol.asyncDispose](); await settings[Symbol.asyncDispose](); await zoteroReads[Symbol.asyncDispose](); sqlite.close(); } };
 }

@@ -885,10 +885,11 @@ async function createNote(
     username: options.username,
   });
   if (!source) throw new Error(`Zotero item not found: ${item.indexedKey}`);
+  // The filename renders from the Snapshot's Item, as the body does.
   const { itemTags, itemCollections } = itemFacets(source);
   let { path, canSuffix } =
     options.preparedPath ??
-    resolveNotePath(ctx, item, {
+    resolveNotePath(ctx, source.item, {
       itemTags,
       itemCollections,
       settings: profile.settings,
@@ -923,7 +924,7 @@ async function createNote(
             attempt,
             itemKey: item.indexedKey,
           });
-          ({ path, canSuffix } = resolveNotePath(ctx, item, {
+          ({ path, canSuffix } = resolveNotePath(ctx, source.item, {
             itemTags,
             itemCollections,
             settings: profile.settings,
@@ -1041,8 +1042,8 @@ async function updateNote(
 ): Promise<UpdateResult> {
   const { indexedKey, scope = "full" } = options;
   // Settle readiness and prepare the attachment handle before pinning the
-  // client, so the lease (an auto-refresh gate) spans only the DB reads, the
-  // vault writes, and the child-note import flush — not the warm-up awaits.
+  // Snapshot, so the lease spans only the DB reads, the vault writes, and the
+  // child-note import flush — not the warm-up awaits.
   const [settings] = await Promise.all([
     ctx.settings.loaded,
     ctx.noteIndex.whenIndexed(),
@@ -1527,8 +1528,8 @@ async function overwriteNote(
 ): Promise<UpdateResult> {
   const { indexedKey } = options;
   // Settle readiness and prepare the attachment handle before pinning the
-  // client, so the lease (an auto-refresh gate) spans only the DB reads, the
-  // vault writes, and the child-note import flush — not the warm-up awaits.
+  // Snapshot, so the lease spans only the DB reads, the vault writes, and the
+  // child-note import flush — not the warm-up awaits.
   const [settings] = await Promise.all([
     ctx.settings.loaded,
     ctx.noteIndex.whenIndexed(),
@@ -1742,7 +1743,7 @@ function renderAnnotationCitation(
 
 /**
  * Assumes the caller has settled note-index and template readiness (and pinned
- * the client via `acquireRead`); {@link updateNote} and {@link overwriteNote} do
+ * a Snapshot via `acquireRead`); {@link updateNote} and {@link overwriteNote} do
  * so before acquiring the lease. `template.ready` in particular gates
  * {@link applyComposedFrontmatter}, which reads `template.frontmatterFields` — without it,
  * an early update could strip managed frontmatter to the still-empty compiled

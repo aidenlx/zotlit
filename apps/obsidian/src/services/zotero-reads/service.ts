@@ -51,6 +51,7 @@ const READ_OPERATIONS = [
   "AttachmentsByKeys",
   "DatabaseIdentity",
   "ItemSnapshot",
+  "ItemType",
 ] as const satisfies readonly (keyof ZoteroReadsClient)[];
 
 /** The read operations of ZoteroReads. */

@@ -774,6 +774,11 @@ describe("createNote", () => {
       client.$client.exec(`
         insert into itemTypes (itemTypeID, typeName) values
           (1, 'journalArticle'), (2, 'attachment'), (4, 'annotation');
+        insert into fieldsCombined (fieldID, fieldName, custom) values
+          (1, 'title', 0), (2, 'citationKey', 0);
+        insert into itemDataValues (valueID, value) values
+          (1, 'Paper'), (2, 'paper2026');
+        insert into itemData (itemID, fieldID, valueID) values (1, 1, 1), (1, 2, 2);
         insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key) values
           (1, 1, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'ROOT1234'),
           (90, 2, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'RGRPDF24'),

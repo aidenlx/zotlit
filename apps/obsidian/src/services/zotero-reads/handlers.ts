@@ -20,6 +20,7 @@ import {
   getItemDisplayRefByID,
   getItemsByID,
   getItemsByKey,
+  getItemTypeByKey,
   getLibraries,
   getNoteByKey,
   getRelatedKeysByItemID,
@@ -27,7 +28,7 @@ import {
   isChildItemFields,
   resolveIndexedKeyLibrary,
 } from "@zotlit/db";
-import type { GroupIDMemo, Item } from "@zotlit/db";
+import type { GroupIDMemo, Item, TagMemo } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 
@@ -116,8 +117,25 @@ function workLabelSource(
 }
 
 /** A connection a Snapshot pinned, with the reads using it right now. */
+/** Lookup memos that stay valid for one database state. */
+interface NoteMemos {
+  readonly collectionCache: CollectionCache;
+  readonly tagMemo: TagMemo;
+  readonly groupIdMemo: GroupIDMemo;
+}
+
+function noteMemos(): NoteMemos {
+  return {
+    collectionCache: new CollectionCache(),
+    tagMemo: new Map(),
+    groupIdMemo: new Map(),
+  };
+}
+
 interface Pinned {
   readonly client: NodeDatabaseClient;
+  /** Shared by the Snapshot's reads: a batch resolves each tag and collection once. */
+  readonly memos: NoteMemos;
   /** Holds the borrow; closes after the Snapshot ends and its last read finishes. */
   readonly scope: Scope.Closeable;
   active: number;
@@ -240,11 +258,17 @@ export function handlersLayer(options?: HandlersOptions) {
 
         NoteSource: (payload) =>
           withClient(payload.snapshot, (client) => {
-            const item = getItemsByID(client, [payload.itemID])[0];
+            const memos =
+              (payload.snapshot !== undefined &&
+                pinned.get(payload.snapshot)?.memos) ||
+              noteMemos();
+            const item = getItemsByID(client, [payload.itemID], {
+              memo: memos.groupIdMemo,
+            })[0];
             if (!item) return null;
             return fetchNoteSource(client, item, {
               ...("username" in payload && { username: payload.username }),
-              collectionCache: new CollectionCache(),
+              ...memos,
             });
           }),
 
@@ -348,6 +372,7 @@ export function handlersLayer(options?: HandlersOptions) {
                 const id = `snapshot-${++snapshots}`;
                 const entry: Pinned = {
                   client,
+                  memos: noteMemos(),
                   scope,
                   active: 0,
                   ended: false,
@@ -392,6 +417,18 @@ export function handlersLayer(options?: HandlersOptions) {
 
         DatabaseIdentity: ({ snapshot }) =>
           withClient(snapshot, getZoteroDatabaseIdentity),
+
+        ItemType: ({ indexedKey, snapshot }) =>
+          withClient(snapshot, (client) => {
+            const selector = resolveIndexedKeyLibrary(client, indexedKey);
+            if (!selector) return null;
+            const itemType = getItemTypeByKey(
+              client,
+              selector.libraryID,
+              selector.key,
+            );
+            return itemType === null ? null : { ...selector, itemType };
+          }),
 
         ItemSnapshot: ({ selection, provenance, vaultTargets, snapshot }) =>
           withClient(snapshot, (client) =>
