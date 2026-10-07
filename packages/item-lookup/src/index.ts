@@ -4,6 +4,7 @@ export {
   createIndexBuilder,
   DEFAULT_SCORING,
   searchIndex,
+  tokenizeIndexItems,
   type BuildIndexOptions,
   type ScoringConfig,
   type SearchField,
@@ -20,4 +21,5 @@ export {
   tokenize,
   type ChsSegmenter,
   type TokenizerOptions,
+  type Tokenizer,
 } from "./tokenizer";

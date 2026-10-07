@@ -3,12 +3,11 @@ import { resolve } from "node:path";
 import { build } from "vite";
 import type { Plugin } from "vite";
 
-const id = "virtual:item-query-worker";
-
 /** Embed an independent Node bundle in the plugin's single distributable main.js. */
-export function itemQueryWorker(): Plugin {
+export function embeddedWorker(service: "item-query" | "item-lookup"): Plugin {
+  const id = `virtual:${service}-worker`;
   return {
-    name: "item-query-worker",
+    name: `${service}-worker`,
     resolveId(source) {
       if (source === id) return `\0${id}`;
     },
@@ -28,9 +27,9 @@ export function itemQueryWorker(): Plugin {
           target: "node24",
           minify: true,
           lib: {
-            entry: resolve(root, "src/services/item-query/worker.ts"),
+            entry: resolve(root, `src/services/${service}/worker.ts`),
             formats: ["cjs"],
-            fileName: () => "item-query.cjs",
+            fileName: () => `${service}.cjs`,
           },
           rolldownOptions: {
             external: [
@@ -43,9 +42,9 @@ export function itemQueryWorker(): Plugin {
       });
       const built = Array.isArray(result) ? result[0]! : result;
       if (!("output" in built))
-        throw new Error("Item Query worker build returned no bundle");
+        throw new Error(`${service} worker build returned no bundle`);
       const chunk = built.output.find((entry) => entry.type === "chunk");
-      if (!chunk) throw new Error("Item Query worker build returned no code");
+      if (!chunk) throw new Error(`${service} worker build returned no code`);
       for (const path of Object.keys(chunk.modules)) this.addWatchFile(path);
       return `export default ${JSON.stringify(chunk.code)};`;
     },

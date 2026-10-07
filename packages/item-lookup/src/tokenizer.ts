@@ -12,7 +12,11 @@ export interface TokenizerOptions {
 const CJK = regex("[\\u4e00-\\u9fa5]", "u");
 const DIACRITIC = regex("\\p{Diacritic}", "gu");
 
-export function tokenize(text: string, opts: TokenizerOptions): string[] {
+/** Local tokenization or tokens prepared by a host-owned segmenter. */
+export type Tokenizer = TokenizerOptions | ((text: string) => string[]);
+
+export function tokenize(text: string, opts: Tokenizer): string[] {
+  if (typeof opts === "function") return opts(text);
   const tokens: string[] = [];
   for (const part of opts.intl.segment(text)) {
     if (!part.isWordLike) continue;

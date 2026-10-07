@@ -101,37 +101,50 @@ it("accepts a late closure receipt while reserving the stopping process until ex
   }
 });
 
-it("gives accepted cleanup the original 50 ms deadline without restarting it", async () => {
+it("reserves process-exit time inside the original 50 ms cancellation budget", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+  using _clock = { [Symbol.dispose]: () => vi.useRealTimers() };
   const created: WorkerReceipts[] = [];
   const workers = new QueryWorkers(() => {
     const worker = new WorkerReceipts();
+    const stop = worker.terminate.bind(worker);
+    worker.terminate = () => {
+      const exited = stop();
+      // A stop can need 20 ms for process exit and cleanup.
+      setTimeout(() => worker.exit(), 20);
+      return exited;
+    };
     created.push(worker);
     return worker;
   });
-  try {
-    await workers.ready;
-    const first = created[0]!;
-    const controller = new AbortController();
-    const reason = new Error("cancel this query");
-    const rejected = expect(
-      workers.answer(job, controller.signal),
-    ).rejects.toBe(reason);
-    await first.started.promise;
-    controller.abort(reason);
-    await vi.advanceTimersByTimeAsync(5);
-    first.reply({ type: "cancel-accepted" });
-    await vi.advanceTimersByTimeAsync(44);
-    expect(first.stopping).toBe(false);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(first.stopping).toBe(true);
-    first.reply({ type: "cancelled" });
-    await rejected;
-  } finally {
-    for (const worker of created) worker.exit();
-    await workers[Symbol.asyncDispose]();
-    vi.useRealTimers();
-  }
+  let rejected: Promise<void> | undefined;
+  await using _cleanup = {
+    async [Symbol.asyncDispose]() {
+      for (const worker of created) worker.exit();
+      await workers[Symbol.asyncDispose]();
+      await rejected;
+    },
+  };
+  await workers.ready;
+  const first = created[0]!;
+  const controller = new AbortController();
+  const reason = new Error("cancel this query");
+  let settledAt: number | undefined;
+  const startedAt = performance.now();
+  rejected = expect(
+    workers.answer(job, controller.signal).finally(() => {
+      settledAt = performance.now() - startedAt;
+    }),
+  ).rejects.toBe(reason);
+  await first.started.promise;
+  // Timer delivery can be one renderer sampling interval late.
+  await vi.advanceTimersByTimeAsync(4);
+  controller.abort(reason);
+  await vi.advanceTimersByTimeAsync(5);
+  first.reply({ type: "cancel-accepted" });
+  await vi.advanceTimersByTimeAsync(41);
+  expect(settledAt).toBeLessThanOrEqual(50);
+  await rejected;
 });
 
 it("rejects a failed replacement startup after its first waiting query was cancelled", async () => {

@@ -6,7 +6,7 @@ import type { IndexedItem, LanguageNameLookup } from "@zotlit/db";
 
 import { formatCreator } from "./format-creator";
 import { normalize, normalizeWithIndexMap, tokenize } from "./tokenizer";
-import type { TokenizerOptions } from "./tokenizer";
+import type { Tokenizer, TokenizerOptions } from "./tokenizer";
 
 /** Structurally compatible with Obsidian's `SearchMatches`. */
 export type SearchMatches = [number, number][];
@@ -71,7 +71,7 @@ export const DEFAULT_SCORING: ScoringConfig = {
 };
 
 export interface SearchIndexOptions {
-  tokenizer: TokenizerOptions;
+  tokenizer: Tokenizer;
   limit: number;
   scoring?: ScoringConfig;
 }
@@ -112,7 +112,7 @@ export interface SearchIndexBuilder {
 }
 
 export function createIndexBuilder(
-  tokenizerOpts: TokenizerOptions,
+  tokenizerOpts: Tokenizer,
   { libraries, languageLookup = null }: BuildIndexOptions,
 ): SearchIndexBuilder {
   const mini = new MiniSearch<IndexedSearchDocument>({
@@ -168,7 +168,7 @@ function orderComparator(
 
 export function buildIndex(
   items: readonly IndexedItem[],
-  tokenizerOpts: TokenizerOptions,
+  tokenizerOpts: Tokenizer,
   options: BuildIndexOptions,
 ): SearchIndex {
   const builder = createIndexBuilder(tokenizerOpts, options);
@@ -297,7 +297,7 @@ type RankedCandidate =
       terms: ReadonlySet<string>;
     };
 
-function queryTokens(query: string, opts: TokenizerOptions): string[] {
+function queryTokens(query: string, opts: Tokenizer): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
   for (const token of tokenize(query, opts)) {
@@ -438,6 +438,23 @@ function compareRankedCandidates(
     );
   }
   return b.score - a.score || compareOrder(a.item, b.item);
+}
+
+/** Prepare the exact indexed text with the host's optional Chinese segmenter. */
+export function tokenizeIndexItems(
+  items: readonly IndexedItem[],
+  tokenizer: TokenizerOptions,
+  languageLookup: LanguageNameLookup | null,
+): [string, string[]][] {
+  const tokens = new Map<string, string[]>();
+  for (const item of items) {
+    const document = toSearchDocument(item, languageLookup);
+    for (const field of SEARCH_FIELDS) {
+      const text = document[field];
+      if (!tokens.has(text)) tokens.set(text, tokenize(text, tokenizer));
+    }
+  }
+  return [...tokens];
 }
 
 function toSearchDocument(

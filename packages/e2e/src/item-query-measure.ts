@@ -506,7 +506,7 @@ async function loadTier(items: number, groupItems?: number): Promise<void> {
   log("Waiting for the search index of this Fixture to finish...");
   await obEval(
     vaultId,
-    '(async()=>{await app.plugins.plugins.zotlit.services.itemLookup.search("",{limit:1});return true;})()',
+    '(async()=>{const hits=await app.plugins.plugins.zotlit.services.itemLookup.search("",{limit:1});if(hits.length!==1)throw new Error("Search index did not produce its first result");return true;})()',
     600_000,
   );
 }

@@ -19,8 +19,8 @@
  *   cached signatures are atomic with the index they label and a concurrent
  *   refresh cannot tear chunks across snapshots. The build hydrates one Library
  *   at a time in `dateModified`-desc chunks, yielding the main thread between
- *   chunks so a large scope stays responsive; {@link SearchIndexBuilder.build}
- *   then imposes the global order over the whole corpus.
+ *   chunks so a large scope stays responsive; the worker
+ *   then imposes the global order over the whole corpus and retains the index outside the renderer.
  *
  * A Library Scope change is a hard invalidation: it bumps {@link #generation} to
  * abandon any in-flight build and search hydration bound to the old scope, and
@@ -32,6 +32,7 @@
  */
 import { chunk } from "@std/collections/chunk";
 import { getLanguage } from "obsidian";
+import workerSource from "virtual:item-lookup-worker";
 
 import {
   createLanguageLookup,
@@ -42,11 +43,9 @@ import {
 } from "@zotlit/db";
 import type { IndexedItem, IndexSignature, Item } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-import { createIndexBuilder, searchIndex } from "@zotlit/item-lookup";
 import type {
   ChsSegmenter,
   SearchHit as EngineSearchHit,
-  SearchIndex,
   TokenizerOptions,
 } from "@zotlit/item-lookup";
 
@@ -54,6 +53,8 @@ import { getLogger } from "@/lib/log";
 import { yieldToMain } from "@/lib/yield-to-main";
 import { DatabaseError } from "@/services/database/service";
 import type { DatabaseService } from "@/services/database/service";
+import { isolatedProcessRuntime } from "@/services/isolated-process";
+import type { IsolatedProcess } from "@/services/isolated-process";
 import { availableKey } from "@/services/library-scope/scope";
 import type {
   AvailableLibrary,
@@ -61,6 +62,10 @@ import type {
 } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { Service } from "@/services/service-base";
+
+import { LookupIndexes } from "./indexes";
+import type { LookupIndex } from "./indexes";
+import type { IndexHit } from "./worker-protocol";
 
 const logger = getLogger(["item-lookup"]);
 export const DEFAULT_LIMIT = 50;
@@ -79,6 +84,7 @@ const INDEX_CHUNK_SIZE = 50;
 
 export interface ItemLookupDeps {
   db: DatabaseService;
+  createWorker?: () => IsolatedProcess;
   libraryScope: LibraryScopeService;
   getChsSegmenter?: () => ChsSegmenter | null;
   loadItemIDs?: (
@@ -104,7 +110,7 @@ interface ItemCache {
   scopeKey: string;
   /** Those Libraries, in canonical order — the source of result labels. */
   libraries: readonly AvailableLibrary[];
-  index: SearchIndex;
+  index: LookupIndex;
   /** One signature per covered Library, in the same canonical order. */
   signatures: readonly IndexSignature[];
 }
@@ -123,8 +129,10 @@ function signaturesEqual(
   );
 }
 
-export class ItemLookup extends Service<void> {
+export class ItemLookup extends Service<LookupIndexes> {
   readonly #db;
+  readonly #createWorker;
+  readonly #locale;
   readonly #libraryScope;
   readonly #languageLookup;
   readonly #getChsSegmenter;
@@ -145,13 +153,15 @@ export class ItemLookup extends Service<void> {
   readonly #intl = new Intl.Segmenter(undefined, { granularity: "word" });
   #tokenizerOpts: TokenizerOptions;
 
-  ready: Promise<void>;
+  ready: Promise<LookupIndexes>;
 
   constructor(deps: ItemLookupDeps) {
     super();
     this.#db = deps.db;
+    this.#createWorker = deps.createWorker;
+    this.#locale = getLanguage();
     this.#libraryScope = deps.libraryScope;
-    this.#languageLookup = createLanguageLookup(getLanguage());
+    this.#languageLookup = createLanguageLookup(this.#locale);
     this.#getChsSegmenter = deps.getChsSegmenter ?? (() => null);
     this.#loadItemIDs = deps.loadItemIDs ?? getIndexedItemIDsByLibrary;
     this.#loadItems = deps.loadItems ?? getIndexedItemsByID;
@@ -159,6 +169,14 @@ export class ItemLookup extends Service<void> {
     this.#hydrateItems = deps.hydrateItems ?? getItemsByID;
     this.#tokenizerOpts = this.#createTokenizerOpts();
     this.ready = this.#load();
+    void this.ready
+      .then(() => this.#loadIfNeeded())
+      .catch((error) => {
+        logger.error("Initial item index load failed", {
+          error,
+          scopeKey: this.#scopeKey,
+        });
+      });
   }
 
   async search(query: string, opts?: { limit?: number }): Promise<SearchHit[]> {
@@ -169,7 +187,8 @@ export class ItemLookup extends Service<void> {
 
     const t0 = performance.now();
     const generation = this.#generation;
-    const cache = await this.#loadIfNeeded();
+    await this.#loadIfNeeded();
+    const cache = this.#cache;
     if (!cache) {
       logger.debug("Search skipped; no index available", {
         queryLength: query.length,
@@ -178,19 +197,14 @@ export class ItemLookup extends Service<void> {
     }
 
     const trimmed = query.trim();
-    // `index.items` is already in global most-recently-modified order, so the
-    // empty query is that order truncated to the limit.
-    const leanHits =
-      trimmed.length === 0
-        ? cache.index.items.slice(0, limit).map((item) => ({
-            item,
-            score: 0,
-            matches: [],
-          }))
-        : searchIndex(cache.index, trimmed, {
-            tokenizer: this.#tokenizerOpts,
-            limit,
-          });
+    let leanHits: IndexHit[];
+    try {
+      leanHits = await cache.index.search(trimmed, this.#tokenizerOpts, limit);
+    } catch (error) {
+      if (generation !== this.#generation) return [];
+      throw error;
+    }
+    if (generation !== this.#generation) return [];
     const hits = await this.#hydrateHits(cache, leanHits, generation);
 
     logger.debug("Search completed", {
@@ -202,28 +216,36 @@ export class ItemLookup extends Service<void> {
     return hits;
   }
 
-  async #load(): Promise<void> {
+  async #load(): Promise<LookupIndexes> {
     await using stack = new AsyncDisposableStack();
+    await this.#libraryScope.ready;
+    const createWorker =
+      this.#createWorker ??
+      stack.use(
+        await isolatedProcessRuntime(workerSource, {
+          prefix: "zotlit-lookup-process-",
+          serviceName: "ZotLit Item Lookup",
+        }),
+      ).create;
+    const indexes = stack.adopt(
+      new LookupIndexes(createWorker()),
+      async (owned) => {
+        this.#generation += 1;
+        this.#cache = null;
+        await owned[Symbol.asyncDispose]();
+        await this.#rebuildInFlight;
+      },
+    );
+    await indexes.ready;
     stack.defer(this.#db.on("changed", () => this.#invalidate()));
     stack.defer(
       this.#libraryScope.on("changed", (scope) => this.#onScopeChanged(scope)),
     );
-
-    this.commit(stack.move());
-
-    // Library Scope settles the database on its own way to ready, so its
-    // resolution is the only startup signal this service waits on.
-    await this.#libraryScope.ready;
     const scope = this.#libraryScope.current;
     this.#scopeKey = scope && availableKey(scope.available);
     logger.info("Item lookup ready", { scopeKey: this.#scopeKey });
-
-    void this.#loadIfNeeded().catch((error) => {
-      logger.error("Initial item index load failed", {
-        error,
-        scopeKey: this.#scopeKey,
-      });
-    });
+    this.commit(stack.move());
+    return indexes;
   }
 
   /**
@@ -244,7 +266,9 @@ export class ItemLookup extends Service<void> {
     });
     this.#scopeKey = scopeKey;
     this.#generation += 1;
+    const previous = this.#cache;
     this.#cache = null;
+    void previous?.index[Symbol.asyncDispose]();
     void this.#scheduleRebuild();
   }
 
@@ -272,7 +296,9 @@ export class ItemLookup extends Service<void> {
    * only block on a build when there is no valid index for the current scope. */
   async #loadIfNeeded(): Promise<ItemCache | null> {
     if (this.#db.state !== "ready") {
+      const previous = this.#cache;
       this.#cache = null;
+      await previous?.index[Symbol.asyncDispose]();
       logger.debug("Item index load skipped; database not ready");
       return null;
     }
@@ -370,16 +396,19 @@ export class ItemLookup extends Service<void> {
         generation,
       );
       if (index === null || generation !== this.#generation) {
+        await index?.[Symbol.asyncDispose]();
         logger.debug("Discarding superseded item index build", {
           scopeKey,
           generation,
         });
         return;
       }
+      const previous = this.#cache;
       this.#cache = { scopeKey, libraries: available, index, signatures };
+      await previous?.index[Symbol.asyncDispose]();
       logger.info("Item index built", {
         libraries: available.length,
-        count: index.items.length,
+        count: index.count,
         durationMs: performance.now() - t0,
       });
     } catch (error) {
@@ -414,8 +443,11 @@ export class ItemLookup extends Service<void> {
     client: NodeDatabaseClient,
     libraries: readonly AvailableLibrary[],
     generation: number,
-  ): Promise<SearchIndex | null> {
-    const builder = createIndexBuilder(this.#tokenizerOpts, {
+  ): Promise<LookupIndex | null> {
+    const indexes = await this.ready;
+    await using builder = await indexes.createBuilder({
+      tokenizer: this.#tokenizerOpts,
+      locale: this.#locale,
       libraries: libraries.map((library) => library.libraryID),
       languageLookup: this.#languageLookup,
     });
@@ -433,7 +465,7 @@ export class ItemLookup extends Service<void> {
           });
           return null;
         }
-        builder.add(await this.#loadItems(client, ids));
+        await builder.add(await this.#loadItems(client, ids));
         await yieldToMain();
       }
     }
@@ -443,7 +475,7 @@ export class ItemLookup extends Service<void> {
       });
       return null;
     }
-    return builder.build();
+    return await builder.build();
   }
 
   #createTokenizerOpts(): TokenizerOptions {
@@ -455,7 +487,7 @@ export class ItemLookup extends Service<void> {
 
   async #hydrateHits(
     cache: ItemCache,
-    leanHits: readonly EngineSearchHit<IndexedItem>[],
+    leanHits: readonly IndexHit[],
     generation: number,
   ): Promise<SearchHit[]> {
     if (leanHits.length === 0) return [];

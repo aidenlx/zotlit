@@ -7,6 +7,7 @@ import workerSource from "virtual:item-query-worker";
 
 import { getLogger } from "@/lib/log";
 import type { DatabaseService } from "@/services/database/service";
+import { isolatedProcessRuntime } from "@/services/isolated-process";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { Service } from "@/services/service-base";
 
@@ -16,7 +17,6 @@ import {
   itemQueryArgumentFailure,
   ITEM_QUERY_COMMAND,
 } from "./cli";
-import { queryProcessRuntime } from "./process";
 import type { QueryObserver } from "./trace";
 import type { QueryJob } from "./worker-protocol";
 import { QueryWorkers } from "./workers";
@@ -51,7 +51,12 @@ export class ItemQueryService extends Service<QueryWorkers> {
     await this.#deps.libraryScope.ready;
     const createWorker =
       this.#deps.createWorker ??
-      stack.use(await queryProcessRuntime(workerSource)).create;
+      stack.use(
+        await isolatedProcessRuntime(workerSource, {
+          prefix: "zotlit-query-process-",
+          serviceName: "ZotLit Item Query",
+        }),
+      ).create;
     const workers = stack.use(new QueryWorkers(createWorker));
     stack.defer(async () => {
       this.#unload.abort();

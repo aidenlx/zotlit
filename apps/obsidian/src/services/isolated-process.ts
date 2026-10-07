@@ -9,20 +9,28 @@ import { getLogger } from "@/lib/log";
 import { requireElectronRemote } from "@/lib/require";
 import { sweepTempDirectory } from "@/lib/temp-sweep";
 
-import type { QueryWorker } from "./workers";
+export interface IsolatedProcess extends Pick<
+  EventEmitter,
+  "on" | "removeAllListeners"
+> {
+  postMessage(message: unknown): void;
+  terminate(): Promise<unknown>;
+}
 
-const logger = getLogger(["item-query"]);
-const PREFIX = "zotlit-query-process-";
+const logger = getLogger(["utility-process"]);
 
 /** One owned entry file shared by this service's isolated Node processes. */
-export async function queryProcessRuntime(source: string) {
+export async function isolatedProcessRuntime(
+  source: string,
+  { prefix, serviceName }: { prefix: string; serviceName: string },
+) {
   const parent = tmpdir();
   await sweepTempDirectory({
     directory: parent,
-    kind: "Item Query process code",
+    kind: `${serviceName} process code`,
     isResidue: (name) => {
-      if (!name.startsWith(PREFIX)) return false;
-      const owner = Number(name.slice(PREFIX.length).split("-")[0]);
+      if (!name.startsWith(prefix)) return false;
+      const owner = Number(name.slice(prefix.length).split("-")[0]);
       if (!Number.isSafeInteger(owner) || owner <= 0 || owner === process.pid)
         return false;
       try {
@@ -33,8 +41,8 @@ export async function queryProcessRuntime(source: string) {
       }
     },
   });
-  const directory = await mkdtemp(join(parent, `${PREFIX}${process.pid}-`));
-  const path = join(directory, "query.cjs");
+  const directory = await mkdtemp(join(parent, `${prefix}${process.pid}-`));
+  const path = join(directory, "worker.cjs");
   try {
     await writeFile(path, source, { mode: 0o600 });
   } catch (error) {
@@ -42,14 +50,14 @@ export async function queryProcessRuntime(source: string) {
     throw error;
   }
   return {
-    create: (): QueryWorker => {
+    create: (): IsolatedProcess => {
       const { utilityProcess } = requireElectronRemote().require(
         "electron",
       ) as typeof import("electron");
-      return new QueryProcess(
+      return new OwnedProcess(
         utilityProcess.fork(path, [String(process.pid)], {
           stdio: "ignore",
-          serviceName: "ZotLit Item Query",
+          serviceName,
         }),
       );
     },
@@ -59,7 +67,7 @@ export async function queryProcessRuntime(source: string) {
 }
 
 /** A process exits without waiting for V8 to reclaim a large query heap. */
-class QueryProcess extends EventEmitter implements QueryWorker {
+class OwnedProcess extends EventEmitter implements IsolatedProcess {
   readonly #child;
   readonly #exited: Promise<void>;
   #stopping = false;
@@ -80,7 +88,7 @@ class QueryProcess extends EventEmitter implements QueryWorker {
         resolve();
       }),
     );
-    child.on("message", (message: string) => {
+    child.on("message", (message: unknown) => {
       // Electron can emit spawn before its remote listener is attached.
       // The readiness message proves that pid is now available.
       this.#pid ??= child.pid;
@@ -91,13 +99,13 @@ class QueryProcess extends EventEmitter implements QueryWorker {
     );
   }
 
-  postMessage(text: string): void {
-    this.#child.postMessage(text);
+  postMessage(message: unknown): void {
+    this.#child.postMessage(message);
   }
 
   #stop(): void {
-    // The process owns only a read-only database and unpublished output. A
-    // local signal avoids Electron remote's synchronous main-process call.
+    // A local signal stops the owned process without Electron remote's
+    // synchronous main-process call.
     try {
       // Covers cancellation before readiness when spawn was already missed.
       this.#pid ??= this.#child.pid;
@@ -106,17 +114,16 @@ class QueryProcess extends EventEmitter implements QueryWorker {
     } catch (error) {
       if (isErrno(error, "ESRCH")) return;
       logger.warn(
-        "Item Query direct process stop failed; asking Electron to stop it",
+        "Utility process direct stop failed; asking Electron to stop it",
         { error },
       );
       try {
         this.#child.kill();
       } catch (fallbackError) {
         // Keep ownership and the source lease until an exit is confirmed.
-        logger.error(
-          "Item Query process could not be stopped; waiting for exit",
-          { error: fallbackError },
-        );
+        logger.error("Utility process could not be stopped; waiting for exit", {
+          error: fallbackError,
+        });
       }
     }
   }

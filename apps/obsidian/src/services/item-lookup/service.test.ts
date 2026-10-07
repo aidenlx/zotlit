@@ -1,3 +1,5 @@
+import { Worker } from "node:worker_threads";
+import workerSource from "virtual:item-lookup-worker";
 import { describe, expect, it, vi } from "vitest";
 
 import type { IndexedItem, IndexSignature, Item } from "@zotlit/db";
@@ -27,13 +29,34 @@ describe("ItemLookup", () => {
       indexItems: [alpha.indexed],
       hydratedItems: [alpha.full],
     });
-    const lookup = new ItemLookup(deps);
+    await using lookup = new ItemLookup(deps);
 
     await lookup.ready;
     await waitForCallCount(deps.loadItems, 1);
     expect(await lookup.search("", { limit: 1 })).toHaveLength(1);
     expect(await lookup.search("Alpha", { limit: 1 })).toHaveLength(1);
     expect(deps.loadItems).toHaveBeenCalledOnce();
+  });
+
+  it("uses the host Chinese segmenter for worker indexing and searches", async () => {
+    const paper = itemPair({ key: "CHINESE1", title: "量子" });
+    const deps = createDeps({
+      indexItems: [paper.indexed],
+      hydratedItems: [paper.full],
+    });
+    const cut = vi.fn(() => ["quanta"]);
+    await using lookup = new ItemLookup({
+      ...deps,
+      getChsSegmenter: () => ({ cut }),
+    });
+    expect(
+      (await lookup.search("quanta")).map(({ item }) => item.itemID),
+    ).toEqual([paper.full.itemID]);
+    expect(
+      (await lookup.search("量子")).map(({ item }) => item.itemID),
+    ).toEqual([paper.full.itemID]);
+    expect((await lookup.search("CHINESE1"))[0]?.score).toBe(Infinity);
+    expect(cut).toHaveBeenCalled();
   });
 
   it("prewarms only after db.ready resolves", async () => {
@@ -44,7 +67,7 @@ describe("ItemLookup", () => {
       indexItems: [alpha.indexed],
       hydratedItems: [alpha.full],
     });
-    const lookup = new ItemLookup(deps);
+    await using lookup = new ItemLookup(deps);
 
     await Promise.resolve();
     expect(deps.loadItems).not.toHaveBeenCalled();
@@ -67,7 +90,7 @@ describe("ItemLookup", () => {
           }),
       ),
     });
-    const lookup = new ItemLookup(deps);
+    await using lookup = new ItemLookup(deps);
     await lookup.ready;
 
     const first = lookup.search("", { limit: 1 });
@@ -89,7 +112,7 @@ describe("ItemLookup", () => {
       hydratedItems: [alpha.full],
       loadSignature: vi.fn(() => ({ count, checksum: 0 })),
     });
-    const lookup = new ItemLookup(deps);
+    await using lookup = new ItemLookup(deps);
 
     await lookup.search("");
     await waitForCallCount(deps.loadItems, 1);
@@ -109,7 +132,7 @@ describe("ItemLookup", () => {
       hydratedItems: [alpha.full],
       loadSignature: vi.fn(() => ({ count: 1, checksum: 0 })),
     });
-    const lookup = new ItemLookup(deps);
+    await using lookup = new ItemLookup(deps);
 
     await lookup.search("");
     await waitForCallCount(deps.loadItems, 1);
@@ -121,7 +144,7 @@ describe("ItemLookup", () => {
   it("hard-invalidates when the library scope changes", async () => {
     const libraryScope = new FakeLibraryScope();
     const deps = createDeps({ libraryScope, ...perLibraryData() });
-    const lookup = new ItemLookup(deps);
+    await using lookup = new ItemLookup(deps);
 
     expect((await lookup.search(""))[0]?.item.libraryID).toBe(USER_LIBRARY_ID);
     libraryScope.setLibraries([library(2)]);
@@ -135,7 +158,7 @@ describe("ItemLookup", () => {
       library(2),
     ]);
     const deps = createDeps({ libraryScope, ...perLibraryData() });
-    const lookup = new ItemLookup(deps);
+    await using lookup = new ItemLookup(deps);
 
     await lookup.search("");
     const builds = deps.loadItems.mock.calls.length;
@@ -155,7 +178,7 @@ describe("ItemLookup", () => {
       library(2),
     ]);
     const deps = createDeps({ libraryScope, ...perLibraryData() });
-    const lookup = new ItemLookup(deps);
+    await using lookup = new ItemLookup(deps);
 
     const hits = await lookup.search("");
 
@@ -169,7 +192,7 @@ describe("ItemLookup", () => {
   it("labels results only when several libraries can contribute", async () => {
     const libraryScope = new FakeLibraryScope();
     const deps = createDeps({ libraryScope, ...perLibraryData() });
-    const lookup = new ItemLookup(deps);
+    await using lookup = new ItemLookup(deps);
 
     expect((await lookup.search("")).map((hit) => hit.library)).toEqual([null]);
 
@@ -196,7 +219,7 @@ describe("ItemLookup", () => {
         checksum: 0,
       })),
     });
-    const lookup = new ItemLookup(deps);
+    await using lookup = new ItemLookup(deps);
 
     await lookup.search("");
     const builds = deps.loadItems.mock.calls.length;
@@ -212,7 +235,7 @@ describe("ItemLookup", () => {
       libraryScope: new FakeLibraryScope([]),
       ...perLibraryData(),
     });
-    const lookup = new ItemLookup(deps);
+    await using lookup = new ItemLookup(deps);
 
     await expect(lookup.search("")).resolves.toEqual([]);
     expect(deps.loadItemIDs).not.toHaveBeenCalled();
@@ -222,7 +245,7 @@ describe("ItemLookup", () => {
     const db = new FakeDb();
     db.error = new DatabaseError("degraded");
     const deps = createDeps({ db });
-    const lookup = new ItemLookup(deps);
+    await using lookup = new ItemLookup(deps);
 
     await expect(lookup.search("anything")).resolves.toEqual([]);
     expect(deps.loadItems).not.toHaveBeenCalled();
@@ -236,7 +259,7 @@ describe("ItemLookup", () => {
       indexItems: [alpha.indexed],
       hydratedItems: [alpha.full],
     });
-    const lookup = new ItemLookup(deps);
+    await using lookup = new ItemLookup(deps);
 
     await expect(lookup.search("")).resolves.toHaveLength(1);
     db.error = new DatabaseError("degraded");
@@ -254,7 +277,7 @@ describe("ItemLookup", () => {
         throw new TypeError("malformed row");
       }),
     });
-    const lookup = new ItemLookup(deps);
+    await using lookup = new ItemLookup(deps);
 
     await expect(lookup.search("anything")).resolves.toEqual([]);
   });
@@ -262,7 +285,7 @@ describe("ItemLookup", () => {
   it("returns recent items for an empty query", async () => {
     const alpha = itemPair({ key: "A", title: "Alpha" });
     const beta = itemPair({ key: "B", title: "Beta" });
-    const lookup = new ItemLookup(
+    await using lookup = new ItemLookup(
       createDeps({
         indexItems: [alpha.indexed, beta.indexed],
         hydratedItems: [alpha.full, beta.full],
@@ -287,7 +310,7 @@ describe("ItemLookup", () => {
       creators: [creator("Jane", "Doe")],
       date: "2015-01-01",
     });
-    const lookup = new ItemLookup(
+    await using lookup = new ItemLookup(
       createDeps({
         indexItems: [alpha.indexed, beta.indexed],
         hydratedItems: [alpha.full, beta.full],
@@ -317,7 +340,7 @@ describe("ItemLookup", () => {
       ),
       loadSignature: vi.fn(() => ({ count, checksum: 0 })),
     });
-    const lookup = new ItemLookup(deps);
+    await using lookup = new ItemLookup(deps);
     await lookup.ready;
 
     await waitForCallCount(deps.loadItems, 1);
@@ -360,7 +383,7 @@ describe("ItemLookup", () => {
           }),
       ),
     });
-    const lookup = new ItemLookup(deps);
+    await using lookup = new ItemLookup(deps);
     await lookup.ready;
     await waitForCallCount(deps.loadItems, 1);
 
@@ -374,7 +397,7 @@ describe("ItemLookup", () => {
 
   it("drops hits that fail hydration", async () => {
     const alpha = itemPair({ key: "A", title: "Alpha" });
-    const lookup = new ItemLookup(
+    await using lookup = new ItemLookup(
       createDeps({
         indexItems: [alpha.indexed],
         hydrateItems: vi.fn(() => []),
@@ -421,6 +444,7 @@ function createDeps(
   const indexItems = options.indexItems ?? [];
   const hydratedItems = options.hydratedItems ?? [];
   return {
+    createWorker: () => new Worker(workerSource, { eval: true }),
     db: (options.db ?? new FakeDb()) as unknown as DatabaseService,
     libraryScope: (options.libraryScope ??
       new FakeLibraryScope()) as unknown as LibraryScopeService,

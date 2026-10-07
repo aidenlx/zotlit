@@ -16,8 +16,9 @@ export interface QueryWorker extends Pick<
 }
 export type QueryWorkerFactory = () => QueryWorker;
 
-/** Spec #1314: measured from the original cancellation request. */
-const CANCEL_COMPLETION_BUDGET_MS = 50;
+// Reserve time inside the 50 ms budget for process exit, file cleanup, and timer delivery.
+// Cooperative cleanup gets two scheduler slices from the original request.
+const CANCEL_CLEANUP_GRACE_MS = SLICE_BUDGET_MS * 2;
 
 interface Pending {
   job: QueryJob;
@@ -194,7 +195,7 @@ class Slot {
       requestedAt = performance.now();
       this.#observeCancel("sent");
       // This watchdog detects an unresponsive event loop. Once the worker
-      // accepts interruption, cleanup has the original request's deadline.
+      // accepts interruption, cleanup keeps the deadline measured from the original request.
       forceStop = setTimeout(stop, SLICE_BUDGET_MS);
       try {
         this.#worker?.postMessage(JSON.stringify({ type: "cancel" }));
@@ -222,7 +223,7 @@ class Slot {
             stop,
             Math.max(
               0,
-              requestedAt + CANCEL_COMPLETION_BUDGET_MS - performance.now(),
+              requestedAt + CANCEL_CLEANUP_GRACE_MS - performance.now(),
             ),
           );
         };

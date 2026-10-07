@@ -8,7 +8,7 @@ vi.mock("@/lib/require", () => ({
   }),
 }));
 
-import { queryProcessRuntime } from "./process";
+import { isolatedProcessRuntime } from "./isolated-process";
 
 // Electron may finish spawning between fork() and registration of its remote
 // listener. Cancellation must work both before and after the readiness message.
@@ -20,7 +20,10 @@ it.each([false, true])(
       kill: vi.fn(),
     });
     fork.mockReturnValue(child);
-    await using runtime = await queryProcessRuntime("");
+    await using runtime = await isolatedProcessRuntime("", {
+      prefix: "zotlit-query-process-",
+      serviceName: "ZotLit Item Query",
+    });
     const worker = runtime.create();
     child.pid = 12345;
     if (ready) child.emit("message", JSON.stringify({ type: "ready" }));
