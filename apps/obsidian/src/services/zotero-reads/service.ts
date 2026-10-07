@@ -48,6 +48,9 @@ const READ_OPERATIONS = [
   "WorkLabels",
   "AttachmentPathIndex",
   "CitekeySnapshot",
+  "AttachmentsByKeys",
+  "DatabaseIdentity",
+  "ItemSnapshot",
 ] as const satisfies readonly (keyof ZoteroReadsClient)[];
 
 /** The read operations of ZoteroReads. */

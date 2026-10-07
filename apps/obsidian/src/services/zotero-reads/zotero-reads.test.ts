@@ -7,6 +7,7 @@ import type { NoteResolvers } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
+import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 
 import { layerRcRef } from "./connection";
 import type { Connection, ConnectionOpener } from "./connection";
@@ -543,6 +544,92 @@ describe("ZoteroReads operations", () => {
       { count: 1, checksum: 1704326700 },
       { count: 0, checksum: 0 },
     ]);
+  });
+
+  it("AttachmentsByKeys returns one library's attachments by key and leaves unknown keys out", async () => {
+    const { open } = fixtureOpener(
+      () => `
+        insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+          values (201, 2, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'IMGE2345');
+        insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path)
+          values (201, 200, 0, 'image/png', 'storage:figure.png');
+      `,
+    );
+    const [found, otherLibrary] = await withReads(open, (reads) =>
+      Effect.all([
+        reads.AttachmentsByKeys({
+          libraryID: 1,
+          keys: ["IMGE2345", "ATCH2345", "MISS2345"],
+        }),
+        reads.AttachmentsByKeys({ libraryID: 2, keys: ["IMGE2345"] }),
+      ]),
+    );
+    expect(found.map((a) => [a.key, a.parentItemID, a.contentType])).toEqual([
+      ["IMGE2345", 200, "image/png"],
+      ["ATCH2345", 1, "application/pdf"],
+    ]);
+    expect(found[0]!.dateAdded).toBeInstanceOf(Temporal.Instant);
+    expect(otherLibrary).toEqual([]);
+  });
+
+  it("DatabaseIdentity names the account and the Local API database", async () => {
+    const { open } = fixtureOpener(
+      () => `
+        insert into settings (setting, key, value)
+          values ('account', 'localUserKey', 'v3aG8nQf'),
+                 ('localAPI', 'serverID', 'A8sf5Zsz8ySw');
+      `,
+    );
+    const identity = await withReads(open, (reads) =>
+      reads.DatabaseIdentity({}),
+    );
+    expect(identity).toEqual({
+      userID: 42,
+      localUserKey: "v3aG8nQf",
+      serverID: "A8sf5Zsz8ySw",
+    });
+  });
+
+  it("ItemSnapshot exports the same Item Snapshot as a direct export", async () => {
+    const { open } = fixtureOpener();
+    const options = {
+      provenance: {
+        kind: "connected",
+        installationId: "install",
+        vault: "Vault",
+      },
+      vaultTargets: { notes: { MAIN2345: "Literature/Main.md" } },
+    } as const;
+    const selection = {
+      library: { type: "personal" },
+      key: "MAIN2345",
+    } as const;
+    const snapshot = await withReads(open, (reads) =>
+      reads.ItemSnapshot({ selection, ...options }),
+    );
+
+    const direct = createClient(":memory:");
+    using _direct = { [Symbol.dispose]: () => direct.$client.close() };
+    createFixtureSchema(direct.$client);
+    direct.$client.exec(SEED);
+    expect(snapshot).toEqual(exportItemSnapshot(direct, selection, options));
+    expect(snapshot.item.title).toBe("Main Study");
+  });
+
+  it("ItemSnapshot fails with DbUnavailable for an Item outside the selected Library", async () => {
+    const { open } = fixtureOpener();
+    const error = await withReads(open, (reads) =>
+      Effect.flip(
+        reads.ItemSnapshot({
+          selection: {
+            library: { type: "group", groupID: 900 },
+            key: "MAIN2345",
+          },
+          provenance: { kind: "sample", id: "x" },
+        }),
+      ),
+    );
+    expect(error).toBeInstanceOf(DbUnavailable);
   });
 
   it("a source that cannot open fails with a tagged DbUnavailable", async () => {

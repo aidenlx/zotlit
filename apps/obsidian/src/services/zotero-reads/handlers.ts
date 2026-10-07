@@ -23,11 +23,13 @@ import {
   getLibraries,
   getNoteByKey,
   getRelatedKeysByItemID,
+  getZoteroDatabaseIdentity,
   isChildItemFields,
   resolveIndexedKeyLibrary,
 } from "@zotlit/db";
 import type { GroupIDMemo, Item } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 
 import { Connection, toDbUnavailable } from "./connection";
 import { SnapshotExpired, ZoteroReads } from "./rpc";
@@ -379,6 +381,24 @@ export function handlersLayer(options?: HandlersOptions) {
         IndexSignature: ({ libraryID, snapshot }) =>
           withClient(snapshot, (client) =>
             getIndexSignature(client, libraryID),
+          ),
+
+        AttachmentsByKeys: ({ libraryID, keys, snapshot }) =>
+          withClient(snapshot, (client) =>
+            keys.flatMap(
+              (key) => getAttachmentByKey(client, key, libraryID) ?? [],
+            ),
+          ),
+
+        DatabaseIdentity: ({ snapshot }) =>
+          withClient(snapshot, getZoteroDatabaseIdentity),
+
+        ItemSnapshot: ({ selection, provenance, vaultTargets, snapshot }) =>
+          withClient(snapshot, (client) =>
+            exportItemSnapshot(client, selection, {
+              provenance,
+              ...(vaultTargets && { vaultTargets }),
+            }),
           ),
       });
     }),

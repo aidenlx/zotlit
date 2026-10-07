@@ -20,8 +20,10 @@ import type {
   Note,
   NoteSource,
   TemplateCollection,
+  ZoteroDatabaseIdentity,
 } from "@zotlit/db";
 import type { AnnotationPositionRaw } from "@zotlit/db";
+import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { ItemFields } from "@zotlit/zotero-types";
 
 import type { ZoteroReadMode } from "@/services/settings/schema";
@@ -310,6 +312,50 @@ type _IndexSignature = Expect<
   Equals<typeof IndexSignatureSchema.Type, IndexSignature>
 >;
 
+/** The account and Local API database a Zotero database belongs to. */
+export const DatabaseIdentitySchema = Schema.Struct({
+  userID: Schema.NullOr(Schema.Number),
+  localUserKey: Schema.NullOr(Schema.String),
+  serverID: Schema.NullOr(Schema.String),
+});
+type _DatabaseIdentity = Expect<
+  Equals<typeof DatabaseIdentitySchema.Type, ZoteroDatabaseIdentity>
+>;
+
+/** The Item an Item Snapshot exports, and the context it carries. */
+export const ItemSnapshotRequestSchema = Schema.Struct({
+  selection: Schema.Struct({
+    library: Schema.Union([
+      Schema.Struct({ type: Schema.Literal("personal") }),
+      Schema.Struct({ type: Schema.Literal("group"), groupID: Schema.Number }),
+    ]),
+    key: Schema.String,
+  }),
+  provenance: Schema.Union([
+    Schema.Struct({
+      kind: Schema.Literal("sample"),
+      id: Schema.String,
+      source: Schema.optionalKey(Schema.String),
+    }),
+    Schema.Struct({
+      kind: Schema.Literal("connected"),
+      installationId: Schema.String,
+      vault: Schema.String,
+    }),
+  ]),
+  vaultTargets: Schema.optionalKey(
+    Schema.Struct({
+      notes: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+      attachments: Schema.optionalKey(
+        Schema.Record(Schema.String, Schema.String),
+      ),
+      annotationImages: Schema.optionalKey(
+        Schema.Record(Schema.String, Schema.String),
+      ),
+    }),
+  ),
+});
+
 // --- Lifecycle ------------------------------------------------------------
 
 /** Settings that drive the source; `Configure` pushes them. */
@@ -487,6 +533,31 @@ export class ZoteroReads extends RpcGroup.make(
   Rpc.make("IndexSignature", {
     payload: { libraryID: Schema.Number, ...snapshot },
     success: IndexSignatureSchema,
+    error: ReadError,
+  }),
+  /** Attachments of one library by key; a key with no live attachment is absent. */
+  Rpc.make("AttachmentsByKeys", {
+    payload: {
+      libraryID: Schema.Number,
+      keys: Schema.Array(Schema.String),
+      ...snapshot,
+    },
+    success: Schema.Array(AttachmentSchema),
+    error: ReadError,
+  }),
+  /** The identity excerpt assets are keyed by. */
+  Rpc.make("DatabaseIdentity", {
+    payload: snapshot,
+    success: DatabaseIdentitySchema,
+    error: ReadError,
+  }),
+  /**
+   * The Item Snapshot the Local Server and the note preview serve. An Item
+   * outside the selected Library fails with {@link DbUnavailable}.
+   */
+  Rpc.make("ItemSnapshot", {
+    payload: { ...ItemSnapshotRequestSchema.fields, ...snapshot },
+    success: jsonObject<ItemSnapshot>(),
     error: ReadError,
   }),
 ) {}
