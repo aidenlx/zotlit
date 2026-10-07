@@ -59,7 +59,10 @@ export function inProcessReadsService(
  * in-process adapter over an empty `:memory:` fixture database, so a suite
  * that stubs the `@zotlit/db` queries answers through the real handlers.
  */
-export function stubbedReads(): Pick<ZoteroReadsService, "ready"> &
+export function stubbedReads(): Pick<
+  ZoteroReadsService,
+  "ready" | "acquireRead"
+> &
   AsyncDisposable & { state: ZoteroReadsService["state"] } {
   const service = inProcessReadsService(memoryOpener(() => "").open);
   return {
@@ -67,6 +70,7 @@ export function stubbedReads(): Pick<ZoteroReadsService, "ready"> &
     get ready() {
       return service.ready;
     },
+    acquireRead: () => service.acquireRead(),
     [Symbol.asyncDispose]: () => service[Symbol.asyncDispose](),
   };
 }

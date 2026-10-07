@@ -116,7 +116,7 @@ function filename(path: string): string {
  *   caller reports rather than the Items it names as missing.
  */
 export async function readReferenceSources(
-  db: Pick<ZoteroReadsService, "state" | "ready">,
+  db: Pick<ZoteroReadsService, "state" | "acquireRead">,
   citations: readonly Pick<Citation, "indexedKey" | "linkpath">[],
 ): Promise<ReferenceSourceJoin> {
   const sources = new Map<string, ReferenceSource>();
@@ -124,7 +124,10 @@ export async function readReferenceSources(
   if (citations.length === 0) return { sources, database: "ready" };
 
   try {
-    const { reads } = await db.ready;
+    // One Snapshot: the Attachment read names Items by the itemIDs the Item
+    // read answered with, so both must see one database.
+    using lease = await db.acquireRead();
+    const { reads } = lease;
     const indexedKeys = [
       ...new Set(
         citations.flatMap(({ indexedKey }) =>

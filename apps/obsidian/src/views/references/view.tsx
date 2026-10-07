@@ -69,7 +69,7 @@ const logger = getLogger(["views", "references"]);
 
 export interface ReferencesViewDeps {
   app: App;
-  db: Pick<ZoteroReadsService, "state" | "ready" | "on">;
+  db: Pick<ZoteroReadsService, "state" | "ready" | "acquireRead" | "on">;
   citationIndex: Pick<
     CitationIndex,
     "getDocumentCitationSet" | "resolveCitekey" | "resolution" | "on"

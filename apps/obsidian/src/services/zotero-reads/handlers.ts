@@ -83,18 +83,27 @@ function itemsByIndexedKeys(
   client: NodeDatabaseClient,
   indexedKeys: readonly string[],
 ): Map<string, Item> {
-  const keysByLibrary = new Map<number, string[]>();
+  // Each requested spelling (`g7` or `g007`) by the item key it resolves to.
+  const requestedByLibrary = new Map<number, Map<string, string[]>>();
   for (const indexedKey of indexedKeys) {
     const selector = resolveIndexedKeyLibrary(client, indexedKey);
     if (!selector) continue;
-    const keys = keysByLibrary.get(selector.libraryID) ?? [];
-    keys.push(selector.key);
-    keysByLibrary.set(selector.libraryID, keys);
+    const requested =
+      requestedByLibrary.get(selector.libraryID) ?? new Map<string, string[]>();
+    requested.set(selector.key, [
+      ...(requested.get(selector.key) ?? []),
+      indexedKey,
+    ]);
+    requestedByLibrary.set(selector.libraryID, requested);
   }
   const items = new Map<string, Item>();
-  for (const [libraryID, keys] of keysByLibrary) {
-    for (const item of getItemsByKey(client, libraryID, keys)) {
-      items.set(item.indexedKey, item);
+  for (const [libraryID, requested] of requestedByLibrary) {
+    for (const item of getItemsByKey(client, libraryID, [
+      ...requested.keys(),
+    ])) {
+      for (const indexedKey of requested.get(item.key) ?? []) {
+        items.set(indexedKey, item);
+      }
     }
   }
   return items;

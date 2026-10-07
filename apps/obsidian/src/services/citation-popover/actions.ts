@@ -7,6 +7,7 @@ import { itemSelectUri } from "@zotlit/db";
 
 import { openAttachments, zoteroAttachmentReader } from "@/lib/attachment-open";
 import { getLogger } from "@/lib/log";
+import type { MenuAnchor } from "@/lib/menu";
 import type { NavigationPane } from "@/services/citekey-navigation";
 
 import type { CitationEntryBlock } from "./blocks";
@@ -86,6 +87,13 @@ export function createCitationPopoverActions({
       });
     },
     onOpenAttachment(block, event) {
+      // With `prepare` the picker opens after the fresh read, when the button
+      // is no longer the event's target, so its box is read while dispatch is
+      // live. Without it the picker opens at once, on the button itself.
+      const button = event.currentTarget as HTMLElement;
+      const anchor: MenuAnchor | undefined = prepare
+        ? { rect: button.getBoundingClientRect(), doc: button.ownerDocument }
+        : undefined;
       act(block, (current) => {
         logger.debug("Citation popover opens an attachment", {
           itemKey: block.itemKey,
@@ -94,6 +102,7 @@ export function createCitationPopoverActions({
         openAttachments(current.attachments, {
           reader: zoteroAttachmentReader,
           event,
+          anchor,
         });
       });
     },

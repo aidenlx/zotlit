@@ -208,7 +208,7 @@ describe("readReferenceSources", () => {
 
   it("reads nothing while the database is unavailable, and says so", async () => {
     const { sources, database } = await readReferenceSources(
-      { state: "degraded", ready: ready.ready },
+      { state: "degraded", acquireRead: () => ready.acquireRead() },
       [citation(KEY, null)],
     );
 

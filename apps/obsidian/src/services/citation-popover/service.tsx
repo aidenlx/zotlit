@@ -40,7 +40,7 @@ const logger = getLogger("citation-popover");
 
 export interface CitationPopoverDeps {
   app: App;
-  db: Pick<ZoteroReadsService, "state" | "ready">;
+  db: Pick<ZoteroReadsService, "state" | "ready" | "acquireRead">;
   citationIndex: Pick<
     CitationIndex,
     "getDocumentCitationSet" | "resolveCitekey" | "resolution" | "on"
@@ -260,6 +260,9 @@ async function fill(
             const { sources, database } = await readReferenceSources(deps.db, [
               { indexedKey: read.indexedKey!, linkpath: null },
             ]);
+            // The popover moved on to another visit while the read ran: this
+            // action neither runs nor touches what the popover shows now.
+            if (signal.aborted) return null;
             const source = sources.get(read.indexedKey!);
             if (database === "unreadable" || !source) {
               popover.render(

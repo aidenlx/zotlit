@@ -39,7 +39,7 @@ const logger = getLogger(["citation-index", "cli"]);
 interface CitationsCliRegistrationDeps {
   app: App;
   citationIndex: CitationIndex;
-  db: Pick<ZoteroReadsService, "state" | "ready">;
+  db: Pick<ZoteroReadsService, "state" | "ready" | "acquireRead">;
   zoteroPref: Pick<ZoteroPrefService, "ready" | "sourceId" | "databasePath">;
 }
 

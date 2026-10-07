@@ -25,6 +25,7 @@ import type { Settings } from "@/services/settings/schema";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import type {
+  ZoteroReadLease,
   ZoteroReadsEvents,
   ZoteroReadsReady,
   ZoteroReadsService,
@@ -273,6 +274,11 @@ export class DatabaseStub implements AsyncDisposable {
 
   get ready(): Promise<ZoteroReadsReady> {
     return this.#ready.promise.then(() => this.#service.ready);
+  }
+
+  async acquireRead(): Promise<ZoteroReadLease> {
+    await this.#ready.promise;
+    return this.#service.acquireRead();
   }
 
   get snapshot(): ZoteroReadsService["snapshot"] {

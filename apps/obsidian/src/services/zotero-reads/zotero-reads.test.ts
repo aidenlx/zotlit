@@ -946,4 +946,18 @@ describe("ZoteroReads citation operations", () => {
     expect(children).toMatchObject([{ itemID: 10, key: "ATCH2345" }]);
     expect(none).toEqual([]);
   });
+
+  it("ItemsByIndexedKeys answers each key under the spelling it was asked by", async () => {
+    const { open } = fixtureOpener();
+    const items = await withReads(open, (reads) =>
+      reads.ItemsByIndexedKeys({
+        indexedKeys: ["GRPITEMSg0900", "GRPITEMSg900"],
+      }),
+    );
+    expect([...items.keys()]).toEqual(["GRPITEMSg0900", "GRPITEMSg900"]);
+    expect(items.get("GRPITEMSg0900")).toMatchObject({
+      key: "GRPITEMS",
+      indexedKey: "GRPITEMSg900",
+    });
+  });
 });

@@ -264,13 +264,12 @@ async function makeHarness({
 }
 
 beforeEach(() => {
-  // Every Indexed Key reads as ALPHA, filed under the key it was asked by.
-  vi.mocked(resolveIndexedKeyLibrary).mockImplementation(
-    (_client, indexedKey) => ({ libraryID: 1, key: indexedKey }),
-  );
-  vi.mocked(getItemsByKey).mockImplementation((_client, _libraryID, keys) =>
-    keys.map((indexedKey) => ({ ...ALPHA, indexedKey })),
-  );
+  // Every Indexed Key reads as ALPHA.
+  vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
+    libraryID: 1,
+    key: "ALPHA123",
+  });
+  vi.mocked(getItemsByKey).mockReturnValue([ALPHA]);
 });
 
 async function readText(service: CitationText): Promise<DocumentCitations> {
@@ -1212,12 +1211,14 @@ function firstSerials(
  * other suite reads one Item for whatever Indexed Key it asks about.
  */
 function readTwoItems(): void {
-  vi.mocked(getItemsByKey).mockImplementation((_client, _libraryID, keys) =>
-    keys.map((indexedKey) => ({
-      ...ALPHA,
-      indexedKey,
+  vi.mocked(resolveIndexedKeyLibrary).mockImplementation(
+    (_client, indexedKey) => ({
+      libraryID: 1,
       key: indexedKey === LIT_KEY ? "BETA123" : "ALPHA123",
-    })),
+    }),
+  );
+  vi.mocked(getItemsByKey).mockImplementation((_client, _libraryID, keys) =>
+    keys.map((key) => ({ ...ALPHA, key })),
   );
 }
 

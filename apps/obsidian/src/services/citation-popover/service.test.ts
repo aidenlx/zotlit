@@ -434,10 +434,13 @@ describe("source-less Item actions", () => {
       expect(run.open).toHaveBeenCalledExactlyOnceWith("ABCD2345", false),
     );
 
+    // The open hid that card; the next hover shows the Item again.
     run.open.mockClear();
+    run.show();
+    const again = await run.shown();
     popovers.at(-1)!.hide.mockClear();
     vi.mocked(getItemsByKey).mockReturnValue([]);
-    element
+    again
       .querySelector<HTMLButtonElement>(
         `[aria-label="${m.references_open_note()}"]`,
       )!

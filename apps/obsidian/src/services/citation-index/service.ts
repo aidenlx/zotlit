@@ -513,7 +513,7 @@ export class CitationIndex extends Service<void> {
       throw new DOMException("The citation index stopped", "AbortError");
     return await this.#queries.readFresh(
       SNAPSHOT_KEY,
-      () => this.#readSnapshot(),
+      ({ signal }) => this.#readSnapshot(signal),
       signal,
     );
   }
@@ -801,10 +801,13 @@ export class CitationIndex extends Service<void> {
 
   #rebuildSnapshot(): Promise<CitekeySnapshot | null> {
     if (this.#stopped) return Promise.resolve(null);
-    return this.#queries.ask(SNAPSHOT_KEY, () => this.#readSnapshot());
+    return this.#queries.ask(SNAPSHOT_KEY, ({ signal }) =>
+      this.#readSnapshot(signal),
+    );
   }
 
-  async #readSnapshot(): Promise<CitekeySnapshot> {
+  /** @param signal ends the read when a newer rebuild supersedes it. */
+  async #readSnapshot(signal: AbortSignal): Promise<CitekeySnapshot> {
     try {
       await this.#reads.ready;
       await this.#libraryScope.ready;
@@ -833,6 +836,7 @@ export class CitationIndex extends Service<void> {
             ),
           ),
         ),
+        { signal },
       );
       const rows = perLibrary.flat();
       logger.debug("Resolution snapshot rebuilt", {

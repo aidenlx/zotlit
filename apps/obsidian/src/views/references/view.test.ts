@@ -273,6 +273,7 @@ beforeEach(async () => {
         get ready() {
           return reads!.ready;
         },
+        acquireRead: () => reads!.acquireRead(),
         on: (event: string, callback: () => void) => {
           if (event === "changed") onDbChanged = callback;
           return () => undefined;

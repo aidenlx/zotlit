@@ -74,7 +74,7 @@ interface CitationTextEvents {
 
 export interface CitationTextDeps {
   app: App;
-  db: Pick<ZoteroReadsService, "state" | "ready">;
+  db: Pick<ZoteroReadsService, "state" | "acquireRead">;
   citationIndex: Pick<
     CitationIndex,
     "getDocumentCitationSet" | "citekeyOf" | "readSnapshot" | "on"
@@ -550,7 +550,8 @@ export class CitationText extends Service<void> {
       throw new Error("The Zotero database cannot be read");
 
     try {
-      const { reads } = await this.#db.ready;
+      using lease = await this.#db.acquireRead();
+      const { reads } = lease;
       const [user, items] = await Effect.runPromise(
         Effect.all(
           [
