@@ -143,14 +143,6 @@ const noteRefByItemIdQuery = defineQuery<{ itemID: number }>()(
     }),
 );
 
-const noteByItemIdQuery = defineQuery<{ itemID: number }>()(
-  (db, { placeholder }) =>
-    db.query.itemNotes.findMany({
-      where: { itemID: placeholder("itemID"), item: { deletedItem: false } },
-      ...noteOptions,
-    }),
-);
-
 /**
  * Lightweight note refs looked up by the note's own item IDs (`mode=note`
  * classify). Each returned row carries identity and title — enough to label a
@@ -233,19 +225,4 @@ export function getChildNotesByParentIDs(
       toChildNote(row, resolveGroupID(db, row.item.libraryID, memo)),
     ),
   );
-}
-
-/**
- * Fetch a note's full body by its global item ID. Used by the explicit import
- * runner to hydrate one note at a time under the concurrency limiter.
- */
-export function getNoteByItemID(
-  db: NodeDatabaseClient,
-  itemID: number,
-  opts?: { memo?: GroupIDMemo },
-): Note | null {
-  const row = noteByItemIdQuery.prepared(db).all({ itemID })[0];
-  if (!row) return null;
-  const memo = opts?.memo ?? new Map();
-  return toNote(row, resolveGroupID(db, row.item.libraryID, memo));
 }
