@@ -566,6 +566,8 @@ export default class ZotLitPlugin extends Plugin {
     registerWelcomeView(this, {
       app: this.app,
       db: services.db,
+      reads: services.zoteroReads,
+      queries: services.queryClient,
       zoteroPref: services.zoteroPref,
       noteIndex: services.noteIndex,
       settings: services.settings,

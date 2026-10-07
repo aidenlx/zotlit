@@ -1,4 +1,4 @@
-// ItemView orchestrator for the Welcome View: mounts the presentational tree, wires live step actions, and keeps connection status subscribed to DB events while open.
+// ItemView orchestrator for the Welcome View: mounts the presentational tree, wires live step actions, and keeps connection status subscribed to database events while open.
 import { ItemView, normalizePath } from "obsidian";
 import type { App, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { createRoot } from "react-dom/client";
@@ -6,12 +6,13 @@ import type { Root } from "react-dom/client";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
-import type { DatabaseService } from "@/services/database/service";
 import type { NoteIndex } from "@/services/note-index/service";
+import type { QueryClientService } from "@/services/query-client/service";
 import type { ReleaseService } from "@/services/release/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { LiteratureNoteTemplateMigrationService } from "@/services/template/migration";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { WelcomeActionsContext } from "./actions";
 import type { WelcomeActions } from "./actions";
@@ -31,7 +32,8 @@ const CONNECTION_CHECKING_DELAY_MS = 200;
 
 export interface WelcomeViewDeps {
   app: App;
-  db: Pick<DatabaseService, "state" | "ready" | "client" | "error" | "on">;
+  reads: Pick<ZoteroReadsService, "state" | "ready" | "error" | "on">;
+  queries: Pick<QueryClientService, "peek" | "read">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "companionInstalled" | "on">;
   noteIndex: Pick<NoteIndex, "getIndexedItemKeys" | "whenIndexed" | "on">;
   settings: Pick<SettingsService, "subscribe">;
@@ -147,7 +149,7 @@ export class WelcomeView extends ItemView {
     );
     const refreshCompanion = (): void => void companion.refresh();
     stack.defer(this.#deps.zoteroPref.on("changed", refreshCompanion));
-    stack.defer(this.#deps.db.on("changed", refreshCompanion));
+    stack.defer(this.#deps.reads.on("changed", refreshCompanion));
     const win = this.containerEl.win;
     win.addEventListener("focus", refreshCompanion);
     stack.defer(() => win.removeEventListener("focus", refreshCompanion));
@@ -183,11 +185,11 @@ export class WelcomeView extends ItemView {
     );
 
     const reload = (): void => void this.#loadConnection();
-    stack.defer(this.#deps.db.on("changed", reload));
-    stack.defer(this.#deps.db.on("degraded", reload));
-    stack.defer(this.#deps.db.on("refresh-failed", reload));
+    stack.defer(this.#deps.reads.on("changed", reload));
+    stack.defer(this.#deps.reads.on("degraded", reload));
+    stack.defer(this.#deps.reads.on("refresh-failed", reload));
     stack.defer(
-      this.#deps.db.on("refreshing", (active) => {
+      this.#deps.reads.on("refreshing", (active) => {
         if (active) {
           // Invalidate any in-flight readout so its stale result can't land on
           // top of this refresh, then show checking only once the refresh is
