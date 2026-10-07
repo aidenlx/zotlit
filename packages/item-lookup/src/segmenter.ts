@@ -1,4 +1,4 @@
-import { regex } from "arkregex";
+// The Segmenter port of the item search engine, with its Intl.Segmenter and jieba layers.
 import { Context, Effect, Layer, Schema } from "effect";
 import { cut_for_search, initSync } from "jieba-wasm/web";
 
@@ -59,7 +59,7 @@ export function layerSegmenterJieba(
   );
 }
 
-const CJK_RUN = regex("([\\u4e00-\\u9fa5]+)", "u");
+const CJK_RUN = /([\u4e00-\u9fa5]+)/u;
 
 /**
  * `cut_for_search` sees each whole CJK run, so it can emit both a compound and

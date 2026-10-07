@@ -26,11 +26,10 @@ import { citationsPageItems } from "./citations";
 import type {
   AnnotationCapabilityActions,
   AttachmentImportActions,
-  ChineseSegmenterActions,
   CitationIndexActions,
   LocalBridgeActions,
   LocalServerActions,
-  PandocEngineActions,
+  ManagedBinaryActions,
   ReleaseTabActions,
   SettingsControlKey,
   SettingsKey,
@@ -70,8 +69,8 @@ export interface ZotLitSettingTabOptions {
   writeAuthorization: WriteAuthorizationActions;
   template: TemplateService;
   release: ReleaseTabActions;
-  pandocEngine: PandocEngineActions;
-  chineseSegmenter: ChineseSegmenterActions;
+  pandocEngine: ManagedBinaryActions;
+  chineseSegmenter: ManagedBinaryActions;
   languagePack: LanguagePackLifecycle;
 }
 
@@ -95,8 +94,8 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #profile: ProfileService;
   readonly #template: TemplateService;
   readonly #release: ReleaseTabActions;
-  readonly #pandocEngine: PandocEngineActions;
-  readonly #chineseSegmenter: ChineseSegmenterActions;
+  readonly #pandocEngine: ManagedBinaryActions;
+  readonly #chineseSegmenter: ManagedBinaryActions;
   readonly #languagePack: LanguagePackLifecycle;
 
   constructor({

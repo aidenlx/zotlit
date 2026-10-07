@@ -4,12 +4,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-/** What a Managed Binary build pins: the release, its download, and the binary's hash. */
-export interface BinaryPin {
-  version: string;
-  url: string;
-  sha256: string;
-}
+import type { BinaryPin } from "../src/services/managed-binary/service.ts";
 
 /**
  * The pin a previous build verified for this version and these bytes, so a

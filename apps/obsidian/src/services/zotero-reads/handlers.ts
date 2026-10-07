@@ -1,14 +1,6 @@
 // The ZoteroReads handler layer: each operation composes @zotlit/db query functions over a borrowed Connection.
 import { chunk } from "@std/collections/chunk";
-import {
-  Effect,
-  Exit,
-  Layer,
-  Scope,
-  Semaphore,
-  Stream,
-  SubscriptionRef,
-} from "effect";
+import { Effect, Exit, Layer, Scope, Semaphore, Stream } from "effect";
 
 import {
   CollectionCache,
@@ -57,6 +49,7 @@ import {
   layerIndexConfig,
   layerItemIndex,
   layerSegmenterNone,
+  updateIndexSettings,
 } from "@zotlit/item-lookup";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 
@@ -111,21 +104,6 @@ export interface HandlersOptions {
    * reads as unavailable.
    */
   readSegmenter?: ReadSegmenter;
-}
-
-/**
- * Hand the Item Index a new locale. An unchanged locale sets nothing, so a
- * `Configure` for another setting rebuilds no index.
- */
-function setLocale(
-  config: (typeof IndexConfig)["Service"],
-  locale: string | null,
-): Effect.Effect<void> {
-  return Effect.flatMap(SubscriptionRef.get(config.locale), (current) =>
-    current === locale
-      ? Effect.void
-      : SubscriptionRef.set(config.locale, locale),
-  );
 }
 
 /** Run a synchronous read; a SQLite throw becomes a {@link DbUnavailable}. */
@@ -300,8 +278,10 @@ export function handlersLayer(options?: HandlersOptions) {
       const connection = yield* Connection;
       const itemIndex = yield* ItemIndex;
       const indexConfig = yield* IndexConfig;
-      const segmenter = yield* makeSegmenterSwitch(options?.readSegmenter);
-      yield* segmenter.set(options?.chineseSegmenter ?? null);
+      const segmenter = makeSegmenterSwitch(options?.readSegmenter);
+      yield* updateIndexSettings({
+        segmenter: yield* segmenter.resolve(options?.chineseSegmenter ?? null),
+      }).pipe(Effect.provideService(IndexConfig, indexConfig));
       // One Configure at a time, in arrival order: a later one waits for an
       // earlier one that reads its Chinese Segmenter binary.
       const configuring = yield* Semaphore.make(1);
@@ -548,8 +528,13 @@ export function handlersLayer(options?: HandlersOptions) {
         Refresh: () => connection.refresh,
         NotifyExternalChange: () => connection.notifyExternalChange,
         Configure: (config) =>
-          setLocale(indexConfig, config.locale).pipe(
-            Effect.andThen(segmenter.set(config.chineseSegmenter)),
+          // The locale and the Segmenter land in one change, so the Item
+          // Index rebuilds once for both.
+          segmenter.resolve(config.chineseSegmenter).pipe(
+            Effect.flatMap((next) =>
+              updateIndexSettings({ locale: config.locale, segmenter: next }),
+            ),
+            Effect.provideService(IndexConfig, indexConfig),
             Effect.andThen(connection.configure(config)),
             configuring.withPermits(1),
           ),

@@ -19,6 +19,8 @@ export {
   layerItemIndex,
   SourceUnavailable,
   switchSegmenter,
+  updateIndexSettings,
+  type IndexSettings,
   type PinnedItemSource,
   type SourcedHits,
 } from "./item-index";

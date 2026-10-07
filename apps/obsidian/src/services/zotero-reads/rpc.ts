@@ -368,6 +368,17 @@ export const SegmenterBinarySchema = Schema.Struct({
 });
 export type SegmenterBinary = typeof SegmenterBinarySchema.Type;
 
+/** Whether `a` and `b` name the same binary, or both name none. */
+export const sameBinary = (
+  a: SegmenterBinary | null,
+  b: SegmenterBinary | null,
+): boolean =>
+  a === b ||
+  (a !== null &&
+    b !== null &&
+    a.directory === b.directory &&
+    a.name === b.name);
+
 /** Settings that drive the source; `Configure` pushes them. */
 export const ReadsConfigSchema = Schema.Struct({
   databasePath: Schema.String,

@@ -42,6 +42,7 @@ const COPY: ManagedBinaryCopy = {
 function binary(status: ManagedBinaryStatus) {
   return {
     getStatus: () => status,
+    subscribe: () => () => undefined,
     install: vi.fn(() => Promise.resolve()),
     uninstall: vi.fn(() => Promise.resolve()),
   };
