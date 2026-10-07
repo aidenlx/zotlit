@@ -29,7 +29,7 @@ The in-process adapter on the main thread blocked 614 ms for the 10,000-item ind
 - **Held Reads serve the synchronous surfaces.** Library Scope, graph citation labels, the welcome readout, the attachment path index, and the annotation sidebar hold their last answer and refresh from the `Changes` stream.
 - **Gesture-bound writes await one read.** Copy citation awaits `AnnotationSources`, renders, then calls `navigator.clipboard.writeText`; Electron's clipboard is the fallback.
 - **Typed values cross the boundary.** `DbUnavailable` and `SnapshotExpired` arrive as tagged errors; `Temporal.Instant` and `ReadonlyMap` fields cross through one Schema codec.
-- **A failed worker degrades the database.** A worker error event, a broken `Changes` stream, or a missed liveness ping (one every 10 s, 15 s to answer) moves the service to `degraded` with a `DbUnavailable`; the next refresh spawns a new worker.
+- **A failed worker degrades the database.** A worker error event, a broken `Changes` stream, or a worker that misses its liveness ping twice (a ping every 10 s with 15 s to answer, then a second ping with 5 s, so a timer that ran on through system sleep does not count) moves the service to `degraded` with a `DbUnavailable`; the next refresh spawns a new worker.
 - **Tests use the in-process adapter.** The same handler layer runs on the calling runtime behind an in-memory RPC pair over `:memory:` fixture databases. The End-to-end Run proves the real transport.
 
 ## Considered Options

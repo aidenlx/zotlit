@@ -30,8 +30,11 @@ function fakeWorkers(
     hangStart?: (n: number) => boolean;
     /** The Read Mode worker #n's connections open with. */
     readMode?: (n: number) => EffectiveReadMode;
-    /** Worker #n stops answering, as a worker stuck in a loop would. */
-    unresponsive?: (n: number) => boolean;
+    /**
+     * How many pings worker #n leaves unanswered before it answers again;
+     * `Infinity` is a worker stuck in a loop.
+     */
+    unanswered?: (n: number) => number;
   } = {},
 ) {
   let spawned = 0;
@@ -75,9 +78,14 @@ function fakeWorkers(
               )) as typeof served.Changes,
           }
         : served;
-      const client: ZoteroReadsClient = options.unresponsive?.(n)
-        ? { ...answering, Ping: () => Effect.never }
-        : answering;
+      let missed = 0;
+      const client: ZoteroReadsClient = {
+        ...answering,
+        Ping: ((...args: Parameters<typeof answering.Ping>) =>
+          missed++ < (options.unanswered?.(n) ?? 0)
+            ? Effect.never
+            : answering.Ping(...args)) as typeof answering.Ping,
+      };
       const died = yield* Deferred.make<DbUnavailable>();
       deaths.set(n, died);
       return { client, died: Deferred.await(died) };
@@ -201,7 +209,9 @@ describe("ZoteroReads worker adapter", () => {
   });
 
   it("a worker that stops answering moves the client to degraded, and Refresh spawns a new one", async () => {
-    const workers = fakeWorkers({ unresponsive: (n) => n === 1 });
+    const workers = fakeWorkers({
+      unanswered: (n) => (n === 1 ? Infinity : 0),
+    });
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const reads = yield* makeWorkerReads(workers.connect);
@@ -210,9 +220,11 @@ describe("ZoteroReads worker adapter", () => {
           Stream.runHead(reads.Changes()),
           Option.getOrThrow,
         );
-        // The probe asks 10 s after the connect and waits 15 s for the answer.
+        // The probe asks 10 s after the connect and waits 15 s for the
+        // answer, then asks once more and waits 5 s.
         yield* TestClock.adjust("10 seconds");
-        yield* TestClock.adjust("14999 millis");
+        yield* TestClock.adjust("15 seconds");
+        yield* TestClock.adjust("4999 millis");
         const before = yield* seed;
         yield* TestClock.adjust("1 millis");
         // The death runs on its own fiber once the deadline passed.
@@ -241,6 +253,23 @@ describe("ZoteroReads worker adapter", () => {
     expect(result.read).toMatchObject({ _tag: "RpcClientError" });
     expect(result.ended).toBe(true);
     expect(result.seen).toBe(2);
+  });
+
+  it("a worker that misses one ping and answers the next stays connected", async () => {
+    const workers = fakeWorkers({ unanswered: () => 1 });
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const reads = yield* makeWorkerReads(workers.connect);
+        yield* workerSeen(reads);
+        // The first ping runs out, as a timer that ran through system sleep.
+        yield* TestClock.adjust("10 seconds");
+        yield* TestClock.adjust("15 seconds");
+        yield* TestClock.adjust("5 seconds");
+        return yield* workerSeen(reads);
+      }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
+    );
+    expect(result).toBe(1);
+    expect(workers.spawned()).toBe(1);
   });
 
   it("a worker that keeps answering stays connected", async () => {

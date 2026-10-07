@@ -44,6 +44,13 @@ const HEARTBEAT_INTERVAL = Duration.seconds(10);
  */
 const HEARTBEAT_TIMEOUT = Duration.seconds(15);
 
+/**
+ * How long a second ping may take after the first went unanswered. A timer
+ * that ran on through system sleep fires at wake before the answer lands;
+ * the second ping tells that from a stuck worker.
+ */
+const HEARTBEAT_RETRY_TIMEOUT = Duration.seconds(5);
+
 /** One live worker: its client, and a signal that completes if it dies. */
 export interface WorkerConnection {
   readonly client: ZoteroReadsClient;
@@ -273,10 +280,18 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
       Effect.gen(function* () {
         for (;;) {
           yield* Effect.sleep(HEARTBEAT_INTERVAL);
-          const answer = yield* connection.client
-            .Ping()
-            .pipe(Effect.timeoutOption(HEARTBEAT_TIMEOUT), Effect.option);
-          if (answer._tag === "Some" && answer.value._tag === "None") {
+          // `true` when the worker answered, `false` when the wait ran out;
+          // a transport failure is the `Changes` watcher's to report.
+          const answered = (timeout: Duration.Duration) =>
+            connection.client.Ping().pipe(
+              Effect.timeoutOption(timeout),
+              Effect.map((answer) => answer._tag === "Some"),
+              Effect.orElseSucceed(() => true),
+            );
+          if (
+            !(yield* answered(HEARTBEAT_TIMEOUT)) &&
+            !(yield* answered(HEARTBEAT_RETRY_TIMEOUT))
+          ) {
             return yield* lost("The database worker stopped responding");
           }
         }
