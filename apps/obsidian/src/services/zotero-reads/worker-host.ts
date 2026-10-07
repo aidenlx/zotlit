@@ -3,6 +3,7 @@ import * as BrowserWorker from "@effect/platform-browser/BrowserWorker";
 import {
   Cause,
   Deferred,
+  Duration,
   Effect,
   Exit,
   Layer,
@@ -13,6 +14,7 @@ import {
 import { RpcClient, RpcClientError, RpcSchema, RpcWorker } from "effect/rpc";
 
 import { getLogger } from "@/lib/log";
+import type { EffectiveReadMode } from "@/services/database/read-source";
 
 import { makeChangeFeed } from "./connection";
 import type { ZoteroReadsClient } from "./in-process";
@@ -30,6 +32,15 @@ const WORKER_CONCURRENCY = 16;
 
 /** How long unload waits for a worker to remove its snapshots. */
 const WORKER_CLOSE_TIMEOUT_MS = 5000;
+
+/** How often the renderer asks a live worker to answer. */
+const HEARTBEAT_INTERVAL = Duration.seconds(10);
+
+/**
+ * How long a worker may take to answer before it counts as hung. Every read
+ * runs in slices of well under a second, so only a stuck worker misses it.
+ */
+const HEARTBEAT_TIMEOUT = Duration.seconds(15);
 
 /** One live worker: its client, and a signal that completes if it dies. */
 export interface WorkerConnection {
@@ -149,13 +160,18 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
   /** `db-file-missing` is raised once per launch, whichever worker saw it. */
   let missingSignalled = false;
   // A subscriber that arrives after the missing-file signal still gets it.
+  /** The Read Mode of the live worker's connection, while it serves. */
+  let readMode: EffectiveReadMode | undefined;
+  const stateEvent = (): ChangeEvent => ({
+    _tag: "state",
+    state,
+    error: lastError,
+    ...(state === "ready" && readMode && { readMode }),
+  });
   const { publish, changes } = yield* makeChangeFeed(() =>
     missingSignalled && state !== "ready"
-      ? [
-          { _tag: "state", state, error: lastError },
-          { _tag: "db-file-missing" },
-        ]
-      : [{ _tag: "state", state, error: lastError }],
+      ? [stateEvent(), { _tag: "db-file-missing" }]
+      : [stateEvent()],
   );
   const connecting = yield* Semaphore.make(1);
 
@@ -185,7 +201,12 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
         // The seed of a new worker's feed: a new client serves or fails.
         state = event.state;
         lastError = event.error;
-        if (event.state === "ready") return publish({ _tag: "changed" });
+        readMode = event.readMode;
+        if (event.state === "ready")
+          return publish({
+            _tag: "changed",
+            ...(event.readMode && { readMode: event.readMode }),
+          });
         if (event.state === "degraded" && event.error)
           return publish({ _tag: "degraded", error: event.error });
         return Effect.void;
@@ -193,10 +214,12 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
       case "changed":
         state = "ready";
         lastError = null;
+        readMode = event.readMode;
         break;
       case "degraded":
         state = "degraded";
         lastError = event.error;
+        readMode = undefined;
         break;
       case "refresh-failed":
         lastError = event.error;
@@ -240,6 +263,22 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
       Effect.flatMap(result.value.died, (error) =>
         Effect.forkIn(die(connection, error), hostScope),
       ),
+      scope,
+    );
+    // A worker stuck in a loop sends no error event and keeps its transport
+    // open; only a request it fails to answer shows it.
+    yield* Effect.forkIn(
+      Effect.gen(function* () {
+        for (;;) {
+          yield* Effect.sleep(HEARTBEAT_INTERVAL);
+          const answer = yield* connection.client
+            .Ping()
+            .pipe(Effect.timeoutOption(HEARTBEAT_TIMEOUT), Effect.option);
+          if (answer._tag === "Some" && answer.value._tag === "None") {
+            return yield* lost("The database worker stopped responding");
+          }
+        }
+      }),
       scope,
     );
     yield* Effect.forkIn(

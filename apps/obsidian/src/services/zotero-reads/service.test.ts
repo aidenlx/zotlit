@@ -2,6 +2,7 @@ import { Effect, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { DbUnavailable } from "./rpc";
+import type { ChangeEvent } from "./rpc";
 import { inProcessReadsService, memoryOpener } from "./test-utils";
 
 /** Open #N reports the user library at `version: N`, so a read shows which connection answered. */
@@ -104,6 +105,33 @@ describe("ZoteroReadsService", () => {
     await expect.poll(() => service.state).toBe("degraded");
     expect(degraded).toHaveLength(1);
     expect(service.error).toBeInstanceOf(DbUnavailable);
+  });
+
+  it("names the Read Mode of the serving connection, none before one serves", async () => {
+    const { open } = memoryOpener(versioned);
+    let mode: "copy" | "immutable" = "copy";
+    await using service = inProcessReadsService(open, (client) => ({
+      ...client,
+      // The source reports the mode each new connection opened with.
+      Changes: ((...args: Parameters<typeof client.Changes>) =>
+        Stream.map(
+          client.Changes(...args) as Stream.Stream<ChangeEvent, unknown>,
+          (event) =>
+            event._tag === "changed" ||
+            (event._tag === "state" && event.state === "ready")
+              ? { ...event, readMode: mode }
+              : event,
+        )) as typeof client.Changes,
+    }));
+    await service.ready;
+    expect(service.activeReadMode).toBeNull();
+
+    await Effect.runPromise((await service.ready).reads.Libraries({}));
+    await expect.poll(() => service.activeReadMode).toBe("copy");
+
+    mode = "immutable";
+    await service.refresh();
+    await expect.poll(() => service.activeReadMode).toBe("immutable");
   });
 
   it("closes the connection when the service is disposed", async () => {

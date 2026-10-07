@@ -1,4 +1,4 @@
-import { Effect, Exit, Layer, Scope, Stream } from "effect";
+import { Effect, Exit, Layer, Option, Scope, Stream } from "effect";
 import { TestClock } from "effect/testing";
 // Database ownership behind the ZoteroReads interface: Read Mode, refresh lane, watcher gate, lifetimes.
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -273,6 +273,32 @@ describe("ZoteroReads source", () => {
     await source.run(source.reads.Configure(config({ readMode: "immutable" })));
     await source.run(source.reads.Refresh());
     await expect(source.version()).resolves.toBe(1);
+  });
+
+  it("names the effective Read Mode of each new connection on Changes", async () => {
+    const { ports } = testPorts();
+    await using source = await startSource(config(), ports);
+    await source.idle();
+    expect(source.events.filter((event) => event._tag === "changed")).toEqual([
+      { _tag: "changed", readMode: "copy" },
+    ]);
+
+    await source.run(source.reads.Configure(config({ readMode: "immutable" })));
+    await source.run(source.reads.Refresh());
+    expect(
+      source.events.filter((event) => event._tag === "changed").at(-1),
+    ).toEqual({ _tag: "changed", readMode: "immutable" });
+    const seed = await source.run(
+      Stream.runHead(source.reads.Changes()).pipe(
+        Effect.map(Option.getOrThrow),
+      ),
+    );
+    expect(seed).toEqual({
+      _tag: "state",
+      state: "ready",
+      error: null,
+      readMode: "immutable",
+    });
   });
 
   it("settles degraded when the startup open fails, and Refresh fails while degraded", async () => {

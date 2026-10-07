@@ -37,7 +37,7 @@ import {
 } from "./connection";
 import type { OpenClient } from "./connection";
 import { DbUnavailable } from "./rpc";
-import type { ReadsConfig } from "./rpc";
+import type { ChangeEvent, ReadsConfig } from "./rpc";
 
 const logger = getLogger("zotero-reads");
 
@@ -174,13 +174,16 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
       yield* Effect.addFinalizer(() => Effect.sync(() => disposeWatchers()));
       // A subscriber that arrives after the missing-file signal (the
       // renderer subscribes once the worker is up) still gets it.
+      const stateEvent = (): ChangeEvent => ({
+        _tag: "state",
+        state,
+        error: lastError,
+        ...(state === "ready" && readMode && { readMode }),
+      });
       const { publish, changes } = yield* makeChangeFeed(() =>
         missingDbSignalled && state !== "ready"
-          ? [
-              { _tag: "state", state, error: lastError },
-              { _tag: "db-file-missing" },
-            ]
-          : [{ _tag: "state", state, error: lastError }],
+          ? [stateEvent(), { _tag: "db-file-missing" }]
+          : [stateEvent()],
       );
       const clients = yield* makeClientRef(
         Effect.suspend(() =>
@@ -367,7 +370,10 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
           return;
         }
         rebindWatchers();
-        yield* publish({ _tag: "changed" });
+        yield* publish({
+          _tag: "changed",
+          ...(readMode && { readMode }),
+        });
         logger.info("Opened Zotero database", {
           sourcePath: databasePath,
           readMode,

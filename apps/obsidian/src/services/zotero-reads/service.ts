@@ -21,6 +21,7 @@ import type { RpcClientError } from "effect/rpc";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
+import type { EffectiveReadMode } from "@/services/database/read-source";
 import { Service } from "@/services/service-base";
 
 import type { Connection } from "./connection";
@@ -59,6 +60,9 @@ const READ_OPERATIONS = [
   "ScopeItemIDs",
   "NoteRefs",
   "ChildNoteRefs",
+  "TagNames",
+  "CollectionPaths",
+  "MembershipFacts",
 ] as const satisfies readonly (keyof ZoteroReadsClient)[];
 
 /** The read operations of ZoteroReads. */
@@ -131,6 +135,7 @@ export class ZoteroReadsService extends Service<ZoteroReadsReady> {
   readonly #emitter = createNanoEvents<ZoteroReadsEvents>();
   #state: "loading" | "ready" | "degraded" = "loading";
   #error: DbUnavailable | null = null;
+  #readMode: EffectiveReadMode | null = null;
 
   /** Settles once the client exists and its first state arrived. */
   ready: Promise<ZoteroReadsReady>;
@@ -143,6 +148,11 @@ export class ZoteroReadsService extends Service<ZoteroReadsReady> {
 
   get state(): "loading" | "ready" | "degraded" {
     return this.#state;
+  }
+
+  /** The Read Mode the serving connection opened with; `null` while none serves. */
+  get activeReadMode(): EffectiveReadMode | null {
+    return this.#readMode;
   }
 
   /** Why the service is degraded, or why the last refresh failed. */
@@ -273,15 +283,18 @@ export class ZoteroReadsService extends Service<ZoteroReadsReady> {
       case "state":
         this.#state = event.state;
         this.#error = event.error;
+        this.#readMode = event.readMode ?? null;
         return;
       case "changed":
         this.#state = "ready";
         this.#error = null;
+        this.#readMode = event.readMode ?? null;
         this.#emitter.emit("changed");
         return;
       case "degraded":
         this.#state = "degraded";
         this.#error = event.error;
+        this.#readMode = null;
         this.#emitter.emit("degraded", event.error);
         return;
       case "refresh-failed":

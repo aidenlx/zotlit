@@ -9,11 +9,6 @@ export {
   type MatchCondition,
   type MatchItemFacts,
 } from "./condition";
-export {
-  listCollectionChoices,
-  resolveMembershipFacts,
-  type CollectionChoice,
-} from "./facts";
 export { matchItem, selectProfileByMatch, type MatchSelection } from "./select";
 export {
   compileProfileMatch,

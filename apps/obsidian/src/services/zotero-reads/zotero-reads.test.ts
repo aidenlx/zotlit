@@ -1186,3 +1186,55 @@ describe("ZoteroReads annotation-family operations", () => {
     expect(sources.username).toBe("reader");
   });
 });
+
+describe("ZoteroReads Profile Match operations", () => {
+  it("TagNames lists the tag names of one library, or of every library", async () => {
+    const { open } = fixtureOpener(
+      () => `insert into tags (tagID, name) values (4, 'Alpha');
+        insert into itemTags (itemID, tagID, type) values (300, 4, 0);`,
+    );
+    const names = await withReads(open, (reads) =>
+      Effect.all({
+        user: reads.TagNames({ libraryID: 1 }),
+        group: reads.TagNames({ libraryID: 2 }),
+        all: reads.TagNames({}),
+      }),
+    );
+    expect(names).toEqual({
+      user: ["claim", "method", "zt"],
+      group: ["Alpha"],
+      all: ["Alpha", "claim", "method", "zt"],
+    });
+  });
+
+  it("CollectionPaths lists every live collection path of the given libraries, root first", async () => {
+    const { open } = fixtureOpener(
+      () => `insert into collections (collectionID, collectionName, libraryID, key, parentCollectionID)
+        values (501, 'Theory', 1, 'CLL32345', 500), (502, 'Lab Notes', 2, 'CLL42345', null);`,
+    );
+    const paths = await withReads(open, (reads) =>
+      Effect.all({
+        user: reads.CollectionPaths({ libraryIDs: [1] }),
+        both: reads.CollectionPaths({ libraryIDs: [1, 2] }),
+      }),
+    );
+    expect(paths).toEqual({
+      user: [["Reading"], ["Reading", "Theory"]],
+      both: [["Lab Notes"], ["Reading"], ["Reading", "Theory"]],
+    });
+  });
+
+  it("MembershipFacts names an item's tags and direct collection paths", async () => {
+    const { open } = fixtureOpener();
+    const facts = await withReads(open, (reads) =>
+      Effect.all({
+        main: reads.MembershipFacts({ itemID: 1, libraryID: 1 }),
+        group: reads.MembershipFacts({ itemID: 300, libraryID: 2 }),
+      }),
+    );
+    expect(facts).toEqual({
+      main: { tags: ["zt"], collections: [["Reading"]] },
+      group: { tags: [], collections: [] },
+    });
+  });
+});

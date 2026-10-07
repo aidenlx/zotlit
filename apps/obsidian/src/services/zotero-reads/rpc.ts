@@ -27,6 +27,7 @@ import type { AnnotationPositionRaw } from "@zotlit/db";
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { ItemFields } from "@zotlit/zotero-types";
 
+import type { EffectiveReadMode } from "@/services/database/read-source";
 import type { ZoteroReadMode } from "@/services/settings/schema";
 
 /** Compile-time assert: `T` must be `true`. */
@@ -388,15 +389,26 @@ export const ReadsConfigSchema = Schema.Struct({
 export type ReadsConfig = typeof ReadsConfigSchema.Type;
 type _ReadMode = Expect<Equals<ReadsConfig["readMode"], ZoteroReadMode>>;
 
+/** The Read Mode a serving client opened with; absent when the source has none. */
+const readMode = {
+  readMode: Schema.optionalKey(
+    Schema.Literals(["reflink", "copy", "immutable"]),
+  ),
+};
+type _EffectiveReadMode = Expect<
+  Equals<NonNullable<(typeof readMode.readMode)["Type"]>, EffectiveReadMode>
+>;
+
 /** One event on the `Changes` stream. The first event is always `state`. */
 export const ChangeEventSchema = Schema.Union([
   /** The state when the subscription starts. */
   Schema.TaggedStruct("state", {
     state: Schema.Literals(["loading", "ready", "degraded"]),
     error: Schema.NullOr(DbUnavailable),
+    ...readMode,
   }),
   /** A new client serves; re-query cached results. */
-  Schema.TaggedStruct("changed", {}),
+  Schema.TaggedStruct("changed", readMode),
   /** No client can serve. */
   Schema.TaggedStruct("degraded", { error: DbUnavailable }),
   /** A refresh failed; the previous client keeps serving. */
@@ -550,6 +562,8 @@ export class ZoteroReads extends RpcGroup.make(
   Rpc.make("Refresh", { error: DbUnavailable }),
   Rpc.make("NotifyExternalChange", {}),
   Rpc.make("Configure", { payload: ReadsConfigSchema }),
+  /** Answers at once: the renderer's proof that the worker still runs. */
+  Rpc.make("Ping", {}),
   /** The item index signature of one library; an unknown library counts zero. */
   Rpc.make("IndexSignature", {
     payload: { libraryID: Schema.Number, ...snapshot },
@@ -691,5 +705,26 @@ export class ZoteroReads extends RpcGroup.make(
     ),
     error: ReadError,
     stream: true,
+  }),
+  /** The tag names in use in one library, or in every library; sorted, distinct. */
+  Rpc.make("TagNames", {
+    payload: { libraryID: Schema.optionalKey(Schema.Number), ...snapshot },
+    success: Schema.Array(Schema.String),
+    error: ReadError,
+  }),
+  /** Every live collection of the libraries as its root-first names, sorted. */
+  Rpc.make("CollectionPaths", {
+    payload: { libraryIDs: Schema.Array(Schema.Number), ...snapshot },
+    success: Schema.Array(Schema.Array(Schema.String)),
+    error: ReadError,
+  }),
+  /** An item's tag names and the root-first path of each direct collection. */
+  Rpc.make("MembershipFacts", {
+    payload: { itemID: Schema.Number, libraryID: Schema.Number, ...snapshot },
+    success: Schema.Struct({
+      tags: Schema.Array(Schema.String),
+      collections: Schema.Array(Schema.Array(Schema.String)),
+    }),
+    error: ReadError,
   }),
 ) {}

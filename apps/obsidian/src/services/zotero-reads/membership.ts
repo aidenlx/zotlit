@@ -7,9 +7,7 @@ import {
 import type { CollectionNode, Item } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
-import type { AvailableLibrary } from "@/services/library-scope/scope";
-
-import type { MatchItemFacts } from "./condition";
+import type { MatchItemFacts } from "@/services/profile-selection/condition";
 
 /** One Collection the editor offers, with the words it is shown by. */
 export interface CollectionChoice {
@@ -47,7 +45,7 @@ export function resolveMembershipFacts(
  */
 export function listCollectionChoices(
   client: NodeDatabaseClient,
-  libraries: readonly AvailableLibrary[],
+  libraries: readonly { readonly libraryID: number }[],
 ): CollectionChoice[] {
   const byPath = new Map<string, CollectionChoice>();
   for (const { libraryID } of libraries) {

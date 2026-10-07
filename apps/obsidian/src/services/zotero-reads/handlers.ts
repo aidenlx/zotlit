@@ -29,6 +29,7 @@ import {
   getItemsByKey,
   getItemTypeByKey,
   getLibraries,
+  getLibraryTagNames,
   getNoteByKey,
   getNoteItemIDsByCollection,
   getNoteItemIDsByLibrary,
@@ -45,6 +46,7 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 
 import { Connection, toDbUnavailable } from "./connection";
+import { listCollectionChoices, resolveMembershipFacts } from "./membership";
 import { SnapshotExpired, ZoteroReads } from "./rpc";
 import type { DbUnavailable } from "./rpc";
 import type { WorkLabelSource } from "./rpc";
@@ -129,6 +131,14 @@ function itemsByIndexedKeys(
     }
   }
   return items;
+}
+
+/** Every distinct tag name across the database, sorted. */
+function allTagNames(client: NodeDatabaseClient): string[] {
+  const rows = client.query.tags.findMany({ columns: { name: true } }).sync();
+  return [...new Set(rows.map((row) => row.name))].sort((a, b) =>
+    a.localeCompare(b),
+  );
 }
 
 function workLabelSource(
@@ -445,6 +455,7 @@ export function handlersLayer(options?: HandlersOptions) {
         Refresh: () => connection.refresh,
         NotifyExternalChange: () => connection.notifyExternalChange,
         Configure: (config) => connection.configure(config),
+        Ping: () => Effect.void,
 
         IndexSignature: ({ libraryID, snapshot }) =>
           withClient(snapshot, (client) =>
@@ -583,6 +594,26 @@ export function handlersLayer(options?: HandlersOptions) {
               })),
             );
           }),
+
+        TagNames: ({ libraryID, snapshot }) =>
+          withClient(snapshot, (client) =>
+            libraryID === undefined
+              ? allTagNames(client)
+              : getLibraryTagNames(client, libraryID),
+          ),
+
+        CollectionPaths: ({ libraryIDs, snapshot }) =>
+          withClient(snapshot, (client) =>
+            listCollectionChoices(
+              client,
+              libraryIDs.map((libraryID) => ({ libraryID })),
+            ).map(({ path }) => path),
+          ),
+
+        MembershipFacts: ({ itemID, libraryID, snapshot }) =>
+          withClient(snapshot, (client) =>
+            resolveMembershipFacts(client, { itemID, libraryID }),
+          ),
       });
     }),
   );
