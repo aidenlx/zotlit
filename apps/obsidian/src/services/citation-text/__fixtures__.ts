@@ -1,5 +1,8 @@
 // The one cited work, and the Citation Index answer naming it, that the citation-text suites read against.
 
+import type { Item } from "@zotlit/db";
+import { makeItem } from "@zotlit/item-lookup/fixtures";
+
 import { scanDocumentCitations } from "@/services/citation-index/service";
 import type {
   Citation,
@@ -15,22 +18,27 @@ export const ALPHA_KEY = "ALPHA234";
 
 /**
  * The Item the stubbed database answers with. A suite mocks `@zotlit/db` so
- * `resolveIndexedKeyLibrary` and `getItemsByKey` hand this back, since the stub
- * client runs no queries; `itemSummary` reads it as `Zeta (2020)`.
+ * `resolveIndexedKeyLibrary` and `getItemsByKey` hand this back to the
+ * ZoteroReads handlers, since the in-process database holds no rows;
+ * `itemSummary` reads it as `Zeta (2020)`.
  */
-export const ALPHA = {
-  key: "ALPHA123",
-  itemID: 1,
-  groupID: null,
-  indexedKey: ALPHA_KEY,
-  creators: [{ creatorType: "author", lastName: "Zeta", firstName: "Ann" }],
-  primaryCreatorType: "author",
-  customFields: [],
-  fields: {
-    itemType: "book",
+export const ALPHA: Item = {
+  ...makeItem({
+    key: "ALPHA123",
+    itemID: 1,
     title: "A study of nothing",
     date: "2020",
-  },
+    creators: [
+      {
+        creatorType: "author",
+        lastName: "Zeta",
+        firstName: "Ann",
+        fieldMode: 0,
+      },
+    ],
+    primaryCreatorType: "author",
+  }),
+  indexedKey: ALPHA_KEY,
 };
 
 /**

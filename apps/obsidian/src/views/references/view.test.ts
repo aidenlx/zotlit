@@ -4,6 +4,8 @@ import type { App, EventRef, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { makeItem } from "@zotlit/item-lookup/fixtures";
+
 import { FIELD_CITATION_STYLE } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import type {
@@ -17,6 +19,7 @@ import type { BibliographyRenderResult } from "@/services/pandoc/render-cache";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { Held } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
+import { stubbedReads } from "@/services/zotero-reads/test-utils";
 
 import { ReferencesView } from "./view";
 
@@ -37,17 +40,18 @@ vi.mock("@/components/obsidian/icon-button", async () => {
 
 vi.mock("@zotlit/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@zotlit/db")>()),
-  getZoteroIdentity: () => ({ userID: 1, localUserKey: "local" }),
+  getZoteroDatabaseIdentity: () => ({
+    userID: 1,
+    localUserKey: "local",
+    serverID: null,
+  }),
   resolveIndexedKeyLibrary: () => ({ libraryID: 1, key: "BOOK0001" }),
   getItemsByKey: () => [
-    {
+    makeItem({
       key: "BOOK0001",
       itemID: 1,
-      groupID: null,
-      creators: [],
-      primaryCreatorType: null,
-      fields: { title: "Field notes" },
-    },
+      title: "Field notes",
+    }),
   ],
   getAttachmentsByParents: () => [],
   isChildItemFields: () => false,
@@ -166,6 +170,7 @@ let scans: PromiseWithResolvers<DocumentCitationSet>[] = [];
 let activeFile: TFile;
 let otherFile: TFile;
 let onDbChanged: (() => void) | undefined;
+let reads: ReturnType<typeof stubbedReads> | undefined;
 let onCitationsChanged: ((path: string) => void) | undefined;
 let onCitedByInvalidated: (() => void) | undefined;
 /** What the Citation Index reports its resolution snapshot as. */
@@ -192,17 +197,21 @@ function copyAction(): HTMLElement {
   )!;
 }
 
-/** Let the pending render settle into the store and the pane re-render. */
+/**
+ * Let the pending database read and render settle into the store and the pane
+ * re-render.
+ */
 async function settle(): Promise<void> {
   await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
 
 async function finishRender(
   outcome: RenderedBibliography = renderedOutcome(),
 ): Promise<void> {
+  // A reload reads the database before it asks for the render.
+  await settle();
   renders.at(-1)!.resolve(outcome);
   await settle();
 }
@@ -254,14 +263,17 @@ beforeEach(async () => {
     loaded: false,
     ready: profileReady.promise,
   };
+  reads = stubbedReads();
   view = new TestReferencesView(
     {} as WorkspaceLeaf,
     {
       app,
       db: {
         state: "ready",
-        client: {},
-        ready: Promise.resolve(),
+        get ready() {
+          return reads!.ready;
+        },
+        acquireRead: () => reads!.acquireRead(),
         on: (event: string, callback: () => void) => {
           if (event === "changed") onDbChanged = callback;
           return () => undefined;
@@ -335,6 +347,8 @@ beforeEach(async () => {
 afterEach(async () => {
   await act(() => view?.close());
   view = undefined;
+  await reads?.[Symbol.asyncDispose]();
+  reads = undefined;
   onDbChanged = undefined;
   onCitationsChanged = undefined;
   onCitedByInvalidated = undefined;

@@ -3,6 +3,7 @@
 // Command, flag, and response text is all hardcoded English: an agent-facing
 // contract surface, not localized UI. See apps/obsidian/policies/cli-text.md.
 
+import { Effect } from "effect";
 import { isAbsolute, relative } from "node:path";
 import { normalizePath } from "obsidian";
 import type {
@@ -14,18 +15,13 @@ import type {
   TFile,
 } from "obsidian";
 
-import {
-  getCitekeyByItemKey,
-  getItemsByKey,
-  resolveIndexedKeyLibrary,
-} from "@zotlit/db";
-
 import { getLogger } from "@/lib/log";
 import type { DatabaseService } from "@/services/database/service";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import type { ProfileReader } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import {
   CSL_COMMAND,
@@ -56,7 +52,8 @@ export { CSL_COMMAND };
 
 export interface PandocResolveDeps {
   app: App;
-  db: Pick<DatabaseService, "acquireRead" | "activeReadMode">;
+  db: Pick<DatabaseService, "activeReadMode">;
+  reads: Pick<ZoteroReadsService, "ready">;
   zoteroPref: Pick<ZoteroPrefService, "ready" | "dataDir">;
   settings: Pick<SettingsService, "current">;
   profile: ProfileReader;
@@ -119,7 +116,7 @@ export function registerPandocResolve(
             readMode: deps.db.activeReadMode,
           }),
           read: (indexedKeys) =>
-            readItems(deps.db, indexedKeys).catch((error: unknown) => {
+            readItems(deps.reads, indexedKeys).catch((error: unknown) => {
               logger.warn("Cannot read the Zotero database", { error });
               return null;
             }),
@@ -195,23 +192,25 @@ function vaultFile(app: App, absolutePath: string): TFile | null {
   );
 }
 
-/** One read lease per invocation, however many links the document carries. */
+/** One database read per invocation, however many links the document carries. */
 async function readItems(
-  db: PandocResolveDeps["db"],
+  reads: PandocResolveDeps["reads"],
   indexedKeys: readonly string[],
 ): Promise<ReadonlyMap<string, ResolvedItem>> {
-  using lease = await db.acquireRead();
+  const { reads: api } = await reads.ready;
+  const unique = [...new Set(indexedKeys)];
+  const found = await Effect.runPromise(
+    api.ItemsByIndexedKeys({ indexedKeys: unique }),
+  );
   const items = new Map<string, ResolvedItem>();
-  for (const indexedKey of new Set(indexedKeys)) {
-    const selector = resolveIndexedKeyLibrary(lease.client, indexedKey);
-    if (!selector) continue;
-    const { libraryID, key } = selector;
-    const item = getItemsByKey(lease.client, libraryID, [key])[0];
+  for (const indexedKey of unique) {
+    const item = found.get(indexedKey);
     if (!item) continue;
     items.set(indexedKey, {
-      citationKey: getCitekeyByItemKey(lease.client, libraryID, key),
-      // Every item type `getItemsByKey` can return carries `title`; the check
-      // is what narrows Zotero's field union, which includes child items.
+      citationKey:
+        ("citationKey" in item.fields ? item.fields.citationKey : null) ?? null,
+      // Every item type `ItemsByIndexedKeys` can return carries `title`; the
+      // check is what narrows Zotero's field union, which includes child items.
       title: ("title" in item.fields ? item.fields.title : null) ?? item.key,
     });
   }

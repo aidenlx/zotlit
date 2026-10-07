@@ -54,6 +54,7 @@ const READ_OPERATIONS = [
   "ItemType",
   "AnnotViewAttachments",
   "ReaderTargetKeys",
+  "AttachmentsAt",
   "AttachmentSources",
 ] as const satisfies readonly (keyof ZoteroReadsClient)[];
 

@@ -1062,6 +1062,36 @@ describe("ZoteroReads connection lifetime", () => {
   });
 });
 
+describe("ZoteroReads citation operations", () => {
+  it("AttachmentsAt returns an attachment itself, a regular item's attachments, or nothing", async () => {
+    const { open } = fixtureOpener();
+    const [own, children, none] = await withReads(open, (reads) =>
+      Effect.all([
+        reads.AttachmentsAt({ itemID: 10 }),
+        reads.AttachmentsAt({ itemID: 1 }),
+        reads.AttachmentsAt({ itemID: 999 }),
+      ]),
+    );
+    expect(own).toMatchObject([{ itemID: 10, key: "ATCH2345" }]);
+    expect(children).toMatchObject([{ itemID: 10, key: "ATCH2345" }]);
+    expect(none).toEqual([]);
+  });
+
+  it("ItemsByIndexedKeys answers each key under the spelling it was asked by", async () => {
+    const { open } = fixtureOpener();
+    const items = await withReads(open, (reads) =>
+      reads.ItemsByIndexedKeys({
+        indexedKeys: ["GRPITEMSg0900", "GRPITEMSg900"],
+      }),
+    );
+    expect([...items.keys()]).toEqual(["GRPITEMSg0900", "GRPITEMSg900"]);
+    expect(items.get("GRPITEMSg0900")).toMatchObject({
+      key: "GRPITEMS",
+      indexedKey: "GRPITEMSg900",
+    });
+  });
+});
+
 describe("ZoteroReads annotation-family operations", () => {
   it("AttachmentSources returns attachments by Indexed Key with their parent items, tags, and username", async () => {
     const { open } = fixtureOpener();

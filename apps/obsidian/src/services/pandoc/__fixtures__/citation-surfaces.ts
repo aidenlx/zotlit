@@ -20,6 +20,8 @@ import type {
 import { act } from "preact/test-utils";
 import { vi } from "vitest";
 
+import { makeCreator, makeItem } from "@zotlit/item-lookup/fixtures";
+
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { spliceFrontMatter } from "@/lib/live-text";
@@ -113,19 +115,16 @@ const CITED_WORK: CitedWork = {
   libraryID: 1,
   key: "DOE2024",
   row: {
-    key: "DOE2024",
-    itemID: 1,
-    groupID: null,
-    indexedKey: KEY_A,
-    creators: [{ creatorType: "author", lastName: "Zeta", firstName: "Ann" }],
-    primaryCreatorType: "author",
-    customFields: [],
-    fields: {
-      itemType: "book",
+    ...makeItem({
+      key: "DOE2024",
+      itemID: 1,
+      creators: [makeCreator("Ann", "Zeta")],
+      primaryCreatorType: "author",
       title: "A study of nothing",
       date: "2020",
       citationKey: CITATION_KEY,
-    },
+    }),
+    indexedKey: KEY_A,
   },
   csl: {
     id: "zeta2020",
@@ -141,19 +140,16 @@ const SECOND_CITED_WORK: CitedWork = {
   libraryID: 1,
   key: "ROE2025",
   row: {
-    key: "ROE2025",
-    itemID: 2,
-    groupID: null,
-    indexedKey: KEY_B,
-    creators: [{ creatorType: "author", lastName: "Alpha", firstName: "Bo" }],
-    primaryCreatorType: "author",
-    customFields: [],
-    fields: {
-      itemType: "book",
+    ...makeItem({
+      key: "ROE2025",
+      itemID: 2,
+      creators: [makeCreator("Bo", "Alpha")],
+      primaryCreatorType: "author",
       title: "A second study of nothing",
       date: "2021",
       citationKey: SECOND_CITATION_KEY,
-    },
+    }),
+    indexedKey: KEY_B,
   },
   csl: {
     id: "alpha2021",
@@ -595,13 +591,7 @@ function exportAdapter({
         cachedRead: (file: TFile) => harness.vault.cachedRead(file),
       },
     } as unknown as App,
-    db: {
-      acquireRead: () =>
-        Promise.resolve({
-          client: harness.db.client,
-          [Symbol.dispose]: () => undefined,
-        }),
-    } as unknown as PandocExportDeps["db"],
+    db: harness.db,
     citationIndex: harness.index,
     pandocEngine: {
       getStatus: () => ({ kind: "installed", version: "test" }),

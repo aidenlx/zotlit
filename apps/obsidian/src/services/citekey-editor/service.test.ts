@@ -1,10 +1,11 @@
 import type { Extension } from "@codemirror/state";
 import { MarkdownView } from "obsidian";
 import type { HoverLinkSource } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getItemsByID } from "@zotlit/db";
+import { getItemsByKey } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
+import { makeCreator, makeItem } from "@zotlit/item-lookup/fixtures";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
@@ -16,6 +17,7 @@ import type { CreationProfileSelection } from "@/services/note-feature";
 import { NoteIndexStub } from "@/services/note-index/test-stub";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import { stubbedReads } from "@/services/zotero-reads/test-utils";
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 import type { LiteratureNoteProfileChoice } from "@/views/quick-switch/profile-picker";
 
@@ -24,8 +26,30 @@ import type { AmbiguousCitekey } from "./service";
 
 vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();
-  return { ...actual, getItemsByID: vi.fn(() => []) };
+  return {
+    ...actual,
+    // The in-process reads run over an empty database: a `g7` key lives in
+    // Library 4, and the item read is stubbed per test.
+    resolveIndexedKeyLibrary: (_client: unknown, indexedKey: string) => {
+      const [key = indexedKey, group] = indexedKey.split("g");
+      return { key, libraryID: group === undefined ? 1 : 4 };
+    },
+    getItemsByKey: vi.fn(() => []),
+  };
 });
+
+/** Every reads stand-in a test opened, disposed after it. */
+const opened: AsyncDisposable[] = [];
+afterEach(async () => {
+  for (const reads of opened.splice(0)) await reads[Symbol.asyncDispose]();
+});
+
+/** ZoteroReads on the in-process adapter; its handlers run the stubs above. */
+function reads() {
+  const stub = stubbedReads();
+  opened.push(stub);
+  return stub;
+}
 
 vi.mock("@/views/quick-switch/profile-picker", () => ({
   chooseLiteratureNoteProfile: vi.fn(),
@@ -71,7 +95,7 @@ describe("CitekeyEditor Profile creation", () => {
       citationIndex,
       citationText: new CitationTextStub(),
       zoteroPref: { dataDir: null },
-      db: { state: "ready", client: {} },
+      db: reads(),
       noteFeature: {
         resolveCreationProfile: async () => selection,
         prepareCreationProfiles: async () => [
@@ -96,7 +120,9 @@ describe("CitekeyEditor Profile creation", () => {
         ],
       },
     } as never);
-    vi.mocked(getItemsByID).mockReturnValue([item as Item]);
+    vi.mocked(getItemsByKey).mockReturnValue([
+      makeItem({ key: item.key, itemID: item.itemID }),
+    ]);
     return { service, create, openLinkText, citationIndex };
   }
 
@@ -382,14 +408,21 @@ describe("CitekeyEditor ambiguous citation keys", () => {
   };
 
   function zoteroItem(itemID: number, title: string, lastName: string): Item {
+    const personal = itemID === 11;
     return {
-      itemID,
-      libraryID: itemID === 11 ? 1 : 4,
-      key: itemID === 11 ? "DOE2024" : "ROE2025",
-      creators: [{ creatorType: "author", lastName, firstName: "A" }],
-      primaryCreatorType: "author",
-      fields: { itemType: "journalArticle", title, date: "2024" },
-    } as unknown as Item;
+      ...makeItem({
+        itemID,
+        libraryID: personal ? 1 : 4,
+        key: personal ? "DOE2024" : "ROE2025",
+        itemType: "journalArticle",
+        title,
+        date: "2024",
+        creators: [makeCreator("A", lastName)],
+        primaryCreatorType: "author",
+      }),
+      groupID: personal ? null : 7,
+      indexedKey: personal ? "DOE2024" : "ROE2025g7",
+    };
   }
 
   async function openEditor(
@@ -424,7 +457,7 @@ describe("CitekeyEditor ambiguous citation keys", () => {
           unavailable: [],
         },
       },
-      db: { state: "ready", client: {} },
+      db: reads(),
       settings: new SettingsStub(),
     } as never);
     await service.ready;
@@ -433,10 +466,15 @@ describe("CitekeyEditor ambiguous citation keys", () => {
   }
 
   it("reports every candidate with its summary, Library name, and bare Zotero item key", async () => {
-    vi.mocked(getItemsByID).mockReturnValue([
+    const items = [
       zoteroItem(11, "A study of citations", "Doe"),
       zoteroItem(22, "Another study", "Roe"),
-    ]);
+    ];
+    vi.mocked(getItemsByKey).mockImplementation((_client, libraryID, keys) =>
+      items.filter(
+        (item) => item.libraryID === libraryID && keys.includes(item.key),
+      ),
+    );
     const opened: { path: string; pane: unknown }[] = [];
     const { service, ambiguities } = await openEditor({}, opened);
 
@@ -479,7 +517,7 @@ describe("CitekeyEditor ambiguous citation keys", () => {
   });
 
   it("opens a chosen candidate by its exact Indexed Key without resolving the key again", async () => {
-    vi.mocked(getItemsByID).mockReturnValue([]);
+    vi.mocked(getItemsByKey).mockReturnValue([]);
     const opened: { path: string; pane: unknown }[] = [];
     const { service, citationIndex, ambiguities } = await openEditor(
       { ROE2025g7: [{ path: "Roe 2025.md" }] },

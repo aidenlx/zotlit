@@ -1,10 +1,6 @@
+import { Effect, Stream } from "effect";
 import type { ObsidianProtocolData, PaneType, Plugin } from "obsidian";
 
-import {
-  getAttachmentByItemId,
-  getAttachmentsByParents,
-  getItemRefByID,
-} from "@zotlit/db";
 import type { ItemRef } from "@zotlit/db";
 import {
   batchProtocolActionId,
@@ -62,6 +58,7 @@ import {
   batchImportToast,
 } from "@/services/note-import/batch-import-notices";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
@@ -74,6 +71,7 @@ export interface ProtocolDeps extends SingleUpdateDeps {
   batchImport: Pick<BatchImport, "runBatchImport" | "runBatchImportAll">;
   zoteroPref: ZoteroPrefService;
   liveUpdate: LocalServerService;
+  zoteroReads: Pick<ZoteroReadsService, "state" | "ready" | "acquireRead">;
 }
 
 /**
@@ -173,7 +171,7 @@ async function handleProtocol(
   });
   if (!query) return;
 
-  const ref = resolveProtocolItem(query, deps, action);
+  const ref = await resolveProtocolItem(query, deps, action);
   if (!ref) return;
 
   const requested = resolveRequestedProfile(query.profileId);
@@ -298,7 +296,7 @@ async function handleExploreProtocol(
   });
   if (!query) return;
 
-  const ref = resolveProtocolItem(query, deps, action);
+  const ref = await resolveProtocolItem(query, deps, action);
   if (!ref) return;
 
   await openTemplateDataExplorer(
@@ -327,17 +325,16 @@ async function handleOpenAttachmentProtocol(
   });
   if (!query) return;
 
-  if (deps.db.state !== "ready") {
+  if (deps.zoteroReads.state !== "ready") {
     logger.warn("Protocol handler: database not ready", { action });
     new BaseNotice(m.notice_protocol_db_unavailable());
     return;
   }
 
-  const client = deps.db.client;
-  const asAttachment = getAttachmentByItemId(client, query.item);
-  const attachments = asAttachment
-    ? [asAttachment]
-    : getAttachmentsByParents(client, [query.item]);
+  const { reads } = await deps.zoteroReads.ready;
+  const attachments = await Effect.runPromise(
+    reads.AttachmentsAt({ itemID: query.item }),
+  );
 
   const openable = toObsidianOpenable(attachments, deps);
 
@@ -446,18 +443,22 @@ function parseProtocolData<Query extends { sourceId: string }>(
   return query;
 }
 
-function resolveProtocolItem(
+async function resolveProtocolItem(
   query: { item: number },
   deps: ProtocolDeps,
   action: string,
-): ItemRef | null {
-  if (deps.db.state !== "ready") {
+): Promise<ItemRef | null> {
+  if (deps.zoteroReads.state !== "ready") {
     logger.warn("Protocol handler: database not ready", { action });
     new BaseNotice(m.notice_protocol_db_unavailable());
     return null;
   }
 
-  const ref = getItemRefByID(deps.db.client, query.item);
+  const { reads } = await deps.zoteroReads.ready;
+  const slices = await Effect.runPromise(
+    Stream.runCollect(reads.DisplayRefs({ itemIDs: [query.item] })),
+  );
+  const ref = slices.flat()[0]?.ref ?? null;
   if (!ref) {
     logger.warn("Protocol handler: item not found", {
       action,
@@ -467,7 +468,8 @@ function resolveProtocolItem(
     return null;
   }
 
-  return ref;
+  const { itemID, libraryID, key, groupID, indexedKey } = ref;
+  return { itemID, libraryID, key, groupID, indexedKey };
 }
 
 /** Reuses the importer's clipboard reader and consent before opening the written file. */

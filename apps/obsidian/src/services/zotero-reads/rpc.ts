@@ -439,7 +439,7 @@ export class ZoteroReads extends RpcGroup.make(
     error: ReadError,
     stream: true,
   }),
-  /** Items keyed by Indexed Key; a key with no live item is absent. */
+  /** Items keyed by the Indexed Key each was asked by; a key with no live item is absent. */
   Rpc.make("ItemsByIndexedKeys", {
     payload: { indexedKeys: Schema.Array(Schema.String), ...snapshot },
     success: Schema.ReadonlyMap(Schema.String, ItemSchema),
@@ -615,6 +615,15 @@ export class ZoteroReads extends RpcGroup.make(
       ...snapshot,
     },
     success: Schema.NullOr(ReaderTargetKeysSchema),
+    error: ReadError,
+  }),
+  /**
+   * The attachment `itemID` names, or the attachments of the regular item it
+   * names; empty for an unknown item.
+   */
+  Rpc.make("AttachmentsAt", {
+    payload: { itemID: Schema.Number, ...snapshot },
+    success: Schema.Array(AttachmentSchema),
     error: ReadError,
   }),
   /**

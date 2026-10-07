@@ -80,7 +80,10 @@ const FIRST_ISBN_RE = /^(?:97[89]-?)?(?:\d-?){9}[\dx](?!-)\b/i;
  *
  * @see https://github.com/zotero/utilities/blob/1dd38e27edf81e9d9c4161c957b7efb7f5681ac3/utilities_item.js#L51
  */
-export function itemToCsl(item: Item, user: ZoteroUserIdentity): CslItemData {
+export function itemToCsl(
+  item: Item,
+  user: Pick<ZoteroUserIdentity, "userID" | "localUserKey">,
+): CslItemData {
   const { itemType } = item.fields;
   const fields = itemFieldValues(item);
   return {

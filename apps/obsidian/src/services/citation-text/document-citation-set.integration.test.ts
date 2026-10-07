@@ -38,10 +38,10 @@ vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();
   return {
     ...actual,
-    getZoteroIdentity: () => ({
+    getZoteroDatabaseIdentity: () => ({
       userID: 1,
       localUserKey: null,
-      username: null,
+      serverID: null,
     }),
     resolveIndexedKeyLibrary: vi.fn(),
     getItemsByKey: vi.fn(),
@@ -126,14 +126,21 @@ function item(
     key: indexedKey,
     itemID,
     indexedKey,
-    creators: [{ creatorType: "author", lastName: family, firstName: "Bea" }],
+    creators: [
+      {
+        creatorType: "author",
+        lastName: family,
+        firstName: "Bea",
+        fieldMode: 0,
+      },
+    ],
     fields: { ...ALPHA.fields, title: `${family} study`, date: "2021" },
-  };
+  } as typeof ALPHA;
 }
 
 /** Every Item the stubbed database answers with, by Indexed Key. */
 const ITEMS: Record<string, typeof ALPHA> = {
-  [KEY_A]: ALPHA,
+  [KEY_A]: { ...ALPHA, indexedKey: KEY_A },
   [KEY_B]: item(KEY_B, 2, "Roe"),
   [KEY_C]: item(KEY_C, 3, "Cox"),
   [KEY_D]: item(KEY_D, 4, "Dey"),
@@ -147,10 +154,9 @@ beforeEach(() => {
       return found ? { libraryID: 1, key: found.key } : null;
     },
   );
-  vi.mocked(getItemsByKey).mockImplementation((_client, _libraryID, keys) => {
-    const found = Object.values(ITEMS).find(({ key }) => key === keys[0]);
-    return found ? [found as never] : [];
-  });
+  vi.mocked(getItemsByKey).mockImplementation((_client, _libraryID, keys) =>
+    Object.values(ITEMS).filter(({ key }) => keys.includes(key)),
+  );
 });
 
 async function readText(
