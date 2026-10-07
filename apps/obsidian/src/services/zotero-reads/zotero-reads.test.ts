@@ -2144,6 +2144,38 @@ describe("ZoteroReads SearchItems", () => {
       },
     );
 
+    it("an uninstall sent while an install reads its binary wins", async () => {
+      const bytes = await jiebaBytes();
+      const reading = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const hits = await withSegmenter(
+        {
+          readSegmenter: async () => {
+            reading.resolve();
+            await release.promise;
+            return bytes;
+          },
+        },
+        (reads) =>
+          Effect.gen(function* () {
+            const install = yield* Effect.forkChild(
+              reads.Configure(config(INSTALLED)),
+            );
+            yield* Effect.promise(() => reading.promise);
+            const uninstall = yield* Effect.forkChild(
+              reads.Configure(config(null)),
+            );
+            // The uninstall reached the worker before the install finished.
+            yield* reads.Ping();
+            release.resolve();
+            yield* Fiber.join(install);
+            yield* Fiber.join(uninstall);
+            return yield* reads.SearchItems(JIEBA_ONLY);
+          }),
+      );
+      expect(keysOf(hits)).toEqual([]);
+    });
+
     it("a corrupt binary through Configure keeps search answering", async () => {
       const result = await withSegmenter(
         { readSegmenter: async () => new Uint8Array([0, 1, 2, 3]) },
