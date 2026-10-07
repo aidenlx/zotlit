@@ -14,8 +14,12 @@ import type { DatabaseConnectionSource } from "./database-connection";
 import { DbUnavailable } from "./rpc";
 import { inProcessClient, ZoteroReadsService } from "./service";
 
-/** A DatabaseService stand-in over one fixture client that counts open leases. */
-class FakeDatabase implements DatabaseConnectionSource {
+/**
+ * A DatabaseService stand-in over one fixture client that counts open leases.
+ * Its refresh keeps the DatabaseService rule: a failure throws only when no
+ * client serves, and otherwise lands in `error`.
+ */
+class FakeDatabase implements DatabaseConnectionSource, Disposable {
   readonly emitter = createNanoEvents<DatabaseEvents>();
   readonly client: NodeDatabaseClient;
   state: "loading" | "ready" | "degraded" = "ready";
@@ -24,7 +28,7 @@ class FakeDatabase implements DatabaseConnectionSource {
   refreshes = 0;
   pushes = 0;
   refreshError: DatabaseError | null = null;
-  readonly ready = Promise.resolve();
+  ready: Promise<void> = Promise.resolve();
 
   constructor() {
     this.client = createClient(":memory:");
@@ -57,7 +61,18 @@ class FakeDatabase implements DatabaseConnectionSource {
 
   async refresh() {
     this.refreshes += 1;
-    if (this.refreshError) throw this.refreshError;
+    if (!this.refreshError) {
+      this.error = null;
+      return;
+    }
+    if (this.state === "degraded") {
+      throw new DatabaseError("degraded", this.refreshError);
+    }
+    this.error = this.refreshError;
+  }
+
+  [Symbol.dispose]() {
+    this.client.$client.close();
   }
 
   notifyExternalChange() {
@@ -77,7 +92,9 @@ describe("layerDatabaseService", () => {
     await using service = serviceOver(db);
     await service.ready;
 
-    const libraries = await Effect.runPromise(service.reads.Libraries({}));
+    const libraries = await Effect.runPromise(
+      (await service.ready).reads.Libraries({}),
+    );
 
     expect(libraries).toMatchObject([{ libraryID: 1 }]);
     expect(db.leases).toBe(0);
@@ -143,6 +160,26 @@ describe("layerDatabaseService", () => {
     expect(service.state).toBe("degraded");
   });
 
+  it("relays events the DatabaseService raises during its first open", async () => {
+    const db = new FakeDatabase();
+    const opening = Promise.withResolvers<void>();
+    db.ready = opening.promise;
+    db.state = "loading";
+    await using service = serviceOver(db);
+    await service.ready;
+    const seen: string[] = [];
+    service.on("db-file-missing", () => seen.push("db-file-missing"));
+    service.on("changed", () => seen.push("changed"));
+
+    db.emitter.emit("db-file-missing");
+    db.state = "ready";
+    db.emitter.emit("changed");
+    opening.resolve();
+
+    await expect.poll(() => seen).toEqual(["db-file-missing", "changed"]);
+    expect(service.state).toBe("ready");
+  });
+
   it("forwards refresh and external change signals to the DatabaseService", async () => {
     const db = new FakeDatabase();
     await using service = serviceOver(db);
@@ -152,11 +189,23 @@ describe("layerDatabaseService", () => {
     service.notifyExternalChange();
     await expect.poll(() => db.pushes).toBe(1);
     expect(db.refreshes).toBe(1);
+  });
 
+  it("rejects a refresh that fails, also when the previous client keeps serving", async () => {
+    using db = new FakeDatabase();
+    await using service = serviceOver(db);
+    await service.ready;
     db.refreshError = new DatabaseError(
-      "degraded",
-      new Error("not a database"),
+      "refresh-failed",
+      new Error("database is locked"),
     );
+
+    await expect(service.refresh()).rejects.toMatchObject({
+      _tag: "DbUnavailable",
+      message: "database is locked",
+    });
+
+    db.state = "degraded";
     await expect(service.refresh()).rejects.toBeInstanceOf(DbUnavailable);
   });
 });

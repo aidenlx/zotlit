@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { DbUnavailable } from "./rpc";
@@ -19,7 +19,9 @@ describe("ZoteroReadsService", () => {
     await using service = inProcessReadsService(open);
     await service.ready;
 
-    const libraries = await Effect.runPromise(service.reads.Libraries({}));
+    const libraries = await Effect.runPromise(
+      (await service.ready).reads.Libraries({}),
+    );
 
     expect(libraries).toMatchObject([{ libraryID: 1, type: "user" }]);
     expect(service.state).toBe("ready");
@@ -40,7 +42,9 @@ describe("ZoteroReadsService", () => {
       await expect.poll(() => changed).toEqual(["changed"]);
 
       const pinned = await Effect.runPromise(lease.reads.Libraries({}));
-      const current = await Effect.runPromise(service.reads.Libraries({}));
+      const current = await Effect.runPromise(
+        (await service.ready).reads.Libraries({}),
+      );
       expect(libraryVersion(pinned)).toBe(1);
       expect(libraryVersion(current)).toBe(2);
       expect(log).toEqual(["open #1", "open #2"]);
@@ -53,7 +57,7 @@ describe("ZoteroReadsService", () => {
     const { open } = memoryOpener((n) => (n === 2 ? null : versioned(n)));
     await using service = inProcessReadsService(open);
     await service.ready;
-    await Effect.runPromise(service.reads.Libraries({}));
+    await Effect.runPromise((await service.ready).reads.Libraries({}));
     const failures: DbUnavailable[] = [];
     service.on("refresh-failed", (error) => failures.push(error));
 
@@ -62,7 +66,9 @@ describe("ZoteroReadsService", () => {
     await expect.poll(() => failures).toHaveLength(1);
     expect(service.state).toBe("ready");
     expect(service.error).toBe(failures[0]);
-    const libraries = await Effect.runPromise(service.reads.Libraries({}));
+    const libraries = await Effect.runPromise(
+      (await service.ready).reads.Libraries({}),
+    );
     expect(libraryVersion(libraries)).toBe(1);
   });
 
@@ -80,11 +86,31 @@ describe("ZoteroReadsService", () => {
     expect(service.error).toBeInstanceOf(DbUnavailable);
   });
 
+  it("degrades when the change stream is lost", async () => {
+    const { open } = memoryOpener(versioned);
+    await using service = inProcessReadsService(open, (client) => ({
+      ...client,
+      // The seed arrives, then the stream ends as a lost worker's would.
+      Changes: ((...args: Parameters<typeof client.Changes>) =>
+        Stream.take(
+          client.Changes(...args) as Stream.Stream<unknown>,
+          1,
+        )) as typeof client.Changes,
+    }));
+    const degraded: DbUnavailable[] = [];
+    service.on("degraded", (error) => degraded.push(error));
+    await service.ready;
+
+    await expect.poll(() => service.state).toBe("degraded");
+    expect(degraded).toHaveLength(1);
+    expect(service.error).toBeInstanceOf(DbUnavailable);
+  });
+
   it("closes the connection when the service is disposed", async () => {
     const { open, log } = memoryOpener(versioned);
     const service = inProcessReadsService(open);
     await service.ready;
-    await Effect.runPromise(service.reads.Libraries({}));
+    await Effect.runPromise((await service.ready).reads.Libraries({}));
 
     await service[Symbol.asyncDispose]();
 

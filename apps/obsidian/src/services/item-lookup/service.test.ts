@@ -21,7 +21,7 @@ import { ItemLookup } from "./service";
 
 describe("ItemLookup", () => {
   it("prewarms and reuses the cache", async () => {
-    const reads = readsOver(() => seed([row({ key: "AAAAAAAA" })]));
+    await using reads = readsOver(() => seed([row({ key: "AAAAAAAA" })]));
     await using lookup = itemLookup(reads);
 
     await lookup.ready;
@@ -33,7 +33,7 @@ describe("ItemLookup", () => {
 
   it("prewarms only after the reads service is ready", async () => {
     const opening = Promise.withResolvers<void>();
-    const reads = readsOver(() => seed([row({ key: "AAAAAAAA" })]), {
+    await using reads = readsOver(() => seed([row({ key: "AAAAAAAA" })]), {
       opening: opening.promise,
     });
     await using lookup = itemLookup(reads);
@@ -47,7 +47,7 @@ describe("ItemLookup", () => {
   });
 
   it("deduplicates parallel loads", async () => {
-    const reads = readsOver(() => seed([row({ key: "AAAAAAAA" })]));
+    await using reads = readsOver(() => seed([row({ key: "AAAAAAAA" })]));
     const gate = reads.gateIndexItems();
     await using lookup = itemLookup(reads);
     await lookup.ready;
@@ -62,7 +62,7 @@ describe("ItemLookup", () => {
   });
 
   it("rebuilds on a database change when the signature moves", async () => {
-    const reads = readsOver((open) =>
+    await using reads = readsOver((open) =>
       seed([
         row({ key: "AAAAAAAA" }),
         ...(open > 1 ? [row({ key: "BBBBBBBB", title: "Beta" })] : []),
@@ -78,7 +78,7 @@ describe("ItemLookup", () => {
   });
 
   it("skips the rebuild when a database change leaves the signature unchanged", async () => {
-    const reads = readsOver(() => seed([row({ key: "AAAAAAAA" })]));
+    await using reads = readsOver(() => seed([row({ key: "AAAAAAAA" })]));
     await using lookup = itemLookup(reads);
 
     await lookup.search("");
@@ -91,7 +91,7 @@ describe("ItemLookup", () => {
   });
 
   it("hard-invalidates when the library scope changes", async () => {
-    const reads = readsOver(() => seed(perLibraryRows()));
+    await using reads = readsOver(() => seed(perLibraryRows()));
     const libraryScope = new FakeLibraryScope();
     await using lookup = itemLookup(reads, libraryScope);
 
@@ -102,7 +102,7 @@ describe("ItemLookup", () => {
   });
 
   it("abandons a build when the library scope changes mid-build", async () => {
-    const reads = readsOver(() => seed(perLibraryRows()));
+    await using reads = readsOver(() => seed(perLibraryRows()));
     const libraryScope = new FakeLibraryScope();
     const gate = reads.gateIndexItems();
     await using lookup = itemLookup(reads, libraryScope);
@@ -119,7 +119,7 @@ describe("ItemLookup", () => {
   });
 
   it("refreshes labels without rebuilding when a refresh only renames a group", async () => {
-    const reads = readsOver(() => seed(perLibraryRows()));
+    await using reads = readsOver(() => seed(perLibraryRows()));
     const libraryScope = new FakeLibraryScope([
       library(USER_LIBRARY_ID),
       library(2),
@@ -139,7 +139,7 @@ describe("ItemLookup", () => {
   });
 
   it("indexes every library in scope in canonical order", async () => {
-    const reads = readsOver(() => seed(perLibraryRows()));
+    await using reads = readsOver(() => seed(perLibraryRows()));
     const libraryScope = new FakeLibraryScope([
       library(USER_LIBRARY_ID),
       library(2),
@@ -153,7 +153,7 @@ describe("ItemLookup", () => {
   });
 
   it("labels results only when several libraries can contribute", async () => {
-    const reads = readsOver(() => seed(perLibraryRows()));
+    await using reads = readsOver(() => seed(perLibraryRows()));
     const libraryScope = new FakeLibraryScope();
     await using lookup = itemLookup(reads, libraryScope);
 
@@ -167,7 +167,7 @@ describe("ItemLookup", () => {
   });
 
   it("rebuilds when any covered library's signature moves", async () => {
-    const reads = readsOver((open) =>
+    await using reads = readsOver((open) =>
       seed([
         ...perLibraryRows(),
         ...(open > 1
@@ -190,7 +190,7 @@ describe("ItemLookup", () => {
   });
 
   it("serves an empty result for a scope with no available library", async () => {
-    const reads = readsOver(() => seed(perLibraryRows()));
+    await using reads = readsOver(() => seed(perLibraryRows()));
     await using lookup = itemLookup(reads, new FakeLibraryScope([]));
 
     await expect(lookup.search("")).resolves.toEqual([]);
@@ -198,7 +198,7 @@ describe("ItemLookup", () => {
   });
 
   it("returns an empty list while the database is degraded", async () => {
-    const reads = readsOver(() => null);
+    await using reads = readsOver(() => null);
     await using lookup = itemLookup(reads);
 
     await expect(lookup.search("anything")).resolves.toEqual([]);
@@ -206,7 +206,7 @@ describe("ItemLookup", () => {
   });
 
   it("does not serve cached items after the database degrades", async () => {
-    const reads = readsOver(() => seed([row({ key: "AAAAAAAA" })]));
+    await using reads = readsOver(() => seed([row({ key: "AAAAAAAA" })]));
     await using lookup = itemLookup(reads);
 
     await expect(lookup.search("")).resolves.toHaveLength(1);
@@ -221,7 +221,7 @@ describe("ItemLookup", () => {
   });
 
   it("degrades to empty when a background rebuild throws a non-database error", async () => {
-    const reads = readsOver(() => seed([row({ key: "AAAAAAAA" })]), {
+    await using reads = readsOver(() => seed([row({ key: "AAAAAAAA" })]), {
       indexItems: () => Stream.die(new TypeError("malformed row")),
     });
     await using lookup = itemLookup(reads);
@@ -230,7 +230,7 @@ describe("ItemLookup", () => {
   });
 
   it("returns recent items for an empty query", async () => {
-    const reads = readsOver(() =>
+    await using reads = readsOver(() =>
       seed([
         row({ key: "AAAAAAAA", modified: "2024-01-02 00:00:00" }),
         row({ key: "BBBBBBBB", itemID: 2, title: "Beta" }),
@@ -249,7 +249,7 @@ describe("ItemLookup", () => {
   });
 
   it("searches across title, creators, and date", async () => {
-    const reads = readsOver(() =>
+    await using reads = readsOver(() =>
       seed([
         row({
           key: "AAAAAAAA",
@@ -274,7 +274,7 @@ describe("ItemLookup", () => {
   });
 
   it("lets an in-flight build finish and serves it stale while rebuilding", async () => {
-    const reads = readsOver((open) =>
+    await using reads = readsOver((open) =>
       seed([
         row({ key: "AAAAAAAA", title: "Stale" }),
         ...(open > 1
@@ -313,7 +313,7 @@ describe("ItemLookup", () => {
   });
 
   it("drops search results when the scope changes mid-hydration", async () => {
-    const reads = readsOver(() => seed(perLibraryRows()));
+    await using reads = readsOver(() => seed(perLibraryRows()));
     const libraryScope = new FakeLibraryScope();
     await using lookup = itemLookup(reads, libraryScope);
     await lookup.search("");
@@ -328,7 +328,7 @@ describe("ItemLookup", () => {
   });
 
   it("drops hits that fail hydration", async () => {
-    const reads = readsOver(() => seed([row({ key: "AAAAAAAA" })]), {
+    await using reads = readsOver(() => seed([row({ key: "AAAAAAAA" })]), {
       hydrate: () => Effect.succeed(new Map()),
     });
     await using lookup = itemLookup(reads);
@@ -433,7 +433,7 @@ type HydrateEffect = Effect.Effect<ReadonlyMap<string, Item>, unknown>;
 const callOf = <A>(operation: unknown) =>
   operation as (payload: object, options?: object) => A;
 
-interface ObservedReads {
+interface ObservedReads extends AsyncDisposable {
   readonly service: ReturnType<typeof inProcessReadsService>;
   /** The Library of each `IndexItems` call, in call order. */
   readonly indexed: number[];
@@ -554,6 +554,7 @@ function readsOver(
     emit: (event) => {
       for (const offer of injected) offer(event);
     },
+    [Symbol.asyncDispose]: () => service[Symbol.asyncDispose](),
   };
 }
 

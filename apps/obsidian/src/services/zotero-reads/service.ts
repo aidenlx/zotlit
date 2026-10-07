@@ -4,8 +4,8 @@
  * The service owns a {@link ZoteroReadsClient} for the plugin's lifetime and
  * exposes it three ways:
  *
- * - {@link ZoteroReadsService.reads}: the unbound interface, for single reads.
- *   Each call reads the current connection.
+ * - `reads` on {@link ZoteroReadsService.ready}: the unbound interface, for
+ *   single reads. Each call reads the current connection.
  * - {@link ZoteroReadsService.acquireRead} and
  *   {@link ZoteroReadsService.snapshot}: the same reads bound to one Snapshot,
  *   so several calls see one database state.
@@ -15,7 +15,7 @@
  * The adapter that makes the client is a dependency: {@link inProcessClient}
  * runs the handler layer on this runtime; a worker adapter can replace it.
  */
-import { Effect, Exit, Layer, Pull, Scope, Stream } from "effect";
+import { Cause, Effect, Exit, Layer, Pull, Scope, Stream } from "effect";
 import type { RpcClientError } from "effect/rpc";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
@@ -104,16 +104,25 @@ function bindReads(client: ZoteroReadsClient, snapshot?: string) {
   return reads as unknown as ZoteroReadsApi;
 }
 
-export class ZoteroReadsService extends Service<void> {
+/** What {@link ZoteroReadsService.ready} resolves with. */
+export interface ZoteroReadsReady {
+  /**
+   * The read operations on the current connection. Two calls can read
+   * different database states; use a Snapshot to read one.
+   */
+  readonly reads: ZoteroReadsApi;
+  /** The whole client, lifecycle operations included. */
+  readonly client: ZoteroReadsClient;
+}
+
+export class ZoteroReadsService extends Service<ZoteroReadsReady> {
   readonly #makeClient;
   readonly #emitter = createNanoEvents<ZoteroReadsEvents>();
-  #client: ZoteroReadsClient | null = null;
-  #reads: ZoteroReadsApi | null = null;
   #state: "loading" | "ready" | "degraded" = "loading";
   #error: DbUnavailable | null = null;
 
   /** Settles once the client exists and its first state arrived. */
-  ready: Promise<void>;
+  ready: Promise<ZoteroReadsReady>;
 
   constructor(deps: ZoteroReadsServiceDeps) {
     super();
@@ -131,17 +140,6 @@ export class ZoteroReadsService extends Service<void> {
   }
 
   /**
-   * The read operations on the current connection. Two calls can read
-   * different database states; use a Snapshot to read one.
-   *
-   * @throws before {@link ready} settles.
-   */
-  get reads(): ZoteroReadsApi {
-    if (!this.#reads) throw new Error("ZoteroReads is not ready");
-    return this.#reads;
-  }
-
-  /**
    * Open a Snapshot for the caller's scope: the returned reads all see one
    * database state, and closing the scope releases it.
    */
@@ -150,24 +148,23 @@ export class ZoteroReadsService extends Service<void> {
     DbUnavailable | RpcClientError.RpcClientError,
     Scope.Scope
   > {
-    return Effect.suspend(() => {
-      const client = this.#client;
-      if (!client) {
-        return Effect.fail(
-          new DbUnavailable({ message: "ZoteroReads is not ready" }),
-        );
-      }
-      return Effect.flatMap(Stream.toPull(client.Snapshot()), (pull) =>
-        pull.pipe(
-          Pull.catchDone(() =>
-            Effect.fail(
-              new DbUnavailable({ message: "The Snapshot ended unopened" }),
+    return Effect.tryPromise({
+      try: () => this.ready,
+      catch: () => new DbUnavailable({ message: "ZoteroReads did not start" }),
+    }).pipe(
+      Effect.flatMap(({ client }) =>
+        Effect.flatMap(Stream.toPull(client.Snapshot()), (pull) =>
+          pull.pipe(
+            Pull.catchDone(() =>
+              Effect.fail(
+                new DbUnavailable({ message: "The Snapshot ended unopened" }),
+              ),
             ),
+            Effect.map(([id]) => bindReads(client, id)),
           ),
-          Effect.map(([id]) => bindReads(client, id)),
         ),
-      );
-    });
+      ),
+    );
   }
 
   /**
@@ -197,16 +194,14 @@ export class ZoteroReadsService extends Service<void> {
    *   previous connection keeps serving.
    */
   async refresh(): Promise<void> {
-    await this.ready;
-    await Effect.runPromise(this.#requireClient().Refresh());
+    const { client } = await this.ready;
+    await Effect.runPromise(client.Refresh());
   }
 
   /** A change signal from outside the plugin (a Zotero push). */
   notifyExternalChange(): void {
     void this.ready
-      .then(() =>
-        Effect.runPromise(this.#requireClient().NotifyExternalChange()),
-      )
+      .then(({ client }) => Effect.runPromise(client.NotifyExternalChange()))
       .catch((error: unknown) => {
         logger.warn("External change signal not delivered", { error });
       });
@@ -219,20 +214,14 @@ export class ZoteroReadsService extends Service<void> {
     return this.#emitter.on(event, cb);
   }
 
-  async #load(): Promise<void> {
+  async #load(): Promise<ZoteroReadsReady> {
     await using stack = new AsyncDisposableStack();
     const scope = Effect.runSync(Scope.make());
-    stack.defer(async () => {
-      this.#client = null;
-      this.#reads = null;
-      await Effect.runPromise(Scope.close(scope, Exit.void));
-    });
+    stack.defer(() => Effect.runPromise(Scope.close(scope, Exit.void)));
 
     const client = await Effect.runPromise(
       Scope.provide(this.#makeClient, scope),
     );
-    this.#client = client;
-    this.#reads = bindReads(client);
 
     const seeded = Promise.withResolvers<void>();
     Effect.runSync(
@@ -242,18 +231,30 @@ export class ZoteroReadsService extends Service<void> {
           seeded.resolve();
         }),
       ).pipe(
-        Effect.tapCause((cause) =>
+        // `Changes` runs for the client's life; only the service's own scope
+        // ends it with an interrupt. Any other end means the adapter is lost.
+        Effect.onExit((exit) =>
           Effect.sync(() => {
-            logger.error("ZoteroReads change stream ended", { cause });
+            seeded.resolve();
+            if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) {
+              return;
+            }
+            logger.error("ZoteroReads change stream ended", { exit });
+            this.#apply({
+              _tag: "degraded",
+              error: new DbUnavailable({
+                message: "The connection to the Zotero database was lost",
+              }),
+            });
           }),
         ),
-        Effect.ensuring(Effect.sync(() => seeded.resolve())),
         Effect.forkIn(scope),
       ),
     );
     await seeded.promise;
     this.commit(stack.move());
     logger.info("ZoteroReads ready", { state: this.#state });
+    return { reads: bindReads(client), client };
   }
 
   #apply(event: ChangeEvent): void {
@@ -283,10 +284,5 @@ export class ZoteroReadsService extends Service<void> {
         this.#emitter.emit("db-file-missing");
         return;
     }
-  }
-
-  #requireClient(): ZoteroReadsClient {
-    if (!this.#client) throw new Error("ZoteroReads is not ready");
-    return this.#client;
   }
 }

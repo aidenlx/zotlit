@@ -37,58 +37,59 @@ export function layerDatabaseService(
         (lease) => Effect.sync(() => lease[Symbol.dispose]()),
       ).pipe(Effect.map((lease) => lease.client)),
 
-      // The first open settles before `ready` does; the seed is its result.
-      changes: Stream.unwrap(
-        Effect.promise(() => db.ready.catch(() => undefined)).pipe(
-          Effect.as(
-            Stream.callback<ChangeEvent>((queue) =>
-              Effect.acquireRelease(
-                Effect.sync(() => {
-                  const offer = (event: ChangeEvent) =>
-                    void Queue.offerUnsafe(queue, event);
-                  // Subscribe in the same step as the seed, so no event falls
-                  // between the two.
-                  offer({
-                    _tag: "state",
-                    state: db.state,
-                    error: db.error && toDbUnavailable(db.error),
-                  });
-                  return [
-                    db.on("changed", () => offer({ _tag: "changed" })),
-                    db.on("degraded", (error) =>
-                      offer({
-                        _tag: "degraded",
-                        error: toDbUnavailable(error),
-                      }),
-                    ),
-                    db.on("refresh-failed", (error) =>
-                      offer({
-                        _tag: "refresh-failed",
-                        error: toDbUnavailable(error),
-                      }),
-                    ),
-                    db.on("refreshing", (active) =>
-                      offer({ _tag: "refreshing", active }),
-                    ),
-                    db.on("db-file-missing", () =>
-                      offer({ _tag: "db-file-missing" }),
-                    ),
-                  ];
+      // Subscribes at once: the first open can raise `db-file-missing` before
+      // the DatabaseService is ready, and raises it only once per launch.
+      changes: Stream.callback<ChangeEvent>((queue) =>
+        Effect.acquireRelease(
+          Effect.sync(() => {
+            const offer = (event: ChangeEvent) =>
+              void Queue.offerUnsafe(queue, event);
+            // Subscribe in the same step as the seed, so no event falls
+            // between the two.
+            offer({
+              _tag: "state",
+              state: db.state,
+              error: db.error && toDbUnavailable(db.error),
+            });
+            return [
+              db.on("changed", () => offer({ _tag: "changed" })),
+              db.on("degraded", (error) =>
+                offer({
+                  _tag: "degraded",
+                  error: toDbUnavailable(error),
                 }),
-                (unsubscribes) =>
-                  Effect.sync(() => {
-                    for (const unsubscribe of unsubscribes) unsubscribe();
-                  }),
               ),
-            ),
-          ),
+              db.on("refresh-failed", (error) =>
+                offer({
+                  _tag: "refresh-failed",
+                  error: toDbUnavailable(error),
+                }),
+              ),
+              db.on("refreshing", (active) =>
+                offer({ _tag: "refreshing", active }),
+              ),
+              db.on("db-file-missing", () =>
+                offer({ _tag: "db-file-missing" }),
+              ),
+            ];
+          }),
+          (unsubscribes) =>
+            Effect.sync(() => {
+              for (const unsubscribe of unsubscribes) unsubscribe();
+            }),
         ),
       ),
 
+      // `db.refresh()` resolves when a failed refresh leaves the previous
+      // client serving; the failure is then in `db.error`.
       refresh: Effect.tryPromise({
         try: () => db.refresh(),
         catch: toDbUnavailable,
-      }),
+      }).pipe(
+        Effect.flatMap(() =>
+          db.error ? Effect.fail(toDbUnavailable(db.error)) : Effect.void,
+        ),
+      ),
       notifyExternalChange: Effect.sync(() => db.notifyExternalChange()),
       configure: () => Effect.void,
     }),

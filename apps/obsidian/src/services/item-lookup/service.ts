@@ -23,7 +23,7 @@
  *   whole corpus.
  *
  * A Library Scope change is a hard invalidation: the new build replaces the
- * running one in {@link #builds}, which interrupts it, and search hydration
+ * running one in the build FiberHandle, which interrupts it, and search hydration
  * bound to the old scope is dropped. The cache goes too, so the new scope
  * builds from scratch. A group rename leaves the covered Libraries alone, so it
  * refreshes labels without rebuilding.
@@ -77,6 +77,11 @@ export interface ItemLookupDeps {
   getChsSegmenter?: () => ChsSegmenter | null;
 }
 
+interface ItemLookupReady {
+  /** Holds the running build; a build run in it interrupts the one before. */
+  builds: FiberHandle.FiberHandle<void, never>;
+}
+
 interface ItemCache {
   /** Identity of the Libraries this index covers; see {@link availableKey}. */
   scopeKey: string;
@@ -101,15 +106,13 @@ function signaturesEqual(
   );
 }
 
-export class ItemLookup extends Service<void> {
+export class ItemLookup extends Service<ItemLookupReady> {
   readonly #reads;
   readonly #libraryScope;
   readonly #languageLookup;
   readonly #getChsSegmenter;
 
   #cache: ItemCache | null = null;
-  /** Holds the running build; a build run in it interrupts the one before. */
-  #builds: FiberHandle.FiberHandle<void, never> | null = null;
   #rebuildInFlight: Promise<void> | null = null;
   #rebuildAgain = false;
   /** Libraries the index should cover, or `null` while the scope is unresolved. */
@@ -117,7 +120,7 @@ export class ItemLookup extends Service<void> {
   readonly #intl = new Intl.Segmenter(undefined, { granularity: "word" });
   #tokenizerOpts: TokenizerOptions;
 
-  ready: Promise<void>;
+  ready: Promise<ItemLookupReady>;
 
   constructor(deps: ItemLookupDeps) {
     super();
@@ -169,14 +172,11 @@ export class ItemLookup extends Service<void> {
     return hits;
   }
 
-  async #load(): Promise<void> {
+  async #load(): Promise<ItemLookupReady> {
     await using stack = new AsyncDisposableStack();
     const buildScope = Effect.runSync(Scope.make());
-    stack.defer(async () => {
-      this.#builds = null;
-      await Effect.runPromise(Scope.close(buildScope, Exit.void));
-    });
-    this.#builds = Effect.runSync(
+    stack.defer(() => Effect.runPromise(Scope.close(buildScope, Exit.void)));
+    const builds = Effect.runSync(
       Scope.provide(FiberHandle.make<void, never>(), buildScope),
     );
     stack.defer(this.#reads.on("changed", () => this.#invalidate()));
@@ -197,6 +197,7 @@ export class ItemLookup extends Service<void> {
         scopeKey: this.#scopeKey,
       });
     });
+    return { builds };
   }
 
   /**
@@ -275,7 +276,7 @@ export class ItemLookup extends Service<void> {
    * arriving mid-rebuild sets a trailing rerun rather than aborting, so a burst
    * of `"changed"` events collapses into one extra rebuild and the index
    * converges instead of starving. `restart` (a scope change) runs a new lane in
-   * {@link #builds}, which interrupts the running one.
+   * the build FiberHandle, which interrupts the running one.
    */
   #scheduleRebuild(options?: { restart?: boolean }): Promise<void> {
     if (this.#rebuildInFlight && !options?.restart) {
@@ -285,13 +286,19 @@ export class ItemLookup extends Service<void> {
       });
       return this.#rebuildInFlight;
     }
-    const builds = this.#builds;
-    if (!builds) return Promise.resolve();
     logger.debug("Item index rebuild lane started", {
       scopeKey: this.#scopeKey,
     });
-    const fiber = Effect.runSync(FiberHandle.run(builds, this.#rebuildLoop()));
-    const done = Effect.runPromise(Fiber.await(fiber)).then(() => undefined);
+    // A failed startup leaves no lane to run in; search then finds no index.
+    const done = this.ready.then(
+      async ({ builds }) => {
+        const fiber = Effect.runSync(
+          FiberHandle.run(builds, this.#rebuildLoop),
+        );
+        await Effect.runPromise(Fiber.await(fiber));
+      },
+      () => undefined,
+    );
     this.#rebuildInFlight = done;
     void done.finally(() => {
       if (this.#rebuildInFlight === done) this.#rebuildInFlight = null;
@@ -299,22 +306,25 @@ export class ItemLookup extends Service<void> {
     return done;
   }
 
-  #rebuildLoop(): Effect.Effect<void> {
-    return Effect.gen({ self: this }, function* () {
-      do {
-        this.#rebuildAgain = false;
-        yield* this.#rebuildOnce();
-        if (this.#rebuildAgain) {
-          logger.debug("Item index rebuild trailing rerun triggered", {
-            scopeKey: this.#scopeKey,
-          });
-        }
-      } while (this.#rebuildAgain);
-    });
-  }
+  readonly #rebuildLoop: Effect.Effect<void> = Effect.suspend(() => {
+    this.#rebuildAgain = false;
+    return this.#rebuildOnce;
+  }).pipe(
+    Effect.repeat({
+      while: () => {
+        if (!this.#rebuildAgain) return false;
+        logger.debug("Item index rebuild trailing rerun triggered", {
+          scopeKey: this.#scopeKey,
+        });
+        return true;
+      },
+    }),
+    Effect.asVoid,
+  );
 
-  #rebuildOnce(): Effect.Effect<void> {
-    return Effect.gen({ self: this }, function* () {
+  readonly #rebuildOnce: Effect.Effect<void> = Effect.gen(
+    { self: this },
+    function* () {
       if (this.#reads.state === "degraded") {
         logger.debug("Item index rebuild skipped; database degraded");
         return;
@@ -350,23 +360,23 @@ export class ItemLookup extends Service<void> {
         count: index.items.length,
         durationMs: performance.now() - t0,
       });
-    }).pipe(
-      Effect.scoped,
-      Effect.catchTag(["DbUnavailable", "SnapshotExpired"], (error) =>
-        // Keep serving the stale index; the next refresh retries the rebuild.
-        Effect.sync(() => {
-          logger.debug("Item index rebuild skipped; database unavailable", {
-            error,
-            scopeKey: this.#scopeKey,
-          });
-        }),
-      ),
-      // A background rebuild must not reject the promise search() awaits — log
-      // and keep serving the stale index. An interrupt passes through.
-      Effect.catch((error) => this.#logRebuildFailure(error)),
-      Effect.catchDefect((defect) => this.#logRebuildFailure(defect)),
-    );
-  }
+    },
+  ).pipe(
+    Effect.scoped,
+    Effect.catchTag(["DbUnavailable", "SnapshotExpired"], (error) =>
+      // Keep serving the stale index; the next refresh retries the rebuild.
+      Effect.sync(() => {
+        logger.debug("Item index rebuild skipped; database unavailable", {
+          error,
+          scopeKey: this.#scopeKey,
+        });
+      }),
+    ),
+    // A background rebuild must not reject the promise search() awaits — log
+    // and keep serving the stale index. An interrupt passes through.
+    Effect.catch((error) => this.#logRebuildFailure(error)),
+    Effect.catchDefect((defect) => this.#logRebuildFailure(defect)),
+  );
 
   #logRebuildFailure(error: unknown): Effect.Effect<void> {
     return Effect.sync(() => {
@@ -420,8 +430,9 @@ export class ItemLookup extends Service<void> {
 
     let hydrated: ReadonlyMap<string, Item>;
     try {
+      const { reads } = await this.#reads.ready;
       hydrated = await Effect.runPromise(
-        this.#reads.reads.ItemsByIndexedKeys({
+        reads.ItemsByIndexedKeys({
           indexedKeys: leanHits.map((hit) => hit.item.indexedKey),
         }),
       );
