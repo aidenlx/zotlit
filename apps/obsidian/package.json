@@ -24,7 +24,7 @@
   },
   "dependencies": {
     "@bjorn3/browser_wasi_shim": "^0.4.2",
-    "@effect/platform-browser": "catalog:",
+    "@effect/platform-browser": "4.0.0",
     "@hono/node-server": "catalog:",
     "@hono/valibot-validator": "^0.6.1",
     "@lezer/markdown": "catalog:",
@@ -47,7 +47,7 @@
     "arkregex": "catalog:",
     "cn": "^0.2.4",
     "diff": "catalog:",
-    "effect": "catalog:",
+    "effect": "4.0.0",
     "eta": "catalog:",
     "fflate": "catalog:",
     "hono": "catalog:",
