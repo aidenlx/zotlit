@@ -1,12 +1,12 @@
 import type { App, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
-import type { DatabaseService } from "@/services/database/service";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { NoteFeature } from "@/services/note-feature";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import type { ImportProfile, CreateProfile } from "@/setting-tab/profiles";
 
 import { QuickSwitchModal } from "./modal";
@@ -15,7 +15,7 @@ export interface QuickSwitchDeps {
   createProfile: CreateProfile;
   importProfile: ImportProfile;
   app: App;
-  db: Pick<DatabaseService, "state" | "client">;
+  reads: Pick<ZoteroReadsService, "ready">;
   lookup: ItemLookup;
   noteIndex: NoteIndex;
   noteFeature: Pick<

@@ -2,18 +2,16 @@ import { TFile } from "@mock/obsidian";
 import type { Command } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Attachment } from "@zotlit/db";
-import {
-  getAttachmentsByParents,
-  getItemsByKey,
-  resolveIndexedKeyLibrary,
-} from "@zotlit/db";
-
 import {
   createObsidianAttachmentReader,
   openAttachments,
 } from "@/lib/attachment-open";
 import { defaults } from "@/services/settings/schema";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import {
+  inProcessReadsService,
+  memoryOpener,
+} from "@/services/zotero-reads/test-utils";
 import { activateAnnotView } from "@/views/annot-view/register";
 
 import {
@@ -22,13 +20,6 @@ import {
   resolveLiteratureNoteAttachments,
 } from "./actions";
 import type { AttachmentOpenDeps, AttachmentOpenLookupDeps } from "./actions";
-
-vi.mock("@zotlit/db", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@zotlit/db")>()),
-  resolveIndexedKeyLibrary: vi.fn(),
-  getItemsByKey: vi.fn(),
-  getAttachmentsByParents: vi.fn(),
-}));
 
 vi.mock("@/views/annot-view/register", () => ({
   activateAnnotView: vi.fn(),
@@ -44,46 +35,45 @@ vi.mock("@/lib/attachment-open", async (importOriginal) => ({
 }));
 
 beforeEach(() => {
-  vi.mocked(resolveIndexedKeyLibrary).mockReset();
-  vi.mocked(getItemsByKey).mockReset();
-  vi.mocked(getAttachmentsByParents).mockReset();
   vi.mocked(openAttachments).mockReset();
   vi.mocked(createObsidianAttachmentReader).mockClear();
   vi.mocked(activateAnnotView).mockClear();
 });
 
+/** Item ABCD2345 (itemID 7) with one stored PDF, ATCH2345. */
+const ITEM_WITH_PDF = `
+  insert into libraries (libraryID, type) values (1, 'user');
+  insert into itemTypes (itemTypeID, typeName)
+    values (1, 'journalArticle'), (2, 'attachment');
+  insert into items (itemID, itemTypeID, libraryID, key, dateAdded, dateModified)
+    values (7, 1, 1, 'ABCD2345', '2024-01-01 00:00:00', '2024-01-01 00:00:00'), (20, 2, 1, 'ATCH2345', '2024-01-01 00:00:00', '2024-01-01 00:00:00'), (8, 1, 1, 'NOPDF234', '2024-01-01 00:00:00', '2024-01-01 00:00:00');
+  insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path)
+    values (20, 7, 0, 'application/pdf', 'storage:Doe 2024.pdf');
+`;
+
+/** ZoteroReads over {@link ITEM_WITH_PDF}; `null` gives a database that cannot open. */
+function readsOver(
+  stack: AsyncDisposableStack,
+  seed: string | null = ITEM_WITH_PDF,
+): ZoteroReadsService {
+  return stack.use(inProcessReadsService(memoryOpener(() => seed).open));
+}
+
 function lookupDeps(
+  reads: Pick<ZoteroReadsService, "ready">,
   overrides: Partial<AttachmentOpenLookupDeps> = {},
 ): AttachmentOpenLookupDeps {
   return {
     app: { vault: { adapter: { getBasePath: () => "/vault" } } },
-    db: { state: "ready", client: {} },
+    reads,
     zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
     settings: { current: defaults },
     ...overrides,
   } as unknown as AttachmentOpenLookupDeps;
 }
 
-/** A live Zotero PDF Attachment row, as `getAttachmentsByParents` hands one over. */
-function attachmentFixture(overrides: Partial<Attachment> = {}): Attachment {
-  return {
-    itemID: 20,
-    libraryID: 1,
-    groupID: null,
-    key: "ATCH2345",
-    indexedKey: "ATCH2345",
-    parentItemID: 7,
-    path: "storage:Doe 2024.pdf",
-    contentType: "application/pdf",
-    linkMode: 0,
-    dateAdded: Temporal.Instant.from("2024-01-01T00:00:00Z"),
-    dateModified: Temporal.Instant.from("2024-01-01T00:00:00Z"),
-    ...overrides,
-  };
-}
-
 /**
- * `attachmentFixture()`'s Obsidian-Openable shape, hand-computed from
+ * {@link ITEM_WITH_PDF}'s Obsidian-Openable shape, hand-computed from
  * `lookupDeps()`'s `zoteroPref.dataDir` ("/data") and `app`'s vault base
  * ("/vault") — an independent oracle, not a call into the mapper under test.
  */
@@ -97,46 +87,47 @@ const OPENABLE_FIXTURE = [
 ];
 
 describe("resolveLiteratureNoteAttachments", () => {
-  it("answers no Attachments while the database is not ready", () => {
-    const result = resolveLiteratureNoteAttachments(
-      lookupDeps({ db: { state: "loading", client: {} } as never }),
+  it("answers no Attachments while the database cannot be read", async () => {
+    await using stack = new AsyncDisposableStack();
+    const result = await resolveLiteratureNoteAttachments(
+      lookupDeps(readsOver(stack, null)),
       "ABCD2345",
     );
     expect(result).toStrictEqual([]);
-    expect(resolveIndexedKeyLibrary).not.toHaveBeenCalled();
   });
 
-  it("answers no Attachments when the Indexed Key names no Library", () => {
-    vi.mocked(resolveIndexedKeyLibrary).mockReturnValue(null);
-    const result = resolveLiteratureNoteAttachments(lookupDeps(), "bad-key");
+  it("answers no Attachments when the Indexed Key names no Library", async () => {
+    await using stack = new AsyncDisposableStack();
+    const result = await resolveLiteratureNoteAttachments(
+      lookupDeps(readsOver(stack)),
+      "ABCD2345g999",
+    );
     expect(result).toStrictEqual([]);
-    expect(getItemsByKey).not.toHaveBeenCalled();
   });
 
-  it("answers no Attachments when the key resolves to no live Item", () => {
-    vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-      key: "ABCD2345",
-      libraryID: 1,
-    });
-    vi.mocked(getItemsByKey).mockReturnValue([]);
-    const result = resolveLiteratureNoteAttachments(lookupDeps(), "ABCD2345");
+  it("answers no Attachments when the key resolves to no live Item", async () => {
+    await using stack = new AsyncDisposableStack();
+    const result = await resolveLiteratureNoteAttachments(
+      lookupDeps(readsOver(stack)),
+      "ZZZZ2345",
+    );
     expect(result).toStrictEqual([]);
-    expect(getAttachmentsByParents).not.toHaveBeenCalled();
   });
 
-  it("resolves the Item's Attachments through the database once the itemID is known", () => {
-    vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-      key: "ABCD2345",
-      libraryID: 1,
-    });
-    vi.mocked(getItemsByKey).mockReturnValue([{ itemID: 7 }] as never);
-    vi.mocked(getAttachmentsByParents).mockReturnValue([attachmentFixture()]);
+  it("answers no Attachments for an Item that holds none", async () => {
+    await using stack = new AsyncDisposableStack();
+    const result = await resolveLiteratureNoteAttachments(
+      lookupDeps(readsOver(stack)),
+      "NOPDF234",
+    );
+    expect(result).toStrictEqual([]);
+  });
 
-    const result = resolveLiteratureNoteAttachments(lookupDeps(), "ABCD2345");
-
-    expect(getAttachmentsByParents).toHaveBeenCalledWith(
-      expect.anything(),
-      [7],
+  it("resolves the Item's Attachments through the database", async () => {
+    await using stack = new AsyncDisposableStack();
+    const result = await resolveLiteratureNoteAttachments(
+      lookupDeps(readsOver(stack)),
+      "ABCD2345",
     );
     expect(result).toStrictEqual(OPENABLE_FIXTURE);
   });
@@ -160,9 +151,8 @@ describe("open-pdf command", () => {
 
   it("is unavailable without an active file", () => {
     const deps = {
-      ...lookupDeps(),
+      ...lookupDeps({ ready: new Promise(() => {}) } as never),
       app: { workspace: { getActiveFile: () => null } },
-      db: { state: "ready", client: {}, ready: Promise.resolve() },
     } as unknown as AttachmentOpenDeps;
     expect(register(deps).checkCallback?.(true)).toBe(false);
   });
@@ -170,24 +160,18 @@ describe("open-pdf command", () => {
   it("is unavailable when the active file carries no item key", () => {
     const file = new TFile();
     const deps = {
-      ...lookupDeps(),
+      ...lookupDeps({ ready: new Promise(() => {}) } as never),
       app: {
         workspace: { getActiveFile: () => file },
         metadataCache: { getFileCache: () => ({ frontmatter: {} }) },
       },
-      db: { state: "ready", client: {}, ready: Promise.resolve() },
     } as unknown as AttachmentOpenDeps;
     expect(register(deps).checkCallback?.(true)).toBe(false);
   });
 
   it("opens the resolved Attachments through the Suggest modal picker once run", async () => {
+    await using stack = new AsyncDisposableStack();
     const file = new TFile();
-    vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-      key: "ABCD2345",
-      libraryID: 1,
-    });
-    vi.mocked(getItemsByKey).mockReturnValue([{ itemID: 7 }] as never);
-    vi.mocked(getAttachmentsByParents).mockReturnValue([attachmentFixture()]);
 
     const app = {
       workspace: { getActiveFile: () => file },
@@ -198,7 +182,7 @@ describe("open-pdf command", () => {
     };
     const deps = {
       app,
-      db: { state: "ready", client: {}, ready: Promise.resolve() },
+      reads: readsOver(stack),
       zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
     } as unknown as AttachmentOpenDeps;
 
@@ -218,19 +202,19 @@ describe("open-pdf command", () => {
   });
 
   it("calls openAttachments with an empty list when nothing resolves, deferring the notice to the reader", async () => {
+    await using stack = new AsyncDisposableStack();
     const file = new TFile();
-    vi.mocked(resolveIndexedKeyLibrary).mockReturnValue(null);
 
     const app = {
       workspace: { getActiveFile: () => file },
       metadataCache: {
-        getFileCache: () => ({ frontmatter: { "zotero-key": "ABCD2345" } }),
+        getFileCache: () => ({ frontmatter: { "zotero-key": "ZZZZ2345" } }),
       },
       vault: { adapter: { getBasePath: () => "/vault" } },
     };
     const deps = {
       app,
-      db: { state: "ready", client: {}, ready: Promise.resolve() },
+      reads: readsOver(stack),
       zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
     } as unknown as AttachmentOpenDeps;
 
@@ -258,7 +242,7 @@ describe("createPdfReader", () => {
   }
 
   it("brings the annotation view forward beside the PDF by default", () => {
-    const deps = lookupDeps();
+    const deps = lookupDeps({ ready: new Promise(() => {}) } as never);
 
     onOpenedOf(deps)();
 
@@ -267,11 +251,14 @@ describe("createPdfReader", () => {
 
   it("leaves the sidebar alone once the user turns the reveal off", () => {
     onOpenedOf(
-      lookupDeps({
-        settings: {
-          current: { ...defaults, "reader.focus-annot-view": false },
-        },
-      } as unknown as Partial<AttachmentOpenLookupDeps>),
+      lookupDeps(
+        { ready: new Promise(() => {}) } as never,
+        {
+          settings: {
+            current: { ...defaults, "reader.focus-annot-view": false },
+          },
+        } as unknown as Partial<AttachmentOpenLookupDeps>,
+      ),
     )();
 
     expect(activateAnnotView).not.toHaveBeenCalled();
@@ -279,9 +266,12 @@ describe("createPdfReader", () => {
 
   it("reveals for a settings service that has not loaded yet, matching the default", () => {
     onOpenedOf(
-      lookupDeps({
-        settings: { current: null },
-      } as unknown as Partial<AttachmentOpenLookupDeps>),
+      lookupDeps(
+        { ready: new Promise(() => {}) } as never,
+        {
+          settings: { current: null },
+        } as unknown as Partial<AttachmentOpenLookupDeps>,
+      ),
     )();
 
     expect(activateAnnotView).toHaveBeenCalledOnce();
