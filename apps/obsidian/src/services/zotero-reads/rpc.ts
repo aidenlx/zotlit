@@ -5,6 +5,7 @@ import { Rpc, RpcGroup } from "effect/rpc";
 import type {
   Annotation,
   AnnotationSources,
+  AnnotViewAttachment,
   Attachment,
   AttachmentWithParentKey,
   ChildNote,
@@ -311,6 +312,26 @@ export const WorkLabelSourceSchema = Schema.Struct({
 });
 export type WorkLabelSource = typeof WorkLabelSourceSchema.Type;
 
+/** One attachment the annotation sidebar lists, with its annotation count. */
+export const AnnotViewAttachmentSchema = Schema.Struct({
+  itemID: Schema.Number,
+  indexedKey: Schema.String,
+  path: Schema.NullOr(Schema.String),
+  annotCount: Schema.Number,
+});
+type _AnnotViewAttachment = Expect<
+  Equals<typeof AnnotViewAttachmentSchema.Type, AnnotViewAttachment>
+>;
+
+/** What one Zotero reader push names, in Indexed Keys. */
+export const ReaderTargetKeysSchema = Schema.Struct({
+  attachmentKey: Schema.String,
+  /** The parent Item; `null` for a standalone attachment. */
+  itemKey: Schema.NullOr(Schema.String),
+  /** The selected annotations that are live children of the attachment. */
+  selected: Schema.Array(Schema.String),
+});
+
 /** A library's change-detection signature for the item index. */
 export const IndexSignatureSchema = Schema.Struct({
   count: Schema.Number,
@@ -497,6 +518,30 @@ export class ZoteroReads extends RpcGroup.make(
   Rpc.make("IndexSignature", {
     payload: { libraryID: Schema.Number, ...snapshot },
     success: IndexSignatureSchema,
+    error: ReadError,
+  }),
+  /**
+   * The attachments the annotation sidebar lists: an item's attachments, or
+   * a standalone attachment alone. Empty for an unknown key.
+   */
+  Rpc.make("AnnotViewAttachments", {
+    payload: {
+      libraryID: Schema.Number,
+      key: Schema.String,
+      standalone: Schema.Boolean,
+      ...snapshot,
+    },
+    success: Schema.mutable(Schema.Array(AnnotViewAttachmentSchema)),
+    error: ReadError,
+  }),
+  /** A Zotero reader push's numeric ids as Indexed Keys; `null` for an unknown attachment. */
+  Rpc.make("ReaderTargetKeys", {
+    payload: {
+      attachmentID: Schema.Number,
+      selected: Schema.Array(Schema.Number),
+      ...snapshot,
+    },
+    success: Schema.NullOr(ReaderTargetKeysSchema),
     error: ReadError,
   }),
   /** The signed-in account a CSL item id and an item URI are built from. */

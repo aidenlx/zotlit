@@ -9,6 +9,8 @@ import {
   getAccountUserID,
   getAnnotationsByKey,
   getAnnotationsByParent,
+  getAnnotViewAttachments,
+  getAttachmentAnnotationCount,
   getAttachmentByItemId,
   getAttachmentByKey,
   getAttachmentPage,
@@ -19,6 +21,7 @@ import {
   getIndexedItemsByID,
   getIndexSignature,
   getItemDisplayRefByID,
+  getItemRefByID,
   getItemsByID,
   getItemsByKey,
   getLibraries,
@@ -382,6 +385,43 @@ export function handlersLayer(options?: HandlersOptions) {
           withClient(snapshot, (client) =>
             getIndexSignature(client, libraryID),
           ),
+
+        AnnotViewAttachments: ({ libraryID, key, standalone, snapshot }) =>
+          withClient(snapshot, (client) => {
+            if (!standalone)
+              return getAnnotViewAttachments(client, key, libraryID);
+            const attachment = getAttachmentByKey(client, key, libraryID);
+            return attachment
+              ? [
+                  {
+                    itemID: attachment.itemID,
+                    indexedKey: attachment.indexedKey,
+                    path: attachment.path,
+                    annotCount: getAttachmentAnnotationCount(
+                      client,
+                      attachment.itemID,
+                    ),
+                  },
+                ]
+              : [];
+          }),
+
+        // The numeric ids a push carries stop here.
+        ReaderTargetKeys: ({ attachmentID, selected, snapshot }) =>
+          withClient(snapshot, (client) => {
+            const attachment = getAttachmentByItemId(client, attachmentID);
+            if (!attachment) return null;
+            return {
+              attachmentKey: attachment.indexedKey,
+              itemKey: attachment.parentItemID
+                ? (getItemRefByID(client, attachment.parentItemID)
+                    ?.indexedKey ?? null)
+                : null,
+              selected: getAnnotationsByParent(client, attachment.itemID)
+                .filter((annotation) => selected.includes(annotation.itemID))
+                .map((annotation) => annotation.indexedKey),
+            };
+          }),
 
         ZoteroIdentity: ({ snapshot }) =>
           withClient(snapshot, getZoteroIdentity),

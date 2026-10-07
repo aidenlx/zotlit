@@ -78,6 +78,10 @@ import { SecretWriteAuthorizationStore } from "./zotero-local-api/write-authoriz
 import { ZoteroPrefService } from "./zotero-pref/service";
 import { layerDatabaseService } from "./zotero-reads/database-connection";
 import { inProcessClient, ZoteroReadsService } from "./zotero-reads/service";
+import {
+  workerAdapterEnabled,
+  workerClient,
+} from "./zotero-reads/worker-client";
 
 /**
  * Construct and wire all Obsidian plugin services.
@@ -157,10 +161,13 @@ export function buildServices(
     })
     .use({
       // The handler layer runs in-process over the DatabaseService, so the
-      // service stays the one database owner.
-      zoteroReads: ({ db }) =>
+      // service stays the one database owner. The dev toggle runs it in the
+      // Web Worker instead, which owns its own connection.
+      zoteroReads: ({ db, settings, zoteroPref }) =>
         new ZoteroReadsService({
-          client: inProcessClient(layerDatabaseService(db)),
+          client: workerAdapterEnabled(plugin.app)
+            ? workerClient({ settings, zoteroPref })
+            : inProcessClient(layerDatabaseService(db)),
         }),
     })
     .use({
@@ -179,8 +186,12 @@ export function buildServices(
         }),
     })
     .use({
-      attachmentResolver: ({ db, zoteroPref }) =>
-        new AttachmentResolver({ db, zoteroPref }),
+      attachmentResolver: ({ zoteroReads, queryClient, zoteroPref }) =>
+        new AttachmentResolver({
+          reads: zoteroReads,
+          queries: queryClient,
+          zoteroPref,
+        }),
     })
     .use({
       zoteroLocalApi: ({ zoteroPref, localServer }) =>
@@ -286,8 +297,12 @@ export function buildServices(
         new AttachmentImportService({ app: plugin.app, settings, zoteroPref }),
     })
     .use({
-      libraryScope: ({ db, settings }) =>
-        new LibraryScopeService({ db, settings }),
+      libraryScope: ({ zoteroReads, queryClient, settings }) =>
+        new LibraryScopeService({
+          reads: zoteroReads,
+          queries: queryClient,
+          settings,
+        }),
     })
     .use({
       profile: ({ settings, template, noteIndex, libraryScope }) =>
@@ -668,7 +683,7 @@ export function buildServices(
     })
     .use({
       graphCitations: ({
-        db,
+        zoteroReads,
         libraryScope,
         citationIndex,
         noteIndex,
@@ -678,7 +693,7 @@ export function buildServices(
       }) =>
         new GraphCitations({
           app: plugin.app,
-          db,
+          reads: zoteroReads,
           libraryScope,
           citationIndex,
           noteIndex,
