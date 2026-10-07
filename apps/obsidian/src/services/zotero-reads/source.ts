@@ -170,11 +170,16 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
       // handing its client over), then the client ref closes every client,
       // and the watchers close last, so nothing binds or opens behind them.
       yield* Effect.addFinalizer(() => Effect.sync(() => disposeWatchers()));
-      const { publish, changes } = yield* makeChangeFeed(() => ({
-        _tag: "state",
-        state,
-        error: lastError,
-      }));
+      // A subscriber that arrives after the missing-file signal (the
+      // renderer subscribes once the worker is up) still gets it.
+      const { publish, changes } = yield* makeChangeFeed(() =>
+        missingDbSignalled && state !== "ready"
+          ? [
+              { _tag: "state", state, error: lastError },
+              { _tag: "db-file-missing" },
+            ]
+          : [{ _tag: "state", state, error: lastError }],
+      );
       const clients = yield* makeClientRef(
         Effect.suspend(() =>
           Effect.fail(
@@ -449,25 +454,26 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
         return moved;
       });
 
-      const refreshIfSourceMoved = ({ trusted }: WatchSignal) =>
-        Effect.gen(function* () {
-          if (!trusted) {
-            const moved = yield* sourceMoved;
-            if (readMode !== "immutable" && !moved) {
-              logger.debug(
-                "Watcher tick ignored, database unchanged since last read",
-              );
-              return;
-            }
-          }
-          // Rechecked after the gate's await: the timer cleared itself before
-          // it, so switching auto-refresh off could no longer cancel it.
-          if (!trusted && !config?.autoRefresh) {
-            logger.debug("Watcher tick ignored, auto-refresh switched off");
+      const refreshIfSourceMoved = Effect.fnUntraced(function* ({
+        trusted,
+      }: WatchSignal) {
+        if (!trusted) {
+          const moved = yield* sourceMoved;
+          if (readMode !== "immutable" && !moved) {
+            logger.debug(
+              "Watcher tick ignored, database unchanged since last read",
+            );
             return;
           }
-          enqueueRefresh();
-        });
+        }
+        // Rechecked after the gate's await: the timer cleared itself before
+        // it, so switching auto-refresh off could no longer cancel it.
+        if (!trusted && !config?.autoRefresh) {
+          logger.debug("Watcher tick ignored, auto-refresh switched off");
+          return;
+        }
+        enqueueRefresh();
+      });
 
       /**
        * Debounce a change signal, then refresh only if the source really
@@ -541,6 +547,8 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
         if (!sourcePath || !readMode) return;
         const parent = dirname(sourcePath);
         try {
+          // One push per watcher, so a throw on the second still leaves the
+          // first owned and closed.
           watchers.push(
             ports.watch(parent, WATCH_OPTIONS, (_event, filename) => {
               const name = filename?.toString();
@@ -548,6 +556,8 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
               if (name === ZOTERO_WAL_FILENAME) syncWalWatcher();
               scheduleWatchedRefresh({ trusted: false });
             }),
+          );
+          watchers.push(
             ports.watch(sourcePath, WATCH_OPTIONS, () =>
               scheduleWatchedRefresh({ trusted: false }),
             ),

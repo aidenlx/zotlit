@@ -191,9 +191,19 @@ async function startSource(
   };
 }
 
-/** Let promise callbacks and forked fibers that are ready to run settle. */
-async function settle(): Promise<void> {
-  for (let i = 0; i < 20; i += 1) await new Promise((r) => setTimeout(r, 0));
+/**
+ * Completion of every watcher tick's gate: each fingerprint read has settled,
+ * and a read queued after that has answered. The tick resumed when its read
+ * settled, so it was scheduled ahead of that request and has decided by then.
+ */
+async function gatesDecided(
+  ports: ReturnType<typeof testPorts>["ports"],
+  source: { version: () => Promise<number> },
+): Promise<void> {
+  await Promise.allSettled(
+    ports.snapshotSource.mock.results.map((result) => result.value),
+  );
+  await source.version();
 }
 
 function emitDirEvent(watchers: FakeWatcher[], filename: string): void {
@@ -241,7 +251,6 @@ describe("ZoteroReads source", () => {
   it("waits for Configure before it opens anything", async () => {
     const { ports } = testPorts();
     await using source = await startSource(null, ports);
-    await settle();
     expect(ports.prepareRead).not.toHaveBeenCalled();
     expect(source.events).toEqual([
       { _tag: "state", state: "loading", error: null },
@@ -417,15 +426,43 @@ describe("ZoteroReads source", () => {
     await vi.waitFor(() => expect(ports.prepareRead).toHaveBeenCalledOnce());
 
     // A Zotero push lands while the first read is still preparing, and its
-    // debounce elapses inside that window: it becomes the trailing rerun.
+    // debounce elapses inside that window: it becomes the trailing rerun of
+    // the same lane, never a second lane opening beside the first.
     await source.run(source.reads.NotifyExternalChange());
     await source.elapse();
-    await settle();
-    expect(ports.prepareRead).toHaveBeenCalledOnce();
 
     startup.release();
-    await vi.waitFor(() => expect(ports.prepareRead).toHaveBeenCalledTimes(2));
+    await source.sawTags(["refreshing", "changed", "changed", "refreshing"]);
+    expect(ports.prepareRead).toHaveBeenCalledTimes(2);
     await expect(source.version()).resolves.toBe(1);
+  });
+
+  it("hands a borrower the newest client while an unread one is released", async () => {
+    const { ports, reads } = testPorts();
+    await using source = await startSource(config(), ports);
+    await source.version();
+    // Read #2 is swapped in and never borrowed before the next refresh.
+    await source.run(source.reads.Refresh());
+
+    // Releasing read #2 is slow; a read arriving meanwhile must get read #3
+    // and keep it after the release completes.
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const second = reads[1]!;
+    const dispose = second[Symbol.asyncDispose].bind(second);
+    second[Symbol.asyncDispose] = async () => {
+      entered.resolve();
+      await release.promise;
+      await dispose();
+    };
+    writeLibrary(dbPath, 3);
+    const refresh = source.run(source.reads.Refresh());
+    await entered.promise;
+    await expect(source.version()).resolves.toBe(3);
+    release.resolve();
+    await refresh;
+
+    await expect(source.version()).resolves.toBe(3);
   });
 
   describe("watcher self-echo gate", () => {
@@ -444,7 +481,7 @@ describe("ZoteroReads source", () => {
       await vi.waitFor(() =>
         expect(ports.snapshotSource).toHaveBeenCalledTimes(2),
       );
-      await settle();
+      await gatesDecided(ports, source);
 
       expect(ports.prepareRead).toHaveBeenCalledOnce();
     });
@@ -488,7 +525,7 @@ describe("ZoteroReads source", () => {
         source.reads.Configure({ ...immutable, autoRefresh: false }),
       );
       await source.elapse();
-      await settle();
+      await gatesDecided(ports, source);
 
       expect(ports.prepareRead).toHaveBeenCalledOnce();
     });
@@ -561,7 +598,7 @@ describe("ZoteroReads source", () => {
       await vi.waitFor(() =>
         expect(ports.snapshotSource).toHaveBeenCalledTimes(3),
       );
-      await settle();
+      await gatesDecided(ports, source);
 
       expect(ports.prepareRead).toHaveBeenCalledTimes(2);
     });
@@ -590,7 +627,7 @@ describe("ZoteroReads source", () => {
       emitDirEvent(watchers, "zotero.sqlite");
       await source.run(source.reads.Configure(config({ autoRefresh: false })));
       await source.elapse();
-      await settle();
+      await gatesDecided(ports, source);
 
       expect(ports.prepareRead).toHaveBeenCalledOnce();
       expect(watchers.every((w) => w.closed)).toBe(true);
@@ -614,7 +651,7 @@ describe("ZoteroReads source", () => {
 
       await source.run(source.reads.Configure(config({ autoRefresh: false })));
       gate.resolve(await snapshotSource(dbPath));
-      await settle();
+      await gatesDecided(ports, source);
 
       expect(ports.prepareRead).toHaveBeenCalledOnce();
     });
@@ -635,9 +672,9 @@ describe("ZoteroReads source", () => {
         expect(ports.snapshotSource).toHaveBeenCalledTimes(2),
       );
 
+      // Teardown completes with the tick interrupted inside its gate.
       await source.close();
       gate.resolve(await snapshotSource(dbPath));
-      await settle();
 
       expect(ports.prepareRead).toHaveBeenCalledOnce();
     });
@@ -681,9 +718,9 @@ describe("ZoteroReads source", () => {
       await vi.waitFor(() =>
         expect(ports.prepareRead).toHaveBeenCalledTimes(2),
       );
+      // Teardown completes with the refresh interrupted inside its read.
       await source.close();
       late.reject(new Error("gone"));
-      await settle();
 
       const tags = tagsSince(source.events, before);
       expect(tags).not.toContain("refresh-failed");
@@ -697,17 +734,18 @@ describe("ZoteroReads source", () => {
 
       // Releasing the previous read removes its clone: a real await, and a
       // window for teardown while the new client is being handed over.
+      const entered = Promise.withResolvers<void>();
       const release = Promise.withResolvers<void>();
       const first = reads[0]!;
       const dispose = first[Symbol.asyncDispose].bind(first);
       first[Symbol.asyncDispose] = async () => {
+        entered.resolve();
         await release.promise;
         await dispose();
       };
       source.detach(source.reads.Refresh());
-      await vi.waitFor(() => expect(reads).toHaveLength(2));
+      await entered.promise;
       const handedOver = vi.spyOn(reads[1]!, Symbol.asyncDispose);
-      await settle();
       const closing = source.close();
       release.resolve();
       await closing;
@@ -744,6 +782,30 @@ describe("ZoteroReads source", () => {
         "db-file-missing",
         "degraded",
         "refreshing",
+      ]);
+    });
+
+    it("reaches a subscriber that arrives after the first open failed", async () => {
+      const { ports } = testPorts();
+      const seed = await Effect.runPromise(
+        Effect.gen(function* () {
+          const reads = yield* makeInProcessClient();
+          yield* Effect.flip(reads.Libraries({}));
+          const pull = yield* Stream.toPull(reads.Changes());
+          return yield* pull;
+        }).pipe(
+          Effect.scoped,
+          Effect.provide(
+            layerSource({
+              ports,
+              initial: config({ databasePath: missing() }),
+            }),
+          ),
+        ),
+      );
+      expect(seed.map((event) => event._tag)).toEqual([
+        "state",
+        "db-file-missing",
       ]);
     });
 

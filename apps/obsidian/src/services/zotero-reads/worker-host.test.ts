@@ -20,7 +20,12 @@ import type { WorkerConnection } from "./worker-host";
  * `kill(n)` raises worker #n's error event; `ended(n)` tells whether its
  * scope (the real adapter terminates the worker there) has closed.
  */
-function fakeWorkers(options: { failStart?: (n: number) => boolean } = {}) {
+function fakeWorkers(
+  options: {
+    failStart?: (n: number) => boolean;
+    hangStart?: (n: number) => boolean;
+  } = {},
+) {
   let spawned = 0;
   const deaths = new Map<number, Deferred.Deferred<DbUnavailable>>();
   const ended = new Set<number>();
@@ -33,6 +38,7 @@ function fakeWorkers(options: { failStart?: (n: number) => boolean } = {}) {
           message: `worker #${n} did not start`,
         });
       }
+      if (options.hangStart?.(n)) return yield* Effect.never;
       const context = yield* Layer.build(
         layerRcRef(() => {
           const client = createClient(":memory:");
@@ -69,17 +75,16 @@ const workerSeen = (reads: ZoteroReadsClient) =>
   );
 
 /** Pull change events until one tagged `tag` arrives. */
-const until = (
+const until = Effect.fnUntraced(function* (
   pull: Effect.Effect<readonly ChangeEvent[], unknown>,
   tag: ChangeEvent["_tag"],
-) =>
-  Effect.gen(function* () {
-    const seen: ChangeEvent[] = [];
-    while (!seen.some((event) => event._tag === tag)) {
-      seen.push(...(yield* Effect.orDie(pull)));
-    }
-    return seen;
-  });
+) {
+  const seen: ChangeEvent[] = [];
+  while (!seen.some((event) => event._tag === tag)) {
+    seen.push(...(yield* Effect.orDie(pull)));
+  }
+  return seen;
+});
 
 describe("ZoteroReads worker adapter", () => {
   it("serves reads from the worker it spawned on creation", async () => {
@@ -161,6 +166,25 @@ describe("ZoteroReads worker adapter", () => {
     });
     expect(result.before).toMatchObject({ _tag: "RpcClientError" });
     expect(result.after).toBe(2);
+  });
+
+  it("ends a worker whose start was interrupted", async () => {
+    const workers = fakeWorkers({ hangStart: (n) => n === 2 });
+    const ended = await Effect.runPromise(
+      Effect.gen(function* () {
+        const reads = yield* makeWorkerReads(workers.connect);
+        yield* workerSeen(reads);
+        const changes = yield* Stream.toPull(reads.Changes());
+        yield* workers.kill(1);
+        yield* until(changes, "degraded");
+
+        // The caller gives up on the respawn while worker #2 is starting.
+        yield* reads.Refresh().pipe(Effect.timeoutOption("10 millis"));
+        return workers.ended(2);
+      }).pipe(Effect.scoped),
+    );
+    expect(workers.spawned()).toBe(2);
+    expect(ended).toBe(true);
   });
 
   it("ends the worker when the caller's scope closes", async () => {

@@ -9,6 +9,7 @@ import { RpcServer, RpcWorker } from "effect/rpc";
 import { handlersLayer } from "./handlers";
 import { ReadsConfigSchema, ZoteroReads } from "./rpc";
 import { layerSource } from "./source";
+import { WORKER_CLOSED } from "./worker-signal";
 
 // The worker has its own LogTape instance; without a sink its records vanish.
 configureSync({
@@ -39,10 +40,13 @@ const ConnectionLive = Layer.unwrap(
   ),
 );
 
-RpcServer.layer(ZoteroReads).pipe(
+const main = RpcServer.layer(ZoteroReads).pipe(
   Layer.provide(handlersLayer()),
   Layer.provide(ConnectionLive),
   Layer.provide(ProtocolLive),
   Layer.launch,
   Effect.runFork,
 );
+// The renderer's close message ends the launch; its finalizers have closed
+// every client and removed every snapshot by the time this observer runs.
+main.addObserver(() => self.postMessage(WORKER_CLOSED));

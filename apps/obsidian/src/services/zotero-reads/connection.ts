@@ -136,15 +136,17 @@ export const makeClientRef = Effect.fnUntraced(function* (
     borrow: Effect.map(RcRef.get(ref), (open) => open.client),
     /**
      * Hand later borrowers `next`. Run it in the same uninterruptible region
-     * as the open, so a new client always has an owner.
+     * as the open, so a new client always has an owner. The ref is emptied
+     * before any close awaits, so a borrower arriving meanwhile gets `next`
+     * and keeps it.
      */
     swap: (next: OpenClient) =>
       Effect.suspend(() => {
         const replaced = staged;
         staged = next;
         return Effect.andThen(
-          replaced ? replaced.close : Effect.void,
           RcRef.invalidate(ref),
+          replaced ? replaced.close : Effect.void,
         );
       }),
   };
@@ -152,10 +154,10 @@ export const makeClientRef = Effect.fnUntraced(function* (
 
 /**
  * The `Changes` feed: lifecycle events, each subscriber first getting the
- * `state` event that `seed` builds.
+ * events that `seed` builds, starting with the `state` event.
  */
 export const makeChangeFeed = Effect.fnUntraced(function* (
-  seed: () => ChangeEvent,
+  seed: () => readonly [ChangeEvent, ...ChangeEvent[]],
 ) {
   const events = yield* PubSub.unbounded<ChangeEvent>();
   return {
@@ -166,7 +168,7 @@ export const makeChangeFeed = Effect.fnUntraced(function* (
     changes: Stream.unwrap(
       Effect.map(PubSub.subscribe(events), (subscription) =>
         Stream.concat(
-          Stream.make(seed()),
+          Stream.fromIterable(seed()),
           Stream.fromSubscription(subscription),
         ),
       ),
@@ -185,11 +187,9 @@ export function layerRcRef(opener: ConnectionOpener): Layer.Layer<Connection> {
       let config: ReadsConfig | null = null;
       let state: "loading" | "ready" | "degraded" = "loading";
       let lastError: DbUnavailable | null = null;
-      const { publish, changes } = yield* makeChangeFeed(() => ({
-        _tag: "state",
-        state,
-        error: lastError,
-      }));
+      const { publish, changes } = yield* makeChangeFeed(() => [
+        { _tag: "state", state, error: lastError },
+      ]);
 
       /** A direct open (no refresh before it) reports the state it moves to. */
       const openDirect = Effect.suspend(() =>

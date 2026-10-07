@@ -18,6 +18,7 @@ import { makeChangeFeed } from "./connection";
 import type { ZoteroReadsClient } from "./in-process";
 import { DbUnavailable, ReadsConfigSchema, ZoteroReads } from "./rpc";
 import type { ChangeEvent, ReadsConfig } from "./rpc";
+import { WORKER_CLOSED } from "./worker-signal";
 
 const logger = getLogger("zotero-reads");
 
@@ -26,6 +27,9 @@ const logger = getLogger("zotero-reads");
  * blocks every other read behind it.
  */
 const WORKER_CONCURRENCY = 16;
+
+/** How long unload waits for a worker to remove its snapshots. */
+const WORKER_CLOSE_TIMEOUT_MS = 5000;
 
 /** One live worker: its client, and a signal that completes if it dies. */
 export interface WorkerConnection {
@@ -47,12 +51,23 @@ export const connectWorker = Effect.fnUntraced(function* (
   const url = URL.createObjectURL(
     new Blob([source], { type: "text/javascript" }),
   );
-  const workers = new Set<Worker>();
+  /** Live workers, each with a promise that settles once it shut down. */
+  const workers = new Map<Worker, Promise<void>>();
   const died = yield* Deferred.make<DbUnavailable>();
-  // Added before the protocol, so it runs after the protocol's close message.
+  // Added before the protocol, so it runs after the protocol's close message:
+  // each worker gets to remove its snapshots before it is terminated.
+  // A worker that never answers is terminated after a bounded wait.
   yield* Effect.addFinalizer(() =>
-    Effect.sync(() => {
-      for (const worker of workers) worker.terminate();
+    Effect.promise(async () => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        Promise.all(workers.values()),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, WORKER_CLOSE_TIMEOUT_MS);
+        }),
+      ]);
+      clearTimeout(timer);
+      for (const worker of workers.keys()) worker.terminate();
       workers.clear();
       URL.revokeObjectURL(url);
     }),
@@ -61,10 +76,16 @@ export const connectWorker = Effect.fnUntraced(function* (
   const spawn = () => {
     // The protocol respawns a failed worker on its own; the one it replaces
     // is still running, so end it here.
-    for (const worker of workers) worker.terminate();
+    for (const worker of workers.keys()) worker.terminate();
     workers.clear();
     const worker = new Worker(url, { name: "zotlit-zotero-reads" });
+    const shutDown = Promise.withResolvers<void>();
+    worker.addEventListener("message", (event: MessageEvent<unknown>) => {
+      if (event.data === WORKER_CLOSED) shutDown.resolve();
+    });
     worker.addEventListener("error", (event) => {
+      // A failed worker has nothing left to shut down.
+      shutDown.resolve();
       Deferred.doneUnsafe(
         died,
         Exit.succeed(
@@ -74,7 +95,7 @@ export const connectWorker = Effect.fnUntraced(function* (
         ),
       );
     });
-    workers.add(worker);
+    workers.set(worker, shutDown.promise);
     return worker;
   };
 
@@ -125,26 +146,37 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
     null;
   let state: "loading" | "ready" | "degraded" = "loading";
   let lastError: DbUnavailable | null = null;
-  const { publish, changes } = yield* makeChangeFeed(() => ({
-    _tag: "state",
-    state,
-    error: lastError,
-  }));
+  /** `db-file-missing` is raised once per launch, whichever worker saw it. */
+  let missingSignalled = false;
+  // A subscriber that arrives after the missing-file signal still gets it.
+  const { publish, changes } = yield* makeChangeFeed(() =>
+    missingSignalled && state !== "ready"
+      ? [
+          { _tag: "state", state, error: lastError },
+          { _tag: "db-file-missing" },
+        ]
+      : [{ _tag: "state", state, error: lastError }],
+  );
   const connecting = yield* Semaphore.make(1);
 
-  /** End `connection` and report why; a no-op once it was replaced. */
-  const die = (connection: typeof current, error: DbUnavailable) =>
-    Effect.suspend(() => {
-      if (!connection || current !== connection) return Effect.void;
-      current = null;
-      state = "degraded";
-      lastError = error;
-      logger.error("Database worker stopped", { error });
-      return Effect.andThen(
-        Scope.close(connection.scope, Exit.void),
-        publish({ _tag: "degraded", error }),
-      );
-    });
+  /**
+   * End `connection` and report why; a no-op once it was replaced. Holds the
+   * connect permit, so no new worker reports before this one's `degraded`.
+   */
+  const die = (connection: NonNullable<typeof current>, error: DbUnavailable) =>
+    connecting.withPermits(1)(
+      Effect.suspend(() => {
+        if (current !== connection) return Effect.void;
+        current = null;
+        state = "degraded";
+        lastError = error;
+        logger.error("Database worker stopped", { error });
+        return Effect.andThen(
+          Scope.close(connection.scope, Exit.void),
+          publish({ _tag: "degraded", error }),
+        );
+      }),
+    );
 
   /** Track the worker's state from its own feed and pass the feed on. */
   const relay = (event: ChangeEvent): Effect.Effect<void> => {
@@ -169,13 +201,22 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
       case "refresh-failed":
         lastError = event.error;
         break;
+      case "db-file-missing":
+        if (missingSignalled) return Effect.void;
+        missingSignalled = true;
+        break;
     }
     return publish(event);
   };
 
   const connectNew = Effect.gen(function* () {
-    const scope = yield* Scope.make();
-    const result = yield* Effect.exit(Scope.provide(connect, scope));
+    // A child of the host's scope: whatever happens to this connect, the
+    // worker it spawned ends with the host at the latest.
+    const scope = yield* Scope.fork(hostScope);
+    const result = yield* Scope.provide(connect, scope).pipe(
+      Effect.onInterrupt(() => Scope.close(scope, Exit.void)),
+      Effect.exit,
+    );
     if (Exit.isFailure(result)) {
       yield* Scope.close(scope, Exit.void);
       const error = Cause.findErrorOption(result.cause);
@@ -225,15 +266,6 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
     ),
   );
 
-  yield* Effect.addFinalizer(() =>
-    Effect.suspend(() => {
-      const connection = current;
-      current = null;
-      return connection
-        ? Scope.close(connection.scope, Exit.void)
-        : Effect.void;
-    }),
-  );
   yield* Effect.ignore(ensureConnected);
 
   /** The live client, or a client error while no worker serves. */
