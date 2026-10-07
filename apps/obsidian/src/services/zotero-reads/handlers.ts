@@ -34,6 +34,7 @@ import {
   getNoteRefsByItemIDs,
   getRelatedKeysByItemID,
   getTrashedNoteItemIDs,
+  getZoteroIdentity,
   getZoteroDatabaseIdentity,
   isChildItemFields,
   resolveIndexedKeyLibrary,
@@ -144,6 +145,8 @@ interface NoteMemos {
   readonly collectionCache: CollectionCache;
   readonly tagMemo: TagMemo;
   readonly groupIdMemo: GroupIDMemo;
+  /** The signed-in account username; `undefined` until first read. */
+  username?: string | null;
 }
 
 function noteMemos(): NoteMemos {
@@ -288,9 +291,17 @@ export function handlersLayer(options?: HandlersOptions) {
               memo: memos.groupIdMemo,
             })[0];
             if (!item) return null;
+            // A batch under one Snapshot reads the account once.
+            if (!("username" in payload) && memos.username === undefined)
+              memos.username = getZoteroIdentity(client).username;
             return fetchNoteSource(client, item, {
-              ...("username" in payload && { username: payload.username }),
-              ...memos,
+              collectionCache: memos.collectionCache,
+              tagMemo: memos.tagMemo,
+              groupIdMemo: memos.groupIdMemo,
+              username:
+                "username" in payload
+                  ? (payload.username ?? null)
+                  : (memos.username ?? null),
             });
           }),
 

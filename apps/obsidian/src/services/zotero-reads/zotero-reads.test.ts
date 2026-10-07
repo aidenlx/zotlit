@@ -923,7 +923,7 @@ describe("ZoteroReads connection lifetime", () => {
     });
   });
 
-  it("NoteSource reuses one Snapshot's tag and collection lookups across reads", async () => {
+  it("NoteSource reuses one Snapshot's tag, collection, and account lookups across reads", async () => {
     const { open, statements } = fixtureOpener();
     const counts = await withReads(open, (reads) =>
       Effect.gen(function* () {

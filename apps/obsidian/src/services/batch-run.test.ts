@@ -512,6 +512,29 @@ describe("classifyStream", () => {
     expect(processSlice).not.toHaveBeenCalled();
   });
 
+  it("interrupts a stream whose slices arrive synchronously at the next slice", async () => {
+    const abort = new AbortController();
+    const { controls } = classifyControls(abort.signal);
+    let interrupted = false;
+    const slices = Stream.fromIterable([[1], [2], [3]], { chunkSize: 1 }).pipe(
+      Stream.onExit((exit) =>
+        Effect.sync(() => {
+          interrupted = Exit.hasInterrupts(exit);
+        }),
+      ),
+    );
+    const seen: number[] = [];
+
+    const pending = classifyStream(slices, controls, (slice) => {
+      seen.push(...slice);
+      abort.abort();
+    });
+
+    await expect(pending).rejects.toThrow();
+    expect(interrupted).toBe(true);
+    expect(seen).toEqual([1]);
+  });
+
   it("interrupts the stream when the signal aborts mid-classify", async () => {
     const abort = new AbortController();
     const { controls } = classifyControls(abort.signal);

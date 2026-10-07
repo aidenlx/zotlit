@@ -64,11 +64,15 @@ export async function classifyStream<A, E>(
   let classified = 0;
   await Effect.runPromise(
     Stream.runForEach(slices, (slice) =>
-      Effect.sync(() => {
-        processSlice(slice);
-        classified += slice.length;
-        controls.onProgress(classified);
-      }),
+      // Slices can arrive synchronously, before the run hears the abort; each
+      // slice checks the signal so an abort interrupts at the next slice.
+      controls.signal.aborted
+        ? Effect.interrupt
+        : Effect.sync(() => {
+            processSlice(slice);
+            classified += slice.length;
+            controls.onProgress(classified);
+          }),
     ),
     { signal: controls.signal },
   );

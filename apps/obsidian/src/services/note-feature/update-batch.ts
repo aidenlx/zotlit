@@ -329,6 +329,7 @@ export async function runBatchUpdate(
             lease.reads.ItemsByIndexedKeys({
               indexedKeys: creations().map((action) => action.indexedKey),
             }),
+            { signal: controls.signal },
           );
           creationItems = creations().flatMap(
             (action) => items.get(action.indexedKey) ?? [],
@@ -727,6 +728,7 @@ async function runAction(
       await action.prepared.create({
         reportExcerpts: run.reportExcerpts,
         outcomes: run.outcomes,
+        reads: run.reads,
       }),
     );
   }
@@ -734,6 +736,7 @@ async function runAction(
     reportExcerpts: run.reportExcerpts,
     profile: action.selection?.selector ?? run.profile,
     outcomes: run.outcomes,
+    reads: run.reads,
   });
   return batchCreateOutcome(result);
 }

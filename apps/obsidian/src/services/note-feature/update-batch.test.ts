@@ -249,13 +249,19 @@ beforeEach(() => {
 });
 
 describe("classify through the DisplayRefs stream", () => {
-  it("classifies from one DisplayRefs stream and loads each item under the run's Snapshot", async () => {
+  it("classifies from one DisplayRefs stream and writes each item under the run's Snapshot", async () => {
     const recorded = recordCalls(["DisplayRefs", "ItemsByIndexedKeys"]);
     const deps = makeDeps("ready", recorded.wrap);
-    deps.noteFeature.createNote = async () => ({
-      outcome: "created",
-      file: { path: "Literature/New.md" } as TFile,
-    });
+    deps.noteFeature.createNote = async (item, options) => {
+      // The create renders through the reads it was handed.
+      await Effect.runPromise(
+        options!.reads!.ItemsByIndexedKeys({ indexedKeys: [item.indexedKey] }),
+      );
+      return {
+        outcome: "created",
+        file: { path: "Literature/New.md" } as TFile,
+      };
+    };
     itemsIn(
       new Map([
         [1, USER_LIBRARY_ID],
@@ -282,11 +288,11 @@ describe("classify through the DisplayRefs stream", () => {
       operation: "DisplayRefs",
       payload: { itemIDs: [1, 2, 3] },
     });
-    expect(loads.map(({ operation }) => operation)).toEqual([
-      "ItemsByIndexedKeys",
-      "ItemsByIndexedKeys",
-    ]);
-    // Classify reads its own Snapshot; the run's item loads share another.
+    // Two item loads and the two creates' reads.
+    expect(loads.map(({ operation }) => operation)).toEqual(
+      Array(4).fill("ItemsByIndexedKeys"),
+    );
+    // Classify reads its own Snapshot; the run's loads and creates share another.
     const [classifySnapshot, runSnapshot] = recorded.snapshots;
     expect(classify!.payload.snapshot).toBe(classifySnapshot);
     for (const load of loads) expect(load.payload.snapshot).toBe(runSnapshot);

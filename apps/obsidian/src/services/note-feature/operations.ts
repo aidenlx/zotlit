@@ -242,7 +242,7 @@ export interface ProfilePreview {
 export interface PreparedCreationProfile extends ProfilePreview {
   /** Re-enters the create gate; the preview holds no database lease. */
   create: (
-    options?: Pick<CreateNoteOptions, "reportExcerpts" | "outcomes">,
+    options?: Pick<CreateNoteOptions, "reportExcerpts" | "outcomes" | "reads">,
   ) => Promise<CreateNoteResult>;
 }
 
@@ -294,6 +294,11 @@ export interface CreateNoteOptions {
    * then releases it once they settle.
    */
   outcomes?: ExcerptOutcomeScope;
+  /**
+   * The initiating batch's Snapshot-bound reads. Omitted, this create opens its
+   * own Snapshot for the render, the write, and the child-note import flush.
+   */
+  reads?: ZoteroReadsApi;
   /**
    * The batch supplies the once-resolved account username; a single-item create
    * resolves it from its own lease when omitted.
@@ -879,9 +884,11 @@ async function createNote(
     });
   }
   // One Snapshot across the render, the vault write, and the child-note import
-  // flush: every read of this create sees one database state.
-  using lease = await ctx.zoteroReads.acquireRead();
-  const source = await readNoteSource(lease.reads, item.itemID, {
+  // flush: every read of this create sees one database state. A batch hands
+  // in its own.
+  using lease = options.reads ? undefined : await ctx.zoteroReads.acquireRead();
+  const reads = options.reads ?? lease!.reads;
+  const source = await readNoteSource(reads, item.itemID, {
     username: options.username,
   });
   if (!source) throw new Error(`Zotero item not found: ${item.indexedKey}`);
@@ -898,7 +905,7 @@ async function createNote(
 
   const parentFolder = dirname(path);
   return await writeNewNote(ctx, item, {
-    reads: lease.reads,
+    reads,
     source,
     path,
     settings: profile.settings,
