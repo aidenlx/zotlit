@@ -120,12 +120,19 @@ const indexedItemIDsByLibraryQuery = defineQuery<{ libraryID: number }>()(
     }),
 );
 
-/** Single-id hydration matching {@link indexedItemsQuery}'s projection. */
-const indexedItemByIdQuery = defineQuery<{ itemID: number }>()(
-  (db, { placeholder }, args: { indexedFieldIDs: readonly number[] }) =>
+/** Hydration of a chunk of ids, matching {@link indexedItemsQuery}'s projection. */
+const indexedItemsByIdsQuery = defineQuery<void>()(
+  (
+    db,
+    _operators,
+    args: {
+      itemIDs: readonly number[];
+      indexedFieldIDs: readonly number[];
+    },
+  ) =>
     db.query.items.findMany({
       where: {
-        itemID: placeholder("itemID"),
+        itemID: { in: [...args.itemIDs] },
         itemType: { typeName: { notIn: [...CHILD_ITEM_TYPES] } },
         deletedItem: false,
       },
@@ -162,9 +169,10 @@ export function getIndexedItemIDsByLibrary(
 }
 
 /**
- * Hydrate {@link IndexedItem}s for a chunk of item ids with one prepared per-id
- * query each, mirroring {@link getItemsByID}. Item ids are unique across
- * libraries, so each row resolves its own `groupID`/`indexedKey`.
+ * Hydrate {@link IndexedItem}s for a chunk of item ids in one statement, in
+ * `itemIDs` order. Item ids are unique across libraries, so each row resolves
+ * its own `groupID`/`indexedKey`. The ids inline into the SQL, so the
+ * statement is not cached.
  */
 export function getIndexedItemsByID(
   db: NodeDatabaseClient,
@@ -172,17 +180,22 @@ export function getIndexedItemsByID(
 ): IndexedItem[] {
   if (itemIDs.length === 0) return [];
   const table = getBaseFieldTable(db, INDEXED_FIELD_NAMES);
-  const stmt = indexedItemByIdQuery.prepared(db, {
-    indexedFieldIDs: table.fieldIDs,
-  });
-  const memo: GroupIDMemo = new Map();
-  return itemIDs.flatMap((itemID) =>
-    stmt
-      .all({ itemID })
-      .map((row) =>
-        toIndexedItem(row, resolveGroupID(db, row.libraryID, memo), table),
-      ),
+  const rows = new Map(
+    indexedItemsByIdsQuery
+      .prepare(db, {
+        itemIDs: [...new Set(itemIDs)],
+        indexedFieldIDs: table.fieldIDs,
+      })
+      .all()
+      .map((row) => [row.itemID, row]),
   );
+  const memo: GroupIDMemo = new Map();
+  return itemIDs.flatMap((itemID) => {
+    const row = rows.get(itemID);
+    return row
+      ? [toIndexedItem(row, resolveGroupID(db, row.libraryID, memo), table)]
+      : [];
+  });
 }
 
 /** Cheap change-detection signature for a library's indexed items. */
