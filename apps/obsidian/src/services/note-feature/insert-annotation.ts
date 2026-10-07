@@ -1,6 +1,4 @@
 // Renders the captured card once, after its final image outcome is durable.
-import { Effect } from "effect";
-
 import {
   annotationColorToName,
   annotationOpenUri,
@@ -18,7 +16,10 @@ import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
-import { excerptRequestFrom } from "@/services/excerpt-image/request";
+import {
+  excerptRequestFrom,
+  readExcerptInputs,
+} from "@/services/excerpt-image/request";
 import { ProfileAnnotationError } from "@/services/template/service";
 
 import type { NoteFeatureDeps } from "./context";
@@ -59,18 +60,10 @@ export async function prepareAnnotationInsert(
   };
   // The parent context, not the Annotation's own row: a card the Local API
   // answered can precede its SQLite row.
-  const [identity, sources] = await Effect.runPromise(
-    Effect.all(
-      [
-        lease.reads.DatabaseIdentity({}),
-        lease.reads.AttachmentSources({ attachmentKeys: [a.parentKey] }),
-      ],
-      { concurrency: "unbounded" },
-    ),
+  const { identity, sources, attachment } = await readExcerptInputs(
+    lease.reads,
+    a.parentKey,
   );
-  const attachment =
-    sources.attachments.find(({ indexedKey }) => indexedKey === a.parentKey) ??
-    null;
   const request = excerptRequestFrom({
     annotation: a,
     source,

@@ -1,7 +1,11 @@
 import { Effect } from "effect";
 
 import { parseIndexedKey } from "@zotlit/db";
-import type { Attachment, ZoteroDatabaseIdentity } from "@zotlit/db";
+import type {
+  AnnotationSources,
+  Attachment,
+  ZoteroDatabaseIdentity,
+} from "@zotlit/db";
 import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
 
@@ -37,14 +41,27 @@ export async function savedExcerptRequest(options: {
   annotation: AnnotationRecord;
   source: AnnotationSource | null;
   sourceScope: string | null;
-  zoteroReads: Pick<ZoteroReadsService, "ready">;
+  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   paths: AttachmentPathContext;
 }): Promise<ExcerptRequest | null> {
-  const { annotation, source, sourceScope, paths } = options;
+  const { annotation, source, sourceScope } = options;
+  // The paths as they stand now: a request belongs to the data directory its
+  // source was read from, whatever the settings become during the read.
+  const paths: AttachmentPathContext = {
+    dataDir: options.paths.dataDir,
+    baseAttachmentPath: options.paths.baseAttachmentPath,
+  };
   if (!source || sourceScope !== paths.dataDir) return null;
   try {
-    const { reads } = await options.zoteroReads.ready;
-    return await excerptRequest({ annotation, source, reads, paths });
+    // One Snapshot, so the identity and the attachment come from one database.
+    using lease = await options.zoteroReads.acquireRead();
+    const request = await excerptRequest({
+      annotation,
+      source,
+      reads: lease.reads,
+      paths,
+    });
+    return options.paths.dataDir === paths.dataDir ? request : null;
   } catch (error) {
     logger.debug("No excerpt request: the database did not answer", {
       annotationKey: annotation.key,
@@ -65,24 +82,40 @@ export async function excerptRequest(options: {
   reads: ExcerptRequestReads;
   paths: AttachmentPathContext;
 }): Promise<ExcerptRequest | null> {
-  const { annotation, reads } = options;
+  const { identity, attachment } = await readExcerptInputs(
+    options.reads,
+    options.annotation.parentKey,
+  );
+  return excerptRequestFrom({ ...options, identity, attachment });
+}
+
+/**
+ * The database facts an excerpt request is verified and resolved against: the
+ * database's identity, and the parent context of the attachment `parentKey`
+ * names, with that attachment, `null` where the database holds none. Pass
+ * Snapshot-bound reads, so both facts come from one database.
+ */
+export async function readExcerptInputs(
+  reads: ExcerptRequestReads,
+  parentKey: string,
+): Promise<{
+  identity: ZoteroDatabaseIdentity;
+  sources: AnnotationSources;
+  attachment: Attachment | null;
+}> {
   const [identity, sources] = await Effect.runPromise(
     Effect.all(
       [
         reads.DatabaseIdentity({}),
-        reads.AttachmentSources({ attachmentKeys: [annotation.parentKey] }),
+        reads.AttachmentSources({ attachmentKeys: [parentKey] }),
       ],
       { concurrency: "unbounded" },
     ),
   );
-  return excerptRequestFrom({
-    ...options,
-    identity,
-    attachment:
-      sources.attachments.find(
-        ({ indexedKey }) => indexedKey === annotation.parentKey,
-      ) ?? null,
-  });
+  const attachment =
+    sources.attachments.find(({ indexedKey }) => indexedKey === parentKey) ??
+    null;
+  return { identity, sources, attachment };
 }
 
 /**

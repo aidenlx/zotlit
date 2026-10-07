@@ -145,7 +145,7 @@ const FILTER_STORAGE_KEY_PREFIX = "zotlit-annot-filter-";
  */
 export interface AnnotViewDeps {
   app: App;
-  reads: Pick<ZoteroReadsService, "ready" | "state" | "on">;
+  reads: Pick<ZoteroReadsService, "ready" | "state" | "on" | "acquireRead">;
   libraryScope: Pick<LibraryScopeService, "libraryRows" | "on">;
   liveUpdate: Pick<
     LocalServerService,

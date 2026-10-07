@@ -27,8 +27,7 @@ import type {
 } from "@/services/excerpt-image/display";
 import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
-import type { NoteFeature } from "@/services/note-feature";
-import type { AnnotationCitation } from "@/services/note-feature/annotation-citation";
+import type { AnnotationCitation, NoteFeature } from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
 
 import { chooseAttachment } from "./attachment-suggester";

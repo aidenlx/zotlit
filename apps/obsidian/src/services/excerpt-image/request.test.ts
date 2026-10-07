@@ -8,7 +8,10 @@ import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
-import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
+import type {
+  ZoteroReadsApi,
+  ZoteroReadsService,
+} from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
   sharedClientOpener,
@@ -63,9 +66,12 @@ const groupRecord: AnnotationRecord = {
 };
 
 /** One Attachment, in each of the user Library and a group Library. */
-async function fixture(
-  serverID: string | null = SERVER_ID,
-): Promise<AsyncDisposableStack & { reads: ZoteroReadsApi }> {
+async function fixture(serverID: string | null = SERVER_ID): Promise<
+  AsyncDisposableStack & {
+    reads: ZoteroReadsApi;
+    zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
+  }
+> {
   const stack = new AsyncDisposableStack();
   const client = stack.adopt(createClient(":memory:"), (db) =>
     db.$client.close(),
@@ -86,10 +92,11 @@ async function fixture(
       (1, null, 0, 'application/pdf', 'storage:paper.pdf'),
       (2, null, 0, 'application/pdf', 'storage:paper.pdf');
   `);
-  const { reads } = await stack.use(
+  const zoteroReads = stack.use(
     inProcessReadsService(sharedClientOpener(client)),
-  ).ready;
-  return Object.assign(stack, { reads });
+  );
+  const { reads } = await zoteroReads.ready;
+  return Object.assign(stack, { reads, zoteroReads });
 }
 
 describe("Saved excerpt request", () => {
@@ -107,6 +114,27 @@ describe("Saved excerpt request", () => {
         paths,
       }),
     ).toBeNull();
+  });
+
+  it("resolves to nothing where the data directory moves during the read", async () => {
+    await using db = await fixture();
+    const moving = { ...paths };
+
+    const request = await savedExcerptRequest({
+      annotation,
+      source: apiSource,
+      sourceScope: paths.dataDir,
+      zoteroReads: {
+        acquireRead: async () => {
+          const lease = await db.zoteroReads.acquireRead();
+          moving.dataDir = "/other-zotero";
+          return lease;
+        },
+      },
+      paths: moving,
+    });
+
+    expect(request).toBeNull();
   });
 });
 

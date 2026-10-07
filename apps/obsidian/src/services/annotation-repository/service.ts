@@ -3667,6 +3667,7 @@ export class AnnotationRepository extends Service<void> {
    * @see apps/obsidian/docs/adr/0067-annotation-locks-come-from-the-zotero-database.md
    */
   async #readLocks(attachmentKey: string): Promise<boolean> {
+    const generation = this.#databaseGeneration;
     let annotations: readonly AnnotationRecord[];
     try {
       using lease = await this.#db.acquireRead();
@@ -3683,6 +3684,9 @@ export class AnnotationRepository extends Service<void> {
       });
       return false;
     }
+    // A read a database change overtook holds the old locks; the change reads
+    // them again.
+    if (generation !== this.#databaseGeneration) return false;
     return this.#keepLocks(attachmentKey, annotations);
   }
 
@@ -3730,6 +3734,7 @@ export class AnnotationRepository extends Service<void> {
   }
 
   async #readFromDatabase(attachmentKey: string): Promise<AnnotationList> {
+    const generation = this.#databaseGeneration;
     using lease = await this.#db.acquireRead();
     const [found, libraries, database] = await Effect.runPromise(
       Effect.all(
@@ -3743,7 +3748,8 @@ export class AnnotationRepository extends Service<void> {
     );
     const annotations = toRecords(attachmentKey, found);
     const source = databaseAnnotationSource(attachmentKey, libraries, database);
-    this.#keepLocks(attachmentKey, annotations);
+    if (generation === this.#databaseGeneration)
+      this.#keepLocks(attachmentKey, annotations);
     logger.debug("Annotations read from the Zotero database", {
       attachmentKey,
       annotations: annotations.length,

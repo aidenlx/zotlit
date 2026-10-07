@@ -616,11 +616,16 @@ export default class ZotLitPlugin extends Plugin {
     // A saved pixel edit revalidates its Excerpt Image wherever the image
     // stands: the card that shows the Annotation, and — with no card on screen —
     // the device-local image the store already holds for it. One subscriber
-    // covers every surface that can save an edit.
+    // covers every surface that can save an edit. Each request reads the
+    // database first, so only the newest edit of an Annotation is revalidated:
+    // an older read that lands late would cancel the newer replacement.
+    const latestEdit = new Map<string, symbol>();
     stack.defer(
       services.annotationRepository.on(
         "excerpt-pixels-changed",
         (record, source) => {
+          const edit = Symbol(record.key);
+          latestEdit.set(record.key, edit);
           void savedExcerptRequest({
             annotation: record,
             source,
@@ -628,6 +633,8 @@ export default class ZotLitPlugin extends Plugin {
             zoteroReads: services.zoteroReads,
             paths: services.zoteroPref,
           }).then((request) => {
+            if (latestEdit.get(record.key) !== edit) return;
+            latestEdit.delete(record.key);
             if (request) services.excerptDisplay.revalidate(request);
           });
         },
