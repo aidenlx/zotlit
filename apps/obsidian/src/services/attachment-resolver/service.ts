@@ -1,5 +1,6 @@
 // Names the Zotero Attachment behind the absolute path of an open PDF.
-import { getAllAttachments } from "@zotlit/db";
+import { Effect, Stream } from "effect";
+
 import type { AttachmentWithParentKey } from "@zotlit/db";
 import { attachmentAbsPath, attachmentPathKey } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
@@ -7,9 +8,10 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
 import { isPdfAttachment } from "@/services/attachment-open/resolve";
-import type { DatabaseService } from "@/services/database/service";
+import type { QueryClientService } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 const logger = getLogger("attachment-resolver");
 
@@ -44,9 +46,9 @@ export type AttachmentResolution =
 export interface AttachmentResolverEvents {
   /**
    * The answers {@link AttachmentResolver.resolve} gives may differ from here
-   * on — the database moved, or the resolved Zotero paths did. Raised whether
-   * or not an index was held, so a caller that was told `pending` hears the
-   * database it was waiting for arrive.
+   * on: a new path index replaced the one held, after the database or the
+   * resolved Zotero paths moved. Raised for the first index too, so a caller
+   * that was told `pending` hears the index it was waiting for arrive.
    */
   "resolutions-changed": () => void;
 }
@@ -54,8 +56,17 @@ export interface AttachmentResolverEvents {
 const UNRESOLVED: AttachmentResolution = { kind: "unresolved" };
 const PENDING: AttachmentResolution = { kind: "pending" };
 
+/** The query key the held path index lives under. */
+const PATH_INDEX_KEY = ["attachment-resolver", "path-index"] as const;
+
+type PathIndex = ReadonlyMap<string, AttachmentResolution>;
+
 export interface AttachmentResolverDeps {
-  db: Pick<DatabaseService, "state" | "client" | "on">;
+  reads: Pick<ZoteroReadsService, "ready" | "on">;
+  queries: Pick<
+    QueryClientService,
+    "client" | "ask" | "invalidate" | "peek" | "watch"
+  >;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath" | "on">;
   /**
    * The filesystem's platform, which decides whether the lookup key folds case.
@@ -68,28 +79,34 @@ export interface AttachmentResolverDeps {
 /**
  * Answers which Zotero Attachment holds the file at an absolute path, from an
  * index built by running the forward path resolver across the attachment table
- * and keying each result with `attachmentPathKey`. The index is built on the
- * first lookup that finds a readable database, dropped whenever the database or
- * the resolved Zotero paths move, and never persisted.
+ * and keying each result with `attachmentPathKey`. The index is never
+ * persisted.
+ *
+ * The index is a Held Read (ADR 0054/0060). The first lookup starts a build
+ * from the `AttachmentPathIndex` stream; the rows arrive in slices off the main
+ * thread. When the database or the resolved Zotero paths move, a new build
+ * starts at once, and lookups answer from the previous index until it lands.
  *
  * @see apps/obsidian/docs/adr/0035-the-attachment-resolver-case-folds-on-case-insensitive-platforms.md
  */
 export class AttachmentResolver extends Service<void> {
-  readonly #db;
+  readonly #reads;
+  readonly #queries;
   readonly #zoteroPref;
   readonly #platform;
   readonly #emitter = createNanoEvents<AttachmentResolverEvents>();
-  #index: ReadonlyMap<string, AttachmentResolution> | null = null;
 
   ready: Promise<void>;
 
   constructor({
-    db,
+    reads,
+    queries,
     zoteroPref,
     platform = process.platform,
   }: AttachmentResolverDeps) {
     super();
-    this.#db = db;
+    this.#reads = reads;
+    this.#queries = queries;
     this.#zoteroPref = zoteroPref;
     this.#platform = platform;
     this.ready = this.#load();
@@ -105,12 +122,15 @@ export class AttachmentResolver extends Service<void> {
   /**
    * @param absolutePath the open file's absolute path, with no `file:` prefix
    *   and already through the vault adapter for an in-vault file.
-   * @returns `pending` while the database cannot be read yet — the caller hears
-   *   `resolutions-changed` once it can.
+   * @returns `pending` while no index was built yet — the caller hears
+   *   `resolutions-changed` once one is.
    */
   resolve(absolutePath: string): AttachmentResolution {
-    const index = this.#index ?? this.#build();
-    if (index === null) return PENDING;
+    const index = this.#queries.peek<PathIndex>(PATH_INDEX_KEY)?.value;
+    if (index === undefined) {
+      void this.#build();
+      return PENDING;
+    }
     return (
       index.get(attachmentPathKey(absolutePath, this.#platform)) ?? UNRESOLVED
     );
@@ -118,58 +138,61 @@ export class AttachmentResolver extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    stack.defer(this.#db.on("changed", () => this.#drop("database changed")));
+    this.#queries.client.setQueryDefaults(PATH_INDEX_KEY, { gcTime: Infinity });
+    stack.defer(
+      this.#queries.watch<PathIndex>(PATH_INDEX_KEY, {
+        changed: () => this.#emitter.emit("resolutions-changed"),
+        settled: () => {},
+      }),
+    );
+    stack.defer(
+      this.#reads.on("changed", () => this.#rebuild("database changed")),
+    );
     stack.defer(
       this.#zoteroPref.on("resolved-changed", () =>
-        this.#drop("Zotero paths changed"),
+        this.#rebuild("Zotero paths changed"),
       ),
     );
     this.commit(stack.move());
   }
 
   /**
-   * Drops the cached index and announces the change. The announcement stands
-   * even when nothing was cached: the database reaching `ready` is exactly the
-   * moment a caller told `pending` becomes answerable.
+   * Marks the held index stale and builds a new one, where a lookup asked for
+   * one before. Lookups answer from the stale index until the new one lands.
    */
-  #drop(reason: string): void {
-    if (this.#index !== null) {
-      this.#index = null;
-      logger.debug("Attachment path index dropped", { reason });
+  #rebuild(reason: string): void {
+    if (this.#queries.client.getQueryState(PATH_INDEX_KEY) === undefined) {
+      return;
     }
-    this.#emitter.emit("resolutions-changed");
+    logger.debug("Attachment path index stale", { reason });
+    this.#queries.invalidate(PATH_INDEX_KEY);
+    void this.#build();
   }
 
-  /**
-   * @returns the index, or `null` while the database cannot be read — nothing is
-   *   cached then, so the next lookup asks again. The database service settles
-   *   the Zotero preferences before it reports ready, so the paths the index is
-   *   built from are the resolved ones.
-   */
-  #build(): ReadonlyMap<string, AttachmentResolution> | null {
-    if (this.#db.state !== "ready") {
-      logger.trace("Attachment path index not built", {
-        database: this.#db.state,
-      });
-      return null;
-    }
-    const { index, collisions } = buildPathIndex(
-      getAllAttachments(this.#db.client),
-      {
+  /** Builds the index into the held value; a failure keeps what it holds. */
+  async #build(): Promise<void> {
+    await this.#queries.ask<PathIndex>(PATH_INDEX_KEY, async ({ signal }) => {
+      const { reads } = await this.#reads.ready;
+      const slices = await Effect.runPromise(
+        Stream.runCollect(reads.AttachmentPathIndex({})),
+        { signal },
+      );
+      // Read after the rows: a paths change during the read starts a new
+      // build, which cancels this one.
+      const { index, collisions } = buildPathIndex(slices.flat(), {
         dataDir: this.#zoteroPref.dataDir,
         baseAttachmentPath: this.#zoteroPref.baseAttachmentPath,
         platform: this.#platform,
-      },
-    );
-    if (collisions.length > 0) {
-      logger.warn("Several Zotero attachments name one file", { collisions });
-    }
-    this.#index = index;
-    logger.debug("Attachment path index built", {
-      paths: index.size,
-      collisions: collisions.length,
+      });
+      if (collisions.length > 0) {
+        logger.warn("Several Zotero attachments name one file", { collisions });
+      }
+      logger.debug("Attachment path index built", {
+        paths: index.size,
+        collisions: collisions.length,
+      });
+      return index;
     });
-    return index;
   }
 }
 

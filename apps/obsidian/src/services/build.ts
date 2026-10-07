@@ -179,8 +179,12 @@ export function buildServices(
         }),
     })
     .use({
-      attachmentResolver: ({ db, zoteroPref }) =>
-        new AttachmentResolver({ db, zoteroPref }),
+      attachmentResolver: ({ zoteroReads, queryClient, zoteroPref }) =>
+        new AttachmentResolver({
+          reads: zoteroReads,
+          queries: queryClient,
+          zoteroPref,
+        }),
     })
     .use({
       zoteroLocalApi: ({ zoteroPref, localServer }) =>

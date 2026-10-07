@@ -1,15 +1,15 @@
+import { Effect, Stream } from "effect";
 import { expect, it } from "vitest";
 
 import type { AttachmentWithParentKey } from "@zotlit/db";
-import { createClient } from "@zotlit/db/client/node";
-import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
-import type {
-  DatabaseEvents,
-  DatabaseService,
-} from "@/services/database/service";
+import { QueryClientService } from "@/services/query-client/service";
 import type { ZoteroPrefEvents } from "@/services/zotero-pref/service";
+import {
+  inProcessReadsService,
+  memoryOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import { AttachmentResolver, buildPathIndex } from "./service";
 import type { AttachmentResolution } from "./service";
@@ -268,23 +268,29 @@ it("reports no collision when every attachment names its own file", () => {
 
 it("answers pending, and keeps no index, while the database cannot be read", async () => {
   await using stack = new AsyncDisposableStack();
-  const { resolver, db } = await setup(stack, { databaseState: "degraded" });
+  const { resolver, reads } = await setup(stack, {
+    seeds: [null, FIXTURE_ROWS],
+    prime: false,
+  });
   const path = `${VAULT_DIR}/attachments/rougier-2014.pdf`;
 
   // Not `unresolved`: "I cannot answer yet" and "Zotero does not know this
   // file" are different answers, and only the second one is final.
   expect(resolver.resolve(path)).toEqual({ kind: "pending" });
+  await expect.poll(() => reads.state).toBe("degraded");
+  expect(resolver.resolve(path)).toEqual({ kind: "pending" });
 
-  db.state = "ready";
+  // The database recovers: the build it was waiting on lands and says so.
+  const announced = nextAnnouncement(resolver);
+  await reads.refresh();
+  await announced;
 
   expect(resolver.resolve(path)).toEqual(ROUGIER);
 });
 
-it("announces the database it was waiting on, having cached no index", async () => {
+it("announces the first index to a caller that was told pending", async () => {
   await using stack = new AsyncDisposableStack();
-  const { resolver, db, dbEvents } = await setup(stack, {
-    databaseState: "loading",
-  });
+  const { resolver } = await setup(stack, { prime: false });
   const path = `${VAULT_DIR}/attachments/rougier-2014.pdf`;
   const announced: AttachmentResolution[] = [];
   stack.defer(
@@ -295,28 +301,31 @@ it("announces the database it was waiting on, having cached no index", async () 
 
   expect(resolver.resolve(path)).toEqual({ kind: "pending" });
 
-  // What plugin startup does: the database reaches `ready` and says so, with
-  // no index yet built for the announcement to drop.
-  db.state = "ready";
-  dbEvents.emit("changed");
-
-  expect(announced).toEqual([ROUGIER]);
+  await expect.poll(() => announced).toEqual([ROUGIER]);
 });
 
-it("rebuilds on the next lookup after the database changed", async () => {
+it("rebuilds after the database changed, answering from the previous index meanwhile", async () => {
   await using stack = new AsyncDisposableStack();
-  const { resolver, client, dbEvents } = await setup(stack);
   const path = `${LINKED_FILES_DIR}/ioannidis-2005.pdf`;
+  const { resolver, reads, gate } = await setup(stack, {
+    seeds: [
+      FIXTURE_ROWS,
+      `${
+        FIXTURE_ROWS
+      }update itemAttachments set path = '${path}' where itemID = 29;`,
+    ],
+  });
 
   expect(resolver.resolve(path)).toEqual({ kind: "unresolved" });
 
-  client.$client.exec(
-    `update itemAttachments set path = '${path}' where itemID = 29;`,
-  );
+  const held = gate();
+  const announced = nextAnnouncement(resolver);
+  await reads.refresh();
+  await expect.poll(() => held.waiting).toBe(true);
 
   expect(resolver.resolve(path)).toEqual({ kind: "unresolved" });
-
-  dbEvents.emit("changed");
+  held.release();
+  await announced;
 
   expect(resolver.resolve(path)).toEqual({
     kind: "resolved",
@@ -326,15 +335,17 @@ it("rebuilds on the next lookup after the database changed", async () => {
   });
 });
 
-it("rebuilds on the next lookup after the resolved Zotero paths changed", async () => {
+it("rebuilds after the resolved Zotero paths changed", async () => {
   await using stack = new AsyncDisposableStack();
   const { resolver, zoteroPref, prefEvents } = await setup(stack);
   const path = "/moved-zotero/storage/PDFSTR22/sakimas-song.pdf";
 
   expect(resolver.resolve(path)).toEqual({ kind: "unresolved" });
 
+  const announced = nextAnnouncement(resolver);
   zoteroPref.dataDir = "/moved-zotero";
   prefEvents.emit("resolved-changed");
+  await announced;
 
   expect(resolver.resolve(path)).toEqual({
     kind: "resolved",
@@ -343,6 +354,16 @@ it("rebuilds on the next lookup after the resolved Zotero paths changed", async 
     openable: true,
   });
 });
+
+/** Settles on the next `resolutions-changed`. */
+function nextAnnouncement(resolver: AttachmentResolver): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  const off = resolver.on("resolutions-changed", () => {
+    off();
+    resolve();
+  });
+  return promise;
+}
 
 /** A `linked_file` row of the shape `getAllAttachments` returns. */
 function linkedAttachment({
@@ -377,23 +398,39 @@ function linkedAttachment({
 interface SetupOptions {
   platform?: NodeJS.Platform;
   baseAttachmentPath?: string | null;
-  databaseState?: DatabaseService["state"];
+  /** The rows each database open holds, in open order; `null` fails that open. */
+  seeds?: (string | null)[];
   rows?: string;
+  /** Build the first index before the test runs. @default true */
+  prime?: boolean;
 }
 
 async function setup(stack: AsyncDisposableStack, options: SetupOptions = {}) {
-  const client = createClient(":memory:");
-  stack.defer(() => client.$client.close());
-  createFixtureSchema(client.$client);
-  client.$client.exec(options.rows ?? FIXTURE_ROWS);
-
-  const dbEvents = createNanoEvents<DatabaseEvents>();
-  const db = {
-    state: options.databaseState ?? ("ready" as DatabaseService["state"]),
-    client,
-    on: <K extends keyof DatabaseEvents>(event: K, cb: DatabaseEvents[K]) =>
-      dbEvents.on(event, cb),
-  };
+  const seeds = options.seeds ?? [options.rows ?? FIXTURE_ROWS];
+  const { open } = memoryOpener((n) => seeds[n - 1] ?? null);
+  let held: PromiseWithResolvers<void> | null = null;
+  let waiting = false;
+  const reads = stack.use(
+    inProcessReadsService(open, (client) => ({
+      ...client,
+      AttachmentPathIndex: ((
+        ...args: Parameters<typeof client.AttachmentPathIndex>
+      ) =>
+        Stream.unwrap(
+          Effect.promise(async () => {
+            if (held !== null) {
+              waiting = true;
+              await held.promise;
+            }
+            return client.AttachmentPathIndex(...args) as Stream.Stream<
+              unknown,
+              unknown
+            >;
+          }),
+        )) as typeof client.AttachmentPathIndex,
+    })),
+  );
+  const queries = stack.use(new QueryClientService());
 
   const prefEvents = createNanoEvents<ZoteroPrefEvents>();
   const zoteroPref = {
@@ -404,11 +441,33 @@ async function setup(stack: AsyncDisposableStack, options: SetupOptions = {}) {
   };
 
   const resolver = new AttachmentResolver({
-    db,
+    reads,
+    queries,
     zoteroPref,
     platform: options.platform ?? "linux",
   });
   stack.use(resolver);
   await resolver.ready;
-  return { resolver, db, zoteroPref, client, dbEvents, prefEvents };
+  if (options.prime ?? true) {
+    const announced = nextAnnouncement(resolver);
+    resolver.resolve("/");
+    await announced;
+  }
+  return {
+    resolver,
+    reads,
+    zoteroPref,
+    prefEvents,
+    /** Holds the next path index read until `release`. */
+    gate: () => {
+      held = Promise.withResolvers<void>();
+      const gated = held;
+      return {
+        get waiting() {
+          return waiting;
+        },
+        release: () => gated.resolve(),
+      };
+    },
+  };
 }
