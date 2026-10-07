@@ -54,14 +54,14 @@ Measured in Obsidian 1.14.4 on a synthetic library with Zotero's indexes, produc
 
 The build frame gap was already at the idle floor before this change, because the renderer slices cost 8–13 ms each. The gains are the index heap leaving the renderer, the worst-case query leaving the main thread, and one owner for the lifecycle. SQL hydration of 50 hits (about 4.5 ms, one statement per key) dominates a typical query in both variants.
 
-The shipped worker adapter, measured in Obsidian 1.14.4 by the End-to-end Run on the Fixture plus 10,000 synthetic journal articles (title, journal, one to three authors; this corpus makes a 21 MB index in Node), development build:
+The shipped worker adapter, measured in Obsidian 1.14.4 by the End-to-end Run (`packages/e2e`, test "rebuilds the worker's Item Index off the renderer", which logs these figures) on the Fixture plus 10,000 synthetic journal articles (title, journal, one to three authors; this corpus makes a 21 MB index in Node), development build:
 
 | Metric | Shipped plugin, 10,000 items, worker index |
 | --- | --- |
-| Index rebuild after a Freshness Signal | 1.6 s from the signal to the first answer with the new Item, refresh included; max frame gap 18 ms, 0 long tasks |
-| Renderer heap after the rebuild | +0.4–0.5 MB after a forced garbage collection |
-| Typical query, end to end (median / p95, 21 runs) | 2–8 ms / 2–11 ms (`zqsynth kamo` 2.0 / 2.1, a one-word title query 5.6 / 6.0, an author 7.5 / 8.2) |
-| One-letter query (`k`) | 7.7 ms median, 10 ms p95 |
-| Query during a rebuild | 2 ms median over 99 polls; the one query at the swap to the new index waited 0.33 s in the worker, renderer free |
+| Index rebuild after a Freshness Signal | 1.6 s from the signal to the first answer with the new Items, refresh included; max frame gap 18 ms, 0 long tasks |
+| Renderer heap after the rebuild | +0.3–0.5 MB after a forced garbage collection |
+| Typical query, end to end (median / p95, 21 runs, 37–50 hits each) | 4–10 ms / 4–10 ms (an author 5.9 / 6.5, one title word 7.3 / 8.3, two title words 9.7 / 10.4, a unique title word 3.8 / 4.2) |
+| One-letter query (`k`) | 8.1 ms median, 13.9 ms p95 |
+| Query during a rebuild | 2.8 ms median, 4.6 ms max over 82 polls; every poll answered from the held index |
 
 Inside a real `RpcServer` worker, `Effect.yieldNow` after each slice of 250–500 items gives a 5.5 ms median wait for a concurrent request and adds no build time. A worker-drained `Stream.mapEffect` without it does not yield; `scheduler.yield()` and no yield make a query wait for the whole build; `setTimeout(0)` works but adds 38–40 % build time. A single read of 100,000 ids overflows the call stack in the query builder, so the build reads in slices.
