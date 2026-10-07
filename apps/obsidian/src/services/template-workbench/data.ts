@@ -1,22 +1,20 @@
 // Resolves an Indexed Key and builds side-effect-free Template data.
 
+import { Effect } from "effect";
 import type { App } from "obsidian";
 
 import {
   buildFilenameContext,
+  buildNoteContextFromSource,
   citekeysToCiteTemplateData,
-  CollectionCache,
-  fetchNoteContext,
   fetchAnnotationsTemplateData,
   getAnnotationsByKey,
   getAttachmentByKey,
-  getZoteroIdentity,
   getItemsByID,
   getItemTypeByKey,
   getItemsByKey,
   getNoteByKey,
   resolveIndexedKeyLibrary,
-  resolveItemTags,
   withAnnotationCitation,
 } from "@zotlit/db";
 import type {
@@ -35,6 +33,7 @@ import type { CitationExampleId } from "@zotlit/workbench/render";
 import { annotationCitation } from "@/lib/annotation-render";
 import { creatorSummary } from "@/lib/item-summary";
 import type { DatabaseService } from "@/services/database/service";
+import { itemFacets } from "@/services/note-feature/context";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
@@ -47,6 +46,7 @@ import {
 } from "@/services/template/inert-resolver-host";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 /**
  * The object one Citation's data is built from: a built-in example set, or an
@@ -71,6 +71,8 @@ export type CitationDataLoadResult =
 export interface TemplateDataDeps {
   app: App;
   db: Pick<DatabaseService, "acquireRead">;
+  /** The note and filename roots read their Item's bundle through a lease. */
+  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   noteIndex: Pick<
     NoteIndex,
     "getNotesByItemKey" | "getImportedNoteByNoteKey" | "whenIndexed"
@@ -122,8 +124,8 @@ export async function loadTemplateData(
     deps.zoteroPref.ready,
     deps.templates.ready,
   ]);
-  using lease = await deps.db.acquireRead();
   if (root === "annotation") {
+    using lease = await deps.db.acquireRead();
     const selected = resolveAnnotation(lease.client, indexedKey);
     if (selected.kind !== "annotation") return selected;
     const resolvers = await createInertResolvers(deps, settings, selected.item);
@@ -141,35 +143,37 @@ export async function loadTemplateData(
     };
   }
 
-  const selected = resolveNoteItem(lease.client, indexedKey);
+  let selected: NoteItemResult;
+  {
+    using lease = await deps.db.acquireRead();
+    selected = resolveNoteItem(lease.client, indexedKey);
+  }
   if (selected.kind !== "item") return selected;
 
-  const item = selected.item;
+  const { itemID } = selected.item;
+  const source = await (async () => {
+    using lease = await deps.zoteroReads.acquireRead();
+    return await Effect.runPromise(lease.reads.NoteSource({ itemID }));
+  })();
+  if (!source) return { kind: "not-found" };
   if (root === "filename") {
-    const collectionCache = new CollectionCache();
+    const { itemTags, itemCollections } = itemFacets(source);
     return {
       kind: "data",
       data: buildFilenameContext({
-        item,
-        tags: resolveItemTags(lease.client, item.itemID, new Map()),
-        collections:
-          collectionCache
-            .byItemIDs(lease.client, item.libraryID, [item.itemID])
-            .get(item.itemID) ?? [],
+        item: source.item,
+        tags: itemTags,
+        collections: itemCollections,
         authorsShort: creatorSummary,
       }),
     };
   }
 
-  const resolvers = await createInertResolvers(deps, settings, item);
+  const resolvers = await createInertResolvers(deps, settings, source.item);
 
   return {
     kind: "data",
-    data: fetchNoteContext(lease.client, item, {
-      resolvers,
-      collectionCache: new CollectionCache(),
-      username: getZoteroIdentity(lease.client).username,
-    }),
+    data: buildNoteContextFromSource(source, resolvers),
   };
 }
 

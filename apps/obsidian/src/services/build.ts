@@ -304,7 +304,7 @@ export function buildServices(
         settings,
         profile,
         localServer,
-        db,
+        zoteroReads,
         noteIndex,
         template,
         zoteroPref,
@@ -315,7 +315,7 @@ export function buildServices(
           settings,
           profile,
           localServer,
-          db,
+          zoteroReads,
           noteIndex,
           template,
           zoteroPref,
@@ -330,6 +330,7 @@ export function buildServices(
         zoteroPref,
         attachmentImport,
         excerptImage,
+        db,
       }): NoteImporter =>
         createNoteImporter({
           profile,
@@ -338,6 +339,8 @@ export function buildServices(
           template,
           zoteroPref,
           attachmentImport,
+          // The write's Snapshot holds a DatabaseService lease, so `db.client`
+          // is the connection that Snapshot pinned.
           excerptImages: (options) =>
             createExcerptPreparation({
               app: plugin.app,
@@ -346,12 +349,13 @@ export function buildServices(
                 dataDir: zoteroPref.dataDir,
                 baseAttachmentPath: zoteroPref.baseAttachmentPath,
               },
-            })(options),
+            })({ ...options, client: db.client }),
         }),
     })
     .use({
       templateMigration: ({
         db,
+        zoteroReads,
         libraryScope,
         noteIndex,
         settings,
@@ -367,6 +371,7 @@ export function buildServices(
               {
                 app: plugin.app,
                 db,
+                zoteroReads,
                 libraryScope,
                 noteIndex,
                 settings,
@@ -392,6 +397,7 @@ export function buildServices(
         profile,
         template,
         db,
+        zoteroReads,
         noteIndex,
         zoteroPref,
         settings,
@@ -405,6 +411,8 @@ export function buildServices(
               app: plugin.app,
               resolver: excerptImage,
             }),
+          // The write's Snapshot holds a DatabaseService lease, so `db.client`
+          // is the connection that Snapshot pinned.
           excerptImages: (options) =>
             createExcerptPreparation({
               app: plugin.app,
@@ -413,11 +421,12 @@ export function buildServices(
                 dataDir: zoteroPref.dataDir,
                 baseAttachmentPath: zoteroPref.baseAttachmentPath,
               },
-            })(options),
+            })({ ...options, client: db.client }),
           profile,
           app: plugin.app,
           template,
           db,
+          zoteroReads,
           noteIndex,
           zoteroPref,
           settings,
@@ -430,6 +439,7 @@ export function buildServices(
         profile,
         template,
         db,
+        zoteroReads,
         noteIndex,
         zoteroPref,
         settings,
@@ -441,6 +451,7 @@ export function buildServices(
           profile,
           template,
           db,
+          zoteroReads,
           noteIndex,
           zoteroPref,
           settings,
@@ -453,6 +464,7 @@ export function buildServices(
         profile,
         template,
         db,
+        zoteroReads,
         noteIndex,
         zoteroPref,
         settings,
@@ -464,6 +476,7 @@ export function buildServices(
           profile,
           template,
           db,
+          zoteroReads,
           noteIndex,
           zoteroPref,
           settings,
@@ -479,6 +492,7 @@ export function buildServices(
         importProfile,
         zoteroPref,
         db,
+        zoteroReads,
         settings,
         libraryScope,
         noteImport,
@@ -494,6 +508,7 @@ export function buildServices(
           profile,
           noteFeature,
           db,
+          zoteroReads,
           settings,
           libraryScope,
           noteImport,

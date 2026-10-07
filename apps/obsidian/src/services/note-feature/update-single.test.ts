@@ -34,6 +34,11 @@ function noteLessDeps(): SingleUpdateDeps {
         throw new Error("create path reached: db.client read");
       },
     } as unknown as SingleUpdateDeps["db"],
+    zoteroReads: {
+      acquireRead: () => {
+        throw new Error("create path reached: ZoteroReads lease acquired");
+      },
+    },
     settings: {} as SingleUpdateDeps["settings"],
     libraryScope: {
       resolveWith: () => {

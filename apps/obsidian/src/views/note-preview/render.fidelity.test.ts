@@ -91,6 +91,7 @@ async function realCreate(
         fixture.deps.templates.render(name as "note", data),
     },
     db: fixture.deps.db,
+    zoteroReads: fixture.deps.zoteroReads,
     noteIndex: {
       ready: Promise.resolve(),
       whenIndexed: async () => {},

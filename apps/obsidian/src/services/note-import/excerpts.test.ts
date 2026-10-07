@@ -33,6 +33,10 @@ import type {
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
+import {
+  inProcessReadsService,
+  sharedClientOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import { diskImageHost } from "./__fixtures__/disk-image-host";
 import { createNoteImporter } from "./service";
@@ -154,17 +158,20 @@ async function fixture(mode = "normal") {
     },
     zoteroPref: paths,
     attachmentImport: attachments,
-    excerptImages: createExcerptPreparation({
-      app,
-      paths,
-      resolver: {
-        operation: () => ({
-          resolve,
-          [Symbol.asyncDispose]: async () => {},
-        }),
-      },
-    }),
+    excerptImages: (options) =>
+      createExcerptPreparation({
+        app,
+        paths,
+        resolver: {
+          operation: () => ({
+            resolve,
+            [Symbol.asyncDispose]: async () => {},
+          }),
+        },
+      })({ ...options, client }),
   });
+  const { reads } = await inProcessReadsService(sharedClientOpener(client))
+    .ready;
   const priorTurndown = Object.getOwnPropertyDescriptor(
     globalThis,
     "TurndownService",
@@ -194,7 +201,7 @@ async function fixture(mode = "normal") {
     },
     import: async (targetFile?: TFile) =>
       importer.importNote(getNoteByKey(client, "NTES2345", { libraryID: 1 })!, {
-        client,
+        reads,
         settings,
         targetFile,
         reportExcerpts: (summary) => reports.push(summary),

@@ -28,6 +28,10 @@ import {
   matchItem,
 } from "@/services/profile-selection";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
+import {
+  inProcessReadsService,
+  sharedClientOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import type { SyncRenderDeps } from "./context";
 import { createNoteFeature } from "./operations";
@@ -37,8 +41,8 @@ vi.mock("@zotlit/db", async (importOriginal) => {
   return {
     ...actual,
     // Rendering context is independent of match facts; all relational matching reads are real.
-    fetchNoteContext: vi.fn(
-      (_client: unknown, item: Item): NoteTemplateContext =>
+    buildNoteContextFromSource: vi.fn(
+      ({ item }: { item: Item }): NoteTemplateContext =>
         ({
           indexedKey: item.indexedKey,
           citationKey: item.key.toLowerCase(),
@@ -51,7 +55,18 @@ vi.mock("@zotlit/db", async (importOriginal) => {
   };
 });
 
-beforeEach(() => vi.useFakeTimers());
+// `setImmediate` stays real: the in-process ZoteroReads runtime schedules on it.
+beforeEach(() =>
+  vi.useFakeTimers({
+    toFake: [
+      "setTimeout",
+      "clearTimeout",
+      "setInterval",
+      "clearInterval",
+      "Date",
+    ],
+  }),
+);
 afterEach(() => vi.useRealTimers());
 const books = "Bk3Qn7XvT2Lp" as ProfileId;
 const papers = "Rz9Wm4YfH6Kd" as ProfileId;
@@ -75,8 +90,11 @@ function seed(client: NodeDatabaseClient): void {
     insert into libraries (libraryID, type) values (1, 'user'), (2, 'group');
     insert into groups (groupID, libraryID, name) values (118, 2, 'Lab Archive');
     insert into itemTypes (itemTypeID, typeName) values (1, 'book'), (2, 'journalArticle');
-    insert into items (itemID, itemTypeID, libraryID, key)
-      values (1, 1, 1, 'BOOK0001'), (2, 1, 2, 'BOOK0002'), (3, 2, 1, 'ARTC0001');
+    insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+      values
+        (1, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'BOOK0001'),
+        (2, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 2, 'BOOK0002'),
+        (3, 2, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'ARTC0001');
     insert into collections (collectionID, collectionName, parentCollectionID, libraryID, key)
       values
         (100, 'Project', null, 1, 'PROJ0001'),
@@ -213,6 +231,7 @@ async function harness(
   const deps: SyncRenderDeps = {
     app,
     db,
+    zoteroReads: inProcessReadsService(sharedClientOpener(client)),
     profile,
     template,
     settings,

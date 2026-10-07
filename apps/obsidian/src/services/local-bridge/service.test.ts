@@ -88,7 +88,9 @@ const PROFILES = {
  * the grant, so nothing here is asked for a value; `reads.test.ts` drives them.
  */
 const READ_DEPS = {
-  db: { acquireRead: () => Promise.reject(new Error("not used here")) },
+  zoteroReads: {
+    acquireRead: () => Promise.reject(new Error("not used here")),
+  },
   noteIndex: {
     whenIndexed: () => Promise.resolve(),
     getNotesByItemKey: () => [],
@@ -101,7 +103,7 @@ const READ_DEPS = {
   zoteroPref: { ready: Promise.resolve(), dataDir: "" },
 } as unknown as Pick<
   LocalBridgeServiceDeps,
-  "db" | "noteIndex" | "template" | "zoteroPref"
+  "zoteroReads" | "noteIndex" | "template" | "zoteroPref"
 >;
 
 /** Resolve the port once the listener binds one. */

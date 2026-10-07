@@ -7,14 +7,18 @@ import { parse } from "yaml";
 
 import { withAnnotationCitation } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import { TemplateError } from "@zotlit/templates/facade";
 
 import { PROFILE_ID_LENGTH, PROFILE_ID_PATTERN } from "@/lib/profile-stamp";
-import type { DatabaseService } from "@/services/database/service";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import { getProfileBinding } from "@/services/profile/bindings";
+import {
+  inProcessReadsService,
+  sharedClientOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import { TEMPLATE_CHECK_COMMAND } from "./check";
 import { loadTemplateData } from "./data";
@@ -48,7 +52,7 @@ frontmatter:
 async function fixture(
   source = SOURCE,
   notes: Record<string, string> = {},
-  db?: Pick<DatabaseService, "acquireRead">,
+  client?: NodeDatabaseClient,
 ) {
   await using stack = new AsyncDisposableStack();
   const f = stack.use(await profileServiceFixture({ [PATH]: source }));
@@ -101,7 +105,10 @@ async function fixture(
       profile: f.profile,
       zoteroPref,
       noteIndex,
-      db,
+      db: client && {
+        acquireRead: async () => ({ client, [Symbol.dispose]() {} }),
+      },
+      zoteroReads: client && inProcessReadsService(sharedClientOpener(client)),
     } as never,
   );
   const cleanup = stack.move();
@@ -893,9 +900,7 @@ My conclusion.
           "Notes/One.md": existing.replace("My introduction.", "First note."),
           "Notes/Two.md": existing.replace("My introduction.", "Second note."),
         },
-        {
-          acquireRead: async () => ({ client, [Symbol.dispose]() {} }) as never,
-        },
+        client,
       );
       Object.assign(f.app.fileManager, {
         generateMarkdownLink: (file: { path: string }) => `[[${file.path}]]`,
@@ -948,7 +953,7 @@ My conclusion.
     await using f = await fixture(
       SOURCE.replace("%}Managed{%", "%}{{ zt.notePath }} {{ zt.noteLink }}{%"),
       { "Notes/Paper.md": existing },
-      { acquireRead: async () => ({ client, [Symbol.dispose]() {} }) as never },
+      client,
     );
     Object.assign(f.app.fileManager, {
       generateMarkdownLink: (file: { path: string }) => `[[${file.path}]]`,

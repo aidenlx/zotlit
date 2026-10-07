@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import {
   mkdir,
   mkdtemp,
@@ -18,12 +19,13 @@ import type { App } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  buildNoteContextFromSource,
   citekeysToCiteTemplateData,
-  CollectionCache,
   fetchAnnotationsTemplateData,
-  fetchNoteContext,
+  fetchNoteSource,
   getAnnotationsByItemId,
   getChildNotesByParentIDs,
+  getItemsByID,
   getItemsByKey,
   itemBaseFields,
   resolveIndexedKeyLibrary,
@@ -31,6 +33,7 @@ import {
 } from "@zotlit/db";
 import type {
   BaseItem,
+  ChildNote,
   Item,
   NoteResolvers,
   NoteTemplateContext,
@@ -99,6 +102,11 @@ import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/b
 import { defaults as settingsDefaults } from "@/services/settings/schema";
 import { ProfileAnnotationError } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
+import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
+import {
+  inProcessReadsService,
+  sharedClientOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import type {
   NoteFeatureDeps,
@@ -108,7 +116,7 @@ type SyncRenderDeps = Omit<RuntimeSyncRenderDeps, "profile"> &
   Partial<Pick<RuntimeSyncRenderDeps, "profile">>;
 import { createNoteFeature as createFeature } from "./operations";
 function createNoteFeature(deps: SyncRenderDeps) {
-  return createFeature({
+  const feature = createFeature({
     ...deps,
     profile:
       deps.profile ??
@@ -117,6 +125,26 @@ function createNoteFeature(deps: SyncRenderDeps) {
         deps.app.metadataCache,
       ),
   });
+  const know = (item: Item) => void knownItems.set(item.itemID, item);
+  return {
+    ...feature,
+    createNote: (...args) => {
+      know(args[0]);
+      return feature.createNote(...args);
+    },
+    prepareCreationProfiles: (item) => {
+      know(item);
+      return feature.prepareCreationProfiles(item);
+    },
+    prepareBatchCreationProfiles: (...args) => {
+      args[0].forEach(know);
+      return feature.prepareBatchCreationProfiles(...args);
+    },
+    writeNoteUpdate: (...args) => {
+      know(args[1].item);
+      return feature.writeNoteUpdate(...args);
+    },
+  } satisfies NoteFeature;
 }
 import type { NoteFeature, UpdateScope } from "./operations";
 
@@ -147,10 +175,40 @@ const blockedAttachmentImport = {
   }),
 };
 
+/**
+ * The `NoteSource` read runs in the in-process handlers over a fixture
+ * database that holds no Items. It looks its Item up by id among the Items the
+ * operation under test named (`knownItems`), and returns that Item with no
+ * related rows; each test stubs the pure build instead.
+ */
+const { knownItems, knownItemsByID, itemOnlySource } = vi.hoisted(() => {
+  const knownItems = new Map<number, import("@zotlit/db").Item>();
+  return {
+    knownItems,
+    knownItemsByID: (_client: unknown, ids: readonly number[]) =>
+      ids.flatMap((id) => knownItems.get(id) ?? []),
+    itemOnlySource: (
+      _client: unknown,
+      item: import("@zotlit/db").Item,
+    ): import("@zotlit/db").NoteSource => ({
+      item,
+      username: null,
+      attachments: [],
+      annotationsByAttachment: new Map(),
+      tagsByItemID: new Map(),
+      collectionsByItemID: new Map(),
+      relatedItems: [],
+      childNotes: [],
+    }),
+  };
+});
+
 vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();
   return {
     ...actual,
+    getItemsByID: vi.fn(knownItemsByID),
+    fetchNoteSource: vi.fn(itemOnlySource),
     // The mock DB client can't run real queries; stub the caches so the
     // note-feature flow under test stays DB-free.
     CollectionCache: class {
@@ -167,11 +225,11 @@ vi.mock("@zotlit/db", async (importOriginal) => {
       localUserKey: null,
       username: null,
     }),
-    // `fetchNoteContext` normally fetches every row from the DB; each test
-    // stubs it to apply the caller's resolvers to a small fixture instead, so
-    // resolver wiring (notePath / noteLink resolution) is exercised without a
-    // real DB.
-    fetchNoteContext: vi.fn(),
+    // `buildNoteContextFromSource` normally builds the context from the read
+    // bundle; each test stubs it to apply the caller's resolvers to a small
+    // fixture instead, so resolver wiring (notePath / noteLink resolution) is
+    // exercised without a real DB.
+    buildNoteContextFromSource: vi.fn(),
     // `overwriteNote`'s indexedKey lookup path; stubbed per-test so it doesn't
     // need a real Zotero item table.
     resolveIndexedKeyLibrary: vi.fn(),
@@ -186,7 +244,7 @@ vi.mock("@zotlit/db", async (importOriginal) => {
 
 /**
  * Minimal `NoteTemplateContext` stand-in: applies `resolvers.item` to `item`
- * and `relatedItems` the way the real (db-package-tested) `fetchNoteContext`
+ * and `relatedItems` the way the real (db-package-tested) `buildNoteContextFromSource`
  * would, so a test can assert on resolver wiring — byItemKey / byCitekey /
  * synthetic-fallback note-path resolution — without a real DB.
  */
@@ -454,9 +512,8 @@ describe("Profile source selection", () => {
       ...makeTemplate(),
       renderFilename: () => `Root${filenameSuffix()}`,
     };
-    vi.mocked(fetchNoteContext).mockImplementation(
-      (_client, current, options) =>
-        stubNoteContext(current, [], options!.resolvers),
+    vi.mocked(buildNoteContextFromSource).mockImplementation(
+      ({ item: current }, resolvers) => stubNoteContext(current, [], resolvers),
     );
     await app.vault.create("Literature/Root.md", "Occupied");
     const feature = createNoteFeature(deps);
@@ -528,9 +585,8 @@ describe("Profile source selection", () => {
       getLiteratureNoteTemplate: (reference) =>
         reference === "books.md" ? document : undefined,
     };
-    vi.mocked(fetchNoteContext).mockImplementation(
-      (_client, current, options) =>
-        stubNoteContext(current, [], options!.resolvers),
+    vi.mocked(buildNoteContextFromSource).mockImplementation(
+      ({ item: current }, resolvers) => stubNoteContext(current, [], resolvers),
     );
     const feature = createNoteFeature(deps);
     using update = vi.spyOn(deps.settings, "update");
@@ -701,14 +757,23 @@ describe("createNote", () => {
       });
       const client = deps.db.client;
       let leaseReleased = false;
-      deps.db.acquireRead = async () => ({
-        client,
-        [Symbol.dispose]() {
-          leaseReleased = true;
+      const zoteroReads = deps.zoteroReads;
+      deps.zoteroReads = {
+        acquireRead: async () => {
+          const lease = await zoteroReads.acquireRead();
+          return {
+            reads: lease.reads,
+            [Symbol.dispose]() {
+              leaseReleased = true;
+              lease[Symbol.dispose]();
+            },
+          };
         },
-      });
+      };
       cleanup.defer(() => client.$client.close());
       client.$client.exec(`
+        insert into itemTypes (itemTypeID, typeName) values
+          (1, 'journalArticle'), (2, 'attachment'), (4, 'annotation');
         insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key) values
           (1, 1, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'ROOT1234'),
           (90, 2, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'RGRPDF24'),
@@ -722,7 +787,16 @@ describe("createNote", () => {
       `);
       const actual =
         await vi.importActual<typeof import("@zotlit/db")>("@zotlit/db");
-      vi.mocked(fetchNoteContext).mockImplementation(actual.fetchNoteContext);
+      // This case reads the seeded rows for real.
+      vi.mocked(getItemsByID).mockImplementation(actual.getItemsByID);
+      vi.mocked(fetchNoteSource).mockImplementation(actual.fetchNoteSource);
+      vi.mocked(buildNoteContextFromSource).mockImplementation(
+        actual.buildNoteContextFromSource,
+      );
+      cleanup.defer(() => {
+        vi.mocked(getItemsByID).mockImplementation(knownItemsByID);
+        vi.mocked(fetchNoteSource).mockImplementation(itemOnlySource);
+      });
       const app = makeApp();
       app.vault.createFolder = vi.fn(async (path: string) => {
         await mkdir(`${root}/${path}`, { recursive: true });
@@ -788,11 +862,12 @@ describe("createNote", () => {
           };
         },
       };
-      deps.excerptImages = createExcerptPreparation({
+      const prepareExcerpts = createExcerptPreparation({
         app: app as unknown as App,
         resolver,
         paths: deps.zoteroPref,
       });
+      deps.excerptImages = (options) => prepareExcerpts({ ...options, client });
       if (mode === "write-failure")
         await writeFile(`${root}/Images`, "occupied");
       const engine = new TemplateEngine();
@@ -1128,12 +1203,9 @@ describe("createNote", () => {
     // Related items pre-sorted by title (A, B, C) — this test asserts on
     // notePath/noteLink resolver wiring, not title sorting (already covered
     // by @zotlit/db's zt-template-note.test.ts).
-    vi.mocked(fetchNoteContext).mockImplementation((_client, item, options) =>
-      stubNoteContext(
-        item,
-        [fallback, byItemKey, byCitekey],
-        options.resolvers,
-      ),
+    vi.mocked(buildNoteContextFromSource).mockImplementation(
+      ({ item }, resolvers) =>
+        stubNoteContext(item, [fallback, byItemKey, byCitekey], resolvers),
     );
 
     const existingByItemKey = makeFile("Notes/Existing by item.md");
@@ -1141,7 +1213,7 @@ describe("createNote", () => {
     const deps: SyncRenderDeps = {
       app,
       template: makeTemplate(),
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1224,8 +1296,8 @@ describe("createNote", () => {
       citationKey: null,
     });
 
-    vi.mocked(fetchNoteContext).mockImplementation((_client, item, options) =>
-      stubNoteContext(item, [related], options.resolvers),
+    vi.mocked(buildNoteContextFromSource).mockImplementation(
+      ({ item }, resolvers) => stubNoteContext(item, [related], resolvers),
     );
 
     const app = makeApp();
@@ -1256,7 +1328,7 @@ describe("createNote", () => {
           return `root:${ctx.noteLink()}\nrelated:${ctx.relatedItems[0]!.noteLink()}`;
         },
       },
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1312,7 +1384,7 @@ describe("createNote", () => {
 
     // `render` below ignores its context entirely, so the stub just needs to
     // avoid throwing.
-    vi.mocked(fetchNoteContext).mockReturnValue({
+    vi.mocked(buildNoteContextFromSource).mockReturnValue({
       relatedItems: [],
     } as unknown as NoteTemplateContext);
 
@@ -1335,7 +1407,7 @@ describe("createNote", () => {
         ...makeTemplate(),
         getLiteratureNoteTemplate: () => document,
       },
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1390,7 +1462,7 @@ describe("createNote", () => {
       title: "Root",
       citationKey: null,
     });
-    vi.mocked(fetchNoteContext).mockReturnValue({
+    vi.mocked(buildNoteContextFromSource).mockReturnValue({
       relatedItems: [],
     } as unknown as NoteTemplateContext);
 
@@ -1418,7 +1490,7 @@ describe("createNote", () => {
         renderFilename: () => "Root",
         render: () => "body",
       },
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1460,7 +1532,7 @@ describe("createNote", () => {
     const deps: SyncRenderDeps = {
       app,
       template: makeTemplate(),
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1512,7 +1584,7 @@ describe("createNote", () => {
     const deps: SyncRenderDeps = {
       app,
       template: makeTemplate(),
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1555,7 +1627,7 @@ describe("createNote", () => {
 
   it("serializes concurrent creates and refuses the second result", async () => {
     const item = makeCreateGateItem();
-    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
     const app = makeApp();
     let releaseCreate!: () => void;
     const createGate = new Promise<void>((resolve) => {
@@ -1570,7 +1642,7 @@ describe("createNote", () => {
     const feature = createNoteFeature({
       app,
       template: makeTemplate(),
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1613,14 +1685,14 @@ describe("createNote", () => {
 
   it("refuses an immediate repeat before the Note Index observes the created file", async () => {
     const item = makeCreateGateItem();
-    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
     const app = makeApp();
     app.metadataCache.hold();
     const create = app.vault.create;
     const feature = createNoteFeature({
       app,
       template: makeTemplate(),
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1653,7 +1725,7 @@ describe("createNote", () => {
 
   it("allows recreation after the created file loses its Zotero key", async () => {
     const item = makeCreateGateItem();
-    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
     const app = makeApp();
     app.metadataCache.hold();
     const feature = createNoteFeature({
@@ -1662,7 +1734,7 @@ describe("createNote", () => {
         ...makeTemplate(),
         renderFilename: () => `Root${filenameSuffix()}`,
       },
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1699,7 +1771,7 @@ describe("createNote", () => {
 
   it("refuses a retry when post-create import flushing fails", async () => {
     const item = makeCreateGateItem();
-    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
     const app = makeApp();
     app.metadataCache.hold();
     const template = makeTemplate();
@@ -1707,7 +1779,7 @@ describe("createNote", () => {
     const feature = createNoteFeature({
       app,
       template,
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1759,7 +1831,7 @@ describe("createNote", () => {
         title: "Root",
         citationKey: null,
       });
-      vi.mocked(fetchNoteContext).mockReturnValue({
+      vi.mocked(buildNoteContextFromSource).mockReturnValue({
         relatedItems: [],
       } as unknown as NoteTemplateContext);
 
@@ -1789,7 +1861,7 @@ describe("createNote", () => {
           },
           render: () => "body",
         },
-        db: makeDb(),
+        ...makeDbDeps(),
         noteIndex: {
           getImportedNoteByNoteKey: () => [],
           ready: Promise.resolve(),
@@ -1833,12 +1905,12 @@ describe("createNote", () => {
       title: "Root",
       citationKey: "root2024",
     });
-    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
     const app = makeApp();
     const deps: SyncRenderDeps = {
       app,
       template: makeTemplate(),
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1886,14 +1958,14 @@ describe("createNote", () => {
   });
 
   it("keeps the default Profile on legacy rendering while conversion is pending", async () => {
-    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
     const app = makeApp();
     const template = makeTemplate();
     const renderLegacy = vi.spyOn(template, "render");
     const result = await createNoteFeature({
       app,
       template,
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1926,7 +1998,7 @@ describe("createNote", () => {
     const result = await createNoteFeature({
       app,
       template: makeTemplate(),
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1955,7 +2027,7 @@ describe("createNote", () => {
   });
 
   it("uses the converted document for the default Profile", async () => {
-    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
     const app = makeApp();
     const document = makeDocumentTemplate({
       createBody: `# Converted\n\n${formatManagedRegion("BODY")}`,
@@ -1968,7 +2040,7 @@ describe("createNote", () => {
         getLiteratureNoteTemplate: (reference) =>
           reference === "zotlit-profile.default.md" ? document : undefined,
       },
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -2001,7 +2073,7 @@ describe("createNote", () => {
   it("creates a Profile note from its document body, filename, and frontmatter", async () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const item = makeCreateGateItem();
-    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
     const app = makeApp();
     const document = makeDocumentTemplate({
       createBody: `# Books layout\n\n${formatManagedRegion("BOOK BODY")}`,
@@ -2022,7 +2094,7 @@ describe("createNote", () => {
     const deps: SyncRenderDeps = {
       app,
       template,
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -2085,7 +2157,7 @@ describe("createNote", () => {
   it("rejects with MissingTemplateError and writes nothing when the Profile document calls a Shared Partial the vault holds no document for", async () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const item = makeCreateGateItem();
-    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
     const app = makeApp();
     // The error a Profile document render raises for a call to a partial the
     // folder holds no document for; `template/service.test.ts` proves the real
@@ -2101,7 +2173,7 @@ describe("createNote", () => {
         getLiteratureNoteTemplate: (reference) =>
           reference === "books.md" ? document : undefined,
       },
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -2142,7 +2214,9 @@ describe("createNote", () => {
     "refuses create before writing when document $field is inert",
     async ({ entry, field }) => {
       const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
-      vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+      vi.mocked(buildNoteContextFromSource).mockReturnValue(
+        createGateContext(),
+      );
       const app = makeApp();
       const document = makeDocumentTemplate({
         frontmatter: compileDocumentFrontmatter(
@@ -2156,7 +2230,7 @@ describe("createNote", () => {
           ...makeTemplate(),
           getLiteratureNoteTemplate: () => document,
         },
-        db: makeDb(),
+        ...makeDbDeps(),
         noteIndex: {
           ready: Promise.resolve(),
           whenIndexed: async () => {},
@@ -2208,7 +2282,7 @@ describe("createNote", () => {
         ...makeTemplate(),
         getLiteratureNoteTemplate: () => undefined,
       },
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -2256,7 +2330,7 @@ describe("createNote", () => {
     const deps: SyncRenderDeps = {
       app,
       template: makeTemplate(),
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -2302,8 +2376,8 @@ describe("createNote", () => {
       title: "Root",
       citationKey: "root2024",
     });
-    vi.mocked(fetchNoteContext).mockImplementation((_client, item, options) =>
-      stubNoteContext(item, [], options.resolvers),
+    vi.mocked(buildNoteContextFromSource).mockImplementation(
+      ({ item }, resolvers) => stubNoteContext(item, [], resolvers),
     );
     const excerptScopes: (ExcerptOutcomeScope | undefined)[] = [];
     const importScopes: (ExcerptOutcomeScope | undefined)[] = [];
@@ -2311,7 +2385,7 @@ describe("createNote", () => {
     const deps: SyncRenderDeps = {
       app: makeApp(),
       template: makeTemplate(),
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -2380,7 +2454,7 @@ describe("overwriteNote", () => {
       libraryID: item.libraryID,
     });
     vi.mocked(getItemsByKey).mockReturnValue([item]);
-    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(updateContext());
     const harness = makeUpdateHarness({
       content: "Old body content",
       frontmatter: {
@@ -2416,7 +2490,7 @@ describe("overwriteNote", () => {
       libraryID: item.libraryID,
     });
     vi.mocked(getItemsByKey).mockReturnValue([item]);
-    vi.mocked(fetchNoteContext).mockReturnValue(
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(
       updateContext({ indexedKey: "ROOT1234" }),
     );
     const harness = makeUpdateHarness({
@@ -2451,7 +2525,7 @@ describe("overwriteNote", () => {
       libraryID: item.libraryID,
     });
     vi.mocked(getItemsByKey).mockReturnValue([item]);
-    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(updateContext());
     const harness = makeUpdateHarness({
       content: "Old body content",
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
@@ -2494,7 +2568,7 @@ describe("overwriteNote", () => {
       libraryID: item.libraryID,
     });
     vi.mocked(getItemsByKey).mockReturnValue([item]);
-    vi.mocked(fetchNoteContext).mockReturnValue(
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(
       updateContext({ indexedKey: "ROOT1234" }),
     );
 
@@ -2591,7 +2665,7 @@ function makeUpdateHarness(options: {
       },
     },
     template,
-    db: makeDb(),
+    ...makeDbDeps(),
     noteIndex: {
       getImportedNoteByNoteKey: () => [],
       ready: Promise.resolve(),
@@ -2631,7 +2705,7 @@ function makeUpdateHarness(options: {
   };
 }
 
-/** Context the (mocked) `fetchNoteContext` hands back for an update. */
+/** Context the (mocked) `buildNoteContextFromSource` hands back for an update. */
 function updateContext(
   overrides: Partial<NoteTemplateContext> = {},
 ): NoteTemplateContext {
@@ -2658,7 +2732,7 @@ function stubIndexedKeyUpdate(context: NoteTemplateContext): void {
       citationKey: "smith2024",
     }),
   ]);
-  vi.mocked(fetchNoteContext).mockReturnValue(context);
+  vi.mocked(buildNoteContextFromSource).mockReturnValue(context);
 }
 
 describe("updateNote", () => {
@@ -3811,10 +3885,10 @@ describe("updateNote", () => {
     const second = makeFile("Imported/Second.md");
     stubIndexedKeyUpdate(updateContext());
     vi.mocked(getChildNotesByParentIDs).mockReturnValueOnce([
-      { indexedKey: "NOTE0001" },
-      { indexedKey: "NOTE0002" },
-      { indexedKey: "NOTEGONE" },
-    ] as never);
+      childNote("NOTE0001"),
+      childNote("NOTE0002"),
+      childNote("NOTEGONE"),
+    ]);
     const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
     harness.deps.noteIndex.getImportedNoteByNoteKey = (key) =>
       key === "NOTE0001" ? [first] : key === "NOTE0002" ? [second] : [];
@@ -3830,9 +3904,9 @@ describe("updateNote", () => {
     const imported = makeFile("Imported/First.md");
     stubIndexedKeyUpdate(updateContext());
     vi.mocked(getChildNotesByParentIDs).mockReturnValueOnce([
-      { indexedKey: "NOTE0001" },
-      { indexedKey: "NOTEGONE" },
-    ] as never);
+      childNote("NOTE0001"),
+      childNote("NOTEGONE"),
+    ]);
     const harness = makeUpdateHarness({
       content: "My content",
       frontmatter: {
@@ -3897,7 +3971,7 @@ describe("updateNote", () => {
       if (failure === "missing item")
         vi.mocked(getItemsByKey).mockReturnValueOnce([]);
       else
-        harness.deps.db.acquireRead = async () => {
+        harness.deps.zoteroReads.acquireRead = async () => {
           throw new Error("Database unavailable");
         };
       const file = harness.file("Literature/Paper.md");
@@ -3972,7 +4046,7 @@ describe("updateNote", () => {
         ],
       },
     });
-    harness.deps.db.acquireRead = async () => {
+    harness.deps.zoteroReads.acquireRead = async () => {
       throw new Error("Recovery must not need a parent lookup");
     };
     const file = harness.file("Imports/Child.md");
@@ -4518,19 +4592,21 @@ describe("updateNote", () => {
   });
 });
 
+// The batch's reads for `writeNoteUpdate`: an unbound interface over its own
+// fixture database.
+const { reads } = await makeDbDeps().zoteroReads.ready;
+
 describe("writeNoteUpdate", () => {
   const writeOptions = (
     scope?: UpdateScope,
   ): Parameters<NoteFeature["writeNoteUpdate"]>[1] => ({
-    client: makeDb().client,
+    reads,
     item: makeItem({
       key: "ABC12345",
       indexedKey: "ABC12345",
       title: "A Study",
       citationKey: "smith2024",
     }),
-    tagMemo: new Map(),
-    collectionCache: new CollectionCache(),
     settings: {
       ...settingsDefaults,
       "note.default-profile": {
@@ -4546,7 +4622,7 @@ describe("writeNoteUpdate", () => {
   });
 
   it("replaces the region and preserves user content from the already-fetched item", async () => {
-    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(updateContext());
 
     const prefix = "user prefix\n\n";
     const suffix = "\n\nuser suffix";
@@ -4567,7 +4643,7 @@ describe("writeNoteUpdate", () => {
   });
 
   it("shares one outcome scope with the Child Note import and releases it after the update", async () => {
-    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(updateContext());
     const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
     await using probe = excerptReuseProbe();
     const excerptScopes: (ExcerptOutcomeScope | undefined)[] = [];
@@ -4609,7 +4685,7 @@ describe("writeNoteUpdate", () => {
   });
 
   it("leaves a caller's batch scope open for the rest of its run", async () => {
-    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(updateContext());
     const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
     const outcomes = new ExcerptOutcomeScope();
     await using probe = excerptReuseProbe();
@@ -4637,7 +4713,7 @@ describe("writeNoteUpdate", () => {
   });
 
   it("honors scope 'metadata' by leaving the body untouched", async () => {
-    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(updateContext());
 
     const original = `prefix\n${formatManagedRegion("OLD")}\nsuffix`;
     const harness = makeUpdateHarness({ content: original });
@@ -4653,7 +4729,7 @@ describe("writeNoteUpdate", () => {
   });
 
   it("uses document Managed Frontmatter for a headless metadata update", async () => {
-    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(updateContext());
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const original = `prefix\n${formatManagedRegion("OLD")}\nsuffix`;
     const harness = makeUpdateHarness({
@@ -4778,7 +4854,7 @@ describe("renderCitation", () => {
             render("citation", citekeysToCiteTemplateData(refs, variant)),
           ),
       },
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -4860,7 +4936,7 @@ describe("renderCitation", () => {
             .citations.map((c) => c.item.title)
             .join("; "),
       },
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -4916,7 +4992,7 @@ describe("renderAnnotation", () => {
         renderFilename: () => "",
         render: vi.fn(),
       },
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -5113,7 +5189,7 @@ function annotDeps(template: SyncRenderDeps["template"]): SyncRenderDeps {
   return {
     app: makeApp(),
     template,
-    db: makeDb(),
+    ...makeDbDeps(),
     noteIndex: {
       getImportedNoteByNoteKey: () => [],
       ready: Promise.resolve(),
@@ -5356,6 +5432,39 @@ function compileDocumentFrontmatter(
   });
 }
 
+/** Record the Items a read returns, so a later `NoteSource` read finds them. */
+function knowReadItems(client: ZoteroReadsClient): ZoteroReadsClient {
+  return {
+    ...client,
+    ItemsByIndexedKeys: ((payload: object, options?: object) =>
+      (
+        client.ItemsByIndexedKeys as unknown as (
+          payload: object,
+          options?: object,
+        ) => Effect.Effect<ReadonlyMap<string, Item>>
+      )(payload, options).pipe(
+        Effect.tap((items) =>
+          Effect.sync(() => {
+            for (const item of items.values())
+              knownItems.set(item.itemID, item);
+          }),
+        ),
+      )) as unknown as ZoteroReadsClient["ItemsByIndexedKeys"],
+  };
+}
+
+/** A fixture database and the ZoteroReads service over the same client. */
+function makeDbDeps() {
+  const db = makeDb();
+  return {
+    db,
+    zoteroReads: inProcessReadsService(
+      sharedClientOpener(db.client),
+      knowReadItems,
+    ),
+  };
+}
+
 function makeDb(): SyncRenderDeps["db"] {
   const client = createClient(":memory:");
   // Known Libraries with no memberships.
@@ -5524,14 +5633,28 @@ function makeItem(
   };
 }
 
+/** A Child Note row of item 1, named by its Indexed Key. */
+function childNote(indexedKey: string): ChildNote {
+  return {
+    groupID: null,
+    itemID: 50,
+    libraryID: 1,
+    key: indexedKey,
+    indexedKey,
+    parentItemID: 1,
+    title: null,
+    dateModified: Temporal.Instant.from("2024-01-15T10:00:00Z"),
+  };
+}
+
 function makeCreateGateItem(): Item {
   return {
     itemID: 1,
     libraryID: 1,
     key: "ROOT1234",
     indexedKey: "ROOT1234",
-    dateAdded: {} as Temporal.Instant,
-    dateModified: {} as Temporal.Instant,
+    dateAdded: Temporal.Instant.from("2024-01-15T10:00:00Z"),
+    dateModified: Temporal.Instant.from("2024-01-15T10:00:00Z"),
     creators: [],
     primaryCreatorType: "author",
     customFields: new Map(),

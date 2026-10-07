@@ -6,11 +6,10 @@
 // bodies, attachment contents, and image bytes are kept out by the shared
 // exporter and by the vault-target module, and none is assembled here.
 
+import { Effect } from "effect";
 import type { App } from "obsidian";
 
-import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import annotationSchema from "@zotlit/db/contract/annotation.schema.json" with { type: "json" };
 import filenameSchema from "@zotlit/db/contract/filename.schema.json" with { type: "json" };
 import noteSchema from "@zotlit/db/contract/note.schema.json" with { type: "json" };
@@ -23,7 +22,6 @@ import type {
   TemplateDependenciesResponse,
   TemplateSchemaResponse,
 } from "@zotlit/workbench/bridge";
-import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 import type {
   ItemSnapshot,
   SnapshotSelection,
@@ -33,7 +31,6 @@ import * as m from "@/lib/i18n/generated/messages";
 import { profileRevision } from "@/lib/profile-revision";
 import { DEFAULT_PROFILE, isProfileId } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import type { DatabaseService } from "@/services/database/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import {
   listInstalledStyles,
@@ -43,6 +40,10 @@ import type { ProfileReader, ProfileService } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type {
+  ZoteroReadsApi,
+  ZoteroReadsService,
+} from "@/services/zotero-reads/service";
 
 import type { SelectedItemIdentity } from "./sessions";
 import { collectVaultTargets } from "./vault-targets";
@@ -70,7 +71,7 @@ export class SelectedItemUnavailableError extends Error {
 export interface LocalBridgeReadDeps {
   app: App;
   settings: Pick<SettingsService, "loaded">;
-  db: Pick<DatabaseService, "acquireRead">;
+  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   noteIndex: Pick<
     NoteIndex,
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
@@ -114,21 +115,25 @@ export function createLocalBridgeReads(
 
     async selectedItem(item) {
       await Promise.all([deps.noteIndex.whenIndexed(), deps.zoteroPref.ready]);
-      using lease = await deps.db.acquireRead();
-      const selected = resolveSelection(lease.client, item.key);
+      // One Snapshot: the vault targets and the export read one state.
+      using lease = await deps.zoteroReads.acquireRead();
+      const selected = await resolveSelection(lease.reads, item.key);
       const vaultTargets = await collectVaultTargets(
-        lease.client,
+        lease.reads,
         selected.item,
         deps,
       );
-      return exportItemSnapshot(lease.client, selected.selection, {
-        provenance: {
-          kind: "connected",
-          installationId: deps.installationId(),
-          vault: deps.vaultName(),
-        },
-        vaultTargets,
-      });
+      return await Effect.runPromise(
+        lease.reads.ItemSnapshot({
+          selection: selected.selection,
+          provenance: {
+            kind: "connected",
+            installationId: deps.installationId(),
+            vault: deps.vaultName(),
+          },
+          vaultTargets,
+        }),
+      );
     },
 
     async selectedProfile(profileId) {
@@ -221,14 +226,15 @@ async function dependencyBundle(
 }
 
 /** The Snapshot selection and the Item row an Indexed Key names. */
-function resolveSelection(
-  client: NodeDatabaseClient,
+async function resolveSelection(
+  reads: ZoteroReadsApi,
   indexedKey: string,
-): { item: Item; selection: SnapshotSelection } {
-  const resolved = resolveIndexedKeyLibrary(client, indexedKey);
-  const item =
-    resolved && getItemsByKey(client, resolved.libraryID, [resolved.key])[0];
-  if (!resolved || !item) throw new SelectedItemUnavailableError(indexedKey);
+): Promise<{ item: Item; selection: SnapshotSelection }> {
+  const items = await Effect.runPromise(
+    reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
+  );
+  const item = items.values().next().value;
+  if (!item) throw new SelectedItemUnavailableError(indexedKey);
   return {
     item,
     selection: {
@@ -236,7 +242,7 @@ function resolveSelection(
         item.groupID === null
           ? { type: "personal" }
           : { type: "group", groupID: item.groupID },
-      key: resolved.key,
+      key: item.key,
     },
   };
 }
