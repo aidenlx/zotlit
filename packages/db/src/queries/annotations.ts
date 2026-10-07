@@ -104,22 +104,6 @@ const legacyAnnotationsByKeyQuery = defineQuery<{
   }),
 );
 
-const annotationByItemIdQuery = defineQuery<{ itemID: number }>()(
-  (db, { placeholder }) =>
-    db.query.itemAnnotations.findMany({
-      where: { itemID: placeholder("itemID"), item: { deletedItem: false } },
-      ...annotationFindOptions,
-    }),
-);
-
-const legacyAnnotationByItemIdQuery = defineQuery<{ itemID: number }>()(
-  (db, { placeholder }) =>
-    db.query.itemAnnotations.findMany({
-      where: { itemID: placeholder("itemID"), item: { deletedItem: false } },
-      ...legacyAnnotationFindOptions,
-    }),
-);
-
 type AnnotationRow = QueryRow<typeof annotationsByParentQuery>;
 
 export function getAnnotationsByParent(
@@ -154,23 +138,6 @@ export function getAnnotationsByKey(
       .flatMap((row) =>
         row.parentAttachment ? [toAnnotation(row, groupId)] : [],
       ),
-  );
-}
-
-export function getAnnotationsByItemId(
-  db: NodeDatabaseClient,
-  itemIDs: number[],
-  opts?: { memo?: GroupIDMemo },
-): Annotation[] {
-  const memo = opts?.memo ?? new Map();
-  const query = hasClientRevisions(db)
-    ? annotationByItemIdQuery
-    : legacyAnnotationByItemIdQuery;
-  return itemIDs.flatMap((itemID) =>
-    query
-      .prepared(db)
-      .all({ itemID })
-      .map((r) => toAnnotation(r, resolveGroupID(db, r.item.libraryID, memo))),
   );
 }
 

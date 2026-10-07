@@ -846,7 +846,10 @@ export class CitationIndex extends Service<void> {
       });
       return CitekeySnapshot.from(rows, inScope);
     } catch (error) {
-      logger.warn("Resolution snapshot rebuild failed", { error });
+      // A newer rebuild superseded this one: nothing failed.
+      if (signal.aborted)
+        logger.debug("Resolution snapshot rebuild superseded");
+      else logger.warn("Resolution snapshot rebuild failed", { error });
       throw error;
     }
   }

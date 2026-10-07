@@ -8,11 +8,7 @@ import { USER_LIBRARY_ID } from "@/lib/constants";
 import { parseAnnotationPosition } from "@/lib/zt-annot-pos";
 import { createFixtureSchema } from "@/test-utils";
 
-import {
-  getAnnotationsByItemId,
-  getAnnotationsByKey,
-  getAnnotationsByParent,
-} from "./annotations";
+import { getAnnotationsByKey, getAnnotationsByParent } from "./annotations";
 
 let sqlite: DatabaseSync;
 let db: NodeDatabaseClient;
@@ -39,7 +35,6 @@ describe("getAnnotationsByParent", () => {
     expect(result).toHaveLength(6);
     expect(result.every(({ version }) => version === 0)).toBe(true);
     expect(getAnnotationsByKey(db, ["JDJKX3N6"], 1)).toHaveLength(1);
-    expect(getAnnotationsByItemId(db, [9060])).toHaveLength(1);
   });
 
   it("returns visible annotations sorted by sortIndex", () => {

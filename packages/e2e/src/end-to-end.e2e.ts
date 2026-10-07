@@ -20,6 +20,7 @@ import {
 } from "node:fs/promises";
 import { createServer } from "node:net";
 import { basename, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -1324,6 +1325,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
 
     await using notices = await observeNotices(vaultId);
+    await using frames = await recordFrames(vaultId);
     const triggered = await obEvalUntil(
       vaultId,
       "app.commands.executeCommandById('zotlit:update-all-notes')",
@@ -1381,6 +1383,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       }),
     );
     expect(await clickModalButton(vaultId, m.batch_update_close())).toBe(true);
+    // The batch's database reads run in the worker: the window kept painting
+    // from the command to the summary.
+    const painted = await frames.read();
+    console.info("update-all frame gaps", painted);
+    expect(painted.frames).toBeGreaterThan(0);
+    expect(painted.maxFrameGapMs).toBeLessThan(1000);
 
     // The seed file the Fixture Vault ships already carries the title
     // heading and the `zotero-key`/`citekey` frontmatter, so polling for
@@ -2385,6 +2393,83 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
   });
 
+  it("refreshes the database from a Freshness Signal", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const server = JSON.parse(
+      await obEval(
+        vaultId,
+        `(function(){var services=${services};var settings=services.settings.current;return JSON.stringify({hostname:settings['server.hostname'],port:settings['server.port'],sourceId:services.zoteroPref.sourceId,autoRefresh:settings['zotero.auto-refresh']});})()`,
+      ),
+    ) as {
+      hostname: string;
+      port: number;
+      sourceId: string;
+      autoRefresh: boolean;
+    };
+    // Only the signal may refresh: the file watchers stay unbound.
+    await obEval(
+      vaultId,
+      `${services}.settings.update({'zotero.auto-refresh':false});window.zotlitE2EChanged=0;window.zotlitE2EOffChanged=${services}.zoteroReads.on('changed',function(){window.zotlitE2EChanged++;});true`,
+    );
+    const signal = async () => {
+      const response = await fetch(
+        `http://${server.hostname}:${server.port}/notify`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            [PROTOCOL_VERSION_HEADER]: String(PROTOCOL_VERSION),
+            [SOURCE_ID_HEADER]: server.sourceId,
+          },
+          body: JSON.stringify({ event: "db/updated" }),
+        },
+      );
+      expect(response.status).toBe(204);
+    };
+    // A Zotero edit moves the Item's title and its modification time.
+    const edit = (title: string, dateModified: string) => {
+      using database = new DatabaseSync(e2eFixture.databasePath);
+      database
+        .prepare(
+          "update itemDataValues set value = ? where valueID = (select itemData.valueID from itemData join fieldsCombined using (fieldID) where itemData.itemID = ? and fieldsCombined.fieldName = 'title')",
+        )
+        .run(title, targetItem.itemID);
+      database
+        .prepare("update items set dateModified = ? where itemID = ?")
+        .run(dateModified, targetItem.itemID);
+    };
+    const original = (() => {
+      using database = new DatabaseSync(e2eFixture.databasePath);
+      return database
+        .prepare("select dateModified from items where itemID = ?")
+        .get(targetItem.itemID) as { dateModified: string };
+    })();
+    const finds = (query: string) =>
+      obEvalUntil(
+        vaultId,
+        `(async function(){var hits=await ${services}.itemLookup.search(${JSON.stringify(query)});return String(hits.some(function(hit){return hit.item.itemID===${targetItem.itemID};}));})()`,
+        { expected: "true" },
+      );
+    try {
+      edit("Freshness signal probe zqxv", "2031-01-01 00:00:00");
+      await signal();
+      expect(
+        await obEvalUntil(vaultId, "String(window.zotlitE2EChanged>=1)", {
+          expected: "true",
+        }),
+      ).toBe(true);
+      expect(await finds("zqxv")).toBe(true);
+    } finally {
+      edit(targetItem.title, original.dateModified);
+      await signal();
+      await obEval(
+        vaultId,
+        `window.zotlitE2EOffChanged();delete window.zotlitE2EOffChanged;delete window.zotlitE2EChanged;${services}.settings.update({'zotero.auto-refresh':${server.autoRefresh}});true`,
+      );
+    }
+    expect(await finds(targetItem.title)).toBe(true);
+  });
+
   it("reflects a Scope Case switch through zotlit:library-scope", async () => {
     const availableCase = findScopeCase("available");
     const dataPath = join(
@@ -2410,6 +2495,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     data[LIBRARY_SCOPE_SETTING_KEY] = availableCase.scope;
     await writeFile(dataPath, JSON.stringify(data, null, 2));
 
+    // The plugin toggle is also the Zotero database worker's whole life:
+    // record every worker spawned and every worker ended across it.
+    await obEval(
+      vaultId,
+      "(function(){var Original=window.Worker;var record={spawned:[],Original:Original,terminate:Original.prototype.terminate,ended:new WeakSet()};record.Recording=class extends Original{constructor(url,options){super(url,options);record.spawned.push({worker:this,name:options&&options.name});}};Original.prototype.terminate=function(){record.ended.add(this);return record.terminate.call(this);};window.Worker=record.Recording;window.zotlitE2EWorkers=record;return true;})()",
+    );
+    const workers = (expression: string) =>
+      `(function(){var record=window.zotlitE2EWorkers;return ${expression};})()`;
     // An ordinary user action (the Community Plugins toggle), not a bypass —
     // it makes the plugin re-read data.json from disk.
     const toggled = await obEvalUntil(
@@ -2455,6 +2548,50 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         .toSorted((a, b) => a - b);
       expect(gotLibraryIDs).toEqual(
         expectedLibraryIDs(availableCase.scope.libraries),
+      );
+    }
+
+    try {
+      // The load spawned one database worker, and it serves.
+      expect(
+        await obEval(
+          vaultId,
+          workers(
+            "String(record.spawned.filter(function(entry){return entry.name==='zotlit-zotero-reads';}).length)",
+          ),
+        ),
+      ).toBe("1");
+      expect(
+        await obEvalUntil(
+          vaultId,
+          "String(app.plugins.plugins.zotlit.services.zoteroReads.state)",
+          { expected: "ready" },
+        ),
+      ).toBe(true);
+      // Unload ends it.
+      await obEval(
+        vaultId,
+        "app.plugins.disablePlugin('zotlit').then(function(){return true;})",
+      );
+      expect(
+        await obEvalUntil(
+          vaultId,
+          workers(
+            "String(record.ended.has(record.spawned.find(function(entry){return entry.name==='zotlit-zotero-reads';}).worker))",
+          ),
+          { expected: "true" },
+        ),
+      ).toBe(true);
+    } finally {
+      await obEval(
+        vaultId,
+        workers(
+          "(window.Worker=record.Original,record.Original.prototype.terminate=record.terminate,delete window.zotlitE2EWorkers,true)",
+        ),
+      );
+      await obEval(
+        vaultId,
+        "app.plugins.enablePlugin('zotlit').then(function(){return true;})",
       );
     }
   });
@@ -2708,6 +2845,47 @@ async function createFixtureNote(
     `(async function(){var services=app.plugins.plugins.zotlit.services;var hits=await services.itemLookup.search('',{limit:100});var hit=hits.find(function(candidate){return candidate.item.itemID===${itemID};});if(!hit){throw new Error('Fixture Item not found');}var result=await services.noteFeature.createNote(hit.item,${JSON.stringify({ profile })});return JSON.stringify(result.outcome==='created'?{outcome:'created',path:result.file.path,indexedKey:hit.item.indexedKey}:{outcome:'refused',diagnostic:result.diagnostic});})()`,
   );
   return JSON.parse(response) as CreateOperationReply;
+}
+
+/**
+ * Watch the window's frames from now on: the longest gap between two
+ * animation frames, and the long tasks the renderer reported.
+ */
+async function recordFrames(vaultId: string): Promise<
+  AsyncDisposable & {
+    read(): Promise<{
+      frames: number;
+      maxFrameGapMs: number;
+      longTasks: number;
+      longestTaskMs: number;
+    }>;
+  }
+> {
+  await obEval(
+    vaultId,
+    "(function(){var record={frames:0,maxFrameGapMs:0,longTasks:0,longestTaskMs:0,live:true};var previous=performance.now();var tick=function(now){record.frames++;record.maxFrameGapMs=Math.max(record.maxFrameGapMs,now-previous);previous=now;if(record.live)requestAnimationFrame(tick);};requestAnimationFrame(tick);record.observer=new PerformanceObserver(function(list){for(var entry of list.getEntries()){record.longTasks++;record.longestTaskMs=Math.max(record.longestTaskMs,entry.duration);}});record.observer.observe({type:'longtask'});window.zotlitE2EFrames=record;return true;})()",
+  );
+  return {
+    async read() {
+      return JSON.parse(
+        await obEval(
+          vaultId,
+          "(function(){var r=window.zotlitE2EFrames;return JSON.stringify({frames:r.frames,maxFrameGapMs:Math.round(r.maxFrameGapMs),longTasks:r.longTasks,longestTaskMs:Math.round(r.longestTaskMs)});})()",
+        ),
+      ) as {
+        frames: number;
+        maxFrameGapMs: number;
+        longTasks: number;
+        longestTaskMs: number;
+      };
+    },
+    async [Symbol.asyncDispose]() {
+      await obEval(
+        vaultId,
+        "(function(){var r=window.zotlitE2EFrames;r.live=false;r.observer.disconnect();delete window.zotlitE2EFrames;return true;})()",
+      );
+    },
+  };
 }
 
 function hasOneIndexedNote(

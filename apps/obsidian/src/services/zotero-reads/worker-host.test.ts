@@ -312,6 +312,24 @@ describe("ZoteroReads worker adapter", () => {
     expect(workers.ended(1)).toBe(true);
   });
 
+  it("reports no degraded ZoteroReadsService when unload ends the worker", async () => {
+    const workers = fakeWorkers();
+    const service = new ZoteroReadsService({
+      client: makeWorkerReads(workers.connect),
+    });
+    const { reads } = await service.ready;
+    await Effect.runPromise(workerSeen(reads));
+    await vi.waitFor(() => expect(service.state).toBe("ready"));
+    const degraded: DbUnavailable[] = [];
+    service.on("degraded", (error) => degraded.push(error));
+
+    await service[Symbol.asyncDispose]();
+
+    expect(workers.ended(1)).toBe(true);
+    expect(degraded).toEqual([]);
+    expect(service.state).toBe("ready");
+  });
+
   it("ends the worker when the caller's scope closes", async () => {
     const workers = fakeWorkers();
     await Effect.runPromise(

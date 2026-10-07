@@ -248,6 +248,8 @@ export class ZoteroReadsService extends Service<ZoteroReadsReady> {
         Effect.onExit((exit) =>
           Effect.sync(() => {
             seeded.resolve();
+            // Unload ends the feed with the adapter; nothing was lost.
+            if (this.disposing) return;
             if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) {
               return;
             }
