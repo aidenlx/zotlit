@@ -20,6 +20,7 @@ import type {
   Note,
   NoteSource,
   TemplateCollection,
+  ZoteroDatabaseIdentity,
 } from "@zotlit/db";
 import type { AnnotationPositionRaw } from "@zotlit/db";
 import type { ItemFields } from "@zotlit/zotero-types";
@@ -310,6 +311,15 @@ type _IndexSignature = Expect<
   Equals<typeof IndexSignatureSchema.Type, IndexSignature>
 >;
 
+export const DatabaseIdentitySchema = Schema.Struct({
+  userID: Schema.NullOr(Schema.Number),
+  localUserKey: Schema.NullOr(Schema.String),
+  serverID: Schema.NullOr(Schema.String),
+});
+type _DatabaseIdentity = Expect<
+  Equals<typeof DatabaseIdentitySchema.Type, ZoteroDatabaseIdentity>
+>;
+
 // --- Lifecycle ------------------------------------------------------------
 
 /** Settings that drive the source; `Configure` pushes them. */
@@ -487,6 +497,26 @@ export class ZoteroReads extends RpcGroup.make(
   Rpc.make("IndexSignature", {
     payload: { libraryID: Schema.Number, ...snapshot },
     success: IndexSignatureSchema,
+    error: ReadError,
+  }),
+  /** The account and Local API database this connection reads. */
+  Rpc.make("DatabaseIdentity", {
+    payload: snapshot,
+    success: DatabaseIdentitySchema,
+    error: ReadError,
+  }),
+  /**
+   * Attachments by Indexed Key, with their parent items, the parents' tags,
+   * and the username: an Annotation's parent context without its own row. A
+   * key with no live attachment is absent.
+   */
+  Rpc.make("AttachmentSources", {
+    payload: {
+      attachmentKeys: Schema.Array(Schema.String),
+      username: Schema.optionalKey(Schema.NullOr(Schema.String)),
+      ...snapshot,
+    },
+    success: AnnotationSourcesSchema,
     error: ReadError,
   }),
 ) {}

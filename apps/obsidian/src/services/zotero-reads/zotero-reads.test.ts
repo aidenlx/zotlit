@@ -858,3 +858,35 @@ describe("ZoteroReads connection lifetime", () => {
     expect(seen).toBe(2);
   });
 });
+
+describe("ZoteroReads annotation-family operations", () => {
+  it("DatabaseIdentity names the account and the Local API database", async () => {
+    const { open } = fixtureOpener(
+      () =>
+        "insert into settings (setting, key, value) values ('localAPI', 'serverID', 'SERVER000001'), ('account', 'localUserKey', 'LOCALKEY')",
+    );
+    const identity = await withReads(open, (reads) =>
+      reads.DatabaseIdentity({}),
+    );
+    expect(identity).toEqual({
+      userID: 42,
+      localUserKey: "LOCALKEY",
+      serverID: "SERVER000001",
+    });
+  });
+
+  it("AttachmentSources returns attachments by Indexed Key with their parent items, tags, and username", async () => {
+    const { open } = fixtureOpener();
+    const sources = await withReads(open, (reads) =>
+      reads.AttachmentSources({ attachmentKeys: ["ATCH2345", "MISS2345"] }),
+    );
+    expect(sources.annotations).toEqual([]);
+    expect(sources.attachments.map((a) => a.indexedKey)).toEqual(["ATCH2345"]);
+    expect(sources.attachments[0]!.dateAdded).toBeInstanceOf(Temporal.Instant);
+    expect(sources.parentItems.map((i) => i.key)).toEqual(["MAIN2345"]);
+    expect(sources.tagsByItemID.get(1)!.map((tag) => tag.tag.name)).toEqual([
+      "zt",
+    ]);
+    expect(sources.username).toBe("reader");
+  });
+});

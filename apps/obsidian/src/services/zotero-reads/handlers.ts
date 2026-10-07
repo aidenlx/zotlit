@@ -5,6 +5,7 @@ import { Clock, Duration, Effect, Exit, Scope, Stream } from "effect";
 import {
   CollectionCache,
   fetchAnnotationSources,
+  fetchAttachmentSources,
   fetchNoteSource,
   getAccountUserID,
   getAnnotationsByKey,
@@ -23,6 +24,7 @@ import {
   getLibraries,
   getNoteByKey,
   getRelatedKeysByItemID,
+  getZoteroDatabaseIdentity,
   isChildItemFields,
   resolveIndexedKeyLibrary,
 } from "@zotlit/db";
@@ -380,6 +382,23 @@ export function handlersLayer(options?: HandlersOptions) {
           withClient(snapshot, (client) =>
             getIndexSignature(client, libraryID),
           ),
+
+        DatabaseIdentity: ({ snapshot }) =>
+          withClient(snapshot, getZoteroDatabaseIdentity),
+
+        AttachmentSources: (payload) =>
+          withClient(payload.snapshot, (client) => {
+            const attachments = payload.attachmentKeys.flatMap((indexedKey) => {
+              const library = resolveIndexedKeyLibrary(client, indexedKey);
+              const attachment =
+                library &&
+                getAttachmentByKey(client, library.key, library.libraryID);
+              return attachment ? [attachment] : [];
+            });
+            return fetchAttachmentSources(client, attachments, {
+              ...("username" in payload && { username: payload.username }),
+            });
+          }),
       });
     }),
   );

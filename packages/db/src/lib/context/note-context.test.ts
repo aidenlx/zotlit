@@ -9,15 +9,18 @@ import type { TemplateItemResolvers } from "@/lib/context/zt-template-item";
 import type { Annotation } from "@/lib/zt-annot";
 import { CollectionCache } from "@/lib/zt-collection";
 import { getAnnotationsByParent } from "@/queries/annotations";
+import { getAttachmentByItemId } from "@/queries/attachments";
 import { getItemsByKey } from "@/queries/items";
 import { resolveItemTagsByIDs } from "@/queries/tags";
 import type { TagMemo } from "@/queries/tags";
 import { createFixtureSchema } from "@/test-utils";
 
 import {
+  buildAnnotationParents,
   buildAnnotationsTemplateData,
   buildNoteContextFromSource,
   fetchAnnotationSources,
+  fetchAttachmentSources,
   fetchAnnotationsTemplateData,
   fetchNoteContext,
   fetchNoteSource,
@@ -219,6 +222,35 @@ describe("fetchAnnotationSources + buildAnnotationsTemplateData", () => {
       "https://www.zotero.org/fromdb/items/MAIN0001",
     );
     expect(result.get("ANNO0003")!.parentItem).toBeNull();
+  });
+});
+
+describe("fetchAttachmentSources + buildAnnotationParents", () => {
+  it("builds each attachment's parent context with no annotation row", () => {
+    sqlite.exec(
+      "insert into settings (setting, key, value) values ('account', 'username', 'fromdb')",
+    );
+    const attachments = [
+      getAttachmentByItemId(db, 10)!,
+      getAttachmentByItemId(db, 20)!,
+    ];
+
+    const sources = fetchAttachmentSources(db, attachments, {});
+    const parents = buildAnnotationParents(
+      overTheWire(sources),
+      annotationResolvers,
+    );
+
+    expect(sources.annotations).toEqual([]);
+    expect(functionPaths(sources)).toEqual([]);
+    const paper = parents.get(10)!;
+    expect(paper.tplAttachment.key).toBe("ATCH0001");
+    expect(paper.parentItem!.authorsShort).toBe("short:MAIN0001");
+    expect(paper.parentItem!.weblink).toBe(
+      "https://www.zotero.org/fromdb/items/MAIN0001",
+    );
+    expect(parents.get(20)!.tplAttachment.key).toBe("ATCH0002");
+    expect(parents.get(20)!.parentItem).toBeNull();
   });
 });
 

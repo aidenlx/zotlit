@@ -61,6 +61,7 @@ export {
   parseIndexedKey,
   type ParsedIndexedKey,
   resolveIndexedKeyLibrary,
+  resolveIndexedKeyLibraryIn,
 } from "./lib/zt-key";
 export { isItemKey } from "./lib/zt-item-key";
 export {
@@ -209,13 +210,15 @@ export {
   type TemplateNoteLink,
 } from "./lib/context/zt-template-note";
 export {
+  buildAnnotationParents,
   buildAnnotationsTemplateData,
   buildNoteContextFromSource,
   fetchAnnotationSources,
   fetchAnnotationsTemplateData,
-  fetchAnnotationParentContext,
+  fetchAttachmentSources,
   fetchNoteContext,
   fetchNoteSource,
+  type AnnotationParent,
   type AnnotationResolvers,
   type AnnotationSources,
   type NoteResolvers,

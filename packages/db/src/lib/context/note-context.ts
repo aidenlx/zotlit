@@ -215,43 +215,11 @@ export function fetchNoteContext(
 
 /** A parent PDF's reusable template shape, built once per attachment and shared
  *  by every annotation off it. */
-interface ParentBundle {
+export interface AnnotationParent {
   attachment: Attachment;
   tplAttachment: TemplateAttachment;
   /** `null` when the attachment is standalone (no parent bibliographic item). */
   parentItem: TemplateParentItemData | null;
-}
-
-/** Parent facts for a captured Annotation that may precede its SQLite row. */
-export function fetchAnnotationParentContext(
-  client: NodeDatabaseClient,
-  attachment: Attachment,
-  resolvers: AnnotationResolvers,
-): Pick<ParentBundle, "parentItem" | "tplAttachment"> {
-  const item = getItemsByID(client, [attachment.parentItemID])[0];
-  let parentItem: TemplateParentItemData | null = null;
-  if (item) {
-    const tags = resolveItemTagsByIDs(client, [item.itemID], new Map());
-    const baseData = itemToTemplateBaseData({
-      item,
-      tags: tags.get(item.itemID) ?? [],
-    });
-    parentItem = withItemPreview({
-      ...baseData,
-      notePath: null,
-      noteLink: () => null,
-      ...resolveItemCore({
-        item,
-        baseData,
-        username: getZoteroIdentity(client).username,
-        authorsShort: resolvers.authorsShort,
-      }),
-    });
-  }
-  return {
-    parentItem,
-    tplAttachment: resolveTemplateAttachment(attachment, resolvers),
-  };
 }
 
 /**
@@ -302,22 +270,59 @@ export function fetchAnnotationSources(
     };
   }
 
-  const username =
-    options.username === undefined
-      ? getZoteroIdentity(client).username
-      : options.username;
-  const { groupIdMemo } = options;
-  const tagMemo: TagMemo = options.tagMemo ?? new Map();
-  const memo = { memo: groupIdMemo };
-
+  const memo = { memo: options.groupIdMemo };
   const attachments: Attachment[] = [];
   for (const itemID of distinct(annotations.map((a) => a.parentItemID))) {
     const attachment = getAttachmentByItemId(client, itemID, memo);
     if (attachment) attachments.push(attachment);
   }
+  return fetchParentSources(client, { annotations, attachments }, options);
+}
 
+/**
+ * Read the {@link AnnotationSources} of attachments alone: their parent items,
+ * the parents' tags, and the username, with no annotation row. For an
+ * Annotation that may precede its SQLite row; {@link buildAnnotationParents}
+ * turns it into each attachment's parent context.
+ */
+export function fetchAttachmentSources(
+  client: NodeDatabaseClient,
+  attachments: readonly Attachment[],
+  options: {
+    tagMemo?: TagMemo;
+    groupIdMemo?: GroupIDMemo;
+    /** As in {@link fetchAnnotationSources}. */
+    username?: string | null;
+  },
+): AnnotationSources {
+  return fetchParentSources(client, { annotations: [], attachments }, options);
+}
+
+/** The parent items and username of `attachments`, and the tags of both. */
+function fetchParentSources(
+  client: NodeDatabaseClient,
+  {
+    annotations,
+    attachments,
+  }: {
+    annotations: readonly Annotation[];
+    attachments: readonly Attachment[];
+  },
+  options: {
+    tagMemo?: TagMemo;
+    groupIdMemo?: GroupIDMemo;
+    username?: string | null;
+  },
+): AnnotationSources {
+  const username =
+    options.username === undefined
+      ? getZoteroIdentity(client).username
+      : options.username;
+  const tagMemo: TagMemo = options.tagMemo ?? new Map();
   const parentIDs = distinct(attachments.map((a) => a.parentItemID));
-  const parentItems = getItemsByID(client, parentIDs, memo);
+  const parentItems = getItemsByID(client, parentIDs, {
+    memo: options.groupIdMemo,
+  });
 
   const tagsByItemID = resolveItemTagsByIDs(
     client,
@@ -340,14 +345,44 @@ export function buildAnnotationsTemplateData(
   sources: AnnotationSources,
   resolvers: AnnotationResolvers,
 ): Map<string, TemplateAnnotation> {
-  const { annotations, attachments, tagsByItemID, username } = sources;
+  const { annotations, tagsByItemID } = sources;
   const result = new Map<string, TemplateAnnotation>();
+  const bundleByAttachment = buildAnnotationParents(sources, resolvers);
+
+  for (const annotation of annotations) {
+    const bundle = bundleByAttachment.get(annotation.parentItemID);
+    if (!bundle) continue;
+    result.set(
+      annotation.key,
+      annotationToTemplateData({
+        annotation,
+        tags: tagsByItemID.get(annotation.itemID) ?? [],
+        getParentAttachment: () => bundle.tplAttachment,
+        getParentItem: () => bundle.parentItem,
+        commentToMarkdown: resolvers.commentToMarkdown,
+        annotationImageLink: resolvers.annotationImageLink,
+        fileLink: (anchor) => resolvers.fileLink(bundle.attachment, anchor),
+      }),
+    );
+  }
+  return result;
+}
+
+/**
+ * Build each attachment's {@link AnnotationParent} from
+ * {@link AnnotationSources}, keyed by attachment itemID — equal to each of its
+ * annotations' `parentItemID`. Reads no database; the resolvers run here only.
+ */
+export function buildAnnotationParents(
+  sources: AnnotationSources,
+  resolvers: AnnotationResolvers,
+): Map<number, AnnotationParent> {
+  const { attachments, tagsByItemID, username } = sources;
   const parentItemsByID = new Map(
     sources.parentItems.map((item) => [item.itemID, item]),
   );
 
-  // Keyed by attachment itemID — equal to each annotation's `parentItemID`.
-  const bundleByAttachment = new Map<number, ParentBundle>();
+  const bundleByAttachment = new Map<number, AnnotationParent>();
   for (const attachment of attachments) {
     const parentItemData = parentItemsByID.get(attachment.parentItemID);
     // `null` for a standalone attachment (a PDF with no parent bibliographic
@@ -378,24 +413,7 @@ export function buildAnnotationsTemplateData(
       tplAttachment: resolveTemplateAttachment(attachment, resolvers),
     });
   }
-
-  for (const annotation of annotations) {
-    const bundle = bundleByAttachment.get(annotation.parentItemID);
-    if (!bundle) continue;
-    result.set(
-      annotation.key,
-      annotationToTemplateData({
-        annotation,
-        tags: tagsByItemID.get(annotation.itemID) ?? [],
-        getParentAttachment: () => bundle.tplAttachment,
-        getParentItem: () => bundle.parentItem,
-        commentToMarkdown: resolvers.commentToMarkdown,
-        annotationImageLink: resolvers.annotationImageLink,
-        fileLink: (anchor) => resolvers.fileLink(bundle.attachment, anchor),
-      }),
-    );
-  }
-  return result;
+  return bundleByAttachment;
 }
 
 /**
