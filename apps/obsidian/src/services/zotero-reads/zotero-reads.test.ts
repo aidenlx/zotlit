@@ -1,4 +1,5 @@
 import { Effect, Exit, Scope, Stream } from "effect";
+import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 
 import { buildNoteContextFromSource } from "@zotlit/db";
@@ -96,33 +97,69 @@ const SEED = `
 /**
  * An opener over fresh `:memory:` databases. Each open gets the next number;
  * the log records opens and closes, so a test can watch a connection's
- * lifetime. Open #N reports library 1 at `version: N`, so a read shows which
- * connection answered. `extra` adds SQL per open, or `null` to fail the open.
+ * lifetime, and `closed(n)` completes when connection #n closes. Open #N
+ * reports library 1 at `version: N`, so a read shows which connection
+ * answered. `statements()` counts the statements run on every connection.
+ * `extra` adds SQL per open, or `null` to fail the open.
  */
 function fixtureOpener(extra: (open: number) => string | null = () => "") {
   const log: string[] = [];
   const configs: (ReadsConfig | null)[] = [];
+  const closes = new Map<number, PromiseWithResolvers<void>>();
+  const closeSignal = (id: number) => {
+    let signal = closes.get(id);
+    if (!signal) {
+      signal = Promise.withResolvers<void>();
+      closes.set(id, signal);
+    }
+    return signal;
+  };
   let opened = 0;
+  let statements = 0;
   const open: ConnectionOpener = (config) => {
     const id = ++opened;
     configs.push(config);
     const sql = extra(id);
     if (sql === null) throw new Error(`source #${id} is not readable`);
     const client: NodeDatabaseClient = createClient(":memory:");
-    createFixtureSchema(client.$client);
-    client.$client.exec(SEED);
-    client.$client.exec(
+    const sqlite = client.$client;
+    createFixtureSchema(sqlite);
+    sqlite.exec(SEED);
+    sqlite.exec(
       `update libraries set version = ${id} where libraryID = 1; ${sql}`,
     );
-    const close = client.$client.close.bind(client.$client);
-    client.$client.close = () => {
+    const prepare = sqlite.prepare.bind(sqlite);
+    sqlite.prepare = (source: string) => {
+      const statement = prepare(source);
+      const methods = statement as unknown as Record<
+        "all" | "get" | "run" | "iterate",
+        (...args: unknown[]) => unknown
+      >;
+      for (const method of ["all", "get", "run", "iterate"] as const) {
+        const run = methods[method].bind(statement);
+        methods[method] = (...args) => {
+          statements += 1;
+          return run(...args);
+        };
+      }
+      return statement;
+    };
+    const close = sqlite.close.bind(sqlite);
+    sqlite.close = () => {
       log.push(`close #${id}`);
       close();
+      closeSignal(id).resolve();
     };
     log.push(`open #${id}`);
     return client;
   };
-  return { open, log, configs };
+  return {
+    open,
+    log,
+    configs,
+    closed: (id: number) => Effect.promise(() => closeSignal(id).promise),
+    statements: () => statements,
+  };
 }
 
 /** Run `body` against an in-process client over `opener`. */
@@ -449,14 +486,29 @@ describe("ZoteroReads operations", () => {
     ]);
   });
 
-  it("AttachmentPathIndex streams every attachment beside its parent key", async () => {
-    const { open } = fixtureOpener();
-    const slices = await withReads(open, (reads) =>
-      Stream.runCollect(reads.AttachmentPathIndex({})),
+  it("AttachmentPathIndex streams every attachment beside its parent key, a slice per query", async () => {
+    const { open } = fixtureOpener(
+      () => `
+        insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+          values (11, 2, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'ATCHSOLO');
+        insert into itemAttachments (itemID, parentItemID, linkMode, path)
+          values (11, null, 0, 'storage:loose.pdf');
+      `,
     );
-    expect(slices).toHaveLength(1);
-    expect(slices[0]).toMatchObject([
-      { key: "ATCH2345", parentIndexedKey: "MAIN2345" },
+    const slices = await withReads(open, (reads) =>
+      Stream.runCollect(reads.AttachmentPathIndex({ sliceSize: 1 })),
+    );
+    expect(
+      slices.map((slice) =>
+        slice.map((attachment) => [
+          attachment.key,
+          attachment.parentIndexedKey,
+          attachment.path,
+        ]),
+      ),
+    ).toEqual([
+      [["ATCH2345", "MAIN2345", "storage:paper.pdf"]],
+      [["ATCHSOLO", null, "storage:loose.pdf"]],
     ]);
   });
 
@@ -510,6 +562,41 @@ describe("ZoteroReads connection lifetime", () => {
     expect(log).toEqual(["open #1", "open #2", "close #1", "close #2"]);
   });
 
+  it("a subscriber that joins before the first read sees the connection open", async () => {
+    const { open } = fixtureOpener();
+    const events = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        const changes = yield* Stream.toPull(reads.Changes());
+        const seed = yield* take(changes, 1);
+        yield* reads.Libraries({});
+        return [...seed, ...(yield* take(changes, 1))];
+      }).pipe(Effect.scoped),
+    );
+    expect(events).toEqual<ChangeEvent[]>([
+      { _tag: "state", state: "loading", error: null },
+      { _tag: "changed" },
+    ]);
+  });
+
+  it("a subscriber that joins before the first read sees a source that cannot open degrade", async () => {
+    const { open } = fixtureOpener(() => null);
+    const events = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        const changes = yield* Stream.toPull(reads.Changes());
+        const seed = yield* take(changes, 1);
+        yield* Effect.flip(reads.Libraries({}));
+        // A second failed open reports nothing new.
+        yield* Effect.flip(reads.Libraries({}));
+        return [...seed, ...(yield* take(changes, 1))];
+      }).pipe(Effect.scoped),
+    );
+    expect(events.map((event) => event._tag)).toEqual(["state", "degraded"]);
+    expect(events[1]).toHaveProperty(
+      "error.message",
+      "source #1 is not readable",
+    );
+  });
+
   it("a refresh whose new source fails validation keeps the current connection serving", async () => {
     const { open, log } = fixtureOpener((id) =>
       id === 2 ? "drop table libraries;" : "",
@@ -545,7 +632,7 @@ describe("ZoteroReads connection lifetime", () => {
   });
 
   it("a Snapshot keeps its connection across a refresh; the old one closes when the Snapshot ends", async () => {
-    const { open, log } = fixtureOpener();
+    const { open, log, closed } = fixtureOpener();
     const seen = await withReads(open, (reads) =>
       Effect.gen(function* () {
         const held = yield* Effect.scoped(
@@ -558,22 +645,20 @@ describe("ZoteroReads connection lifetime", () => {
             return { pinned, current, log: [...log] };
           }),
         );
-        // The interrupt reaches the server after the client scope closes.
-        yield* Effect.yieldNow;
-        return { ...held, logAfterEnd: [...log] };
+        yield* closed(1);
+        return held;
       }),
     );
     expect(seen).toEqual({
       pinned: 1,
       current: 2,
       log: ["open #1", "open #2"],
-      logAfterEnd: ["open #1", "open #2", "close #1"],
     });
   });
 
-  it("a stream named by a Snapshot reads the pinned connection and holds it until the stream ends", async () => {
+  it("a Snapshot-bound stream keeps reading its connection after a swap and holds it until the stream ends", async () => {
     // Open #2 drops RELA2345 (item 3); the pinned connection still holds it.
-    const { open, log } = fixtureOpener((id) =>
+    const { open, log, closed } = fixtureOpener((id) =>
       id === 2 ? "delete from items where itemID = 3;" : "",
     );
     const result = await withReads(open, (reads) =>
@@ -583,11 +668,11 @@ describe("ZoteroReads connection lifetime", () => {
           Scope.provide(snapshotScope),
         );
         const [id] = yield* take(snapshot, 1);
-        yield* reads.Refresh();
 
-        const refs = yield* Effect.scoped(
+        const streamed = yield* Effect.scoped(
           Effect.gen(function* () {
-            // A one-slot buffer keeps the server from reading ahead.
+            // Started before the swap. A one-slot buffer keeps the server
+            // from reading ahead, so the last slice is read after the swap.
             const slices = yield* Stream.toPull(
               reads.DisplayRefs(
                 { itemIDs: [1, 1, 1, 1, 3], sliceSize: 1, snapshot: id },
@@ -595,23 +680,38 @@ describe("ZoteroReads connection lifetime", () => {
               ),
             );
             const first = yield* take(slices, 1);
+            yield* reads.Refresh();
+            // Started after the swap, naming the Snapshot.
+            const indexed = yield* Stream.runCollect(
+              reads.IndexItems({ libraryID: 1, snapshot: id }),
+            );
+
+            // End the Snapshot; its id stops answering once the server has
+            // ended it, while the stream still holds the connection.
             yield* Scope.close(snapshotScope, Exit.void);
-            yield* Effect.yieldNow;
+            yield* reads
+              .Libraries({ snapshot: id })
+              .pipe(Effect.flip, Effect.retry({ times: 100 }));
             const logAfterSnapshotEnd = [...log];
+
             const rest = yield* take(slices, 4);
-            return { refs: [...first, ...rest].flat(), logAfterSnapshotEnd };
+            return {
+              refs: [...first, ...rest].flat(),
+              indexed: indexed.flat().map((item) => item.key),
+              logAfterSnapshotEnd,
+            };
           }),
         );
-        yield* Effect.yieldNow;
-        return { ...refs, log: [...log] };
+        yield* closed(1);
+        return streamed;
       }),
     );
     expect(result.refs.at(-1)).toMatchObject({
       itemID: 3,
       ref: { key: "RELA2345" },
     });
+    expect(result.indexed).toEqual(["MAIN2345", "RELA2345", "RELB2345"]);
     expect(result.logAfterSnapshotEnd).toEqual(["open #1", "open #2"]);
-    expect(result.log).toEqual(["open #1", "open #2", "close #1"]);
   });
 
   it("a read naming an unknown Snapshot fails with SnapshotExpired", async () => {
@@ -626,24 +726,36 @@ describe("ZoteroReads connection lifetime", () => {
     });
   });
 
-  it("an idle Snapshot times out and releases its connection", async () => {
-    const { open, log } = fixtureOpener();
-    const result = await withReads(
-      open,
-      (reads) =>
-        Effect.gen(function* () {
-          const ids = yield* Stream.runCollect(reads.Snapshot());
-          yield* reads.Refresh();
-          const expired = yield* Effect.flip(
-            reads.Libraries({ snapshot: ids[0]! }),
-          );
-          return { ids, expired, log: [...log] };
-        }),
-      { snapshotIdleTimeout: "20 millis" },
+  it("an idle Snapshot ends one idle timeout after its last read and releases its connection", async () => {
+    const { open, closed } = fixtureOpener();
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const reads = yield* makeInProcessClient({
+          snapshotIdleTimeout: "1 minute",
+        });
+        const pull = yield* Stream.toPull(reads.Snapshot());
+        const [id] = yield* take(pull, 1);
+        yield* reads.Refresh();
+
+        // Each read restarts the idle timeout.
+        yield* TestClock.adjust("59 seconds");
+        const at59s = yield* connectionSeen(reads, id);
+        yield* TestClock.adjust("59 seconds");
+        const at118s = yield* connectionSeen(reads, id);
+
+        yield* TestClock.adjust("60 seconds");
+        yield* closed(1);
+        const expired = yield* Effect.flip(reads.Libraries({ snapshot: id }));
+        return { at59s, at118s, expired };
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(layerRcRef(open)),
+        Effect.provide(TestClock.layer()),
+      ),
     );
-    expect(result.ids).toHaveLength(1);
-    expect(result.expired).toMatchObject({ _tag: "SnapshotExpired" });
-    expect(result.log).toEqual(["open #1", "open #2", "close #1"]);
+    expect(result.at59s).toBe(1);
+    expect(result.at118s).toBe(1);
+    expect(result.expired).toBeInstanceOf(SnapshotExpired);
   });
 
   it("a request completes while a stream is open", async () => {
@@ -670,10 +782,12 @@ describe("ZoteroReads connection lifetime", () => {
     expect(order).toEqual(["first slice", "libraries", "stream drained"]);
   });
 
-  it("interrupting a stream releases its borrow", async () => {
-    const { open, log } = fixtureOpener();
+  it("interrupting a stream stops its reads and releases its borrow", async () => {
+    const { open, closed, statements } = fixtureOpener();
     const result = await withReads(open, (reads) =>
       Effect.gen(function* () {
+        yield* reads.Libraries({});
+        const before = statements();
         // Fifty one-item slices behind a one-slot buffer: the server is
         // still mid-stream, waiting on the client, when the take ends it.
         const first = yield* Stream.runCollect(
@@ -685,14 +799,16 @@ describe("ZoteroReads connection lifetime", () => {
             1,
           ),
         );
-        yield* Effect.yieldNow;
+        // The swap closes #1 only once the interrupted stream let go of it.
         yield* reads.Refresh();
-        return { first, log: [...log] };
+        yield* closed(1);
+        return { first, ran: statements() - before };
       }),
     );
     expect(result.first).toHaveLength(1);
-    // The stream's borrow ended with the interrupt, so the swap closes #1 now.
-    expect(result.log).toEqual(["open #1", "open #2", "close #1"]);
+    // One statement per slice read, plus the refresh's validation: far from
+    // the fifty slices an uninterrupted stream would read.
+    expect(result.ran).toBeLessThan(10);
   });
 
   it("Configure hands the new settings to the opener and swaps the connection", async () => {

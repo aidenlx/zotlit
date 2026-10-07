@@ -97,28 +97,38 @@ export function layerRcRef(opener: ConnectionOpener): Layer.Layer<Connection> {
       let state: "loading" | "ready" | "degraded" = "loading";
       let lastError: DbUnavailable | null = null;
       const events = yield* PubSub.unbounded<ChangeEvent>();
+      const publish = (event: ChangeEvent) =>
+        PubSub.publish(events, event).pipe(Effect.asVoid);
+
+      /**
+       * Open a client for the ref. A staged client comes from a refresh that
+       * already reported it; a direct open reports the state it moves to.
+       */
+      const acquire = Effect.suspend(() => {
+        const next = staged;
+        staged = null;
+        if (next) return Effect.succeed(next);
+        return openValidated(opener, config).pipe(
+          Effect.tap(() => {
+            const wasReady = state === "ready";
+            state = "ready";
+            lastError = null;
+            return wasReady ? Effect.void : publish({ _tag: "changed" });
+          }),
+          Effect.tapError((error) => {
+            const wasDegraded = state === "degraded";
+            state = "degraded";
+            lastError = error;
+            return wasDegraded
+              ? Effect.void
+              : publish({ _tag: "degraded", error });
+          }),
+        );
+      });
 
       const ref = yield* RcRef.make({
-        acquire: Effect.acquireRelease(
-          Effect.suspend(() => {
-            const next = staged;
-            staged = null;
-            return next ? Effect.succeed(next) : openValidated(opener, config);
-          }).pipe(
-            Effect.tap(() =>
-              Effect.sync(() => {
-                state = "ready";
-                lastError = null;
-              }),
-            ),
-            Effect.tapError((error) =>
-              Effect.sync(() => {
-                state = "degraded";
-                lastError = error;
-              }),
-            ),
-          ),
-          (client) => Effect.sync(() => client.$client.close()),
+        acquire: Effect.acquireRelease(acquire, (client) =>
+          Effect.sync(() => client.$client.close()),
         ),
         idleTimeToLive: Duration.infinity,
       });
@@ -130,23 +140,30 @@ export function layerRcRef(opener: ConnectionOpener): Layer.Layer<Connection> {
         }),
       );
 
-      const publish = (event: ChangeEvent) =>
-        PubSub.publish(events, event).pipe(Effect.asVoid);
+      // Uninterruptible from the open to the hand-off into `staged`, so a
+      // validated client always has an owner.
+      const swapIn = Effect.uninterruptible(
+        Effect.flatMap(
+          Effect.suspend(() => openValidated(opener, config)),
+          (client) => {
+            staged?.$client.close();
+            staged = client;
+            state = "ready";
+            lastError = null;
+            return RcRef.invalidate(ref);
+          },
+        ),
+      );
 
       const refresh = Effect.gen(function* () {
         yield* publish({ _tag: "refreshing", active: true });
-        const result = yield* Effect.result(openValidated(opener, config));
+        const result = yield* Effect.result(swapIn);
         if (result._tag === "Failure") {
           lastError = result.failure;
           yield* publish({ _tag: "refresh-failed", error: result.failure });
           yield* publish({ _tag: "refreshing", active: false });
           return yield* result.failure;
         }
-        staged?.$client.close();
-        staged = result.success;
-        yield* RcRef.invalidate(ref);
-        state = "ready";
-        lastError = null;
         yield* publish({ _tag: "changed" });
         yield* publish({ _tag: "refreshing", active: false });
       });

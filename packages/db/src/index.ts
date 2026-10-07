@@ -77,6 +77,7 @@ export {
 export {
   getAllAttachments,
   getAttachmentByItemId,
+  getAttachmentPage,
   getAttachmentByKey,
   getAttachmentsByParents,
   type AttachmentWithParentKey,

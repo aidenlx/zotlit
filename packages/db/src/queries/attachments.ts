@@ -85,7 +85,27 @@ const allAttachmentsQuery = defineQuery<void>()((db) =>
   }),
 );
 
+const attachmentPageQuery = defineQuery<{
+  afterItemID: number;
+  limit: number;
+}>()((db, { placeholder }) =>
+  db.query.itemAttachments.findMany({
+    where: {
+      itemID: { gt: placeholder("afterItemID") },
+      item_itemID: { deletedItem: false },
+    },
+    columns: attachmentFindOptions.columns,
+    with: {
+      ...attachmentFindOptions.with,
+      item_parentItemID: { columns: { key: true } },
+    },
+    orderBy: { itemID: "asc" },
+    limit: placeholder("limit"),
+  }),
+);
+
 type AttachmentRow = QueryRow<typeof attachmentsByParentQuery>;
+type AttachmentWithParentRow = QueryRow<typeof allAttachmentsQuery>;
 
 function toAttachment(row: AttachmentRow, groupID: number | null): Attachment {
   const path =
@@ -155,17 +175,40 @@ export function getAllAttachments(
   return allAttachmentsQuery
     .prepared(db)
     .all()
-    .map((row) => {
-      // Zotero keeps a child in its parent's library, so one group lookup
-      // covers both keys.
-      const groupID = resolveGroupID(db, row.item_itemID.libraryID, memo);
-      const parentKey = row.item_parentItemID?.key;
-      return {
-        ...toAttachment(row, groupID),
-        parentIndexedKey:
-          parentKey === undefined ? null : formatIndexedKey(parentKey, groupID),
-      };
-    });
+    .map((row) => toAttachmentWithParentKey(db, row, memo));
+}
+
+/**
+ * One page of {@link getAllAttachments}, in `itemID` order: the live
+ * Attachments after `afterItemID`, at most `limit` of them. Pass the last
+ * page's final `itemID` to read the next; an empty page ends the table.
+ */
+export function getAttachmentPage(
+  db: NodeDatabaseClient,
+  page: { afterItemID: number; limit: number },
+  opts?: { memo?: GroupIDMemo },
+): AttachmentWithParentKey[] {
+  const memo = opts?.memo ?? new Map();
+  return attachmentPageQuery
+    .prepared(db)
+    .all(page)
+    .map((row) => toAttachmentWithParentKey(db, row, memo));
+}
+
+function toAttachmentWithParentKey(
+  db: NodeDatabaseClient,
+  row: AttachmentWithParentRow,
+  memo: GroupIDMemo,
+): AttachmentWithParentKey {
+  // Zotero keeps a child in its parent's library, so one group lookup covers
+  // both keys.
+  const groupID = resolveGroupID(db, row.item_itemID.libraryID, memo);
+  const parentKey = row.item_parentItemID?.key;
+  return {
+    ...toAttachment(row, groupID),
+    parentIndexedKey:
+      parentKey === undefined ? null : formatIndexedKey(parentKey, groupID),
+  };
 }
 
 export function getAttachmentByItemId(

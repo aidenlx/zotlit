@@ -9,6 +9,7 @@ import { createFixtureSchema } from "@/test-utils";
 
 import {
   getAllAttachments,
+  getAttachmentPage,
   getAttachmentByKey,
   getAttachmentsByParents,
 } from "./attachments";
@@ -129,6 +130,47 @@ describe("getAllAttachments", () => {
       ["URLATTCH", "PARURL", "https://example.com/article"],
       ["STANDALN", null, "storage:loose.pdf"],
     ]);
+  });
+});
+
+describe("getAttachmentPage", () => {
+  it("reads the live attachments after a cursor in item order, a page at a time", () => {
+    sqlite.exec(`
+      insert into groups (groupID, libraryID, name)
+        values (4200309, 2, 'Shared Reading');
+    `);
+    const first = getAttachmentPage(db, { afterItemID: 0, limit: 2 });
+    const second = getAttachmentPage(db, {
+      afterItemID: first.at(-1)!.itemID,
+      limit: 2,
+    });
+    const rest = getAttachmentPage(db, {
+      afterItemID: second.at(-1)!.itemID,
+      limit: 2,
+    });
+
+    expect(
+      [first, second, rest].map((page) =>
+        page.map((attachment) => [
+          attachment.itemID,
+          attachment.indexedKey,
+          attachment.parentIndexedKey,
+        ]),
+      ),
+    ).toEqual([
+      [
+        [101, "ATTA1", "PARA"],
+        [102, "ATTA2", "PARA"],
+      ],
+      [
+        [201, "ATTB1", "PARB"],
+        [301, "ATTOTHERg4200309", "PAROTHERg4200309"],
+      ],
+      [[401, "URLATTCH", "PARURL"]],
+    ]);
+    expect(
+      getAttachmentPage(db, { afterItemID: rest.at(-1)!.itemID, limit: 2 }),
+    ).toEqual([]);
   });
 });
 

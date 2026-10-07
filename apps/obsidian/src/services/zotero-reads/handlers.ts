@@ -1,16 +1,16 @@
 // The ZoteroReads handler layer: each operation composes @zotlit/db query functions over a borrowed Connection.
 import { chunk } from "@std/collections/chunk";
-import { Duration, Effect, Exit, Scope, Stream } from "effect";
+import { Clock, Duration, Effect, Exit, Scope, Stream } from "effect";
 
 import {
   CollectionCache,
   fetchAnnotationSources,
   fetchNoteSource,
   getAccountUserID,
-  getAllAttachments,
   getAnnotationsByKey,
   getAnnotationsByParent,
   getAttachmentByKey,
+  getAttachmentPage,
   getAttachmentsByParents,
   getChildNotesByParentIDs,
   getCitekeysByLibrary,
@@ -120,8 +120,8 @@ interface Pinned {
   readonly scope: Scope.Closeable;
   active: number;
   ended: boolean;
-  /** A read named this Snapshot since the idle check last looked. */
-  touched: boolean;
+  /** Clock time when a read last named this Snapshot, or when it opened. */
+  lastUsed: number;
 }
 
 export function handlersLayer(options?: HandlersOptions) {
@@ -136,9 +136,9 @@ export function handlersLayer(options?: HandlersOptions) {
       let snapshots = 0;
 
       const releasePinned = (entry: Pinned) =>
-        Effect.suspend(() => {
+        Effect.flatMap(Clock.currentTimeMillis, (now) => {
           entry.active -= 1;
-          entry.touched = true;
+          entry.lastUsed = now;
           return entry.ended && entry.active === 0
             ? Scope.close(entry.scope, Exit.void)
             : Effect.void;
@@ -157,11 +157,11 @@ export function handlersLayer(options?: HandlersOptions) {
       > => {
         if (snapshot === undefined) return connection.borrow;
         return Effect.acquireRelease(
-          Effect.suspend(() => {
+          Effect.flatMap(Clock.currentTimeMillis, (now) => {
             const entry = pinned.get(snapshot);
             if (!entry) return Effect.fail(new SnapshotExpired({ snapshot }));
             entry.active += 1;
-            entry.touched = true;
+            entry.lastUsed = now;
             return Effect.succeed(entry);
           }),
           releasePinned,
@@ -183,13 +183,16 @@ export function handlersLayer(options?: HandlersOptions) {
         f: (client: NodeDatabaseClient) => Stream.Stream<A, DbUnavailable>,
       ) => Stream.unwrap(Effect.map(borrow(snapshot), f));
 
-      /** Ends when no read has named `entry` for one idle timeout. */
+      /** Ends once no read has named `entry` for one idle timeout. */
       const idle = (entry: Pinned) =>
         Effect.gen(function* () {
-          do {
-            entry.touched = false;
-            yield* Effect.sleep(idleTimeout);
-          } while (entry.touched || entry.active > 0);
+          const timeout = Duration.toMillis(idleTimeout);
+          for (;;) {
+            const now = yield* Clock.currentTimeMillis;
+            const due = entry.lastUsed + timeout;
+            if (entry.active === 0 && now >= due) return;
+            yield* Effect.sleep(entry.active > 0 ? timeout : due - now);
+          }
         });
 
       return ZoteroReads.of({
@@ -306,17 +309,23 @@ export function handlersLayer(options?: HandlersOptions) {
             return labels;
           }),
 
-        // One statement reads the whole table; the slices bound each message.
+        // Keyset pages in itemID order: one statement per slice.
         AttachmentPathIndex: ({ sliceSize, snapshot }) =>
-          withClientStream(snapshot, (client) =>
-            Stream.unwrap(
-              Effect.map(read(client, getAllAttachments), (attachments) =>
-                Stream.fromIterable(slicesOf(attachments, sliceSize), {
-                  chunkSize: 1,
-                }),
+          withClientStream(snapshot, (client) => {
+            const limit = sliceSize ?? DEFAULT_SLICE_SIZE;
+            const memo: GroupIDMemo = new Map();
+            return Stream.unfold(0, (afterItemID) =>
+              Effect.map(
+                read(client, (c) =>
+                  getAttachmentPage(c, { afterItemID, limit }, { memo }),
+                ),
+                (page) =>
+                  page.length === 0
+                    ? undefined
+                    : ([page, page.at(-1)!.itemID] as const),
               ),
-            ),
-          ),
+            );
+          }),
 
         CitekeySnapshot: ({ libraryID, snapshot }) =>
           withClient(snapshot, (client) =>
@@ -327,37 +336,41 @@ export function handlersLayer(options?: HandlersOptions) {
 
         Snapshot: () =>
           Stream.unwrap(
-            Effect.gen(function* () {
-              const scope = yield* Scope.make();
-              const client = yield* connection.borrow.pipe(
-                Scope.provide(scope),
-                Effect.onError(() => Scope.close(scope, Exit.void)),
-              );
-              const id = `snapshot-${++snapshots}`;
-              const entry: Pinned = {
-                client,
-                scope,
-                active: 0,
-                ended: false,
-                touched: false,
-              };
-              pinned.set(id, entry);
-              // The stream's scope ends when the caller ends the stream or the
-              // idle check runs out; the pinned borrow ends after its last read.
-              yield* Effect.addFinalizer(() =>
-                Effect.suspend(() => {
-                  pinned.delete(id);
-                  entry.ended = true;
-                  return entry.active === 0
-                    ? Scope.close(scope, Exit.void)
-                    : Effect.void;
-                }),
-              );
-              return Stream.concat(
-                Stream.make(id),
-                Stream.drain(Stream.fromEffect(idle(entry))),
-              );
-            }),
+            // Uninterruptible from the borrow to the finalizer, so an
+            // interrupt cannot strand the pinned borrow outside every scope.
+            Effect.uninterruptibleMask((restore) =>
+              Effect.gen(function* () {
+                const scope = yield* Scope.make();
+                const client = yield* restore(
+                  Scope.provide(connection.borrow, scope),
+                ).pipe(Effect.onError(() => Scope.close(scope, Exit.void)));
+                const id = `snapshot-${++snapshots}`;
+                const entry: Pinned = {
+                  client,
+                  scope,
+                  active: 0,
+                  ended: false,
+                  lastUsed: yield* Clock.currentTimeMillis,
+                };
+                pinned.set(id, entry);
+                // The stream's scope ends when the caller ends the stream or
+                // the idle check runs out; the pinned borrow ends after the
+                // Snapshot's last read.
+                yield* Effect.addFinalizer(() =>
+                  Effect.suspend(() => {
+                    pinned.delete(id);
+                    entry.ended = true;
+                    return entry.active === 0
+                      ? Scope.close(scope, Exit.void)
+                      : Effect.void;
+                  }),
+                );
+                return Stream.concat(
+                  Stream.make(id),
+                  Stream.drain(Stream.fromEffect(idle(entry))),
+                );
+              }),
+            ),
           ),
 
         Refresh: () => connection.refresh,
