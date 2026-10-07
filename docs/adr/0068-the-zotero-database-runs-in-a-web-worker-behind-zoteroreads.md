@@ -1,4 +1,10 @@
+---
+status: amended by ADR-0069
+---
+
 # The Zotero database runs in a Web Worker behind ZoteroReads
+
+> **Amended by [ADR 0069](0069-the-item-search-index-runs-in-the-zoteroreads-worker.md).** The item search index runs in the worker behind one `SearchItems` operation; `IndexItems` and `IndexSignature` leave the contract.
 
 Amends [ADR 0050](0050-chunked-work-yields-via-messagechannel.md) for database reads. Applies [ADR 0054](0054-held-reads-serve-the-old-answer-until-a-fresh-read-replaces-it.md) and [ADR 0060](0060-held-reads-are-realized-on-tanstack-query-core.md) unchanged.
 
