@@ -4556,8 +4556,9 @@ describe("updateNote", () => {
 
 // The batch's reads for `writeNoteUpdate`: an unbound interface over its own
 // fixture database, which holds the Item the batch hands over.
-const writeFixture = openDbDeps();
-afterAll(() => writeFixture.dispose());
+const writeFixtures = new AsyncDisposableStack();
+afterAll(() => writeFixtures.disposeAsync());
+const writeFixture = openDbDeps(writeFixtures);
 seedItem(
   writeFixture.db.client,
   makeItem({
@@ -5093,34 +5094,28 @@ function compileDocumentFrontmatter(
 }
 
 /** The fixture databases and services the current case opened. */
-const openFixtures: { dispose: () => Promise<void> }[] = [];
+let caseFixtures = new AsyncDisposableStack();
 afterEach(async () => {
-  for (const fixture of openFixtures.splice(0).reverse())
-    await fixture.dispose();
+  const opened = caseFixtures;
+  caseFixtures = new AsyncDisposableStack();
+  await opened.disposeAsync();
 });
 
 /**
- * A fixture database and the ZoteroReads service over the same client, with
- * the disposal that closes both.
+ * A fixture database and the ZoteroReads service over the same client, both
+ * held by `stack`: the service closes before the database.
  */
-function openDbDeps() {
-  const db = makeDb();
-  const zoteroReads = inProcessReadsService(sharedClientOpener(db.client));
-  return {
-    db,
-    zoteroReads,
-    async dispose() {
-      await zoteroReads[Symbol.asyncDispose]();
-      db.client.$client.close();
-    },
-  };
+function openDbDeps(stack: AsyncDisposableStack) {
+  const db = stack.adopt(makeDb(), ({ client }) => client.$client.close());
+  const zoteroReads = stack.use(
+    inProcessReadsService(sharedClientOpener(db.client)),
+  );
+  return { db, zoteroReads };
 }
 
 /** {@link openDbDeps} for one case: both close after it. */
 function makeDbDeps() {
-  const fixture = openDbDeps();
-  openFixtures.push(fixture);
-  return { db: fixture.db, zoteroReads: fixture.zoteroReads };
+  return openDbDeps(caseFixtures);
 }
 
 /**

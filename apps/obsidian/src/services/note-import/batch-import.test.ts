@@ -278,7 +278,7 @@ function makeDeps(
       }),
     },
     zoteroReads: withState(
-      openServices.use(
+      caseResources.use(
         inProcessReadsService(sharedClientOpener(db), { wrap: options.wrap }),
       ),
       options.dbState ?? "ready",
@@ -500,21 +500,20 @@ it.each([true, false])(
   },
 );
 
-/** The read services the current case opened; they close before its database. */
-let openServices: AsyncDisposableStack;
+/** The database and the read services the current case opened over it. */
+let caseResources: AsyncDisposableStack;
 
 beforeEach(() => {
   openedModals.length = 0;
-  db = createClient(":memory:");
+  caseResources = new AsyncDisposableStack();
+  db = caseResources.adopt(createClient(":memory:"), (client) =>
+    client.$client.close(),
+  );
   createFixtureSchema(db.$client);
   db.$client.exec(BASE_ROWS);
-  openServices = new AsyncDisposableStack();
   currentScope = scopeOf([PERSONAL_LIBRARY]);
   confirmMock.mockReset();
-  return async () => {
-    await openServices.disposeAsync();
-    db.$client.close();
-  };
+  return () => caseResources.disposeAsync();
 });
 
 describe("classify through the NoteRefs stream", () => {

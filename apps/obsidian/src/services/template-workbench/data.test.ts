@@ -781,7 +781,12 @@ function createFixture(options?: {
   try {
     seed(sqlite);
     sqlite.exec("PRAGMA query_only = ON");
-    const zoteroReads = inProcessReadsService(sharedClientOpener(client));
+    // The service closes before the database it reads.
+    const resources = new AsyncDisposableStack();
+    resources.adopt(sqlite, (database) => database.close());
+    const zoteroReads = resources.use(
+      inProcessReadsService(sharedClientOpener(client)),
+    );
     return {
       deps: {
         app: {
@@ -841,10 +846,7 @@ function createFixture(options?: {
         },
       },
       writeCalls,
-      async [Symbol.asyncDispose]() {
-        await zoteroReads[Symbol.asyncDispose]();
-        sqlite.close();
-      },
+      [Symbol.asyncDispose]: () => resources.disposeAsync(),
     };
   } catch (error) {
     sqlite.close();

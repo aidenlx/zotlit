@@ -254,8 +254,10 @@ export class NoteIndexStub {
 /**
  * The ZoteroReads stand-in. The test drives its lifecycle (`state`, `ready`,
  * the `changed` event); its reads run through the in-process adapter over a
- * `:memory:` fixture database that holds the `seed` rows (none by default),
- * and the citation-key read answers from {@link citekeys}.
+ * `:memory:` fixture database. With no `seed`, that database is empty and the
+ * citation-key read answers from {@link citekeys}; with `seed`, it holds the
+ * seeded rows and every read, the citation-key read included, answers from
+ * them.
  */
 export class DatabaseStub implements AsyncDisposable {
   state: "loading" | "ready" | "degraded" = "ready";
@@ -264,11 +266,22 @@ export class DatabaseStub implements AsyncDisposable {
   readonly #listeners = new Set<() => void>();
   readonly #ready = Promise.withResolvers<void>();
 
-  constructor({ readyImmediately = true, seed = "" } = {}) {
+  constructor({
+    readyImmediately = true,
+    seed,
+  }: { readyImmediately?: boolean; seed?: string } = {}) {
     if (readyImmediately) this.#ready.resolve();
-    this.#service = inProcessReadsService(memoryOpener(() => seed).open, {
-      wrap: (client) => ({ ...client, CitekeySnapshot: this.citekeys.read }),
-    });
+    this.#service = inProcessReadsService(
+      memoryOpener(() => seed ?? "").open,
+      seed === undefined
+        ? {
+            wrap: (client) => ({
+              ...client,
+              CitekeySnapshot: this.citekeys.read,
+            }),
+          }
+        : {},
+    );
   }
 
   get ready(): Promise<ZoteroReadsReady> {
@@ -555,7 +568,10 @@ export interface CitationIndexHarnessOptions {
   store?: MemoryStore;
   citekeys?: LibraryCitekey[];
   db?: DatabaseStub;
-  /** SQL for the rows the default {@link DatabaseStub}'s database holds. */
+  /**
+   * SQL for the rows the default {@link DatabaseStub}'s database holds; its
+   * citation-key read then answers from them too.
+   */
   zoteroRows?: string;
   notes?: boolean;
   settingsService?: SettingsStub;

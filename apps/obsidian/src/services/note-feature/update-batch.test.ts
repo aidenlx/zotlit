@@ -197,8 +197,8 @@ function collectionHolds(libraryID: number, itemIDs: readonly number[]): void {
   `);
 }
 
-/** The read services the current case opened; they close before {@link db}. */
-let openServices: AsyncDisposableStack;
+/** {@link db} and the read services the current case opened over it. */
+let caseResources: AsyncDisposableStack;
 
 function makeDeps(
   dbState: "loading" | "ready" = "ready",
@@ -209,7 +209,7 @@ function makeDeps(
     profile: profileReader(),
     app: {} as SingleUpdateDeps["app"],
     zoteroReads: withState(
-      openServices.use(
+      caseResources.use(
         inProcessReadsService(sharedClientOpener(client), {
           wrap: (reads) => wrap(itemsAtInterface(reads)),
         }),
@@ -264,12 +264,9 @@ async function classifyLastModal(): Promise<{
 beforeEach(() => {
   openedModals.length = 0;
   currentScope = scopeOf([PERSONAL_LIBRARY]);
-  db = seedDatabase();
-  openServices = new AsyncDisposableStack();
-  return async () => {
-    await openServices.disposeAsync();
-    db.$client.close();
-  };
+  caseResources = new AsyncDisposableStack();
+  db = caseResources.adopt(seedDatabase(), (client) => client.$client.close());
+  return () => caseResources.disposeAsync();
 });
 
 /** The libraries (and collection keys) a run's scope read asked for. */

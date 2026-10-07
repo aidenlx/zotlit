@@ -2834,6 +2834,7 @@ describe("Template Workbench Item choice", () => {
     // The read that confirms the chosen Item holds until the test lets it go.
     const firstRead = Promise.withResolvers<void>();
     const firstReading = Promise.withResolvers<void>();
+    let gated = false;
     await using zoteroReads = inProcessReadsService(
       memoryOpener(() =>
         seedWorksSql([
@@ -2854,7 +2855,7 @@ describe("Template Workbench Item choice", () => {
                 options?: object,
               ) => Effect.Effect<unknown>
             )(payload, options);
-            return payload.indexedKeys.includes(FIRST)
+            return gated && payload.indexedKeys.includes(FIRST)
               ? Effect.andThen(
                   Effect.promise(() => {
                     firstReading.resolve();
@@ -2869,16 +2870,17 @@ describe("Template Workbench Item choice", () => {
     );
     const { reads } = await zoteroReads.ready;
     const items = await Effect.runPromise(
-      reads.ItemsByIndexedKeys({ indexedKeys: [LATER] }),
+      reads.ItemsByIndexedKeys({ indexedKeys: [FIRST] }),
     );
-    const later = items.get(LATER)!;
+    const first = items.get(FIRST)!;
+    gated = true;
     const { view, app } = setup({
       zoteroReads,
       itemLookup: {
         // The chooser lists the first paper among the recently updated Items.
         search: async () => [
           {
-            item: { ...later, key: FIRST, indexedKey: FIRST },
+            item: first,
             score: 1,
             matches: [],
             library: null,

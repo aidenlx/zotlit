@@ -25,8 +25,12 @@ import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { spliceFrontMatter } from "@/lib/live-text";
 import {
   createCitationIndexHarness,
+  GROUP_LIBRARY_ID,
+  groupLibrary,
   KEY_A,
   KEY_B,
+  LibraryScopeStub,
+  personalLibrary,
   SettingsStub,
 } from "@/services/citation-index/test-harness";
 import type { CitationIndexHarness } from "@/services/citation-index/test-harness";
@@ -103,9 +107,6 @@ const DRAFT_BODY = `Cited @${CITATION_KEY}. Then @${SECOND_CITATION_KEY}.`;
 export const EXPORT_NOTE = "export.md";
 const LINKPATH = "Doe 2024";
 export const EXPORT_BODY = `Cited [[${LINKPATH}]].\n`;
-
-/** The library of the group (7) that {@link KEY_B} names. */
-const GROUP_LIBRARY_ID = 2;
 
 /**
  * SQL for the Zotero database: My Library of account user 1, the library of
@@ -277,6 +278,7 @@ export async function openCitationVault({
       {
         settingsService: settings,
         zoteroRows: zoteroRows([...citedWorks.values()]),
+        libraryScope: new LibraryScopeStub([personalLibrary(), groupLibrary()]),
       },
     ),
   );
