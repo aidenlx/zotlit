@@ -24,6 +24,7 @@ import type {
   ZoteroDatabaseIdentity,
 } from "@zotlit/db";
 import type { AnnotationPositionRaw } from "@zotlit/db";
+import type { ItemHit } from "@zotlit/item-lookup";
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { ItemFields } from "@zotlit/zotero-types";
 
@@ -334,6 +335,19 @@ type _IndexSignature = Expect<
   Equals<typeof IndexSignatureSchema.Type, IndexSignature>
 >;
 
+/**
+ * One ranked answer of `SearchItems`: the hydrated Item and the ranges of its
+ * title that matched the query, as `[start, end)` offsets into the title.
+ */
+export const SearchHitSchema = Schema.Struct({
+  item: ItemSchema,
+  matches: Schema.mutable(
+    Schema.Array(Schema.mutable(Schema.Tuple([Schema.Number, Schema.Number]))),
+  ),
+});
+export type SearchHit = typeof SearchHitSchema.Type;
+type _SearchMatches = Expect<Equals<SearchHit["matches"], ItemHit["matches"]>>;
+
 /** The account and Local API database a Zotero database belongs to. */
 export const DatabaseIdentitySchema = Schema.Struct({
   userID: Schema.NullOr(Schema.Number),
@@ -385,6 +399,8 @@ export const ReadsConfigSchema = Schema.Struct({
   databasePath: Schema.String,
   readMode: Schema.Literals(["auto", "reflink", "copy", "immutable"]),
   autoRefresh: Schema.Boolean,
+  /** The UI locale the Item Index formats creator names with; `null` for none. */
+  locale: Schema.NullOr(Schema.String),
 });
 export type ReadsConfig = typeof ReadsConfigSchema.Type;
 type _ReadMode = Expect<Equals<ReadsConfig["readMode"], ZoteroReadMode>>;
@@ -578,6 +594,22 @@ export class ZoteroReads extends RpcGroup.make(
     },
     success: Schema.Array(AttachmentSchema),
     error: ReadError,
+  }),
+  /**
+   * The Items of `libraryIDs` (local ids in canonical order) that match
+   * `query`, best first, at most `limit`. The first search of a Library list
+   * waits for its index; later ones answer from the last complete index while
+   * a rebuild runs. An Item that vanished since the build is left out, so the
+   * answer can be shorter than `limit`.
+   */
+  Rpc.make("SearchItems", {
+    payload: {
+      libraryIDs: Schema.Array(Schema.Number),
+      query: Schema.String,
+      limit: Schema.Number,
+    },
+    success: Schema.Array(SearchHitSchema),
+    error: DbUnavailable,
   }),
   /** The identity excerpt assets are keyed by. */
   Rpc.make("DatabaseIdentity", {

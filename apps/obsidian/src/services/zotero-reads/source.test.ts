@@ -62,6 +62,7 @@ function config(patch: Partial<ReadsConfig> = {}): ReadsConfig {
     databasePath: dbPath,
     readMode: "copy",
     autoRefresh: true,
+    locale: null,
     ...patch,
   };
 }

@@ -14,8 +14,9 @@ export interface MemoryItemSourceReads {
   /** `items` reads interrupted while held at the gate. */
   interrupted: number;
   /**
-   * Pinned sources whose scope closed: one per finished build or re-check,
-   * interrupted or not.
+   * Pinned sources whose scope closed. A held index keeps the source it was
+   * built on, so a finished build or re-check releases the source it
+   * replaces; an interrupted or failed one releases its own.
    */
   released: number;
 }

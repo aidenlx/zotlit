@@ -6,9 +6,9 @@ import {
   Fiber,
   Layer,
   Scheduler,
+  Scope,
   SubscriptionRef,
 } from "effect";
-import type { Scope } from "effect";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -76,6 +76,15 @@ interface Harness {
     query: string,
   ) => Effect.Effect<string[], unknown>;
   config: (typeof IndexConfig)["Service"];
+  /** Hit keys and the generation of the source held for hydration. */
+  sourced: (
+    libraries: readonly number[],
+    query: string,
+  ) => Effect.Effect<
+    { keys: string[]; generation: number },
+    unknown,
+    Scope.Scope
+  >;
 }
 
 /** Run `body` against a fresh Item Index over an in-memory source. */
@@ -94,7 +103,7 @@ function withIndex<A>(
         Layer.provide([source.layer, layerSegmenterNone]),
       ),
     );
-    const { search } = Context.get(context, ItemIndex);
+    const { search, searchWithSource } = Context.get(context, ItemIndex);
     const config = Context.get(context, IndexConfig);
     return yield* body({
       source,
@@ -102,6 +111,13 @@ function withIndex<A>(
       search: (libraries, query) =>
         search(libraries, query, 50).pipe(
           Effect.map((hits) => hits.map((hit) => hit.indexedKey)),
+        ),
+      sourced: (libraries, query) =>
+        searchWithSource(libraries, query, 50).pipe(
+          Effect.map(({ hits, source: pinned }) => ({
+            keys: hits.map((hit) => hit.indexedKey),
+            generation: pinned.generation,
+          })),
         ),
     });
   }).pipe(Effect.scoped, Effect.runPromise);
@@ -211,7 +227,7 @@ describe("Item Index", () => {
       Effect.gen(function* () {
         yield* search(USER, "");
         yield* source.swap;
-        yield* eventually(() => source.reads.released === 2);
+        yield* eventually(() => source.reads.released === 1);
         return source.reads.itemIDs;
       }),
     );
@@ -224,7 +240,7 @@ describe("Item Index", () => {
       Effect.gen(function* () {
         yield* search(USER, "");
         yield* source.notify;
-        yield* eventually(() => source.reads.released === 2);
+        yield* eventually(() => source.reads.released === 1);
         yield* search(USER, "");
         return { ...source.reads };
       }),
@@ -336,7 +352,7 @@ describe("Item Index", () => {
         yield* search(USER, "");
         yield* search(GROUP, "");
         yield* SubscriptionRef.set(config.locale, "zh");
-        yield* eventually(() => source.reads.released === 4);
+        yield* eventually(() => source.reads.released === 2);
         return source.reads.itemIDs;
       }),
     );
@@ -375,6 +391,69 @@ describe("Item Index", () => {
       fallback: [],
       itemIDs: 3,
     });
+  });
+
+  it("hands out the source the answering index holds, the old one while a rebuild runs", async () => {
+    const result = await withIndex(({ source, sourced }) =>
+      Effect.gen(function* () {
+        const first = yield* Effect.scoped(sourced(USER, ""));
+        yield* source.setItems(USER_LIBRARY_ID, [alpha, beta, delta]);
+        yield* source.closeGate;
+        yield* source.swap;
+        yield* source.held;
+        const during = yield* Effect.scoped(sourced(USER, ""));
+        yield* source.openGate;
+        const after = yield* until(
+          Effect.scoped(sourced(USER, "")),
+          ({ keys }) => keys.length === 3,
+        );
+        return { first, during, after };
+      }),
+    );
+
+    expect(result.first).toEqual({ keys: ["BETA", "ALPHA"], generation: 0 });
+    expect(result.during).toEqual({ keys: ["BETA", "ALPHA"], generation: 0 });
+    expect(result.after).toEqual({
+      keys: ["DELTA", "BETA", "ALPHA"],
+      generation: 1,
+    });
+  });
+
+  it("holds an index's source until a newer index replaces it and no search holds it", async () => {
+    const result = await withIndex(({ source, sourced }) =>
+      Effect.gen(function* () {
+        const scope = yield* Scope.make();
+        yield* Scope.provide(sourced(USER, ""), scope);
+        const built = source.reads.released;
+        yield* source.swap;
+        // The rebuild closes its own scope only when it fails.
+        yield* until(
+          Effect.scoped(sourced(USER, "")),
+          ({ generation }) => generation === 1,
+        );
+        const replaced = source.reads.released;
+        yield* Scope.close(scope, Exit.void);
+        return { built, replaced, closed: source.reads.released };
+      }),
+    );
+
+    expect(result).toEqual({ built: 0, replaced: 0, closed: 1 });
+  });
+
+  it("releases the source of a list evicted at an emission", async () => {
+    const released = await withIndex(({ source, search }) =>
+      Effect.gen(function* () {
+        yield* search(USER, "");
+        // The first emission counts the search; the second evicts the list.
+        yield* source.notify;
+        yield* eventually(() => source.reads.released === 1);
+        yield* source.notify;
+        yield* eventually(() => source.reads.released === 2);
+        return source.reads.released;
+      }),
+    );
+
+    expect(released).toBe(2);
   });
 
   it("fails the search and drops the index when the source is unavailable", async () => {

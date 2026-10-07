@@ -35,6 +35,12 @@ export class Connection extends Context.Service<
     readonly notifyExternalChange: Effect.Effect<void>;
     /** New settings for the source; the provider rebinds to them. */
     readonly configure: (config: ReadsConfig) => Effect.Effect<void>;
+    /**
+     * The database file a client of this connection reads: the configured
+     * path it opened from, `null` for none. Each refresh of one file opens a
+     * new client with the same answer.
+     */
+    readonly databaseFile: (client: NodeDatabaseClient) => string | null;
   }
 >()("zotlit/zotero-reads/Connection") {}
 
@@ -156,14 +162,20 @@ export function layerRcRef(opener: ConnectionOpener): Layer.Layer<Connection> {
       let config: ReadsConfig | null = null;
       let state: "loading" | "ready" | "degraded" = "loading";
       let lastError: DbUnavailable | null = null;
+      const databaseFiles = new WeakMap<NodeDatabaseClient, string | null>();
+      /** Open and validate a client, recording the file it opened from. */
+      const openRecorded = Effect.suspend(() => {
+        const opened = config?.databasePath ?? null;
+        return Effect.tap(openValidated(opener, config), (client) =>
+          Effect.sync(() => databaseFiles.set(client, opened)),
+        );
+      });
       const { publish, changes } = yield* makeChangeFeed(() => [
         { _tag: "state", state, error: lastError },
       ]);
 
       /** A direct open (no refresh before it) reports the state it moves to. */
-      const openDirect = Effect.suspend(() =>
-        openValidated(opener, config),
-      ).pipe(
+      const openDirect = openRecorded.pipe(
         Effect.map(bareClient),
         Effect.tap(() => {
           const wasReady = state === "ready";
@@ -183,14 +195,11 @@ export function layerRcRef(opener: ConnectionOpener): Layer.Layer<Connection> {
       const clients = yield* makeClientRef(openDirect);
 
       const swapIn = Effect.uninterruptible(
-        Effect.flatMap(
-          Effect.suspend(() => openValidated(opener, config)),
-          (client) => {
-            state = "ready";
-            lastError = null;
-            return clients.swap(bareClient(client));
-          },
-        ),
+        Effect.flatMap(openRecorded, (client) => {
+          state = "ready";
+          lastError = null;
+          return clients.swap(bareClient(client));
+        }),
       );
 
       const refresh = Effect.gen(function* () {
@@ -216,6 +225,7 @@ export function layerRcRef(opener: ConnectionOpener): Layer.Layer<Connection> {
             config = next;
             return Effect.ignore(refresh);
           }),
+        databaseFile: (client) => databaseFiles.get(client) ?? null,
       });
     }),
   );
