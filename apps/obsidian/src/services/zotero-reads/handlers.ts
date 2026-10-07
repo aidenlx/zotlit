@@ -1,6 +1,14 @@
 // The ZoteroReads handler layer: each operation composes @zotlit/db query functions over a borrowed Connection.
 import { chunk } from "@std/collections/chunk";
-import { Effect, Exit, Layer, Scope, Stream, SubscriptionRef } from "effect";
+import {
+  Effect,
+  Exit,
+  Layer,
+  Scope,
+  Semaphore,
+  Stream,
+  SubscriptionRef,
+} from "effect";
 
 import {
   CollectionCache,
@@ -57,7 +65,9 @@ import { Connection, toDbUnavailable } from "./connection";
 import { layerConnectionItemSource, pinnedClient } from "./item-source";
 import { listCollectionChoices, resolveMembershipFacts } from "./membership";
 import { DbUnavailable, SnapshotExpired, SnapshotId, ZoteroReads } from "./rpc";
-import type { SearchHit, WorkLabelSource } from "./rpc";
+import type { SearchHit, SegmenterBinary, WorkLabelSource } from "./rpc";
+import { makeSegmenterSwitch } from "./segmenter";
+import type { ReadSegmenter } from "./segmenter";
 
 /** The id queries {@link ZoteroReads} `ScopeItemIDs` runs, per kind. */
 const SCOPE_QUERIES = {
@@ -89,6 +99,19 @@ export interface HandlersOptions {
    * @default null
    */
   locale?: string | null;
+  /**
+   * The installed Chinese Segmenter binary at start, until `Configure` sends
+   * another.
+   *
+   * @default null
+   */
+  chineseSegmenter?: SegmenterBinary | null;
+  /**
+   * Reads an installed binary's bytes: the worker reads its OPFS store; tests
+   * pass the bytes of the `jieba-wasm` dev dependency. Without it every binary
+   * reads as unavailable.
+   */
+  readSegmenter?: ReadSegmenter;
 }
 
 /**
@@ -278,6 +301,11 @@ export function handlersLayer(options?: HandlersOptions) {
       const connection = yield* Connection;
       const itemIndex = yield* ItemIndex;
       const indexConfig = yield* IndexConfig;
+      const segmenter = yield* makeSegmenterSwitch(options?.readSegmenter);
+      yield* segmenter.set(options?.chineseSegmenter ?? null);
+      // One Configure at a time, in arrival order: a later one waits for an
+      // earlier one that reads its Chinese Segmenter binary.
+      const configuring = yield* Semaphore.make(1);
       const pinned = new Map<SnapshotId, Pinned>();
       let snapshots = 0;
 
@@ -535,9 +563,10 @@ export function handlersLayer(options?: HandlersOptions) {
         Refresh: () => connection.refresh,
         NotifyExternalChange: () => connection.notifyExternalChange,
         Configure: (config) =>
-          Effect.andThen(
-            setLocale(indexConfig, config.locale),
-            connection.configure(config),
+          setLocale(indexConfig, config.locale).pipe(
+            Effect.andThen(segmenter.set(config.chineseSegmenter)),
+            Effect.andThen(connection.configure(config)),
+            configuring.withPermits(1),
           ),
         Ping: () => Effect.void,
 
