@@ -1,144 +1,133 @@
-import { describe, expect, it, vi } from "vitest";
+import { Effect, Exit, Queue, Stream } from "effect";
+import { describe, expect, it } from "vitest";
 
-import type { IndexedItem, IndexSignature, Item } from "@zotlit/db";
 import { USER_LIBRARY_ID } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-import {
-  makeCreator as creator,
-  makeIndexedItem as indexedItem,
-  makeItem as item,
-} from "@zotlit/item-lookup/fixtures";
-import type { ItemFixtureOptions } from "@zotlit/item-lookup/fixtures";
+import type { IndexedItem, Item, Library } from "@zotlit/db";
 
-import { DatabaseError } from "@/services/database/service";
-import type { DatabaseService } from "@/services/database/service";
 import type {
   AvailableLibrary,
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
+import type { ChangeEvent } from "@/services/zotero-reads/rpc";
+import {
+  inProcessReadsService,
+  memoryOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import { ItemLookup } from "./service";
 
 describe("ItemLookup", () => {
   it("prewarms and reuses the cache", async () => {
-    const alpha = itemPair({ key: "A", title: "Alpha" });
-    const deps = createDeps({
-      indexItems: [alpha.indexed],
-      hydratedItems: [alpha.full],
-    });
-    const lookup = new ItemLookup(deps);
+    await using reads = readsOver(() => seed([row({ key: "AAAAAAAA" })]));
+    await using lookup = itemLookup(reads);
 
     await lookup.ready;
-    await waitForCallCount(deps.loadItems, 1);
+    await expect.poll(() => reads.indexed).toEqual([USER_LIBRARY_ID]);
     expect(await lookup.search("", { limit: 1 })).toHaveLength(1);
     expect(await lookup.search("Alpha", { limit: 1 })).toHaveLength(1);
-    expect(deps.loadItems).toHaveBeenCalledOnce();
+    expect(reads.indexed).toEqual([USER_LIBRARY_ID]);
   });
 
-  it("prewarms only after db.ready resolves", async () => {
-    const db = new FakeDb({ ready: "pending" });
-    const alpha = itemPair({ key: "A", title: "Alpha" });
-    const deps = createDeps({
-      db,
-      indexItems: [alpha.indexed],
-      hydratedItems: [alpha.full],
+  it("prewarms only after the reads service is ready", async () => {
+    const opening = Promise.withResolvers<void>();
+    await using reads = readsOver(() => seed([row({ key: "AAAAAAAA" })]), {
+      opening: opening.promise,
     });
-    const lookup = new ItemLookup(deps);
+    await using lookup = itemLookup(reads);
 
-    await Promise.resolve();
-    expect(deps.loadItems).not.toHaveBeenCalled();
+    await delayTicks();
+    expect(reads.indexed).toEqual([]);
 
-    db.resolveReady();
+    opening.resolve();
     await lookup.ready;
-    await waitForCallCount(deps.loadItems, 1);
+    await expect.poll(() => reads.indexed).toEqual([USER_LIBRARY_ID]);
   });
 
   it("deduplicates parallel loads", async () => {
-    const alpha = itemPair({ key: "A", title: "Alpha" });
-    let resolveLoad: (items: IndexedItem[]) => void = () => undefined;
-    const deps = createDeps({
-      indexItems: [alpha.indexed],
-      hydratedItems: [alpha.full],
-      loadItems: vi.fn(
-        () =>
-          new Promise<IndexedItem[]>((resolve) => {
-            resolveLoad = resolve;
-          }),
-      ),
-    });
-    const lookup = new ItemLookup(deps);
+    await using reads = readsOver(() => seed([row({ key: "AAAAAAAA" })]));
+    const gate = reads.gateIndexItems();
+    await using lookup = itemLookup(reads);
     await lookup.ready;
 
     const first = lookup.search("", { limit: 1 });
     const second = lookup.search("Alpha", { limit: 1 });
-    await waitForCallCount(deps.loadItems, 1);
+    await expect.poll(() => reads.indexed).toHaveLength(1);
 
-    expect(deps.loadItems).toHaveBeenCalledOnce();
-    resolveLoad([alpha.indexed]);
+    gate.resolve();
     await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+    expect(reads.indexed).toEqual([USER_LIBRARY_ID]);
   });
 
   it("rebuilds on a database change when the signature moves", async () => {
-    const db = new FakeDb();
-    const alpha = itemPair({ key: "A", title: "Alpha" });
-    let count = 1;
-    const deps = createDeps({
-      db,
-      indexItems: [alpha.indexed],
-      hydratedItems: [alpha.full],
-      loadSignature: vi.fn(() => ({ count, checksum: 0 })),
-    });
-    const lookup = new ItemLookup(deps);
+    await using reads = readsOver((open) =>
+      seed([
+        row({ key: "AAAAAAAA" }),
+        ...(open > 1 ? [row({ key: "BBBBBBBB", title: "Beta" })] : []),
+      ]),
+    );
+    await using lookup = itemLookup(reads);
 
-    await lookup.search("");
-    await waitForCallCount(deps.loadItems, 1);
-    count = 2;
-    db.emitChanged();
-    await waitForCallCount(deps.loadItems, 2);
+    expect(await lookup.search("")).toHaveLength(1);
+    await reads.service.refresh();
 
-    expect(deps.loadItems).toHaveBeenCalledTimes(2);
+    await expect.poll(() => reads.indexed).toHaveLength(2);
+    await expect.poll(() => lookup.search("")).toHaveLength(2);
   });
 
   it("skips the rebuild when a database change leaves the signature unchanged", async () => {
-    const db = new FakeDb();
-    const alpha = itemPair({ key: "A", title: "Alpha" });
-    const deps = createDeps({
-      db,
-      indexItems: [alpha.indexed],
-      hydratedItems: [alpha.full],
-      loadSignature: vi.fn(() => ({ count: 1, checksum: 0 })),
-    });
-    const lookup = new ItemLookup(deps);
+    await using reads = readsOver(() => seed([row({ key: "AAAAAAAA" })]));
+    await using lookup = itemLookup(reads);
 
     await lookup.search("");
-    await waitForCallCount(deps.loadItems, 1);
-    db.emitChanged();
-    await waitForCallCount(deps.loadSignature, 2);
-    expect(deps.loadItems).toHaveBeenCalledOnce();
+    const signatures = reads.signatures;
+    await reads.service.refresh();
+
+    await expect.poll(() => reads.signatures).toBeGreaterThan(signatures);
+    await delayTicks();
+    expect(reads.indexed).toEqual([USER_LIBRARY_ID]);
   });
 
   it("hard-invalidates when the library scope changes", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
     const libraryScope = new FakeLibraryScope();
-    const deps = createDeps({ libraryScope, ...perLibraryData() });
-    const lookup = new ItemLookup(deps);
+    await using lookup = itemLookup(reads, libraryScope);
 
     expect((await lookup.search(""))[0]?.item.libraryID).toBe(USER_LIBRARY_ID);
     libraryScope.setLibraries([library(2)]);
     expect((await lookup.search(""))[0]?.item.libraryID).toBe(2);
-    expect(deps.loadItems).toHaveBeenCalledTimes(2);
+    expect(reads.indexed).toEqual([USER_LIBRARY_ID, 2]);
+  });
+
+  it("abandons a build when the library scope changes mid-build", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
+    const libraryScope = new FakeLibraryScope();
+    const gate = reads.gateIndexItems();
+    await using lookup = itemLookup(reads, libraryScope);
+    await lookup.ready;
+    await expect.poll(() => reads.indexed).toEqual([USER_LIBRARY_ID]);
+
+    gate.release();
+    libraryScope.setLibraries([library(2)]);
+
+    await expect.poll(() => reads.interrupted).toEqual([USER_LIBRARY_ID]);
+    gate.resolve();
+    const hits = await lookup.search("");
+    expect(hits.map((hit) => hit.item.libraryID)).toEqual([2]);
   });
 
   it("refreshes labels without rebuilding when a refresh only renames a group", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
     const libraryScope = new FakeLibraryScope([
       library(USER_LIBRARY_ID),
       library(2),
     ]);
-    const deps = createDeps({ libraryScope, ...perLibraryData() });
-    const lookup = new ItemLookup(deps);
+    await using lookup = itemLookup(reads, libraryScope);
 
     await lookup.search("");
-    const builds = deps.loadItems.mock.calls.length;
+    const builds = reads.indexed.length;
     libraryScope.setLibraries([
       library(USER_LIBRARY_ID),
       { ...library(2), name: "Renamed" },
@@ -146,30 +135,27 @@ describe("ItemLookup", () => {
     const hits = await lookup.search("");
 
     expect(hits.map((hit) => hit.library?.name)).toEqual([null, "Renamed"]);
-    expect(deps.loadItems).toHaveBeenCalledTimes(builds);
+    expect(reads.indexed).toHaveLength(builds);
   });
 
   it("indexes every library in scope in canonical order", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
     const libraryScope = new FakeLibraryScope([
       library(USER_LIBRARY_ID),
       library(2),
     ]);
-    const deps = createDeps({ libraryScope, ...perLibraryData() });
-    const lookup = new ItemLookup(deps);
+    await using lookup = itemLookup(reads, libraryScope);
 
     const hits = await lookup.search("");
 
     expect(hits.map((hit) => hit.item.libraryID)).toEqual([USER_LIBRARY_ID, 2]);
-    expect(deps.loadItemIDs.mock.calls.map((call) => call[1])).toEqual([
-      USER_LIBRARY_ID,
-      2,
-    ]);
+    expect(reads.indexed).toEqual([USER_LIBRARY_ID, 2]);
   });
 
   it("labels results only when several libraries can contribute", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
     const libraryScope = new FakeLibraryScope();
-    const deps = createDeps({ libraryScope, ...perLibraryData() });
-    const lookup = new ItemLookup(deps);
+    await using lookup = itemLookup(reads, libraryScope);
 
     expect((await lookup.search("")).map((hit) => hit.library)).toEqual([null]);
 
@@ -181,319 +167,395 @@ describe("ItemLookup", () => {
   });
 
   it("rebuilds when any covered library's signature moves", async () => {
-    const db = new FakeDb();
+    await using reads = readsOver((open) =>
+      seed([
+        ...perLibraryRows(),
+        ...(open > 1
+          ? [row({ key: "GGGGGGGG", itemID: 201, libraryID: 2 })]
+          : []),
+      ]),
+    );
     const libraryScope = new FakeLibraryScope([
       library(USER_LIBRARY_ID),
       library(2),
     ]);
-    let groupCount = 1;
-    const deps = createDeps({
-      db,
-      libraryScope,
-      ...perLibraryData(),
-      loadSignature: vi.fn((_client, libraryID) => ({
-        count: libraryID === USER_LIBRARY_ID ? 1 : groupCount,
-        checksum: 0,
-      })),
-    });
-    const lookup = new ItemLookup(deps);
+    await using lookup = itemLookup(reads, libraryScope);
 
     await lookup.search("");
-    const builds = deps.loadItems.mock.calls.length;
-    groupCount = 2;
-    db.emitChanged();
-    await waitForCallCount(deps.loadItems, builds * 2);
+    const builds = reads.indexed.length;
+    await reads.service.refresh();
 
-    expect(deps.loadItems.mock.calls.length).toBeGreaterThan(builds);
+    await expect.poll(() => reads.indexed).toHaveLength(builds * 2);
+    await expect.poll(() => lookup.search("")).toHaveLength(3);
   });
 
   it("serves an empty result for a scope with no available library", async () => {
-    const deps = createDeps({
-      libraryScope: new FakeLibraryScope([]),
-      ...perLibraryData(),
-    });
-    const lookup = new ItemLookup(deps);
+    await using reads = readsOver(() => seed(perLibraryRows()));
+    await using lookup = itemLookup(reads, new FakeLibraryScope([]));
 
     await expect(lookup.search("")).resolves.toEqual([]);
-    expect(deps.loadItemIDs).not.toHaveBeenCalled();
+    expect(reads.indexed).toEqual([]);
   });
 
   it("returns an empty list while the database is degraded", async () => {
-    const db = new FakeDb();
-    db.error = new DatabaseError("degraded");
-    const deps = createDeps({ db });
-    const lookup = new ItemLookup(deps);
+    await using reads = readsOver(() => null);
+    await using lookup = itemLookup(reads);
 
     await expect(lookup.search("anything")).resolves.toEqual([]);
-    expect(deps.loadItems).not.toHaveBeenCalled();
+    expect(reads.indexed).toEqual([]);
   });
 
   it("does not serve cached items after the database degrades", async () => {
-    const db = new FakeDb();
-    const alpha = itemPair({ key: "A", title: "Alpha" });
-    const deps = createDeps({
-      db,
-      indexItems: [alpha.indexed],
-      hydratedItems: [alpha.full],
-    });
-    const lookup = new ItemLookup(deps);
+    await using reads = readsOver(() => seed([row({ key: "AAAAAAAA" })]));
+    await using lookup = itemLookup(reads);
 
     await expect(lookup.search("")).resolves.toHaveLength(1);
-    db.error = new DatabaseError("degraded");
+    reads.emit({
+      _tag: "degraded",
+      error: new DbUnavailable({ message: "worker lost" }),
+    });
+    await expect.poll(() => reads.service.state).toBe("degraded");
 
     await expect(lookup.search("")).resolves.toEqual([]);
-    expect(deps.loadItems).toHaveBeenCalledOnce();
+    expect(reads.indexed).toEqual([USER_LIBRARY_ID]);
   });
 
   it("degrades to empty when a background rebuild throws a non-database error", async () => {
-    const db = new FakeDb();
-    const deps = createDeps({
-      db,
-      loadItemIDs: vi.fn(() => [1]),
-      loadItems: vi.fn(() => {
-        throw new TypeError("malformed row");
-      }),
+    await using reads = readsOver(() => seed([row({ key: "AAAAAAAA" })]), {
+      indexItems: () => Stream.die(new TypeError("malformed row")),
     });
-    const lookup = new ItemLookup(deps);
+    await using lookup = itemLookup(reads);
 
     await expect(lookup.search("anything")).resolves.toEqual([]);
   });
 
   it("returns recent items for an empty query", async () => {
-    const alpha = itemPair({ key: "A", title: "Alpha" });
-    const beta = itemPair({ key: "B", title: "Beta" });
-    const lookup = new ItemLookup(
-      createDeps({
-        indexItems: [alpha.indexed, beta.indexed],
-        hydratedItems: [alpha.full, beta.full],
-      }),
+    await using reads = readsOver(() =>
+      seed([
+        row({ key: "AAAAAAAA", modified: "2024-01-02 00:00:00" }),
+        row({ key: "BBBBBBBB", itemID: 2, title: "Beta" }),
+      ]),
     );
+    await using lookup = itemLookup(reads);
 
-    await expect(lookup.search(" ", { limit: 1 })).resolves.toEqual([
-      { item: alpha.full, score: 0, matches: [], library: null },
+    await expect(lookup.search(" ", { limit: 1 })).resolves.toMatchObject([
+      {
+        item: { key: "AAAAAAAA", fields: { title: "Alpha" } },
+        score: 0,
+        matches: [],
+        library: null,
+      },
     ]);
   });
 
   it("searches across title, creators, and date", async () => {
-    const alpha = itemPair({
-      key: "A",
-      title: "Senior citizen transit ID cards",
-      creators: [creator("Transit", "SEPTA")],
-      date: "2015-01-01",
-    });
-    const beta = itemPair({
-      key: "B",
-      title: "Senior services overview",
-      creators: [creator("Jane", "Doe")],
-      date: "2015-01-01",
-    });
-    const lookup = new ItemLookup(
-      createDeps({
-        indexItems: [alpha.indexed, beta.indexed],
-        hydratedItems: [alpha.full, beta.full],
-      }),
+    await using reads = readsOver(() =>
+      seed([
+        row({
+          key: "AAAAAAAA",
+          title: "Senior citizen transit ID cards",
+          creator: ["Transit", "SEPTA"],
+          date: "2015-01-01",
+        }),
+        row({
+          key: "BBBBBBBB",
+          itemID: 2,
+          title: "Senior services overview",
+          creator: ["Jane", "Doe"],
+          date: "2015-01-01",
+        }),
+      ]),
     );
+    await using lookup = itemLookup(reads);
 
     const hits = await lookup.search("senior septa 2015", { limit: 3 });
 
-    expect(hits.map((hit) => hit.item.key)).toEqual(["A"]);
+    expect(hits.map((hit) => hit.item.key)).toEqual(["AAAAAAAA"]);
   });
 
   it("lets an in-flight build finish and serves it stale while rebuilding", async () => {
-    const db = new FakeDb();
-    const stale = itemPair({ key: "A", title: "Stale" });
-    const fresh = itemPair({ key: "B", title: "Fresh" });
-    const loadResolvers: ((items: IndexedItem[]) => void)[] = [];
-    let count = 1;
-    const deps = createDeps({
-      db,
-      hydratedItems: [stale.full, fresh.full],
-      loadItemIDs: vi.fn(() => [1]),
-      loadItems: vi.fn(
-        () =>
-          new Promise<IndexedItem[]>((resolve) => {
-            loadResolvers.push(resolve);
-          }),
-      ),
-      loadSignature: vi.fn(() => ({ count, checksum: 0 })),
-    });
-    const lookup = new ItemLookup(deps);
+    await using reads = readsOver((open) =>
+      seed([
+        row({ key: "AAAAAAAA", title: "Stale" }),
+        ...(open > 1
+          ? [
+              row({
+                key: "BBBBBBBB",
+                itemID: 2,
+                title: "Fresh",
+                modified: "2024-01-02 00:00:00",
+              }),
+            ]
+          : []),
+      ]),
+    );
+    const first = reads.gateIndexItems();
+    await using lookup = itemLookup(reads);
     await lookup.ready;
+    await expect.poll(() => reads.indexed).toHaveLength(1);
 
-    await waitForCallCount(deps.loadItems, 1);
     // A change arrives mid-build; the signature moves so a rebuild is owed.
-    count = 2;
-    db.emitChanged();
+    const second = reads.gateIndexItems();
+    await reads.service.refresh();
     // The first build is not aborted — finishing it populates the stale cache.
-    loadResolvers[0]!([stale.indexed]);
-    await waitForCallCount(deps.loadItems, 2);
+    first.resolve();
+    await expect.poll(() => reads.indexed).toHaveLength(2);
 
     // SWR: the trailing rebuild is in flight, yet search returns the stale index.
     await expect(lookup.search("", { limit: 1 })).resolves.toMatchObject([
-      { item: { key: "A" } },
+      { item: { key: "AAAAAAAA" } },
     ]);
 
-    loadResolvers[1]!([fresh.indexed]);
-    // The rebuild's chunk yields land on the message-task queue, so poll for
-    // the swapped-in index instead of counting macrotasks.
-    await vi.waitFor(async () => {
-      await expect(lookup.search("", { limit: 1 })).resolves.toMatchObject([
-        { item: { key: "B" } },
-      ]);
-    });
+    second.resolve();
+    await expect
+      .poll(() => lookup.search("", { limit: 1 }))
+      .toMatchObject([{ item: { key: "BBBBBBBB" } }]);
   });
 
   it("drops search results when the scope changes mid-hydration", async () => {
-    const db = new FakeDb();
+    await using reads = readsOver(() => seed(perLibraryRows()));
     const libraryScope = new FakeLibraryScope();
-    const alpha = itemPair({ key: "A", title: "Alpha" });
-    let resolveHydration: (items: Item[]) => void = () => undefined;
-    const deps = createDeps({
-      db,
-      libraryScope,
-      indexItems: [alpha.indexed],
-      hydratedItems: [alpha.full],
-      hydrateItems: vi.fn(
-        () =>
-          new Promise<Item[]>((resolve) => {
-            resolveHydration = resolve;
-          }),
-      ),
-    });
-    const lookup = new ItemLookup(deps);
-    await lookup.ready;
-    await waitForCallCount(deps.loadItems, 1);
+    await using lookup = itemLookup(reads, libraryScope);
+    await lookup.search("");
+    const hydration = reads.gateHydration();
 
-    const search = lookup.search("Alpha");
-    await waitForCallCount(deps.hydrateItems, 1);
+    const search = lookup.search("");
+    await expect.poll(() => reads.hydrations).toBe(2);
     libraryScope.setLibraries([library(2)]);
-    resolveHydration([alpha.full]);
+    hydration.resolve();
 
     await expect(search).resolves.toEqual([]);
   });
 
   it("drops hits that fail hydration", async () => {
-    const alpha = itemPair({ key: "A", title: "Alpha" });
-    const lookup = new ItemLookup(
-      createDeps({
-        indexItems: [alpha.indexed],
-        hydrateItems: vi.fn(() => []),
-      }),
-    );
+    await using reads = readsOver(() => seed([row({ key: "AAAAAAAA" })]), {
+      hydrate: () => Effect.succeed(new Map()),
+    });
+    await using lookup = itemLookup(reads);
 
     await expect(lookup.search("Alpha")).resolves.toEqual([]);
   });
 });
 
-async function waitForCallCount(
-  fn: ReturnType<typeof vi.fn>,
-  count: number,
-): Promise<void> {
-  await vi.waitFor(() =>
-    expect(fn.mock.calls.length).toBeGreaterThanOrEqual(count),
-  );
+function itemLookup(
+  reads: ObservedReads,
+  libraryScope: FakeLibraryScope = new FakeLibraryScope(),
+): ItemLookup {
+  return new ItemLookup({
+    reads: reads.service,
+    libraryScope: libraryScope as unknown as LibraryScopeService,
+  });
 }
 
-function createDeps(
+async function delayTicks(): Promise<void> {
+  for (let i = 0; i < 20; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
+interface RowOptions {
+  key: string;
+  itemID?: number;
+  libraryID?: number;
+  title?: string;
+  date?: string;
+  creator?: [firstName: string, lastName: string];
+  /** `dateModified` in Zotero's format. */
+  modified?: string;
+}
+
+const row = (options: RowOptions) => options;
+
+/** One item per Library; the item id derives from the Library id. */
+function perLibraryRows(): RowOptions[] {
+  return [USER_LIBRARY_ID, 2].map((libraryID) => ({
+    key: `LIBRARY${libraryID + 1}`,
+    itemID: libraryID * 100,
+    libraryID,
+  }));
+}
+
+/**
+ * SQL for a user library (1) and a group library (2, group 2) holding `rows`
+ * as journal articles; a row without a title is titled "Alpha".
+ */
+function seed(rows: readonly RowOptions[]): string {
+  const values = (list: string[]) => list.join(",\n");
+  const itemRows = rows.map((r, index) => {
+    const itemID = r.itemID ?? index + 1;
+    const modified = r.modified ?? "2024-01-01 00:00:00";
+    return `(${itemID}, 1, '2024-01-01 00:00:00', '${modified}', ${r.libraryID ?? USER_LIBRARY_ID}, '${r.key}')`;
+  });
+  const data: string[] = [];
+  const dataValues: string[] = [];
+  const creators: string[] = [];
+  const itemCreators: string[] = [];
+  rows.forEach((r, index) => {
+    const itemID = r.itemID ?? index + 1;
+    const fields: [number, string | undefined][] = [
+      [10, r.title ?? "Alpha"],
+      [12, r.date],
+    ];
+    for (const [fieldID, value] of fields) {
+      if (value === undefined) continue;
+      const valueID = dataValues.length + 1;
+      dataValues.push(`(${valueID}, '${value}')`);
+      data.push(`(${itemID}, ${fieldID}, ${valueID})`);
+    }
+    if (r.creator) {
+      const creatorID = creators.length + 1;
+      creators.push(`(${creatorID}, '${r.creator[0]}', '${r.creator[1]}', 0)`);
+      itemCreators.push(`(${itemID}, ${creatorID}, 1, 0)`);
+    }
+  });
+  return `
+    insert into libraries (libraryID, type, version, clientVersion)
+      values (1, 'user', 1, 0), (2, 'group', 1, 0);
+    insert into groups (groupID, libraryID, name) values (2, 2, 'Group 2');
+    insert into itemTypes (itemTypeID, typeName) values (1, 'journalArticle');
+    insert into fieldsCombined (fieldID, fieldName, custom)
+      values (10, 'title', 0), (12, 'date', 0);
+    insert into creatorTypes (creatorTypeID, creatorType) values (1, 'author');
+    insert into itemTypeCreatorTypes (itemTypeID, creatorTypeID, primaryField)
+      values (1, 1, 1);
+    ${itemRows.length ? `insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key) values ${values(itemRows)};` : ""}
+    ${dataValues.length ? `insert into itemDataValues (valueID, value) values ${values(dataValues)};` : ""}
+    ${data.length ? `insert into itemData (itemID, fieldID, valueID) values ${values(data)};` : ""}
+    ${creators.length ? `insert into creators (creatorID, firstName, lastName, fieldMode) values ${values(creators)};` : ""}
+    ${itemCreators.length ? `insert into itemCreators (itemID, creatorID, creatorTypeID, orderIndex) values ${values(itemCreators)};` : ""}
+  `;
+}
+
+type IndexItemsStream = Stream.Stream<readonly IndexedItem[], unknown>;
+type HydrateEffect = Effect.Effect<ReadonlyMap<string, Item>, unknown>;
+
+/** `operation` as a plain call, for a wrapper to forward to. */
+const callOf = <A>(operation: unknown) =>
+  operation as (payload: object, options?: object) => A;
+
+interface ObservedReads extends AsyncDisposable {
+  readonly service: ReturnType<typeof inProcessReadsService>;
+  /** The Library of each `IndexItems` call, in call order. */
+  readonly indexed: number[];
+  /** The Library of each `IndexItems` call that ended interrupted. */
+  readonly interrupted: number[];
+  readonly signatures: number;
+  readonly hydrations: number;
+  /**
+   * Hold the next `IndexItems` call until `resolve()`. `release()` lets
+   * calls after the held one run at once.
+   */
+  gateIndexItems(): { resolve(): void; release(): void };
+  /** Hold the next `ItemsByIndexedKeys` call until `resolve()`. */
+  gateHydration(): { resolve(): void };
+  /** Inject a `Changes` event, as the worker would send it. */
+  emit(event: ChangeEvent): void;
+}
+
+/**
+ * A reads service on the in-process adapter over seeded `:memory:` databases;
+ * open #N runs `seedFor(N)`, and a `null` seed fails the open. The client is
+ * observed: calls are recorded, and a test can hold a call or replace it.
+ */
+function readsOver(
+  seedFor: (open: number) => string | null,
   options: {
-    db?: FakeDb;
-    libraryScope?: FakeLibraryScope;
-    indexItems?: IndexedItem[];
-    hydratedItems?: Item[];
-    loadItemIDs?: (
-      db: NodeDatabaseClient,
-      libraryID: number,
-    ) => number[] | Promise<number[]>;
-    loadItems?: (
-      db: NodeDatabaseClient,
-      itemIDs: readonly number[],
-    ) => IndexedItem[] | Promise<IndexedItem[]>;
-    loadSignature?: (
-      db: NodeDatabaseClient,
-      libraryID: number,
-    ) => IndexSignature | Promise<IndexSignature>;
-    hydrateItems?: (
-      db: NodeDatabaseClient,
-      itemIDs: readonly number[],
-    ) => Item[] | Promise<Item[]>;
+    opening?: Promise<void>;
+    indexItems?: () => IndexItemsStream;
+    hydrate?: () => HydrateEffect;
   } = {},
-) {
-  const indexItems = options.indexItems ?? [];
-  const hydratedItems = options.hydratedItems ?? [];
-  return {
-    db: (options.db ?? new FakeDb()) as unknown as DatabaseService,
-    libraryScope: (options.libraryScope ??
-      new FakeLibraryScope()) as unknown as LibraryScopeService,
-    loadItemIDs: vi.fn(
-      options.loadItemIDs ?? (() => indexItems.map((item) => item.itemID)),
-    ),
-    loadItems: vi.fn(
-      options.loadItems ??
-        ((_db, itemIDs) =>
-          indexItems.filter((item) => itemIDs.includes(item.itemID))),
-    ),
-    loadSignature: vi.fn(
-      options.loadSignature ??
-        (() => ({ count: indexItems.length, checksum: 0 })),
-    ),
-    hydrateItems: vi.fn(
-      options.hydrateItems ??
-        ((_db, itemIDs) =>
-          hydratedItems.filter((candidate) =>
-            itemIDs.includes(candidate.itemID),
-          )),
-    ),
+): ObservedReads {
+  const indexed: number[] = [];
+  const interrupted: number[] = [];
+  let signatures = 0;
+  let hydrations = 0;
+  const indexGates: { promise: Promise<void> }[] = [];
+  const hydrationGates: { promise: Promise<void> }[] = [];
+  const injected = new Set<(event: ChangeEvent) => void>();
+  let releaseAll = false;
+
+  const { open } = memoryOpener(seedFor);
+  const wrap = (client: ZoteroReadsClient): ZoteroReadsClient => ({
+    ...client,
+    IndexItems: ((payload: { libraryID: number }, callOptions?: object) => {
+      indexed.push(payload.libraryID);
+      const gate = releaseAll ? undefined : indexGates.shift();
+      const source =
+        options.indexItems?.() ??
+        callOf<IndexItemsStream>(client.IndexItems)(payload, callOptions);
+      return Stream.unwrap(
+        Effect.as(
+          Effect.promise(() => gate?.promise ?? Promise.resolve()),
+          source,
+        ),
+      ).pipe(
+        Stream.onExit((exit) =>
+          Effect.sync(() => {
+            if (Exit.hasInterrupts(exit)) interrupted.push(payload.libraryID);
+          }),
+        ),
+      );
+    }) as unknown as ZoteroReadsClient["IndexItems"],
+    IndexSignature: ((payload: object, callOptions?: object) => {
+      signatures += 1;
+      return callOf<unknown>(client.IndexSignature)(payload, callOptions);
+    }) as unknown as ZoteroReadsClient["IndexSignature"],
+    ItemsByIndexedKeys: ((payload: object, callOptions?: object) => {
+      hydrations += 1;
+      const gate = hydrationGates.shift();
+      const source =
+        options.hydrate?.() ??
+        callOf<HydrateEffect>(client.ItemsByIndexedKeys)(payload, callOptions);
+      return Effect.andThen(
+        Effect.promise(() => gate?.promise ?? Promise.resolve()),
+        source,
+      );
+    }) as unknown as ZoteroReadsClient["ItemsByIndexedKeys"],
+    Changes: ((payload: object, callOptions?: object) =>
+      Stream.merge(
+        callOf<Stream.Stream<ChangeEvent>>(client.Changes)(
+          payload,
+          callOptions,
+        ),
+        Stream.callback<ChangeEvent>((queue) =>
+          Effect.sync(() => {
+            injected.add((event) => void Queue.offerUnsafe(queue, event));
+          }),
+        ),
+      )) as unknown as ZoteroReadsClient["Changes"],
+  });
+
+  const service = inProcessReadsService(open, wrap, options.opening);
+  const gate = (gates: { promise: Promise<void> }[]) => {
+    const signal = Promise.withResolvers<void>();
+    gates.push(signal);
+    return signal;
   };
-}
-
-class FakeDb {
-  error: DatabaseError | null = null;
-  readonly #client = {} as NodeDatabaseClient;
-  readonly #changed = new Set<() => void>();
-  #resolveReady: () => void = () => undefined;
-  readonly #ready: Promise<void>;
-
-  constructor(options: { ready?: "resolved" | "pending" } = {}) {
-    this.#ready =
-      options.ready === "pending"
-        ? new Promise((resolve) => {
-            this.#resolveReady = resolve;
-          })
-        : Promise.resolve();
-  }
-
-  get state(): "ready" | "degraded" {
-    return this.error ? "degraded" : "ready";
-  }
-
-  get ready(): Promise<void> {
-    return this.#ready;
-  }
-
-  get client(): NodeDatabaseClient {
-    if (this.error) throw this.error;
-    return this.#client;
-  }
-
-  acquireRead(): { client: NodeDatabaseClient } & Disposable {
-    if (this.error) throw this.error;
-    return { client: this.#client, [Symbol.dispose]: () => undefined };
-  }
-
-  on(event: "changed", cb: () => void): () => void {
-    this.#changed.add(cb);
-    return () => {
-      this.#changed.delete(cb);
-    };
-  }
-
-  emitChanged(): void {
-    for (const cb of this.#changed) cb();
-  }
-
-  resolveReady(): void {
-    this.#resolveReady();
-  }
+  return {
+    service,
+    indexed,
+    interrupted,
+    get signatures() {
+      return signatures;
+    },
+    get hydrations() {
+      return hydrations;
+    },
+    gateIndexItems: () => {
+      const signal = gate(indexGates);
+      return {
+        resolve: () => signal.resolve(),
+        release: () => {
+          releaseAll = true;
+        },
+      };
+    },
+    gateHydration: () => gate(hydrationGates),
+    emit: (event) => {
+      for (const offer of injected) offer(event);
+    },
+    [Symbol.asyncDispose]: () => service[Symbol.asyncDispose](),
+  };
 }
 
 /** An available Library named by its local id; group ids mirror it for brevity. */
@@ -529,7 +591,7 @@ class FakeLibraryScope {
     return false;
   }
 
-  resolveWith(): ResolvedLibraryScope {
+  resolveLibraries(_libraries: readonly Library[]): ResolvedLibraryScope {
     return this.#resolved();
   }
 
@@ -556,40 +618,4 @@ class FakeLibraryScope {
       unavailable: [],
     };
   }
-}
-
-function itemPair(options: ItemFixtureOptions): {
-  indexed: IndexedItem;
-  full: Item;
-} {
-  return {
-    indexed: indexedItem(options),
-    full: item(options),
-  };
-}
-
-/**
- * Loaders serving exactly one item per Library, with the item id derived from
- * the Library id, so a hit traces back to the Library that produced it.
- */
-function perLibraryData() {
-  const itemIDOf = (libraryID: number): number => libraryID * 100;
-  const optionsOf = (itemID: number): ItemFixtureOptions => ({
-    key: `L${itemID / 100}`,
-    itemID,
-    libraryID: itemID / 100,
-  });
-  return {
-    loadItemIDs: vi.fn((_client: NodeDatabaseClient, libraryID: number) => [
-      itemIDOf(libraryID),
-    ]),
-    loadItems: vi.fn(
-      (_client: NodeDatabaseClient, itemIDs: readonly number[]) =>
-        itemIDs.map((itemID) => indexedItem(optionsOf(itemID))),
-    ),
-    hydrateItems: vi.fn(
-      (_client: NodeDatabaseClient, itemIDs: readonly number[]) =>
-        itemIDs.map((itemID) => item(optionsOf(itemID))),
-    ),
-  };
 }

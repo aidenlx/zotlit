@@ -1,7 +1,7 @@
 // The worker adapter's lifetime: degraded on a worker death, a new worker on Refresh, termination on scope end.
 import { Deferred, Effect, Layer, Stream } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
@@ -11,6 +11,7 @@ import { makeInProcessClient } from "./in-process";
 import type { ZoteroReadsClient } from "./in-process";
 import { DbUnavailable } from "./rpc";
 import type { ChangeEvent } from "./rpc";
+import { ZoteroReadsService } from "./service";
 import { makeWorkerReads } from "./worker-host";
 import type { WorkerConnection } from "./worker-host";
 
@@ -68,7 +69,7 @@ function fakeWorkers(
   };
 }
 
-const workerSeen = (reads: ZoteroReadsClient) =>
+const workerSeen = (reads: Pick<ZoteroReadsClient, "Libraries">) =>
   Effect.map(
     reads.Libraries({}),
     (libraries) => libraries.find((l) => l.libraryID === 1)!.version,
@@ -185,6 +186,30 @@ describe("ZoteroReads worker adapter", () => {
     );
     expect(workers.spawned()).toBe(2);
     expect(ended).toBe(true);
+  });
+
+  it("moves ZoteroReadsService to degraded on a worker error, and refresh() recovers", async () => {
+    const workers = fakeWorkers();
+    await using service = new ZoteroReadsService({
+      client: makeWorkerReads(workers.connect),
+    });
+    const { reads } = await service.ready;
+    await Effect.runPromise(workerSeen(reads));
+
+    const degraded = new Promise<DbUnavailable>((resolve) =>
+      service.on("degraded", resolve),
+    );
+    await Effect.runPromise(workers.kill(1));
+    await expect(degraded).resolves.toMatchObject({
+      _tag: "DbUnavailable",
+      message: "worker #1 crashed",
+    });
+    expect(service.state).toBe("degraded");
+
+    await service.refresh();
+    await vi.waitFor(() => expect(service.state).toBe("ready"));
+    await expect(Effect.runPromise(workerSeen(reads))).resolves.toBe(2);
+    expect(workers.ended(1)).toBe(true);
   });
 
   it("ends the worker when the caller's scope closes", async () => {

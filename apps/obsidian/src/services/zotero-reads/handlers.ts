@@ -375,6 +375,11 @@ export function handlersLayer(options?: HandlersOptions) {
         Refresh: () => connection.refresh,
         NotifyExternalChange: () => connection.notifyExternalChange,
         Configure: (config) => connection.configure(config),
+
+        IndexSignature: ({ libraryID, snapshot }) =>
+          withClient(snapshot, (client) =>
+            getIndexSignature(client, libraryID),
+          ),
       });
     }),
   );

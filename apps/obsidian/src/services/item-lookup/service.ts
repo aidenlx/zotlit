@@ -5,7 +5,7 @@
  * - One **composite index** spans every available Library in scope. Per-Library
  *   BM25 scores are not comparable, so they are never merged: the whole corpus
  *   is indexed together and ranked once, globally.
- * - A database refresh (`db.on("changed")`) rebuilds in the background while
+ * - A database refresh (`reads.on("changed")`) rebuilds in the background while
  *   {@link ItemLookup.search} keeps serving the cached index — search never
  *   blocks on a rebuild, so frequent Zotero writes don't freeze suggestions.
  * - A change-gate reads a cheap per-Library `(count, checksum)`
@@ -14,34 +14,27 @@
  * - Rebuilds are single-flight with a trailing rerun ({@link #scheduleRebuild}):
  *   a refresh arriving mid-build lets the build finish, then reruns once, so a
  *   burst of refreshes converges instead of restarting.
- * - Each rebuild pins one DB snapshot ({@link DatabaseService.acquireRead}) for
- *   its scope resolution, its signature reads, and its chunked hydration, so the
+ * - Each rebuild pins one Snapshot ({@link ZoteroReadsService.snapshot}) for
+ *   its scope resolution, its signature reads, and its item stream, so the
  *   cached signatures are atomic with the index they label and a concurrent
- *   refresh cannot tear chunks across snapshots. The build hydrates one Library
- *   at a time in `dateModified`-desc chunks, yielding the main thread between
- *   chunks so a large scope stays responsive; {@link SearchIndexBuilder.build}
- *   then imposes the global order over the whole corpus.
+ *   refresh cannot tear slices across database states. The build reads one
+ *   Library at a time from the `IndexItems` stream;
+ *   {@link SearchIndexBuilder.build} then imposes the global order over the
+ *   whole corpus.
  *
- * A Library Scope change is a hard invalidation: it bumps {@link #generation} to
- * abandon any in-flight build and search hydration bound to the old scope, and
- * drops the cache so the new scope builds from scratch. A group rename leaves
- * the covered Libraries alone, so it refreshes labels without rebuilding.
+ * A Library Scope change is a hard invalidation: the new build replaces the
+ * running one in the build FiberHandle, which interrupts it, and search hydration
+ * bound to the old scope is dropped. The cache goes too, so the new scope
+ * builds from scratch. A group rename leaves the covered Libraries alone, so it
+ * refreshes labels without rebuilding.
  *
- * No fixed Library or Item limit applies; the chunked build is what keeps a
- * large scope affordable.
+ * No fixed Library or Item limit applies.
  */
-import { chunk } from "@std/collections/chunk";
+import { Effect, Exit, Fiber, FiberHandle, Scope, Stream } from "effect";
 import { getLanguage } from "obsidian";
 
-import {
-  createLanguageLookup,
-  getIndexedItemIDsByLibrary,
-  getIndexedItemsByID,
-  getIndexSignature,
-  getItemsByID,
-} from "@zotlit/db";
+import { createLanguageLookup } from "@zotlit/db";
 import type { IndexedItem, IndexSignature, Item } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createIndexBuilder, searchIndex } from "@zotlit/item-lookup";
 import type {
   ChsSegmenter,
@@ -51,9 +44,6 @@ import type {
 } from "@zotlit/item-lookup";
 
 import { getLogger } from "@/lib/log";
-import { yieldToMain } from "@/lib/yield-to-main";
-import { DatabaseError } from "@/services/database/service";
-import type { DatabaseService } from "@/services/database/service";
 import { availableKey } from "@/services/library-scope/scope";
 import type {
   AvailableLibrary,
@@ -61,6 +51,11 @@ import type {
 } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { Service } from "@/services/service-base";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
+import type {
+  ZoteroReadsApi,
+  ZoteroReadsService,
+} from "@/services/zotero-reads/service";
 
 const logger = getLogger(["item-lookup"]);
 export const DEFAULT_LIMIT = 50;
@@ -73,30 +68,18 @@ export interface SearchHit extends EngineSearchHit<Item> {
   library: AvailableLibrary | null;
 }
 
-/** Items hydrated and indexed per yield, keeping each synchronous slice short
- * enough that the main thread can paint between chunks during a rebuild. */
-const INDEX_CHUNK_SIZE = 50;
-
 export interface ItemLookupDeps {
-  db: DatabaseService;
-  libraryScope: LibraryScopeService;
+  reads: ZoteroReadsService;
+  libraryScope: Pick<
+    LibraryScopeService,
+    "ready" | "on" | "current" | "resolveLibraries"
+  >;
   getChsSegmenter?: () => ChsSegmenter | null;
-  loadItemIDs?: (
-    db: NodeDatabaseClient,
-    libraryID: number,
-  ) => number[] | Promise<number[]>;
-  loadItems?: (
-    db: NodeDatabaseClient,
-    itemIDs: readonly number[],
-  ) => IndexedItem[] | Promise<IndexedItem[]>;
-  loadSignature?: (
-    db: NodeDatabaseClient,
-    libraryID: number,
-  ) => IndexSignature | Promise<IndexSignature>;
-  hydrateItems?: (
-    db: NodeDatabaseClient,
-    itemIDs: readonly number[],
-  ) => Item[] | Promise<Item[]>;
+}
+
+interface ItemLookupReady {
+  /** Holds the running build; a build run in it interrupts the one before. */
+  builds: FiberHandle.FiberHandle<void, never>;
 }
 
 interface ItemCache {
@@ -123,40 +106,28 @@ function signaturesEqual(
   );
 }
 
-export class ItemLookup extends Service<void> {
-  readonly #db;
+export class ItemLookup extends Service<ItemLookupReady> {
+  readonly #reads;
   readonly #libraryScope;
   readonly #languageLookup;
   readonly #getChsSegmenter;
-  readonly #loadItemIDs;
-  readonly #loadItems;
-  readonly #loadSignature;
-  readonly #hydrateItems;
 
   #cache: ItemCache | null = null;
   #rebuildInFlight: Promise<void> | null = null;
   #rebuildAgain = false;
   /** Libraries the index should cover, or `null` while the scope is unresolved. */
   #scopeKey: string | null = null;
-  /** Bumped only on a scope change — the hard-abort token for an in-flight build
-   * and in-flight search hydration whose Libraries are now wrong. Data refreshes
-   * do not bump it; they reconcile via the change-gate and a trailing rebuild. */
-  #generation = 0;
   readonly #intl = new Intl.Segmenter(undefined, { granularity: "word" });
   #tokenizerOpts: TokenizerOptions;
 
-  ready: Promise<void>;
+  ready: Promise<ItemLookupReady>;
 
   constructor(deps: ItemLookupDeps) {
     super();
-    this.#db = deps.db;
+    this.#reads = deps.reads;
     this.#libraryScope = deps.libraryScope;
     this.#languageLookup = createLanguageLookup(getLanguage());
     this.#getChsSegmenter = deps.getChsSegmenter ?? (() => null);
-    this.#loadItemIDs = deps.loadItemIDs ?? getIndexedItemIDsByLibrary;
-    this.#loadItems = deps.loadItems ?? getIndexedItemsByID;
-    this.#loadSignature = deps.loadSignature ?? getIndexSignature;
-    this.#hydrateItems = deps.hydrateItems ?? getItemsByID;
     this.#tokenizerOpts = this.#createTokenizerOpts();
     this.ready = this.#load();
   }
@@ -168,7 +139,6 @@ export class ItemLookup extends Service<void> {
     if (limit <= 0) return [];
 
     const t0 = performance.now();
-    const generation = this.#generation;
     const cache = await this.#loadIfNeeded();
     if (!cache) {
       logger.debug("Search skipped; no index available", {
@@ -191,7 +161,7 @@ export class ItemLookup extends Service<void> {
             tokenizer: this.#tokenizerOpts,
             limit,
           });
-    const hits = await this.#hydrateHits(cache, leanHits, generation);
+    const hits = await this.#hydrateHits(cache, leanHits);
 
     logger.debug("Search completed", {
       libraries: cache.libraries.length,
@@ -202,18 +172,21 @@ export class ItemLookup extends Service<void> {
     return hits;
   }
 
-  async #load(): Promise<void> {
+  async #load(): Promise<ItemLookupReady> {
     await using stack = new AsyncDisposableStack();
-    stack.defer(this.#db.on("changed", () => this.#invalidate()));
+    const buildScope = Effect.runSync(Scope.make());
+    stack.defer(() => Effect.runPromise(Scope.close(buildScope, Exit.void)));
+    const builds = Effect.runSync(
+      Scope.provide(FiberHandle.make<void, never>(), buildScope),
+    );
+    stack.defer(this.#reads.on("changed", () => this.#invalidate()));
     stack.defer(
       this.#libraryScope.on("changed", (scope) => this.#onScopeChanged(scope)),
     );
 
     this.commit(stack.move());
 
-    // Library Scope settles the database on its own way to ready, so its
-    // resolution is the only startup signal this service waits on.
-    await this.#libraryScope.ready;
+    await Promise.all([this.#reads.ready, this.#libraryScope.ready]);
     const scope = this.#libraryScope.current;
     this.#scopeKey = scope && availableKey(scope.available);
     logger.info("Item lookup ready", { scopeKey: this.#scopeKey });
@@ -224,13 +197,14 @@ export class ItemLookup extends Service<void> {
         scopeKey: this.#scopeKey,
       });
     });
+    return { builds };
   }
 
   /**
-   * A scope change makes the cached index wrong, not merely stale: hard-abort
-   * any in-flight build/hydration (generation bump) and drop the cache. A
-   * refresh that only renames a group leaves the covered Libraries alone, so it
-   * keeps the index and only refreshes the labels drawn from it.
+   * A scope change makes the cached index wrong, not merely stale: interrupt
+   * any in-flight build, drop the cache, and build again. A refresh that only
+   * renames a group leaves the covered Libraries alone, so it keeps the index
+   * and only refreshes the labels drawn from it.
    */
   #onScopeChanged(scope: ResolvedLibraryScope | null): void {
     const scopeKey = scope && availableKey(scope.available);
@@ -243,9 +217,8 @@ export class ItemLookup extends Service<void> {
       to: scopeKey,
     });
     this.#scopeKey = scopeKey;
-    this.#generation += 1;
     this.#cache = null;
-    void this.#scheduleRebuild();
+    void this.#scheduleRebuild({ restart: true });
   }
 
   /**
@@ -260,7 +233,7 @@ export class ItemLookup extends Service<void> {
   }
 
   /** Database refresh: keep serving the stale index (SWR) and rebuild in the
-   * background. {@link #generation} is untouched so the in-flight build finishes. */
+   * background. The in-flight build finishes; a trailing rerun follows it. */
   #invalidate(): void {
     logger.debug("Item index invalidated by database change", {
       scopeKey: this.#scopeKey,
@@ -271,9 +244,9 @@ export class ItemLookup extends Service<void> {
   /** Serve the cached index immediately when present (stale-while-revalidate);
    * only block on a build when there is no valid index for the current scope. */
   async #loadIfNeeded(): Promise<ItemCache | null> {
-    if (this.#db.state !== "ready") {
+    if (this.#reads.state === "degraded") {
       this.#cache = null;
-      logger.debug("Item index load skipped; database not ready");
+      logger.debug("Item index load skipped; database degraded");
       return null;
     }
     const scopeKey = this.#scopeKey;
@@ -299,13 +272,14 @@ export class ItemLookup extends Service<void> {
   }
 
   /**
-   * Single-flight rebuild lane with trailing-rerun coalescing, mirroring
-   * {@link DatabaseService}'s refresh loop: a refresh arriving mid-rebuild sets a
-   * trailing rerun rather than aborting, so a burst of `"changed"` events collapses
-   * into one extra rebuild and the index converges instead of starving.
+   * Single-flight rebuild lane with trailing-rerun coalescing: a refresh
+   * arriving mid-rebuild sets a trailing rerun rather than aborting, so a burst
+   * of `"changed"` events collapses into one extra rebuild and the index
+   * converges instead of starving. `restart` (a scope change) runs a new lane in
+   * the build FiberHandle, which interrupts the running one.
    */
-  #scheduleRebuild(): Promise<void> {
-    if (this.#rebuildInFlight) {
+  #scheduleRebuild(options?: { restart?: boolean }): Promise<void> {
+    if (this.#rebuildInFlight && !options?.restart) {
       this.#rebuildAgain = true;
       logger.debug("Item index rebuild coalesced; trailing rerun scheduled", {
         scopeKey: this.#scopeKey,
@@ -315,44 +289,59 @@ export class ItemLookup extends Service<void> {
     logger.debug("Item index rebuild lane started", {
       scopeKey: this.#scopeKey,
     });
-    this.#rebuildInFlight = this.#rebuildLoop().finally(() => {
-      this.#rebuildInFlight = null;
+    // A failed startup leaves no lane to run in; search then finds no index.
+    const done = this.ready.then(
+      async ({ builds }) => {
+        const fiber = Effect.runSync(
+          FiberHandle.run(builds, this.#rebuildLoop),
+        );
+        await Effect.runPromise(Fiber.await(fiber));
+      },
+      () => undefined,
+    );
+    this.#rebuildInFlight = done;
+    void done.finally(() => {
+      if (this.#rebuildInFlight === done) this.#rebuildInFlight = null;
     });
-    return this.#rebuildInFlight;
+    return done;
   }
 
-  async #rebuildLoop(): Promise<void> {
-    do {
-      this.#rebuildAgain = false;
-      await this.#rebuildOnce();
-      if (this.#rebuildAgain) {
+  readonly #rebuildLoop: Effect.Effect<void> = Effect.suspend(() => {
+    this.#rebuildAgain = false;
+    return this.#rebuildOnce;
+  }).pipe(
+    Effect.repeat({
+      while: () => {
+        if (!this.#rebuildAgain) return false;
         logger.debug("Item index rebuild trailing rerun triggered", {
           scopeKey: this.#scopeKey,
         });
-      }
-    } while (this.#rebuildAgain);
-  }
+        return true;
+      },
+    }),
+    Effect.asVoid,
+  );
 
-  async #rebuildOnce(): Promise<void> {
-    if (this.#db.state !== "ready") {
-      logger.debug("Item index rebuild skipped; database not ready");
-      return;
-    }
-    const generation = this.#generation;
-    const t0 = performance.now();
-    try {
-      // Pin one DB snapshot for the scope resolution, the signature reads and
-      // the whole chunked build: a concurrent refresh cannot swap the client
-      // between chunks (a torn index), and the cached signatures describe
-      // exactly the index stored with them.
-      using lease = await this.#db.acquireRead();
-      const { client } = lease;
-      const { available } = this.#libraryScope.resolveWith(client);
-      const scopeKey = availableKey(available);
-      const signatures: IndexSignature[] = [];
-      for (const library of available) {
-        signatures.push(await this.#loadSignature(client, library.libraryID));
+  readonly #rebuildOnce: Effect.Effect<void> = Effect.gen(
+    { self: this },
+    function* () {
+      if (this.#reads.state === "degraded") {
+        logger.debug("Item index rebuild skipped; database degraded");
+        return;
       }
+      const t0 = performance.now();
+      // Pin one Snapshot for the scope resolution, the signature reads and the
+      // whole item stream: a concurrent refresh cannot swap the connection
+      // between slices (a torn index), and the cached signatures describe
+      // exactly the index stored with them.
+      const reads = yield* this.#reads.snapshot;
+      const { available } = this.#libraryScope.resolveLibraries(
+        yield* reads.Libraries({}),
+      );
+      const scopeKey = availableKey(available);
+      const signatures = yield* Effect.forEach(available, (library) =>
+        reads.IndexSignature({ libraryID: library.libraryID }),
+      );
       if (
         this.#cache?.scopeKey === scopeKey &&
         signaturesEqual(this.#cache.signatures, signatures)
@@ -364,86 +353,66 @@ export class ItemLookup extends Service<void> {
         return;
       }
       this.#tokenizerOpts = this.#createTokenizerOpts();
-      const index = await this.#buildCompositeIndex(
-        client,
-        available,
-        generation,
-      );
-      if (index === null || generation !== this.#generation) {
-        logger.debug("Discarding superseded item index build", {
-          scopeKey,
-          generation,
-        });
-        return;
-      }
+      const index = yield* this.#buildCompositeIndex(reads, available);
       this.#cache = { scopeKey, libraries: available, index, signatures };
       logger.info("Item index built", {
         libraries: available.length,
         count: index.items.length,
         durationMs: performance.now() - t0,
       });
-    } catch (error) {
-      if (error instanceof DatabaseError) {
-        // Keep serving the stale index; the next refresh retries the rebuild.
+    },
+  ).pipe(
+    Effect.scoped,
+    Effect.catchTag(["DbUnavailable", "SnapshotExpired"], (error) =>
+      // Keep serving the stale index; the next refresh retries the rebuild.
+      Effect.sync(() => {
         logger.debug("Item index rebuild skipped; database unavailable", {
           error,
           scopeKey: this.#scopeKey,
         });
-        return;
-      }
-      // A background rebuild must not reject the promise search() awaits — log and
-      // keep serving the stale index, mirroring DatabaseService's refresh loop.
+      }),
+    ),
+    // A background rebuild must not reject the promise search() awaits — log
+    // and keep serving the stale index. An interrupt passes through.
+    Effect.catch((error) => this.#logRebuildFailure(error)),
+    Effect.catchDefect((defect) => this.#logRebuildFailure(defect)),
+  );
+
+  #logRebuildFailure(error: unknown): Effect.Effect<void> {
+    return Effect.sync(() => {
       logger.error("Item index rebuild failed", {
         error,
         scopeKey: this.#scopeKey,
       });
-    }
+    });
   }
 
   /**
-   * Build one composite index over every Library in scope — per Library, one
-   * lightweight id query up front, then per-chunk hydration — yielding the main
-   * thread between chunks so a large scope does not freeze the UI. All reads use
-   * the caller's pinned `client` so every chunk reflects one DB snapshot. A
-   * scope change bumps {@link #generation}; the per-chunk guard then abandons
-   * this now-wrong build.
-   *
-   * @returns the built index, or `null` when a scope change superseded it.
+   * Build one composite index over every Library in scope from each Library's
+   * `IndexItems` stream, all read from the caller's Snapshot. An interrupt
+   * (a scope change) stops the stream at its next slice.
    */
-  async #buildCompositeIndex(
-    client: NodeDatabaseClient,
+  #buildCompositeIndex(
+    reads: ZoteroReadsApi,
     libraries: readonly AvailableLibrary[],
-    generation: number,
-  ): Promise<SearchIndex | null> {
+  ) {
     const builder = createIndexBuilder(this.#tokenizerOpts, {
       libraries: libraries.map((library) => library.libraryID),
       languageLookup: this.#languageLookup,
     });
-    for (const library of libraries) {
-      const itemIDs = await this.#loadItemIDs(client, library.libraryID);
-      logger.debug("Item index build started for a library", {
-        libraryID: library.libraryID,
-        itemCount: itemIDs.length,
-        chunkSize: INDEX_CHUNK_SIZE,
-      });
-      for (const ids of chunk(itemIDs, INDEX_CHUNK_SIZE)) {
-        if (generation !== this.#generation) {
-          logger.debug("Item index build abandoned mid-chunk; scope changed", {
-            generation,
-          });
-          return null;
-        }
-        builder.add(await this.#loadItems(client, ids));
-        await yieldToMain();
-      }
-    }
-    if (generation !== this.#generation) {
-      logger.debug("Item index build abandoned post-chunks; scope changed", {
-        generation,
-      });
-      return null;
-    }
-    return builder.build();
+    return Effect.forEach(
+      libraries,
+      (library) => {
+        logger.debug("Item index build started for a library", {
+          libraryID: library.libraryID,
+        });
+        return Stream.runForEach(
+          reads.IndexItems({ libraryID: library.libraryID }),
+          (slice) => Effect.sync(() => builder.add(slice)),
+        );
+      },
+      { discard: true },
+    ).pipe(Effect.map(() => builder.build()));
   }
 
   #createTokenizerOpts(): TokenizerOptions {
@@ -456,19 +425,19 @@ export class ItemLookup extends Service<void> {
   async #hydrateHits(
     cache: ItemCache,
     leanHits: readonly EngineSearchHit<IndexedItem>[],
-    generation: number,
   ): Promise<SearchHit[]> {
     if (leanHits.length === 0) return [];
 
-    let hydrated: Map<number, Item>;
+    let hydrated: ReadonlyMap<string, Item>;
     try {
-      const items = await this.#hydrateItems(
-        this.#db.client,
-        leanHits.map((hit) => hit.item.itemID),
+      const { reads } = await this.#reads.ready;
+      hydrated = await Effect.runPromise(
+        reads.ItemsByIndexedKeys({
+          indexedKeys: leanHits.map((hit) => hit.item.indexedKey),
+        }),
       );
-      hydrated = new Map(items.map((item) => [item.itemID, item]));
     } catch (error) {
-      if (error instanceof DatabaseError) {
+      if (error instanceof DbUnavailable) {
         logger.debug(
           "Search hydration skipped because the database is unavailable",
           { error, scopeKey: cache.scopeKey },
@@ -478,10 +447,9 @@ export class ItemLookup extends Service<void> {
       throw error;
     }
 
-    if (generation !== this.#generation) {
+    if (cache.scopeKey !== this.#scopeKey) {
       logger.debug("Search hydration discarded; scope changed", {
         scopeKey: cache.scopeKey,
-        generation,
       });
       return [];
     }
@@ -495,7 +463,7 @@ export class ItemLookup extends Service<void> {
         : null;
 
     return leanHits.flatMap((hit) => {
-      const item = hydrated.get(hit.item.itemID);
+      const item = hydrated.get(hit.item.indexedKey);
       return item
         ? [
             {

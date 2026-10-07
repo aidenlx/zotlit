@@ -160,8 +160,10 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
       let watchTrusted = false;
 
       /** The running lane's completion, while one runs. */
-      let laneDone: Deferred.Deferred<void> | null = null;
+      let laneDone: Deferred.Deferred<void, DbUnavailable> | null = null;
       let refreshAgain = false;
+      /** Why the lane's latest refresh failed; `null` once one succeeds. */
+      let laneFailure: DbUnavailable | null = null;
       /** Completes once the first refresh settled, either way. */
       const firstSettled = yield* Deferred.make<void>();
 
@@ -336,6 +338,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
               reportSchemaVersions(open.client);
               yield* clients.swap(open);
               hasClient = true;
+              laneFailure = null;
               sourcePath = databasePath;
               readMode = prepared.effectiveMode;
               fingerprint = nextFingerprint;
@@ -352,6 +355,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
           yield* publish({ _tag: "refresh-failed", error });
           logger.warn("Failed to refresh Zotero database", { error });
           yield* maybeSignalMissingDatabase(databasePath);
+          laneFailure = error;
           // Keep serving the previous client on a failed refresh; only go
           // degraded when there was never a working client to fall back to.
           lastError = error;
@@ -385,20 +389,24 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
        * trigger shares one in-flight run, and a trigger mid-run sets one
        * trailing rerun. Returns the run's completion.
        */
-      const enqueueRefresh = (): Deferred.Deferred<void> => {
+      const enqueueRefresh = (): Deferred.Deferred<void, DbUnavailable> => {
         if (laneDone) {
           logger.debug("Refresh in flight, coalescing trailing rerun");
           refreshAgain = true;
           return laneDone;
         }
-        const done = Deferred.makeUnsafe<void>();
+        const done = Deferred.makeUnsafe<void, DbUnavailable>();
         laneDone = done;
         run(
           refreshLane.pipe(
             Effect.ensuring(
               Effect.suspend(() => {
                 laneDone = null;
-                return Deferred.succeed(done, undefined);
+                const failure = laneFailure;
+                laneFailure = null;
+                return failure
+                  ? Deferred.fail(done, failure)
+                  : Deferred.succeed(done, undefined);
               }),
             ),
           ),
@@ -603,12 +611,9 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
         // the service's `ready`.
         borrow: Effect.andThen(Deferred.await(firstSettled), clients.borrow),
         changes,
-        refresh: Effect.gen(function* () {
-          yield* Deferred.await(enqueueRefresh());
-          // Fails only when no client serves; a failed refresh that leaves
-          // the previous client serving reports on `Changes` instead.
-          if (state === "degraded" && lastError) return yield* lastError;
-        }),
+        // Fails when the lane's last refresh failed, also when the previous
+        // client keeps serving; `Changes` tells the two apart.
+        refresh: Effect.suspend(() => Deferred.await(enqueueRefresh())),
         notifyExternalChange: Effect.sync(() => {
           logger.debug("External change signalled, scheduling refresh");
           scheduleWatchedRefresh({ trusted: true });

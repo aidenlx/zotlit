@@ -33,9 +33,8 @@ export class Connection extends Context.Service<
     /** Lifecycle events, starting with the current state for each subscriber. */
     readonly changes: Stream.Stream<ChangeEvent>;
     /**
-     * Open and validate a new client, then swap it in. Fails only when no
-     * client serves afterwards; a failure that leaves the previous client
-     * serving reports `refresh-failed` on `changes`.
+     * Open and validate a new client, then swap it in. Fails when the new
+     * source fails, also when the previous client keeps serving.
      */
     readonly refresh: Effect.Effect<void, DbUnavailable>;
     /** A change signal from outside the process (a Zotero push). */
@@ -231,10 +230,7 @@ export function layerRcRef(opener: ConnectionOpener): Layer.Layer<Connection> {
           lastError = result.failure;
           yield* publish({ _tag: "refresh-failed", error: result.failure });
           yield* publish({ _tag: "refreshing", active: false });
-          // Fails only when no client serves; otherwise the previous client
-          // keeps serving and `Changes` carries the failure.
-          if (state !== "ready") return yield* result.failure;
-          return;
+          return yield* result.failure;
         }
         yield* publish({ _tag: "changed" });
         yield* publish({ _tag: "refreshing", active: false });

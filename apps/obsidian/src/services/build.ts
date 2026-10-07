@@ -76,7 +76,12 @@ import { WikilinkReading } from "./wikilink-reading/service";
 import { ZoteroLocalApiClient } from "./zotero-local-api/service";
 import { SecretWriteAuthorizationStore } from "./zotero-local-api/write-authorization";
 import { ZoteroPrefService } from "./zotero-pref/service";
-import { ZoteroReadsWorker } from "./zotero-reads/worker-service";
+import { layerDatabaseService } from "./zotero-reads/database-connection";
+import { inProcessClient, ZoteroReadsService } from "./zotero-reads/service";
+import {
+  workerAdapterEnabled,
+  workerClient,
+} from "./zotero-reads/worker-client";
 
 /**
  * Construct and wire all Obsidian plugin services.
@@ -155,8 +160,15 @@ export function buildServices(
         new DatabaseService({ settings, zoteroPref }),
     })
     .use({
-      zoteroReadsWorker: ({ settings, zoteroPref }) =>
-        new ZoteroReadsWorker({ settings, zoteroPref, storage: plugin.app }),
+      // The handler layer runs in-process over the DatabaseService, so the
+      // service stays the one database owner. The dev toggle runs it in the
+      // Web Worker instead, which owns its own connection.
+      zoteroReads: ({ db, settings, zoteroPref }) =>
+        new ZoteroReadsService({
+          client: workerAdapterEnabled(plugin.app)
+            ? workerClient({ settings, zoteroPref })
+            : inProcessClient(layerDatabaseService(db)),
+        }),
     })
     .use({
       excerptImage: () =>
@@ -374,9 +386,9 @@ export function buildServices(
         }),
     })
     .use({
-      itemLookup: ({ db, libraryScope }) =>
+      itemLookup: ({ zoteroReads, libraryScope }) =>
         new ItemLookup({
-          db,
+          reads: zoteroReads,
           libraryScope,
           getChsSegmenter: () => getChsSegmenter(plugin.app),
         }),

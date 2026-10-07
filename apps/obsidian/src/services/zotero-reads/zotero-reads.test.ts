@@ -528,6 +528,23 @@ describe("ZoteroReads operations", () => {
     ]);
   });
 
+  it("IndexSignature counts and checksums the top-level items of one library", async () => {
+    const { open } = fixtureOpener();
+    const signatures = await withReads(open, (reads) =>
+      Effect.all([
+        reads.IndexSignature({ libraryID: 1 }),
+        reads.IndexSignature({ libraryID: 2 }),
+        reads.IndexSignature({ libraryID: 99 }),
+      ]),
+    );
+    // Seconds of each dateModified plus the itemID, summed per library.
+    expect(signatures).toEqual([
+      { count: 3, checksum: 1706745601 + 1704153602 + 1704240003 },
+      { count: 1, checksum: 1704326700 },
+      { count: 0, checksum: 0 },
+    ]);
+  });
+
   it("a source that cannot open fails with a tagged DbUnavailable", async () => {
     const { open } = fixtureOpener(() => null);
     const error = await withReads(open, (reads) =>
@@ -606,7 +623,7 @@ describe("ZoteroReads connection lifetime", () => {
         const before = yield* connectionSeen(reads);
         const changes = yield* Stream.toPull(reads.Changes());
         const seed = yield* take(changes, 1);
-        const refresh = yield* Effect.exit(reads.Refresh());
+        const refresh = yield* Effect.flip(reads.Refresh());
         const after = yield* connectionSeen(reads);
         const rest = yield* take(changes, 3);
         return { before, refresh, after, events: [...seed, ...rest] };
@@ -614,7 +631,7 @@ describe("ZoteroReads connection lifetime", () => {
     );
     expect(result.before).toBe(1);
     expect(result.after).toBe(1);
-    expect(result.refresh._tag).toBe("Success");
+    expect(result.refresh).toMatchObject({ _tag: "DbUnavailable" });
     expect(result.events.map((event) => event._tag)).toEqual([
       "state",
       "refreshing",

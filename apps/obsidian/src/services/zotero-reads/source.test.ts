@@ -311,7 +311,7 @@ describe("ZoteroReads source", () => {
     await expect(source.version()).resolves.toBe(1);
   });
 
-  it("keeps the active client when a refresh fails, and Refresh succeeds", async () => {
+  it("keeps the active client when a refresh fails, and Refresh reports the failure", async () => {
     const { ports } = testPorts();
     await using source = await startSource(config(), ports);
     await expect(source.version()).resolves.toBe(1);
@@ -320,7 +320,9 @@ describe("ZoteroReads source", () => {
 
     writeLibrary(dbPath, 2);
     ports.prepareRead.mockRejectedValueOnce(new Error("busy"));
-    await source.run(source.reads.Refresh());
+    await expect(
+      source.run(Effect.flip(source.reads.Refresh())),
+    ).resolves.toMatchObject({ _tag: "DbUnavailable", message: "busy" });
 
     await expect(source.version()).resolves.toBe(1);
     await source.sawTags(
@@ -338,7 +340,7 @@ describe("ZoteroReads source", () => {
     const other = join(dir, "other", "zotero.sqlite");
     new DatabaseSync(other).close();
     await source.run(source.reads.Configure(config({ databasePath: other })));
-    await source.run(source.reads.Refresh());
+    await source.run(Effect.ignore(source.reads.Refresh()));
 
     await expect(source.version()).resolves.toBe(1);
     await vi.waitFor(() =>

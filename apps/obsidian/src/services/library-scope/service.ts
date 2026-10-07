@@ -125,7 +125,12 @@ export class LibraryScopeService extends Service<void> {
 
   /** Resolve the saved scope against a caller-pinned database client. */
   resolveWith(client: NodeDatabaseClient): ResolvedLibraryScope {
-    return resolveLibraryScope(this.#loadLibraries(client), this.#savedScope());
+    return this.resolveLibraries(this.#loadLibraries(client));
+  }
+
+  /** Resolve the saved scope against Libraries the caller read from one Snapshot. */
+  resolveLibraries(libraries: readonly Library[]): ResolvedLibraryScope {
+    return resolveLibraryScope(libraries, this.#savedScope());
   }
 
   on<K extends keyof LibraryScopeEvents>(
