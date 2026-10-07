@@ -122,7 +122,7 @@ describe("native preview load boundaries", () => {
     async (item) => {
       await using fixture = await createRenderFixture();
       const acquire = vi
-        .spyOn(fixture.deps.db, "acquireRead")
+        .spyOn(fixture.deps.zoteroReads, "acquireRead")
         .mockRejectedValue(new Error("Database offline"));
       const { scheduler } = scheduling(false);
       using _scheduler = scheduler;
@@ -146,7 +146,7 @@ describe("native preview load boundaries", () => {
     await using fixture = await createRenderFixture();
     vi.useFakeTimers();
     const acquire = vi
-      .spyOn(fixture.deps.db, "acquireRead")
+      .spyOn(fixture.deps.zoteroReads, "acquireRead")
       .mockRejectedValue(new Error("Database offline"));
     const { render, scheduler } = scheduling(true);
     using _scheduler = scheduler;
@@ -184,7 +184,7 @@ describe("native preview load boundaries", () => {
 
   it("keeps an unavailable sample selection out of the database", async () => {
     await using fixture = await createRenderFixture();
-    const acquire = vi.spyOn(fixture.deps.db, "acquireRead");
+    const acquire = vi.spyOn(fixture.deps.zoteroReads, "acquireRead");
     const { scheduler } = scheduling(false);
     using _scheduler = scheduler;
     using session = new NativePreviewSession(fixture.deps, scheduler, {
@@ -205,10 +205,12 @@ describe("native preview load boundaries", () => {
       await using fixture = await createRenderFixture();
       const { scheduler } = scheduling(false);
       using _scheduler = scheduler;
-      const acquire = fixture.deps.db.acquireRead.bind(fixture.deps.db);
+      const acquire = fixture.deps.zoteroReads.acquireRead.bind(
+        fixture.deps.zoteroReads,
+      );
       const pending =
         Promise.withResolvers<Awaited<ReturnType<typeof acquire>>>();
-      vi.spyOn(fixture.deps.db, "acquireRead").mockImplementationOnce(
+      vi.spyOn(fixture.deps.zoteroReads, "acquireRead").mockImplementationOnce(
         () => pending.promise,
       );
       using session = new NativePreviewSession(fixture.deps, scheduler, {
@@ -240,7 +242,7 @@ describe("native preview load boundaries", () => {
         "delete from itemAnnotations; delete from items where itemID = 3",
       );
     }
-    vi.spyOn(fixture.deps.db, "acquireRead").mockRejectedValueOnce(
+    vi.spyOn(fixture.deps.zoteroReads, "acquireRead").mockRejectedValueOnce(
       new Error("Database offline"),
     );
     using session = new NativePreviewSession(fixture.deps, scheduler, {
@@ -267,10 +269,12 @@ describe("native preview load boundaries", () => {
     await using fixture = await createRenderFixture();
     const { scheduler } = scheduling(false);
     using _scheduler = scheduler;
-    const acquire = fixture.deps.db.acquireRead.bind(fixture.deps.db);
+    const acquire = fixture.deps.zoteroReads.acquireRead.bind(
+      fixture.deps.zoteroReads,
+    );
     const pending =
       Promise.withResolvers<Awaited<ReturnType<typeof acquire>>>();
-    vi.spyOn(fixture.deps.db, "acquireRead").mockImplementationOnce(
+    vi.spyOn(fixture.deps.zoteroReads, "acquireRead").mockImplementationOnce(
       () => pending.promise,
     );
     using session = new NativePreviewSession(fixture.deps, scheduler, {
@@ -292,10 +296,12 @@ describe("native preview load boundaries", () => {
     await using fixture = await createRenderFixture();
     const { scheduler } = scheduling(false);
     using _scheduler = scheduler;
-    const acquire = fixture.deps.db.acquireRead.bind(fixture.deps.db);
+    const acquire = fixture.deps.zoteroReads.acquireRead.bind(
+      fixture.deps.zoteroReads,
+    );
     const pending =
       Promise.withResolvers<Awaited<ReturnType<typeof acquire>>>();
-    vi.spyOn(fixture.deps.db, "acquireRead").mockImplementationOnce(
+    vi.spyOn(fixture.deps.zoteroReads, "acquireRead").mockImplementationOnce(
       () => pending.promise,
     );
     using session = new NativePreviewSession(fixture.deps, scheduler, {

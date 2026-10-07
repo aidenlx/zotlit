@@ -9,7 +9,10 @@ import type {
   AnnotationSource,
 } from "@/services/annotation-repository/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
-import { readsOverClient } from "@/services/zotero-reads/test-utils";
+import {
+  inProcessReadsService,
+  sharedClientOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import { PNG_FORMAT } from "./format";
 import { savedExcerptRequest } from "./request";
@@ -83,7 +86,7 @@ async function fixture(
       (1, null, 0, 'application/pdf', 'storage:paper.pdf'),
       (2, null, 0, 'application/pdf', 'storage:paper.pdf');
   `);
-  const { reads } = await stack.use(readsOverClient(client)).ready;
+  const { reads } = await stack.use(inProcessReadsService(sharedClientOpener(client))).ready;
   return Object.assign(stack, { reads });
 }
 
@@ -91,7 +94,7 @@ describe("Saved excerpt request", () => {
   it("resolves to nothing where the database cannot answer", async () => {
     const closed = createClient(":memory:");
     closed.$client.close();
-    await using zoteroReads = readsOverClient(closed);
+    await using zoteroReads = inProcessReadsService(sharedClientOpener(closed));
 
     expect(
       await savedExcerptRequest({

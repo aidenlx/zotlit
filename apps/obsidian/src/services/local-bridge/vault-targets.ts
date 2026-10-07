@@ -3,19 +3,11 @@
 // which is what the exporter reports as unavailable. No absolute path is built
 // here, so none can cross the bridge.
 
+import { Effect } from "effect";
 import type { App } from "obsidian";
 
-import {
-  annotationHasCacheImage,
-  getAnnotationsByParent,
-  getAttachmentsByParents,
-  getChildNotesByParentIDs,
-  getItemsByKey,
-  getRelatedKeysByItemID,
-  getZoteroDatabaseIdentity,
-} from "@zotlit/db";
+import { annotationHasCacheImage } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import type { SnapshotVaultTargets } from "@zotlit/workbench/snapshot";
 
 import {
@@ -30,6 +22,7 @@ import { referencedExcerptPaths } from "@/services/excerpt-image/references";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 export interface VaultTargetDeps {
   app: App;
@@ -44,7 +37,7 @@ export interface VaultTargetDeps {
  * related Items, and the excerpt images already imported beside its note.
  */
 export async function collectVaultTargets(
-  client: NodeDatabaseClient,
+  reads: ZoteroReadsApi,
   item: Item,
   deps: VaultTargetDeps,
 ): Promise<SnapshotVaultTargets> {
@@ -55,18 +48,16 @@ export async function collectVaultTargets(
   };
 
   remember(item.indexedKey, deps.noteIndex.getNotesByItemKey(item.indexedKey));
-  const related = getItemsByKey(
-    client,
-    item.libraryID,
-    getRelatedKeysByItemID(client, item.itemID),
+  const family = await Effect.runPromise(
+    reads.ItemFamily({ itemID: item.itemID }),
   );
-  for (const entry of related) {
+  for (const entry of family.relatedItems) {
     remember(
       entry.indexedKey,
       deps.noteIndex.getNotesByItemKey(entry.indexedKey),
     );
   }
-  for (const child of getChildNotesByParentIDs(client, [item.itemID])) {
+  for (const child of family.childNotes) {
     remember(
       child.indexedKey,
       deps.noteIndex.getImportedNoteByNoteKey(child.indexedKey),
@@ -75,7 +66,7 @@ export async function collectVaultTargets(
 
   return {
     notes,
-    annotationImages: await annotationImageTargets(client, item, {
+    annotationImages: await annotationImageTargets(reads, item, {
       ...deps,
       notePath: notes[item.indexedKey],
     }),
@@ -89,7 +80,7 @@ export async function collectVaultTargets(
  * the exporter to report rather than pointed at a Zotero cache path.
  */
 async function annotationImageTargets(
-  client: NodeDatabaseClient,
+  reads: ZoteroReadsApi,
   item: Item,
   deps: VaultTargetDeps & { notePath: string | undefined },
 ): Promise<Record<string, string>> {
@@ -105,17 +96,23 @@ async function annotationImageTargets(
     ? deps.app.vault.getFileByPath(deps.notePath)
     : null;
   const referenced = note ? await referencedExcerptPaths(deps.app, note) : [];
-  for (const attachment of getAttachmentsByParents(client, [item.itemID])) {
-    for (const annotation of getAnnotationsByParent(
-      client,
-      attachment.itemID,
-    )) {
+  const [attachments, database] = await Effect.runPromise(
+    Effect.all([
+      reads.AttachmentsOf({ itemIDs: [item.itemID] }),
+      reads.DatabaseIdentity({}),
+    ]),
+  );
+  for (const attachment of attachments) {
+    const { annotations } = await Effect.runPromise(
+      reads.AnnotationsOfAttachment({ attachmentKey: attachment.indexedKey }),
+    );
+    for (const annotation of annotations) {
       if (!annotationHasCacheImage(annotation.type)) continue;
       const identities = excerptAssetIdentities({
         sourceScope: deps.zoteroPref.dataDir,
         source: {
           kind: "zotero-db",
-          database: getZoteroDatabaseIdentity(client),
+          database,
           libraryID: annotation.libraryID,
           libraryRevision: null,
         },

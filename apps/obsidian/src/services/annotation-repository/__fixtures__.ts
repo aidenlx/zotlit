@@ -35,7 +35,10 @@ import type {
   ZoteroReadLease,
   ZoteroReadsEvents,
 } from "@/services/zotero-reads/service";
-import { readsOverClient } from "@/services/zotero-reads/test-utils";
+import {
+  inProcessReadsService,
+  sharedClientOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import { AnnotationRepository } from "./service";
 import type { AnnotationRepositoryDeps } from "./service";
@@ -199,7 +202,7 @@ export async function setup(
   if (group) moveToGroup(client, group);
 
   const dbEvents = createNanoEvents<ZoteroReadsEvents>();
-  const reads = stack.use(readsOverClient(client));
+  const reads = stack.use(inProcessReadsService(sharedClientOpener(client)));
   const acquireRead = vi.fn(() => reads.acquireRead());
   const db = {
     acquireRead,
@@ -270,7 +273,7 @@ export function leaseOver(
   stack: AsyncDisposableStack,
   client: ReturnType<typeof createClient>,
 ): Promise<ZoteroReadLease> {
-  return stack.use(readsOverClient(client)).acquireRead();
+  return stack.use(inProcessReadsService(sharedClientOpener(client))).acquireRead();
 }
 
 /**

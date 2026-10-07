@@ -1,27 +1,20 @@
+import { Effect } from "effect";
 import { basename, dirname, join } from "node:path/posix";
 import { getFrontMatterInfo } from "obsidian";
 import type { TFile } from "obsidian";
 
 import {
-  CollectionCache,
+  buildNoteContextFromSource,
   fetchAnnotationsTemplateData,
-  fetchNoteContext,
   getAnnotationsByItemId,
-  getChildNotesByParentIDs,
-  getZoteroIdentity,
-  getItemsByKey,
-  resolveIndexedKeyLibrary,
-  resolveItemTags,
 } from "@zotlit/db";
 import type {
   CitationVariant,
   CiteRef,
-  GroupIDMemo,
   Item,
+  NoteSource,
   NoteTemplateContext,
-  TagMemo,
 } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import type { UpdateScope } from "@zotlit/protocol";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import type { Emitter } from "@zotlit/shared/nanoevents";
@@ -82,12 +75,13 @@ import type { LiteratureNoteProfile } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 import { ProfileAnnotationError } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 import { applyComposedFrontmatter, composeLiteratureNote } from "./compose";
 import type { ComposeFrontmatterInput } from "./compose";
 import {
   buildNoteResolvers,
-  fetchItemCollections,
+  itemFacets,
   resolveNotePath,
   resolveRenderedNotePath,
 } from "./context";
@@ -290,13 +284,10 @@ const NO_BODY_UPDATE: UpdateResult = {
  */
 const MAX_CREATE_RETRIES = 5;
 
-/** Per-batch memos threaded through a multi-item create run. */
+/** Per-batch inputs threaded through a multi-item create run. */
 export interface CreateNoteOptions {
   /** A batch collects used outcomes here and reports once when the run settles. */
   reportExcerpts?: (summary: ExcerptSummary) => void;
-  collectionCache?: CollectionCache;
-  tagMemo?: TagMemo;
-  groupIdMemo?: GroupIDMemo;
   /**
    * The initiating batch's retained outcomes. Omitted, this create opens its
    * own scope for the note it writes and the Child Notes its template imports,
@@ -322,18 +313,15 @@ interface CreateNoteInternalOptions extends CreateNoteOptions {
 }
 
 /**
- * Batch-threaded write: the caller owns the run-wide lease and passes its pinned
- * `client` plus the run's shared memos, so no per-item lease re-acquisition.
+ * Batch-threaded write: the caller owns the run-wide lease and passes its
+ * Snapshot-bound `reads`, so no per-item lease re-acquisition.
  */
 export interface WriteNoteUpdateOptions {
   reportExcerpts?: (summary: ExcerptSummary) => void;
-  client: NodeDatabaseClient;
+  reads: ZoteroReadsApi;
   item: Item;
-  tagMemo: TagMemo;
-  collectionCache: CollectionCache;
   settings: Readonly<Settings>;
   scope?: UpdateScope;
-  groupIdMemo?: GroupIDMemo;
   /** Once-resolved account username for the batch. */
   username: string | null;
   /** Headless explicit Profile. A different stamp is refused. */
@@ -638,13 +626,14 @@ async function prepareCreationProfiles(
     ctx.template.ready,
     ctx.noteIndex.whenIndexed(),
   ]);
-  using lease = await ctx.db.acquireRead();
-  const itemTags = resolveItemTags(lease.client, item.itemID, new Map());
-  const itemCollections = fetchItemCollections(
-    new CollectionCache(),
-    lease.client,
-    item,
-  );
+  let source: NoteSource | null;
+  {
+    using lease = await ctx.zoteroReads.acquireRead();
+    source = await readNoteSource(lease.reads, item.itemID);
+  }
+  const { itemTags, itemCollections } = source
+    ? itemFacets(source)
+    : { itemTags: [], itemCollections: [] };
   return selectableProfiles(ctx).map((profile) => {
     const { selector } = profile;
     let preparedPath: { path: string; canSuffix: boolean } | undefined;
@@ -846,8 +835,6 @@ async function createNote(
   item: Item,
   options: CreateNoteInternalOptions = {},
 ): Promise<CreateNoteResult> {
-  const collectionCache = options.collectionCache ?? new CollectionCache();
-  const tagMemo: TagMemo = options.tagMemo ?? new Map();
   const [settings] = await Promise.all([
     ctx.settings.loaded,
     ctx.noteIndex.whenIndexed(),
@@ -891,23 +878,18 @@ async function createNote(
       indexedKey: item.indexedKey,
     });
   }
-  // Pin the client across the async vault write and the child-note import flush
-  // so an auto-refresh swap can't dispose it mid-operation; `lease.client` is
-  // threaded through the helpers so they read one stable snapshot.
-  using lease = await ctx.db.acquireRead();
-  const username =
-    options.username !== undefined
-      ? options.username
-      : getZoteroIdentity(lease.client).username;
-  const itemTags = resolveItemTags(lease.client, item.itemID, tagMemo);
-  const itemCollections = fetchItemCollections(
-    collectionCache,
-    lease.client,
-    item,
-  );
+  // One Snapshot across the render, the vault write, and the child-note import
+  // flush: every read of this create sees one database state.
+  using lease = await ctx.zoteroReads.acquireRead();
+  const source = await readNoteSource(lease.reads, item.itemID, {
+    username: options.username,
+  });
+  if (!source) throw new Error(`Zotero item not found: ${item.indexedKey}`);
+  // The filename renders from the Snapshot's Item, as the body does.
+  const { itemTags, itemCollections } = itemFacets(source);
   let { path, canSuffix } =
     options.preparedPath ??
-    resolveNotePath(ctx, item, {
+    resolveNotePath(ctx, source.item, {
       itemTags,
       itemCollections,
       settings: profile.settings,
@@ -916,15 +898,12 @@ async function createNote(
 
   const parentFolder = dirname(path);
   return await writeNewNote(ctx, item, {
-    client: lease.client,
-    tagMemo,
-    collectionCache,
+    reads: lease.reads,
+    source,
     path,
     settings: profile.settings,
     profile,
     document,
-    groupIdMemo: options.groupIdMemo,
-    username,
     onFileCreated: options.onFileCreated,
     reportExcerpts: options.reportExcerpts,
     outcomes: options.outcomes,
@@ -945,7 +924,7 @@ async function createNote(
             attempt,
             itemKey: item.indexedKey,
           });
-          ({ path, canSuffix } = resolveNotePath(ctx, item, {
+          ({ path, canSuffix } = resolveNotePath(ctx, source.item, {
             itemTags,
             itemCollections,
             settings: profile.settings,
@@ -970,15 +949,14 @@ async function writeNewNote(
   ctx: OpsContext,
   item: Item,
   options: {
-    client: NodeDatabaseClient;
-    tagMemo: TagMemo;
-    collectionCache: CollectionCache;
+    /** Bound to the create's Snapshot; the Child Note flush reads through it. */
+    reads: ZoteroReadsApi;
+    /** The item's bundle, read under the same Snapshot. */
+    source: NoteSource;
     path: string;
     settings: Readonly<Settings>;
     profile: ResolvedProfile;
     document: ResolvedLiteratureNoteTemplate | undefined;
-    groupIdMemo?: GroupIDMemo;
-    username: string | null;
     onFileCreated?: (file: TFile) => void;
     createFile: (content: string) => Promise<TFile>;
     reportExcerpts?: (summary: ExcerptSummary) => void;
@@ -986,7 +964,7 @@ async function writeNewNote(
     outcomes?: ExcerptOutcomeScope;
   },
 ): Promise<CreateNoteResult> {
-  const { tagMemo, collectionCache, path, settings } = options;
+  const { path, settings } = options;
   await ensureParentFolder(ctx.app, path);
   await using stack = new AsyncDisposableStack();
   // One created note is one initiating batch: its own excerpts and the Child
@@ -994,7 +972,6 @@ async function writeNewNote(
   const outcomes = resolveOutcomeScope(options.outcomes, stack);
 
   const excerptImages = ctx.excerptImages?.({
-    client: options.client,
     notePath: path,
     settings,
     outcomes,
@@ -1002,11 +979,9 @@ async function writeNewNote(
 
   const attachmentImport = await ctx.attachmentImport.prepare(path);
   const noteImport = await ctx.noteImport.prepare({
-    client: options.client,
+    reads: options.reads,
     sourcePath: path,
     settings,
-    groupIdMemo: options.groupIdMemo,
-    tagMemo,
     outcomes,
   });
   const resolvers = buildNoteResolvers(ctx, {
@@ -1016,13 +991,7 @@ async function writeNewNote(
     sourcePath: path,
     excerptImages,
   });
-  const context = fetchNoteContext(options.client, item, {
-    resolvers,
-    tagMemo,
-    collectionCache,
-    groupIdMemo: options.groupIdMemo,
-    username: options.username,
-  });
+  const context = buildNoteContextFromSource(options.source, resolvers);
   await excerptImages?.prepare();
   const composed = composeLiteratureNote(ctx, {
     context,
@@ -1073,8 +1042,8 @@ async function updateNote(
 ): Promise<UpdateResult> {
   const { indexedKey, scope = "full" } = options;
   // Settle readiness and prepare the attachment handle before pinning the
-  // client, so the lease (an auto-refresh gate) spans only the DB reads, the
-  // vault writes, and the child-note import flush — not the warm-up awaits.
+  // Snapshot, so the lease spans only the DB reads, the vault writes, and the
+  // child-note import flush — not the warm-up awaits.
   const [settings] = await Promise.all([
     ctx.settings.loaded,
     ctx.noteIndex.whenIndexed(),
@@ -1108,7 +1077,7 @@ async function updateNote(
     return refusedUpdateMissingDocument(profile.document!, file.path);
   }
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
-  using lease = await ctx.db.acquireRead();
+  using lease = await ctx.zoteroReads.acquireRead();
   await using stack = new AsyncDisposableStack();
   // One initiating batch: this note's own excerpts and the Child Notes it
   // imports share one retention until both settle.
@@ -1117,7 +1086,7 @@ async function updateNote(
     ctx,
     indexedKey,
     {
-      client: lease.client,
+      reads: lease.reads,
       attachmentImport,
       sourcePath: file.path,
       settings: profile.settings,
@@ -1176,10 +1145,8 @@ function prepareProfileNote(
     create: async () => {
       let item: Item | undefined;
       {
-        using lease = await ctx.db.acquireRead();
-        const parsed = resolveIndexedKeyLibrary(lease.client, note.indexedKey);
-        if (parsed)
-          item = getItemsByKey(lease.client, parsed.libraryID, [parsed.key])[0];
+        using lease = await ctx.zoteroReads.acquireRead();
+        item = await readItem(lease.reads, note.indexedKey);
       }
       if (!item) throw new Error(m.notice_protocol_item_not_found());
       return create(item, { profile: profile.selector, preparedPath });
@@ -1312,12 +1279,13 @@ async function getImportedNotesForItem(
   indexedKey: string,
 ): Promise<TFile[]> {
   await ctx.noteIndex.whenIndexed();
-  using lease = await ctx.db.acquireRead();
-  const parsed = resolveIndexedKeyLibrary(lease.client, indexedKey);
-  if (!parsed) throw new Error(`Zotero item not found: ${indexedKey}`);
-  const item = getItemsByKey(lease.client, parsed.libraryID, [parsed.key])[0];
+  using lease = await ctx.zoteroReads.acquireRead();
+  const item = await readItem(lease.reads, indexedKey);
   if (!item) throw new Error(`Zotero item not found: ${indexedKey}`);
-  return getChildNotesByParentIDs(lease.client, [item.itemID]).flatMap((note) =>
+  const { childNotes } = await Effect.runPromise(
+    lease.reads.ItemFamily({ itemID: item.itemID }),
+  );
+  return childNotes.flatMap((note) =>
     ctx.noteIndex.getImportedNoteByNoteKey(note.indexedKey),
   );
 }
@@ -1414,18 +1382,20 @@ async function writeNoteUpdate(
   // Without a batch above it, this update is its own initiating batch: its own
   // excerpts and the Child Notes it imports share this retention.
   const outcomes = resolveOutcomeScope(options.outcomes, stack);
+  const source = await readNoteSource(options.reads, options.item.itemID, {
+    username: options.username,
+  });
+  if (!source)
+    throw new Error(`Zotero item not found: ${options.item.indexedKey}`);
   const noteImport = await ctx.noteImport.prepare({
-    client: options.client,
+    reads: options.reads,
     sourcePath: file.path,
     settings: profile.settings,
-    groupIdMemo: options.groupIdMemo,
-    tagMemo: options.tagMemo,
     outcomes,
   });
   const excerptImages =
     options.scope !== "metadata"
       ? ctx.excerptImages?.({
-          client: options.client,
           notePath: file.path,
           settings: profile.settings,
           previousNote: file,
@@ -1439,13 +1409,7 @@ async function writeNoteUpdate(
     sourcePath: file.path,
     excerptImages,
   });
-  const context = fetchNoteContext(options.client, options.item, {
-    resolvers,
-    tagMemo: options.tagMemo,
-    collectionCache: options.collectionCache,
-    groupIdMemo: options.groupIdMemo,
-    username: options.username,
-  });
+  const context = buildNoteContextFromSource(source, resolvers);
   // Awaited inside the scope: returning the pending update would release the
   // retention before its Child Note imports resolved their excerpts.
   return await applyManagedUpdate(ctx, file, {
@@ -1564,8 +1528,8 @@ async function overwriteNote(
 ): Promise<UpdateResult> {
   const { indexedKey } = options;
   // Settle readiness and prepare the attachment handle before pinning the
-  // client, so the lease (an auto-refresh gate) spans only the DB reads, the
-  // vault writes, and the child-note import flush — not the warm-up awaits.
+  // Snapshot, so the lease spans only the DB reads, the vault writes, and the
+  // child-note import flush — not the warm-up awaits.
   const [settings] = await Promise.all([
     ctx.settings.loaded,
     ctx.noteIndex.whenIndexed(),
@@ -1583,7 +1547,7 @@ async function overwriteNote(
     return refusedUpdateMissingDocument(profile.document!, file.path);
   }
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
-  using lease = await ctx.db.acquireRead();
+  using lease = await ctx.zoteroReads.acquireRead();
   await using stack = new AsyncDisposableStack();
   // One initiating batch: this note's own excerpts and the Child Notes it
   // imports share one retention until both settle.
@@ -1592,7 +1556,7 @@ async function overwriteNote(
     ctx,
     indexedKey,
     {
-      client: lease.client,
+      reads: lease.reads,
       attachmentImport,
       sourcePath: file.path,
       settings: profile.settings,
@@ -1779,7 +1743,7 @@ function renderAnnotationCitation(
 
 /**
  * Assumes the caller has settled note-index and template readiness (and pinned
- * the client via `acquireRead`); {@link updateNote} and {@link overwriteNote} do
+ * a Snapshot via `acquireRead`); {@link updateNote} and {@link overwriteNote} do
  * so before acquiring the lease. `template.ready` in particular gates
  * {@link applyComposedFrontmatter}, which reads `template.frontmatterFields` — without it,
  * an early update could strip managed frontmatter to the still-empty compiled
@@ -1789,7 +1753,8 @@ async function contextForIndexedKey(
   ctx: NoteFeatureDeps,
   indexedKey: string,
   options: {
-    client: NodeDatabaseClient;
+    /** Bound to the operation's Snapshot. */
+    reads: ZoteroReadsApi;
     attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
     sourcePath: string;
     settings: Readonly<Settings>;
@@ -1802,21 +1767,18 @@ async function contextForIndexedKey(
   noteImport: NoteImport;
   excerptImages?: PreparedExcerpts;
 }> {
-  const { client, sourcePath, settings } = options;
-  const parsed = resolveIndexedKeyLibrary(client, indexedKey);
-  if (!parsed) throw new Error(`Zotero item not found: ${indexedKey}`);
-
-  const [item] = getItemsByKey(client, parsed.libraryID, [parsed.key]);
-  if (!item) throw new Error(`Zotero item not found: ${indexedKey}`);
+  const { reads, sourcePath, settings } = options;
+  const item = await readItem(reads, indexedKey);
+  const source = item && (await readNoteSource(reads, item.itemID));
+  if (!source) throw new Error(`Zotero item not found: ${indexedKey}`);
   const noteImport = await ctx.noteImport.prepare({
-    client,
+    reads,
     sourcePath,
     settings,
     outcomes: options.outcomes,
   });
   const excerptImages = options.previousNote
     ? ctx.excerptImages?.({
-        client,
         notePath: sourcePath,
         settings,
         previousNote: options.previousNote,
@@ -1830,13 +1792,36 @@ async function contextForIndexedKey(
     sourcePath,
     excerptImages,
   });
-  const context = fetchNoteContext(client, item, {
-    resolvers,
-    tagMemo: new Map(),
-    collectionCache: new CollectionCache(),
-    username: getZoteroIdentity(client).username,
-  });
+  const context = buildNoteContextFromSource(source, resolvers);
   return { context, noteImport, excerptImages };
+}
+
+/** The live Item an Indexed Key names, or `undefined` when none does. */
+async function readItem(
+  reads: ZoteroReadsApi,
+  indexedKey: string,
+): Promise<Item | undefined> {
+  const items = await Effect.runPromise(
+    reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
+  );
+  return items.values().next().value;
+}
+
+/**
+ * The {@link NoteSource} of an item, or `null` for an unknown item. An omitted
+ * `username` reads the signed-in account.
+ */
+async function readNoteSource(
+  reads: ZoteroReadsApi,
+  itemID: number,
+  options: { username?: string | null } = {},
+): Promise<NoteSource | null> {
+  return await Effect.runPromise(
+    reads.NoteSource({
+      itemID,
+      ...(options.username !== undefined && { username: options.username }),
+    }),
+  );
 }
 
 /**

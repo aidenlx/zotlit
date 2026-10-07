@@ -3,6 +3,7 @@
 import { basename } from "node:path";
 
 import {
+  buildAnnotationsTemplateData,
   fetchAnnotationsTemplateData,
   formatAnnotationSubpath,
   narrowBaseDataToCiteItemData,
@@ -12,11 +13,13 @@ import type {
   Annotation,
   AnnotationFileLinkAnchor,
   AnnotationResolvers,
+  AnnotationSources,
   AnnotationTemplateContext,
   Attachment,
   FallibleTemplateLink,
   GroupIDMemo,
   TagMemo,
+  TemplateAnnotation,
   TemplateParentItemData,
 } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
@@ -97,6 +100,15 @@ export function buildAnnotationResolvers(options: {
   };
 }
 
+/** How {@link renderAnnotations} and {@link renderAnnotationSources} render. */
+interface RenderAnnotationsOptions {
+  template: Pick<TemplateService, "render" | "renderCitation">;
+  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
+  attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
+  renderAnnotation?: (data: AnnotationTemplateContext) => string;
+  annotationImageLink?: AnnotationResolvers["annotationImageLink"];
+}
+
 /**
  * Resolve already-fetched annotations to their template data and render each
  * through the `annotation` template, returning a `key → rendered string` map.
@@ -106,26 +118,49 @@ export function buildAnnotationResolvers(options: {
 export function renderAnnotations(
   client: NodeDatabaseClient,
   annotations: readonly Annotation[],
-  options: {
-    template: Pick<TemplateService, "render" | "renderCitation">;
-    zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
-    attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
+  options: RenderAnnotationsOptions & {
     groupIdMemo?: GroupIDMemo;
     tagMemo?: TagMemo;
-    renderAnnotation?: (data: AnnotationTemplateContext) => string;
-    annotationImageLink?: AnnotationResolvers["annotationImageLink"];
   },
 ): Map<string, string> {
-  const resolvers = buildAnnotationResolvers({
+  const dataByKey = fetchAnnotationsTemplateData(client, annotations, {
+    resolvers: annotationResolvers(options),
+    groupIdMemo: options.groupIdMemo,
+    tagMemo: options.tagMemo,
+  });
+  return renderTemplateData(dataByKey, options);
+}
+
+/**
+ * {@link renderAnnotations} over already-read {@link AnnotationSources}: reads
+ * no database.
+ */
+export function renderAnnotationSources(
+  sources: AnnotationSources,
+  options: RenderAnnotationsOptions,
+): Map<string, string> {
+  const dataByKey = buildAnnotationsTemplateData(
+    sources,
+    annotationResolvers(options),
+  );
+  return renderTemplateData(dataByKey, options);
+}
+
+function annotationResolvers(
+  options: RenderAnnotationsOptions,
+): AnnotationResolvers {
+  return buildAnnotationResolvers({
     zoteroPref: options.zoteroPref,
     attachmentImport: options.attachmentImport,
     annotationImageLink: options.annotationImageLink,
   });
-  const dataByKey = fetchAnnotationsTemplateData(client, annotations, {
-    resolvers,
-    groupIdMemo: options.groupIdMemo,
-    tagMemo: options.tagMemo,
-  });
+}
+
+/** Render each annotation's template data through the `annotation` template. */
+function renderTemplateData(
+  dataByKey: ReadonlyMap<string, TemplateAnnotation>,
+  options: RenderAnnotationsOptions,
+): Map<string, string> {
   const result = new Map<string, string>();
   for (const [key, data] of dataByKey) {
     const root = withAnnotationCitation(data, () =>

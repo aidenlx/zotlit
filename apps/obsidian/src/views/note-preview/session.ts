@@ -1,4 +1,5 @@
 // One native render owner loads its own Item Snapshot and annotation examples.
+import { Effect } from "effect";
 import { createStore } from "zustand/vanilla";
 import type { StoreApi } from "zustand/vanilla";
 
@@ -21,7 +22,6 @@ import type {
   CitationExampleId,
   PartialContext,
 } from "@zotlit/workbench/render";
-import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import { annotationSamples } from "@zotlit/workbench/ui";
 import type {
@@ -335,24 +335,23 @@ export class NativePreviewSession implements Disposable {
           this.state.setState({ status: "error" });
           return;
         }
-        using lease = await this.#deps.db.acquireRead();
+        using lease = await this.#deps.zoteroReads.acquireRead();
         if (generation !== this.#dataGeneration || this.#closed) return;
-        snapshot = exportItemSnapshot(
-          lease.client,
-          {
-            key: parsed.key,
-            library:
-              parsed.groupID === null
-                ? { type: "personal" }
-                : { type: "group", groupID: parsed.groupID },
-          },
-          {
+        snapshot = await Effect.runPromise(
+          lease.reads.ItemSnapshot({
+            selection: {
+              key: parsed.key,
+              library:
+                parsed.groupID === null
+                  ? { type: "personal" }
+                  : { type: "group", groupID: parsed.groupID },
+            },
             provenance: {
               kind: "connected",
               installationId: "obsidian",
               vault: "preview",
             },
-          },
+          }),
         );
       }
       if (generation !== this.#dataGeneration || this.#closed) {

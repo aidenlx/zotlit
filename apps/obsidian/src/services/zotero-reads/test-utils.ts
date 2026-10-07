@@ -1,14 +1,13 @@
 // Test support: ZoteroReads over `:memory:` fixture databases, for the service and its consumers.
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Stream } from "effect";
 
 import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
-import { Connection, layerRcRef } from "./connection";
+import { layerRcRef } from "./connection";
 import type { ConnectionOpener } from "./connection";
 import type { ZoteroReadsClient } from "./in-process";
-import type { ChangeEvent } from "./rpc";
 import { inProcessClient, ZoteroReadsService } from "./service";
 
 /**
@@ -38,6 +37,20 @@ export function memoryOpener(seed: (open: number) => string | null) {
 }
 
 /**
+ * An opener that serves `client` itself, for a fixture that also reads the
+ * client directly. The connection leaves `client` open; its owner closes it.
+ */
+export function sharedClientOpener(
+  client: NodeDatabaseClient,
+): ConnectionOpener {
+  // The connection closes `$client` on release; queries never read it.
+  const shared = Object.create(client, {
+    $client: { value: { close() {} } },
+  }) as NodeDatabaseClient;
+  return () => shared;
+}
+
+/**
  * A {@link ZoteroReadsService} on the in-process adapter over `opener`.
  * `wrap` lets a test observe or gate the client its consumers call; the
  * client opens once `opening` settles.
@@ -55,26 +68,51 @@ export function inProcessReadsService(
   });
 }
 
+/** One recorded call: the operation and the payload it carried. */
+export interface RecordedCall {
+  readonly operation: string;
+  readonly payload: Readonly<Record<string, unknown>>;
+}
+
 /**
- * A {@link ZoteroReadsService} on the in-process adapter whose every read
- * borrows `client`. The caller owns `client`: it seeds and edits it, and
- * closes it. The service reports `ready` and raises no events.
+ * A `wrap` for {@link inProcessReadsService} that records the payload of each
+ * call to `operations` in `calls`, and each Snapshot id the client opens in
+ * `snapshots`.
  */
-export function readsOverClient(
-  client: NodeDatabaseClient,
-): ZoteroReadsService {
-  const ready: ChangeEvent = { _tag: "state", state: "ready", error: null };
-  return new ZoteroReadsService({
-    client: inProcessClient(
-      Layer.succeed(Connection)(
-        Connection.of({
-          borrow: Effect.succeed(client),
-          changes: Stream.concat(Stream.make(ready), Stream.never),
-          refresh: Effect.void,
-          notifyExternalChange: Effect.void,
-          configure: () => Effect.void,
-        }),
-      ),
-    ),
-  });
+export function recordCalls(operations: readonly (keyof ZoteroReadsClient)[]): {
+  wrap: (client: ZoteroReadsClient) => ZoteroReadsClient;
+  calls: RecordedCall[];
+  snapshots: string[];
+} {
+  const calls: RecordedCall[] = [];
+  const snapshots: string[] = [];
+  const wrap = (client: ZoteroReadsClient): ZoteroReadsClient => {
+    const wrapped: Record<string, unknown> = {
+      ...client,
+      Snapshot: (payload?: object, options?: object) =>
+        (
+          client.Snapshot as (
+            payload?: object,
+            options?: object,
+          ) => Stream.Stream<string, unknown>
+        )(payload, options).pipe(
+          Stream.tap((id) => Effect.sync(() => snapshots.push(id))),
+        ),
+    };
+    for (const operation of operations) {
+      const call = client[operation] as (
+        payload: object,
+        options?: object,
+      ) => unknown;
+      wrapped[operation] = (payload: object, options?: object) => {
+        calls.push({
+          operation,
+          payload: payload as Record<string, unknown>,
+        });
+        return call(payload, options);
+      };
+    }
+    return wrapped as unknown as ZoteroReadsClient;
+  };
+  return { wrap, calls, snapshots };
 }

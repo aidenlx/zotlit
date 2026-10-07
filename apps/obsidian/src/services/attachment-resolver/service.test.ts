@@ -342,8 +342,9 @@ it("keeps the previous index when a rebuild fails, and asks again after the fail
   const f = await setup(stack, {
     seeds: [
       FIXTURE_ROWS,
-      `${FIXTURE_ROWS 
-        }update itemAttachments set path = '${path}' where itemID = 29;`,
+      `${
+        FIXTURE_ROWS
+      }update itemAttachments set path = '${path}' where itemID = 29;`,
     ],
   });
 

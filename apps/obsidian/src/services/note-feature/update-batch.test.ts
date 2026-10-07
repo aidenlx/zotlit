@@ -29,6 +29,10 @@ import type {
 import { selectorOf } from "@/services/library-scope/scope";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
+import {
+  inProcessReadsService,
+  sharedClientOpener,
+} from "@/services/zotero-reads/test-utils";
 import type {
   BatchModalOptions,
   BatchProfileChoice,
@@ -150,6 +154,7 @@ function makeDeps(dbState: "loading" | "ready" = "ready"): BatchUpdateDeps {
       client,
       acquireRead: async () => ({ client, [Symbol.dispose]() {} }),
     },
+    zoteroReads: inProcessReadsService(sharedClientOpener(client)),
     settings: {
       current: defaults,
       loaded: Promise.resolve({ ...defaults }),
