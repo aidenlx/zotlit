@@ -18,13 +18,15 @@
     "typecheck": "tsc --noEmit -p tsconfig.lib.json",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "lint": "oxlint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "bench": "vitest run --config vitest.bench.config.ts"
   },
   "dependencies": {
     "@zotlit/db": "workspace:*",
     "@zotlit/shared": "workspace:*",
     "@zotlit/zotero-types": "workspace:*",
     "arkregex": "catalog:",
+    "effect": "catalog:",
     "minisearch": "^7.2.0"
   },
   "devDependencies": {
@@ -35,5 +37,8 @@
     "tsdown": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
+  },
+  "inlinedDependencies": {
+    "jieba-wasm": "2.4.0"
   }
 }

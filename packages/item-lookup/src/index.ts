@@ -1,11 +1,16 @@
 export {
+  buildEngineIndex,
   buildIndex,
   cleanQuery,
   createIndexBuilder,
-  DEFAULT_SCORING,
+  makeEngineIndexBuilder,
+  searchEngineIndex,
   searchIndex,
   type BuildIndexOptions,
-  type ScoringConfig,
+  type EngineIndex,
+  type EngineIndexBuilder,
+  type EngineIndexOptions,
+  type ItemHit,
   type SearchField,
   type SearchHit,
   type SearchIndex,
@@ -14,6 +19,12 @@ export {
   type SearchMatches,
 } from "./engine";
 export { formatCreator } from "./format-creator";
+export {
+  layerSegmenterJieba,
+  layerSegmenterNone,
+  Segmenter,
+  SegmenterUnavailable,
+} from "./segmenter";
 export {
   normalize,
   normalizeWithIndexMap,
