@@ -424,7 +424,7 @@ function defaultCitekeys(): LibraryCitekey[] {
     },
     {
       itemID: 2,
-      libraryID: MY_LIBRARY_ID,
+      libraryID: GROUP_LIBRARY_ID,
       key: "ROE2025",
       indexedKey: KEY_B,
       citekey: "roe2025",
@@ -594,7 +594,10 @@ export async function createCitationIndexHarness(
   );
   const { citekeys } = db;
   if (options.citekeys) citekeys.rows = options.citekeys;
-  const libraryScope = options.libraryScope ?? new LibraryScopeStub();
+  // The default rows hold an Item of My Library and one of group 7's Library.
+  const libraryScope =
+    options.libraryScope ??
+    new LibraryScopeStub([personalLibrary(), groupLibrary()]);
 
   const addFile = (path: string, body: string): TFile => {
     const added = makeFile(path, body);

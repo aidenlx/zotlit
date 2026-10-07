@@ -854,7 +854,11 @@ describe("CitationIndex resolution", () => {
     expect(index.resolveCitekey("doe2024")).toBeNull();
     await yieldToMain();
 
-    expect(citekeys.calls).toHaveLength(failedCalls + 1);
+    // The retry reads each Library in the scope once.
+    expect(citekeys.calls.slice(failedCalls)).toEqual([
+      MY_LIBRARY_ID,
+      GROUP_LIBRARY_ID,
+    ]);
     expect(index.resolution).toBe("fresh");
     expect(index.resolveCitekey("doe2024")?.kind).toBe("unique");
   });
@@ -1750,6 +1754,8 @@ describe("CitationIndex one-shot reads", () => {
 describe("CitationIndex ambiguous citation keys", () => {
   /** An Indexed Key of the group Library the multi-Library fixtures use. */
   const GROUP_KEY = "GRP12345g7";
+  /** An Indexed Key of My Library, for a second Item there. */
+  const TWIN_KEY = "RVW23456";
 
   const myLibraryRow = {
     itemID: 1,
@@ -1762,8 +1768,8 @@ describe("CitationIndex ambiguous citation keys", () => {
   const sameLibraryTwin = {
     itemID: 2,
     libraryID: MY_LIBRARY_ID,
-    key: "ROE2025",
-    indexedKey: KEY_B,
+    key: TWIN_KEY,
+    indexedKey: TWIN_KEY,
     citekey: "doe2024",
   };
   /** An Item of the group Library answering to the same citekey. A lower
@@ -1798,8 +1804,8 @@ describe("CitationIndex ambiguous citation keys", () => {
         {
           itemID: 2,
           libraryID: MY_LIBRARY_ID,
-          key: "ROE2025",
-          indexedKey: KEY_B,
+          key: TWIN_KEY,
+          indexedKey: TWIN_KEY,
         },
       ],
     });
@@ -1875,7 +1881,7 @@ describe("CitationIndex ambiguous citation keys", () => {
     expect(notified).toBe(1);
     expect(index.resolveCitekey("doe2024")).toMatchObject({
       kind: "ambiguous",
-      candidates: [{ indexedKey: KEY_B }, { indexedKey: KEY_A }],
+      candidates: [{ indexedKey: TWIN_KEY }, { indexedKey: KEY_A }],
     });
   });
 

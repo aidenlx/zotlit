@@ -13,6 +13,7 @@ import type {
 } from "@/services/citation-index/service";
 import {
   createCitationIndexHarness,
+  GROUP_LIBRARY_ID,
   KEY_A,
   KEY_B,
   link,
@@ -405,7 +406,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
           },
           {
             itemID: 2,
-            libraryID: MY_LIBRARY_ID,
+            libraryID: GROUP_LIBRARY_ID,
             key: "ROE2025",
             indexedKey: KEY_B,
             citekey: "doe2024",

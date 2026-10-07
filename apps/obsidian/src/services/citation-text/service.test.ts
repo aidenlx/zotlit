@@ -16,7 +16,9 @@ import { CitekeySnapshot } from "@/services/citation-index/snapshot";
 import {
   createCitationIndexHarness,
   DatabaseStub,
+  GROUP_LIBRARY_ID,
   KEY_A,
+  MY_LIBRARY_ID,
 } from "@/services/citation-index/test-harness";
 import type {
   BibliographyRequest,
@@ -359,7 +361,11 @@ describe("CitationText", () => {
 
     expect((await service.read(h.draft.path))?.formatted.size).toBe(1);
     expect(service.peek(h.draft.path)?.status).toBe("fresh");
-    expect(h.citekeys.calls).toHaveLength(reads + 1);
+    // The retry reads each Library in the scope once.
+    expect(h.citekeys.calls.slice(reads)).toEqual([
+      MY_LIBRARY_ID,
+      GROUP_LIBRARY_ID,
+    ]);
   });
 
   it.each(["first read", "replacement"] as const)(
