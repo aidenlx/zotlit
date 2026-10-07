@@ -20,6 +20,16 @@ export {
 } from "./engine";
 export { formatCreator } from "./format-creator";
 export {
+  IndexConfig,
+  ItemIndex,
+  ItemSource,
+  layerIndexConfig,
+  layerItemIndex,
+  SourceUnavailable,
+  switchSegmenter,
+  type PinnedItemSource,
+} from "./item-index";
+export {
   layerSegmenterJieba,
   layerSegmenterNone,
   Segmenter,
