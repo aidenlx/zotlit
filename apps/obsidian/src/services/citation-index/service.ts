@@ -636,6 +636,14 @@ export class CitationIndex extends Service<void> {
     stack.defer(
       this.#libraryScope.on("changed", () => this.#invalidateSnapshot()),
     );
+    // Every local Library is read for the reverse lookup, and Library Scope
+    // settles its Libraries after the database change: a Library outside the
+    // saved scope reaches the index through this event alone.
+    stack.defer(
+      this.#libraryScope.on("libraries-changed", () =>
+        this.#invalidateSnapshot(),
+      ),
+    );
     this.#queries.client.setQueryDefaults(SNAPSHOT_KEY, {
       gcTime: Infinity,
       // An equal rebuild keeps the snapshot every resolved citekey was read

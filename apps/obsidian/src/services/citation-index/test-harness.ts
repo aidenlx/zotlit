@@ -337,7 +337,7 @@ export class CitekeysStub {
 export class LibraryScopeStub {
   libraries: AvailableLibrary[];
   ready = Promise.resolve();
-  readonly #listeners = new Set<() => void>();
+  readonly #listeners = new Map<keyof LibraryScopeEvents, Set<() => void>>();
   #current: ResolvedLibraryScope | null;
 
   constructor(libraries: AvailableLibrary[] = [personalLibrary()]) {
@@ -350,12 +350,22 @@ export class LibraryScopeStub {
   }
 
   on(
-    _event: keyof LibraryScopeEvents,
+    event: keyof LibraryScopeEvents,
     cb: LibraryScopeEvents[keyof LibraryScopeEvents],
   ): () => void {
     const notify = () => cb(this.#current);
-    this.#listeners.add(notify);
-    return () => this.#listeners.delete(notify);
+    const listeners = this.#listeners.get(event) ?? new Set();
+    this.#listeners.set(event, listeners.add(notify));
+    return () => listeners.delete(notify);
+  }
+
+  /**
+   * The database now holds `libraries`, and the saved scope resolves as it
+   * did: only `libraries-changed` reports it.
+   */
+  holdLibraries(libraries: AvailableLibrary[]): void {
+    this.libraries = libraries;
+    this.#emit("libraries-changed");
   }
 
   /** Narrow or widen the scope over the Libraries the database already holds. */
@@ -376,8 +386,8 @@ export class LibraryScopeStub {
     this.#emit();
   }
 
-  #emit(): void {
-    for (const listener of this.#listeners) listener();
+  #emit(event: keyof LibraryScopeEvents = "changed"): void {
+    for (const listener of this.#listeners.get(event) ?? []) listener();
   }
 }
 

@@ -770,6 +770,34 @@ describe("CitationIndex resolution", () => {
     expect(citekeys.calls).toEqual([MY_LIBRARY_ID, GROUP_LIBRARY_ID]);
   });
 
+  it("rebuilds when a Library outside the scope joins the database", async () => {
+    const libraryScope = new LibraryScopeStub([personalLibrary()]);
+    libraryScope.select([personalLibrary()]);
+    const { index, citekeys } = await makeHarness(
+      {},
+      { notes: false, libraryScope },
+    );
+    citekeys.rows = [
+      ...citekeys.rows,
+      {
+        itemID: 9,
+        libraryID: GROUP_LIBRARY_ID,
+        key: "GRP23456",
+        indexedKey: "GRP23456g7",
+        citekey: "grp2026",
+      },
+    ];
+    expect(index.citekeyOf("GRP23456g7")).toBeNull();
+
+    // Library Scope settles its read after the database change, and a Library
+    // outside the saved scope reaches the index through `libraries-changed`.
+    libraryScope.holdLibraries([personalLibrary(), groupLibrary()]);
+    await index.whenResolved();
+    await yieldToMain();
+
+    expect(index.citekeyOf("GRP23456g7")).toBe("grp2026");
+  });
+
   it("settles whenResolved unresolved when the database is degraded", async () => {
     const db = new DatabaseStub();
     db.state = "degraded";
