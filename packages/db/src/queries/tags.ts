@@ -3,8 +3,13 @@ import { distinct } from "@std/collections";
 import type { NodeDatabaseClient } from "@/client/node";
 import type { ItemTag, Tag } from "@/lib/zt-tag";
 
-import { defineQuery } from "./_shared";
-import type { QueryRow } from "./_shared";
+import { defineQuery, rowsByID } from "./_shared";
+import type { FindManyOptions, QueryRow } from "./_shared";
+
+const itemTagOptions = {
+  columns: { itemID: true, tagID: true, type: true },
+  with: { tag: { columns: { tagID: true, name: true } } },
+} satisfies FindManyOptions<"itemTags">;
 
 const itemTagsByItemQuery = defineQuery<{ itemID: number }>()(
   (db, { placeholder }) =>
@@ -13,58 +18,63 @@ const itemTagsByItemQuery = defineQuery<{ itemID: number }>()(
         itemID: placeholder("itemID"),
         item: { deletedItem: false },
       },
-      columns: { itemID: true, tagID: true, type: true },
+      ...itemTagOptions,
     }),
 );
 
-const tagByIdQuery = defineQuery<{ tagID: number }>()((db, { placeholder }) =>
-  db.query.tags.findMany({
-    where: { tagID: placeholder("tagID") },
-    columns: { tagID: true, name: true },
-  }),
+const itemTagsByItemsQuery = defineQuery<void>()(
+  (db, _operators, args: { itemIDs: readonly number[] }) =>
+    db.query.itemTags.findMany({
+      where: {
+        itemID: { in: [...args.itemIDs] },
+        item: { deletedItem: false },
+      },
+      ...itemTagOptions,
+    }),
 );
 
 type ItemTagRow = QueryRow<typeof itemTagsByItemQuery>;
-type TagRow = QueryRow<typeof tagByIdQuery>;
 
-function toTag(row: TagRow): Tag {
-  return {
-    tagID: row.tagID,
-    name: row.name,
-  };
-}
+const byTagName = (a: ItemTagRow, b: ItemTagRow): number =>
+  tagName(a).localeCompare(tagName(b));
 
-function toItemTag(
-  row: ItemTagRow,
-  tagsByID: ReadonlyMap<number, Tag>,
-): ItemTag {
-  const tag = tagsByID.get(row.tagID);
-  if (!tag) {
+function tagName(row: ItemTagRow): string {
+  if (!row.tag) {
     throw new Error(`Missing tag row for tagID ${row.tagID}`);
   }
-  return { itemID: row.itemID, tag, type: row.type };
+  return row.tag.name;
 }
 
-const byTagName = (a: ItemTag, b: ItemTag): number =>
-  a.tag.name.localeCompare(b.tag.name);
-
+/**
+ * Tag applications of each item, in `itemIDs` order and in tag-name order
+ * within one item, through {@link rowsByID}. An item with no tag adds
+ * nothing; a repeated id repeats its tags. Items that share a tag share one
+ * {@link Tag} object.
+ */
 export function getTagsByItemIDs(
   db: NodeDatabaseClient,
   itemIDs: readonly number[],
 ): ItemTag[] {
-  const batches = itemIDs.map((itemID) =>
-    itemTagsByItemQuery.prepared(db).all({ itemID }),
-  );
-  const rows = batches.flat();
-  const tagsByID = new Map(
-    distinct(rows.map((row) => row.tagID))
-      .map((tagID) => tagByIdQuery.prepared(db).all({ tagID })[0])
-      .filter((row): row is TagRow => row != null)
-      .map((row) => [row.tagID, toTag(row)]),
-  );
-  return batches.flatMap((rows) =>
-    rows.map((row) => toItemTag(row, tagsByID)).toSorted(byTagName),
-  );
+  const rows = rowsByID(itemIDs, {
+    // Sorting the whole read keeps each item's rows in tag-name order.
+    one: (itemID) =>
+      itemTagsByItemQuery.prepared(db).all({ itemID }).toSorted(byTagName),
+    many: (ids) =>
+      itemTagsByItemsQuery
+        .prepare(db, { itemIDs: ids })
+        .all()
+        .toSorted(byTagName),
+    idOf: (row) => row.itemID,
+  });
+  const tagsByID = new Map<number, Tag>();
+  return rows.map((row) => {
+    const tag = tagsByID.get(row.tagID) ?? {
+      tagID: row.tagID,
+      name: tagName(row),
+    };
+    tagsByID.set(row.tagID, tag);
+    return { itemID: row.itemID, tag, type: row.type };
+  });
 }
 
 /**

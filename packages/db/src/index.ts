@@ -79,6 +79,7 @@ export {
   getAttachmentByItemId,
   getAttachmentPage,
   getAttachmentByKey,
+  getAttachmentsByKey,
   getAttachmentsByParents,
   type AttachmentWithParentKey,
 } from "./queries/attachments";

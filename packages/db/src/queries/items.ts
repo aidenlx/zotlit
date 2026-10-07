@@ -177,6 +177,19 @@ const itemByKeyQuery = defineQuery<{ libraryID: number; key: string }>()(
     }),
 );
 
+const itemsByKeysQuery = defineQuery<void>()(
+  (db, _operators, args: { libraryID: number; keys: readonly string[] }) =>
+    db.query.items.findMany({
+      where: {
+        libraryID: args.libraryID,
+        key: { in: [...args.keys] },
+        itemType: { typeName: { notIn: [...CHILD_ITEM_TYPES] } },
+        deletedItem: false,
+      },
+      ...itemFindOptions,
+    }),
+);
+
 const itemTypeByKeyQuery = defineQuery<{
   libraryID: number;
   key: string;
@@ -302,17 +315,13 @@ export function getItemsByID(
 
   const memo = opts?.memo ?? new Map();
   const baseFieldTable = getBaseFieldTable(db, ITEM_BASE_FIELDS);
-  const rows = rowsByID(itemIDs, {
+  return rowsByID(itemIDs, {
     one: (itemID) => itemByIdQuery.prepared(db).all({ itemID }),
     many: (ids) => itemsByIdsQuery.prepare(db, { itemIDs: ids }).all(),
     idOf: (row) => row.itemID,
-  });
-  return itemIDs.flatMap((itemID) => {
-    const row = rows.get(itemID);
-    return row
-      ? [toItem(row, resolveGroupID(db, row.libraryID, memo), baseFieldTable)]
-      : [];
-  });
+  }).map((row) =>
+    toItem(row, resolveGroupID(db, row.libraryID, memo), baseFieldTable),
+  );
 }
 
 export function getItemTypeByKey(
@@ -326,6 +335,11 @@ export function getItemTypeByKey(
   );
 }
 
+/**
+ * Fetch items of one library by key, in `keys` order, through
+ * {@link rowsByID}. A key that names no live regular item has no entry; a
+ * repeated key repeats its item.
+ */
 export function getItemsByKey(
   db: NodeDatabaseClient,
   libraryID: number,
@@ -335,10 +349,10 @@ export function getItemsByKey(
 
   const groupId = groupIDForLibrary(db, libraryID);
   const baseFieldTable = getBaseFieldTable(db, ITEM_BASE_FIELDS);
-  return keys.flatMap((key) =>
-    itemByKeyQuery
-      .prepared(db)
-      .all({ libraryID, key })
-      .map((r) => toItem(r, groupId, baseFieldTable)),
-  );
+  return rowsByID(keys, {
+    one: (key) => itemByKeyQuery.prepared(db).all({ libraryID, key }),
+    many: (batch) =>
+      itemsByKeysQuery.prepare(db, { libraryID, keys: batch }).all(),
+    idOf: (row) => row.key,
+  }).map((row) => toItem(row, groupId, baseFieldTable));
 }

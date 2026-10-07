@@ -349,6 +349,28 @@ describe("getItemsByKey", () => {
   it("returns an empty array when no key matches", () => {
     expect(getItemsByKey(db, USER_LIBRARY_ID, ["NOPE"])).toEqual([]);
   });
+
+  it("returns items in request order, repeating a repeated key and leaving misses out", () => {
+    expect(
+      getItemsByKey(db, USER_LIBRARY_ID, [
+        "USER2",
+        "NOPE",
+        "USER1",
+        "USER2",
+      ]).map((item) => item.key),
+    ).toEqual(["USER2", "USER1", "USER2"]);
+  });
+
+  it("runs the same statements for one key as for many", () => {
+    const statements = countStatements(sqlite);
+    const cost = (keys: string[]) => {
+      const before = statements();
+      getItemsByKey(db, USER_LIBRARY_ID, keys);
+      return statements() - before;
+    };
+    cost(["USER1"]);
+    expect(cost(["USER1", "USER2", "DELETED", "NOPE"])).toBe(cost(["USER1"]));
+  });
 });
 
 function seedFixture(sqlite: DatabaseSync): void {

@@ -866,6 +866,47 @@ describe("ZoteroReads operations", () => {
               : ["NTE22345", "NTE32345", "TRSH2345", "MISS2345", "NTE22345"],
         }),
     ],
+    // Live items, an attachment, a miss, and a repeat.
+    [
+      "ItemsByIndexedKeys",
+      (reads, size) =>
+        reads.ItemsByIndexedKeys({
+          indexedKeys:
+            size === "one"
+              ? ["MAIN2345"]
+              : ["MAIN2345", "RELB2345", "RELA2345", "ATCH2345", "MISS2345"],
+        }),
+    ],
+    // Parents with one and two attachments, one with none, and a miss.
+    [
+      "AttachmentsOf",
+      (reads, size) =>
+        reads.AttachmentsOf({
+          itemIDs: size === "one" ? [2] : [1, 2, 3, 999, 1],
+        }),
+    ],
+    // Live attachments, a trashed one, a miss, and a repeat.
+    [
+      "AttachmentsByKeys",
+      (reads, size) =>
+        reads.AttachmentsByKeys({
+          libraryID: 1,
+          keys:
+            size === "one"
+              ? ["ATCH2345"]
+              : ["ATCH2345", "ATC22345", "ATC32345", "TRSA2345", "MISS2345"],
+        }),
+    ],
+    [
+      "AttachmentSources",
+      (reads, size) =>
+        reads.AttachmentSources({
+          attachmentKeys:
+            size === "one"
+              ? ["ATCH2345"]
+              : ["ATCH2345", "ATC22345", "ATC32345", "TRSA2345", "MISS2345"],
+        }),
+    ],
   ])(
     "%s runs the same statements for one row as for many",
     async (_operation, read) => {
@@ -873,10 +914,17 @@ describe("ZoteroReads operations", () => {
         () => `
           insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
             values (201, 3, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'TRSH2345'),
-                   (202, 3, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'NTE32345');
+                   (202, 3, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'NTE32345'),
+                   (11, 2, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'ATC22345'),
+                   (12, 2, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'ATC32345'),
+                   (13, 2, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'TRSA2345');
           insert into itemNotes (itemID, parentItemID, note, title)
             values (201, 1, '<p>gone</p>', 'Gone'), (202, 2, '<p>more</p>', 'More');
-          insert into deletedItems (itemID) values (201);
+          insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path)
+            values (11, 2, 0, 'application/pdf', 'storage:beta.pdf'),
+                   (12, 1, 0, 'application/pdf', 'storage:main-2.pdf'),
+                   (13, 1, 0, 'application/pdf', 'storage:gone.pdf');
+          insert into deletedItems (itemID) values (201), (13);
         `,
       );
       const counts = await withReads(open, (reads) =>

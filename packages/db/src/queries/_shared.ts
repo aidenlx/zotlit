@@ -346,10 +346,12 @@ export type QueryRow<Q> =
 export const IN_BATCH_SIZE = 10_000;
 
 /**
- * Read the rows for `ids` in batched statements, keyed by id. One distinct id
- * runs `one`, a cached single-row query. More run `many`, a dynamic `IN`
- * query, once per {@link IN_BATCH_SIZE} distinct ids. An id with no row has no
- * entry.
+ * Read the rows for `ids` in batched statements and return them in request
+ * order: the rows of `ids[0]`, then those of `ids[1]`, and so on. An id with no
+ * row adds nothing; a repeated id repeats its rows; an id keeps its rows in the
+ * order the query returns them. One distinct id runs `one`, a cached
+ * single-id query. More run `many`, a dynamic `IN` query, once per
+ * {@link IN_BATCH_SIZE} distinct ids.
  */
 export function rowsByID<K, R>(
   ids: readonly K[],
@@ -358,11 +360,13 @@ export function rowsByID<K, R>(
     many: (ids: K[]) => readonly R[];
     idOf: (row: R) => K;
   },
-): Map<K, R> {
+): R[] {
   const distinct = [...new Set(ids)];
+  if (distinct.length === 0) return [];
   const rows =
     distinct.length === 1
       ? read.one(distinct[0]!)
       : chunk(distinct, IN_BATCH_SIZE).flatMap((batch) => read.many(batch));
-  return new Map(rows.map((row) => [read.idOf(row), row]));
+  const byID = Map.groupBy(rows, read.idOf);
+  return ids.flatMap((id) => byID.get(id) ?? []);
 }

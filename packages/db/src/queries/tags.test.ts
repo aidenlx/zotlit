@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { NodeDatabaseClient } from "@/client/node";
 import { tagTypeToName } from "@/lib/zt-tag";
-import { createFixtureSchema } from "@/test-utils";
+import { countStatements, createFixtureSchema } from "@/test-utils";
 
 import {
   getAllTagNames,
@@ -89,6 +89,31 @@ describe("getTagsByItemIDs", () => {
     );
 
     expect(item2Alpha?.tag).toBe(item1Alpha?.tag);
+  });
+
+  it("returns items in request order, repeating a repeated id and leaving misses out", () => {
+    expect(
+      getTagsByItemIDs(db, [2, 999, 1, 2]).map((t) => [t.itemID, t.tag.name]),
+    ).toEqual([
+      [2, "alpha"],
+      [2, "gamma"],
+      [1, "alpha"],
+      [1, "beta"],
+      [2, "alpha"],
+      [2, "gamma"],
+    ]);
+  });
+
+  it("runs the same statements for one id as for many", () => {
+    const statements = countStatements(sqlite);
+    const cost = (itemIDs: number[]) => {
+      const before = statements();
+      getTagsByItemIDs(db, itemIDs);
+      return statements() - before;
+    };
+    cost([4]);
+    // The many-id read holds more items and more distinct tags than item 4.
+    expect(cost([1, 2, 3, 4, 999, 2])).toBe(cost([4]));
   });
 });
 

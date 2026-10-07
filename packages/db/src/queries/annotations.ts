@@ -4,7 +4,7 @@ import { formatIndexedKey } from "@/lib/zt-key";
 
 import { groupIDForLibrary, resolveGroupID } from "./_groups";
 import type { GroupIDMemo } from "./_groups";
-import { defineQuery } from "./_shared";
+import { defineQuery, rowsByID } from "./_shared";
 import type { FindManyOptions, QueryRow } from "./_shared";
 import { hasClientRevisions } from "./schema-version";
 
@@ -104,6 +104,34 @@ const legacyAnnotationsByKeyQuery = defineQuery<{
   }),
 );
 
+const annotationsByKeysQuery = defineQuery<void>()(
+  (db, _operators, args: { libraryID: number; keys: readonly string[] }) =>
+    db.query.itemAnnotations.findMany({
+      where: {
+        item: {
+          key: { in: [...args.keys] },
+          libraryID: args.libraryID,
+          deletedItem: false,
+        },
+      },
+      ...annotationFindOptions,
+    }),
+);
+
+const legacyAnnotationsByKeysQuery = defineQuery<void>()(
+  (db, _operators, args: { libraryID: number; keys: readonly string[] }) =>
+    db.query.itemAnnotations.findMany({
+      where: {
+        item: {
+          key: { in: [...args.keys] },
+          libraryID: args.libraryID,
+          deletedItem: false,
+        },
+      },
+      ...legacyAnnotationFindOptions,
+    }),
+);
+
 type AnnotationRow = QueryRow<typeof annotationsByParentQuery>;
 
 export function getAnnotationsByParent(
@@ -120,6 +148,11 @@ export function getAnnotationsByParent(
   );
 }
 
+/**
+ * Fetch annotations of one library by key, in `keys` order, through
+ * {@link rowsByID}. A key that names no live annotation has no entry; a
+ * repeated key repeats its annotation.
+ */
 export function getAnnotationsByKey(
   db: NodeDatabaseClient,
   keys: readonly string[],
@@ -128,16 +161,15 @@ export function getAnnotationsByKey(
   if (keys.length === 0) return [];
 
   const groupId = groupIDForLibrary(db, libraryID);
-  const query = hasClientRevisions(db)
-    ? annotationsByKeyQuery
-    : legacyAnnotationsByKeyQuery;
-  return keys.flatMap((key) =>
-    query
-      .prepared(db)
-      .all({ libraryID, key })
-      .flatMap((row) =>
-        row.parentAttachment ? [toAnnotation(row, groupId)] : [],
-      ),
+  const [byKey, byKeys] = hasClientRevisions(db)
+    ? [annotationsByKeyQuery, annotationsByKeysQuery]
+    : [legacyAnnotationsByKeyQuery, legacyAnnotationsByKeysQuery];
+  return rowsByID(keys, {
+    one: (key) => byKey.prepared(db).all({ libraryID, key }),
+    many: (batch) => byKeys.prepare(db, { libraryID, keys: batch }).all(),
+    idOf: (row) => row.item.key,
+  }).flatMap((row) =>
+    row.parentAttachment ? [toAnnotation(row, groupId)] : [],
   );
 }
 

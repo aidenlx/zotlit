@@ -162,12 +162,9 @@ export function getNotesByKey(
       notesByKeysQuery.prepare(db, { libraryID, keys: batch }).all(),
     idOf: (row) => row.item.key,
   });
-  if (rows.size === 0) return [];
+  if (rows.length === 0) return [];
   const groupID = groupIDForLibrary(db, libraryID);
-  return keys.flatMap((key) => {
-    const row = rows.get(key);
-    return row ? [toNote(row, groupID)] : [];
-  });
+  return rows.map((row) => toNote(row, groupID));
 }
 
 // --- Queries for explicit note-import (Stage 9.3) ---
