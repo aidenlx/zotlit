@@ -27,7 +27,7 @@ const logger = getLogger("attachment-open");
 /** What resolving a Literature Note's Attachments needs. */
 export interface AttachmentOpenLookupDeps {
   app: App;
-  reads: Pick<ZoteroReadsService, "ready">;
+  reads: Pick<ZoteroReadsService, "acquireRead">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
   settings: Pick<SettingsService, "current">;
 }
@@ -84,14 +84,18 @@ export function toObsidianOpenable(
  * Attachments — shared by the `open-pdf` command, the file menu, and the
  * Quick Switcher's PDF chords, so a key→itemID lookup is written once.
  *
+ * Both reads share one Snapshot, so a database swap between them cannot pair
+ * an itemID with another database's Attachments.
+ *
  * @returns no Attachments while the database cannot be read.
  */
 export async function resolveLiteratureNoteAttachments(
   deps: AttachmentOpenLookupDeps,
   indexedKey: string,
 ): Promise<ObsidianOpenableAttachment[]> {
-  const { reads } = await deps.reads.ready;
   try {
+    using lease = await deps.reads.acquireRead();
+    const { reads } = lease;
     const items = await Effect.runPromise(
       reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
     );

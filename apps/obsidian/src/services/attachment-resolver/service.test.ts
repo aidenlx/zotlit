@@ -6,6 +6,7 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { QueryClientService } from "@/services/query-client/service";
 import type { ZoteroPrefEvents } from "@/services/zotero-pref/service";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import {
   inProcessReadsService,
   memoryOpener,
@@ -335,6 +336,36 @@ it("rebuilds after the database changed, answering from the previous index meanw
   });
 });
 
+it("keeps the previous index when a rebuild fails, and asks again after the failure cooldown", async () => {
+  await using stack = new AsyncDisposableStack();
+  const path = `${LINKED_FILES_DIR}/ioannidis-2005.pdf`;
+  const f = await setup(stack, {
+    seeds: [
+      FIXTURE_ROWS,
+      `${FIXTURE_ROWS 
+        }update itemAttachments set path = '${path}' where itemID = 29;`,
+    ],
+  });
+
+  f.failReads(true);
+  await f.reads.refresh();
+  await expect.poll(() => f.failures).toBe(1);
+
+  expect(f.resolver.resolve(path)).toEqual({ kind: "unresolved" });
+  expect(f.failures).toBe(1);
+
+  f.failReads(false);
+  f.advance(10);
+  const announced = nextAnnouncement(f.resolver);
+  expect(f.resolver.resolve(path)).toEqual({ kind: "unresolved" });
+  await announced;
+
+  expect(f.resolver.resolve(path)).toMatchObject({
+    kind: "resolved",
+    attachmentKey: "IANPDF25",
+  });
+});
+
 it("rebuilds after the resolved Zotero paths changed", async () => {
   await using stack = new AsyncDisposableStack();
   const { resolver, zoteroPref, prefEvents } = await setup(stack);
@@ -410,6 +441,8 @@ async function setup(stack: AsyncDisposableStack, options: SetupOptions = {}) {
   const { open } = memoryOpener((n) => seeds[n - 1] ?? null);
   let held: PromiseWithResolvers<void> | null = null;
   let waiting = false;
+  let failing = false;
+  let failures = 0;
   const reads = stack.use(
     inProcessReadsService(open, (client) => ({
       ...client,
@@ -422,6 +455,12 @@ async function setup(stack: AsyncDisposableStack, options: SetupOptions = {}) {
               waiting = true;
               await held.promise;
             }
+            if (failing) {
+              failures += 1;
+              return Stream.fail(
+                new DbUnavailable({ message: "the read failed" }),
+              ) as Stream.Stream<unknown, unknown>;
+            }
             return client.AttachmentPathIndex(...args) as Stream.Stream<
               unknown,
               unknown
@@ -430,7 +469,8 @@ async function setup(stack: AsyncDisposableStack, options: SetupOptions = {}) {
         )) as typeof client.AttachmentPathIndex,
     })),
   );
-  const queries = stack.use(new QueryClientService());
+  let now = Temporal.Now.instant();
+  const queries = stack.use(new QueryClientService({ now: () => now }));
 
   const prefEvents = createNanoEvents<ZoteroPrefEvents>();
   const zoteroPref = {
@@ -458,6 +498,18 @@ async function setup(stack: AsyncDisposableStack, options: SetupOptions = {}) {
     reads,
     zoteroPref,
     prefEvents,
+    /** Makes every later path index read fail, until set back. */
+    failReads: (on: boolean) => {
+      failing = on;
+    },
+    /** How many path index reads failed. */
+    get failures() {
+      return failures;
+    },
+    /** Moves the failure cooldown clock forward from the real time. */
+    advance: (seconds: number) => {
+      now = now.add({ seconds });
+    },
     /** Holds the next path index read until `release`. */
     gate: () => {
       held = Promise.withResolvers<void>();

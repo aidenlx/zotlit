@@ -221,6 +221,8 @@ export class AnnotationView extends ItemView implements HistorySurface {
   #root: Root | null = null;
   #actions: AnnotActions | null = null;
   #loadDisposables: DisposableStack | null = null;
+  /** The load whose reads run; a later load or a clear supersedes it. */
+  #loading: object | null = null;
   /** The Zotero Reader, translated into Indexed Keys. */
   #zoteroReader: ZoteroReaderSession | null = null;
   /** The active leaf's PDF view session, while one is being followed. */
@@ -393,7 +395,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
   protected override async onOpen(): Promise<void> {
     this.#zoteroReader = new ZoteroReaderSession({
       liveUpdate: this.#deps.liveUpdate,
-      resolve: (target) => this.#resolveZoteroReader(target),
+      resolve: (target, signal) => this.#resolveZoteroReader(target, signal),
       navigate: (annotationKey) => this.#openInZotero(annotationKey),
     });
     this.register(() => this.#zoteroReader?.[Symbol.dispose]());
@@ -1012,6 +1014,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
   /** Names what one companion reader push points at, in Indexed Keys. */
   async #resolveZoteroReader(
     pushed: ReaderTarget,
+    signal: AbortSignal,
   ): Promise<ZoteroReaderResolution | null> {
     try {
       const { reads } = await this.#deps.reads.ready;
@@ -1022,6 +1025,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
           attachmentID: pushed.attachmentID,
           selected: pushed.selected,
         }),
+        { signal },
       );
       if (!named) return null;
       return {
@@ -1051,13 +1055,20 @@ export class AnnotationView extends ItemView implements HistorySurface {
     this.#itemKey = itemKey;
     this.#memoryKey = memoryKey;
 
-    // Dispose the previous load's subscriptions before any state mutation of
-    // this load: `subscribeWithSelector` fires synchronously, so the reset
-    // below would otherwise trigger the old save subscription (closed over
-    // the previous item's key) and wipe its persisted filter.
-    this.#loadDisposables?.[Symbol.dispose]();
-    const load = new DisposableStack();
-    this.#loadDisposables = load;
+    // A new Item disposes the previous load's subscriptions before any state
+    // mutation of this load: `subscribeWithSelector` fires synchronously, so
+    // the reset below would otherwise trigger the old save subscription
+    // (closed over the previous item's key) and wipe its persisted filter.
+    // Its Annotation reads still running are superseded too. A reload of the
+    // same Item keeps them until the new list lands, so a choice made while
+    // it reads is still read and saved.
+    if (memoryChanged) {
+      this.#loadDisposables?.[Symbol.dispose]();
+      this.#loadDisposables = null;
+      this.#reads += 1;
+    }
+    const load = {};
+    this.#loading = load;
     const sameItem = itemKey === this.#store.getState().itemKey;
 
     // What is on screen stays while this load reads: the attachments and
@@ -1073,21 +1084,24 @@ export class AnnotationView extends ItemView implements HistorySurface {
     });
 
     void this.#resolveItemSummary(target).then((itemDisplay) => {
-      if (this.#loadDisposables === load) this.#store.setState({ itemDisplay });
+      if (this.#loading === load) this.#store.setState({ itemDisplay });
     });
     void this.#readAttachments(target).then(
       (attachments) => {
-        if (this.#loadDisposables !== load) return;
+        if (this.#loading !== load) return;
+        this.#loadDisposables?.[Symbol.dispose]();
+        this.#loadDisposables = new DisposableStack();
         this.#showAttachments(target, attachments, {
-          load,
+          load: this.#loadDisposables,
           memoryKey,
           memoryChanged,
         });
       },
       (err: unknown) => {
-        if (this.#loadDisposables !== load) return;
+        if (this.#loading !== load) return;
         logger.warn("Failed to load annot view data", { key, error: err });
-        this.#clearState();
+        // A reload of the same Item keeps what is on screen.
+        if (memoryChanged) this.#clearState();
       },
     );
   }
@@ -1720,6 +1734,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
   #clearState(): void {
     this.#loadDisposables?.[Symbol.dispose]();
     this.#loadDisposables = null;
+    this.#loading = null;
     this.#store.setState({
       ...INITIAL_FILTER_STATE,
       itemKey: null,

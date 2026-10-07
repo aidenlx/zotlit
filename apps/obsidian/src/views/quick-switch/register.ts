@@ -15,7 +15,7 @@ export interface QuickSwitchDeps {
   createProfile: CreateProfile;
   importProfile: ImportProfile;
   app: App;
-  reads: Pick<ZoteroReadsService, "ready">;
+  reads: Pick<ZoteroReadsService, "acquireRead">;
   lookup: ItemLookup;
   noteIndex: NoteIndex;
   noteFeature: Pick<

@@ -60,7 +60,7 @@ function readsOver(
 }
 
 function lookupDeps(
-  reads: Pick<ZoteroReadsService, "ready">,
+  reads: Pick<ZoteroReadsService, "acquireRead">,
   overrides: Partial<AttachmentOpenLookupDeps> = {},
 ): AttachmentOpenLookupDeps {
   return {

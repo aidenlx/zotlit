@@ -191,7 +191,7 @@ describe("QuickSwitchModal PDF chord", () => {
       noteFeature: { createNote: vi.fn() },
       noteIndex: { getNotesByItemKey, whenIndexed: vi.fn() },
       settings: { current: {} },
-      reads: { ready: Promise.resolve() },
+      reads: { acquireRead: vi.fn() },
       zoteroPref: { dataDir: null, baseAttachmentPath: null },
     } as unknown as QuickSwitchDeps;
     return { deps, modal: new QuickSwitchModal(deps), getNotesByItemKey };

@@ -111,6 +111,7 @@ export class LibraryScopeService extends Service<void> {
    * changes, so a subscriber can compare by reference.
    */
   get current(): ResolvedLibraryScope | null {
+    this.#heldLibraries();
     return this.#current;
   }
 
@@ -129,6 +130,7 @@ export class LibraryScopeService extends Service<void> {
    * database is unreadable.
    */
   get libraries(): readonly AvailableLibrary[] {
+    this.#heldLibraries();
     return this.#all?.available ?? [];
   }
 
@@ -137,7 +139,7 @@ export class LibraryScopeService extends Service<void> {
    * saved scope names; `null` while no read is held.
    */
   get libraryRows(): readonly Library[] | null {
-    return this.#queries.peek<Library[]>(LIBRARIES_KEY)?.value ?? null;
+    return this.#heldLibraries();
   }
 
   /**
@@ -247,9 +249,19 @@ export class LibraryScopeService extends Service<void> {
     });
   }
 
+  /**
+   * The held Libraries. A held read whose last replacement failed is asked
+   * again; the failure cooldown paces the retries.
+   */
+  #heldLibraries(): Library[] | null {
+    const held = this.#queries.peek<Library[]>(LIBRARIES_KEY);
+    if (held?.status === "failed") void this.#readLibraries();
+    return held?.value ?? null;
+  }
+
   /** @returns `null` while no read of the Libraries is held. */
   #resolveNow(scope: LibraryScope | null): ResolvedLibraryScope | null {
-    const libraries = this.#queries.peek<Library[]>(LIBRARIES_KEY)?.value;
+    const libraries = this.#heldLibraries();
     return libraries ? resolveLibraryScope(libraries, scope) : null;
   }
 }

@@ -220,9 +220,13 @@ export class WelcomeView extends ItemView {
     this.#store.setState({ connection });
   }
 
-  /** Show the checking spinner only if this readout is still pending after the grace delay. */
+  /**
+   * Show the checking spinner only if this readout is still pending after the
+   * grace delay. A held readout stays on screen instead.
+   */
   #armChecking(gen: number): void {
     this.#clearCheckingTimer();
+    if (readConnectionSync(this.#deps) !== null) return;
     this.#checkingTimer = window.setTimeout(() => {
       this.#checkingTimer = null;
       if (!this.#closed && gen === this.#connectionGen) {

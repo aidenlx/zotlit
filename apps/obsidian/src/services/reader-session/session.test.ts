@@ -207,7 +207,9 @@ describe("ZoteroReaderSession", () => {
 
   it("keeps its target while a new push resolves, and drops a superseded answer", async () => {
     const pending = new Map<number, PromiseWithResolvers<void>>();
-    const { live, session } = build(PUSHED, async (target) => {
+    const aborted: number[] = [];
+    const { live, session } = build(PUSHED, async (target, signal) => {
+      signal.addEventListener("abort", () => aborted.push(target.attachmentID));
       if (target.attachmentID !== 2) {
         const gate = Promise.withResolvers<void>();
         pending.set(target.attachmentID, gate);
@@ -220,6 +222,7 @@ describe("ZoteroReaderSession", () => {
     live.push({ itemID: 3, attachmentID: 3, selected: [] });
     live.push({ itemID: 9, attachmentID: 9, selected: [] });
     expect(session.target).toEqual(PAPER);
+    expect(aborted).toEqual([2, 3]);
 
     pending.get(9)!.resolve();
     await expect.poll(() => session.target).toBe(null);
@@ -245,10 +248,15 @@ describe("ZoteroReaderSession", () => {
     await expect.poll(() => session.target).toEqual(PAPER);
   });
 
-  it("stops tracking the listener when disposed", () => {
-    const { live, session } = build();
+  it("stops tracking the listener and aborts its read when disposed", () => {
+    const signals: AbortSignal[] = [];
+    const { live, session } = build(PUSHED, (_target, signal) => {
+      signals.push(signal);
+      return new Promise(() => {});
+    });
     session[Symbol.dispose]();
     expect(live.subscribers).toBe(0);
+    expect(signals.map((signal) => signal.aborted)).toEqual([true]);
   });
 
   it("opens an annotation through the port Zotero gave it", () => {

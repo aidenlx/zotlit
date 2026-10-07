@@ -6,6 +6,7 @@ import type { Library } from "@zotlit/db";
 import { QueryClientService } from "@/services/query-client/service";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import {
   inProcessReadsService,
   memoryOpener,
@@ -124,6 +125,22 @@ describe("LibraryScopeService", () => {
     await expect.poll(() => f.service.current?.available).toHaveLength(1);
   });
 
+  it("keeps the previous scope when a Libraries read fails, and asks again after the failure cooldown", async () => {
+    await using f = await makeService();
+    const before = f.service.current;
+    f.failLibraries(true);
+
+    await f.refresh([MY_LIBRARY]);
+    await f.service.ready;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(f.service.current).toBe(before);
+    f.failLibraries(false);
+    f.advance(10);
+    expect(f.service.current).toBe(before);
+    await expect.poll(() => f.service.current?.available).toHaveLength(1);
+  });
+
   it("keeps the previous scope when a refresh fails", async () => {
     await using f = await makeService();
     const before = f.service.current;
@@ -232,17 +249,25 @@ async function makeService(
   let gate: PromiseWithResolvers<void> | null = null;
   let waiting = false;
   let librariesRead = 0;
+  let failing = false;
+  let now = Temporal.Now.instant();
   const { open } = memoryOpener((n) => librariesSql(opens[n - 1] ?? null));
   const reads = stack.use(
     inProcessReadsService(open, (client) => ({
       ...client,
       Libraries: ((...args: Parameters<typeof client.Libraries>) =>
         Effect.andThen(
-          Effect.promise(async () => {
-            if (gate === null) return;
-            waiting = true;
-            await gate.promise;
-          }),
+          Effect.andThen(
+            Effect.promise(async () => {
+              if (gate === null) return;
+              waiting = true;
+              await gate.promise;
+            }),
+            () =>
+              failing
+                ? Effect.fail(new DbUnavailable({ message: "the read failed" }))
+                : Effect.void,
+          ),
           Effect.map(client.Libraries(...args), (libraries) => {
             librariesRead += 1;
             return libraries;
@@ -250,7 +275,7 @@ async function makeService(
         )) as typeof client.Libraries,
     })),
   );
-  const queries = stack.use(new QueryClientService());
+  const queries = stack.use(new QueryClientService({ now: () => now }));
   const settings = new FakeSettings(
     options.scope === undefined ? { mode: "all" } : options.scope,
     options.broken ?? false,
@@ -279,6 +304,14 @@ async function makeService(
     refresh: async (libraries: readonly Library[] | null) => {
       opens.push(libraries);
       await reads.refresh().catch(() => {});
+    },
+    /** Makes every later `Libraries` read fail, until set back. */
+    failLibraries: (on: boolean) => {
+      failing = on;
+    },
+    /** Moves the failure cooldown clock forward from the real time. */
+    advance: (seconds: number) => {
+      now = now.add({ seconds });
     },
     /** Holds every later `Libraries` read until `release`. */
     gateLibraries: () => {

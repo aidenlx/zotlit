@@ -126,11 +126,11 @@ export class AttachmentResolver extends Service<void> {
    *   `resolutions-changed` once one is.
    */
   resolve(absolutePath: string): AttachmentResolution {
-    const index = this.#queries.peek<PathIndex>(PATH_INDEX_KEY)?.value;
-    if (index === undefined) {
-      void this.#build();
-      return PENDING;
-    }
+    const held = this.#queries.peek<PathIndex>(PATH_INDEX_KEY);
+    // A failed build is asked again; the failure cooldown paces the retries.
+    if (held === null || held.status === "failed") void this.#build();
+    const index = held?.value;
+    if (index === undefined) return PENDING;
     return (
       index.get(attachmentPathKey(absolutePath, this.#platform)) ?? UNRESOLVED
     );
