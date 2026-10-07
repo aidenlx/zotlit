@@ -371,6 +371,13 @@ export class TFile extends TAbstractFile {
   extension = "";
 }
 
+/** Obsidian spells an external file's path as its absolute path behind `file:`. */
+export class TExternalFile extends TFile {
+  getRealPath(): string {
+    return this.path.substring("file:".length);
+  }
+}
+
 export class TFolder extends TAbstractFile {
   children: TAbstractFile[] = [];
 

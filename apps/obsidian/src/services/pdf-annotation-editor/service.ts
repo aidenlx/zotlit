@@ -23,7 +23,7 @@ import type {
   CapabilityGestures,
   CommentNotes,
 } from "./binding";
-import { openFilePathOf, PDF_VIEW_TYPE } from "./seam";
+import { openFileOf, PDF_VIEW_TYPE } from "./seam";
 import type { MarkGestures } from "./selection";
 import { toolColorStore } from "./tools";
 
@@ -224,7 +224,11 @@ export class PdfAnnotationEditor extends Service<void> {
     for (const [view, binding] of this.#bindings) {
       // A view that swapped files gets a fresh binding, so the seam probes and
       // the attachment resolution both run again for the file now on screen.
-      if (open.has(view) && binding.filePath === openFilePathOf(view)) continue;
+      if (
+        open.has(view) &&
+        binding.filePath === (openFileOf(view)?.path ?? null)
+      )
+        continue;
       binding[Symbol.dispose]();
       this.#bindings.delete(view);
     }

@@ -575,20 +575,24 @@ describe("citekeyEditorExtension citation widgets", () => {
 
   it("keeps the drawn citation only while a moved occurrence reads the same", () => {
     let held = heldRead({
-      formatted: new Map([["[@doe2024]", occurrences(rendered("Doe (2024)"))]]),
+      formatted: new Map([
+        ["[@doe2024]", occurrences(rendered("Doe (2024)"), 3)],
+      ]),
       entrySerials: false,
       summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
       literalWorks: new Map([["doe2024", DOE_KEY]]),
     });
-    using view = viewWithCitationText("[@doe2024]", () => held);
+    using view = viewWithCitationText("Hi [@doe2024]", () => held);
     const drawn = view.dom.querySelector<HTMLElement>(".zt-citation")!;
 
+    // CodeMirror redraws a widget whose start an insert touches, so the edit
+    // lands ahead of the text before the Citation.
     view.dispatch({ changes: { from: 0, insert: "Before " } });
     expect(view.dom.querySelector(".zt-citation")).toBe(drawn);
 
     held = heldRead({
       formatted: new Map([
-        ["[@doe2024]", occurrences(rendered("Doe (2024)"), 7)],
+        ["[@doe2024]", occurrences(rendered("Doe (2024)"), 10)],
       ]),
       entrySerials: false,
       summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
@@ -599,11 +603,11 @@ describe("citekeyEditorExtension citation widgets", () => {
 
     expect(view.dom.querySelector(".zt-citation")).toBe(drawn);
     drawn.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
-    expect(requests[0]?.shown?.at).toEqual({ kind: "offset", start: 7 });
+    expect(requests[0]?.shown?.at).toEqual({ kind: "offset", start: 10 });
 
     held = heldRead({
       formatted: new Map([
-        ["[@doe2024]", occurrences(rendered("Roe (2025)"), 7)],
+        ["[@doe2024]", occurrences(rendered("Roe (2025)"), 10)],
       ]),
       entrySerials: false,
       summaries: new Map([[DOE_KEY, "Roe (2025)"]]),

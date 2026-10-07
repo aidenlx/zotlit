@@ -210,10 +210,10 @@ export function pdfDocumentOf(
   return controller.pdfViewer?.pdfDocument ?? null;
 }
 
-/** The open file's path, `file:`-prefixed for an external file. */
-export function openFilePathOf(view: unknown): string | null {
+/** The open file, a `TExternalFile` when it lies outside the vault. */
+export function openFileOf(view: unknown): { path: string } | null {
   const file = isObject(view) ? view.file : null;
-  return isVaultFile(file) ? file.path : null;
+  return isVaultFile(file) ? file : null;
 }
 
 /** Runs `onReady` with the viewer child, at once or once Obsidian builds it. */
