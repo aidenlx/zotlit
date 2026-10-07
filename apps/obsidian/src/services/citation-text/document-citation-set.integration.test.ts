@@ -407,7 +407,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
           {
             itemID: 2,
             libraryID: GROUP_LIBRARY_ID,
-            key: "ROE2025",
+            key: "ZZZ99999",
             indexedKey: KEY_B,
             citekey: "doe2024",
           },
@@ -522,7 +522,7 @@ function referenceSources(): ReadonlyMap<string, ReferenceSource> {
   });
   return new Map([
     [KEY_A, source("doe2024", 1, "Doe")],
-    [KEY_B, source("roe2025", 2, "Roe")],
+    [KEY_B, { ...source("roe2025", 2, "Roe"), groupID: 7 }],
   ]);
 }
 

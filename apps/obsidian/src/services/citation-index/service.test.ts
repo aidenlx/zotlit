@@ -1400,9 +1400,9 @@ describe("CitationIndex resolution", () => {
 
     citekeys.rows = [
       {
-        itemID: 1,
-        libraryID: MY_LIBRARY_ID,
-        key: "DOE2024",
+        itemID: 2,
+        libraryID: GROUP_LIBRARY_ID,
+        key: "ZZZ99999",
         indexedKey: KEY_B,
         citekey: "doe2024",
       },

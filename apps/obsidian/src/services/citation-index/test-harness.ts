@@ -425,7 +425,7 @@ function defaultCitekeys(): LibraryCitekey[] {
     {
       itemID: 2,
       libraryID: GROUP_LIBRARY_ID,
-      key: "ROE2025",
+      key: "ZZZ99999",
       indexedKey: KEY_B,
       citekey: "roe2025",
     },
