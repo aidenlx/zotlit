@@ -78,6 +78,13 @@ describe("getNotesByKey", () => {
     expect(getNotesByKey(db, 2, ["LIVE"])).toEqual([]);
   });
 
+  it("reads more keys than one statement can bind", () => {
+    const misses = Array.from({ length: 40_000 }, (_, i) => `MISS${i}`);
+    expect(
+      getNotesByKey(db, 1, ["CHILD002", ...misses, "LIVE"]).map((n) => n.key),
+    ).toEqual(["CHILD002", "LIVE"]);
+  });
+
   it("runs the same statements for one key as for many", () => {
     const statements = countStatements(sqlite);
     const cost = (keys: string[]) => {

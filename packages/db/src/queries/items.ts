@@ -15,7 +15,7 @@ import { getBaseFieldTable, getBaseFieldTableAsync } from "./_base-fields";
 import type { BaseFieldTable } from "./_base-fields";
 import { groupIDForLibrary, groupsQuery, resolveGroupID } from "./_groups";
 import type { GroupIDMemo } from "./_groups";
-import { CHILD_ITEM_TYPES, defineQuery } from "./_shared";
+import { CHILD_ITEM_TYPES, defineQuery, rowsByID } from "./_shared";
 import type { ChildItemType, FindManyOptions, QueryRow } from "./_shared";
 
 export interface Creator {
@@ -139,6 +139,17 @@ const itemsByLibraryQuery = defineQuery<{ libraryID: number }>()(
       ...itemFindOptions,
       orderBy: { dateModified: "desc" },
     }),
+);
+
+const itemByIdQuery = defineQuery<{ itemID: number }>()((db, { placeholder }) =>
+  db.query.items.findMany({
+    where: {
+      itemID: placeholder("itemID"),
+      itemType: { typeName: { notIn: [...CHILD_ITEM_TYPES] } },
+      deletedItem: false,
+    },
+    ...itemFindOptions,
+  }),
 );
 
 const itemsByIdsQuery = defineQuery<void>()(
@@ -272,11 +283,11 @@ export async function getItemsByLibraryAsync(
 }
 
 /**
- * Fetch items by global item id, in one statement, in `itemIDs` order. An id
- * that names no live regular item has no entry; a repeated id repeats its
- * item. Item ids are unique across libraries, so the batch may span libraries;
- * each row's `groupID`/`indexedKey` resolves from its own `libraryID`. The ids
- * inline into the SQL, so the statement is not cached.
+ * Fetch items by global item id, in `itemIDs` order, through {@link rowsByID}:
+ * one statement per {@link IN_BATCH_SIZE} distinct ids. An id that names no
+ * live regular item has no entry; a repeated id repeats its item. Item ids are
+ * unique across libraries, so the batch may span libraries; each row's
+ * `groupID`/`indexedKey` resolves from its own `libraryID`.
  *
  * @param opts.memo caller-owned `libraryID → groupID` cache. Pass a shared memo
  *   to resolve each library once across many calls; omit to scope the cache
@@ -291,12 +302,11 @@ export function getItemsByID(
 
   const memo = opts?.memo ?? new Map();
   const baseFieldTable = getBaseFieldTable(db, ITEM_BASE_FIELDS);
-  const rows = new Map(
-    itemsByIdsQuery
-      .prepare(db, { itemIDs: [...new Set(itemIDs)] })
-      .all()
-      .map((row) => [row.itemID, row]),
-  );
+  const rows = rowsByID(itemIDs, {
+    one: (itemID) => itemByIdQuery.prepared(db).all({ itemID }),
+    many: (ids) => itemsByIdsQuery.prepare(db, { itemIDs: ids }).all(),
+    idOf: (row) => row.itemID,
+  });
   return itemIDs.flatMap((itemID) => {
     const row = rows.get(itemID);
     return row

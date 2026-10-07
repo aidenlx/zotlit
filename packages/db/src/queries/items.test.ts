@@ -291,6 +291,13 @@ describe("getItemsByID", () => {
     );
   });
 
+  it("reads more ids than one statement can bind", () => {
+    const misses = Array.from({ length: 40_000 }, (_, i) => 1_000 + i);
+    expect(getItemsByID(db, [6, ...misses, 1]).map((i) => i.itemID)).toEqual([
+      6, 1,
+    ]);
+  });
+
   it("runs the same statements for one id as for many", () => {
     const statements = countStatements(sqlite);
     const cost = (itemIDs: number[]) => {

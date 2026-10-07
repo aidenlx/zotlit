@@ -1,4 +1,5 @@
 import type { relations } from "@drizzle/relations";
+import { chunk } from "@std/collections";
 import { sql } from "drizzle-orm";
 import type { DBQueryConfig, Placeholder } from "drizzle-orm";
 import type {
@@ -337,3 +338,31 @@ export type QueryRow<Q> =
       ? E
       : never
     : never;
+
+/**
+ * Most values one dynamic `IN (...)` binds. Each value is one bound
+ * parameter, and SQLite allows 32,766 in one statement.
+ */
+export const IN_BATCH_SIZE = 10_000;
+
+/**
+ * Read the rows for `ids` in batched statements, keyed by id. One distinct id
+ * runs `one`, a cached single-row query. More run `many`, a dynamic `IN`
+ * query, once per {@link IN_BATCH_SIZE} distinct ids. An id with no row has no
+ * entry.
+ */
+export function rowsByID<K, R>(
+  ids: readonly K[],
+  read: {
+    one: (id: K) => readonly R[];
+    many: (ids: K[]) => readonly R[];
+    idOf: (row: R) => K;
+  },
+): Map<K, R> {
+  const distinct = [...new Set(ids)];
+  const rows =
+    distinct.length === 1
+      ? read.one(distinct[0]!)
+      : chunk(distinct, IN_BATCH_SIZE).flatMap((batch) => read.many(batch));
+  return new Map(rows.map((row) => [read.idOf(row), row]));
+}
