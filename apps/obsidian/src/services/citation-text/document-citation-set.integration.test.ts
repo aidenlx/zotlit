@@ -13,6 +13,7 @@ import type {
 } from "@/services/citation-index/service";
 import {
   createCitationIndexHarness,
+  GROUP_LIBRARY_ID,
   KEY_A,
   KEY_B,
   link,
@@ -405,8 +406,8 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
           },
           {
             itemID: 2,
-            libraryID: MY_LIBRARY_ID,
-            key: "ROE2025",
+            libraryID: GROUP_LIBRARY_ID,
+            key: "ZZZ99999",
             indexedKey: KEY_B,
             citekey: "doe2024",
           },
@@ -521,7 +522,7 @@ function referenceSources(): ReadonlyMap<string, ReferenceSource> {
   });
   return new Map([
     [KEY_A, source("doe2024", 1, "Doe")],
-    [KEY_B, source("roe2025", 2, "Roe")],
+    [KEY_B, { ...source("roe2025", 2, "Roe"), groupID: 7 }],
   ]);
 }
 

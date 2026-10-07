@@ -105,9 +105,6 @@ async function fixture(
       profile: f.profile,
       zoteroPref,
       noteIndex,
-      db: client && {
-        acquireRead: async () => ({ client, [Symbol.dispose]() {} }),
-      },
       zoteroReads:
         client && stack.use(inProcessReadsService(sharedClientOpener(client))),
     } as never,
