@@ -1,6 +1,6 @@
 // The ZoteroReads handler layer: each operation composes @zotlit/db query functions over a borrowed Connection.
 import { chunk } from "@std/collections/chunk";
-import { Effect, Exit, Scope, Stream } from "effect";
+import { Effect, Exit, Layer, Scope, Stream, SubscriptionRef } from "effect";
 
 import {
   CollectionCache,
@@ -44,13 +44,20 @@ import {
 } from "@zotlit/db";
 import type { GroupIDMemo, Item, TagMemo } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import {
+  IndexConfig,
+  ItemIndex,
+  layerIndexConfig,
+  layerItemIndex,
+  layerSegmenterNone,
+} from "@zotlit/item-lookup";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 
 import { Connection, toDbUnavailable } from "./connection";
+import { layerConnectionItemSource } from "./item-source";
 import { listCollectionChoices, resolveMembershipFacts } from "./membership";
-import { SnapshotExpired, SnapshotId, ZoteroReads } from "./rpc";
-import type { DbUnavailable } from "./rpc";
-import type { WorkLabelSource } from "./rpc";
+import { DbUnavailable, SnapshotExpired, SnapshotId, ZoteroReads } from "./rpc";
+import type { SearchHit, WorkLabelSource } from "./rpc";
 
 /** The id queries {@link ZoteroReads} `ScopeItemIDs` runs, per kind. */
 const SCOPE_QUERIES = {
@@ -75,6 +82,28 @@ export interface HandlersOptions {
    * @default {@link DEFAULT_SLICE_SIZE}
    */
   sliceSize?: number;
+  /**
+   * The UI locale the Item Index formats creator names with, until
+   * `Configure` sends another.
+   *
+   * @default null
+   */
+  locale?: string | null;
+}
+
+/**
+ * Hand the Item Index a new locale. An unchanged locale sets nothing, so a
+ * `Configure` for another setting rebuilds no index.
+ */
+function setLocale(
+  config: (typeof IndexConfig)["Service"],
+  locale: string | null,
+): Effect.Effect<void> {
+  return Effect.flatMap(SubscriptionRef.get(config.locale), (current) =>
+    current === locale
+      ? Effect.void
+      : SubscriptionRef.set(config.locale, locale),
+  );
 }
 
 /** Run a synchronous read; a SQLite throw becomes a {@link DbUnavailable}. */
@@ -232,9 +261,23 @@ export function handlersLayer(options?: HandlersOptions) {
     });
   };
 
-  return ZoteroReads.toLayer(
+  /** The Item Index over the connection, with the none Segmenter. */
+  const itemIndexLayer = layerItemIndex.pipe(
+    Layer.provideMerge(
+      Layer.merge(
+        layerConnectionItemSource,
+        layerIndexConfig({ locale: options?.locale ?? null }).pipe(
+          Layer.provide(layerSegmenterNone),
+        ),
+      ),
+    ),
+  );
+
+  const handlers = ZoteroReads.toLayer(
     Effect.gen(function* () {
       const connection = yield* Connection;
+      const itemIndex = yield* ItemIndex;
+      const indexConfig = yield* IndexConfig;
       const pinned = new Map<SnapshotId, Pinned>();
       let snapshots = 0;
 
@@ -491,7 +534,11 @@ export function handlersLayer(options?: HandlersOptions) {
 
         Refresh: () => connection.refresh,
         NotifyExternalChange: () => connection.notifyExternalChange,
-        Configure: (config) => connection.configure(config),
+        Configure: (config) =>
+          Effect.andThen(
+            setLocale(indexConfig, config.locale),
+            connection.configure(config),
+          ),
         Ping: () => Effect.void,
 
         IndexSignature: ({ libraryID, snapshot }) =>
@@ -650,7 +697,34 @@ export function handlersLayer(options?: HandlersOptions) {
           withClient(snapshot, (client) =>
             resolveMembershipFacts(client, { itemID, libraryID }),
           ),
+
+        // Hydration reads the hits by Indexed Key, which names the same Item
+        // on any client of one database; a hit that no longer resolves drops.
+        SearchItems: ({ libraryIDs, query, limit }) =>
+          Effect.scoped(
+            Effect.gen(function* () {
+              const client = yield* connection.borrow;
+              const hits = yield* itemIndex
+                .search(libraryIDs, query, limit)
+                .pipe(
+                  Effect.mapError(
+                    (error) => new DbUnavailable({ message: error.message }),
+                  ),
+                );
+              const items = yield* read(client, (c) =>
+                itemsByIndexedKeys(
+                  c,
+                  hits.map((hit) => hit.indexedKey),
+                ),
+              );
+              return hits.flatMap((hit): SearchHit[] => {
+                const item = items.get(hit.indexedKey);
+                return item ? [{ item, matches: hit.matches }] : [];
+              });
+            }),
+          ),
       });
     }),
   );
+  return handlers.pipe(Layer.provide(itemIndexLayer));
 }

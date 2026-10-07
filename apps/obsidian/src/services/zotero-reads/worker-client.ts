@@ -2,6 +2,7 @@
 
 import { Effect, FiberSet } from "effect";
 import type { Scope } from "effect";
+import { getLanguage } from "obsidian";
 import workerSource from "virtual:zotero-reads-worker";
 
 import type { Settings } from "@/services/settings/schema";
@@ -25,18 +26,20 @@ function readsConfig(
     databasePath: zoteroPref.databasePath,
     readMode: settings["zotero.read-mode"],
     autoRefresh: settings["zotero.auto-refresh"],
+    locale: getLanguage(),
   };
 }
 
 const sameConfig = (a: ReadsConfig, b: ReadsConfig) =>
   a.databasePath === b.databasePath &&
   a.readMode === b.readMode &&
-  a.autoRefresh === b.autoRefresh;
+  a.autoRefresh === b.autoRefresh &&
+  a.locale === b.locale;
 
 /**
  * A client on the ZoteroReads Web Worker for the caller's scope. Every worker
- * it spawns starts with the current database path, Read Mode, and
- * auto-refresh setting; a later change reaches the live worker through
+ * it spawns starts with the current database path, Read Mode, auto-refresh
+ * setting, and UI locale; a later change reaches the live worker through
  * `Configure`. The scope's end terminates the worker.
  */
 export const workerClient = Effect.fnUntraced(function* ({
