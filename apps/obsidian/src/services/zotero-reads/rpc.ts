@@ -20,6 +20,7 @@ import type {
   Note,
   NoteSource,
   TemplateCollection,
+  ZoteroUserIdentity,
 } from "@zotlit/db";
 import type { AnnotationPositionRaw } from "@zotlit/db";
 import type { ItemFields } from "@zotlit/zotero-types";
@@ -290,6 +291,15 @@ type _ItemDisplayRef = Expect<
   >
 >;
 
+export const ZoteroUserIdentitySchema = Schema.Struct({
+  userID: Schema.NullOr(Schema.Number),
+  localUserKey: Schema.NullOr(Schema.String),
+  username: Schema.NullOr(Schema.String),
+});
+type _ZoteroUserIdentity = Expect<
+  Equals<typeof ZoteroUserIdentitySchema.Type, ZoteroUserIdentity>
+>;
+
 /** The inputs of one graph Work Label; the renderer formats the label. */
 export const WorkLabelSourceSchema = Schema.Struct({
   libraryID: Schema.Number,
@@ -487,6 +497,21 @@ export class ZoteroReads extends RpcGroup.make(
   Rpc.make("IndexSignature", {
     payload: { libraryID: Schema.Number, ...snapshot },
     success: IndexSignatureSchema,
+    error: ReadError,
+  }),
+  /** The signed-in account a CSL item id and an item URI are built from. */
+  Rpc.make("ZoteroIdentity", {
+    payload: snapshot,
+    success: ZoteroUserIdentitySchema,
+    error: ReadError,
+  }),
+  /**
+   * The attachment `itemID` names, or the attachments of the regular item it
+   * names; empty for an unknown item.
+   */
+  Rpc.make("AttachmentsAt", {
+    payload: { itemID: Schema.Number, ...snapshot },
+    success: Schema.Array(AttachmentSchema),
     error: ReadError,
   }),
 ) {}

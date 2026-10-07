@@ -9,6 +9,7 @@ import {
   getAccountUserID,
   getAnnotationsByKey,
   getAnnotationsByParent,
+  getAttachmentByItemId,
   getAttachmentByKey,
   getAttachmentPage,
   getAttachmentsByParents,
@@ -23,6 +24,7 @@ import {
   getLibraries,
   getNoteByKey,
   getRelatedKeysByItemID,
+  getZoteroIdentity,
   isChildItemFields,
   resolveIndexedKeyLibrary,
 } from "@zotlit/db";
@@ -380,6 +382,17 @@ export function handlersLayer(options?: HandlersOptions) {
           withClient(snapshot, (client) =>
             getIndexSignature(client, libraryID),
           ),
+
+        ZoteroIdentity: ({ snapshot }) =>
+          withClient(snapshot, getZoteroIdentity),
+
+        AttachmentsAt: ({ itemID, snapshot }) =>
+          withClient(snapshot, (client) => {
+            const attachment = getAttachmentByItemId(client, itemID);
+            return attachment
+              ? [attachment]
+              : getAttachmentsByParents(client, [itemID]);
+          }),
       });
     }),
   );

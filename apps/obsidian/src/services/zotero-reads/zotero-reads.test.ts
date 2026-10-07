@@ -858,3 +858,29 @@ describe("ZoteroReads connection lifetime", () => {
     expect(seen).toBe(2);
   });
 });
+
+describe("ZoteroReads citation operations", () => {
+  it("ZoteroIdentity returns the signed-in account", async () => {
+    const { open } = fixtureOpener();
+    const identity = await withReads(open, (reads) => reads.ZoteroIdentity({}));
+    expect(identity).toEqual({
+      userID: 42,
+      localUserKey: null,
+      username: "reader",
+    });
+  });
+
+  it("AttachmentsAt returns an attachment itself, a regular item's attachments, or nothing", async () => {
+    const { open } = fixtureOpener();
+    const [own, children, none] = await withReads(open, (reads) =>
+      Effect.all([
+        reads.AttachmentsAt({ itemID: 10 }),
+        reads.AttachmentsAt({ itemID: 1 }),
+        reads.AttachmentsAt({ itemID: 999 }),
+      ]),
+    );
+    expect(own).toMatchObject([{ itemID: 10, key: "ATCH2345" }]);
+    expect(children).toMatchObject([{ itemID: 10, key: "ATCH2345" }]);
+    expect(none).toEqual([]);
+  });
+});
