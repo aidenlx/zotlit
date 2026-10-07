@@ -397,7 +397,7 @@ function nextAnnouncement(resolver: AttachmentResolver): Promise<void> {
   return promise;
 }
 
-/** A `linked_file` row of the shape `getAllAttachments` returns. */
+/** A `linked_file` row of the shape `getAttachmentPage` returns. */
 function linkedAttachment({
   itemID,
   key,

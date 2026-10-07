@@ -395,8 +395,8 @@ export function buildAnnotationParents(
       });
       parentItem = withItemPreview({
         ...parentBaseData,
-        // Unresolved: this path runs synchronously on dragstart and stays
-        // cheap by design (see zt-template-item.ts's TemplateParentItemData).
+        // Unresolved by design (see zt-template-item.ts's
+        // TemplateParentItemData).
         notePath: null,
         noteLink: () => null,
         ...resolveItemCore({

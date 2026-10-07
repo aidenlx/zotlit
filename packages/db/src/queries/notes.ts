@@ -132,14 +132,6 @@ export function getNoteByKey(
 
 // --- Queries for explicit note-import (Stage 9.3) ---
 
-const noteByItemIdQuery = defineQuery<{ itemID: number }>()(
-  (db, { placeholder }) =>
-    db.query.itemNotes.findMany({
-      where: { itemID: placeholder("itemID"), item: { deletedItem: false } },
-      ...noteOptions,
-    }),
-);
-
 /** A note found by its own item ID, live or in Zotero's trash. */
 export interface NoteRef {
   note: ChildNote;
@@ -226,19 +218,4 @@ export function getChildNotesByParentIDs(
       toChildNote(row, resolveGroupID(db, row.item.libraryID, memo)),
     ),
   );
-}
-
-/**
- * Fetch a note's full body by its global item ID. Used by the explicit import
- * runner to hydrate one note at a time under the concurrency limiter.
- */
-export function getNoteByItemID(
-  db: NodeDatabaseClient,
-  itemID: number,
-  opts?: { memo?: GroupIDMemo },
-): Note | null {
-  const row = noteByItemIdQuery.prepared(db).all({ itemID })[0];
-  if (!row) return null;
-  const memo = opts?.memo ?? new Map();
-  return toNote(row, resolveGroupID(db, row.item.libraryID, memo));
 }
