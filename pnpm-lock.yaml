@@ -209,6 +209,9 @@ catalogs:
     hono:
       specifier: ^4.13.0
       version: 4.13.0
+    jieba-wasm:
+      specifier: 2.4.0
+      version: 2.4.0
     monkey-around:
       specifier: 3.0.0
       version: 3.0.0
@@ -732,6 +735,9 @@ importers:
       happy-dom:
         specifier: 'catalog:'
         version: 20.9.0
+      jieba-wasm:
+        specifier: 'catalog:'
+        version: 2.4.0
       obsidian:
         specifier: workspace:*
         version: link:../../packages/obsidian-api
@@ -998,7 +1004,7 @@ importers:
         specifier: workspace:*
         version: link:../config
       jieba-wasm:
-        specifier: ^2.4.0
+        specifier: 'catalog:'
         version: 2.4.0
       oxlint:
         specifier: 'catalog:'

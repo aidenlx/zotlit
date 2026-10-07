@@ -18,6 +18,7 @@ import { CapabilityNotices } from "./annotation-repository/notices";
 import { AnnotationRepository } from "./annotation-repository/service";
 import { AttachmentImportService } from "./attachment-import/service";
 import { AttachmentResolver } from "./attachment-resolver/service";
+import { createChineseSegmenterService } from "./chinese-segmenter/service";
 import { CitationIndex } from "./citation-index/service";
 import { CitationPopover } from "./citation-popover/service";
 import { CitationText } from "./citation-text/service";
@@ -524,6 +525,9 @@ export function buildServices(
     })
     .use({
       pandocEngine: () => createPandocEngineService(plugin.app),
+    })
+    .use({
+      chineseSegmenter: () => createChineseSegmenterService(plugin.app),
     })
     .use({
       bibliographyRender: ({

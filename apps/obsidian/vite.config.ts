@@ -17,6 +17,7 @@ import {
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import packageJson from "./package.json" with { type: "json" };
+import { resolveChineseSegmenterPin } from "./scripts/chinese-segmenter.ts";
 import { deriveDevVersion } from "./scripts/dev-version.ts";
 import { embeddedWorker } from "./scripts/embedded-worker.ts";
 import { pandocFilterVariants } from "./scripts/lua-filter.ts";
@@ -48,6 +49,10 @@ const fullContractIRPath = fileURLToPath(
 // Resolved once per Vite process, so a watch rebuild never re-runs the cross-check.
 const pandocEngine = await resolvePandocEnginePin();
 console.log(`Pinning Pandoc ${pandocEngine.version}: ${pandocEngine.url}`);
+const chineseSegmenter = await resolveChineseSegmenterPin();
+console.log(
+  `Pinning jieba-wasm ${chineseSegmenter.version}: ${chineseSegmenter.url}`,
+);
 
 /** `obsidian-vault.ts create` seeds and registers this folder with Obsidian. */
 function getDevVaultPluginDir(pluginId: string) {
@@ -86,6 +91,7 @@ export default defineConfig(({ mode }) => {
       parseMinElectronVersion(packageJson),
     ),
     __PANDOC_ENGINE__: JSON.stringify(pandocEngine),
+    __CHINESE_SEGMENTER__: JSON.stringify(chineseSegmenter),
     "process.env.NODE_ENV": JSON.stringify(mode),
   };
 
