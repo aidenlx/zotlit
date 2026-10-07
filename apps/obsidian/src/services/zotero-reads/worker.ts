@@ -8,6 +8,7 @@ import { RpcServer, RpcWorker } from "effect/rpc";
 
 import { handlersLayer } from "./handlers";
 import { ReadsConfigSchema, ZoteroReads } from "./rpc";
+import { readSegmenterFromOpfs } from "./segmenter";
 import { layerSource } from "./source";
 import { WORKER_CLOSED } from "./worker-signal";
 
@@ -40,9 +41,11 @@ const HandlersLive = Layer.unwrap(
   RpcWorker.initialMessage(ReadsConfigSchema).pipe(
     Effect.orDie,
     Effect.map((initial) =>
-      handlersLayer({ locale: initial.locale }).pipe(
-        Layer.provide(layerSource({ initial })),
-      ),
+      handlersLayer({
+        locale: initial.locale,
+        chineseSegmenter: initial.chineseSegmenter,
+        readSegmenter: readSegmenterFromOpfs,
+      }).pipe(Layer.provide(layerSource({ initial }))),
     ),
   ),
 );

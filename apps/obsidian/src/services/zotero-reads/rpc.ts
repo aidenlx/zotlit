@@ -394,6 +394,16 @@ export const ItemSnapshotRequestSchema = Schema.Struct({
 
 // --- Lifecycle ------------------------------------------------------------
 
+/**
+ * A verified Chinese Segmenter binary in the device-wide OPFS store: the file
+ * `zotlit/<directory>/<name>`. Only verified bytes get that name.
+ */
+export const SegmenterBinarySchema = Schema.Struct({
+  directory: Schema.String,
+  name: Schema.String,
+});
+export type SegmenterBinary = typeof SegmenterBinarySchema.Type;
+
 /** Settings that drive the source; `Configure` pushes them. */
 export const ReadsConfigSchema = Schema.Struct({
   databasePath: Schema.String,
@@ -401,6 +411,8 @@ export const ReadsConfigSchema = Schema.Struct({
   autoRefresh: Schema.Boolean,
   /** The UI locale the Item Index formats creator names with; `null` for none. */
   locale: Schema.NullOr(Schema.String),
+  /** The installed Chinese Segmenter binary the Item Index cuts CJK text with; `null` for none. */
+  chineseSegmenter: Schema.NullOr(SegmenterBinarySchema),
 });
 export type ReadsConfig = typeof ReadsConfigSchema.Type;
 type _ReadMode = Expect<Equals<ReadsConfig["readMode"], ZoteroReadMode>>;

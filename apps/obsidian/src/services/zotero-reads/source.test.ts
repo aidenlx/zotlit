@@ -63,6 +63,7 @@ function config(patch: Partial<ReadsConfig> = {}): ReadsConfig {
     readMode: "copy",
     autoRefresh: true,
     locale: null,
+    chineseSegmenter: null,
     ...patch,
   };
 }

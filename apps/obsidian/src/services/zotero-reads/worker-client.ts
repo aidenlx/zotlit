@@ -5,28 +5,45 @@ import type { Scope } from "effect";
 import { getLanguage } from "obsidian";
 import workerSource from "virtual:zotero-reads-worker";
 
+import { CHINESE_SEGMENTER } from "@/services/chinese-segmenter/service";
+import type { ChineseSegmenterService } from "@/services/chinese-segmenter/service";
+import { cachedBinaryName } from "@/services/managed-binary/service";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import type { ZoteroReadsClient } from "./in-process";
-import type { ReadsConfig } from "./rpc";
+import type { ReadsConfig, SegmenterBinary } from "./rpc";
 import { connectWorker, makeWorkerReads } from "./worker-host";
 
 export interface WorkerClientDeps {
   settings: SettingsService;
   zoteroPref: ZoteroPrefService;
+  chineseSegmenter: ChineseSegmenterService;
+}
+
+/** The verified binary in the device-wide store, once the Chinese Segmenter is installed. */
+function installedSegmenter(
+  chineseSegmenter: ChineseSegmenterService,
+): SegmenterBinary | null {
+  return chineseSegmenter.getStatus().kind === "installed"
+    ? {
+        directory: CHINESE_SEGMENTER.id,
+        name: cachedBinaryName(CHINESE_SEGMENTER.pin),
+      }
+    : null;
 }
 
 function readsConfig(
   settings: Readonly<Settings>,
-  zoteroPref: ZoteroPrefService,
+  { zoteroPref, chineseSegmenter }: Omit<WorkerClientDeps, "settings">,
 ): ReadsConfig {
   return {
     databasePath: zoteroPref.databasePath,
     readMode: settings["zotero.read-mode"],
     autoRefresh: settings["zotero.auto-refresh"],
     locale: getLanguage(),
+    chineseSegmenter: installedSegmenter(chineseSegmenter),
   };
 }
 
@@ -34,24 +51,27 @@ const sameConfig = (a: ReadsConfig, b: ReadsConfig) =>
   a.databasePath === b.databasePath &&
   a.readMode === b.readMode &&
   a.autoRefresh === b.autoRefresh &&
-  a.locale === b.locale;
+  a.locale === b.locale &&
+  a.chineseSegmenter?.name === b.chineseSegmenter?.name &&
+  a.chineseSegmenter?.directory === b.chineseSegmenter?.directory;
 
 /**
  * A client on the ZoteroReads Web Worker for the caller's scope. Every worker
  * it spawns starts with the current database path, Read Mode, auto-refresh
- * setting, and UI locale; a later change reaches the live worker through
+ * setting, UI locale, and installed Chinese Segmenter; a later change reaches the live worker through
  * `Configure`. The scope's end terminates the worker.
  */
 export const workerClient = Effect.fnUntraced(function* ({
   settings,
   zoteroPref,
+  chineseSegmenter,
 }: WorkerClientDeps): Effect.fn.Return<ZoteroReadsClient, never, Scope.Scope> {
   let config = readsConfig(
     yield* Effect.promise(async () => {
-      await zoteroPref.ready;
+      await Promise.all([zoteroPref.ready, chineseSegmenter.ready]);
       return settings.loaded;
     }),
-    zoteroPref,
+    { zoteroPref, chineseSegmenter },
   );
   // Pushes run in this scope, so the scope's end interrupts one in flight.
   const run = yield* FiberSet.runtime(yield* FiberSet.make())();
@@ -65,7 +85,7 @@ export const workerClient = Effect.fnUntraced(function* ({
   const push = (): void => {
     const current = settings.current;
     if (!current) return;
-    const next = readsConfig(current, zoteroPref);
+    const next = readsConfig(current, { zoteroPref, chineseSegmenter });
     if (sameConfig(next, config)) return;
     config = next;
     run(Effect.ignore(reads.Configure(next)));
@@ -73,6 +93,7 @@ export const workerClient = Effect.fnUntraced(function* ({
   const unsubscribes = [
     settings.subscribe(push),
     zoteroPref.on("resolved-changed", push),
+    chineseSegmenter.subscribe(push),
   ];
   yield* Effect.addFinalizer(() =>
     Effect.sync(() => {

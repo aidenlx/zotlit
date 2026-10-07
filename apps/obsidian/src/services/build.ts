@@ -152,11 +152,14 @@ export function buildServices(
         new LocalServerService({ settings, zoteroPref, noteIndex }),
     })
     .use({
+      chineseSegmenter: () => createChineseSegmenterService(plugin.app),
+    })
+    .use({
       // The Zotero database lives in a Web Worker, which owns the connection;
       // the renderer reads it only through ZoteroReads.
-      zoteroReads: ({ settings, zoteroPref }) =>
+      zoteroReads: ({ settings, zoteroPref, chineseSegmenter }) =>
         new ZoteroReadsService({
-          client: workerClient({ settings, zoteroPref }),
+          client: workerClient({ settings, zoteroPref, chineseSegmenter }),
         }),
     })
     .use({
@@ -525,9 +528,6 @@ export function buildServices(
     })
     .use({
       pandocEngine: () => createPandocEngineService(plugin.app),
-    })
-    .use({
-      chineseSegmenter: () => createChineseSegmenterService(plugin.app),
     })
     .use({
       bibliographyRender: ({

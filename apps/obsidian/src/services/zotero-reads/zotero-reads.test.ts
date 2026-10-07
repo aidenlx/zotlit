@@ -9,6 +9,8 @@ import {
   Stream,
 } from "effect";
 import { TestClock } from "effect/testing";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -29,7 +31,7 @@ import type { HandlersOptions } from "./handlers";
 import { makeInProcessClient } from "./in-process";
 import type { ZoteroReadsClient } from "./in-process";
 import { DbUnavailable, SnapshotExpired, SnapshotId } from "./rpc";
-import type { ChangeEvent, ReadsConfig } from "./rpc";
+import type { ChangeEvent, ReadsConfig, SegmenterBinary } from "./rpc";
 import { inProcessReadsService, sharedClientOpener } from "./test-utils";
 
 /**
@@ -1346,6 +1348,7 @@ describe("ZoteroReads connection lifetime", () => {
       readMode: "immutable",
       autoRefresh: true,
       locale: null,
+      chineseSegmenter: null,
     };
     const seen = await withReads(open, (reads) =>
       Effect.gen(function* () {
@@ -1784,6 +1787,7 @@ describe("ZoteroReads SearchItems", () => {
           readMode: "auto",
           autoRefresh: true,
           locale: null,
+          chineseSegmenter: null,
         });
         return yield* eventually(
           reads.SearchItems({ ...everything, query: "quagga" }),
@@ -1946,6 +1950,7 @@ describe("ZoteroReads SearchItems", () => {
       readMode: "auto",
       autoRefresh: true,
       locale,
+      chineseSegmenter: null,
     });
     const builds = await withConnection(quiet, (reads) =>
       Effect.gen(function* () {
@@ -1985,5 +1990,171 @@ describe("ZoteroReads SearchItems", () => {
     );
     expect(result.searching).toBe(true);
     expect(result.order).toEqual(["ping", "search"]);
+  });
+
+  describe("with the Chinese Segmenter", () => {
+    // `Intl.Segmenter` keeps `长江流域` whole; jieba's `cut_for_search` adds
+    // `长江`, `江流`, `流域`. So `流域` hits only through jieba.
+    const CHINESE_TITLE =
+      "update itemDataValues set value = '长江流域的城市化研究' where valueID = 3;";
+    const JIEBA_ONLY = inLibrary(1, "流域");
+    const WHOLE_RUN = inLibrary(1, "长江流域");
+    const INSTALLED: SegmenterBinary = {
+      directory: "chinese-segmenter",
+      name: "pinned.wasm",
+    };
+    /** The web-target binary the plugin pins, from the dev dependency. */
+    const jiebaBytes = () =>
+      readFile(
+        fileURLToPath(
+          new URL(
+            "jieba_rs_wasm_bg.wasm",
+            import.meta.resolve("jieba-wasm/web"),
+          ),
+        ),
+      );
+    const config = (chineseSegmenter: SegmenterBinary | null): ReadsConfig => ({
+      databasePath: "/Zotero/zotero.sqlite",
+      readMode: "auto",
+      autoRefresh: true,
+      locale: null,
+      chineseSegmenter,
+    });
+
+    /**
+     * Run `body` against an in-process client over a connection that rebinds
+     * without a new client on `Configure`, so only the Segmenter changes.
+     */
+    const withSegmenter = <A, E>(
+      options: HandlersOptions,
+      body: (
+        reads: ZoteroReadsClient,
+        ran: (sql: string) => number,
+      ) => Effect.Effect<A, E, Scope.Scope>,
+    ): Promise<A> => {
+      const { open, ran } = fixtureOpener(() => CHINESE_TITLE);
+      const quiet = Layer.effect(Connection)(
+        Effect.map(Effect.service(Connection), (base) =>
+          Connection.of({ ...base, configure: () => Effect.void }),
+        ),
+      ).pipe(Layer.provide(layerRcRef(open)));
+      return Effect.runPromise(
+        Effect.gen(function* () {
+          const reads = yield* makeInProcessClient(options);
+          return yield* body(reads, ran);
+        }).pipe(Effect.scoped, Effect.provide(quiet)),
+      );
+    };
+
+    it("an installed binary at start cuts Chinese titles and queries with jieba", async () => {
+      const bytes = await jiebaBytes();
+      const asked: SegmenterBinary[] = [];
+      const hits = await withSegmenter(
+        {
+          chineseSegmenter: INSTALLED,
+          readSegmenter: async (binary) => {
+            asked.push(binary);
+            return bytes;
+          },
+        },
+        (reads) => reads.SearchItems(JIEBA_ONLY),
+      );
+      expect(asked).toEqual([INSTALLED]);
+      expect(keysOf(hits)).toEqual(["RELA2345"]);
+    });
+
+    it("with no binary, CJK runs segment through Intl.Segmenter", async () => {
+      const result = await withSegmenter({}, (reads) =>
+        Effect.all({
+          part: reads.SearchItems(JIEBA_ONLY),
+          whole: reads.SearchItems(WHOLE_RUN),
+        }),
+      );
+      expect(keysOf(result.part)).toEqual([]);
+      expect(keysOf(result.whole)).toEqual(["RELA2345"]);
+    });
+
+    it("a Configure that installs the binary rebuilds every held index once", async () => {
+      const bytes = await jiebaBytes();
+      const result = await withSegmenter(
+        { readSegmenter: async () => bytes },
+        (reads, ran) =>
+          Effect.gen(function* () {
+            const before = yield* reads.SearchItems(JIEBA_ONLY);
+            yield* reads.SearchItems(everything);
+            yield* reads.Configure(config(INSTALLED));
+            const after = yield* eventually(
+              reads.SearchItems(JIEBA_ONLY),
+              (hits) => hits.length > 0,
+            );
+            yield* eventually(
+              Effect.sync(() => ran(ID_READ)),
+              (count) => count >= 6,
+            );
+            // The same binary again changes nothing.
+            yield* reads.Configure(config(INSTALLED));
+            yield* reads.SearchItems(everything);
+            yield* reads.SearchItems(JIEBA_ONLY);
+            return { before, after, builds: ran(ID_READ) };
+          }),
+      );
+      expect(keysOf(result.before)).toEqual([]);
+      expect(keysOf(result.after)).toEqual(["RELA2345"]);
+      // One ids read per Library per build: [1] and [1, 2], each built twice.
+      expect(result.builds).toBe(6);
+    });
+
+    it("a Configure that uninstalls the binary falls back to Intl.Segmenter and still answers", async () => {
+      const bytes = await jiebaBytes();
+      const result = await withSegmenter(
+        { chineseSegmenter: INSTALLED, readSegmenter: async () => bytes },
+        (reads) =>
+          Effect.gen(function* () {
+            const installed = yield* reads.SearchItems(JIEBA_ONLY);
+            yield* reads.Configure(config(null));
+            const part = yield* eventually(
+              reads.SearchItems(JIEBA_ONLY),
+              (hits) => hits.length === 0,
+            );
+            const whole = yield* reads.SearchItems(WHOLE_RUN);
+            return { installed, part, whole };
+          }),
+      );
+      expect(keysOf(result.installed)).toEqual(["RELA2345"]);
+      expect(keysOf(result.part)).toEqual([]);
+      expect(keysOf(result.whole)).toEqual(["RELA2345"]);
+    });
+
+    it.each([
+      ["missing", () => Promise.reject(new Error("NotFoundError"))],
+      ["corrupt", () => Promise.resolve(new Uint8Array([0, 1, 2, 3]))],
+    ])(
+      "a %s binary at start falls back to Intl.Segmenter and search answers",
+      async (_, readSegmenter) => {
+        const result = await withSegmenter(
+          { chineseSegmenter: INSTALLED, readSegmenter },
+          (reads) =>
+            Effect.all({
+              part: reads.SearchItems(JIEBA_ONLY),
+              whole: reads.SearchItems(WHOLE_RUN),
+            }),
+        );
+        expect(keysOf(result.part)).toEqual([]);
+        expect(keysOf(result.whole)).toEqual(["RELA2345"]);
+      },
+    );
+
+    it("a corrupt binary through Configure keeps search answering", async () => {
+      const result = await withSegmenter(
+        { readSegmenter: async () => new Uint8Array([0, 1, 2, 3]) },
+        (reads) =>
+          Effect.gen(function* () {
+            yield* reads.SearchItems(WHOLE_RUN);
+            yield* reads.Configure(config(INSTALLED));
+            return yield* reads.SearchItems(WHOLE_RUN);
+          }),
+      );
+      expect(keysOf(result)).toEqual(["RELA2345"]);
+    });
   });
 });
