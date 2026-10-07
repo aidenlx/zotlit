@@ -54,6 +54,8 @@ const READ_OPERATIONS = [
   "ItemType",
   "AnnotViewAttachments",
   "ReaderTargetKeys",
+  "AttachmentsAt",
+  "AttachmentSources",
   "ScopeItemIDs",
   "NoteRefs",
   "ChildNoteRefs",

@@ -168,7 +168,7 @@ async function fixture(mode = "normal") {
             [Symbol.asyncDispose]: async () => {},
           }),
         },
-      })({ ...options, client }),
+      })(options),
   });
   const { reads } = await stack.use(
     inProcessReadsService(sharedClientOpener(client)),

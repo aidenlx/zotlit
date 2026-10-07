@@ -3,11 +3,7 @@ import { basename, dirname, join } from "node:path/posix";
 import { getFrontMatterInfo } from "obsidian";
 import type { TFile } from "obsidian";
 
-import {
-  buildNoteContextFromSource,
-  fetchAnnotationsTemplateData,
-  getAnnotationsByItemId,
-} from "@zotlit/db";
+import { buildNoteContextFromSource, getAnnotationsByItemId } from "@zotlit/db";
 import type {
   CitationVariant,
   CiteRef,
@@ -20,11 +16,7 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import type { Emitter } from "@zotlit/shared/nanoevents";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
-import {
-  annotationCitation,
-  buildAnnotationResolvers,
-  renderAnnotations,
-} from "@/lib/annotation-render";
+import { renderAnnotations } from "@/lib/annotation-render";
 import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
@@ -77,6 +69,8 @@ import { ProfileAnnotationError } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
+import { renderAnnotationCitation } from "./annotation-citation";
+import type { AnnotationCitation } from "./annotation-citation";
 import { applyComposedFrontmatter, composeLiteratureNote } from "./compose";
 import type { ComposeFrontmatterInput } from "./compose";
 import {
@@ -436,7 +430,7 @@ export interface NoteFeature {
     },
   ): string | null;
   /** @see renderAnnotationCitation */
-  renderAnnotationCitation(annotationItemId: number): string | null;
+  renderAnnotationCitation(annotationKey: string): Promise<AnnotationCitation>;
   prepareAnnotationInsert(
     options: AnnotationInsertOptions,
   ): ReturnType<typeof prepareAnnotationInsert>;
@@ -551,8 +545,8 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
     renderCitation: (items, variant) => renderCitation(ctx, items, variant),
     renderAnnotation: (annotationItemId, options) =>
       renderAnnotation(ctx, annotationItemId, options),
-    renderAnnotationCitation: (annotationItemId) =>
-      renderAnnotationCitation(ctx, annotationItemId),
+    renderAnnotationCitation: (annotationKey) =>
+      renderAnnotationCitation(ctx, annotationKey),
     prepareAnnotationInsert: (options) => prepareAnnotationInsert(ctx, options),
     on: (event, cb) => events.on(event, cb),
   };
@@ -979,6 +973,7 @@ async function writeNewNote(
   const outcomes = resolveOutcomeScope(options.outcomes, stack);
 
   const excerptImages = ctx.excerptImages?.({
+    reads: options.reads,
     notePath: path,
     settings,
     outcomes,
@@ -1403,6 +1398,7 @@ async function writeNoteUpdate(
   const excerptImages =
     options.scope !== "metadata"
       ? ctx.excerptImages?.({
+          reads: options.reads,
           notePath: file.path,
           settings: profile.settings,
           previousNote: file,
@@ -1710,45 +1706,6 @@ function renderAnnotation(
 }
 
 /**
- * Render an annotation's page-pinned citation for the annot view's "Copy
- * citation" action: the same `cite`-template path {@link renderAnnotation}'s
- * `zt.citation` field uses, called directly (no excerpt image import needed
- * for a citation string, so the `attachmentImport` port is stubbed).
- * Returns `null` when the annotation, its parent item, or the parent's
- * citation key can't be resolved, or the database/template isn't ready.
- */
-function renderAnnotationCitation(
-  ctx: SyncRenderDeps,
-  annotationItemId: number,
-): string | null {
-  const { db } = ctx;
-  if (db.state !== "ready") return null;
-  if (!ctx.template.loaded || !ctx.profile.loaded) return null;
-
-  const [annotation] = getAnnotationsByItemId(db.client, [annotationItemId]);
-  if (!annotation) return null;
-
-  const resolvers = buildAnnotationResolvers({
-    zoteroPref: ctx.zoteroPref,
-    attachmentImport: {
-      decide: (path, origin) => ({
-        approved: false,
-        path,
-        origin,
-        reason: "no-trusted-root",
-      }),
-      resolveLink: () => () => "",
-    },
-  });
-  const data = fetchAnnotationsTemplateData(db.client, [annotation], {
-    resolvers,
-  }).get(annotation.key);
-  if (!data) return null;
-
-  return annotationCitation(data.parentItem, data.pageLabel, ctx.template);
-}
-
-/**
  * Assumes the caller has settled note-index and template readiness (and pinned
  * a Snapshot via `acquireRead`); {@link updateNote} and {@link overwriteNote} do
  * so before acquiring the lease. `template.ready` in particular gates
@@ -1786,6 +1743,7 @@ async function contextForIndexedKey(
   });
   const excerptImages = options.previousNote
     ? ctx.excerptImages?.({
+        reads,
         notePath: sourcePath,
         settings,
         previousNote: options.previousNote,

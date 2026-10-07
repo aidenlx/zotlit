@@ -180,7 +180,7 @@ async function fixture(
     attachmentImport: attachments,
     excerptImages: (options) => {
       scopes.push(options.outcomes);
-      return preparation({ ...options, client });
+      return preparation(options);
     },
   });
   const { reads } = await stack.use(

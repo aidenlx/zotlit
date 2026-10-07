@@ -45,7 +45,6 @@ import {
   createPdfReader,
   toObsidianOpenable,
 } from "@/services/attachment-open/actions";
-import type { DatabaseService } from "@/services/database/service";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import { savedExcerptRequest } from "@/services/excerpt-image/request";
 import type { ExcerptRequest } from "@/services/excerpt-image/service";
@@ -146,9 +145,7 @@ const FILTER_STORAGE_KEY_PREFIX = "zotlit-annot-filter-";
  */
 export interface AnnotViewDeps {
   app: App;
-  /** What an Excerpt Image request resolves its files through. */
-  db: Pick<DatabaseService, "state" | "client">;
-  reads: Pick<ZoteroReadsService, "ready" | "state" | "on">;
+  reads: Pick<ZoteroReadsService, "ready" | "state" | "on" | "acquireRead">;
   libraryScope: Pick<LibraryScopeService, "libraryRows" | "on">;
   liveUpdate: Pick<
     LocalServerService,
@@ -426,8 +423,6 @@ export class AnnotationView extends ItemView implements HistorySurface {
       annotations: this.#deps.annotations,
       controls: (annot) => this.#cardControls(annot),
       selectedCards: () => this.#selectedCards(),
-      resolveAnnotationID: (indexedKey) =>
-        this.#resolveAnnotationID(indexedKey),
       libraryTagNames: (annot) => this.#deps.libraryTagNames(annot.key),
       getState: () => this.#store.getState(),
       setSelectedAttachmentKey: (key) =>
@@ -1327,10 +1322,10 @@ export class AnnotationView extends ItemView implements HistorySurface {
     annotation: AnnotationRecord;
     source: AnnotationSource | null;
     sourceScope: string | null;
-  }): ExcerptRequest | null {
+  }): Promise<ExcerptRequest | null> {
     return savedExcerptRequest({
       ...input,
-      db: this.#deps.db,
+      zoteroReads: this.#deps.reads,
       paths: this.#deps.zoteroPref,
     });
   }
@@ -1698,37 +1693,6 @@ export class AnnotationView extends ItemView implements HistorySurface {
         groupID: annotation.groupID,
       }),
     );
-  }
-
-  /**
-   * The numeric id the Zotero database holds for an Annotation, for the note
-   * templates that read the database. `null` for an Annotation the Zotero
-   * Local API answered before SQLite caught up — which is the whole reason the
-   * cards are keyed by Indexed Key rather than by this.
-   *
-   * @see apps/obsidian/docs/adr/0033-zotero-object-identity-is-the-indexed-key-server-id-is-source-data.md
-   */
-  async #resolveAnnotationID(indexedKey: string): Promise<number | null> {
-    const parentKey = this.#store
-      .getState()
-      .annotations?.find((record) => record.key === indexedKey)?.parentKey;
-    if (parentKey === undefined) return null;
-    try {
-      const { reads } = await this.#deps.reads.ready;
-      const { annotations } = await Effect.runPromise(
-        reads.AnnotationsOfAttachment({ attachmentKey: parentKey }),
-      );
-      return (
-        annotations.find((annotation) => annotation.indexedKey === indexedKey)
-          ?.itemID ?? null
-      );
-    } catch (error) {
-      logger.warn("Failed to name an annotation in the Zotero database", {
-        indexedKey,
-        error,
-      });
-      return null;
-    }
   }
 
   #clearState(): void {

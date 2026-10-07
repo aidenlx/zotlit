@@ -46,3 +46,4 @@ export {
   type UpdateResult,
   type UpdateScope,
 } from "./operations";
+export { type AnnotationCitation } from "./annotation-citation";

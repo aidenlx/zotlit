@@ -7,9 +7,11 @@ import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
 
 import { buildColorMenu } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
 import type { MenuAlign } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
+import { requireElectron } from "@/lib/require";
 import * as toast from "@/lib/toast";
 import type {
   AnnotationRecord,
@@ -25,7 +27,7 @@ import type {
 } from "@/services/excerpt-image/display";
 import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
-import type { NoteFeature } from "@/services/note-feature";
+import type { AnnotationCitation, NoteFeature } from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
 
 import { chooseAttachment } from "./attachment-suggester";
@@ -39,6 +41,8 @@ import type { ExcerptImageTarget } from "./excerpt-image-state";
 import { buildHeaderMenu } from "./menus";
 import { attachmentLine, headerMenu } from "./presentation";
 import type { AnnotState, FollowMode } from "./store";
+
+const logger = getLogger(["views", "annot-view"]);
 
 export interface AnnotActions {
   /**
@@ -207,9 +211,12 @@ export interface AnnotActions {
   openExcerptImage(): ExcerptDisplayDemand;
   /**
    * The request one card's target resolves, or `null` where nothing can: no
-   * Annotation Source, another Zotero data directory, or an unready database.
+   * Annotation Source, another Zotero data directory, or a database that
+   * cannot answer.
    */
-  excerptImageRequest(target: ExcerptImageTarget): ExcerptRequest | null;
+  excerptImageRequest(
+    target: ExcerptImageTarget,
+  ): Promise<ExcerptRequest | null>;
   getBacklink(annot: AnnotationRecord): string | undefined;
   /** Render a comment's Zotero HTML as Markdown; returns a disposer. */
   renderComment: CommentRenderer;
@@ -250,15 +257,6 @@ export interface AnnotActionDeps {
   controls: (annot: AnnotationRecord) => CardControls;
   /** The Selected Cards, in list order. */
   selectedCards: () => readonly AnnotationRecord[];
-  /**
-   * The numeric id the Zotero database holds for an Annotation, or `null` for
-   * one it does not hold yet — an Annotation created through the Zotero Local
-   * API, which the card shows before SQLite knows it. The note templates read
-   * the database, so they can render only what it holds.
-   *
-   * @see apps/obsidian/docs/adr/0033-zotero-object-identity-is-the-indexed-key-server-id-is-source-data.md
-   */
-  resolveAnnotationID: (indexedKey: string) => Promise<number | null>;
   libraryTagNames: AnnotActions["libraryTagNames"];
   /**
    * What the view is showing right now. A native menu is built at the moment
@@ -535,24 +533,32 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
         .setTitle(m.annot_view_menu_copy_citation())
         .setIcon("quote")
         .onClick(async () => {
-          const annotationID = await deps.resolveAnnotationID(annot.key);
-          if (annotationID === null) {
+          let citation: AnnotationCitation;
+          try {
+            citation = await deps.noteFeature.renderAnnotationCitation(
+              annot.key,
+            );
+          } catch (e) {
+            if (e instanceof InertTemplateError) {
+              new BaseNotice(e.message);
+              return;
+            }
+            logger.warn("Copy citation could not read the annotation", {
+              annotationKey: annot.key,
+              error: e,
+            });
+            new BaseNotice(m.annot_view_copy_failed());
+            return;
+          }
+          if (citation.kind === "not-in-database") {
             new BaseNotice(m.annot_view_annotation_not_in_database());
             return;
           }
-          let citation: string | null;
-          try {
-            citation = deps.noteFeature.renderAnnotationCitation(annotationID);
-          } catch (e) {
-            if (!(e instanceof InertTemplateError)) throw e;
-            new BaseNotice(e.message);
-            return;
-          }
-          if (citation === null) {
+          if (citation.kind === "no-citation-key") {
             new BaseNotice(m.annot_view_copy_citation_no_key());
             return;
           }
-          void toast.promise(navigator.clipboard.writeText(citation), {
+          void toast.promise(writeClipboard(citation.text), {
             success: m.annot_view_copied_citation(),
             error: m.annot_view_copy_failed(),
           });
@@ -809,9 +815,25 @@ export const NOOP_ACTIONS: AnnotActions = {
   onDiscardConflict: () => {},
   onRefresh: () => {},
   openExcerptImage: () => NOOP_DEMAND,
-  excerptImageRequest: () => null,
+  excerptImageRequest: async () => null,
   getBacklink: () => undefined,
   renderComment: () => () => {},
 };
 
 export const AnnotActionsContext = createContext<AnnotActions>(NOOP_ACTIONS);
+
+/**
+ * Put `text` on the clipboard after an awaited read. Obsidian lets
+ * `navigator.clipboard` write after an `await`; where a platform refuses that
+ * write, Electron's own clipboard takes the text.
+ */
+async function writeClipboard(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (error) {
+    logger.debug("The clipboard refused the write; Electron writes it", {
+      error,
+    });
+    requireElectron().clipboard.writeText(text);
+  }
+}

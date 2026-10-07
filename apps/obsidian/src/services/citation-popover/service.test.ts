@@ -3,7 +3,7 @@ import type { TFile } from "obsidian";
 import { act } from "preact/test-utils";
 import type { ReactElement } from "react";
 import { createRoot } from "react-dom/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getItemsByKey } from "@zotlit/db";
 import { makeCreator, makeItem } from "@zotlit/item-lookup/fixtures";
@@ -13,6 +13,7 @@ import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { DocumentCitations } from "@/services/citation-text/service";
 import type { BibliographyRenderResult } from "@/services/pandoc/render-cache";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
+import { stubbedReads } from "@/services/zotero-reads/test-utils";
 
 import type { CitationPopoverContentProps } from "./content";
 import { CitationPopover } from "./service";
@@ -44,12 +45,25 @@ vi.mock("./popover", () => ({
   },
 }));
 
+/** Every reads stand-in a test opened, disposed after it. */
+const opened: AsyncDisposable[] = [];
+afterEach(async () => {
+  for (const reads of opened.splice(0)) await reads[Symbol.asyncDispose]();
+});
+
+/** ZoteroReads on the in-process adapter; its handlers run the stubs below. */
+function reads() {
+  const stub = stubbedReads();
+  opened.push(stub);
+  return stub;
+}
+
 vi.mock("@zotlit/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@zotlit/db")>()),
-  getZoteroIdentity: () => ({
+  getZoteroDatabaseIdentity: () => ({
     userID: null,
     localUserKey: null,
-    username: null,
+    serverID: null,
   }),
   getItemsByKey: vi.fn(() => []),
   getAttachmentsByParents: vi.fn(() => []),
@@ -81,7 +95,7 @@ function harness(read: () => Promise<DocumentCitations | null>) {
         },
       },
     },
-    db: { state: "ready", client: {} },
+    db: reads(),
     citationIndex: {
       getDocumentCitationSet: () =>
         Promise.resolve({ occurrences: [], citations: [], errors: [] }),
@@ -209,7 +223,7 @@ describe("source-less Citation Popover", () => {
     }));
     await using service = new CitationPopover({
       app: {},
-      db: { state: "ready", client: {} },
+      db: reads(),
       citationIndex: { resolution: null },
       libraryScope: { current: [] },
       profile: profileReader(),
@@ -256,7 +270,7 @@ function workHarness() {
       group.delete(listener);
     };
   };
-  const db = { state: "ready", client: {} };
+  const db = reads();
   const citationIndex = {
     resolution: {} as object | null,
     resolveCitekey: vi.fn<() => CitekeyResolution | null>(() => ({
@@ -323,7 +337,7 @@ describe("source-less lookup states", () => {
 
   it("distinguishes an unavailable database from an absent exact Item", async () => {
     await using run = workHarness();
-    run.db.state = "loading";
+    run.db.state = "degraded";
     run.show();
     const element = await run.shown();
     expect(element.textContent).toBe(m.citation_popover_database_unavailable());
@@ -415,20 +429,28 @@ describe("source-less Item actions", () => {
         `[aria-label="${m.references_open_note()}"]`,
       )!
       .click();
-    expect(run.open).toHaveBeenCalledExactlyOnceWith("ABCD2345", false);
+    // The action reads the Item again first, so it lands once that read does.
+    await vi.waitFor(() =>
+      expect(run.open).toHaveBeenCalledExactlyOnceWith("ABCD2345", false),
+    );
 
+    // The open hid that card; the next hover shows the Item again.
     run.open.mockClear();
+    run.show();
+    const again = await run.shown();
     popovers.at(-1)!.hide.mockClear();
     vi.mocked(getItemsByKey).mockReturnValue([]);
-    element
+    again
       .querySelector<HTMLButtonElement>(
         `[aria-label="${m.references_open_note()}"]`,
       )!
       .click();
+    await vi.waitFor(async () => {
+      expect((await run.shown()).textContent).toBe(
+        m.citation_popover_item_unavailable(),
+      );
+    });
     expect(run.open).not.toHaveBeenCalled();
-    expect((await run.shown()).textContent).toBe(
-      m.citation_popover_item_unavailable(),
-    );
     expect(popovers.at(-1)!.hide).not.toHaveBeenCalled();
   });
 });

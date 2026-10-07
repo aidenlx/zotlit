@@ -69,10 +69,10 @@ export function fetchCitedBibliography(): Promise<{
 /** The Zotero database, answering for those same works and nothing else. */
 export function zoteroDatabaseDoubles(): Record<string, unknown> {
   return {
-    getZoteroIdentity: () => ({
+    getZoteroDatabaseIdentity: () => ({
       userID: 1,
       localUserKey: null,
-      username: null,
+      serverID: null,
     }),
     resolveIndexedKeyLibrary: (_client: unknown, indexedKey: string) => {
       const work = citedWorks.get(indexedKey);

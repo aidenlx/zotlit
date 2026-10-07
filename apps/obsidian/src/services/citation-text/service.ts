@@ -1,13 +1,8 @@
+import { Effect } from "effect";
 import type { App, TFile } from "obsidian";
 // The formatted text of one document's Citations, held for every surface that shows them.
 
-import {
-  getItemsByKey,
-  getZoteroIdentity,
-  isChildItemFields,
-  itemToCsl,
-  resolveIndexedKeyLibrary,
-} from "@zotlit/db";
+import { isChildItemFields, itemToCsl } from "@zotlit/db";
 import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import type { PandocTextSpan as TextSpan } from "@zotlit/templates/pandoc-citation";
@@ -28,7 +23,6 @@ import type {
   CitationIndex,
   CitationOccurrence,
 } from "@/services/citation-index/service";
-import type { DatabaseService } from "@/services/database/service";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import {
@@ -43,6 +37,7 @@ import type {
 import type { ProfileReader } from "@/services/profile/service";
 import type { Held, QueryClientService } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { citationKey, presentedCitationEqual } from "./present";
 import type {
@@ -79,7 +74,7 @@ interface CitationTextEvents {
 
 export interface CitationTextDeps {
   app: App;
-  db: Pick<DatabaseService, "state" | "client">;
+  db: Pick<ZoteroReadsService, "state" | "acquireRead">;
   citationIndex: Pick<
     CitationIndex,
     "getDocumentCitationSet" | "citekeyOf" | "readSnapshot" | "on"
@@ -324,7 +319,10 @@ export class CitationText extends Service<void> {
     const set = await this.#citationIndex.getDocumentCitationSet(file);
     const wikilinks = this.#wikilinkCitations(file, body, set.occurrences);
     const literal = worksByCitekey(set.citations);
-    const works = this.#readCited([...literal.values(), ...wikilinks.cited]);
+    const works = await this.#readCited([
+      ...literal.values(),
+      ...wikilinks.cited,
+    ]);
 
     // Both syntaxes go to one render in document order, so a numbering style
     // counts every citation of the document once and in the order it reads.
@@ -545,22 +543,27 @@ export class CitationText extends Service<void> {
    * @returns the readable works by Indexed Key, in first-cited order.
    * @throws a database read failure, so the document retains its failure and retry cooldown.
    */
-  #readCited(cited: readonly string[]): Map<string, CitedItem> {
+  async #readCited(cited: readonly string[]): Promise<Map<string, CitedItem>> {
     const works = new Map<string, CitedItem>();
     if (cited.length === 0) return works;
-    if (this.#db.state !== "ready")
+    if (this.#db.state === "degraded")
       throw new Error("The Zotero database cannot be read");
 
     try {
-      const client = this.#db.client;
-      const user = getZoteroIdentity(client);
+      using lease = await this.#db.acquireRead();
+      const { reads } = lease;
+      const [user, items] = await Effect.runPromise(
+        Effect.all(
+          [
+            reads.DatabaseIdentity({}),
+            reads.ItemsByIndexedKeys({ indexedKeys: [...new Set(cited)] }),
+          ],
+          { concurrency: "unbounded" },
+        ),
+      );
       for (const indexedKey of cited) {
         if (works.has(indexedKey)) continue;
-        const selector = resolveIndexedKeyLibrary(client, indexedKey);
-        if (!selector) continue;
-        const item = getItemsByKey(client, selector.libraryID, [
-          selector.key,
-        ])[0];
+        const item = items.get(indexedKey);
         if (!item) continue;
         const { fields } = item;
         if (isChildItemFields(fields)) continue;

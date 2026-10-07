@@ -86,14 +86,6 @@ type WriteMode =
   | { action: "create"; path: string }
   | { action: "overwrite"; file: TFile };
 
-/**
- * An {@link ExcerptPreparation} that reads the database state of the write it
- * serves: the caller supplies no database handle.
- */
-export type NoteExcerptPreparation = (
-  options: Omit<Parameters<ExcerptPreparation>[0], "client">,
-) => PreparedExcerpts;
-
 /** Shared per-run inputs threaded to every write in a `prepare`/`importNote` call. */
 interface RunContext {
   /** Bound to the operation's Snapshot: every read of the run sees one database state. */
@@ -138,7 +130,7 @@ interface NoteImporterDeps {
   >;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
-  excerptImages?: NoteExcerptPreparation;
+  excerptImages?: ExcerptPreparation;
 }
 
 export interface PrepareNoteImportOptions {
@@ -590,6 +582,7 @@ async function writeNote(
       : undefined;
     if (annotations?.length) {
       excerpts = ctx.excerptImages!({
+        reads: run.reads,
         notePath: path,
         settings: run.profile.settings,
         previousNote: mode.action === "overwrite" ? mode.file : undefined,

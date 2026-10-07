@@ -1,11 +1,12 @@
+import { Effect } from "effect";
 import { writeFile } from "node:fs/promises";
 // Registers the built-in export command and drives one export end to end:
 // modal → resolution → bibliography → engine → chosen destination.
 import { basename, join } from "node:path";
 import type { App, FileSystemAdapter, Plugin, TFile } from "obsidian";
 
-import { parseIndexedKey, resolveIndexedKeyLibrary } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import { parseIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
+import type { Library } from "@zotlit/db";
 
 import { citationStyleLabel } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
@@ -14,7 +15,6 @@ import { nodeFetch } from "@/lib/node-fetch";
 import { BaseNotice, LazyNotice } from "@/lib/notice";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
 import type { CitationIndex } from "@/services/citation-index/service";
-import type { DatabaseService } from "@/services/database/service";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import {
   fetchBibliography,
@@ -35,6 +35,7 @@ import type { CslStyleRequest } from "@/services/pandoc/styles";
 import type { ProfileReader } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { openPandocExportModal } from "./modal";
 import { showEngineMissing, showExportFailure } from "./notices";
@@ -43,7 +44,7 @@ const logger = getLogger(["views", "pandoc-export"]);
 
 export interface PandocExportDeps {
   app: App;
-  db: Pick<DatabaseService, "acquireRead">;
+  db: Pick<ZoteroReadsService, "ready">;
   /** Resolves the literal citation keys of the exported document. */
   citationIndex: Pick<CitationIndex, "resolveCitekey" | "whenResolved">;
   pandocEngine: Pick<PandocEngineService, "getStatus" | "getEngine">;
@@ -252,16 +253,17 @@ function exportPorts(
   };
 }
 
-/** One read lease per export, however many Literature Notes it cites. */
+/** One database read per export, however many Literature Notes it cites. */
 async function readItemRefs(
   db: PandocExportDeps["db"],
   indexedKeys: readonly string[],
 ): Promise<ReadonlyMap<string, BibliographyItemRef> | null> {
   try {
-    using lease = await db.acquireRead();
+    const { reads } = await db.ready;
+    const libraries = await Effect.runPromise(reads.Libraries({}));
     const refs = new Map<string, BibliographyItemRef>();
     for (const indexedKey of new Set(indexedKeys)) {
-      const ref = placeItem(lease.client, indexedKey);
+      const ref = placeItem(libraries, indexedKey);
       if (ref) refs.set(indexedKey, ref);
     }
     return refs;
@@ -273,17 +275,18 @@ async function readItemRefs(
 
 /** Both identities the two bibliography sources address one Item by. */
 function placeItem(
-  client: NodeDatabaseClient,
+  libraries: readonly Library[],
   indexedKey: string,
 ): BibliographyItemRef | null {
   const parsed = parseIndexedKey(indexedKey);
-  const selector = resolveIndexedKeyLibrary(client, indexedKey);
-  if (!parsed || !selector) return null;
-  return {
-    itemKey: selector.key,
-    libraryID: selector.libraryID,
-    groupID: parsed.groupID,
-  };
+  if (!parsed) return null;
+  const { key: itemKey, groupID } = parsed;
+  const libraryID =
+    groupID == null
+      ? USER_LIBRARY_ID
+      : libraries.find((library) => library.groupID === groupID)?.libraryID;
+  if (libraryID === undefined) return null;
+  return { itemKey, libraryID, groupID };
 }
 
 /** Desktop-only plugin: the adapter is always a `FileSystemAdapter`. */

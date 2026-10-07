@@ -1,13 +1,8 @@
 // Draft citations use their own source and presentation, without entering the saved-note cache.
+import { Effect } from "effect";
 import type { App } from "obsidian";
 
-import {
-  getItemsByKey,
-  getZoteroIdentity,
-  isChildItemFields,
-  itemToCsl,
-  resolveIndexedKeyLibrary,
-} from "@zotlit/db";
+import { isChildItemFields, itemToCsl } from "@zotlit/db";
 import type { CslItemData } from "@zotlit/db";
 import type { RenderDiagnostic } from "@zotlit/workbench/render";
 
@@ -25,14 +20,14 @@ import {
 } from "@/services/citation-index/scan";
 import type { CitationIndex } from "@/services/citation-index/service";
 import type { PresentedCitation } from "@/services/citation-text/present";
-import type { DatabaseService } from "@/services/database/service";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import { holdsNote } from "@/services/pandoc/inline-content";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 export interface NativeCitationDeps {
   app: App;
-  db: Pick<DatabaseService, "acquireRead">;
+  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   bibliographyRender: Pick<
     BibliographyRenderCache,
     | "renderCitations"
@@ -125,15 +120,22 @@ export async function renderDraftCitations(
   if (placed.length === 0) return { citations: [], diagnostics: [] };
   const items = new Map<string, CslItemData>();
   {
-    using lease = await deps.db.acquireRead();
-    const user = getZoteroIdentity(lease.client);
-    for (const key of new Set(placed.flatMap(({ works }) => works))) {
-      if (key === null) continue;
-      const selector = resolveIndexedKeyLibrary(lease.client, key);
-      if (!selector) continue;
-      const item = getItemsByKey(lease.client, selector.libraryID, [
-        selector.key,
-      ])[0];
+    const keys = [...new Set(placed.flatMap(({ works }) => works))].filter(
+      (key) => key !== null,
+    );
+    using lease = await deps.zoteroReads.acquireRead();
+    const { reads } = lease;
+    const [user, found] = await Effect.runPromise(
+      Effect.all(
+        [
+          reads.DatabaseIdentity({}),
+          reads.ItemsByIndexedKeys({ indexedKeys: keys }),
+        ],
+        { concurrency: "unbounded" },
+      ),
+    );
+    for (const key of keys) {
+      const item = found.get(key);
       if (item && !isChildItemFields(item.fields))
         items.set(key, { ...itemToCsl(item, user), id: key });
     }

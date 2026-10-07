@@ -208,14 +208,14 @@ export function buildServices(
     })
     .use({
       annotationRepository: ({
-        db,
+        zoteroReads,
         queryClient,
         zoteroLocalApi,
         zoteroPref,
         excerptImage,
       }) =>
         new AnnotationRepository({
-          db,
+          db: zoteroReads,
           queryClient,
           localApi: zoteroLocalApi,
           // A session's first read of an Attachment has no list that stood
@@ -224,11 +224,11 @@ export function buildServices(
           // stored-outcome read, so an Annotation this device never cached has
           // no baseline here exactly as it has no image to replace there.
           persistedExcerpt: async (annotation, source) => {
-            const request = savedExcerptRequest({
+            const request = await savedExcerptRequest({
               annotation,
               source,
               sourceScope: zoteroPref.dataDir,
-              db,
+              zoteroReads,
               paths: zoteroPref,
             });
             if (!request) return null;
@@ -345,7 +345,6 @@ export function buildServices(
         zoteroPref,
         attachmentImport,
         excerptImage,
-        db,
       }): NoteImporter =>
         createNoteImporter({
           profile,
@@ -354,10 +353,6 @@ export function buildServices(
           template,
           zoteroPref,
           attachmentImport,
-          // On the in-process adapter the write's Snapshot holds a DatabaseService
-          // lease, so `db.client` is the connection that Snapshot pinned. The
-          // worker adapter pins its own connection: this binding reads another
-          // until the preparation reads through ZoteroReads.
           excerptImages: (options) =>
             createExcerptPreparation({
               app: plugin.app,
@@ -366,7 +361,7 @@ export function buildServices(
                 dataDir: zoteroPref.dataDir,
                 baseAttachmentPath: zoteroPref.baseAttachmentPath,
               },
-            })({ ...options, client: db.client }),
+            })(options),
         }),
     })
     .use({
@@ -428,10 +423,6 @@ export function buildServices(
               app: plugin.app,
               resolver: excerptImage,
             }),
-          // On the in-process adapter the write's Snapshot holds a DatabaseService
-          // lease, so `db.client` is the connection that Snapshot pinned. The
-          // worker adapter pins its own connection: this binding reads another
-          // until the preparation reads through ZoteroReads.
           excerptImages: (options) =>
             createExcerptPreparation({
               app: plugin.app,
@@ -440,7 +431,7 @@ export function buildServices(
                 dataDir: zoteroPref.dataDir,
                 baseAttachmentPath: zoteroPref.baseAttachmentPath,
               },
-            })({ ...options, client: db.client }),
+            })(options),
           profile,
           app: plugin.app,
           template,
@@ -537,12 +528,18 @@ export function buildServices(
         }),
     })
     .use({
-      citationIndex: ({ noteIndex, settings, db, libraryScope, queryClient }) =>
+      citationIndex: ({
+        noteIndex,
+        settings,
+        zoteroReads,
+        libraryScope,
+        queryClient,
+      }) =>
         new CitationIndex({
           app: plugin.app,
           noteIndex,
           settings,
-          db,
+          reads: zoteroReads,
           libraryScope,
           queryClient,
         }),
@@ -571,7 +568,7 @@ export function buildServices(
     .use({
       citationText: ({
         profile,
-        db,
+        zoteroReads,
         citationIndex,
         noteIndex,
         bibliographyRender,
@@ -580,7 +577,7 @@ export function buildServices(
         new CitationText({
           profile,
           app: plugin.app,
-          db,
+          db: zoteroReads,
           citationIndex,
           noteIndex,
           bibliographyRender,
@@ -590,7 +587,7 @@ export function buildServices(
     .use({
       citationPopover: ({
         profile,
-        db,
+        zoteroReads,
         citationIndex,
         citationText,
         bibliographyRender,
@@ -599,7 +596,7 @@ export function buildServices(
         new CitationPopover({
           profile,
           app: plugin.app,
-          db,
+          db: zoteroReads,
           citationIndex,
           citationText,
           bibliographyRender,
@@ -613,7 +610,7 @@ export function buildServices(
         createProfile,
         importProfile,
         zoteroPref,
-        db,
+        zoteroReads,
         citationText,
         citationPopover,
         settings,
@@ -628,7 +625,7 @@ export function buildServices(
           createProfile,
           importProfile,
           zoteroPref,
-          db,
+          db: zoteroReads,
           citationText,
           citationPopover,
           settings,

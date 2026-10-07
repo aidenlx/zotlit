@@ -32,6 +32,7 @@ import type {
   ZoteroRequest,
 } from "@/services/zotero-local-api/__fixtures__";
 import type { WireTag } from "@/services/zotero-local-api/wire";
+import type { ZoteroReadLease } from "@/services/zotero-reads/service";
 import {
   annotationBlocks,
   capabilityBlock,
@@ -48,12 +49,14 @@ import {
   FIXTURE_ROWS,
   GROUP_ATTACHMENT,
   GROUP_ID,
+  leaseOver,
   markExternal,
   NOW,
   nextChange,
   REMEMBERED_KEY,
   setup,
   switchToLocalApi,
+  useFakeTimers,
   writable,
   zoteroLibrary,
 } from "./__fixtures__";
@@ -735,7 +738,7 @@ it("hides an old database draft and cancels its save schedule", async () => {
       },
       { key: REMEMBERED_KEY },
     );
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     repository.editTextField("comment", "PUPR5FG5", "First database");
     await vi.advanceTimersByTimeAsync(500);
@@ -946,10 +949,7 @@ it("rejects a late database read from the prior configured database", async () =
   oldClient.$client.exec(
     `insert into settings (setting, key, value) values ('localAPI', 'serverID', '${SERVER_ID}')`,
   );
-  const oldLease = Promise.withResolvers<{
-    client: NodeDatabaseClient;
-    [Symbol.dispose](): undefined;
-  }>();
+  const oldLease = Promise.withResolvers<ZoteroReadLease>();
   acquireRead.mockImplementationOnce(() => oldLease.promise);
   dbEvents.emit("changed");
   const late = repository.read("RGRPDF24");
@@ -959,7 +959,7 @@ it("rejects a late database read from the prior configured database", async () =
   );
   dbEvents.emit("changed");
   const current = await repository.read("RGRPDF24");
-  oldLease.resolve({ client: oldClient, [Symbol.dispose]: () => undefined });
+  oldLease.resolve(await leaseOver(stack, oldClient));
   await late;
 
   answering = true;
@@ -1125,7 +1125,7 @@ it("patches a comment with the precondition and nothing else", async () => {
 });
 
 it("autosaves after one idle second and caps a continuous editing burst", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     let saved = "";
@@ -1182,7 +1182,7 @@ it("autosaves after one idle second and caps a continuous editing burst", async 
 });
 
 it("autosaves a Quoted Text draft on the idle and burst timers, with the text alone", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     let saved = "";
@@ -1256,7 +1256,7 @@ it("saves an emptied Quoted Text draft as a clear", async () => {
 });
 
 it("serializes writes and saves only the latest input after a slow response", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     let answerFirst!: (response: Response) => void;
@@ -1300,7 +1300,7 @@ it("serializes writes and saves only the latest input after a slow response", as
 });
 
 it("queues a return to the old baseline while a newer value is saving", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const first = Promise.withResolvers<Response>();
@@ -1336,7 +1336,7 @@ it("queues a return to the old baseline while a newer value is saving", async ()
 });
 
 it("keeps a failed autosave for explicit editing without replaying it", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const { repository, requests } = await writable(stack, {
@@ -1365,7 +1365,7 @@ it("keeps a failed autosave for explicit editing without replaying it", async ()
 });
 
 it("retains a paused draft until an explicit save after authorization returns", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const { repository, localApi, requests } = await writable(stack, {
@@ -1407,7 +1407,7 @@ it("retains a paused draft until an explicit save after authorization returns", 
 });
 
 it("saves text typed during a held draft's save once that save lands", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const first = Promise.withResolvers<Response>();
@@ -1449,7 +1449,7 @@ it("saves text typed during a held draft's save once that save lands", async () 
 });
 
 it("requires explicit recovery after a lost save response even when refresh reconnects", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const { repository, requests } = await writable(stack, {
@@ -1474,7 +1474,7 @@ it("requires explicit recovery after a lost save response even when refresh reco
 });
 
 it("cancels a scheduled comment when deletion is confirmed", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const { repository, requests } = await writable(stack);
@@ -1496,7 +1496,7 @@ it("cancels a scheduled comment when deletion is confirmed", async () => {
 });
 
 it("discards scheduled session work when the repository unloads", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const { repository, requests } = await writable(stack);
@@ -1813,7 +1813,7 @@ it("discards a draft only when its own source confirms deletion", async () => {
 });
 
 it("discards a queued draft when the verified database confirms deletion after API loss", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     let answering = true;
@@ -2900,10 +2900,7 @@ it.each(["patch", "create"] as const)(
     const reply = Promise.withResolvers<Response>();
     const sent = Promise.withResolvers<void>();
     const verifying = Promise.withResolvers<void>();
-    const lease = Promise.withResolvers<{
-      client: NodeDatabaseClient;
-      [Symbol.dispose](): undefined;
-    }>();
+    const lease = Promise.withResolvers<ZoteroReadLease>();
     const { repository, client, acquireRead, dbEvents } = await writable(
       stack,
       {
@@ -2934,7 +2931,7 @@ it.each(["patch", "create"] as const)(
     await verifying.promise;
     dbEvents.emit("changed");
     await repository.read("RGRPDF24");
-    lease.resolve({ client, [Symbol.dispose]: () => undefined });
+    lease.resolve(await leaseOver(stack, client));
 
     await expect(running).resolves.toEqual(
       operation === "patch"
@@ -2949,10 +2946,7 @@ it("rejects verification from an old database generation", async () => {
   const reply = Promise.withResolvers<Response>();
   const sent = Promise.withResolvers<void>();
   const verification = Promise.withResolvers<void>();
-  const oldLease = Promise.withResolvers<{
-    client: NodeDatabaseClient;
-    [Symbol.dispose](): undefined;
-  }>();
+  const oldLease = Promise.withResolvers<ZoteroReadLease>();
   const { repository, client, acquireRead, dbEvents } = await writable(stack, {
     write: () => {
       sent.resolve();
@@ -2984,7 +2978,7 @@ it("rejects verification from an old database generation", async () => {
   );
   dbEvents.emit("changed");
   const current = await repository.read("RGRPDF24");
-  oldLease.resolve({ client: oldClient, [Symbol.dispose]: () => undefined });
+  oldLease.resolve(await leaseOver(stack, oldClient));
 
   await expect(running).resolves.toEqual({
     kind: "failed",
@@ -3495,7 +3489,7 @@ it("drops a comment draft holding what Zotero already has", async () => {
 });
 
 it("draws nothing while an automatic comment save is in flight", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const answer = Promise.withResolvers<Response>();
@@ -4752,7 +4746,7 @@ it("keeps a colour pick out of a run of keyboard nudges", async () => {
 // Each session's autosaves run on the fake clock the idle timer is armed on.
 
 it("makes one step of a comment session, however many times it saved", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const zotero = zoteroHolding("PUPR5FG5");
@@ -4790,7 +4784,7 @@ it("makes one step of a comment session, however many times it saved", async () 
 });
 
 it("makes one step of a Text Edit session, and undo writes back the earlier text alone", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const zotero = zoteroHolding("PUPR5FG5");
@@ -4854,7 +4848,7 @@ it("keeps a Text Edit session and a comment session after it as two steps", asyn
 });
 
 it("starts a new step where the comment moved in Zotero between two saves", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const zotero = zoteroHolding("PUPR5FG5");
@@ -4897,7 +4891,7 @@ it("starts a new step where the comment moved in Zotero between two saves", asyn
 });
 
 it("records no step for a comment draft discarded before it saved", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const zotero = zoteroHolding("PUPR5FG5");
@@ -4917,7 +4911,7 @@ it("records no step for a comment draft discarded before it saved", async () => 
 });
 
 it("records no step where a comment session settles on its starting text", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const zotero = zoteroHolding("HRK7BG32");
@@ -4943,7 +4937,7 @@ it("records no step where a comment session settles on its starting text", async
 });
 
 it("does nothing while the Annotation the top step touches is being edited", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const zotero = zoteroHolding("PUPR5FG5");
@@ -4978,7 +4972,7 @@ it("does nothing while the Annotation the top step touches is being edited", asy
 });
 
 it("does nothing while an autosave on the Attachment is still due", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const zotero = zoteroHolding("PUPR5FG5");
@@ -4999,7 +4993,7 @@ it("does nothing while an autosave on the Attachment is still due", async () => 
 });
 
 it("discards the redo steps when a comment session moves its own step", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const zotero = zoteroHolding("PUPR5FG5");
@@ -5032,7 +5026,7 @@ it("discards the redo steps when a comment session moves its own step", async ()
 });
 
 it("records a colour pick after a comment session as a step of its own", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const zotero = zoteroHolding("PUPR5FG5");
@@ -5061,7 +5055,7 @@ it("records a colour pick after a comment session as a step of its own", async (
 });
 
 it("records an autosave that lands while a step runs beside it", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const zotero = zoteroHolding("PUPR5FG5");
@@ -5363,7 +5357,7 @@ it("shares one tag draft and preserves it across unrelated refresh changes", asy
 });
 
 it("saves, conflicts, and discards a comment draft and a tag draft on one Annotation apart", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
@@ -6254,7 +6248,7 @@ it("refuses every verb on an External Annotation before any request", async () =
 });
 
 it("holds the drafts open when the lock appears, and sends none of them", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const harness = await writable(stack);
@@ -6395,7 +6389,7 @@ it("keeps the History Steps of an Annotation the lock refuses where they stand",
 });
 
 it("refuses the Text Edit step of an External Annotation with the Lock Reason, and the step stays", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const zotero = zoteroHolding("PUPR5FG5");
@@ -6458,7 +6452,7 @@ it("refuses a group recolour with one External Annotation whole, and sends nothi
 });
 
 it("refuses a group delete with one External Annotation whole, and keeps the drafts of the others", async () => {
-  vi.useFakeTimers();
+  useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const zotero = zoteroLibrary();

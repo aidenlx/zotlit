@@ -873,7 +873,7 @@ describe("createNote", () => {
         resolver,
         paths: deps.zoteroPref,
       });
-      deps.excerptImages = (options) => prepareExcerpts({ ...options, client });
+      deps.excerptImages = (options) => prepareExcerpts(options);
       if (mode === "write-failure")
         await writeFile(`${root}/Images`, "occupied");
       const engine = new TemplateEngine();
@@ -5330,77 +5330,6 @@ describe("renderAnnotation — zt.citation (9.2-CSL #05)", () => {
       ),
     );
     expect(result).toBe("null");
-  });
-});
-
-describe("renderAnnotationCitation (9.2-CSL #06)", () => {
-  const renderCite = (deps: SyncRenderDeps): string | null =>
-    createNoteFeature(deps).renderAnnotationCitation(1);
-
-  it("produces a page-pinned Pandoc cite from the parent item + page label", () => {
-    // The copy-citation action resolves the annotation's parent through the DB
-    // and renders it via the shared annotation-citation path (page label as
-    // locator), so the string the user pastes is `[@key, p. N]`.
-    vi.mocked(getAnnotationsByItemId).mockReturnValue([
-      { key: "ANN1" } as never,
-    ]);
-    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
-      new Map([["ANN1", annData("Hensher2011", "62")]]),
-    );
-    expect(renderCite(annotDeps(citationTemplate()))).toContain(
-      "[@Hensher2011, {p. 62}]",
-    );
-  });
-
-  it("routes the copied citation through the user's Citation Template (locator = page label)", () => {
-    vi.mocked(getAnnotationsByItemId).mockReturnValue([
-      { key: "ANN1" } as never,
-    ]);
-    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
-      new Map([["ANN1", annData("Hensher2011", "62")]]),
-    );
-    const cite =
-      "<%= zt.citations.map(c => `{{${c.item.citationKey}|${c.locator}}}`).join('') %>";
-    expect(
-      renderCite(annotDeps(citationTemplate(cite, { language: "eta" }))),
-    ).toContain("{{Hensher2011|62}}");
-  });
-
-  it("returns null when the parent item has no citation key (so the action can notice instead of copying)", () => {
-    vi.mocked(getAnnotationsByItemId).mockReturnValue([
-      { key: "ANN1" } as never,
-    ]);
-    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
-      new Map([["ANN1", annData(null, "62")]]),
-    );
-    expect(renderCite(annotDeps(citationTemplate()))).toBeNull();
-  });
-
-  it("asks the template service for the main variant with the page as locator", () => {
-    // The Citation Template owns the text and its inline normalization; this
-    // path decides only which refs and which variant render, and copies what
-    // comes back.
-    vi.mocked(getAnnotationsByItemId).mockReturnValue([
-      { key: "ANN1" } as never,
-    ]);
-    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
-      new Map([["ANN1", annData("Hensher2011", "62")]]),
-    );
-    const renderCitation = vi.fn(() => "[@Hensher2011, {p. 62}]");
-
-    expect(
-      renderCite(annotDeps({ ...citationTemplate(), renderCitation })),
-    ).toBe("[@Hensher2011, {p. 62}]");
-    expect(renderCitation).toHaveBeenCalledWith(
-      [
-        expect.objectContaining({
-          citationKey: "Hensher2011",
-          label: "page",
-          locator: "62",
-        }),
-      ],
-      "main",
-    );
   });
 });
 
