@@ -177,6 +177,7 @@ export function getIndexedItemIDsByLibrary(
 export function getIndexedItemsByID(
   db: NodeDatabaseClient,
   itemIDs: readonly number[],
+  opts?: { memo?: GroupIDMemo },
 ): IndexedItem[] {
   if (itemIDs.length === 0) return [];
   const table = getBaseFieldTable(db, INDEXED_FIELD_NAMES);
@@ -189,7 +190,7 @@ export function getIndexedItemsByID(
       .all()
       .map((row) => [row.itemID, row]),
   );
-  const memo: GroupIDMemo = new Map();
+  const memo = opts?.memo ?? new Map();
   return itemIDs.flatMap((itemID) => {
     const row = rows.get(itemID);
     return row

@@ -275,14 +275,18 @@ export function handlersLayer(options?: HandlersOptions) {
           })),
 
         IndexItems: ({ libraryID, snapshot }) =>
-          withClientStream(snapshot, (client) =>
-            Stream.unwrap(
+          withClientStream(snapshot, (client) => {
+            const memo: GroupIDMemo = new Map();
+            return Stream.unwrap(
               Effect.map(
                 read(client, (c) => getIndexedItemIDsByLibrary(c, libraryID)),
-                (ids) => sliced(client, slicesOf(ids), getIndexedItemsByID),
+                (ids) =>
+                  sliced(client, slicesOf(ids), (c, slice) =>
+                    getIndexedItemsByID(c, slice, { memo }),
+                  ),
               ),
-            ),
-          ),
+            );
+          }),
 
         ItemsByIndexedKeys: ({ indexedKeys, snapshot }) =>
           withClient(snapshot, (client) =>
