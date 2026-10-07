@@ -664,7 +664,7 @@ The plugin-owned, internal vault-wide index of Citation Occurrences across both 
 _Avoid_: citation cache (names the persistence, not the index), citation scanner (the per-file parse step, not the index)
 
 **Item Index** _(ZoteroReads)_:
-The search index over the Items of the Libraries in Library Scope, held by the ZoteroReads worker and answered through one `SearchItems` operation. Its identity is the list of covered Libraries and the connection it was built on; the worker rebuilds it from its own change feed, serves the last complete index while a rebuild runs, and hydrates the hits before it answers. The renderer never holds the index.
+The search index over the Items of the Libraries in Library Scope, held by the ZoteroReads worker and answered through one `SearchItems` operation. Its identity is the list of covered Libraries and the connection it was built on; the worker rebuilds it from its own change feed, serves the last complete index while a rebuild runs, and hydrates the hits before it answers. It keeps the index of the list the latest search asked for; the index of another list leaves at the next change when no search asked for it since the change before. The renderer never holds the index.
 _Avoid_: search cache, item-lookup index (names the package, not the thing), MiniSearch index (names the engine)
 
 **Chinese Segmenter**:

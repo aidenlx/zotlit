@@ -444,16 +444,50 @@ describe("Item Index", () => {
     const released = await withIndex(({ source, search }) =>
       Effect.gen(function* () {
         yield* search(USER, "");
-        // The first emission counts the search; the second evicts the list.
-        yield* source.notify;
-        yield* eventually(() => source.reads.released === 1);
+        yield* search(GROUP, "");
+        // The first emission counts both searches and re-checks both lists.
         yield* source.notify;
         yield* eventually(() => source.reads.released === 2);
+        // The second evicts the user list and re-checks the group list.
+        yield* source.notify;
+        yield* eventually(() => source.reads.released === 4);
         return source.reads.released;
       }),
     );
 
-    expect(released).toBe(2);
+    expect(released).toBe(4);
+  });
+
+  it("keeps the latest list warm across emissions with no search between", async () => {
+    const result = await withIndex(({ source, search }) =>
+      Effect.gen(function* () {
+        yield* search(USER, "");
+        yield* search(GROUP, "");
+        yield* source.notify;
+        yield* eventually(() => source.reads.released === 2);
+        yield* source.notify;
+        yield* eventually(() => source.reads.released === 4);
+        yield* source.notify;
+        yield* eventually(() => source.reads.released === 5);
+        const before = source.reads.itemIDs;
+        const group = yield* search(GROUP, "");
+        const groupBuilds = source.reads.itemIDs - before;
+        const user = yield* search(USER, "");
+        return {
+          group,
+          groupBuilds,
+          user,
+          userBuilds: source.reads.itemIDs - before - groupBuilds,
+        };
+      }),
+    );
+
+    expect(result).toEqual({
+      group: ["GAMMA"],
+      groupBuilds: 0,
+      user: ["BETA", "ALPHA"],
+      userBuilds: 1,
+    });
   });
 
   it("fails the search and drops the index when the source is unavailable", async () => {

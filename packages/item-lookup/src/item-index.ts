@@ -9,8 +9,9 @@ import { getLogger } from "@logtape/logtape";
  *   that arrives mid-build lets the build finish, then runs once more.
  * - A generation emission re-checks every held list. A changed generation, a
  *   changed configuration, or a moved signature vector rebuilds; an equal one
- *   keeps the index. A list no search asked for since the last emission, and
- *   that no search waits on, is evicted and its build interrupted.
+ *   keeps the index. The list the latest search asked for stays held. Any
+ *   other list no search asked for since the last emission, and that no
+ *   search waits on, is evicted and its build interrupted.
  * - A build reads one pinned source for its whole life, in slices, and yields
  *   to the scheduler after each slice.
  * - A held index keeps the pinned source it was built on, or last verified
@@ -226,6 +227,8 @@ export const layerItemIndex: Layer.Layer<
     const source = yield* Effect.service(ItemSource);
     const config = yield* Effect.service(IndexConfig);
     const entries = new Map<string, Entry>();
+    /** The list the latest search asked for; no emission evicts it. */
+    let latest: Entry | null = null;
     // Registered before the lanes' FiberSet, so it runs after every lane
     // ended: no lane can bind a source after it.
     yield* Effect.addFinalizer(() =>
@@ -426,7 +429,7 @@ export const layerItemIndex: Layer.Layer<
     const onGeneration = Effect.suspend(() => {
       const work: Effect.Effect<void>[] = [];
       for (const [key, entry] of entries) {
-        if (!entry.asked && entry.waiters === 0) {
+        if (!entry.asked && entry.waiters === 0 && entry !== latest) {
           entries.delete(key);
           logger.debug("Item index evicted; no search since the last change", {
             libraries: entry.libraries,
@@ -468,6 +471,7 @@ export const layerItemIndex: Layer.Layer<
       Effect.gen(function* () {
         const entry = getEntry(libraries);
         entry.asked = true;
+        latest = entry;
         if (entry.built === null) {
           const lane = ensureLane(entry);
           // The count rises and its release registers in one step, so an
