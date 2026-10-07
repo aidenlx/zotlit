@@ -91,6 +91,23 @@ describe("item search engine", () => {
     ).toBe("B");
   });
 
+  it("finds a citation key by its whole-query prefix across word boundaries", async () => {
+    // Word segmentation cuts this key into 研究 / 生命 / 起源 / 2020, so no
+    // single word of it starts with 研究生.
+    const target = item({
+      key: "A",
+      title: "Other",
+      citationKey: "研究生命起源2020",
+    });
+    const titleHit = item({
+      key: "B",
+      title: "研究生 survey",
+      dateModified: "2026-01-01T00:00:00Z",
+    });
+
+    expect(keys(await search([titleHit, target], "研究生"))[0]).toBe("A");
+  });
+
   it("answers a bare Zotero key after cleanup with that Item alone", async () => {
     const target = item({ key: "ABCD1234", title: "Unrelated" });
     const contentMatch = item({ key: "WXYZ5678", title: "ABCD1234" });

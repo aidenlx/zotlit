@@ -186,7 +186,10 @@ function createCore(
     idField: "id",
     fields: [...SEARCH_FIELDS],
     storeFields: [],
-    tokenize: (text) => words(text),
+    // The whole citation key is one term too, so the citation key rule can
+    // find it by prefix wherever word segmentation would cut it.
+    tokenize: (text, field) =>
+      field === "citationKey" ? [text, ...words(text)] : words(text),
     processTerm,
   });
   const libraryRank = new Map(libraries.map((id, rank) => [id, rank]));
@@ -312,15 +315,32 @@ function lookupQuery(
   const tokens = queryTokens(cleaned, words);
   if (tokens.length === 0) return { kind: "none" };
 
-  const results = index.mini.search(cleaned, {
-    combineWith: "AND",
-    prefix: true,
-    fuzzy: fuzziness,
-    boost: BOOSTS,
-    tokenize: () => tokens,
-    processTerm: (term) => term,
+  const whole = normalize(cleaned);
+  // One lookup: every token across the fields, or the whole query as a
+  // prefix of a whole citation key.
+  const results = index.mini.search({
+    combineWith: "OR",
+    queries: [
+      {
+        queries: [cleaned],
+        combineWith: "AND",
+        prefix: true,
+        fuzzy: fuzziness,
+        boost: BOOSTS,
+        tokenize: () => tokens,
+        processTerm: (term) => term,
+      },
+      {
+        queries: [whole],
+        fields: ["citationKey"],
+        prefix: true,
+        fuzzy: false,
+        tokenize: (text) => [text],
+        processTerm: (term) => term,
+      },
+    ],
   });
-  return { kind: "ranked", whole: normalize(cleaned), results };
+  return { kind: "ranked", whole, results };
 }
 
 function finishLookup(

@@ -36,6 +36,8 @@ export const layerSegmenterNone: Layer.Layer<Segmenter> = Layer.sync(
  * Word segmentation with every CJK run cut by jieba's `cut_for_search` and the
  * rest through `Intl.Segmenter`. `wasm` holds the bytes of the `jieba-wasm` web
  * target binary (`jieba_rs_wasm_bg.wasm`); the caller reads and verifies them.
+ * `jieba-wasm` holds one instance per JavaScript realm: the first bytes that
+ * load serve every later jieba layer in the same realm.
  */
 export function layerSegmenterJieba(
   wasm: BufferSource,
