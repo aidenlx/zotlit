@@ -2548,6 +2548,163 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(JSON.stringify({ least: attachmentAnnotations.length, now: true }));
   });
 
+  it("inserts a citation from the worker's Item Index and rebuilds the index off the renderer", async () => {
+    const finds = (query: string, itemID: number) =>
+      `(async function(){var hits=await app.plugins.plugins.zotlit.services.itemLookup.search(${JSON.stringify(query)});return String(hits.some(function(hit){return hit.item.itemID===${itemID};}));})()`;
+    // An empty index answers fast; it fails the run here, before any timing.
+    expect(
+      await obEval(vaultId, finds("simple rules", annotationItem.itemID)),
+    ).toBe("true");
+
+    await using cleanup = new AsyncDisposableStack();
+    const source = "Citation suggester source.md";
+    await obEval(
+      vaultId,
+      `(async function(){var file=await app.vault.create(${JSON.stringify(source)},'');var leaf=app.workspace.getLeaf(true);await leaf.openFile(file,{state:{mode:'source',source:true}});leaf.view.editor.focus();return true;})()`,
+    );
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async function(){var file=app.vault.getAbstractFileByPath(${JSON.stringify(source)});for(var leaf of app.workspace.getLeavesOfType('markdown'))if(leaf.view.file===file)leaf.detach();await app.fileManager.trashFile(file);return true;})()`,
+      );
+    });
+    const editor = `app.workspace.getLeavesOfType('markdown').find(function(leaf){return leaf.view.file?.path===${JSON.stringify(source)};}).view.editor`;
+    // One key at a time with no pause, as a fast typist types: each
+    // keystroke interrupts the search before it.
+    await obEval(
+      vaultId,
+      `(function(){var cm=${editor}.cm;for(var ch of ${JSON.stringify("[@ten simple")})cm.dispatch(cm.state.replaceSelection(ch),{userEvent:'input.type'});return true;})()`,
+    );
+    const popup =
+      "Array.from(activeDocument.querySelectorAll('.suggestion-container')).at(-1)";
+    // The popup stays open and lists the final query's Item first.
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(!!${popup}?.querySelector('.suggestion-item')?.textContent.includes(${JSON.stringify(annotationItem.title)}))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){var row=${popup}.querySelector('.suggestion-item');row.dispatchEvent(new activeWindow.MouseEvent('mousemove',{bubbles:true}));row.dispatchEvent(new activeWindow.MouseEvent('click',{bubbles:true}));return true;})()`,
+    );
+    expect(
+      await obEvalUntil(vaultId, `${editor}.getValue()`, {
+        expected: `[@${annotationItem.citationKey}]`,
+      }),
+    ).toBe(true);
+
+    // A sync lands a large Library: the worker builds its index while the
+    // renderer keeps painting.
+    const corpus = syntheticTitles(SYNTHETIC_CORPUS_SIZE);
+    const lastTitleQuery = `${SYNTHETIC_MARKER} ${corpus.at(-1)!.split(" ").at(-1)!}`;
+    const heapBefore = await rendererHeap(vaultId);
+    await using frames = await recordFrames(vaultId);
+    const added = addMyLibraryItems(e2eFixture.databasePath, corpus);
+    const lastItemID = added.firstItemID + corpus.length - 1;
+    cleanup.defer(async () => {
+      added[Symbol.dispose]();
+      await signalDatabaseUpdated(vaultId);
+      expect(
+        await obEvalUntil(vaultId, finds(lastTitleQuery, lastItemID), {
+          expected: "false",
+        }),
+      ).toBe(true);
+    });
+    await signalDatabaseUpdated(vaultId);
+    // The held index answers while the rebuild runs; the new Items show
+    // once the build completes.
+    expect(
+      await obEvalUntil(vaultId, finds(lastTitleQuery, lastItemID), {
+        expected: "true",
+        tries: 120,
+      }),
+    ).toBe(true);
+    const painted = await frames.read();
+    const heapGrowth = (await rendererHeap(vaultId)) - heapBefore;
+    console.info("Item Index rebuild, renderer side", {
+      items: corpus.length,
+      ...painted,
+      heapGrowthMB: Math.round(heapGrowth / 1e5) / 10,
+    });
+    expect(painted.frames).toBeGreaterThan(1);
+    expect(painted.longTasks).toBe(0);
+    // ADR 0069 measured about 1 MB of index per 1,000 Items; the renderer
+    // keeps less than a quarter of that.
+    expect(heapGrowth).toBeLessThan((corpus.length * 1000) / 4);
+  });
+
+  it("finds a word inside a Chinese title once the Chinese Segmenter is installed, with no reload", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const segmenter = `${services}.chineseSegmenter`;
+    await using cleanup = new AsyncDisposableStack();
+    // The binary cache is device-wide: leave it as this run found it.
+    if (
+      (await obEval(vaultId, `${segmenter}.getStatus().kind`)) === "installed"
+    ) {
+      await obEval(
+        vaultId,
+        `${segmenter}.uninstall().then(function(){return true;})`,
+      );
+      cleanup.defer(async () => {
+        await obEval(
+          vaultId,
+          `${segmenter}.install().then(function(){return true;})`,
+          120_000,
+        );
+      });
+    }
+    const added = addMyLibraryItems(e2eFixture.databasePath, [
+      "长江流域的城市化研究",
+    ]);
+    cleanup.defer(async () => {
+      added[Symbol.dispose]();
+      await signalDatabaseUpdated(vaultId);
+    });
+    await signalDatabaseUpdated(vaultId);
+    const finds = (query: string) =>
+      `(async function(){var hits=await ${services}.itemLookup.search(${JSON.stringify(query)});return String(hits.some(function(hit){return hit.item.itemID===${added.firstItemID};}));})()`;
+    expect(
+      await obEvalUntil(vaultId, finds("长江流域"), { expected: "true" }),
+    ).toBe(true);
+    // `Intl.Segmenter` keeps `长江流域` one word, so the word inside misses.
+    expect(await obEval(vaultId, finds("流域"))).toBe("false");
+
+    await obEval(
+      vaultId,
+      "window.zotlitE2EPlugin=app.plugins.plugins.zotlit;true",
+    );
+    cleanup.defer(async () => {
+      await obEval(vaultId, "delete window.zotlitE2EPlugin;true");
+    });
+    expect(
+      await obEval(
+        vaultId,
+        `${segmenter}.install().then(function(){return ${segmenter}.getStatus().kind;})`,
+        120_000,
+      ),
+    ).toBe("installed");
+    expect(
+      await obEvalUntil(vaultId, finds("流域"), { expected: "true" }),
+    ).toBe(true);
+
+    await obEval(
+      vaultId,
+      `${segmenter}.uninstall().then(function(){return true;})`,
+    );
+    expect(
+      await obEvalUntil(vaultId, finds("流域"), { expected: "false" }),
+    ).toBe(true);
+    expect(await obEval(vaultId, finds("长江流域"))).toBe("true");
+    expect(
+      await obEval(
+        vaultId,
+        "String(window.zotlitE2EPlugin===app.plugins.plugins.zotlit)",
+      ),
+    ).toBe("true");
+  });
+
   it("reflects a Scope Case switch through zotlit:library-scope", async () => {
     const availableCase = findScopeCase("available");
     const dataPath = join(
@@ -3106,4 +3263,186 @@ async function observeNotices(vaultId: string) {
       );
     },
   };
+}
+
+/** Items a synthetic sync adds: the scale ADR 0069 measured at. */
+const SYNTHETIC_CORPUS_SIZE = 10_000;
+/** A word only synthetic Items carry. */
+const SYNTHETIC_MARKER = "zqsynth";
+
+/**
+ * Deterministic synthetic titles, each with {@link SYNTHETIC_MARKER} and a
+ * last word no other title has.
+ */
+function syntheticTitles(count: number): string[] {
+  let seed = 42;
+  const random = () => (seed = (seed * 1103515245 + 12345) % 2147483648);
+  const syllables = "ka ri mo ne lu ta si po ve ga ro mi da ze nu fo".split(
+    " ",
+  );
+  const vocabulary = Array.from({ length: 600 }, () =>
+    Array.from(
+      { length: 2 + (random() % 3) },
+      () => syllables[random() % syllables.length],
+    ).join(""),
+  );
+  return Array.from({ length: count }, (_, index) =>
+    [
+      SYNTHETIC_MARKER,
+      ...Array.from(
+        { length: 6 + (random() % 8) },
+        () => vocabulary[random() % vocabulary.length],
+      ),
+      `v${index}`,
+    ].join(" "),
+  );
+}
+
+/**
+ * Writes journal articles into the Fixture's My Library the way Zotero stores
+ * them: a title, a journal, and one to three authors each. Disposing deletes
+ * every row it wrote.
+ */
+function addMyLibraryItems(
+  databasePath: string,
+  titles: readonly string[],
+): Disposable & { firstItemID: number } {
+  using database = new DatabaseSync(databasePath);
+  const id = (sql: string, ...params: string[]) =>
+    Number(Object.values(database.prepare(sql).get(...params)!)[0]);
+  const itemTypeID = id(
+    "select itemTypeID from itemTypes where typeName = 'journalArticle'",
+  );
+  const field = (name: string) =>
+    id("select fieldID from fieldsCombined where fieldName = ?", name);
+  const titleField = field("title");
+  const journalField = field("publicationTitle");
+  const authorTypeID = id(
+    "select creatorTypeID from creatorTypes where creatorType = 'author'",
+  );
+  const firstItemID = id("select max(itemID) + 1 from items");
+  const firstValueID = id("select max(valueID) + 1 from itemDataValues");
+  const firstCreatorID = id(
+    "select coalesce(max(creatorID), 0) + 1 from creators",
+  );
+  const libraryID = LIBRARIES.find(
+    ({ groupID }) => groupID === null,
+  )!.libraryID;
+
+  const value = database.prepare(
+    "insert into itemDataValues (valueID, value) values (?, ?)",
+  );
+  // Names carry the first new itemID, so a second call writes new rows too.
+  const journals = Array.from({ length: 40 }, (_, index) => {
+    value.run(
+      firstValueID + index,
+      `${SYNTHETIC_MARKER} journal ${firstItemID + index}`,
+    );
+    return firstValueID + index;
+  });
+  const creator = database.prepare(
+    "insert into creators (creatorID, firstName, lastName, fieldMode) values (?, ?, ?, 0)",
+  );
+  const creators = Array.from({ length: 400 }, (_, index) => {
+    creator.run(
+      firstCreatorID + index,
+      "A.",
+      `Synthauthor${firstItemID + index}`,
+    );
+    return firstCreatorID + index;
+  });
+  const item = database.prepare(
+    "insert into items (itemID, itemTypeID, libraryID, key, dateAdded, dateModified, clientDateModified) values (?, ?, ?, ?, '2030-01-01 00:00:00', '2030-01-01 00:00:00', '2030-01-01 00:00:00')",
+  );
+  const data = database.prepare(
+    "insert into itemData (itemID, fieldID, valueID) values (?, ?, ?)",
+  );
+  const author = database.prepare(
+    "insert into itemCreators (itemID, creatorID, creatorTypeID, orderIndex) values (?, ?, ?, ?)",
+  );
+  const titleValueID = firstValueID + journals.length;
+  database.exec("begin");
+  titles.forEach((title, index) => {
+    const itemID = firstItemID + index;
+    item.run(itemID, itemTypeID, libraryID, zoteroKey(itemID));
+    value.run(titleValueID + index, title);
+    data.run(itemID, titleField, titleValueID + index);
+    data.run(itemID, journalField, journals[index % journals.length]!);
+    for (let order = 0; order <= index % 3; order++) {
+      author.run(
+        itemID,
+        creators[(index * 7 + order) % creators.length]!,
+        authorTypeID,
+        order,
+      );
+    }
+  });
+  database.exec("commit");
+
+  const lastItemID = firstItemID + titles.length - 1;
+  return {
+    firstItemID,
+    [Symbol.dispose]() {
+      using database = new DatabaseSync(databasePath);
+      database.exec("begin");
+      for (const table of ["itemCreators", "itemData", "items"])
+        database
+          .prepare(`delete from ${table} where itemID between ? and ?`)
+          .run(firstItemID, lastItemID);
+      database
+        .prepare("delete from itemDataValues where valueID between ? and ?")
+        .run(firstValueID, titleValueID + titles.length - 1);
+      database
+        .prepare("delete from creators where creatorID between ? and ?")
+        .run(firstCreatorID, firstCreatorID + creators.length - 1);
+      database.exec("commit");
+    },
+  };
+}
+
+/** A Zotero Item key, `ZQ` and six more of Zotero's key characters, one per `itemID`. */
+function zoteroKey(itemID: number): string {
+  const alphabet = "23456789ABCDEFGHIJKLMNPQRSTUVWXYZ";
+  let key = "";
+  for (let rest = itemID, place = 0; place < 6; place++) {
+    key = alphabet[rest % alphabet.length] + key;
+    rest = Math.floor(rest / alphabet.length);
+  }
+  return `ZQ${key}`;
+}
+
+/** Tells the plugin the Zotero database changed, as the Companion's Freshness Signal does. */
+async function signalDatabaseUpdated(vaultId: string): Promise<void> {
+  const server = JSON.parse(
+    await obEval(
+      vaultId,
+      "(function(){var services=app.plugins.plugins.zotlit.services;var settings=services.settings.current;return JSON.stringify({hostname:settings['server.hostname'],port:settings['server.port'],sourceId:services.zoteroPref.sourceId});})()",
+    ),
+  ) as { hostname: string; port: number; sourceId: string };
+  const response = await fetch(
+    `http://${server.hostname}:${server.port}/notify`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        [PROTOCOL_VERSION_HEADER]: String(PROTOCOL_VERSION),
+        [SOURCE_ID_HEADER]: server.sourceId,
+      },
+      body: JSON.stringify({ event: "db/updated" }),
+    },
+  );
+  expect(response.status).toBe(204);
+}
+
+/**
+ * The renderer's used JavaScript heap, in bytes, after a full garbage
+ * collection. A Web Worker's heap is its own and stays out of this figure.
+ */
+async function rendererHeap(vaultId: string): Promise<number> {
+  return Number(
+    await obEval(
+      vaultId,
+      "(function(){require('v8').setFlagsFromString('--expose-gc');var gc=require('vm').runInNewContext('gc');gc();gc();return String(process.memoryUsage().heapUsed);})()",
+    ),
+  );
 }
