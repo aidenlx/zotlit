@@ -2,10 +2,11 @@ import { zipSync } from "fflate";
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
+import type { BinaryStore } from "@/services/managed-binary/store";
+
 import type { CitationEngine, PreparedDocument } from "./engine";
 import { PandocEngineService } from "./service";
 import type { PandocEnginePorts } from "./service";
-import type { EngineBinaryStore } from "./store";
 
 /** Node's own typings hand back `ArrayBufferLike` views; the ports take `ArrayBuffer` ones. */
 function bytes(source: Uint8Array): Uint8Array<ArrayBuffer> {
@@ -28,7 +29,7 @@ const ARCHIVE = bytes(zipSync({ "pandoc-3.10-wasm/pandoc.wasm": BINARY }));
 
 type BinaryFiles = Record<string, Uint8Array<ArrayBuffer>>;
 
-type MemoryStore = EngineBinaryStore & {
+type MemoryStore = BinaryStore & {
   files: Map<string, Uint8Array<ArrayBuffer>>;
 };
 
