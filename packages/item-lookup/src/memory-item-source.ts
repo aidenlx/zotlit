@@ -13,6 +13,11 @@ export interface MemoryItemSourceReads {
   signature: number;
   /** `items` reads interrupted while held at the gate. */
   interrupted: number;
+  /**
+   * Pinned sources whose scope closed: one per finished build or re-check,
+   * interrupted or not.
+   */
+  released: number;
 }
 
 /**
@@ -42,6 +47,8 @@ export interface MemoryItemSource {
   readonly openGate: Effect.Effect<void>;
   /** Wait until an `items` read is held at the closed gate. */
   readonly held: Effect.Effect<void>;
+  /** `items` reads held at the gate now. */
+  readonly waiting: number;
 }
 
 /** `rows` holds the Items of each Library; ids come back newest first. */
@@ -56,10 +63,12 @@ export const makeMemoryItemSource = (
       items: 0,
       signature: 0,
       interrupted: 0,
+      released: 0,
     };
     let generation = 0;
     let unavailable = false;
     let gateClosed = false;
+    let waiting = 0;
     const generations = yield* PubSub.unbounded<number>();
     const gate = yield* Latch.make(true);
     const arrived = yield* Latch.make(false);
@@ -90,15 +99,20 @@ export const makeMemoryItemSource = (
             Effect.andThen(
               Effect.suspend(() => {
                 reads.items++;
-                return gateClosed
-                  ? Effect.andThen(arrived.open, gate.await).pipe(
-                      Effect.onInterrupt(() =>
-                        Effect.sync(() => {
-                          reads.interrupted++;
-                        }),
-                      ),
-                    )
-                  : Effect.void;
+                if (!gateClosed) return Effect.void;
+                waiting++;
+                return Effect.andThen(arrived.open, gate.await).pipe(
+                  Effect.onInterrupt(() =>
+                    Effect.sync(() => {
+                      reads.interrupted++;
+                    }),
+                  ),
+                  Effect.ensuring(
+                    Effect.sync(() => {
+                      waiting--;
+                    }),
+                  ),
+                );
               }),
             ),
             Effect.andThen(check),
@@ -122,11 +136,17 @@ export const makeMemoryItemSource = (
 
     const layer = Layer.succeed(ItemSource, {
       generation: Stream.fromPubSub(generations),
-      pinned: check.pipe(
-        Effect.map(() => {
-          reads.pinned++;
-          return pinnedTo(new Map(libraries));
-        }),
+      pinned: Effect.acquireRelease(
+        check.pipe(
+          Effect.map(() => {
+            reads.pinned++;
+            return pinnedTo(new Map(libraries));
+          }),
+        ),
+        () =>
+          Effect.sync(() => {
+            reads.released++;
+          }),
       ),
     });
 
@@ -135,6 +155,9 @@ export const makeMemoryItemSource = (
       reads,
       get generation() {
         return generation;
+      },
+      get waiting() {
+        return waiting;
       },
       setItems: (libraryID, items) =>
         Effect.sync(() => {

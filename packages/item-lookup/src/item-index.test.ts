@@ -5,6 +5,7 @@ import {
   Exit,
   Fiber,
   Layer,
+  Scheduler,
   SubscriptionRef,
 } from "effect";
 import type { Scope } from "effect";
@@ -122,6 +123,7 @@ describe("Item Index", () => {
       items: 0,
       signature: 0,
       interrupted: 0,
+      released: 0,
     });
   });
 
@@ -139,19 +141,27 @@ describe("Item Index", () => {
     expect(result.itemIDs).toBe(1);
   });
 
-  it("shares one build between two parallel first searches", async () => {
+  it("shares one build between parallel first searches", async () => {
     const result = await withIndex(({ source, search }) =>
       Effect.gen(function* () {
-        const [first, second] = yield* Effect.all(
+        const answers = yield* Effect.all(
           [search(USER, ""), search(USER, "")],
-          { concurrency: "unbounded" },
+          {
+            concurrency: "unbounded",
+          },
+        ).pipe(
+          // Yield every few steps, so the two searches interleave at the
+          // points where the scheduler could split them.
+          Effect.provideService(Scheduler.MaxOpsBeforeYield, 4),
         );
-        return { first, second, itemIDs: source.reads.itemIDs };
+        return { answers, itemIDs: source.reads.itemIDs };
       }),
     );
 
-    expect(result.first).toEqual(["BETA", "ALPHA"]);
-    expect(result.second).toEqual(["BETA", "ALPHA"]);
+    expect(result.answers).toEqual([
+      ["BETA", "ALPHA"],
+      ["BETA", "ALPHA"],
+    ]);
     expect(result.itemIDs).toBe(1);
   });
 
@@ -201,8 +211,7 @@ describe("Item Index", () => {
       Effect.gen(function* () {
         yield* search(USER, "");
         yield* source.swap;
-        yield* eventually(() => source.reads.itemIDs === 2);
-        yield* settle;
+        yield* eventually(() => source.reads.released === 2);
         return source.reads.itemIDs;
       }),
     );
@@ -215,8 +224,7 @@ describe("Item Index", () => {
       Effect.gen(function* () {
         yield* search(USER, "");
         yield* source.notify;
-        yield* eventually(() => source.reads.signature === 2);
-        yield* settle;
+        yield* eventually(() => source.reads.released === 2);
         yield* search(USER, "");
         return { ...source.reads };
       }),
@@ -236,7 +244,7 @@ describe("Item Index", () => {
         // The first emission still counts the search before it.
         yield* source.notify;
         const group = yield* Effect.forkChild(search(GROUP, ""));
-        yield* settle;
+        yield* eventually(() => source.waiting === 2);
         yield* source.notify;
         yield* eventually(() => source.reads.interrupted === 1);
         yield* source.openGate;
@@ -266,8 +274,8 @@ describe("Item Index", () => {
         yield* source.swap;
         yield* source.swap;
         yield* source.openGate;
+        // The first waiter waits for the whole lane, trailing rerun included.
         const answer = yield* Fiber.join(first);
-        yield* settle;
         return {
           answer,
           itemIDs: source.reads.itemIDs,
@@ -328,8 +336,7 @@ describe("Item Index", () => {
         yield* search(USER, "");
         yield* search(GROUP, "");
         yield* SubscriptionRef.set(config.locale, "zh");
-        yield* eventually(() => source.reads.itemIDs === 4);
-        yield* settle;
+        yield* eventually(() => source.reads.released === 4);
         return source.reads.itemIDs;
       }),
     );
@@ -393,9 +400,6 @@ describe("Item Index", () => {
     expect(result.itemIDs).toBe(2);
   });
 });
-
-/** Let background fibers run until they block. */
-const settle = Effect.repeat(Effect.yieldNow, { times: 20 });
 
 /** Yield until `check` holds; fail the test when it never does. */
 function eventually(check: () => boolean): Effect.Effect<void> {

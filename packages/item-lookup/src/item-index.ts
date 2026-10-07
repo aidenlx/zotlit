@@ -1,3 +1,4 @@
+import { getLogger } from "@logtape/logtape";
 /**
  * The Item Index: one search index per Library list, built from an
  * {@link ItemSource} and kept fresh by its generation stream.
@@ -22,6 +23,7 @@ import {
   Effect,
   Exit,
   Fiber,
+  FiberSet,
   Layer,
   Schema,
   Stream,
@@ -141,6 +143,8 @@ export class ItemIndex extends Context.Service<
   }
 >()("zotlit/item-lookup/ItemIndex") {}
 
+const logger = getLogger(["zotlit", "item-lookup", "item-index"]);
+
 /** Ids read per `items` call during a build. */
 const SLICE_SIZE = 500;
 
@@ -154,7 +158,8 @@ interface BuiltIndex {
 }
 
 interface Lane {
-  readonly fiber: Fiber.Fiber<void, SourceUnavailable>;
+  /** Set as soon as the lane is forked. */
+  fiber: Fiber.Fiber<void, SourceUnavailable> | null;
   /** Completes when the lane ends; an interrupted lane completes with void. */
   readonly done: Deferred.Deferred<void, SourceUnavailable>;
 }
@@ -179,7 +184,7 @@ export const layerItemIndex: Layer.Layer<
   Effect.gen(function* () {
     const source = yield* Effect.service(ItemSource);
     const config = yield* Effect.service(IndexConfig);
-    const scope = yield* Effect.scope;
+    const fork = yield* FiberSet.makeRuntime<never, void, SourceUnavailable>();
     const entries = new Map<string, Entry>();
     let configVersion = 0;
     let languageLookup: {
@@ -209,8 +214,25 @@ export const layerItemIndex: Layer.Layer<
           held.config === version &&
           signaturesEqual(held.signatures, signatures)
         ) {
+          logger.debug("Item index up to date; skipping rebuild", {
+            libraries: entry.libraries,
+            generation: pinned.generation,
+          });
           return;
         }
+        logger.debug("Item index build started", {
+          libraries: entry.libraries,
+          generation: pinned.generation,
+          reason:
+            held === null
+              ? "no index"
+              : held.generation !== pinned.generation
+                ? "generation"
+                : held.config !== version
+                  ? "configuration"
+                  : "signature",
+        });
+        const startedAt = performance.now();
         const locale = yield* SubscriptionRef.get(config.locale);
         const segmenter = yield* SubscriptionRef.get(config.segmenter);
         const builder = yield* makeEngineIndexBuilder({
@@ -224,83 +246,101 @@ export const layerItemIndex: Layer.Layer<
             yield* builder.add(yield* pinned.items(slice));
           }
         }
+        const engine = yield* builder.build;
         entry.built = {
-          engine: yield* builder.build,
+          engine,
           generation: pinned.generation,
           signatures,
           config: version,
         };
+        logger.info("Item index built", {
+          libraries: entry.libraries,
+          count: engine.size,
+          durationMs: performance.now() - startedAt,
+        });
       }).pipe(
         Effect.scoped,
-        Effect.tapError(() =>
+        Effect.tapError((error) =>
           Effect.sync(() => {
             entry.built = null;
+            logger.debug("Item index dropped; source unavailable", {
+              libraries: entry.libraries,
+              error,
+            });
           }),
         ),
       );
 
-    /** Run the entry's lane: rebuild, then once more per trailing request. */
-    const startLane = (entry: Entry) =>
-      Effect.gen(function* () {
-        const done = yield* Deferred.make<void, SourceUnavailable>();
-        const run = Effect.suspend(() => {
-          entry.rerun = false;
-          return rebuildOnce(entry);
-        }).pipe(
-          Effect.repeat({ while: () => entry.rerun }),
-          Effect.asVoid,
-          Effect.onExit((exit) =>
-            Effect.suspend(() => {
-              entry.lane = null;
-              return Deferred.done(
-                done,
-                Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
-                  ? Exit.void
-                  : exit,
-              );
-            }),
-          ),
-        );
-        const fiber = yield* Effect.forkIn(run, scope);
-        const lane: Lane = { fiber, done };
-        // A lane that ended before the fork returned has already cleared itself.
-        if (fiber.pollUnsafe() === undefined) entry.lane = lane;
-        return lane;
-      });
+    /**
+     * Start the entry's lane: rebuild, then once more per trailing request.
+     * Synchronous, so the check for a running lane and the reservation of a
+     * new one cannot be split by a scheduler yield.
+     */
+    const startLane = (entry: Entry): Lane => {
+      const done = Deferred.makeUnsafe<void, SourceUnavailable>();
+      const lane: Lane = { fiber: null, done };
+      const run = Effect.suspend(() => {
+        entry.rerun = false;
+        return rebuildOnce(entry);
+      }).pipe(
+        Effect.repeat({ while: () => entry.rerun }),
+        Effect.asVoid,
+        Effect.onExit((exit) =>
+          Effect.suspend(() => {
+            if (entry.lane === lane) entry.lane = null;
+            return Deferred.done(
+              done,
+              Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
+                ? Exit.void
+                : exit,
+            );
+          }),
+        ),
+      );
+      entry.lane = lane;
+      lane.fiber = fork(run);
+      return lane;
+    };
 
     /** Join the running lane, or start one. */
-    const ensureLane = (entry: Entry) =>
-      entry.lane ? Effect.succeed(entry.lane) : startLane(entry);
+    const ensureLane = (entry: Entry): Lane => entry.lane ?? startLane(entry);
 
     /** Rebuild after the running build, or now when none runs. */
-    const requestRebuild = (entry: Entry) =>
-      Effect.suspend(() => {
-        if (entry.lane) {
-          entry.rerun = true;
-          return Effect.void;
-        }
-        return startLane(entry);
-      }).pipe(Effect.asVoid);
+    const requestRebuild = (entry: Entry): void => {
+      if (entry.lane) {
+        entry.rerun = true;
+        logger.debug("Item index rebuild coalesced; trailing rerun scheduled", {
+          libraries: entry.libraries,
+        });
+      } else {
+        startLane(entry);
+      }
+    };
 
     const onGeneration = Effect.suspend(() => {
       const work: Effect.Effect<void>[] = [];
       for (const [key, entry] of entries) {
         if (!entry.asked && entry.waiters === 0) {
           entries.delete(key);
-          if (entry.lane) work.push(Fiber.interrupt(entry.lane.fiber));
+          logger.debug("Item index evicted; no search since the last change", {
+            libraries: entry.libraries,
+          });
+          const fiber = entry.lane?.fiber;
+          if (fiber) work.push(Fiber.interrupt(fiber));
           continue;
         }
         entry.asked = false;
-        work.push(requestRebuild(entry));
+        requestRebuild(entry);
       }
       return Effect.all(work, { discard: true });
     });
 
-    const onConfig = Effect.suspend(() => {
+    const onConfig = Effect.sync(() => {
       configVersion++;
-      return Effect.forEach(entries.values(), requestRebuild, {
-        discard: true,
+      logger.debug("Item index configuration changed; rebuilding", {
+        lists: entries.size,
       });
+      for (const entry of entries.values()) requestRebuild(entry);
     });
 
     yield* Stream.runForEach(source.generation, () => onGeneration).pipe(
@@ -319,34 +359,45 @@ export const layerItemIndex: Layer.Layer<
       libraries: readonly number[],
     ): Effect.Effect<EngineIndex, SourceUnavailable> =>
       Effect.gen(function* () {
-        const key = libraries.join(",");
-        for (;;) {
-          let entry = entries.get(key);
-          if (entry === undefined) {
-            entry = {
-              libraries: [...libraries],
-              built: null,
-              lane: null,
-              rerun: false,
-              asked: false,
-              waiters: 0,
-            };
-            entries.set(key, entry);
-          }
-          entry.asked = true;
-          if (entry.built) return entry.built.engine;
-          const waiting = entry;
-          const lane = yield* ensureLane(waiting);
-          waiting.waiters++;
-          yield* Deferred.await(lane.done).pipe(
-            Effect.ensuring(
+        const entry = getEntry(libraries);
+        entry.asked = true;
+        if (entry.built === null) {
+          const lane = ensureLane(entry);
+          // The count rises and its release registers in one step, so an
+          // interrupt cannot leave the entry counted as waited on.
+          yield* Effect.acquireUseRelease(
+            Effect.sync(() => {
+              entry.waiters++;
+            }),
+            () => Deferred.await(lane.done),
+            () =>
               Effect.sync(() => {
-                waiting.waiters--;
+                entry.waiters--;
               }),
-            ),
           );
         }
+        if (entry.built) return entry.built.engine;
+        // A waited-on entry is never evicted, so only the layer closing ends
+        // its lane without an index.
+        return yield* Effect.interrupt;
       });
+
+    const getEntry = (libraries: readonly number[]): Entry => {
+      const key = libraries.join(",");
+      let entry = entries.get(key);
+      if (entry === undefined) {
+        entry = {
+          libraries: [...libraries],
+          built: null,
+          lane: null,
+          rerun: false,
+          asked: false,
+          waiters: 0,
+        };
+        entries.set(key, entry);
+      }
+      return entry;
+    };
 
     return {
       search: (libraries, query, limit) =>
