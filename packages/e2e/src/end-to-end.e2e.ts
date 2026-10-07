@@ -2430,17 +2430,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
   it("refreshes the database from a Freshness Signal", async () => {
     const services = "app.plugins.plugins.zotlit.services";
-    const server = JSON.parse(
-      await obEval(
-        vaultId,
-        `(function(){var services=${services};var settings=services.settings.current;return JSON.stringify({hostname:settings['server.hostname'],port:settings['server.port'],sourceId:services.zoteroPref.sourceId,autoRefresh:settings['zotero.auto-refresh']});})()`,
-      ),
-    ) as {
-      hostname: string;
-      port: number;
-      sourceId: string;
-      autoRefresh: boolean;
-    };
+    const autoRefresh = await obEval(
+      vaultId,
+      `String(${services}.settings.current['zotero.auto-refresh'])`,
+    );
     await using cleanup = new AsyncDisposableStack();
     // Only the signal may refresh: the file watchers stay unbound.
     await obEval(
@@ -2450,7 +2443,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     cleanup.defer(async () => {
       await obEval(
         vaultId,
-        `${services}.settings.update({'zotero.auto-refresh':${server.autoRefresh}});true`,
+        `${services}.settings.update({'zotero.auto-refresh':${autoRefresh}});true`,
       );
     });
     await obEval(
@@ -2487,21 +2480,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         "window.zotlitE2ESidebar?.observer.disconnect();delete window.zotlitE2ESidebar;true",
       );
     });
-    const signal = async () => {
-      const response = await fetch(
-        `http://${server.hostname}:${server.port}/notify`,
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            [PROTOCOL_VERSION_HEADER]: String(PROTOCOL_VERSION),
-            [SOURCE_ID_HEADER]: server.sourceId,
-          },
-          body: JSON.stringify({ event: "db/updated" }),
-        },
-      );
-      expect(response.status).toBe(204);
-    };
+    const signal = () => signalDatabaseUpdated(vaultId);
     // A Zotero edit moves the Item's title and its modification time.
     const edit = (title: string, dateModified: string) => {
       using database = new DatabaseSync(e2eFixture.databasePath);
@@ -2548,52 +2527,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(JSON.stringify({ least: attachmentAnnotations.length, now: true }));
   });
 
-  it("inserts a citation from the worker's Item Index and rebuilds the index off the renderer", async () => {
+  it("rebuilds the worker's Item Index off the renderer, then inserts a citation from it", async () => {
     const finds = (query: string, itemID: number) =>
       `(async function(){var hits=await app.plugins.plugins.zotlit.services.itemLookup.search(${JSON.stringify(query)});return String(hits.some(function(hit){return hit.item.itemID===${itemID};}));})()`;
     // An empty index answers fast; it fails the run here, before any timing.
     expect(
       await obEval(vaultId, finds("simple rules", annotationItem.itemID)),
     ).toBe("true");
-
     await using cleanup = new AsyncDisposableStack();
-    const source = "Citation suggester source.md";
-    await obEval(
-      vaultId,
-      `(async function(){var file=await app.vault.create(${JSON.stringify(source)},'');var leaf=app.workspace.getLeaf(true);await leaf.openFile(file,{state:{mode:'source',source:true}});leaf.view.editor.focus();return true;})()`,
-    );
-    cleanup.defer(async () => {
-      await obEval(
-        vaultId,
-        `(async function(){var file=app.vault.getAbstractFileByPath(${JSON.stringify(source)});for(var leaf of app.workspace.getLeavesOfType('markdown'))if(leaf.view.file===file)leaf.detach();await app.fileManager.trashFile(file);return true;})()`,
-      );
-    });
-    const editor = `app.workspace.getLeavesOfType('markdown').find(function(leaf){return leaf.view.file?.path===${JSON.stringify(source)};}).view.editor`;
-    // One key at a time with no pause, as a fast typist types: each
-    // keystroke interrupts the search before it.
-    await obEval(
-      vaultId,
-      `(function(){var cm=${editor}.cm;for(var ch of ${JSON.stringify("[@ten simple")})cm.dispatch(cm.state.replaceSelection(ch),{userEvent:'input.type'});return true;})()`,
-    );
-    const popup =
-      "Array.from(activeDocument.querySelectorAll('.suggestion-container')).at(-1)";
-    // The popup stays open and lists the final query's Item first.
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(!!${popup}?.querySelector('.suggestion-item')?.textContent.includes(${JSON.stringify(annotationItem.title)}))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
-      vaultId,
-      `(function(){var row=${popup}.querySelector('.suggestion-item');row.dispatchEvent(new activeWindow.MouseEvent('mousemove',{bubbles:true}));row.dispatchEvent(new activeWindow.MouseEvent('click',{bubbles:true}));return true;})()`,
-    );
-    expect(
-      await obEvalUntil(vaultId, `${editor}.getValue()`, {
-        expected: `[@${annotationItem.citationKey}]`,
-      }),
-    ).toBe(true);
 
     // A sync lands a large Library: the worker builds its index while the
     // renderer keeps painting.
@@ -2613,48 +2554,123 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ).toBe(true);
     });
     await signalDatabaseUpdated(vaultId);
-    // The held index answers while the rebuild runs; the new Items show
-    // once the build completes.
-    expect(
-      await obEvalUntil(vaultId, finds(lastTitleQuery, lastItemID), {
-        expected: "true",
-        tries: 120,
-      }),
-    ).toBe(true);
+    // Until the build completes, the held index answers: a known Item stays
+    // found. The new Items show once it completes.
+    const rebuild = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async function(){var lookup=app.plugins.plugins.zotlit.services.itemLookup;var has=function(hits,id){return hits.some(function(hit){return hit.item.itemID===id;});};var start=performance.now();var waits=[];var staleMisses=0;while(performance.now()-start<60000){if(has(await lookup.search(${JSON.stringify(lastTitleQuery)}),${lastItemID}))return JSON.stringify({builtMs:Math.round(performance.now()-start),polls:waits.length,staleMisses:staleMisses,waitMedianMs:waits.sort(function(a,b){return a-b;})[waits.length>>1],waitMaxMs:waits.at(-1)});var t0=performance.now();if(!has(await lookup.search('simple rules'),${annotationItem.itemID}))staleMisses++;waits.push(Math.round((performance.now()-t0)*10)/10);await new Promise(function(resolve){setTimeout(resolve,10);});}return JSON.stringify({builtMs:null});})()`,
+        90_000,
+      ),
+    ) as {
+      builtMs: number | null;
+      polls: number;
+      staleMisses: number;
+      waitMedianMs: number;
+      waitMaxMs: number;
+    };
     const painted = await frames.read();
     const heapGrowth = (await rendererHeap(vaultId)) - heapBefore;
-    console.info("Item Index rebuild, renderer side", {
-      items: corpus.length,
+    console.info("Item Index rebuild, 10,000 Items", {
+      ...rebuild,
       ...painted,
-      heapGrowthMB: Math.round(heapGrowth / 1e5) / 10,
+      rendererHeapGrowthMB: Math.round(heapGrowth / 1e5) / 10,
     });
+    expect(rebuild.builtMs).not.toBeNull();
+    expect(rebuild.staleMisses).toBe(0);
     expect(painted.frames).toBeGreaterThan(1);
     expect(painted.longTasks).toBe(0);
     // ADR 0069 measured about 1 MB of index per 1,000 Items; the renderer
     // keeps less than a quarter of that.
     expect(heapGrowth).toBeLessThan((corpus.length * 1000) / 4);
-  });
+
+    // Query cost through the shipped adapter, for ADR 0069's Measurements.
+    // Each query must find Items, so its time includes the hydration.
+    const words = corpus[123]!.split(" ");
+    const queries = [
+      "k",
+      words[2]!,
+      `${SYNTHETIC_MARKER} ${words[3]!}`,
+      `Synthauthor${added.firstItemID + 12}`,
+      lastTitleQuery,
+    ];
+    const timings = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async function(){var lookup=app.plugins.plugins.zotlit.services.itemLookup;var out={};for(var query of ${JSON.stringify(queries)}){var times=[];var hits=0;for(var i=0;i<21;i++){var t0=performance.now();hits=(await lookup.search(query)).length;times.push(performance.now()-t0);}times.sort(function(a,b){return a-b;});out[query]={hits:hits,medianMs:Math.round(times[10]*10)/10,p95Ms:Math.round(times[19]*10)/10};}return JSON.stringify(out);})()`,
+        90_000,
+      ),
+    ) as Record<string, { hits: number; medianMs: number; p95Ms: number }>;
+    console.info("Item Index queries, 10,000 Items", timings);
+    for (const query of queries)
+      expect(timings[query]!.hits).toBeGreaterThan(0);
+
+    // The Citation Suggester over that Library. It comes after the
+    // measurement: a rendered citation can start the Pandoc engine, and that
+    // start is renderer work of its own.
+    const source = "Citation suggester source.md";
+    await obEval(
+      vaultId,
+      `(async function(){var file=await app.vault.create(${JSON.stringify(source)},'');var leaf=app.workspace.getLeaf(true);await leaf.openFile(file,{state:{mode:'source',source:true}});leaf.view.editor.focus();return true;})()`,
+    );
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async function(){var file=app.vault.getAbstractFileByPath(${JSON.stringify(source)});for(var leaf of app.workspace.getLeavesOfType('markdown'))if(leaf.view.file===file)leaf.detach();await app.fileManager.trashFile(file);return true;})()`,
+      );
+    });
+    const editor = `app.workspace.getLeavesOfType('markdown').find(function(leaf){return leaf.view.file?.path===${JSON.stringify(source)};}).view.editor`;
+    // One key every 70 ms, past Obsidian's 50 ms suggester delay, so each
+    // keystroke sends its own search. The popup opens at `[@` and stays
+    // open through every answer after it.
+    expect(
+      await obEval(
+        vaultId,
+        `(async function(){var cm=${editor}.cm;var watch={opened:false,closed:false};var observer=new MutationObserver(function(records){for(var record of records)for(var node of record.removedNodes)if(node.classList?.contains('suggestion-container'))watch.closed=true;});try{for(var ch of ${JSON.stringify("[@ten simple")}){cm.dispatch(cm.state.replaceSelection(ch),{userEvent:'input.type'});await new Promise(function(resolve){setTimeout(resolve,70);});if(!watch.opened&&activeDocument.querySelector('.suggestion-container')){watch.opened=true;observer.observe(activeDocument.body,{childList:true,subtree:true});}}}finally{observer.disconnect();}return JSON.stringify(watch);})()`,
+      ),
+    ).toBe(JSON.stringify({ opened: true, closed: false }));
+    const popup =
+      "Array.from(activeDocument.querySelectorAll('.suggestion-container')).at(-1)";
+    // The list matches the final query: its Item comes first.
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(!!${popup}?.querySelector('.suggestion-item')?.textContent.includes(${JSON.stringify(annotationItem.title)}))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){var row=${popup}.querySelector('.suggestion-item');row.dispatchEvent(new activeWindow.MouseEvent('mousemove',{bubbles:true}));row.dispatchEvent(new activeWindow.MouseEvent('click',{bubbles:true}));return true;})()`,
+    );
+    expect(
+      await obEvalUntil(vaultId, `${editor}.getValue()`, {
+        expected: `[@${annotationItem.citationKey}]`,
+      }),
+    ).toBe(true);
+  }, 180_000);
 
   it("finds a word inside a Chinese title once the Chinese Segmenter is installed, with no reload", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const segmenter = `${services}.chineseSegmenter`;
     await using cleanup = new AsyncDisposableStack();
-    // The binary cache is device-wide: leave it as this run found it.
-    if (
-      (await obEval(vaultId, `${segmenter}.getStatus().kind`)) === "installed"
-    ) {
+    // The binary cache is device-wide: copy it now and put the copy back at
+    // the end, whatever happens between.
+    await obEval(
+      vaultId,
+      `(async function(){var saved=[];try{var dir=await (await (await navigator.storage.getDirectory()).getDirectoryHandle('zotlit')).getDirectoryHandle(${JSON.stringify(SEGMENTER_CACHE_DIR)});for await(var [name,handle] of dir.entries())if(handle.kind==='file')saved.push({name:name,bytes:new Uint8Array(await (await handle.getFile()).arrayBuffer())});}catch(error){if(error.name!=='NotFoundError')throw error;}window.zotlitE2ESegmenterCache=saved;return true;})()`,
+    );
+    cleanup.defer(async () => {
       await obEval(
         vaultId,
-        `${segmenter}.uninstall().then(function(){return true;})`,
+        `(async function(){var root=await (await navigator.storage.getDirectory()).getDirectoryHandle('zotlit',{create:true});await root.removeEntry(${JSON.stringify(SEGMENTER_CACHE_DIR)},{recursive:true}).catch(function(error){if(error.name!=='NotFoundError')throw error;});var saved=window.zotlitE2ESegmenterCache;if(saved.length>0){var dir=await root.getDirectoryHandle(${JSON.stringify(SEGMENTER_CACHE_DIR)},{create:true});for(var entry of saved){var writable=await (await dir.getFileHandle(entry.name,{create:true})).createWritable();await writable.write(entry.bytes);await writable.close();}}delete window.zotlitE2ESegmenterCache;return true;})()`,
       );
-      cleanup.defer(async () => {
-        await obEval(
-          vaultId,
-          `${segmenter}.install().then(function(){return true;})`,
-          120_000,
-        );
-      });
-    }
+    });
+    // Start from no binary, as a user who has not installed it yet.
+    await obEval(
+      vaultId,
+      `${segmenter}.uninstall().then(function(){return true;})`,
+    );
     const added = addMyLibraryItems(e2eFixture.databasePath, [
       "长江流域的城市化研究",
     ]);
@@ -2703,7 +2719,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         "String(window.zotlitE2EPlugin===app.plugins.plugins.zotlit)",
       ),
     ).toBe("true");
-  });
+  }, 180_000);
 
   it("reflects a Scope Case switch through zotlit:library-scope", async () => {
     const availableCase = findScopeCase("available");
@@ -3265,6 +3281,9 @@ async function observeNotices(vaultId: string) {
   };
 }
 
+/** The Chinese Segmenter's device-wide cache directory under OPFS `zotlit/`. */
+const SEGMENTER_CACHE_DIR = "chinese-segmenter";
+
 /** Items a synthetic sync adds: the scale ADR 0069 measured at. */
 const SYNTHETIC_CORPUS_SIZE = 10_000;
 /** A word only synthetic Items carry. */
@@ -3329,6 +3348,10 @@ function addMyLibraryItems(
     ({ groupID }) => groupID === null,
   )!.libraryID;
 
+  // One transaction: a failed write leaves no row behind.
+  database.exec("begin");
+  using rollback = new DisposableStack();
+  rollback.defer(() => database.exec("rollback"));
   const value = database.prepare(
     "insert into itemDataValues (valueID, value) values (?, ?)",
   );
@@ -3361,7 +3384,6 @@ function addMyLibraryItems(
     "insert into itemCreators (itemID, creatorID, creatorTypeID, orderIndex) values (?, ?, ?, ?)",
   );
   const titleValueID = firstValueID + journals.length;
-  database.exec("begin");
   titles.forEach((title, index) => {
     const itemID = firstItemID + index;
     item.run(itemID, itemTypeID, libraryID, zoteroKey(itemID));
@@ -3378,6 +3400,7 @@ function addMyLibraryItems(
     }
   });
   database.exec("commit");
+  rollback.move();
 
   const lastItemID = firstItemID + titles.length - 1;
   return {
