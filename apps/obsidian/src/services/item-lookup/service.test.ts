@@ -204,6 +204,27 @@ describe("ItemLookup", () => {
     expect(reads.interrupted).toEqual([]);
   });
 
+  it("drops a pending search's answer when a database switch gives its local id to another group", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
+    const group = (groupID: number): AvailableLibrary => ({
+      selector: { type: "group", groupID },
+      libraryID: 2,
+      name: `Group ${groupID}`,
+    });
+    const libraryScope = new FakeLibraryScope([group(10)]);
+    await using lookup = itemLookup(reads, libraryScope);
+    await lookup.search("");
+    const gate = reads.gateSearch();
+
+    const search = lookup.search("Alpha");
+    await expect.poll(() => reads.held).toBe(1);
+    libraryScope.setLibraries([group(20)]);
+
+    await expect(search).resolves.toEqual([]);
+    expect(reads.interrupted).toEqual(["Alpha"]);
+    gate.resolve();
+  });
+
   it.each([
     ["another Library", [library(2)]],
     ["no Library", []],

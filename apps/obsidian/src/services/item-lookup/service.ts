@@ -19,6 +19,7 @@ import { Effect, FiberHandle, FiberSet, Scope } from "effect";
 
 import { openScope } from "@/lib/effect-scope";
 import { getLogger } from "@/lib/log";
+import { selectorKey } from "@/services/library-scope/scope";
 import type {
   AvailableLibrary,
   ResolvedLibraryScope,
@@ -101,14 +102,14 @@ export class ItemLookup extends Service<ItemLookupReady> {
       if (libraries.length === 0) return;
       runPrewarm(Effect.asVoid(this.#searchItems(libraries, "", 1)));
     };
-    let libraryIDs = libraryIDsOf(this.#libraryScope.current);
+    let scopeKey = scopeKeyOf(this.#libraryScope.current);
     stack.defer(
       this.#libraryScope.on("changed", (resolved) => {
         // A pending answer covers the Libraries it asked with; once those
         // change, it must not reach a picker. A rename keeps it.
-        const next = libraryIDsOf(resolved);
-        if (next !== libraryIDs) {
-          libraryIDs = next;
+        const next = scopeKeyOf(resolved);
+        if (next !== scopeKey) {
+          scopeKey = next;
           Effect.runFork(FiberHandle.clear(searches));
         }
         prewarm(resolved);
@@ -119,7 +120,7 @@ export class ItemLookup extends Service<ItemLookupReady> {
 
     await Promise.all([this.#reads.ready, this.#libraryScope.ready]);
     logger.info("Item lookup ready");
-    libraryIDs = libraryIDsOf(this.#libraryScope.current);
+    scopeKey = scopeKeyOf(this.#libraryScope.current);
     prewarm(this.#libraryScope.current);
     return { runSearch };
   }
@@ -180,9 +181,13 @@ export class ItemLookup extends Service<ItemLookupReady> {
   }
 }
 
-/** The local ids `resolved` covers, as one comparable value. */
-function libraryIDsOf(resolved: ResolvedLibraryScope | null): string {
+/**
+ * The Libraries `resolved` covers, as one comparable value: each stable
+ * selector with its local id, since a database switch can give a local id to
+ * another group.
+ */
+function scopeKeyOf(resolved: ResolvedLibraryScope | null): string {
   return (resolved?.available ?? [])
-    .map((library) => library.libraryID)
+    .map((library) => `${selectorKey(library.selector)}@${library.libraryID}`)
     .join(",");
 }
