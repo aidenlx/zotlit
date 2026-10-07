@@ -18,6 +18,7 @@ import type { ProfileService } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import {
   createCheckHandler,
@@ -75,6 +76,7 @@ import { choices } from "./vocabulary";
 interface TemplateWorkbenchRegistrationDeps {
   app: App;
   db: DatabaseService;
+  zoteroReads: ZoteroReadsService;
   noteIndex: NoteIndex;
   settings: SettingsService;
   profile: ProfileService;

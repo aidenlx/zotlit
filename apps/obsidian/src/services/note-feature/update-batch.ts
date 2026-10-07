@@ -1,13 +1,12 @@
 import type { TFile } from "obsidian";
 
 import {
-  CollectionCache,
   getZoteroIdentity,
   getItemDisplayRefByID,
   getItemRefByID,
   getItemsByID,
 } from "@zotlit/db";
-import type { GroupIDMemo, TagMemo, Item } from "@zotlit/db";
+import type { GroupIDMemo, Item } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -41,6 +40,7 @@ import type { ResolvedProfile } from "@/services/profile/bindings";
 import type { LiteratureNoteProfile } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 import { InertTemplateError } from "@/services/template/errors";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 import { BatchModal, FlatManifest } from "@/views/batch-modal";
 import type {
   BatchProfileChoice,
@@ -110,12 +110,10 @@ interface NotFoundEntry {
 interface RunContext {
   reportExcerpts: (summary: ExcerptSummary) => void;
   client: NodeDatabaseClient;
+  /** Bound to the run's Snapshot; each update renders and flushes through it. */
+  reads: ZoteroReadsApi;
   settings: Readonly<Settings>;
   groupIdMemo: GroupIDMemo;
-  /** Spans the whole batch so per-library collection nodes load once. */
-  collectionCache: CollectionCache;
-  /** Spans the whole batch so a shared item's tags load once. */
-  tagMemo: TagMemo;
   /** The one retention every note this batch writes reuses outcomes from. */
   outcomes: ExcerptOutcomeScope;
   /**
@@ -628,15 +626,17 @@ async function executeBatchActions(
   // the run's last admitted consumer settles.
   await using outcomes = new ExcerptOutcomeScope();
 
+  // The run's updates read one Snapshot, held until the run settles.
+  using readLease = await deps.zoteroReads.acquireRead();
+
   // Per-run caches + scope span the whole batch; `client` and `username` are
   // run-invariant too but only available inside the run closure, so they're
   // passed per call instead of baked in here.
   const baseContext: Omit<RunContext, "client" | "username"> = {
     reportExcerpts: excerptReports.add,
+    reads: readLease.reads,
     settings,
     groupIdMemo: new Map(),
-    collectionCache: new CollectionCache(),
-    tagMemo: new Map(),
     scope,
     profile,
     outcomes,
@@ -694,8 +694,8 @@ async function executeBatchActions(
 
 /**
  * Load the action's full item (deferred from classification) and write it: an
- * existing-note update reuses {@link writeNoteUpdate}, sharing the batch's
- * `tagMemo`/`collectionCache`; a create routes through the self-contained
+ * existing-note update reuses {@link writeNoteUpdate} under the batch's
+ * Snapshot; a create routes through the self-contained
  * {@link createNote} (resolves tags + path, then writes — a filename collision
  * surfaces as this item's own `vault.create` failure). An item deleted in
  * Zotero between classification and its write throws here, surfacing as this
@@ -715,13 +715,10 @@ async function runAction(
   if (action.kind === "update") {
     const result = await deps.noteFeature.writeNoteUpdate(action.file, {
       reportExcerpts: run.reportExcerpts,
-      client: run.client,
+      reads: run.reads,
       item,
-      tagMemo: run.tagMemo,
-      collectionCache: run.collectionCache,
       settings: run.settings,
       scope: run.scope,
-      groupIdMemo: run.groupIdMemo,
       username: run.username,
       outcomes: run.outcomes,
     });
@@ -749,9 +746,6 @@ async function runAction(
   }
   const result = await deps.noteFeature.createNote(item, {
     reportExcerpts: run.reportExcerpts,
-    collectionCache: run.collectionCache,
-    tagMemo: run.tagMemo,
-    groupIdMemo: run.groupIdMemo,
     username: run.username,
     profile: action.selection?.selector ?? run.profile,
     outcomes: run.outcomes,

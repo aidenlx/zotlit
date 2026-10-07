@@ -1,4 +1,5 @@
 import { distinct } from "@std/collections";
+import { Effect } from "effect";
 // Batch import runner for Zotero notes into standalone Markdown mirrors.
 import type { MetadataCache, TFile } from "obsidian";
 
@@ -8,12 +9,13 @@ import {
   getItemsByKey,
   getItemsByID,
   getNoteByItemID,
-  getNoteByKey,
   getNoteRefsByItemIDs,
   getTrashedNoteItemIDs,
+  parseIndexedKey,
   resolveIndexedKeyLibrary,
+  USER_LIBRARY_ID,
 } from "@zotlit/db";
-import type { ChildNote, GroupIDMemo, TagMemo } from "@zotlit/db";
+import type { ChildNote, GroupIDMemo, Note } from "@zotlit/db";
 import type { ImportMode } from "@zotlit/protocol";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -50,6 +52,10 @@ import type { NoteIndex } from "@/services/note-index/service";
 import type { ProfileReader } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
+import type {
+  ZoteroReadsApi,
+  ZoteroReadsService,
+} from "@/services/zotero-reads/service";
 import { FlatManifest, HierarchyManifest } from "@/views/batch-modal";
 import type {
   FlatTask,
@@ -81,6 +87,8 @@ export interface NoteImportDeps {
   /** UI port for the classify/confirm modals; keeps `App` out of the runners. */
   view: NoteImportView;
   db: Pick<DatabaseService, "state" | "client" | "acquireRead">;
+  /** A note write's reads: one lease spans the write and what it imports. */
+  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   settings: Pick<SettingsService, "loaded" | "update">;
   /** Which Libraries an unqualified library-wide import covers. */
   libraryScope: Pick<LibraryScopeService, "resolveWith">;
@@ -335,13 +343,13 @@ async function prepareImportProfiles(
   const cache = new Map<ProfileSelector, Map<number, PreparedExplicitImport>>();
   const initial = new Map<number, PreparedExplicitImport>();
   {
-    using lease = await deps.db.acquireRead();
+    using lease = await deps.zoteroReads.acquireRead();
     for (const action of actions) {
       signal.throwIfAborted();
       try {
         action.profilePlan = await deps.noteImport.prepareExplicitImport(
           action.note,
-          { client: lease.client, orphanProfile: selection.selector },
+          { reads: lease.reads, orphanProfile: selection.selector },
         );
         initial.set(action.note.itemID, action.profilePlan);
       } catch (error) {
@@ -372,12 +380,12 @@ async function prepareImportProfiles(
     let plans = cache.get(selector);
     if (plans) return plans;
     plans = new Map();
-    using lease = await deps.db.acquireRead();
+    using lease = await deps.zoteroReads.acquireRead();
     for (const action of orphans) {
       plans.set(
         action.note.itemID,
         await deps.noteImport.prepareExplicitImport(action.note, {
-          client: lease.client,
+          reads: lease.reads,
           orphanProfile: selector,
         }),
       );
@@ -729,15 +737,16 @@ async function importOne(
     deps.settings.loaded,
     deps.template.ready,
   ]);
-  using lease = await deps.db.acquireRead();
-  const memo: GroupIDMemo = new Map();
-  const note = getNoteByItemID(lease.client, ref.itemID, { memo });
+  // One Snapshot for the read and the write it feeds.
+  using lease = await deps.zoteroReads.acquireRead();
+  const [note] = await Effect.runPromise(
+    lease.reads.NoteBodies({ libraryID: ref.libraryID, keys: [ref.key] }),
+  );
   if (!note) return "skipped";
   using excerpts = collectExcerptSummary(deps.noteFeature.reportExcerptImages);
   return await deps.noteImport.importNote(note, {
-    client: lease.client,
+    reads: lease.reads,
     settings,
-    groupIdMemo: memo,
     reportExcerpts: excerpts.add,
     ...(targetFile ? { targetFile } : {}),
   });
@@ -770,12 +779,13 @@ async function executeImportRun(
     deps.template.ready,
   ]);
   const memo: GroupIDMemo = new Map();
-  const tagMemo: TagMemo = new Map();
   const attachmentFolderCache = new Map<string, string>();
   using excerpts = collectExcerptSummary(deps.noteFeature.reportExcerptImages);
   // One run is one initiating batch: every note it writes reuses one retention,
   // released as soon as the run's last admitted consumer settles.
   await using outcomes = new ExcerptOutcomeScope();
+  // The run's writes read one Snapshot, held until the run settles.
+  using readLease = await deps.zoteroReads.acquireRead();
 
   const result = await runBatchWrite({
     db: deps.db,
@@ -791,10 +801,8 @@ async function executeImportRun(
         return "skipped";
       }
       const options = {
-        client,
+        reads: readLease.reads,
         settings,
-        groupIdMemo: memo,
-        tagMemo,
         attachmentFolderCache,
         reportExcerpts: excerpts.add,
         outcomes,
@@ -892,25 +900,39 @@ async function reimportNoteByKey(
 
   await Promise.all([deps.noteIndex.whenIndexed(), deps.template.ready]);
 
-  using lease = await deps.db.acquireRead();
-  const groupIdMemo: GroupIDMemo = new Map();
-  const resolved = resolveIndexedKeyLibrary(lease.client, noteKey);
-  const note = resolved
-    ? getNoteByKey(lease.client, resolved.key, {
-        libraryID: resolved.libraryID,
-        memo: groupIdMemo,
-      })
-    : null;
+  // One Snapshot for the read and the write it feeds.
+  using lease = await deps.zoteroReads.acquireRead();
+  const note = await readNoteByIndexedKey(lease.reads, noteKey);
   if (!note) return { outcome: "not-found" };
 
   const settings = await deps.settings.loaded;
   using excerpts = collectExcerptSummary(deps.noteFeature.reportExcerptImages);
   const writeOutcome = await deps.noteImport.importNote(note, {
-    client: lease.client,
+    reads: lease.reads,
     settings,
-    groupIdMemo,
     targetFile,
     reportExcerpts: excerpts.add,
   });
   return { outcome: writeOutcome };
+}
+
+/** The live note an Indexed Key names, with its body; `undefined` when none does. */
+async function readNoteByIndexedKey(
+  reads: ZoteroReadsApi,
+  indexedKey: string,
+): Promise<Note | undefined> {
+  const parsed = parseIndexedKey(indexedKey);
+  if (!parsed) return undefined;
+  const { key, groupID } = parsed;
+  const libraryID =
+    groupID == null
+      ? USER_LIBRARY_ID
+      : (await Effect.runPromise(reads.Libraries({}))).find(
+          (library) => library.groupID === groupID,
+        )?.libraryID;
+  if (libraryID === undefined) return undefined;
+  const [note] = await Effect.runPromise(
+    reads.NoteBodies({ libraryID, keys: [key] }),
+  );
+  return note;
 }

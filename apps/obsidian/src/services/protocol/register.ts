@@ -71,7 +71,7 @@ export interface ProtocolDeps extends SingleUpdateDeps {
   batchImport: Pick<BatchImport, "runBatchImport" | "runBatchImportAll">;
   zoteroPref: ZoteroPrefService;
   liveUpdate: LocalServerService;
-  reads: Pick<ZoteroReadsService, "state" | "ready">;
+  zoteroReads: Pick<ZoteroReadsService, "state" | "ready" | "acquireRead">;
 }
 
 /**
@@ -325,13 +325,13 @@ async function handleOpenAttachmentProtocol(
   });
   if (!query) return;
 
-  if (deps.reads.state !== "ready") {
+  if (deps.zoteroReads.state !== "ready") {
     logger.warn("Protocol handler: database not ready", { action });
     new BaseNotice(m.notice_protocol_db_unavailable());
     return;
   }
 
-  const { reads } = await deps.reads.ready;
+  const { reads } = await deps.zoteroReads.ready;
   const attachments = await Effect.runPromise(
     reads.AttachmentsAt({ itemID: query.item }),
   );
@@ -448,13 +448,13 @@ async function resolveProtocolItem(
   deps: ProtocolDeps,
   action: string,
 ): Promise<ItemRef | null> {
-  if (deps.reads.state !== "ready") {
+  if (deps.zoteroReads.state !== "ready") {
     logger.warn("Protocol handler: database not ready", { action });
     new BaseNotice(m.notice_protocol_db_unavailable());
     return null;
   }
 
-  const { reads } = await deps.reads.ready;
+  const { reads } = await deps.zoteroReads.ready;
   const slices = await Effect.runPromise(
     Stream.runCollect(reads.DisplayRefs({ itemIDs: [query.item] })),
   );

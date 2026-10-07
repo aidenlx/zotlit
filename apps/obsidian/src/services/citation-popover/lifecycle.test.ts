@@ -34,10 +34,10 @@ function reads() {
 
 vi.mock("@zotlit/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@zotlit/db")>()),
-  getZoteroIdentity: () => ({
+  getZoteroDatabaseIdentity: () => ({
     userID: null,
     localUserKey: null,
-    username: null,
+    serverID: null,
   }),
   getItemsByKey: vi.fn(() => []),
   getAttachmentsByParents: () => [],

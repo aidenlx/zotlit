@@ -34,6 +34,10 @@ import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import { ProfileAnnotationError } from "@/services/template/service";
+import {
+  inProcessReadsService,
+  sharedClientOpener,
+} from "@/services/zotero-reads/test-utils";
 import type {
   BatchClassifyControls,
   BatchModalOptions,
@@ -231,6 +235,7 @@ function makeDeps(
       client,
       acquireRead: async () => ({ client, [Symbol.dispose]() {} }),
     },
+    zoteroReads: inProcessReadsService(sharedClientOpener(client)),
     settings: {
       loaded: Promise.resolve({ ...defaults, ...settings }),
       update: vi.fn(),
@@ -467,7 +472,13 @@ beforeEach(() => {
   vi.mocked(getItemDisplayRefByID).mockReset();
   vi.mocked(getNoteByItemID).mockReset();
   vi.mocked(getItemsByKey).mockReset();
-  vi.mocked(getNoteByKey).mockReset();
+  // The single-note paths read `NoteBodies`, whose handler looks a note up by
+  // key; answer it from the by-id stub a test sets.
+  vi.mocked(getNoteByKey)
+    .mockReset()
+    .mockImplementation((client, key) =>
+      vi.mocked(getNoteByItemID)(client, Number(key.replace("NOTE", ""))),
+    );
   currentScope = scopeOf([PERSONAL_LIBRARY]);
   vi.mocked(getLibraries)
     .mockReset()
@@ -751,9 +762,9 @@ describe("single note import (mode=note, 1 id)", () => {
 
     expect(openedModals).toHaveLength(0);
     expect(importNote).toHaveBeenCalledTimes(1);
-    // The shared group memo is threaded so a run memoizes group-library lookups.
+    // The write reads through the Snapshot its read opened.
     expect(importNote.mock.calls[0]![1]).toMatchObject({
-      groupIdMemo: expect.any(Map),
+      reads: expect.any(Object),
     });
     expect(result).toEqual({
       outcome: "single",
@@ -970,7 +981,7 @@ describe("note-mode modal classify + run", () => {
     expect(probe.renders()).toBe(2);
   });
 
-  it("threads the shared group memo to every imported note", async () => {
+  it("threads the run's Snapshot reads to every imported note", async () => {
     vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50), makeRef(51)]);
     vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
       makeNote(itemID),
@@ -981,11 +992,11 @@ describe("note-mode modal classify + run", () => {
     await driveLastModal();
 
     expect(importNote).toHaveBeenCalledTimes(2);
-    // Both writes share one memo instance, so group-library lookups memoize.
-    const memo = importNote.mock.calls[0]![1].groupIdMemo;
-    expect(memo).toBeInstanceOf(Map);
+    // Both writes read one Snapshot, held for the run.
+    const reads = importNote.mock.calls[0]![1].reads;
+    expect(reads).toEqual(expect.any(Object));
     for (const call of importNote.mock.calls) {
-      expect(call[1].groupIdMemo).toBe(memo);
+      expect(call[1].reads).toBe(reads);
     }
   });
 

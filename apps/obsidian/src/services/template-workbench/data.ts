@@ -1,22 +1,20 @@
 // Resolves an Indexed Key and builds side-effect-free Template data.
 
+import { Effect } from "effect";
 import type { App } from "obsidian";
 
 import {
   buildFilenameContext,
+  buildNoteContextFromSource,
   citekeysToCiteTemplateData,
-  CollectionCache,
-  fetchNoteContext,
   fetchAnnotationsTemplateData,
   getAnnotationsByKey,
   getAttachmentByKey,
-  getZoteroIdentity,
   getItemsByID,
   getItemTypeByKey,
   getItemsByKey,
   getNoteByKey,
   resolveIndexedKeyLibrary,
-  resolveItemTags,
   withAnnotationCitation,
 } from "@zotlit/db";
 import type {
@@ -26,6 +24,7 @@ import type {
   ContractRoot,
   Item,
   NoteResolvers,
+  NoteSource,
 } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { TemplateError } from "@zotlit/templates/facade";
@@ -35,6 +34,7 @@ import type { CitationExampleId } from "@zotlit/workbench/render";
 import { annotationCitation } from "@/lib/annotation-render";
 import { creatorSummary } from "@/lib/item-summary";
 import type { DatabaseService } from "@/services/database/service";
+import { itemFacets } from "@/services/note-feature/context";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
@@ -47,6 +47,10 @@ import {
 } from "@/services/template/inert-resolver-host";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type {
+  ZoteroReadsApi,
+  ZoteroReadsService,
+} from "@/services/zotero-reads/service";
 
 /**
  * The object one Citation's data is built from: a built-in example set, or an
@@ -71,6 +75,8 @@ export type CitationDataLoadResult =
 export interface TemplateDataDeps {
   app: App;
   db: Pick<DatabaseService, "acquireRead">;
+  /** The note and filename roots read their Item's bundle through a lease. */
+  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   noteIndex: Pick<
     NoteIndex,
     "getNotesByItemKey" | "getImportedNoteByNoteKey" | "whenIndexed"
@@ -122,8 +128,8 @@ export async function loadTemplateData(
     deps.zoteroPref.ready,
     deps.templates.ready,
   ]);
-  using lease = await deps.db.acquireRead();
   if (root === "annotation") {
+    using lease = await deps.db.acquireRead();
     const selected = resolveAnnotation(lease.client, indexedKey);
     if (selected.kind !== "annotation") return selected;
     const resolvers = await createInertResolvers(deps, settings, selected.item);
@@ -141,35 +147,30 @@ export async function loadTemplateData(
     };
   }
 
-  const selected = resolveNoteItem(lease.client, indexedKey);
-  if (selected.kind !== "item") return selected;
-
-  const item = selected.item;
+  const selected = await (async () => {
+    using lease = await deps.zoteroReads.acquireRead();
+    return await readNoteItemSource(lease.reads, indexedKey);
+  })();
+  if (selected.kind !== "source") return selected;
+  const { source } = selected;
   if (root === "filename") {
-    const collectionCache = new CollectionCache();
+    const { itemTags, itemCollections } = itemFacets(source);
     return {
       kind: "data",
       data: buildFilenameContext({
-        item,
-        tags: resolveItemTags(lease.client, item.itemID, new Map()),
-        collections:
-          collectionCache
-            .byItemIDs(lease.client, item.libraryID, [item.itemID])
-            .get(item.itemID) ?? [],
+        item: source.item,
+        tags: itemTags,
+        collections: itemCollections,
         authorsShort: creatorSummary,
       }),
     };
   }
 
-  const resolvers = await createInertResolvers(deps, settings, item);
+  const resolvers = await createInertResolvers(deps, settings, source.item);
 
   return {
     kind: "data",
-    data: fetchNoteContext(lease.client, item, {
-      resolvers,
-      collectionCache: new CollectionCache(),
-      username: getZoteroIdentity(lease.client).username,
-    }),
+    data: buildNoteContextFromSource(source, resolvers),
   };
 }
 
@@ -352,6 +353,54 @@ function resolveNoteItem(
     return resolveParentItem(client, attachment.parentItemID);
   }
   return resolveParentItem(client, selected.parentItemID);
+}
+
+/**
+ * {@link resolveNoteItem} through ZoteroReads under one Snapshot: the Item an
+ * Indexed Key names, or the parent Item of the attachment, note, or annotation
+ * it names, read as a {@link NoteSource}.
+ */
+async function readNoteItemSource(
+  reads: ZoteroReadsApi,
+  indexedKey: string,
+): Promise<
+  | { kind: "source"; source: NoteSource }
+  | Exclude<NoteItemResult, { kind: "item" }>
+> {
+  const run = Effect.runPromise;
+  const selected = await run(reads.ItemType({ indexedKey }));
+  if (!selected) return { kind: "not-found" };
+  const { libraryID, key, itemType } = selected;
+  let parentItemID: number | null;
+  if (itemType === "annotation") {
+    const sources = await run(
+      reads.AnnotationSources({ libraryID, keys: [key], username: null }),
+    );
+    const attachment = sources.attachments[0];
+    if (!attachment) return { kind: "annotation-attachment-missing" };
+    parentItemID = attachment.parentItemID;
+  } else if (itemType === "attachment") {
+    const [attachment] = await run(
+      reads.AttachmentsByKeys({ libraryID, keys: [key] }),
+    );
+    if (!attachment) return { kind: "not-found" };
+    parentItemID = attachment.parentItemID;
+  } else if (itemType === "note") {
+    const [note] = await run(reads.NoteBodies({ libraryID, keys: [key] }));
+    if (!note) return { kind: "not-found" };
+    parentItemID = note.parentItemID;
+  } else {
+    const items = await run(
+      reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
+    );
+    const item = items.values().next().value;
+    const source =
+      item && (await run(reads.NoteSource({ itemID: item.itemID })));
+    return source ? { kind: "source", source } : { kind: "not-found" };
+  }
+  if (!parentItemID) return { kind: "no-parent-item" };
+  const source = await run(reads.NoteSource({ itemID: parentItemID }));
+  return source ? { kind: "source", source } : { kind: "no-parent-item" };
 }
 
 function resolveParentItem(

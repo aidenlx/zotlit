@@ -161,7 +161,7 @@ describe("single-note protocol links", () => {
     async (action) => {
       refOf(REF);
       using _handlers = register({
-        reads: readsIn(),
+        zoteroReads: readsIn(),
       } as unknown as Partial<ProtocolDeps>);
       handlers.get(`zotlit/${action}`)?.({
         action: `zotlit/${action}`,
@@ -186,7 +186,7 @@ describe("paneType", () => {
     const app = {} as ProtocolDeps["app"];
     using _handlers = register({
       app,
-      reads: readsIn(),
+      zoteroReads: readsIn(),
     } as unknown as Partial<ProtocolDeps>);
     handlers.get("zotlit/explore")?.({
       action: "zotlit/explore",
@@ -206,7 +206,7 @@ describe("paneType", () => {
   it("routes the link's paneType to the Companion flow", async () => {
     refOf(REF);
     using _handlers = register({
-      reads: readsIn(),
+      zoteroReads: readsIn(),
     } as unknown as Partial<ProtocolDeps>);
     handlers.get("zotlit/open")?.({
       action: "zotlit/open",
@@ -234,7 +234,7 @@ describe("open-attachment protocol link", () => {
   ): Partial<ProtocolDeps> {
     return {
       app,
-      reads: readsIn(),
+      zoteroReads: readsIn(),
       zoteroPref: {
         sourceId: SOURCE_ID,
         dataDir: "/data",
@@ -312,7 +312,7 @@ describe("open-attachment protocol link", () => {
 
   it("shows the db-unavailable notice instead of resolving Attachments", () => {
     using _handlers = register(
-      baseDeps({ reads: readsIn("loading") } as never),
+      baseDeps({ zoteroReads: readsIn("loading") } as never),
     );
 
     handlers.get("zotlit/open-attachment")?.({

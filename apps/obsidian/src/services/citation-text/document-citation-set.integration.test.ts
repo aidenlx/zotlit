@@ -38,10 +38,10 @@ vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();
   return {
     ...actual,
-    getZoteroIdentity: () => ({
+    getZoteroDatabaseIdentity: () => ({
       userID: 1,
       localUserKey: null,
-      username: null,
+      serverID: null,
     }),
     resolveIndexedKeyLibrary: vi.fn(),
     getItemsByKey: vi.fn(),

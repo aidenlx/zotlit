@@ -54,10 +54,10 @@ vi.mock("@zotlit/db", async (importOriginal) => {
     ...actual,
     // The in-process reads run over an empty database; these three are the
     // whole read path from an Indexed Key to the Item the citation names.
-    getZoteroIdentity: () => ({
+    getZoteroDatabaseIdentity: () => ({
       userID: 1,
       localUserKey: null,
-      username: null,
+      serverID: null,
     }),
     resolveIndexedKeyLibrary: vi.fn(),
     getItemsByKey: vi.fn(),

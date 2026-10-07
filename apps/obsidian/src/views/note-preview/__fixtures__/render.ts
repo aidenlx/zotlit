@@ -8,8 +8,8 @@ import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { RenderedCitation } from "@/services/pandoc/engine";
 import { SettingsService } from "@/services/settings/service";
 import { TemplateService } from "@/services/template/service";
-import { inProcessReadsService, memoryOpener } from "@/services/zotero-reads/test-utils";
 import { createObsidianHost, PluginStub } from "@/lib/__fixtures__/obsidian-host";
+import { inProcessReadsService, sharedClientOpener } from "@/services/zotero-reads/test-utils";
 import type { NativeRenderDeps } from "@/views/note-preview/render";
 
 export const PROFILE_SOURCE = `---
@@ -52,8 +52,11 @@ Old generated body.
 Personal conclusion.
 `;
 
-/** The rows every preview fixture reads: one item with an attachment and an annotation. */
-const SEED = `
+export async function createRenderFixture(options: { existing?: string; javascript?: boolean; wikilinks?: boolean; defaultStyle?: string; partials?: Record<string, string> } = {}) {
+  const client = createClient(":memory:");
+  const sqlite = client.$client as DatabaseSync;
+  createFixtureSchema(sqlite);
+  sqlite.exec(`
     insert into libraries (libraryID, type, editable, filesEditable) values (1, 'user', 1, 1);
     insert into itemTypes (itemTypeID, typeName) values (1, 'journalArticle'), (2, 'attachment'), (3, 'annotation');
     insert into fieldsCombined (fieldID, fieldName, custom) values (1, 'title', 0), (2, 'citationKey', 0);
@@ -66,14 +69,7 @@ const SEED = `
     insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path) values (2, 1, 0, 'application/pdf', 'storage:paper.pdf');
     insert into itemAnnotations (itemID, parentItemID, type, authorName, text, comment, color, pageLabel, sortIndex, position, isExternal)
       values (3, 2, 1, null, 'Use readable figures.', null, '#ffd400', '2', '00000|000001|00000', '{"pageIndex":1,"rects":[]}', 0);
-  `;
-
-export async function createRenderFixture(options: { existing?: string; javascript?: boolean; wikilinks?: boolean; defaultStyle?: string; partials?: Record<string, string> } = {}) {
-  const client = createClient(":memory:");
-  const sqlite = client.$client as DatabaseSync;
-  createFixtureSchema(sqlite);
-  sqlite.exec(SEED);
-  const reads = inProcessReadsService(memoryOpener(() => SEED).open);
+  `);
   const host = createObsidianHost();
   const { vault } = host;
   const file = options.existing === undefined ? null : vault.addFile("notes/paper.md", options.existing);
@@ -109,11 +105,12 @@ export async function createRenderFixture(options: { existing?: string; javascri
     const outcome = await renderCitations(sources, items, options?.presentation);
     return outcome.kind === "held" ? outcome.record.value : null;
   });
+  const zoteroReads = inProcessReadsService(sharedClientOpener(client));
   const deps: NativeRenderDeps = {
     app, settings, templates,
     profile: { resolveProfile: () => undefined },
     db: { on: () => () => {}, acquireRead: async () => ({ client, [Symbol.dispose]() {} }) as never },
-    reads,
+    zoteroReads,
     noteIndex: { getNotesByItemKey: (key) => file && key === "MAIN2345" ? [file] : [], getImportedNoteByNoteKey: () => [], whenIndexed: async () => {} },
     zoteroPref: { ready: Promise.resolve(), dataDir: "/Zotero", baseAttachmentPath: null },
     citationIndex: {
@@ -124,5 +121,5 @@ export async function createRenderFixture(options: { existing?: string; javascri
   };
   const writes = { create: vi.spyOn(vault, "create"), process: vi.spyOn(vault, "process"), modify: vi.spyOn(vault, "modifyFile") };
   const snapshot = exportItemSnapshot(client, { key: "MAIN2345", library: { type: "personal" } }, { provenance: { kind: "connected", installationId: "fixture", vault: "preview" } });
-  return { deps, snapshot, host, vault, renderCitations, writes, async [Symbol.asyncDispose]() { await reads[Symbol.asyncDispose](); await templates[Symbol.asyncDispose](); await settings[Symbol.asyncDispose](); sqlite.close(); } };
+  return { deps, snapshot, host, vault, renderCitations, writes, async [Symbol.asyncDispose]() { await templates[Symbol.asyncDispose](); await settings[Symbol.asyncDispose](); await zoteroReads[Symbol.asyncDispose](); sqlite.close(); } };
 }

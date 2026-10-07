@@ -137,7 +137,7 @@ export async function readReferenceSources(
     ];
     const [user, items] = await Effect.runPromise(
       Effect.all(
-        [reads.ZoteroIdentity({}), reads.ItemsByIndexedKeys({ indexedKeys })],
+        [reads.DatabaseIdentity({}), reads.ItemsByIndexedKeys({ indexedKeys })],
         { concurrency: "unbounded" },
       ),
     );

@@ -24,6 +24,7 @@ import type { NoteIndex } from "@/services/note-index/service";
 import type { ProfileReader } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import { InertTemplateError } from "@/services/template/errors";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 /**
  * Dependencies for the batch runner's single-action create / update path.
@@ -33,6 +34,8 @@ export interface SingleUpdateDeps {
   profile: ProfileReader;
   app: App;
   db: DatabaseService;
+  /** The batch run's Snapshot, which its note updates read through. */
+  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   settings: SettingsService;
   noteFeature: NoteFeature;
   noteIndex: NoteIndex;

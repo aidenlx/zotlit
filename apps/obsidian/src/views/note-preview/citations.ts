@@ -27,7 +27,7 @@ import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 export interface NativeCitationDeps {
   app: App;
-  reads: Pick<ZoteroReadsService, "acquireRead">;
+  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   bibliographyRender: Pick<
     BibliographyRenderCache,
     | "renderCitations"
@@ -123,12 +123,12 @@ export async function renderDraftCitations(
     const keys = [...new Set(placed.flatMap(({ works }) => works))].filter(
       (key) => key !== null,
     );
-    using lease = await deps.reads.acquireRead();
+    using lease = await deps.zoteroReads.acquireRead();
     const { reads } = lease;
     const [user, found] = await Effect.runPromise(
       Effect.all(
         [
-          reads.ZoteroIdentity({}),
+          reads.DatabaseIdentity({}),
           reads.ItemsByIndexedKeys({ indexedKeys: keys }),
         ],
         { concurrency: "unbounded" },

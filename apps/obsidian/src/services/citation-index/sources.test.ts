@@ -20,10 +20,10 @@ vi.mock("@zotlit/db", async (importOriginal) => {
     ...actual,
     // The in-process reads run over an empty database, so the table reads
     // are stubbed per test. Key parsing and the CSL mapping stay real: both are pure.
-    getZoteroIdentity: () => ({
+    getZoteroDatabaseIdentity: () => ({
       userID: null,
       localUserKey: null,
-      username: null,
+      serverID: null,
     }),
     getItemsByKey: vi.fn(() => []),
     getAttachmentsByParents: vi.fn(() => []),

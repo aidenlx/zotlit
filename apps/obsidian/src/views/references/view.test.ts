@@ -40,10 +40,10 @@ vi.mock("@/components/obsidian/icon-button", async () => {
 
 vi.mock("@zotlit/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@zotlit/db")>()),
-  getZoteroIdentity: () => ({
+  getZoteroDatabaseIdentity: () => ({
     userID: 1,
     localUserKey: "local",
-    username: null,
+    serverID: null,
   }),
   resolveIndexedKeyLibrary: () => ({ libraryID: 1, key: "BOOK0001" }),
   getItemsByKey: () => [

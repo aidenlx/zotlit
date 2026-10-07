@@ -21,6 +21,7 @@ import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import { loadTemplateData } from "@/services/template-workbench/data";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { templateFileFromPath } from "./defaults";
 import type {
@@ -91,6 +92,7 @@ export interface MigrationVerificationData {
 export interface LiteratureNoteTemplateMigrationDataDeps {
   app: Parameters<typeof loadTemplateData>[0]["app"];
   db: DatabaseService;
+  zoteroReads: ZoteroReadsService;
   libraryScope: Pick<LibraryScopeService, "ready" | "resolveWith">;
   noteIndex: NoteIndex;
   settings: SettingsService;
@@ -123,6 +125,7 @@ export async function loadLiteratureNoteTemplateMigrationData(
   const dataDeps = {
     app: deps.app,
     db: deps.db,
+    zoteroReads: deps.zoteroReads,
     noteIndex: deps.noteIndex,
     settings: deps.settings,
     templates: deps.templates,

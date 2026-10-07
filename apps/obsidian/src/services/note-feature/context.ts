@@ -6,16 +6,15 @@ import type {
   Workspace,
 } from "obsidian";
 
-import { buildFilenameContext } from "@zotlit/db";
+import { buildFilenameContext, toTemplateCollection } from "@zotlit/db";
 import type {
-  CollectionCache,
   Item,
   ItemTag,
   NoteResolvers,
+  NoteSource,
   TemplateCollection,
   TemplateFilenameItemData,
 } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { hasSuffixMarker, joinNotePath } from "@zotlit/templates";
 
 import { buildAnnotationResolvers } from "@/lib/annotation-render";
@@ -27,12 +26,13 @@ import type {
   AttachmentImportService,
 } from "@/services/attachment-import/service";
 import type { DatabaseService } from "@/services/database/service";
-import type {
-  ExcerptPreparation,
-  PreparedExcerpts,
-} from "@/services/excerpt-image/prepare";
+import type { PreparedExcerpts } from "@/services/excerpt-image/prepare";
 import type { prepareSingleExcerpt } from "@/services/excerpt-image/prepare-single";
-import type { NoteImport, NoteImporter } from "@/services/note-import/service";
+import type {
+  NoteExcerptPreparation,
+  NoteImport,
+  NoteImporter,
+} from "@/services/note-import/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { getProfileBinding } from "@/services/profile/bindings";
 import type { ProfileBindingSettings } from "@/services/profile/bindings";
@@ -42,6 +42,7 @@ import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { resolveFreeNotePath } from "./filename";
 
@@ -89,6 +90,11 @@ export interface NoteFeatureDeps {
    * The synchronous `renderAnnotation` path takes {@link SyncRenderDeps}.
    */
   db: Pick<DatabaseService, "acquireRead">;
+  /**
+   * The note write pipeline's reads: an operation holds one lease, so the
+   * Literature Note and the Child Notes it imports read one database state.
+   */
+  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   noteIndex: Pick<
     NoteIndex,
     "ready" | "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
@@ -97,7 +103,7 @@ export interface NoteFeatureDeps {
   settings: Pick<SettingsService, "current" | "loaded" | "update">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
   noteImport: Pick<NoteImporter, "prepare">;
-  excerptImages?: ExcerptPreparation;
+  excerptImages?: NoteExcerptPreparation;
   singleExcerpt?: (
     options: Omit<
       Parameters<typeof prepareSingleExcerpt>[0],
@@ -120,15 +126,18 @@ interface NoteTarget {
   file: TFile;
 }
 
-export function fetchItemCollections(
-  cache: CollectionCache,
-  client: NodeDatabaseClient,
-  item: Pick<Item, "itemID" | "libraryID">,
-): TemplateCollection[] {
-  return (
-    cache.byItemIDs(client, item.libraryID, [item.itemID]).get(item.itemID) ??
-    []
-  );
+/** The item's own tags and collections in `source`, for its note filename. */
+export function itemFacets(source: NoteSource): {
+  itemTags: readonly ItemTag[];
+  itemCollections: TemplateCollection[];
+} {
+  const { itemID } = source.item;
+  return {
+    itemTags: source.tagsByItemID.get(itemID) ?? [],
+    itemCollections: (source.collectionsByItemID.get(itemID) ?? []).map(
+      toTemplateCollection,
+    ),
+  };
 }
 
 /**

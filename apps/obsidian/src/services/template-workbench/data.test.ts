@@ -17,6 +17,10 @@ import type { CitationExampleId } from "@zotlit/workbench/render";
 
 import { defaults as settingsDefaults } from "@/services/settings/schema";
 import { InertTemplateError } from "@/services/template/errors";
+import {
+  inProcessReadsService,
+  sharedClientOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import {
   createTemplateWorkbenchHandlers,
@@ -806,6 +810,7 @@ function createFixture(options?: {
               [Symbol.dispose]() {},
             }) as never,
         },
+        zoteroReads: inProcessReadsService(sharedClientOpener(client)),
         noteIndex: {
           getNotesByItemKey: () => [],
           getImportedNoteByNoteKey: () => [],

@@ -555,7 +555,7 @@ export class CitationText extends Service<void> {
       const [user, items] = await Effect.runPromise(
         Effect.all(
           [
-            reads.ZoteroIdentity({}),
+            reads.DatabaseIdentity({}),
             reads.ItemsByIndexedKeys({ indexedKeys: [...new Set(cited)] }),
           ],
           { concurrency: "unbounded" },
