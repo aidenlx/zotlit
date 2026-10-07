@@ -32,7 +32,7 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "@zotlit/config": "workspace:*",
-    "jieba-wasm": "^2.4.0",
+    "jieba-wasm": "catalog:",
     "oxlint": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",

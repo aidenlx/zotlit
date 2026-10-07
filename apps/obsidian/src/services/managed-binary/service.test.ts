@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import { ManagedBinaryService } from "./service";
-import type { BinaryStore, ManagedBinary, ManagedBinaryPorts } from "./service";
+import type { ManagedBinary } from "./service";
+import { memoryDevice } from "./test-utils";
 
 /** Node's own typings hand back `ArrayBufferLike` views; the ports take `ArrayBuffer` ones. */
 function bytes(text: string): Uint8Array<ArrayBuffer> {
@@ -42,58 +43,6 @@ function instance(
 
 const SEGMENTER = instance("chinese-segmenter", SEGMENTER_BINARY);
 const OTHER = instance("other-binary", OTHER_BINARY);
-
-/**
- * The device: one origin-wide store root with a directory per Managed Binary,
- * and one vault-scoped consent storage.
- */
-function memoryDevice() {
-  const directories = new Map<string, Map<string, Uint8Array<ArrayBuffer>>>();
-  const files = (directory: string) => {
-    let entries = directories.get(directory);
-    if (!entries) directories.set(directory, (entries = new Map()));
-    return entries;
-  };
-  const openStore = (directory: string): BinaryStore => ({
-    list: () => Promise.resolve([...files(directory).keys()]),
-    read: (name) => {
-      const stored = files(directory).get(name);
-      return Promise.resolve(stored && new Blob([stored]));
-    },
-    write: (name, written) => {
-      files(directory).set(name, written);
-      return Promise.resolve();
-    },
-    rename: (from, to) => {
-      const entries = files(directory);
-      const moved = entries.get(from);
-      if (!moved) throw new Error(`No entry named ${from}`);
-      entries.delete(from);
-      entries.set(to, moved);
-      return Promise.resolve();
-    },
-    remove: (name) => {
-      files(directory).delete(name);
-      return Promise.resolve();
-    },
-    clear: () => {
-      directories.delete(directory);
-      return Promise.resolve();
-    },
-  });
-  const values = new Map<string, unknown>();
-  const consent: ManagedBinaryPorts["consent"] = {
-    loadLocalStorage: (key) => values.get(key) ?? null,
-    saveLocalStorage: (key, value) => {
-      if (value === null) values.delete(key);
-      else values.set(key, value);
-    },
-  };
-  /** The names stored in one directory, sorted. */
-  const names = (directory: string) =>
-    [...(directories.get(directory)?.keys() ?? [])].sort();
-  return { openStore, consent, files, names };
-}
 
 type Device = ReturnType<typeof memoryDevice>;
 

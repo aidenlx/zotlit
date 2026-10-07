@@ -57,6 +57,7 @@ catalog:
   drizzle-kit: 1.0.0-rc.4
   drizzle-orm: 1.0.0-rc.4
   fflate: ^0.8.2
+  jieba-wasm: 2.4.0
   monkey-around: 3.0.0
   oxfmt: ^0.55.0
   oxlint: ^1.70.0
