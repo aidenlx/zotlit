@@ -1,5 +1,6 @@
 // Measurement lives in the worker; these observers never transfer Query Rows.
 import { Effect } from "effect";
+import { createHook } from "node:async_hooks";
 
 import { ItemQueryStatementObserver } from "@zotlit/db/item-query";
 import type { ItemQueryReader } from "@zotlit/db/item-query";
@@ -35,11 +36,48 @@ export interface Trace {
   engineEnd: number | undefined;
   paused: number[];
   resumed: number[];
+  slices: { start: number; end: number }[];
   statements: { reader: ItemQueryReader; rows: number; at: number }[];
   heapSamples: number[];
 }
 
 export function createTrace(sampleHeap: boolean): Trace {
+  let currentSlice: { start: number; end: number } | undefined;
+  const resources = new Map<number, boolean>();
+  const callbacks: number[] = [];
+  const startSlice = () => {
+    const start = now();
+    currentSlice = { start, end: start };
+    trace.slices.push(currentSlice);
+  };
+  const endWork = () => {
+    if (currentSlice) currentSlice.end = now();
+  };
+  // A worker runs one query at a time. Measure its host callbacks, including
+  // native Promise continuations outside Effect. Microtasks extend the same
+  // task; a later host callback starts a new slice and excludes the I/O wait.
+  const hook = createHook({
+    init: (id, type) => {
+      resources.set(
+        id,
+        type === "PROMISE" || type === "Microtask" || type === "TickObject",
+      );
+    },
+    before: (id) => {
+      const microtask = resources.get(id);
+      if (microtask === undefined) return;
+      if (callbacks.length === 0 && !microtask) startSlice();
+      callbacks.push(id);
+    },
+    after: (id) => {
+      if (!resources.has(id)) return;
+      endWork();
+      if (callbacks.at(-1) === id) callbacks.pop();
+    },
+    destroy: (id) => {
+      resources.delete(id);
+    },
+  });
   const sample = sampleHeap
     ? () => trace.heapSamples.push(process.memoryUsage().heapUsed)
     : () => {};
@@ -48,18 +86,39 @@ export function createTrace(sampleHeap: boolean): Trace {
     engineEnd: undefined,
     paused: [],
     resumed: [],
+    slices: [],
     statements: [],
     heapSamples: [],
     instrument: (operation) =>
-      Effect.suspend(() => {
+      Effect.gen(function* () {
         trace.engineStart = now();
         sample();
-        return operation;
+        startSlice();
+        hook.enable();
+        const tracer = yield* Effect.tracer;
+        return yield* Effect.withTracer(operation, {
+          span: (options) => tracer.span(options),
+          // The hook starts inside an existing callback. Cover its initial
+          // synchronous work too, before the first observed host callback.
+          context: (primitive, fiber) => {
+            try {
+              return tracer.context
+                ? tracer.context(primitive, fiber)
+                : primitive["~effect/Effect/evaluate"](fiber);
+            } finally {
+              endWork();
+            }
+          },
+        });
       }).pipe(
         Effect.onExit(() =>
           Effect.sync(() => {
             trace.engineEnd = now();
             sample();
+            endWork();
+            hook.disable();
+            callbacks.length = 0;
+            resources.clear();
           }),
         ),
         Effect.provideService(ItemQuerySliceObserver, {
@@ -81,23 +140,6 @@ export function createTrace(sampleHeap: boolean): Trace {
       ),
   };
   return trace;
-}
-
-/** The slices of a run: from its start or a resume to the next pause or its end. */
-export function slicesOf(
-  trace: Omit<Trace, "instrument">,
-): { start: number; end: number }[] {
-  if (trace.engineStart === undefined || trace.engineEnd === undefined) {
-    return [];
-  }
-  const slices: { start: number; end: number }[] = [];
-  let start: number | undefined = trace.engineStart;
-  for (const [index, pausedAt] of trace.paused.entries()) {
-    if (start !== undefined) slices.push({ start, end: pausedAt });
-    start = trace.resumed[index];
-  }
-  if (start !== undefined) slices.push({ start, end: trace.engineEnd });
-  return slices;
 }
 
 export interface WorkerMeasurement {
@@ -135,7 +177,7 @@ export function finishTrace(
   context: { startedAt: number; answerSteps: number[]; heapBefore?: number },
 ): WorkerMeasurement {
   const finishedAt = now();
-  const slices = slicesOf(trace);
+  const { slices } = trace;
   const durations = slices.map(({ start, end }) => end - start);
   let worstIndex = -1;
   for (const [index, ms] of durations.entries()) {
