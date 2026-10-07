@@ -194,6 +194,9 @@ catalogs:
     drizzle-orm:
       specifier: 1.0.0-rc.4
       version: 1.0.0-rc.4
+    effect:
+      specifier: 4.0.0
+      version: 4.0.0
     eta:
       specifier: 4.6.0
       version: 4.6.0
@@ -624,7 +627,7 @@ importers:
         specifier: 'catalog:'
         version: 8.0.4
       effect:
-        specifier: 4.0.0
+        specifier: 'catalog:'
         version: 4.0.0
       eta:
         specifier: 'catalog:'
@@ -984,6 +987,9 @@ importers:
       arkregex:
         specifier: 'catalog:'
         version: 0.0.5
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0
       minisearch:
         specifier: ^7.2.0
         version: 7.2.0
