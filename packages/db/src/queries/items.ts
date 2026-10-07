@@ -141,15 +141,16 @@ const itemsByLibraryQuery = defineQuery<{ libraryID: number }>()(
     }),
 );
 
-const itemByIdQuery = defineQuery<{ itemID: number }>()((db, { placeholder }) =>
-  db.query.items.findMany({
-    where: {
-      itemID: placeholder("itemID"),
-      itemType: { typeName: { notIn: [...CHILD_ITEM_TYPES] } },
-      deletedItem: false,
-    },
-    ...itemFindOptions,
-  }),
+const itemsByIdsQuery = defineQuery<void>()(
+  (db, _operators, args: { itemIDs: readonly number[] }) =>
+    db.query.items.findMany({
+      where: {
+        itemID: { in: [...args.itemIDs] },
+        itemType: { typeName: { notIn: [...CHILD_ITEM_TYPES] } },
+        deletedItem: false,
+      },
+      ...itemFindOptions,
+    }),
 );
 
 const itemByKeyQuery = defineQuery<{ libraryID: number; key: string }>()(
@@ -271,13 +272,15 @@ export async function getItemsByLibraryAsync(
 }
 
 /**
- * Fetch items by global item id. Item ids are unique across libraries, so the
- * batch may span libraries; each row's `groupID`/`indexedKey` resolves from its
- * own `libraryID`.
+ * Fetch items by global item id, in one statement, in `itemIDs` order. An id
+ * that names no live regular item has no entry; a repeated id repeats its
+ * item. Item ids are unique across libraries, so the batch may span libraries;
+ * each row's `groupID`/`indexedKey` resolves from its own `libraryID`. The ids
+ * inline into the SQL, so the statement is not cached.
  *
  * @param opts.memo caller-owned `libraryID → groupID` cache. Pass a shared memo
- *   to resolve each library once across many single-id calls (e.g. a batch that
- *   loads items one at a time); omit to scope the cache to this call.
+ *   to resolve each library once across many calls; omit to scope the cache
+ *   to this call.
  */
 export function getItemsByID(
   db: NodeDatabaseClient,
@@ -288,14 +291,18 @@ export function getItemsByID(
 
   const memo = opts?.memo ?? new Map();
   const baseFieldTable = getBaseFieldTable(db, ITEM_BASE_FIELDS);
-  return itemIDs.flatMap((itemID) =>
-    itemByIdQuery
-      .prepared(db)
-      .all({ itemID })
-      .map((r) =>
-        toItem(r, resolveGroupID(db, r.libraryID, memo), baseFieldTable),
-      ),
+  const rows = new Map(
+    itemsByIdsQuery
+      .prepare(db, { itemIDs: [...new Set(itemIDs)] })
+      .all()
+      .map((row) => [row.itemID, row]),
   );
+  return itemIDs.flatMap((itemID) => {
+    const row = rows.get(itemID);
+    return row
+      ? [toItem(row, resolveGroupID(db, row.libraryID, memo), baseFieldTable)]
+      : [];
+  });
 }
 
 export function getItemTypeByKey(

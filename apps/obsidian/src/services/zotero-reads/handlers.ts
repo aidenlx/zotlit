@@ -31,7 +31,7 @@ import {
   getItemTypeByKey,
   getLibraries,
   getLibraryTagNames,
-  getNoteByKey,
+  getNotesByKey,
   getNoteItemIDsByCollection,
   getNoteItemIDsByLibrary,
   getNoteRefsByItemIDs,
@@ -372,12 +372,9 @@ export function handlersLayer(options?: HandlersOptions) {
           ),
 
         NoteBodies: ({ libraryID, keys, snapshot }) =>
-          withClient(snapshot, (client) => {
-            const memo: GroupIDMemo = new Map();
-            return keys.flatMap(
-              (key) => getNoteByKey(client, key, { libraryID, memo }) ?? [],
-            );
-          }),
+          withClient(snapshot, (client) =>
+            getNotesByKey(client, libraryID, keys),
+          ),
 
         WorkLabels: ({ indexedKeys, snapshot }) =>
           withClient(snapshot, (client) => {

@@ -85,6 +85,7 @@ export {
 export {
   getChildNotesByParentIDs,
   getNoteByKey,
+  getNotesByKey,
   getNoteRefsByItemIDs,
   type ChildNote,
   type Note,

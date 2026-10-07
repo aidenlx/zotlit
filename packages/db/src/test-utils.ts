@@ -1,3 +1,5 @@
+import type { DatabaseSync, StatementSync } from "node:sqlite";
+
 // Shared item-fixture builders for @zotlit/db consumers' tests.
 import type { ItemFields } from "@zotlit/zotero-types";
 
@@ -15,6 +17,31 @@ import type { BaseItem, Item } from "./queries/items";
  */
 export function createFixtureSchema(db: { exec(sql: string): void }): void {
   db.exec(FIXTURE_DDL);
+}
+
+/**
+ * Count the statements run on `sqlite` from now on: each `all`, `get`, `run`,
+ * or `iterate` call on a statement it prepares. Install it before the first
+ * query, so statements a query caches are counted too. A batched read runs
+ * the same count for one id as for many.
+ */
+export function countStatements(sqlite: DatabaseSync): () => number {
+  let count = 0;
+  const prepare = sqlite.prepare.bind(sqlite);
+  sqlite.prepare = (source: string) => {
+    const statement: StatementSync = prepare(source);
+    for (const method of ["all", "get", "run", "iterate"] as const) {
+      const call = statement[method].bind(statement) as (
+        ...args: unknown[]
+      ) => never;
+      statement[method] = ((...args: unknown[]) => {
+        count += 1;
+        return call(...args);
+      }) as never;
+    }
+    return statement;
+  };
+  return () => count;
 }
 
 const FIXTURE_DDL = `

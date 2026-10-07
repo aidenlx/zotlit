@@ -4,9 +4,13 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { NodeDatabaseClient } from "@/client/node";
-import { createFixtureSchema } from "@/test-utils";
+import { countStatements, createFixtureSchema } from "@/test-utils";
 
-import { getChildNotesByParentIDs, getNoteRefsByItemIDs } from "./notes";
+import {
+  getChildNotesByParentIDs,
+  getNoteRefsByItemIDs,
+  getNotesByKey,
+} from "./notes";
 
 let sqlite: DatabaseSync;
 let db: NodeDatabaseClient;
@@ -50,6 +54,45 @@ describe("getNoteRefsByItemIDs", () => {
 
   it("returns an empty map for empty input", () => {
     expect(getNoteRefsByItemIDs(db, [])).toEqual(new Map());
+  });
+});
+
+describe("getNotesByKey", () => {
+  it("returns live notes with their bodies in request order, repeating a repeated key", () => {
+    const notes = getNotesByKey(db, 1, [
+      "CHILD002",
+      "LIVE",
+      "TRASHED",
+      "NOTANOTE",
+      "MISSING",
+      "CHILD002",
+    ]);
+    expect(notes.map(({ key, note }) => [key, note])).toEqual([
+      ["CHILD002", "<p>Two</p>"],
+      ["LIVE", "<p>Live note</p>"],
+      ["CHILD002", "<p>Two</p>"],
+    ]);
+  });
+
+  it("reads only the requested library", () => {
+    expect(getNotesByKey(db, 2, ["LIVE"])).toEqual([]);
+  });
+
+  it("runs the same statements for one key as for many", () => {
+    const statements = countStatements(sqlite);
+    const cost = (keys: string[]) => {
+      const before = statements();
+      getNotesByKey(db, 1, keys);
+      return statements() - before;
+    };
+    cost(["LIVE"]);
+    expect(cost(["LIVE", "CHILD001", "CHILD002", "TRASHED", "MISSING"])).toBe(
+      cost(["LIVE"]),
+    );
+  });
+
+  it("returns no notes for empty input", () => {
+    expect(getNotesByKey(db, 1, [])).toEqual([]);
   });
 });
 

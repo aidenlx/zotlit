@@ -828,32 +828,54 @@ describe("ZoteroReads operations", () => {
       (
         reads: ZoteroReadsClient,
         size: "one" | "many",
-      ) => Stream.Stream<unknown, unknown>,
+      ) => Effect.Effect<unknown, unknown>,
     ]
   >([
     [
       "DisplayRefs",
-      (reads, size) => reads.DisplayRefs({ itemIDs: sliceIDs[size] }),
+      (reads, size) =>
+        Stream.runDrain(reads.DisplayRefs({ itemIDs: sliceIDs[size] })),
     ],
-    ["NoteRefs", (reads, size) => reads.NoteRefs({ itemIDs: sliceIDs[size] })],
+    [
+      "NoteRefs",
+      (reads, size) =>
+        Stream.runDrain(reads.NoteRefs({ itemIDs: sliceIDs[size] })),
+    ],
     [
       "ChildNoteRefs",
-      (reads, size) => reads.ChildNoteRefs({ itemIDs: sliceIDs[size] }),
+      (reads, size) =>
+        Stream.runDrain(reads.ChildNoteRefs({ itemIDs: sliceIDs[size] })),
     ],
     // Library 2 indexes one item; library 1 indexes three.
     [
       "IndexItems",
-      (reads, size) => reads.IndexItems({ libraryID: size === "one" ? 2 : 1 }),
+      (reads, size) =>
+        Stream.runDrain(
+          reads.IndexItems({ libraryID: size === "one" ? 2 : 1 }),
+        ),
+    ],
+    // Live notes, a trashed note, a miss, and a repeat.
+    [
+      "NoteBodies",
+      (reads, size) =>
+        reads.NoteBodies({
+          libraryID: 1,
+          keys:
+            size === "one"
+              ? ["NTE22345"]
+              : ["NTE22345", "NTE32345", "TRSH2345", "MISS2345", "NTE22345"],
+        }),
     ],
   ])(
-    "%s runs the same statements for a slice of one row as for a slice of many",
-    async (_operation, stream) => {
+    "%s runs the same statements for one row as for many",
+    async (_operation, read) => {
       const { open, statements } = fixtureOpener(
         () => `
           insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
-            values (201, 3, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'TRSH2345');
+            values (201, 3, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'TRSH2345'),
+                   (202, 3, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'NTE32345');
           insert into itemNotes (itemID, parentItemID, note, title)
-            values (201, 1, '<p>gone</p>', 'Gone');
+            values (201, 1, '<p>gone</p>', 'Gone'), (202, 2, '<p>more</p>', 'More');
           insert into deletedItems (itemID) values (201);
         `,
       );
@@ -862,7 +884,7 @@ describe("ZoteroReads operations", () => {
           const cost = (size: "one" | "many") =>
             Effect.gen(function* () {
               const before = statements();
-              yield* Stream.runDrain(stream(reads, size));
+              yield* read(reads, size);
               return statements() - before;
             });
           yield* cost("one");

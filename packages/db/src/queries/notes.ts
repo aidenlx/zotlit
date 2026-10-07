@@ -3,7 +3,7 @@
 import type { NodeDatabaseClient } from "@/client/node";
 import { formatIndexedKey } from "@/lib/zt-key";
 
-import { resolveGroupID } from "./_groups";
+import { groupIDForLibrary, resolveGroupID } from "./_groups";
 import type { GroupIDMemo } from "./_groups";
 import { defineQuery } from "./_shared";
 import type { FindManyOptions, QueryRow } from "./_shared";
@@ -128,6 +128,46 @@ export function getNoteByKey(
     row,
     resolveGroupID(db, opts.libraryID, opts.memo ?? new Map()),
   );
+}
+
+const notesByKeysQuery = defineQuery<void>()(
+  (db, _operators, args: { libraryID: number; keys: readonly string[] }) =>
+    db.query.itemNotes.findMany({
+      where: {
+        item: {
+          key: { in: [...args.keys] },
+          libraryID: args.libraryID,
+          deletedItem: false,
+        },
+      },
+      ...noteOptions,
+    }),
+);
+
+/**
+ * Fetch notes of one library by key, in one statement, in `keys` order:
+ * {@link getNoteByKey} for each key. A key that names no live note has no
+ * entry; a repeated key repeats its note. The keys inline into the SQL, so the
+ * statement is not cached.
+ */
+export function getNotesByKey(
+  db: NodeDatabaseClient,
+  libraryID: number,
+  keys: readonly string[],
+): Note[] {
+  if (keys.length === 0) return [];
+  const rows = new Map(
+    notesByKeysQuery
+      .prepare(db, { libraryID, keys: [...new Set(keys)] })
+      .all()
+      .map((row) => [row.item.key, row]),
+  );
+  if (rows.size === 0) return [];
+  const groupID = groupIDForLibrary(db, libraryID);
+  return keys.flatMap((key) => {
+    const row = rows.get(key);
+    return row ? [toNote(row, groupID)] : [];
+  });
 }
 
 // --- Queries for explicit note-import (Stage 9.3) ---

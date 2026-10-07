@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { NodeDatabaseClient } from "@/client/node";
 import { USER_LIBRARY_ID } from "@/lib/constants";
 import { parseItemLanguage } from "@/lib/zt-lang";
-import { createFixtureSchema } from "@/test-utils";
+import { countStatements, createFixtureSchema } from "@/test-utils";
 
 import {
   getItemsByID,
@@ -283,6 +283,24 @@ describe("getItemsByID", () => {
       libraryID: 2,
       indexedKey: "GRP1g17",
     });
+  });
+
+  it("returns items in request order, repeating a repeated id and leaving misses out", () => {
+    expect(getItemsByID(db, [7, 1, 2, 7, 999, 6]).map((i) => i.itemID)).toEqual(
+      [7, 1, 7, 6],
+    );
+  });
+
+  it("runs the same statements for one id as for many", () => {
+    const statements = countStatements(sqlite);
+    const cost = (itemIDs: number[]) => {
+      const before = statements();
+      getItemsByID(db, itemIDs);
+      return statements() - before;
+    };
+    cost([1]);
+    // Every id is in the user library, so each read resolves one group.
+    expect(cost([1, 6, 2, 3, 999, 6])).toBe(cost([1]));
   });
 
   it("returns an empty array for empty input", () => {
