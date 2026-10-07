@@ -286,8 +286,12 @@ export function buildServices(
         new AttachmentImportService({ app: plugin.app, settings, zoteroPref }),
     })
     .use({
-      libraryScope: ({ db, settings }) =>
-        new LibraryScopeService({ db, settings }),
+      libraryScope: ({ zoteroReads, queryClient, settings }) =>
+        new LibraryScopeService({
+          reads: zoteroReads,
+          queries: queryClient,
+          settings,
+        }),
     })
     .use({
       profile: ({ settings, template, noteIndex, libraryScope }) =>

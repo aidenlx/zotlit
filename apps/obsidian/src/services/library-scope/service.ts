@@ -4,32 +4,42 @@
  *
  * The policy is pure and lives in `./scope.ts`; this service owns only the
  * wiring: read the saved value (and its broken-override diagnostic) from
- * {@link SettingsService}, resolve it against {@link DatabaseService}, and emit
- * `changed` when the result stops meaning the same thing to consumers.
+ * {@link SettingsService}, resolve it against the Libraries the
+ * {@link ZoteroReadsService} last answered, and emit `changed` when the result
+ * stops meaning the same thing to consumers.
+ *
+ * ## Held Libraries
+ *
+ * The Libraries are a Held Read (ADR 0054/0060): a database change starts a
+ * fresh `Libraries` read, and {@link LibraryScopeService.current} keeps the
+ * previous resolution until that read settles. A failed read keeps it too.
  *
  * ## Unavailable database versus zero Libraries
  *
  * {@link LibraryScopeService.current} is `null` while the database cannot be
- * read. That is a different state from a valid scope whose Libraries are all
+ * read: before the first read settles, and after the database degrades. That is a different state from a valid scope whose Libraries are all
  * absent, which resolves normally with an empty `available` list. Settings
  * controls disable on the first and stay editable on the second, and the saved
  * value is untouched either way.
  *
  * ## Leases
  *
- * A caller holding a {@link DatabaseService.acquireRead} lease resolves once
+ * A caller holding a database read lease resolves once
  * against its own pinned client through {@link LibraryScopeService.resolveWith},
  * so a refresh mid-read cannot move the Libraries under it.
  */
+import { Effect } from "effect";
+
 import { getLibraries } from "@zotlit/db";
 import type { Library } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
-import type { DatabaseService } from "@/services/database/service";
+import type { QueryClientService } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
 import type { SettingsService } from "@/services/settings/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import {
   DEFAULT_LIBRARY_SCOPE,
@@ -48,6 +58,9 @@ const logger = getLogger(["library-scope"]);
 /** The settings key holding the saved scope. */
 export const LIBRARY_SCOPE_KEY = "zotero.library-scope";
 
+/** The query key the held Libraries live under. */
+const LIBRARIES_KEY = ["library-scope", "libraries"] as const;
+
 export interface LibraryScopeEvents {
   /**
    * The resolved scope changed, or became `null` because the database went
@@ -60,13 +73,19 @@ export interface LibraryScopeEvents {
 }
 
 export interface LibraryScopeDeps {
-  db: DatabaseService;
+  reads: Pick<ZoteroReadsService, "ready" | "on">;
+  queries: Pick<
+    QueryClientService,
+    "client" | "ask" | "invalidate" | "peek" | "watch"
+  >;
   settings: SettingsService;
+  /** Reads the Libraries for {@link LibraryScopeService.resolveWith}. */
   loadLibraries?: (client: NodeDatabaseClient) => Library[];
 }
 
 export class LibraryScopeService extends Service<void> {
-  readonly #db;
+  readonly #reads;
+  readonly #queries;
   readonly #settings;
   readonly #loadLibraries;
   readonly #emitter = createNanoEvents<LibraryScopeEvents>();
@@ -79,7 +98,8 @@ export class LibraryScopeService extends Service<void> {
 
   constructor(deps: LibraryScopeDeps) {
     super();
-    this.#db = deps.db;
+    this.#reads = deps.reads;
+    this.#queries = deps.queries;
     this.#settings = deps.settings;
     this.#loadLibraries = deps.loadLibraries ?? getLibraries;
     this.ready = this.#load();
@@ -144,8 +164,27 @@ export class LibraryScopeService extends Service<void> {
     await this.#settings.loaded;
 
     await using stack = new AsyncDisposableStack();
-    stack.defer(this.#db.on("changed", () => this.#recompute()));
-    stack.defer(this.#db.on("degraded", () => this.#recompute()));
+    this.#queries.client.setQueryDefaults(LIBRARIES_KEY, { gcTime: Infinity });
+    // An equal read keeps the held Libraries, so only a different answer
+    // reaches the resolution.
+    stack.defer(
+      this.#queries.watch<Library[]>(LIBRARIES_KEY, {
+        changed: () => this.#recompute(),
+        settled: () => {},
+      }),
+    );
+    stack.defer(
+      this.#reads.on("changed", () => {
+        this.#queries.invalidate(LIBRARIES_KEY);
+        void this.#readLibraries();
+      }),
+    );
+    stack.defer(
+      this.#reads.on("degraded", () => {
+        this.#queries.client.removeQueries({ queryKey: LIBRARIES_KEY });
+        this.#recompute();
+      }),
+    );
     stack.defer(
       this.#settings.subscribe((next) => {
         if (next !== null) this.#recompute();
@@ -153,7 +192,8 @@ export class LibraryScopeService extends Service<void> {
     );
     this.commit(stack.move());
 
-    await this.#db.ready;
+    await this.#reads.ready;
+    await this.#readLibraries();
     this.#recompute();
     logger.info("Library scope ready", {
       mode: this.#current?.mode ?? null,
@@ -191,16 +231,17 @@ export class LibraryScopeService extends Service<void> {
     this.#emitter.emit("changed", next);
   }
 
-  /** @returns `null` while the database holds no readable client. */
+  /** Read the Libraries into the held value; a failure keeps what it holds. */
+  async #readLibraries(): Promise<void> {
+    await this.#queries.ask<Library[]>(LIBRARIES_KEY, async ({ signal }) => {
+      const { reads } = await this.#reads.ready;
+      return Effect.runPromise(reads.Libraries({}), { signal });
+    });
+  }
+
+  /** @returns `null` while no read of the Libraries is held. */
   #resolveNow(scope: LibraryScope | null): ResolvedLibraryScope | null {
-    if (this.#db.state !== "ready") return null;
-    try {
-      return resolveLibraryScope(this.#loadLibraries(this.#db.client), scope);
-    } catch (error) {
-      logger.debug("Library scope resolution skipped; database unavailable", {
-        error,
-      });
-      return null;
-    }
+    const libraries = this.#queries.peek<Library[]>(LIBRARIES_KEY)?.value;
+    return libraries ? resolveLibraryScope(libraries, scope) : null;
   }
 }
