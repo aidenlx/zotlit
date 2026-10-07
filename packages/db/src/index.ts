@@ -88,9 +88,9 @@ export {
   getNoteByItemID,
   getNoteByKey,
   getNoteRefsByItemIDs,
-  getTrashedNoteItemIDs,
   type ChildNote,
   type Note,
+  type NoteRef,
 } from "./queries/notes";
 export {
   getCitekeyByItemKey,

@@ -820,6 +820,49 @@ describe("ZoteroReads operations", () => {
     ]);
   });
 
+  it.each<
+    [
+      string,
+      (
+        reads: ZoteroReadsClient,
+        itemIDs: number[],
+      ) => Stream.Stream<unknown, unknown>,
+    ]
+  >([
+    ["DisplayRefs", (reads, itemIDs) => reads.DisplayRefs({ itemIDs })],
+    ["NoteRefs", (reads, itemIDs) => reads.NoteRefs({ itemIDs })],
+    ["ChildNoteRefs", (reads, itemIDs) => reads.ChildNoteRefs({ itemIDs })],
+  ])(
+    "%s runs the same statements for a slice of one id as for a slice of many",
+    async (_operation, stream) => {
+      // A live note, a trashed note, items with and without notes, a miss.
+      const { open, statements } = fixtureOpener(
+        () => `
+          insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+            values (201, 3, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'TRSH2345');
+          insert into itemNotes (itemID, parentItemID, note, title)
+            values (201, 1, '<p>gone</p>', 'Gone');
+          insert into deletedItems (itemID) values (201);
+        `,
+      );
+      const many = [1, 2, 3, 10, 200, 201, 999];
+      const counts = await withReads(open, (reads) =>
+        Effect.gen(function* () {
+          const cost = (itemIDs: number[]) =>
+            Effect.gen(function* () {
+              const before = statements();
+              yield* Stream.runDrain(stream(reads, itemIDs));
+              return statements() - before;
+            });
+          yield* cost(many);
+          // Both reads find rows in library 1, so both resolve its group once.
+          return { one: yield* cost([200]), many: yield* cost(many) };
+        }),
+      );
+      expect(counts.many).toBe(counts.one);
+    },
+  );
+
   it("a source that cannot open fails with a tagged DbUnavailable", async () => {
     const { open } = fixtureOpener(() => null);
     const error = await withReads(open, (reads) =>

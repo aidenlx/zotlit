@@ -36,7 +36,6 @@ import {
   getNoteItemIDsByLibrary,
   getNoteRefsByItemIDs,
   getRelatedKeysByItemID,
-  getTrashedNoteItemIDs,
   getZoteroIdentity,
   getZoteroDatabaseIdentity,
   isChildItemFields,
@@ -182,6 +181,34 @@ export function handlersLayer(options?: HandlersOptions) {
   const sliceSize = options?.sliceSize ?? DEFAULT_SLICE_SIZE;
   /** Cut `inputs` into stream slices. */
   const slicesOf = <I>(inputs: readonly I[]): I[][] => chunk(inputs, sliceSize);
+
+  /**
+   * One entry per requested id, in request order, sliced. `lookup` reads a
+   * whole slice through batched `@zotlit/db` queries (one statement each, never
+   * one per id); `entry` builds each id's entry from that result without the
+   * database. The stream's lookups share one group-id memo.
+   */
+  const idEntries = <L, E>(
+    client: NodeDatabaseClient,
+    itemIDs: readonly number[],
+    {
+      lookup,
+      entry,
+    }: {
+      lookup: (
+        client: NodeDatabaseClient,
+        ids: readonly number[],
+        opts: { memo: GroupIDMemo },
+      ) => L;
+      entry: (itemID: number, found: L) => E;
+    },
+  ): Stream.Stream<E[], DbUnavailable> => {
+    const memo: GroupIDMemo = new Map();
+    return sliced(client, slicesOf(itemIDs), (c, ids) => {
+      const found = lookup(c, ids, { memo });
+      return ids.map((itemID) => entry(itemID, found));
+    });
+  };
 
   return ZoteroReads.toLayer(
     Effect.gen(function* () {
@@ -330,16 +357,15 @@ export function handlersLayer(options?: HandlersOptions) {
           ),
 
         DisplayRefs: ({ itemIDs, snapshot }) =>
-          withClientStream(snapshot, (client) => {
-            const memo: GroupIDMemo = new Map();
-            return sliced(client, slicesOf(itemIDs), (c, ids) => {
-              const refs = getItemDisplayRefsByIDs(c, ids, { memo });
-              return ids.map((itemID) => ({
+          withClientStream(snapshot, (client) =>
+            idEntries(client, itemIDs, {
+              lookup: getItemDisplayRefsByIDs,
+              entry: (itemID, refs) => ({
                 itemID,
                 ref: refs.get(itemID) ?? null,
-              }));
-            });
-          }),
+              }),
+            }),
+          ),
 
         NoteBodies: ({ libraryID, keys, snapshot }) =>
           withClient(snapshot, (client) => {
@@ -550,43 +576,37 @@ export function handlersLayer(options?: HandlersOptions) {
           }),
 
         NoteRefs: ({ itemIDs, snapshot }) =>
-          withClientStream(snapshot, (client) => {
-            const memo: GroupIDMemo = new Map();
-            return sliced(client, slicesOf(itemIDs), (c, ids) => {
-              const notes = new Map(
-                getNoteRefsByItemIDs(c, ids, { memo }).map((note) => [
-                  note.itemID,
-                  note,
-                ]),
-              );
-              const trashed = getTrashedNoteItemIDs(
-                c,
-                ids.filter((id) => !notes.has(id)),
-              );
-              return ids.map((itemID) => ({
-                itemID,
-                note: notes.get(itemID) ?? null,
-                trashed: trashed.has(itemID),
-              }));
-            });
-          }),
+          withClientStream(snapshot, (client) =>
+            idEntries(client, itemIDs, {
+              lookup: getNoteRefsByItemIDs,
+              entry: (itemID, refs) => {
+                const ref = refs.get(itemID);
+                return {
+                  itemID,
+                  note: ref && !ref.trashed ? ref.note : null,
+                  trashed: ref?.trashed ?? false,
+                };
+              },
+            }),
+          ),
 
         ChildNoteRefs: ({ itemIDs, snapshot }) =>
-          withClientStream(snapshot, (client) => {
-            const memo: GroupIDMemo = new Map();
-            return sliced(client, slicesOf(itemIDs), (c, ids) => {
-              const refs = getItemDisplayRefsByIDs(c, ids, { memo });
-              const notes = Map.groupBy(
-                getChildNotesByParentIDs(c, ids, { memo }),
-                (note) => note.parentItemID,
-              );
-              return ids.map((itemID) => ({
+          withClientStream(snapshot, (client) =>
+            idEntries(client, itemIDs, {
+              lookup: (c, ids, opts) => ({
+                refs: getItemDisplayRefsByIDs(c, ids, opts),
+                notes: Map.groupBy(
+                  getChildNotesByParentIDs(c, ids, opts),
+                  (note) => note.parentItemID,
+                ),
+              }),
+              entry: (itemID, { refs, notes }) => ({
                 itemID,
                 ref: refs.get(itemID) ?? null,
                 notes: notes.get(itemID) ?? [],
-              }));
-            });
-          }),
+              }),
+            }),
+          ),
 
         TagNames: ({ libraryID, snapshot }) =>
           withClient(snapshot, (client) =>
