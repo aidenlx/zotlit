@@ -1,19 +1,14 @@
 // The source-join of a document's Citations: each cited Item read from the Zotero database, in the identities and summary a reference list reports.
 
-import {
-  getAttachmentsByParents,
-  getItemsByKey,
-  getZoteroIdentity,
-  isChildItemFields,
-  itemToCsl,
-  resolveIndexedKeyLibrary,
-} from "@zotlit/db";
+import { Effect } from "effect";
+
+import { isChildItemFields, itemToCsl } from "@zotlit/db";
 import type { Attachment, CslItemData, Item } from "@zotlit/db";
 import { parseAttachmentPath } from "@zotlit/db/path";
 
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
-import type { DatabaseService } from "@/services/database/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import type { Citation } from "./query";
 
@@ -120,16 +115,29 @@ function filename(path: string): string {
  * @returns the readable sources by Indexed Key, beside the `database` state a
  *   caller reports rather than the Items it names as missing.
  */
-export function readReferenceSources(
-  db: Pick<DatabaseService, "state" | "client">,
+export async function readReferenceSources(
+  db: Pick<ZoteroReadsService, "state" | "ready">,
   citations: readonly Pick<Citation, "indexedKey" | "linkpath">[],
-): ReferenceSourceJoin {
+): Promise<ReferenceSourceJoin> {
   const sources = new Map<string, ReferenceSource>();
-  if (db.state !== "ready") return { sources, database: "unreadable" };
+  if (db.state === "degraded") return { sources, database: "unreadable" };
   if (citations.length === 0) return { sources, database: "ready" };
 
   try {
-    const user = getZoteroIdentity(db.client);
+    const { reads } = await db.ready;
+    const indexedKeys = [
+      ...new Set(
+        citations.flatMap(({ indexedKey }) =>
+          indexedKey === null ? [] : [indexedKey],
+        ),
+      ),
+    ];
+    const [user, items] = await Effect.runPromise(
+      Effect.all(
+        [reads.ZoteroIdentity({}), reads.ItemsByIndexedKeys({ indexedKeys })],
+        { concurrency: "unbounded" },
+      ),
+    );
     const cited: {
       indexedKey: string;
       linkpath: string | null;
@@ -139,11 +147,7 @@ export function readReferenceSources(
     }[] = [];
     for (const { indexedKey, linkpath } of citations) {
       if (indexedKey === null) continue;
-      const selector = resolveIndexedKeyLibrary(db.client, indexedKey);
-      if (!selector) continue;
-      const item = getItemsByKey(db.client, selector.libraryID, [
-        selector.key,
-      ])[0];
+      const item = items.get(indexedKey);
       if (!item) continue;
       const { fields } = item;
       if (isChildItemFields(fields)) continue;
@@ -158,9 +162,8 @@ export function readReferenceSources(
 
     const attachments = new Map<number, ZoteroOpenableAttachment[]>();
     try {
-      const rows = getAttachmentsByParents(
-        db.client,
-        cited.map(({ item }) => item.itemID),
+      const rows = await Effect.runPromise(
+        reads.AttachmentsOf({ itemIDs: cited.map(({ item }) => item.itemID) }),
       );
       for (const [itemID, group] of Map.groupBy(
         rows,

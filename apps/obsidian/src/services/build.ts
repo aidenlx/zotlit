@@ -503,12 +503,18 @@ export function buildServices(
         }),
     })
     .use({
-      citationIndex: ({ noteIndex, settings, db, libraryScope, queryClient }) =>
+      citationIndex: ({
+        noteIndex,
+        settings,
+        zoteroReads,
+        libraryScope,
+        queryClient,
+      }) =>
         new CitationIndex({
           app: plugin.app,
           noteIndex,
           settings,
-          db,
+          reads: zoteroReads,
           libraryScope,
           queryClient,
         }),
@@ -537,7 +543,7 @@ export function buildServices(
     .use({
       citationText: ({
         profile,
-        db,
+        zoteroReads,
         citationIndex,
         noteIndex,
         bibliographyRender,
@@ -546,7 +552,7 @@ export function buildServices(
         new CitationText({
           profile,
           app: plugin.app,
-          db,
+          db: zoteroReads,
           citationIndex,
           noteIndex,
           bibliographyRender,
@@ -556,7 +562,7 @@ export function buildServices(
     .use({
       citationPopover: ({
         profile,
-        db,
+        zoteroReads,
         citationIndex,
         citationText,
         bibliographyRender,
@@ -565,7 +571,7 @@ export function buildServices(
         new CitationPopover({
           profile,
           app: plugin.app,
-          db,
+          db: zoteroReads,
           citationIndex,
           citationText,
           bibliographyRender,
@@ -579,7 +585,7 @@ export function buildServices(
         createProfile,
         importProfile,
         zoteroPref,
-        db,
+        zoteroReads,
         citationText,
         citationPopover,
         settings,
@@ -594,7 +600,7 @@ export function buildServices(
           createProfile,
           importProfile,
           zoteroPref,
-          db,
+          db: zoteroReads,
           citationText,
           citationPopover,
           settings,

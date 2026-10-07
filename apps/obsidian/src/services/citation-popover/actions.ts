@@ -37,7 +37,7 @@ export interface CitationPopoverActionDeps {
   hide: () => void;
   switchProfile: (path: string) => void;
   /** Refresh source-less Item availability before any action. */
-  prepare?: (block: CitationEntryBlock) => CitationEntryBlock | null;
+  prepare?: (block: CitationEntryBlock) => Promise<CitationEntryBlock | null>;
 }
 
 export function createCitationPopoverActions({
@@ -46,45 +46,65 @@ export function createCitationPopoverActions({
   switchProfile,
   prepare,
 }: CitationPopoverActionDeps): CitationPopoverActions {
-  let completed = true;
-  const read = (block: CitationEntryBlock): CitationEntryBlock | null => {
-    const current = prepare ? prepare(block) : block;
-    completed = current !== null;
-    return current;
+  /** Whether the last action ran; `onDone` hides only after one that did. */
+  let completed: boolean | Promise<boolean> = true;
+  /**
+   * Run `action` on the block as it stands now. Without `prepare` the action
+   * runs at once; with it, once the fresh read settles.
+   */
+  const act = (
+    block: CitationEntryBlock,
+    action: (current: CitationEntryBlock) => void,
+  ): void => {
+    if (!prepare) {
+      action(block);
+      completed = true;
+      return;
+    }
+    completed = prepare(block).then((current) => {
+      if (current) action(current);
+      return current !== null;
+    });
   };
   return {
     onOpenNote(block, event) {
-      const current = read(block);
-      if (!current) return;
       const pane = navigationPaneOf(event);
-      logger.debug("Citation popover opens note", {
-        citekey: block.citekey,
-        pane,
+      act(block, (current) => {
+        logger.debug("Citation popover opens note", {
+          citekey: block.citekey,
+          pane,
+        });
+        open(current, pane);
       });
-      open(current, pane);
     },
     onOpenInZotero(block) {
-      const current = read(block);
-      if (!current) return;
-      logger.debug("Citation popover selects in Zotero", {
-        itemKey: block.itemKey,
+      act(block, (current) => {
+        logger.debug("Citation popover selects in Zotero", {
+          itemKey: block.itemKey,
+        });
+        window.open(itemSelectUri(current.itemKey, current.groupID));
       });
-      window.open(itemSelectUri(current.itemKey, current.groupID));
     },
     onOpenAttachment(block, event) {
-      const current = read(block);
-      if (!current) return;
-      logger.debug("Citation popover opens an attachment", {
-        itemKey: block.itemKey,
-        attachments: block.attachments.length,
-      });
-      openAttachments(current.attachments, {
-        reader: zoteroAttachmentReader,
-        event,
+      act(block, (current) => {
+        logger.debug("Citation popover opens an attachment", {
+          itemKey: block.itemKey,
+          attachments: block.attachments.length,
+        });
+        openAttachments(current.attachments, {
+          reader: zoteroAttachmentReader,
+          event,
+        });
       });
     },
     onDone: () => {
-      if (completed) hide();
+      if (typeof completed === "boolean") {
+        if (completed) hide();
+        return;
+      }
+      void completed.then((done) => {
+        if (done) hide();
+      });
     },
     onSwitchProfile: switchProfile,
   };

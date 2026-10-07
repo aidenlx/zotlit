@@ -53,3 +53,20 @@ export function inProcessReadsService(
     ),
   });
 }
+
+/**
+ * A reads stand-in whose `state` the test sets. Its reads run on the
+ * in-process adapter over an empty `:memory:` fixture database, so a suite
+ * that stubs the `@zotlit/db` queries answers through the real handlers.
+ */
+export function stubbedReads(): Pick<ZoteroReadsService, "ready"> &
+  AsyncDisposable & { state: ZoteroReadsService["state"] } {
+  const service = inProcessReadsService(memoryOpener(() => "").open);
+  return {
+    state: "ready",
+    get ready() {
+      return service.ready;
+    },
+    [Symbol.asyncDispose]: () => service[Symbol.asyncDispose](),
+  };
+}

@@ -14,9 +14,23 @@ import type {
   BibliographyRenderResult,
 } from "@/services/pandoc/render-cache";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
+import { stubbedReads } from "@/services/zotero-reads/test-utils";
 
 import { CitationPopover } from "./service";
 import type { WorkHoverRequest } from "./service";
+
+/** Every reads stand-in a test opened, disposed after it. */
+const opened: AsyncDisposable[] = [];
+afterEach(async () => {
+  for (const reads of opened.splice(0)) await reads[Symbol.asyncDispose]();
+});
+
+/** ZoteroReads on the in-process adapter; its handlers run the stubs below. */
+function reads() {
+  const stub = stubbedReads();
+  opened.push(stub);
+  return stub;
+}
 
 vi.mock("@zotlit/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@zotlit/db")>()),
@@ -67,7 +81,7 @@ function harness() {
         },
       },
     },
-    db: { state: "ready", client: {} },
+    db: reads(),
     citationIndex: {
       resolveCitekey: () => ({ kind: "missing" }),
       on,
@@ -279,6 +293,10 @@ describe("Citation Popover visits", () => {
     await act(async () => {
       old.reject(new Error("Stale render failed"));
     });
+    // The newest work's database read settles on the runtime's clock.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
     expect(run.parent.hoverPopover!.hoverEl).toBe(card);
     expect(card.textContent).toContain("Beta");
     expect(card.textContent).not.toContain("Alpha");
@@ -286,6 +304,10 @@ describe("Citation Popover visits", () => {
       '[data-citation-popover-actions] [role="button"]',
     )!;
     await act(() => openNote.click());
+    // The action reads the Item again first, so it lands once that read does.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
     expect(run.open).toHaveBeenCalledWith("BCDE3456", false);
     expect(run.parent.hoverPopover).toBeNull();
   });

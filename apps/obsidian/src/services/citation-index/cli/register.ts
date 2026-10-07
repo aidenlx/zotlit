@@ -4,6 +4,7 @@
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 
+import { Effect } from "effect";
 import type {
   App,
   CliFlag,
@@ -12,11 +13,7 @@ import type {
   Plugin,
 } from "obsidian";
 
-import {
-  getItemsByKey,
-  isChildItemFields,
-  resolveIndexedKeyLibrary,
-} from "@zotlit/db";
+import { isChildItemFields } from "@zotlit/db";
 
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
@@ -25,8 +22,8 @@ import type {
   CitationIndex,
   CitationSyntax,
 } from "@/services/citation-index/service";
-import type { DatabaseService } from "@/services/database/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import {
   CITATIONS_GUIDE_COMMAND,
@@ -42,7 +39,7 @@ const logger = getLogger(["citation-index", "cli"]);
 interface CitationsCliRegistrationDeps {
   app: App;
   citationIndex: CitationIndex;
-  db: Pick<DatabaseService, "state" | "client">;
+  db: Pick<ZoteroReadsService, "state" | "ready">;
   zoteroPref: Pick<ZoteroPrefService, "ready" | "sourceId" | "databasePath">;
 }
 
@@ -144,7 +141,7 @@ async function readDocument(
   if (!file || file.extension !== "md") return null;
   const { citations, errors } =
     await deps.citationIndex.getDocumentCitationSet(file);
-  const { sources, database } = readReferenceSources(deps.db, citations);
+  const { sources, database } = await readReferenceSources(deps.db, citations);
   return { citations, errors, sources, database };
 }
 
@@ -163,15 +160,18 @@ async function documentOmittedSyntaxes(
  *  holds one; a read that fails leaves the verdict `"unreadable"` rather than
  *  reporting every Item as missing. The same read renders the Item's summary,
  *  so one answer carries both. */
-function lookupItem(
+async function lookupItem(
   db: CitationsCliRegistrationDeps["db"],
   indexedKey: string,
-): ItemLookup {
-  if (db.state !== "ready") return { presence: "unreadable", summary: null };
+): Promise<ItemLookup> {
+  if (db.state === "degraded") return { presence: "unreadable", summary: null };
   try {
-    const selector = resolveIndexedKeyLibrary(db.client, indexedKey);
-    if (!selector) return { presence: "absent", summary: null };
-    const [item] = getItemsByKey(db.client, selector.libraryID, [selector.key]);
+    const { reads } = await db.ready;
+    const item = (
+      await Effect.runPromise(
+        reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
+      )
+    ).get(indexedKey);
     if (!item) return { presence: "absent", summary: null };
     // A note or an attachment carries no work fields, so the source holds it
     // and renders no summary for it, as the reference list reads it too.

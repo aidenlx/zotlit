@@ -110,7 +110,7 @@ interface CitationsCliDeps {
       indexedKey: string,
     ) => Promise<readonly CitationSyntax[]>;
   };
-  lookupItem: (indexedKey: string) => ItemLookup;
+  lookupItem: (indexedKey: string) => Promise<ItemLookup>;
   /**
    * @returns the document's references, or `null` when the vault holds no
    *   Markdown note at the path.
@@ -176,7 +176,7 @@ export function createCitationsCliHandlers(
       if (admission.kind === "rejected") return admission.response;
       const { echoed } = admission;
 
-      const selected = resolveItem(deps, request.value);
+      const selected = await resolveItem(deps, request.value);
       if (selected.kind === "fault") {
         return envelope(CITED_BY_COMMAND, {
           ok: false,
@@ -274,10 +274,10 @@ type SelectedItem =
  *   missing Item. A citekey selector keeps the resolution snapshot's verdict on
  *   which Item it names, and takes the source read for the summary alone.
  */
-function resolveItem(
+async function resolveItem(
   deps: CitationsCliDeps,
   selector: CitedBySelector,
-): SelectedItem {
+): Promise<SelectedItem> {
   if ("citekey" in selector) {
     const { citekey } = selector;
     const resolved = deps.index.resolveCitekey(citekey);
@@ -299,12 +299,12 @@ function resolveItem(
       item: {
         key: indexedKey,
         citekey,
-        summary: deps.lookupItem(indexedKey).summary,
+        summary: (await deps.lookupItem(indexedKey)).summary,
       },
     };
   }
   const { key } = selector;
-  const { presence, summary } = deps.lookupItem(key);
+  const { presence, summary } = await deps.lookupItem(key);
   if (presence === "absent") {
     return { kind: "fault", diagnostic: keyNotFoundDiagnostic(key) };
   }

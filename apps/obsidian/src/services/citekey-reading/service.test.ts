@@ -28,6 +28,10 @@ import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { QueryClientService } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import {
+  inProcessReadsService,
+  memoryOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import { CitekeyReading } from "./service";
 
@@ -35,8 +39,8 @@ vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();
   return {
     ...actual,
-    // The stub client runs no queries; these three are the whole read path from
-    // an Indexed Key to the Item the citation names.
+    // The in-process reads run over an empty database; these three are the
+    // whole read path from an Indexed Key to the Item the citation names.
     getZoteroIdentity: () => ({
       userID: 1,
       localUserKey: null,
@@ -151,6 +155,7 @@ async function makeHarness({
   const children: MarkdownRenderChild[] = [];
   let ambiguous = ambiguousKeys;
 
+  const reads = stack.use(inProcessReadsService(memoryOpener(() => "").open));
   const citationText = stack.use(
     new CitationText({
       profile: profileReader(defaults, {
@@ -169,7 +174,7 @@ async function makeHarness({
           getFileCache: () => ({ frontmatter }),
         },
       },
-      db: { state: "ready", client: {} },
+      db: reads,
       citationIndex: {
         getDocumentCitationSet: () =>
           Promise.resolve({ occurrences, citations: cited }),
@@ -293,11 +298,13 @@ async function makeHarness({
 }
 
 beforeEach(() => {
-  vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-    libraryID: 1,
-    key: "ALPHA123",
-  });
-  vi.mocked(getItemsByKey).mockReturnValue([ALPHA as never]);
+  // Every Indexed Key reads as ALPHA, filed under the key it was asked by.
+  vi.mocked(resolveIndexedKeyLibrary).mockImplementation(
+    (_client, indexedKey) => ({ libraryID: 1, key: indexedKey }),
+  );
+  vi.mocked(getItemsByKey).mockImplementation((_client, _libraryID, keys) =>
+    keys.map((indexedKey) => ({ ...ALPHA, indexedKey })),
+  );
 });
 
 describe("CitekeyReading", () => {

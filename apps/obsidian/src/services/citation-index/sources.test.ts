@@ -1,12 +1,15 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getAttachmentsByParents, getItemsByKey } from "@zotlit/db";
 import type { Attachment, Item } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { makeCreator, makeItem } from "@zotlit/item-lookup/fixtures";
 import type { ItemFixtureOptions } from "@zotlit/item-lookup/fixtures";
 
-import type { DatabaseService } from "@/services/database/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import {
+  inProcessReadsService,
+  memoryOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import type { Citation } from "./query";
 import { readReferenceSources, toZoteroOpenableAttachments } from "./sources";
@@ -15,8 +18,8 @@ vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();
   return {
     ...actual,
-    // The stand-in client runs no queries, so the table reads are stubbed per
-    // test. Key parsing and the CSL mapping stay real: both are pure.
+    // The in-process reads run over an empty database, so the table reads
+    // are stubbed per test. Key parsing and the CSL mapping stay real: both are pure.
     getZoteroIdentity: () => ({
       userID: null,
       localUserKey: null,
@@ -30,10 +33,8 @@ vi.mock("@zotlit/db", async (importOriginal) => {
 const KEY = "ABCD2345";
 const OTHER_KEY = "EFGH6789";
 
-const ready: Pick<DatabaseService, "state" | "client"> = {
-  state: "ready",
-  client: {} as NodeDatabaseClient,
-};
+/** ZoteroReads on the in-process adapter; its handlers run the stubs above. */
+let ready: ZoteroReadsService;
 
 function citation(
   indexedKey: string | null,
@@ -87,16 +88,20 @@ function attachment(overrides: Partial<Attachment>): Attachment {
 }
 
 describe("readReferenceSources", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.mocked(getItemsByKey).mockReturnValue([]);
     vi.mocked(getAttachmentsByParents).mockReturnValue([]);
+    ready = inProcessReadsService(memoryOpener(() => "").open);
+    await ready.ready;
   });
 
-  it("joins the identity and summary of each cited Item", () => {
+  afterEach(() => ready[Symbol.asyncDispose]());
+
+  it("joins the identity and summary of each cited Item", async () => {
     const cited = item(KEY);
     vi.mocked(getItemsByKey).mockReturnValue([cited]);
 
-    const { sources } = readReferenceSources(ready, [
+    const { sources } = await readReferenceSources(ready, [
       citation(KEY, "Notes/Doe 2024.md"),
     ]);
 
@@ -111,37 +116,43 @@ describe("readReferenceSources", () => {
     expect(sources.get(KEY)?.csl.title).toBe("Alpha kernels");
   });
 
-  it("carries a null linkpath through for an Item with no Literature Note", () => {
+  it("carries a null linkpath through for an Item with no Literature Note", async () => {
     vi.mocked(getItemsByKey).mockReturnValue([item(KEY)]);
 
-    const { sources } = readReferenceSources(ready, [citation(KEY, null)]);
+    const { sources } = await readReferenceSources(ready, [
+      citation(KEY, null),
+    ]);
 
     expect(sources.get(KEY)?.linkpath).toBeNull();
   });
 
-  it("reports no citation key when Zotero holds none for the Item", () => {
+  it("reports no citation key when Zotero holds none for the Item", async () => {
     vi.mocked(getItemsByKey).mockReturnValue([
       item(KEY, { citationKey: null }),
     ]);
 
-    const { sources } = readReferenceSources(ready, [citation(KEY, null)]);
+    const { sources } = await readReferenceSources(ready, [
+      citation(KEY, null),
+    ]);
 
     expect(sources.get(KEY)?.citekey).toBeNull();
   });
 
-  it("leaves out a citekey that names no live Zotero Item", () => {
-    const { sources } = readReferenceSources(ready, [citation(null, null)]);
+  it("leaves out a citekey that names no live Zotero Item", async () => {
+    const { sources } = await readReferenceSources(ready, [
+      citation(null, null),
+    ]);
 
     expect(sources.size).toBe(0);
     expect(getItemsByKey).not.toHaveBeenCalled();
   });
 
-  it("leaves out an Item the library no longer holds", () => {
+  it("leaves out an Item the library no longer holds", async () => {
     vi.mocked(getItemsByKey).mockImplementation((_client, _libraryID, keys) =>
       keys[0] === KEY ? [item(KEY)] : [],
     );
 
-    const { sources } = readReferenceSources(ready, [
+    const { sources } = await readReferenceSources(ready, [
       citation(KEY, null),
       citation(OTHER_KEY, null),
     ]);
@@ -149,7 +160,7 @@ describe("readReferenceSources", () => {
     expect([...sources.keys()]).toStrictEqual([KEY]);
   });
 
-  it("offers the Zotero-Openable Attachments of the cited Item", () => {
+  it("offers the Zotero-Openable Attachments of the cited Item", async () => {
     const cited = item(KEY);
     vi.mocked(getItemsByKey).mockReturnValue([cited]);
     vi.mocked(getAttachmentsByParents).mockReturnValue([
@@ -160,30 +171,34 @@ describe("readReferenceSources", () => {
       }),
     ]);
 
-    const { sources } = readReferenceSources(ready, [citation(KEY, null)]);
+    const { sources } = await readReferenceSources(ready, [
+      citation(KEY, null),
+    ]);
 
     expect(sources.get(KEY)?.attachments).toStrictEqual([
       { key: "ATCH2345", groupID: null, label: "Doe_2024.pdf" },
     ]);
   });
 
-  it("keeps the cited Items when the attachment table cannot be read", () => {
+  it("keeps the cited Items when the attachment table cannot be read", async () => {
     vi.mocked(getItemsByKey).mockReturnValue([item(KEY)]);
     vi.mocked(getAttachmentsByParents).mockImplementation(() => {
       throw new Error("attachments unavailable");
     });
 
-    const { sources } = readReferenceSources(ready, [citation(KEY, null)]);
+    const { sources } = await readReferenceSources(ready, [
+      citation(KEY, null),
+    ]);
 
     expect(sources.get(KEY)?.attachments).toStrictEqual([]);
   });
 
-  it("answers empty and unreadable when the item read fails", () => {
+  it("answers empty and unreadable when the item read fails", async () => {
     vi.mocked(getItemsByKey).mockImplementation(() => {
       throw new Error("database locked");
     });
 
-    const { sources, database } = readReferenceSources(ready, [
+    const { sources, database } = await readReferenceSources(ready, [
       citation(KEY, null),
     ]);
 
@@ -191,9 +206,9 @@ describe("readReferenceSources", () => {
     expect(database).toBe("unreadable");
   });
 
-  it("reads nothing while the database is unavailable, and says so", () => {
-    const { sources, database } = readReferenceSources(
-      { state: "loading", client: {} as NodeDatabaseClient },
+  it("reads nothing while the database is unavailable, and says so", async () => {
+    const { sources, database } = await readReferenceSources(
+      { state: "degraded", ready: ready.ready },
       [citation(KEY, null)],
     );
 

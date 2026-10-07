@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { basename } from "node:path/posix";
 import { TFile } from "obsidian";
 import type {
@@ -9,10 +10,8 @@ import type {
 } from "obsidian";
 
 import type { LibraryCitekey } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
-import type { DatabaseEvents } from "@/services/database/service";
 import type {
   AvailableLibrary,
   ResolvedLibraryScope,
@@ -23,10 +22,20 @@ import { QueryClientService } from "@/services/query-client/service";
 import { testClock } from "@/services/query-client/test-clock";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
+import type {
+  ZoteroReadsEvents,
+  ZoteroReadsReady,
+  ZoteroReadsService,
+} from "@/services/zotero-reads/service";
+import {
+  inProcessReadsService,
+  memoryOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import { CitationIndex } from "./service";
 import type { CitekeyRecord, CitekeyStore } from "./service";
-import type { ReadCitekeys } from "./snapshot";
 
 export const KEY_A = "ABCD2345";
 export const KEY_B = "ZZZ99999g7";
@@ -241,27 +250,45 @@ export class NoteIndexStub {
   }
 }
 
-export class DatabaseStub {
+/**
+ * The ZoteroReads stand-in. The test drives its lifecycle (`state`, `ready`,
+ * the `changed` event); its reads run through the in-process adapter over an
+ * empty `:memory:` fixture database, and the citation-key read answers from
+ * {@link citekeys}.
+ */
+export class DatabaseStub implements AsyncDisposable {
   state: "loading" | "ready" | "degraded" = "ready";
-  readonly client = {} as NodeDatabaseClient;
+  readonly citekeys = new CitekeysStub(defaultCitekeys());
+  readonly #service: ZoteroReadsService;
   readonly #listeners = new Set<() => void>();
   readonly #ready = Promise.withResolvers<void>();
 
   constructor({ readyImmediately = true } = {}) {
     if (readyImmediately) this.#ready.resolve();
+    this.#service = inProcessReadsService(
+      memoryOpener(() => "").open,
+      (client) => ({ ...client, CitekeySnapshot: this.citekeys.read }),
+    );
   }
 
-  get ready(): Promise<void> {
-    return this.#ready.promise;
+  get ready(): Promise<ZoteroReadsReady> {
+    return this.#ready.promise.then(() => this.#service.ready);
+  }
+
+  get snapshot(): ZoteroReadsService["snapshot"] {
+    return Effect.andThen(
+      Effect.promise(() => this.#ready.promise),
+      this.#service.snapshot,
+    );
   }
 
   settle(): void {
     this.#ready.resolve();
   }
 
-  on<K extends keyof DatabaseEvents>(
+  on<K extends keyof ZoteroReadsEvents>(
     event: K,
-    cb: DatabaseEvents[K],
+    cb: ZoteroReadsEvents[K],
   ): () => void {
     const listener = cb as () => void;
     if (event === "changed") this.#listeners.add(listener);
@@ -271,8 +298,13 @@ export class DatabaseStub {
   changed(): void {
     for (const listener of this.#listeners) listener();
   }
+
+  [Symbol.asyncDispose](): Promise<void> {
+    return this.#service[Symbol.asyncDispose]();
+  }
 }
 
+/** The citation-key rows the {@link DatabaseStub} answers, with each read it served. */
 export class CitekeysStub {
   rows: LibraryCitekey[];
   error: unknown = null;
@@ -282,11 +314,20 @@ export class CitekeysStub {
     this.rows = rows;
   }
 
-  read: ReadCitekeys = (_db, libraryID) => {
-    this.calls.push(libraryID);
-    if (this.error) throw this.error;
-    return this.rows.filter((row) => row.libraryID === libraryID);
-  };
+  read = (({ libraryID }: { libraryID: number }) =>
+    Effect.suspend(() => {
+      this.calls.push(libraryID);
+      if (this.error)
+        return Effect.fail(
+          new DbUnavailable({
+            message:
+              this.error instanceof Error ? this.error.message : "read failed",
+          }),
+        );
+      return Effect.succeed(
+        this.rows.filter((row) => row.libraryID === libraryID),
+      );
+    })) as unknown as ZoteroReadsClient["CitekeySnapshot"];
 }
 
 /**
@@ -515,8 +556,9 @@ export async function createCitationIndexHarness(
   const workspace = new MockWorkspace();
   const noteIndex = new NoteIndexStub();
   const store = options.store ?? new MemoryStore();
-  const db = options.db ?? new DatabaseStub();
-  const citekeys = new CitekeysStub(options.citekeys ?? defaultCitekeys());
+  const db = stack.use(options.db ?? new DatabaseStub());
+  const { citekeys } = db;
+  if (options.citekeys) citekeys.rows = options.citekeys;
   const libraryScope = options.libraryScope ?? new LibraryScopeStub();
 
   const addFile = (path: string, body: string): TFile => {
@@ -556,9 +598,8 @@ export async function createCitationIndexHarness(
       app,
       noteIndex,
       settings,
-      db,
+      reads: db,
       libraryScope,
-      readCitekeys: citekeys.read,
       openStore: () => Promise.resolve(store),
       queryClient,
     }),

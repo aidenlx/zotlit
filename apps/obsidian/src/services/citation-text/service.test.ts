@@ -28,6 +28,10 @@ import type { Held } from "@/services/query-client/service";
 import { QueryClientService } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import {
+  inProcessReadsService,
+  memoryOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import {
   ALPHA,
@@ -48,8 +52,8 @@ vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();
   return {
     ...actual,
-    // The stub client runs no queries; these three are the whole read path from
-    // an Indexed Key to the Item the citation names.
+    // The in-process reads run over an empty database; these three are the
+    // whole read path from an Indexed Key to the Item the citation names.
     getZoteroIdentity: () => ({
       userID: 1,
       localUserKey: null,
@@ -164,6 +168,7 @@ async function makeHarness({
   };
 
   let present = true;
+  const reads = inProcessReadsService(memoryOpener(() => "").open);
   const service = new CitationText({
     app: {
       vault: {
@@ -183,7 +188,7 @@ async function makeHarness({
           Object.hasOwn(notes, linkpath) ? { path: linkpath } : null,
       },
     },
-    db: { state: "ready", client: {} },
+    db: reads,
     citationIndex: {
       getDocumentCitationSet: () => Promise.resolve(set),
       // Every Literature Note stand-in shares one Indexed Key, so one entry
@@ -253,16 +258,19 @@ async function makeHarness({
     dispose: async () => {
       await service[Symbol.asyncDispose]();
       await queryClient[Symbol.asyncDispose]();
+      await reads[Symbol.asyncDispose]();
     },
   };
 }
 
 beforeEach(() => {
-  vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-    libraryID: 1,
-    key: "ALPHA123",
-  });
-  vi.mocked(getItemsByKey).mockReturnValue([ALPHA as never]);
+  // Every Indexed Key reads as ALPHA, filed under the key it was asked by.
+  vi.mocked(resolveIndexedKeyLibrary).mockImplementation(
+    (_client, indexedKey) => ({ libraryID: 1, key: indexedKey }),
+  );
+  vi.mocked(getItemsByKey).mockImplementation((_client, _libraryID, keys) =>
+    keys.map((indexedKey) => ({ ...ALPHA, indexedKey })),
+  );
 });
 
 async function readText(service: CitationText): Promise<DocumentCitations> {
@@ -1204,15 +1212,13 @@ function firstSerials(
  * other suite reads one Item for whatever Indexed Key it asks about.
  */
 function readTwoItems(): void {
-  vi.mocked(resolveIndexedKeyLibrary).mockImplementation(
-    (_client, indexedKey) => ({
-      libraryID: 1,
+  vi.mocked(getItemsByKey).mockImplementation((_client, _libraryID, keys) =>
+    keys.map((indexedKey) => ({
+      ...ALPHA,
+      indexedKey,
       key: indexedKey === LIT_KEY ? "BETA123" : "ALPHA123",
-    }),
+    })),
   );
-  vi.mocked(getItemsByKey).mockImplementation((_client, _libraryID, keys) => [
-    { ...ALPHA, key: keys[0] } as never,
-  ]);
 }
 
 describe("CitationText Entry Serials", () => {

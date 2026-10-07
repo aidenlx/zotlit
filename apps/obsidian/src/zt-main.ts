@@ -390,6 +390,7 @@ export default class ZotLitPlugin extends Plugin {
         app: this.app,
         settings: services.settings,
         db: services.db,
+        reads: services.zoteroReads,
         libraryScope: services.libraryScope,
         zoteroPref: services.zoteroPref,
         noteFeature: services.noteFeature,
@@ -451,6 +452,7 @@ export default class ZotLitPlugin extends Plugin {
       nativePreview: {
         app: this.app,
         db: services.db,
+        reads: services.zoteroReads,
         noteIndex: services.noteIndex,
         zoteroPref: services.zoteroPref,
         settings: services.settings,
@@ -476,6 +478,7 @@ export default class ZotLitPlugin extends Plugin {
       itemLookup: services.itemLookup,
       profile: services.profile,
       db: services.db,
+      reads: services.zoteroReads,
       noteIndex: services.noteIndex,
       zoteroPref: services.zoteroPref,
       settings: services.settings,
@@ -496,7 +499,7 @@ export default class ZotLitPlugin extends Plugin {
     registerReferencesView(this, {
       profile: services.profile,
       app: this.app,
-      db: services.db,
+      db: services.zoteroReads,
       citationIndex: services.citationIndex,
       libraryScope: services.libraryScope,
       citationText: services.citationText,
@@ -513,7 +516,7 @@ export default class ZotLitPlugin extends Plugin {
     registerCitationsCli(this, {
       app: this.app,
       citationIndex: services.citationIndex,
-      db: services.db,
+      db: services.zoteroReads,
       zoteroPref: services.zoteroPref,
     });
 
@@ -538,6 +541,7 @@ export default class ZotLitPlugin extends Plugin {
     registerPandocResolve(this, {
       app: this.app,
       db: services.db,
+      reads: services.zoteroReads,
       zoteroPref: services.zoteroPref,
       settings: services.settings,
       profile: services.profile,
@@ -546,7 +550,7 @@ export default class ZotLitPlugin extends Plugin {
     registerPandocExport(this, {
       profile: services.profile,
       app: this.app,
-      db: services.db,
+      db: services.zoteroReads,
       citationIndex: services.citationIndex,
       pandocEngine: services.pandocEngine,
       zoteroPref: services.zoteroPref,
