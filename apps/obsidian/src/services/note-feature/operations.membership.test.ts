@@ -1,8 +1,10 @@
 // Creation preparation and registry behavior over Profile documents and relational Item rows.
+import { Effect } from "effect";
 import type { TFile } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stringify as stringifyYaml } from "yaml";
 
+import { getLibraries } from "@zotlit/db";
 import type { Item, NoteTemplateContext } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
@@ -18,16 +20,18 @@ import {
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { DatabaseError } from "@/services/database/service";
-import type {
-  DatabaseEvents,
-  DatabaseService,
-} from "@/services/database/service";
+import type { DatabaseEvents } from "@/services/database/service";
 import {
   listCollectionChoices,
   resolveMembershipFacts,
   matchItem,
 } from "@/services/profile-selection";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
+import type {
+  ZoteroReadsEvents,
+  ZoteroReadsService,
+} from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
   sharedClientOpener,
@@ -192,6 +196,21 @@ async function harness(
   stack.defer(() => client.$client.close());
   seed(client);
   const events = createNanoEvents<DatabaseEvents>();
+  const zoteroEvents = createNanoEvents<ZoteroReadsEvents>();
+  // Library Scope reads the Libraries through ZoteroReads, over the same client.
+  const readsEvents = {
+    ready: Promise.resolve({
+      reads: {
+        Libraries: () =>
+          Effect.suspend(() =>
+            readable
+              ? Effect.succeed(getLibraries(client))
+              : Effect.fail(new DbUnavailable({ message: "Unavailable" })),
+          ),
+      },
+    }),
+    on: zoteroEvents.on.bind(zoteroEvents),
+  } as unknown as ZoteroReadsService;
   let readable = true;
   const db = {
     ready: Promise.resolve(),
@@ -213,7 +232,7 @@ async function harness(
         ),
         ...extraFiles,
       },
-      db as DatabaseService,
+      readsEvents,
     ),
   );
   const { app, vault, profile, template, settings } = fixture;
@@ -279,11 +298,24 @@ async function harness(
     client,
     deps,
     feature: createNoteFeature(deps),
-    refreshLibraries: () => events.emit("changed"),
-    setReadable: (next: boolean) => {
+    refreshLibraries: async () => {
+      events.emit("changed");
+      zoteroEvents.emit("changed");
+      await vi.advanceTimersByTimeAsync(0);
+    },
+    setReadable: async (next: boolean) => {
       readable = next;
-      if (next) events.emit("changed");
-      else events.emit("degraded", new DatabaseError("Unavailable"));
+      if (next) {
+        events.emit("changed");
+        zoteroEvents.emit("changed");
+      } else {
+        events.emit("degraded", new DatabaseError("Unavailable"));
+        zoteroEvents.emit(
+          "degraded",
+          new DbUnavailable({ message: "Unavailable" }),
+        );
+      }
+      await vi.advanceTimersByTimeAsync(0);
     },
     async editMatch(id: ProfileId, match?: MatchTree) {
       vault.modifyFile(
@@ -551,7 +583,7 @@ describe("Profile document matches at creation preparation", () => {
     f.client.$client.exec(
       "insert into libraries (libraryID, type) values (9, 'group'); insert into groups (groupID, libraryID, name) values (999, 9, 'Remote team')",
     );
-    f.refreshLibraries();
+    await f.refreshLibraries();
     expect(f.libraryScope.current).toBe(selected);
     expect(f.profile.profiles[0]?.match).toMatchObject({
       state: "evaluable",
@@ -560,17 +592,17 @@ describe("Profile document matches at creation preparation", () => {
     f.client.$client.exec(
       "update groups set name = 'Research team' where groupID = 999",
     );
-    f.refreshLibraries();
+    await f.refreshLibraries();
     expect(f.libraryScope.current).toBe(selected);
     expect(f.profile.profiles[0]?.match.summary).toContain("Research team");
-    f.setReadable(false);
+    await f.setReadable(false);
     expect(f.profile.profiles[0]?.match.state).toBe("unevaluable");
-    f.setReadable(true);
+    await f.setReadable(true);
     expect(f.profile.profiles[0]?.match.state).toBe("evaluable");
     f.client.$client.exec(
       "delete from groups where groupID = 999; delete from libraries where libraryID = 9",
     );
-    f.refreshLibraries();
+    await f.refreshLibraries();
     expect(f.profile.profiles[0]?.match.state).toBe("unevaluable");
   });
 

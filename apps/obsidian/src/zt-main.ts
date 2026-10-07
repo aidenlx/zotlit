@@ -310,13 +310,13 @@ export default class ZotLitPlugin extends Plugin {
     registerIndexedKeyFileMenu(this);
     addAttachmentOpenActions(this, {
       app: this.app,
-      db: services.db,
+      reads: services.zoteroReads,
       zoteroPref: services.zoteroPref,
       settings: services.settings,
     });
     registerAttachmentOpenFileMenu(this, {
       app: this.app,
-      db: services.db,
+      reads: services.zoteroReads,
       zoteroPref: services.zoteroPref,
       settings: services.settings,
     });
@@ -374,7 +374,7 @@ export default class ZotLitPlugin extends Plugin {
       createProfile: services.createProfile,
       importProfile: services.importProfile,
       app: this.app,
-      db: services.db,
+      reads: services.zoteroReads,
       lookup: services.itemLookup,
       noteIndex: services.noteIndex,
       noteFeature: services.noteFeature,
@@ -404,6 +404,8 @@ export default class ZotLitPlugin extends Plugin {
     registerAnnotView(this, {
       app: this.app,
       db: services.db,
+      reads: services.zoteroReads,
+      libraryScope: services.libraryScope,
       liveUpdate: services.localServer,
       pdfReaders: services.pdfAnnotationEditor,
       annotations: services.annotationRepository,
@@ -573,6 +575,8 @@ export default class ZotLitPlugin extends Plugin {
     registerWelcomeView(this, {
       app: this.app,
       db: services.db,
+      reads: services.zoteroReads,
+      queries: services.queryClient,
       zoteroPref: services.zoteroPref,
       noteIndex: services.noteIndex,
       settings: services.settings,

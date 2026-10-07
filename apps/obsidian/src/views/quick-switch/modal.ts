@@ -70,7 +70,7 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
     evt: MouseEvent | KeyboardEvent,
   ): Promise<void> {
     if (evt.shiftKey) {
-      this.#openAttachment(hit, Keymap.isModEvent(evt));
+      await this.#openAttachment(hit, Keymap.isModEvent(evt));
       return;
     }
     await this.#deps.noteIndex.whenIndexed();
@@ -92,8 +92,11 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
    * Attachments always fall to the Suggest modal picker; `pane` still honors
    * the chord's own Mod, wherever the open lands.
    */
-  #openAttachment(hit: SearchHit, pane: PaneType | boolean): void {
-    const attachments = resolveLiteratureNoteAttachments(
+  async #openAttachment(
+    hit: SearchHit,
+    pane: PaneType | boolean,
+  ): Promise<void> {
+    const attachments = await resolveLiteratureNoteAttachments(
       this.#deps,
       hit.item.indexedKey,
     );

@@ -21,6 +21,12 @@ declare module "*.lua?variant=sandbox" {
   export default source;
 }
 
+/** The ZoteroReads worker bundle, built and embedded by the `embedded-worker` Vite plugin. */
+declare module "virtual:zotero-reads-worker" {
+  const source: string;
+  export default source;
+}
+
 var __DEV__: boolean;
 var __WEB_WORKBENCH_ENABLED__: boolean;
 var __DOCS_SITE_URL__: string;

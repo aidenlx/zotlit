@@ -654,6 +654,69 @@ describe("ZoteroReads operations", () => {
     ]);
   });
 
+  it("AnnotViewAttachments lists an item's attachments, or a standalone attachment alone, with annotation counts", async () => {
+    const { open } = fixtureOpener(
+      () => `
+        insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+          values (11, 2, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'LOOS2345');
+        insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path)
+          values (11, null, 0, 'application/pdf', 'storage:loose.pdf');
+      `,
+    );
+    const [ofItem, standalone, unknown] = await withReads(open, (reads) =>
+      Effect.all([
+        reads.AnnotViewAttachments({
+          libraryID: 1,
+          key: "MAIN2345",
+          standalone: false,
+        }),
+        reads.AnnotViewAttachments({
+          libraryID: 1,
+          key: "LOOS2345",
+          standalone: true,
+        }),
+        reads.AnnotViewAttachments({
+          libraryID: 1,
+          key: "MISS2345",
+          standalone: true,
+        }),
+      ]),
+    );
+    expect(ofItem).toEqual([
+      {
+        itemID: 10,
+        indexedKey: "ATCH2345",
+        path: "storage:paper.pdf",
+        annotCount: 2,
+      },
+    ]);
+    expect(standalone).toEqual([
+      {
+        itemID: 11,
+        indexedKey: "LOOS2345",
+        path: "storage:loose.pdf",
+        annotCount: 0,
+      },
+    ]);
+    expect(unknown).toEqual([]);
+  });
+
+  it("ReaderTargetKeys names a push's attachment, parent item, and live selected annotations", async () => {
+    const { open } = fixtureOpener();
+    const [named, unknown] = await withReads(open, (reads) =>
+      Effect.all([
+        reads.ReaderTargetKeys({ attachmentID: 10, selected: [101, 999] }),
+        reads.ReaderTargetKeys({ attachmentID: 999, selected: [] }),
+      ]),
+    );
+    expect(named).toEqual({
+      attachmentKey: "ATCH2345",
+      itemKey: "MAIN2345",
+      selected: ["ANNT2346"],
+    });
+    expect(unknown).toBeNull();
+  });
+
   it("a source that cannot open fails with a tagged DbUnavailable", async () => {
     const { open } = fixtureOpener(() => null);
     const error = await withReads(open, (reads) =>
