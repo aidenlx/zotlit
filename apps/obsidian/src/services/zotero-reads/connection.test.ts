@@ -2,9 +2,11 @@ import { Effect, Exit } from "effect";
 import type { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 
+import { getLibraries, getSchemaVersions } from "@zotlit/db";
 import { ItemQueryDatabase, readLibraries } from "@zotlit/db/item-query";
 import { openScenarioDatabase } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabaseOptions } from "@zotlit/db/test-scenario";
+import { countStatements } from "@zotlit/db/test-utils";
 import { queryItems } from "@zotlit/item-query";
 
 import { validateClient } from "./connection";
@@ -121,5 +123,24 @@ describe("validateClient and Item Query", () => {
         missing: [{ table: "fieldsCombined", column: "custom" }],
       }),
     );
+  });
+
+  it("reads the layout of a copy once for validation, the stamps, and the Library readers", () => {
+    using scenario = openScenarioDatabase();
+    const statements = countStatements(scenario.sqlite);
+
+    validateClient(scenario.db);
+    const validated = statements();
+    getSchemaVersions(scenario.db);
+    getLibraries(scenario.db);
+    Effect.runSync(
+      Effect.provideService(readLibraries(), ItemQueryDatabase, {
+        client: scenario.db,
+      }),
+    );
+
+    // Two layout statements, then one Library statement for each reader.
+    expect(validated).toBe(2);
+    expect(statements()).toBe(validated + 2);
   });
 });

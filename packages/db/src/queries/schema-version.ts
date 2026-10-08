@@ -8,8 +8,9 @@ import { defineQuery } from "./_shared";
 /**
  * Inclusive version ranges ZotLit is tested against, keyed by the
  * `version.schema` row that holds each one. This is the range of Zotero clients
- * exercised. The typed schema exposes newer columns. Queries that use them
- * must keep an explicit path for supported userdata 125 databases.
+ * exercised. The typed schema exposes newer columns. A query selects one of
+ * them only when `readDatabaseLayout(db).has(table, column)` says the copy
+ * has it, so it also reads supported userdata 125 databases.
  *
  * - `userdata` counts Zotero's applied migration steps. Zotero 9.0.0 through
  *   9.0.6 sit at 125; Zotero 10.0.0 raises it to 129.

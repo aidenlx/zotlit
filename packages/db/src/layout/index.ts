@@ -1,8 +1,10 @@
 // The layout of a Zotero database copy: the columns of each table and view,
 // and the version stamps. Every reader asks this module which columns a copy
 // has; the stamps are for logging only. It reads a copy once and keeps the
-// answer for the life of the client. This core is synchronous; the Effect
-// adapter of the Item Query readers is `src/item-query/layout.ts`.
+// answer for the life of the client. This core is synchronous. The Effect
+// adapter of the Item Query readers (`readLayout`, `checkLayout`) is in
+// `src/item-query/database.ts`; `src/item-query/layout.ts` gives the typed
+// failure and the synchronous check `checkDatabaseLayout`.
 import { version } from "@drizzle/schema";
 import { getLogger } from "@logtape/logtape";
 import { inArray, sql } from "drizzle-orm";
