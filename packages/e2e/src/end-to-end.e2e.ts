@@ -505,15 +505,28 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         throw new Error(`Annotation cards did not render: ${state}`);
       }
       expect(JSON.parse(await obEval(vaultId, visibleCards))).toEqual(expected);
-      // A selected card draws its outline as a ring, which Tailwind composes
-      // into `box-shadow`, and its tint as `background-color`. Both must ease,
-      // or the outline snaps while the tint still fades. The card is sampled
-      // 40ms into each direction of the change, well inside Obsidian's fast
-      // duration: a property still easing reads apart from both its
-      // start and its end. The card still grows while its excerpt loads, and a
-      // change made then starts no transition at all, so the probe waits until
-      // its height holds for 300ms. Under reduced motion neither eases.
-      const selectionEase = `(async()=>{const card=app.workspace.getLeavesOfType('zotero-annotation-view')[0].view.containerEl.querySelector('.zt-annot-card:not([data-selected])');const read=()=>{const s=getComputedStyle(card);return{fill:s.backgroundColor,ring:s.boxShadow};};const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));const probe=async(on)=>{const start=read();card.toggleAttribute('data-selected',on);await sleep(40);const mid=read();await sleep(600);const end=read();const eases=(name)=>mid[name]!==start[name]&&mid[name]!==end[name];return{fill:eases('fill'),ring:eases('ring')};};for(let height=-1,steady=0;steady<300;steady=card.offsetHeight===height?steady+50:0,height=card.offsetHeight)await sleep(50);const motion=!matchMedia('(prefers-reduced-motion: reduce)').matches;const select=await probe(true);const deselect=await probe(false);return JSON.stringify({motion,select,deselect});})()`;
+      // Both selection colors must interpolate. Seek the actual transitions
+      // to their midpoint so CPU load cannot move a timer past their end.
+      // Under reduced motion neither property has an intermediate value.
+      const selectionEase = `(()=>{
+        const card=app.workspace.getLeavesOfType('zotero-annotation-view')[0].view.containerEl.querySelector('.zt-annot-card:not([data-selected])');
+        const read=()=>{const s=getComputedStyle(card);return{fill:s.backgroundColor,ring:s.boxShadow};};
+        const probe=(on)=>{
+          const start=read();
+          card.toggleAttribute('data-selected',on);
+          read();
+          const transitions=card.getAnimations().filter(animation=>['background-color','box-shadow'].includes(animation.transitionProperty));
+          for(const animation of transitions){animation.pause();animation.currentTime=animation.effect.getComputedTiming().activeDuration/2;}
+          const mid=read();
+          for(const animation of transitions)animation.finish();
+          const end=read();
+          const eases=(name)=>mid[name]!==start[name]&&mid[name]!==end[name];
+          return{fill:eases('fill'),ring:eases('ring')};
+        };
+        const motion=!matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const select=probe(true);const deselect=probe(false);
+        return JSON.stringify({motion,select,deselect});
+      })()`;
       const { motion, ...eased } = JSON.parse(
         await obEval(vaultId, selectionEase),
       ) as { motion: boolean };
