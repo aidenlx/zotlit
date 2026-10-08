@@ -32,7 +32,7 @@ import { makeStateFeed } from "./change-feed";
 import {
   Connection,
   makeClientRef,
-  makeDatabaseFiles,
+  makeDatabaseGenerations,
   toDbUnavailable,
   validateClient,
 } from "./connection";
@@ -179,7 +179,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
         readMode,
         missing: missingDbSignalled,
       }));
-      const databaseFiles = makeDatabaseFiles();
+      const databaseGenerations = makeDatabaseGenerations();
       const clients = yield* makeClientRef(
         Effect.suspend(() =>
           Effect.fail(
@@ -278,8 +278,11 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
         });
       };
 
-      /** Open and validate a client over a prepared read; on failure release both. */
-      const openClient = (prepared: PreparedRead) =>
+      /**
+       * Open and validate a client over a prepared read of `file`, recording
+       * the database it reads; on failure release both.
+       */
+      const openClient = (prepared: PreparedRead, file: string) =>
         Effect.tryPromise({
           try: async (): Promise<OpenClient> => {
             let client: NodeDatabaseClient;
@@ -289,6 +292,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
                   buildSqliteUri(prepared.path, prepared.uriOptions),
                 ),
               );
+              databaseGenerations.record(client, file);
             } catch (error) {
               await disposeRead(prepared);
               throw error;
@@ -335,8 +339,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
                   ports.prepareRead(configuredMode, databasePath),
                 ),
               );
-              const open = yield* openClient(prepared);
-              databaseFiles.record(open.client, databasePath);
+              const open = yield* openClient(prepared, databasePath);
               logReadFallback(prepared);
               reportSchemaVersions(open.client);
               yield* clients.swap(open);
@@ -625,7 +628,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
           scheduleWatchedRefresh({ trusted: true });
         }),
         configure,
-        databaseFile: databaseFiles.databaseFile,
+        databaseGeneration: databaseGenerations.databaseGeneration,
       });
     }),
   );
