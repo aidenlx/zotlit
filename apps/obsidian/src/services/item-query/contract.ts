@@ -8,11 +8,13 @@
 import type { CliFlag, CliFlags } from "obsidian";
 
 export const ITEM_QUERY_COMMAND = "zotlit:item-query" as const;
+export const ITEM_QUERY_CANCEL_COMMAND = "zotlit:item-query-cancel" as const;
 export const ITEM_QUERY_SCHEMA_COMMAND = "zotlit:item-query-schema" as const;
 export const ITEM_QUERY_GUIDE_COMMAND = "zotlit:item-query-guide" as const;
 
 export type ItemQueryCommand =
   | typeof ITEM_QUERY_COMMAND
+  | typeof ITEM_QUERY_CANCEL_COMMAND
   | typeof ITEM_QUERY_SCHEMA_COMMAND
   | typeof ITEM_QUERY_GUIDE_COMMAND;
 
@@ -20,6 +22,8 @@ export type ItemQueryCommand =
 export const DEFAULT_CLI_LIMIT = 100;
 /** Bounds the string transferred through Obsidian's renderer and CLI. */
 export const INLINE_MAX_BYTES = 1024 * 1024;
+/** The longest query ID, in characters. */
+export const QUERY_ID_MAX_LENGTH = 128;
 
 export const ITEM_QUERY_PARAMS = [
   "filter",
@@ -29,6 +33,7 @@ export const ITEM_QUERY_PARAMS = [
   "library",
   "libraries",
   "output",
+  "id",
 ] as const;
 
 type ItemQueryParam = (typeof ITEM_QUERY_PARAMS)[number];
@@ -68,7 +73,18 @@ export const itemQueryFlags: CliFlags = {
     description:
       "Write the complete JSON response to a new file and return its path and counts",
   },
+  id: {
+    value: "<id>",
+    description: `Name this query so that ${ITEM_QUERY_CANCEL_COMMAND} can stop it: letters, digits, ., _, and -, at most ${QUERY_ID_MAX_LENGTH} characters`,
+  },
 } satisfies Record<ItemQueryParam, CliFlag>;
+
+export const itemQueryCancelFlags: CliFlags = {
+  id: {
+    value: "<id>",
+    description: `The id of a running ${ITEM_QUERY_COMMAND} call in this vault`,
+  },
+} satisfies Record<"id", CliFlag>;
 
 /**
  * The diagnostic codes this adapter raises itself, each defined with the
@@ -82,6 +98,7 @@ export const DIAGNOSTIC_HINTS = {
     "Use an absolute output path in an existing writable directory, with a filename that does not exist.",
   "invalid-argument":
     "Correct the parameter named in details.parameter, then run the command again.",
+  "query-id-in-use": `Give this query another id. A query with this id is still running in this vault; the id is free again when that query finishes or is cancelled with ${ITEM_QUERY_CANCEL_COMMAND}.`,
   "source-unavailable":
     "Run the command again once the connected Zotero source is readable; when the message reports a failure, ask the user to check the plugin log.",
   "library-not-found":

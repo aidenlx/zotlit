@@ -1,7 +1,8 @@
 // Registers the Item Query commands with Obsidian's CLI: the only Promise edge
 // of `@zotlit/item-query` (ADR 0066). The query command decodes the flat
 // arguments, takes the source lease, resolves the Target Libraries, runs the
-// query, and answers the versioned envelope of ADR 0065. The schema command
+// query, and answers the versioned envelope of ADR 0065. The cancel command
+// stops one running query that the caller named with `id`. The schema command
 // answers the Item Query Schema of the source in the same envelope; the guide
 // command prints plain text.
 //
@@ -43,12 +44,15 @@ import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 import {
   DEFAULT_CLI_LIMIT,
   DIAGNOSTIC_HINTS,
+  ITEM_QUERY_CANCEL_COMMAND,
   ITEM_QUERY_COMMAND,
   INLINE_MAX_BYTES,
   ITEM_QUERY_GUIDE_COMMAND,
   ITEM_QUERY_PARAMS,
   ITEM_QUERY_SCHEMA_COMMAND,
+  itemQueryCancelFlags,
   itemQueryFlags,
+  QUERY_ID_MAX_LENGTH,
 } from "./contract";
 import type { ItemQueryCommand } from "./contract";
 import { GUIDE_TOPIC_NAMES, parseGuideTopic, renderGuide } from "./guide";
@@ -65,6 +69,7 @@ export const CONTRACT_VERSION = 1;
 
 export {
   DEFAULT_CLI_LIMIT,
+  ITEM_QUERY_CANCEL_COMMAND,
   ITEM_QUERY_COMMAND,
   ITEM_QUERY_GUIDE_COMMAND,
   ITEM_QUERY_SCHEMA_COMMAND,
@@ -137,7 +142,13 @@ type EnvelopeTail =
       rows?: readonly { indexedKey: string; values: object }[];
       file?: { path: string; bytes: number; format: "json" };
     }
-  | { ok: true; identity: WorkbenchIdentity; schema: SchemaWire };
+  | { ok: true; identity: WorkbenchIdentity; schema: SchemaWire }
+  | {
+      ok: true;
+      id: string;
+      /** `false`: no query with this id was running in this vault. */
+      cancelRequested: boolean;
+    };
 
 /** The Item Query Schema with the defaults of the CLI in place of the package's. */
 type SchemaWire = Omit<ItemQuerySchema, "defaults"> & {
@@ -190,10 +201,17 @@ export interface ItemQueryCliDeps {
   }>;
 }
 
+/** The owner of query runs: it runs each query and cancels a named one. */
+export interface ItemQueryRuns {
+  answer(params: CliData, signal: AbortSignal): Promise<string>;
+  /** @returns `false` when no query with this id is running. */
+  cancel(id: string): boolean;
+}
+
 export function registerItemQueryCli(
   plugin: Plugin,
   deps: Omit<ItemQueryCliDeps, "signal">,
-  query: (params: CliData, signal: AbortSignal) => Promise<string>,
+  runs: ItemQueryRuns,
 ): void {
   const unload = new AbortController();
   plugin.register(() => unload.abort());
@@ -201,7 +219,13 @@ export function registerItemQueryCli(
     ITEM_QUERY_COMMAND,
     "Query the Items of Zotero Libraries and return the matches as JSON",
     itemQueryFlags,
-    (params) => query(params, unload.signal),
+    (params) => runs.answer(params, unload.signal).catch(printCancel),
+  );
+  plugin.registerCliHandler(
+    ITEM_QUERY_CANCEL_COMMAND,
+    "Stop a running Item Query that was started with id, and return as JSON whether one was running",
+    itemQueryCancelFlags,
+    createItemQueryCancelHandler((id) => runs.cancel(id)),
   );
   plugin.registerCliHandler(
     ITEM_QUERY_SCHEMA_COMMAND,
@@ -271,6 +295,61 @@ export function itemQueryGuideHandler(params: CliData): string {
     );
   }
   return renderGuide(topic);
+}
+
+/**
+ * Obsidian prints a rejected string as `Error: <text>`, and prints any other
+ * rejection as `[object Object]`. A cancelled query rejects with the text of
+ * its cancel, so the caller reads why it stopped; other rejections pass.
+ */
+function printCancel(error: unknown): never {
+  if (error instanceof DOMException && error.name === "AbortError") {
+    // oxlint-disable-next-line no-throw-literal, typescript/only-throw-error -- Obsidian prints only a string reason.
+    throw error.message;
+  }
+  throw error;
+}
+
+/**
+ * The cancel handler answers whether it requested the cancel of a running
+ * query. An id with no running query, such as one that already finished,
+ * answers `cancelRequested: false`.
+ */
+export function createItemQueryCancelHandler(
+  cancel: (id: string) => boolean,
+): CliHandler {
+  return (params: CliData): string => {
+    const rejected = rejectParameters(params, ["id"]);
+    if (rejected) return failure(ITEM_QUERY_CANCEL_COMMAND, rejected);
+    if (params.id === undefined) {
+      return failure(
+        ITEM_QUERY_CANCEL_COMMAND,
+        invalid(
+          "id",
+          "id is missing: give the id of the query to cancel, as in id=<id>.",
+        ),
+      );
+    }
+    const malformed = rejectQueryId(params.id);
+    if (malformed) return failure(ITEM_QUERY_CANCEL_COMMAND, malformed);
+    return envelope(ITEM_QUERY_CANCEL_COMMAND, {
+      ok: true,
+      id: params.id,
+      cancelRequested: cancel(params.id),
+    });
+  };
+}
+
+/** The answer of a query whose id names a query that is still running. */
+export function queryIdInUseFailure(id: string): string {
+  return failure(
+    ITEM_QUERY_COMMAND,
+    diagnostic(
+      "query-id-in-use",
+      `A query with the id '${id}' is running in this vault.`,
+      { details: { parameter: "id" } },
+    ),
+  );
 }
 
 /** Reject malformed CLI parameters before the host acquires a database lease. */
@@ -659,6 +738,7 @@ function messageOf(error: unknown): string {
 // Argument decoding
 
 const GROUP_SELECTOR = regex("^group:([1-9]\\d*)$");
+const QUERY_ID = regex("^[\\w.-]+$");
 const POSITIVE_INTEGER = /^[1-9]\d*$/;
 
 const librariesSchema = v.pipe(v.array(v.string()), v.minLength(1));
@@ -734,7 +814,21 @@ function decodeArguments(params: CliData): DecodedArguments | Diagnostic {
       "output must be an absolute path to a new JSON file.",
     );
   }
+
+  if (params.id !== undefined) {
+    const malformed = rejectQueryId(params.id);
+    if (malformed) return malformed;
+  }
   return { libraries, filter, fields, sort, limit, output };
+}
+
+/** The diagnostic of a query ID outside the accepted form. */
+function rejectQueryId(id: string): Diagnostic | null {
+  if (id.length <= QUERY_ID_MAX_LENGTH && QUERY_ID.test(id)) return null;
+  return invalid(
+    "id",
+    `id '${id}' is not a query id: use 1 to ${QUERY_ID_MAX_LENGTH} letters, digits, ., _, or -.`,
+  );
 }
 
 /** The Library that `personal` or `group:<groupID>` names. */

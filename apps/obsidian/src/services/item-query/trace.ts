@@ -11,6 +11,7 @@ const now = (): number => performance.timeOrigin + performance.now();
 
 export interface CancellationEvent {
   phase:
+    | "requested"
     | "sent"
     | "received"
     | "accepted"

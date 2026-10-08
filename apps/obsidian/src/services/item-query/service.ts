@@ -15,7 +15,9 @@ import {
   diagnostic,
   failure,
   itemQueryArgumentFailure,
+  ITEM_QUERY_CANCEL_COMMAND,
   ITEM_QUERY_COMMAND,
+  queryIdInUseFailure,
 } from "./cli";
 import type { QueryObserver } from "./trace";
 import type { QueryJob } from "./worker-protocol";
@@ -32,11 +34,17 @@ interface ItemQueryServiceDeps {
   createWorker?: QueryWorkerFactory;
 }
 
-/** Owns query jobs, pinned reads, bounded workers, and publication of complete exports. */
+/**
+ * Owns query jobs, pinned reads, bounded workers, and publication of complete
+ * exports. A job that the caller names with `id` can be cancelled by that id
+ * until it settles; one service serves one vault, so an id names one query in
+ * one vault.
+ */
 export class ItemQueryService extends Service<QueryWorkers> {
   readonly #deps;
   readonly #unload = new AbortController();
   readonly #jobs = new Set<Promise<string>>();
+  readonly #named = new Map<string, AbortController>();
   ready: Promise<QueryWorkers>;
 
   constructor(deps: ItemQueryServiceDeps) {
@@ -72,11 +80,30 @@ export class ItemQueryService extends Service<QueryWorkers> {
     signal: AbortSignal,
     measure?: QueryObserver & { heap: boolean },
   ): Promise<string> {
-    const job = this.#answer(
-      params,
-      AbortSignal.any([signal, this.#unload.signal]),
-      measure,
+    // Validate and claim the id synchronously, so two calls with one id
+    // cannot both start.
+    const rejected = itemQueryArgumentFailure(params);
+    if (rejected) return Promise.resolve(rejected);
+    const id = params.id;
+    if (id !== undefined && this.#named.has(id)) {
+      return Promise.resolve(queryIdInUseFailure(id));
+    }
+    const named = new AbortController();
+    if (id !== undefined) this.#named.set(id, named);
+    const combined = AbortSignal.any([
+      signal,
+      this.#unload.signal,
+      named.signal,
+    ]);
+    combined.addEventListener(
+      "abort",
+      () => measure?.cancelled?.({ phase: "requested", atEpochMs: Date.now() }),
+      { once: true },
     );
+    // The id is free before the caller sees the query settle.
+    const job = this.#answer(params, combined, measure).finally(() => {
+      if (id !== undefined) this.#named.delete(id);
+    });
     this.#jobs.add(job);
     void job.then(
       () => this.#jobs.delete(job),
@@ -85,13 +112,27 @@ export class ItemQueryService extends Service<QueryWorkers> {
     return job;
   }
 
+  /**
+   * Request the cancel of the running query named `id`.
+   * @returns `false` when no query with this id is running in this vault.
+   */
+  cancel(id: string): boolean {
+    const named = this.#named.get(id);
+    if (!named) return false;
+    named.abort(
+      new DOMException(
+        `The query '${id}' was cancelled by ${ITEM_QUERY_CANCEL_COMMAND}.`,
+        "AbortError",
+      ),
+    );
+    return true;
+  }
+
   async #answer(
     params: QueryJob["params"],
     signal: AbortSignal,
     measure?: QueryObserver & { heap: boolean },
   ): Promise<string> {
-    const rejected = itemQueryArgumentFailure(params);
-    if (rejected) return rejected;
     signal.throwIfAborted();
     const workers = await abortable(this.ready, signal);
     signal.throwIfAborted();

@@ -37,5 +37,5 @@ Each suite file builds its own Fixture and new purged vaults under `.scratch/e2e
 - The measurement vault uses `keepRendering`, like the End-to-end Run, so background timer throttling does not enter responsiveness samples. It remains visible and leaves OS focus with the developer.
 - Each tier waits for the normal initial Item Lookup index build before timing Item Query. Its separate renderer hydration and indexing work would otherwise contaminate query responsiveness and total-time samples.
 - Worker runs check execution slices and encoding steps against the spec's limits, and check renderer timer gaps against the same limits. Unlimited queries write complete JSON files; the runner deletes each file after its receipt.
-- The numbers come from the dev-build commands `zotlit:item-query-measure` and `zotlit:item-query-measure-cancel` (`apps/obsidian/src/services/item-query/measure.ts`).
+- The numbers come from the dev-build command `zotlit:item-query-measure` (`apps/obsidian/src/services/item-query/measure.ts`). A cancel through the CLI uses the production command `zotlit:item-query-cancel` with the `id` of the measured run.
 - Output goes to `.scratch/item-query-measure/<time>/`: `raw.json` and `summary.md`, the comment for the release pull request.

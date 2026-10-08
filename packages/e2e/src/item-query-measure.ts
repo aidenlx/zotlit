@@ -20,11 +20,10 @@ import { randomUUID } from "node:crypto";
 // repeats a run in which the window was hidden. The E2E window setup disables
 // background throttling and emulates focus while leaving OS focus unchanged.
 //
-// "Cancel through the Obsidian CLI" here is a second CLI call
-// (`zotlit:item-query-measure-cancel`) that aborts the measured run. Obsidian
-// gives a CLI handler no `AbortSignal`, so `zotlit:item-query` has no cancel
-// command: in the product, only a plugin unload cancels a CLI run. The script
-// measures the unload too.
+// "Cancel through the Obsidian CLI" here is the production command
+// `zotlit:item-query-cancel`, called with the `id` of the measured run from a
+// second CLI call. The script measures a plugin unload too, which cancels
+// every run.
 //
 // Output: `.scratch/item-query-measure/<time>/raw.json` and `summary.md`. Post
 // `summary.md` as a comment on the release pull request. The thresholds are in
@@ -78,7 +77,7 @@ import {
 } from "./vault-script.ts";
 
 const MEASURE_COMMAND = "zotlit:item-query-measure";
-const CANCEL_COMMAND = "zotlit:item-query-measure-cancel";
+const CANCEL_COMMAND = "zotlit:item-query-cancel";
 /** One measured call may be a `limit=all` run on 100,000 Items. */
 const CALL_TIMEOUT_MS = 180_000;
 /** Runs to repeat when the window was hidden in a run. */
@@ -587,19 +586,24 @@ async function cancelThroughCli(
   spec: QuerySpec,
   delayMs: number,
 ): Promise<RawCancel> {
-  const running = measure(spec.args);
+  const id = `measure-${randomUUID()}`;
+  const running = measure({ ...spec.args, id });
   await delay(delayMs);
   const sentAtEpochMs = Temporal.Now.instant().epochMilliseconds;
-  const cancelled = JSON.parse(await cliCommand(vaultId, CANCEL_COMMAND)) as {
-    cancelled: number;
-    arrivedAtEpochMs: number;
-  };
+  const answer = JSON.parse(
+    await cliCommand(vaultId, CANCEL_COMMAND, { args: { id } }),
+  ) as { ok: boolean; cancelRequested?: boolean };
+  if (!answer.ok) {
+    throw new Error(`${CANCEL_COMMAND} failed: ${JSON.stringify(answer)}`);
+  }
+  const report = await running;
   return {
     delivery: "cli",
     query: spec.id,
     sentAtEpochMs,
-    arrivedAtEpochMs: cancelled.arrivedAtEpochMs,
-    report: await running,
+    // The cancel command aborts the run when the call arrives in the window.
+    arrivedAtEpochMs: report.cancel?.firedAtEpochMs,
+    report,
   };
 }
 
@@ -879,7 +883,7 @@ function findings(rawTiers: RawTier[], tiers: TierMeasurement[]): string[] {
     `JSON encoding runs inside query execution, one projection chunk at a time. Its largest cumulative synchronous encoding time: ${each((raw) => `${Math.max(0, ...raw.queries.filter(({ spec }) => spec.class !== "all").flatMap(({ runs }) => runs.map((run) => run.answerMs ?? 0))).toFixed(1)} ms for \`limit 100\`, ${Math.max(0, ...raw.queries.filter(({ spec }) => spec.class === "all").flatMap(({ runs }) => runs.map((run) => run.answerMs ?? 0))).toFixed(1)} ms for \`limit=all\``)}. File I/O and scheduler waits are included in total query time.`,
   );
   notes.push(
-    "Cancel, timer: a timer in the window aborts the run; the time is from the moment the timer was due to the rejection of the handler. Cancel, cli: a second Obsidian CLI call (`zotlit:item-query-measure-cancel`, dev build) aborts the run; the time is from the arrival of that call in the window to the rejection, and the transport from the terminal to the window is given apart. Cancel, unload: the plugin unloads, which is the only cancel `zotlit:item-query` has in the product, because Obsidian gives a CLI handler no `AbortSignal`; the time is from the start of the unload to the rejection.",
+    "Cancel, timer: a timer in the window aborts the run; the time is from the moment the timer was due to the rejection of the handler. Cancel, cli: a second Obsidian CLI call, the production `zotlit:item-query-cancel` with the `id` of the run, aborts the run; the time is from the arrival of that call in the window to the rejection, and the transport from the terminal to the window is given apart. Cancel, unload: the plugin unloads and cancels every run; the time is from the start of the unload to the rejection.",
   );
   const megabytes = (bytes: number): string => (bytes / 1024 / 1024).toFixed(1);
   notes.push(
