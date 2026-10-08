@@ -24,6 +24,10 @@ The Annotation Marks and the Creation Toolbar inside Obsidian's PDF reader are v
 
 `src/services/note-feature/` is composable free functions over an injected `NoteFeatureDeps` bundle — **not a `Service`**, despite living under `src/services/`. `createNoteFeature(deps)` binds them; read `context.ts` (deps) and `operations.ts` (bound ops) before editing. Batch runners fetch shared context (item tags, note path) once and thread it through the stages, so per-item ops take already-fetched data instead of re-reading.
 
+## Effect
+
+Read `node_modules/effect/AGENTS.md` completely before writing Effect code; follow its links for the area being changed. Search the installed source before adding helpers.
+
 ## Setting tab
 
 Run `/obsidian-settings` for the declarative 1.13 `getSettingDefinitions()` API (controls, sub-pages, migration); build the tab from those definitions alone. Tab lives in `src/setting-tab/index.ts`.

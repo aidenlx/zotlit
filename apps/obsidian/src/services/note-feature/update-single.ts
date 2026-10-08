@@ -1,6 +1,6 @@
+import { Effect } from "effect";
 import type { App, TFile } from "obsidian";
 
-import { getItemsByID } from "@zotlit/db";
 import type { Item, ItemRef } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -9,7 +9,6 @@ import { profileRecoveryNotice } from "@/lib/profile-recovery";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
 import { missingPartialNotice } from "@/lib/workbench-recovery";
-import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { EmptyFilenameError } from "@/services/note-feature/filename";
 import type {
@@ -24,6 +23,7 @@ import type { NoteIndex } from "@/services/note-index/service";
 import type { ProfileReader } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import { InertTemplateError } from "@/services/template/errors";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 /**
  * Dependencies for the batch runner's single-action create / update path.
@@ -32,12 +32,16 @@ import { InertTemplateError } from "@/services/template/errors";
 export interface SingleUpdateDeps {
   profile: ProfileReader;
   app: App;
-  db: DatabaseService;
+  /**
+   * The database reads. A batch run opens its Snapshot here, and its note
+   * updates read through it.
+   */
+  zoteroReads: Pick<ZoteroReadsService, "acquireRead" | "ready" | "state">;
   settings: SettingsService;
   noteFeature: NoteFeature;
   noteIndex: NoteIndex;
   /** Which Libraries an unqualified library-wide update covers. */
-  libraryScope: Pick<LibraryScopeService, "resolveWith">;
+  libraryScope: Pick<LibraryScopeService, "resolveLibraries">;
 }
 
 /**
@@ -134,7 +138,11 @@ export async function createAndOpen(
   ref: ItemRef,
   profile?: ProfileSelector,
 ): Promise<void> {
-  const [item] = getItemsByID(deps.db.client, [ref.itemID]);
+  const { reads } = await deps.zoteroReads.ready;
+  const items = await Effect.runPromise(
+    reads.ItemsByIndexedKeys({ indexedKeys: [ref.indexedKey] }),
+  );
+  const item = items.get(ref.indexedKey);
   if (!item) return;
 
   const file = await createNoteWithToast(deps.noteFeature, item, {

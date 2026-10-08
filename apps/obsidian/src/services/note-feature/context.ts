@@ -6,16 +6,15 @@ import type {
   Workspace,
 } from "obsidian";
 
-import { buildFilenameContext } from "@zotlit/db";
+import { buildFilenameContext, toTemplateCollection } from "@zotlit/db";
 import type {
-  CollectionCache,
   Item,
   ItemTag,
   NoteResolvers,
+  NoteSource,
   TemplateCollection,
   TemplateFilenameItemData,
 } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { hasSuffixMarker, joinNotePath } from "@zotlit/templates";
 
 import { buildAnnotationResolvers } from "@/lib/annotation-render";
@@ -26,7 +25,6 @@ import type {
   AttachmentImport,
   AttachmentImportService,
 } from "@/services/attachment-import/service";
-import type { DatabaseService } from "@/services/database/service";
 import type {
   ExcerptPreparation,
   PreparedExcerpts,
@@ -42,6 +40,7 @@ import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { resolveFreeNotePath } from "./filename";
 
@@ -83,12 +82,10 @@ export interface NoteFeatureDeps {
     | "getLiteratureNoteTemplate"
   >;
   /**
-   * Lease-only. The sync `state`/`client` accessors are omitted so async
-   * operations must pin a snapshot via `acquireRead()` and read through the
-   * lease, rather than touching a `client` a refresh swap could close mid-read.
-   * The synchronous `renderAnnotation` path takes {@link SyncRenderDeps}.
+   * The note write pipeline's reads: an operation holds one lease, so the
+   * Literature Note and the Child Notes it imports read one database state.
    */
-  db: Pick<DatabaseService, "acquireRead">;
+  zoteroReads: Pick<ZoteroReadsService, "acquireRead" | "ready">;
   noteIndex: Pick<
     NoteIndex,
     "ready" | "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
@@ -106,29 +103,23 @@ export interface NoteFeatureDeps {
   ) => ReturnType<typeof prepareSingleExcerpt>;
 }
 
-/**
- * `renderAnnotation` runs synchronously during `dragstart`, so it reads a live
- * `state`/`client` snapshot off `db` in one uninterrupted tick instead of
- * awaiting a lease — no `await` boundary a refresh swap could interleave with.
- */
-export type SyncRenderDeps = NoteFeatureDeps & {
-  db: Pick<DatabaseService, "acquireRead" | "state" | "client">;
-};
-
 interface NoteTarget {
   path: string;
   file: TFile;
 }
 
-export function fetchItemCollections(
-  cache: CollectionCache,
-  client: NodeDatabaseClient,
-  item: Pick<Item, "itemID" | "libraryID">,
-): TemplateCollection[] {
-  return (
-    cache.byItemIDs(client, item.libraryID, [item.itemID]).get(item.itemID) ??
-    []
-  );
+/** The item's own tags and collections in `source`, for its note filename. */
+export function itemFacets(source: NoteSource): {
+  itemTags: readonly ItemTag[];
+  itemCollections: TemplateCollection[];
+} {
+  const { itemID } = source.item;
+  return {
+    itemTags: source.tagsByItemID.get(itemID) ?? [],
+    itemCollections: (source.collectionsByItemID.get(itemID) ?? []).map(
+      toTemplateCollection,
+    ),
+  };
 }
 
 /**

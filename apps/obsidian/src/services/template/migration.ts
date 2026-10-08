@@ -1,11 +1,7 @@
+import { Effect, Stream } from "effect";
 import { join } from "node:path/posix";
 import type { FileManager, Vault, Workspace } from "obsidian";
 
-import {
-  getIndexedItemIDsByLibrary,
-  getItemDisplayRefByID,
-  getItemsByID,
-} from "@zotlit/db";
 import type { CiteRef } from "@zotlit/db";
 import {
   CONVERTED_DEFAULT_PROFILE_DOCUMENT,
@@ -13,7 +9,6 @@ import {
 } from "@zotlit/templates/facade";
 
 import { getLogger } from "@/lib/log";
-import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
@@ -21,6 +16,10 @@ import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import { loadTemplateData } from "@/services/template-workbench/data";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type {
+  ZoteroReadsApi,
+  ZoteroReadsService,
+} from "@/services/zotero-reads/service";
 
 import { templateFileFromPath } from "./defaults";
 import type {
@@ -90,8 +89,8 @@ export interface MigrationVerificationData {
 
 export interface LiteratureNoteTemplateMigrationDataDeps {
   app: Parameters<typeof loadTemplateData>[0]["app"];
-  db: DatabaseService;
-  libraryScope: Pick<LibraryScopeService, "ready" | "resolveWith">;
+  zoteroReads: ZoteroReadsService;
+  libraryScope: Pick<LibraryScopeService, "ready" | "resolveLibraries">;
   noteIndex: NoteIndex;
   settings: SettingsService;
   templates: TemplateService;
@@ -104,38 +103,42 @@ export async function loadLiteratureNoteTemplateMigrationData(
   options: { annotation: boolean },
 ): Promise<MigrationVerificationData | null> {
   await deps.libraryScope.ready;
-  using lease = await deps.db.acquireRead();
-  const scope = deps.libraryScope.resolveWith(lease.client);
-  const candidates: { indexedKey: string; itemID: number }[] = [];
+  await using lease = await deps.zoteroReads.acquireRead();
+  const scope = deps.libraryScope.resolveLibraries(
+    await Effect.runPromise(lease.reads.Libraries({})),
+  );
+  const candidates: string[] = [];
   for (const library of scope.available) {
-    for (const itemID of getIndexedItemIDsByLibrary(
-      lease.client,
-      library.libraryID,
-    )) {
-      const indexedKey = getItemDisplayRefByID(
-        lease.client,
-        itemID,
-      )?.indexedKey;
-      if (indexedKey) candidates.push({ indexedKey, itemID });
-    }
+    const itemIDs = await Effect.runPromise(
+      lease.reads.ScopeItemIDs({
+        kind: "literature-items",
+        libraryID: library.libraryID,
+      }),
+    );
+    const slices = await Effect.runPromise(
+      Stream.runCollect(lease.reads.DisplayRefs({ itemIDs: itemIDs ?? [] })),
+    );
+    for (const { ref } of slices.flat())
+      if (ref) candidates.push(ref.indexedKey);
   }
 
   const dataDeps = {
     app: deps.app,
-    db: deps.db,
+    zoteroReads: deps.zoteroReads,
     noteIndex: deps.noteIndex,
     settings: deps.settings,
     templates: deps.templates,
     zoteroPref: deps.zoteroPref,
   };
   let verificationBase: MigrationVerificationData | undefined;
-  for (const { indexedKey, itemID } of candidates) {
+  for (const indexedKey of candidates) {
+    // The Citation is read under the lease before the render, not after.
+    const citation = await citationVerificationRefs(lease.reads, indexedKey);
     const [note, filename] = await Promise.all([
       loadTemplateData(dataDeps, indexedKey, "note"),
       loadTemplateData(dataDeps, indexedKey, "filename"),
     ]);
     if (note.kind !== "data" || filename.kind !== "data") continue;
-    const citation = citationVerificationRefs(lease.client, itemID);
     if (!options.annotation) {
       return {
         note: note.data,
@@ -173,11 +176,14 @@ export async function loadLiteratureNoteTemplateMigrationData(
  * ref shape the citation suggester inserts, so the fold is checked through the
  * data path a real insertion takes.
  */
-function citationVerificationRefs(
-  client: Parameters<typeof getItemsByID>[0],
-  itemID: number,
-): readonly CiteRef[] {
-  const item = getItemsByID(client, [itemID])[0];
+async function citationVerificationRefs(
+  reads: ZoteroReadsApi,
+  indexedKey: string,
+): Promise<readonly CiteRef[]> {
+  const items = await Effect.runPromise(
+    reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
+  );
+  const item = items.get(indexedKey);
   if (!item) return [];
   const citationKey =
     "citationKey" in item.fields ? (item.fields.citationKey ?? null) : null;

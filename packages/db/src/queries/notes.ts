@@ -3,9 +3,9 @@
 import type { NodeDatabaseClient } from "@/client/node";
 import { formatIndexedKey } from "@/lib/zt-key";
 
-import { resolveGroupID } from "./_groups";
+import { groupIDForLibrary, resolveGroupID } from "./_groups";
 import type { GroupIDMemo } from "./_groups";
-import { defineQuery } from "./_shared";
+import { defineQuery, defineKeyedQuery } from "./_shared";
 import type { FindManyOptions, QueryRow } from "./_shared";
 
 /** A note's identity and staleness stamp, without its HTML body. */
@@ -130,95 +130,118 @@ export function getNoteByKey(
   );
 }
 
-// --- Queries for explicit note-import (Stage 9.3) ---
-
-const noteRefByItemIdQuery = defineQuery<{ itemID: number }>()(
-  (db, { placeholder }) =>
+const notesByKeysQuery = defineKeyedQuery<string, { libraryID: number }>()(
+  (db, { placeholder, contains }) =>
     db.query.itemNotes.findMany({
-      columns: { title: true, itemID: true, parentItemID: true },
-      with: {
-        item: { columns: { key: true, libraryID: true, dateModified: true } },
+      where: {
+        item: {
+          RAW: (item) => contains(item.key),
+          libraryID: placeholder("libraryID"),
+          deletedItem: false,
+        },
       },
-      where: { itemID: placeholder("itemID"), item: { deletedItem: false } },
-    }),
-);
-
-const noteByItemIdQuery = defineQuery<{ itemID: number }>()(
-  (db, { placeholder }) =>
-    db.query.itemNotes.findMany({
-      where: { itemID: placeholder("itemID"), item: { deletedItem: false } },
       ...noteOptions,
     }),
+  { keyOf: (row) => row.item.key },
 );
 
 /**
- * Lightweight note refs looked up by the note's own item IDs (`mode=note`
- * classify). Each returned row carries identity and title — enough to label a
- * batch manifest entry and deduplicate against the note index.
+ * Fetch notes of one library by key, in `keys` order, through
+ * one cached keyed read. A key that names no live note has no
+ * entry; a repeated key repeats its note.
+ */
+export function getNotesByKey(
+  db: NodeDatabaseClient,
+  libraryID: number,
+  keys: readonly string[],
+): Note[] {
+  if (keys.length === 0) return [];
+  const rows = notesByKeysQuery(db, keys, { params: { libraryID } });
+  if (rows.length === 0) return [];
+  const groupID = groupIDForLibrary(db, libraryID);
+  return rows.map((row) => toNote(row, groupID));
+}
+
+// --- Queries for explicit note-import (Stage 9.3) ---
+
+/** A note found by its own item ID, live or in Zotero's trash. */
+export interface NoteRef {
+  note: ChildNote;
+  /** The note's item is in Zotero's trash. */
+  trashed: boolean;
+}
+
+const noteRefsByItemIdsQuery = defineKeyedQuery<number>()(
+  (db, { contains }) =>
+    db.query.itemNotes.findMany({
+      columns: { title: true, itemID: true, parentItemID: true },
+      with: {
+        item: {
+          columns: { key: true, libraryID: true, dateModified: true },
+          with: { deletedItem: { columns: { itemID: true } } },
+        },
+      },
+      where: { RAW: (note) => contains(note.itemID) },
+      orderBy: { itemID: "asc" },
+    }),
+  { keyOf: (row) => row.itemID },
+);
+
+/**
+ * Note refs looked up by the notes' own item IDs (`mode=note` classify), in
+ * one cached keyed read. Each note ID maps to the note's identity and title —
+ * enough to label a batch manifest entry and deduplicate against the note index —
+ * and to whether the note is in Zotero's trash. An ID that names no note has
+ * no entry. Entries stay in ascending item ID order.
  */
 export function getNoteRefsByItemIDs(
   db: NodeDatabaseClient,
   itemIDs: readonly number[],
   opts?: { memo?: GroupIDMemo },
-): ChildNote[] {
+): Map<number, NoteRef> {
+  const refs = new Map<number, NoteRef>();
+  if (itemIDs.length === 0) return refs;
   const memo = opts?.memo ?? new Map();
-  return itemIDs.flatMap((itemID) => {
-    const row = noteRefByItemIdQuery.prepared(db).all({ itemID })[0];
-    if (!row) return [];
-    return [toChildNote(row, resolveGroupID(db, row.item.libraryID, memo))];
-  });
+  for (const row of noteRefsByItemIdsQuery(
+    db,
+    [...new Set(itemIDs)].toSorted((a, b) => a - b),
+  )) {
+    refs.set(row.itemID, {
+      note: toChildNote(row, resolveGroupID(db, row.item.libraryID, memo)),
+      trashed: row.item.deletedItem !== null,
+    });
+  }
+  return refs;
 }
 
-const trashedNoteByItemIdQuery = defineQuery<{ itemID: number }>()(
-  (db, { placeholder }) =>
+const childNotesByParentsQuery = defineKeyedQuery<number>()(
+  (db, { contains }) =>
     db.query.itemNotes.findMany({
-      columns: { itemID: true },
-      where: { itemID: placeholder("itemID"), item: { deletedItem: true } },
+      columns: { title: true, itemID: true, parentItemID: true },
+      with: {
+        item: { columns: { key: true, libraryID: true, dateModified: true } },
+      },
+      where: {
+        RAW: (note) => contains(note.parentItemID),
+        item: { deletedItem: false },
+      },
+      orderBy: { itemID: "asc" },
     }),
+  { keyOf: (row) => row.parentItemID! },
 );
 
 /**
- * Item ids among `itemIDs` that are notes currently in Zotero's trash. Used
- * to tell a trashed note apart from a genuine non-note id at `mode=note`
- * classify time — {@link getNoteRefsByItemIDs} filters trashed items out, so
- * it alone can't distinguish the two.
- */
-export function getTrashedNoteItemIDs(
-  db: NodeDatabaseClient,
-  itemIDs: readonly number[],
-): Set<number> {
-  return new Set(
-    itemIDs.filter(
-      (itemID) =>
-        trashedNoteByItemIdQuery.prepared(db).all({ itemID }).length > 0,
-    ),
-  );
-}
-
-/**
- * Fetch child notes of multiple parent items (`mode=child`). Generalizes
- * {@link getChildNotes} to accept multiple parent IDs, flattening the results.
+ * Fetch child notes of multiple parent items (`mode=child`) through one cached
+ * keyed read: {@link getChildNotes} for each parent, in `parentItemIDs` order.
  */
 export function getChildNotesByParentIDs(
   db: NodeDatabaseClient,
   parentItemIDs: readonly number[],
   opts?: { memo?: GroupIDMemo },
 ): ChildNote[] {
+  if (parentItemIDs.length === 0) return [];
   const memo = opts?.memo ?? new Map();
-  return parentItemIDs.flatMap((id) => getChildNotes(db, id, { memo }));
-}
-
-/**
- * Fetch a note's full body by its global item ID. Used by the explicit import
- * runner to hydrate one note at a time under the concurrency limiter.
- */
-export function getNoteByItemID(
-  db: NodeDatabaseClient,
-  itemID: number,
-  opts?: { memo?: GroupIDMemo },
-): Note | null {
-  const row = noteByItemIdQuery.prepared(db).all({ itemID })[0];
-  if (!row) return null;
-  const memo = opts?.memo ?? new Map();
-  return toNote(row, resolveGroupID(db, row.item.libraryID, memo));
+  return childNotesByParentsQuery(db, parentItemIDs).map((row) =>
+    toChildNote(row, resolveGroupID(db, row.item.libraryID, memo)),
+  );
 }

@@ -17,6 +17,7 @@ import type {
   MutationState,
   TextFieldDraft,
 } from "@/services/annotation-repository/service";
+import type { ExcerptRequest } from "@/services/excerpt-image/contract";
 
 import { editorApp } from "./__fixtures__/editor-app";
 import { AnnotActionsContext } from "./actions";
@@ -160,6 +161,7 @@ async function mountCard({
       onBlockedPress,
       onApplyAgain,
       onDiscardConflict,
+      libraryTagNames: async () => [],
     } as Partial<AnnotActions>,
     {
       get: (target, name: keyof AnnotActions) =>
@@ -661,5 +663,78 @@ describe("a text field's draft on the card", () => {
     expect(onSaveField.mock.calls).toEqual([
       [CARD, "text", { text: "alpha, typed", automatic: true }],
     ]);
+  });
+});
+
+describe("an image card's Excerpt Image demand", () => {
+  it("states the request its resolution lands with, never one a later source superseded", async () => {
+    const image: AnnotationRecord = {
+      ...CARD,
+      type: "image",
+      text: null,
+      comment: null,
+    };
+    const store = createAnnotStore();
+    store.setState({
+      annotationSource: { kind: "zotero-local-api", serverID: "SERVER000001" },
+      annotationSourceScope: "/zotero",
+    });
+    const reading = { image: null, current: false, status: "reading" } as const;
+    const resolutions: PromiseWithResolvers<ExcerptRequest | null>[] = [];
+    const demanded: (ExcerptRequest | null)[] = [];
+    const actions = new Proxy(
+      {
+        excerptImageRequest: () => {
+          const resolution = Promise.withResolvers<ExcerptRequest | null>();
+          resolutions.push(resolution);
+          return resolution.promise;
+        },
+        openExcerptImage: () => ({
+          demand: (request: ExcerptRequest | null) => demanded.push(request),
+          release: () => {},
+          subscribe: () => () => {},
+          snapshot: () => reading,
+        }),
+      } as Partial<AnnotActions>,
+      {
+        get: (target, name: keyof AnnotActions) =>
+          target[name] ??
+          (name === "renderComment" ? () => () => {} : () => null),
+      },
+    ) as AnnotActions;
+    await mount(
+      createElement(
+        AnnotStoreProvider,
+        { value: store },
+        createElement(
+          AnnotActionsContext,
+          { value: actions },
+          createElement(Annotation, {
+            annot: image,
+            collapsed: false,
+            tabStop: true,
+          }),
+        ),
+      ),
+    );
+    await act(() =>
+      store.setState({
+        annotationSource: {
+          kind: "zotero-local-api",
+          serverID: "OTHER0000001",
+        },
+      }),
+    );
+    expect(resolutions).toHaveLength(2);
+    const [first, second] = resolutions;
+    const fromOther = { attachmentKey: "other" } as ExcerptRequest;
+
+    await act(async () => {
+      second!.resolve(fromOther);
+      first!.resolve({ attachmentKey: "superseded" } as ExcerptRequest);
+      await Promise.all([first!.promise, second!.promise]);
+    });
+
+    expect(demanded).toEqual([fromOther]);
   });
 });

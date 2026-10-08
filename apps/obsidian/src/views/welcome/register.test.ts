@@ -63,6 +63,7 @@ it.each([false, true])(
         app,
         settings: { current: { "release.migration-pending": true } },
         db: { on: vi.fn(() => () => {}) },
+        reads: { on: vi.fn(() => () => {}) },
       } as unknown as WelcomeRegistrationDeps,
     );
     commands[0]!.callback!();

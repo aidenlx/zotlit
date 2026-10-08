@@ -18,7 +18,7 @@ import {
 
 import { initI18n } from "@/lib/i18n";
 import * as m from "@/lib/i18n/generated/messages";
-import type { DatabaseService } from "@/services/database/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { createTemplateWorkbenchHost } from "./host";
 import { loadMatchFacts } from "./match-data";
@@ -50,7 +50,7 @@ it("refreshes Match and vocabulary in On demand mode and ignores the old paper r
       if (event === "changed") changed = listener;
       return unsubscribe;
     },
-  } as unknown as Pick<DatabaseService, "on" | "acquireRead">;
+  } as unknown as Pick<ZoteroReadsService, "on" | "acquireRead">;
   const tags = vi.fn(async () => []);
   const render = vi.fn(() =>
     Promise.reject(new Error("This test renders nothing.")),

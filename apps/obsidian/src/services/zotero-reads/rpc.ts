@@ -1,0 +1,752 @@
+// The ZoteroReads contract: one RpcGroup and the Schema codecs both sides share.
+import { Predicate, Schema, SchemaGetter } from "effect";
+import { Rpc, RpcGroup } from "effect/rpc";
+import { Transferable } from "effect/workers";
+
+import type {
+  Annotation,
+  AnnotationSources,
+  AnnotViewAttachment,
+  Attachment,
+  AttachmentWithParentKey,
+  ChildNote,
+  Creator,
+  getItemDisplayRefByID,
+  Item,
+  ItemBaseFields,
+  ItemTag,
+  Library,
+  LibraryCitekey,
+  Note,
+  NoteSource,
+  TemplateCollection,
+  ZoteroDatabaseIdentity,
+} from "@zotlit/db";
+import type { AnnotationPositionRaw } from "@zotlit/db";
+import type { ItemHit } from "@zotlit/item-lookup";
+import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
+import type { ItemFields } from "@zotlit/zotero-types";
+
+import type { EffectiveReadMode } from "@/services/database/read-source";
+import type { Settings, ZoteroReadMode } from "@/services/settings/schema";
+
+/** Compile-time assert: `T` must be `true`. */
+type Expect<T extends true> = T;
+/** Mutual assignability: the decoded type is the `@zotlit/db` type. */
+type Equals<A, B> = [A, B] extends [B, A] ? true : false;
+
+/**
+ * `Temporal.Instant` is not structured-cloneable; it crosses the wire as its
+ * ISO string and arrives as an `Instant`.
+ */
+export const Instant = Schema.String.pipe(
+  Schema.decodeTo(Schema.instanceOf(Temporal.Instant), {
+    decode: SchemaGetter.transform((s: string) => Temporal.Instant.from(s)),
+    encode: SchemaGetter.transform((i: Temporal.Instant) => i.toString()),
+  }),
+);
+
+/**
+ * A raw Zotero integer column typed as its known values. Decoding accepts any
+ * number: Zotero can add a value after the mapping was written, and the
+ * `@zotlit/db` name resolvers already answer `"unknown"` for it.
+ */
+function rawInt<T extends number>() {
+  return Schema.declare((u: unknown): u is T => Predicate.isNumber(u));
+}
+
+/**
+ * A JSON object whose shape the `@zotlit/db` layer owns (item fields, base
+ * fields, annotation position). It crosses the wire as JSON, unchanged.
+ */
+function jsonObject<T extends object>() {
+  return Schema.declare((u: unknown): u is T => Predicate.isObject(u));
+}
+
+// --- Errors ---------------------------------------------------------------
+
+/** The database cannot answer: no connection opens, or the source is not a Zotero database. */
+export class DbUnavailable extends Schema.TaggedError<DbUnavailable>()(
+  "DbUnavailable",
+  { message: Schema.String },
+) {}
+
+/** The Snapshot id names no open Snapshot: it ended or never existed. */
+export class SnapshotExpired extends Schema.TaggedError<SnapshotExpired>()(
+  "SnapshotExpired",
+  { snapshot: Schema.String },
+) {}
+
+/** The errors a read can fail with. */
+export const ReadError = Schema.Union([DbUnavailable, SnapshotExpired]);
+
+// --- Rows -----------------------------------------------------------------
+
+export const LibrarySchema = Schema.Struct({
+  libraryID: Schema.Number,
+  type: Schema.Literals(["user", "group"]),
+  version: Schema.Number,
+  clientVersion: Schema.NullOr(Schema.Number),
+  groupID: Schema.NullOr(Schema.Number),
+  name: Schema.NullOr(Schema.String),
+});
+type _Library = Expect<Equals<typeof LibrarySchema.Type, Library>>;
+
+const CreatorSchema = Schema.Struct({
+  firstName: Schema.NullOr(Schema.String),
+  lastName: Schema.NullOr(Schema.String),
+  creatorType: Schema.String,
+  fieldMode: rawInt<Creator["fieldMode"]>(),
+});
+type _Creator = Expect<Equals<typeof CreatorSchema.Type, Creator>>;
+
+export const ItemSchema = Schema.Struct({
+  itemID: Schema.Number,
+  libraryID: Schema.Number,
+  key: Schema.String,
+  indexedKey: Schema.String,
+  dateAdded: Instant,
+  dateModified: Instant,
+  creators: Schema.mutable(Schema.Array(CreatorSchema)),
+  primaryCreatorType: Schema.NullOr(Schema.String),
+  customFields: Schema.ReadonlyMap(Schema.String, Schema.NullOr(Schema.String)),
+  fields: jsonObject<ItemFields>(),
+  baseFields: jsonObject<ItemBaseFields>(),
+  venue: Schema.NullOr(Schema.String),
+  groupID: Schema.NullOr(Schema.Number),
+});
+type _Item = Expect<Equals<typeof ItemSchema.Type, Item>>;
+
+export const AttachmentSchema = Schema.Struct({
+  itemID: Schema.Number,
+  libraryID: Schema.Number,
+  groupID: Schema.NullOr(Schema.Number),
+  key: Schema.String,
+  indexedKey: Schema.String,
+  parentItemID: Schema.Number,
+  path: Schema.NullOr(Schema.String),
+  contentType: Schema.NullOr(Schema.String),
+  linkMode: Schema.NullOr(rawInt<NonNullable<Attachment["linkMode"]>>()),
+  dateAdded: Instant,
+  dateModified: Instant,
+});
+type _Attachment = Expect<Equals<typeof AttachmentSchema.Type, Attachment>>;
+
+export const AttachmentWithParentKeySchema = Schema.Struct({
+  ...AttachmentSchema.fields,
+  parentIndexedKey: Schema.NullOr(Schema.String),
+});
+type _AttachmentWithParentKey = Expect<
+  Equals<typeof AttachmentWithParentKeySchema.Type, AttachmentWithParentKey>
+>;
+
+type TagType = ItemTag["type"];
+
+export const AnnotationSchema = Schema.Struct({
+  groupID: Schema.NullOr(Schema.Number),
+  itemID: Schema.Number,
+  key: Schema.String,
+  indexedKey: Schema.String,
+  libraryID: Schema.Number,
+  dateAdded: Instant,
+  dateModified: Instant,
+  version: Schema.Number,
+  type: rawInt<Annotation["type"]>(),
+  text: Schema.NullOr(Schema.String),
+  comment: Schema.NullOr(Schema.String),
+  color: Schema.NullOr(Schema.String),
+  pageLabel: Schema.NullOr(Schema.String),
+  tags: Schema.mutable(Schema.Array(Schema.String)),
+  tagDetails: Schema.optionalKey(
+    Schema.mutable(
+      Schema.Array(
+        Schema.Struct({ name: Schema.String, type: rawInt<TagType>() }),
+      ),
+    ),
+  ),
+  sortIndex: Schema.String,
+  position: jsonObject<AnnotationPositionRaw>(),
+  authorName: Schema.NullOr(Schema.String),
+  isExternal: Schema.Boolean,
+  createdByUserID: Schema.NullOr(Schema.Number),
+  parentItemID: Schema.Number,
+  parentKey: Schema.String,
+});
+type _Annotation = Expect<Equals<typeof AnnotationSchema.Type, Annotation>>;
+
+export const ChildNoteSchema = Schema.Struct({
+  groupID: Schema.NullOr(Schema.Number),
+  itemID: Schema.Number,
+  libraryID: Schema.Number,
+  key: Schema.String,
+  indexedKey: Schema.String,
+  parentItemID: Schema.NullOr(Schema.Number),
+  title: Schema.NullOr(Schema.String),
+  dateModified: Instant,
+});
+type _ChildNote = Expect<Equals<typeof ChildNoteSchema.Type, ChildNote>>;
+
+export const NoteSchema = Schema.Struct({
+  ...ChildNoteSchema.fields,
+  note: Schema.NullOr(Schema.String),
+  dateAdded: Instant,
+});
+type _Note = Expect<Equals<typeof NoteSchema.Type, Note>>;
+
+const ItemTagSchema = Schema.Struct({
+  itemID: Schema.Number,
+  tag: Schema.Struct({ tagID: Schema.Number, name: Schema.String }),
+  type: rawInt<TagType>(),
+});
+type _ItemTag = Expect<Equals<typeof ItemTagSchema.Type, ItemTag>>;
+
+const TemplateCollectionSchema = Schema.Struct({
+  key: Schema.String,
+  name: Schema.String,
+  path: Schema.Array(Schema.String),
+});
+type _TemplateCollection = Expect<
+  Equals<typeof TemplateCollectionSchema.Type, TemplateCollection>
+>;
+
+const TagsByItemID = Schema.ReadonlyMap(
+  Schema.Number,
+  Schema.Array(ItemTagSchema),
+);
+
+export const NoteSourceSchema = Schema.Struct({
+  item: ItemSchema,
+  username: Schema.NullOr(Schema.String),
+  attachments: Schema.Array(AttachmentSchema),
+  annotationsByAttachment: Schema.ReadonlyMap(
+    Schema.Number,
+    Schema.Array(AnnotationSchema),
+  ),
+  tagsByItemID: TagsByItemID,
+  collectionsByItemID: Schema.ReadonlyMap(
+    Schema.Number,
+    Schema.Array(TemplateCollectionSchema),
+  ),
+  relatedItems: Schema.Array(ItemSchema),
+  childNotes: Schema.Array(ChildNoteSchema),
+});
+type _NoteSource = Expect<Equals<typeof NoteSourceSchema.Type, NoteSource>>;
+
+export const AnnotationSourcesSchema = Schema.Struct({
+  annotations: Schema.Array(AnnotationSchema),
+  attachments: Schema.Array(AttachmentSchema),
+  parentItems: Schema.Array(ItemSchema),
+  tagsByItemID: TagsByItemID,
+  username: Schema.NullOr(Schema.String),
+});
+type _AnnotationSources = Expect<
+  Equals<typeof AnnotationSourcesSchema.Type, AnnotationSources>
+>;
+
+export const LibraryCitekeySchema = Schema.Struct({
+  itemID: Schema.Number,
+  libraryID: Schema.Number,
+  key: Schema.String,
+  indexedKey: Schema.String,
+  citekey: Schema.String,
+});
+type _LibraryCitekey = Expect<
+  Equals<typeof LibraryCitekeySchema.Type, LibraryCitekey>
+>;
+
+export const ItemDisplayRefSchema = Schema.Struct({
+  itemID: Schema.Number,
+  libraryID: Schema.Number,
+  key: Schema.String,
+  groupID: Schema.NullOr(Schema.Number),
+  indexedKey: Schema.String,
+  title: Schema.NullOr(Schema.String),
+});
+type _ItemDisplayRef = Expect<
+  Equals<
+    typeof ItemDisplayRefSchema.Type,
+    NonNullable<ReturnType<typeof getItemDisplayRefByID>>
+  >
+>;
+
+/** The inputs of one graph Work Label; the renderer formats the label. */
+export const WorkLabelSourceSchema = Schema.Struct({
+  libraryID: Schema.Number,
+  creators: Schema.mutable(Schema.Array(CreatorSchema)),
+  primaryCreatorType: Schema.NullOr(Schema.String),
+  title: Schema.NullOr(Schema.String),
+  shortTitle: Schema.NullOr(Schema.String),
+  date: Schema.NullOr(Schema.String),
+});
+export type WorkLabelSource = typeof WorkLabelSourceSchema.Type;
+
+/** One attachment the annotation sidebar lists, with its annotation count. */
+export const AnnotViewAttachmentSchema = Schema.Struct({
+  itemID: Schema.Number,
+  indexedKey: Schema.String,
+  path: Schema.NullOr(Schema.String),
+  annotCount: Schema.Number,
+});
+type _AnnotViewAttachment = Expect<
+  Equals<typeof AnnotViewAttachmentSchema.Type, AnnotViewAttachment>
+>;
+
+/** What one Zotero reader push names, in Indexed Keys. */
+export const ReaderTargetKeysSchema = Schema.Struct({
+  attachmentKey: Schema.String,
+  /** The parent Item; `null` for a standalone attachment. */
+  itemKey: Schema.NullOr(Schema.String),
+  /** The selected annotations that are live children of the attachment. */
+  selected: Schema.Array(Schema.String),
+});
+
+/**
+ * One ranked answer of `SearchItems`: the hydrated Item and the ranges of its
+ * title that matched the query, as `[start, end)` offsets into the title.
+ */
+export const SearchHitSchema = Schema.Struct({
+  item: ItemSchema,
+  matches: Schema.mutable(
+    Schema.Array(Schema.mutable(Schema.Tuple([Schema.Number, Schema.Number]))),
+  ),
+});
+export type SearchHit = typeof SearchHitSchema.Type;
+type _SearchMatches = Expect<Equals<SearchHit["matches"], ItemHit["matches"]>>;
+
+/** The account and Local API database a Zotero database belongs to. */
+export const DatabaseIdentitySchema = Schema.Struct({
+  userID: Schema.NullOr(Schema.Number),
+  localUserKey: Schema.NullOr(Schema.String),
+  serverID: Schema.NullOr(Schema.String),
+});
+type _DatabaseIdentity = Expect<
+  Equals<typeof DatabaseIdentitySchema.Type, ZoteroDatabaseIdentity>
+>;
+
+/** The Item an Item Snapshot exports, and the context it carries. */
+export const ItemSnapshotRequestSchema = Schema.Struct({
+  selection: Schema.Struct({
+    library: Schema.Union([
+      Schema.Struct({ type: Schema.Literal("personal") }),
+      Schema.Struct({ type: Schema.Literal("group"), groupID: Schema.Number }),
+    ]),
+    key: Schema.String,
+  }),
+  provenance: Schema.Union([
+    Schema.Struct({
+      kind: Schema.Literal("sample"),
+      id: Schema.String,
+      source: Schema.optionalKey(Schema.String),
+    }),
+    Schema.Struct({
+      kind: Schema.Literal("connected"),
+      installationId: Schema.String,
+      vault: Schema.String,
+    }),
+  ]),
+  vaultTargets: Schema.optionalKey(
+    Schema.Struct({
+      notes: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+      attachments: Schema.optionalKey(
+        Schema.Record(Schema.String, Schema.String),
+      ),
+      annotationImages: Schema.optionalKey(
+        Schema.Record(Schema.String, Schema.String),
+      ),
+    }),
+  ),
+});
+
+// --- Lifecycle ------------------------------------------------------------
+
+/**
+ * A verified Chinese Segmenter binary in the device-wide OPFS store: the file
+ * `zotlit/<directory>/<name>`. Only verified bytes get that name.
+ */
+export const SegmenterBinarySchema = Schema.Struct({
+  directory: Schema.String,
+  name: Schema.String,
+});
+export type SegmenterBinary = typeof SegmenterBinarySchema.Type;
+
+/** Whether `a` and `b` name the same binary, or both name none. */
+export const sameBinary = (
+  a: SegmenterBinary | null,
+  b: SegmenterBinary | null,
+): boolean =>
+  a === b ||
+  (a !== null &&
+    b !== null &&
+    a.directory === b.directory &&
+    a.name === b.name);
+
+/** Settings that drive the source; `Configure` pushes them. */
+export const ReadsConfigSchema = Schema.Struct({
+  databasePath: Schema.String,
+  readMode: Schema.Literals(["auto", "reflink", "copy", "immutable"]),
+  autoRefresh: Schema.Boolean,
+  /** The UI locale the Item Index formats creator names with; `null` for none. */
+  locale: Schema.NullOr(Schema.String),
+  /** The installed Chinese Segmenter binary the Item Index cuts CJK text with; `null` for none. */
+  chineseSegmenter: Schema.NullOr(SegmenterBinarySchema),
+  /** The lowest level the worker forwards to the plugin's logger; `null` for none. */
+  logLevel: Schema.NullOr(
+    Schema.Literals(["trace", "debug", "info", "warning", "error", "fatal"]),
+  ),
+});
+export type ReadsConfig = typeof ReadsConfigSchema.Type;
+
+/**
+ * What the renderer sends with each worker spawn: the settings to open, the
+ * owner tag the worker names its read snapshots with, so the renderer can
+ * reap them once that worker is gone, and the port the worker posts its log
+ * records to.
+ */
+export const WorkerInitSchema = Schema.Struct({
+  ...ReadsConfigSchema.fields,
+  snapshotOwner: Schema.String,
+  logs: Transferable.MessagePort,
+});
+type _ReadMode = Expect<Equals<ReadsConfig["readMode"], ZoteroReadMode>>;
+type _LogLevel = Expect<Equals<ReadsConfig["logLevel"], Settings["log.level"]>>;
+
+/** The Read Mode a serving client opened with; absent when the source has none. */
+const readMode = {
+  readMode: Schema.optionalKey(
+    Schema.Literals(["reflink", "copy", "immutable"]),
+  ),
+};
+type _EffectiveReadMode = Expect<
+  Equals<NonNullable<(typeof readMode.readMode)["Type"]>, EffectiveReadMode>
+>;
+
+/** One event on the `Changes` stream. The first event is always `state`. */
+export const ChangeEventSchema = Schema.Union([
+  /** The state when the subscription starts. */
+  Schema.TaggedStruct("state", {
+    state: Schema.Literals(["loading", "ready", "degraded"]),
+    error: Schema.NullOr(DbUnavailable),
+    ...readMode,
+  }),
+  /** A new client serves; re-query cached results. */
+  Schema.TaggedStruct("changed", readMode),
+  /** No client can serve. */
+  Schema.TaggedStruct("degraded", { error: DbUnavailable }),
+  /** A refresh failed; the previous client keeps serving. */
+  Schema.TaggedStruct("refresh-failed", { error: DbUnavailable }),
+  Schema.TaggedStruct("refreshing", { active: Schema.Boolean }),
+  /** The configured database file is absent. */
+  Schema.TaggedStruct("db-file-missing", {}),
+]);
+export type ChangeEvent = typeof ChangeEventSchema.Type;
+
+// --- Operations -----------------------------------------------------------
+
+/**
+ * Pins one connection: an operation that names this id reads that connection
+ * instead of the current one.
+ */
+export const SnapshotId = Schema.String.pipe(Schema.brand("SnapshotId"));
+export type SnapshotId = typeof SnapshotId.Type;
+
+/** The optional Snapshot every read accepts. */
+const snapshot = { snapshot: Schema.optionalKey(SnapshotId) };
+
+export class ZoteroReads extends RpcGroup.make(
+  Rpc.make("Libraries", {
+    payload: snapshot,
+    success: Schema.mutable(Schema.Array(LibrarySchema)),
+    error: ReadError,
+  }),
+  /** Items across every library, independent of Library Scope. */
+  Rpc.make("ConnectionReadout", {
+    payload: snapshot,
+    success: Schema.Struct({ itemCount: Schema.Number }),
+    error: ReadError,
+  }),
+  /** Items keyed by the Indexed Key each was asked by; a key with no live item is absent. */
+  Rpc.make("ItemsByIndexedKeys", {
+    payload: { indexedKeys: Schema.Array(Schema.String), ...snapshot },
+    success: Schema.ReadonlyMap(Schema.String, ItemSchema),
+    error: ReadError,
+  }),
+  /** An item's related items and child notes; empty for an unknown item. */
+  Rpc.make("ItemFamily", {
+    payload: { itemID: Schema.Number, ...snapshot },
+    success: Schema.Struct({
+      relatedItems: Schema.Array(ItemSchema),
+      childNotes: Schema.Array(ChildNoteSchema),
+    }),
+    error: ReadError,
+  }),
+  /** The Literature Note bundle for an item; `null` for an unknown item. */
+  Rpc.make("NoteSource", {
+    payload: {
+      itemID: Schema.Number,
+      username: Schema.optionalKey(Schema.NullOr(Schema.String)),
+      ...snapshot,
+    },
+    success: Schema.NullOr(NoteSourceSchema),
+    error: ReadError,
+  }),
+  /** The annotation template bundle for annotations named by key. */
+  Rpc.make("AnnotationSources", {
+    payload: {
+      libraryID: Schema.Number,
+      keys: Schema.Array(Schema.String),
+      username: Schema.optionalKey(Schema.NullOr(Schema.String)),
+      ...snapshot,
+    },
+    success: AnnotationSourcesSchema,
+    error: ReadError,
+  }),
+  /** An attachment's annotations with the account facts their locks need. */
+  Rpc.make("AnnotationsOfAttachment", {
+    payload: { attachmentKey: Schema.String, ...snapshot },
+    success: Schema.Struct({
+      attachment: Schema.NullOr(AttachmentSchema),
+      annotations: Schema.Array(AnnotationSchema),
+      accountUserID: Schema.NullOr(Schema.Number),
+    }),
+    error: ReadError,
+  }),
+  /** The attachments of the given parent items, in display order. */
+  Rpc.make("AttachmentsOf", {
+    payload: { itemIDs: Schema.Array(Schema.Number), ...snapshot },
+    success: Schema.Array(AttachmentSchema),
+    error: ReadError,
+  }),
+  /** One entry per requested id; `ref` is `null` for an id with no live item. */
+  Rpc.make("DisplayRefs", {
+    payload: {
+      itemIDs: Schema.Array(Schema.Number),
+      ...snapshot,
+    },
+    success: Schema.Array(
+      Schema.Struct({
+        itemID: Schema.Number,
+        ref: Schema.NullOr(ItemDisplayRefSchema),
+      }),
+    ),
+    error: ReadError,
+    stream: true,
+  }),
+  /** Notes with their bodies; a key with no live note is absent. */
+  Rpc.make("NoteBodies", {
+    payload: {
+      libraryID: Schema.Number,
+      keys: Schema.Array(Schema.String),
+      ...snapshot,
+    },
+    success: Schema.Array(NoteSchema),
+    error: ReadError,
+  }),
+  /** Work Label inputs keyed by Indexed Key; child items and unknown keys are absent. */
+  Rpc.make("WorkLabels", {
+    payload: { indexedKeys: Schema.Array(Schema.String), ...snapshot },
+    success: Schema.ReadonlyMap(Schema.String, WorkLabelSourceSchema),
+    error: ReadError,
+  }),
+  Rpc.make("AttachmentPathIndex", {
+    payload: snapshot,
+    success: Schema.Array(AttachmentWithParentKeySchema),
+    error: ReadError,
+    stream: true,
+  }),
+  /** The live items of one library that carry a citation key, in slices. */
+  Rpc.make("CitekeySnapshot", {
+    payload: { libraryID: Schema.Number, ...snapshot },
+    success: Schema.Array(LibraryCitekeySchema),
+    error: ReadError,
+    stream: true,
+  }),
+  Rpc.make("Changes", {
+    success: ChangeEventSchema,
+    stream: true,
+  }),
+  /**
+   * Emits one Snapshot id and holds its connection until the caller ends the
+   * stream or goes away.
+   */
+  Rpc.make("Snapshot", {
+    success: SnapshotId,
+    error: DbUnavailable,
+    stream: true,
+  }),
+  Rpc.make("Refresh", { error: DbUnavailable }),
+  Rpc.make("NotifyExternalChange", {}),
+  Rpc.make("Configure", { payload: ReadsConfigSchema }),
+  /** Answers at once: the renderer's proof that the worker still runs. */
+  Rpc.make("Ping", {}),
+  /** Attachments of one library by key; a key with no live attachment is absent. */
+  Rpc.make("AttachmentsByKeys", {
+    payload: {
+      libraryID: Schema.Number,
+      keys: Schema.Array(Schema.String),
+      ...snapshot,
+    },
+    success: Schema.Array(AttachmentSchema),
+    error: ReadError,
+  }),
+  /**
+   * The Items of `libraryIDs` (local ids in canonical order) that match
+   * `query`, best first, at most `limit`. The first search of a Library list
+   * waits for its index; later ones answer from the last complete index while
+   * a rebuild runs. An Item that vanished since the build is left out, so the
+   * answer can be shorter than `limit`.
+   */
+  Rpc.make("SearchItems", {
+    payload: {
+      libraryIDs: Schema.Array(Schema.Number),
+      query: Schema.String,
+      limit: Schema.Number,
+    },
+    success: Schema.Array(SearchHitSchema),
+    error: DbUnavailable,
+  }),
+  /** The identity excerpt assets are keyed by. */
+  Rpc.make("DatabaseIdentity", {
+    payload: snapshot,
+    success: DatabaseIdentitySchema,
+    error: ReadError,
+  }),
+  /**
+   * The Item Snapshot the Local Server and the note preview serve. An Item
+   * outside the selected Library fails with {@link DbUnavailable}.
+   */
+  Rpc.make("ItemSnapshot", {
+    payload: { ...ItemSnapshotRequestSchema.fields, ...snapshot },
+    success: jsonObject<ItemSnapshot>(),
+    error: ReadError,
+  }),
+  /** The library, key, and type of any live Item, child Items included; `null` for none. */
+  Rpc.make("ItemType", {
+    payload: { indexedKey: Schema.String, ...snapshot },
+    success: Schema.NullOr(
+      Schema.Struct({
+        libraryID: Schema.Number,
+        key: Schema.String,
+        itemType: Schema.String,
+      }),
+    ),
+    error: ReadError,
+  }),
+  /**
+   * The attachments the annotation sidebar lists: an item's attachments, or
+   * a standalone attachment alone. Empty for an unknown key.
+   */
+  Rpc.make("AnnotViewAttachments", {
+    payload: {
+      libraryID: Schema.Number,
+      key: Schema.String,
+      standalone: Schema.Boolean,
+      ...snapshot,
+    },
+    success: Schema.mutable(Schema.Array(AnnotViewAttachmentSchema)),
+    error: ReadError,
+  }),
+  /** A Zotero reader push's numeric ids as Indexed Keys; `null` for an unknown attachment. */
+  Rpc.make("ReaderTargetKeys", {
+    payload: {
+      attachmentID: Schema.Number,
+      selected: Schema.Array(Schema.Number),
+      ...snapshot,
+    },
+    success: Schema.NullOr(ReaderTargetKeysSchema),
+    error: ReadError,
+  }),
+  /**
+   * The attachment `itemID` names, or the attachments of the regular item it
+   * names; empty for an unknown item.
+   */
+  Rpc.make("AttachmentsAt", {
+    payload: { itemID: Schema.Number, ...snapshot },
+    success: Schema.Array(AttachmentSchema),
+    error: ReadError,
+  }),
+  /**
+   * Attachments by Indexed Key, with their parent items, the parents' tags,
+   * and the username: an Annotation's parent context without its own row. A
+   * key with no live attachment is absent.
+   */
+  Rpc.make("AttachmentSources", {
+    payload: {
+      attachmentKeys: Schema.Array(Schema.String),
+      username: Schema.optionalKey(Schema.NullOr(Schema.String)),
+      ...snapshot,
+    },
+    success: AnnotationSourcesSchema,
+    error: ReadError,
+  }),
+  /**
+   * The ids a batch run covers in one library, or in one collection and its
+   * descendants: regular items by `dateModified` descending, or live notes by
+   * id. `null` for a collection key the library does not hold.
+   */
+  Rpc.make("ScopeItemIDs", {
+    payload: {
+      kind: Schema.Literals(["literature-items", "notes"]),
+      libraryID: Schema.Number,
+      collectionKey: Schema.optionalKey(Schema.String),
+      ...snapshot,
+    },
+    success: Schema.NullOr(Schema.Array(Schema.Number)),
+    error: ReadError,
+  }),
+  /**
+   * One entry per requested id; `note` is `null` for an id with no live note,
+   * and `trashed` tells a note in the trash from an id that names no note.
+   */
+  Rpc.make("NoteRefs", {
+    payload: {
+      itemIDs: Schema.Array(Schema.Number),
+      ...snapshot,
+    },
+    success: Schema.Array(
+      Schema.Struct({
+        itemID: Schema.Number,
+        note: Schema.NullOr(ChildNoteSchema),
+        trashed: Schema.Boolean,
+      }),
+    ),
+    error: ReadError,
+    stream: true,
+  }),
+  /** One entry per requested parent id: its display ref and its child notes. */
+  Rpc.make("ChildNoteRefs", {
+    payload: {
+      itemIDs: Schema.Array(Schema.Number),
+      ...snapshot,
+    },
+    success: Schema.Array(
+      Schema.Struct({
+        itemID: Schema.Number,
+        ref: Schema.NullOr(ItemDisplayRefSchema),
+        notes: Schema.Array(ChildNoteSchema),
+      }),
+    ),
+    error: ReadError,
+    stream: true,
+  }),
+  /** The tag names in use in one library, or in every library; sorted, distinct. */
+  Rpc.make("TagNames", {
+    payload: { libraryID: Schema.optionalKey(Schema.Number), ...snapshot },
+    success: Schema.Array(Schema.String),
+    error: ReadError,
+  }),
+  /** Every live collection of the libraries as its root-first names, sorted. */
+  Rpc.make("CollectionPaths", {
+    payload: { libraryIDs: Schema.Array(Schema.Number), ...snapshot },
+    success: Schema.Array(Schema.Array(Schema.String)),
+    error: ReadError,
+  }),
+  /** An item's tag names and the root-first path of each direct collection. */
+  Rpc.make("MembershipFacts", {
+    payload: { itemID: Schema.Number, libraryID: Schema.Number, ...snapshot },
+    success: Schema.Struct({
+      tags: Schema.Array(Schema.String),
+      collections: Schema.Array(Schema.Array(Schema.String)),
+    }),
+    error: ReadError,
+  }),
+) {}

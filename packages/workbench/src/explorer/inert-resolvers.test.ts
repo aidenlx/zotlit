@@ -623,7 +623,9 @@ describe("buildInertNoteResolvers over a real fetchNoteContext tree", () => {
       }),
     );
 
-    const [main] = getItemsByKey(client, USER_LIBRARY_ID, [MAIN_KEY]);
+    const [main] = getItemsByKey(client, [MAIN_KEY], {
+      libraryID: USER_LIBRARY_ID,
+    });
     expect(main).toBeDefined();
 
     const ctx = fetchNoteContext(client, main!, {

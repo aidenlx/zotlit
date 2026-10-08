@@ -191,7 +191,7 @@ describe("QuickSwitchModal PDF chord", () => {
       noteFeature: { createNote: vi.fn() },
       noteIndex: { getNotesByItemKey, whenIndexed: vi.fn() },
       settings: { current: {} },
-      db: { state: "ready", client: {} },
+      reads: { acquireRead: vi.fn() },
       zoteroPref: { dataDir: null, baseAttachmentPath: null },
     } as unknown as QuickSwitchDeps;
     return { deps, modal: new QuickSwitchModal(deps), getNotesByItemKey };
@@ -200,7 +200,7 @@ describe("QuickSwitchModal PDF chord", () => {
   it("resolves the Item's Attachments instead of its note on Shift+Enter", async () => {
     const { deps, modal, getNotesByItemKey } = pdfDeps();
     const openable = [{ indexedKey: "ATCH1" }];
-    vi.mocked(resolveLiteratureNoteAttachments).mockReturnValue(
+    vi.mocked(resolveLiteratureNoteAttachments).mockResolvedValue(
       openable as never,
     );
 
@@ -223,7 +223,7 @@ describe("QuickSwitchModal PDF chord", () => {
   it("honors Mod+Shift+Enter's new-pane request, however many Attachments resolve", async () => {
     const { modal } = pdfDeps();
     const opened = { indexedKey: "ATCH1" };
-    vi.mocked(resolveLiteratureNoteAttachments).mockReturnValue([
+    vi.mocked(resolveLiteratureNoteAttachments).mockResolvedValue([
       opened,
     ] as never);
     using _mod = vi.spyOn(Keymap, "isModEvent").mockReturnValue(true);

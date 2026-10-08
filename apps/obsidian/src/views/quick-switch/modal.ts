@@ -1,4 +1,4 @@
-import { Keymap, MarkdownView, Platform, SuggestModal } from "obsidian";
+import { Keymap, MarkdownView, Platform } from "obsidian";
 import type { PaneType, TFile } from "obsidian";
 
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
@@ -7,8 +7,7 @@ import {
   createPdfReader,
   resolveLiteratureNoteAttachments,
 } from "@/services/attachment-open/actions";
-import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
-import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
+import { ItemSearchModal } from "@/services/item-lookup/search-modal";
 import type { SearchHit } from "@/services/item-lookup/service";
 import { createNoteInteractively } from "@/services/note-feature";
 import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
@@ -25,13 +24,12 @@ function shiftGlyph(): string {
   return Platform.isMacOS ? "⇧" : "Shift";
 }
 
-export class QuickSwitchModal extends SuggestModal<SearchHit> {
+export class QuickSwitchModal extends ItemSearchModal {
   readonly #deps: QuickSwitchDeps;
 
   constructor(deps: QuickSwitchDeps) {
-    super(deps.app);
+    super(deps);
     this.#deps = deps;
-    this.limit = DEFAULT_LIMIT;
     this.setPlaceholder(m.modal_literature_search_placeholder());
     this.setInstructions([
       { command: "↑↓", purpose: m.instruction_navigate() },
@@ -57,20 +55,12 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
     });
   }
 
-  override getSuggestions(query: string): SearchHit[] | Promise<SearchHit[]> {
-    return this.#deps.lookup.search(query, { limit: this.limit });
-  }
-
-  override renderSuggestion(hit: SearchHit, el: HTMLElement): void {
-    renderSearchHit(this.#deps.settings, hit, el);
-  }
-
   override async onChooseSuggestion(
     hit: SearchHit,
     evt: MouseEvent | KeyboardEvent,
   ): Promise<void> {
     if (evt.shiftKey) {
-      this.#openAttachment(hit, Keymap.isModEvent(evt));
+      await this.#openAttachment(hit, Keymap.isModEvent(evt));
       return;
     }
     await this.#deps.noteIndex.whenIndexed();
@@ -92,8 +82,11 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
    * Attachments always fall to the Suggest modal picker; `pane` still honors
    * the chord's own Mod, wherever the open lands.
    */
-  #openAttachment(hit: SearchHit, pane: PaneType | boolean): void {
-    const attachments = resolveLiteratureNoteAttachments(
+  async #openAttachment(
+    hit: SearchHit,
+    pane: PaneType | boolean,
+  ): Promise<void> {
+    const attachments = await resolveLiteratureNoteAttachments(
       this.#deps,
       hit.item.indexedKey,
     );

@@ -20,13 +20,13 @@ import {
 import type { WorkbenchItemChoice } from "@zotlit/workbench/ui";
 
 import * as m from "@/lib/i18n/generated/messages";
-import type { DatabaseService } from "@/services/database/service";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import type { TemplateService } from "@/services/template/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import {
   activeTemplateWorkbench,
   registerCompanionHistory,
@@ -63,9 +63,9 @@ import {
 
 export const EXPLORER_VIEW_TYPE = "zotlit-template-data-explorer";
 export interface ExplorerViewDeps extends TemplateDataDeps {
-  db: Pick<
-    DatabaseService,
-    "state" | "client" | "ready" | "on" | "refresh" | "acquireRead"
+  zoteroReads: Pick<
+    ZoteroReadsService,
+    "state" | "ready" | "on" | "acquireRead"
   >;
   itemLookup: Pick<ItemLookup, "search">;
   settings: SettingsService;
@@ -526,11 +526,13 @@ export class TemplateDataExplorerView extends ItemView {
         this.leaf,
       ),
     );
-    cleanup.defer(this.#deps.db.on("changed", () => this.#session.refresh()));
+    cleanup.defer(
+      this.#deps.zoteroReads.on("changed", () => this.#session.refresh()),
+    );
     this.#mount();
     this.#cleanup = cleanup.move();
     updateSelectionTitle(this);
-    await this.#deps.db.ready;
+    await this.#deps.zoteroReads.ready;
     if (this.#closed || this.#session.state.getState().context) return;
     if (!this.#session.state.getState().item) {
       const file = this.app.workspace.getActiveFile();

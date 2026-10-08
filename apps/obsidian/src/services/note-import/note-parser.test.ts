@@ -5,61 +5,63 @@ import TurndownService from "turndown";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  buildAnnotationsTemplateData,
   citekeysToCiteTemplateData,
-  fetchAnnotationsTemplateData,
-  getAttachmentByKey,
-  getItemsByKey,
-  getLibraryByGroupID,
+  formatIndexedKey,
 } from "@zotlit/db";
-import type { CiteRef, CitationVariant } from "@zotlit/db";
+import type { Attachment, CiteRef, CitationVariant, Item } from "@zotlit/db";
 import { makeItem } from "@zotlit/db/test-utils";
 import { getPackageRoot } from "@zotlit/scripts/package-roots";
 import { inlineCitation, TemplateEngine } from "@zotlit/templates";
 import defaultCitation from "@zotlit/templates/defaults/citation.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
-import { renderAnnotations } from "@/lib/annotation-render";
+import { renderAnnotationSources } from "@/lib/annotation-render";
 import type {
   AttachmentSource,
   ResolveLinkOptions,
   SourceOrigin,
 } from "@/services/attachment-import/service";
 
-import { parseNote } from "./note-parser";
+import { noteReferences, parseNote } from "./note-parser";
 import type { ParseNoteDeps } from "./note-parser";
 
 const packageRoot = getPackageRoot(import.meta.filename);
 
-// Keep the real DOM-free parsers; only the DB-backed legs are stubbed per test.
+// Keep the real DOM-free parsers; only the template-data leg is stubbed.
 vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();
   return {
     ...actual,
-    getItemsByKey: vi.fn(),
-    getAttachmentByKey: vi.fn(),
-    getLibraryByGroupID: vi.fn(),
-    fetchAnnotationsTemplateData: vi.fn(),
+    buildAnnotationsTemplateData: vi.fn(),
   };
 });
 
+/** The already-read cited Items the parser looks up, by Indexed Key. */
+const citedItem = vi.fn<(indexedKey: string) => Item | undefined>();
+/** The already-read embedded image attachments the parser looks up, by key. */
+const embeddedAttachment = vi.fn<(key: string) => Attachment | undefined>();
+
 /**
- * Mock `getItemsByKey` to return a live DB row for each `key -> citationKey`
- * entry within `libraryID`, mirroring how `resolveCitekey` now reads the
- * citekey off the already-fetched item instead of a second query.
+ * Serve a live DB row for each `key -> citationKey` entry in the library of
+ * `groupID` (`null`: the personal library), mirroring how `resolveCitekey`
+ * reads the citekey off the already-read item.
  */
-function mockDbCitekeys(entries: Record<string, string | null>, libraryID = 1) {
-  vi.mocked(getItemsByKey).mockImplementation((_db, lib, keys) =>
-    lib === libraryID
-      ? keys
-          .filter((key) => key in entries)
-          .map((key) =>
-            makeItem(
-              { itemType: "journalArticle", citationKey: entries[key]! },
-              { key, indexedKey: key, libraryID: lib },
-            ),
-          )
-      : [],
-  );
+function mockDbCitekeys(
+  entries: Record<string, string | null>,
+  groupID: number | null = null,
+) {
+  citedItem.mockImplementation((indexedKey) => {
+    const key = Object.keys(entries).find(
+      (entry) => formatIndexedKey(entry, groupID) === indexedKey,
+    );
+    return key === undefined
+      ? undefined
+      : makeItem(
+          { itemType: "journalArticle", citationKey: entries[key]! },
+          { key, indexedKey },
+        );
+  });
 }
 
 const ITEMS = "http://zotero.org/users/local/BOtEiq6p/items";
@@ -103,10 +105,14 @@ const echoResolveLink = vi.fn(
   (opts: ResolveLinkOptions) => () => `[[${opts.vaultName}]]`,
 );
 
-/** Full {@link ParseNoteDeps} for the resolving path; `client` is unused by the stubs. */
+/** Full {@link ParseNoteDeps} for the resolving path, over the lookup stubs. */
 const deps: ParseNoteDeps = {
-  client: {} as never,
-  libraryID: 1,
+  citedItems: { get: citedItem } as unknown as ReadonlyMap<string, Item>,
+  groupID: null,
+  attachments: { get: embeddedAttachment } as unknown as ReadonlyMap<
+    string,
+    Attachment
+  >,
   useColoredHighlightSyntax: false,
   renderCite,
   pathContext: { dataDir: "/data", baseAttachmentPath: null },
@@ -511,7 +517,7 @@ describe("embedded image resolution", () => {
     `<p><img data-attachment-key="${key}" alt=""></p>`;
 
   it("resolves a storage image to a vault embed via resolveLink", () => {
-    vi.mocked(getAttachmentByKey).mockReturnValue(
+    embeddedAttachment.mockReturnValue(
       storageAttachment("U5WTYIJK", "diagram.png") as never,
     );
     const md = parseNote(TurndownService, note(img("U5WTYIJK")), deps);
@@ -534,9 +540,7 @@ describe("embedded image resolution", () => {
   });
 
   it("resolves an image-excerpt embed to a bare embed (no annotation branch)", () => {
-    vi.mocked(getAttachmentByKey).mockReturnValue(
-      storageAttachment("DUPB2GWX") as never,
-    );
+    embeddedAttachment.mockReturnValue(storageAttachment("DUPB2GWX") as never);
     const md = parseNote(
       TurndownService,
       note(
@@ -549,7 +553,7 @@ describe("embedded image resolution", () => {
   });
 
   it("passes a missing attachment through as raw HTML", () => {
-    vi.mocked(getAttachmentByKey).mockReturnValue(null);
+    embeddedAttachment.mockReturnValue(undefined);
     const md = parseNote(TurndownService, note(img("GONE1234")), deps);
     expect(md).toContain('data-attachment-key="GONE1234"');
     expect(md.startsWith("<img")).toBe(true);
@@ -558,7 +562,7 @@ describe("embedded image resolution", () => {
 
   it("passes a path-unresolved attachment through as raw HTML", () => {
     // linkMode 3 (linked_url) has no filesystem path, so attachmentAbsPath is null.
-    vi.mocked(getAttachmentByKey).mockReturnValue({
+    embeddedAttachment.mockReturnValue({
       key: "URL12345",
       path: "http://example.com/a.png",
       linkMode: 3,
@@ -613,9 +617,7 @@ describe("annotation template mode", () => {
   });
 
   it("subsumes an image excerpt without resolving its storage attachment", () => {
-    vi.mocked(getAttachmentByKey).mockReturnValue(
-      storageAttachment("IMG1") as never,
-    );
+    embeddedAttachment.mockReturnValue(storageAttachment("IMG1") as never);
     const imgAnnot = encodeURIComponent(
       JSON.stringify({ attachmentURI: ATTACHMENT, annotationKey: "K3" }),
     );
@@ -623,7 +625,7 @@ describe("annotation template mode", () => {
     const md = parseNote(TurndownService, note(body), withRender());
     expect(md).toBe("> [!note]\n>\n> callout K3");
     // The inner <img> is removed before the embed rule runs — no orphan copy.
-    expect(getAttachmentByKey).not.toHaveBeenCalled();
+    expect(embeddedAttachment).not.toHaveBeenCalled();
   });
 
   it("falls back to an inline mark when the renderer declines", () => {
@@ -733,7 +735,7 @@ describe("annotation template mode", () => {
   });
 
   it("carries zt.citation onto a subsumed annotation paragraph via the real render path (9.2-CSL #05)", () => {
-    // The import leg wires `renderAnnotationParagraph` to `renderAnnotations`,
+    // The import leg wires `renderAnnotationParagraph` to `renderAnnotationSources`,
     // whose annotation-template data must expose `zt.citation` — the parent
     // item rendered through the Citation Template with the annotation's page
     // label as locator. A custom template referencing it should surface the
@@ -741,7 +743,7 @@ describe("annotation template mode", () => {
     const facade = new TemplateFacade();
     facade.define("citation", defaultCitation, "liquid");
     facade.define("annotation", "> [!note]\n>\n> <%= zt.citation %>", "eta");
-    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
+    vi.mocked(buildAnnotationsTemplateData).mockReturnValue(
       new Map([
         [
           "K1",
@@ -754,11 +756,10 @@ describe("annotation template mode", () => {
       ]),
     );
     const renderAnnotationParagraph = (keys: readonly string[]) =>
-      renderAnnotations(
-        deps.client as never,
-        keys.map((key) => ({ key }) as never),
+      renderAnnotationSources(
+        { annotations: keys.map((key) => ({ key })) } as never,
         {
-          // The two template seams `renderAnnotations` reaches for, wired to
+          // The two template seams `renderAnnotationSources` reaches for, wired to
           // one facade the way TemplateService wires them to its own.
           template: {
             render: (name: string, data: object) => facade.render(name, data),
@@ -885,18 +886,9 @@ describe("citation resolution", () => {
     expect(md).toContain("[@Embedded2020; @NOEMBED0?]");
   });
 
-  it("resolves a group-library citation via the group's own libraryID, not the note's", () => {
-    // deps.libraryID is 1 (the note's personal library); the ref points at
-    // group 9, which lives in libraryID 7.
-    vi.mocked(getLibraryByGroupID).mockReturnValue({
-      libraryID: 7,
-      version: 0,
-      clientVersion: null,
-      type: "group",
-      groupID: 9,
-      name: "Team Group",
-    });
-    mockDbCitekeys({ GRP1TEM: "GroupCite2020" }, 7);
+  it("resolves a group-library citation in the group's own library, not the note's", () => {
+    // The note lives in the personal library; the ref points at group 9.
+    mockDbCitekeys({ GRP1TEM: "GroupCite2020" }, 9);
     const md = parseNote(
       TurndownService,
       note(
@@ -909,13 +901,24 @@ describe("citation resolution", () => {
       ),
       deps,
     );
-    expect(getLibraryByGroupID).toHaveBeenCalledWith(deps.client, 9);
-    expect(getItemsByKey).toHaveBeenCalledWith(deps.client, 7, ["GRP1TEM"]);
+    expect(citedItem).toHaveBeenCalledWith("GRP1TEMg9");
     expect(md).toContain("[@GroupCite2020]");
   });
 
-  it("falls back to the note's libraryID when the group can't be resolved", () => {
-    vi.mocked(getLibraryByGroupID).mockReturnValue(null);
+  it("resolves a personal-library ref of a group note in the note's group", () => {
+    mockDbCitekeys({ KX67D9YM: "GroupNote2020" }, 5);
+    const md = parseNote(TurndownService, note(oneCite), {
+      ...deps,
+      groupID: 5,
+    });
+    expect(citedItem).toHaveBeenCalledWith("KX67D9YMg5");
+    expect(md).toContain("[@GroupNote2020]");
+  });
+
+  it("leaves a citation of a group the database does not hold to the sentinel", () => {
+    // The note's own library has an item under the same key; the ref still
+    // names group 9, so the note's library does not answer it.
+    mockDbCitekeys({ GRP1TEM: "PersonalCite2020" });
     const md = parseNote(
       TurndownService,
       note(
@@ -928,9 +931,7 @@ describe("citation resolution", () => {
       ),
       deps,
     );
-    expect(getItemsByKey).toHaveBeenCalledWith(deps.client, deps.libraryID, [
-      "GRP1TEM",
-    ]);
+    expect(citedItem).toHaveBeenCalledWith("GRP1TEMg9");
     expect(md).toContain("[@GRP1TEM?]");
   });
 
@@ -1060,6 +1061,45 @@ describe("citation resolution", () => {
   });
 });
 
+describe("noteReferences", () => {
+  const personal = cite({
+    citationItems: [{ uris: [`${ITEMS}/KX67D9YM`] }],
+    properties: {},
+  });
+  const grouped = cite({
+    citationItems: [
+      { uris: ["http://zotero.org/groups/9/items/GRP1TEM"] },
+      { uris: [`${ITEMS}/KX67D9YM`] },
+    ],
+    properties: {},
+  });
+  const image = '<img data-attachment-key="U5WTYIJK" alt="">';
+
+  it("names each cited Item's Indexed Key and each embedded image's key once", () => {
+    const html = note(
+      `<p>${personal} ${grouped}</p><p>${image}</p><p>${image}</p>`,
+    );
+    expect(noteReferences(html, null)).toEqual({
+      citedIndexedKeys: ["KX67D9YM", "GRP1TEMg9"],
+      attachmentKeys: ["U5WTYIJK"],
+    });
+  });
+
+  it("names a personal-library ref of a group note in the note's group", () => {
+    expect(noteReferences(note(`<p>${personal}</p>`), 5)).toEqual({
+      citedIndexedKeys: ["KX67D9YMg5"],
+      attachmentKeys: [],
+    });
+  });
+
+  it("names nothing for a note the Zotero rules do not convert", () => {
+    expect(noteReferences(`<p>${personal} ${image}</p>`, null)).toEqual({
+      citedIndexedKeys: [],
+      attachmentKeys: [],
+    });
+  });
+});
+
 describe("citation resolution — DB item data (9.2-CSL #03)", () => {
   /** A single-item citation mark referencing `KX67D9YM`. */
   const oneCite = cite({
@@ -1073,14 +1113,14 @@ describe("citation resolution — DB item data (9.2-CSL #03)", () => {
       "citation",
       "<%= zt.citations.map(c => `${c.item.title} (${c.item.date?.year ?? 'n.d.'})`).join('; ') %>",
     );
-    vi.mocked(getItemsByKey).mockReturnValue([
+    citedItem.mockReturnValue(
       makeItem({
         itemType: "journalArticle",
         title: "Stated choice methods",
         date: "2011",
         citationKey: "Hensher2011",
       }),
-    ]);
+    );
     const md = parseNote(TurndownService, note(oneCite), {
       ...deps,
       renderCite: (items) =>
@@ -1095,13 +1135,13 @@ describe("citation resolution — DB item data (9.2-CSL #03)", () => {
       "citation",
       "<%= zt.citations.map(c => `${c.item.citekey}: ${c.item.title}`).join('; ') %>",
     );
-    vi.mocked(getItemsByKey).mockReturnValue([
+    citedItem.mockReturnValue(
       makeItem({
         itemType: "journalArticle",
         title: "Stated choice methods",
         citationKey: null,
       }),
-    ]);
+    );
     const md = parseNote(
       TurndownService,
       note(oneCite, 10, [
@@ -1151,9 +1191,8 @@ describe("citation resolution — embedded item data (9.2-CSL #04)", () => {
   }
 
   it("renders full item data from the embedded snapshot for a cross-library cite the DB can't resolve", () => {
-    // group 9 is not synced locally → getLibraryByGroupID misses; the local DB
-    // has no such item, so item data must come from the embedded snapshot.
-    vi.mocked(getLibraryByGroupID).mockReturnValue(null);
+    // group 9 is not synced locally, so no live item answers; item data
+    // must come from the embedded snapshot.
     const uri = "http://zotero.org/groups/9/items/GRP1TEM";
     const md = parseNote(
       TurndownService,
@@ -1168,7 +1207,7 @@ describe("citation resolution — embedded item data (9.2-CSL #04)", () => {
   });
 
   it("resolves full embedded item data when the DB is degraded (client not ready)", () => {
-    // getItemsByKey is unconfigured → returns undefined (the degraded-DB path);
+    // No live item answers (the degraded-DB path);
     // the embedded snapshot alone must carry item data plus the citekey.
     const uri = `${ITEMS}/KX67D9YM`;
     const md = parseNote(
@@ -1184,14 +1223,14 @@ describe("citation resolution — embedded item data (9.2-CSL #04)", () => {
   });
 
   it("keeps the live DB item's data over the embedded snapshot when both resolve", () => {
-    vi.mocked(getItemsByKey).mockReturnValue([
+    citedItem.mockReturnValue(
       makeItem({
         itemType: "journalArticle",
         title: "Live DB title",
         publicationTitle: "Live DB journal",
         citationKey: "Hensher2011",
       }),
-    ]);
+    );
     const uri = `${ITEMS}/KX67D9YM`;
     const md = parseNote(
       TurndownService,
@@ -1222,8 +1261,8 @@ describe("fixtures (resolving)", () => {
   }
 
   it("renders images, citations, and formatting in zt-note-example.html", () => {
-    vi.mocked(getAttachmentByKey).mockImplementation(
-      (_db, key) => storageAttachment(key) as never,
+    embeddedAttachment.mockImplementation(
+      (key) => storageAttachment(key) as never,
     );
     const md = parseNote(
       TurndownService,
@@ -1243,8 +1282,8 @@ describe("fixtures (resolving)", () => {
   });
 
   it("extracts annotations and image excerpts in zt-excerpt-note.html", () => {
-    vi.mocked(getAttachmentByKey).mockImplementation(
-      (_db, key) => storageAttachment(key) as never,
+    embeddedAttachment.mockImplementation(
+      (key) => storageAttachment(key) as never,
     );
     // No annotation-template renderer → inline marks / bare embed (default).
     const md = parseNote(
@@ -1270,8 +1309,8 @@ describe("fixtures (resolving)", () => {
   });
 
   it("renders every annotation paragraph via the template when enabled", () => {
-    vi.mocked(getAttachmentByKey).mockImplementation(
-      (_db, key) => storageAttachment(key) as never,
+    embeddedAttachment.mockImplementation(
+      (key) => storageAttachment(key) as never,
     );
     const renderAnnotationParagraph = batchRender(
       (key) => `> [!note] Page 62\n>\n> excerpt ${key}`,
@@ -1308,6 +1347,6 @@ describe("fixtures (resolving)", () => {
     // The image excerpt's storage attachment is never resolved — its <img> is
     // removed before the embed rule runs (no orphan copy).
     expect(md).not.toContain("![[7TTPMKWK");
-    expect(getAttachmentByKey).not.toHaveBeenCalled();
+    expect(embeddedAttachment).not.toHaveBeenCalled();
   });
 });

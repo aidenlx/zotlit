@@ -17,7 +17,9 @@ import {
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import packageJson from "./package.json" with { type: "json" };
+import { resolveChineseSegmenterPin } from "./scripts/chinese-segmenter.ts";
 import { deriveDevVersion } from "./scripts/dev-version.ts";
+import { embeddedWorker } from "./scripts/embedded-worker.ts";
 import { pandocFilterVariants } from "./scripts/lua-filter.ts";
 import { resolvePandocEnginePin } from "./scripts/pandoc-engine.ts";
 
@@ -47,6 +49,10 @@ const fullContractIRPath = fileURLToPath(
 // Resolved once per Vite process, so a watch rebuild never re-runs the cross-check.
 const pandocEngine = await resolvePandocEnginePin();
 console.log(`Pinning Pandoc ${pandocEngine.version}: ${pandocEngine.url}`);
+const chineseSegmenter = await resolveChineseSegmenterPin();
+console.log(
+  `Pinning jieba-wasm ${chineseSegmenter.version}: ${chineseSegmenter.url}`,
+);
 
 /** `obsidian-vault.ts create` seeds and registers this folder with Obsidian. */
 function getDevVaultPluginDir(pluginId: string) {
@@ -66,28 +72,32 @@ export default defineConfig(({ mode }) => {
     ? parseI18nDevServerPort(process.env.I18N_DEV_SERVER)
     : undefined;
 
+  const resolveConfig = {
+    alias: {
+      "@zotlit/db/contract/ir.runtime.json": fullContractIRPath,
+    },
+    conditions: ["module", "node", "development|production"],
+    tsconfigPaths: true,
+  };
+  const define = {
+    __DEV__: JSON.stringify(isDev),
+    __WEB_WORKBENCH_ENABLED__: JSON.stringify(
+      process.env.WEB_WORKBENCH_ENABLED === "true",
+    ),
+    __DOCS_SITE_URL__: JSON.stringify(
+      parseDocsSiteUrl(process.env.DOCS_SITE_URL),
+    ),
+    __MIN_ELECTRON_VERSION__: JSON.stringify(
+      parseMinElectronVersion(packageJson),
+    ),
+    __PANDOC_ENGINE__: JSON.stringify(pandocEngine),
+    __CHINESE_SEGMENTER__: JSON.stringify(chineseSegmenter),
+    "process.env.NODE_ENV": JSON.stringify(mode),
+  };
+
   return {
-    resolve: {
-      alias: {
-        "@zotlit/db/contract/ir.runtime.json": fullContractIRPath,
-      },
-      conditions: ["module", "node", "development|production"],
-      tsconfigPaths: true,
-    },
-    define: {
-      __DEV__: JSON.stringify(isDev),
-      __WEB_WORKBENCH_ENABLED__: JSON.stringify(
-        process.env.WEB_WORKBENCH_ENABLED === "true",
-      ),
-      __DOCS_SITE_URL__: JSON.stringify(
-        parseDocsSiteUrl(process.env.DOCS_SITE_URL),
-      ),
-      __MIN_ELECTRON_VERSION__: JSON.stringify(
-        parseMinElectronVersion(packageJson),
-      ),
-      __PANDOC_ENGINE__: JSON.stringify(pandocEngine),
-      "process.env.NODE_ENV": JSON.stringify(mode),
-    },
+    resolve: resolveConfig,
+    define,
     build: {
       reportCompressedSize: false,
       lib: {
@@ -142,6 +152,22 @@ export default defineConfig(({ mode }) => {
       preact(),
       tailwindcss(),
       pandocFilterVariants(),
+      embeddedWorker({
+        id: "virtual:zotero-reads-worker",
+        entry: resolve(
+          import.meta.dirname,
+          "src/services/zotero-reads/worker.ts",
+        ),
+        config: {
+          mode,
+          define,
+          resolve: resolveConfig,
+          external: builtins,
+          minify: isProd,
+          sourcemap: isProd ? false : "inline",
+          target: "es2025",
+        },
+      }),
       obsidianBuildPlugin(isDev),
       Boolean(process.env.ANALYZE) &&
         unstableRolldownAdapter(

@@ -221,7 +221,7 @@ async function waitForInitialization(
   zotero: ChildProcess,
   dataDir: string,
 ): Promise<void> {
-  const deadline = Date.now() + INIT_TIMEOUT_MS;
+  const deadline = performance.now() + INIT_TIMEOUT_MS;
   let exited = false;
   zotero.once("exit", () => {
     exited = true;
@@ -229,7 +229,7 @@ async function waitForInitialization(
 
   let previous: string | null = null;
   let quiet = 0;
-  while (Date.now() < deadline) {
+  while (performance.now() < deadline) {
     if (exited) {
       throw new Error("Zotero exited before it finished initializing.");
     }

@@ -3,6 +3,7 @@
   "extends": ["./tsconfig.base.json", "./tsconfig.node26.json"],
   "compilerOptions": {
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "isolatedDeclarations": false,
     "types": ["node"]
   },

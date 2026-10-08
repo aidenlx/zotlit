@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { ItemView, Platform, Scope } from "obsidian";
 import type {
   Menu as ObsidianMenu,
@@ -10,21 +11,10 @@ import type { Root } from "react-dom/client";
 
 import {
   annotationOpenUri,
-  getAnnotationsByKey,
-  getAnnotationsByParent,
-  getAnnotViewAttachments,
-  getAttachmentAnnotationCount,
-  getAttachmentByItemId,
-  getAttachmentByKey,
-  getItemRefByID,
-  getItemsByKey,
-  getLibraries,
   isChildItemFields,
   parseIndexedKey,
-  resolveIndexedKeyLibrary,
 } from "@zotlit/db";
-import type { AnnotViewAttachment, Library } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import type { AnnotViewAttachment, Attachment } from "@zotlit/db";
 
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import { AppContext } from "@/lib/app-context";
@@ -55,12 +45,12 @@ import {
   createPdfReader,
   toObsidianOpenable,
 } from "@/services/attachment-open/actions";
-import type { DatabaseService } from "@/services/database/service";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import { savedExcerptRequest } from "@/services/excerpt-image/request";
 import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemLookup } from "@/services/item-lookup/service";
+import type { LibraryScopeService } from "@/services/library-scope/service";
 import type {
   LocalServerService,
   ReaderTarget,
@@ -75,6 +65,7 @@ import { ZoteroReaderSession } from "@/services/reader-session/zotero";
 import type { ZoteroReaderResolution } from "@/services/reader-session/zotero";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 
 import { AnnotActionsContext, createAnnotActions } from "./actions";
@@ -147,15 +138,15 @@ const FILTER_STORAGE_KEY_PREFIX = "zotlit-annot-filter-";
  * touches, so the real services satisfy it as-is and target-resolution logic can
  * be unit-tested against plain stubs.
  *
- * The database reads here run synchronously within one tick (no `await` a
- * refresh swap could interleave with), matching the house sync-read pattern
- * (`protocol`, `citekey-editor`). The Annotations are the exception: they come
- * from the repository, which may answer from the Zotero Local API, so that one
- * read is awaited under a serial guard.
+ * The database reads here await ZoteroReads, and what is on screen stays
+ * until a read replaces it. The Libraries are the Held Read Library Scope
+ * keeps. The Annotations come from the repository, which may answer from the
+ * Zotero Local API, and are read under a serial guard.
  */
 export interface AnnotViewDeps {
   app: App;
-  db: Pick<DatabaseService, "state" | "client" | "on" | "ready">;
+  reads: Pick<ZoteroReadsService, "ready" | "state" | "on" | "acquireRead">;
+  libraryScope: Pick<LibraryScopeService, "libraryRows" | "on">;
   liveUpdate: Pick<
     LocalServerService,
     "available" | "readerTarget" | "readerClosed" | "on"
@@ -204,7 +195,7 @@ export interface AnnotViewDeps {
    */
   reportBlockedGesture: (attachmentKey: string) => void;
   /** The tag names of an Annotation's Library, which the tag editor suggests. */
-  libraryTagNames: (annotationKey: string) => readonly string[];
+  libraryTagNames: (annotationKey: string) => Promise<readonly string[]>;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
   /** The plugin's live display surface for Excerpt Images. */
   excerptDisplay: Pick<
@@ -226,8 +217,9 @@ export class AnnotationView extends ItemView implements HistorySurface {
   readonly #deps: AnnotViewDeps;
   #root: Root | null = null;
   #actions: AnnotActions | null = null;
-  #librariesCache: Library[] | null = null;
   #loadDisposables: DisposableStack | null = null;
+  /** The load whose reads run; a later load or a clear supersedes it. */
+  #loading: object | null = null;
   /** The Zotero Reader, translated into Indexed Keys. */
   #zoteroReader: ZoteroReaderSession | null = null;
   /** The active leaf's PDF view session, while one is being followed. */
@@ -400,7 +392,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
   protected override async onOpen(): Promise<void> {
     this.#zoteroReader = new ZoteroReaderSession({
       liveUpdate: this.#deps.liveUpdate,
-      resolve: (target) => this.#resolveZoteroReader(target),
+      resolve: (target, signal) => this.#resolveZoteroReader(target, signal),
       navigate: (annotationKey) => this.#openInZotero(annotationKey),
     });
     this.register(() => this.#zoteroReader?.[Symbol.dispose]());
@@ -431,8 +423,6 @@ export class AnnotationView extends ItemView implements HistorySurface {
       annotations: this.#deps.annotations,
       controls: (annot) => this.#cardControls(annot),
       selectedCards: () => this.#selectedCards(),
-      resolveAnnotationID: (indexedKey) =>
-        this.#resolveAnnotationID(indexedKey),
       libraryTagNames: (annot) => this.#deps.libraryTagNames(annot.key),
       getState: () => this.#store.getState(),
       setSelectedAttachmentKey: (key) =>
@@ -456,7 +446,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
       onUnpin: () => this.#unpin(),
       onEnableLiveUpdates: () => this.#enableLiveUpdates(),
       onAllowEditing: () => this.#deps.allowEditing(),
-      onOpenPdf: () => this.#openPdf(),
+      onOpenPdf: () => void this.#openPdf(),
       onSelectAnnotation: (annot, gesture) =>
         this.#clickFromView({ kind: gesture, key: annot.key }),
       onClearSelection: () => void this.#clearFromView(),
@@ -508,12 +498,15 @@ export class AnnotationView extends ItemView implements HistorySurface {
     );
 
     this.register(
-      this.#deps.db.on("changed", () => {
+      this.#deps.reads.on("changed", () => {
         logger.debug("DB changed, refreshing annot view");
-        this.#librariesCache = null;
         this.#zoteroReader?.refresh();
         this.#reload();
       }),
+    );
+    // The held Libraries settle after the database change that moved them.
+    this.register(
+      this.#deps.libraryScope.on("libraries-changed", () => this.#reload()),
     );
 
     this.registerEvent(
@@ -798,12 +791,14 @@ export class AnnotationView extends ItemView implements HistorySurface {
       }),
     );
 
-    await this.#deps.db.ready;
+    await this.#deps.reads.ready;
     this.#reload();
   }
 
   protected override async onClose(): Promise<void> {
     this.#closed = true;
+    this.#loading = null;
+    this.#reads += 1;
     this.#submitOpenEditor();
     this.#loadDisposables?.[Symbol.dispose]();
     this.#loadDisposables = null;
@@ -851,20 +846,22 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * Open the Attachment on screen in Obsidian's own PDF view. A non-PDF
    * Attachment or a missing file is answered by the reader's own notice.
    */
-  #openPdf(): void {
+  async #openPdf(): Promise<void> {
     const active = selectActiveAttachment(this.#store.getState());
-    if (!active || this.#deps.db.state !== "ready") return;
-    const resolved = resolveIndexedKeyLibrary(
-      this.#deps.db.client,
-      active.indexedKey,
-    );
-    const attachment = resolved
-      ? getAttachmentByKey(
-          this.#deps.db.client,
-          resolved.key,
-          resolved.libraryID,
-        )
-      : null;
+    if (!active) return;
+    let attachment: Attachment | null;
+    try {
+      const { reads } = await this.#deps.reads.ready;
+      ({ attachment } = await Effect.runPromise(
+        reads.AnnotationsOfAttachment({ attachmentKey: active.indexedKey }),
+      ));
+    } catch (error) {
+      logger.warn("Failed to read the attachment to open", {
+        attachmentKey: active.indexedKey,
+        error,
+      });
+      return;
+    }
     openAttachments(
       attachment ? toObsidianOpenable([attachment], this.#deps) : [],
       { reader: createPdfReader(this.#deps), app: this.#deps.app },
@@ -926,6 +923,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
   // #region resolve + load
 
   #reload(): void {
+    if (this.#closed) return;
     // Only Active Tab follows an open PDF's own session, so the subscription
     // stands exactly as long as that mode does.
     this.#followLeafSession(
@@ -934,7 +932,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
         : null,
     );
     this.#bindReader();
-    if (this.#deps.db.state !== "ready") {
+    if (this.#deps.reads.state !== "ready") {
       this.#clearState();
       return;
     }
@@ -942,7 +940,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
   }
 
   #resolveTarget(): LoadTarget | null {
-    const libraries = this.#getLibraries();
+    const libraries = this.#deps.libraryScope.libraryRows;
     switch (this.#followMode) {
       case "active-tab":
         return resolveLoadTarget({
@@ -1012,23 +1010,25 @@ export class AnnotationView extends ItemView implements HistorySurface {
   }
 
   /** Names what one companion reader push points at, in Indexed Keys. */
-  #resolveZoteroReader(pushed: ReaderTarget): ZoteroReaderResolution | null {
-    if (this.#deps.db.state !== "ready") return null;
+  async #resolveZoteroReader(
+    pushed: ReaderTarget,
+    signal: AbortSignal,
+  ): Promise<ZoteroReaderResolution | null> {
     try {
-      const client = this.#deps.db.client;
-      const attachment = getAttachmentByItemId(client, pushed.attachmentID);
-      if (!attachment) return null;
+      const { reads } = await this.#deps.reads.ready;
       // The wire carries a selection as numeric ids, and this is the last
       // place they are read: the session speaks Indexed Keys from here on.
-      const selected = getAnnotationsByParent(client, attachment.itemID)
-        .filter((annot) => pushed.selected.includes(annot.itemID))
-        .map((annot) => annot.indexedKey);
-      const parent = attachment.parentItemID
-        ? (getItemRefByID(client, attachment.parentItemID)?.indexedKey ?? null)
-        : null;
+      const named = await Effect.runPromise(
+        reads.ReaderTargetKeys({
+          attachmentID: pushed.attachmentID,
+          selected: pushed.selected,
+        }),
+        { signal },
+      );
+      if (!named) return null;
       return {
-        target: { attachmentKey: attachment.indexedKey, itemKey: parent },
-        selected,
+        target: { attachmentKey: named.attachmentKey, itemKey: named.itemKey },
+        selected: named.selected,
       };
     } catch (err) {
       logger.warn("Failed to name the Zotero reader's attachment", {
@@ -1045,9 +1045,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
       return;
     }
 
-    const { db } = this.#deps;
-    const { itemKey, lockedAttachmentKey, lock, key, libraryID, groupID } =
-      target;
+    const { itemKey, lockedAttachmentKey, lock, key, groupID } = target;
     // A standalone Attachment has no Item, so the Attachment itself is what
     // the attachment choice and the saved filter are remembered against.
     const memoryKey = itemKey ?? lockedAttachmentKey ?? key;
@@ -1055,104 +1053,158 @@ export class AnnotationView extends ItemView implements HistorySurface {
     this.#itemKey = itemKey;
     this.#memoryKey = memoryKey;
 
-    // Dispose the previous load's subscriptions before any state mutation of
-    // this load: `subscribeWithSelector` fires synchronously, so the reset
-    // below would otherwise trigger the old save subscription (closed over
-    // the previous item's key) and wipe its persisted filter.
-    this.#loadDisposables?.[Symbol.dispose]();
-    this.#loadDisposables = new DisposableStack();
+    // A new Item disposes the previous load's subscriptions before any state
+    // mutation of this load: `subscribeWithSelector` fires synchronously, so
+    // the reset below would otherwise trigger the old save subscription
+    // (closed over the previous item's key) and wipe its persisted filter.
+    // Its Annotation reads still running are superseded too. A reload of the
+    // same Item keeps them until the new list lands, so a choice made while
+    // it reads is still read and saved.
+    if (memoryChanged) {
+      this.#loadDisposables?.[Symbol.dispose]();
+      this.#loadDisposables = null;
+      this.#reads += 1;
+    }
+    const load = {};
+    this.#loading = load;
+    const sameItem = itemKey === this.#store.getState().itemKey;
 
+    // What is on screen stays while this load reads: the attachments and
+    // their Annotations until the new list lands, and the identity block
+    // while the same Item reads again.
     this.#store.setState({
       ...(memoryChanged ? INITIAL_FILTER_STATE : null),
       groupID,
       itemKey,
       attachmentLock: lock,
       pinnable: itemKey,
-      itemDisplay: this.#resolveItemSummary(target),
+      ...(!sameItem && { itemDisplay: null }),
     });
 
-    try {
-      const client = db.client;
-      const attachments = itemKey
-        ? getAnnotViewAttachments(client, key, libraryID)
-        : standaloneAttachment(client, key, libraryID);
-      this.#store.setState({ attachments });
-
-      const held = (k: string | null): string | null =>
-        k !== null && attachments.some((a) => a.indexedKey === k) ? k : null;
-      const saved =
-        lockedAttachmentKey === null
-          ? this.#loadAttachmentSelection(memoryKey)
-          : null;
-      const activeKey =
-        held(lockedAttachmentKey) ??
-        held(saved) ??
-        attachments[0]?.indexedKey ??
-        null;
-
-      if (activeKey === null) {
-        this.#store.setState({
-          selectedAttachmentKey: null,
-          annotations: null,
-          annotationSource: null,
-          annotationSourceScope: null,
+    void this.#resolveItemSummary(target).then((itemDisplay) => {
+      if (this.#loading === load) this.#store.setState({ itemDisplay });
+    });
+    this.#reading = this.#readAttachments(target).then(
+      (attachments) => {
+        if (this.#loading !== load) return;
+        this.#loadDisposables?.[Symbol.dispose]();
+        this.#loadDisposables = new DisposableStack();
+        return this.#showAttachments(target, attachments, {
+          load: this.#loadDisposables,
+          memoryKey,
+          memoryChanged,
         });
-        return;
-      }
+      },
+      (err: unknown) => {
+        if (this.#loading !== load) return;
+        logger.warn("Failed to load annot view data", { key, error: err });
+        // A reload of the same Item keeps what is on screen.
+        if (memoryChanged) this.#clearState();
+      },
+    );
+  }
 
-      this.#store.setState({ selectedAttachmentKey: activeKey });
-      this.#readAnnotations(activeKey, { restoreFilter: memoryChanged });
-
-      this.#loadDisposables.defer(
-        this.#store.subscribe(
-          (s) => s.selectedAttachmentKey,
-          (attachmentKey) => {
-            if (attachmentKey === null) return;
-            if (lockedAttachmentKey === null) {
-              this.#saveAttachmentSelection(memoryKey, attachmentKey);
-            }
-            this.#readAnnotations(attachmentKey, { restoreFilter: false });
-          },
-        ),
-      );
-
-      // The repository's own event is the only word that a list was superseded;
-      // a held read says nothing about an invalidation of its own.
-      this.#loadDisposables.defer(
-        this.#deps.annotations.on("annotations-changed", (changedKey) => {
-          if (changedKey !== this.#store.getState().selectedAttachmentKey) {
-            return;
-          }
-          // What the repository holds now, a write's Pending Proposal among
-          // it, stands in the same task; the read that follows replaces it.
-          const held = this.#heldList(changedKey);
-          if (held) this.#store.setState(held);
-          this.#readAnnotations(changedKey, { restoreFilter: false });
-        }),
-      );
-
-      this.#loadDisposables.defer(
-        this.#store.subscribe(
-          (s) => [s.selectedColors, s.selectedTags] as const,
-          ([colors, tags]) =>
-            this.#saveFilterSelection(memoryKey, { colors, tags }),
-          {
-            equalityFn: ([aColors, aTags], [bColors, bTags]) =>
-              aColors === bColors && aTags === bTags,
-          },
-        ),
-      );
-
-      logger.debug("Annot view loaded", {
-        followMode: this.#followMode,
-        key,
+  /** The attachments the view lists for `target`. */
+  async #readAttachments({
+    itemKey,
+    key,
+    libraryID,
+  }: LoadTarget): Promise<AnnotViewAttachment[]> {
+    const { reads } = await this.#deps.reads.ready;
+    return Effect.runPromise(
+      reads.AnnotViewAttachments({
         libraryID,
-        attachments: attachments.length,
+        key,
+        standalone: itemKey === null,
+      }),
+    );
+  }
+
+  /** Shows the attachments one load read, and reads the active one's Annotations. */
+  #showAttachments(
+    { lockedAttachmentKey, key, libraryID }: LoadTarget,
+    attachments: AnnotViewAttachment[],
+    {
+      load,
+      memoryKey,
+      memoryChanged,
+    }: { load: DisposableStack; memoryKey: string; memoryChanged: boolean },
+  ): Promise<void> | undefined {
+    this.#store.setState({ attachments });
+
+    const held = (k: string | null): string | null =>
+      k !== null && attachments.some((a) => a.indexedKey === k) ? k : null;
+    const saved =
+      lockedAttachmentKey === null
+        ? this.#loadAttachmentSelection(memoryKey)
+        : null;
+    const activeKey =
+      held(lockedAttachmentKey) ??
+      held(saved) ??
+      attachments[0]?.indexedKey ??
+      null;
+
+    if (activeKey === null) {
+      this.#store.setState({
+        selectedAttachmentKey: null,
+        annotations: null,
+        annotationSource: null,
+        annotationSourceScope: null,
       });
-    } catch (err) {
-      logger.warn("Failed to load annot view data", { key, error: err });
-      this.#clearState();
+      return;
     }
+
+    this.#store.setState({ selectedAttachmentKey: activeKey });
+    this.#readAnnotations(activeKey, { restoreFilter: memoryChanged });
+    const reading = this.#reading;
+
+    load.defer(
+      this.#store.subscribe(
+        (s) => s.selectedAttachmentKey,
+        (attachmentKey) => {
+          if (attachmentKey === null) return;
+          if (lockedAttachmentKey === null) {
+            this.#saveAttachmentSelection(memoryKey, attachmentKey);
+          }
+          this.#readAnnotations(attachmentKey, { restoreFilter: false });
+        },
+      ),
+    );
+
+    // The repository's own event is the only word that a list was superseded;
+    // a held read says nothing about an invalidation of its own.
+    load.defer(
+      this.#deps.annotations.on("annotations-changed", (changedKey) => {
+        if (changedKey !== this.#store.getState().selectedAttachmentKey) {
+          return;
+        }
+        // What the repository holds now, a write's Pending Proposal among
+        // it, stands in the same task; the read that follows replaces it.
+        const held = this.#heldList(changedKey);
+        if (held) this.#store.setState(held);
+        this.#readAnnotations(changedKey, { restoreFilter: false });
+      }),
+    );
+
+    load.defer(
+      this.#store.subscribe(
+        (s) => [s.selectedColors, s.selectedTags] as const,
+        ([colors, tags]) =>
+          this.#saveFilterSelection(memoryKey, { colors, tags }),
+        {
+          equalityFn: ([aColors, aTags], [bColors, bTags]) =>
+            aColors === bColors && aTags === bTags,
+        },
+      ),
+    );
+
+    logger.debug("Annot view loaded", {
+      followMode: this.#followMode,
+      key,
+      libraryID,
+      attachments: attachments.length,
+    });
+    return reading;
   }
 
   /**
@@ -1275,10 +1327,10 @@ export class AnnotationView extends ItemView implements HistorySurface {
     annotation: AnnotationRecord;
     source: AnnotationSource | null;
     sourceScope: string | null;
-  }): ExcerptRequest | null {
+  }): Promise<ExcerptRequest | null> {
     return savedExcerptRequest({
       ...input,
-      db: this.#deps.db,
+      zoteroReads: this.#deps.reads,
       paths: this.#deps.zoteroPref,
     });
   }
@@ -1302,14 +1354,15 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * The identity block names the Item only where nothing else on screen does:
    * Active Tab always has the note or the PDF in front of the user.
    */
-  #resolveItemSummary(target: LoadTarget): ItemSummary | null {
-    if (this.#followMode === "active-tab" || target.itemKey === null) {
-      return null;
-    }
+  async #resolveItemSummary(target: LoadTarget): Promise<ItemSummary | null> {
+    const { itemKey } = target;
+    if (this.#followMode === "active-tab" || itemKey === null) return null;
     try {
-      const item = getItemsByKey(this.#deps.db.client, target.libraryID, [
-        target.key,
-      ])[0];
+      const { reads } = await this.#deps.reads.ready;
+      const items = await Effect.runPromise(
+        reads.ItemsByIndexedKeys({ indexedKeys: [itemKey] }),
+      );
+      const item = items.get(itemKey);
       if (!item || isChildItemFields(item.fields)) return null;
       return itemSummary(item, item.fields);
     } catch {
@@ -1647,46 +1700,10 @@ export class AnnotationView extends ItemView implements HistorySurface {
     );
   }
 
-  /**
-   * The numeric id the Zotero database holds for an Annotation, for the note
-   * templates that read the database. `null` for an Annotation the Zotero
-   * Local API answered before SQLite caught up — which is the whole reason the
-   * cards are keyed by Indexed Key rather than by this.
-   *
-   * @see apps/obsidian/docs/adr/0033-zotero-object-identity-is-the-indexed-key-server-id-is-source-data.md
-   */
-  #resolveAnnotationID(indexedKey: string): number | null {
-    if (this.#deps.db.state !== "ready") return null;
-    try {
-      const client = this.#deps.db.client;
-      const library = resolveIndexedKeyLibrary(client, indexedKey);
-      if (!library) return null;
-      return (
-        getAnnotationsByKey(client, [library.key], library.libraryID)[0]
-          ?.itemID ?? null
-      );
-    } catch (error) {
-      logger.warn("Failed to name an annotation in the Zotero database", {
-        indexedKey,
-        error,
-      });
-      return null;
-    }
-  }
-
-  #getLibraries(): Library[] | null {
-    if (this.#librariesCache) return this.#librariesCache;
-    try {
-      this.#librariesCache = getLibraries(this.#deps.db.client);
-      return this.#librariesCache;
-    } catch {
-      return null;
-    }
-  }
-
   #clearState(): void {
     this.#loadDisposables?.[Symbol.dispose]();
     this.#loadDisposables = null;
+    this.#loading = null;
     this.#store.setState({
       ...INITIAL_FILTER_STATE,
       itemKey: null,
@@ -1737,25 +1754,4 @@ export class AnnotationView extends ItemView implements HistorySurface {
     }
     this.#deps.app.saveLocalStorage(key, JSON.stringify({ colors, tags }));
   }
-}
-
-/**
- * A standalone Attachment as a one-entry list, so the load path, the picker,
- * and the card list read the same shape whether or not an Item owns it.
- */
-function standaloneAttachment(
-  client: NodeDatabaseClient,
-  key: string,
-  libraryID: number,
-): AnnotViewAttachment[] {
-  const attachment = getAttachmentByKey(client, key, libraryID);
-  if (!attachment) return [];
-  return [
-    {
-      itemID: attachment.itemID,
-      indexedKey: attachment.indexedKey,
-      path: attachment.path,
-      annotCount: getAttachmentAnnotationCount(client, attachment.itemID),
-    },
-  ];
 }

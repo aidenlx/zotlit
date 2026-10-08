@@ -1,14 +1,7 @@
+import { Effect } from "effect";
 import type { TFile } from "obsidian";
 
-import {
-  CollectionCache,
-  getZoteroIdentity,
-  getItemDisplayRefByID,
-  getItemRefByID,
-  getItemsByID,
-} from "@zotlit/db";
-import type { GroupIDMemo, TagMemo, Item } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import type { Item, ItemRef } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -19,7 +12,7 @@ import { chooseBatchProfile } from "@/services/batch-profile-choice";
 import type { BatchProfilePickerDeps } from "@/services/batch-profile-choice";
 import { batchProfileSummary } from "@/services/batch-profile-summary";
 import type { BatchProfileCount } from "@/services/batch-profile-summary";
-import { classifyChunked, runBatchWrite } from "@/services/batch-run";
+import { classifyStream, runBatchWrite } from "@/services/batch-run";
 import type {
   BatchClassifyControls,
   BatchRunControls,
@@ -41,6 +34,8 @@ import type { ResolvedProfile } from "@/services/profile/bindings";
 import type { LiteratureNoteProfile } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 import { InertTemplateError } from "@/services/template/errors";
+import { readDisplayRef } from "@/services/zotero-reads/display-ref";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 import { BatchModal, FlatManifest } from "@/views/batch-modal";
 import type {
   BatchProfileChoice,
@@ -106,24 +101,17 @@ interface NotFoundEntry {
   label: string;
 }
 
-/** Lease-scoped state shared across a run's per-action item loads. */
+/** Snapshot-scoped state shared across a run's per-action item loads. */
 interface RunContext {
   reportExcerpts: (summary: ExcerptSummary) => void;
-  client: NodeDatabaseClient;
+  /**
+   * Bound to the run's Snapshot; each item loads, renders, and flushes
+   * through it.
+   */
+  reads: ZoteroReadsApi;
   settings: Readonly<Settings>;
-  groupIdMemo: GroupIDMemo;
-  /** Spans the whole batch so per-library collection nodes load once. */
-  collectionCache: CollectionCache;
-  /** Spans the whole batch so a shared item's tags load once. */
-  tagMemo: TagMemo;
   /** The one retention every note this batch writes reuses outcomes from. */
   outcomes: ExcerptOutcomeScope;
-  /**
-   * Signed-in account username, resolved once for the whole batch.
-   *
-   * @see docs/adr/0009-weblink-is-the-web-url-not-the-item-uri.md
-   */
-  username: string | null;
   /** How much of each existing note an update refreshes. */
   scope: UpdateScope;
   profile?: ProfileSelector;
@@ -172,7 +160,7 @@ export async function runBatchUpdate(
   opts: BatchUpdateOptions = {},
 ): Promise<BatchUpdateResult> {
   const { scope = "full", unavailableLibraries = 0, profile } = opts;
-  if (deps.db.state !== "ready") {
+  if (deps.zoteroReads.state !== "ready") {
     logger.warn("Batch update: database not ready", { count: itemIDs.length });
     return { outcome: "db-unavailable" };
   }
@@ -190,11 +178,9 @@ export async function runBatchUpdate(
   const profilesEnabled = deps.profile.profiles.length > 0;
   if (restIDs.length === 0 && !profilesEnabled) {
     // Single id: hand the lightweight ref to updateNote, which owns the full
-    // item load on the create path — no need to hydrate it here. The lease pins
-    // the client for this ref load; the downstream updateNote re-acquires its
-    // own lease and threads that client through its write + flush.
-    using lease = await deps.db.acquireRead();
-    const ref = getItemRefByID(lease.client, firstID);
+    // item load on the create path — no need to hydrate it here. The
+    // downstream updateNote reads under its own lease.
+    const ref = await displayRef(deps, firstID);
     if (!ref) {
       return { outcome: "not-found" };
     }
@@ -202,14 +188,13 @@ export async function runBatchUpdate(
     return { outcome: "single-update" };
   }
 
-  // ≥2 ids: classification is the only synchronous DB work heavy enough to
-  // freeze the UI, so it runs inside the modal's loading phase where the bar
-  // can paint between chunks; `actions` is captured here for the run callback.
+  // ≥2 ids: classification runs inside the modal's loading phase, where the
+  // bar advances per streamed slice and Cancel interrupts the stream;
+  // `actions` is captured here for the run callback.
   let actions: BatchAction[] = [];
   let creationItems: Item[] = [];
   let plans: ReadonlyMap<number, readonly PreparedCreationProfile[]> =
     new Map();
-  let tasks: FlatTask[] = [];
   let keptCount = 0;
   let notFoundCount = 0;
   const profileCounts = new Map<ProfileSelector, BatchProfileCount>();
@@ -218,7 +203,7 @@ export async function runBatchUpdate(
       (action): action is BatchAction & CreateAction =>
         action.kind === "create",
     );
-  /** Bind one row to its selection: resolved Profile, frozen path, row copy. */
+  /** Bind one row to its selection: resolved Profile and frozen path. */
   const assign = (
     action: BatchAction & CreateAction,
     selection: CreationProfileSelection,
@@ -232,8 +217,6 @@ export async function runBatchUpdate(
       plans
         .get(action.itemID)
         ?.find((entry) => entry.selector === selection.selector);
-    const task = tasks.find((entry) => entry.id === action.itemID);
-    if (task) Object.assign(task, creationRow(action));
   };
   /** A Profile created after classification has no prepared path yet. */
   const ensurePlans = async (itemID: number, selectors: ProfileSelector[]) => {
@@ -339,10 +322,15 @@ export async function runBatchUpdate(
       let profileChoices: BatchProfileChoice[] | undefined;
       if (profilesEnabled && creations().length > 0) {
         {
-          using lease = await deps.db.acquireRead();
-          creationItems = getItemsByID(
-            lease.client,
-            creations().map((action) => action.itemID),
+          await using lease = await deps.zoteroReads.acquireRead();
+          const items = await Effect.runPromise(
+            lease.reads.ItemsByIndexedKeys({
+              indexedKeys: creations().map((action) => action.indexedKey),
+            }),
+            { signal: controls.signal },
+          );
+          creationItems = creations().flatMap(
+            (action) => items.get(action.indexedKey) ?? [],
           );
         }
         plans = await deps.noteFeature.prepareBatchCreationProfiles(
@@ -351,10 +339,13 @@ export async function runBatchUpdate(
         );
         // Each Item keeps its own result and prepared destination. Overlap
         // rows need a choice; the fallback also covers unmatched Items.
+        const itemsByID = new Map(
+          creationItems.map((item) => [item.itemID, item]),
+        );
         for (const action of creations()) {
           const selection = await deps.noteFeature.resolveCreationProfile({
             headless: profile,
-            item: creationItems.find((item) => item.itemID === action.itemID),
+            item: itemsByID.get(action.itemID),
           });
           action.origin =
             selection.problem && selection.problem.kind !== "overlap"
@@ -376,22 +367,8 @@ export async function runBatchUpdate(
           choiceFor("all-new", creations),
         ];
       }
-      tasks = actions.map((action) => ({
-        id: action.itemID,
-        label: action.label,
-        kind: batchGroupKey(action.libraryID, action.kind),
-        ...(profilesEnabled
-          ? action.kind === "create"
-            ? creationRow(action)
-            : {
-                profile: action.profile
-                  ? profileLabel(action.profile)
-                  : action.unknownStamp,
-              }
-          : {}),
-      }));
       return new FlatManifest({
-        tasks,
+        tasks: actions.map((action) => batchTask(action, profilesEnabled)),
         notFound: classified.notFound,
         profileChoices,
         groups: batchGroups(classified.libraries, [
@@ -463,18 +440,41 @@ function fallbackSelection(
   );
 }
 
-/** A new row's chip, frozen destination, and the reason behind them. */
-function creationRow(
-  action: BatchAction & CreateAction,
-): Pick<FlatTask, "profile" | "path" | "reason"> {
-  const { selection, prepared } = action;
+/**
+ * One action's confirmation row. A new row reads its chip, frozen
+ * destination, and the reason behind them from the action, so a Profile
+ * change shows on the next render.
+ */
+function batchTask(action: BatchAction, profilesEnabled: boolean): FlatTask {
+  const task = {
+    id: action.itemID,
+    label: action.label,
+    kind: batchGroupKey(action.libraryID, action.kind),
+  };
+  if (!profilesEnabled) return task;
+  if (action.kind !== "create")
+    return {
+      ...task,
+      profile: action.profile
+        ? profileLabel(action.profile)
+        : action.unknownStamp,
+    };
   return {
-    profile: action.profile && profileLabel(action.profile),
-    path: prepared?.path,
-    reason:
-      [selection && creationReason(selection), prepared?.unavailable]
-        .filter(Boolean)
-        .join(" ") || undefined,
+    ...task,
+    get profile() {
+      return action.profile && profileLabel(action.profile);
+    },
+    get path() {
+      return action.prepared?.path;
+    },
+    get reason() {
+      const { selection, prepared } = action;
+      return (
+        [selection && creationReason(selection), prepared?.unavailable]
+          .filter(Boolean)
+          .join(" ") || undefined
+      );
+    },
   };
 }
 
@@ -487,13 +487,21 @@ function creationReason(selection: CreationProfileSelection): string {
   );
 }
 
+/** The lightweight ref of one item; `null` when no live item has that id. */
+async function displayRef(
+  deps: Pick<SingleUpdateDeps, "zoteroReads">,
+  itemID: number,
+): Promise<ItemRef | null> {
+  await using lease = await deps.zoteroReads.acquireRead();
+  return await readDisplayRef(lease.reads, itemID);
+}
+
 /**
- * Resolve `itemIDs` into update / create / skipped / not-found using one
- * lightweight {@link getItemDisplayRefByID} per id (indexed key + title only, no
- * heavy relational load — that is deferred to each item's write task). Chunked so
- * the synchronous per-id queries yield the main thread before the next slice:
- * this is the one UI-freeze risk in the flow, since `better-sqlite3` is
- * synchronous and a large batch would otherwise block paint and Cancel.
+ * Resolve `itemIDs` into update / create / skipped / not-found from the
+ * `DisplayRefs` stream (indexed key + title only, no heavy relational load —
+ * that is deferred to each item's write task), matched against the Note Index
+ * here. Each streamed slice advances the loading bar; Cancel interrupts the
+ * stream.
  *
  * A `metadata` scope classifies note-less items as skipped rather than create —
  * see {@link updateNote} for why the narrowing never creates.
@@ -522,71 +530,74 @@ async function classifyActions(
   libraries: BatchLibrary[];
   kept: { label: string; profile: string; reason: string }[];
 }> {
-  // Pin the client for the chunked loop's whole async lifetime so a concurrent
-  // refresh cannot swap it out between `yieldToMain()` yields.
-  using lease = await deps.db.acquireRead();
-  const client = lease.client;
-  const groupIdMemo: GroupIDMemo = new Map();
+  // One Snapshot for the refs and the Libraries they are grouped by.
+  await using lease = await deps.zoteroReads.acquireRead();
   const actions: BatchAction[] = [];
   const skipped: NotFoundEntry[] = [];
   const notFound: NotFoundEntry[] = [];
   const kept: { label: string; profile: string; reason: string }[] = [];
-  await classifyChunked(itemIDs, controls, (slice) => {
-    for (const itemID of slice) {
-      const ref = getItemDisplayRefByID(client, itemID, { memo: groupIdMemo });
-      if (!ref) {
-        notFound.push({
-          itemID,
-          label: m.batch_update_unknown_item({ id: itemID }),
-        });
-        continue;
-      }
-      const file = resolveLiteratureNoteWithWarning(
-        deps.noteIndex.getNotesByItemKey(ref.indexedKey),
-      );
-      const label = itemLabel(ref.title, itemID);
-      const row = {
-        itemID,
-        indexedKey: ref.indexedKey,
-        label,
-        libraryID: ref.libraryID,
-      };
-      if (file) {
-        const stamped = deps.profile.profileOf(file);
-        if (
-          profilesEnabled &&
-          stamped.ok &&
-          profile !== undefined &&
-          stamped.profile.selector !== profile
-        ) {
-          kept.push({
-            label,
-            profile: profileLabel(stamped.profile),
-            reason: m.batch_profile_kept_reason({
-              label: profileLabel(stamped.profile),
-              requested: profileLabel(deps.profile.resolveProfile(profile)!),
-            }),
+  await classifyStream(
+    {
+      itemIDs,
+      read: (ids) => lease.reads.DisplayRefs({ itemIDs: ids }),
+    },
+    controls,
+    (slice) => {
+      for (const { itemID, ref } of slice) {
+        if (!ref) {
+          notFound.push({
+            itemID,
+            label: m.batch_update_unknown_item({ id: itemID }),
           });
-        } else {
-          actions.push({
-            ...row,
-            kind: "update",
-            file,
-            ...(stamped.ok
-              ? { profile: stamped.profile }
-              : { unknownStamp: stamped.stamped.stamp }),
-          });
+          continue;
         }
-      } else if (scope === "metadata") {
-        skipped.push({ itemID, label });
-      } else {
-        actions.push({ ...row, kind: "create" });
+        const file = resolveLiteratureNoteWithWarning(
+          deps.noteIndex.getNotesByItemKey(ref.indexedKey),
+        );
+        const label = itemLabel(ref.title, itemID);
+        const row = {
+          itemID,
+          indexedKey: ref.indexedKey,
+          label,
+          libraryID: ref.libraryID,
+        };
+        if (file) {
+          const stamped = deps.profile.profileOf(file);
+          if (
+            profilesEnabled &&
+            stamped.ok &&
+            profile !== undefined &&
+            stamped.profile.selector !== profile
+          ) {
+            kept.push({
+              label,
+              profile: profileLabel(stamped.profile),
+              reason: m.batch_profile_kept_reason({
+                label: profileLabel(stamped.profile),
+                requested: profileLabel(deps.profile.resolveProfile(profile)!),
+              }),
+            });
+          } else {
+            actions.push({
+              ...row,
+              kind: "update",
+              file,
+              ...(stamped.ok
+                ? { profile: stamped.profile }
+                : { unknownStamp: stamped.stamped.stamp }),
+            });
+          }
+        } else if (scope === "metadata") {
+          skipped.push({ itemID, label });
+        } else {
+          actions.push({ ...row, kind: "create" });
+        }
       }
-    }
-  });
+    },
+  );
 
   const libraries = batchLibraries(
-    client,
+    await Effect.runPromise(lease.reads.Libraries({})),
     new Set(actions.map((action) => action.libraryID)),
   );
 
@@ -628,39 +639,25 @@ async function executeBatchActions(
   // the run's last admitted consumer settles.
   await using outcomes = new ExcerptOutcomeScope();
 
-  // Per-run caches + scope span the whole batch; `client` and `username` are
-  // run-invariant too but only available inside the run closure, so they're
-  // passed per call instead of baked in here.
-  const baseContext: Omit<RunContext, "client" | "username"> = {
+  // Scope spans the whole batch; the Snapshot-bound `reads` is only available
+  // inside the run closure, so it is passed per call instead of baked in here.
+  const baseContext: Omit<RunContext, "reads"> = {
     reportExcerpts: excerptReports.add,
     settings,
-    groupIdMemo: new Map(),
-    collectionCache: new CollectionCache(),
-    tagMemo: new Map(),
     scope,
     profile,
     outcomes,
   };
 
-  // The signed-in username is an account-wide scalar, resolved once under the
-  // batch's own read lease (the client `runBatchWrite` pins) rather than via a
-  // separate lease a refresh could swap. `undefined` marks it unresolved —
-  // unreachable as a `getZoteroIdentity` result — so the first task resolves it
-  // and the rest reuse the value.
-  let username: string | null | undefined;
-
+  // The run's item loads and updates read one Snapshot, held until the run
+  // settles.
   const result = await runBatchWrite({
-    db: deps.db,
+    zoteroReads: deps.zoteroReads,
     tasks: actions.map((a) => ({ ...a, id: a.itemID })),
     controls,
     concurrency: 32,
-    run: async (task, client) => {
-      if (username === undefined) username = getZoteroIdentity(client).username;
-      const outcome = await runAction(deps, task, {
-        ...baseContext,
-        client,
-        username,
-      });
+    run: async (task, reads) => {
+      const outcome = await runAction(deps, task, { ...baseContext, reads });
       if (
         plan.profileCounts &&
         task.profile &&
@@ -694,8 +691,8 @@ async function executeBatchActions(
 
 /**
  * Load the action's full item (deferred from classification) and write it: an
- * existing-note update reuses {@link writeNoteUpdate}, sharing the batch's
- * `tagMemo`/`collectionCache`; a create routes through the self-contained
+ * existing-note update reuses {@link writeNoteUpdate} under the batch's
+ * Snapshot; a create routes through the self-contained
  * {@link createNote} (resolves tags + path, then writes — a filename collision
  * surfaces as this item's own `vault.create` failure). An item deleted in
  * Zotero between classification and its write throws here, surfacing as this
@@ -706,23 +703,20 @@ async function runAction(
   action: BatchAction,
   run: RunContext,
 ): Promise<RunOutcome> {
-  const [item] = getItemsByID(run.client, [action.itemID], {
-    memo: run.groupIdMemo,
-  });
+  const items = await Effect.runPromise(
+    run.reads.ItemsByIndexedKeys({ indexedKeys: [action.indexedKey] }),
+  );
+  const item = items.get(action.indexedKey);
   if (!item)
     throw new Error(m.batch_update_unknown_item({ id: action.itemID }));
 
   if (action.kind === "update") {
     const result = await deps.noteFeature.writeNoteUpdate(action.file, {
       reportExcerpts: run.reportExcerpts,
-      client: run.client,
+      reads: run.reads,
       item,
-      tagMemo: run.tagMemo,
-      collectionCache: run.collectionCache,
       settings: run.settings,
       scope: run.scope,
-      groupIdMemo: run.groupIdMemo,
-      username: run.username,
       outcomes: run.outcomes,
     });
     if (result.diagnostic) {
@@ -744,17 +738,15 @@ async function runAction(
       await action.prepared.create({
         reportExcerpts: run.reportExcerpts,
         outcomes: run.outcomes,
+        reads: run.reads,
       }),
     );
   }
   const result = await deps.noteFeature.createNote(item, {
     reportExcerpts: run.reportExcerpts,
-    collectionCache: run.collectionCache,
-    tagMemo: run.tagMemo,
-    groupIdMemo: run.groupIdMemo,
-    username: run.username,
     profile: action.selection?.selector ?? run.profile,
     outcomes: run.outcomes,
+    reads: run.reads,
   });
   return batchCreateOutcome(result);
 }
@@ -804,7 +796,7 @@ export async function runBatchUpdateAll(
   deps: BatchUpdateDeps,
   target: BatchTarget = {},
 ): Promise<BatchUpdateResult> {
-  if (deps.db.state !== "ready") {
+  if (deps.zoteroReads.state !== "ready") {
     logger.warn("Batch update all: database not ready");
     return { outcome: "db-unavailable" };
   }

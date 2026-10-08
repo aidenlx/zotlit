@@ -1,11 +1,13 @@
 // Parent → child-note tree body for the batch modal (import child notes).
+import { cn } from "@/lib/utils";
+
 import {
+  GROUP_SUMMARY_CLS,
   listGroup,
   ROW_ICON,
   ROW_ICON_CLASS,
-  row,
-  SECTION_OPEN_MAX,
-  setRowIcon,
+  rowGroup,
+  RowStatusBoard,
   profileChoiceControl,
   profileListGroup,
 } from "./dom";
@@ -45,7 +47,7 @@ export interface HierarchyManifestOptions {
  */
 export class HierarchyManifest implements BatchManifest {
   readonly #options: HierarchyManifestOptions;
-  readonly #rowIcons = new Map<number, HTMLElement>();
+  readonly #rows = new RowStatusBoard();
   /** Flattened child tasks across all parents, for counts and summary grouping. */
   readonly #children: readonly FlatTask[];
 
@@ -59,16 +61,18 @@ export class HierarchyManifest implements BatchManifest {
   }
 
   renderList(parent: HTMLElement, controls?: BatchListControls): void {
-    this.#rowIcons.clear();
+    this.#rows.unmount();
     for (const node of this.#options.parents) {
       if (node.children.length === 0) continue;
-      const details = parent.createEl("details", {
-        cls: "zt:mb-4 zt:last:mb-0",
-        attr: node.children.length <= SECTION_OPEN_MAX ? { open: "" } : {},
-      });
-      const summary = details.createEl("summary", {
-        cls: "zt:sticky zt:top-0 zt:z-10 zt:mb-1 zt:cursor-pointer zt:select-none zt:bg-(--modal-background) zt:py-1 zt:flex zt:items-center zt:gap-2 zt:min-w-0",
-      });
+      const summary = rowGroup(
+        parent,
+        cn(GROUP_SUMMARY_CLS, "zt:flex zt:min-w-0 zt:items-center zt:gap-2"),
+        {
+          items: node.children,
+          renderRow: (ul, child) =>
+            this.#rows.mount(ul, { ...child, indent: true }),
+        },
+      );
       summary.createSpan({
         text: node.label,
         cls: "zt:truncate zt:text-sm zt:font-medium zt:text-(--text-normal)",
@@ -80,12 +84,6 @@ export class HierarchyManifest implements BatchManifest {
         text: `(${node.children.length})`,
         cls: "zt:shrink-0 zt:text-xs zt:tabular-nums zt:text-(--text-muted)",
       });
-      const ul = details.createEl("ul", { cls: "zt:m-0 zt:list-none zt:p-0" });
-      for (const child of node.children) {
-        const icon = row(ul, child.label, { ...child, indent: true });
-        setRowIcon(icon, "pending");
-        this.#rowIcons.set(child.id, icon);
-      }
     }
     this.#renderUpToDate(parent);
   }
@@ -102,15 +100,14 @@ export class HierarchyManifest implements BatchManifest {
   }
 
   setRowStatus(id: number, status: "done" | "skipped" | "failed"): void {
-    const icon = this.#rowIcons.get(id);
-    if (icon) setRowIcon(icon, status);
+    this.#rows.set(id, status);
   }
 
   renderSummary(
     parent: HTMLElement,
     finalStatus: ReadonlyMap<number, "done" | "skipped" | "failed">,
   ): void {
-    this.#rowIcons.clear();
+    this.#rows.unmount();
     const done = this.#children.filter(
       (child) => finalStatus.get(child.id) === "done",
     );

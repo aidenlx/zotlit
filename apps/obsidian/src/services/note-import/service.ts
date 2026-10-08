@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 // Materializes a literature note's child Zotero notes into flat Markdown mirrors.
 import { normalizePath, stringifyYaml } from "obsidian";
 import type {
@@ -9,22 +10,21 @@ import type {
 } from "obsidian";
 import PQueue from "p-queue";
 
-import { getAnnotationsByKey, getItemsByID, getNoteByKey } from "@zotlit/db";
 import type {
+  AnnotationSources,
+  Attachment,
   ChildNote,
-  GroupIDMemo,
+  Item,
   Note,
-  TagMemo,
   TemplateNoteLink,
 } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import {
   MAX_SEGMENT_BYTES,
   normalizeFilename,
   truncateToByteLimit,
 } from "@zotlit/templates";
 
-import { renderAnnotations } from "@/lib/annotation-render";
+import { renderAnnotationSources } from "@/lib/annotation-render";
 import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_LASTMOD,
@@ -67,8 +67,10 @@ import type {
 import type { ProfileService } from "@/services/profile/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import { readDisplayRef } from "@/services/zotero-reads/display-ref";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
-import { noteAnnotationKeys, parseNote } from "./note-parser";
+import { noteAnnotationKeys, noteReferences, parseNote } from "./note-parser";
 
 const logger = getLogger(["note-import", "service"]);
 
@@ -87,10 +89,9 @@ type WriteMode =
 
 /** Shared per-run inputs threaded to every write in a `prepare`/`importNote` call. */
 interface RunContext {
-  client: NodeDatabaseClient;
+  /** Bound to the operation's Snapshot: every read of the run sees one database state. */
+  reads: ZoteroReadsApi;
   settings: ProfileBindingSettings;
-  groupIdMemo?: GroupIDMemo;
-  tagMemo?: TagMemo;
   attachmentFolderCache: Map<string, string>;
   /** Profile every note this run writes belongs to. */
   profile: ResolvedProfile;
@@ -134,15 +135,15 @@ interface NoteImporterDeps {
 }
 
 export interface PrepareNoteImportOptions {
-  client: NodeDatabaseClient;
+  /**
+   * Bound to the calling operation's Snapshot, so the flush reads the Child
+   * Notes from the database state the Literature Note rendered from.
+   */
+  reads: ZoteroReadsApi;
   /** The literature note's vault path; the link source for `noteLink`. */
   sourcePath: string;
   /** Caller-held settings snapshot (import folder and related note-import prefs). */
   settings: ProfileBindingSettings;
-  /** Shared across a run so group-library lookups memoize. */
-  groupIdMemo?: GroupIDMemo;
-  /** Shared across a run so parent-item/annotation tag lookups memoize. */
-  tagMemo?: TagMemo;
   /**
    * The initiating batch's retained outcomes, so the Child Notes this run
    * imports reuse the Literature Note's own excerpt resolutions.
@@ -164,10 +165,9 @@ export interface NoteImport {
 }
 
 export interface ImportNoteOptions {
-  client: NodeDatabaseClient;
+  /** Bound to the calling operation's Snapshot. */
+  reads: ZoteroReadsApi;
   settings: ProfileBindingSettings;
-  groupIdMemo?: GroupIDMemo;
-  tagMemo?: TagMemo;
   attachmentFolderCache?: Map<string, string>;
   /** Explicit overwrite target; omitted resolves by imported-note index. */
   targetFile?: TFile;
@@ -180,8 +180,7 @@ export interface ImportNoteOptions {
 }
 
 interface PrepareExplicitImportOptions {
-  client: NodeDatabaseClient;
-  groupIdMemo?: GroupIDMemo;
+  reads: ZoteroReadsApi;
   orphanProfile?: ProfileSelector;
 }
 
@@ -261,10 +260,8 @@ async function prepareImport(
   if (!profile)
     throw new NoteImportProfileError(DEFAULT_PROFILE, { path: sourcePath });
   const run: RunContext = {
-    client: options.client,
+    reads: options.reads,
     settings,
-    groupIdMemo: options.groupIdMemo,
-    tagMemo: options.tagMemo,
     attachmentFolderCache: new Map(),
     profile,
     outcomes: options.outcomes,
@@ -286,13 +283,15 @@ async function doImportNote(
 ): Promise<WriteOutcome> {
   await ctx.profile.ready;
   return ctx.writes.add(async () => {
-    const { existing, profile } = explicitImportTarget(ctx, note, options);
+    const { existing, profile } = await explicitImportTarget(
+      ctx,
+      note,
+      options,
+    );
     await using stack = new AsyncDisposableStack();
     const run: RunContext = {
-      client: options.client,
+      reads: options.reads,
       settings: profile.settings,
-      groupIdMemo: options.groupIdMemo,
-      tagMemo: options.tagMemo,
       attachmentFolderCache: options.attachmentFolderCache ?? new Map(),
       profile,
       reportExcerpts: options.reportExcerpts,
@@ -325,7 +324,7 @@ async function prepareExplicitImport(
   options: PrepareExplicitImportOptions,
 ): Promise<PreparedExplicitImport> {
   await ctx.profile.ready;
-  const { existing, profile, source, sourcePath } = explicitImportTarget(
+  const { existing, profile, source, sourcePath } = await explicitImportTarget(
     ctx,
     note,
     options,
@@ -349,9 +348,8 @@ async function prepareExplicitImport(
     path,
     import: (current, runOptions) =>
       ctx.writes.add(async () => {
-        const target = explicitImportTarget(ctx, current, {
-          client: runOptions.client,
-          groupIdMemo: runOptions.groupIdMemo,
+        const target = await explicitImportTarget(ctx, current, {
+          reads: runOptions.reads,
           orphanProfile,
         });
         if (
@@ -382,10 +380,8 @@ async function prepareExplicitImport(
             ? { action: "overwrite", file: existing }
             : { action: "create", path },
           run: {
-            client: runOptions.client,
+            reads: runOptions.reads,
             settings: profile.settings,
-            groupIdMemo: runOptions.groupIdMemo,
-            tagMemo: runOptions.tagMemo,
             attachmentFolderCache:
               runOptions.attachmentFolderCache ?? new Map(),
             profile,
@@ -398,7 +394,7 @@ async function prepareExplicitImport(
   };
 }
 
-function explicitImportTarget(
+async function explicitImportTarget(
   ctx: Ctx,
   note: ChildNote,
   options: PrepareExplicitImportOptions & { targetFile?: TFile },
@@ -407,7 +403,7 @@ function explicitImportTarget(
     (options.targetFile
       ? ctx.app.vault.getFileByPath(options.targetFile.path)
       : null) ?? ctx.noteIndex.getImportedNoteByNoteKey(note.indexedKey)[0];
-  const file = existing ?? parentLiteratureNote(ctx, note, options);
+  const file = existing ?? (await parentLiteratureNote(ctx, note, options));
   const source: PreparedExplicitImport["source"] = existing
     ? "existing"
     : file
@@ -501,6 +497,12 @@ async function flushQueue(
   options: { importFolder: string; run: RunContext },
 ): Promise<{ created: number; skipped: number; failed: number }> {
   if (queue.length === 0) return { created: 0, skipped: 0, failed: 0 };
+  // One read under the operation's Snapshot: the bodies come from the
+  // database state the Literature Note rendered from.
+  const bodies = await readNoteBodies(
+    options.run.reads,
+    queue.map((entry) => entry.note),
+  );
   await ensureImportFolder(ctx.app, options.importFolder);
   await using stack = new AsyncDisposableStack();
   // One flush is one initiating batch when nothing above owns a scope.
@@ -512,10 +514,7 @@ async function flushQueue(
   const results = await Promise.allSettled(
     queue.map((entry) =>
       ctx.writes.add(async () => {
-        const noteData = getNoteByKey(run.client, entry.note.key, {
-          libraryID: entry.note.libraryID,
-          memo: run.groupIdMemo,
-        });
+        const noteData = bodies.get(entry.note.indexedKey);
         if (!noteData) {
           logger.warn("Imported note vanished before flush; skipped", {
             noteKey: entry.note.indexedKey,
@@ -575,17 +574,16 @@ async function writeNote(
       run.settings,
       "note.import-annotations-as-template",
     );
-    const annotations =
-      templateMode && ctx.excerptImages
-        ? getAnnotationsByKey(
-            run.client,
-            noteAnnotationKeys(note.note),
-            note.libraryID,
-          )
-        : undefined;
+    const inputs = await readParseInputs(run.reads, note, {
+      html: note.note,
+      annotations: templateMode,
+    });
+    const annotations = ctx.excerptImages
+      ? inputs.annotations?.annotations
+      : undefined;
     if (annotations?.length) {
       excerpts = ctx.excerptImages!({
-        client: run.client,
+        reads: run.reads,
         notePath: path,
         settings: run.profile.settings,
         previousNote: mode.action === "overwrite" ? mode.file : undefined,
@@ -595,29 +593,26 @@ async function writeNote(
         excerpts.annotationImageLink(annotation);
       await excerpts.prepare();
     }
-    const renderAnnotationParagraph = templateMode
-      ? (keys: readonly string[]) =>
-          renderAnnotations(
-            run.client,
-            annotations ??
-              getAnnotationsByKey(run.client, keys, note.libraryID),
-            {
-              template: ctx.template,
-              zoteroPref: ctx.zoteroPref,
-              attachmentImport: batch,
-              annotationImageLink: excerpts?.annotationImageLink,
-              groupIdMemo: run.groupIdMemo,
-              tagMemo: run.tagMemo,
-              renderAnnotation: (data) =>
-                ctx.template.renderProfileAnnotation(data, {
-                  profile: run.profile,
-                }),
-            },
-          )
+    const sources = inputs.annotations;
+    // The prepass asks for the paragraphs `noteAnnotationKeys` selected, so
+    // the sources already hold every annotation it renders.
+    const renderAnnotationParagraph = sources
+      ? () =>
+          renderAnnotationSources(sources, {
+            template: ctx.template,
+            zoteroPref: ctx.zoteroPref,
+            attachmentImport: batch,
+            annotationImageLink: excerpts?.annotationImageLink,
+            renderAnnotation: (data) =>
+              ctx.template.renderProfileAnnotation(data, {
+                profile: run.profile,
+              }),
+          })
       : undefined;
     body = parseNote(TurndownService, note.note, {
-      client: run.client,
-      libraryID: note.libraryID,
+      citedItems: inputs.citedItems,
+      groupID: note.groupID,
+      attachments: inputs.attachments,
       renderCite: (items) => ctx.template.renderCitation(items, "main"),
       pathContext: {
         dataDir: ctx.zoteroPref.dataDir,
@@ -674,17 +669,92 @@ async function writeNote(
 }
 
 /** The parent Literature Note an explicitly created note inherits its Profile from. */
-function parentLiteratureNote(
+async function parentLiteratureNote(
   ctx: Ctx,
   note: ChildNote,
-  options: Pick<ImportNoteOptions, "client" | "groupIdMemo">,
-): TFile | undefined {
+  options: Pick<ImportNoteOptions, "reads">,
+): Promise<TFile | undefined> {
   if (note.parentItemID === null) return undefined;
-  const parent = getItemsByID(options.client, [note.parentItemID], {
-    memo: options.groupIdMemo,
-  })[0];
+  const parent = await readDisplayRef(options.reads, note.parentItemID);
   if (!parent) return undefined;
   return ctx.noteIndex.getNotesByItemKey(parent.indexedKey)[0];
+}
+
+/** The live bodies of `notes`, keyed by Indexed Key; a vanished note is absent. */
+async function readNoteBodies(
+  reads: ZoteroReadsApi,
+  notes: readonly ChildNote[],
+): Promise<Map<string, Note>> {
+  const keysByLibrary = Map.groupBy(notes, (note) => note.libraryID);
+  const bodies = await Effect.runPromise(
+    Effect.forEach(
+      keysByLibrary,
+      ([libraryID, inLibrary]) =>
+        reads.NoteBodies({
+          libraryID,
+          keys: inLibrary.map((note) => note.key),
+        }),
+      { concurrency: "unbounded" },
+    ),
+  );
+  return new Map(bodies.flat().map((note) => [note.indexedKey, note]));
+}
+
+/** The rows {@link parseNote} and the annotation prepass read for one note. */
+interface ParseInputs {
+  citedItems: ReadonlyMap<string, Item>;
+  attachments: ReadonlyMap<string, Attachment>;
+  /** Set when the note's annotation paragraphs render through the template. */
+  annotations?: AnnotationSources;
+}
+
+const NO_ANNOTATIONS: AnnotationSources = {
+  annotations: [],
+  attachments: [],
+  parentItems: [],
+  tagsByItemID: new Map(),
+  username: null,
+};
+
+/** Read every row the conversion of `html` needs, before the synchronous parse. */
+async function readParseInputs(
+  reads: ZoteroReadsApi,
+  note: Pick<Note, "libraryID" | "groupID">,
+  options: { html: string; annotations: boolean },
+): Promise<ParseInputs> {
+  const { html } = options;
+  const { citedIndexedKeys, attachmentKeys } = noteReferences(
+    html,
+    note.groupID,
+  );
+  const annotationKeys = options.annotations ? noteAnnotationKeys(html) : [];
+  const [citedItems, attachments, annotations] = await Effect.runPromise(
+    Effect.all(
+      [
+        citedIndexedKeys.length > 0
+          ? reads.ItemsByIndexedKeys({ indexedKeys: citedIndexedKeys })
+          : Effect.succeed(new Map<string, Item>()),
+        attachmentKeys.length > 0
+          ? reads.AttachmentsByKeys({
+              libraryID: note.libraryID,
+              keys: attachmentKeys,
+            })
+          : Effect.succeed([]),
+        annotationKeys.length > 0
+          ? reads.AnnotationSources({
+              libraryID: note.libraryID,
+              keys: annotationKeys,
+            })
+          : Effect.succeed(options.annotations ? NO_ANNOTATIONS : undefined),
+      ],
+      { concurrency: "unbounded" },
+    ),
+  );
+  return {
+    citedItems,
+    attachments: new Map(attachments.map((a) => [a.key, a])),
+    ...(annotations && { annotations }),
+  };
 }
 
 export class NoteImportProfileError extends Error {

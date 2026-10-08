@@ -1,23 +1,21 @@
 // Prepares excerpt helpers once, then counts only helpers used by the final render.
+import { Effect } from "effect";
 import type { App, TFile } from "obsidian";
 
 import {
   annotationHasCacheImage,
   annotationOpenUri,
   annotationTypeToName,
-  getAttachmentByItemId,
-  getLibraries,
-  getZoteroDatabaseIdentity,
   parseAnnotationPosition,
 } from "@zotlit/db";
 import type { Annotation, AnnotationResolvers, TemplateLink } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
 
 import { attachmentFileLink } from "@/lib/annotation-render";
 import { getLogger } from "@/lib/log";
 import type { Settings } from "@/services/settings/schema";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 import { createExcerptLink, summarizeExcerpts } from "./helper";
 import type { ExcerptSummary } from "./helper";
@@ -63,7 +61,11 @@ export interface PreparedExcerpts {
   summary(): ExcerptSummary;
 }
 export type ExcerptPreparation = (options: {
-  client: NodeDatabaseClient;
+  /** The reads of the write the excerpts serve, bound to its Snapshot. */
+  reads: Pick<
+    ZoteroReadsApi,
+    "AttachmentsByKeys" | "DatabaseIdentity" | "Libraries"
+  >;
   notePath: string;
   settings: Readonly<Settings>;
   previousNote?: TFile;
@@ -80,7 +82,7 @@ export function createExcerptPreparation(deps: {
   resolver: Pick<ExcerptImageService, "operation">;
   paths: AttachmentPathContext;
 }): ExcerptPreparation {
-  return ({ client, notePath, settings, previousNote, outcomes }) => {
+  return ({ reads, notePath, settings, previousNote, outcomes }) => {
     const candidates = new Map<
       string,
       {
@@ -111,16 +113,40 @@ export function createExcerptPreparation(deps: {
         return candidate.helper;
       },
       async prepare() {
+        // Every database input is read before the vault, in one batch.
+        const keysByLibrary = Map.groupBy(
+          candidates.values(),
+          ({ annotation }) => annotation.libraryID,
+        );
+        const [database, libraries, attachmentLists] = await Effect.runPromise(
+          Effect.all(
+            [
+              reads.DatabaseIdentity({}),
+              reads.Libraries({}),
+              Effect.forEach(
+                keysByLibrary,
+                ([libraryID, group]) =>
+                  reads.AttachmentsByKeys({
+                    libraryID,
+                    keys: group.map(({ annotation }) => annotation.parentKey),
+                  }),
+                { concurrency: "unbounded" },
+              ),
+            ],
+            { concurrency: "unbounded" },
+          ),
+        );
+        const attachments = new Map(
+          attachmentLists.flat().map((a) => [a.itemID, a]),
+        );
         await using operation = deps.resolver.operation({ outcomes });
         const previousPaths = previousNote
           ? await referencedExcerptPaths(deps.app, previousNote)
           : [];
-        const database = getZoteroDatabaseIdentity(client);
-        const libraries = getLibraries(client);
         for (const candidate of candidates.values()) {
           const a = candidate.annotation;
           try {
-            const attachment = getAttachmentByItemId(client, a.parentItemID);
+            const attachment = attachments.get(a.parentItemID);
             if (!attachment) continue;
             const position = parseAnnotationPosition(
               a.position,

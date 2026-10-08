@@ -214,7 +214,7 @@ function setup(options: SetupOptions = {}) {
   const resolveCitekey = vi.fn(() => citekeyResolution);
   const citekeyOf = vi.fn(() => ITEM_CITEKEY);
   const getCitedBy = vi.fn(() => options.snapshot ?? CITED);
-  const lookupItem = vi.fn(() => lookup);
+  const lookupItem = vi.fn(() => Promise.resolve(lookup));
   const readDocument = vi.fn(() => Promise.resolve(documentReferences));
   const resolution = vi.fn(() => options.resolution ?? "fresh");
   const syntaxes = vi.fn(() => options.syntaxes ?? SYNTAXES);
@@ -649,7 +649,7 @@ describe("zotlit:cited-by", () => {
       },
       lookupItem: () => {
         order.push("lookup");
-        return PRESENT;
+        return Promise.resolve(PRESENT);
       },
       readDocument: () => Promise.resolve(DOCUMENT),
     });

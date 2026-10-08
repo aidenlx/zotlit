@@ -1,13 +1,9 @@
 import type { Extension } from "@codemirror/state";
 // The citekey editor treatment service: it follows the settings that switch the
 // CodeMirror extension on and owns the click that opens a citekey's note.
+import { Effect } from "effect";
 import type { App, Plugin } from "obsidian";
 
-import {
-  getItemsByID,
-  getItemsByKey,
-  resolveIndexedKeyLibrary,
-} from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
@@ -29,7 +25,6 @@ import type {
   HoverPreferences,
   NavigationPane,
 } from "@/services/citekey-navigation";
-import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { NoteFeature } from "@/services/note-feature";
 import { createNoteInteractively } from "@/services/note-feature";
@@ -40,6 +35,7 @@ import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import type { ImportProfile, CreateProfile } from "@/setting-tab/profiles";
 
 import { citekeyDecorationsChanged, citekeyEditorExtension } from "./extension";
@@ -54,7 +50,7 @@ export interface CitekeyEditorDeps {
   noteIndex: NoteIndex;
   noteFeature: NoteFeature;
   zoteroPref: Pick<ZoteroPrefService, "dataDir">;
-  db: DatabaseService;
+  db: Pick<ZoteroReadsService, "state" | "ready">;
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "peek" | "on">;
   /** What a hovered citation shows. */
@@ -319,7 +315,7 @@ export class CitekeyEditor extends Service<void> {
       });
       this.#emitter.emit("citekey-ambiguous", {
         citekey,
-        candidates: describeCandidates(
+        candidates: await describeCandidates(
           { db: this.#db, libraryScope: this.#libraryScope },
           resolved.candidates,
         ),
@@ -367,16 +363,13 @@ export class CitekeyEditor extends Service<void> {
     pane: NavigationPane,
   ): Promise<void> {
     await this.#noteIndex.whenIndexed();
-    if (this.#db.state !== "ready") {
+    if (this.#db.state === "degraded") {
       this.#emitter.emit("item-unavailable", "database");
       return;
     }
     let item;
     try {
-      const selector = resolveIndexedKeyLibrary(this.#db.client, indexedKey);
-      item = selector
-        ? getItemsByKey(this.#db.client, selector.libraryID, [selector.key])[0]
-        : undefined;
+      item = await this.#readItem(indexedKey);
     } catch (error) {
       logger.warn("Cannot read Item for navigation", { indexedKey, error });
       this.#emitter.emit("item-unavailable", "database");
@@ -387,6 +380,15 @@ export class CitekeyEditor extends Service<void> {
       return;
     }
     await this.#openItem(item, pane);
+  }
+
+  /** The live Item an Indexed Key names, or `undefined` when none does. */
+  async #readItem(indexedKey: string) {
+    const { reads } = await this.#db.ready;
+    const items = await Effect.runPromise(
+      reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
+    );
+    return items.get(indexedKey);
   }
 
   /**
@@ -414,7 +416,7 @@ export class CitekeyEditor extends Service<void> {
       return;
     }
 
-    const [zoteroItem] = getItemsByID(this.#db.client, [item.itemID]);
+    const zoteroItem = await this.#readItem(item.indexedKey);
     if (!zoteroItem) {
       logger.debug("Citekey open blocked", {
         indexedKey: item.indexedKey,

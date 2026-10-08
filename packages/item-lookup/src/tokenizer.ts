@@ -1,24 +1,16 @@
 import { regex } from "arkregex";
 
-export interface ChsSegmenter {
-  cut(word: string, opts: { search: boolean }): string[];
-}
-
 export interface TokenizerOptions {
   intl: Intl.Segmenter;
-  chsSegmenter?: ChsSegmenter | null;
 }
 
-const CJK = regex("[\\u4e00-\\u9fa5]", "u");
 const DIACRITIC = regex("\\p{Diacritic}", "gu");
 
 export function tokenize(text: string, opts: TokenizerOptions): string[] {
   const tokens: string[] = [];
   for (const part of opts.intl.segment(text)) {
     if (!part.isWordLike) continue;
-    for (const token of segmentCjk(part.segment, opts.chsSegmenter)) {
-      tokens.push(...splitHyphenated(token));
-    }
+    tokens.push(...splitHyphenated(part.segment));
   }
   return tokens;
 }
@@ -58,14 +50,6 @@ export function normalizeWithIndexMap(text: string): {
   }
   indexMap.push(text.length);
   return { normalized: parts.join(""), indexMap };
-}
-
-function segmentCjk(
-  segment: string,
-  chsSegmenter: ChsSegmenter | null | undefined,
-): string[] {
-  if (!chsSegmenter || !CJK.test(segment)) return [segment];
-  return chsSegmenter.cut(segment, { search: true });
 }
 
 function splitHyphenated(token: string): string[] {

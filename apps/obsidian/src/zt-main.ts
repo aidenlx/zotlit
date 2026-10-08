@@ -2,6 +2,7 @@ import { getLanguage, Plugin, requestUrl, View } from "obsidian";
 import type { FileSystemAdapter } from "obsidian";
 import semverGte from "semver/functions/gte";
 
+import { printableCliHandler } from "@/lib/cli-rejection";
 import { DOCS_SITE_URL, WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
@@ -192,6 +193,23 @@ export default class ZotLitPlugin extends Plugin {
     return this.#services;
   }
 
+  /**
+   * Every zotlit:* command registers here, so each handler rejects with the
+   * text of its error: Obsidian prints any other rejection as [object Object].
+   */
+  override registerCliHandler(
+    ...[command, description, flags, handler]: Parameters<
+      Plugin["registerCliHandler"]
+    >
+  ): void {
+    super.registerCliHandler(
+      command,
+      description,
+      flags,
+      printableCliHandler(handler),
+    );
+  }
+
   /** Show the installer notice independently of the version check. */
   showInstallerUpdateNotice(): BaseNotice {
     return showInstallerUpdateNotice();
@@ -268,7 +286,7 @@ export default class ZotLitPlugin extends Plugin {
         profile: services.profile,
         plugin: this,
         settings: services.settings,
-        db: services.db,
+        db: services.zoteroReads,
         libraryScope: services.libraryScope,
         zoteroPref: services.zoteroPref,
         localServer: services.localServer,
@@ -288,6 +306,7 @@ export default class ZotLitPlugin extends Plugin {
         template: services.template,
         release: services.release,
         pandocEngine: services.pandocEngine,
+        chineseSegmenter: services.chineseSegmenter,
         languagePack,
       }),
     );
@@ -299,7 +318,7 @@ export default class ZotLitPlugin extends Plugin {
     });
     addCitationTemplateActions(this, { template: services.template });
     addProfileActions(this, { importProfile: services.importProfile });
-    addDatabaseActions(this, { db: services.db });
+    addDatabaseActions(this, { db: services.zoteroReads });
     addReleaseActions(this, { release: services.release });
     addIndexedKeyActions(this);
     addCitekeyEditorActions(this, { citekeyEditor: services.citekeyEditor });
@@ -310,13 +329,13 @@ export default class ZotLitPlugin extends Plugin {
     registerIndexedKeyFileMenu(this);
     addAttachmentOpenActions(this, {
       app: this.app,
-      db: services.db,
+      reads: services.zoteroReads,
       zoteroPref: services.zoteroPref,
       settings: services.settings,
     });
     registerAttachmentOpenFileMenu(this, {
       app: this.app,
-      db: services.db,
+      reads: services.zoteroReads,
       zoteroPref: services.zoteroPref,
       settings: services.settings,
     });
@@ -341,7 +360,7 @@ export default class ZotLitPlugin extends Plugin {
         zoteroPref: services.zoteroPref,
         profile: services.profile,
         app: this.app,
-        db: services.db,
+        zoteroReads: services.zoteroReads,
         settings: services.settings,
         libraryScope: services.libraryScope,
         noteFeature: services.noteFeature,
@@ -373,7 +392,7 @@ export default class ZotLitPlugin extends Plugin {
       createProfile: services.createProfile,
       importProfile: services.importProfile,
       app: this.app,
-      db: services.db,
+      reads: services.zoteroReads,
       lookup: services.itemLookup,
       noteIndex: services.noteIndex,
       noteFeature: services.noteFeature,
@@ -389,7 +408,7 @@ export default class ZotLitPlugin extends Plugin {
         profile: services.profile,
         app: this.app,
         settings: services.settings,
-        db: services.db,
+        zoteroReads: services.zoteroReads,
         libraryScope: services.libraryScope,
         zoteroPref: services.zoteroPref,
         noteFeature: services.noteFeature,
@@ -401,7 +420,8 @@ export default class ZotLitPlugin extends Plugin {
 
     registerAnnotView(this, {
       app: this.app,
-      db: services.db,
+      reads: services.zoteroReads,
+      libraryScope: services.libraryScope,
       liveUpdate: services.localServer,
       pdfReaders: services.pdfAnnotationEditor,
       annotations: services.annotationRepository,
@@ -410,7 +430,7 @@ export default class ZotLitPlugin extends Plugin {
       reportBlockedGesture: (attachmentKey) =>
         services.capabilityNotices.reportBlockedGesture(attachmentKey),
       libraryTagNames: (annotationKey) =>
-        libraryTagNames(services.db, annotationKey),
+        libraryTagNames(services.zoteroReads, annotationKey),
       zoteroPref: services.zoteroPref,
       noteFeature: services.noteFeature,
       noteIndex: services.noteIndex,
@@ -441,7 +461,7 @@ export default class ZotLitPlugin extends Plugin {
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
       customize,
       app: this.app,
-      db: services.db,
+      zoteroReads: services.zoteroReads,
       noteIndex: services.noteIndex,
       zoteroPref: services.zoteroPref,
       itemLookup: services.itemLookup,
@@ -450,7 +470,7 @@ export default class ZotLitPlugin extends Plugin {
       profile: services.profile,
       nativePreview: {
         app: this.app,
-        db: services.db,
+        zoteroReads: services.zoteroReads,
         noteIndex: services.noteIndex,
         zoteroPref: services.zoteroPref,
         settings: services.settings,
@@ -463,7 +483,7 @@ export default class ZotLitPlugin extends Plugin {
 
     registerTemplateDataExplorer(this, {
       app: this.app,
-      db: services.db,
+      zoteroReads: services.zoteroReads,
       noteIndex: services.noteIndex,
       zoteroPref: services.zoteroPref,
       itemLookup: services.itemLookup,
@@ -475,7 +495,7 @@ export default class ZotLitPlugin extends Plugin {
       app: this.app,
       itemLookup: services.itemLookup,
       profile: services.profile,
-      db: services.db,
+      zoteroReads: services.zoteroReads,
       noteIndex: services.noteIndex,
       zoteroPref: services.zoteroPref,
       settings: services.settings,
@@ -496,7 +516,7 @@ export default class ZotLitPlugin extends Plugin {
     registerReferencesView(this, {
       profile: services.profile,
       app: this.app,
-      db: services.db,
+      db: services.zoteroReads,
       citationIndex: services.citationIndex,
       libraryScope: services.libraryScope,
       citationText: services.citationText,
@@ -513,7 +533,7 @@ export default class ZotLitPlugin extends Plugin {
     registerCitationsCli(this, {
       app: this.app,
       citationIndex: services.citationIndex,
-      db: services.db,
+      db: services.zoteroReads,
       zoteroPref: services.zoteroPref,
     });
 
@@ -528,7 +548,7 @@ export default class ZotLitPlugin extends Plugin {
     registerTemplateWorkbench(this, {
       profile: services.profile,
       app: this.app,
-      db: services.db,
+      zoteroReads: services.zoteroReads,
       noteIndex: services.noteIndex,
       settings: services.settings,
       templates: services.template,
@@ -537,7 +557,7 @@ export default class ZotLitPlugin extends Plugin {
 
     registerPandocResolve(this, {
       app: this.app,
-      db: services.db,
+      reads: services.zoteroReads,
       zoteroPref: services.zoteroPref,
       settings: services.settings,
       profile: services.profile,
@@ -546,7 +566,7 @@ export default class ZotLitPlugin extends Plugin {
     registerPandocExport(this, {
       profile: services.profile,
       app: this.app,
-      db: services.db,
+      db: services.zoteroReads,
       citationIndex: services.citationIndex,
       pandocEngine: services.pandocEngine,
       zoteroPref: services.zoteroPref,
@@ -565,7 +585,8 @@ export default class ZotLitPlugin extends Plugin {
 
     registerWelcomeView(this, {
       app: this.app,
-      db: services.db,
+      reads: services.zoteroReads,
+      queries: services.queryClient,
       zoteroPref: services.zoteroPref,
       noteIndex: services.noteIndex,
       settings: services.settings,
@@ -599,26 +620,34 @@ export default class ZotLitPlugin extends Plugin {
     // lane as the filesystem watchers.
     stack.defer(
       services.localServer.on("db/updated", () => {
-        services.db.notifyExternalChange();
+        services.zoteroReads.notifyExternalChange();
       }),
     );
 
     // A saved pixel edit revalidates its Excerpt Image wherever the image
     // stands: the card that shows the Annotation, and — with no card on screen —
     // the device-local image the store already holds for it. One subscriber
-    // covers every surface that can save an edit.
+    // covers every surface that can save an edit. Each request reads the
+    // database first, so only the newest edit of an Annotation is revalidated:
+    // an older read that lands late would cancel the newer replacement.
+    const latestEdit = new Map<string, symbol>();
     stack.defer(
       services.annotationRepository.on(
         "excerpt-pixels-changed",
         (record, source) => {
-          const request = savedExcerptRequest({
+          const edit = Symbol(record.key);
+          latestEdit.set(record.key, edit);
+          void savedExcerptRequest({
             annotation: record,
             source,
             sourceScope: services.zoteroPref.dataDir,
-            db: services.db,
+            zoteroReads: services.zoteroReads,
             paths: services.zoteroPref,
+          }).then((request) => {
+            if (latestEdit.get(record.key) !== edit) return;
+            latestEdit.delete(record.key);
+            if (request) services.excerptDisplay.revalidate(request);
           });
-          if (request) services.excerptDisplay.revalidate(request);
         },
       ),
     );

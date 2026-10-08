@@ -54,12 +54,14 @@ export interface BatchListControls {
 export interface BatchManifest {
   readonly counts: BatchCounts;
   /**
-   * Render the full item listing into `parent`. Called once per phase that
-   * shows the list (confirm body, then the progress disclosure), rebuilding the
-   * row-icon registry each time since the prior phase's DOM was discarded.
+   * Render the item listing into `parent`. Called once per phase that shows
+   * the list (confirm body, then the progress disclosure), rebuilding the
+   * row-icon registry each time since the prior phase's DOM was discarded. A
+   * collapsed group mounts its rows when it first opens.
    */
   renderList(parent: HTMLElement, controls?: BatchListControls): void;
-  /** Flip a row's terminal status in place; no-op if the row isn't mounted. */
+  /** Record a row's terminal status; a mounted row flips in place, a row
+   * mounted later shows it. */
   setRowStatus(id: number, status: "done" | "skipped" | "failed"): void;
   /**
    * Render the outcome-grouped summary into `parent`. `finalStatus` carries the

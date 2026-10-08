@@ -1,10 +1,7 @@
 import type { Extension } from "@codemirror/state";
 import { MarkdownView } from "obsidian";
 import type { HoverLinkSource } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
-
-import { getItemsByID } from "@zotlit/db";
-import type { Item } from "@zotlit/db";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
@@ -16,16 +13,37 @@ import type { CreationProfileSelection } from "@/services/note-feature";
 import { NoteIndexStub } from "@/services/note-index/test-stub";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import {
+  inProcessReadsService,
+  memoryOpener,
+  seedWorksSql,
+  withState,
+} from "@/services/zotero-reads/test-utils";
+import type { SeededWork } from "@/services/zotero-reads/test-utils";
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 import type { LiteratureNoteProfileChoice } from "@/views/quick-switch/profile-picker";
 
 import { CitekeyEditor } from "./service";
 import type { AmbiguousCitekey } from "./service";
 
-vi.mock("@zotlit/db", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@zotlit/db")>();
-  return { ...actual, getItemsByID: vi.fn(() => []) };
+/** Every reads stand-in a test opened, disposed after it. */
+const opened: AsyncDisposable[] = [];
+afterEach(async () => {
+  for (const reads of opened.splice(0)) await reads[Symbol.asyncDispose]();
 });
+
+/**
+ * ZoteroReads on the in-process adapter over My Library and the Shared group
+ * (group 7, Library 4), holding `works`.
+ */
+function reads(works: readonly SeededWork[] = []) {
+  const sql = `${seedWorksSql(works)}
+    insert into libraries (libraryID, type) values (4, 'group');
+    insert into groups (groupID, libraryID, name) values (7, 4, 'Shared group');`;
+  const service = inProcessReadsService(memoryOpener(() => sql).open);
+  opened.push(service);
+  return withState(service, "ready");
+}
 
 vi.mock("@/views/quick-switch/profile-picker", () => ({
   chooseLiteratureNoteProfile: vi.fn(),
@@ -71,7 +89,7 @@ describe("CitekeyEditor Profile creation", () => {
       citationIndex,
       citationText: new CitationTextStub(),
       zoteroPref: { dataDir: null },
-      db: { state: "ready", client: {} },
+      db: reads([{ itemID: item.itemID, key: item.key }]),
       noteFeature: {
         resolveCreationProfile: async () => selection,
         prepareCreationProfiles: async () => [
@@ -96,7 +114,6 @@ describe("CitekeyEditor Profile creation", () => {
         ],
       },
     } as never);
-    vi.mocked(getItemsByID).mockReturnValue([item as Item]);
     return { service, create, openLinkText, citationIndex };
   }
 
@@ -376,25 +393,31 @@ describe("CitekeyEditor ambiguous citation keys", () => {
   const AMBIGUOUS: CitekeyResolution = {
     kind: "ambiguous",
     candidates: [
-      { itemID: 11, libraryID: 1, key: "DOE2024", indexedKey: "DOE2024" },
-      { itemID: 22, libraryID: 4, key: "ROE2025", indexedKey: "ROE2025g7" },
+      { itemID: 11, libraryID: 1, key: "DEAA2345", indexedKey: "DEAA2345" },
+      { itemID: 22, libraryID: 4, key: "REBB3456", indexedKey: "REBB3456g7" },
     ],
   };
 
-  function zoteroItem(itemID: number, title: string, lastName: string): Item {
+  function zoteroItem(
+    itemID: number,
+    title: string,
+    lastName: string,
+  ): SeededWork {
+    const personal = itemID === 11;
     return {
       itemID,
-      libraryID: itemID === 11 ? 1 : 4,
-      key: itemID === 11 ? "DOE2024" : "ROE2025",
-      creators: [{ creatorType: "author", lastName, firstName: "A" }],
-      primaryCreatorType: "author",
-      fields: { itemType: "journalArticle", title, date: "2024" },
-    } as unknown as Item;
+      libraryID: personal ? 1 : 4,
+      key: personal ? "DEAA2345" : "REBB3456",
+      title,
+      date: "2024",
+      creators: [["A", lastName]],
+    };
   }
 
   async function openEditor(
     notes: Record<string, { path: string }[]> = {},
     opened: { path: string; pane: unknown }[] = [],
+    works: readonly SeededWork[] = [],
   ) {
     const citationIndex = new CitationIndexStub({ doe2024: AMBIGUOUS });
     const ambiguities: AmbiguousCitekey[] = [];
@@ -424,7 +447,7 @@ describe("CitekeyEditor ambiguous citation keys", () => {
           unavailable: [],
         },
       },
-      db: { state: "ready", client: {} },
+      db: reads(works),
       settings: new SettingsStub(),
     } as never);
     await service.ready;
@@ -433,12 +456,12 @@ describe("CitekeyEditor ambiguous citation keys", () => {
   }
 
   it("reports every candidate with its summary, Library name, and bare Zotero item key", async () => {
-    vi.mocked(getItemsByID).mockReturnValue([
+    const items = [
       zoteroItem(11, "A study of citations", "Doe"),
       zoteroItem(22, "Another study", "Roe"),
-    ]);
+    ];
     const opened: { path: string; pane: unknown }[] = [];
-    const { service, ambiguities } = await openEditor({}, opened);
+    const { service, ambiguities } = await openEditor({}, opened, items);
 
     await service.openCitekey("doe2024", false);
 
@@ -455,12 +478,12 @@ describe("CitekeyEditor ambiguous citation keys", () => {
       {
         summary: "Doe (2024): A study of citations",
         library: null,
-        key: "DOE2024",
+        key: "DEAA2345",
       },
       {
         summary: "Roe (2024): Another study",
         library: "Shared group",
-        key: "ROE2025",
+        key: "REBB3456",
       },
     ]);
     await service[Symbol.asyncDispose]();
@@ -470,8 +493,8 @@ describe("CitekeyEditor ambiguous citation keys", () => {
   // shows none of them: a hover implies no identity the key does not carry.
   it("previews no note for a citekey that names several Items", async () => {
     const { service } = await openEditor({
-      DOE2024: [{ path: "Doe 2024.md" }],
-      ROE2025g7: [{ path: "Roe 2025.md" }],
+      DEAA2345: [{ path: "Doe 2024.md" }],
+      REBB3456g7: [{ path: "Roe 2025.md" }],
     });
 
     expect(service.hoverNotePath("doe2024")).toBeNull();
@@ -479,10 +502,9 @@ describe("CitekeyEditor ambiguous citation keys", () => {
   });
 
   it("opens a chosen candidate by its exact Indexed Key without resolving the key again", async () => {
-    vi.mocked(getItemsByID).mockReturnValue([]);
     const opened: { path: string; pane: unknown }[] = [];
     const { service, citationIndex, ambiguities } = await openEditor(
-      { ROE2025g7: [{ path: "Roe 2025.md" }] },
+      { REBB3456g7: [{ path: "Roe 2025.md" }] },
       opened,
     );
     await service.openCitekey("doe2024", "tab");

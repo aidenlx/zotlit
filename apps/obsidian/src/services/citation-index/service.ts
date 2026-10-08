@@ -1,15 +1,14 @@
 // The vault-wide Citation Index: literal-citekey occurrences per file, wikilinks derived at query time.
 
+import { Effect, Stream } from "effect";
 import { TFile } from "obsidian";
 import type { App, LinkCache, TAbstractFile } from "obsidian";
 
-import { getCitekeysByLibrary } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { registerEvent } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import { yieldToMain } from "@/lib/yield-to-main";
-import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
@@ -17,6 +16,7 @@ import type { Held, QueryClientService } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { groupCitations } from "./query";
 import type { Citation, ResolvedNote } from "./query";
@@ -27,7 +27,7 @@ import {
 } from "./scan";
 import type { CitationOccurrence, CitationSyntax } from "./scan";
 import { CitekeySnapshot } from "./snapshot";
-import type { CitekeyResolution, ReadCitekeys, SnapshotItem } from "./snapshot";
+import type { CitekeyResolution, SnapshotItem } from "./snapshot";
 import { openCitekeyStore } from "./store";
 import type { CitekeyRecord, CitekeyStore, FileScan } from "./store";
 
@@ -167,7 +167,7 @@ export interface CitationIndexOptions {
   app: App;
   noteIndex: Pick<NoteIndex, "getNotesByItemKey">;
   settings: Pick<SettingsService, "ready" | "current" | "subscribe">;
-  db: Pick<DatabaseService, "state" | "client" | "ready" | "on">;
+  reads: Pick<ZoteroReadsService, "state" | "ready" | "on" | "snapshot">;
   /** Which Libraries a Citation Key resolves against. */
   libraryScope: Pick<
     LibraryScopeService,
@@ -180,12 +180,6 @@ export interface CitationIndexOptions {
    * @default openCitekeyStore
    */
   openStore?: (app: App) => Promise<CitekeyStore>;
-  /**
-   * The bulk read the snapshot rebuilds from.
-   *
-   * @default getCitekeysByLibrary
-   */
-  readCitekeys?: ReadCitekeys;
   /** The plugin-wide query client every Held Read is realized on. */
   queryClient: QueryClientService;
 }
@@ -208,10 +202,9 @@ export class CitationIndex extends Service<void> {
   readonly #app;
   readonly #noteIndex;
   readonly #settings;
-  readonly #db;
+  readonly #reads;
   readonly #libraryScope;
   readonly #openStore;
-  readonly #readCitekeys;
   readonly #emitter = createNanoEvents<CitationIndexEvents>();
   /** Scans by path; a path it covers with matching mtime and size needs no read. */
   readonly #scans = new Map<string, FileScan>();
@@ -238,10 +231,9 @@ export class CitationIndex extends Service<void> {
     this.#app = options.app;
     this.#noteIndex = options.noteIndex;
     this.#settings = options.settings;
-    this.#db = options.db;
+    this.#reads = options.reads;
     this.#libraryScope = options.libraryScope;
     this.#openStore = options.openStore ?? openCitekeyStore;
-    this.#readCitekeys = options.readCitekeys ?? getCitekeysByLibrary;
     this.#queries = options.queryClient;
     this.ready = this.#load();
   }
@@ -521,7 +513,7 @@ export class CitationIndex extends Service<void> {
       throw new DOMException("The citation index stopped", "AbortError");
     return await this.#queries.readFresh(
       SNAPSHOT_KEY,
-      () => this.#readSnapshot(),
+      ({ signal }) => this.#readSnapshot(signal),
       signal,
     );
   }
@@ -638,11 +630,19 @@ export class CitationIndex extends Service<void> {
         }),
       ),
     );
-    stack.defer(this.#db.on("changed", () => this.#invalidateSnapshot()));
+    stack.defer(this.#reads.on("changed", () => this.#invalidateSnapshot()));
     // Library Scope decides which Libraries a Citation Key resolves against,
     // so narrowing or widening it can turn an Ambiguous key unique and back.
     stack.defer(
       this.#libraryScope.on("changed", () => this.#invalidateSnapshot()),
+    );
+    // Every local Library is read for the reverse lookup, and Library Scope
+    // settles its Libraries after the database change: a Library outside the
+    // saved scope reaches the index through this event alone.
+    stack.defer(
+      this.#libraryScope.on("libraries-changed", () =>
+        this.#invalidateSnapshot(),
+      ),
     );
     this.#queries.client.setQueryDefaults(SNAPSHOT_KEY, {
       gcTime: Infinity,
@@ -801,12 +801,15 @@ export class CitationIndex extends Service<void> {
 
   #rebuildSnapshot(): Promise<CitekeySnapshot | null> {
     if (this.#stopped) return Promise.resolve(null);
-    return this.#queries.ask(SNAPSHOT_KEY, () => this.#readSnapshot());
+    return this.#queries.ask(SNAPSHOT_KEY, ({ signal }) =>
+      this.#readSnapshot(signal),
+    );
   }
 
-  async #readSnapshot(): Promise<CitekeySnapshot> {
+  /** @param signal ends the read when a newer rebuild supersedes it. */
+  async #readSnapshot(signal: AbortSignal): Promise<CitekeySnapshot> {
     try {
-      await this.#db.ready;
+      await this.#reads.ready;
       await this.#libraryScope.ready;
     } catch (error) {
       logger.warn("Resolution snapshot database unavailable", { error });
@@ -815,7 +818,7 @@ export class CitationIndex extends Service<void> {
     if (this.#stopped) throw new Error("The citation index stopped");
 
     const scope = this.#libraryScope.current;
-    if (this.#db.state !== "ready" || scope === null) {
+    if (this.#reads.state === "degraded" || scope === null) {
       logger.debug("Resolution snapshot rebuild skipped, database not ready");
       throw new Error("The Zotero database cannot be read");
     }
@@ -823,17 +826,32 @@ export class CitationIndex extends Service<void> {
       const inScope = new Set(
         scope.available.map((library) => library.libraryID),
       );
-      const rows = this.#libraryScope.libraries.flatMap((library) =>
-        this.#readCitekeys(this.#db.client, library.libraryID),
+      const { libraries } = this.#libraryScope;
+      // One Snapshot, so every Library's rows come from one database state.
+      const perLibrary = await Effect.runPromise(
+        Effect.scoped(
+          Effect.flatMap(this.#reads.snapshot, (reads) =>
+            Effect.forEach(libraries, (library) =>
+              Stream.runCollect(
+                reads.CitekeySnapshot({ libraryID: library.libraryID }),
+              ),
+            ),
+          ),
+        ),
+        { signal },
       );
+      const rows = perLibrary.flat(2);
       logger.debug("Resolution snapshot rebuilt", {
-        libraries: this.#libraryScope.libraries.length,
+        libraries: libraries.length,
         inScope: inScope.size,
         count: rows.length,
       });
       return CitekeySnapshot.from(rows, inScope);
     } catch (error) {
-      logger.warn("Resolution snapshot rebuild failed", { error });
+      // A newer rebuild superseded this one: nothing failed.
+      if (signal.aborted)
+        logger.debug("Resolution snapshot rebuild superseded");
+      else logger.warn("Resolution snapshot rebuild failed", { error });
       throw error;
     }
   }

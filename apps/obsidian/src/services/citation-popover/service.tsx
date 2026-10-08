@@ -5,13 +5,15 @@ import type { App, HoverParent } from "obsidian";
 import { registerEvent } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
-import { describeCandidates } from "@/services/citation-index/ambiguity";
+import {
+  describeCandidates,
+  readAmbiguousCandidates,
+} from "@/services/citation-index/ambiguity";
 import { readReferenceSources } from "@/services/citation-index/service";
 import type { CitationIndex } from "@/services/citation-index/service";
 import { shownCitationContent } from "@/services/citation-text/present";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
-import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { Inlines } from "@/services/pandoc/ast";
 import {
@@ -24,6 +26,7 @@ import { noteContent } from "@/services/pandoc/inline-content";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { ProfileReader } from "@/services/profile/service";
 import { Service } from "@/services/service-base";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { RenderedReference } from "@/views/references/entries";
 
@@ -37,7 +40,7 @@ const logger = getLogger("citation-popover");
 
 export interface CitationPopoverDeps {
   app: App;
-  db: Pick<DatabaseService, "state" | "client">;
+  db: Pick<ZoteroReadsService, "state" | "ready" | "acquireRead">;
   citationIndex: Pick<
     CitationIndex,
     "getDocumentCitationSet" | "resolveCitekey" | "resolution" | "on"
@@ -253,10 +256,13 @@ async function fill(
     },
     prepare:
       "work" in request && read.indexedKey
-        ? (block) => {
-            const { sources, database } = readReferenceSources(deps.db, [
+        ? async (block) => {
+            const { sources, database } = await readReferenceSources(deps.db, [
               { indexedKey: read.indexedKey!, linkpath: null },
             ]);
+            // The popover moved on to another visit while the read ran: this
+            // action neither runs nor touches what the popover shows now.
+            if (signal.aborted) return null;
             const source = sources.get(read.indexedKey!);
             if (database === "unreadable" || !source) {
               popover.render(
@@ -320,7 +326,8 @@ async function readWork(
     profileFailure: undefined,
     pending: false,
   };
-  if (deps.db.state !== "ready") return { ...empty, unavailable: "database" };
+  if (deps.db.state === "degraded")
+    return { ...empty, unavailable: "database" };
   if (work.kind === "citekey" && indexedKey === undefined) {
     return {
       ...empty,
@@ -330,14 +337,14 @@ async function readWork(
           ? {
               kind: "ambiguous",
               citekey: work.citekey,
-              candidates: describeCandidates(deps, resolution.candidates),
+              candidates: await describeCandidates(deps, resolution.candidates),
             }
           : { kind: "unresolved", citekey: work.citekey },
       ],
     };
   }
   if (indexedKey === undefined) return empty;
-  const { sources, database } = readReferenceSources(deps.db, [
+  const { sources, database } = await readReferenceSources(deps.db, [
     { indexedKey, linkpath: null },
   ]);
   if (database === "unreadable") return { ...empty, unavailable: "database" };
@@ -395,7 +402,7 @@ async function readBlocks(
   // Read beside the citations it qualifies: this read resolved against the
   // snapshot as it stood here, and the popover redraws on the next hover.
   const pending = deps.citationIndex.resolution === null;
-  const { sources } = readReferenceSources(deps.db, citations);
+  const { sources } = await readReferenceSources(deps.db, citations);
   // The hovered note's own Citation Presentation, so the popover shows what the
   // References Sidebar of that note shows — including nothing formatted at all
   // where the note's declared style or language cannot be rendered with.
@@ -424,6 +431,14 @@ async function readBlocks(
   // found them: a Citation Presentation change drops what was held for this
   // note, and this read is what puts the note text and the serials back.
   const text = await deps.citationText.read(file.path, { signal });
+  // Read as the popover fills, so an Ambiguous Citation Key states the
+  // candidates the current Library Scope names — and no candidate is
+  // described for the citations that resolve.
+  const ambiguous = await readAmbiguousCandidates(
+    deps,
+    (citekey) => deps.citationIndex.resolveCitekey(citekey),
+    request.works.map(({ citekey }) => citekey),
+  );
   // A note-class style writes its citation as a note the surfaces stand serials
   // in place of, so the popover is where that text is read — taken from the
   // formatted text of the very occurrence the pointer is on, and from no other
@@ -435,15 +450,7 @@ async function readBlocks(
   return {
     blocks: citationPopoverBlocks(request.works, entries, {
       serials: text?.entrySerials ?? false,
-      // Read as the popover fills, so an Ambiguous Citation Key states the
-      // candidates the current Library Scope names — and no candidate is
-      // described for the citations that resolve.
-      ambiguous: (citekey) => {
-        const resolution = deps.citationIndex.resolveCitekey(citekey);
-        return resolution?.kind === "ambiguous"
-          ? describeCandidates(deps, resolution.candidates)
-          : null;
-      },
+      ambiguous,
     }),
     note: formatted ? noteContent(formatted.text.content) : undefined,
     profileFailure:

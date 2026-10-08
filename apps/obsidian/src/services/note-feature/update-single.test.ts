@@ -29,14 +29,18 @@ function noteLessDeps(): SingleUpdateDeps {
   return {
     profile: profileReader(),
     app: {} as SingleUpdateDeps["app"],
-    db: {
-      get client(): never {
-        throw new Error("create path reached: db.client read");
+    zoteroReads: {
+      state: "ready",
+      get ready(): never {
+        throw new Error("create path reached: ZoteroReads read");
       },
-    } as unknown as SingleUpdateDeps["db"],
+      acquireRead: () => {
+        throw new Error("create path reached: ZoteroReads lease acquired");
+      },
+    },
     settings: {} as SingleUpdateDeps["settings"],
     libraryScope: {
-      resolveWith: () => {
+      resolveLibraries: () => {
         throw new Error("create path reached: library scope resolved");
       },
     },

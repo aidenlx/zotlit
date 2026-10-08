@@ -3,23 +3,21 @@
 import { basename } from "node:path";
 
 import {
-  fetchAnnotationsTemplateData,
+  buildAnnotationsTemplateData,
   formatAnnotationSubpath,
   narrowBaseDataToCiteItemData,
   withAnnotationCitation,
 } from "@zotlit/db";
 import type {
-  Annotation,
   AnnotationFileLinkAnchor,
   AnnotationResolvers,
+  AnnotationSources,
   AnnotationTemplateContext,
   Attachment,
   FallibleTemplateLink,
-  GroupIDMemo,
-  TagMemo,
+  TemplateAnnotation,
   TemplateParentItemData,
 } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
 
@@ -59,8 +57,8 @@ export function attachmentFileLink(
 /**
  * Resolvers for direct attachment file paths and annotation rendering (comment
  * conversion, import-capable excerpt images). Shared by the full note context
- * (`buildNoteResolvers`) and the single-annotation drag/paragraph paths
- * ({@link renderAnnotations}), so both render annotations identically.
+ * (`buildNoteResolvers`) and the annotation paths
+ * ({@link renderAnnotationSources}), so both render annotations identically.
  */
 export function buildAnnotationResolvers(options: {
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
@@ -97,35 +95,47 @@ export function buildAnnotationResolvers(options: {
   };
 }
 
+/** How {@link renderAnnotationSources} renders. */
+interface RenderAnnotationsOptions {
+  template: Pick<TemplateService, "render" | "renderCitation">;
+  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
+  attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
+  renderAnnotation?: (data: AnnotationTemplateContext) => string;
+  annotationImageLink?: AnnotationResolvers["annotationImageLink"];
+}
+
 /**
- * Resolve already-fetched annotations to their template data and render each
- * through the `annotation` template, returning a `key → rendered string` map.
- * `attachmentImport` decides each excerpt-cache image and copies an approved
- * one into the target note's attachment folder.
+ * Resolve already-read {@link AnnotationSources} to their template data and
+ * render each through the `annotation` template, returning a `key → rendered
+ * string` map. `attachmentImport` decides each excerpt-cache image and copies
+ * an approved one into the target note's attachment folder. Reads no database.
  */
-export function renderAnnotations(
-  client: NodeDatabaseClient,
-  annotations: readonly Annotation[],
-  options: {
-    template: Pick<TemplateService, "render" | "renderCitation">;
-    zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
-    attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
-    groupIdMemo?: GroupIDMemo;
-    tagMemo?: TagMemo;
-    renderAnnotation?: (data: AnnotationTemplateContext) => string;
-    annotationImageLink?: AnnotationResolvers["annotationImageLink"];
-  },
+export function renderAnnotationSources(
+  sources: AnnotationSources,
+  options: RenderAnnotationsOptions,
 ): Map<string, string> {
-  const resolvers = buildAnnotationResolvers({
+  const dataByKey = buildAnnotationsTemplateData(
+    sources,
+    annotationResolvers(options),
+  );
+  return renderTemplateData(dataByKey, options);
+}
+
+function annotationResolvers(
+  options: RenderAnnotationsOptions,
+): AnnotationResolvers {
+  return buildAnnotationResolvers({
     zoteroPref: options.zoteroPref,
     attachmentImport: options.attachmentImport,
     annotationImageLink: options.annotationImageLink,
   });
-  const dataByKey = fetchAnnotationsTemplateData(client, annotations, {
-    resolvers,
-    groupIdMemo: options.groupIdMemo,
-    tagMemo: options.tagMemo,
-  });
+}
+
+/** Render each annotation's template data through the `annotation` template. */
+function renderTemplateData(
+  dataByKey: ReadonlyMap<string, TemplateAnnotation>,
+  options: RenderAnnotationsOptions,
+): Map<string, string> {
   const result = new Map<string, string>();
   for (const [key, data] of dataByKey) {
     const root = withAnnotationCitation(data, () =>

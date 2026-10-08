@@ -22,6 +22,10 @@ import * as m from "@/lib/i18n/generated/messages";
 import { excerptAssetIdentities } from "@/services/excerpt-image/materialize";
 import { defaults } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
+import {
+  inProcessReadsService,
+  sharedClientOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import { createLocalBridgeApp } from "./app";
 import { STABLE_DOCS_ORIGIN } from "./origins";
@@ -205,13 +209,7 @@ async function harness(
   const reads = createLocalBridgeReads({
     app,
     settings,
-    db: {
-      acquireRead: () =>
-        Promise.resolve({
-          client: sqlite,
-          [Symbol.dispose]() {},
-        }),
-    } as never,
+    zoteroReads: inProcessReadsService(sharedClientOpener(sqlite)),
     noteIndex: {
       whenIndexed: () => Promise.resolve(),
       getNotesByItemKey: (indexedKey: string) =>

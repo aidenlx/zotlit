@@ -7,6 +7,7 @@ import { itemSelectUri } from "@zotlit/db";
 
 import { openAttachments, zoteroAttachmentReader } from "@/lib/attachment-open";
 import { getLogger } from "@/lib/log";
+import type { MenuAnchor } from "@/lib/menu";
 import type { NavigationPane } from "@/services/citekey-navigation";
 
 import type { CitationEntryBlock } from "./blocks";
@@ -37,7 +38,7 @@ export interface CitationPopoverActionDeps {
   hide: () => void;
   switchProfile: (path: string) => void;
   /** Refresh source-less Item availability before any action. */
-  prepare?: (block: CitationEntryBlock) => CitationEntryBlock | null;
+  prepare?: (block: CitationEntryBlock) => Promise<CitationEntryBlock | null>;
 }
 
 export function createCitationPopoverActions({
@@ -46,45 +47,73 @@ export function createCitationPopoverActions({
   switchProfile,
   prepare,
 }: CitationPopoverActionDeps): CitationPopoverActions {
-  let completed = true;
-  const read = (block: CitationEntryBlock): CitationEntryBlock | null => {
-    const current = prepare ? prepare(block) : block;
-    completed = current !== null;
-    return current;
+  /** Whether the last action ran; `onDone` hides only after one that did. */
+  let completed: boolean | Promise<boolean> = true;
+  /**
+   * Run `action` on the block as it stands now. Without `prepare` the action
+   * runs at once; with it, once the fresh read settles.
+   */
+  const act = (
+    block: CitationEntryBlock,
+    action: (current: CitationEntryBlock) => void,
+  ): void => {
+    if (!prepare) {
+      action(block);
+      completed = true;
+      return;
+    }
+    completed = prepare(block).then((current) => {
+      if (current) action(current);
+      return current !== null;
+    });
   };
   return {
     onOpenNote(block, event) {
-      const current = read(block);
-      if (!current) return;
       const pane = navigationPaneOf(event);
-      logger.debug("Citation popover opens note", {
-        citekey: block.citekey,
-        pane,
+      act(block, (current) => {
+        logger.debug("Citation popover opens note", {
+          citekey: block.citekey,
+          pane,
+        });
+        open(current, pane);
       });
-      open(current, pane);
     },
     onOpenInZotero(block) {
-      const current = read(block);
-      if (!current) return;
-      logger.debug("Citation popover selects in Zotero", {
-        itemKey: block.itemKey,
+      act(block, (current) => {
+        logger.debug("Citation popover selects in Zotero", {
+          itemKey: block.itemKey,
+        });
+        window.open(itemSelectUri(current.itemKey, current.groupID));
       });
-      window.open(itemSelectUri(current.itemKey, current.groupID));
     },
     onOpenAttachment(block, event) {
-      const current = read(block);
-      if (!current) return;
-      logger.debug("Citation popover opens an attachment", {
-        itemKey: block.itemKey,
-        attachments: block.attachments.length,
-      });
-      openAttachments(current.attachments, {
-        reader: zoteroAttachmentReader,
-        event,
+      // With `prepare` the picker opens after the fresh read, when the button
+      // is no longer the event's target, so its box is read while dispatch is
+      // live. Without it the picker opens at once, on the button itself.
+      const button = event.currentTarget as HTMLElement;
+      const anchor: MenuAnchor | undefined = prepare
+        ? { rect: button.getBoundingClientRect(), doc: button.ownerDocument }
+        : undefined;
+      act(block, (current) => {
+        logger.debug("Citation popover opens an attachment", {
+          itemKey: block.itemKey,
+          attachments: block.attachments.length,
+        });
+        openAttachments(current.attachments, {
+          reader: zoteroAttachmentReader,
+          event,
+          anchor,
+        });
       });
     },
     onDone: () => {
-      if (completed) hide();
+      if (typeof completed === "boolean") {
+        if (completed) hide();
+        return;
+      }
+      void completed.then((done) => {
+        if (done) hide();
+      });
     },
     onSwitchProfile: switchProfile,
   };

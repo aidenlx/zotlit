@@ -5,6 +5,7 @@ import type { App } from "obsidian";
 import * as m from "@/lib/i18n/generated/messages";
 import { renderProfileRecovery } from "@/lib/profile-recovery";
 import { cn } from "@/lib/utils";
+import { yieldToMain } from "@/lib/yield-to-main";
 import type { BatchFailure } from "@/services/batch-run";
 import { describeSelectionSource } from "@/services/note-feature/selection-copy";
 
@@ -159,38 +160,100 @@ export const ROW_ICON_CLASS: Record<RowStatus, string> = {
 export const ICON_CLS = "zt:flex zt:shrink-0";
 
 /**
- * Sticky category label (Obsidian UI-smaller scale, not an editor heading): it
- * pins to the top of the scroll region so the current group stays labeled while
- * its rows scroll, over a modal-surface background that hides them underneath.
+ * Sticky group summary: it pins to the top of the scroll region so the current
+ * group stays labeled while its rows scroll, over a modal-surface background
+ * that hides them underneath.
  */
-export const SECTION_SUMMARY_CLS =
-  "zt:sticky zt:top-0 zt:z-10 zt:mb-1 zt:cursor-pointer zt:select-none zt:bg-(--modal-background) zt:py-1 zt:text-xs zt:font-semibold zt:uppercase zt:tracking-wide zt:text-(--text-muted)";
+export const GROUP_SUMMARY_CLS =
+  "zt:sticky zt:top-0 zt:z-10 zt:mb-1 zt:cursor-pointer zt:select-none zt:bg-(--modal-background) zt:py-1";
+
+/** Category label on a {@link GROUP_SUMMARY_CLS} summary (Obsidian UI-smaller
+ * scale, not an editor heading). */
+export const SECTION_SUMMARY_CLS = `${GROUP_SUMMARY_CLS} zt:text-xs zt:font-semibold zt:uppercase zt:tracking-wide zt:text-(--text-muted)`;
 
 /** Groups larger than this start collapsed, so the modal opens on a compact
  * overview of group headers and the user can collapse past a group of thousands
  * to reach the next one instead of scrolling through it. */
-export const SECTION_OPEN_MAX = 50;
+const SECTION_OPEN_MAX = 50;
+
+/** Rows one task mounts when a collapsed group opens. */
+const MOUNT_CHUNK = 200;
 
 // `content-visibility: auto` lets the browser skip layout/paint for off-screen
-// rows in an expanded group while keeping every <li> (and its updatable status
-// icon) live in the DOM; the intrinsic-size estimate keeps the scrollbar steady.
+// rows in an expanded group while keeping every mounted <li> (and its updatable
+// status icon) live in the DOM; the intrinsic-size estimate keeps the scrollbar
+// steady.
 const ROW_CLS =
   "zt:flex zt:items-center zt:gap-2 zt:py-0.5 zt:min-w-0 zt:[content-visibility:auto] zt:[contain-intrinsic-size:auto_1.5rem]";
 const ROW_LABEL_CLS = "zt:truncate zt:text-sm zt:text-(--text-normal)";
 
-/** Collapsible titled section: a sticky summary label above a reset `<ul>`;
- * `open` starts the group expanded (see {@link SECTION_OPEN_MAX}). */
-export function section(
+export interface RowGroupContent<T> {
+  items: readonly T[];
+  renderRow: (ul: HTMLElement, item: T) => void;
+  /** @default groups of at most {@link SECTION_OPEN_MAX} start open */
+  open?: boolean;
+}
+
+/**
+ * A collapsible group of `items`: a `<details>` whose `<ul>` holds one row per
+ * item. A group mounts its rows when it first opens, {@link MOUNT_CHUNK} per
+ * task, so the window keeps painting through a group of thousands; a group
+ * that starts open mounts its first chunk at once.
+ *
+ * @returns the group's `<summary>`, for the caller to fill
+ */
+export function rowGroup<T>(
   parent: HTMLElement,
-  header: string,
-  open: boolean,
+  summaryCls: string,
+  {
+    items,
+    renderRow,
+    open = items.length <= SECTION_OPEN_MAX,
+  }: RowGroupContent<T>,
 ): HTMLElement {
   const details = parent.createEl("details", {
     cls: "zt:mb-4 zt:last:mb-0",
     attr: open ? { open: "" } : {},
   });
-  details.createEl("summary", { text: header, cls: SECTION_SUMMARY_CLS });
-  return details.createEl("ul", { cls: "zt:m-0 zt:list-none zt:p-0" });
+  const summary = details.createEl("summary", { cls: summaryCls });
+  const ul = details.createEl("ul", { cls: "zt:m-0 zt:list-none zt:p-0" });
+  const mount = async () => {
+    for (let start = 0; start < items.length; start += MOUNT_CHUNK) {
+      if (start > 0) {
+        await yieldToMain();
+        // A phase change discards the group; its remaining rows go with it.
+        if (!ul.isConnected) return;
+      }
+      for (const item of items.slice(start, start + MOUNT_CHUNK))
+        renderRow(ul, item);
+    }
+  };
+  if (open) {
+    void mount();
+    return summary;
+  }
+  const onToggle = () => {
+    if (!details.open) return;
+    details.removeEventListener("toggle", onToggle);
+    void mount();
+  };
+  details.addEventListener("toggle", onToggle);
+  return summary;
+}
+
+/**
+ * {@link rowGroup} under a sticky category label.
+ *
+ * @returns the group's `<summary>`
+ */
+export function section<T>(
+  parent: HTMLElement,
+  header: string,
+  content: RowGroupContent<T>,
+): HTMLElement {
+  const summary = rowGroup(parent, SECTION_SUMMARY_CLS, content);
+  summary.setText(header);
+  return summary;
 }
 
 /** One checklist row: a leading icon span (returned for status styling) and a
@@ -232,9 +295,43 @@ export function row(
 }
 
 /** Paint a status icon into a row's leading span. */
-export function setRowIcon(icon: HTMLElement, status: RowStatus): void {
+function setRowIcon(icon: HTMLElement, status: RowStatus): void {
   icon.className = `${ICON_CLS} ${ROW_ICON_CLASS[status]}`;
+  icon.dataset["rowStatus"] = status;
   setIcon(icon, ROW_ICON[status]);
+}
+
+/**
+ * Each task row's status and, while the row is mounted, its icon. A run
+ * records a status for any row; a row shows its status whenever it mounts.
+ */
+export class RowStatusBoard {
+  /** Terminal status per task id; absent ids are pending. */
+  readonly #status = new Map<number, RowStatus>();
+  /** Status icon of each mounted row, keyed by task id. */
+  readonly #icons = new Map<number, HTMLElement>();
+
+  /** Mount one task row, painted with its recorded status. */
+  mount(
+    ul: HTMLElement,
+    task: BatchRow & { id: number; indent?: boolean },
+  ): void {
+    const icon = row(ul, task.label, task);
+    setRowIcon(icon, this.#status.get(task.id) ?? "pending");
+    this.#icons.set(task.id, icon);
+  }
+
+  /** Record a row's status; a mounted row flips in place. */
+  set(id: number, status: RowStatus): void {
+    this.#status.set(id, status);
+    const icon = this.#icons.get(id);
+    if (icon) setRowIcon(icon, status);
+  }
+
+  /** Forget the mounted icons once a phase discards their DOM. */
+  unmount(): void {
+    this.#icons.clear();
+  }
 }
 
 export interface StaticGroup {
@@ -247,16 +344,14 @@ export interface StaticGroup {
 /** A static (non-updating) section of icon + label rows, skipped when empty. */
 export function listGroup(parent: HTMLElement, group: StaticGroup): void {
   if (group.items.length === 0) return;
-  const ul = section(
-    parent,
-    group.header,
-    group.items.length <= SECTION_OPEN_MAX,
-  );
-  for (const item of group.items) {
-    const icon = row(ul, item.label, item);
-    icon.addClass(group.colorCls);
-    setIcon(icon, group.icon);
-  }
+  section(parent, group.header, {
+    items: group.items,
+    renderRow: (ul, item) => {
+      const icon = row(ul, item.label, item);
+      icon.addClass(group.colorCls);
+      setIcon(icon, group.icon);
+    },
+  });
 }
 
 /** Completed rows retain their confirmed Profile in each summary group. */

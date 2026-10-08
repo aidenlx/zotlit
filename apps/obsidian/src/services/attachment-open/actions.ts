@@ -1,14 +1,10 @@
 // Resolves a Literature Note to its Item's PDF Attachments, and the `open-pdf` command that opens them.
 
+import { Effect } from "effect";
 import { TFile } from "obsidian";
 import type { App, FileSystemAdapter, Plugin } from "obsidian";
 
 import type { Attachment } from "@zotlit/db";
-import {
-  getAttachmentsByParents,
-  getItemsByKey,
-  resolveIndexedKeyLibrary,
-} from "@zotlit/db";
 
 import {
   createObsidianAttachmentReader,
@@ -16,19 +12,22 @@ import {
 } from "@/lib/attachment-open";
 import type { AttachmentReader } from "@/lib/attachment-open";
 import * as m from "@/lib/i18n/generated/messages";
-import type { DatabaseService } from "@/services/database/service";
+import { getLogger } from "@/lib/log";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import { activateAnnotView } from "@/views/annot-view/register";
 
 import type { ObsidianOpenableAttachment } from "./resolve";
 import { toObsidianOpenableAttachments } from "./resolve";
 
-/** What resolving a Literature Note's Attachments needs — no `ready` wait, since a caller resolves at its own moment. */
+const logger = getLogger("attachment-open");
+
+/** What resolving a Literature Note's Attachments needs. */
 export interface AttachmentOpenLookupDeps {
   app: App;
-  db: Pick<DatabaseService, "state" | "client">;
+  reads: Pick<ZoteroReadsService, "acquireRead">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
   settings: Pick<SettingsService, "current">;
 }
@@ -54,9 +53,7 @@ export function createPdfReader(
   });
 }
 
-export interface AttachmentOpenDeps extends AttachmentOpenLookupDeps {
-  db: Pick<DatabaseService, "state" | "client" | "ready">;
-}
+export type AttachmentOpenDeps = AttachmentOpenLookupDeps;
 
 /**
  * Attachments already fetched from the database, narrowed to the
@@ -86,29 +83,42 @@ export function toObsidianOpenable(
  * Resolve a Literature Note's Indexed Key to its Item's Obsidian-Openable PDF
  * Attachments — shared by the `open-pdf` command, the file menu, and the
  * Quick Switcher's PDF chords, so a key→itemID lookup is written once.
+ *
+ * Both reads share one Snapshot, so a database swap between them cannot pair
+ * an itemID with another database's Attachments.
+ *
+ * @returns no Attachments while the database cannot be read.
  */
-export function resolveLiteratureNoteAttachments(
+export async function resolveLiteratureNoteAttachments(
   deps: AttachmentOpenLookupDeps,
   indexedKey: string,
-): ObsidianOpenableAttachment[] {
-  if (deps.db.state !== "ready") return [];
-  const resolved = resolveIndexedKeyLibrary(deps.db.client, indexedKey);
-  if (!resolved) return [];
-  const itemID = getItemsByKey(deps.db.client, resolved.libraryID, [
-    resolved.key,
-  ])[0]?.itemID;
-  if (itemID == null) return [];
-
-  const attachments = getAttachmentsByParents(deps.db.client, [itemID]);
-  return toObsidianOpenable(attachments, deps);
+): Promise<ObsidianOpenableAttachment[]> {
+  try {
+    await using lease = await deps.reads.acquireRead();
+    const { reads } = lease;
+    const items = await Effect.runPromise(
+      reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
+    );
+    const itemID = items.get(indexedKey)?.itemID;
+    if (itemID === undefined) return [];
+    const attachments = await Effect.runPromise(
+      reads.AttachmentsOf({ itemIDs: [itemID] }),
+    );
+    return toObsidianOpenable(attachments, deps);
+  } catch (error) {
+    logger.warn("Literature Note Attachments unavailable", {
+      indexedKey,
+      error,
+    });
+    return [];
+  }
 }
 
 async function runOpenPdfCommand(
   deps: AttachmentOpenDeps,
   indexedKey: string,
 ): Promise<void> {
-  await deps.db.ready;
-  const attachments = resolveLiteratureNoteAttachments(deps, indexedKey);
+  const attachments = await resolveLiteratureNoteAttachments(deps, indexedKey);
   openAttachments(attachments, {
     reader: createPdfReader(deps),
     app: deps.app,
