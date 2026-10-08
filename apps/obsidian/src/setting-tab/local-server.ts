@@ -1,9 +1,11 @@
 // The Advanced page's Local server group: the one loopback listener, the
-// toggle of each service it hosts, and the port it actually bound.
+// toggle of each service it hosts, and the port it actually bound. The live
+// update switch sits on the Zotero page beside the Companion it answers.
 import type { SettingGroupItem } from "obsidian";
 
 import { DOCS_COMPANION, DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
+import { revealSetting } from "@/lib/open-settings";
 
 import type { SettingsKey, SettingTabContext } from "./context";
 import { defaultPlaceholder } from "./placeholder";
@@ -27,13 +29,6 @@ export function localServerItems(
       name: m.settings_local_server_enabled_name(),
       desc: m.settings_local_server_enabled_desc(),
       control: { type: "toggle", key: "server.enabled" },
-    },
-    {
-      id: "settings_live_updates_enabled",
-      name: m.settings_live_updates_enabled_name(),
-      desc: liveUpdateDescription(),
-      visible: enabled,
-      control: { type: "toggle", key: "server.live-update" },
     },
     ...(ctx.webWorkbenchEnabled
       ? [
@@ -83,6 +78,61 @@ export function localServerItems(
         type: "text",
         key: "server.hostname",
         placeholder: defaultPlaceholder("server.hostname"),
+      },
+    },
+  ];
+}
+
+/**
+ * The Zotero page's Companion rows: the switch that answers the Companion, and
+ * the local server it rides on. The server hosts more than live updates, so
+ * its controls stay on the Advanced page; this row reports its state and links
+ * there. Turning the server off keeps the live update choice as it is.
+ */
+export function liveUpdatesItems(
+  ctx: SettingTabContext,
+): SettingGroupItem<SettingsKey>[] {
+  return [
+    {
+      id: "settings_live_updates_enabled",
+      name: m.settings_live_updates_enabled_name(),
+      desc: liveUpdateDescription(),
+      control: { type: "toggle", key: "server.live-update" },
+    },
+    {
+      id: "settings_zotero_local_server",
+      name: m.settings_advanced_local_server_heading(),
+      render: (setting) => {
+        setting.addButton((button) =>
+          button
+            .setButtonText(m.settings_zotero_local_server_open())
+            .onClick(() =>
+              revealSetting(
+                ctx.app,
+                ctx.manifest.id,
+                "settings_local_server_enabled",
+              ),
+            ),
+        );
+        // The server also turns on from the annotation view and Customize, and
+        // a bind can fail while it stays on, so the state line follows both
+        // the setting and the listener while the row is on screen.
+        const stack = new DisposableStack();
+        const apply = (): void => {
+          const port = ctx.localServer.effectivePort;
+          const listening = port !== null;
+          setting.setDesc(
+            listening
+              ? m.settings_zotero_local_server_on({ port })
+              : ctx.settings.current?.["server.enabled"]
+                ? m.settings_zotero_local_server_not_listening()
+                : m.settings_zotero_local_server_off(),
+          );
+          setting.descEl.toggleClass("mod-warning", !listening);
+        };
+        stack.defer(ctx.settings.subscribe(apply));
+        stack.defer(ctx.localServer.on("listening", apply));
+        return () => stack.dispose();
       },
     },
   ];

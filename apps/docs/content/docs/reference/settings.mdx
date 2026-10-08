@@ -387,7 +387,16 @@ workflow.
 
 ## Zotero [#zotero]
 
-Open this page from <SettingsPath page={m.settings_page_zotero()} />. It holds the connection to Zotero and the libraries ZotLit reads.
+Open this page from <SettingsPath page={m.settings_page_zotero()} />. It holds the connection to Zotero, the libraries ZotLit reads, and how ZotLit stays current with Zotero.
+
+| Label                                                | Key         | Control                                                                      | Default | Storage |
+| ---------------------------------------------------- | ----------- | ---------------------------------------------------------------------------- | ------- | ------- |
+| <UiLabel name={m.settings_db_file_name()} />         | (read-only) | Displays the status and resolved `zotero.sqlite` path, with a refresh action | None    | None    |
+| <UiLabel name={m.settings_page_zotero_location()} /> | None        | Sub-page with the [Zotero location](#zotero-location) rows                   | None    | None    |
+
+### Zotero location [#zotero-location]
+
+Open this sub-page from <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} />. These rows set where and how ZotLit reads Zotero. Change them when ZotLit cannot find your Zotero library or shows outdated data.
 
 <Callout type="info" title="Device Overrides">
   <UiLabel name={m.settings_db_profile_dir_name()} /> and{" "}
@@ -398,17 +407,12 @@ Open this page from <SettingsPath page={m.settings_page_zotero()} />. It holds t
   on multiple devices](/docs/how-to/sync-across-devices) for details.
 </Callout>
 
-### Connection [#connection]
-
-| Label                                                | Key                   | Control                                                                                                                                                                        | Default                                           | Storage    |
-| ---------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- | ---------- |
-| <UiLabel name={m.settings_zotero_editing_name()} />  | None                  | <UiLabel name={m.settings_zotero_editing_enable()} />, <UiLabel name={m.settings_zotero_editing_check()} />, and <UiLabel name={m.settings_zotero_editing_forget()} /> actions | Not allowed                                       | Per device |
-| <UiLabel name={m.settings_db_companion_name()} />    | None                  | <UiLabel name={m.settings_db_companion_install()} /> action                                                                                                                    | Not installed                                     | None       |
-| <UiLabel name={m.settings_db_stale_help_name()} />   | None                  | <UiLabel name={m.settings_db_stale_help_action()} /> action                                                                                                                    | None                                              | None       |
-| <UiLabel name={m.settings_db_profile_dir_name()} />  | (device-local)        | Profile picker                                                                                                                                                                 | <UiLabel name={m.settings_db_profile_auto()} />   | Per device |
-| <UiLabel name={m.settings_db_file_name()} />         | (read-only)           | Displays resolved `zotero.sqlite` path                                                                                                                                         | None                                              | None       |
-| <UiLabel name={m.settings_db_read_mode_name()} />    | `zotero.read-mode`    | Dropdown                                                                                                                                                                       | <UiLabel name={m.settings_db_read_mode_auto()} /> | Synced     |
-| <UiLabel name={m.settings_db_auto_refresh_name()} /> | `zotero.auto-refresh` | Toggle                                                                                                                                                                         | On                                                | Synced     |
+| Label                                               | Key                | Control                                                                  | Default                                           | Storage    |
+| --------------------------------------------------- | ------------------ | ------------------------------------------------------------------------ | ------------------------------------------------- | ---------- |
+| <UiLabel name={m.settings_db_profile_dir_name()} /> | (device-local)     | Profile picker                                                           | <UiLabel name={m.settings_db_profile_auto()} />   | Per device |
+| <UiLabel name={m.settings_db_data_dir_name()} />    | (device-local)     | Folder picker                                                            | <UiLabel name={m.settings_db_data_dir_auto()} />  | Per device |
+| <UiLabel name={m.settings_db_read_mode_name()} />   | `zotero.read-mode` | Dropdown                                                                 | <UiLabel name={m.settings_db_read_mode_auto()} /> | Synced     |
+| <UiLabel name={m.settings_db_source_id_name()} />   | (read-only)        | Displays the 8-character hex identifier for the connected Zotero install | None                                              | None       |
 
 <UiLabel name={m.settings_db_read_mode_name()} /> options:
 
@@ -418,27 +422,6 @@ Open this page from <SettingsPath page={m.settings_page_zotero()} />. It holds t
 | <UiLabel name={m.settings_db_read_mode_reflink()} />   | Fast, lightweight snapshot. What <UiLabel name={m.settings_db_read_mode_auto()} /> uses on macOS and Linux filesystems that support cloning.                                           |
 | <UiLabel name={m.settings_db_read_mode_copy()} />      | Byte-for-byte copy of the database file. Works on any filesystem but slower and uses more disk space. <UiLabel name={m.settings_db_read_mode_auto()} /> does not select this mode.     |
 | <UiLabel name={m.settings_db_read_mode_immutable()} /> | Reads the database file directly. What <UiLabel name={m.settings_db_read_mode_auto()} /> falls back to when cloning is unavailable. Recent edits in Zotero may not appear immediately. |
-
-#### Zotero editing [#zotero-editing]
-
-<UiLabel name={m.settings_zotero_editing_name()} /> shows whether ZotLit can
-change annotations in Zotero. Reading annotations needs no permission. Editing
-needs four things:
-
-- Zotero 10 or later.
-- Zotero running on the same computer.
-- In Zotero, **Allow other applications on this computer to communicate with Zotero** turned on, under Settings → Advanced.
-- Your permission. Select <UiLabel name={m.settings_zotero_editing_enable()} />, and when Zotero asks, choose **Always Allow**. **Allow** alone leaves editing off.
-
-The row shows only the actions that apply at the moment:
-
-| Action                                                | Shown                                                      | Effect                                                                  |
-| ----------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------- |
-| <UiLabel name={m.settings_zotero_editing_enable()} /> | While ZotLit needs your permission                         | Asks Zotero for permission to edit.                                     |
-| <UiLabel name={m.settings_zotero_editing_check()} />  | While ZotLit cannot reach Zotero or cannot edit through it | Checks the connection to Zotero again and shows the result in a notice. |
-| <UiLabel name={m.settings_zotero_editing_forget()} /> | While this device has a saved permission                   | Removes the saved permission. Editing stops until you allow it again.   |
-
-ZotLit saves the permission for this vault on this device only, in Obsidian's Keychain. Another computer that shares the vault asks for its own permission. See [Edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations).
 
 ### Libraries [#libraries]
 
@@ -492,16 +475,51 @@ ZotLit shows <UiLabel name={m.notice_library_scope_invalid()} /> as a notice onc
   .
 </Callout>
 
-### Live updates [#live-updates]
+### Sync with Zotero [#sync]
 
-Live update controls are in the [Local Server group](#local-server) under <SettingsPath page={m.settings_page_advanced()} />. See [Set up live updates](/docs/how-to/set-up-live-updates) for the Companion connection.
+| Label                                                         | Key                   | Control                                                                                                               | Default       | Storage |
+| ------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------- | ------- |
+| <UiLabel name={m.settings_db_companion_name()} />             | None                  | <UiLabel name={m.settings_db_companion_install()} /> action                                                           | Not installed | None    |
+| <UiLabel name={m.settings_live_updates_enabled_name()} />     | `server.live-update`  | Toggle                                                                                                                | On            | Synced  |
+| <UiLabel name={m.settings_advanced_local_server_heading()} /> | None                  | Shows whether the local server is listening, with the <UiLabel name={m.settings_zotero_local_server_open()} /> action | None          | None    |
+| <UiLabel name={m.settings_db_auto_refresh_name()} />          | `zotero.auto-refresh` | Toggle                                                                                                                | On            | Synced  |
+| <UiLabel name={m.settings_db_stale_help_name()} />            | None                  | <UiLabel name={m.settings_db_stale_help_action()} /> action                                                           | None          | None    |
 
-### Advanced [#zotero-advanced]
+<UiLabel name={m.settings_live_updates_enabled_name()} /> lets ZotLit answer
+ZotLit Companion's notifications. The notifications arrive through the local
+server, which is off by default. Turn on
+<UiLabel name={m.settings_local_server_enabled_name()} /> in the [Local server
+group](#local-server) for updates to arrive.
+<UiLabel name={m.settings_zotero_local_server_open()} /> opens that group. See
+[Set up live updates](/docs/how-to/set-up-live-updates) for the Companion
+connection.
 
-| Label                                             | Key            | Control                                                                  | Default                                          | Storage    |
-| ------------------------------------------------- | -------------- | ------------------------------------------------------------------------ | ------------------------------------------------ | ---------- |
-| <UiLabel name={m.settings_db_data_dir_name()} />  | (device-local) | Folder picker                                                            | <UiLabel name={m.settings_db_data_dir_auto()} /> | Per device |
-| <UiLabel name={m.settings_db_source_id_name()} /> | (read-only)    | Displays the 8-character hex identifier for the connected Zotero install | None                                             | None       |
+### Editing [#editing]
+
+| Label                                               | Key  | Control                                                                                                                                                                        | Default     | Storage    |
+| --------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------- | ---------- |
+| <UiLabel name={m.settings_zotero_editing_name()} /> | None | <UiLabel name={m.settings_zotero_editing_enable()} />, <UiLabel name={m.settings_zotero_editing_check()} />, and <UiLabel name={m.settings_zotero_editing_forget()} /> actions | Not allowed | Per device |
+
+#### Zotero editing [#zotero-editing]
+
+<UiLabel name={m.settings_zotero_editing_name()} /> shows whether ZotLit can
+change annotations in Zotero. Reading annotations needs no permission. Editing
+needs four things:
+
+- Zotero 10 or later.
+- Zotero running on the same computer.
+- In Zotero, **Allow other applications on this computer to communicate with Zotero** turned on, under Settings → Advanced.
+- Your permission. Select <UiLabel name={m.settings_zotero_editing_enable()} />, and when Zotero asks, choose **Always Allow**. **Allow** alone leaves editing off.
+
+The row shows only the actions that apply at the moment:
+
+| Action                                                | Shown                                                      | Effect                                                                  |
+| ----------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------- |
+| <UiLabel name={m.settings_zotero_editing_enable()} /> | While ZotLit needs your permission                         | Asks Zotero for permission to edit.                                     |
+| <UiLabel name={m.settings_zotero_editing_check()} />  | While ZotLit cannot reach Zotero or cannot edit through it | Checks the connection to Zotero again and shows the result in a notice. |
+| <UiLabel name={m.settings_zotero_editing_forget()} /> | While this device has a saved permission                   | Removes the saved permission. Editing stops until you allow it again.   |
+
+ZotLit saves the permission for this vault on this device only, in Obsidian's Keychain. Another computer that shares the vault asks for its own permission. See [Edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations).
 
 ## Attachments
 
@@ -605,17 +623,16 @@ A file without the `zotlit-` prefix is ignored and gets no row. See [template do
 
 ### Local Server [#local-server]
 
-| Label                                                         | Key                  | Control                   | Default     | Visibility | Storage |
-| ------------------------------------------------------------- | -------------------- | ------------------------- | ----------- | ---------- | ------- |
-| <UiLabel name={m.settings_local_server_enabled_name()} />     | `server.enabled`     | Toggle                    | Off         | Always     | Synced  |
-| <UiLabel name={m.settings_live_updates_enabled_name()} />     | `server.live-update` | Toggle                    | On          | Server on  | Synced  |
-| <UiLabel name={m.settings_live_updates_port_name()} />        | `server.port`        | Number from 1024 to 65535 | `9091`      | Server on  | Synced  |
-| <UiLabel name={m.settings_local_server_active_port_name()} /> | (read-only)          | Active port or status     | No listener | Server on  | None    |
-| <UiLabel name={m.settings_live_updates_hostname_name()} />    | `server.hostname`    | Text                      | `127.0.0.1` | Server on  | Synced  |
+| Label                                                         | Key               | Control                   | Default     | Visibility | Storage |
+| ------------------------------------------------------------- | ----------------- | ------------------------- | ----------- | ---------- | ------- |
+| <UiLabel name={m.settings_local_server_enabled_name()} />     | `server.enabled`  | Toggle                    | Off         | Always     | Synced  |
+| <UiLabel name={m.settings_live_updates_port_name()} />        | `server.port`     | Number from 1024 to 65535 | `9091`      | Server on  | Synced  |
+| <UiLabel name={m.settings_local_server_active_port_name()} /> | (read-only)       | Active port or status     | No listener | Server on  | None    |
+| <UiLabel name={m.settings_live_updates_hostname_name()} />    | `server.hostname` | Text                      | `127.0.0.1` | Server on  | Synced  |
 
 The server binds to the configured hostname, which defaults to this computer's loopback address. It tries the configured port, then up to 9 higher ports, stopping at 65535. <UiLabel name={m.settings_local_server_active_port_name()} /> reports the port actually used. ZotLit Companion's notification URL must use that port.
 
-Turning off <UiLabel name={m.settings_local_server_enabled_name()} /> stops Live Update connections.
+Turning off <UiLabel name={m.settings_local_server_enabled_name()} /> stops Live Update connections. <UiLabel name={m.settings_live_updates_enabled_name()} /> keeps its value and is in the [Sync with Zotero](#sync) group on <SettingsPath page={m.settings_page_zotero()} />.
 
 ### Logging [#logging]
 
@@ -673,18 +690,20 @@ The cache survives restarts and has a 256 MiB limit. ZotLit removes the least re
 
 ZotLit 2.2.0 reorganized the settings tab around the literature note. Every row keeps its name, so Obsidian's own settings search still finds a setting by the name you know. Settings new in 2.2.0, such as <UiLabel name={m.settings_note_import_highlight_mappings_name()} />, are not listed here; they appear only in their own section above.
 
-| Old location                                                   | New location                                                                                                                                                        |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Literature note folder**, on the top-level page              | The <UiLabel name={m.settings_profile_folder_name()} /> row on the main page                                                                                        |
-| **Note import** page                                           | <SettingsPath page={m.settings_page_note_import()} />, except <UiLabel name={m.settings_note_import_folder_name()} />, which is on the main page                    |
-| **Frontmatter** field list, under the Templates page           | The template document, opened with <UiLabel name={m.settings_profile_edit()} /> from the <UiLabel name={m.settings_profile_document_name()} /> row on the main page |
-| **Template folder**, on the Templates page                     | <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />                                                                      |
-| **JavaScript templates** and trim, on the Templates page       | The <UiLabel name={m.settings_advanced_template_engine_heading()} /> group on <SettingsPath page={m.settings_page_advanced()} />                                    |
-| **Citation** and **Alternate citation**, on the Templates page | One <UiLabel name={m.settings_citation_text_name()} /> row on <SettingsPath page={m.settings_page_citations()} />. Both gestures now come from one template.        |
-| **Zotero database** page                                       | The <UiLabel name={m.settings_zotero_connection_heading()} /> group on <SettingsPath page={m.settings_page_zotero()} />                                             |
-| **Library** page                                               | The <UiLabel name={m.settings_zotero_libraries_heading()} /> group on <SettingsPath page={m.settings_page_zotero()} />                                              |
-| **Live updates** page                                          | The <UiLabel name={m.settings_advanced_local_server_heading()} /> group on <SettingsPath page={m.settings_page_advanced()} />                                       |
-| **Maintenance** page                                           | <SettingsPath page={m.settings_page_advanced()} />                                                                                                                  |
+| Old location                                                                                                                                                        | New location                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Literature note folder**, on the top-level page                                                                                                                   | The <UiLabel name={m.settings_profile_folder_name()} /> row on the main page                                                                                                                                                |
+| **Note import** page                                                                                                                                                | <SettingsPath page={m.settings_page_note_import()} />, except <UiLabel name={m.settings_note_import_folder_name()} />, which is on the main page                                                                            |
+| **Frontmatter** field list, under the Templates page                                                                                                                | The template document, opened with <UiLabel name={m.settings_profile_edit()} /> from the <UiLabel name={m.settings_profile_document_name()} /> row on the main page                                                         |
+| **Template folder**, on the Templates page                                                                                                                          | <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />                                                                                                                              |
+| **JavaScript templates** and trim, on the Templates page                                                                                                            | The <UiLabel name={m.settings_advanced_template_engine_heading()} /> group on <SettingsPath page={m.settings_page_advanced()} />                                                                                            |
+| **Citation** and **Alternate citation**, on the Templates page                                                                                                      | One <UiLabel name={m.settings_citation_text_name()} /> row on <SettingsPath page={m.settings_page_citations()} />. Both gestures now come from one template.                                                                |
+| **Zotero database** page                                                                                                                                            | <SettingsPath page={m.settings_page_zotero()} />. <UiLabel name={m.settings_db_file_name()} /> leads the page. The Companion and change-watching rows are in the <UiLabel name={m.settings_zotero_sync_heading()} /> group. |
+| <UiLabel name={m.settings_db_profile_dir_name()} />, <UiLabel name={m.settings_db_read_mode_name()} />, and the **Advanced** group, on the **Zotero database** page | <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} />                                                                                                                                |
+| **Library** page                                                                                                                                                    | The <UiLabel name={m.settings_zotero_libraries_heading()} /> group on <SettingsPath page={m.settings_page_zotero()} />                                                                                                      |
+| **Live updates** page                                                                                                                                               | The <UiLabel name={m.settings_advanced_local_server_heading()} /> group on <SettingsPath page={m.settings_page_advanced()} />                                                                                               |
+| <UiLabel name={m.settings_live_updates_enabled_name()} />, on the **Live updates** page                                                                             | The <UiLabel name={m.settings_zotero_sync_heading()} /> group on <SettingsPath page={m.settings_page_zotero()} />                                                                                                           |
+| **Maintenance** page                                                                                                                                                | <SettingsPath page={m.settings_page_advanced()} />                                                                                                                                                                          |
 
 The legacy template rows for the literature note, the managed region, the annotation, and the note filename are no longer in settings. A literature note's body, filename, and properties come from its Profile's template document.
 

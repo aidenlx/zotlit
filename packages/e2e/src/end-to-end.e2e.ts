@@ -129,7 +129,10 @@ const settingsContent = "app.setting.containerEl";
 
 async function openProfilesSettings(
   vaultId: string,
-  pageId: "settings_page_profiles" | "settings_page_advanced",
+  pageId:
+    | "settings_page_profiles"
+    | "settings_page_advanced"
+    | "settings_page_zotero",
 ) {
   await obEval(
     vaultId,
@@ -2097,7 +2100,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obEval(
           vaultId,
-          `(function(){var names=Array.from((${settingsContent}).querySelectorAll('.setting-item-name'),el=>el.textContent);return String(names.includes(${JSON.stringify(m.settings_local_server_enabled_name())})&&names.includes(${JSON.stringify(m.settings_live_updates_enabled_name())})&&!names.includes(${JSON.stringify(m.settings_local_server_workbench_name())})&&!names.includes(${JSON.stringify(m.settings_local_server_workbench_confirm_name())})&&!names.includes(${JSON.stringify(m.template_workbench_preference_name())})&&!app.commands.commands['zotlit:open-profile-web-workbench']);})()`,
+          `(function(){var names=Array.from((${settingsContent}).querySelectorAll('.setting-item-name'),el=>el.textContent);return String(names.includes(${JSON.stringify(m.settings_local_server_enabled_name())})&&!names.includes(${JSON.stringify(m.settings_local_server_workbench_name())})&&!names.includes(${JSON.stringify(m.settings_local_server_workbench_confirm_name())})&&!names.includes(${JSON.stringify(m.template_workbench_preference_name())})&&!app.commands.commands['zotlit:open-profile-web-workbench']);})()`,
+        ),
+      ).toBe("true");
+
+      // Live updates answer the Companion, so their switch sits on the Zotero
+      // page beside it rather than with the server that carries them.
+      await openProfilesSettings(vaultId, "settings_page_zotero");
+      expect(
+        await obEval(
+          vaultId,
+          `(function(){var names=Array.from((${settingsContent}).querySelectorAll('.setting-item-name'),el=>el.textContent);return String(names.includes(${JSON.stringify(m.settings_live_updates_enabled_name())})&&names.includes(${JSON.stringify(m.settings_advanced_local_server_heading())}));})()`,
         ),
       ).toBe("true");
 

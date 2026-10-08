@@ -28,7 +28,7 @@ If Zotero's profile or data directory is in a custom location on one of your com
   <Step>
     ### Open the Zotero settings
 
-    On the device that needs a custom path, open <SettingsPath page={m.settings_page_zotero()} />.
+    On the device that needs a custom path, open <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} />.
 
   </Step>
   <Step>
@@ -40,7 +40,7 @@ If Zotero's profile or data directory is in a custom location on one of your com
   <Step>
     ### Set the data directory override (if needed)
 
-    If the Zotero data directory is also non-default, expand the <UiLabel name={m.settings_db_advanced()} /> group and use the <UiLabel name={m.settings_db_data_dir_name()} /> picker to select the correct path.
+    If the Zotero data directory is also non-default, use the <UiLabel name={m.settings_db_data_dir_name()} /> picker to select the correct path.
 
   </Step>
 </Steps>
@@ -60,7 +60,7 @@ If you sync a vault to a computer where Zotero is not in the default location an
 
 The notice includes a <UiLabel name={m.notice_db_not_found_action()} /> action that opens the Welcome View. The first quick-start step displays live connection status and a locate action to pick the correct path. The notice reappears on each launch while the connection is unresolved; it does not appear when auto-detection succeeds or a working Device Override is in place.
 
-You can also set the path directly from <SettingsPath page={m.settings_page_zotero()} />, as described above.
+You can also set the path directly from <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} />, as described above.
 
 ## See also
 

@@ -27,12 +27,25 @@ const PICKER_AUTO = "";
 /** Folder-picker dropdown sentinel that opens the folder picker; NUL can't be in a path. */
 const PICKER_BROWSE = "\0browse";
 
-/**
- * The Zotero page's Connection rows: Companion setup, status, the Zotero
- * profile, the database file, read mode, and change watching.
- */
-export function databaseConnectionItems(
+/** The Zotero page's lead row: the database file, its status, and refresh. */
+export function databaseFileItem(
   ctx: SettingTabContext,
+): SettingGroupItem<SettingsKey> {
+  return {
+    id: "settings_db_file",
+    name: m.settings_db_file_name(),
+    desc: m.settings_db_file_desc(),
+    render: (setting) => renderDatabaseFileRow(setting, ctx),
+  };
+}
+
+/**
+ * The Zotero page's Sync rows the database owns: Companion setup, change
+ * watching, and the stale-data guide. `liveUpdates` are the Companion's rows,
+ * placed right after its setup row.
+ */
+export function databaseSyncItems(
+  liveUpdates: SettingGroupItem<SettingsKey>[],
 ): SettingGroupItem<SettingsKey>[] {
   return [
     {
@@ -46,6 +59,13 @@ export function databaseConnectionItems(
             .onClick(() => window.open(DOCS_COMPANION)),
         );
       },
+    },
+    ...liveUpdates,
+    {
+      id: "settings_db_auto_refresh",
+      name: m.settings_db_auto_refresh_name(),
+      desc: m.settings_db_auto_refresh_desc(),
+      control: { type: "toggle", key: "zotero.auto-refresh" },
     },
     {
       id: "settings_db_stale_help",
@@ -61,6 +81,17 @@ export function databaseConnectionItems(
         );
       },
     },
+  ];
+}
+
+/**
+ * The Zotero location page: where and how ZotLit reads Zotero — the profile,
+ * the data directory override, read mode, and the Source ID they produce.
+ */
+export function databaseLocationItems(
+  ctx: SettingTabContext,
+): SettingGroupItem<SettingsKey>[] {
+  return [
     {
       id: "settings_db_profile_dir",
       name: m.settings_db_profile_dir_name(),
@@ -68,36 +99,16 @@ export function databaseConnectionItems(
       render: (setting) => renderProfileDirRow(setting, ctx),
     },
     {
-      id: "settings_db_file",
-      name: m.settings_db_file_name(),
-      desc: m.settings_db_file_desc(),
-      render: (setting) => renderDatabaseFileRow(setting, ctx),
+      id: "settings_db_data_dir",
+      name: m.settings_db_data_dir_name(),
+      desc: m.settings_db_data_dir_desc(),
+      render: (setting) => renderDataDirRow(setting, ctx),
     },
     {
       id: "settings_db_read_mode",
       name: m.settings_db_read_mode_name(),
       desc: m.settings_db_read_mode_desc(),
       render: (setting) => renderReadModeRow(setting, ctx),
-    },
-    {
-      id: "settings_db_auto_refresh",
-      name: m.settings_db_auto_refresh_name(),
-      desc: m.settings_db_auto_refresh_desc(),
-      control: { type: "toggle", key: "zotero.auto-refresh" },
-    },
-  ];
-}
-
-/** The Zotero page's Advanced rows the database owns: device-scoped overrides. */
-export function databaseAdvancedItems(
-  ctx: SettingTabContext,
-): SettingGroupItem<SettingsKey>[] {
-  return [
-    {
-      id: "settings_db_data_dir",
-      name: m.settings_db_data_dir_name(),
-      desc: m.settings_db_data_dir_desc(),
-      render: (setting) => renderDataDirRow(setting, ctx),
     },
     {
       id: "settings_db_source_id",

@@ -26,7 +26,7 @@ Reading annotations needs no setup. Editing needs four things:
 To give ZotLit permission to change annotations in Zotero, select <UiLabel name={m.capability_enable_editing()} />. It is in two places:
 
 - In the annotation view, select the mode button at the start of the view's toolbar, then select <UiLabel name={m.capability_enable_editing()} />.
-- In <SettingsPath page={m.settings_page_zotero()} setting={m.settings_zotero_connection_heading()} />, on the <UiLabel name={m.settings_zotero_editing_name()} /> row, select <UiLabel name={m.settings_zotero_editing_enable()} />.
+- In <SettingsPath page={m.settings_page_zotero()} />, in the <UiLabel name={m.settings_zotero_editing_heading()} /> group, on the <UiLabel name={m.settings_zotero_editing_name()} /> row, select <UiLabel name={m.settings_zotero_editing_enable()} />.
 
 Zotero opens its permission dialog at once. In the dialog, choose **Always Allow**. ZotLit edits only with a permission that Zotero remembers, so **Allow** leaves editing off. To decline, choose **Deny**.
 
