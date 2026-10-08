@@ -54,6 +54,8 @@ export class ItemQueryService extends Service {
   readonly #deps;
   #jobs!: FiberMap.FiberMap<string, string>;
   #run!: JobRunner;
+  /** The failure of startup: every job then rejects with it. */
+  #startup: { failed: true; error: unknown } | undefined;
   ready: Promise<void>;
 
   constructor(deps: ItemQueryServiceDeps) {
@@ -71,8 +73,14 @@ export class ItemQueryService extends Service {
       Scope.provide(FiberMap.make<string, string>(), scope),
     );
     this.#run = Effect.runSync(FiberMap.runtime(this.#jobs)());
-    await this.#deps.reads.ready;
-    await this.#deps.libraryScope.ready;
+    try {
+      await this.#deps.reads.ready;
+      await this.#deps.libraryScope.ready;
+    } catch (error) {
+      // Recorded before the stack closes the jobs, which then reject with it.
+      this.#startup = { failed: true, error };
+      throw error;
+    }
     this.commit(stack.move());
   }
 
@@ -139,14 +147,14 @@ export class ItemQueryService extends Service {
     return Effect.runPromise(Fiber.await(fiber)).then((exit) => {
       if (Exit.isSuccess(exit)) return exit.value;
       if (!Cause.hasInterruptsOnly(exit.cause)) throw Cause.squash(exit.cause);
-      throw signal.aborted
-        ? (signal.reason as unknown)
-        : new DOMException(
-            id === undefined || this.disposing
-              ? "The query was cancelled."
-              : queryCancelledText(id),
-            "AbortError",
-          );
+      if (signal.aborted) throw signal.reason;
+      if (this.#startup) throw this.#startup.error;
+      throw new DOMException(
+        id === undefined || this.disposing
+          ? "The query was cancelled."
+          : queryCancelledText(id),
+        "AbortError",
+      );
     });
   }
 

@@ -9,12 +9,13 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { ItemQueryDatabase } from "@zotlit/db/item-query";
 import { ItemQueryScheduler } from "@zotlit/item-query";
 
-import { getLogger } from "@/lib/log";
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
 import {
   answerItemQuery,
   answerItemQuerySchema,
+  failure,
+  ITEM_QUERY_COMMAND,
   ItemQueryOutputError,
 } from "./cli";
 import type { QueryWriter } from "./cli";
@@ -32,12 +33,15 @@ export interface QueryJobEnv {
 /**
  * Run one Query Job to its answer. The staging file of an export closes in the
  * scope of the job, before the returned Effect ends, so it closes before the
- * caller ends its borrow of the connection. Interruption cancels the job.
+ * caller ends its borrow of the connection. A failed close makes the answer
+ * `output-error`: the file is then not a complete export. Interruption cancels
+ * the job.
  */
 export function runQueryJob(
   job: QueryJob,
   { client, identity }: QueryJobEnv,
 ): Effect.Effect<QueryAnswer> {
+  const stage: StageState = {};
   return Effect.gen(function* () {
     const startedAt = performance.timeOrigin + performance.now();
     const trace = job.measure ? createTrace(job.heap ?? false) : undefined;
@@ -53,7 +57,7 @@ export function runQueryJob(
             onAnswerStep: job.measure
               ? (ms: number) => answerSteps.push(ms)
               : undefined,
-            openOutput: () => openStage(job.stagePath),
+            openOutput: () => openStage(job.stagePath, stage),
           },
           job.query,
         );
@@ -68,17 +72,37 @@ export function runQueryJob(
     };
   }).pipe(
     Effect.scoped,
+    Effect.flatMap((answer) => {
+      const { closeError } = stage;
+      if (closeError === undefined) return Effect.succeed(answer);
+      return fileStep(() => Promise.reject(closeError)).pipe(
+        Effect.as(answer),
+        Effect.catch((failed) =>
+          Effect.succeed<QueryAnswer>({
+            answer: failure(ITEM_QUERY_COMMAND, failed.diagnostic),
+            receipt: { kind: "inline" },
+          }),
+        ),
+      );
+    }),
     Effect.provideService(ItemQueryDatabase, { client }),
     Effect.provideService(Scheduler.Scheduler, new ItemQueryScheduler()),
   );
 }
 
+/** The close of the staging file, which the release of the writer records. */
+interface StageState {
+  closeError?: unknown;
+}
+
 /**
  * Open the staging file of the job in its scope. Only the write of one chunk is
- * uninterruptible: native I/O settles before the scope closes the file.
+ * uninterruptible: native I/O settles before the scope closes the file. The
+ * release records a failed close in `stage`.
  */
 function openStage(
   stagePath: string | undefined,
+  stage: StageState,
 ): Effect.Effect<QueryWriter, ItemQueryOutputError, Scope.Scope> {
   if (stagePath === undefined)
     return Effect.die(new Error("Item Query export has no staging path"));
@@ -87,10 +111,7 @@ function openStage(
     (file) =>
       Effect.promise(() =>
         file.close().catch((error: unknown) => {
-          getLogger(["item-query"]).warn(
-            "Item Query could not close its temporary export {path}",
-            { path: stagePath, error },
-          );
+          stage.closeError = error;
         }),
       ),
   ).pipe(

@@ -3,7 +3,7 @@ import type { Scope } from "effect";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { CliData } from "obsidian";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ItemQueryDatabase } from "@zotlit/db/item-query";
 import {
@@ -23,6 +23,27 @@ import { decodeItemQuery } from "./decode";
 import type { DecodedQuery } from "./decode";
 import { runQueryJob } from "./job";
 import type { QueryJob } from "./worker-protocol";
+
+/** The next close of a file that `open` gives fails with this error. */
+const closeFailure = vi.hoisted(() => ({
+  next: undefined as Error | undefined,
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const fs = await importOriginal<typeof import("node:fs/promises")>();
+  const open: typeof fs.open = async (...args) => {
+    const handle = await fs.open(...args);
+    const close = handle.close.bind(handle);
+    handle.close = async () => {
+      await close();
+      const failure = closeFailure.next;
+      closeFailure.next = undefined;
+      if (failure) throw failure;
+    };
+    return handle;
+  };
+  return { ...fs, open, default: { ...fs, open } };
+});
 
 const IDENTITY = {
   vault: { name: "Research", path: "/vaults/research" },
@@ -119,6 +140,32 @@ describe("Query Job", () => {
       ok: false,
       diagnostic: { code: "result-too-large" },
     });
+  });
+
+  it("answers output-error with no file receipt when the staging file does not close", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    const { output, stagePath } = exportPaths(scenario);
+    closeFailure.next = Object.assign(new Error("EIO: i/o error, close"), {
+      code: "EIO",
+    });
+
+    try {
+      const answer = await run(scenario, jobOf({ output }, stagePath));
+
+      expect(closeFailure.next).toBeUndefined();
+      expect(answer.receipt).toEqual({ kind: "inline" });
+      expect(JSON.parse(answer.answer)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "output-error",
+          message: "EIO: i/o error, close",
+        },
+      });
+      // The staging file is not a complete export: no receipt publishes it.
+      expect(await readFile(stagePath, "utf8")).not.toBe("");
+    } finally {
+      closeFailure.next = undefined;
+    }
   });
 
   it("answers output-error when the staging file cannot be opened, and keeps the file there", async () => {

@@ -453,4 +453,32 @@ describe("Item Query worker jobs", () => {
       name: "AbortError",
     });
   });
+
+  it("rejects each query and schema request with the startup failure", async () => {
+    using scenario = openScenarioDatabase();
+    await using reads = inProcessReadsService(sharedClientOpener(scenario.db));
+    const startup = new Error("the Library Scope did not load");
+    const failed: Promise<void> = Promise.reject(startup);
+    failed.catch(() => {});
+    const service = new ItemQueryService({
+      reads,
+      zoteroPref: { sourceId: "captured-source", databasePath: scenario.path },
+      libraryScope: {
+        ready: failed,
+        effective: MY_LIBRARY_SCOPE,
+      } as LibraryScopeService,
+      vault: {
+        getName: () => "Query tests",
+        adapter: { getBasePath: () => dirname(scenario.path) },
+      } as unknown as Vault,
+    });
+    await using _owned = service;
+    // One request starts before startup fails, the others after it.
+    const early = service.answer({ id: "early" }, signal());
+
+    await expect(early).rejects.toBe(startup);
+    await expect(service.ready).rejects.toBe(startup);
+    await expect(service.answer({}, signal())).rejects.toBe(startup);
+    await expect(service.schema({}, signal())).rejects.toBe(startup);
+  });
 });
