@@ -117,6 +117,20 @@ TEXT
     ${filter('title.lower().contains("climate")')}
   Values of different types are never equal: 1 == "1" is false.
 
+TEXT HELPERS
+  trim(), title(), reverse(), slice(start, end?), repeat(count),
+  replace(pattern, replacement), and split(separator, n?) work on text as
+  in Obsidian Bases. replace replaces every occurrence of the text pattern;
+  split gives the parts as a list. toFixed(precision) writes a number as
+  text with that many decimals. isTruthy() is true when a value selects
+  the Item. list(value) wraps a value that is one text on some Items and
+  a list on others, so it is a list everywhere:
+    ${filter('title.trim().split(":")[0] == "Climate"')}
+    ${filter('title.title().startsWith("The ")')}
+    ${filter('number(volume).toFixed(1) == "12.0"')}
+    ${filter("publisher.isTruthy()")}
+    ${filter('list(custom["review.status"]).contains("done")')}
+
 TAGS, COLLECTIONS, AND CREATORS
   tags, collections, and creators are lists of text.
     ${filter('tags.contains("to-read")')}
