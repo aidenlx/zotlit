@@ -195,7 +195,6 @@ export async function runBatchUpdate(
   let creationItems: Item[] = [];
   let plans: ReadonlyMap<number, readonly PreparedCreationProfile[]> =
     new Map();
-  let tasks: FlatTask[] = [];
   let keptCount = 0;
   let notFoundCount = 0;
   const profileCounts = new Map<ProfileSelector, BatchProfileCount>();
@@ -204,7 +203,7 @@ export async function runBatchUpdate(
       (action): action is BatchAction & CreateAction =>
         action.kind === "create",
     );
-  /** Bind one row to its selection: resolved Profile, frozen path, row copy. */
+  /** Bind one row to its selection: resolved Profile and frozen path. */
   const assign = (
     action: BatchAction & CreateAction,
     selection: CreationProfileSelection,
@@ -218,8 +217,6 @@ export async function runBatchUpdate(
       plans
         .get(action.itemID)
         ?.find((entry) => entry.selector === selection.selector);
-    const task = tasks.find((entry) => entry.id === action.itemID);
-    if (task) Object.assign(task, creationRow(action));
   };
   /** A Profile created after classification has no prepared path yet. */
   const ensurePlans = async (itemID: number, selectors: ProfileSelector[]) => {
@@ -342,10 +339,13 @@ export async function runBatchUpdate(
         );
         // Each Item keeps its own result and prepared destination. Overlap
         // rows need a choice; the fallback also covers unmatched Items.
+        const itemsByID = new Map(
+          creationItems.map((item) => [item.itemID, item]),
+        );
         for (const action of creations()) {
           const selection = await deps.noteFeature.resolveCreationProfile({
             headless: profile,
-            item: creationItems.find((item) => item.itemID === action.itemID),
+            item: itemsByID.get(action.itemID),
           });
           action.origin =
             selection.problem && selection.problem.kind !== "overlap"
@@ -367,22 +367,8 @@ export async function runBatchUpdate(
           choiceFor("all-new", creations),
         ];
       }
-      tasks = actions.map((action) => ({
-        id: action.itemID,
-        label: action.label,
-        kind: batchGroupKey(action.libraryID, action.kind),
-        ...(profilesEnabled
-          ? action.kind === "create"
-            ? creationRow(action)
-            : {
-                profile: action.profile
-                  ? profileLabel(action.profile)
-                  : action.unknownStamp,
-              }
-          : {}),
-      }));
       return new FlatManifest({
-        tasks,
+        tasks: actions.map((action) => batchTask(action, profilesEnabled)),
         notFound: classified.notFound,
         profileChoices,
         groups: batchGroups(classified.libraries, [
@@ -454,18 +440,41 @@ function fallbackSelection(
   );
 }
 
-/** A new row's chip, frozen destination, and the reason behind them. */
-function creationRow(
-  action: BatchAction & CreateAction,
-): Pick<FlatTask, "profile" | "path" | "reason"> {
-  const { selection, prepared } = action;
+/**
+ * One action's confirmation row. A new row reads its chip, frozen
+ * destination, and the reason behind them from the action, so a Profile
+ * change shows on the next render.
+ */
+function batchTask(action: BatchAction, profilesEnabled: boolean): FlatTask {
+  const task = {
+    id: action.itemID,
+    label: action.label,
+    kind: batchGroupKey(action.libraryID, action.kind),
+  };
+  if (!profilesEnabled) return task;
+  if (action.kind !== "create")
+    return {
+      ...task,
+      profile: action.profile
+        ? profileLabel(action.profile)
+        : action.unknownStamp,
+    };
   return {
-    profile: action.profile && profileLabel(action.profile),
-    path: prepared?.path,
-    reason:
-      [selection && creationReason(selection), prepared?.unavailable]
-        .filter(Boolean)
-        .join(" ") || undefined,
+    ...task,
+    get profile() {
+      return action.profile && profileLabel(action.profile);
+    },
+    get path() {
+      return action.prepared?.path;
+    },
+    get reason() {
+      const { selection, prepared } = action;
+      return (
+        [selection && creationReason(selection), prepared?.unavailable]
+          .filter(Boolean)
+          .join(" ") || undefined
+      );
+    },
   };
 }
 

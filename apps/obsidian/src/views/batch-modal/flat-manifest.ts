@@ -3,10 +3,8 @@ import {
   listGroup,
   ROW_ICON,
   ROW_ICON_CLASS,
-  row,
+  RowStatusBoard,
   section,
-  SECTION_OPEN_MAX,
-  setRowIcon,
   profileChoiceControl,
   profileListGroup,
 } from "./dom";
@@ -52,13 +50,12 @@ export interface FlatManifestOptions {
 
 /**
  * Flat checklist: ordered groups of tasks (each a leading status icon + label)
- * plus a static not-found group. Rows register their icon under {@link #rowIcons}
- * so a run can flip them in place; the summary regroups by terminal status.
+ * plus a static not-found group. Rows mount on {@link #rows}, so a run can
+ * flip them in place; the summary regroups by terminal status.
  */
 export class FlatManifest implements BatchManifest {
   readonly #options: FlatManifestOptions;
-  /** Per-row status icon element, keyed by task id, for in-place updates. */
-  readonly #rowIcons = new Map<number, HTMLElement>();
+  readonly #rows = new RowStatusBoard();
 
   constructor(options: FlatManifestOptions) {
     this.#options = options;
@@ -72,7 +69,7 @@ export class FlatManifest implements BatchManifest {
   }
 
   renderList(parent: HTMLElement, controls?: BatchListControls): void {
-    this.#rowIcons.clear();
+    this.#rows.unmount();
     if (this.#options.profileChoices?.length) {
       const choices = parent.createDiv({
         cls: "zt:mb-6 zt:flex zt:flex-col zt:gap-4",
@@ -84,22 +81,12 @@ export class FlatManifest implements BatchManifest {
     for (const group of this.#options.groups) {
       const tasks = byKind[group.kind] ?? [];
       if (tasks.length === 0) continue;
-      const ul = section(
-        parent,
-        group.header({ count: tasks.length }),
-        tasks.length <= SECTION_OPEN_MAX,
-      );
+      const summary = section(parent, group.header({ count: tasks.length }), {
+        items: tasks,
+        renderRow: (ul, task) => this.#rows.mount(ul, task),
+      });
       if (group.profileChoice)
-        profileChoiceControl(
-          ul.previousElementSibling as HTMLElement,
-          group.profileChoice,
-          controls,
-        );
-      for (const task of tasks) {
-        const icon = row(ul, task.label, task);
-        setRowIcon(icon, "pending");
-        this.#rowIcons.set(task.id, icon);
-      }
+        profileChoiceControl(summary, group.profileChoice, controls);
     }
     this.#renderStatic(parent);
     listGroup(parent, {
@@ -132,15 +119,14 @@ export class FlatManifest implements BatchManifest {
   }
 
   setRowStatus(id: number, status: "done" | "skipped" | "failed"): void {
-    const icon = this.#rowIcons.get(id);
-    if (icon) setRowIcon(icon, status);
+    this.#rows.set(id, status);
   }
 
   renderSummary(
     parent: HTMLElement,
     finalStatus: ReadonlyMap<number, "done" | "skipped" | "failed">,
   ): void {
-    this.#rowIcons.clear();
+    this.#rows.unmount();
     const done = this.#options.tasks.filter(
       (task) => finalStatus.get(task.id) === "done",
     );
