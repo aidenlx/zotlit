@@ -537,7 +537,10 @@ async function classifyActions(
   const notFound: NotFoundEntry[] = [];
   const kept: { label: string; profile: string; reason: string }[] = [];
   await classifyStream(
-    lease.reads.DisplayRefs({ itemIDs }),
+    {
+      itemIDs,
+      read: (ids) => lease.reads.DisplayRefs({ itemIDs: ids }),
+    },
     controls,
     (slice) => {
       for (const { itemID, ref } of slice) {

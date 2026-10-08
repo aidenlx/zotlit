@@ -2619,6 +2619,46 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     for (const query of queries)
       expect(timings[query]!.hits).toBeGreaterThan(0);
 
+    // A large classification bounds renderer request encoding as well as
+    // worker replies, while every request uses the same Snapshot (#1351).
+    await obEval(
+      vaultId,
+      `(()=>{const original=Worker.prototype.postMessage;const requests=[];Worker.prototype.postMessage=function(message,...rest){const request=message?.[1];if(request?.tag==='DisplayRefs')requests.push({count:request.payload.itemIDs.length,snapshot:request.payload.snapshot});return original.call(this,message,...rest);};window.zotlitE2EClassifyRequests={requests,restore:()=>{Worker.prototype.postMessage=original;}};return true;})()`,
+    );
+    try {
+      expect(
+        await obEval(
+          vaultId,
+          "app.commands.executeCommandById('zotlit:update-all-notes')",
+        ),
+      ).toBe("true");
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `String(Array.from(activeDocument.querySelectorAll('.modal button')).some(button=>button.textContent.trim()===${JSON.stringify(m.batch_update_confirm_button())}))`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      const requests = JSON.parse(
+        await obEval(
+          vaultId,
+          "JSON.stringify(window.zotlitE2EClassifyRequests.requests)",
+        ),
+      ) as { count: number; snapshot: string }[];
+      expect(
+        requests.reduce((total, request) => total + request.count, 0),
+      ).toBeGreaterThanOrEqual(SYNTHETIC_CORPUS_SIZE);
+      expect(requests.every(({ count }) => count <= 500)).toBe(true);
+      expect(requests[0]?.snapshot).toBeDefined();
+      expect(new Set(requests.map(({ snapshot }) => snapshot)).size).toBe(1);
+    } finally {
+      await clickModalButton(vaultId, m.modal_cancel());
+      await obEval(
+        vaultId,
+        "window.zotlitE2EClassifyRequests.restore();delete window.zotlitE2EClassifyRequests;true",
+      );
+    }
+
     // The Citation Suggester over that Library. It comes after the
     // measurement: a rendered citation can start the Pandoc engine, and that
     // start is renderer work of its own.

@@ -542,18 +542,23 @@ async function classifyNoteImport(
   await using lease = await deps.zoteroReads.acquireRead();
   const actions: ImportAction[] = [];
   const notFound: NotFoundEntry[] = [];
-  await classifyStream(lease.reads.NoteRefs({ itemIDs }), controls, (slice) => {
-    for (const { note } of slice) if (note) actions.push(toAction(deps, note));
-    for (const { itemID: id, note, trashed } of slice) {
-      if (note) continue;
-      notFound.push({
-        itemID: id,
-        label: trashed
-          ? m.batch_import_item_trashed({ id })
-          : m.batch_import_item_not_note({ id }),
-      });
-    }
-  });
+  await classifyStream(
+    { itemIDs, read: (ids) => lease.reads.NoteRefs({ itemIDs: ids }) },
+    controls,
+    (slice) => {
+      for (const { note } of slice)
+        if (note) actions.push(toAction(deps, note));
+      for (const { itemID: id, note, trashed } of slice) {
+        if (note) continue;
+        notFound.push({
+          itemID: id,
+          label: trashed
+            ? m.batch_import_item_trashed({ id })
+            : m.batch_import_item_not_note({ id }),
+        });
+      }
+    },
+  );
   const libraries = batchLibraries(
     await Effect.runPromise(lease.reads.Libraries({})),
     new Set(actions.filter(needsImport).map((action) => action.note.libraryID)),
@@ -660,7 +665,10 @@ async function classifyChildImport(
   await using lease = await deps.zoteroReads.acquireRead();
   const parents: ChildGroup[] = [];
   await classifyStream(
-    lease.reads.ChildNoteRefs({ itemIDs: parentItemIDs }),
+    {
+      itemIDs: parentItemIDs,
+      read: (ids) => lease.reads.ChildNoteRefs({ itemIDs: ids }),
+    },
     controls,
     (slice) => {
       for (const { itemID: parentID, ref, notes } of slice) {

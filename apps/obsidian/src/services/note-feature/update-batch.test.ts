@@ -287,7 +287,7 @@ function scopeReads() {
 }
 
 describe("classify through the DisplayRefs stream", () => {
-  it("classifies from one DisplayRefs stream and writes each item under the run's Snapshot", async () => {
+  it("classifies bounded requests under one Snapshot and writes each item under the run's Snapshot", async () => {
     const recorded = recordCalls(["DisplayRefs", "ItemsByIndexedKeys"]);
     const deps = makeDeps("ready", recorded.wrap);
     deps.noteFeature.createNote = async (item, options) => {
@@ -308,7 +308,8 @@ describe("classify through the DisplayRefs stream", () => {
     );
     const progress: number[] = [];
 
-    await runBatchUpdate(deps, [1, 2, 3]);
+    const itemIDs = Array.from({ length: 1001 }, (_, index) => index + 1);
+    await runBatchUpdate(deps, itemIDs);
     const modal = openedModals.at(-1)!;
     await modal.onClassify({
       onProgress: (classified) => progress.push(classified),
@@ -320,19 +321,25 @@ describe("classify through the DisplayRefs stream", () => {
     });
 
     expect(result).toMatchObject({ created: 2, failed: 0 });
-    expect(progress).toEqual([3]);
-    const [classify, ...loads] = recorded.calls;
-    expect(classify).toMatchObject({
-      operation: "DisplayRefs",
-      payload: { itemIDs: [1, 2, 3] },
-    });
+    expect(progress).toEqual([500, 1000, 1001]);
+    const classify = recorded.calls.slice(0, 3);
+    const loads = recorded.calls.slice(3);
+    expect(classify.map(({ operation }) => operation)).toEqual(
+      Array(3).fill("DisplayRefs"),
+    );
+    expect(classify.map(({ payload }) => payload.itemIDs)).toEqual([
+      itemIDs.slice(0, 500),
+      itemIDs.slice(500, 1000),
+      itemIDs.slice(1000),
+    ]);
     // Two item loads and the two creates' reads.
     expect(loads.map(({ operation }) => operation)).toEqual(
       Array(4).fill("ItemsByIndexedKeys"),
     );
     // Classify reads its own Snapshot; the run's loads and creates share another.
     const [classifySnapshot, runSnapshot] = recorded.snapshots;
-    expect(classify!.payload.snapshot).toBe(classifySnapshot);
+    for (const request of classify)
+      expect(request.payload.snapshot).toBe(classifySnapshot);
     for (const load of loads) expect(load.payload.snapshot).toBe(runSnapshot);
     expect(runSnapshot).not.toBe(classifySnapshot);
   });

@@ -484,12 +484,76 @@ describe("classifyStream", () => {
     };
   }
 
+  it("bounds each request while preserving order, duplicates, and cumulative progress", async () => {
+    const { controls, progress } = classifyControls();
+    const itemIDs = Array.from({ length: 100_001 }, (_, index) => index % 997);
+    const requested: number[][] = [];
+    const seen: number[] = [];
+    await classifyStream(
+      {
+        itemIDs,
+        read: (ids) => {
+          requested.push([...ids]);
+          return Stream.succeed(ids);
+        },
+      },
+      controls,
+      (slice) => seen.push(...slice),
+    );
+    expect(requested.every((ids) => ids.length <= 500)).toBe(true);
+    expect(requested.flat()).toEqual(itemIDs);
+    expect(seen).toEqual(itemIDs);
+    expect(progress).toEqual(
+      requested.map((_, index) => Math.min((index + 1) * 500, itemIDs.length)),
+    );
+  });
+
+  it("starts no further request after cancellation", async () => {
+    const abort = new AbortController();
+    const { controls } = classifyControls(abort.signal);
+    const read = vi.fn((ids: readonly number[]) => Stream.succeed(ids));
+    await expect(
+      classifyStream(
+        { itemIDs: Array.from({ length: 1001 }, (_, i) => i), read },
+        controls,
+        () => abort.abort(),
+      ),
+    ).rejects.toThrow();
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it("propagates a read failure without requesting the next slice", async () => {
+    const { controls, progress } = classifyControls();
+    const read = vi.fn(() => Stream.fail(new Error("read failed")));
+    await expect(
+      classifyStream(
+        { itemIDs: Array.from({ length: 1001 }, (_, i) => i), read },
+        controls,
+        () => {},
+      ),
+    ).rejects.toThrow("read failed");
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(progress).toEqual([]);
+  });
+
+  it("completes an empty selection without reading", async () => {
+    const { controls, progress } = classifyControls();
+    const read = vi.fn(() => Stream.succeed([]));
+    await classifyStream({ itemIDs: [], read }, controls, () => {});
+    expect(read).not.toHaveBeenCalled();
+    expect(progress).toEqual([]);
+  });
+
   it("processes every slice in order and reports cumulative progress", async () => {
     const { controls, progress } = classifyControls();
     const seen: number[] = [];
 
     await classifyStream(
-      Stream.fromIterable([[1, 2], [3, 4], [5]], { chunkSize: 1 }),
+      {
+        itemIDs: [1, 2, 3, 4, 5],
+        read: () =>
+          Stream.fromIterable([[1, 2], [3, 4], [5]], { chunkSize: 1 }),
+      },
       controls,
       (slice) => {
         seen.push(...slice);
@@ -507,7 +571,11 @@ describe("classifyStream", () => {
     const processSlice = vi.fn();
 
     await expect(
-      classifyStream(Stream.make([1, 2, 3]), controls, processSlice),
+      classifyStream(
+        { itemIDs: [1, 2, 3], read: () => Stream.make([1, 2, 3]) },
+        controls,
+        processSlice,
+      ),
     ).rejects.toThrow();
     expect(processSlice).not.toHaveBeenCalled();
   });
@@ -525,10 +593,14 @@ describe("classifyStream", () => {
     );
     const seen: number[] = [];
 
-    const pending = classifyStream(slices, controls, (slice) => {
-      seen.push(...slice);
-      abort.abort();
-    });
+    const pending = classifyStream(
+      { itemIDs: [1, 2, 3], read: () => slices },
+      controls,
+      (slice) => {
+        seen.push(...slice);
+        abort.abort();
+      },
+    );
 
     await expect(pending).rejects.toThrow();
     expect(interrupted).toBe(true);
@@ -557,10 +629,14 @@ describe("classifyStream", () => {
     );
     const seen: number[] = [];
 
-    const pending = classifyStream(slices, controls, (slice) => {
-      seen.push(...slice);
-      abort.abort();
-    });
+    const pending = classifyStream(
+      { itemIDs: [1, 2, 3], read: () => slices },
+      controls,
+      (slice) => {
+        seen.push(...slice);
+        abort.abort();
+      },
+    );
 
     await expect(pending).rejects.toThrow();
     expect(interrupted).toBe(true);

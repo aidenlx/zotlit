@@ -46,7 +46,8 @@ export interface BatchRunResult {
 }
 
 /**
- * Classify loop over a stream of slices, one entry per classified id: each
+ * Classify ids through sequential requests of at most 500 ids. `read` uses
+ * the caller's Snapshot so every request sees one database state. Each reply
  * slice advances the loading bar. An abort of
  * {@link BatchClassifyControls.signal} interrupts the stream, so no read runs
  * after the slice in progress. The caller's `processSlice` handles the per-id
@@ -55,12 +56,30 @@ export interface BatchRunResult {
  * @throws when {@link BatchClassifyControls.signal} aborts or a read fails.
  */
 export async function classifyStream<A, E>(
-  slices: Stream.Stream<readonly A[], E>,
+  {
+    itemIDs,
+    read,
+  }: {
+    itemIDs: readonly number[];
+    read: (itemIDs: readonly number[]) => Stream.Stream<readonly A[], E>;
+  },
   controls: BatchClassifyControls,
   processSlice: (slice: readonly A[]) => void,
 ): Promise<void> {
   // A run started on an already-aborted signal completes, so check first.
   controls.signal.throwIfAborted();
+  function* requests() {
+    for (let start = 0; start < itemIDs.length; start += 500) {
+      yield itemIDs.slice(start, start + 500);
+    }
+  }
+  // Bound request encoding and structured cloning on the renderer as well
+  // as the worker's reply slices. Pull one request only after the last ends.
+  const slices = Stream.fromIterable(requests(), { chunkSize: 1 }).pipe(
+    Stream.flatMap((ids) =>
+      controls.signal.aborted ? Stream.fromEffect(Effect.interrupt) : read(ids),
+    ),
+  );
   let classified = 0;
   await Effect.runPromise(
     Stream.runForEach(slices, (slice) =>
