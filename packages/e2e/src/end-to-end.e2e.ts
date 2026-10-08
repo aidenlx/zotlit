@@ -844,7 +844,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           cleanup.defer(()=>clipboard.write(saved));
           const write=navigator.clipboard.writeText;
           cleanup.defer(()=>{navigator.clipboard.writeText=write;});
-          await navigator.clipboard.writeText('');
+          clipboard.writeText('');
           if(${refuse})navigator.clipboard.writeText=()=>Promise.reject(new Error('Clipboard write refused'));
           button.click();
           let item=null;
@@ -852,7 +852,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           if(!item)throw new Error('Copy citation missing from the card menu');
           item.click();
           let text='';
-          for(let i=0;i<50&&!text;i++){text=await navigator.clipboard.readText().catch(()=>'');if(!text)await new Promise(r=>setTimeout(r,100));}
+          for(let i=0;i<50&&text!==${JSON.stringify(citation)};i++){text=clipboard.readText();if(text!==${JSON.stringify(citation)})await new Promise(r=>setTimeout(r,100));}
           return text;
         })()`,
       );
