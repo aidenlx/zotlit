@@ -253,6 +253,36 @@ describe("describeItemQuery functions", () => {
         returns: "list",
       });
     }
+    expect(methods.find((entry) => entry.name === "isTruthy")).toEqual({
+      name: "isTruthy",
+      on: "any",
+      parameters: [],
+      optional: [],
+      rest: null,
+      returns: "boolean",
+    });
+    expect(functions.find((entry) => entry.name === "list")).toEqual({
+      name: "list",
+      parameters: [{ name: "value", type: "any" }],
+      optional: [],
+      rest: null,
+      returns: "list",
+    });
+    expect(
+      methods.find((entry) => entry.on === "string" && entry.name === "split"),
+    ).toEqual({
+      name: "split",
+      on: "string",
+      parameters: [{ name: "separator", type: "string" }],
+      optional: [{ name: "n", type: "number" }],
+      rest: null,
+      returns: "list",
+    });
+    expect(
+      methods.find(
+        (entry) => entry.on === "number" && entry.name === "toFixed",
+      ),
+    ).toMatchObject({ parameters: [{ name: "precision", type: "number" }] });
     expect(
       properties.filter((entry) => entry.name === "length").map((e) => e.on),
     ).toEqual(["string", "list"]);
