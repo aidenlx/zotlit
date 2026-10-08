@@ -5,8 +5,8 @@ import { formatIndexedKey } from "@/lib/zt-key";
 
 import { groupIDForLibrary, resolveGroupID } from "./_groups";
 import type { GroupIDMemo } from "./_groups";
-import { defineQuery, rowsByID } from "./_shared";
-import type { FindManyOptions, QueryRow } from "./_shared";
+import { defineQuery, idSlots, rowsByID } from "./_shared";
+import type { FindManyOptions, QueryRow, SlotParams } from "./_shared";
 
 /** A note's identity and staleness stamp, without its HTML body. */
 export interface ChildNote {
@@ -130,24 +130,25 @@ export function getNoteByKey(
   );
 }
 
-const notesByKeysQuery = defineQuery<void>()(
-  (db, _operators, args: { libraryID: number; keys: readonly string[] }) =>
-    db.query.itemNotes.findMany({
-      where: {
-        item: {
-          key: { in: [...args.keys] },
-          libraryID: args.libraryID,
-          deletedItem: false,
-        },
+const notesByKeysQuery = defineQuery<
+  { libraryID: number } & SlotParams<string>
+>()((db, { placeholder }) =>
+  db.query.itemNotes.findMany({
+    where: {
+      item: {
+        key: { in: idSlots(placeholder) },
+        libraryID: placeholder("libraryID"),
+        deletedItem: false,
       },
-      ...noteOptions,
-    }),
+    },
+    ...noteOptions,
+  }),
 );
 
 /**
  * Fetch notes of one library by key, in `keys` order, through
- * {@link rowsByID}: {@link getNoteByKey} for each key, in one statement per
- * {@link IN_BATCH_SIZE} distinct keys. A key that names no live note has no
+ * {@link rowsByID}: {@link getNoteByKey} for each key, in one cached statement
+ * per {@link BATCH_SLOTS} distinct keys. A key that names no live note has no
  * entry; a repeated key repeats its note.
  */
 export function getNotesByKey(
@@ -157,17 +158,13 @@ export function getNotesByKey(
 ): Note[] {
   if (keys.length === 0) return [];
   const rows = rowsByID(keys, {
-    one: (key) => noteByKeyQuery.prepared(db).all({ libraryID, key }),
-    many: (batch) =>
-      notesByKeysQuery.prepare(db, { libraryID, keys: batch }).all(),
+    batch: (slots) =>
+      notesByKeysQuery.prepared(db).all({ libraryID, ...slots }),
     idOf: (row) => row.item.key,
   });
-  if (rows.size === 0) return [];
+  if (rows.length === 0) return [];
   const groupID = groupIDForLibrary(db, libraryID);
-  return keys.flatMap((key) => {
-    const row = rows.get(key);
-    return row ? [toNote(row, groupID)] : [];
-  });
+  return rows.map((row) => toNote(row, groupID));
 }
 
 // --- Queries for explicit note-import (Stage 9.3) ---

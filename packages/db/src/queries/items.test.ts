@@ -6,7 +6,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { NodeDatabaseClient } from "@/client/node";
 import { USER_LIBRARY_ID } from "@/lib/constants";
 import { parseItemLanguage } from "@/lib/zt-lang";
-import { countStatements, createFixtureSchema } from "@/test-utils";
+import {
+  countCompiles,
+  countStatements,
+  createFixtureSchema,
+} from "@/test-utils";
 
 import {
   getItemsByID,
@@ -298,8 +302,9 @@ describe("getItemsByID", () => {
     ]);
   });
 
-  it("runs the same statements for one id as for many", () => {
+  it("runs the same cached statements for one id as for many", () => {
     const statements = countStatements(sqlite);
+    const compiles = countCompiles(sqlite);
     const cost = (itemIDs: number[]) => {
       const before = statements();
       getItemsByID(db, itemIDs);
@@ -308,6 +313,9 @@ describe("getItemsByID", () => {
     cost([1]);
     // Every id is in the user library, so each read resolves one group.
     expect(cost([1, 6, 2, 3, 999, 6])).toBe(cost([1]));
+    const compiled = compiles();
+    cost([1, 6, 2, 3, 999, 6]);
+    expect(compiles()).toBe(compiled);
   });
 
   it("returns an empty array for empty input", () => {
@@ -367,8 +375,9 @@ describe("getItemsByKey", () => {
     ).toEqual(["USER2", "USER1"]);
   });
 
-  it("runs the same statements for one key as for fifty", () => {
+  it("runs the same cached statements for one key as for fifty", () => {
     const statements = countStatements(sqlite);
+    const compiles = countCompiles(sqlite);
     const cost = (keys: string[]) => {
       const before = statements();
       getItemsByKey(db, keys, { libraryID: USER_LIBRARY_ID });
@@ -379,6 +388,9 @@ describe("getItemsByKey", () => {
       i % 2 === 0 ? "USER1" : `MISS${i}`,
     );
     expect(cost(["USER2", ...fifty.slice(1)])).toBe(cost(["USER1"]));
+    const compiled = compiles();
+    cost(["USER2", ...fifty.slice(1)]);
+    expect(compiles()).toBe(compiled);
   });
 });
 

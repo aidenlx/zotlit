@@ -44,6 +44,21 @@ export function countStatements(sqlite: DatabaseSync): () => number {
   return () => count;
 }
 
+/**
+ * Count the statements compiled on `sqlite` from now on: each `prepare` call.
+ * A warm batched read compiles none, for one id or for many: it runs only
+ * statements its queries cache.
+ */
+export function countCompiles(sqlite: DatabaseSync): () => number {
+  let count = 0;
+  const prepare = sqlite.prepare.bind(sqlite);
+  sqlite.prepare = (source: string) => {
+    count += 1;
+    return prepare(source);
+  };
+  return () => count;
+}
+
 const FIXTURE_DDL = `
   create table libraries (
     libraryID integer primary key,

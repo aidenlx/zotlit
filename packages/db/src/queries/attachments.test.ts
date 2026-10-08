@@ -5,11 +5,16 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { NodeDatabaseClient } from "@/client/node";
 import { USER_LIBRARY_ID } from "@/lib/constants";
-import { createFixtureSchema } from "@/test-utils";
+import {
+  countCompiles,
+  countStatements,
+  createFixtureSchema,
+} from "@/test-utils";
 
 import {
   getAttachmentPage,
   getAttachmentByKey,
+  getAttachmentsByKey,
   getAttachmentsByParents,
 } from "./attachments";
 
@@ -84,6 +89,28 @@ describe("getAttachmentsByParents", () => {
       "ATTA2",
     ]);
   });
+
+  it("returns parents in request order, repeating a repeated parent and leaving misses out", () => {
+    expect(
+      getAttachmentsByParents(db, [200, 999, 100, 200]).map((a) => a.key),
+    ).toEqual(["ATTB1", "ATTA1", "ATTA2", "ATTB1"]);
+  });
+
+  it("runs the same cached statements for one parent as for many", () => {
+    const statements = countStatements(sqlite);
+    const compiles = countCompiles(sqlite);
+    const cost = (parentItemIDs: number[]) => {
+      const before = statements();
+      getAttachmentsByParents(db, parentItemIDs);
+      return statements() - before;
+    };
+    cost([200]);
+    // Every parent is in the user library, so each read resolves one group.
+    expect(cost([100, 200, 400, 999, 100])).toBe(cost([200]));
+    const compiled = compiles();
+    cost([100, 200, 400, 999, 100]);
+    expect(compiles()).toBe(compiled);
+  });
 });
 
 describe("getAttachmentByKey", () => {
@@ -99,6 +126,42 @@ describe("getAttachmentByKey", () => {
     expect(getAttachmentByKey(db, "MISSING", USER_LIBRARY_ID)).toBeNull();
     expect(getAttachmentByKey(db, "TRASHED", USER_LIBRARY_ID)).toBeNull();
     expect(getAttachmentByKey(db, "ATTOTHER", USER_LIBRARY_ID)).toBeNull();
+  });
+});
+
+describe("getAttachmentsByKey", () => {
+  it("returns keys in request order, repeating a repeated key and leaving misses, deleted, and other-library attachments out", () => {
+    expect(
+      getAttachmentsByKey(db, USER_LIBRARY_ID, [
+        "ATTB1",
+        "MISSING",
+        "ATTA1",
+        "TRASHED",
+        "ATTOTHER",
+        "ATTB1",
+      ]).map((a) => a.key),
+    ).toEqual(["ATTB1", "ATTA1", "ATTB1"]);
+  });
+
+  it("returns an empty array for empty input", () => {
+    expect(getAttachmentsByKey(db, USER_LIBRARY_ID, [])).toEqual([]);
+  });
+
+  it("runs the same cached statements for one key as for many", () => {
+    const statements = countStatements(sqlite);
+    const compiles = countCompiles(sqlite);
+    const cost = (keys: string[]) => {
+      const before = statements();
+      getAttachmentsByKey(db, USER_LIBRARY_ID, keys);
+      return statements() - before;
+    };
+    cost(["ATTA1"]);
+    expect(cost(["ATTA1", "ATTA2", "ATTB1", "URLATTCH", "MISSING"])).toBe(
+      cost(["ATTA1"]),
+    );
+    const compiled = compiles();
+    cost(["ATTA1", "ATTA2", "ATTB1", "URLATTCH", "MISSING"]);
+    expect(compiles()).toBe(compiled);
   });
 });
 

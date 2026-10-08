@@ -117,7 +117,8 @@ const SEED = `
  * the log records opens and closes, so a test can watch a connection's
  * lifetime, and `closed(n)` completes when connection #n closes. Open #N
  * reports library 1 at `version: N`, so a read shows which connection
- * answered. `statements()` counts the statements run on every connection;
+ * answered. `statements()` counts the statements run on every connection,
+ * and `compiles()` the statements prepared on every connection;
  * `ran(sql, open?)` counts the runs of one statement, on connection #open
  * or on any. `extra` adds SQL per open, or `null` to fail the open.
  */
@@ -135,6 +136,7 @@ function fixtureOpener(extra: (open: number) => string | null = () => "") {
   };
   let opened = 0;
   let statements = 0;
+  let compiles = 0;
   const runs: { open: number; sql: string }[] = [];
   const open: ConnectionOpener = (config) => {
     const id = ++opened;
@@ -150,6 +152,7 @@ function fixtureOpener(extra: (open: number) => string | null = () => "") {
     );
     const prepare = sqlite.prepare.bind(sqlite);
     sqlite.prepare = (source: string) => {
+      compiles += 1;
       const statement = prepare(source);
       const methods = statement as unknown as Record<
         "all" | "get" | "run" | "iterate",
@@ -180,6 +183,7 @@ function fixtureOpener(extra: (open: number) => string | null = () => "") {
     configs,
     closed: (id: number) => Effect.promise(() => closeSignal(id).promise),
     statements: () => statements,
+    compiles: () => compiles,
     ran: (sql: string, open?: number) =>
       runs.filter(
         (entry) =>
@@ -807,15 +811,34 @@ describe("ZoteroReads operations", () => {
 
   /** Ids for one row, and for many: notes live and trashed, items with and without notes, a miss. */
   const sliceIDs = { one: [200], many: [1, 2, 3, 10, 200, 201, 999] };
-  it.each<
-    [
-      string,
-      (
-        reads: ZoteroReadsClient,
-        size: "one" | "many",
-      ) => Effect.Effect<unknown, unknown>,
-    ]
-  >([
+  /** One operation, read for one row or for many. */
+  type SliceRead = [
+    string,
+    (
+      reads: ZoteroReadsClient,
+      size: "one" | "many",
+    ) => Effect.Effect<unknown, unknown>,
+  ];
+  /** Live and trashed notes and attachments beyond the base seed. */
+  const sliceOpener = () =>
+    fixtureOpener(
+      () => `
+        insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+          values (201, 3, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'TRSH2345'),
+                 (202, 3, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'NTE32345'),
+                 (11, 2, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'ATC22345'),
+                 (12, 2, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'ATC32345'),
+                 (13, 2, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'TRSA2345');
+        insert into itemNotes (itemID, parentItemID, note, title)
+          values (201, 1, '<p>gone</p>', 'Gone'), (202, 2, '<p>more</p>', 'More');
+        insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path)
+          values (11, 2, 0, 'application/pdf', 'storage:beta.pdf'),
+                 (12, 1, 0, 'application/pdf', 'storage:main-2.pdf'),
+                 (13, 1, 0, 'application/pdf', 'storage:gone.pdf');
+        insert into deletedItems (itemID) values (201), (13);
+      `,
+    );
+  const sliceReads: SliceRead[] = [
     [
       "DisplayRefs",
       (reads, size) =>
@@ -843,19 +866,66 @@ describe("ZoteroReads operations", () => {
               : ["NTE22345", "NTE32345", "TRSH2345", "MISS2345", "NTE22345"],
         }),
     ],
-  ])(
+    // Live items, an attachment, a miss, and a repeat.
+    [
+      "ItemsByIndexedKeys",
+      (reads, size) =>
+        reads.ItemsByIndexedKeys({
+          indexedKeys:
+            size === "one"
+              ? ["MAIN2345"]
+              : ["MAIN2345", "RELB2345", "RELA2345", "ATCH2345", "MISS2345"],
+        }),
+    ],
+    // Parents with one and two attachments, one with none, and a miss.
+    [
+      "AttachmentsOf",
+      (reads, size) =>
+        reads.AttachmentsOf({
+          itemIDs: size === "one" ? [2] : [1, 2, 3, 999, 1],
+        }),
+    ],
+    // An annotation, a miss, and a repeat.
+    [
+      "AnnotationSources",
+      (reads, size) =>
+        reads.AnnotationSources({
+          libraryID: 1,
+          keys:
+            size === "one"
+              ? ["ANNT2345"]
+              : ["ANNT2345", "MISS2345", "ANNT2345"],
+        }),
+    ],
+    // Live attachments, a trashed one, a miss, and a repeat.
+    [
+      "AttachmentsByKeys",
+      (reads, size) =>
+        reads.AttachmentsByKeys({
+          libraryID: 1,
+          keys:
+            size === "one"
+              ? ["ATCH2345"]
+              : ["ATCH2345", "ATC22345", "ATC32345", "TRSA2345", "MISS2345"],
+        }),
+    ],
+    [
+      "AttachmentSources",
+      (reads, size) =>
+        reads.AttachmentSources({
+          attachmentKeys:
+            size === "one"
+              ? ["ATCH2345"]
+              : ["ATCH2345", "ATC22345", "ATC32345", "TRSA2345", "MISS2345"],
+        }),
+    ],
+  ];
+  /** Reads whose batched query builds its SQL per call, so it is not cached. */
+  const uncachedReads = new Set(["DisplayRefs", "NoteRefs", "ChildNoteRefs"]);
+  it.each(sliceReads)(
     "%s runs the same statements for one row as for many",
     async (_operation, read) => {
-      const { open, statements } = fixtureOpener(
-        () => `
-          insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
-            values (201, 3, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'TRSH2345'),
-                   (202, 3, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'NTE32345');
-          insert into itemNotes (itemID, parentItemID, note, title)
-            values (201, 1, '<p>gone</p>', 'Gone'), (202, 2, '<p>more</p>', 'More');
-          insert into deletedItems (itemID) values (201);
-        `,
-      );
+      const { open, statements } = sliceOpener();
       const counts = await withReads(open, (reads) =>
         Effect.gen(function* () {
           const cost = (size: "one" | "many") =>
@@ -873,6 +943,26 @@ describe("ZoteroReads operations", () => {
       expect(counts.many).toBe(counts.one);
     },
   );
+  it.each(sliceReads.filter(([operation]) => !uncachedReads.has(operation)))(
+    "%s compiles no statement for a warm read of one row or many",
+    async (_operation, read) => {
+      const { open, compiles } = sliceOpener();
+      const counts = await withReads(open, (reads) =>
+        Effect.gen(function* () {
+          const cost = (size: "one" | "many") =>
+            Effect.gen(function* () {
+              const before = compiles();
+              yield* read(reads, size);
+              return compiles() - before;
+            });
+          yield* cost("one");
+          yield* cost("many");
+          return [yield* cost("one"), yield* cost("many")];
+        }),
+      );
+      expect(counts).toEqual([0, 0]);
+    },
+  );
 
   /** Fifty Indexed Keys of one Library: its live items, misses, and a repeat. */
   const fiftyKeys = (live: string[], suffix: string) => {
@@ -886,16 +976,21 @@ describe("ZoteroReads operations", () => {
   const userFifty = fiftyKeys(["MAIN2345", "RELA2345", "RELB2345"], "");
   const groupFifty = fiftyKeys(["GRPITEMS"], "g900");
 
-  /** Statements each `ItemsByIndexedKeys` request runs, read warm. */
-  const keyReadCosts = (requests: (readonly string[])[]) => {
-    const { open, statements } = fixtureOpener();
+  /** Statements each `ItemsByIndexedKeys` request runs or compiles, read warm. */
+  const keyReadCosts = (
+    requests: (readonly string[])[],
+    counter: "statements" | "compiles" = "statements",
+  ) => {
+    const opener = fixtureOpener();
+    const { open } = opener;
+    const count = opener[counter];
     return withReads(open, (reads) =>
       Effect.gen(function* () {
         const cost = (indexedKeys: readonly string[]) =>
           Effect.gen(function* () {
-            const before = statements();
+            const before = count();
             yield* reads.ItemsByIndexedKeys({ indexedKeys });
-            return statements() - before;
+            return count() - before;
           });
         for (const request of requests) yield* cost(request);
         const costs: number[] = [];
@@ -909,11 +1004,12 @@ describe("ZoteroReads operations", () => {
     ["the user Library", ["MAIN2345"], userFifty],
     ["a group Library", ["GRPITEMSg900"], groupFifty],
   ])(
-    "ItemsByIndexedKeys runs the same statements for one key of %s as for fifty",
+    "ItemsByIndexedKeys runs the same cached statements for one key of %s as for fifty",
     async (_library, one, fifty) => {
       expect(fifty).toHaveLength(50);
       const [oneCost, fiftyCost] = await keyReadCosts([one, fifty]);
       expect(fiftyCost).toBe(oneCost);
+      expect(await keyReadCosts([one, fifty], "compiles")).toEqual([0, 0]);
     },
   );
 

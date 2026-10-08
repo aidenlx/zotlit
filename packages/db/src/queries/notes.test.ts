@@ -4,7 +4,11 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { NodeDatabaseClient } from "@/client/node";
-import { countStatements, createFixtureSchema } from "@/test-utils";
+import {
+  countCompiles,
+  countStatements,
+  createFixtureSchema,
+} from "@/test-utils";
 
 import {
   getChildNotesByParentIDs,
@@ -85,8 +89,9 @@ describe("getNotesByKey", () => {
     ).toEqual(["CHILD002", "LIVE"]);
   });
 
-  it("runs the same statements for one key as for many", () => {
+  it("runs the same cached statements for one key as for many", () => {
     const statements = countStatements(sqlite);
+    const compiles = countCompiles(sqlite);
     const cost = (keys: string[]) => {
       const before = statements();
       getNotesByKey(db, 1, keys);
@@ -96,6 +101,9 @@ describe("getNotesByKey", () => {
     expect(cost(["LIVE", "CHILD001", "CHILD002", "TRASHED", "MISSING"])).toBe(
       cost(["LIVE"]),
     );
+    const compiled = compiles();
+    cost(["LIVE", "CHILD001", "CHILD002", "TRASHED", "MISSING"]);
+    expect(compiles()).toBe(compiled);
   });
 
   it("returns no notes for empty input", () => {

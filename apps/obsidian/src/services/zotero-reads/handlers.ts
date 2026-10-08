@@ -15,6 +15,7 @@ import {
   getAttachmentByItemId,
   getAttachmentByKey,
   getAttachmentPage,
+  getAttachmentsByKey,
   getAttachmentsByParents,
   getChildNotesByParentIDs,
   getAllTagNames,
@@ -41,7 +42,7 @@ import {
   parseIndexedKey,
   resolveIndexedKeyLibrary,
 } from "@zotlit/db";
-import type { GroupIDMemo, Item, TagMemo } from "@zotlit/db";
+import type { Attachment, GroupIDMemo, Item, TagMemo } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import {
   IndexConfig,
@@ -143,7 +144,7 @@ function sliced<I, O>(
 /**
  * Live items for Indexed Keys, keyed by Indexed Key in request order. Each
  * Library the keys span resolves once and reads its items through
- * `getItemsByKey`: one statement per `IN_BATCH_SIZE` distinct keys.
+ * `getItemsByKey`: one cached statement per `BATCH_SLOTS` distinct keys.
  */
 function itemsByIndexedKeys(
   client: NodeDatabaseClient,
@@ -190,6 +191,37 @@ function itemsByIndexedKeys(
     if (item) items.set(indexedKey, item);
   }
   return items;
+}
+
+/** Live attachments for Indexed Keys, in request order; misses drop out. */
+function attachmentsByIndexedKeys(
+  client: NodeDatabaseClient,
+  indexedKeys: readonly string[],
+): Attachment[] {
+  const selectors = indexedKeys.map((indexedKey) =>
+    resolveIndexedKeyLibrary(client, indexedKey),
+  );
+  const byLibrary = new Map<number, Map<string, Attachment>>();
+  for (const [libraryID, group] of Map.groupBy(
+    selectors.filter((selector) => selector !== null),
+    (selector) => selector.libraryID,
+  )) {
+    const keys = group.map((selector) => selector.key);
+    byLibrary.set(
+      libraryID,
+      new Map(
+        getAttachmentsByKey(client, libraryID, keys).map((attachment) => [
+          attachment.key,
+          attachment,
+        ]),
+      ),
+    );
+  }
+  return selectors.flatMap((selector) => {
+    const attachment =
+      selector && byLibrary.get(selector.libraryID)?.get(selector.key);
+    return attachment ? [attachment] : [];
+  });
 }
 
 function workLabelSource(
@@ -555,9 +587,7 @@ export function handlersLayer(options?: HandlersOptions) {
 
         AttachmentsByKeys: ({ libraryID, keys, snapshot }) =>
           withClient(snapshot, (client) =>
-            keys.flatMap(
-              (key) => getAttachmentByKey(client, key, libraryID) ?? [],
-            ),
+            getAttachmentsByKey(client, libraryID, keys),
           ),
 
         DatabaseIdentity: ({ snapshot }) =>
@@ -629,13 +659,10 @@ export function handlersLayer(options?: HandlersOptions) {
 
         AttachmentSources: (payload) =>
           withClient(payload.snapshot, (client) => {
-            const attachments = payload.attachmentKeys.flatMap((indexedKey) => {
-              const library = resolveIndexedKeyLibrary(client, indexedKey);
-              const attachment =
-                library &&
-                getAttachmentByKey(client, library.key, library.libraryID);
-              return attachment ? [attachment] : [];
-            });
+            const attachments = attachmentsByIndexedKeys(
+              client,
+              payload.attachmentKeys,
+            );
             return fetchAttachmentSources(client, attachments, {
               ...("username" in payload && { username: payload.username }),
             });
