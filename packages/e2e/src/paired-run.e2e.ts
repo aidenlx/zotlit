@@ -1379,8 +1379,14 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             ),
           ).toBe(true);
           expect(
-            await obEval(vaultId!, `${tool}.getAttribute('aria-pressed')`),
-          ).toBe("false");
+            await obEvalUntil(
+              vaultId!,
+              `${tool}.getAttribute('aria-pressed')`,
+              {
+                expected: "false",
+              },
+            ),
+          ).toBe(true);
           // The card shows the Excerpt Image, decoded.
           expect(
             await obEvalUntil(
