@@ -549,8 +549,8 @@ describe("independent native Note Preview", () => {
       );
     });
     const preview = await test.open();
-    // The linked render of the open settles before the restore lands.
-    await advance();
+    // The editor's read for the open is still in flight, so the context it
+    // publishes when the read lands arrives after the restore.
     vi.mocked(activeTemplateWorkbench).mockReturnValue(test.editor);
     const saved = {
       source: { builtin: true },
