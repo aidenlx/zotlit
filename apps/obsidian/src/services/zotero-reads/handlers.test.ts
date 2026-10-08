@@ -169,7 +169,7 @@ describe("ZoteroReads ItemQuery", () => {
     expect(borrows()).toBe(0);
   });
 
-  it("ends the job of a request that the client interrupts, before its borrow ends", async () => {
+  it("ends the job of a request that the client interrupts, and releases its borrow", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     seedBulkLibrary(scenario.sqlite, 20000);
     const { client, borrows } = clientOf(scenario);

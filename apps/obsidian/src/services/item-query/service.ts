@@ -136,22 +136,17 @@ export class ItemQueryService extends Service {
       signal,
       uninterruptible: true,
     });
-    return new Promise((resolve, reject) => {
-      fiber.addObserver((exit) => {
-        if (Exit.isSuccess(exit)) resolve(exit.value);
-        else if (Cause.hasInterruptsOnly(exit.cause)) {
-          reject(
-            signal.aborted
-              ? (signal.reason as unknown)
-              : new DOMException(
-                  id === undefined || this.disposing
-                    ? "The query was cancelled."
-                    : queryCancelledText(id),
-                  "AbortError",
-                ),
+    return Effect.runPromise(Fiber.await(fiber)).then((exit) => {
+      if (Exit.isSuccess(exit)) return exit.value;
+      if (!Cause.hasInterruptsOnly(exit.cause)) throw Cause.squash(exit.cause);
+      throw signal.aborted
+        ? (signal.reason as unknown)
+        : new DOMException(
+            id === undefined || this.disposing
+              ? "The query was cancelled."
+              : queryCancelledText(id),
+            "AbortError",
           );
-        } else reject(Cause.squash(exit.cause));
-      });
     });
   }
 
@@ -223,16 +218,20 @@ export class ItemQueryService extends Service {
         Effect.onInterrupt(() =>
           report("requested").pipe(
             Effect.andThen(report("sent")),
-            Effect.andThen(reads.CancelItemQuery({ id }).pipe(Effect.ignore)),
-            Effect.andThen(Fiber.await(call)),
+            Effect.andThen(reads.CancelItemQuery({ id })),
+            Effect.ignoreCause,
+            Effect.ensuring(Fiber.await(call)),
           ),
         ),
       );
       if (result.cancelled) return yield* Effect.interrupt;
       if (result.measurement) measure?.completed(result.measurement);
-      if (output !== undefined && stagePath !== undefined)
-        if (result.receipt.kind === "file")
-          return yield* publishExport(stagePath, output, result.answer);
+      if (stagePath !== undefined && result.receipt.kind === "file")
+        return yield* publishExport(
+          stagePath,
+          result.receipt.path,
+          result.answer,
+        );
       return result.answer;
     }).pipe(
       Effect.scoped,
