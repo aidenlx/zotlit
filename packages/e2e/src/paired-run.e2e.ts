@@ -6052,12 +6052,18 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               rects: [[100, 560 - n * 30, 300, 580 - n * 30]],
             },
           }));
-          const made = await obJson<string[]>(
-            vaultId!,
-            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const keys=[];for(const draft of ${JSON.stringify(drafts)}){const outcome=await repository.createAnnotation(${JSON.stringify(attachment.key)},draft);keys.push(outcome.annotationKey);}return JSON.stringify(keys);})()`,
-          );
           try {
-            expect(made).toHaveLength(2);
+            const outcomes = await obJson<
+              { kind: string; annotationKey?: string }[]
+            >(
+              vaultId!,
+              `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const outcomes=[];for(const draft of ${JSON.stringify(drafts)})outcomes.push(await repository.createAnnotation(${JSON.stringify(attachment.key)},draft));return JSON.stringify(outcomes);})()`,
+            );
+            expect(outcomes).toEqual([
+              { kind: "created", annotationKey: expect.any(String) },
+              { kind: "created", annotationKey: expect.any(String) },
+            ]);
+            const made = outcomes.map(({ annotationKey }) => annotationKey!);
             const [first, second] = made as [string, string];
             await clickCard(first);
             expect(
