@@ -1,22 +1,22 @@
 ---
 name: interface-review
 disable-model-invocation: true
-description: Reviews your work across multiple categories like UI, typography, layout, color, writing and accessibility and gives you a detailed analysis of the findings.
+description: Reviews a branch, pull request or uncommitted change for the interface problems it introduced or regressed, across accessibility, layout, writing, typography, color and UI.
 ---
 
-# Change review
+# Interface review
 
 This skill reviews a change rather than a screen. It resolves the scope, expands the changed files to the surfaces they affect, reads both sides of the diff and classifies every finding.
 
-Scope is all it owns. Domain rules belong to the `better-*` skills. Severity, consolidation, coverage, the cap and the verdict belong to `better-interface`, which this skill hands the review to.
+It owns the scope, the classification and the change-scoped report. Domain rules belong to the `better-*` skills. Severity, consolidation, coverage, the cap and the verdict belong to `better-interface`, which this skill hands the review to.
 
-Correctness, tests, security and performance belong to the project's general code review. Name the concern once and move on.
+Correctness, tests, security and performance belong to the project's general code review. Name such a concern once, point at that review and drop it.
 
 ## The change, not the codebase
 
 The author is asking "did I make this worse?". Report what the change caused and stay mostly quiet about what it merely touched. Three pre-existing findings is a courtesy; thirty is a different review and one nobody asked for.
 
-Read the change before forming an opinion of it. The stated intent decides what counts as incomplete, and a skimmed diff produces findings about code the next hunk already fixed.
+Read the whole diff before forming an opinion of it. A skimmed diff produces findings about code the next hunk already fixed.
 
 ## Core principles
 
@@ -26,41 +26,40 @@ The whole invocation is the target, so `/interface-review pr 482` reviews pull r
 
 With no target supplied, resolve in this order and stop at the first match:
 
-1. `HEAD` is ahead of `git merge-base origin/<default-branch> HEAD`: that range **plus** any uncommitted changes, with the commit count and the uncommitted file count stated separately.
-2. The working tree is dirty: the uncommitted changes.
-3. Neither: there is no change to review. Stop and ask, per **With no change, ask rather than invent one**.
+1. `HEAD` is ahead of `git merge-base origin/<default-branch> HEAD`. Review that range **plus** any uncommitted changes, stating the commit count and the uncommitted file count separately.
+2. The working tree is dirty. Review the uncommitted changes.
+3. Neither. There is no change to review, so follow **With no change, ask rather than invent one**.
 
-Order matters. Check the working tree first and one stray formatting edit shadows a twelve-commit branch, with the report still claiming full coverage.
+Record the base commit of the resolved range as `$BASE` and name it in the scope block. Every command in this skill and its references uses it.
 
-Exclude lockfiles, snapshots, generated output, vendored code and binaries, and name what you excluded. An empty scope after exclusions reaches the same place by a different route.
+Exclude lockfiles, snapshots, generated output, vendored code and binaries per [Excluded paths](scope-resolution.md#excluded-paths), and name what you excluded. If nothing survives the exclusions, treat it as no change.
 
 ### 2. With no change, ask rather than invent one
 
-A clean tree with nothing ahead of the merge base means the user asked to review a change that does not exist. Never fall back to `HEAD~1..HEAD` on your own. The last commit is whatever happened to land, often a merge, often someone else's work, and a report on it is indistinguishable from a report on what the user meant.
+A clean tree with nothing ahead of the merge base means there is no change to review. Never fall back to `HEAD~1..HEAD` on your own. The last commit is whatever happened to land, often a merge or someone else's work.
 
-State the repository facts you found, then offer the routes and wait. [Nothing to review](scope-resolution.md#nothing-to-review) holds the facts to gather:
+Gather the facts in [Nothing to review](scope-resolution.md#nothing-to-review), state them, then offer these routes and wait:
 
-- **The last commit**, `HEAD~1..HEAD`, named by short SHA and subject, so the user sees what they would get before choosing it.
-- **A target they name**: `pr <n>`, a branch, a ref, or a range, resolved per **Resolve the change scope first**.
-- **A whole-repository interface audit**, which is not a change review. Hand it to `better-interface` as a repository-scope review, without this skill's scope block, statuses, or pre-existing section. With no change, every finding is pre-existing and the classification says nothing.
+- **The open pull request** on the current branch, first when there is one. A branch whose commits already landed resolves to no change, while its pull request is still exactly what the user meant.
+- **The last commit**, `HEAD~1..HEAD`, named by short SHA and subject so the user sees what they would get.
+- **A target they name**, such as `pr <n>`, a branch, a ref or a range.
+- **A whole-repository interface audit**, which is not a change review. Hand it to `better-interface` as a repository-scope review, without this skill's scope block, statuses or pre-existing section.
 
-Check for an open pull request on the current branch before asking, and offer it first. A branch whose commits already landed resolves to no change, while its pull request is still exactly what the user meant.
-
-Where the scope emptied out after exclusions, say which files were excluded and ask the same way. Never report a review of nothing as `Approve`.
+Where exclusions emptied the scope, name the excluded files in the offer. Never report a review of nothing as `Approve`.
 
 ### 3. A diff is not a surface
 
 A changed file is evidence, not the review subject. Its **blast radius** is the set of surfaces it renders in; review those.
 
-Expand the blast radius one hop by default: the direct importers and callers. Expand a second hop only for design tokens, theme values and shared primitives, where one line reaches the whole product.
+Expand one hop by default, to the direct importers and callers. Expand a second hop only for design tokens, theme values and shared primitives, where one line reaches the whole product.
 
-Review at most five consumers, ordered by [the rule in Scope resolution](scope-resolution.md#expanding-to-consumers), then state how many you did not expand. A sweep with no bound cannot support the coverage it claims, and an unstated cutoff reads as completeness.
+Review at most five consumers in total across both hops, ordered by [the rule in Scope resolution](scope-resolution.md#expanding-to-consumers). State how many you did not expand, since an unstated cutoff reads as completeness.
 
 ### 4. Read the removed lines
 
 Regressions are invisible in the post-change state. Read the `-` side of every hunk against [Removed signals](removed-signals.md).
 
-A signal is a lead, not a finding. A removal is only a regression when nothing in the change replaces it, and the domain skill owns that judgement. Route each unmatched removal to its owner, report only what that skill confirms and status it `Regression`. That tells the author they broke something that worked rather than made a new mistake.
+A signal is a lead, not a finding. A removal is a regression only when nothing in the change replaces it, and the domain skill owns that judgement. Route each unmatched removal to its owner, report only what that skill confirms and status it `Regression`.
 
 ### 5. Classify every finding
 
@@ -68,56 +67,56 @@ Give every finding one status:
 
 - `Introduced`: the change created it.
 - `Regression`: the change weakened something previously correct.
-- `Pre-existing`: present in the touched code but not caused by this change.
+- `Pre-existing`: present before the change and not made worse by it.
 
-Status by what the diff touched, not by which file it sits in: a line the change never touched is `Pre-existing` even three lines from a hunk. Confirm against the base ref when it matters:
+Status by cause, not by location. A finding a changed line causes is `Introduced` or `Regression` wherever it surfaces, including an untouched consumer of a changed token. A finding the change neither created nor worsened is `Pre-existing`, even three lines from a hunk.
+
+To check whether a line predates the change, blame the reviewed range. A `^` prefix marks a line unchanged since the base:
 
 ```bash
-git blame -L <line>,<line> "$BASE" -- path/to/file
+git blame -L <line>,<line> "$BASE"..<head-ref> -- path/to/file
 ```
 
-Hand every finding up with its status attached and let `better-interface` apply its cap and verdict rules.
+For uncommitted work, drop the range. A line marked `Not Committed Yet` or blamed on a commit inside `$BASE..HEAD` belongs to the change.
 
 ### 6. Hold the change to its stated intent
 
 Read the pull request title and body, the linked issue and the commit messages, then review whether the interface delivers what they claim.
 
-This is what surfaces the **incomplete** change. A surface review cannot see it, because it inspects the states that are present, and here the point is the ones that are absent:
+This is how you find the **incomplete** change, which a surface review misses because it inspects only the states that exist. Look for the absent ones:
 
-- A new variant, size, or theme applied to some states but not all: hover, focus, active, disabled, loading, selected.
+- A new variant, size or theme applied to some states but not all of hover, focus, active, disabled, loading and selected.
 - A new user-facing string with no entry in the translation catalogue the project maintains.
-- A new component with no empty, loading, error, disabled, or narrow-width state.
+- A new component with no empty, loading, error, disabled or narrow-width state.
 - A control added to one surface but not to the siblings that already carry its peers.
 
 Do not report scope creep. Whether a change does too much is a process question, not an interface one.
 
 ### 7. Hand the review to `better-interface`
 
-Hand `better-interface` the scope block, the affected surfaces and a status on every finding. It routes to the domain skills, applies severity, consolidates, enforces the cap and issues the verdict.
+Hand `better-interface` the scope block, the affected surfaces and a status on every finding, and report in the format below.
 
-If `better-interface` is unavailable, report the resolved scope and the file inventory, name it as the missing skill and stop. Do not invent a severity scale, a cap, or a verdict.
+If `better-interface` is unavailable, report the resolved scope and the file inventory, name it as the missing skill and stop. Do not invent a severity scale, a cap or a verdict.
 
 ### 8. Never mutate the working tree
 
-A change review is read-only, including the checkout. Fetch pull request refs; never check them out. `git fetch` writes only to `.git` and is permitted. `gh pr checkout`, `git checkout`, `git switch` and `git stash` rewrite the files the author has open. They fail against local edits or discard them, so they are never permitted.
+A change review is read-only, including the checkout. `git fetch` writes only to `.git` and is permitted. `gh pr checkout`, `git checkout`, `git switch` and `git stash` rewrite the files the author has open, so they are never permitted. Fetch pull request refs and read them in place.
 
-Rendered verification is opt-in. Mark visual and runtime claims **Not verified** unless the project exposes a cheap preview or the user asks for a rendered review. When they do, use an isolated worktree (`git worktree add /tmp/review-<n> refs/remotes/pr/<n>`) and remove it when done.
+Rendered verification is opt-in here, in place of `better-interface`'s **Verify what can be verified**. Mark visual and runtime claims **Not verified** unless the project exposes a cheap preview or the user asks for a rendered review. For `working` and `branch`, the checkout already is the head, so render it in place. For any other target, render an isolated worktree such as `git worktree add /tmp/review-<n> refs/remotes/pr/<n>` and remove it when done.
 
 ## Before you finish
 
 | Mistake | Fix |
 | --- | --- |
-| One stray edit reviewed instead of the branch | Check `merge-base` before the working tree, and report both counts |
-| The last commit reviewed because there was no change | State the facts and offer the last commit, a named target, or a repository audit |
-| Hunks reviewed without their consumers | Expand one hop, two for tokens and primitives, and name what you skipped |
-| Only the `+` side of the diff read | Search the `-` side for removed accessibility, focus, motion and text signals |
-| An equivalent replacement reported as a regression | Route the removal to its owner; report only what it confirms |
-| A removal reported as a new mistake | Status it `Regression` so the author knows it used to work |
-| A line near a hunk statused `Introduced` | Status by what the diff touched, confirmed with `git blame` against the base ref |
-| A pull request checked out to review it | Fetch the ref and review it in place |
-| Line numbers cited that do not exist on the reviewed ref | Cite against the head ref named in the scope block |
-| The severity scale or the finding cap restated here | Defer to `better-interface` |
-| Correctness, test, or security findings in the report | Name the concern once, point at the project's code review and drop it |
+| The scope block counts only uncommitted files while `HEAD` is ahead of the merge base | Review the branch range plus the uncommitted changes, with both counts |
+| A report on `HEAD~1..HEAD` the user never chose | State the facts and offer the routes in **With no change, ask rather than invent one** |
+| A changed shared component with no consumer under `Surfaces expanded` | Expand to its consumers and name the ones you skipped |
+| A deleted `aria-label`, `outline` or `prefers-reduced-motion` with no finding and no note | Route it to its owner through [Removed signals](removed-signals.md) |
+| A `Regression` whose removed attribute reappears elsewhere in the diff | Check the [equivalent replacements](removed-signals.md#equivalent-replacements) first |
+| A finding on an untouched consumer of a changed token statused `Pre-existing` | The change caused it, so it is `Introduced` or `Regression` |
+| A line outside every hunk statused `Introduced` with no causing change named | Blame it against the reviewed range |
+| `gh pr checkout` or `git switch` in the command log | Fetch the ref and read files with `git show` |
+| A cited line that does not match `git show <head-ref>:path` | Cite against the head ref named in the scope block |
 
 ## Review output format
 
@@ -125,15 +124,15 @@ Open with the scope block:
 
 | Field | Value |
 | --- | --- |
-| Target | `branch`, `working`, `staged`, `pr 482`, or the range as entered |
+| Target | `branch`, `working`, `staged`, `pr 482` or the range as entered |
 | Base ref | `origin/main` at `a1b2c3d` |
 | Head ref | `refs/remotes/pr/482` at `e4f5g6h` |
 | Commits | 7 committed, 2 files uncommitted |
 | Files in scope | 12 after exclusions |
-| Excluded | `pnpm-lock.yaml`, `src/__snapshots__/`: lockfile and snapshots |
+| Excluded | `pnpm-lock.yaml`, `src/__snapshots__/`, lockfile and snapshots |
 | Surfaces expanded | `CheckoutPage`, `SettingsPanel`; 3 further `Button` consumers not expanded |
 
-The coverage table follows it unchanged. A domain with no evidence in the change scope is `Not reviewed: no evidence in the change scope`, which is a coverage statement rather than a gap.
+The coverage table from `better-interface` follows it. A domain with no evidence in the change scope is `Not reviewed: no evidence in the change scope`, which is a coverage statement rather than a gap.
 
 Then the findings, with a `Status` column per **Classify every finding**:
 
@@ -149,6 +148,4 @@ Then `Pre-existing` findings, at most three, highest severity first, stated plai
 | --- | --- | --- | --- |
 | MEDIUM | Typography | `src/Toolbar.tsx:7` | Numeric badges use proportional figures; predates this change |
 
-The cap and the verdict cover `Introduced` and `Regression` only. `Pre-existing` findings sit outside the cap, so touching a legacy file cannot turn into a full-file audit. They sit outside the verdict too, so a change whose only findings are pre-existing is an `Approve`.
-
-End with `Block` when any `HIGH` remains and `Approve` otherwise, leaving the remaining findings in the table as work to do. When `better-interface` is available, the severity scale and the cap come from it.
+Verification and the verdict follow in `better-interface`'s format.

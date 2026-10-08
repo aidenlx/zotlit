@@ -23,9 +23,9 @@ The canonical `.sr-only` pattern hides content visually while keeping it in the 
 
 Use `1px` boxes, not `0`, because some screen readers skip zero-sized elements. `white-space: nowrap` stops words being read as one run-together string. Never `display: none` or `visibility: hidden`, which remove the content from assistive tech entirely.
 
-Tailwind ships this as `sr-only`. Skip links add a focus variant that un-hides it, `focus:not-sr-only` or an override on `:focus`.
+Tailwind ships this as `sr-only`. The skip-link recipe is in [focus-and-keyboard.md](focus-and-keyboard.md).
 
-Use it for context sighted users get visually: `<span class="sr-only">Opens in new tab</span>`, table captions, or an icon-only control's label where `aria-label` isn't an option.
+Use it for context sighted users get visually: `<span class="sr-only">Opens in new tab</span>`, table captions or an icon-only control's label where `aria-label` isn't an option.
 
 ## Choosing how to announce a change
 
@@ -33,12 +33,10 @@ Work down this list and stop at the first match:
 
 1. **Focus moves there anyway**, as with an opened modal or the first invalid field. Nothing extra needed; the focus move is the announcement.
 2. **Tied to a specific control**, such as a field error or character count: `aria-describedby` on the control, announced with the field.
-3. **Non-urgent, not tied to a control**, such as a toast, "Saved", a result count, or a loading state: a polite live region, `role="status"`.
+3. **Non-urgent, not tied to a control**, such as a toast, "Saved", a result count or a loading state: a polite live region, `role="status"`.
 4. **Urgent and not tied to a control**, such as a form-level failure or session expiry: `role="alert"`.
 
 ## Live regions
-
-Live regions announce content that changes without a page load: toasts, validation, search-result counts, loading states.
 
 | Mechanism | Politeness | Use for |
 | --- | --- | --- |
@@ -48,10 +46,10 @@ Live regions announce content that changes without a page load: toasts, validati
 Rules for reliable announcements:
 
 - For repeated polite updates, keep a stable empty region in the DOM before changing its text. Inserting a new polite region with its content is announced inconsistently.
-- Dynamically inserted `role="alert"` content is usually announced, but behavior varies. Use it only for urgent errors not tied to a control, and test the target browser and screen-reader combinations.
-- Default to polite. Overusing `assertive` is the most common live-region mistake, because it interrupts whatever the user was reading.
+- Dynamically inserted `role="alert"` content is usually announced, but behavior varies. Test the target browser and screen-reader combinations.
+- Default to polite. `assertive` interrupts whatever the user was reading.
 - Keep messages short and self-contained. `aria-atomic="true"` re-reads the whole region on change.
-- Never move focus to a toast. Announce it and leave focus where the user is working. Give toasts a generous timeout or a dismiss button, and never put the only path to an action inside an auto-dismissing one.
+- Never move focus to a toast. Announce it and leave focus where the user is working.
 
 ```tsx
 // Region rendered from the start, message injected later
@@ -82,14 +80,14 @@ A missing `alt` is worse than an empty one, because screen readers fall back to 
 
 ## SVG
 
-- Decorative SVG: `aria-hidden="true"` and `focusable="false"`, the latter for legacy Edge and IE tabbing. No title needed.
+- Decorative SVG: `aria-hidden="true"`. No title needed.
 - Meaningful inline SVG: `role="img"` plus `aria-label="…"`, or a `<title>` as the first child referenced by `aria-labelledby`.
 - Simple cases: `<img src="icon.svg" alt="…">` is the most reliable delivery.
 
 ```tsx
 // Decorative icon inside a labeled button
 <button aria-label="Close">
-  <svg aria-hidden="true" focusable="false">…</svg>
+  <svg aria-hidden="true">…</svg>
 </button>
 
 // Standalone meaningful icon
@@ -98,4 +96,4 @@ A missing `alt` is worse than an empty one, because screen readers fall back to 
 
 ## Video and audio
 
-Prerecorded video needs captions; provide transcripts for audio. Never autoplay with sound, and always render controls.
+Prerecorded video needs captions (1.2.2), and prerecorded audio needs a transcript (1.2.1). Never autoplay with sound (1.4.2), and always render controls.

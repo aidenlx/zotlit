@@ -1,55 +1,37 @@
 # Enter and exit animations
 
-Staged entrances and the exits that follow them. For interactive state feedback see [animations.md](animations.md); for icon swaps see [icon-transitions.md](icon-transitions.md).
+Recipes for staged entrances and the exits that follow them. For interactive state feedback see [animations.md](animations.md), and for icon swaps see [icon-transitions.md](icon-transitions.md).
 
-## Enter animations: split and stagger
+## Enter animations
 
-Use this for infrequent staged entrances where sequence communicates hierarchy: the first load of a page hero, a success state, an empty state. Break a large container into semantic chunks and animate each one. Never stagger routine interactions such as row hovers, keystrokes, or repeated tab changes.
+1. **Split** into semantic groups such as title, description and actions.
+2. **Stagger** the groups `100ms` apart.
+3. **Split a short display headline** into words, staggered `80ms` apart, where it should read word by word.
+4. **Combine** `opacity`, `blur` and `translateY` for each group's enter.
 
-### Step by step
-
-1. **Split** into logical groups (title, description, buttons)
-2. **Stagger** with ~100ms delay between groups
-3. **For titles**, consider splitting into individual words with ~80ms stagger
-4. **Combine** `opacity`, `blur` and `translateY` for the enter effect
-
-### Code example
+### Motion
 
 ```tsx
-// Motion (Framer Motion): staggered enter
+const item = {
+  hidden: { opacity: 0, y: 12, filter: "blur(4px)" },
+  visible: {
+    opacity: 1,
+    y: 0,
+    filter: "blur(0px)",
+    transition: { duration: 0.3, ease: "easeOut" },
+  },
+};
+
 function PageHeader() {
   return (
     <motion.div
       initial="hidden"
       animate="visible"
-      variants={{
-        visible: { transition: { staggerChildren: 0.1 } },
-      }}
+      variants={{ visible: { transition: { staggerChildren: 0.1 } } }}
     >
-      <motion.h1
-        variants={{
-          hidden: { opacity: 0, y: 12, filter: "blur(4px)" },
-          visible: { opacity: 1, y: 0, filter: "blur(0px)" },
-        }}
-      >
-        Welcome
-      </motion.h1>
-
-      <motion.p
-        variants={{
-          hidden: { opacity: 0, y: 12, filter: "blur(4px)" },
-          visible: { opacity: 1, y: 0, filter: "blur(0px)" },
-        }}
-      >
-        A description of the page.
-      </motion.p>
-
-      <motion.div
-        variants={{
-          hidden: { opacity: 0, y: 12, filter: "blur(4px)" },
-          visible: { opacity: 1, y: 0, filter: "blur(0px)" },
-        }}
-      >
+      <motion.h1 variants={item}>Welcome</motion.h1>
+      <motion.p variants={item}>A description of the page.</motion.p>
+      <motion.div variants={item}>
         <Button>Get started</Button>
       </motion.div>
     </motion.div>
@@ -57,37 +39,72 @@ function PageHeader() {
 }
 ```
 
-### CSS-only stagger
+### CSS
+
+The hidden state lives in the `from` keyframe, so an item whose animation never runs stays visible. Reduced motion keeps only the opacity keyframe.
 
 ```css
 .stagger-item {
-  opacity: 0;
-  transform: translateY(12px);
-  filter: blur(4px);
-  animation: fadeInUp 400ms ease-out forwards;
+  animation: fade-in 300ms ease-out both;
 }
 
-.stagger-item:nth-child(1) { animation-delay: 0ms; }
+@media (prefers-reduced-motion: no-preference) {
+  .stagger-item {
+    animation-name: fade-in-up;
+  }
+}
+
 .stagger-item:nth-child(2) { animation-delay: 100ms; }
 .stagger-item:nth-child(3) { animation-delay: 200ms; }
 
-@keyframes fadeInUp {
-  to {
-    opacity: 1;
-    transform: translateY(0);
-    filter: blur(0);
+@keyframes fade-in {
+  from { opacity: 0; }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+    filter: blur(4px);
   }
 }
 ```
 
+### Entering from display: none
+
+A popover, dialog or element toggled from `display: none` has no previous style to transition from. `@starting-style` supplies one, and `transition-behavior: allow-discrete` keeps it rendered through the exit. The open state's duration applies on enter and the closed state's on exit.
+
+```css
+[popover] {
+  opacity: 0;
+  translate: 0 12px;
+  transition-property: opacity, translate, display, overlay;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+  transition-behavior: allow-discrete;
+}
+
+[popover]:popover-open {
+  opacity: 1;
+  translate: 0 0;
+  transition-duration: 300ms;
+}
+
+@starting-style {
+  [popover]:popover-open {
+    opacity: 0;
+    translate: 0 12px;
+  }
+}
+```
+
+`@starting-style` and discrete `display` transitions are Baseline 2024. `overlay` is Chromium only, and browsers without support show and hide instantly.
+
 ## Exit animations
 
-Exits are softer and less attention-grabbing than enters. The user's focus is moving to the next thing, so do not fight for it.
-
-### Subtle exit (recommended)
+### Subtle exit
 
 ```tsx
-// Small fixed translateY: indicates direction without drama
 <motion.div
   exit={{
     opacity: 0,
@@ -100,11 +117,11 @@ Exits are softer and less attention-grabbing than enters. The user's focus is mo
 </motion.div>
 ```
 
-### Full exit (when context matters)
+### Full exit
+
+Slide fully out only where the destination carries meaning, such as a card returning to a list or a drawer closing:
 
 ```tsx
-// Slide fully out: use when spatial context is important
-// (e.g., a card returning to a list, a drawer closing)
 <motion.div
   exit={{
     opacity: 0,
@@ -116,7 +133,7 @@ Exits are softer and less attention-grabbing than enters. The user's focus is mo
 </motion.div>
 ```
 
-### Good vs. bad
+### Good and bad
 
 ```css
 /* Good: subtle exit */
@@ -133,15 +150,8 @@ Exits are softer and less attention-grabbing than enters. The user's focus is mo
   transition: all 400ms ease-out;
 }
 
-/* Sometimes correct: remove immediately when motion adds no context */
+/* Sometimes correct: remove at once when motion adds no information */
 .item-exit {
   display: none;
 }
 ```
-
-**Key points:**
-- Use a small fixed `translateY`, say `-12px`, rather than the full container height
-- Keep some directional movement to indicate where the element went
-- Exit duration should be shorter than enter duration (150ms vs 300ms)
-- Use a subtle exit when it preserves spatial context. Remove immediately when motion adds no information, the interaction repeats frequently, or reduced motion is requested.
-

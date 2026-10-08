@@ -8,37 +8,43 @@ disable-model-invocation: true
 
 This skill takes one described piece of UI and builds three versions that differ on purpose. They go behind a picker in the real page, so you can flip between them and choose.
 
-Every other skill here judges. This one produces candidates and hands the decision back. Reviewing existing UI is `interface-review` and `better-interface`, and it does not pick the winner.
+It produces candidates and never ranks them. Reviewing existing UI is `interface-review` and `better-interface`, stress testing one component is `break` and working through a component's states is `state-machine`.
 
 ## Different answers, not different tints
 
-Three variants that differ in accent color teach nothing. You flip between them, see no real choice and the run is wasted.
-
-So each variant is a different answer to the same brief, on an axis this collection owns:
+Each variant is a different answer to the same brief, on an axis this collection owns:
 
 | Axis | Owner | What varies |
 | --- | --- | --- |
 | Structure | `better-layout` | Grouping, order, column count, what collapses |
-| Density | `better-layout` | Spacing scale, hit areas, how much fits |
+| Density | `better-layout` | Spacing scale, how much fits |
 | Emphasis | `better-colors` | Where filled color goes, what recedes |
 | Type | `better-typography` | Scale steps, weight contrast, measure |
 | Voice | `better-writing` | Labels, tone, how much copy |
 
 Pick **one primary axis** and give each variant a different position on it. Secondary choices follow from it rather than varying on their own. A dense variant may need a smaller type step, and that is coherence, not a second axis.
 
-Varying every axis at once produces three unattributable results. You learn which you liked, not what made it work, so the next piece starts from nothing.
-
 ## The floor every variant clears
 
-A variant that wins on looks and fails an escalation trigger is not a candidate. It is a bug with a nice surface.
+Before a variant enters the picker it clears `better-interface`'s escalation triggers, which are:
 
-Before a variant enters the picker it clears `better-interface`'s escalation triggers. Every control has an accessible name, keyboard reaches everything a pointer does, focus is visible, nothing clips at 320px and no meaning rides on color alone.
+- Every control has an accessible name and a visible focus indicator.
+- Keyboard reaches everything a pointer does.
+- Motion and auto-playing content respect `prefers-reduced-motion`.
+- Nothing clips, overlaps or becomes unreachable at 320px width or 200% zoom.
+- Body and control text pass their required contrast ratio.
+- No state or meaning rides on color alone, and no state change on motion alone.
+- A destructive action has a confirmation, an undo or a distinct treatment.
+- Truncated content has a way to reach the full value.
+- Nothing hides past a scroll edge or behind a disclosure with no visible cue.
+- Every error names a way to recover.
+- No semantic color is used against its meaning, such as the danger hue on a non-destructive action.
 
 That floor is identical across variants. It is not an axis and never trades against one. Where a direction can only work by breaking it, say so and drop the direction.
 
 ## 1. Scope one piece
 
-One piece of UI per run. "The dashboard" is not a piece; the metric card is. Where the brief spans several, name the one the others hang off, say why and offer the rest as later runs.
+One piece of UI per run. "The dashboard" is not a piece; the metric card is. Where the request spans several, list the candidates and ask which one to explore.
 
 Restate the brief in one sentence: what the thing is, where it renders, what it has to do.
 
@@ -55,7 +61,7 @@ With no project to read, use neutral grays, one accent and the system font stack
 
 ## 3. Name the axis before writing code
 
-Default to three variants. Go to five only when asked, or when the space is genuinely wide. Past five nobody compares, they scroll.
+Default to three variants. Go to five only when asked.
 
 Write the set down first, a name and an axis position each. Names say what the direction is, so `Quiet`, `Editorial`, `Dense`, never `Option A`.
 
@@ -63,11 +69,13 @@ This step is done when no two variants share a position and you can state each o
 
 ## 4. Build it into the real page
 
-A variant looks fine in isolation, which is why isolation is the wrong place to judge it. Host the variants on the page that will actually contain the piece, with the real chrome, the real neighbours and realistic data.
+Host the variants on the page that will actually contain the piece, with the real chrome, the real neighbours and realistic data.
 
-Select with a URL search param (`?variant=quiet`), so every variant is a link you can send someone. A floating control sets it; [picker.md](picker.md) holds the spec.
+Select with a URL search param such as `?__variant=quiet`, so every variant is a link you can send someone. A floating control sets it; [picker.md](picker.md) holds the spec.
 
 Render one variant at a time, full size. Thumbnails distort spacing and scale, and spacing is usually the thing you are choosing between.
+
+Variant files may import production components. Only the hosting page imports a variant, and nothing else imports from the harness.
 
 Where no page can host it, build one self-contained HTML file and keep the same picker.
 
@@ -75,7 +83,7 @@ Give every variant real content: product-shaped copy, plausible names and the nu
 
 ## 5. Present the tradeoffs and stop
 
-Flip through every variant yourself first. Each one renders, each interaction responds, the console is clean.
+Load the page once in a browser already at hand and flip through every variant. Each one renders, each interaction responds and the console is clean. With no browser at hand, say so and hand the URL over for the user to check.
 
 Then hand the decision over:
 
@@ -90,11 +98,9 @@ Never mark a favourite in the table. Asked directly, answer from how often the p
 
 ## 6. Promote one, delete the rest
 
-On a choice: build that variant properly where it belongs, following the project's own conventions, then delete the others and the harness.
+On a choice, build that variant properly where it belongs, following the project's own conventions. Then delete the other variants, the picker and the guarded import. Search for the variant names and the `__variant` param, and check the diff leaves nothing of the harness behind.
 
-Asked for another round instead, keep the harness and run step 3 again, taking new positions around the direction you leaned toward.
-
-Until promotion, the harness never imports from production and production never imports from the harness.
+Asked for another round instead, keep the harness and run **Name the axis before writing code** again, taking new positions around the direction you leaned toward.
 
 ## Before you finish
 
@@ -107,4 +113,4 @@ Until promotion, the harness never imports from production and production never 
 | The boldest variant skips keyboard or focus | Clear the floor or drop the direction |
 | A favourite marked in the table | State each variant's cost and let the user choose |
 | Picker restyled with the project's tokens | Keep it visibly outside the design system |
-| Harness left behind after promotion | Delete it unless asked to keep it |
+| Harness left behind after promotion | Delete it and search for the names and the param |

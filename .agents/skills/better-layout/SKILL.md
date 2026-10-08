@@ -1,75 +1,91 @@
 ---
 name: better-layout
-description: Helps with grouping, alignment, reading order, progressive disclosure and other details that make a good layout.
+description: Helps with grouping, alignment, reading order, responsive structure and room for translated text, so a layout holds up when it is resized, translated or mirrored.
 ---
 
 # Layout
 
-Position, spacing and alignment carry hierarchy before a word is read. This skill builds that structure and stress-tests it: resize it, translate it, mirror it for RTL.
+This skill sets grouping, alignment, spacing and responsive structure. It then stress-tests that structure by resizing it, translating it and mirroring it for RTL.
 
-Write every fix in the project's styling system. The numbers below are starting points for interfaces with no established density system, and where one applies, use it as written rather than a familiar-looking substitute. Keep deliberate platform chrome, compact professional tools and project tokens where they still pass the stress tests.
+Write every fix in the project's styling system. The numbers below apply only where the project has no spacing scale or density system; otherwise use its tokens. A finding needs a failure you can show, such as a clip, an overlap, a broken mirror or a misread group. A value that differs from these starting points is not one.
 
-Hit areas and focus behavior belong to `better-accessibility`. Radius, shadows and animation belong to `better-ui`. Line length and text spacing belong to `better-typography`.
+Hit areas and focus behavior belong to `better-accessibility`. Radius, shadows and animation belong to `better-ui`. Line length, text spacing and truncation mechanics belong to `better-typography`. The words themselves belong to `better-writing`.
 
 ## Group with space, not lines
 
-Space groups first, background shapes second, separator lines last and only where space alone can't carry the structure. The gap between groups must be at least 2× the gap within one (`8px` intra-group to `16px`+ inter-group), or the grouping reads as noise. Alignment edges and importance ordering are in [grouping-and-alignment.md](grouping-and-alignment.md).
+Space groups first, background shapes second, separator lines last and only where space alone can't carry the structure. The gap between groups is at least 2× the gap within one, so `8px` inside a group means `16px` or more between groups. Recipes are in [grouping-and-alignment.md](grouping-and-alignment.md#group-with-space-not-lines).
 
 ## Keep controls distinct from content
 
-Give every interactive element a background shape, a border, or a consistent placement zone. A control styled like the static text beside it does not read as a control.
+Give every interactive element a background shape, a border, an underline or a consistent placement zone such as a toolbar. A control styled like the static text beside it does not read as a control. See [grouping-and-alignment.md](grouping-and-alignment.md#keep-controls-distinct-from-content).
 
 ## Align to shared edges
 
-Pick alignment edges and stick to them; every stray edge reads as noise. Use one project spacing step per level of subordination, where `16px` is a useful default.
+Pick a small set of alignment edges and put everything on them. Use one project spacing step per level of nesting, where `16px` is a useful default. See [grouping-and-alignment.md](grouping-and-alignment.md#align-to-shared-edges).
 
-Use logical properties for direction-dependent layout: `padding-inline-start`, `margin-inline-end`. Reserve physical left and right for genuinely physical geometry.
+## Logical properties for anything that mirrors
+
+Write direction-dependent layout as leading and trailing: `margin-inline-start`, `padding-inline-end`, `inset-inline-start`, `text-align: start`. Reserve physical left and right for physical geometry such as safe-area insets. The mapping table and the RTL progression rules are in [grouping-and-alignment.md](grouping-and-alignment.md#logical-properties-for-anything-that-mirrors).
 
 ## Order by importance
 
-The most important content sits near the top and the leading edge. Reading order flows top-to-bottom, leading-to-trailing. Think in leading and trailing, not left and right.
+The most important content sits near the top and the leading edge. Within a row, identifying content leads and metadata and actions trail. Visual order matches DOM order, so never move content out of source sequence with `order`, `row-reverse` or grid placement. See [grouping-and-alignment.md](grouping-and-alignment.md#order-by-importance).
+
+## One primary action per view
+
+Give each view one primary action. Put secondary actions behind a menu once there are more than 3. Prefer a short view that links deeper over one long view that shows everything at the top level. `better-colors` owns how color marks the primary action.
 
 ## Hint at hidden content
 
-Progressive disclosure needs a visible affordance. Use the project's established cue, or let the next item peek `16–32px` past the scroll edge, or show a disclosure control. Content hidden with zero cue may as well not exist.
+Every piece of off-screen or collapsed content needs a visible cue. Use the project's established cue, let the next item peek `16–32px` past the scroll edge or show a disclosure control.
 
-## Breathing room between targets
+A truncated value the user needs has a way to the full text: an expand control, a detail view or a tooltip that is also keyboard-reachable. Truncation mechanics are `better-typography`'s. Recipes are in [spacing-and-adaptivity.md](spacing-and-adaptivity.md#hint-at-hidden-content).
 
-Without an established density system, start with `12px` between adjacent bordered or filled controls and `24px` around borderless text- and icon-only ones. Compact layouts may use less, as long as `better-accessibility` hit areas don't overlap and the controls stay distinct. Layout margins and breakpoint recipes are in [spacing-and-adaptivity.md](spacing-and-adaptivity.md).
+## Borderless controls need more clearance
+
+Without an established density system, start with `12px` between adjacent bordered or filled controls. Leave `24px` between the visible glyphs of borderless text and icon controls, counting each button's own padding. Compact layouts may use less, as long as hit areas never overlap and the controls stay distinct. See [spacing-and-adaptivity.md](spacing-and-adaptivity.md#borderless-controls-need-more-clearance).
 
 ## Inset buttons from the edges
 
-In content layouts, keep full-width buttons inside the layout margins with a visible radius, starting near `16px` inline on mobile. Edge-to-edge actions work when they follow established platform chrome, account for safe areas and stay distinguishable from system UI.
+In content layouts, keep full-width buttons inside the layout margins, starting near `16px` inline on mobile. Edge-to-edge actions work when they follow established platform chrome, account for safe areas and stay distinguishable from system UI. See [spacing-and-adaptivity.md](spacing-and-adaptivity.md#inset-buttons-from-the-edges).
 
 ## Content bleeds, controls float
 
-Backgrounds and media extend to the viewport edges. Controls and text stay inside the layout margins and safe areas (`env(safe-area-inset-*)`). Sticky chrome floats above the content layer rather than blocking it.
+Backgrounds and media extend to the viewport edges. Controls and text stay inside the layout margins and safe areas. `env(safe-area-inset-*)` is non-zero only when the viewport meta includes `viewport-fit=cover`.
+
+Content scrolls beneath sticky chrome. Set `scroll-padding-block-start` to the sticky header's height, so anchored targets and focused elements never land under it. See [spacing-and-adaptivity.md](spacing-and-adaptivity.md#content-bleeds-controls-float).
 
 ## Hold structure until it breaks
 
-Breakpoints come from the content, not device presets. Keep the expanded layout as long as it genuinely fits and collapse late. Prefer container queries for component-level adaptation, and test the smallest and largest sizes first.
+Breakpoints come from the content, not device presets. Keep the expanded layout until it stops fitting, then collapse. Prefer container queries for component-level adaptation, and test the smallest and largest supported sizes first. See [spacing-and-adaptivity.md](spacing-and-adaptivity.md#hold-structure-until-it-breaks).
 
 ## Plan for growth and clipping
 
-Translated strings grow, and short ones grow proportionally more, so a one-word button label is the riskiest thing on the screen. Put no fixed width or height on a text container, and let rows wrap. Test with pseudo-localization and one representative locale rather than budgeting a percentage.
+Translated strings grow, and short ones grow proportionally more, so a one-word button label is the riskiest thing on the screen. Size text containers with `max-width` and `min-height`, never a fixed width or height, and let rows wrap. Test with pseudo-localization and one long-string locale such as German.
 
-Never park a critical action where resizing or scrolling clips it. Keep it in the normal flow, or in stable chrome suited to the product.
+Never park a critical action where resizing, zoom or scrolling clips it. Keep it in the normal flow or in stable chrome. See [spacing-and-adaptivity.md](spacing-and-adaptivity.md#plan-for-growth-and-clipping).
 
 ## Before you finish
 
-| Mistake | Fix |
+| Detection pattern | Fix |
 | --- | --- |
-| `margin-left` / `padding-right` in a localizable layout | `margin-inline-start` / `padding-inline-end` |
-| Content-layout button touches the viewport edge | Inset within the project margins; keep intentional platform chrome |
-| Breakpoints at 768/1024 because they're the defaults | Break where the content actually stops fitting |
-| Fixed-width text container sized to one language | `max-width` and wrapping; test pseudo-localization |
-| Primary action at the clip-prone bottom of a pane | Sticky positioning or stable chrome with safe-area padding |
+| `grid-template-columns: … 1fr` or a flex child holding long text or a wide table, overflowing its track | `minmax(0, 1fr)` on the track, `min-width: 0` on the flex child |
+| `width: 100vw` | `width: 100%`; `100vw` includes the scrollbar and scrolls horizontally on desktop |
+| `height: 100vh` on a full-height mobile pane | `100dvh`, so the browser toolbar and keyboard never cover the bottom |
+| `height:` with a fixed length on a box holding text | `min-height`, or `max-height` with `overflow-y: auto` |
+| `@media (max-width: …)` inside a reusable component | `@container` on the component's parent |
+| `container-type: inline-size` on a flex item, inline-block or absolute element with no width | Give it a definite width; size containment collapses a shrink-to-fit box to zero |
+| `env(safe-area-inset-*)` with no `viewport-fit=cover` in the viewport meta | Add it, or the insets resolve to `0` |
+| `inset-inline-*` or `*-inline-*` combined with `safe-area-inset-left` or `-right` | Physical `left` or `right` with the matching inset, plus a `[dir="rtl"]` override |
+| `float: left` on mirrored UI | `float: inline-start` |
+| `translateX` or `background-position: left` on mirrored UI | A `[dir="rtl"]` override; neither has a logical form |
+| Sticky header with no `scroll-padding-block-start` | Set it to the header height |
 
 ## Reporting
 
-**Severity.** `HIGH` blocks content or an action at a supported viewport. `MEDIUM` harms hierarchy, reading order, or adaptability. `LOW` is isolated alignment or spacing polish.
+**Severity.** `HIGH` blocks content or an action at a supported viewport. Clipping or overlap at 320px width or 200% zoom is always `HIGH`, as is truncated content with no way to the full value. So is content past a scroll edge or behind a disclosure with no visible cue. `MEDIUM` harms hierarchy, reading order or adaptability. `LOW` is isolated alignment or spacing polish.
 
-**Verification.** Without a browser: logical properties in place of physical ones, container and media queries against the supported viewport list and DOM order against the intended reading order. With one: every supported width, 200% zoom and the RTL mirror. Report every check you could not run as `Not verified`.
+**Verification.** Without a browser, check logical properties in place of physical ones, container and media queries against the supported viewport list and DOM order against visual order. With one, check every supported width, 320px, 200% zoom and the RTL mirror. Report every check you could not run as `Not verified`.
 
 **Format.** Group findings under the principle each violates, ordered by severity, one row per root cause listing every location it appears in:
 

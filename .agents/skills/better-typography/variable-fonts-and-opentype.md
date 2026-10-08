@@ -7,20 +7,19 @@ What a font file can do beyond drawing letters and how to reach those abilities 
 - **Static font:** one weight and one style per file. Regular, medium and bold is three files.
 - **Variable font:** a whole range in one file. Any value in it works, such as `font-weight: 589`.
 
-A variable font is not automatically better. At one or two weights, static files can be smaller. At several weights, optical sizes, or custom axes, a variable font usually wins.
+A variable font is not automatically better. At one or two weights, static files can be smaller. At several weights, optical sizes or custom axes, a variable font usually wins.
 
-## Load intended weights and styles
+## Disable synthesis narrowly
 
-Use a weight or style the active family does not provide and the browser may synthesize it, so load the faces the design uses. `none` disables weight, style, small-cap, superscript and subscript synthesis together and can erase distinctions when the real face is unavailable. Verify the whole fallback stack and every emphasis state before setting it.
+`font-synthesis: none` disables weight, style, small-cap and position synthesis together. Scope it to an isolated treatment you have verified across the fallback stack:
 
 ```css
 .brand-wordmark {
-  /* Safe only after this isolated treatment is verified */
   font-synthesis: none;
 }
 ```
 
-For body and interface text, keep synthesis enabled unless a verified font setup supplies every requested form. If only one mode is unwanted, use the specific longhand (`font-synthesis-weight`, `font-synthesis-style` and related properties) instead of the blanket shorthand.
+To disable one mode, use its longhand: `font-synthesis-weight`, `font-synthesis-style`, `font-synthesis-small-caps` or `font-synthesis-position`.
 
 ## Axes
 
@@ -36,17 +35,16 @@ Variable-font controls, each with a four-letter tag. A font supports only the ax
 
 Inter's variable file exposes only `wght` and `opsz`.
 
-Optical sizes predate variable fonts, and many families still ship them as separate files. Heldane Text is sturdier and more spaced for reading sizes, Heldane Display finer for large ones.
+Optical sizes predate variable fonts. Many families still ship them as separate `Text` and `Display` files instead of an `opsz` axis.
 
-## Properties over axis tags
+## Raw tags only for custom axes
 
-When a property exists, use it. `font-weight` keeps working when a non-variable fallback renders, where `font-variation-settings` silently does nothing. Save raw tags for custom axes with no property of their own:
+`font-variation-settings` silently does nothing on a non-variable fallback, where `font-weight` still picks the nearest face:
 
 ```css
 /* Good: common axes use the properties */
 .heading {
   font-weight: 650;
-  font-optical-sizing: auto;
 }
 
 /* Good: custom axis with no property of its own */
@@ -62,7 +60,7 @@ When a property exists, use it. `font-weight` keeps working when a non-variable 
 
 ## OpenType features
 
-OpenType is the standard behind almost every modern font. Features are extra built-in options and, unlike axes, work the same on static and variable fonts. A font ships only the features its designer included.
+Unlike axes, features work the same on static and variable fonts. A font ships only the features its designer included.
 
 | Tag | Feature |
 | --- | --- |
@@ -72,7 +70,7 @@ OpenType is the standard behind almost every modern font. Features are extra bui
 | `ss01`–`ss20` | Stylistic sets (numbered slots) |
 | `cv01`–`cv99` | Character variants (numbered slots) |
 
-Same rule as axes. Prefer the `font-variant-*` properties and reserve `font-feature-settings` for tags with no property:
+Common features have a `font-variant-*` property, and `font-feature-settings` is for the rest:
 
 ```css
 /* Good: common features use the properties */
@@ -80,7 +78,6 @@ Same rule as axes. Prefer the `font-variant-*` properties and reserve `font-feat
   font-variant-numeric: tabular-nums;
 }
 
-/* Good: slashed zero via the property too */
 .id {
   font-variant-numeric: slashed-zero;
 }
@@ -90,8 +87,6 @@ Same rule as axes. Prefer the `font-variant-*` properties and reserve `font-feat
   font-feature-settings: "ss01" 1;
 }
 ```
-
-Tabular numbers matter for changing values. Without them each digit has a different width and the layout shifts as values update.
 
 ## Small caps, superscripts, subscripts
 
