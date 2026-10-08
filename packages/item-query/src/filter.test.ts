@@ -487,11 +487,14 @@ describe("text helpers", () => {
     ['"-".repeat(3)', "---"],
     ['"ab".repeat(0)', ""],
     ['"ab".repeat(1)', "ab"],
-    // A count that is negative, not an integer, or above 10 000 gives null.
+    // A count that is negative, not an integer, or above 10 000 gives null;
+    // so does a result above 1 000 000 code units.
     ['"ab".repeat(-1)', null],
     ['"ab".repeat(1.5)', null],
     ['"ab".repeat(10000).length', 20_000],
     ['"ab".repeat(10001)', null],
+    ['"a".repeat(10000).repeat(100).length', 1_000_000],
+    ['"a".repeat(10000).repeat(101)', null],
     ['"ab".repeat(null)', null],
     // A count that comes from the Item and is not a number.
     ['"ab".repeat(tags[0])', null],
@@ -533,6 +536,7 @@ describe("text helpers", () => {
     ['"a:b:c".split(":", 2)', ["a", "b"]],
     ['"a:b:c".split(":", 0)', []],
     ['"a:b:c".split(":", 9)', ["a", "b", "c"]],
+    ['"a:b:c".split(":", 4294967296)', ["a", "b", "c"]],
     ['"abc".split(":")', ["abc"]],
     ['"abc".split("")', ["a", "b", "c"]],
     ['"".split(":")', [""]],
@@ -566,6 +570,10 @@ describe("regular expressions", () => {
       [true, true, true],
     ],
     ["/Eco/y.matches(title) && /Eco/y.matches(title)", true],
+    // One literal, tested once for each element.
+    ['["a", "a"].map(/a/g.matches(value))', [true, true]],
+    ['["a", "a"].map(/a/y.matches(value))', [true, true]],
+    ['["a", "a"].map(value.replace(/a/y, "b"))', ["b", "b"]],
     // A null or wrongly typed argument gives null.
     ["/a/.matches(publisher)", null],
     ["/a/.matches(null)", null],
@@ -589,6 +597,10 @@ describe("regular expressions", () => {
     ['"a1b22c".split(/\\d+/)', ["a", "b", "c"]],
     ['"abc".split(/x/)', ["abc"]],
     ["title.split(/\\s+/)[2]", "Éclairs"],
+    ['"a:b:c".split(/:/, 4294967296)', ["a", "b", "c"]],
+    // A group that does not take part in the match is null.
+    ['"a-b".split(/(-)|(,)/)', ["a", "-", null, "b"]],
+    ['"a-b".split(/(-)|(,)/).join("|")', "a|-||b"],
     ["title.split(/ /, -1)", null],
     ["publisher.split(/ /)", null],
     // Equality by source and flags; toString() gives /source/flags.
@@ -644,7 +656,7 @@ describe("number methods", () => {
     ["number(pages).round()", null],
     ["(2.5).round(null)", null],
     // toFixed gives a text with that many decimals; a precision outside 0 to
-    // 100 or not an integer gives null.
+    // 100 gives null.
     ["(1.005).toFixed(2)", "1.00"],
     ["(2).toFixed(1)", "2.0"],
     ["(2.567).toFixed(0)", "3"],
@@ -652,7 +664,7 @@ describe("number methods", () => {
     ["(1).toFixed(100).length", 102],
     ["(1).toFixed(101)", null],
     ["(1).toFixed(-1)", null],
-    ["(1).toFixed(1.5)", null],
+    ["(2.567).toFixed(1.5)", "2.6"],
     ["(1).toFixed(null)", null],
     ['(1).toFixed(["a"][0])', null],
     ["number(volume).toFixed(1)", "12.0"],
@@ -795,6 +807,11 @@ describe("list helpers", () => {
     [
       '[date("2020-01-15"), date("2020-01-15 00:00")].sort().toString()',
       "2020-01-15, 2020-01-15T00:00:00Z",
+    ],
+    // Dates sort by their start at full precision.
+    [
+      '[date("2020-01-15 10:30:00.0000002Z"), date("2020-01-15 10:30:00.0000001Z")].sort().toString()',
+      "2020-01-15T10:30:00.0000001Z, 2020-01-15T10:30:00.0000002Z",
     ],
     ["[].sort()", []],
     ["tags.sort() == tags", true],

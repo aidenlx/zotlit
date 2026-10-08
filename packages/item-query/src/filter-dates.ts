@@ -312,6 +312,18 @@ export function compareDates(
   }
 }
 
+/** The order of two dates by their start, at the full precision of an instant. */
+export function compareStarts(
+  a: DateValue,
+  b: DateValue,
+  clock: QueryClock,
+): number {
+  return Temporal.Instant.compare(
+    startOf(a, clock).toInstant(),
+    startOf(b, clock).toInstant(),
+  );
+}
+
 /** Two durations are equal when every unit holds the same count. */
 export function durationsEqual(a: DurationValue, b: DurationValue): boolean {
   return a.duration.toString() === b.duration.toString();

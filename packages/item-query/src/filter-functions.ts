@@ -1,8 +1,9 @@
-import { compareStrings } from "./collation";
 // The function registry of the Filter Expression evaluator. Validation,
 // execution, and the Item Query Schema read the same entries, so a function,
 // a method, or a property exists only here.
+import { compareStrings } from "./collation";
 import {
+  compareStarts,
   dateOnly,
   datePart,
   formatDate,
@@ -116,8 +117,14 @@ export function finite(value: number): number | null {
 /** The largest count `repeat` takes: one query cannot exhaust the worker. */
 const MAX_REPEAT = 10_000;
 
+/** The longest text `repeat` gives, in UTF-16 code units. */
+const MAX_REPEAT_LENGTH = 1_000_000;
+
 /** The largest precision `toFixed` takes, as JavaScript's `toFixed`. */
 const MAX_PRECISION = 100;
+
+/** The largest `n` the native `split` takes: a larger one wraps to zero. */
+const MAX_SPLIT_LIMIT = 0xff_ff_ff_ff;
 
 /** Whether `value` is an integer from 0 to `max`. */
 function isCount(value: FilterValue | undefined, max: number): value is number {
@@ -127,6 +134,11 @@ function isCount(value: FilterValue | undefined, max: number): value is number {
     value >= 0 &&
     value <= max
   );
+}
+
+/** Whether `value` is a number from 0 to `max`. */
+function inRange(value: FilterValue | undefined, max: number): value is number {
+  return typeof value === "number" && value >= 0 && value <= max;
 }
 
 /** `min` and `max`: the pick among the numbers; null without a number. */
@@ -252,9 +264,7 @@ function sortOrder(a: FilterValue, b: FilterValue, clock: QueryClock): number {
   if (typeof a === "boolean" && typeof b === "boolean") {
     return Number(a) - Number(b);
   }
-  if (isDate(a) && isDate(b)) {
-    return datePart(a, "timestamp", clock)! - datePart(b, "timestamp", clock)!;
-  }
+  if (isDate(a) && isDate(b)) return compareStarts(a, b, clock);
   return 0;
 }
 
@@ -300,7 +310,7 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
         parameters: [number("precision")],
         returns: "string",
         call: (subject, [precision]) =>
-          isCount(precision, MAX_PRECISION)
+          inRange(precision, MAX_PRECISION)
             ? (subject as number).toFixed(precision)
             : null,
       },
@@ -360,11 +370,15 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
               before + first.toUpperCase(),
           ),
       },
+      // A count above 10 000, or a result above 1 000 000 code units, is null.
       repeat: {
         parameters: [number("count")],
         returns: "string",
         call: (subject, [count]) =>
-          isCount(count, MAX_REPEAT) ? (subject as string).repeat(count) : null,
+          isCount(count, MAX_REPEAT) &&
+          (subject as string).length * count <= MAX_REPEAT_LENGTH
+            ? (subject as string).repeat(count)
+            : null,
       },
       // By code point, so an emoji survives.
       reverse: {
@@ -406,17 +420,20 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
           );
         },
       },
-      // `n` keeps the first `n` parts.
+      // `n` keeps the first `n` parts. A group of a regexp separator that
+      // does not take part in the match is null.
       split: {
         parameters: [{ name: "separator", type: ["string", "regexp"] }],
         optional: [number("n")],
         returns: "list",
         call: (subject, [separator = null, n]) => {
           if (n !== undefined && !isCount(n, Infinity)) return null;
-          return (subject as string).split(
-            isRegexp(separator) ? separator.regexp : (separator as string),
-            n as number | undefined,
-          );
+          return (subject as string)
+            .split(
+              isRegexp(separator) ? separator.regexp : (separator as string),
+              n === undefined ? undefined : Math.min(n, MAX_SPLIT_LIMIT),
+            )
+            .map((part) => part ?? null);
         },
       },
     }),
