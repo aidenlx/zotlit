@@ -349,6 +349,21 @@ describe("global functions", () => {
     ["date(dateAdded) == dateAdded", true],
     ['date(date("2020-01")).toString()', "2020-01"],
     ["date(publisher)", null],
+    // list() wraps a value: a list stays, null is the empty list, any other
+    // value is a one-element list.
+    ["list(tags)", ["methods", "to-read", "To-Read"]],
+    ['list(["a"])', ["a"]],
+    ["list([])", []],
+    ["list(null)", []],
+    ["list(publisher)", []],
+    ["list(title)", ["Ecology of Éclairs"]],
+    ["list(1)", [1]],
+    ["list(false)", [false]],
+    ["list(mood).length", 1],
+    ['list(mood).contains("calm")', true],
+    ['list(publisher).contains("calm")', false],
+    ["list(publisher).isEmpty()", true],
+    ["list(today())[0] == today()", true],
   ]);
 });
 
@@ -372,6 +387,23 @@ describe("methods of every value", () => {
     ["title.isType(publisher)", null],
     // A type name that comes from the Item's data and names no type.
     ["title.isType(title)", null],
+    // isTruthy() is the truthiness of a filter: null, false, zero, the empty
+    // text, the empty list, and a zero duration are false.
+    ["title.isTruthy()", true],
+    ["shortTitle.isTruthy()", false],
+    ["publisher.isTruthy()", false],
+    ["null.isTruthy()", false],
+    ["false.isTruthy()", false],
+    ["(0).isTruthy()", false],
+    ["(1).isTruthy()", true],
+    ["[].isTruthy()", false],
+    ["[null].isTruthy()", true],
+    ["tags.isTruthy()", true],
+    ["attachments.isTruthy()", true],
+    ["today().isTruthy()", true],
+    ['duration("0d").isTruthy()', false],
+    ['duration("1d").isTruthy()', true],
+    ['(publisher > "a").isTruthy()', false],
   ]);
 });
 
@@ -436,6 +468,86 @@ describe("string methods", () => {
   });
 });
 
+describe("text helpers", () => {
+  vectors([
+    ['"  a b  ".trim()', "a b"],
+    ["title.trim()", "Ecology of Éclairs"],
+    ['"\\t\\n x \\n".trim()', "x"],
+    ["publisher.trim()", null],
+    // title() upper-cases the first code point of each word that starts the
+    // text or follows whitespace, and leaves the rest as it is.
+    ['"hello wORLD".title()', "Hello WORLD"],
+    ['"  two  spaces ".title()', "  Two  Spaces "],
+    ['"a\\tb\\nc".title()', "A\tB\nC"],
+    ['"éclair ßtraße 🧪x".title()', "Éclair SStraße 🧪x"],
+    ['"pre-print of-things".title()', "Pre-print Of-things"],
+    ['"".title()', ""],
+    ["title.title()", "Ecology Of Éclairs"],
+    ["publisher.title()", null],
+    ['"-".repeat(3)', "---"],
+    ['"ab".repeat(0)', ""],
+    ['"ab".repeat(1)', "ab"],
+    // A count that is negative, not an integer, or above 10 000 gives null.
+    ['"ab".repeat(-1)', null],
+    ['"ab".repeat(1.5)', null],
+    ['"ab".repeat(10000).length', 20_000],
+    ['"ab".repeat(10001)', null],
+    ['"ab".repeat(null)', null],
+    // A count that comes from the Item and is not a number.
+    ['"ab".repeat(tags[0])', null],
+    ["publisher.repeat(2)", null],
+    // reverse() works by code point, so an emoji survives.
+    ['"abc".reverse()', "cba"],
+    ['"a🧪b".reverse()', "b🧪a"],
+    ['"".reverse()', ""],
+    ["title.reverse()", "srialcÉ fo ygolocE"],
+    ["publisher.reverse()", null],
+    // slice() counts code units, as length and index access do.
+    ["title.slice(0, 7)", "Ecology"],
+    ["title.slice(11)", "Éclairs"],
+    ["title.slice(-7)", "Éclairs"],
+    ["title.slice(0, -8)", "Ecology of"],
+    ["title.slice(5, 2)", ""],
+    ["title.slice(99)", ""],
+    ['"a🧪b".slice(1, 3)', "🧪"],
+    ["title.slice(null)", null],
+    ["title.slice(0, null)", null],
+    ["title.slice(tags[0])", null],
+    ["publisher.slice(0, 1)", null],
+    // replace() with a text pattern replaces every occurrence, with the
+    // replacement as literal text.
+    ['"a  b  c".replace("  ", " ")', "a b c"],
+    ['"aaa".replace("a", "b")', "bbb"],
+    ['"abc".replace("x", "y")', "abc"],
+    ['"abc".replace("", "-")', "-a-b-c-"],
+    ['"a.b".replace(".", "$&$&")', "a$&$&b"],
+    ['"abc".replace("b", "")', "ac"],
+    ['title.replace("of", "and")', "Ecology and Éclairs"],
+    ['title.replace(null, "a")', null],
+    ['title.replace("a", null)', null],
+    ['title.replace([1][0], "a")', null],
+    ['publisher.replace("a", "b")', null],
+    // split() gives the parts as a list of texts; n keeps the first n parts.
+    ['"a:b:c".split(":")', ["a", "b", "c"]],
+    ['"a:b:c".split(":")[0]', "a"],
+    ['"a:b:c".split(":", 2)', ["a", "b"]],
+    ['"a:b:c".split(":", 0)', []],
+    ['"a:b:c".split(":", 9)', ["a", "b", "c"]],
+    ['"abc".split(":")', ["abc"]],
+    ['"abc".split("")', ["a", "b", "c"]],
+    ['"".split(":")', [""]],
+    ['"a::b".split("::")', ["a", "b"]],
+    ['"a:b:c".split(":", -1)', null],
+    ['"a:b:c".split(":", 1.5)', null],
+    ['"a:b".split(":", null)', null],
+    ['"a:b".split(null)', null],
+    ['"a:b".split([1][0])', null],
+    ['title.split(" ").length', 3],
+    ['title.split(" ")[1] == "of"', true],
+    ['publisher.split(":")', null],
+  ]);
+});
+
 describe("number methods", () => {
   vectors([
     ["(2.5).round()", 3],
@@ -450,6 +562,21 @@ describe("number methods", () => {
     // The value is a string on this Item, so a number method is null.
     ["number(pages).round()", null],
     ["(2.5).round(null)", null],
+    // toFixed gives a text with that many decimals; a precision outside 0 to
+    // 100 or not an integer gives null.
+    ["(1.005).toFixed(2)", "1.00"],
+    ["(2).toFixed(1)", "2.0"],
+    ["(2.567).toFixed(0)", "3"],
+    ["(-1.5).toFixed(1)", "-1.5"],
+    ["(1).toFixed(100).length", 102],
+    ["(1).toFixed(101)", null],
+    ["(1).toFixed(-1)", null],
+    ["(1).toFixed(1.5)", null],
+    ["(1).toFixed(null)", null],
+    ['(1).toFixed(["a"][0])', null],
+    ["number(volume).toFixed(1)", "12.0"],
+    ['number(volume).toFixed(1) == "12.0"', true],
+    ["number(pages).toFixed(1)", null],
   ]);
 });
 
@@ -1113,6 +1240,37 @@ describe("validation", () => {
     ["title.year", "unknown-property", [6, 10]],
     ['duration("1d").days', "unknown-property", [15, 19]],
     ['(now() - duration("1d")).length', "unknown-property", [25, 31]],
+    // Text, number, and wrapping helpers.
+    ["tags.trim()", "unknown-function", [5, 9]],
+    ["(1).title()", "unknown-function", [4, 9]],
+    ["attachments.repeat(2)", "unknown-function", [12, 18]],
+    ["dateAdded.reverse()", "unknown-function", [10, 17]],
+    ["dateAdded.slice(0)", "unknown-function", [10, 15]],
+    ['tags.replace("a", "b")', "unknown-function", [5, 12]],
+    ['tags.split(":")', "unknown-function", [5, 10]],
+    ["title.toFixed(1)", "unknown-function", [6, 13]],
+    ["title.trim(1)", "wrong-argument-count", [0, 13]],
+    ["title.title(1)", "wrong-argument-count", [0, 14]],
+    ["title.repeat()", "wrong-argument-count", [0, 14]],
+    ['title.repeat("2")', "wrong-argument-type", [13, 16]],
+    ["title.reverse(1)", "wrong-argument-count", [0, 16]],
+    ["title.slice()", "wrong-argument-count", [0, 13]],
+    ["title.slice(0, 1, 2)", "wrong-argument-count", [0, 20]],
+    ['title.slice("0")', "wrong-argument-type", [12, 15]],
+    ['title.slice(0, "1")', "wrong-argument-type", [15, 18]],
+    ['title.replace("a")', "wrong-argument-count", [0, 18]],
+    ['title.replace(1, "a")', "wrong-argument-type", [14, 15]],
+    ['title.replace("a", 1)', "wrong-argument-type", [19, 20]],
+    ["title.split()", "wrong-argument-count", [0, 13]],
+    ["title.split(1)", "wrong-argument-type", [12, 13]],
+    ['title.split(":", "2")', "wrong-argument-type", [17, 20]],
+    ["(1).toFixed()", "wrong-argument-count", [0, 13]],
+    ['(1).toFixed("1")', "wrong-argument-type", [12, 15]],
+    ["title.isTruthy(1)", "wrong-argument-count", [0, 17]],
+    ["list()", "wrong-argument-count", [0, 6]],
+    ["list(1, 2)", "wrong-argument-count", [0, 10]],
+    ["title.list()", "unknown-function", [6, 10]],
+    ["list == 1", "unknown-field", [0, 4]],
     ["custom", "unfilterable-field", [0, 6]],
     ["custom.isEmpty()", "unfilterable-field", [0, 6]],
     ["min == 1", "unknown-field", [0, 3]],
@@ -1170,6 +1328,17 @@ describe("validation", () => {
       "value.contains(...)",
     );
     expect(problem("title.number()").hint).toContain("number(...)");
+    expect(problem("title.list()").hint).toContain("list(...)");
+  });
+
+  it("names the type a text helper belongs to when the subject has another type", () => {
+    expect(problem("tags.trim()")).toMatchObject({
+      message: 'A list has no method "trim".',
+      hint: expect.stringContaining("trim is a method of a string."),
+    });
+    expect(problem("title.toFixed(1)").hint).toContain(
+      "toFixed is a method of a number.",
+    );
   });
 
   // A branch that never runs is validated like every other part.
@@ -1196,6 +1365,11 @@ describe("validation", () => {
     "title.startsWith(publisher)",
     "null.isEmpty()",
     "null.lower()",
+    "null.isTruthy()",
+    "tags[0].trim()",
+    'title.split(":")[0].trim()',
+    'list(tags[0]).contains("a")',
+    "list(publisher).isEmpty()",
     "min(number(volume), 3)",
     // A list helper on a subject whose type depends on the Item, and on the
     // list another list helper gives.
@@ -1261,6 +1435,7 @@ describe("names", () => {
     ["number", false],
     ["if", false],
     ["min", false],
+    ["list", false],
     ["null", false],
     ["true", false],
     ["false", false],
