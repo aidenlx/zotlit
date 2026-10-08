@@ -5056,10 +5056,47 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               `JSON.stringify({comment:!!${card}?.querySelector('.cm-content'),tags:!!${card}?.querySelector('[data-slot=tags-input]')})`,
             );
 
+          // A collected query leaves the published card on screen.
+          await obEval(
+            vaultId!,
+            `(() => { app.plugins.plugins.zotlit.services.queryClient.client.removeQueries({queryKey:['annotations']}); return true; })()`,
+          );
           await trustedClick(field);
           await expect
             .poll(editors, poll)
             .toEqual({ comment: true, tags: false });
+
+          // Keep the database replacement pending while the user changes
+          // editors: a refresh must preserve the card's editing capability.
+          await using pendingRead = new AsyncDisposableStack();
+          pendingRead.defer(async () => {
+            await obEval(
+              vaultId!,
+              `(() => { window.__zlPendingDatabaseRead?.restore(); delete window.__zlPendingDatabaseRead; return true; })()`,
+            );
+          });
+          await obEval(
+            vaultId!,
+            `(async () => {
+              const db = app.plugins.plugins.zotlit.services.zoteroReads;
+              const acquire = db.acquireRead;
+              const pending = Promise.withResolvers();
+              const state = { changed: false, restore: null };
+              const off = db.on('changed', () => { state.changed = true; });
+              state.restore = () => { db.acquireRead = acquire; off(); pending.resolve(); };
+              window.__zlPendingDatabaseRead = state;
+              db.acquireRead = async () => { await pending.promise; return acquire.call(db); };
+              await db.refresh();
+              return true;
+            })()`,
+          );
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `window.__zlPendingDatabaseRead.changed`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
 
           // The tag toggle saves and closes the comment editor first.
           await trustedClick(toggle("tag"));
