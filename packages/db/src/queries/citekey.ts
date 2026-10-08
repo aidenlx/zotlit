@@ -3,6 +3,7 @@ import { formatIndexedKey } from "@/lib/zt-key";
 
 import { groupIDForLibrary } from "./_groups";
 import { defineQuery } from "./_shared";
+import type { QueryRow } from "./_shared";
 
 /** Zotero's native citation-key field name in Zotero's `fieldsCombined`. */
 const CITEKEY_FIELD = "citationKey";
@@ -110,6 +111,32 @@ const citekeysByLibraryQuery = defineQuery<{ libraryID: number }>()(
     }),
 );
 
+const citekeyPageQuery = defineQuery<{
+  libraryID: number;
+  afterItemID: number;
+  limit: number;
+}>()((db, { placeholder }) =>
+  db.query.itemData.findMany({
+    where: {
+      itemID: { gt: placeholder("afterItemID") },
+      fieldsCombined: { fieldName: CITEKEY_FIELD },
+      item: {
+        libraryID: placeholder("libraryID"),
+        deletedItem: false,
+      },
+    },
+    columns: { itemID: true },
+    with: {
+      item: { columns: { key: true } },
+      itemDataValue: { columns: { value: true } },
+    },
+    orderBy: { itemID: "asc" },
+    limit: placeholder("limit"),
+  }),
+);
+
+type CitekeyRow = QueryRow<typeof citekeysByLibraryQuery>;
+
 /**
  * Bulk-read every live item of `libraryID` that carries a native citation
  * key — the one read the Citation Index's resolution snapshot rebuilds from.
@@ -118,15 +145,46 @@ export function getCitekeysByLibrary(
   db: NodeDatabaseClient,
   libraryID: number,
 ): LibraryCitekey[] {
-  const groupID = groupIDForLibrary(db, libraryID);
-  const rows: LibraryCitekey[] = [];
-  for (const row of citekeysByLibraryQuery.prepared(db).all({ libraryID })) {
+  return toLibraryCitekeys(
+    citekeysByLibraryQuery.prepared(db).all({ libraryID }),
+    libraryID,
+    groupIDForLibrary(db, libraryID),
+  );
+}
+
+/**
+ * One page of {@link getCitekeysByLibrary}, in `itemID` order: at most
+ * `limit` rows after `afterItemID`. Pass `next` to read the following page;
+ * `next` is `null` once the library has no more rows.
+ */
+export function getCitekeyPage(
+  db: NodeDatabaseClient,
+  page: { libraryID: number; afterItemID: number; limit: number },
+): { citekeys: LibraryCitekey[]; next: number | null } {
+  const rows = citekeyPageQuery.prepared(db).all(page);
+  return {
+    citekeys: toLibraryCitekeys(
+      rows,
+      page.libraryID,
+      groupIDForLibrary(db, page.libraryID),
+    ),
+    next: rows.at(-1)?.itemID ?? null,
+  };
+}
+
+function toLibraryCitekeys(
+  rows: readonly CitekeyRow[],
+  libraryID: number,
+  groupID: number | null,
+): LibraryCitekey[] {
+  const citekeys: LibraryCitekey[] = [];
+  for (const row of rows) {
     const citekey = row.itemDataValue?.value;
     if (!citekey) continue;
     const key = row.item?.key;
     if (!key) continue;
     if (row.itemID == null) continue;
-    rows.push({
+    citekeys.push({
       itemID: row.itemID,
       libraryID,
       key,
@@ -134,5 +192,5 @@ export function getCitekeysByLibrary(
       citekey,
     });
   }
-  return rows;
+  return citekeys;
 }

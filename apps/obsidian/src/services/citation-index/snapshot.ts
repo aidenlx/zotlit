@@ -1,7 +1,6 @@
 // The citekey resolution snapshot: a native citekey's Items, and an Item's native citekey, kept in memory.
 
 import type { LibraryCitekey } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { getLogger } from "@/lib/log";
 import { mapsEqual } from "@/lib/maps-equal";
@@ -29,12 +28,6 @@ export type CitekeyResolution =
   | { kind: "unique"; item: SnapshotItem }
   /** Candidates in canonical Library order, then by ascending `itemID`. */
   | { kind: "ambiguous"; candidates: readonly SnapshotItem[] };
-
-/** The bulk read a {@link CitekeySnapshot} rebuilds one Library from. */
-export type ReadCitekeys = (
-  db: NodeDatabaseClient,
-  libraryID: number,
-) => LibraryCitekey[];
 
 /**
  * The Citation Index's resolution snapshot: which Zotero Items a native

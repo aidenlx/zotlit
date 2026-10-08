@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as confirmation from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
+import * as native from "@/lib/require";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import { annotation } from "@/services/pdf-annotation-editor/__fixtures__";
 
@@ -52,6 +53,7 @@ const LOCKED: CardControl = {
 function setup(
   selected: readonly AnnotationRecord[],
   control: CardControl = LIVE,
+  overrides: Partial<AnnotActionDeps> = {},
 ) {
   const selectAlone = vi.fn();
   const openEditor = vi.fn();
@@ -85,9 +87,9 @@ function setup(
     selectAlone,
     closeEditors: () => {},
     openEditor,
-    resolveAnnotationID: () => null,
     onExploreAnnotation: () => {},
     offerAnnotationInsert: () => null,
+    ...overrides,
   } as unknown as AnnotActionDeps;
   return {
     actions: createAnnotActions(deps),
@@ -444,5 +446,51 @@ describe("the verbs that end a text field's draft", () => {
     actions.onApplyAgain(FIRST);
     actions.onDiscardConflict(FIRST);
     expect(calls).toEqual(["retry write", "discard conflict"]);
+  });
+});
+
+describe("copying an Annotation's citation", () => {
+  const CITATION = "[@Hensher2011, {p. 62}]";
+
+  /** One card's menu, whose citation renders as `CITATION` after a read. */
+  function copyCitation() {
+    const renderAnnotationCitation = vi.fn(async () => ({
+      kind: "citation" as const,
+      text: CITATION,
+    }));
+    const { actions } = setup([], LIVE, {
+      noteFeature: { renderAnnotationCitation },
+    });
+    entry(openMenu(actions, QUOTED), m.annot_view_menu_copy_citation()).click();
+    return renderAnnotationCitation;
+  }
+
+  it("writes the citation the awaited read renders from one click", async () => {
+    using write = vi
+      .spyOn(navigator.clipboard, "writeText")
+      .mockResolvedValue(undefined);
+
+    const render = copyCitation();
+
+    expect(render).toHaveBeenCalledExactlyOnceWith(QUOTED.key);
+    await vi.waitFor(() =>
+      expect(write).toHaveBeenCalledExactlyOnceWith(CITATION),
+    );
+  });
+
+  it("writes through Electron's clipboard where the clipboard refuses the write", async () => {
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(
+      new DOMException("Document is not focused.", "NotAllowedError"),
+    );
+    const electronWrite = vi.fn();
+    vi.spyOn(native, "requireElectron").mockReturnValue({
+      clipboard: { writeText: electronWrite },
+    } as never);
+
+    copyCitation();
+
+    await vi.waitFor(() =>
+      expect(electronWrite).toHaveBeenCalledExactlyOnceWith(CITATION),
+    );
   });
 });

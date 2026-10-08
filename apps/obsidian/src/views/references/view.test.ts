@@ -17,6 +17,11 @@ import type { BibliographyRenderResult } from "@/services/pandoc/render-cache";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { Held } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import {
+  inProcessReadsService,
+  memoryOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import { ReferencesView } from "./view";
 
@@ -35,24 +40,21 @@ vi.mock("@/components/obsidian/icon-button", async () => {
   };
 });
 
-vi.mock("@zotlit/db", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@zotlit/db")>()),
-  getZoteroIdentity: () => ({ userID: 1, localUserKey: "local" }),
-  resolveIndexedKeyLibrary: () => ({ libraryID: 1, key: "BOOK0001" }),
-  getItemsByKey: () => [
-    {
-      key: "BOOK0001",
-      itemID: 1,
-      groupID: null,
-      creators: [],
-      primaryCreatorType: null,
-      fields: { title: "Field notes" },
-    },
-  ],
-  getAttachmentsByParents: () => [],
-  isChildItemFields: () => false,
-  itemToCsl: () => ({ id: "ref-book", type: "book", title: "Field notes" }),
-}));
+/** The one cited work: a book in My Library, signed in as user 1. */
+const SEED = `
+  insert into libraries (libraryID, type, version, clientVersion)
+    values (1, 'user', 1, 1);
+  insert into settings (setting, key, value) values ('account', 'userID', 1);
+  insert into itemTypes (itemTypeID, typeName) values (1, 'book');
+  insert into fieldsCombined (fieldID, fieldName, custom) values (1, 'title', 0);
+  insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+    values (1, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'BKRV2345');
+  insert into itemDataValues (valueID, value) values (1, 'Field notes');
+  insert into itemData (itemID, fieldID, valueID) values (1, 1, 1);
+`;
+
+/** The CSL id the book's citation data carries. */
+const BOOK_CSL_ID = "http://zotero.org/users/1/items/BKRV2345";
 
 class TestReferencesView extends ReferencesView {
   open(): Promise<void> {
@@ -68,9 +70,9 @@ const citationSet: DocumentCitationSet = {
   occurrences: [],
   citations: [
     {
-      indexedKey: "BOOK0001",
+      indexedKey: "BKRV2345",
       refNumber: 1,
-      linkpath: "notes/BOOK0001",
+      linkpath: "notes/BKRV2345",
       occurrences: [
         {
           kind: "citekey",
@@ -101,7 +103,7 @@ function renderedOutcome(): RenderedBibliography {
   const value: BibliographyRenderResult = {
     entries: [
       {
-        id: "ref-book",
+        id: BOOK_CSL_ID,
         marker: words("[1]"),
         content: words("Rivers, A. (2020). Field notes. Harbour Press."),
       },
@@ -132,7 +134,7 @@ function unmarkedOutcome(): RenderedBibliography {
   const value: BibliographyRenderResult = {
     entries: [
       {
-        id: "ref-book",
+        id: BOOK_CSL_ID,
         marker: undefined,
         content: words("Rivers, A. (2020). Field notes. Harbour Press."),
       },
@@ -162,10 +164,13 @@ function heldText(entrySerials: boolean): DocumentCitations {
 
 let view: TestReferencesView | undefined;
 let renders: PromiseWithResolvers<RenderedBibliography>[] = [];
+/** The render requests a test has answered. */
+let answered = new Set<PromiseWithResolvers<RenderedBibliography>>();
 let scans: PromiseWithResolvers<DocumentCitationSet>[] = [];
 let activeFile: TFile;
 let otherFile: TFile;
 let onDbChanged: (() => void) | undefined;
+let reads: ZoteroReadsService | undefined;
 let onCitationsChanged: ((path: string) => void) | undefined;
 let onCitedByInvalidated: (() => void) | undefined;
 /** What the Citation Index reports its resolution snapshot as. */
@@ -192,27 +197,50 @@ function copyAction(): HTMLElement {
   )!;
 }
 
-/** Let the pending render settle into the store and the pane re-render. */
-async function settle(): Promise<void> {
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
+/** The newest render request, once it arrived and is still unanswered. */
+async function pendingRender(): Promise<
+  PromiseWithResolvers<RenderedBibliography>
+> {
+  // A reload reads the database before it asks for the render, and the test
+  // cannot name when that read lands.
+  return await vi.waitFor(() => {
+    const render = renders.at(-1);
+    if (!render || answered.has(render))
+      throw new Error("No render request is waiting");
+    return render;
   });
 }
 
+/** Answer the newest render request and let the pane paint its answer. */
 async function finishRender(
   outcome: RenderedBibliography = renderedOutcome(),
 ): Promise<void> {
-  renders.at(-1)!.resolve(outcome);
-  await settle();
+  const render = await pendingRender();
+  answered.add(render);
+  await act(async () => {
+    render.resolve(outcome);
+    // The view awaited this promise first, so it has painted by the time this
+    // await returns.
+    await render.promise;
+  });
 }
 
-/** Answer the citation-set read the newest rescan is waiting on. */
+/**
+ * Answer the citation-set read the newest rescan is waiting on. A new set
+ * reloads the list, which ends in a render request; that request is the
+ * completion signal.
+ */
 async function finishScan(
   set: DocumentCitationSet = citationSet,
 ): Promise<void> {
-  scans.at(-1)!.resolve(set);
-  await settle();
+  const before = renders.length;
+  await act(async () => {
+    scans.at(-1)!.resolve(set);
+    await vi.waitFor(() => {
+      if (renders.length === before)
+        throw new Error("The rescan has not reloaded the list");
+    });
+  });
 }
 
 /** Follow another note, which the pane learns of before its rescan answers. */
@@ -223,6 +251,7 @@ async function followOtherNote(): Promise<void> {
 
 beforeEach(async () => {
   renders = [];
+  answered = new Set();
   scans = [];
   heldCitations = null;
   frontmatter = undefined;
@@ -254,14 +283,17 @@ beforeEach(async () => {
     loaded: false,
     ready: profileReady.promise,
   };
+  reads = inProcessReadsService(memoryOpener(() => SEED).open);
   view = new TestReferencesView(
     {} as WorkspaceLeaf,
     {
       app,
       db: {
         state: "ready",
-        client: {},
-        ready: Promise.resolve(),
+        get ready() {
+          return reads!.ready;
+        },
+        acquireRead: () => reads!.acquireRead(),
         on: (event: string, callback: () => void) => {
           if (event === "changed") onDbChanged = callback;
           return () => undefined;
@@ -335,6 +367,8 @@ beforeEach(async () => {
 afterEach(async () => {
   await act(() => view?.close());
   view = undefined;
+  await reads?.[Symbol.asyncDispose]();
+  reads = undefined;
   onDbChanged = undefined;
   onCitationsChanged = undefined;
   onCitedByInvalidated = undefined;

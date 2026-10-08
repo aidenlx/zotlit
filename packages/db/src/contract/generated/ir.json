@@ -1969,7 +1969,7 @@
       "members": [
         {
           "name": "notePath",
-          "description": "Always `null` on a standalone annotation render (annotation-view\ndrag/insert, note import) — resolving the parent's real literature-note\npath would require app-layer vault-index I/O, which the annotation path\n(synchronous on `dragstart`) intentionally avoids. Stubbed rather than\nomitted so `zt.parentItem.notePath` reads as \"unresolved\" instead of\n`undefined`.",
+          "description": "Always `null` on a standalone annotation render (annotation-view\ndrag/insert, note import) — resolving the parent's real literature-note\npath would require app-layer vault-index I/O, which the annotation path\nintentionally avoids. Stubbed rather than\nomitted so `zt.parentItem.notePath` reads as \"unresolved\" instead of\n`undefined`.",
           "optional": false,
           "type": {
             "kind": "union",

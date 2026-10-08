@@ -4,9 +4,11 @@ import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { yieldToMain } from "@/lib/yield-to-main";
 import { batchGroups } from "@/services/batch-scope";
 
-import { BatchModal, FlatManifest } from "./index";
+import { section } from "./dom";
+import { BatchModal, FlatManifest, HierarchyManifest } from "./index";
 import type { BatchProfileChoice } from "./index";
 import type { BatchRunResult } from "./index";
 
@@ -448,4 +450,96 @@ it("offers note recovery in both the live failure panel and the completed summar
   expect(summaryButton).not.toBe(liveButton);
   summaryButton.click();
   expect(trigger).toHaveBeenCalledTimes(2);
+});
+
+const papers = (count: number) =>
+  Array.from({ length: count }, (_, index) => ({
+    id: index + 1,
+    label: `Paper ${index + 1}`,
+    kind: "update",
+  }));
+
+/** The status each mounted row shows, by label. */
+const rowStatuses = (container: HTMLElement) =>
+  Array.from(container.querySelectorAll("li"), (li) => [
+    li.textContent,
+    li.querySelector<HTMLElement>("[data-row-status]")?.dataset["rowStatus"],
+  ]);
+
+it.each([
+  [
+    "flat",
+    (tasks: ReturnType<typeof papers>) =>
+      new FlatManifest({
+        tasks,
+        groups: [{ kind: "update", header: m.batch_update_group_update }],
+        notFound: [],
+        notFoundHeader: m.batch_update_group_not_found,
+        abortedHeader: m.batch_update_group_aborted,
+      }),
+  ],
+  [
+    "hierarchy",
+    (tasks: ReturnType<typeof papers>) =>
+      new HierarchyManifest({
+        parents: [{ label: "Parent paper", children: tasks }],
+        doneHeader: m.batch_update_group_update,
+        abortedHeader: m.batch_update_group_aborted,
+      }),
+  ],
+])(
+  "mounts a collapsed %s group's rows when it opens, with the statuses recorded before",
+  async (_, manifestOf) => {
+    const count = 1000;
+    const manifest = manifestOf(papers(count));
+    const container = document.body.createDiv();
+    manifest.renderList(container);
+    const group = container.querySelector("details")!;
+    expect(group.open).toBe(false);
+    expect(rowStatuses(container)).toEqual([]);
+
+    manifest.setRowStatus(count, "done");
+    group.open = true;
+    await vi.waitFor(() =>
+      expect(container.querySelectorAll("li")).toHaveLength(count),
+    );
+    manifest.setRowStatus(1, "failed");
+    const statuses = rowStatuses(container);
+    expect(statuses[0]).toEqual(["Paper 1", "failed"]);
+    expect(statuses[1]).toEqual(["Paper 2", "pending"]);
+    expect(statuses.at(-1)).toEqual([`Paper ${count}`, "done"]);
+    container.remove();
+  },
+);
+
+it("mounts every row of a large group that starts open, across tasks", async () => {
+  const container = document.body.createDiv();
+  section(container, "Failed", {
+    items: papers(1000),
+    renderRow: (ul, paper) => ul.createEl("li", { text: paper.label }),
+    open: true,
+  });
+  const mounted = container.querySelectorAll("li").length;
+  expect(mounted).toBeGreaterThan(0);
+  expect(mounted).toBeLessThan(1000);
+  await vi.waitFor(() =>
+    expect(container.querySelectorAll("li")).toHaveLength(1000),
+  );
+  expect(container.querySelector("li:last-child")?.textContent).toBe(
+    "Paper 1000",
+  );
+  container.remove();
+});
+
+it("stops mounting a group's rows once a phase change discards it", async () => {
+  const container = document.body.createDiv();
+  const renderRow = vi.fn((ul: HTMLElement, paper: { label: string }) =>
+    ul.createEl("li", { text: paper.label }),
+  );
+  section(container, "Failed", { items: papers(1000), renderRow, open: true });
+  const mounted = renderRow.mock.calls.length;
+  container.remove();
+  await yieldToMain();
+  await yieldToMain();
+  expect(renderRow).toHaveBeenCalledTimes(mounted);
 });

@@ -131,7 +131,7 @@ function standingDeps() {
     markGestures: markGestures(),
     settings: readerSettings(),
     noteIndex: new NoteIndexStub(),
-    libraryTagNames: () => [],
+    libraryTagNames: async () => [],
   };
 }
 

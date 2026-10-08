@@ -22,7 +22,7 @@ it("searches Zotero from the first item chooser and selects a matching paper", a
     title: "Ten Simple Rules for Better Figures",
   });
   const search = vi.fn(async (query: string) =>
-    query ? [{ item, score: 1, matches: [], library: null }] : [],
+    query ? [{ item, matches: [], library: null }] : [],
   );
   const app = {} as App;
   const deps = {

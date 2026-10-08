@@ -3,9 +3,7 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import type { CachedMetadata, TFile } from "obsidian";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { themeHook } from "@/lib/theme-hooks";
@@ -15,6 +13,7 @@ import type {
 } from "@/services/citation-index/service";
 import {
   createCitationIndexHarness,
+  GROUP_LIBRARY_ID,
   KEY_A,
   KEY_B,
   link,
@@ -26,27 +25,18 @@ import { createCitationEngine } from "@/services/pandoc/engine";
 import type { CitationEngine } from "@/services/pandoc/engine";
 import { inlineText } from "@/services/pandoc/inline-content";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import {
+  inProcessReadsService,
+  memoryOpener,
+} from "@/services/zotero-reads/test-utils";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { ReferenceEntry } from "@/views/references/entries";
 
-import { ALPHA, firstText } from "./__fixtures__";
+import { firstText } from "./__fixtures__";
 import { citationElement, citationKey } from "./present";
 import type { DocumentCitations, FormattedOccurrence } from "./present";
 import { CitationText } from "./service";
-
-vi.mock("@zotlit/db", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@zotlit/db")>();
-  return {
-    ...actual,
-    getZoteroIdentity: () => ({
-      userID: 1,
-      localUserKey: null,
-      username: null,
-    }),
-    resolveIndexedKeyLibrary: vi.fn(),
-    getItemsByKey: vi.fn(),
-  };
-});
 
 const WASM_PATH = join(
   dirname(createRequire(import.meta.url).resolve("pandoc-wasm")),
@@ -115,42 +105,53 @@ const KEY_C = "CCCC2345";
 const KEY_D = "DDDD2345";
 const KEY_E = "EEEE2345";
 
-/** A personal-library Item, whose bare key is its Indexed Key. */
-function item(
-  indexedKey: string,
-  itemID: number,
-  family: string,
-): typeof ALPHA {
-  return {
-    ...ALPHA,
-    key: indexedKey,
-    itemID,
-    indexedKey,
-    creators: [{ creatorType: "author", lastName: family, firstName: "Bea" }],
-    fields: { ...ALPHA.fields, title: `${family} study`, date: "2021" },
-  };
-}
+/**
+ * The Items the database holds: KEY_A is "A study of nothing" (2020) by Ann
+ * Zeta; KEY_B (group 7) and the keyless Items each a "<Family> study" (2021)
+ * by Bea <Family>.
+ */
+const ITEM_ROWS = `
+  insert into libraries (libraryID, type, version, clientVersion)
+    values (1, 'user', 1, 1), (2, 'group', 1, 1);
+  insert into groups (groupID, libraryID, name) values (7, 2, 'Lab');
+  insert into settings (setting, key, value) values ('account', 'userID', 1);
+  insert into itemTypes (itemTypeID, typeName) values (1, 'journalArticle');
+  insert into fieldsCombined (fieldID, fieldName, custom)
+    values (10, 'title', 0), (12, 'date', 0);
+  insert into creatorTypes (creatorTypeID, creatorType) values (1, 'author');
+  insert into itemTypeCreatorTypes (itemTypeID, creatorTypeID, primaryField)
+    values (1, 1, 1);
+  insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+    values
+      (1, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, '${KEY_A}'),
+      (2, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 2, 'ZZZ99999'),
+      (3, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, '${KEY_C}'),
+      (4, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, '${KEY_D}'),
+      (5, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, '${KEY_E}');
+  insert into itemDataValues (valueID, value)
+    values (1, 'A study of nothing'), (2, '2020'), (3, '2021'),
+           (4, 'Roe study'), (5, 'Cox study'), (6, 'Dey study'),
+           (7, 'Ess study');
+  insert into itemData (itemID, fieldID, valueID)
+    values (1, 10, 1), (1, 12, 2), (2, 10, 4), (2, 12, 3), (3, 10, 5),
+           (3, 12, 3), (4, 10, 6), (4, 12, 3), (5, 10, 7), (5, 12, 3);
+  insert into creators (creatorID, firstName, lastName, fieldMode)
+    values (1, 'Ann', 'Zeta', 0), (2, 'Bea', 'Roe', 0), (3, 'Bea', 'Cox', 0),
+           (4, 'Bea', 'Dey', 0), (5, 'Bea', 'Ess', 0);
+  insert into itemCreators (itemID, creatorID, creatorTypeID, orderIndex)
+    values (1, 1, 1, 0), (2, 2, 1, 0), (3, 3, 1, 0), (4, 4, 1, 0),
+           (5, 5, 1, 0);
+`;
 
-/** Every Item the stubbed database answers with, by Indexed Key. */
-const ITEMS: Record<string, typeof ALPHA> = {
-  [KEY_A]: ALPHA,
-  [KEY_B]: item(KEY_B, 2, "Roe"),
-  [KEY_C]: item(KEY_C, 3, "Cox"),
-  [KEY_D]: item(KEY_D, 4, "Dey"),
-  [KEY_E]: item(KEY_E, 5, "Ess"),
-};
+/** The reads every CitationText here formats from. */
+let items: ZoteroReadsService;
 
 beforeEach(() => {
-  vi.mocked(resolveIndexedKeyLibrary).mockImplementation(
-    (_client, indexedKey) => {
-      const found = ITEMS[indexedKey];
-      return found ? { libraryID: 1, key: found.key } : null;
-    },
-  );
-  vi.mocked(getItemsByKey).mockImplementation((_client, _libraryID, keys) => {
-    const found = Object.values(ITEMS).find(({ key }) => key === keys[0]);
-    return found ? [found as never] : [];
-  });
+  items = inProcessReadsService(memoryOpener(() => ITEM_ROWS).open);
+});
+
+afterEach(async () => {
+  await items[Symbol.asyncDispose]();
 });
 
 async function readText(
@@ -405,8 +406,8 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
           },
           {
             itemID: 2,
-            libraryID: MY_LIBRARY_ID,
-            key: "ROE2025",
+            libraryID: GROUP_LIBRARY_ID,
+            key: "ZZZ99999",
             indexedKey: KEY_B,
             citekey: "doe2024",
           },
@@ -440,14 +441,14 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
 
 /** One CitationText over a harness, formatting through the real engine. */
 function openText(
-  { app, db, index, noteIndex, queryClient }: CitationIndexHarness,
+  { app, index, noteIndex, queryClient }: CitationIndexHarness,
   engine: CitationEngine,
   styleXml: string,
 ): CitationText {
   return new CitationText({
     profile: profileReader(),
     app,
-    db,
+    db: items,
     citationIndex: index,
     noteIndex,
     bibliographyRender: {
@@ -521,7 +522,7 @@ function referenceSources(): ReadonlyMap<string, ReferenceSource> {
   });
   return new Map([
     [KEY_A, source("doe2024", 1, "Doe")],
-    [KEY_B, source("roe2025", 2, "Roe")],
+    [KEY_B, { ...source("roe2025", 2, "Roe"), groupID: 7 }],
   ]);
 }
 

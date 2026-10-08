@@ -170,6 +170,11 @@ export class NotePreviewView extends ItemView {
   #file: TFile | null = null;
   #sourceGeneration = 0;
   #choiceGeneration = 0;
+  /**
+   * Set while a restored state waits for native completion, which rebinds the
+   * editor; context the old editor publishes until then is stale.
+   */
+  #restoring = false;
   #session: NativePreviewSession | null = null;
   #scheduler: RenderScheduler<NativeRenderResult> | null = null;
   /** Names this preview to the editor that explains what it found. */
@@ -619,7 +624,8 @@ export class NotePreviewView extends ItemView {
     const contextEvent = this.app.workspace.on(
       "zotlit:authoring-context",
       (context) => {
-        if (context.leaf === this.#editor?.leaf) this.#apply(context);
+        if (!this.#restoring && context.leaf === this.#editor?.leaf)
+          this.#apply(context);
       },
     );
     cleanup.defer(() => this.app.workspace.offref(contextEvent));
@@ -704,6 +710,7 @@ export class NotePreviewView extends ItemView {
     } finally {
       if (previous !== JSON.stringify(this.getState())) result.history = true;
       onCompanionStateRestored(this.app, result, () => {
+        this.#restoring = false;
         if (!this.#cleanup) return;
         this.#editor = activeTemplateWorkbench(
           this.app,
@@ -814,6 +821,7 @@ export class NotePreviewView extends ItemView {
         live: value["live"] !== false,
       };
       if (this.#session) {
+        this.#restoring = true;
         this.#session.setPreview(preview);
         this.#session.setCitation(citation);
         this.#session.setItem(item);

@@ -25,8 +25,12 @@ import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { spliceFrontMatter } from "@/lib/live-text";
 import {
   createCitationIndexHarness,
+  GROUP_LIBRARY_ID,
+  groupLibrary,
   KEY_A,
   KEY_B,
+  LibraryScopeStub,
+  personalLibrary,
   SettingsStub,
 } from "@/services/citation-index/test-harness";
 import type { CitationIndexHarness } from "@/services/citation-index/test-harness";
@@ -37,6 +41,7 @@ import { createCitationEngine } from "@/services/pandoc/engine";
 import { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
+import { seedWorksSql } from "@/services/zotero-reads/test-utils";
 import { applyCitationPresentation } from "@/views/citation-presentation/presentation";
 import type { CitationPresentationChoice } from "@/views/citation-presentation/presentation";
 import { runPandocExport } from "@/views/pandoc-export/register";
@@ -82,11 +87,6 @@ vi.mock("@/components/obsidian/icon-button", async () => {
   };
 });
 
-vi.mock("@zotlit/db", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@zotlit/db")>()),
-  ...(await import("./citation-surface-mocks")).zoteroDatabaseDoubles(),
-}));
-
 /** Instantiating the Haskell runtime dominates every timing here. */
 export const TIMEOUT = 60_000;
 
@@ -108,24 +108,28 @@ export const EXPORT_NOTE = "export.md";
 const LINKPATH = "Doe 2024";
 export const EXPORT_BODY = `Cited [[${LINKPATH}]].\n`;
 
+/**
+ * SQL for the Zotero database: My Library of account user 1, the library of
+ * group 7, and `works`.
+ */
+function zoteroRows(works: readonly CitedWork[]): string {
+  return `
+    ${seedWorksSql(works.map(({ work }) => work))}
+    insert into libraries (libraryID, type) values (${GROUP_LIBRARY_ID}, 'group');
+    insert into groups (groupID, libraryID, name) values (7, ${GROUP_LIBRARY_ID}, 'Group');
+    insert into settings (setting, key, value) values ('account', 'userID', 1);
+  `;
+}
+
 /** The work both notes cite first, as the database and Zotero itself answer it. */
 const CITED_WORK: CitedWork = {
-  libraryID: 1,
-  key: "DOE2024",
-  row: {
-    key: "DOE2024",
+  work: {
     itemID: 1,
-    groupID: null,
-    indexedKey: KEY_A,
-    creators: [{ creatorType: "author", lastName: "Zeta", firstName: "Ann" }],
-    primaryCreatorType: "author",
-    customFields: [],
-    fields: {
-      itemType: "book",
-      title: "A study of nothing",
-      date: "2020",
-      citationKey: CITATION_KEY,
-    },
+    key: KEY_A,
+    creators: [["Ann", "Zeta"]],
+    title: "A study of nothing",
+    date: "2020",
+    citationKey: CITATION_KEY,
   },
   csl: {
     id: "zeta2020",
@@ -138,22 +142,14 @@ const CITED_WORK: CitedWork = {
 
 /** The work the draft cites second, which every surface numbers after the first. */
 const SECOND_CITED_WORK: CitedWork = {
-  libraryID: 1,
-  key: "ROE2025",
-  row: {
-    key: "ROE2025",
+  work: {
     itemID: 2,
-    groupID: null,
-    indexedKey: KEY_B,
-    creators: [{ creatorType: "author", lastName: "Alpha", firstName: "Bo" }],
-    primaryCreatorType: "author",
-    customFields: [],
-    fields: {
-      itemType: "book",
-      title: "A second study of nothing",
-      date: "2021",
-      citationKey: SECOND_CITATION_KEY,
-    },
+    key: KEY_B.slice(0, KEY_B.indexOf("g")),
+    libraryID: GROUP_LIBRARY_ID,
+    creators: [["Bo", "Alpha"]],
+    title: "A second study of nothing",
+    date: "2021",
+    citationKey: SECOND_CITATION_KEY,
   },
   csl: {
     id: "alpha2021",
@@ -279,7 +275,11 @@ export async function openCitationVault({
   const harness = stack.use(
     await createCitationIndexHarness(
       { [DRAFT]: DRAFT_BODY, [EXPORT_NOTE]: EXPORT_BODY },
-      { settingsService: settings },
+      {
+        settingsService: settings,
+        zoteroRows: zoteroRows([...citedWorks.values()]),
+        libraryScope: new LibraryScopeStub([personalLibrary(), groupLibrary()]),
+      },
     ),
   );
   // The wikilink Obsidian's own cache reports for the exported note.
@@ -595,13 +595,7 @@ function exportAdapter({
         cachedRead: (file: TFile) => harness.vault.cachedRead(file),
       },
     } as unknown as App,
-    db: {
-      acquireRead: () =>
-        Promise.resolve({
-          client: harness.db.client,
-          [Symbol.dispose]: () => undefined,
-        }),
-    } as unknown as PandocExportDeps["db"],
+    db: harness.db,
     citationIndex: harness.index,
     pandocEngine: {
       getStatus: () => ({ kind: "installed", version: "test" }),

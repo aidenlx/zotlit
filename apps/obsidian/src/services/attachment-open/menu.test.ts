@@ -1,28 +1,19 @@
 import { Menu, TFile, TFolder } from "@mock/obsidian";
 import type { TAbstractFile } from "obsidian";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-import {
-  getAttachmentsByParents,
-  getItemsByKey,
-  resolveIndexedKeyLibrary,
-} from "@zotlit/db";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createObsidianAttachmentReader,
   openAttachments,
 } from "@/lib/attachment-open";
+import {
+  inProcessReadsService,
+  memoryOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import type { AttachmentOpenDeps } from "./actions";
 import { registerAttachmentOpenFileMenu } from "./menu";
 import { toObsidianOpenableAttachments } from "./resolve";
-
-vi.mock("@zotlit/db", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@zotlit/db")>()),
-  resolveIndexedKeyLibrary: vi.fn(),
-  getItemsByKey: vi.fn(),
-  getAttachmentsByParents: vi.fn(),
-}));
 
 vi.mock("./resolve", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./resolve")>()),
@@ -44,10 +35,23 @@ type FileMenuHandler = (
   source: string,
 ) => void;
 
+/** Item ABCD2345 with two stored PDFs. */
+const ITEM_WITH_PDFS = `
+  insert into libraries (libraryID, type) values (1, 'user');
+  insert into itemTypes (itemTypeID, typeName)
+    values (1, 'journalArticle'), (2, 'attachment');
+  insert into items (itemID, itemTypeID, libraryID, key, dateAdded, dateModified)
+    values (7, 1, 1, 'ABCD2345', '2024-01-01 00:00:00', '2024-01-01 00:00:00'), (20, 2, 1, 'ATCHA234', '2024-01-01 00:00:00', '2024-01-01 00:00:00'), (21, 2, 1, 'ATCHB234', '2024-01-01 00:00:00', '2024-01-01 00:00:00');
+  insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path)
+    values
+      (20, 7, 0, 'application/pdf', 'storage:Alpha.pdf'),
+      (21, 7, 0, 'application/pdf', 'storage:Beta.pdf');
+`;
+
+let stack: AsyncDisposableStack;
+
 beforeEach(() => {
-  vi.mocked(resolveIndexedKeyLibrary).mockReset();
-  vi.mocked(getItemsByKey).mockReset();
-  vi.mocked(getAttachmentsByParents).mockReset();
+  stack = new AsyncDisposableStack();
   vi.mocked(toObsidianOpenableAttachments).mockReset();
   vi.mocked(openAttachments).mockReset();
   vi.mocked(createObsidianAttachmentReader).mockReset();
@@ -57,9 +61,11 @@ beforeEach(() => {
   }));
 });
 
+afterEach(() => stack.disposeAsync());
+
 function fileMenuHandler(
   deps: Partial<AttachmentOpenDeps> = {},
-  frontmatter: Record<string, unknown> = { "zotero-key": "ABCD2345g42" },
+  frontmatter: Record<string, unknown> = { "zotero-key": "ABCD2345" },
 ): FileMenuHandler {
   let handler: FileMenuHandler | undefined;
   const app = {
@@ -76,7 +82,9 @@ function fileMenuHandler(
     { registerEvent: () => {}, app: app as never },
     {
       app,
-      db: { state: "ready", client: {}, ready: Promise.resolve() },
+      reads: stack.use(
+        inProcessReadsService(memoryOpener(() => ITEM_WITH_PDFS).open),
+      ),
       zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
       ...deps,
     } as unknown as AttachmentOpenDeps,
@@ -114,12 +122,6 @@ describe("Literature Note attachment-open file menu", () => {
   });
 
   it("opens the resolved Attachments on click", async () => {
-    vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-      key: "ABCD2345",
-      libraryID: 42,
-    });
-    vi.mocked(getItemsByKey).mockReturnValue([{ itemID: 7 }] as never);
-    vi.mocked(getAttachmentsByParents).mockReturnValue([{}] as never);
     const openable = [{ indexedKey: "ATCH1" }];
     vi.mocked(toObsidianOpenableAttachments).mockReturnValue(openable as never);
 
@@ -167,12 +169,6 @@ describe("Literature Note attachment-open file menu", () => {
   });
 
   it("calls openAttachments with an empty list when the note has no PDF Attachment", async () => {
-    vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-      key: "ABCD2345",
-      libraryID: 42,
-    });
-    vi.mocked(getItemsByKey).mockReturnValue([{ itemID: 7 }] as never);
-    vi.mocked(getAttachmentsByParents).mockReturnValue([{}] as never);
     vi.mocked(toObsidianOpenableAttachments).mockReturnValue([]);
 
     const menu = new Menu();
@@ -195,7 +191,7 @@ describe("Literature Note attachment-open file menu", () => {
    * Exercises the real `openAttachments` / `createObsidianAttachmentReader`
    * pair (not the module-level mocks) so the regression is caught end to end.
    */
-  it("shows the picker at the button's own box for a keyboard click, after the async db.ready gap", async () => {
+  it("shows the picker at the button's own box for a keyboard click, after the async database read", async () => {
     const actual = await vi.importActual<
       typeof import("@/lib/attachment-open")
     >("@/lib/attachment-open");
@@ -203,12 +199,6 @@ describe("Literature Note attachment-open file menu", () => {
     vi.mocked(createObsidianAttachmentReader).mockImplementation(
       actual.createObsidianAttachmentReader,
     );
-    vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-      key: "ABCD2345",
-      libraryID: 42,
-    });
-    vi.mocked(getItemsByKey).mockReturnValue([{ itemID: 7 }] as never);
-    vi.mocked(getAttachmentsByParents).mockReturnValue([{}, {}] as never);
     vi.mocked(toObsidianOpenableAttachments).mockReturnValue([
       { indexedKey: "ATCH1", label: "Alpha.pdf" },
       { indexedKey: "ATCH2", label: "Beta.pdf" },

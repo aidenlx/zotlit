@@ -67,7 +67,7 @@ async function readerRegistry(
     markGestures: markGestures(),
     settings: readerSettings(),
     noteIndex: new NoteIndexStub(),
-    libraryTagNames: () => [],
+    libraryTagNames: async () => [],
   });
   await service.ready;
   return service;

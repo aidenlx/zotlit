@@ -77,16 +77,15 @@ describe("itemToCsl: identity and type", () => {
       itemToCsl(item, {
         userID: null,
         localUserKey: "v3aG8nQf",
-        username: null,
       }).id,
     ).toBe("http://zotero.org/users/local/v3aG8nQf/items/ABC12345");
   });
 
   it("falls back to the Indexed Key when the account carries no id", () => {
     const item = makeItem({ itemType: "book" });
-    expect(
-      itemToCsl(item, { userID: null, localUserKey: null, username: null }).id,
-    ).toBe("ABC12345");
+    expect(itemToCsl(item, { userID: null, localUserKey: null }).id).toBe(
+      "ABC12345",
+    );
   });
 
   it("rejects an item type outside the CSL mapping", () => {

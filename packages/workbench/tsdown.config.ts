@@ -1,4 +1,4 @@
-import { defineConfig } from "tsdown";
+import { defineLibrary } from "@zotlit/config/tsdown";
 
 /** The browser-safe entries, each also published as its source. */
 const SOURCE = {
@@ -12,7 +12,7 @@ const SOURCE = {
   ui: "./src/ui/index.tsx",
 };
 
-export default defineConfig({
+export default defineLibrary({
   entry: [{ ...SOURCE, snapshot: "./src/snapshot/index.ts" }],
   tsconfig: "./tsconfig.lib.json",
   dts: true,

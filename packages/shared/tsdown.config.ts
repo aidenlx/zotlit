@@ -1,6 +1,6 @@
-import { defineConfig } from "tsdown";
+import { defineLibrary } from "@zotlit/config/tsdown";
 
-export default defineConfig({
+export default defineLibrary({
   entry: [
     {
       "log-formatter": "./src/log-formatter.ts",

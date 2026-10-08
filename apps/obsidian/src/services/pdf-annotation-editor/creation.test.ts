@@ -13,6 +13,7 @@ import type {
 import { AbortError } from "@/lib/abort-error";
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
+import { useFakeTimers } from "@/services/annotation-repository/__fixtures__";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   TextPosition,
@@ -176,7 +177,7 @@ async function reader(
   });
   // The repository reads Zotero on real time; the reader's own timers are
   // driven by hand from here on.
-  vi.useFakeTimers();
+  useFakeTimers();
   const { app, creation, store: surfaceState, revealed, zotero } = reader;
 
   return {
@@ -944,7 +945,7 @@ async function imageReader(
   });
   // The repository reads Zotero on real time; the reader's own timers are
   // driven by hand from here on.
-  vi.useFakeTimers();
+  useFakeTimers();
   const slot = document.body.createDiv();
   surfaces.creation.mountToolbar(slot);
   // Armed as a researcher arms it, from the toolbar; the arm itself stands

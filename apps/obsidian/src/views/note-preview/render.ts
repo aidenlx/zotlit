@@ -41,7 +41,6 @@ import { isLanguageTag } from "@/lib/language-tag";
 import { readLiveText } from "@/lib/live-text";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
-import type { DatabaseService } from "@/services/database/service";
 import {
   applyComposedFrontmatter,
   composeLiteratureNote,
@@ -57,6 +56,7 @@ import {
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import { findExistingLitNote } from "@/services/template/inert-resolver-host";
 import type { TemplateService } from "@/services/template/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { previewBaseline } from "./baseline";
 export { previewBaseline } from "./baseline";
@@ -65,7 +65,7 @@ import { renderDraftCitations } from "./citations";
 import type { NativeCitationDeps, PreviewCitation } from "./citations";
 
 export interface NativeRenderDeps extends TemplateDataDeps, NativeCitationDeps {
-  db: Pick<DatabaseService, "acquireRead" | "on">;
+  zoteroReads: Pick<ZoteroReadsService, "acquireRead" | "on">;
   templates: Pick<
     TemplateService,
     | "ready"

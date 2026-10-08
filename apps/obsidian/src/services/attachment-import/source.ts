@@ -161,11 +161,11 @@ export async function buildCanonicalRoots(
 
 /**
  * Decide whether `path` may be read as an attachment source. Synchronous and
- * memory-only by design: it runs inside link resolution, which renders a
- * template and populates a `dragstart` data transfer, neither of which can
- * await. The string check is complete for a hostile Zotero row, because the
- * pure layer in `@zotlit/db` already rejected every separator and parent
- * segment; a symbolic link on disk is left to {@link confirmSource}.
+ * memory-only by design: it runs inside link resolution during a template
+ * render, which cannot await. The string check is complete for a hostile
+ * Zotero row, because the pure layer in `@zotlit/db` already rejected every
+ * separator and parent segment; a symbolic link on disk is left to
+ * {@link confirmSource}.
  */
 export function decideSource(
   path: string,

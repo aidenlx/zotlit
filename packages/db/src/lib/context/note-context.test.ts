@@ -9,12 +9,22 @@ import type { TemplateItemResolvers } from "@/lib/context/zt-template-item";
 import type { Annotation } from "@/lib/zt-annot";
 import { CollectionCache } from "@/lib/zt-collection";
 import { getAnnotationsByParent } from "@/queries/annotations";
+import { getAttachmentByItemId } from "@/queries/attachments";
 import { getItemsByKey } from "@/queries/items";
 import { resolveItemTagsByIDs } from "@/queries/tags";
 import type { TagMemo } from "@/queries/tags";
 import { createFixtureSchema } from "@/test-utils";
 
-import { fetchAnnotationsTemplateData, fetchNoteContext } from "./note-context";
+import {
+  buildAnnotationParents,
+  buildAnnotationsTemplateData,
+  buildNoteContextFromSource,
+  fetchAnnotationSources,
+  fetchAttachmentSources,
+  fetchAnnotationsTemplateData,
+  fetchNoteContext,
+  fetchNoteSource,
+} from "./note-context";
 import type { AnnotationResolvers, NoteResolvers } from "./note-context";
 
 let sqlite: DatabaseSync;
@@ -60,7 +70,9 @@ const noteResolvers: NoteResolvers = {
 
 describe("fetchNoteContext", () => {
   it("fetches attachments, annotations, related items, and child notes into the assembled context", () => {
-    const [main] = getItemsByKey(db, USER_LIBRARY_ID, ["MAIN0001"]);
+    const [main] = getItemsByKey(db, ["MAIN0001"], {
+      libraryID: USER_LIBRARY_ID,
+    });
 
     const ctx = fetchNoteContext(db, main!, {
       resolvers: noteResolvers,
@@ -96,7 +108,9 @@ describe("fetchNoteContext", () => {
   });
 
   it("reuses a caller-supplied TagMemo/CollectionCache instead of re-querying", () => {
-    const [main] = getItemsByKey(db, USER_LIBRARY_ID, ["MAIN0001"]);
+    const [main] = getItemsByKey(db, ["MAIN0001"], {
+      libraryID: USER_LIBRARY_ID,
+    });
 
     const tagMemo: TagMemo = new Map();
     const collectionCache = new CollectionCache();
@@ -119,6 +133,134 @@ describe("fetchNoteContext", () => {
 
     expect(ctx.tags.map((t) => t.name)).toEqual(["zt"]);
     expect(ctx.collections.map((c) => c.name)).toEqual(["Reading"]);
+  });
+});
+
+describe("fetchNoteSource + buildNoteContextFromSource", () => {
+  it("returns a bundle that holds no functions", () => {
+    const [main] = getItemsByKey(db, ["MAIN0001"], {
+      libraryID: USER_LIBRARY_ID,
+    });
+
+    const source = fetchNoteSource(db, main!, {
+      username: "aidenlx",
+      collectionCache: new CollectionCache(),
+    });
+
+    expect(functionPaths(source)).toEqual([]);
+  });
+
+  it("builds the same context from a bundle that crossed the wire", () => {
+    const [main] = getItemsByKey(db, ["MAIN0001"], {
+      libraryID: USER_LIBRARY_ID,
+    });
+
+    const source = fetchNoteSource(db, main!, {
+      username: "aidenlx",
+      collectionCache: new CollectionCache(),
+    });
+    const ctx = buildNoteContextFromSource(overTheWire(source), noteResolvers);
+
+    expect(ctx.tags.map(String)).toEqual(["zt"]);
+    expect(ctx.collections.map(String)).toEqual(["Reading"]);
+    expect(ctx.collections[0]!.path).toEqual(["Reading"]);
+    expect(ctx.weblink).toBe("https://www.zotero.org/aidenlx/items/MAIN0001");
+    expect(ctx.attachments.map((a) => a.key)).toEqual(["ATCH0001"]);
+    expect(ctx.annotations.map((a) => a.key)).toEqual(["ANNO0001", "ANNO0002"]);
+    expect(ctx.annotations[0]!.tags.map(String)).toEqual(["claim"]);
+    expect(ctx.annotations[0]!.comment).toBe("md(<i>excerpt</i>)");
+    expect(ctx.annotations[0]!.parentAttachment).toBe(ctx.attachments[0]);
+    expect(ctx.relatedItems.map((r) => r.title)).toEqual([
+      "Alpha Paper",
+      "Beta Book",
+    ]);
+    const beta = ctx.relatedItems.find((r) => r.title === "Beta Book")!;
+    expect(beta.tags.map(String)).toEqual(["method"]);
+    expect(beta.collections.map(String)).toEqual(["Reading"]);
+    expect(ctx.notes.map((n) => n.key)).toEqual(["NOTE0001"]);
+  });
+
+  it("reads the signed-in username when the caller passes none", () => {
+    sqlite.exec(
+      "insert into settings (setting, key, value) values ('account', 'username', 'fromdb')",
+    );
+    const [main] = getItemsByKey(db, ["MAIN0001"], {
+      libraryID: USER_LIBRARY_ID,
+    });
+
+    const source = fetchNoteSource(db, main!, {
+      collectionCache: new CollectionCache(),
+    });
+
+    expect(source.username).toBe("fromdb");
+  });
+});
+
+describe("fetchAnnotationSources + buildAnnotationsTemplateData", () => {
+  it("returns a bundle that holds no functions", () => {
+    const annotations = getAnnotationsByParent(db, 10);
+
+    const sources = fetchAnnotationSources(db, annotations, {});
+
+    expect(functionPaths(sources)).toEqual([]);
+  });
+
+  it("builds the same annotations from a bundle that crossed the wire", () => {
+    sqlite.exec(
+      "insert into settings (setting, key, value) values ('account', 'username', 'fromdb')",
+    );
+    const [nonStandalone] = getAnnotationsByParent(db, 10);
+    const [standalone] = getAnnotationsByParent(db, 20);
+
+    const sources = fetchAnnotationSources(
+      db,
+      [nonStandalone!, standalone!],
+      {},
+    );
+    const result = buildAnnotationsTemplateData(
+      overTheWire(sources),
+      annotationResolvers,
+    );
+
+    expect([...result.keys()]).toEqual(["ANNO0001", "ANNO0003"]);
+    const first = result.get("ANNO0001")!;
+    expect(first.tags.map(String)).toEqual(["claim"]);
+    expect(first.comment).toBe("md(<i>excerpt</i>)");
+    expect(first.parentAttachment.key).toBe("ATCH0001");
+    expect(first.parentItem!.authorsShort).toBe("short:MAIN0001");
+    expect(first.parentItem!.weblink).toBe(
+      "https://www.zotero.org/fromdb/items/MAIN0001",
+    );
+    expect(result.get("ANNO0003")!.parentItem).toBeNull();
+  });
+});
+
+describe("fetchAttachmentSources + buildAnnotationParents", () => {
+  it("builds each attachment's parent context with no annotation row", () => {
+    sqlite.exec(
+      "insert into settings (setting, key, value) values ('account', 'username', 'fromdb')",
+    );
+    const attachments = [
+      getAttachmentByItemId(db, 10)!,
+      getAttachmentByItemId(db, 20)!,
+    ];
+
+    const sources = fetchAttachmentSources(db, attachments, {});
+    const parents = buildAnnotationParents(
+      overTheWire(sources),
+      annotationResolvers,
+    );
+
+    expect(sources.annotations).toEqual([]);
+    expect(functionPaths(sources)).toEqual([]);
+    const paper = parents.get(10)!;
+    expect(paper.tplAttachment.key).toBe("ATCH0001");
+    expect(paper.parentItem!.authorsShort).toBe("short:MAIN0001");
+    expect(paper.parentItem!.weblink).toBe(
+      "https://www.zotero.org/fromdb/items/MAIN0001",
+    );
+    expect(parents.get(20)!.tplAttachment.key).toBe("ATCH0002");
+    expect(parents.get(20)!.parentItem).toBeNull();
   });
 });
 
@@ -213,6 +355,58 @@ describe("fetchAnnotationsTemplateData", () => {
     expect(standaloneTpl.backlink).toContain("ANNO0003");
   });
 });
+
+/** Own-property paths (enumerable or not) that hold a function. */
+function functionPaths(value: unknown, path = "$"): string[] {
+  if (typeof value === "function") return [path];
+  if (value === null || typeof value !== "object") return [];
+  if (value instanceof Temporal.Instant) return [];
+  if (value instanceof Map) {
+    return [...value.entries()].flatMap(([key, entry]) =>
+      functionPaths(entry, `${path}.get(${String(key)})`),
+    );
+  }
+  return Object.getOwnPropertyNames(value).flatMap((key) =>
+    functionPaths((value as Record<string, unknown>)[key], `${path}.${key}`),
+  );
+}
+
+const INSTANT = "$instant";
+
+/**
+ * Simulate a worker hop: each `Temporal.Instant` travels as its ISO string (the
+ * Schema codec's encoding), everything else through structured clone, which
+ * keeps only enumerable properties.
+ */
+function overTheWire<T>(value: T): T {
+  const encode = (v: unknown): unknown => {
+    if (v instanceof Temporal.Instant) return { [INSTANT]: v.toString() };
+    if (v instanceof Map) {
+      return new Map([...v].map(([k, entry]) => [k, encode(entry)]));
+    }
+    if (Array.isArray(v)) return v.map(encode);
+    if (v !== null && typeof v === "object") {
+      return Object.fromEntries(
+        Object.entries(v).map(([k, entry]) => [k, encode(entry)]),
+      );
+    }
+    return v;
+  };
+  const decode = (v: unknown): unknown => {
+    if (v instanceof Map) {
+      return new Map([...v].map(([k, entry]) => [k, decode(entry)]));
+    }
+    if (Array.isArray(v)) return v.map(decode);
+    if (v !== null && typeof v === "object") {
+      if (INSTANT in v) return Temporal.Instant.from(String(v[INSTANT]));
+      return Object.fromEntries(
+        Object.entries(v).map(([k, entry]) => [k, decode(entry)]),
+      );
+    }
+    return v;
+  };
+  return decode(structuredClone(encode(value))) as T;
+}
 
 function seed(sqlite: DatabaseSync): void {
   createFixtureSchema(sqlite);

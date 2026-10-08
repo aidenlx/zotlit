@@ -1,5 +1,6 @@
 // One file-backed authoring session; TextFileView owns vault updates and saves.
 import { EditorView } from "@codemirror/view";
+import { Effect } from "effect";
 import { apiVersion, Scope, TextFileView } from "obsidian";
 import type {
   App,
@@ -21,13 +22,7 @@ import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import {
-  getItemsByKey,
-  getLibraries,
-  isChildItemFields,
-  parseIndexedKey,
-  USER_LIBRARY_ID,
-} from "@zotlit/db";
+import { isChildItemFields, parseIndexedKey } from "@zotlit/db";
 import type { CitationVariant } from "@zotlit/db";
 import type { TemplateLanguage } from "@zotlit/templates/facade";
 import {
@@ -301,7 +296,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    */
   #arrival: ArrivingProblem | null = null;
   get matchDatabase() {
-    return this.#deps.db;
+    return this.#deps.zoteroReads;
   }
   readonly #deps: TemplateWorkbenchDeps;
   readonly #host: ReturnType<typeof createTemplateWorkbenchHost>;
@@ -480,7 +475,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
             result={this.scheduler.getState().result}
           />
         ),
-        matchData: createMatchData(deps.db),
+        matchData: createMatchData(deps.zoteroReads),
         insertTarget: () => this.insertTarget,
         partials: {
           names: () =>
@@ -505,7 +500,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       subscribeWorkbenchSelection(this, {
         editor: () => this.leaf,
         apply: (selection) => {
-          if (selection.kind === "item") this.selectItem(selection.item);
+          if (selection.kind === "item") void this.selectItem(selection.item);
           else if (selection.kind === "annotation")
             this.preview?.select(selection.annotationId);
           else if (selection.kind === "partial")
@@ -763,7 +758,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   async #databaseReady(): Promise<boolean> {
     try {
-      await this.#deps.db.ready;
+      await this.#deps.zoteroReads.ready;
       return true;
     } catch {
       this.#databaseUnavailable = true;
@@ -1331,7 +1326,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       )
         return;
       if (!this.#closed && itemGeneration === this.#itemGeneration)
-        this.#selectKey(value.itemIndexedKey);
+        await this.#selectKey(value.itemIndexedKey);
     } else if (value.itemIndexedKey === null) store.setItem(null);
     if (typeof value.annotationId === "string" || value.annotationId === null)
       this.preview?.select(value.annotationId);
@@ -1880,20 +1875,21 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       },
       this.store.getState().item ?? undefined,
     )
-      .then((choice) => {
+      .then(async (choice) => {
         if (
           choice &&
           !this.#closed &&
           generation === this.#generation &&
           itemGeneration === this.#itemGeneration
         ) {
-          this.selectItem(choice);
+          // A selection that a later one outran stays unpublished.
+          if (!(await this.selectItem(choice))) return false;
           publishWorkbenchSelection(
             this,
             { kind: "item", item: choice },
             this.leaf,
           );
-          return this.store.getState().item?.id === choice.id;
+          return true;
         }
         return false;
       })
@@ -1908,14 +1904,16 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     await this.chooseItem();
     return this.store.getState().item !== null;
   }
-  selectItem(item: WorkbenchItemChoice): void {
-    if (this.#closed) return;
+  /** Whether `item` became the selection; a later selection outranks it. */
+  async selectItem(item: WorkbenchItemChoice): Promise<boolean> {
+    if (this.#closed) return false;
     this.#itemGeneration++;
-    this.#selectKey(item.id);
+    if (!(await this.#selectKey(item.id))) return false;
     // An Item the reader picked is the Citation set they asked to see, so the
     // built-in example that outranks it stands down.
     if (this.store.getState().root === "citation")
       this.preview?.setCitation({ citationExample: null });
+    return true;
   }
   async chooseAnnotation(): Promise<void> {
     const preview = this.preview;
@@ -1941,38 +1939,45 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       );
     }
   }
-  #selectKey(indexedKey: string): void {
+  /**
+   * Select the Item `indexedKey` names once a read confirms it. Answers
+   * whether it became the selection.
+   */
+  async #selectKey(indexedKey: string): Promise<boolean> {
     const sample = getSampleItem(indexedKey);
     if (sample) {
       this.store
         .getState()
         .setItem({ id: indexedKey, title: sample.item.title ?? null });
-      return;
+      return true;
     }
-    const parsed = parseIndexedKey(indexedKey);
-    if (!parsed || this.#deps.db.state !== "ready") return;
+    if (
+      parseIndexedKey(indexedKey) === null ||
+      this.#deps.zoteroReads.state === "degraded"
+    )
+      return false;
+    const generation = this.#itemGeneration;
     try {
-      const libraryID =
-        parsed.groupID === null
-          ? USER_LIBRARY_ID
-          : getLibraries(this.#deps.db.client)?.find(
-              (library) => library.groupID === parsed.groupID,
-            )?.libraryID;
-      if (libraryID === undefined) return;
-      const item = getItemsByKey(this.#deps.db.client, libraryID, [
-        parsed.key,
-      ])[0];
-      if (!item || isChildItemFields(item.fields)) return;
+      const { reads } = await this.#deps.zoteroReads.ready;
+      const items = await Effect.runPromise(
+        reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
+      );
+      const item = items.get(indexedKey);
+      if (!item || isChildItemFields(item.fields)) return false;
+      // A later selection or a closed view outranks this read.
+      if (this.#closed || generation !== this.#itemGeneration) return false;
       this.store.getState().setItem({
         id: indexedKey,
         title: itemSummary(item, item.fields).formatted,
       });
       rememberTemplateItem(this.app, indexedKey);
+      return true;
     } catch (error) {
       logger.warn("Failed to restore Template Workbench Item {indexedKey}", {
         indexedKey,
         error,
       });
+      return false;
     }
   }
   #subscribe(): void {

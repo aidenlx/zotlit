@@ -32,6 +32,10 @@ import type { ExcerptEntry } from "@/services/excerpt-image/service";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
+import {
+  inProcessReadsService,
+  sharedClientOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import { diskImageHost } from "./__fixtures__/disk-image-host";
 import { createNoteImporter } from "./service";
@@ -179,6 +183,9 @@ async function fixture(
       return preparation(options);
     },
   });
+  const { reads } = await stack.use(
+    inProcessReadsService(sharedClientOpener(client)),
+  ).ready;
   const priorTurndown = Object.getOwnPropertyDescriptor(
     globalThis,
     "TurndownService",
@@ -199,7 +206,7 @@ async function fixture(
     return importer.importNote(
       getNoteByKey(client, noteKey, { libraryID: 1 })!,
       {
-        client,
+        reads,
         settings,
         outcomes,
         reportExcerpts: (summary) => report.push(summary),
@@ -210,6 +217,7 @@ async function fixture(
   return {
     app,
     client,
+    reads,
     settings,
     importer,
     vaultRoot,
@@ -268,7 +276,7 @@ it("reuses one resolution across the notes of one initiating import batch", asyn
 it("reuses the bytes a store whose write failed never kept", async () => {
   await using f = await fixture({ failWrites: true });
   const noteImport = await f.importer.prepare({
-    client: f.client,
+    reads: f.reads,
     sourcePath: "Literature/Paper.md",
     settings: f.settings,
   });
@@ -317,7 +325,7 @@ it("keeps a caller's batch scope open until the caller releases it", async () =>
 it("shares one retention across the Child Notes one flush imports", async () => {
   await using f = await fixture();
   const noteImport = await f.importer.prepare({
-    client: f.client,
+    reads: f.reads,
     sourcePath: "Literature/Paper.md",
     settings: f.settings,
   });

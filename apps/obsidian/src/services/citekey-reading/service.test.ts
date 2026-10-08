@@ -6,16 +6,13 @@ import type {
   MarkdownRenderChild,
   TFile,
 } from "obsidian";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
+import { describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
 import type { Citation } from "@/services/citation-index/service";
 import { CitekeySnapshot } from "@/services/citation-index/snapshot";
 import {
-  ALPHA,
   ALPHA_KEY,
   citation,
   literalOccurrences,
@@ -28,24 +25,13 @@ import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { QueryClientService } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import {
+  citedWorkSeed,
+  inProcessReadsService,
+  memoryOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import { CitekeyReading } from "./service";
-
-vi.mock("@zotlit/db", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@zotlit/db")>();
-  return {
-    ...actual,
-    // The stub client runs no queries; these three are the whole read path from
-    // an Indexed Key to the Item the citation names.
-    getZoteroIdentity: () => ({
-      userID: 1,
-      localUserKey: null,
-      username: null,
-    }),
-    resolveIndexedKeyLibrary: vi.fn(),
-    getItemsByKey: vi.fn(),
-  };
-});
 
 /** One rendered section, as a Markdown post-processor receives it. */
 function section(html: string): HTMLElement {
@@ -151,6 +137,9 @@ async function makeHarness({
   const children: MarkdownRenderChild[] = [];
   let ambiguous = ambiguousKeys;
 
+  const reads = stack.use(
+    inProcessReadsService(memoryOpener(() => citedWorkSeed([ALPHA_KEY])).open),
+  );
   const citationText = stack.use(
     new CitationText({
       profile: profileReader(defaults, {
@@ -169,7 +158,7 @@ async function makeHarness({
           getFileCache: () => ({ frontmatter }),
         },
       },
-      db: { state: "ready", client: {} },
+      db: reads,
       citationIndex: {
         getDocumentCitationSet: () =>
           Promise.resolve({ occurrences, citations: cited }),
@@ -291,14 +280,6 @@ async function makeHarness({
     [Symbol.asyncDispose]: () => resources.disposeAsync(),
   };
 }
-
-beforeEach(() => {
-  vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-    libraryID: 1,
-    key: "ALPHA123",
-  });
-  vi.mocked(getItemsByKey).mockReturnValue([ALPHA as never]);
-});
 
 describe("CitekeyReading", () => {
   it("rerenders open reading views when Pandoc navigation changes", async () => {

@@ -1068,7 +1068,15 @@ function ExcerptImage({ annot, collapsed }: AnnotationProps) {
   // A card states its demand as the record it paints moves; the demand lives on
   // until the card goes, so a replacement keeps the previous image it holds.
   useEffect(() => {
-    demand.demand(actions.excerptImageRequest(target));
+    // The request resolves through the database; a later target supersedes
+    // one still resolving, so only the newest is stated.
+    let current = true;
+    void actions.excerptImageRequest(target).then((request) => {
+      if (current) demand.demand(request);
+    });
+    return () => {
+      current = false;
+    };
   }, [actions, demand, target]);
   useEffect(() => () => demand.release(), [demand]);
   const display = useSyncExternalStore(demand.subscribe, demand.snapshot);

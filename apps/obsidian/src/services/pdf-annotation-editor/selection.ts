@@ -239,7 +239,7 @@ export interface MarkSelectionDeps {
   /** Renders a stored comment as the Annotation Card does. */
   renderComment: CommentRenderer;
   /** The tag names of an Annotation's Library, which the tag editor suggests. */
-  libraryTagNames: (annotationKey: string) => readonly string[];
+  libraryTagNames: (annotationKey: string) => Promise<readonly string[]>;
   /**
    * The one popup of this view: a press inside it leaves the selection
    * standing, and a scroll re-hangs it.

@@ -401,7 +401,7 @@ export interface TemplateParentItemData
    * Always `null` on a standalone annotation render (annotation-view
    * drag/insert, note import) — resolving the parent's real literature-note
    * path would require app-layer vault-index I/O, which the annotation path
-   * (synchronous on `dragstart`) intentionally avoids. Stubbed rather than
+   * intentionally avoids. Stubbed rather than
    * omitted so `zt.parentItem.notePath` reads as "unresolved" instead of
    * `undefined`.
    */

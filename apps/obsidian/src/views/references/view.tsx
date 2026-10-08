@@ -8,7 +8,7 @@ import { writeClipboardRichText } from "@/lib/clipboard";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import { describeCandidates } from "@/services/citation-index/ambiguity";
+import { readAmbiguousCandidates } from "@/services/citation-index/ambiguity";
 import type { AmbiguousCandidatesOf } from "@/services/citation-index/ambiguity";
 import {
   citationsEqual,
@@ -24,7 +24,6 @@ import type {
 } from "@/services/citation-index/service";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
-import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import {
   documentCitationPresentation,
@@ -42,6 +41,7 @@ import type {
 import type { PandocEngineService } from "@/services/pandoc/service";
 import type { ProfileReader } from "@/services/profile/service";
 import type { Held } from "@/services/query-client/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { createReferenceActions, ReferenceActionsContext } from "./actions";
 import type { CopyBibliographySnapshot, ReferenceActions } from "./actions";
@@ -69,7 +69,7 @@ const logger = getLogger(["views", "references"]);
 
 export interface ReferencesViewDeps {
   app: App;
-  db: Pick<DatabaseService, "state" | "client" | "ready" | "on">;
+  db: Pick<ZoteroReadsService, "state" | "ready" | "acquireRead" | "on">;
   citationIndex: Pick<
     CitationIndex,
     "getDocumentCitationSet" | "resolveCitekey" | "resolution" | "on"
@@ -121,6 +121,8 @@ export class ReferencesView extends ItemView {
   #actions: ReferenceActions | null = null;
   /** Bumped when copy readiness moves to another on-screen result. */
   #copyGeneration = 0;
+  /** Bumped per reload, so only the latest reload's database read lands. */
+  #reloads = 0;
   /** The Held Read whose events can repaint this list. */
   #renderKey: string | null = null;
   /** Bumped per rescan, the same way, since a query may await a file read. */
@@ -349,16 +351,10 @@ export class ReferencesView extends ItemView {
 
   /**
    * The Items an Ambiguous Citation Key names, or `null` for a citekey that
-   * names no Item at all. Read as the list is built, so a row states the
-   * candidates the current Library Scope names. Bound once, since every build
-   * of the list hands the same reader over.
+   * names no Item at all. Read with the cited Items on each reload, so a row
+   * states the candidates the current Library Scope names.
    */
-  readonly #ambiguousCandidates: AmbiguousCandidatesOf = (citekey) => {
-    const resolved = this.#deps.citationIndex.resolveCitekey(citekey);
-    return resolved?.kind === "ambiguous"
-      ? describeCandidates(this.#deps, resolved.candidates)
-      : null;
-  };
+  #ambiguousCandidates: AmbiguousCandidatesOf = () => null;
 
   /** The Citation Presentation one note renders under; no note renders as none. */
   #readPresentation(file: TFile | null): DocumentPresentation {
@@ -385,32 +381,50 @@ export class ReferencesView extends ItemView {
     }
     this.#entrySerials = this.#readEntrySerials();
     this.#copyGeneration += 1;
+    const reload = ++this.#reloads;
     const citations = this.#citations;
-    const { sources } = readReferenceSources(this.#deps.db, citations);
-    const engine = this.#deps.pandocEngine.getStatus();
-    const entries = buildReferenceEntries(citations, sources, {
-      bibliography: {
-        entries: this.#onScreen,
-        complete: false,
-      },
-      errors: this.#errors,
-      ambiguous: this.#ambiguousCandidates,
-    });
-
     // Retained formatted entries answer for the render that is about to be
-    // replaced, so the reload alone puts copy out of reach.
-    this.#formatting = engine.kind === "installed" ? "pending" : "unavailable";
-    this.#store.setState({
-      entries,
-      listMode: this.#listMode(),
-      engine,
-      formattingFailed: this.#formattingFailed,
-      documentPresentationError: this.#documentPresentationError,
-      dbReady: this.#deps.db.state === "ready",
-      citekeyResolution: this.#deps.citationIndex.resolution,
-      copy: this.#trackCopy(entries),
+    // replaced, so the reload alone puts copy out of reach, before its read.
+    this.#formatting =
+      this.#deps.pandocEngine.getStatus().kind === "installed"
+        ? "pending"
+        : "unavailable";
+    this.#refreshCopy();
+    this.#publishResolution();
+    void Promise.all([
+      readReferenceSources(this.#deps.db, citations),
+      readAmbiguousCandidates(
+        this.#deps,
+        (citekey) => this.#deps.citationIndex.resolveCitekey(citekey),
+        citations.flatMap(({ indexedKey, occurrences }) =>
+          indexedKey === null ? [occurrences[0]!.raw] : [],
+        ),
+      ),
+    ]).then(([{ sources }, ambiguous]) => {
+      // A later reload read the list again; its answer is the one to show.
+      if (reload !== this.#reloads) return;
+      this.#ambiguousCandidates = ambiguous;
+      const engine = this.#deps.pandocEngine.getStatus();
+      const entries = buildReferenceEntries(citations, sources, {
+        bibliography: {
+          entries: this.#onScreen,
+          complete: false,
+        },
+        errors: this.#errors,
+        ambiguous,
+      });
+      this.#store.setState({
+        entries,
+        listMode: this.#listMode(),
+        engine,
+        formattingFailed: this.#formattingFailed,
+        documentPresentationError: this.#documentPresentationError,
+        dbReady: this.#deps.db.state === "ready",
+        citekeyResolution: this.#deps.citationIndex.resolution,
+        copy: this.#trackCopy(entries),
+      });
+      void this.#render(citations, sources);
     });
-    void this.#render(citations, sources);
   }
 
   /** Republish the resolution state alone, for a settle the list survives. */

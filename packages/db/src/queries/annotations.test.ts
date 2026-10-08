@@ -6,13 +6,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { NodeDatabaseClient } from "@/client/node";
 import { USER_LIBRARY_ID } from "@/lib/constants";
 import { parseAnnotationPosition } from "@/lib/zt-annot-pos";
-import { createFixtureSchema } from "@/test-utils";
-
 import {
-  getAnnotationsByItemId,
-  getAnnotationsByKey,
-  getAnnotationsByParent,
-} from "./annotations";
+  countCompiles,
+  countStatements,
+  createFixtureSchema,
+} from "@/test-utils";
+
+import { getAnnotationsByKey, getAnnotationsByParent } from "./annotations";
 
 let sqlite: DatabaseSync;
 let db: NodeDatabaseClient;
@@ -39,7 +39,6 @@ describe("getAnnotationsByParent", () => {
     expect(result).toHaveLength(6);
     expect(result.every(({ version }) => version === 0)).toBe(true);
     expect(getAnnotationsByKey(db, ["JDJKX3N6"], 1)).toHaveLength(1);
-    expect(getAnnotationsByItemId(db, [9060])).toHaveLength(1);
   });
 
   it("returns visible annotations sorted by sortIndex", () => {
@@ -158,6 +157,33 @@ describe("getAnnotationsByKey", () => {
 
   it("returns an empty array for empty keys", () => {
     expect(getAnnotationsByKey(db, [], USER_LIBRARY_ID)).toEqual([]);
+  });
+
+  it("returns keys in request order, repeating a repeated key and leaving misses out", () => {
+    expect(
+      getAnnotationsByKey(
+        db,
+        ["V78IHLM9", "TRASHED1", "MISSING", "JDJKX3N6", "V78IHLM9"],
+        USER_LIBRARY_ID,
+      ).map((annotation) => annotation.key),
+    ).toEqual(["V78IHLM9", "JDJKX3N6", "V78IHLM9"]);
+  });
+
+  it("runs the same cached statements for one key as for many", () => {
+    const statements = countStatements(sqlite);
+    const compiles = countCompiles(sqlite);
+    const cost = (keys: string[]) => {
+      const before = statements();
+      getAnnotationsByKey(db, keys, USER_LIBRARY_ID);
+      return statements() - before;
+    };
+    cost(["JDJKX3N6"]);
+    expect(
+      cost(["JDJKX3N6", "V78IHLM9", "DBKE89L9", "463QFRLZ", "MISSING"]),
+    ).toBe(cost(["JDJKX3N6"]));
+    const compiled = compiles();
+    cost(["JDJKX3N6", "V78IHLM9", "DBKE89L9", "463QFRLZ", "MISSING"]);
+    expect(compiles()).toBe(compiled);
   });
 });
 

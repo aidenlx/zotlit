@@ -95,7 +95,6 @@ describe("InsertCitationModal ambiguity", () => {
     );
     const hit = {
       item: { key: "ABC123", fields: { citationKey: "doe2024" } },
-      score: 0,
       matches: [],
     } as unknown as SearchHit;
 

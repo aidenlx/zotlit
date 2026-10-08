@@ -53,7 +53,7 @@ export function exportItemSnapshot(
 ): ItemSnapshot {
   const libraryID = resolveLibraryID(client, selection.library);
   const provenance = validateProvenance(options.provenance);
-  const item = getItemsByKey(client, libraryID, [selection.key])[0];
+  const item = getItemsByKey(client, [selection.key], { libraryID })[0];
   if (!item) {
     throw new SnapshotSelectionError(
       `Item '${selection.key}' is not in the selected Library.`,
@@ -170,8 +170,8 @@ function collectCustomFieldNames(
 ): ReadonlySet<string> {
   const related = getItemsByKey(
     client,
-    libraryID,
     getRelatedKeysByItemID(client, item.itemID),
+    { libraryID },
   );
   return new Set(
     [item, ...related].flatMap((entry) => [...entry.customFields.keys()]),

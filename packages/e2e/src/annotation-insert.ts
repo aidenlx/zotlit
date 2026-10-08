@@ -61,6 +61,14 @@ export async function verifyAnnotationInsert(
         `String(app.vault.getFiles().filter(f=>f.name.startsWith('zotlit-excerpt-')).length===${state}.assets)`,
       ),
     ).toBe("true");
+    // The cards render once the read lands, a frame after the snapshot.
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(!!${state}.view.contentEl.querySelector('.zt-annot-card[data-zotero-annotation-key="FDRFQ7C2"] [aria-label="More options"]'))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
     for (const mode of [
       "success",
       "ink",

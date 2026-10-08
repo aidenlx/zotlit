@@ -1,17 +1,12 @@
+import { Effect } from "effect";
 import { stringifyYaml } from "obsidian";
 import type { App, TFile } from "obsidian";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  formatIndexedKey,
-  getAnnotationsByKey,
-  getItemsByID,
-  getNoteByKey,
-  USER_LIBRARY_ID,
-} from "@zotlit/db";
+import { formatIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
-import { renderAnnotations } from "@/lib/annotation-render";
+import { renderAnnotationSources } from "@/lib/annotation-render";
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
@@ -29,8 +24,13 @@ import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/b
 import { defaults } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
+import {
+  inProcessReadsService,
+  memoryOpener,
+  recordCalls,
+} from "@/services/zotero-reads/test-utils";
 
-import { parseNote } from "./note-parser";
+import { noteAnnotationKeys, parseNote } from "./note-parser";
 import { createNoteImporter, NoteImportMintError } from "./service";
 import type {
   ImportVaultApp,
@@ -38,25 +38,17 @@ import type {
   PrepareNoteImportOptions,
 } from "./service";
 
-vi.mock("@zotlit/db", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@zotlit/db")>();
-  return {
-    ...actual,
-    getNoteByKey: vi.fn(),
-    getAnnotationsByKey: vi.fn(),
-    getItemsByID: vi.fn(),
-  };
-});
-
 // The service owns the annotation renderer now; stub the leaf so the test asserts
-// the wiring (resolveLink binding, library scoping) without the DB template pipeline.
+// the wiring (resolveLink binding, library scoping) without the template pipeline.
 vi.mock("@/lib/annotation-render", () => ({
-  renderAnnotations: vi.fn(() => new Map<string, string>()),
+  renderAnnotationSources: vi.fn(() => new Map<string, string>()),
 }));
 
 // `parseNote` is stubbed to echo its HTML and any annotation-callout output, so
 // the service-built `renderAnnotationParagraph` is exercised through the write.
 vi.mock("./note-parser", () => ({
+  noteAnnotationKeys: vi.fn(() => []),
+  noteReferences: vi.fn(() => ({ citedIndexedKeys: [], attachmentKeys: [] })),
   parseNote: vi.fn(
     (
       _td: unknown,
@@ -81,6 +73,54 @@ vi.mock("./note-parser", () => ({
 // stub it so the bare reference resolves.
 vi.stubGlobal("TurndownService", class {});
 
+const NOTE_BODY = "<h1>Methods</h1><p>body</p>";
+
+/**
+ * The Zotero rows every import reads: a parent item (1) with the child notes
+ * the tests import — NOTE1234 in the personal library and in group 42, plus
+ * NOTE0001/NOTE0002 — and an annotation ANNOT1 in each library.
+ */
+const SEED = `
+  insert into libraries (libraryID, type) values (1, 'user'), (2, 'group');
+  insert into groups (groupID, libraryID, name) values (42, 2, 'Team');
+  insert into itemTypes (itemTypeID, typeName)
+    values (1, 'journalArticle'), (2, 'attachment'), (3, 'note'),
+           (4, 'annotation');
+  insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+    values
+      (1, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'PRNT2345'),
+      (50, 3, '2024-01-01 10:00:00', '2024-02-03 08:30:00', 1, 'NOTE1234'),
+      (51, 3, '2024-01-01 10:00:00', '2024-02-03 08:30:00', 1, 'NOTE0001'),
+      (52, 3, '2024-01-01 10:00:00', '2024-02-03 08:30:00', 1, 'NOTE0002'),
+      (60, 3, '2024-01-01 10:00:00', '2024-02-03 08:30:00', 2, 'NOTE1234'),
+      (10, 2, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'ATCH2345'),
+      (70, 2, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 2, 'ATCH2345'),
+      (100, 4, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'ANNOT1'),
+      (110, 4, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 2, 'ANNOT1');
+  insert into itemNotes (itemID, parentItemID, note, title)
+    values (50, 1, '${NOTE_BODY}', 'Methods'),
+           (51, 1, '${NOTE_BODY}', 'Methods'),
+           (52, 1, '${NOTE_BODY}', 'Methods'),
+           (60, null, '${NOTE_BODY}', 'Methods');
+  insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path)
+    values (10, 1, 0, 'application/pdf', 'storage:paper.pdf'),
+           (70, null, 0, 'application/pdf', 'storage:paper.pdf');
+  insert into itemAnnotations (
+    itemID, parentItemID, type, text, comment, color, pageLabel, sortIndex,
+    position, isExternal
+  )
+    values
+      (100, 10, 1, 'personal', null, '#ffd400', '1', '00000|000000|00000',
+       '{"pageIndex":0,"rects":[[0,0,1,1]]}', 0),
+      (110, 70, 1, 'group', null, '#ffd400', '1', '00000|000000|00000',
+       '{"pageIndex":0,"rects":[[0,0,1,1]]}', 0);
+`;
+
+/** The reads every write in this suite runs on: the in-process adapter over {@link SEED}. */
+const suiteReads = inProcessReadsService(memoryOpener(() => SEED).open);
+afterAll(() => suiteReads[Symbol.asyncDispose]());
+const { reads } = await suiteReads.ready;
+
 function makeNote(overrides: Partial<ReturnType<typeof baseNote>> = {}) {
   const base = baseNote({
     key: overrides.key,
@@ -100,7 +140,7 @@ function baseNote(overrides?: { key?: string; groupID?: number | null }) {
     key,
     indexedKey: formatIndexedKey(key, groupID),
     title: "Methods",
-    note: "<h1>Methods</h1><p>body</p>",
+    note: NOTE_BODY,
     dateAdded: Temporal.Instant.from("2024-01-01T10:00:00Z"),
     dateModified: Temporal.Instant.from("2024-02-03T08:30:00Z"),
   };
@@ -252,7 +292,7 @@ function makePrepare(
 ): PrepareNoteImportOptions {
   const { settings: settingsOverrides, ...rest } = overrides;
   return {
-    client: {} as any,
+    reads,
     sourcePath: "Literature/Paper.md",
     settings: {
       ...resolveProfile(defaults, "default").settings,
@@ -296,10 +336,8 @@ function profileSettings(): Settings {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(getNoteByKey).mockReturnValue(makeNote());
-  vi.mocked(getItemsByID).mockReturnValue([]);
-  vi.mocked(getAnnotationsByKey).mockReturnValue([]);
-  vi.mocked(renderAnnotations).mockReturnValue(new Map());
+  vi.mocked(noteAnnotationKeys).mockReturnValue([]);
+  vi.mocked(renderAnnotationSources).mockReturnValue(new Map());
 });
 
 describe("createNoteImporter", () => {
@@ -310,7 +348,7 @@ describe("createNoteImporter", () => {
     const target = host.file("Imported/Existing.md");
     const service = makeService(app, { existing: [target] });
     const prepared = await service.prepareExplicitImport(makeNote(), {
-      client: {} as never,
+      reads,
     });
     host.vault.modifyFile(
       target.path,
@@ -319,7 +357,7 @@ describe("createNoteImporter", () => {
 
     await expect(
       prepared.import(makeNote(), {
-        client: {} as never,
+        reads,
         settings: profileSettings(),
       }),
     ).resolves.toBe("skipped");
@@ -330,7 +368,7 @@ describe("createNoteImporter", () => {
     const { app, create, createFolder } = makeApp();
     await expect(
       makeService(app).prepareExplicitImport(makeNote(), {
-        client: {} as never,
+        reads,
         orphanProfile: "Qt5Nb8ZcV3Jm" as ProfileId,
       }),
     ).rejects.toMatchObject({
@@ -347,14 +385,14 @@ describe("createNoteImporter", () => {
     const prepared = await makeService(app, {
       attachmentImport,
     }).prepareExplicitImport(makeNote(), {
-      client: {} as never,
+      reads,
       orphanProfile: PROFILE_A,
     });
     create.mockRejectedValueOnce(new Error("File already exists."));
 
     await expect(
       prepared.import(makeNote(), {
-        client: {} as never,
+        reads,
         settings: profileSettings(),
       }),
     ).resolves.toBe("skipped");
@@ -368,13 +406,10 @@ describe("createNoteImporter", () => {
       const { app, host, create, process } = makeApp();
       const existing: TFile[] = [];
       const literatureNotes: TFile[] = [];
-      vi.mocked(getItemsByID).mockReturnValue([
-        { indexedKey: "PARENT123" },
-      ] as never);
       const service = makeService(app, { existing, literatureNotes });
       const note = makeNote();
       const prepared = await service.prepareExplicitImport(note, {
-        client: {} as never,
+        reads,
         orphanProfile: PROFILE_A,
       });
       (source === "existing" ? existing : literatureNotes).push(
@@ -383,7 +418,7 @@ describe("createNoteImporter", () => {
 
       await expect(
         prepared.import(note, {
-          client: {} as never,
+          reads,
           settings: profileSettings(),
         }),
       ).resolves.toBe("skipped");
@@ -399,9 +434,6 @@ describe("createNoteImporter", () => {
         "History/Existing.md": { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_B },
       });
       const target = host.file("History/Existing.md");
-      vi.mocked(getItemsByID).mockReturnValue([
-        { indexedKey: "PARENT123" },
-      ] as never);
       const service = makeService(
         app,
         source === "existing"
@@ -409,14 +441,14 @@ describe("createNoteImporter", () => {
           : { literatureNotes: [target] },
       );
       const prepared = await service.prepareExplicitImport(makeNote(), {
-        client: {} as never,
+        reads,
         orphanProfile: PROFILE_A,
       });
 
       expect(prepared.source).toBe(source);
       expect(prepared.profile.selector).toBe(PROFILE_B);
       await prepared.import(makeNote(), {
-        client: {} as never,
+        reads,
         settings: profileSettings(),
       });
       if (source === "existing") {
@@ -438,7 +470,7 @@ describe("createNoteImporter", () => {
     const service = makeService(app);
     const note = { ...makeNote(), parentItemID: null };
     const prepared = await service.prepareExplicitImport(note, {
-      client: {} as never,
+      reads,
       orphanProfile: PROFILE_A,
     });
 
@@ -450,7 +482,7 @@ describe("createNoteImporter", () => {
 
     await expect(
       prepared.import(note, {
-        client: {} as never,
+        reads,
         settings: profileSettings(),
       }),
     ).resolves.toBe("created");
@@ -458,6 +490,43 @@ describe("createNoteImporter", () => {
     expect(create.mock.calls[0]![1]).toContain(
       `${FIELD_LITERATURE_NOTE_PROFILE}: Law (Bk3Qn7XvT2Lp)`,
     );
+  });
+
+  it("flushes Child Notes from the Snapshot the operation holds, across a refresh", async () => {
+    // Open #2 holds a newer body: the refresh lands between render and flush.
+    const { open } = memoryOpener(
+      (n) =>
+        SEED +
+        (n === 1
+          ? ""
+          : "update itemNotes set note = '<p>refreshed</p>' where itemID = 50;"),
+    );
+    const { wrap, calls, snapshots } = recordCalls(["NoteBodies"]);
+    await using readsService = inProcessReadsService(open, { wrap });
+    const { app, create } = makeApp();
+    await using lease = await readsService.acquireRead();
+    const batch = await makeService(app).prepare({
+      ...PREPARE,
+      reads: lease.reads,
+    });
+
+    batch.resolveChildNote(makeNote()).noteLink();
+    await readsService.refresh();
+    await batch.flush();
+
+    expect(create.mock.calls[0]![1]).toContain(`md(${NOTE_BODY})`);
+    expect(calls).toEqual([
+      {
+        operation: "NoteBodies",
+        payload: { libraryID: 1, keys: ["NOTE1234"], snapshot: snapshots[0] },
+      },
+    ]);
+    // The refresh landed: a read outside the Snapshot sees the new body.
+    const { reads: current } = await readsService.ready;
+    const [refreshed] = await Effect.runPromise(
+      current.NoteBodies({ libraryID: 1, keys: ["NOTE1234"] }),
+    );
+    expect(refreshed!.note).toBe("<p>refreshed</p>");
   });
 
   it("mints a flat path, renders the title alias, and creates the mirror on flush", async () => {
@@ -532,11 +601,12 @@ describe("createNoteImporter", () => {
   });
 
   it("scopes the identity key by groupID", async () => {
-    vi.mocked(getNoteByKey).mockReturnValue(makeNote({ groupID: 42 }));
     const { app, create } = makeApp();
     const batch = await makeService(app).prepare(PREPARE);
 
-    const link = batch.resolveChildNote(makeNote({ groupID: 42 }));
+    const link = batch.resolveChildNote(
+      makeNote({ groupID: 42, libraryID: 2 }),
+    );
     expect(link.indexedKey).toBe("NOTE1234g42");
     link.noteLink();
     await batch.flush();
@@ -577,11 +647,10 @@ describe("createNoteImporter", () => {
   });
 
   it("skips and warns when the note vanished before flush", async () => {
-    vi.mocked(getNoteByKey).mockReturnValue(null);
     const { app, create } = makeApp();
     const batch = await makeService(app).prepare(PREPARE);
 
-    batch.resolveChildNote(makeNote()).noteLink();
+    batch.resolveChildNote(makeNote({ key: "GONE2345" })).noteLink();
     await expect(batch.flush()).resolves.toEqual({
       created: 0,
       skipped: 1,
@@ -682,7 +751,8 @@ describe("createNoteImporter", () => {
   });
 
   it("renders annotations through the template when the setting is on, resolveLink bound to the note's batch", async () => {
-    vi.mocked(renderAnnotations).mockReturnValue(
+    vi.mocked(noteAnnotationKeys).mockReturnValue(["ANNOT1"]);
+    vi.mocked(renderAnnotationSources).mockReturnValue(
       new Map([["ANNOT1", "> [!note]\n>\n> callout"]]),
     );
     const { app, create } = makeApp();
@@ -697,16 +767,21 @@ describe("createNoteImporter", () => {
     await batch.flush();
 
     // The service scopes the annotation lookup to the note's library.
-    expect(getAnnotationsByKey).toHaveBeenCalledWith(
-      expect.anything(),
-      ["ANNOT1"],
-      USER_LIBRARY_ID,
-    );
+    const [sources] = vi.mocked(renderAnnotationSources).mock.calls[0]!;
+    expect(
+      sources.annotations.map(({ key, libraryID, text }) => ({
+        key,
+        libraryID,
+        text,
+      })),
+    ).toEqual([
+      { key: "ANNOT1", libraryID: USER_LIBRARY_ID, text: "personal" },
+    ]);
     // The template-rendered callout lands in the written file.
     expect(create.mock.calls[0]![1]).toContain("> [!note]\n>\n> callout");
 
     // The attachment-import port handed to the renderer is the note's batch.
-    const opts = vi.mocked(renderAnnotations).mock.calls[0]![2];
+    const opts = vi.mocked(renderAnnotationSources).mock.calls[0]![1];
     const source = opts.attachmentImport.decide("/a.png", "annotation-cache");
     opts.attachmentImport.resolveLink({ source, vaultName: "a.png" });
     expect(attachmentImport.decide).toHaveBeenCalledWith(
@@ -739,8 +814,8 @@ describe("createNoteImporter", () => {
     batch.resolveChildNote(makeNote()).noteLink();
     await batch.flush();
 
-    const render =
-      vi.mocked(renderAnnotations).mock.calls[0]![2].renderAnnotation;
+    const render = vi.mocked(renderAnnotationSources).mock.calls[0]![1]
+      .renderAnnotation;
     expect(render?.({ text: "Excerpt" } as never)).toBe("profile annotation");
     expect(renderProfileAnnotation).toHaveBeenCalledWith(
       { text: "Excerpt" },
@@ -764,7 +839,7 @@ describe("createNoteImporter", () => {
     expect(
       vi.mocked(parseNote).mock.calls[0]![2].renderAnnotationParagraph,
     ).toBeUndefined();
-    expect(renderAnnotations).not.toHaveBeenCalled();
+    expect(renderAnnotationSources).not.toHaveBeenCalled();
   });
 
   it("passes the colored highlight toggle and mappings to the note parser", async () => {
@@ -833,7 +908,7 @@ describe("createNoteImporter", () => {
     const service = makeService(app);
 
     const outcome = await service.importNote(makeNote(), {
-      client: {} as any,
+      reads,
       settings: PREPARE.settings,
       targetFile: target,
     });
@@ -853,7 +928,7 @@ describe("createNoteImporter", () => {
     const service = makeService(app);
 
     await service.importNote(makeNote(), {
-      client: {} as any,
+      reads,
       settings: profileSettings(),
       targetFile: target,
     });
@@ -877,7 +952,7 @@ describe("createNoteImporter", () => {
     const service = makeService(app);
 
     await service.importNote(makeNote(), {
-      client: {} as any,
+      reads,
       settings: profileSettings(),
       targetFile: target,
     });
@@ -903,7 +978,7 @@ describe("createNoteImporter", () => {
     const service = makeService(app);
 
     await service.importNote(makeNote(), {
-      client: {} as any,
+      reads,
       settings,
       targetFile: target,
     });
@@ -926,12 +1001,12 @@ describe("createNoteImporter", () => {
 
     await Promise.all([
       service.importNote(makeNote({ key: "NOTE0001" }), {
-        client: {} as any,
+        reads,
         settings,
         targetFile: first,
       }),
       service.importNote(makeNote({ key: "NOTE0002" }), {
-        client: {} as any,
+        reads,
         settings,
         targetFile: second,
       }),
@@ -961,7 +1036,7 @@ describe("createNoteImporter", () => {
 
     await expect(
       service.importNote(makeNote(), {
-        client: {} as any,
+        reads,
         settings: profileSettings(),
         targetFile: target,
       }),
@@ -987,13 +1062,10 @@ describe("createNoteImporter", () => {
       "Literature/Parent.md": { [FIELD_LITERATURE_NOTE_PROFILE]: "Missing" },
     });
     const parent = host.file("Literature/Parent.md");
-    vi.mocked(getItemsByID).mockReturnValue([
-      { indexedKey: "PARENT23" },
-    ] as never);
     const service = makeService(app, { literatureNotes: [parent] });
     await expect(
       service.importNote(makeNote(), {
-        client: {} as never,
+        reads,
         settings: profileSettings(),
       }),
     ).rejects.toMatchObject({
@@ -1020,7 +1092,7 @@ describe("createNoteImporter", () => {
     };
 
     const outcome = await service.importNote(makeNote(), {
-      client: {} as any,
+      reads,
       settings,
     });
 
@@ -1034,13 +1106,10 @@ describe("createNoteImporter", () => {
       "Law/Parent.md": { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_A },
     });
     const literatureNote = host.file("Law/Parent.md");
-    vi.mocked(getItemsByID).mockReturnValue([
-      { indexedKey: "PARENT123" } as any,
-    ]);
     const service = makeService(app, { literatureNotes: [literatureNote] });
 
     await service.importNote(makeNote(), {
-      client: {} as any,
+      reads,
       settings: profileSettings(),
     });
 
@@ -1052,13 +1121,10 @@ describe("createNoteImporter", () => {
 
   it("uses the default Profile when an attached note has no Literature Note", async () => {
     const { app, create } = makeApp();
-    vi.mocked(getItemsByID).mockReturnValue([
-      { indexedKey: "PARENT123" } as any,
-    ]);
     const service = makeService(app);
 
     await service.importNote(makeNote(), {
-      client: {} as any,
+      reads,
       settings: profileSettings(),
     });
 

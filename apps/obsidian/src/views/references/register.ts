@@ -6,11 +6,11 @@ import { revealSetting } from "@/lib/open-settings";
 import type { CitationIndex } from "@/services/citation-index/service";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
-import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { PandocEngineService } from "@/services/pandoc/service";
 import type { ProfileReader } from "@/services/profile/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { REFERENCES_VIEW_TYPE, ReferencesView } from "./view";
 import type { ReferencesViewDeps } from "./view";
@@ -23,7 +23,7 @@ type ReferencesPlugin = Pick<
 export interface ReferencesRegistrationDeps {
   profile: ProfileReader;
   app: App;
-  db: DatabaseService;
+  db: ZoteroReadsService;
   citationIndex: CitationIndex;
   libraryScope: LibraryScopeService;
   citationText: CitationText;

@@ -1,5 +1,6 @@
 // The Graph Citations service: installs the render facade and the click, right-click and hover wraps on every graph leaf, re-renders on index changes, and restores every swapped member on feature-off and unload.
 
+import { Effect, Exit, Fiber } from "effect";
 import { around } from "monkey-around";
 import type {
   App,
@@ -11,12 +12,6 @@ import type {
   WorkspaceLeaf,
 } from "obsidian";
 
-import {
-  getItemsByKey,
-  resolveIndexedKeyLibrary,
-  isChildItemFields,
-} from "@zotlit/db";
-
 import { disposable, registerEvent } from "@/lib/disposables";
 import { workLabel } from "@/lib/item-summary";
 import type { WorkLabel } from "@/lib/item-summary";
@@ -26,13 +21,14 @@ import type { CitationIndex } from "@/services/citation-index/service";
 import type { CitationPopover } from "@/services/citation-popover/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { NavigationPane } from "@/services/citekey-navigation";
-import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
+import type { WorkLabelSource } from "@/services/zotero-reads/rpc";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { graphCitationAdditions, NO_ADDITIONS } from "./adapter";
 import type { GraphCitationAdditions } from "./adapter";
@@ -61,7 +57,7 @@ import type { NodeRightClickDeps } from "./right-click";
 import { rowFlag } from "./rows";
 import { deferredLeafOptions, savedLeafOptions } from "./saved-options";
 import { installGraphViewCreation, installGraphViewState } from "./view-state";
-import { WorkLabelGraphics, refreshWorkLabels } from "./work-labels";
+import { WorkLabelGraphics } from "./work-labels";
 
 const logger = getLogger("graph-citations");
 
@@ -82,7 +78,7 @@ const CITATION_INDEX_EVENTS = [
 
 export interface GraphCitationsDeps {
   app: App;
-  db: Pick<DatabaseService, "state" | "client">;
+  reads: Pick<ZoteroReadsService, "ready" | "on">;
   libraryScope: Pick<LibraryScopeService, "current">;
   citationIndex: Pick<
     CitationIndex,
@@ -112,6 +108,18 @@ interface GraphInstallation {
   graphics: WorkLabelGraphics;
 }
 
+/** A held Work Label, with the Library its work lives in. */
+interface HeldLabel {
+  readonly libraryID: number;
+  readonly label: WorkLabel;
+}
+
+/** The label a work's label inputs format to; `null` where they give none. */
+function heldLabel(source: WorkLabelSource | undefined): HeldLabel | null {
+  const label = source ? workLabel(source, source) : null;
+  return source && label ? { libraryID: source.libraryID, label } : null;
+}
+
 /**
  * Runs `callback` when `view` unloads, and no longer once the returned
  * Disposable is disposed.
@@ -134,9 +142,21 @@ function releasedOnDispose(view: View, callback: () => void): Disposable {
  */
 export class GraphCitations extends Service<void> {
   readonly #app;
-  readonly #db;
+  readonly #reads;
   readonly #libraryScope;
-  #labels = new Map<string, WorkLabel | null>();
+  /**
+   * The Work Labels of the drawn works by Indexed Key, a Held Read: a work
+   * with no label holds `null`, and a label stays on screen while a fresh
+   * read replaces it.
+   */
+  readonly #labels = new Map<string, HeldLabel | null>();
+  /** Held labels an invalidation marked stale; a fresh read replaces each. */
+  readonly #staleLabels = new Set<string>();
+  /** The running `WorkLabels` read and the keys it answers. */
+  #labelRead: {
+    keys: ReadonlySet<string>;
+    fiber: Fiber.Fiber<ReadonlyMap<string, WorkLabelSource>, unknown>;
+  } | null = null;
   readonly #citationIndex;
   readonly #noteIndex;
   readonly #citekeyEditor;
@@ -178,7 +198,7 @@ export class GraphCitations extends Service<void> {
   constructor(deps: GraphCitationsDeps) {
     super();
     this.#app = deps.app;
-    this.#db = deps.db;
+    this.#reads = deps.reads;
     this.#libraryScope = deps.libraryScope;
     this.#citationIndex = deps.citationIndex;
     this.#noteIndex = deps.noteIndex;
@@ -240,6 +260,7 @@ export class GraphCitations extends Service<void> {
       );
     }
     stack.defer(this.#noteIndex.on("changed", () => this.#invalidateLabels()));
+    stack.defer(this.#reads.on("changed", () => this.#invalidateLabels()));
     stack.defer(
       this.#settings.subscribe((settings) => {
         if (settings) this.#applySettings(settings);
@@ -253,6 +274,7 @@ export class GraphCitations extends Service<void> {
     stack.defer(() => {
       this.#stopped = true;
       if (this.#renderTimer !== null) window.clearTimeout(this.#renderTimer);
+      this.#cancelLabelRead();
       this.#uninstallAll();
     });
     this.commit(stack.move());
@@ -485,18 +507,75 @@ export class GraphCitations extends Service<void> {
       if (render)
         for (const { installation } of installed)
           this.#render(installation.members);
-      this.#fillLabels();
-      for (const { installation } of installed)
-        installation.graphics.update(installation.labels);
+      this.#showLabels();
     }, RENDER_SETTLE_MS);
   }
 
+  /**
+   * Marks every held label stale: each stays on screen until the fresh read
+   * the next fill starts replaces it.
+   */
   #invalidateLabels(): void {
-    this.#labels.clear();
+    for (const key of this.#labels.keys()) this.#staleLabels.add(key);
+    this.#cancelLabelRead();
     this.#requestRender();
   }
 
-  /** Runs in the render debounce, outside the synchronous hand-off and frame. */
+  /** Fills the labels of every installed leaf and hands them to its graphics. */
+  #showLabels(): void {
+    this.#fillLabels();
+    for (const { installation } of this.#installed())
+      installation.graphics.update(installation.labels);
+  }
+
+  #cancelLabelRead(): void {
+    const running = this.#labelRead;
+    this.#labelRead = null;
+    if (running) Effect.runFork(Fiber.interrupt(running.fiber));
+  }
+
+  /**
+   * Reads the labels of `keys` off the main thread. When the read settles,
+   * the labels it answered replace what was held and the graphics redraw; a
+   * failed read keeps what was held and leaves the rest native.
+   */
+  #readLabels(keys: ReadonlySet<string>): void {
+    this.#cancelLabelRead();
+    if (this.#stopped) return;
+    const fiber = Effect.runFork(
+      Effect.flatMap(
+        Effect.promise(() => this.#reads.ready),
+        ({ reads }) => reads.WorkLabels({ indexedKeys: [...keys] }),
+      ),
+    );
+    this.#labelRead = { keys, fiber };
+    fiber.addObserver((exit) => {
+      if (this.#labelRead?.fiber !== fiber) return;
+      this.#labelRead = null;
+      if (Exit.isSuccess(exit)) {
+        for (const key of keys) {
+          this.#labels.set(key, heldLabel(exit.value.get(key)));
+          this.#staleLabels.delete(key);
+        }
+      } else {
+        logger.warn("Graph Work Label metadata unavailable; left native", {
+          keys: keys.size,
+          cause: exit.cause,
+        });
+        for (const key of keys) {
+          if (!this.#labels.has(key)) this.#labels.set(key, null);
+          this.#staleLabels.delete(key);
+        }
+      }
+      if (!this.#stopped) this.#showLabels();
+    });
+  }
+
+  /**
+   * Runs outside the synchronous hand-off and frame: in the render debounce,
+   * and when a label read settles. Reads only held labels; the keys it holds
+   * nothing fresh for start one read.
+   */
   #fillLabels(): void {
     const needed = new Set<string>();
     const pending = this.#installed().map(({ installation }) => {
@@ -522,41 +601,34 @@ export class GraphCitations extends Service<void> {
       }
       return { installation, keys };
     });
-    this.#labels = refreshWorkLabels(this.#labels, needed, (key) =>
-      this.#readLabel(key),
+    // Only drawn works are retained.
+    for (const key of this.#labels.keys()) {
+      if (needed.has(key)) continue;
+      this.#labels.delete(key);
+      this.#staleLabels.delete(key);
+    }
+    const missing = new Set(
+      [...needed].filter(
+        (key) => !this.#labels.has(key) || this.#staleLabels.has(key),
+      ),
+    );
+    const reading = this.#labelRead?.keys;
+    if (
+      missing.size > 0 &&
+      !(reading && [...missing].every((key) => reading.has(key)))
+    )
+      this.#readLabels(missing);
+
+    const inScope = new Set(
+      this.#libraryScope.current?.available.map((library) => library.libraryID),
     );
     for (const { installation, keys } of pending) {
       installation.labels.clear();
       for (const [id, key] of keys) {
-        const label = this.#labels.get(key);
-        if (label) installation.labels.set(id, label);
+        const held = this.#labels.get(key);
+        if (held && inScope.has(held.libraryID))
+          installation.labels.set(id, held.label);
       }
-    }
-  }
-
-  #readLabel(key: string): WorkLabel | null {
-    try {
-      if (this.#db.state !== "ready") return null;
-      const selector = resolveIndexedKeyLibrary(this.#db.client, key);
-      if (
-        !selector ||
-        !this.#libraryScope.current?.available.some(
-          (library) => library.libraryID === selector.libraryID,
-        )
-      )
-        return null;
-      const item = getItemsByKey(this.#db.client, selector.libraryID, [
-        selector.key,
-      ])[0];
-      return item && !isChildItemFields(item.fields)
-        ? workLabel(item, item.fields)
-        : null;
-    } catch (error) {
-      logger.warn("Graph Work Label metadata unavailable; left native", {
-        indexedKey: key,
-        error,
-      });
-      return null;
     }
   }
 

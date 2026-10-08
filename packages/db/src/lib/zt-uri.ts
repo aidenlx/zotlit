@@ -29,13 +29,16 @@ export function itemSelectUri(key: string, groupID: number | null): string {
 export function itemUri(
   key: string,
   groupID: number | null,
-  user: ZoteroUserIdentity,
+  user: Pick<ZoteroUserIdentity, "userID" | "localUserKey">,
 ): string | null {
   const path = groupID != null ? `groups/${groupID}` : userPath(user);
   return path && `http://zotero.org/${path}/items/${key}`;
 }
 
-function userPath({ userID, localUserKey }: ZoteroUserIdentity): string | null {
+function userPath({
+  userID,
+  localUserKey,
+}: Pick<ZoteroUserIdentity, "userID" | "localUserKey">): string | null {
   if (userID != null) return `users/${userID}`;
   return localUserKey == null ? null : `users/local/${localUserKey}`;
 }

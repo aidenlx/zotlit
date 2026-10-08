@@ -8,7 +8,7 @@ import {
   ZOTERO_DB_READ_TEMP_PREFIX,
 } from "@/lib/constants";
 
-import { reapReadClones } from "./reap-temps";
+import { reapReadClones, reapWorkerClones } from "./reap-temps";
 
 let parent: string;
 
@@ -20,11 +20,18 @@ afterEach(async () => {
   await rm(parent, { recursive: true, force: true });
 });
 
-/** A clone directory tagged with `pid`, as `prepareRead` names one. */
-async function readClone(pid: number): Promise<string> {
-  const name = `${ZOTERO_DB_READ_TEMP_PREFIX}${pid}-aBcDeF`;
-  await mkdir(join(parent, name));
-  await writeFile(join(parent, name, "zotero.sqlite"), "db");
+/**
+ * A clone directory tagged with `pid`, and with `owner` when given, as
+ * `prepareRead` names one.
+ */
+async function readClone(
+  pid: number,
+  owner?: string,
+  directory = parent,
+): Promise<string> {
+  const name = `${ZOTERO_DB_READ_TEMP_PREFIX}${pid}-${owner ? `${owner}-` : ""}aBcDeF`;
+  await mkdir(join(directory, name), { recursive: true });
+  await writeFile(join(directory, name, "zotero.sqlite"), "db");
   return name;
 }
 
@@ -88,11 +95,75 @@ describe("reapReadClones", () => {
     expect(await readdir(beside)).toEqual([own]);
   });
 
+  it("removes a dead process's clone that names its worker", async () => {
+    await readClone(DEAD_PID, "0123456789ab");
+
+    await reapReadClones({ parent });
+
+    expect(await names()).toEqual([]);
+  });
+
   it("leaves every clone in place when the signal is already aborted", async () => {
     const dead = await readClone(DEAD_PID);
 
     await reapReadClones({ parent, signal: AbortSignal.abort() });
 
     expect(await names()).toEqual([dead]);
+  });
+});
+
+describe("reapWorkerClones", () => {
+  const DEAD_WORKER = "0123456789ab";
+  const LIVE_WORKER = "ba9876543210";
+
+  it("removes the clones the named worker left, in every parent", async () => {
+    const beside = join(parent, ZOTERO_DB_READ_PARENT_DIRNAME);
+    await readClone(process.pid, DEAD_WORKER);
+    await readClone(process.pid, DEAD_WORKER, beside);
+
+    await reapWorkerClones({ owner: DEAD_WORKER, parents: [parent, beside] });
+
+    expect(await names()).toEqual([ZOTERO_DB_READ_PARENT_DIRNAME]);
+    expect(await readdir(beside)).toEqual([]);
+  });
+
+  it("keeps the clone of another worker in this process", async () => {
+    await readClone(process.pid, DEAD_WORKER);
+    const live = await readClone(process.pid, LIVE_WORKER);
+
+    await reapWorkerClones({ owner: DEAD_WORKER, parents: [parent] });
+
+    expect(await names()).toEqual([live]);
+  });
+
+  it("keeps clones that name no worker, and entries it does not recognize", async () => {
+    const untagged = await readClone(process.pid);
+    await writeFile(join(parent, `${DEAD_WORKER}-aBcDeF`), "x");
+    await writeFile(
+      join(parent, `${ZOTERO_DB_READ_TEMP_PREFIX}notapid-${DEAD_WORKER}-x`),
+      "x",
+    );
+
+    await reapWorkerClones({ owner: DEAD_WORKER, parents: [parent] });
+
+    expect(await names()).toEqual(
+      [
+        untagged,
+        `${DEAD_WORKER}-aBcDeF`,
+        `${ZOTERO_DB_READ_TEMP_PREFIX}notapid-${DEAD_WORKER}-x`,
+      ].sort(),
+    );
+  });
+
+  it("settles when a parent is absent", async () => {
+    await readClone(process.pid, DEAD_WORKER);
+
+    await expect(
+      reapWorkerClones({
+        owner: DEAD_WORKER,
+        parents: [join(parent, "absent"), parent],
+      }),
+    ).resolves.toBeUndefined();
+    expect(await names()).toEqual([]);
   });
 });

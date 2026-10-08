@@ -41,6 +41,11 @@ export default defineConfig({
       url: "https://example.invalid/pandoc.wasm.zip",
       sha256: "0".repeat(64),
     }),
+    __CHINESE_SEGMENTER__: JSON.stringify({
+      version: "0.0.0",
+      url: "https://example.invalid/jieba_rs_wasm_bg.wasm",
+      sha256: "0".repeat(64),
+    }),
   },
   plugins: [preact(), pandocFilterVariants()],
   test: {

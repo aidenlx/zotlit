@@ -5,6 +5,8 @@ import baseConfig from "@zotlit/config/oxlint";
 export default defineConfig({
   extends: [baseConfig],
   rules: {
+    // Zotero's Firefox 140 ESR ships no Temporal (apps/zotero/policies/dates.md).
+    "no-restricted-globals": "off",
     "no-restricted-properties": [
       "error",
       {

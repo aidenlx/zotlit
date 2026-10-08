@@ -18,7 +18,6 @@ import type { CitationSuggestDeps } from "./register";
 function makeHit(citationKey: string | null): SearchHit {
   return {
     item: { key: "ABC123", fields: { citationKey } },
-    score: 0,
     matches: [],
   } as unknown as SearchHit;
 }

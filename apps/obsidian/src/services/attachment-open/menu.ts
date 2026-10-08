@@ -42,8 +42,7 @@ export function registerAttachmentOpenFileMenu(
               ? { rect: target.getBoundingClientRect(), doc: target.doc }
               : undefined;
             void (async () => {
-              await deps.db.ready;
-              const attachments = resolveLiteratureNoteAttachments(
+              const attachments = await resolveLiteratureNoteAttachments(
                 deps,
                 indexedKey,
               );

@@ -17,20 +17,6 @@ import { workLabelTitleAlpha } from "./work-label-zoom";
 const logger = getLogger("graph-citations");
 const LABEL_WIDTH = 240;
 
-/** Retains exactly the drawn keys, including unreadable hits until invalidation. */
-export function refreshWorkLabels(
-  held: ReadonlyMap<string, WorkLabel | null>,
-  keys: ReadonlySet<string>,
-  read: (key: string) => WorkLabel | null,
-): Map<string, WorkLabel | null> {
-  return new Map(
-    Array.from(keys, (key) => [
-      key,
-      held.has(key) ? held.get(key)! : read(key),
-    ]),
-  );
-}
-
 interface TextSprite extends GraphTextDisplay {
   text: string;
   width: number;

@@ -40,7 +40,7 @@ export interface TagSectionProps {
   /** The held tag draft the section shows in the chips' place, if any. */
   held: HeldTags | null;
   heldActions: HeldDraftActions;
-  libraryNames: () => readonly string[];
+  libraryNames: () => Promise<readonly string[]>;
   onChange: (names: readonly string[]) => void;
   /**
    * The session ends, once: focus left the popup, Escape was pressed, or the

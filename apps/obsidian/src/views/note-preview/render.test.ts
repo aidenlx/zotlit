@@ -77,7 +77,7 @@ describe("native Profile rendering", () => {
     async ({ id, title }) => {
       await using fixture = await createRenderFixture();
       const acquire = vi
-        .spyOn(fixture.deps.db, "acquireRead")
+        .spyOn(fixture.deps.zoteroReads, "acquireRead")
         .mockRejectedValue(new Error("Database offline"));
       const lookup = vi.spyOn(fixture.deps.noteIndex, "getNotesByItemKey");
       const snapshot = getSampleItem(id)!;
@@ -145,7 +145,7 @@ describe("native Profile rendering", () => {
     await using fixture = await createRenderFixture({ existing: SAVED_NOTE });
     const sample = getSampleItem("sample:conference-paper")!;
     const acquire = vi
-      .spyOn(fixture.deps.db, "acquireRead")
+      .spyOn(fixture.deps.zoteroReads, "acquireRead")
       .mockRejectedValue(new Error("Database offline"));
     const lookup = vi.spyOn(fixture.deps.noteIndex, "getNotesByItemKey");
     const result = await renderNativeProfile(fixture.deps, {
@@ -192,7 +192,7 @@ frontmatter:
     expect(disabled.diagnostics[0]?.message).toContain("JavaScript templates");
     await using fixture = await createRenderFixture({ javascript: true });
     const acquire = vi
-      .spyOn(fixture.deps.db, "acquireRead")
+      .spyOn(fixture.deps.zoteroReads, "acquireRead")
       .mockRejectedValue(new Error("Database offline"));
     const result = await renderNativeProfile(fixture.deps, {
       source,
@@ -571,8 +571,7 @@ describe("native Citation rendering", () => {
     // The snapshot was taken above; the reader then edits the Item in Zotero.
     // The Data Explorer's citation root reads the change at once, so the
     // preview beside it has to read the same Item.
-    using lease = await fixture.deps.db.acquireRead();
-    (lease.client.$client as DatabaseSync).exec(
+    (fixture.client.$client as DatabaseSync).exec(
       "update itemDataValues set value = 'Readable figures' where valueID = 1;",
     );
 

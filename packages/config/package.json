@@ -12,11 +12,17 @@
     "./tsconfig.zotero": "./tsconfig.zotero.json",
     "./oxlint": "./oxlint.base.ts",
     "./oxfmt": "./oxfmt.base.ts",
-    "./vitest": "./vitest.base.ts"
+    "./vitest": "./vitest.base.ts",
+    "./tsdown": "./tsdown.base.ts"
+  },
+  "scripts": {
+    "test": "node --test"
   },
   "devDependencies": {
     "@types/node": "catalog:",
     "oxfmt": "catalog:",
-    "oxlint": "catalog:"
+    "oxlint": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:"
   }
 }

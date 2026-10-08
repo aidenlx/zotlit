@@ -7,7 +7,7 @@ import { parse } from "yaml";
 import { getItemsByKey } from "@zotlit/db";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
-import type { SyncRenderDeps } from "@/services/note-feature/context";
+import type { NoteFeatureDeps } from "@/services/note-feature/context";
 import { createNoteFeature } from "@/services/note-feature/operations";
 import type { CreateNoteResult } from "@/services/note-feature/operations";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
@@ -90,7 +90,7 @@ async function realCreate(
       render: (name: string, data: object) =>
         fixture.deps.templates.render(name as "note", data),
     },
-    db: fixture.deps.db,
+    zoteroReads: fixture.deps.zoteroReads,
     noteIndex: {
       ready: Promise.resolve(),
       whenIndexed: async () => {},
@@ -133,10 +133,11 @@ async function realCreate(
         flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
       }),
     },
-  } as unknown as SyncRenderDeps;
+  } as unknown as NoteFeatureDeps;
 
-  using lease = await fixture.deps.db.acquireRead();
-  const item = getItemsByKey(lease.client, 1, ["MAIN2345"])[0]!;
+  const item = getItemsByKey(fixture.client, ["MAIN2345"], {
+    libraryID: 1,
+  })[0]!;
   const result = await createNoteFeature(deps).createNote(item, {
     profile: entry.id,
   });

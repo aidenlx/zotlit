@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { defineConfig } from "tsdown";
 import type { TsdownPlugin } from "tsdown";
+
+import { defineLibrary } from "@zotlit/config/tsdown";
 
 /** Mirrors Vite's `?raw` handling (which vitest uses), so both builds inline the same text content. */
 function rawImports(): TsdownPlugin {
@@ -26,7 +27,7 @@ function rawImports(): TsdownPlugin {
   };
 }
 
-export default defineConfig({
+export default defineLibrary({
   entry: [
     "./src/index.ts",
     "./src/constants.ts",

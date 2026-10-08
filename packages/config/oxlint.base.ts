@@ -29,6 +29,14 @@ export default defineConfig({
     "prefer-template": "warn",
     "no-useless-concat": "error",
 
+    "no-restricted-globals": [
+      "error",
+      {
+        name: "Date",
+        message:
+          "Use Temporal (policies/temporal-dates.md); apps/zotero and the named apps/docs date helpers are the exceptions.",
+      },
+    ],
     "unicorn/prefer-number-properties": "error",
     "unicorn/prefer-string-replace-all": "error",
     "no-restricted-imports": [

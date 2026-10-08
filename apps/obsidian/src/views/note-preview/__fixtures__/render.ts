@@ -1,7 +1,8 @@
 // Live database and TemplateService boundaries for native preview tests.
 import type { DatabaseSync } from "node:sqlite";
 import type { App } from "obsidian";
-import { vi } from "vitest";
+import { Effect } from "effect";
+import { expect, vi } from "vitest";
 import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
@@ -9,6 +10,7 @@ import type { RenderedCitation } from "@/services/pandoc/engine";
 import { SettingsService } from "@/services/settings/service";
 import { TemplateService } from "@/services/template/service";
 import { createObsidianHost, PluginStub } from "@/lib/__fixtures__/obsidian-host";
+import { inProcessReadsService, sharedClientOpener } from "@/services/zotero-reads/test-utils";
 import type { NativeRenderDeps } from "@/views/note-preview/render";
 
 export const PROFILE_SOURCE = `---
@@ -104,10 +106,15 @@ export async function createRenderFixture(options: { existing?: string; javascri
     const outcome = await renderCitations(sources, items, options?.presentation);
     return outcome.kind === "held" ? outcome.record.value : null;
   });
+  const zoteroReads = inProcessReadsService(sharedClientOpener(client));
+  // The plugin's worker opens the database at start; open it here too, so its
+  // first `changed` lands before a view subscribes.
+  await Effect.runPromise((await zoteroReads.ready).reads.Libraries({}));
+  await vi.waitFor(() => expect(zoteroReads.state).toBe("ready"));
   const deps: NativeRenderDeps = {
     app, settings, templates,
     profile: { resolveProfile: () => undefined },
-    db: { on: () => () => {}, acquireRead: async () => ({ client, [Symbol.dispose]() {} }) as never },
+    zoteroReads,
     noteIndex: { getNotesByItemKey: (key) => file && key === "MAIN2345" ? [file] : [], getImportedNoteByNoteKey: () => [], whenIndexed: async () => {} },
     zoteroPref: { ready: Promise.resolve(), dataDir: "/Zotero", baseAttachmentPath: null },
     citationIndex: {
@@ -118,5 +125,5 @@ export async function createRenderFixture(options: { existing?: string; javascri
   };
   const writes = { create: vi.spyOn(vault, "create"), process: vi.spyOn(vault, "process"), modify: vi.spyOn(vault, "modifyFile") };
   const snapshot = exportItemSnapshot(client, { key: "MAIN2345", library: { type: "personal" } }, { provenance: { kind: "connected", installationId: "fixture", vault: "preview" } });
-  return { deps, snapshot, host, vault, renderCitations, writes, async [Symbol.asyncDispose]() { await templates[Symbol.asyncDispose](); await settings[Symbol.asyncDispose](); sqlite.close(); } };
+  return { deps, client, snapshot, host, vault, renderCitations, writes, async [Symbol.asyncDispose]() { await templates[Symbol.asyncDispose](); await settings[Symbol.asyncDispose](); await zoteroReads[Symbol.asyncDispose](); sqlite.close(); } };
 }

@@ -14,26 +14,6 @@ import type { FormattedOccurrence, PresentedCitation } from "./present";
 export const ALPHA_KEY = "ALPHA234";
 
 /**
- * The Item the stubbed database answers with. A suite mocks `@zotlit/db` so
- * `resolveIndexedKeyLibrary` and `getItemsByKey` hand this back, since the stub
- * client runs no queries; `itemSummary` reads it as `Zeta (2020)`.
- */
-export const ALPHA = {
-  key: "ALPHA123",
-  itemID: 1,
-  groupID: null,
-  indexedKey: ALPHA_KEY,
-  creators: [{ creatorType: "author", lastName: "Zeta", firstName: "Ann" }],
-  primaryCreatorType: "author",
-  customFields: [],
-  fields: {
-    itemType: "book",
-    title: "A study of nothing",
-    date: "2020",
-  },
-};
-
-/**
  * One Citation Index answer.
  *
  * @param indexedKey the Indexed Key the citekey reaches, or null for a key that

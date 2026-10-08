@@ -19,13 +19,13 @@ import { DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { DEFAULT_PROFILE, isProfileId } from "@/lib/profile-stamp";
-import type { DatabaseService } from "@/services/database/service";
 import type { LocalServerService } from "@/services/local-server/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import type { Settings, SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { createLocalBridgeApp } from "./app";
 import type { ConnectionGrantDescription } from "./app";
@@ -74,7 +74,7 @@ export interface LocalBridgeServiceDeps {
   profile: BridgeProfileWriter;
   /** The one loopback listener the bridge mounts its routes on. */
   localServer: Pick<LocalServerService, "mount" | "effectivePort">;
-  db: Pick<DatabaseService, "acquireRead">;
+  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   noteIndex: Pick<
     NoteIndex,
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
@@ -124,7 +124,7 @@ export class LocalBridgeService extends Service<void> {
     this.#reads = createLocalBridgeReads({
       app: deps.app,
       settings: deps.settings,
-      db: deps.db,
+      zoteroReads: deps.zoteroReads,
       noteIndex: deps.noteIndex,
       profile: deps.profile,
       template: deps.template,

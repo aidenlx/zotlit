@@ -4,6 +4,7 @@ import type { SettingDefinitionItem } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 
+import { chineseSegmenterDefinition } from "./chinese-segmenter";
 import type { SettingsKey, SettingTabContext } from "./context";
 import { databaseAdvancedItems, databaseConnectionItems } from "./database";
 import { libraryScopeRow, selectedLibrariesList } from "./library-scope";
@@ -28,6 +29,12 @@ export function zoteroPageItems(
     // A list cannot sit inside a group, so the selected Libraries follow the
     // Libraries group as their own compact section.
     selectedLibrariesList(ctx),
+    {
+      type: "group",
+      id: "settings_zotero_search",
+      heading: m.settings_zotero_search_heading(),
+      items: [chineseSegmenterDefinition(ctx)],
+    },
     {
       type: "group",
       id: "settings_db_advanced",

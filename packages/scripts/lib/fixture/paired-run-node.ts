@@ -280,9 +280,9 @@ async function waitForFixtureRelease(
   findLive: () => Promise<LivePairedZotero[]>,
   timeoutMs: number,
 ): Promise<LivePairedZotero[]> {
-  const deadline = Date.now() + timeoutMs;
+  const deadline = performance.now() + timeoutMs;
   let live = await findLive();
-  while (live.length > 0 && Date.now() < deadline) {
+  while (live.length > 0 && performance.now() < deadline) {
     await delay(ZOTERO_EXIT_POLL_INTERVAL_MS);
     live = await findLive();
   }

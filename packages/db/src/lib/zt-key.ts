@@ -55,6 +55,7 @@ export function isIndexedKey(value: string): boolean {
 
 import type { NodeDatabaseClient } from "@/client/node";
 import { getLibraryByGroupID } from "@/queries/libraries";
+import type { Library } from "@/queries/libraries";
 
 import { USER_LIBRARY_ID } from "./constants";
 
@@ -68,6 +69,23 @@ export function resolveIndexedKeyLibrary(
   const { key, groupID } = parsed;
   if (groupID == null) return { key, libraryID: USER_LIBRARY_ID };
   const library = getLibraryByGroupID(client, groupID);
+  if (!library) return null;
+  return { key, libraryID: library.libraryID };
+}
+
+/**
+ * {@link resolveIndexedKeyLibrary} against libraries already read, for a caller
+ * that holds the library list rather than a client.
+ */
+export function resolveIndexedKeyLibraryIn(
+  libraries: readonly Pick<Library, "libraryID" | "groupID">[],
+  indexedKey: string,
+): { key: string; libraryID: number } | null {
+  const parsed = parseIndexedKey(indexedKey);
+  if (!parsed) return null;
+  const { key, groupID } = parsed;
+  if (groupID == null) return { key, libraryID: USER_LIBRARY_ID };
+  const library = libraries.find((library) => library.groupID === groupID);
   if (!library) return null;
   return { key, libraryID: library.libraryID };
 }

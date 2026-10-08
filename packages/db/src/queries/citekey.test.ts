@@ -9,6 +9,7 @@ import { createFixtureSchema } from "@/test-utils";
 
 import {
   getCitekeyByItemKey,
+  getCitekeyPage,
   getCitekeysByLibrary,
   getItemIDByCitekey,
 } from "./citekey";
@@ -140,6 +141,27 @@ describe("getCitekeysByLibrary", () => {
     // Item 8 (USER3) has only a `title` field, not a citationKey.
     const rows = getCitekeysByLibrary(db, USER_LIBRARY_ID);
     expect(rows.some((row) => row.itemID === 8)).toBe(false);
+  });
+});
+
+describe("getCitekeyPage", () => {
+  it("pages through getCitekeysByLibrary's rows in itemID order", () => {
+    const pages: number[][] = [];
+    let afterItemID = 0;
+    for (;;) {
+      const { citekeys, next } = getCitekeyPage(db, {
+        libraryID: 2,
+        afterItemID,
+        limit: 1,
+      });
+      if (next === null) break;
+      pages.push(citekeys.map((row) => row.itemID));
+      afterItemID = next;
+    }
+    expect(pages).toEqual([[7], [9]]);
+    expect(pages.flat()).toEqual(
+      getCitekeysByLibrary(db, 2).map((row) => row.itemID),
+    );
   });
 });
 

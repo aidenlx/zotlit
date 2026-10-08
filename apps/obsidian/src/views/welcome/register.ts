@@ -3,13 +3,15 @@ import type { App, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
-import type { DatabaseService } from "@/services/database/service";
 import type { NoteIndex } from "@/services/note-index/service";
+import type { QueryClientService } from "@/services/query-client/service";
 import type { ReleaseService } from "@/services/release/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { LiteratureNoteTemplateMigrationService } from "@/services/template/migration";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
+import { holdConnectionReadout } from "./connection";
 import { createSetupActions } from "./setup-actions";
 import { WELCOME_VIEW_TYPE, WelcomeView } from "./view";
 
@@ -17,7 +19,8 @@ export { WELCOME_VIEW_TYPE };
 
 export interface WelcomeRegistrationDeps {
   app: App;
-  db: DatabaseService;
+  reads: ZoteroReadsService;
+  queries: QueryClientService;
   zoteroPref: ZoteroPrefService;
   noteIndex: NoteIndex;
   settings: SettingsService;
@@ -43,7 +46,8 @@ export function registerWelcomeView(
     (leaf) =>
       new WelcomeView(leaf, {
         app: deps.app,
-        db: deps.db,
+        reads: deps.reads,
+        queries: deps.queries,
         zoteroPref: deps.zoteroPref,
         noteIndex: deps.noteIndex,
         settings: deps.settings,
@@ -51,6 +55,10 @@ export function registerWelcomeView(
         templateMigration: deps.templateMigration,
         release: deps.release,
       }),
+  );
+
+  plugin.register(
+    holdConnectionReadout({ reads: deps.reads, queries: deps.queries }),
   );
 
   plugin.addCommand({
@@ -69,7 +77,7 @@ export function registerWelcomeView(
   // file is absent (auto-detect missed the install on this device). Attached
   // synchronously during onload — before the db service's first async refresh
   // can emit — so the one-per-launch signal is never missed.
-  const unsubscribe = deps.db.on("db-file-missing", () => {
+  const unsubscribe = deps.reads.on("db-file-missing", () => {
     new BaseNotice(
       BaseNotice.render((renderer) => {
         renderer.setTitle(m.notice_db_not_found_on_device());

@@ -18,12 +18,12 @@ import { CapabilityNotices } from "./annotation-repository/notices";
 import { AnnotationRepository } from "./annotation-repository/service";
 import { AttachmentImportService } from "./attachment-import/service";
 import { AttachmentResolver } from "./attachment-resolver/service";
+import { createChineseSegmenterService } from "./chinese-segmenter/service";
 import { CitationIndex } from "./citation-index/service";
 import { CitationPopover } from "./citation-popover/service";
 import { CitationText } from "./citation-text/service";
 import { CitekeyEditor } from "./citekey-editor/service";
 import { CitekeyReading } from "./citekey-reading/service";
-import { DatabaseService } from "./database/service";
 import { ExcerptDisplayService } from "./excerpt-image/display";
 import { createExcerptPreparation } from "./excerpt-image/prepare";
 import { prepareSingleExcerpt } from "./excerpt-image/prepare-single";
@@ -32,7 +32,6 @@ import { savedExcerptRequest } from "./excerpt-image/request";
 import { ExcerptImageService } from "./excerpt-image/service";
 import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
-import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
 import { LibraryScopeService } from "./library-scope/service";
 import { LocalBridgeService } from "./local-bridge/service";
@@ -76,6 +75,8 @@ import { WikilinkReading } from "./wikilink-reading/service";
 import { ZoteroLocalApiClient } from "./zotero-local-api/service";
 import { SecretWriteAuthorizationStore } from "./zotero-local-api/write-authorization";
 import { ZoteroPrefService } from "./zotero-pref/service";
+import { ZoteroReadsService } from "./zotero-reads/service";
+import { workerClient } from "./zotero-reads/worker-client";
 
 /**
  * Construct and wire all Obsidian plugin services.
@@ -150,8 +151,15 @@ export function buildServices(
         new LocalServerService({ settings, zoteroPref, noteIndex }),
     })
     .use({
-      db: ({ settings, zoteroPref }) =>
-        new DatabaseService({ settings, zoteroPref }),
+      chineseSegmenter: () => createChineseSegmenterService(plugin.app),
+    })
+    .use({
+      // The Zotero database lives in a Web Worker, which owns the connection;
+      // the renderer reads it only through ZoteroReads.
+      zoteroReads: ({ settings, zoteroPref, chineseSegmenter }) =>
+        new ZoteroReadsService({
+          client: workerClient({ settings, zoteroPref, chineseSegmenter }),
+        }),
     })
     .use({
       excerptImage: () =>
@@ -169,8 +177,12 @@ export function buildServices(
         }),
     })
     .use({
-      attachmentResolver: ({ db, zoteroPref }) =>
-        new AttachmentResolver({ db, zoteroPref }),
+      attachmentResolver: ({ zoteroReads, queryClient, zoteroPref }) =>
+        new AttachmentResolver({
+          reads: zoteroReads,
+          queries: queryClient,
+          zoteroPref,
+        }),
     })
     .use({
       zoteroLocalApi: ({ zoteroPref, localServer }) =>
@@ -187,14 +199,14 @@ export function buildServices(
     })
     .use({
       annotationRepository: ({
-        db,
+        zoteroReads,
         queryClient,
         zoteroLocalApi,
         zoteroPref,
         excerptImage,
       }) =>
         new AnnotationRepository({
-          db,
+          db: zoteroReads,
           queryClient,
           localApi: zoteroLocalApi,
           // A session's first read of an Attachment has no list that stood
@@ -203,11 +215,11 @@ export function buildServices(
           // stored-outcome read, so an Annotation this device never cached has
           // no baseline here exactly as it has no image to replace there.
           persistedExcerpt: async (annotation, source) => {
-            const request = savedExcerptRequest({
+            const request = await savedExcerptRequest({
               annotation,
               source,
               sourceScope: zoteroPref.dataDir,
-              db,
+              zoteroReads,
               paths: zoteroPref,
             });
             if (!request) return null;
@@ -239,7 +251,7 @@ export function buildServices(
         attachmentResolver,
         annotationRepository,
         capabilityNotices,
-        db,
+        zoteroReads,
         noteIndex,
         settings,
       }) => {
@@ -249,7 +261,7 @@ export function buildServices(
           annotations: annotationRepository,
           noteIndex,
           libraryTagNames: (annotationKey) =>
-            libraryTagNames(db, annotationKey),
+            libraryTagNames(zoteroReads, annotationKey),
           settings,
           capabilityGestures: {
             reportBlockedGesture: (attachmentKey) =>
@@ -276,8 +288,12 @@ export function buildServices(
         new AttachmentImportService({ app: plugin.app, settings, zoteroPref }),
     })
     .use({
-      libraryScope: ({ db, settings }) =>
-        new LibraryScopeService({ db, settings }),
+      libraryScope: ({ zoteroReads, queryClient, settings }) =>
+        new LibraryScopeService({
+          reads: zoteroReads,
+          queries: queryClient,
+          settings,
+        }),
     })
     .use({
       profile: ({ settings, template, noteIndex, libraryScope }) =>
@@ -294,7 +310,7 @@ export function buildServices(
         settings,
         profile,
         localServer,
-        db,
+        zoteroReads,
         noteIndex,
         template,
         zoteroPref,
@@ -305,7 +321,7 @@ export function buildServices(
           settings,
           profile,
           localServer,
-          db,
+          zoteroReads,
           noteIndex,
           template,
           zoteroPref,
@@ -341,7 +357,7 @@ export function buildServices(
     })
     .use({
       templateMigration: ({
-        db,
+        zoteroReads,
         libraryScope,
         noteIndex,
         settings,
@@ -356,7 +372,7 @@ export function buildServices(
             loadLiteratureNoteTemplateMigrationData(
               {
                 app: plugin.app,
-                db,
+                zoteroReads,
                 libraryScope,
                 noteIndex,
                 settings,
@@ -369,19 +385,15 @@ export function buildServices(
         }),
     })
     .use({
-      itemLookup: ({ db, libraryScope }) =>
-        new ItemLookup({
-          db,
-          libraryScope,
-          getChsSegmenter: () => getChsSegmenter(plugin.app),
-        }),
+      itemLookup: ({ zoteroReads, libraryScope }) =>
+        new ItemLookup({ reads: zoteroReads, libraryScope }),
     })
     .useValue({
       noteFeature: ({
         excerptImage,
         profile,
         template,
-        db,
+        zoteroReads,
         noteIndex,
         zoteroPref,
         settings,
@@ -407,7 +419,7 @@ export function buildServices(
           profile,
           app: plugin.app,
           template,
-          db,
+          zoteroReads,
           noteIndex,
           zoteroPref,
           settings,
@@ -419,7 +431,7 @@ export function buildServices(
       createProfile: ({
         profile,
         template,
-        db,
+        zoteroReads,
         noteIndex,
         zoteroPref,
         settings,
@@ -430,7 +442,7 @@ export function buildServices(
           app: plugin.app,
           profile,
           template,
-          db,
+          zoteroReads,
           noteIndex,
           zoteroPref,
           settings,
@@ -442,7 +454,7 @@ export function buildServices(
       importProfile: ({
         profile,
         template,
-        db,
+        zoteroReads,
         noteIndex,
         zoteroPref,
         settings,
@@ -453,7 +465,7 @@ export function buildServices(
           app: plugin.app,
           profile,
           template,
-          db,
+          zoteroReads,
           noteIndex,
           zoteroPref,
           settings,
@@ -468,7 +480,7 @@ export function buildServices(
         createProfile,
         importProfile,
         zoteroPref,
-        db,
+        zoteroReads,
         settings,
         libraryScope,
         noteImport,
@@ -483,7 +495,7 @@ export function buildServices(
           }),
           profile,
           noteFeature,
-          db,
+          zoteroReads,
           settings,
           libraryScope,
           noteImport,
@@ -493,12 +505,18 @@ export function buildServices(
         }),
     })
     .use({
-      citationIndex: ({ noteIndex, settings, db, libraryScope, queryClient }) =>
+      citationIndex: ({
+        noteIndex,
+        settings,
+        zoteroReads,
+        libraryScope,
+        queryClient,
+      }) =>
         new CitationIndex({
           app: plugin.app,
           noteIndex,
           settings,
-          db,
+          reads: zoteroReads,
           libraryScope,
           queryClient,
         }),
@@ -508,7 +526,7 @@ export function buildServices(
     })
     .use({
       bibliographyRender: ({
-        db,
+        zoteroReads,
         pandocEngine,
         zoteroPref,
         settings,
@@ -517,7 +535,7 @@ export function buildServices(
       }) =>
         new BibliographyRenderCache({
           profile,
-          db,
+          db: zoteroReads,
           pandocEngine,
           zoteroPref,
           settings,
@@ -527,7 +545,7 @@ export function buildServices(
     .use({
       citationText: ({
         profile,
-        db,
+        zoteroReads,
         citationIndex,
         noteIndex,
         bibliographyRender,
@@ -536,7 +554,7 @@ export function buildServices(
         new CitationText({
           profile,
           app: plugin.app,
-          db,
+          db: zoteroReads,
           citationIndex,
           noteIndex,
           bibliographyRender,
@@ -546,7 +564,7 @@ export function buildServices(
     .use({
       citationPopover: ({
         profile,
-        db,
+        zoteroReads,
         citationIndex,
         citationText,
         bibliographyRender,
@@ -555,7 +573,7 @@ export function buildServices(
         new CitationPopover({
           profile,
           app: plugin.app,
-          db,
+          db: zoteroReads,
           citationIndex,
           citationText,
           bibliographyRender,
@@ -569,7 +587,7 @@ export function buildServices(
         createProfile,
         importProfile,
         zoteroPref,
-        db,
+        zoteroReads,
         citationText,
         citationPopover,
         settings,
@@ -584,7 +602,7 @@ export function buildServices(
           createProfile,
           importProfile,
           zoteroPref,
-          db,
+          db: zoteroReads,
           citationText,
           citationPopover,
           settings,
@@ -652,7 +670,7 @@ export function buildServices(
     })
     .use({
       graphCitations: ({
-        db,
+        zoteroReads,
         libraryScope,
         citationIndex,
         noteIndex,
@@ -662,7 +680,7 @@ export function buildServices(
       }) =>
         new GraphCitations({
           app: plugin.app,
-          db,
+          reads: zoteroReads,
           libraryScope,
           citationIndex,
           noteIndex,

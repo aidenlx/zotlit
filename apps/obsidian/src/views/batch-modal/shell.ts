@@ -408,14 +408,17 @@ export class BatchModal extends Modal {
 
     const details = this.#renderDisclosure(shell, this.#failures.length > 0);
     if (this.#failures.length > 0) {
-      const ul = section(
+      section(
         details,
         (this.#options.text.failedHeader ?? m.batch_update_group_failed)({
           count: this.#failures.length,
         }),
-        true,
+        {
+          items: this.#failures,
+          renderRow: (ul, failure) => failureRow(ul, failure, this.app),
+          open: true,
+        },
       );
-      for (const failure of this.#failures) failureRow(ul, failure, this.app);
     }
     this.#manifestOrThrow.renderSummary(details, this.#finalStatus);
 

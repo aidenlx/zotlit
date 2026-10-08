@@ -161,59 +161,102 @@ function liveUpdate(initial: ReaderTarget | null) {
 }
 
 describe("ZoteroReaderSession", () => {
-  function build(initial: ReaderTarget | null = null) {
+  /** The resolution the database gives a push. */
+  const named = (target: ReaderTarget) =>
+    target.attachmentID === 2
+      ? { target: PAPER, selected: ["ANNO2345"] }
+      : target.attachmentID === 3
+        ? { target: STANDALONE, selected: [] }
+        : null;
+
+  function build(
+    initial: ReaderTarget | null = null,
+    resolve: ZoteroReaderSessionDeps["resolve"] = (target) =>
+      Promise.resolve(named(target)),
+  ) {
     const live = liveUpdate(initial);
     const navigated: string[] = [];
     const session = new ZoteroReaderSession({
       liveUpdate: live.stub,
       navigate: (key) => navigated.push(key),
-      resolve: (target) =>
-        target.attachmentID === 2
-          ? { target: PAPER, selected: ["ANNO2345"] }
-          : null,
+      resolve,
     });
     return { live, session, navigated };
   }
 
-  it("names the Zotero source and seeds from the push the listener holds", () => {
+  it("names the Zotero source and seeds from the push the listener holds", async () => {
     const { session } = build(PUSHED);
     expect(session.source).toBe("zotero");
-    expect(session.target).toEqual(PAPER);
+    await expect.poll(() => session.target).toEqual(PAPER);
     expect(session.selected).toEqual(["ANNO2345"]);
   });
 
-  it("translates each push into Indexed Keys", () => {
+  it("translates each push into Indexed Keys", async () => {
     const { live, session } = build();
     expect(session.target).toBe(null);
 
     live.push(PUSHED);
-    expect(session.target).toEqual(PAPER);
+    await expect.poll(() => session.target).toEqual(PAPER);
     expect(session.selected).toEqual(["ANNO2345"]);
 
     // A push the database cannot name leaves the session holding nothing.
     live.push({ itemID: 9, attachmentID: 9, selected: [] });
-    expect(session.target).toBe(null);
+    await expect.poll(() => session.target).toBe(null);
     expect(session.selected).toEqual([]);
   });
 
-  it("takes no selection from a consumer, because Zotero owns its reader", () => {
+  it("keeps its target while a new push resolves, and drops a superseded answer", async () => {
+    const pending = new Map<number, PromiseWithResolvers<void>>();
+    const aborted: number[] = [];
+    const { live, session } = build(PUSHED, async (target, signal) => {
+      signal.addEventListener("abort", () => aborted.push(target.attachmentID));
+      if (target.attachmentID !== 2) {
+        const gate = Promise.withResolvers<void>();
+        pending.set(target.attachmentID, gate);
+        await gate.promise;
+      }
+      return named(target);
+    });
+    await expect.poll(() => session.target).toEqual(PAPER);
+
+    live.push({ itemID: 3, attachmentID: 3, selected: [] });
+    live.push({ itemID: 9, attachmentID: 9, selected: [] });
+    expect(session.target).toEqual(PAPER);
+    expect(aborted).toEqual([2, 3]);
+
+    pending.get(9)!.resolve();
+    await expect.poll(() => session.target).toBe(null);
+    pending.get(3)!.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(session.target).toBe(null);
+  });
+
+  it("takes no selection from a consumer, because Zotero owns its reader", async () => {
     const { session } = build(PUSHED);
+    await expect.poll(() => session.selected).toEqual(["ANNO2345"]);
     session.setSelectedAnnotations([]);
     expect(session.selected).toEqual(["ANNO2345"]);
   });
 
-  it("re-reads the held push on refresh", () => {
+  it("re-reads the held push on refresh", async () => {
     const { live, session } = build();
     live.push(PUSHED);
+    await expect.poll(() => session.target).toEqual(PAPER);
     session.setTarget(null);
     session.refresh();
-    expect(session.target).toEqual(PAPER);
+    await expect.poll(() => session.target).toEqual(PAPER);
   });
 
-  it("stops tracking the listener when disposed", () => {
-    const { live, session } = build();
+  it("stops tracking the listener and aborts its read when disposed", () => {
+    const signals: AbortSignal[] = [];
+    const { live, session } = build(PUSHED, (_target, signal) => {
+      signals.push(signal);
+      return new Promise(() => {});
+    });
     session[Symbol.dispose]();
     expect(live.subscribers).toBe(0);
+    expect(signals.map((signal) => signal.aborted)).toEqual([true]);
   });
 
   it("opens an annotation through the port Zotero gave it", () => {

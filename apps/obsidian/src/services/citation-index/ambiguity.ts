@@ -1,16 +1,18 @@
 // One Ambiguous Citation Key's candidates, described the same way on every surface that shows them.
 
-import { getItemsByID, isChildItemFields } from "@zotlit/db";
+import { Effect } from "effect";
+
+import { isChildItemFields } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
-import type { DatabaseService } from "@/services/database/service";
 import { libraryLabel } from "@/services/library-scope/label";
 import type { AvailableLibrary } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
-import type { SnapshotItem } from "./snapshot";
+import type { CitekeyResolution, SnapshotItem } from "./snapshot";
 
 const logger = getLogger("citation-index");
 
@@ -59,7 +61,7 @@ export type AmbiguousCandidatesOf = (
 
 /** Where a candidate description reads its summary and its Library from. */
 export interface CandidateDeps {
-  db: Pick<DatabaseService, "client">;
+  db: Pick<ZoteroReadsService, "ready">;
   /** Names the Library each candidate lives in. */
   libraryScope: Pick<LibraryScopeService, "current">;
 }
@@ -72,8 +74,69 @@ export interface CandidateDeps {
  * @param candidates the Items of one Ambiguous Citation Key, in the canonical
  *   order the resolution snapshot reports them.
  */
-export function describeCandidates(
-  { db, libraryScope }: CandidateDeps,
+export async function describeCandidates(
+  deps: CandidateDeps,
+  candidates: readonly SnapshotItem[],
+): Promise<AmbiguousCandidate[]> {
+  return describeWith(
+    deps,
+    await readCandidateItems(deps, candidates),
+    candidates,
+  );
+}
+
+/**
+ * The candidates of every Ambiguous Citation Key among `citekeys`, described
+ * in one read, as the synchronous lookup a list build takes.
+ *
+ * @param resolveCitekey what a citekey names in the current Library Scope.
+ */
+export async function readAmbiguousCandidates(
+  deps: CandidateDeps,
+  resolveCitekey: (citekey: string) => CitekeyResolution | null,
+  citekeys: Iterable<string>,
+): Promise<AmbiguousCandidatesOf> {
+  const ambiguous = new Map<string, readonly SnapshotItem[]>();
+  for (const citekey of citekeys) {
+    const resolution = resolveCitekey(citekey);
+    if (resolution?.kind === "ambiguous") {
+      ambiguous.set(citekey, resolution.candidates);
+    }
+  }
+  if (ambiguous.size === 0) return () => null;
+  const items = await readCandidateItems(deps, [...ambiguous.values()].flat());
+  const described = new Map(
+    [...ambiguous].map(([citekey, candidates]) => [
+      citekey,
+      describeWith(deps, items, candidates),
+    ]),
+  );
+  return (citekey) => described.get(citekey) ?? null;
+}
+
+/** The candidates' Items by Indexed Key; a failed read answers none. */
+async function readCandidateItems(
+  { db }: CandidateDeps,
+  candidates: readonly SnapshotItem[],
+): Promise<ReadonlyMap<string, Item>> {
+  try {
+    const { reads } = await db.ready;
+    return await Effect.runPromise(
+      reads.ItemsByIndexedKeys({
+        indexedKeys: candidates.map((candidate) => candidate.indexedKey),
+      }),
+    );
+  } catch (error) {
+    logger.warn("Ambiguous citekey candidates read without summaries", {
+      error,
+    });
+    return new Map();
+  }
+}
+
+function describeWith(
+  { libraryScope }: CandidateDeps,
+  items: ReadonlyMap<string, Item>,
   candidates: readonly SnapshotItem[],
 ): AmbiguousCandidate[] {
   const libraries = new Map(
@@ -82,21 +145,8 @@ export function describeCandidates(
       library,
     ]),
   );
-  let items = new Map<number, Item>();
-  try {
-    items = new Map(
-      getItemsByID(
-        db.client,
-        candidates.map((candidate) => candidate.itemID),
-      ).map((item) => [item.itemID, item]),
-    );
-  } catch (error) {
-    logger.warn("Ambiguous citekey candidates read without summaries", {
-      error,
-    });
-  }
   return candidates.map((candidate) => {
-    const item = items.get(candidate.itemID);
+    const item = items.get(candidate.indexedKey);
     const fields = item?.fields;
     return {
       ...candidate,

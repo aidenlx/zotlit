@@ -135,7 +135,6 @@ describe("itemUri", () => {
       itemUri("ABC12345", 42, {
         userID: null,
         localUserKey: null,
-        username: null,
       }),
     ).toBe("http://zotero.org/groups/42/items/ABC12345");
   });
@@ -145,7 +144,6 @@ describe("itemUri", () => {
       itemUri("ABC12345", null, {
         userID: null,
         localUserKey: null,
-        username: null,
       }),
     ).toBeNull();
   });

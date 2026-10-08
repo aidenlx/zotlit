@@ -32,6 +32,14 @@ export default defineConfig({
   },
   overrides: [
     {
+      // workerd ships no Temporal: the publication-date schema, its date
+      // helpers, and the Date the feed library takes (AGENTS.md → Dates).
+      files: ["src/lib/shared.ts", "src/routes/changelog/rss\\[.\\]xml.ts"],
+      rules: {
+        "no-restricted-globals": "off",
+      },
+    },
+    {
       // Codegen scripts read `src/` directly; the `@/` alias resolves for the
       // bundler, not for `node scripts/*.ts`.
       files: ["scripts/**"],

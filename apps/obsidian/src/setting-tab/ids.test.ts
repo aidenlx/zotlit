@@ -73,6 +73,10 @@ function ctx(): SettingTabContext {
       getStatus: () => ({ kind: "absent" }),
       subscribe: () => () => {},
     },
+    chineseSegmenter: {
+      getStatus: () => ({ kind: "absent" }),
+      subscribe: () => () => {},
+    },
     languagePack: {
       getSituation: () => ({ kind: "unavailable" }),
       endonym: "English",

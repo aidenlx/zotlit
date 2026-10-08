@@ -46,15 +46,18 @@ describe("writeOutput", () => {
       missingBaseLocale: undefined,
     };
     const artifactPath = join(outputDirectory, "messages.ts");
-    const unchangedTime = new Date("2000-01-01T00:00:00.000Z");
+    const unchangedTime = Temporal.Instant.from("2000-01-01T00:00:00Z");
+    const unchangedSeconds = unchangedTime.epochMilliseconds / 1000;
 
     const first = await writeOutput(generated, outputDirectory);
-    await utimes(artifactPath, unchangedTime, unchangedTime);
+    await utimes(artifactPath, unchangedSeconds, unchangedSeconds);
     const second = await writeOutput(generated, outputDirectory);
 
     expect(first.writtenPaths).toEqual([artifactPath]);
     expect(second.writtenPaths).toEqual([]);
-    expect((await stat(artifactPath)).mtimeMs).toBe(unchangedTime.getTime());
+    expect((await stat(artifactPath)).mtimeMs).toBe(
+      unchangedTime.epochMilliseconds,
+    );
   });
 });
 

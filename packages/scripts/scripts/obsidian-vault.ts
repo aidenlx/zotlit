@@ -675,7 +675,7 @@ async function linkFixture(vaultId: string): Promise<void> {
 
   const refreshed = await waitFor(async () => {
     const raw = await obEval(
-      `(async()=>{const services=app.plugins.plugins.${pluginId}.services;await services.db.refresh();return JSON.stringify({profileDir:services.zoteroPref.resolvedProfileDir,databasePath:services.zoteroPref.databasePath,dbState:services.db.state})})()`,
+      `(async()=>{const services=app.plugins.plugins.${pluginId}.services;await services.zoteroReads.refresh().catch(()=>{});return JSON.stringify({profileDir:services.zoteroPref.resolvedProfileDir,databasePath:services.zoteroPref.databasePath,dbState:services.zoteroReads.state})})()`,
       vaultId,
     ).catch(rethrowUnreachable);
     if (!raw) return false;
@@ -712,7 +712,7 @@ async function setFixtureWriteAuthorization(
 
 async function readFixtureLink(vaultId: string): Promise<FixtureLinkReport> {
   const raw = await obEval(
-    `{const services=app.plugins.plugins.${pluginId}.services;JSON.stringify({profileDir:services.zoteroPref.resolvedProfileDir,databasePath:services.zoteroPref.databasePath,dbState:services.db.state})}`,
+    `{const services=app.plugins.plugins.${pluginId}.services;JSON.stringify({profileDir:services.zoteroPref.resolvedProfileDir,databasePath:services.zoteroPref.databasePath,dbState:services.zoteroReads.state})}`,
     vaultId,
   );
   return JSON.parse(raw) as FixtureLinkReport;

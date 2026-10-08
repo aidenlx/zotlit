@@ -554,6 +554,10 @@ _Avoid_: citation format (omits references and locale), render settings
 The Pandoc WASM binary that formats references and runs the built-in export, pinned per plugin release to one upstream release asset and its SHA-256. A user starts the download from settings; ZotLit verifies the bytes against the pin before they become the cache, stores them uncompressed and content-addressed, and shares them with every vault on the device. Uninstall reaches the whole device. The engine's absence is a normal mode, and its download, checksum, and startup failures each name themselves so one fallback surface guides the user out.
 _Avoid_: Pandoc install (Pandoc CLI is a separate, user-owned install), bundled Pandoc (the plugin never ships the binary)
 
+**Managed Binary**:
+A WASM binary ZotLit depends on but never ships: pinned per plugin release to one upstream asset and its SHA-256, downloaded once the user asks from settings, verified against the pin before it becomes the cache, stored content-addressed in one device-wide store shared by every vault, and removable from the same place. Its absence is a normal mode, and its download, checksum, and startup failures each name themselves. The Pandoc Engine and the Chinese Segmenter are its two instances.
+_Avoid_: bundled binary, dependency download, plugin asset (Language Packs and schemas ship on the Resource Release instead)
+
 **Embedded Item Data**:
 A CSL-JSON snapshot of each cited Item, stored on the Zotero note container's `data-citation-items` attribute at citation-insertion time. The only source for cross-library cites and the fallback when the DB cannot resolve a ref; mapped into the zt item vocabulary by a schema-driven CSL→zt reverse mapping.
 _Avoid_: citation map (that's the derived lookup structure)
@@ -659,6 +663,14 @@ A vault-wide in-memory index mapping `zotero-key` to Literature Notes and `zoter
 The plugin-owned, internal vault-wide index of Citation Occurrences across both citation syntaxes — literal Pandoc citations and Literature Note wikilinks. It tracks derived source facts independently of which citation sources the user includes; the Document Citation Set applies those choices for citation-aware consumers. Reset Citation Index remains a Diagnostics recovery action that rebuilds this derived data without changing vault files.
 _Avoid_: citation cache (names the persistence, not the index), citation scanner (the per-file parse step, not the index)
 
+**Item Index** _(ZoteroReads)_:
+The search index over the Items of the Libraries in Library Scope, held by the ZoteroReads worker and answered through one `SearchItems` operation. Its identity is the list of covered Libraries and the connection it was built on; the worker rebuilds it from its own change feed, serves the last complete index while a rebuild runs, and hydrates the hits before it answers. It keeps the index of the list the latest search asked for; the index of another list leaves at the next change when no search asked for it since the change before. The renderer never holds the index.
+_Avoid_: search cache, item-lookup index (names the package, not the thing), MiniSearch index (names the engine)
+
+**Chinese Segmenter**:
+The Managed Binary that cuts Chinese text into search words for the Item Index: the pinned `jieba-wasm` binary, loaded inside the ZoteroReads worker for indexing and for queries. Optional; without it, Chinese runs segment through the browser's own word segmentation.
+_Avoid_: jieba plugin, cm-chs-patch (a separate third-party plugin ZotLit no longer reads), tokenizer (the whole word-splitting step, of which the segmenter is one part)
+
 **Citekey Resolution Snapshot**:
 The Citation Index's point-in-time answer for mapping Citation Keys to Items. Citation Key discovery covers the available Libraries in Library Scope; reverse lookup by exact Indexed Key covers every local Library.
 _Avoid_: citekey cache (implies incremental invalidation, not a wholesale rebuild)
@@ -734,6 +746,14 @@ A canonical directory the user permitted on this device as a source for Attachme
 _Avoid_: allowed folder, trusted directory (implies a broader grant than one Attachment Import source), whitelisted path
 
 ### Database access
+
+**ZoteroReads**:
+The plugin's one interface to the Zotero database: a set of use-case operations that a Web Worker answers. The worker owns the connection, the Read Mode, the file watchers, and refreshes; the renderer only calls operations and receives plain data. Every operation is asynchronous, and two operations read one database state only when they share a Snapshot.
+_Avoid_: database service, DB client (the renderer holds no client)
+
+**Snapshot** _(ZoteroReads)_:
+One database state pinned for as long as its holder keeps it open. Every read that names the Snapshot sees that state, also after a refresh swaps in a newer one; closing it releases the state. A note write holds one Snapshot, so the Literature Note and the Child Notes it imports come from one moment.
+_Avoid_: lease, read lease, Item Snapshot (the Workbench's export of one Item)
 
 **Read Mode**:
 The strategy ZotLit uses to open `zotero.sqlite` while Zotero is running and holds the file exclusively. Configured per vault (synced) as one of four values: Auto, Reflink clone, Full copy, Immutable source. Auto resolves to one of the three concrete modes at runtime.

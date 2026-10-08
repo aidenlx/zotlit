@@ -3,7 +3,7 @@ import { formatIndexedKey } from "@/lib/zt-key";
 
 import { groupIDForLibrary, resolveGroupID } from "./_groups";
 import type { GroupIDMemo } from "./_groups";
-import { defineQuery } from "./_shared";
+import { defineQuery, defineKeyedQuery } from "./_shared";
 import type { Item } from "./items";
 
 /**
@@ -106,6 +106,57 @@ export function getItemDisplayRefByID(
     indexedKey: formatIndexedKey(row.key, groupID),
     title,
   };
+}
+
+const itemDisplayRefsByIdsQuery = defineKeyedQuery<number>()(
+  (db, { contains }) =>
+    db.query.items.findMany({
+      columns: { itemID: true, key: true, libraryID: true },
+      where: { RAW: (item) => contains(item.itemID), deletedItem: false },
+      with: {
+        itemData: {
+          columns: {},
+          with: {
+            fieldsCombined: {
+              columns: { fieldName: true },
+              where: { fieldName: { eq: "title" } },
+            },
+            itemDataValue: { columns: { value: true } },
+          },
+        },
+      },
+    }),
+  { keyOf: (row) => row.itemID },
+);
+
+/**
+ * {@link getItemDisplayRefByID} for many ids through one cached keyed read.
+ *
+ * @returns each live item's {@link ItemDisplayRef} by item id; an id with no
+ *   live item is absent.
+ */
+export function getItemDisplayRefsByIDs(
+  db: NodeDatabaseClient,
+  itemIDs: readonly number[],
+  opts?: { memo?: GroupIDMemo },
+): Map<number, ItemDisplayRef> {
+  const refs = new Map<number, ItemDisplayRef>();
+  if (itemIDs.length === 0) return refs;
+  const memo = opts?.memo ?? new Map();
+  for (const row of itemDisplayRefsByIdsQuery(db, itemIDs)) {
+    const groupID = resolveGroupID(db, row.libraryID, memo);
+    refs.set(row.itemID, {
+      itemID: row.itemID,
+      key: row.key,
+      libraryID: row.libraryID,
+      groupID,
+      indexedKey: formatIndexedKey(row.key, groupID),
+      title:
+        row.itemData.find((d) => d.fieldsCombined?.fieldName === "title")
+          ?.itemDataValue?.value ?? null,
+    });
+  }
+  return refs;
 }
 
 export type ItemDisplayInfo = Pick<

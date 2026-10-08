@@ -29,6 +29,10 @@ import type {
 } from "@/services/excerpt-image/service";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
+import {
+  inProcessReadsService,
+  sharedClientOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import type { AnnotationInsertOptions } from "./insert-annotation";
 import { prepareAnnotationInsert } from "./insert-annotation";
@@ -70,6 +74,7 @@ async function fixture(mode: string) {
       (2,2,'2025-01-01 00:00:00','2025-01-01 00:00:00',1,'RGRPDF24');
     insert into itemAttachments (itemID,parentItemID,linkMode,contentType,path) values (2,1,0,'application/pdf','storage:paper.pdf');
   `);
+  const zoteroReads = inProcessReadsService(sharedClientOpener(client));
   const settings = {
     ...defaults,
     "attachment.import": mode !== "disabled",
@@ -124,7 +129,7 @@ async function fixture(mode: string) {
     }),
   );
   const ctx: Parameters<typeof prepareAnnotationInsert>[0] = {
-    db: { acquireRead: async () => ({ client, [Symbol.dispose]() {} }) },
+    zoteroReads,
     zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
     settings: {
       current: settings,
@@ -173,6 +178,7 @@ async function fixture(mode: string) {
       valid = false;
     },
     async [Symbol.asyncDispose]() {
+      await zoteroReads[Symbol.asyncDispose]();
       client.$client.close();
       await rm(root, { recursive: true, force: true });
     },
