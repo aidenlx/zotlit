@@ -1,7 +1,7 @@
 import { abortable } from "@std/async/abortable";
 import { Effect } from "effect";
 import { randomUUID } from "node:crypto";
-import type { FileSystemAdapter, Vault } from "obsidian";
+import type { CliData, FileSystemAdapter, Vault } from "obsidian";
 
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { Service } from "@/services/service-base";
@@ -11,16 +11,16 @@ import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import {
   diagnostic,
   failure,
-  itemQueryArgumentFailure,
   ITEM_QUERY_COMMAND,
   ITEM_QUERY_SCHEMA_COMMAND,
   queryIdInUseFailure,
 } from "./cli";
 import { queryCancelledText } from "./contract";
+import { decodeItemQuery, decodeSchemaArguments } from "./decode";
 import { QueryExport } from "./export";
 import type { QueryObserver } from "./trace";
 import type { QueryAnswer } from "./worker";
-import type { QueryJob } from "./worker-protocol";
+import type { QueryCommand } from "./worker-protocol";
 
 interface ItemQueryServiceDeps {
   reads: ZoteroReadsService;
@@ -59,15 +59,17 @@ export class ItemQueryService extends Service {
   }
 
   answer(
-    params: QueryJob["params"],
+    params: CliData,
     signal: AbortSignal,
     measure?: QueryObserver & { heap: boolean },
   ): Promise<string> {
-    // Validate and claim the id synchronously, so two calls with one id
-    // cannot both start.
-    const rejected = itemQueryArgumentFailure(params);
-    if (rejected) return Promise.resolve(rejected);
-    const id = params.id;
+    // Decode and claim the id synchronously, so two calls with one id
+    // cannot both start. The worker receives the decoded query.
+    const query = decodeItemQuery(params);
+    if ("code" in query) {
+      return Promise.resolve(failure(ITEM_QUERY_COMMAND, query));
+    }
+    const id = query.id;
     if (id !== undefined && this.#named.has(id)) {
       return Promise.resolve(queryIdInUseFailure(id));
     }
@@ -86,7 +88,9 @@ export class ItemQueryService extends Service {
     combined.addEventListener("abort", requested, { once: true });
     // The id is free before the caller sees the query settle. A listener
     // keeps the combined signal alive as long as its unload sources.
-    const job = this.#answer(params, combined, { measure }).finally(() => {
+    const job = this.#answer({ schema: false, query }, combined, {
+      measure,
+    }).finally(() => {
       combined.removeEventListener("abort", requested);
       if (combined.aborted)
         measure?.cancelled?.({
@@ -114,11 +118,14 @@ export class ItemQueryService extends Service {
     return true;
   }
 
-  schema(params: QueryJob["params"], signal: AbortSignal): Promise<string> {
+  schema(params: CliData, signal: AbortSignal): Promise<string> {
+    const rejected = decodeSchemaArguments(params);
+    if (rejected) {
+      return Promise.resolve(failure(ITEM_QUERY_SCHEMA_COMMAND, rejected));
+    }
     const job = this.#answer(
-      params,
-      AbortSignal.any([signal, this.#unload.signal]),
       { schema: true },
+      AbortSignal.any([signal, this.#unload.signal]),
     );
     this.#jobs.add(job);
     void job.then(
@@ -129,20 +136,18 @@ export class ItemQueryService extends Service {
   }
 
   async #answer(
-    params: QueryJob["params"],
+    command: QueryCommand,
     signal: AbortSignal,
-    {
-      measure,
-      schema = false,
-    }: { measure?: QueryObserver & { heap: boolean }; schema?: boolean } = {},
+    { measure }: { measure?: QueryObserver & { heap: boolean } } = {},
   ): Promise<string> {
+    const { schema } = command;
     signal.throwIfAborted();
     await abortable(this.ready, signal);
     signal.throwIfAborted();
     const { reads } = await this.#deps.reads.ready;
     const id = randomUUID();
     await using output = new QueryExport(
-      schema ? undefined : params.output,
+      command.schema ? undefined : command.query.output,
       id,
     );
     const { stagePath } = output;
@@ -152,7 +157,7 @@ export class ItemQueryService extends Service {
           job: {
             id,
             ...(stagePath ? { stagePath } : {}),
-            params,
+            ...command,
             source: {
               id: this.#deps.zoteroPref.sourceId,
               databasePath: this.#deps.zoteroPref.databasePath,
@@ -164,7 +169,6 @@ export class ItemQueryService extends Service {
               ).getBasePath(),
             },
             scope: this.#deps.libraryScope.effective,
-            schema,
             measure: measure !== undefined,
             ...(measure ? { heap: measure.heap } : {}),
           },

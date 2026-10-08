@@ -94,6 +94,25 @@ describe("Item Query worker jobs", () => {
     expect(unavailable.leases()).toBe(0);
   });
 
+  it("answers the schema envelope for a parameter, without a lease", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    const { service, leases } = setup(scenario);
+    await using _owned = service;
+
+    const answer = await service.schema({ library: "personal" }, signal());
+
+    expect(JSON.parse(answer)).toMatchObject({
+      contractVersion: 1,
+      command: "zotlit:item-query-schema",
+      ok: false,
+      diagnostic: {
+        code: "invalid-argument",
+        details: { parameter: "library" },
+      },
+    });
+    expect(leases()).toBe(0);
+  });
+
   it("exports the same envelope as inline, preserves existing files, and releases each lease", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     const { service, leases } = setup(scenario);

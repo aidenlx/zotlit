@@ -27,6 +27,8 @@ import {
   registerItemQueryCli,
 } from "./cli";
 import type { ItemQueryCliDeps } from "./cli";
+import { decodeItemQuery } from "./decode";
+import type { DecodedQuery } from "./decode";
 import { GUIDE_EXAMPLES, GUIDE_FILTERS, GUIDE_TOPIC_NAMES } from "./guide";
 
 /** The driver call under every statement of the borrowed client. */
@@ -56,6 +58,17 @@ const PERSONAL_BY_MODIFIED = [
   "CNF2TEXT",
 ];
 
+/**
+ * The query that the renderer decodes from `params`, as the worker receives it:
+ * plain JSON. The decoder tests cover malformed arguments.
+ */
+function decoded(params: CliData = {}): DecodedQuery {
+  const query = decodeItemQuery(params);
+  if ("code" in query)
+    throw new Error(`Malformed test query: ${query.message}`);
+  return JSON.parse(JSON.stringify(query)) as DecodedQuery;
+}
+
 function setup(
   scenario: ScenarioDatabase,
   overrides: Partial<ItemQueryCliDeps> = {},
@@ -72,7 +85,7 @@ function setup(
   return {
     read,
     run: async (params: CliData = {}) => {
-      const answer = await handler(params);
+      const answer = await handler(decoded(params));
       return JSON.parse(answer) as Record<string, unknown>;
     },
   };
@@ -126,7 +139,7 @@ describe("zotlit:item-query without arguments", () => {
       signal: new AbortController().signal,
     });
 
-    const answer = await handler({ limit: "1" });
+    const answer = await handler(decoded({ limit: "1" }));
 
     expect(answer).toMatch(/^\{\n {2}"contractVersion": 1,\n/);
   });
@@ -149,13 +162,14 @@ describe("zotlit:item-query answer", () => {
     scenario: ScenarioDatabase,
     overrides: Partial<ItemQueryCliDeps> = {},
   ) {
-    return createItemQueryHandler({
+    const handler = createItemQueryHandler({
       client: scenario.db,
       identity: IDENTITY,
       libraryScope: async () => MY_LIBRARY_SCOPE,
       signal: new AbortController().signal,
       ...overrides,
     });
+    return (params: CliData) => handler(decoded(params));
   }
 
   it.each<CliData>([
@@ -253,28 +267,6 @@ describe("zotlit:item-query limit", () => {
       truncated: false,
     });
   });
-
-  it.each(["0", "-1", "1.5", "ten", "", "1e3", "99999999999999999999"])(
-    "rejects limit=%j with the diagnostic envelope before it reads the source",
-    async (limit) => {
-      using scenario = openScenarioDatabase();
-      const { run, read } = setup(scenario);
-
-      const answer = await run({ limit });
-
-      expect(answer).toMatchObject({
-        contractVersion: 1,
-        command: ITEM_QUERY_COMMAND,
-        ok: false,
-        diagnostic: {
-          code: "invalid-argument",
-          hint: expect.any(String),
-          details: { parameter: "limit" },
-        },
-      });
-      expect(read).not.toHaveBeenCalled();
-    },
-  );
 });
 
 /** Both Libraries of the scenario, most recently modified first. */
@@ -336,25 +328,6 @@ describe("zotlit:item-query library", () => {
       },
     });
   });
-
-  it.each(["group:", "group:abc", "group:0", "My Library", "1", "all"])(
-    "rejects library=%j",
-    async (library) => {
-      using scenario = openScenarioDatabase();
-      const { run, read } = setup(scenario);
-
-      const answer = await run({ library });
-
-      expect(answer).toMatchObject({
-        ok: false,
-        diagnostic: {
-          code: "invalid-argument",
-          details: { parameter: "library" },
-        },
-      });
-      expect(read).not.toHaveBeenCalled();
-    },
-  );
 });
 
 describe("zotlit:item-query libraries", () => {
@@ -471,75 +444,6 @@ describe("zotlit:item-query libraries", () => {
       diagnostic: {
         code: "library-not-found",
         message: expect.stringContaining("999"),
-        details: { parameter: "libraries" },
-      },
-    });
-  });
-
-  it.each([
-    ["no JSON", "personal"],
-    ["no array", '"personal"'],
-    ["an empty array", "[]"],
-    ["a selector that is no text", "[1]"],
-    ["a selector object", '[{"type":"personal"}]'],
-    ["an unknown selector", '["My Library"]'],
-    ["a group without a positive ID", '["group:0"]'],
-    ["the word all inside the array", '["all"]'],
-    ["a Library twice", '["personal","personal"]'],
-    ["a group twice", '["group:4815","personal","group:4815"]'],
-  ])("rejects libraries with %s", async (_name, libraries) => {
-    using scenario = openScenarioDatabase();
-    const { run, read } = setup(scenario);
-
-    const answer = await run({ libraries });
-
-    expect(answer).toMatchObject({
-      ok: false,
-      diagnostic: {
-        code: "invalid-argument",
-        details: { parameter: "libraries" },
-      },
-    });
-    expect(read).not.toHaveBeenCalled();
-  });
-});
-
-describe("zotlit:item-query library and libraries together", () => {
-  it("reads the Libraries of libraries and ignores library", async () => {
-    using scenario = openScenarioDatabase();
-    const { run } = setup(scenario);
-
-    const answer = await run({
-      library: "personal",
-      libraries: '["group:4815"]',
-    });
-
-    expect(answer.libraries).toEqual([METHODS_GROUP_WIRE]);
-    expect(answer.request).toMatchObject({ libraries: ["group:4815"] });
-    expect(keys(answer)).toEqual(["ART2FULLg4815", "GRP2BK22g4815"]);
-  });
-
-  it("ignores a library that the source does not hold, and a malformed one", async () => {
-    using scenario = openScenarioDatabase();
-    const { run } = setup(scenario);
-
-    for (const library of ["group:999", "My Library"]) {
-      const answer = await run({ library, libraries: "all" });
-
-      expect(answer).toMatchObject({ ok: true, returnedCount: 12 });
-    }
-  });
-
-  it("answers the diagnostic of a malformed libraries beside a valid library", async () => {
-    using scenario = openScenarioDatabase();
-    const { run } = setup(scenario);
-
-    const answer = await run({ library: "personal", libraries: "[]" });
-
-    expect(answer).toMatchObject({
-      ok: false,
-      diagnostic: {
-        code: "invalid-argument",
         details: { parameter: "libraries" },
       },
     });
@@ -733,45 +637,9 @@ describe("zotlit:item-query fields", () => {
       },
     });
   });
-
-  it.each(['["title"', '"title"', "[1]", '{"0":"title"}'])(
-    "rejects fields=%s",
-    async (fields) => {
-      using scenario = openScenarioDatabase();
-      const { run } = setup(scenario);
-
-      const answer = await run({ fields });
-
-      expect(answer).toMatchObject({
-        ok: false,
-        diagnostic: {
-          code: "invalid-argument",
-          details: { parameter: "fields" },
-        },
-      });
-    },
-  );
 });
 
 describe("zotlit:item-query filter and sort", () => {
-  it.each([
-    ["filter", ""],
-    ["filter", "   "],
-    ["sort", "not json"],
-    ["sort", '[{"field":"title"}]'],
-    ["sort", '[{"field":"title","direction":"up"}]'],
-    ["sort", '{"field":"title","direction":"asc"}'],
-  ])("rejects %s=%j", async (parameter, value) => {
-    using scenario = openScenarioDatabase();
-    const { run } = setup(scenario);
-
-    const answer = await run({ [parameter]: value });
-
-    expect(answer).toMatchObject({
-      ok: false,
-      diagnostic: { code: "invalid-argument", details: { parameter } },
-    });
-  });
   it("passes a well-formed filter through to the engine and echoes it", async () => {
     using scenario = openScenarioDatabase();
     const { run } = setup(scenario);
@@ -826,47 +694,7 @@ describe("zotlit:item-query filter and sort", () => {
   });
 });
 
-describe("zotlit:item-query parameters", () => {
-  it("rejects an undeclared parameter", async () => {
-    using scenario = openScenarioDatabase();
-    const { run } = setup(scenario);
-
-    const answer = await run({ fields: "[]", colour: "red" });
-
-    expect(answer).toMatchObject({
-      ok: false,
-      diagnostic: {
-        code: "invalid-argument",
-        details: { parameter: "colour" },
-      },
-    });
-  });
-
-  it("explains a vault parameter after the command name", async () => {
-    using scenario = openScenarioDatabase();
-    const { run } = setup(scenario);
-
-    const answer = await run({ vault: "Research" });
-
-    expect(answer).toMatchObject({
-      ok: false,
-      diagnostic: {
-        code: "invalid-argument",
-        message: expect.stringContaining("before the command name"),
-        details: { parameter: "vault" },
-      },
-    });
-  });
-
-  it("leaves Obsidian's own -- tokens alone", async () => {
-    using scenario = openScenarioDatabase();
-    const { run } = setup(scenario);
-
-    const answer = await run({ "--copy": "true", limit: "1" });
-
-    expect(answer.ok).toBe(true);
-  });
-
+describe("zotlit:item-query id", () => {
   it("accepts a query ID and keeps it out of the request", async () => {
     using scenario = openScenarioDatabase();
     const { run } = setup(scenario);
@@ -876,22 +704,6 @@ describe("zotlit:item-query parameters", () => {
     expect(answer).toMatchObject({ ok: true, returnedCount: 1 });
     expect(answer.request).not.toHaveProperty("id");
   });
-
-  it.each(["", "two words", "a/b", "x".repeat(129)])(
-    "rejects the query ID %j before it reads the database",
-    async (id) => {
-      using scenario = openScenarioDatabase();
-      const { run, read } = setup(scenario);
-
-      const answer = await run({ id });
-
-      expect(answer).toMatchObject({
-        ok: false,
-        diagnostic: { code: "invalid-argument", details: { parameter: "id" } },
-      });
-      expect(read).not.toHaveBeenCalled();
-    },
-  );
 });
 
 describe("zotlit:item-query-cancel", () => {
@@ -1146,14 +958,8 @@ function setupSchema(
   });
   return {
     read,
-    text: async (params: CliData = {}) => {
-      const answer = await handler(params);
-      return answer;
-    },
-    run: async (params: CliData = {}) => {
-      const answer = await handler(params);
-      return JSON.parse(answer) as Record<string, unknown>;
-    },
+    text: handler,
+    run: async () => JSON.parse(await handler()) as Record<string, unknown>,
   };
 }
 
@@ -1209,24 +1015,6 @@ describe("zotlit:item-query-schema", () => {
       limit: 100,
       libraries: { source: "library-scope" },
     });
-  });
-
-  it("rejects a parameter before it reads the source", async () => {
-    using scenario = openScenarioDatabase();
-    const { run, read } = setupSchema(scenario);
-
-    const answer = await run({ library: "personal" });
-
-    expect(answer).toMatchObject({
-      contractVersion: 1,
-      command: ITEM_QUERY_SCHEMA_COMMAND,
-      ok: false,
-      diagnostic: {
-        code: "invalid-argument",
-        details: { parameter: "library" },
-      },
-    });
-    expect(read).not.toHaveBeenCalled();
   });
 
   it("answers the source identity supplied by its caller", async () => {
@@ -1315,13 +1103,17 @@ describe("zotlit:item-query-guide", () => {
       }),
     });
 
-    const failing: CliData[] = [{}, { library: "group:999" }, { limit: "0" }];
+    type Answered = { code: string; hint: string };
+    // The renderer answers a malformed argument; the handler, the rest.
+    const diagnostics = [decodeItemQuery({ limit: "0" }) as Answered];
+    const failing: CliData[] = [{}, { library: "group:999" }];
     for (const params of failing) {
-      const { diagnostic } = (await run(params)) as {
-        diagnostic: { code: string; hint: string };
-      };
+      const answer = (await run(params)) as { diagnostic: Answered };
+      diagnostics.push(answer.diagnostic);
+    }
 
-      expect(flat).toContain(`${diagnostic.code}: ${diagnostic.hint}`);
+    for (const { code, hint } of diagnostics) {
+      expect(flat).toContain(`${code}: ${hint}`);
     }
   });
 
