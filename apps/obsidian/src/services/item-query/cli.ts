@@ -1,6 +1,6 @@
 // Registers the Item Query commands with Obsidian's CLI: the only Promise edge
 // of `@zotlit/item-query` (ADR 0066). The query command decodes the flat
-// arguments, takes the source lease, resolves the Target Libraries, runs the
+// arguments, resolves the Target Libraries on the borrowed client, runs the
 // query, and answers the versioned envelope of ADR 0065. The cancel command
 // stops one running query that the caller named with `id`. The schema command
 // answers the Item Query Schema of the source in the same envelope; the guide
@@ -174,15 +174,10 @@ export function failure(
   return envelope(command, { ok: false, diagnostic });
 }
 
-/** A pinned read of the active Zotero source, released on dispose. */
-export interface ItemQueryLease extends Disposable {
-  readonly client: NodeDatabaseClient;
-  readonly source: WorkbenchIdentity["source"];
-}
-
+/** Runs inside the caller's connection scope; the caller owns the client. */
 export interface ItemQueryCliDeps {
-  acquireRead(): Promise<ItemQueryLease>;
-  vault(): WorkbenchIdentity["vault"];
+  client: NodeDatabaseClient;
+  identity: WorkbenchIdentity;
   /**
    * The Library Scope in force: the default Target Libraries of a query are
    * its available Libraries.
@@ -197,10 +192,9 @@ export interface ItemQueryCliDeps {
    * milliseconds; the measurement command sets it.
    */
   onAnswerStep?: (ms: number) => void;
-  /** Open an unpublished file owned by the job; close on failure or disposal too. */
+  /** Get the job-owned output writer after validation. The caller closes it. */
   openOutput?: (path: string) => Promise<{
     write(text: string): Promise<void>;
-    close(): Promise<void>;
   }>;
 }
 
@@ -256,17 +250,16 @@ export function createItemQuerySchemaHandler(
 
     deps.signal.throwIfAborted();
 
-    const read = await withLease(deps, ITEM_QUERY_SCHEMA_COMMAND, (client) =>
-      runDescribeItemQuery({ client, signal: deps.signal }),
-    );
-    if ("answer" in read) return read.answer;
-    const exit = read.value;
+    const exit = await runDescribeItemQuery({
+      client: deps.client,
+      signal: deps.signal,
+    });
 
     if (Exit.isSuccess(exit)) {
       const schema = exit.value;
       return envelope(ITEM_QUERY_SCHEMA_COMMAND, {
         ok: true,
-        identity: read.identity,
+        identity: deps.identity,
         schema: {
           ...schema,
           defaults: {
@@ -378,44 +371,40 @@ export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
       }
       deps.signal.throwIfAborted();
     }
-    const read = await withLease(deps, ITEM_QUERY_COMMAND, (client, identity) =>
-      runItemQueryTo(
-        { scope, requireEach: named !== null },
-        {
-          filter: decoded.filter,
-          fields: decoded.fields,
-          sort: decoded.sort,
-          limit: decoded.limit,
-        },
-        {
-          client,
-          signal: deps.signal,
-          instrument: deps.instrument,
-          begin: (summary, libraries) =>
-            outputStep(() =>
-              createAnswer(summary, {
-                identity,
-                libraries: libraries.available.map(({ selector, name }) =>
-                  selector.type === "group"
-                    ? { ...selector, name: name ?? "" }
-                    : selector,
-                ),
-                signal: deps.signal,
-                onAnswerStep: deps.onAnswerStep,
-                output: decoded.output,
-                openOutput: deps.openOutput,
-              }),
-            ).pipe(
-              Effect.map((answer) => ({
-                write: (rows) => outputStep(() => answer.write(rows)),
-                end: () => outputStep(() => answer.end()),
-              })),
-            ),
-        },
-      ),
+    const exit = await runItemQueryTo(
+      { scope, requireEach: named !== null },
+      {
+        filter: decoded.filter,
+        fields: decoded.fields,
+        sort: decoded.sort,
+        limit: decoded.limit,
+      },
+      {
+        client: deps.client,
+        signal: deps.signal,
+        instrument: deps.instrument,
+        begin: (summary, libraries) =>
+          outputStep(() =>
+            createAnswer(summary, {
+              identity: deps.identity,
+              libraries: libraries.available.map(({ selector, name }) =>
+                selector.type === "group"
+                  ? { ...selector, name: name ?? "" }
+                  : selector,
+              ),
+              signal: deps.signal,
+              onAnswerStep: deps.onAnswerStep,
+              output: decoded.output,
+              openOutput: deps.openOutput,
+            }),
+          ).pipe(
+            Effect.map((answer) => ({
+              write: (rows) => outputStep(() => answer.write(rows)),
+              end: () => outputStep(() => answer.end()),
+            })),
+          ),
+      },
     );
-    if ("answer" in read) return read.answer;
-    const exit = read.value;
 
     if (Exit.isFailure(exit)) {
       return answerFailure(exit.cause, ITEM_QUERY_COMMAND, deps.signal);
@@ -444,39 +433,6 @@ export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
     }
     return result;
   };
-}
-
-/**
- * Run `read` under one source lease. The lease ends when `read` settles, so
- * it ends after the last database read and before the caller answers or
- * rejects. A source that gives no lease answers `source-unavailable`.
- *
- * The lease carries the source identity of its copy. Preferences can name a
- * newer source while another lease still pins this copy.
- */
-async function withLease<T>(
-  deps: ItemQueryCliDeps,
-  command: ItemQueryCommand,
-  read: (client: NodeDatabaseClient, identity: WorkbenchIdentity) => Promise<T>,
-): Promise<{ answer: string } | { value: T; identity: WorkbenchIdentity }> {
-  let acquired: ItemQueryLease;
-  try {
-    acquired = await deps.acquireRead();
-  } catch (error) {
-    logger.warn("Item Query could not read the Zotero source", { error });
-    return {
-      answer: failure(
-        command,
-        diagnostic(
-          "source-unavailable",
-          `The connected Zotero source is not readable: ${messageOf(error)}`,
-        ),
-      ),
-    };
-  }
-  using lease = acquired;
-  const identity = { vault: deps.vault(), source: lease.source };
-  return { value: await read(lease.client, identity), identity };
 }
 
 type ItemQueryExit = Exit.Exit<
@@ -630,7 +586,6 @@ async function createAnswer(result: QuerySummary, context: AnswerContext) {
     end: async () => {
       if (result.returnedCount > 0) await append(CHUNK_END);
       if (!file) return text;
-      await file.close();
       return envelope(ITEM_QUERY_COMMAND, {
         ...summary,
         file: { path: context.output!, bytes, format: "json" },

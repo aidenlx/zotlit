@@ -1,10 +1,7 @@
 // Item Query execution inside the ZoteroReads worker, on its borrowed connection.
 import { Effect } from "effect";
-import { open, rm } from "node:fs/promises";
 
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-
-import { getLogger } from "@/lib/log";
 
 import {
   createItemQueryHandler,
@@ -13,6 +10,7 @@ import {
   failure,
   ITEM_QUERY_COMMAND,
 } from "./cli";
+import { withQueryOutput } from "./export";
 import { createTrace, finishTrace } from "./trace";
 import type { WorkerMeasurement } from "./trace";
 import type { QueryJob } from "./worker-protocol";
@@ -59,54 +57,37 @@ async function answer(
   const trace = job.measure ? createTrace(job.heap ?? false) : undefined;
   const answerSteps: number[] = [];
   const heapBefore = job.heap ? process.memoryUsage().heapUsed : undefined;
-  const stagePath = job.stagePath;
-  let completed = false;
   try {
-    await using outputFiles = new AsyncDisposableStack();
-    const deps = {
-      acquireRead: async () => ({
+    return await withQueryOutput(job.stagePath, async (openOutput) => {
+      const deps = {
         client,
-        source: job.source,
-        [Symbol.dispose]: () => {},
-      }),
-      vault: () => job.vault,
-      libraryScope: async () => job.scope,
-      signal,
-      instrument: trace?.instrument,
-      onAnswerStep: job.measure
-        ? (ms: number) => answerSteps.push(ms)
-        : undefined,
-      openOutput: async () => {
-        if (!stagePath)
-          throw new Error("Item Query export has no staging path");
-        const file = outputFiles.adopt(
-          await open(stagePath, "wx", 0o600),
-          (file) => file.close(),
-        );
-        return {
-          write: (text: string) => file.writeFile(text, "utf8"),
-          close: () => file.close(),
-        };
-      },
-    };
-    const handler = job.schema
-      ? createItemQuerySchemaHandler(deps)
-      : createItemQueryHandler(deps);
-    const text = await handler(job.params);
-    signal.throwIfAborted();
-    completed = true;
-    return {
-      answer: text,
-      ...(trace
-        ? {
-            measurement: JSON.parse(
-              JSON.stringify(
-                finishTrace(trace, { startedAt, answerSteps, heapBefore }),
-              ),
-            ) as WorkerMeasurement,
-          }
-        : {}),
-    };
+        identity: { vault: job.vault, source: job.source },
+        libraryScope: async () => job.scope,
+        signal,
+        instrument: trace?.instrument,
+        onAnswerStep: job.measure
+          ? (ms: number) => answerSteps.push(ms)
+          : undefined,
+        openOutput,
+      };
+      const handler = job.schema
+        ? createItemQuerySchemaHandler(deps)
+        : createItemQueryHandler(deps);
+      const text = await handler(job.params);
+      signal.throwIfAborted();
+      return {
+        answer: text,
+        ...(trace
+          ? {
+              measurement: JSON.parse(
+                JSON.stringify(
+                  finishTrace(trace, { startedAt, answerSteps, heapBefore }),
+                ),
+              ) as WorkerMeasurement,
+            }
+          : {}),
+      };
+    });
   } catch (error) {
     signal.throwIfAborted();
     if (!(error instanceof Error) || !("code" in error)) throw error;
@@ -116,13 +97,5 @@ async function answer(
         diagnostic("output-error", error.message),
       ),
     };
-  } finally {
-    if (stagePath && !completed)
-      await rm(stagePath, { force: true }).catch((error: unknown) => {
-        getLogger(["item-query"]).warn(
-          "Item Query could not remove its temporary export {path}",
-          { path: stagePath, error },
-        );
-      });
   }
 }

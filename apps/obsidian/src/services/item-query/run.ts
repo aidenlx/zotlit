@@ -1,4 +1,4 @@
-// Runs the operations of `@zotlit/item-query` to an `Exit` on a leased
+// Runs the operations of `@zotlit/item-query` to an `Exit` on a borrowed
 // client: the scheduler, the abort signal, and the database service of a run.
 import { Effect, Exit } from "effect";
 
@@ -53,7 +53,7 @@ export interface RunLibraries {
 
 export interface ItemQueryRun<A = QueryResult> {
   /**
-   * `scope` on the Libraries of the leased source. The Target Libraries are
+   * `scope` on the Libraries of the borrowed source. The Target Libraries are
    * its available ones, in the canonical order.
    */
   readonly libraries: ResolvedLibraryScope;
@@ -65,9 +65,9 @@ export interface ItemQueryRun<A = QueryResult> {
 }
 
 /**
- * Resolve the Target Libraries and run one Item Query on the leased client to
+ * Resolve the Target Libraries and run one Item Query on the borrowed client to
  * its `Exit`. Each run gets its own time-budget scheduler; the Query Clock is
- * the system clock and zone. The caller holds the lease until the returned
+ * the system clock and zone. The caller owns the connection scope until the returned
  * promise settles.
  *
  * Effect starts a run on a signal that is already aborted, so the abort check
@@ -89,7 +89,7 @@ export function runItemQuery(
   });
 }
 
-/** Consume projection chunks under the same scope, scheduler, and source lease. */
+/** Consume projection chunks under the same scope, scheduler, and connection borrow. */
 export function runItemQueryTo<A, E>(
   libraries: RunLibraries,
   request: Omit<ItemQueryRequest, "libraries">,
@@ -156,7 +156,7 @@ function runItemQueryWith<A, E>(
   );
 }
 
-/** Read the Item Query Schema of the leased source to its `Exit`, as {@link runItemQuery} does. */
+/** Read the Item Query Schema of the borrowed source to its `Exit`, as {@link runItemQuery} does. */
 export function runDescribeItemQuery(
   options: RunOptions,
 ): Promise<

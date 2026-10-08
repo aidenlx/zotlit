@@ -1,8 +1,6 @@
 import { abortable } from "@std/async/abortable";
 import { Effect } from "effect";
 import { randomUUID } from "node:crypto";
-import { link, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
 import type { FileSystemAdapter, Vault } from "obsidian";
 
 import type { LibraryScopeService } from "@/services/library-scope/service";
@@ -19,6 +17,7 @@ import {
   queryIdInUseFailure,
 } from "./cli";
 import { queryCancelledText } from "./contract";
+import { QueryExport } from "./export";
 import type { QueryObserver } from "./trace";
 import type { QueryAnswer } from "./worker";
 import type { QueryJob } from "./worker-protocol";
@@ -89,6 +88,11 @@ export class ItemQueryService extends Service {
     // keeps the combined signal alive as long as its unload sources.
     const job = this.#answer(params, combined, { measure }).finally(() => {
       combined.removeEventListener("abort", requested);
+      if (combined.aborted)
+        measure?.cancelled?.({
+          phase: "cleanup-finished",
+          atEpochMs: Temporal.Now.instant().epochMilliseconds,
+        });
       if (id !== undefined) this.#named.delete(id);
     });
     this.#jobs.add(job);
@@ -137,10 +141,11 @@ export class ItemQueryService extends Service {
     signal.throwIfAborted();
     const { reads } = await this.#deps.reads.ready;
     const id = randomUUID();
-    const output = schema ? undefined : params.output;
-    const stagePath = output
-      ? join(dirname(output), `.zotlit-query-${id}.tmp`)
-      : undefined;
+    await using output = new QueryExport(
+      schema ? undefined : params.output,
+      id,
+    );
+    const { stagePath } = output;
     const pending = Effect.runPromise(
       reads
         .ItemQuery({
@@ -193,13 +198,7 @@ export class ItemQueryService extends Service {
       if (result.cancelled)
         throw new DOMException("Item Query cancelled", "AbortError");
       if (result.measurement) measure?.completed(result.measurement);
-      if (stagePath && output) {
-        const receipt = JSON.parse(result.answer) as {
-          ok: boolean;
-          file?: object;
-        };
-        if (receipt.ok && receipt.file) await link(stagePath, output);
-      }
+      await output.publish(result.answer, signal);
       return result.answer;
     } catch (error) {
       signal.throwIfAborted();
@@ -210,12 +209,6 @@ export class ItemQueryService extends Service {
       );
     } finally {
       signal.removeEventListener("abort", cancel);
-      if (stagePath) await rm(stagePath, { force: true }).catch(() => {});
-      if (signal.aborted)
-        measure?.cancelled?.({
-          phase: "cleanup-finished",
-          atEpochMs: Temporal.Now.instant().epochMilliseconds,
-        });
     }
   }
 }
