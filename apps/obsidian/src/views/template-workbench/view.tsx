@@ -103,6 +103,7 @@ import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { itemSummary } from "@/lib/item-summary";
 import { loadedTextFileView } from "@/lib/live-text";
 import { getLogger } from "@/lib/log";
+import { MENU_SECTION } from "@/lib/menu-section";
 import { BaseNotice } from "@/lib/notice";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { ArrivingProblem } from "@/lib/workbench-recovery";
@@ -1477,7 +1478,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     super.onPaneMenu(menu, source);
     menu.addItem((item) =>
       item
-        .setSection("zotlit")
+        .setSection(MENU_SECTION.open)
         .setTitle(m.template_workbench_open_layout())
         .setIcon("panels-top-left")
         .onClick(
@@ -1489,7 +1490,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     );
     menu.addItem((item) =>
       item
-        .setSection("zotlit")
+        .setSection(MENU_SECTION.action)
         .setTitle(m.workbench_choose_item())
         .setIcon("search")
         .onClick(() => void this.chooseItem()),
@@ -1497,7 +1498,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     if (this.documentKind !== "citation")
       menu.addItem((item) =>
         item
-          .setSection("zotlit")
+          .setSection(MENU_SECTION.action)
           .setTitle(m.workbench_choose_annotation())
           .setIcon("highlighter")
           .onClick(() => void this.chooseAnnotation()),
@@ -1505,7 +1506,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.#addPartialsMenu(menu);
     menu.addItem((item) =>
       item
-        .setSection("zotlit")
+        .setSection(MENU_SECTION.open)
         .setTitle(m.template_workbench_open_citation())
         .setIcon("quote")
         .onClick(
@@ -1521,6 +1522,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     if (target && pluginVersion)
       menu.addItem((item) =>
         item
+          .setSection(MENU_SECTION.action)
           .setTitle(this.templateDataExportLabel())
           .setIcon("file-json")
           .onClick(
@@ -1533,6 +1535,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       );
     menu.addItem((item) =>
       item
+        .setSection(MENU_SECTION.open)
         .setTitle(m.template_workbench_open_markdown())
         .setIcon("file-text")
         .setDisabled(!this.file)
@@ -1541,7 +1544,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     if (this.file?.path === this.#deps.profile?.defaultDocumentPath)
       menu.addItem((item) =>
         item
+          .setSection(MENU_SECTION.danger)
           .setTitle(m.settings_profile_document_restore())
+          .setWarning(true)
           .setIcon("rotate-ccw")
           .onClick(() => void this.restoreDefault()),
       );
@@ -1560,7 +1565,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     const bundled = this.#controller.document?.manifest.partials ?? [];
     menu.addItem((item) => {
       item
-        .setSection("zotlit")
+        .setSection(MENU_SECTION.open)
         .setTitle(m.template_workbench_partials())
         .setIcon("puzzle");
       const submenu = item.setSubmenu();
@@ -1647,8 +1652,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     const current = this.#controller.plainDocument?.manifest.language;
     if (current === undefined) return;
     menu.addItem((item) => {
-      item.setTitle(m.template_workbench_change_language()).setIcon("code-2");
-      const submenu = item.setSubmenu();
+      item
+        .setSection(MENU_SECTION.action)
+        .setTitle(m.template_workbench_change_language())
+        .setIcon("code-2");
+      const submenu = item.setSubmenu().setNoIcon();
       for (const [language, title] of [
         ["liquid", m.workbench_name_language_liquid()],
         ["eta", m.workbench_name_language_eta()],

@@ -1136,6 +1136,11 @@ describe("GraphCitations right-clicks", () => {
       m.graph_citations_menu_copy_citekey(),
     ]);
     expect(engine.nativeRightClicks).toEqual([]);
+    expect(fixture.trigger).toHaveBeenCalledWith(
+      "zotlit:graph-cited-work-menu",
+      menu,
+      expect.objectContaining({ citekey: "pine2023" }),
+    );
 
     const opened = vi.spyOn(window, "open").mockReturnValue(null);
     const copied = vi

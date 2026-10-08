@@ -20,6 +20,7 @@ import {
 } from "@codemirror/view";
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 import { editorInfoField, livePreviewState } from "obsidian";
+import type { Workspace } from "obsidian";
 
 import { livePreviewOf, overlapsSelection } from "@/lib/editor-decoration";
 import { getLogger } from "@/lib/log";
@@ -97,6 +98,8 @@ export type ResolveHoverNote = (citekey: string) => string | null;
 
 export interface CitekeyEditorHandlers {
   open: OpenCitekey;
+  /** Raises the menus a rendered citation opens. */
+  workspace: Pick<Workspace, "trigger">;
   /** Show the Citation Popover of one hovered citation. */
   showPopover: (request: CitationHoverRequest) => void;
   /** What hover answers with, read once per hover. */
@@ -619,6 +622,7 @@ class CitationWidget extends WidgetType {
       showPopover: this.#handlers.showPopover,
       hoverPreferences: this.#handlers.hoverPreferences,
       hoverNotePath: this.#handlers.hoverNotePath,
+      workspace: this.#handlers.workspace,
       hoverTarget: () => {
         const info = view.state.field(editorInfoField, false);
         return info

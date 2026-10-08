@@ -971,8 +971,17 @@ export class Menu {
   /** The event `showAtMouseEvent` opened at, or `null` for none. */
   mouseEvent: MouseEvent | null = null;
 
+  /** Every section `addSections` registered, in the order given. */
+  readonly sections: string[] = [];
+
   constructor() {
     Menu.instances.push(this);
+  }
+
+  addSections(sections: readonly string[]): this {
+    for (const section of sections)
+      if (!this.sections.includes(section)) this.sections.push(section);
+    return this;
   }
 
   addItem(cb: (item: MenuItem) => unknown): this {

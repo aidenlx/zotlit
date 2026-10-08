@@ -26,14 +26,14 @@ export function buildPaneMenu(
   menu: Menu,
   { state, actions, now }: PaneMenuInput,
 ): void {
-  menu.addSeparator();
+  // Obsidian already sets these unsectioned rows off from its own sections.
   buildHeaderMenu(menu, { groups: headerMenu(state, now), actions });
 
   menu.addSeparator();
   menu.addItem((item) =>
     item
       .setTitle(m.annot_view_refresh_data())
-      .setIcon("refresh-ccw")
+      .setIcon("refresh-cw")
       .onClick(() => actions.onRefresh()),
   );
 }

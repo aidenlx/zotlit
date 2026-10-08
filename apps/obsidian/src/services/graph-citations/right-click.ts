@@ -2,6 +2,7 @@
 
 import { around } from "monkey-around";
 import { Keymap, Menu } from "obsidian";
+import type { Workspace } from "obsidian";
 
 import { itemSelectUri, parseIndexedKey } from "@zotlit/db";
 
@@ -10,15 +11,19 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import * as toast from "@/lib/toast";
 import type { CitekeyResolution } from "@/services/citation-index/service";
+import { menuSections, raiseMenu } from "@/services/menu-events";
 
 import type { NodeClickDeps } from "./click";
 import type { GraphLeafMembers } from "./install";
 
 const logger = getLogger("graph-citations");
+const SECTION = menuSections("zotlit:graph-cited-work-menu");
 
 export interface NodeRightClickDeps extends NodeClickDeps {
   /** What the citekey names in the current Library Scope; `null` while the resolution snapshot is cold. */
   resolveCitekey: (citekey: string) => CitekeyResolution | null;
+  /** Where the menu raises `zotlit:graph-cited-work-menu`. */
+  workspace: Pick<Workspace, "trigger">;
 }
 
 /**
@@ -45,13 +50,15 @@ export function wrapNodeRightClick(
           citekey,
           resolution,
           open: deps.open,
+          workspace: deps.workspace,
         }).showAtMouseEvent(evt);
       },
     }),
   );
 }
 
-interface CitedWorkMenuContext extends Pick<NodeClickDeps, "open"> {
+interface CitedWorkMenuContext
+  extends Pick<NodeClickDeps, "open">, Pick<NodeRightClickDeps, "workspace"> {
   citekey: string;
   /** What the citekey names; `null` while the resolution snapshot is cold. */
   resolution: CitekeyResolution | null;
@@ -71,15 +78,14 @@ interface CitedWorkMenuContext extends Pick<NodeClickDeps, "open"> {
  * - **Copy citation key** hands back the node's own label, whatever the key
  *   resolves to — which is what a mistyped key needs to be fixed.
  *
- * The menu is ZotLit's alone and holds no sections: Obsidian sorts sectioned
- * items ahead of unsectioned ones, so a section here would only reorder the
- * three entries.
+ * Listeners add to it through `zotlit:graph-cited-work-menu`.
  */
 function citedWorkMenu(ctx: CitedWorkMenuContext): Menu {
   const menu = new Menu();
   if (ctx.resolution?.kind !== "missing") {
     menu.addItem((item) =>
       item
+        .setSection(SECTION.open)
         .setTitle(m.graph_citations_menu_create_note())
         .setIcon("file-plus")
         .onClick((evt) => ctx.open(ctx.citekey, Keymap.isModEvent(evt))),
@@ -92,6 +98,7 @@ function citedWorkMenu(ctx: CitedWorkMenuContext): Menu {
     const { groupID } = parseIndexedKey(indexedKey)!;
     menu.addItem((item) =>
       item
+        .setSection(SECTION.open)
         .setTitle(m.references_open_in_zotero())
         .setIcon("external-link")
         .onClick(() => {
@@ -101,10 +108,16 @@ function citedWorkMenu(ctx: CitedWorkMenuContext): Menu {
   }
   menu.addItem((item) =>
     item
+      .setSection(SECTION.clipboard)
       .setTitle(m.graph_citations_menu_copy_citekey())
       .setIcon("copy")
       .onClick(() => void copyCitekey(ctx.citekey)),
   );
+  raiseMenu(menu, {
+    workspace: ctx.workspace,
+    name: "zotlit:graph-cited-work-menu",
+    info: { citekey: ctx.citekey, resolution: ctx.resolution },
+  });
   return menu;
 }
 

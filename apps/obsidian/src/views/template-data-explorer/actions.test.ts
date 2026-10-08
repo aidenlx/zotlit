@@ -44,7 +44,7 @@ describe("pane menu — copy key", () => {
     expect(actions.addCopyKeyMenuItem(menu as never)).toBe(true);
     expect(menu.items[0]!.title).toBe("Copy annotation key");
     // The pane menu groups by section, alongside Obsidian's own entries.
-    expect(menu.items[0]!.section).toBe("zotlit");
+    expect(menu.items[0]!.section).toBe("info");
 
     menu.items[0]!.click();
     expect(writeText).toHaveBeenCalledWith("ANNO2345g42");
@@ -60,14 +60,14 @@ describe("pane menu — copy key", () => {
 });
 
 describe("pane menu — export", () => {
-  it("adds a zotlit-section export entry that runs the export", () => {
+  it("adds an export entry in the action section that runs the export", () => {
     const onExport = vi.fn();
     const menu = new Menu();
 
     makeActions({ onExport }).addExportMenuItem(menu as never);
 
     expect(menu.items).toHaveLength(1);
-    expect(menu.items[0]!.section).toBe("zotlit");
+    expect(menu.items[0]!.section).toBe("action");
     menu.items[0]!.click();
     expect(onExport).toHaveBeenCalledTimes(1);
   });

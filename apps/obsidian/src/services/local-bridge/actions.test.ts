@@ -4,9 +4,14 @@ import type { Command, Plugin, TFile as ObsidianFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { fileMenuHandler } from "@/services/__fixtures__/file-menu";
 import { defaults } from "@/services/settings/schema";
 
-import { addCustomizeActions, noteCustomizeRequest } from "./actions";
+import {
+  addCustomizeActions,
+  customizeFileMenu,
+  noteCustomizeRequest,
+} from "./actions";
 import type { CustomizeActionDeps } from "./actions";
 
 /** The one Profile this vault holds beside the built-in Default. */
@@ -20,8 +25,6 @@ interface Note {
   /** The `zotlit-profile` stamp, absent when the note carries none. */
   readonly stamp?: string;
 }
-
-type FileMenuHandler = (menu: Menu, file: ObsidianFile, source: string) => void;
 
 interface Harness {
   file: ObsidianFile | null;
@@ -49,16 +52,10 @@ function harness(
   if (note?.stamp) frontmatter["zotlit-profile"] = note.stamp;
 
   const commands: Command[] = [];
-  const menuHandlers: FileMenuHandler[] = [];
   const customize = vi.fn(() => Promise.resolve());
   const app = {
     workspace: {
       getActiveFile: () => file,
-      on: (event: string, handler: unknown) => {
-        if (event === "file-menu")
-          menuHandlers.push(handler as FileMenuHandler);
-        return event;
-      },
     },
     metadataCache: { getFileCache: () => ({ frontmatter }) },
   } as unknown as Plugin["app"];
@@ -80,18 +77,17 @@ function harness(
         commands.push(command);
         return command;
       },
-      registerEvent: () => {},
     },
     deps,
   );
+  const fileMenu = fileMenuHandler([customizeFileMenu(app, deps)], frontmatter);
 
   return {
     file: file as unknown as ObsidianFile | null,
     command: commands.find(({ id }) => id === "customize-note-template")!,
     menu: () => {
       const menu = new Menu();
-      for (const handler of menuHandlers)
-        handler(menu, file! as unknown as ObsidianFile, "more-options");
+      fileMenu(menu as never, file! as never, "more-options");
       return menu;
     },
     customize,
@@ -132,13 +128,13 @@ describe("Customize on a Literature Note", () => {
     });
   });
 
-  it("offers the same launch from the note's menu, in the ZotLit section", () => {
+  it("offers the same launch from the note's menu, in the action section", () => {
     const h = harness(STAMPED);
     const items = h.menu().items;
 
     expect(items).toHaveLength(1);
     expect(items[0]!.title).toBe(m.command_customize_note_template_name());
-    expect(items[0]!.section).toBe("zotlit");
+    expect(items[0]!.section).toBe("action");
 
     items[0]!.click();
     expect(h.customize).toHaveBeenCalledExactlyOnceWith({

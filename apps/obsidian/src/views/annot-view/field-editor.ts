@@ -23,6 +23,7 @@ import type { App, ExtendedHotkey } from "obsidian";
 import { overlapsSelection } from "@/lib/editor-decoration";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { menuSections, raiseMenu } from "@/services/menu-events";
 
 import {
   activeFormats,
@@ -32,8 +33,11 @@ import {
   toggleFormat,
 } from "./comment-format";
 import type { CommentEdit, CommentFormat } from "./comment-format";
+import type { EditorSurface } from "./editor-sheet";
 
 const logger = getLogger(["views", "annot-view"]);
+
+const SECTION = menuSections("zotlit:comment-editor-menu");
 
 /**
  * What an editor says about the Annotation field it edits. Everything else —
@@ -50,6 +54,8 @@ export interface FieldEditorWording {
 export interface FieldEditorOptions {
   app: App;
   parent: HTMLElement;
+  /** Where the editor stands, for the `zotlit:comment-editor-menu` listeners. */
+  surface: EditorSurface;
   /** The field the editor edits, for its placeholder and accessible name. */
   wording: FieldEditorWording;
   text: string;
@@ -147,6 +153,14 @@ export function createFieldEditor(opts: FieldEditorOptions): FieldEditor {
             event.preventDefault();
             const menu = new Menu();
             fillCommentMenu(menu, v);
+            raiseMenu(menu, {
+              workspace: opts.app.workspace,
+              name: "zotlit:comment-editor-menu",
+              info: {
+                surface: opts.surface,
+                editor: v,
+              },
+            });
             // The editor is the menu's parent, so the surface it stands in
             // takes a press on the menu as its own.
             menu.setParentElement(v.dom);
@@ -253,6 +267,9 @@ function hotkeyKey(hotkey: ExtendedHotkey): string {
   return code.startsWith("Key") && code.length === 4 ? code.charAt(3) : code;
 }
 
+/** The "Format" submenu's groups, named as Obsidian's own editor names them. */
+const FORMAT_SECTION = { basic: "basic", danger: "danger" } as const;
+
 /**
  * Obsidian's own editor menu, cut to what a comment holds: the "Format"
  * submenu with the four Zotero formats, then the clipboard.
@@ -267,15 +284,15 @@ function fillCommentMenu(menu: Menu, view: EditorView): void {
 
   menu.addItem((item) => {
     item
-      .setSection("selection")
+      .setSection(SECTION.selection)
       .setTitle(m.comment_editor_format())
       .setIcon("lucide-paintbrush")
       .setDisabled(!editable);
-    const sub = item.setSubmenu();
+    const sub = item.setSubmenu().addSections(Object.values(FORMAT_SECTION));
     for (const { format, title, icon } of FORMAT_ITEMS) {
       sub.addItem((entry) =>
         entry
-          .setSection("basic")
+          .setSection(FORMAT_SECTION.basic)
           .setTitle(title())
           .setIcon(icon)
           .setChecked(active.has(format))
@@ -286,7 +303,7 @@ function fillCommentMenu(menu: Menu, view: EditorView): void {
     }
     sub.addItem((entry) =>
       entry
-        .setSection("danger")
+        .setSection(FORMAT_SECTION.danger)
         .setTitle(m.comment_editor_clear_formatting())
         .setIcon("lucide-eraser")
         .onClick(() => apply(view, clearFormatting(docOf(view), selOf(view)))),
@@ -335,7 +352,7 @@ function fillCommentMenu(menu: Menu, view: EditorView): void {
   for (const { title, icon, enabled, run } of clipboard) {
     menu.addItem((item) =>
       item
-        .setSection("clipboard")
+        .setSection(SECTION.clipboard)
         .setTitle(title)
         .setIcon(icon)
         .setDisabled(!enabled)
@@ -348,7 +365,7 @@ function fillCommentMenu(menu: Menu, view: EditorView): void {
   }
   menu.addItem((item) =>
     item
-      .setSection("clipboard")
+      .setSection(SECTION.clipboard)
       .setTitle(m.comment_editor_select_all())
       .setIcon("lucide-box-select")
       .onClick(() =>

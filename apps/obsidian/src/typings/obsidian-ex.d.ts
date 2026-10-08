@@ -133,6 +133,16 @@ declare module "obsidian" {
       ctx?: any,
     ): EventRef;
 
+    /** A menu ZotLit built, raised before it shows so listeners add entries. */
+    on<E extends import("@/services/menu-events").ZotLitMenuEvent>(
+      name: E,
+      callback: (
+        menu: Menu,
+        info: import("@/services/menu-events").ZotLitMenuEvents[E],
+      ) => any,
+      ctx?: any,
+    ): EventRef;
+
     /** `request.document` is the vault path of the Template Document holding
      *  the call that refused, and `request.problem` the failure to explain on
      *  arrival; the Default Profile stands in when there is no document. */
@@ -775,6 +785,15 @@ declare module "obsidian" {
   interface MenuItem {
     /** Convert this item into a submenu parent, returning the nested {@link Menu} to populate. Runtime API present since Obsidian 1.4, absent from the vendored typings. */
     setSubmenu(): Menu;
+  }
+  interface Menu {
+    /**
+     * Register section names in the order the menu shows them, ahead of the
+     * unnamed section `""` where the menu has one. An item's section the menu
+     * never registered sorts after every registered one. Internal; verified
+     * against Obsidian 1.14.4.
+     */
+    addSections(sections: readonly string[]): this;
   }
   interface EditorSuggest<T> {
     /** Undocumented internal driving the popover's selection; invoking it from a custom keymap handler selects the highlighted suggestion as if Enter were pressed. */

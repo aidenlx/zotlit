@@ -18,14 +18,14 @@ import { BaseNotice } from "./lib/notice";
 import { openSettingsTab, revealSetting } from "./lib/open-settings";
 import { addAnnotationHistoryActions } from "./services/annotation-repository/actions";
 import type { HistorySurface } from "./services/annotation-repository/actions";
-import { registerAnnotationHistoryFileMenu } from "./services/annotation-repository/menu";
+import { annotationHistoryFileMenu } from "./services/annotation-repository/menu";
 import { registerAttachmentSkipNotice } from "./services/attachment-import/notices";
 import {
   addAttachmentOpenActions,
   createPdfReader,
 } from "./services/attachment-open/actions";
 import { registerFileLinkCapture } from "./services/attachment-open/capture";
-import { registerAttachmentOpenFileMenu } from "./services/attachment-open/menu";
+import { attachmentOpenFileMenu } from "./services/attachment-open/menu";
 import { buildServices } from "./services/build";
 import { registerCitationsCli } from "./services/citation-index/cli/register";
 import { addCitekeyEditorActions } from "./services/citekey-editor/actions";
@@ -35,16 +35,23 @@ import { addDatabaseActions } from "./services/database/actions";
 import { libraryTagNames } from "./services/database/library-tag-names";
 import { reapReadClones } from "./services/database/reap-temps";
 import { savedExcerptRequest } from "./services/excerpt-image/request";
+import { registerFileMenu } from "./services/file-menu";
 import { addGraphCitationsActions } from "./services/graph-citations/actions";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
-import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
+import { indexedKeyFileMenu } from "./services/indexed-key/menu";
 import { registerLibraryScopeCli } from "./services/library-scope/cli";
 import { registerLibraryScopeNotices } from "./services/library-scope/notices";
-import { addCustomizeActions } from "./services/local-bridge/actions";
+import {
+  addCustomizeActions,
+  customizeFileMenu,
+} from "./services/local-bridge/actions";
 import { createCustomize } from "./services/local-bridge/customize";
 import { createLaunchSheet } from "./services/local-bridge/launch-sheet";
 import { registerWorkbenchSavedNotice } from "./services/local-bridge/notices";
-import { addNoteFeatureActions } from "./services/note-feature/actions";
+import {
+  addNoteFeatureActions,
+  noteFeatureFileMenu,
+} from "./services/note-feature/actions";
 import { runBatchUpdateAll } from "./services/note-feature/update-batch";
 import { registerCitationStyleNotice } from "./services/pandoc/notices";
 import { reapCslStore } from "./services/pandoc/reap-temps";
@@ -57,16 +64,23 @@ import { addCitationTemplateActions } from "./services/template/actions";
 import { ZotLitSettingTab } from "./setting-tab";
 import { registerAnnotView } from "./views/annot-view/register";
 import { AnnotationView } from "./views/annot-view/view";
-import { registerCitationPresentation } from "./views/citation-presentation/register";
+import {
+  citationPresentationFileMenu,
+  registerCitationPresentation,
+} from "./views/citation-presentation/register";
 import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerCitedByView } from "./views/cited-by/register";
 import { registerNotePreview } from "./views/note-preview/register";
 import { registerPandocExport } from "./views/pandoc-export/register";
 import { registerQuickSwitch } from "./views/quick-switch/register";
 import { registerReferencesView } from "./views/references/register";
-import { registerTemplateDataExplorer } from "./views/template-data-explorer/register";
+import {
+  explorerFileMenu,
+  registerTemplateDataExplorer,
+} from "./views/template-data-explorer/register";
 import {
   openNativeProfile,
+  templateWorkbenchFileMenu,
   registerTemplateWorkbenchView,
 } from "./views/template-workbench/register";
 import { registerWelcomeView } from "./views/welcome/register";
@@ -311,11 +325,12 @@ export default class ZotLitPlugin extends Plugin {
       }),
     );
 
-    addCustomizeActions(this, {
+    const customizeDeps = {
       settings: services.settings,
       profile: services.profile,
       customize,
-    });
+    };
+    addCustomizeActions(this, customizeDeps);
     addCitationTemplateActions(this, { template: services.template });
     addProfileActions(this, { importProfile: services.importProfile });
     addDatabaseActions(this, { db: services.zoteroReads });
@@ -326,19 +341,13 @@ export default class ZotLitPlugin extends Plugin {
       app: this.app,
       graphCitations: services.graphCitations,
     });
-    registerIndexedKeyFileMenu(this);
-    addAttachmentOpenActions(this, {
+    const attachmentOpenDeps = {
       app: this.app,
       reads: services.zoteroReads,
       zoteroPref: services.zoteroPref,
       settings: services.settings,
-    });
-    registerAttachmentOpenFileMenu(this, {
-      app: this.app,
-      reads: services.zoteroReads,
-      zoteroPref: services.zoteroPref,
-      settings: services.settings,
-    });
+    };
+    addAttachmentOpenActions(this, attachmentOpenDeps);
     void stack.use(
       registerFileLinkCapture({
         // Desktop-only plugin: the adapter is always a `FileSystemAdapter`.
@@ -366,7 +375,7 @@ export default class ZotLitPlugin extends Plugin {
         noteFeature: services.noteFeature,
         noteIndex: services.noteIndex,
       });
-    addNoteFeatureActions(this, {
+    const noteFeatureDeps = {
       createProfile: services.createProfile,
       importProfile: services.importProfile,
       app: this.app,
@@ -374,7 +383,8 @@ export default class ZotLitPlugin extends Plugin {
       zoteroPref: services.zoteroPref,
       batchImport: services.batchImport,
       updateAll,
-    });
+    };
+    addNoteFeatureActions(this, noteFeatureDeps);
     stack.defer(
       registerWorkbenchSavedNotice({
         localBridge: services.localBridge,
@@ -451,12 +461,8 @@ export default class ZotLitPlugin extends Plugin {
           : services.pdfAnnotationEditor.bindingFor(view);
       },
     });
-    registerAnnotationHistoryFileMenu(this, {
-      annotations: services.annotationRepository,
-      surfaceFor: (leaf) => services.pdfAnnotationEditor.bindingFor(leaf.view),
-    });
 
-    registerTemplateWorkbenchView(this, {
+    const templateWorkbenchDeps = {
       noteFeature: services.noteFeature,
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
       customize,
@@ -479,7 +485,8 @@ export default class ZotLitPlugin extends Plugin {
         bibliographyRender: services.bibliographyRender,
         citationIndex: services.citationIndex,
       },
-    });
+    };
+    registerTemplateWorkbenchView(this, templateWorkbenchDeps);
 
     registerTemplateDataExplorer(this, {
       app: this.app,
@@ -577,11 +584,29 @@ export default class ZotLitPlugin extends Plugin {
       },
     });
 
-    registerCitationPresentation(this, {
+    const citationPresentationDeps = {
       app: this.app,
       zoteroPref: services.zoteroPref,
       settings: services.settings,
-    });
+    };
+    registerCitationPresentation(this, citationPresentationDeps);
+
+    // Every ZotLit entry on Obsidian's file menu. Each entry names its own
+    // section; this order is the order of the rows inside each section.
+    registerFileMenu(this, [
+      attachmentOpenFileMenu(attachmentOpenDeps),
+      templateWorkbenchFileMenu(this.app, templateWorkbenchDeps),
+      noteFeatureFileMenu(noteFeatureDeps),
+      customizeFileMenu(this.app, customizeDeps),
+      citationPresentationFileMenu(citationPresentationDeps),
+      annotationHistoryFileMenu({
+        annotations: services.annotationRepository,
+        surfaceFor: (leaf) =>
+          services.pdfAnnotationEditor.bindingFor(leaf.view),
+      }),
+      indexedKeyFileMenu(),
+      explorerFileMenu(this.app),
+    ]);
 
     registerWelcomeView(this, {
       app: this.app,

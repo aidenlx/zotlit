@@ -50,6 +50,7 @@ import type {
   MutationState,
   WriteFailure,
 } from "@/services/annotation-repository/write";
+import { raiseMenu } from "@/services/menu-events";
 import type { ReaderSessionHost } from "@/services/reader-session/session";
 import {
   fieldEditorControls,
@@ -1390,14 +1391,18 @@ export class MarkSelection implements Disposable {
   ): void {
     const { gestures } = this.#deps;
     switch (id) {
-      case "color":
-        showMenuAtButton(
-          colorMenu(annotation.color, (hex) =>
-            this.#recolor([annotation.key], hex),
-          ),
-          node,
+      case "color": {
+        const menu = colorMenu(annotation.color, (hex) =>
+          this.#recolor([annotation.key], hex),
         );
+        raiseMenu(menu, {
+          workspace: this.#deps.app.workspace,
+          name: "zotlit:annotation-color-menu",
+          info: { source: "pdf-mark", annotations: [annotation] },
+        });
+        showMenuAtButton(menu, node);
         return;
+      }
       case "tags":
         this.#toggleTags(annotation);
         return;

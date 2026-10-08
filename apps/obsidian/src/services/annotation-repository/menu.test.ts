@@ -1,18 +1,12 @@
-import { Menu } from "@mock/obsidian";
-import type { TAbstractFile, WorkspaceLeaf } from "obsidian";
+import { Menu, TFile } from "@mock/obsidian";
+import type { WorkspaceLeaf } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
+
+import { fileMenuHandler } from "@/services/__fixtures__/file-menu";
 
 import type { HistorySurface } from "./actions";
 import type { HistoryDirection } from "./history";
-import { registerAnnotationHistoryFileMenu } from "./menu";
-
-// oxlint-disable-next-line max-params -- Obsidian's own `file-menu` shape.
-type FileMenuHandler = (
-  menu: Menu,
-  file: TAbstractFile,
-  source: string,
-  leaf?: WorkspaceLeaf,
-) => void;
+import { annotationHistoryFileMenu } from "./menu";
 
 interface Surface extends HistorySurface {
   /** Every step this surface was asked to take, in the order asked. */
@@ -42,31 +36,21 @@ function setup({
   undo?: boolean;
   redo?: boolean;
 } = {}) {
-  let handler: FileMenuHandler | undefined;
-  const app = {
-    workspace: {
-      on: (name: string, cb: FileMenuHandler) => {
-        if (name === "file-menu") handler = cb;
-        return {};
-      },
-    },
-  };
   const surfaceFor = vi.fn(() => active);
-  registerAnnotationHistoryFileMenu(
-    { registerEvent: () => {}, app: app as never },
-    {
+  const registered = fileMenuHandler([
+    annotationHistoryFileMenu({
       annotations: { canUndo: () => undo, canRedo: () => redo },
       surfaceFor,
-    },
-  );
-  if (!handler) throw new Error("file-menu handler was not registered");
-  const registered = handler;
+    }),
+  ]);
+  const pdf = new TFile();
+  pdf.extension = "pdf";
   return {
     surfaceFor,
     /** One More options menu, built over the leaf this test names. */
     open: (source = "more-options", leaf: WorkspaceLeaf | null = LEAF) => {
       const menu = new Menu();
-      registered(menu, {} as TAbstractFile, source, leaf ?? undefined);
+      registered(menu as never, pdf as never, source, leaf ?? undefined);
       return menu;
     },
   };
@@ -86,13 +70,13 @@ describe("the Annotation History file menu", () => {
     ).toEqual([
       {
         title: "Undo annotation change",
-        section: "zotlit",
+        section: "action",
         icon: "undo-2",
         disabled: false,
       },
       {
         title: "Redo annotation change",
-        section: "zotlit",
+        section: "action",
         icon: "redo-2",
         disabled: false,
       },
