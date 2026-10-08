@@ -1,8 +1,23 @@
-import { Effect, Exit, Scope, Stream } from "effect";
+import {
+  Effect,
+  Exit,
+  Fiber,
+  Latch,
+  Layer,
+  PubSub,
+  Scope,
+  Stream,
+} from "effect";
 import { TestClock } from "effect/testing";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { buildNoteContextFromSource } from "@zotlit/db";
+import {
+  buildNoteContextFromSource,
+  getIndexedItemIDsByLibrary,
+  getIndexSignature,
+} from "@zotlit/db";
 import type { NoteResolvers } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
@@ -10,13 +25,14 @@ import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 
 import { layerRcRef } from "./connection";
-import type { Connection, ConnectionOpener } from "./connection";
+import { Connection } from "./connection";
+import type { ConnectionOpener } from "./connection";
 import type { HandlersOptions } from "./handlers";
 import { makeInProcessClient } from "./in-process";
 import type { ZoteroReadsClient } from "./in-process";
 import { DbUnavailable, SnapshotExpired, SnapshotId } from "./rpc";
-import type { ChangeEvent, ReadsConfig } from "./rpc";
-import { inProcessReadsService } from "./test-utils";
+import type { ChangeEvent, ReadsConfig, SegmenterBinary } from "./rpc";
+import { inProcessReadsService, sharedClientOpener } from "./test-utils";
 
 /**
  * Rows every contract test reads: a user library (1) and a group library (2,
@@ -101,8 +117,9 @@ const SEED = `
  * the log records opens and closes, so a test can watch a connection's
  * lifetime, and `closed(n)` completes when connection #n closes. Open #N
  * reports library 1 at `version: N`, so a read shows which connection
- * answered. `statements()` counts the statements run on every connection.
- * `extra` adds SQL per open, or `null` to fail the open.
+ * answered. `statements()` counts the statements run on every connection;
+ * `ran(sql, open?)` counts the runs of one statement, on connection #open
+ * or on any. `extra` adds SQL per open, or `null` to fail the open.
  */
 function fixtureOpener(extra: (open: number) => string | null = () => "") {
   const log: string[] = [];
@@ -118,6 +135,7 @@ function fixtureOpener(extra: (open: number) => string | null = () => "") {
   };
   let opened = 0;
   let statements = 0;
+  const runs: { open: number; sql: string }[] = [];
   const open: ConnectionOpener = (config) => {
     const id = ++opened;
     configs.push(config);
@@ -141,6 +159,7 @@ function fixtureOpener(extra: (open: number) => string | null = () => "") {
         const run = methods[method].bind(statement);
         methods[method] = (...args) => {
           statements += 1;
+          runs.push({ open: id, sql: source });
           return run(...args);
         };
       }
@@ -161,6 +180,11 @@ function fixtureOpener(extra: (open: number) => string | null = () => "") {
     configs,
     closed: (id: number) => Effect.promise(() => closeSignal(id).promise),
     statements: () => statements,
+    ran: (sql: string, open?: number) =>
+      runs.filter(
+        (entry) =>
+          entry.sql === sql && (open === undefined || entry.open === open),
+      ).length,
   };
 }
 
@@ -249,28 +273,6 @@ describe("ZoteroReads operations", () => {
       reads.ConnectionReadout({}),
     );
     expect(readout).toEqual({ itemCount: 4 });
-  });
-
-  it("IndexItems streams the library in slices, with Instants decoded", async () => {
-    const { open } = fixtureOpener();
-    const slices = await withReads(
-      open,
-      (reads) => Stream.runCollect(reads.IndexItems({ libraryID: 1 })),
-      { sliceSize: 2 },
-    );
-    expect(slices.map((slice) => slice.map((item) => item.key))).toEqual([
-      ["MAIN2345", "RELA2345"],
-      ["RELB2345"],
-    ]);
-    const main = slices[0]![0]!;
-    expect(main.dateModified).toBeInstanceOf(Temporal.Instant);
-    expect(main.dateModified.toString()).toBe("2024-02-01T00:00:00Z");
-    expect(main).toMatchObject({
-      indexedKey: "MAIN2345",
-      title: "Main Study",
-      citationKey: "main2024",
-      primaryCreator: { firstName: "Ada", lastName: "Lovelace", fieldMode: 0 },
-    });
   });
 
   it("ItemsByIndexedKeys answers user and group keys and leaves unknown keys out", async () => {
@@ -553,23 +555,6 @@ describe("ZoteroReads operations", () => {
     ]);
   });
 
-  it("IndexSignature counts and checksums the top-level items of one library", async () => {
-    const { open } = fixtureOpener();
-    const signatures = await withReads(open, (reads) =>
-      Effect.all([
-        reads.IndexSignature({ libraryID: 1 }),
-        reads.IndexSignature({ libraryID: 2 }),
-        reads.IndexSignature({ libraryID: 99 }),
-      ]),
-    );
-    // Seconds of each dateModified plus the itemID, summed per library.
-    expect(signatures).toEqual([
-      { count: 3, checksum: 1706745601 + 1704153602 + 1704240003 },
-      { count: 1, checksum: 1704326700 },
-      { count: 0, checksum: 0 },
-    ]);
-  });
-
   it("AttachmentsByKeys returns one library's attachments by key and leaves unknown keys out", async () => {
     const { open } = fixtureOpener(
       () => `
@@ -846,14 +831,6 @@ describe("ZoteroReads operations", () => {
       (reads, size) =>
         Stream.runDrain(reads.ChildNoteRefs({ itemIDs: sliceIDs[size] })),
     ],
-    // Library 2 indexes one item; library 1 indexes three.
-    [
-      "IndexItems",
-      (reads, size) =>
-        Stream.runDrain(
-          reads.IndexItems({ libraryID: size === "one" ? 2 : 1 }),
-        ),
-    ],
     // Live notes, a trashed note, a miss, and a repeat.
     [
       "NoteBodies",
@@ -896,6 +873,60 @@ describe("ZoteroReads operations", () => {
       expect(counts.many).toBe(counts.one);
     },
   );
+
+  /** Fifty Indexed Keys of one Library: its live items, misses, and a repeat. */
+  const fiftyKeys = (live: string[], suffix: string) => {
+    const alphabet = "23456789ABCDEFGHIJKLMNPQRSTUVWXYZ";
+    const misses = Array.from(
+      { length: 50 - live.length - 1 },
+      (_, i) => `MISS22${alphabet[Math.floor(i / 33)]}${alphabet[i % 33]}`,
+    );
+    return [...live, ...misses, live[0]!].map((key) => `${key}${suffix}`);
+  };
+  const userFifty = fiftyKeys(["MAIN2345", "RELA2345", "RELB2345"], "");
+  const groupFifty = fiftyKeys(["GRPITEMS"], "g900");
+
+  /** Statements each `ItemsByIndexedKeys` request runs, read warm. */
+  const keyReadCosts = (requests: (readonly string[])[]) => {
+    const { open, statements } = fixtureOpener();
+    return withReads(open, (reads) =>
+      Effect.gen(function* () {
+        const cost = (indexedKeys: readonly string[]) =>
+          Effect.gen(function* () {
+            const before = statements();
+            yield* reads.ItemsByIndexedKeys({ indexedKeys });
+            return statements() - before;
+          });
+        for (const request of requests) yield* cost(request);
+        const costs: number[] = [];
+        for (const request of requests) costs.push(yield* cost(request));
+        return costs;
+      }),
+    );
+  };
+
+  it.each([
+    ["the user Library", ["MAIN2345"], userFifty],
+    ["a group Library", ["GRPITEMSg900"], groupFifty],
+  ])(
+    "ItemsByIndexedKeys runs the same statements for one key of %s as for fifty",
+    async (_library, one, fifty) => {
+      expect(fifty).toHaveLength(50);
+      const [oneCost, fiftyCost] = await keyReadCosts([one, fifty]);
+      expect(fiftyCost).toBe(oneCost);
+    },
+  );
+
+  it("ItemsByIndexedKeys keys spanning two Libraries run each Library's statements once", async () => {
+    const [user, group, both] = await keyReadCosts([
+      ["MAIN2345"],
+      ["GRPITEMSg900"],
+      [...userFifty, ...groupFifty],
+    ]);
+    expect(both).toBe(user! + group!);
+    // The user Library needs no resolution: its hydration is the one statement.
+    expect(user).toBe(1);
+  });
 
   it("a source that cannot open fails with a tagged DbUnavailable", async () => {
     const { open } = fixtureOpener(() => null);
@@ -1084,9 +1115,10 @@ describe("ZoteroReads connection lifetime", () => {
               const first = yield* take(slices, 1);
               yield* reads.Refresh();
               // Started after the swap, naming the Snapshot.
-              const indexed = yield* Stream.runCollect(
-                reads.IndexItems({ libraryID: 1, snapshot: id }),
-              );
+              const indexed = yield* reads.ItemsByIndexedKeys({
+                indexedKeys: ["MAIN2345", "RELA2345", "RELB2345"],
+                snapshot: id,
+              });
 
               // End the Snapshot; its id stops answering once the server has
               // ended it, while the stream still holds the connection.
@@ -1099,7 +1131,7 @@ describe("ZoteroReads connection lifetime", () => {
               const rest = yield* take(slices, 4);
               return {
                 refs: [...first, ...rest].flat(),
-                indexed: indexed.flat().map((item) => item.key),
+                indexed: [...indexed.keys()],
                 logAfterSnapshotEnd,
               };
             }),
@@ -1269,6 +1301,8 @@ describe("ZoteroReads connection lifetime", () => {
       databasePath: "/Zotero/zotero.sqlite",
       readMode: "immutable",
       autoRefresh: true,
+      locale: null,
+      chineseSegmenter: null,
     };
     const seen = await withReads(open, (reads) =>
       Effect.gen(function* () {
@@ -1307,6 +1341,16 @@ describe("ZoteroReads citation operations", () => {
     expect(own).toMatchObject([{ itemID: 10, key: "ATCH2345" }]);
     expect(children).toMatchObject([{ itemID: 10, key: "ATCH2345" }]);
     expect(none).toEqual([]);
+  });
+
+  it("ItemsByIndexedKeys answers in the order of the requested keys", async () => {
+    const { open } = fixtureOpener();
+    const items = await withReads(open, (reads) =>
+      reads.ItemsByIndexedKeys({
+        indexedKeys: ["RELB2345", "GRPITEMSg900", "MISS2345", "MAIN2345"],
+      }),
+    );
+    expect([...items.keys()]).toEqual(["RELB2345", "GRPITEMSg900", "MAIN2345"]);
   });
 
   it("ItemsByIndexedKeys answers each key under the spelling it was asked by", async () => {
@@ -1389,6 +1433,770 @@ describe("ZoteroReads Profile Match operations", () => {
     expect(facts).toEqual({
       main: { tags: ["zt"], collections: [["Reading"]] },
       group: { tags: [], collections: [] },
+    });
+  });
+});
+
+describe("ZoteroReads SearchItems", () => {
+  /** `effect`'s value and the statements it ran on every connection. */
+  const costOf =
+    (statements: () => number) =>
+    <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      Effect.gen(function* () {
+        const before = statements();
+        const value = yield* effect;
+        return { value, cost: statements() - before };
+      });
+
+  const everything = { libraryIDs: [1, 2], query: "", limit: 10 };
+  const inLibrary = (libraryID: number, query = "") => ({
+    libraryIDs: [libraryID],
+    query,
+    limit: 10,
+  });
+  const keysOf = (hits: readonly { item: { indexedKey: string } }[]) =>
+    hits.map((hit) => hit.item.indexedKey);
+
+  /**
+   * Open the connection. Its first open publishes `changed`; opened first,
+   * that event precedes every search, so a test counts only its own changes.
+   */
+  const connect = (reads: ZoteroReadsClient) => reads.Libraries({});
+
+  /** The SQL `query` runs, read from a scratch fixture database. */
+  function sqlOf(query: (client: NodeDatabaseClient) => unknown): string {
+    const client = createClient(":memory:");
+    const sqlite = client.$client;
+    try {
+      createFixtureSchema(sqlite);
+      const prepare = sqlite.prepare.bind(sqlite);
+      let seen = "";
+      sqlite.prepare = (source: string) => {
+        seen = source;
+        return prepare(source);
+      };
+      query(client);
+      return seen;
+    } finally {
+      sqlite.close();
+    }
+  }
+  /** A build reads each Library's ids once; nothing else runs this. */
+  const ID_READ = sqlOf((client) => getIndexedItemIDsByLibrary(client, 1));
+  const SIGNATURE_READ = sqlOf((client) => getIndexSignature(client, 1));
+
+  /**
+   * Run `effect` until `accept` holds for its value, at most 500 times a
+   * millisecond apart, and answer that value; fail the test when it never
+   * holds.
+   */
+  const eventually = <A, E, R>(
+    effect: Effect.Effect<A, E, R>,
+    accept: (value: A) => boolean,
+  ) =>
+    Effect.gen(function* () {
+      for (let tries = 0; tries < 500; tries++) {
+        const value = yield* effect;
+        if (accept(value)) return value;
+        yield* Effect.sleep("1 millis");
+      }
+      return yield* Effect.die(new Error("condition never held"));
+    });
+
+  /** SQL for `count` more journal articles in My Library, older than SEED's. */
+  const bulkWorks = (count: number) =>
+    Array.from(
+      { length: count },
+      (_, i) =>
+        `insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key) values (${1000 + i}, 1, '2023-01-01 00:00:00', '2023-01-01 00:00:00', 1, 'BULK${String(i).padStart(4, "0")}');`,
+    ).join("\n");
+
+  /**
+   * {@link layerRcRef} over `opener`, with controls: `degrade` makes later
+   * borrows fail and reports `degraded`, as when no client can serve;
+   * `holdBorrows` holds every later borrow until `releaseBorrows`, and
+   * `borrowHeld` waits until a borrow waits there.
+   */
+  const controlledConnection = (opener: ConnectionOpener) => {
+    let failure: DbUnavailable | null = null;
+    let publish: (event: ChangeEvent) => Effect.Effect<void> = () =>
+      Effect.void;
+    const gate = Latch.makeUnsafe(true);
+    const arrived = Latch.makeUnsafe(false);
+    const layer = Layer.effect(Connection)(
+      Effect.gen(function* () {
+        const base = yield* Connection;
+        const extra = yield* PubSub.unbounded<ChangeEvent>();
+        publish = (event) => PubSub.publish(extra, event).pipe(Effect.asVoid);
+        return Connection.of({
+          ...base,
+          borrow: Effect.andThen(
+            Effect.andThen(arrived.open, gate.await),
+            Effect.suspend(() =>
+              failure ? Effect.fail(failure) : base.borrow,
+            ),
+          ),
+          changes: Stream.merge(base.changes, Stream.fromPubSub(extra)),
+        });
+      }),
+    ).pipe(Layer.provide(layerRcRef(opener)));
+    const degrade = Effect.suspend(() => {
+      failure = new DbUnavailable({ message: "database gone" });
+      return publish({ _tag: "degraded", error: failure });
+    });
+    return {
+      layer,
+      degrade,
+      holdBorrows: Effect.andThen(gate.close, arrived.close),
+      releaseBorrows: gate.open,
+      borrowHeld: arrived.await,
+    };
+  };
+
+  /** Run `body` against an in-process client over the `connection` layer. */
+  const withConnection = <A, E>(
+    connection: Layer.Layer<Connection>,
+    body: (reads: ZoteroReadsClient) => Effect.Effect<A, E, Scope.Scope>,
+  ): Promise<A> =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const reads = yield* makeInProcessClient();
+        return yield* body(reads);
+      }).pipe(Effect.scoped, Effect.provide(connection)),
+    );
+
+  it("the first search builds the index and answers hydrated Items; later searches reuse it", async () => {
+    const { open, statements } = fixtureOpener();
+    const cost = costOf(statements);
+    const result = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        const first = yield* cost(reads.SearchItems(everything));
+        const second = yield* cost(reads.SearchItems(everything));
+        const third = yield* cost(reads.SearchItems(everything));
+        return { first, second, third };
+      }),
+    );
+    expect(result.first.value.map((hit) => hit.item.indexedKey)).toEqual([
+      "MAIN2345",
+      "GRPITEMSg900",
+      "RELA2345",
+      "RELB2345",
+    ]);
+    expect(result.first.value[0]!.item.dateAdded).toBeInstanceOf(
+      Temporal.Instant,
+    );
+    expect(result.second.value).toEqual(result.first.value);
+    // The build reads ids and rows; a later search only hydrates.
+    expect(result.first.cost).toBeGreaterThan(result.second.cost);
+    expect(result.third.cost).toBe(result.second.cost);
+  });
+
+  it("a fresh adapter builds nothing before the first search", async () => {
+    const { open, ran, closed } = fixtureOpener();
+    const result = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        // The first open and a refresh each publish `changed`.
+        yield* reads.Libraries({});
+        yield* reads.Refresh();
+        yield* closed(1);
+        const before = ran(ID_READ);
+        yield* reads.SearchItems(everything);
+        return { before, after: ran(ID_READ) };
+      }),
+    );
+    expect(result).toEqual({ before: 0, after: 2 });
+  });
+
+  it("two parallel first searches share one build", async () => {
+    const { open, ran } = fixtureOpener();
+    const [a, b] = await withReads(open, (reads) =>
+      Effect.all(
+        [reads.SearchItems(everything), reads.SearchItems(everything)],
+        { concurrency: "unbounded" },
+      ),
+    );
+    expect(keysOf(b)).toEqual(keysOf(a));
+    expect(a).toHaveLength(4);
+    // One ids read per Library of one build.
+    expect(ran(ID_READ)).toBe(2);
+  });
+
+  it("ranks a Zotero key and a citation key prefix first", async () => {
+    const { open } = fixtureOpener();
+    const result = await withReads(open, (reads) =>
+      Effect.all({
+        key: reads.SearchItems({ ...everything, query: "GRPITEMS" }),
+        citationKey: reads.SearchItems({ ...everything, query: "main20" }),
+        title: reads.SearchItems({ ...everything, query: "alpha" }),
+      }),
+    );
+    expect(keysOf(result.key)).toEqual(["GRPITEMSg900"]);
+    expect(keysOf(result.citationKey)[0]).toBe("MAIN2345");
+    expect(keysOf(result.title)).toEqual(["RELA2345"]);
+    expect(result.title[0]!.matches).toEqual([[0, 5]]);
+  });
+
+  it("answers only the Libraries asked for, best first, up to the limit", async () => {
+    const { open } = fixtureOpener();
+    const result = await withReads(open, (reads) =>
+      Effect.all({
+        user: reads.SearchItems(inLibrary(1)),
+        group: reads.SearchItems(inLibrary(2)),
+        two: reads.SearchItems({ ...everything, limit: 2 }),
+      }),
+    );
+    expect(keysOf(result.user)).toEqual(["MAIN2345", "RELA2345", "RELB2345"]);
+    expect(keysOf(result.group)).toEqual(["GRPITEMSg900"]);
+    expect(keysOf(result.two)).toEqual(["MAIN2345", "GRPITEMSg900"]);
+  });
+
+  it("a refresh that moves a signature rebuilds, and the answer changes", async () => {
+    const { open } = fixtureOpener((id) =>
+      id === 1
+        ? ""
+        : `insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+             values (4, 1, '2024-03-01 00:00:00', '2024-03-01 00:00:00', 1, 'NEWW2345');
+           insert into itemDataValues (valueID, value) values (50, 'Fresh Find');
+           insert into itemData (itemID, fieldID, valueID) values (4, 10, 50);`,
+    );
+    const result = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        yield* connect(reads);
+        const before = yield* reads.SearchItems(inLibrary(1, "fresh"));
+        yield* reads.Refresh();
+        const after = yield* eventually(
+          reads.SearchItems(inLibrary(1, "fresh")),
+          (hits) => hits.length > 0,
+        );
+        return { before, after };
+      }),
+    );
+    expect(result.before).toEqual([]);
+    expect(keysOf(result.after)).toEqual(["NEWW2345"]);
+  });
+
+  it("a refresh of the same database with equal signatures keeps the index", async () => {
+    // The rename leaves `dateModified`, so the signatures stay equal.
+    const { open, ran, closed } = fixtureOpener((id) =>
+      id === 1
+        ? ""
+        : "update itemDataValues set value = 'Quagga Study' where valueID = 1;",
+    );
+    const result = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        yield* connect(reads);
+        yield* reads.SearchItems(everything);
+        // The `changed` of #2 re-checks the index on #2, and the index then
+        // holds #2; the re-check on #3 takes over, and #2 closes. The search
+        // between keeps the list from eviction at the second change.
+        yield* reads.Refresh();
+        yield* reads.SearchItems(everything);
+        yield* reads.Refresh();
+        yield* closed(2);
+        return {
+          signatures: ran(SIGNATURE_READ, 2),
+          builds: ran(ID_READ, 2),
+          renamed: yield* reads.SearchItems({ ...everything, query: "quagga" }),
+        };
+      }),
+    );
+    expect(result.signatures).toBeGreaterThan(0);
+    expect(result.builds).toBe(0);
+    expect(result.renamed).toEqual([]);
+  });
+
+  it("a refresh to another database file whose Libraries have equal local ids rebuilds", async () => {
+    // Same ids and signatures; another local user key marks another database.
+    const { open } = fixtureOpener((id) =>
+      id === 1
+        ? ""
+        : `insert into settings (setting, key, value) values ('account', 'localUserKey', 'OTHERDB${id}');
+           update itemDataValues set value = 'Quagga Study' where valueID = 1;`,
+    );
+    const renamed = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        yield* connect(reads);
+        yield* reads.SearchItems(everything);
+        yield* reads.Refresh();
+        return yield* eventually(
+          reads.SearchItems({ ...everything, query: "quagga" }),
+          (hits) => hits.length > 0,
+        );
+      }),
+    );
+    expect(keysOf(renamed)).toEqual(["MAIN2345"]);
+    expect(renamed[0]!.item.fields).toMatchObject({ title: "Quagga Study" });
+  });
+
+  it("a Configure that points to another database file rebuilds, also with equal ids and signatures", async () => {
+    // Every open holds the same database; only the configured path differs.
+    const { open } = fixtureOpener((id) =>
+      id === 1
+        ? ""
+        : "update itemDataValues set value = 'Quagga Study' where valueID = 1;",
+    );
+    const renamed = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        yield* connect(reads);
+        yield* reads.SearchItems(everything);
+        yield* reads.Configure({
+          databasePath: "/Backup/zotero.sqlite",
+          readMode: "auto",
+          autoRefresh: true,
+          locale: null,
+          chineseSegmenter: null,
+        });
+        return yield* eventually(
+          reads.SearchItems({ ...everything, query: "quagga" }),
+          (hits) => hits.length > 0,
+        );
+      }),
+    );
+    expect(keysOf(renamed)).toEqual(["MAIN2345"]);
+  });
+
+  it("a Library list no search asked for since the last change is evicted at the next", async () => {
+    const { open, ran } = fixtureOpener();
+    const result = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        yield* connect(reads);
+        yield* reads.SearchItems(inLibrary(1));
+        yield* reads.SearchItems(inLibrary(2));
+        yield* reads.Refresh();
+        // Only the group list is asked for before the next change.
+        yield* reads.SearchItems(inLibrary(2));
+        yield* reads.Refresh();
+        const before = ran(ID_READ);
+        const user = yield* reads.SearchItems(inLibrary(1));
+        const group = yield* reads.SearchItems(inLibrary(2));
+        return { user, group, builds: ran(ID_READ) - before };
+      }),
+    );
+    expect(keysOf(result.user)).toEqual(["MAIN2345", "RELA2345", "RELB2345"]);
+    expect(keysOf(result.group)).toEqual(["GRPITEMSg900"]);
+    // The user list builds anew; the group list answers from its index.
+    expect(result.builds).toBe(1);
+  });
+
+  it("a hit whose Item vanished since the build is left out", async () => {
+    const client = createClient(":memory:");
+    createFixtureSchema(client.$client);
+    client.$client.exec(SEED);
+    const answers = await withConnection(
+      layerRcRef(sharedClientOpener(client)),
+      (reads) =>
+        Effect.gen(function* () {
+          const before = yield* reads.SearchItems(inLibrary(1));
+          // No change event: the index still holds the Item.
+          client.$client.exec(
+            "delete from itemData where itemID = 3; delete from items where itemID = 3;",
+          );
+          const after = yield* reads.SearchItems(inLibrary(1));
+          return { before, after };
+        }),
+    ).finally(() => client.$client.close());
+    expect(keysOf(answers.before)).toEqual([
+      "MAIN2345",
+      "RELA2345",
+      "RELB2345",
+    ]);
+    expect(keysOf(answers.after)).toEqual(["MAIN2345", "RELB2345"]);
+  });
+
+  it("hydrates on the database state the answering index was built on while a rebuild waits", async () => {
+    // #2 renames the Item and moves its signature.
+    const { open } = fixtureOpener((id) =>
+      id === 1
+        ? ""
+        : `update itemDataValues set value = 'Quagga Study' where valueID = 1;
+           update items set dateModified = '2024-06-01 00:00:00' where itemID = 1;`,
+    );
+    const { layer, holdBorrows, releaseBorrows } = controlledConnection(open);
+    const result = await withConnection(layer, (reads) =>
+      Effect.gen(function* () {
+        yield* connect(reads);
+        yield* reads.SearchItems(everything);
+        // The rebuild on #2 waits at its borrow.
+        yield* holdBorrows;
+        yield* reads.Refresh();
+        const during = yield* reads.SearchItems({
+          ...everything,
+          query: "study",
+        });
+        yield* releaseBorrows;
+        const after = yield* eventually(
+          reads.SearchItems({ ...everything, query: "quagga" }),
+          (hits) => hits.length > 0,
+        );
+        return { during, after };
+      }),
+    );
+    expect(keysOf(result.during)).toEqual(["MAIN2345"]);
+    expect(result.during[0]!.item.fields).toMatchObject({
+      title: "Main Study",
+    });
+    expect(result.during[0]!.matches).toEqual([[5, 10]]);
+    expect(result.after[0]!.item.fields).toMatchObject({
+      title: "Quagga Study",
+    });
+    expect(result.after[0]!.matches).toEqual([[0, 6]]);
+  });
+
+  it("a degraded connection fails the search with DbUnavailable", async () => {
+    const { open } = fixtureOpener();
+    const { layer, degrade } = controlledConnection(open);
+    const result = await withConnection(layer, (reads) =>
+      Effect.gen(function* () {
+        const before = yield* reads.SearchItems(everything);
+        yield* degrade;
+        // The re-check the event starts finds no client and drops the index.
+        const exit = yield* eventually(
+          Effect.exit(reads.SearchItems(everything)),
+          Exit.isFailure,
+        );
+        const error = yield* Effect.flip(exit);
+        return { before, error };
+      }),
+    );
+    expect(result.before).toHaveLength(4);
+    expect(result.error).toBeInstanceOf(DbUnavailable);
+    expect(result.error.message).toBe("database gone");
+  });
+
+  it("a source that cannot open fails the search with DbUnavailable", async () => {
+    const { open } = fixtureOpener(() => null);
+    const error = await withReads(open, (reads) =>
+      Effect.flip(reads.SearchItems(everything)),
+    );
+    expect(error).toBeInstanceOf(DbUnavailable);
+  });
+
+  it("an interrupted first search leaves its build running for the next search", async () => {
+    const { open, ran } = fixtureOpener(() => bulkWorks(3000));
+    const result = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        const first = yield* Effect.forkChild(
+          reads.SearchItems(inLibrary(1, "main")),
+        );
+        yield* eventually(
+          Effect.sync(() => ran(ID_READ)),
+          (count) => count > 0,
+        );
+        yield* Fiber.interrupt(first);
+        const exit = yield* Fiber.await(first);
+        const next = yield* reads.SearchItems(inLibrary(1, "main"));
+        return { exit, next, builds: ran(ID_READ) };
+      }),
+    );
+    // The search was still waiting for the build when it was interrupted.
+    expect(Exit.hasInterrupts(result.exit)).toBe(true);
+    expect(keysOf(result.next)).toEqual(["MAIN2345"]);
+    expect(result.builds).toBe(1);
+  });
+
+  it("a locale change through Configure rebuilds the held index", async () => {
+    const { open, ran } = fixtureOpener();
+    // A source that rebinds without a new client, as for a locale-only change.
+    const quiet = Layer.effect(Connection)(
+      Effect.map(Effect.service(Connection), (base) =>
+        Connection.of({ ...base, configure: () => Effect.void }),
+      ),
+    ).pipe(Layer.provide(layerRcRef(open)));
+    const config = (locale: string | null): ReadsConfig => ({
+      databasePath: "/Zotero/zotero.sqlite",
+      readMode: "auto",
+      autoRefresh: true,
+      locale,
+      chineseSegmenter: null,
+    });
+    const builds = await withConnection(quiet, (reads) =>
+      Effect.gen(function* () {
+        yield* reads.SearchItems(everything);
+        yield* reads.Configure(config("de"));
+        return yield* eventually(
+          Effect.sync(() => ran(ID_READ)),
+          (count) => count >= 4,
+        );
+      }),
+    );
+    // Two ids reads per build: the first build and the rebuild.
+    expect(builds).toBe(4);
+  });
+
+  it("a request sent during a build is answered before the build ends", async () => {
+    const { open } = fixtureOpener();
+    const { layer, holdBorrows, releaseBorrows, borrowHeld } =
+      controlledConnection(open);
+    const result = await withConnection(layer, (reads) =>
+      Effect.gen(function* () {
+        yield* connect(reads);
+        const order: string[] = [];
+        // The build waits at its borrow until the release below.
+        yield* holdBorrows;
+        const search = yield* Effect.forkChild(
+          reads
+            .SearchItems(inLibrary(1, "main"))
+            .pipe(Effect.tap(() => Effect.sync(() => order.push("search")))),
+        );
+        yield* borrowHeld;
+        yield* reads.Ping();
+        order.push("ping");
+        const searching = search.pollUnsafe() === undefined;
+        yield* releaseBorrows;
+        yield* Fiber.join(search);
+        return { order, searching };
+      }),
+    );
+    expect(result.searching).toBe(true);
+    expect(result.order).toEqual(["ping", "search"]);
+  });
+
+  describe("with the Chinese Segmenter", () => {
+    // `Intl.Segmenter` keeps `长江流域` whole; jieba's `cut_for_search` adds
+    // `长江`, `江流`, `流域`. So `流域` hits only through jieba.
+    const CHINESE_TITLE =
+      "update itemDataValues set value = '长江流域的城市化研究' where valueID = 3;";
+    const JIEBA_ONLY = inLibrary(1, "流域");
+    const WHOLE_RUN = inLibrary(1, "长江流域");
+    const INSTALLED: SegmenterBinary = {
+      directory: "chinese-segmenter",
+      name: "pinned.wasm",
+    };
+    /** The web-target binary the plugin pins, from the dev dependency. */
+    const jiebaBytes = () =>
+      readFile(
+        fileURLToPath(
+          new URL(
+            "jieba_rs_wasm_bg.wasm",
+            import.meta.resolve("jieba-wasm/web"),
+          ),
+        ),
+      );
+    const config = (chineseSegmenter: SegmenterBinary | null): ReadsConfig => ({
+      databasePath: "/Zotero/zotero.sqlite",
+      readMode: "auto",
+      autoRefresh: true,
+      locale: null,
+      chineseSegmenter,
+    });
+
+    /**
+     * Run `body` against an in-process client over a connection that rebinds
+     * without a new client on `Configure`, so only the Segmenter changes.
+     */
+    const withSegmenter = <A, E>(
+      options: HandlersOptions,
+      body: (
+        reads: ZoteroReadsClient,
+        ran: (sql: string) => number,
+      ) => Effect.Effect<A, E, Scope.Scope>,
+    ): Promise<A> => {
+      const { open, ran } = fixtureOpener(() => CHINESE_TITLE);
+      const quiet = Layer.effect(Connection)(
+        Effect.map(Effect.service(Connection), (base) =>
+          Connection.of({ ...base, configure: () => Effect.void }),
+        ),
+      ).pipe(Layer.provide(layerRcRef(open)));
+      return Effect.runPromise(
+        Effect.gen(function* () {
+          const reads = yield* makeInProcessClient(options);
+          return yield* body(reads, ran);
+        }).pipe(Effect.scoped, Effect.provide(quiet)),
+      );
+    };
+
+    it("an installed binary at start cuts Chinese titles and queries with jieba", async () => {
+      const bytes = await jiebaBytes();
+      const asked: SegmenterBinary[] = [];
+      const hits = await withSegmenter(
+        {
+          chineseSegmenter: INSTALLED,
+          readSegmenter: async (binary) => {
+            asked.push(binary);
+            return bytes;
+          },
+        },
+        (reads) => reads.SearchItems(JIEBA_ONLY),
+      );
+      expect(asked).toEqual([INSTALLED]);
+      expect(keysOf(hits)).toEqual(["RELA2345"]);
+    });
+
+    it("with no binary, CJK runs segment through Intl.Segmenter", async () => {
+      const result = await withSegmenter({}, (reads) =>
+        Effect.all({
+          part: reads.SearchItems(JIEBA_ONLY),
+          whole: reads.SearchItems(WHOLE_RUN),
+        }),
+      );
+      expect(keysOf(result.part)).toEqual([]);
+      expect(keysOf(result.whole)).toEqual(["RELA2345"]);
+    });
+
+    it("a Configure that installs the binary rebuilds every held index once", async () => {
+      const bytes = await jiebaBytes();
+      const result = await withSegmenter(
+        { readSegmenter: async () => bytes },
+        (reads, ran) =>
+          Effect.gen(function* () {
+            const before = yield* reads.SearchItems(JIEBA_ONLY);
+            yield* reads.SearchItems(everything);
+            yield* reads.Configure(config(INSTALLED));
+            const after = yield* eventually(
+              reads.SearchItems(JIEBA_ONLY),
+              (hits) => hits.length > 0,
+            );
+            yield* eventually(
+              Effect.sync(() => ran(ID_READ)),
+              (count) => count >= 6,
+            );
+            // The same binary again changes nothing.
+            yield* reads.Configure(config(INSTALLED));
+            yield* reads.SearchItems(everything);
+            yield* reads.SearchItems(JIEBA_ONLY);
+            return { before, after, builds: ran(ID_READ) };
+          }),
+      );
+      expect(keysOf(result.before)).toEqual([]);
+      expect(keysOf(result.after)).toEqual(["RELA2345"]);
+      // One ids read per Library per build: [1] and [1, 2], each built twice.
+      expect(result.builds).toBe(6);
+    });
+
+    it("a Configure that changes the locale and installs the binary rebuilds every held index once", async () => {
+      const bytes = await jiebaBytes();
+      const result = await withSegmenter(
+        { readSegmenter: async () => bytes },
+        (reads, ran) =>
+          Effect.gen(function* () {
+            yield* reads.SearchItems(JIEBA_ONLY);
+            yield* reads.SearchItems(everything);
+            yield* reads.Configure({ ...config(INSTALLED), locale: "zh" });
+            // A jieba hit shows only after a build with both settings.
+            for (const list of [JIEBA_ONLY, { ...everything, query: "流域" }]) {
+              yield* eventually(
+                reads.SearchItems(list),
+                (hits) => hits.length > 0,
+              );
+            }
+            return ran(ID_READ);
+          }),
+      );
+      // One ids read per Library per build: [1] and [1, 2], each built twice.
+      expect(result).toBe(6);
+    });
+
+    it("a Configure that uninstalls the binary falls back to Intl.Segmenter and still answers", async () => {
+      const bytes = await jiebaBytes();
+      const result = await withSegmenter(
+        { chineseSegmenter: INSTALLED, readSegmenter: async () => bytes },
+        (reads) =>
+          Effect.gen(function* () {
+            const installed = yield* reads.SearchItems(JIEBA_ONLY);
+            yield* reads.Configure(config(null));
+            const part = yield* eventually(
+              reads.SearchItems(JIEBA_ONLY),
+              (hits) => hits.length === 0,
+            );
+            const whole = yield* reads.SearchItems(WHOLE_RUN);
+            return { installed, part, whole };
+          }),
+      );
+      expect(keysOf(result.installed)).toEqual(["RELA2345"]);
+      expect(keysOf(result.part)).toEqual([]);
+      expect(keysOf(result.whole)).toEqual(["RELA2345"]);
+    });
+
+    it.each([
+      ["missing", () => Promise.reject(new Error("NotFoundError"))],
+      ["corrupt", () => Promise.resolve(new Uint8Array([0, 1, 2, 3]))],
+    ])(
+      "a %s binary at start falls back to Intl.Segmenter and search answers",
+      async (_, readSegmenter) => {
+        const result = await withSegmenter(
+          { chineseSegmenter: INSTALLED, readSegmenter },
+          (reads) =>
+            Effect.all({
+              part: reads.SearchItems(JIEBA_ONLY),
+              whole: reads.SearchItems(WHOLE_RUN),
+            }),
+        );
+        expect(keysOf(result.part)).toEqual([]);
+        expect(keysOf(result.whole)).toEqual(["RELA2345"]);
+      },
+    );
+
+    it("an uninstall sent while an install reads its binary wins", async () => {
+      const bytes = await jiebaBytes();
+      const reading = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const hits = await withSegmenter(
+        {
+          readSegmenter: async () => {
+            reading.resolve();
+            await release.promise;
+            return bytes;
+          },
+        },
+        (reads) =>
+          Effect.gen(function* () {
+            const install = yield* Effect.forkChild(
+              reads.Configure(config(INSTALLED)),
+            );
+            yield* Effect.promise(() => reading.promise);
+            const uninstall = yield* Effect.forkChild(
+              reads.Configure(config(null)),
+            );
+            // The uninstall reached the worker before the install finished.
+            yield* reads.Ping();
+            release.resolve();
+            yield* Fiber.join(install);
+            yield* Fiber.join(uninstall);
+            return yield* reads.SearchItems(JIEBA_ONLY);
+          }),
+      );
+      expect(keysOf(hits)).toEqual([]);
+    });
+
+    it("a Configure with the same binary after a failed load tries it again", async () => {
+      const bytes = await jiebaBytes();
+      let reads = 0;
+      const result = await withSegmenter(
+        {
+          chineseSegmenter: INSTALLED,
+          readSegmenter: async () => {
+            reads++;
+            if (reads === 1) throw new Error("NotFoundError");
+            return bytes;
+          },
+        },
+        (client) =>
+          Effect.gen(function* () {
+            const failed = yield* client.SearchItems(JIEBA_ONLY);
+            yield* client.Configure(config(INSTALLED));
+            const retried = yield* eventually(
+              client.SearchItems(JIEBA_ONLY),
+              (hits) => hits.length > 0,
+            );
+            return { failed, retried };
+          }),
+      );
+      expect(reads).toBe(2);
+      expect(keysOf(result.failed)).toEqual([]);
+      expect(keysOf(result.retried)).toEqual(["RELA2345"]);
+    });
+
+    it("a corrupt binary through Configure keeps search answering", async () => {
+      const result = await withSegmenter(
+        { readSegmenter: async () => new Uint8Array([0, 1, 2, 3]) },
+        (reads) =>
+          Effect.gen(function* () {
+            yield* reads.SearchItems(WHOLE_RUN);
+            yield* reads.Configure(config(INSTALLED));
+            return yield* reads.SearchItems(WHOLE_RUN);
+          }),
+      );
+      expect(keysOf(result)).toEqual(["RELA2345"]);
     });
   });
 });

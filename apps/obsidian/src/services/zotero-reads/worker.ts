@@ -8,6 +8,7 @@ import { RpcServer, RpcWorker } from "effect/rpc";
 
 import { handlersLayer } from "./handlers";
 import { ReadsConfigSchema, ZoteroReads } from "./rpc";
+import { readSegmenterFromOpfs } from "./segmenter";
 import { layerSource } from "./source";
 import { WORKER_CLOSED } from "./worker-signal";
 
@@ -32,17 +33,25 @@ const ProtocolLive = RpcServer.layerProtocolWorkerRunner.pipe(
   Layer.provide(BrowserWorkerRunner.layer),
 );
 
-/** The source opens the settings the renderer sent with the spawn. */
-const ConnectionLive = Layer.unwrap(
+/**
+ * The handlers and the source start from the settings the renderer sent with
+ * the spawn: the source opens them, the Item Index takes the locale.
+ */
+const HandlersLive = Layer.unwrap(
   RpcWorker.initialMessage(ReadsConfigSchema).pipe(
     Effect.orDie,
-    Effect.map((initial) => layerSource({ initial })),
+    Effect.map((initial) =>
+      handlersLayer({
+        locale: initial.locale,
+        chineseSegmenter: initial.chineseSegmenter,
+        readSegmenter: readSegmenterFromOpfs,
+      }).pipe(Layer.provide(layerSource({ initial }))),
+    ),
   ),
 );
 
 const main = RpcServer.layer(ZoteroReads).pipe(
-  Layer.provide(handlersLayer()),
-  Layer.provide(ConnectionLive),
+  Layer.provide(HandlersLive),
   Layer.provide(ProtocolLive),
   Layer.launch,
   Effect.runFork,

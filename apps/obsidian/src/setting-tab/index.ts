@@ -29,7 +29,7 @@ import type {
   CitationIndexActions,
   LocalBridgeActions,
   LocalServerActions,
-  PandocEngineActions,
+  ManagedBinaryActions,
   ReleaseTabActions,
   SettingsControlKey,
   SettingsKey,
@@ -69,7 +69,8 @@ export interface ZotLitSettingTabOptions {
   writeAuthorization: WriteAuthorizationActions;
   template: TemplateService;
   release: ReleaseTabActions;
-  pandocEngine: PandocEngineActions;
+  pandocEngine: ManagedBinaryActions;
+  chineseSegmenter: ManagedBinaryActions;
   languagePack: LanguagePackLifecycle;
 }
 
@@ -93,7 +94,8 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #profile: ProfileService;
   readonly #template: TemplateService;
   readonly #release: ReleaseTabActions;
-  readonly #pandocEngine: PandocEngineActions;
+  readonly #pandocEngine: ManagedBinaryActions;
+  readonly #chineseSegmenter: ManagedBinaryActions;
   readonly #languagePack: LanguagePackLifecycle;
 
   constructor({
@@ -117,6 +119,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     profile,
     release,
     pandocEngine,
+    chineseSegmenter,
     languagePack,
   }: ZotLitSettingTabOptions) {
     super(plugin.app, plugin);
@@ -147,6 +150,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     plugin.register(profile.on("changed", () => this.#requestUpdate()));
     this.#release = release;
     this.#pandocEngine = pandocEngine;
+    this.#chineseSegmenter = chineseSegmenter;
     this.#languagePack = languagePack;
 
     plugin.register(
@@ -169,6 +173,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     );
     plugin.register(languagePack.subscribe(() => this.#requestUpdate()));
     plugin.register(pandocEngine.subscribe(() => this.#requestUpdate()));
+    plugin.register(chineseSegmenter.subscribe(() => this.#requestUpdate()));
     // Library scope rows are built from the resolved scope, so a database
     // refresh, a group rename, and a repair each rebuild them.
     plugin.register(libraryScope.on("changed", () => this.#requestUpdate()));
@@ -256,6 +261,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
       template: this.#template,
       release: this.#release,
       pandocEngine: this.#pandocEngine,
+      chineseSegmenter: this.#chineseSegmenter,
       languagePack: this.#languagePack,
       requestUpdate: () => this.update(),
     };

@@ -11,8 +11,6 @@ import type {
   ChildNote,
   Creator,
   getItemDisplayRefByID,
-  IndexedItem,
-  IndexSignature,
   Item,
   ItemBaseFields,
   ItemTag,
@@ -24,6 +22,7 @@ import type {
   ZoteroDatabaseIdentity,
 } from "@zotlit/db";
 import type { AnnotationPositionRaw } from "@zotlit/db";
+import type { ItemHit } from "@zotlit/item-lookup";
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { ItemFields } from "@zotlit/zotero-types";
 
@@ -116,31 +115,6 @@ export const ItemSchema = Schema.Struct({
   groupID: Schema.NullOr(Schema.Number),
 });
 type _Item = Expect<Equals<typeof ItemSchema.Type, Item>>;
-
-const IndexedCreatorSchema = Schema.Struct({
-  firstName: Schema.NullOr(Schema.String),
-  lastName: Schema.NullOr(Schema.String),
-  fieldMode: rawInt<Creator["fieldMode"]>(),
-});
-
-export const IndexedItemSchema = Schema.Struct({
-  itemID: Schema.Number,
-  libraryID: Schema.Number,
-  key: Schema.String,
-  indexedKey: Schema.String,
-  dateModified: Instant,
-  itemType: Schema.String,
-  primaryCreator: Schema.NullOr(IndexedCreatorSchema),
-  creators: Schema.Array(IndexedCreatorSchema),
-  language: Schema.NullOr(Schema.String),
-  title: Schema.NullOr(Schema.String),
-  publicationTitle: Schema.NullOr(Schema.String),
-  shortTitle: Schema.NullOr(Schema.String),
-  court: Schema.NullOr(Schema.String),
-  citationKey: Schema.NullOr(Schema.String),
-  date: Schema.NullOr(Schema.String),
-});
-type _IndexedItem = Expect<Equals<typeof IndexedItemSchema.Type, IndexedItem>>;
 
 export const AttachmentSchema = Schema.Struct({
   itemID: Schema.Number,
@@ -325,14 +299,18 @@ export const ReaderTargetKeysSchema = Schema.Struct({
   selected: Schema.Array(Schema.String),
 });
 
-/** A library's change-detection signature for the item index. */
-export const IndexSignatureSchema = Schema.Struct({
-  count: Schema.Number,
-  checksum: Schema.Number,
+/**
+ * One ranked answer of `SearchItems`: the hydrated Item and the ranges of its
+ * title that matched the query, as `[start, end)` offsets into the title.
+ */
+export const SearchHitSchema = Schema.Struct({
+  item: ItemSchema,
+  matches: Schema.mutable(
+    Schema.Array(Schema.mutable(Schema.Tuple([Schema.Number, Schema.Number]))),
+  ),
 });
-type _IndexSignature = Expect<
-  Equals<typeof IndexSignatureSchema.Type, IndexSignature>
->;
+export type SearchHit = typeof SearchHitSchema.Type;
+type _SearchMatches = Expect<Equals<SearchHit["matches"], ItemHit["matches"]>>;
 
 /** The account and Local API database a Zotero database belongs to. */
 export const DatabaseIdentitySchema = Schema.Struct({
@@ -380,11 +358,36 @@ export const ItemSnapshotRequestSchema = Schema.Struct({
 
 // --- Lifecycle ------------------------------------------------------------
 
+/**
+ * A verified Chinese Segmenter binary in the device-wide OPFS store: the file
+ * `zotlit/<directory>/<name>`. Only verified bytes get that name.
+ */
+export const SegmenterBinarySchema = Schema.Struct({
+  directory: Schema.String,
+  name: Schema.String,
+});
+export type SegmenterBinary = typeof SegmenterBinarySchema.Type;
+
+/** Whether `a` and `b` name the same binary, or both name none. */
+export const sameBinary = (
+  a: SegmenterBinary | null,
+  b: SegmenterBinary | null,
+): boolean =>
+  a === b ||
+  (a !== null &&
+    b !== null &&
+    a.directory === b.directory &&
+    a.name === b.name);
+
 /** Settings that drive the source; `Configure` pushes them. */
 export const ReadsConfigSchema = Schema.Struct({
   databasePath: Schema.String,
   readMode: Schema.Literals(["auto", "reflink", "copy", "immutable"]),
   autoRefresh: Schema.Boolean,
+  /** The UI locale the Item Index formats creator names with; `null` for none. */
+  locale: Schema.NullOr(Schema.String),
+  /** The installed Chinese Segmenter binary the Item Index cuts CJK text with; `null` for none. */
+  chineseSegmenter: Schema.NullOr(SegmenterBinarySchema),
 });
 export type ReadsConfig = typeof ReadsConfigSchema.Type;
 type _ReadMode = Expect<Equals<ReadsConfig["readMode"], ZoteroReadMode>>;
@@ -442,12 +445,6 @@ export class ZoteroReads extends RpcGroup.make(
     payload: snapshot,
     success: Schema.Struct({ itemCount: Schema.Number }),
     error: ReadError,
-  }),
-  Rpc.make("IndexItems", {
-    payload: { libraryID: Schema.Number, ...snapshot },
-    success: Schema.Array(IndexedItemSchema),
-    error: ReadError,
-    stream: true,
   }),
   /** Items keyed by the Indexed Key each was asked by; a key with no live item is absent. */
   Rpc.make("ItemsByIndexedKeys", {
@@ -563,12 +560,6 @@ export class ZoteroReads extends RpcGroup.make(
   Rpc.make("Configure", { payload: ReadsConfigSchema }),
   /** Answers at once: the renderer's proof that the worker still runs. */
   Rpc.make("Ping", {}),
-  /** The item index signature of one library; an unknown library counts zero. */
-  Rpc.make("IndexSignature", {
-    payload: { libraryID: Schema.Number, ...snapshot },
-    success: IndexSignatureSchema,
-    error: ReadError,
-  }),
   /** Attachments of one library by key; a key with no live attachment is absent. */
   Rpc.make("AttachmentsByKeys", {
     payload: {
@@ -578,6 +569,22 @@ export class ZoteroReads extends RpcGroup.make(
     },
     success: Schema.Array(AttachmentSchema),
     error: ReadError,
+  }),
+  /**
+   * The Items of `libraryIDs` (local ids in canonical order) that match
+   * `query`, best first, at most `limit`. The first search of a Library list
+   * waits for its index; later ones answer from the last complete index while
+   * a rebuild runs. An Item that vanished since the build is left out, so the
+   * answer can be shorter than `limit`.
+   */
+  Rpc.make("SearchItems", {
+    payload: {
+      libraryIDs: Schema.Array(Schema.Number),
+      query: Schema.String,
+      limit: Schema.Number,
+    },
+    success: Schema.Array(SearchHitSchema),
+    error: DbUnavailable,
   }),
   /** The identity excerpt assets are keyed by. */
   Rpc.make("DatabaseIdentity", {

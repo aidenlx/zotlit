@@ -32,6 +32,7 @@ import { makeStateFeed } from "./change-feed";
 import {
   Connection,
   makeClientRef,
+  makeDatabaseFiles,
   toDbUnavailable,
   validateClient,
 } from "./connection";
@@ -178,6 +179,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
         readMode,
         missing: missingDbSignalled,
       }));
+      const databaseFiles = makeDatabaseFiles();
       const clients = yield* makeClientRef(
         Effect.suspend(() =>
           Effect.fail(
@@ -334,6 +336,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
                 ),
               );
               const open = yield* openClient(prepared);
+              databaseFiles.record(open.client, databasePath);
               logReadFallback(prepared);
               reportSchemaVersions(open.client);
               yield* clients.swap(open);
@@ -622,6 +625,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
           scheduleWatchedRefresh({ trusted: true });
         }),
         configure,
+        databaseFile: databaseFiles.databaseFile,
       });
     }),
   );

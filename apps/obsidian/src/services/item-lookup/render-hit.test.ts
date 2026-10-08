@@ -49,7 +49,6 @@ function libraryText(library: AvailableLibrary | null): string | null {
 function hit(library: AvailableLibrary | null): SearchHit {
   return {
     item: makeItem({ key: "AAAAAAAA", title: "Alpha" }),
-    score: 1,
     matches: [],
     library,
   };
@@ -148,7 +147,7 @@ function metaParts<TType extends ItemFields["itemType"]>(
   const el = document.createElement("div");
   renderSuggestion(
     settings,
-    { item: makeItem(options), score: 1, matches: [], library: null },
+    { item: makeItem(options), matches: [], library: null },
     el,
   );
   const metaEl = el.querySelector(".meta");

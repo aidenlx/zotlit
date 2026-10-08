@@ -1,7 +1,6 @@
-// The Pandoc engine binary cache: a flat directory of files, backed by OPFS on the device.
+// A Managed Binary's cache: a flat directory of files, backed by OPFS on the device.
 
 const ROOT_DIR = "zotlit";
-const CACHE_DIR = "pandoc-engine";
 
 declare global {
   interface FileSystemFileHandle {
@@ -15,11 +14,11 @@ declare global {
 }
 
 /**
- * A flat directory the engine binary is cached in. Entries are addressed by
+ * A flat directory one Managed Binary is cached in. Entries are addressed by
  * name alone, and {@link rename} is atomic, so a reader never observes a
  * half-written entry.
  */
-export interface EngineBinaryStore {
+export interface BinaryStore {
   list(): Promise<string[]>;
   /**
    * The entry's backing blob, unread. `undefined` when nothing is stored under
@@ -39,8 +38,11 @@ export interface EngineBinaryStore {
  * OPFS is origin-scoped and Obsidian serves every vault from one origin, so
  * this directory — and the binary in it — is shared device-wide, with no
  * per-vault isolation.
+ *
+ * @param directory the directory under `zotlit/` that this binary owns alone.
  */
-export function createOpfsBinaryStore(): EngineBinaryStore {
+export function createOpfsBinaryStore(directory: string): BinaryStore {
+  const cacheDir = () => openCacheDir(directory);
   return {
     async list() {
       const names: string[] = [];
@@ -80,7 +82,7 @@ export function createOpfsBinaryStore(): EngineBinaryStore {
       const root = await navigator.storage.getDirectory();
       const zotlit = await root.getDirectoryHandle(ROOT_DIR, { create: true });
       try {
-        await zotlit.removeEntry(CACHE_DIR, { recursive: true });
+        await zotlit.removeEntry(directory, { recursive: true });
       } catch (error) {
         if (!isNotFound(error)) throw error;
       }
@@ -88,10 +90,12 @@ export function createOpfsBinaryStore(): EngineBinaryStore {
   };
 }
 
-async function cacheDir(): Promise<FileSystemDirectoryHandle> {
+async function openCacheDir(
+  directory: string,
+): Promise<FileSystemDirectoryHandle> {
   const root = await navigator.storage.getDirectory();
   const zotlit = await root.getDirectoryHandle(ROOT_DIR, { create: true });
-  return zotlit.getDirectoryHandle(CACHE_DIR, { create: true });
+  return zotlit.getDirectoryHandle(directory, { create: true });
 }
 
 function isNotFound(error: unknown): boolean {

@@ -125,8 +125,8 @@ export function fetchNoteSource(
 
   const relatedItems = getItemsByKey(
     client,
-    libraryID,
     getRelatedKeysByItemID(client, item.itemID),
+    { libraryID },
   );
   const relatedItemIDs = relatedItems.map((related) => related.itemID);
 

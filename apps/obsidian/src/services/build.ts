@@ -18,6 +18,7 @@ import { CapabilityNotices } from "./annotation-repository/notices";
 import { AnnotationRepository } from "./annotation-repository/service";
 import { AttachmentImportService } from "./attachment-import/service";
 import { AttachmentResolver } from "./attachment-resolver/service";
+import { createChineseSegmenterService } from "./chinese-segmenter/service";
 import { CitationIndex } from "./citation-index/service";
 import { CitationPopover } from "./citation-popover/service";
 import { CitationText } from "./citation-text/service";
@@ -31,7 +32,6 @@ import { savedExcerptRequest } from "./excerpt-image/request";
 import { ExcerptImageService } from "./excerpt-image/service";
 import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
-import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
 import { LibraryScopeService } from "./library-scope/service";
 import { LocalBridgeService } from "./local-bridge/service";
@@ -151,11 +151,14 @@ export function buildServices(
         new LocalServerService({ settings, zoteroPref, noteIndex }),
     })
     .use({
+      chineseSegmenter: () => createChineseSegmenterService(plugin.app),
+    })
+    .use({
       // The Zotero database lives in a Web Worker, which owns the connection;
       // the renderer reads it only through ZoteroReads.
-      zoteroReads: ({ settings, zoteroPref }) =>
+      zoteroReads: ({ settings, zoteroPref, chineseSegmenter }) =>
         new ZoteroReadsService({
-          client: workerClient({ settings, zoteroPref }),
+          client: workerClient({ settings, zoteroPref, chineseSegmenter }),
         }),
     })
     .use({
@@ -383,11 +386,7 @@ export function buildServices(
     })
     .use({
       itemLookup: ({ zoteroReads, libraryScope }) =>
-        new ItemLookup({
-          reads: zoteroReads,
-          libraryScope,
-          getChsSegmenter: () => getChsSegmenter(plugin.app),
-        }),
+        new ItemLookup({ reads: zoteroReads, libraryScope }),
     })
     .useValue({
       noteFeature: ({
