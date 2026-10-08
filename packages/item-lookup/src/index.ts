@@ -12,22 +12,18 @@ export {
 } from "./engine";
 export { formatCreator } from "./format-creator";
 export {
-  IndexConfig,
   ItemIndex,
   ItemSource,
-  layerIndexConfig,
   layerItemIndex,
   SourceUnavailable,
-  switchSegmenter,
-  updateIndexSettings,
   type IndexSettings,
   type PinnedItemSource,
-  type SourcedHits,
+  type SearchHit,
 } from "./item-index";
+export { SegmenterUnavailable } from "./segmenter";
 export {
-  layerSegmenterJieba,
-  layerSegmenterNone,
-  Segmenter,
-  SegmenterUnavailable,
-} from "./segmenter";
+  sameSegmenterBinary,
+  SegmenterBinaryReader,
+  type SegmenterBinary,
+} from "./segmenter-switch";
 export { normalize, normalizeWithIndexMap } from "./tokenizer";

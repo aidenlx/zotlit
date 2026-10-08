@@ -5,6 +5,8 @@ import type { Scope } from "effect";
 import { getLanguage } from "obsidian";
 import workerSource from "virtual:zotero-reads-worker";
 
+import { sameSegmenterBinary } from "@zotlit/item-lookup";
+
 import { CHINESE_SEGMENTER } from "@/services/chinese-segmenter/service";
 import type { ChineseSegmenterService } from "@/services/chinese-segmenter/service";
 import { cachedBinaryName } from "@/services/managed-binary/service";
@@ -13,7 +15,6 @@ import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import type { ZoteroReadsClient } from "./in-process";
-import { sameBinary } from "./rpc";
 import type { ReadsConfig, SegmenterBinary } from "./rpc";
 import { connectWorker, makeWorkerReads } from "./worker-host";
 
@@ -65,7 +66,7 @@ const sameConfig = (a: ReadsConfig, b: ReadsConfig) =>
   a.readMode === b.readMode &&
   a.autoRefresh === b.autoRefresh &&
   a.locale === b.locale &&
-  sameBinary(a.chineseSegmenter, b.chineseSegmenter) &&
+  sameSegmenterBinary(a.chineseSegmenter, b.chineseSegmenter) &&
   a.logLevel === b.logLevel;
 
 /**

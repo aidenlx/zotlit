@@ -23,7 +23,10 @@ import type {
   ZoteroDatabaseIdentity,
 } from "@zotlit/db";
 import type { AnnotationPositionRaw } from "@zotlit/db";
-import type { ItemHit } from "@zotlit/item-lookup";
+import type {
+  SearchHit as ItemIndexHit,
+  SegmenterBinary as ItemIndexSegmenterBinary,
+} from "@zotlit/item-lookup";
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { ItemFields } from "@zotlit/zotero-types";
 
@@ -311,7 +314,7 @@ export const SearchHitSchema = Schema.Struct({
   ),
 });
 export type SearchHit = typeof SearchHitSchema.Type;
-type _SearchMatches = Expect<Equals<SearchHit["matches"], ItemHit["matches"]>>;
+type _SearchHit = Expect<Equals<SearchHit, ItemIndexHit>>;
 
 /** The account and Local API database a Zotero database belongs to. */
 export const DatabaseIdentitySchema = Schema.Struct({
@@ -368,17 +371,9 @@ export const SegmenterBinarySchema = Schema.Struct({
   name: Schema.String,
 });
 export type SegmenterBinary = typeof SegmenterBinarySchema.Type;
-
-/** Whether `a` and `b` name the same binary, or both name none. */
-export const sameBinary = (
-  a: SegmenterBinary | null,
-  b: SegmenterBinary | null,
-): boolean =>
-  a === b ||
-  (a !== null &&
-    b !== null &&
-    a.directory === b.directory &&
-    a.name === b.name);
+type _SegmenterBinary = Expect<
+  Equals<SegmenterBinary, ItemIndexSegmenterBinary>
+>;
 
 /** Settings that drive the source; `Configure` pushes them. */
 export const ReadsConfigSchema = Schema.Struct({
