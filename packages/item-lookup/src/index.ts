@@ -1,17 +1,4 @@
 export {
-  buildEngineIndex,
-  cleanQuery,
-  makeEngineIndexBuilder,
-  searchEngineIndex,
-  type EngineIndex,
-  type EngineIndexBuilder,
-  type EngineIndexOptions,
-  type ItemHit,
-  type SearchField,
-  type SearchMatches,
-} from "./engine";
-export { formatCreator } from "./format-creator";
-export {
   ItemIndex,
   ItemSource,
   layerItemIndex,
@@ -26,4 +13,3 @@ export {
   SegmenterBinaryReader,
   type SegmenterBinary,
 } from "./segmenter-switch";
-export { normalize, normalizeWithIndexMap } from "./tokenizer";
