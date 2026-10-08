@@ -59,8 +59,10 @@ export function makeDatabaseGenerations() {
   return {
     /**
      * Record the database a validated client reads: the file it opened from
-     * and the Zotero identity inside it. A client whose identity cannot be
-     * read is closed before the throw, as in {@link validateClient}.
+     * and the Zotero identity inside it.
+     *
+     * @throws The identity read's error, after the client closes.
+     * @see {@link validateClient}, which closes a client the same way.
      */
     record: (client: NodeDatabaseClient, file: string | null): void => {
       let identity: ZoteroDatabaseIdentity;
@@ -83,8 +85,12 @@ export function makeDatabaseGenerations() {
       }
       clientGenerations.set(client, generation);
     },
-    databaseGeneration: (client: NodeDatabaseClient): number =>
-      clientGenerations.get(client) ?? 0,
+    databaseGeneration: (client: NodeDatabaseClient): number => {
+      const generation = clientGenerations.get(client);
+      if (generation === undefined)
+        throw new Error("The client was not opened by this connection");
+      return generation;
+    },
   };
 }
 

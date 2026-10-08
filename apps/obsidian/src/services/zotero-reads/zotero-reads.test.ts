@@ -1448,7 +1448,8 @@ describe("Connection databaseGeneration", () => {
       }),
     );
     expect(result.seen).toBe(2);
-    expect(result.after).toBe(result.before);
+    expect(result.before).toBe(1);
+    expect(result.after).toBe(1);
   });
 
   it("a Configure to another database file gives the next client a higher generation", async () => {

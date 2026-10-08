@@ -509,11 +509,11 @@ describe("ZoteroReads source", () => {
     it("keeps the generation when a refresh reopens the same database", async () => {
       const { ports } = testPorts();
       await using source = await startSource(config(), ports);
-      const before = await source.run(generationNow);
+      await expect(source.run(generationNow)).resolves.toBe(1);
       writeLibrary(dbPath, 2);
       await source.run(source.reads.Refresh());
       await expect(source.version()).resolves.toBe(2);
-      await expect(source.run(generationNow)).resolves.toBe(before);
+      await expect(source.run(generationNow)).resolves.toBe(1);
     });
 
     it("gives a higher generation after a Configure to another database file", async () => {
