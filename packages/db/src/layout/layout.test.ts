@@ -110,6 +110,31 @@ describe("readDatabaseLayout", () => {
     expect(layout.missing).toContainEqual({ table: "items", column: null });
   });
 
+  it.each([
+    ["an empty database", ""],
+    ["a database with only a foo table", "create table foo (id integer)"],
+  ])("reads %s as no Zotero database", (_name, ddl) => {
+    using sqlite = new DatabaseSync(":memory:");
+    sqlite.exec(ddl);
+
+    expect(
+      readDatabaseLayout(drizzle({ client: sqlite, relations }))
+        .isZoteroDatabase,
+    ).toBe(false);
+  });
+
+  it("reads a Zotero copy that lacks a manifest column as a Zotero database", () => {
+    using copy = openCopy((sqlite) => {
+      sqlite.exec('alter table "fieldsCombined" drop column "custom"');
+      sqlite.exec('drop table "deletedItems"');
+    });
+
+    const layout = readDatabaseLayout(copy.db);
+
+    expect(layout.isZoteroDatabase).toBe(true);
+    expect(layout.missing).not.toEqual([]);
+  });
+
   it("reads the layout once for each copy", () => {
     using copy = openCopy();
     const statements = countStatements(copy.sqlite);

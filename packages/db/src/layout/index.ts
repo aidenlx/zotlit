@@ -63,6 +63,23 @@ export const OPTIONAL_LAYOUT_COLUMNS = {
   libraries: ["clientVersion"],
 } as const satisfies Readonly<Record<string, readonly string[]>>;
 
+/**
+ * The tables every Zotero database has, whatever its version. A file without
+ * one of them is no Zotero database; a Zotero copy older or newer than the
+ * manifest still has them.
+ */
+export const ZOTERO_CORE_TABLES = ["items", "libraries"] as const;
+
+/** The file is no Zotero database: it lacks a table of {@link ZOTERO_CORE_TABLES}. */
+export class NotZoteroDatabaseError extends Error {
+  override readonly name = "NotZoteroDatabaseError";
+  constructor() {
+    super(
+      "This file is not a Zotero database. Check the Zotero data directory in ZotLit settings.",
+    );
+  }
+}
+
 /** A table, or one column of a table, that the copy lacks. */
 export interface LayoutGap {
   readonly table: string;
@@ -89,6 +106,8 @@ export interface DatabaseLayout {
    * when the readers can read the copy.
    */
   readonly missing: readonly LayoutGap[];
+  /** Whether the copy has every table of {@link ZOTERO_CORE_TABLES}. */
+  readonly isZoteroDatabase: boolean;
   /** Whether the copy has `column` in `table`. */
   has(table: string, column: string): boolean;
 }
@@ -211,6 +230,7 @@ export function recordLayout(
     columns,
     versions,
     missing,
+    isZoteroDatabase: ZOTERO_CORE_TABLES.every((table) => columns.has(table)),
     has: (table, column) => columns.get(table)?.has(column) ?? false,
   };
   layouts.set(client, layout);

@@ -3,6 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 
 import { getLibraries, getSchemaVersions } from "@zotlit/db";
+import { createClient } from "@zotlit/db/client/node";
 import { ItemQueryDatabase, readLibraries } from "@zotlit/db/item-query";
 import { openScenarioDatabase } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabaseOptions } from "@zotlit/db/test-scenario";
@@ -15,6 +16,8 @@ interface Copy {
   readonly name: string;
   readonly options?: ScenarioDatabaseOptions;
   readonly alter?: (sqlite: DatabaseSync) => void;
+  /** The schema of a plain SQLite database, in place of the scenario copy. */
+  readonly ddl?: string;
 }
 
 function stampUserdata(version: number) {
@@ -63,7 +66,21 @@ const UNREADABLE: readonly Copy[] = [
   },
 ];
 
-function open({ options, alter }: Copy) {
+/** Files that are no Zotero database: both refuse them. */
+const NOT_ZOTERO: readonly Copy[] = [
+  { name: "an empty database", ddl: "" },
+  { name: "a database with only a foo table", ddl: "create table foo (id)" },
+];
+
+function open({ options, alter, ddl }: Copy) {
+  if (ddl !== undefined) {
+    const db = createClient(":memory:");
+    db.$client.exec(ddl);
+    const close = () => {
+      if (db.$client.isOpen) db.$client.close();
+    };
+    return { db, sqlite: db.$client, [Symbol.dispose]: close };
+  }
   const copy = openScenarioDatabase(options);
   alter?.(copy.sqlite);
   return copy;
@@ -112,6 +129,19 @@ describe("validateClient and Item Query", () => {
   it.each(UNREADABLE)("both refuse $name", async (copy) => {
     expect(zoteroReadsValidates(copy)).toBe(false);
     expect(await itemQueryReads(copy)).toBe(false);
+  });
+
+  it.each(NOT_ZOTERO)("both refuse $name", async (copy) => {
+    expect(zoteroReadsValidates(copy)).toBe(false);
+    expect(await itemQueryReads(copy)).toBe(false);
+  });
+
+  it.each(NOT_ZOTERO)("refuses $name as not a Zotero database", (copy) => {
+    using plain = open(copy);
+
+    expect(() => validateClient(plain.db)).toThrow(
+      "This file is not a Zotero database. Check the Zotero data directory in ZotLit settings.",
+    );
   });
 
   it("refuses a copy the readers cannot read with the layout error", () => {

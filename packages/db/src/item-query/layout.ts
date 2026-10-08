@@ -5,7 +5,11 @@
 import { Data } from "effect";
 
 import type { NodeDatabaseClient } from "@/client/node";
-import { describeLayoutGaps, readDatabaseLayout } from "@/layout";
+import {
+  describeLayoutGaps,
+  NotZoteroDatabaseError,
+  readDatabaseLayout,
+} from "@/layout";
 import type { DatabaseLayout, LayoutGap, LayoutVersions } from "@/layout";
 
 export type { LayoutGap, LayoutVersions } from "@/layout";
@@ -42,12 +46,15 @@ export function layoutErrorOf(
  * Read the layout of the copy behind `client`, once for each copy, and throw
  * {@link ItemQueryLayoutError} when the readers cannot read it. This is the
  * synchronous form of the check that the first reader statement on a copy
- * runs. A failed statement throws the driver error.
+ * runs. A file without the Zotero core tables throws
+ * {@link NotZoteroDatabaseError} instead; a failed statement throws the driver
+ * error.
  */
 export function checkDatabaseLayout(
   client: NodeDatabaseClient,
 ): DatabaseLayout {
   const layout = readDatabaseLayout(client);
+  if (!layout.isZoteroDatabase) throw new NotZoteroDatabaseError();
   const error = layoutErrorOf(layout);
   if (error) throw error;
   return layout;

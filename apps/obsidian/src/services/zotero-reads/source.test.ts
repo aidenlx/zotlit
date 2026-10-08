@@ -378,7 +378,7 @@ describe("ZoteroReads source", () => {
         source.events.find((e) => e._tag === "refresh-failed"),
       ).toHaveProperty(
         "error.message",
-        expect.stringContaining("Missing: the table items"),
+        expect.stringContaining("This file is not a Zotero database."),
       ),
     );
   });

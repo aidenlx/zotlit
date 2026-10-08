@@ -36,6 +36,7 @@ export {
   type ZoteroUserIdentity,
 } from "./queries/account";
 export {
+  NotZoteroDatabaseError,
   readDatabaseLayout,
   type DatabaseLayout,
   type LayoutGap,
