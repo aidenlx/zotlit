@@ -15,7 +15,8 @@ import {
   ITEM_QUERY_GUIDE_COMMAND,
   ITEM_QUERY_SCHEMA_COMMAND,
   itemQueryFlags,
-  QUERY_ID_MAX_LENGTH,
+  QUERY_ID_FORM,
+  queryCancelledText,
 } from "./contract";
 
 /** One query command of the guide, as flat CLI arguments. */
@@ -245,8 +246,8 @@ const CANCEL_SECTION = `CANCEL A RUNNING QUERY
 
 NAME THE QUERY
   Give a query an id when you start it; a second CLI call can then stop it.
-  An id has 1 to ${QUERY_ID_MAX_LENGTH} letters, digits, ., _, or -, and names one running
-  query in this vault:
+  An id has ${QUERY_ID_FORM}, and names one
+  running query in this vault:
     ${example({ id: "export-1", limit: "all", fields: "[]" })}
   A second query with the id of a running query fails with
   query-id-in-use; the running query continues. The id is free again when
@@ -260,7 +261,7 @@ CANCEL
   cancelRequested. cancelRequested is true when a query with this id was
   running: it stops within a moment. The cancelled call prints this text in
   place of JSON, and leaves no file at its output path:
-    Error: The query 'export-1' was cancelled by ${ITEM_QUERY_CANCEL_COMMAND}.
+    Error: ${queryCancelledText("export-1")}
   Queries with other ids, and queries in other vaults, continue.
 
 QUERY ALREADY FINISHED

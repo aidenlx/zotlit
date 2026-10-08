@@ -15,10 +15,10 @@ import {
   diagnostic,
   failure,
   itemQueryArgumentFailure,
-  ITEM_QUERY_CANCEL_COMMAND,
   ITEM_QUERY_COMMAND,
   queryIdInUseFailure,
 } from "./cli";
+import { queryCancelledText } from "./contract";
 import type { QueryObserver } from "./trace";
 import type { QueryJob } from "./worker-protocol";
 import { QueryWorkers } from "./workers";
@@ -95,13 +95,16 @@ export class ItemQueryService extends Service<QueryWorkers> {
       this.#unload.signal,
       named.signal,
     ]);
-    combined.addEventListener(
-      "abort",
-      () => measure?.cancelled?.({ phase: "requested", atEpochMs: Date.now() }),
-      { once: true },
-    );
-    // The id is free before the caller sees the query settle.
+    const requested = () =>
+      measure?.cancelled?.({
+        phase: "requested",
+        atEpochMs: Temporal.Now.instant().epochMilliseconds,
+      });
+    combined.addEventListener("abort", requested, { once: true });
+    // The id is free before the caller sees the query settle. A listener
+    // keeps the combined signal alive as long as its unload sources.
     const job = this.#answer(params, combined, measure).finally(() => {
+      combined.removeEventListener("abort", requested);
       if (id !== undefined) this.#named.delete(id);
     });
     this.#jobs.add(job);
@@ -119,12 +122,7 @@ export class ItemQueryService extends Service<QueryWorkers> {
   cancel(id: string): boolean {
     const named = this.#named.get(id);
     if (!named) return false;
-    named.abort(
-      new DOMException(
-        `The query '${id}' was cancelled by ${ITEM_QUERY_CANCEL_COMMAND}.`,
-        "AbortError",
-      ),
-    );
+    named.abort(new DOMException(queryCancelledText(id), "AbortError"));
     return true;
   }
 

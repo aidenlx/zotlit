@@ -22,8 +22,14 @@ export type ItemQueryCommand =
 export const DEFAULT_CLI_LIMIT = 100;
 /** Bounds the string transferred through Obsidian's renderer and CLI. */
 export const INLINE_MAX_BYTES = 1024 * 1024;
-/** The longest query ID, in characters. */
 export const QUERY_ID_MAX_LENGTH = 128;
+/** The form of a query id, as the help, the guide, and the diagnostic state it. */
+export const QUERY_ID_FORM = `1 to ${QUERY_ID_MAX_LENGTH} ASCII letters, digits, ., _, or -`;
+
+/** The text a cancelled query rejects with; Obsidian prints it after "Error: ". */
+export function queryCancelledText(id: string): string {
+  return `The query '${id}' was cancelled by ${ITEM_QUERY_CANCEL_COMMAND}.`;
+}
 
 export const ITEM_QUERY_PARAMS = [
   "filter",
@@ -75,7 +81,7 @@ export const itemQueryFlags: CliFlags = {
   },
   id: {
     value: "<id>",
-    description: `Name this query so that ${ITEM_QUERY_CANCEL_COMMAND} can stop it: letters, digits, ., _, and -, at most ${QUERY_ID_MAX_LENGTH} characters`,
+    description: `Name this query so that ${ITEM_QUERY_CANCEL_COMMAND} can stop it: ${QUERY_ID_FORM}`,
   },
 } satisfies Record<ItemQueryParam, CliFlag>;
 

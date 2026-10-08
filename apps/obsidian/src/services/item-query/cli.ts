@@ -52,6 +52,7 @@ import {
   ITEM_QUERY_SCHEMA_COMMAND,
   itemQueryCancelFlags,
   itemQueryFlags,
+  QUERY_ID_FORM,
   QUERY_ID_MAX_LENGTH,
 } from "./contract";
 import type { ItemQueryCommand } from "./contract";
@@ -201,7 +202,6 @@ export interface ItemQueryCliDeps {
   }>;
 }
 
-/** The owner of query runs: it runs each query and cancels a named one. */
 export interface ItemQueryRuns {
   answer(params: CliData, signal: AbortSignal): Promise<string>;
   /** @returns `false` when no query with this id is running. */
@@ -219,7 +219,7 @@ export function registerItemQueryCli(
     ITEM_QUERY_COMMAND,
     "Query the Items of Zotero Libraries and return the matches as JSON",
     itemQueryFlags,
-    (params) => runs.answer(params, unload.signal).catch(printCancel),
+    (params) => runs.answer(params, unload.signal).catch(rejectWithCancelText),
   );
   plugin.registerCliHandler(
     ITEM_QUERY_CANCEL_COMMAND,
@@ -302,7 +302,7 @@ export function itemQueryGuideHandler(params: CliData): string {
  * rejection as `[object Object]`. A cancelled query rejects with the text of
  * its cancel, so the caller reads why it stopped; other rejections pass.
  */
-function printCancel(error: unknown): never {
+function rejectWithCancelText(error: unknown): never {
   if (error instanceof DOMException && error.name === "AbortError") {
     // oxlint-disable-next-line no-throw-literal, typescript/only-throw-error -- Obsidian prints only a string reason.
     throw error.message;
@@ -738,7 +738,7 @@ function messageOf(error: unknown): string {
 // Argument decoding
 
 const GROUP_SELECTOR = regex("^group:([1-9]\\d*)$");
-const QUERY_ID = regex("^[\\w.-]+$");
+const QUERY_ID = /^[\w.-]+$/;
 const POSITIVE_INTEGER = /^[1-9]\d*$/;
 
 const librariesSchema = v.pipe(v.array(v.string()), v.minLength(1));
@@ -822,13 +822,9 @@ function decodeArguments(params: CliData): DecodedArguments | Diagnostic {
   return { libraries, filter, fields, sort, limit, output };
 }
 
-/** The diagnostic of a query ID outside the accepted form. */
 function rejectQueryId(id: string): Diagnostic | null {
   if (id.length <= QUERY_ID_MAX_LENGTH && QUERY_ID.test(id)) return null;
-  return invalid(
-    "id",
-    `id '${id}' is not a query id: use 1 to ${QUERY_ID_MAX_LENGTH} letters, digits, ., _, or -.`,
-  );
+  return invalid("id", `id '${id}' is not a query id: use ${QUERY_ID_FORM}.`);
 }
 
 /** The Library that `personal` or `group:<groupID>` names. */

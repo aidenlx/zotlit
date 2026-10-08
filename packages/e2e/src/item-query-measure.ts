@@ -592,7 +592,7 @@ async function cancelThroughCli(
   const sentAtEpochMs = Temporal.Now.instant().epochMilliseconds;
   const answer = JSON.parse(
     await cliCommand(vaultId, CANCEL_COMMAND, { args: { id } }),
-  ) as { ok: boolean; cancelRequested?: boolean };
+  ) as { ok: boolean };
   if (!answer.ok) {
     throw new Error(`${CANCEL_COMMAND} failed: ${JSON.stringify(answer)}`);
   }
