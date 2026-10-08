@@ -273,11 +273,33 @@ describe("describeItemQuery functions", () => {
     ).toEqual({
       name: "split",
       on: "string",
-      parameters: [{ name: "separator", type: "string" }],
+      parameters: [{ name: "separator", type: ["string", "regexp"] }],
       optional: [{ name: "n", type: "number" }],
       rest: null,
       returns: "list",
     });
+    expect(
+      methods.find(
+        (entry) => entry.on === "string" && entry.name === "replace",
+      ),
+    ).toMatchObject({
+      parameters: [
+        { name: "pattern", type: ["string", "regexp"] },
+        { name: "replacement", type: "string" },
+      ],
+    });
+    // A regular expression literal is a value of type regexp.
+    expect(methods.filter((entry) => entry.on === "regexp")).toEqual([
+      {
+        name: "matches",
+        on: "regexp",
+        parameters: [{ name: "text", type: "string" }],
+        optional: [],
+        rest: null,
+        returns: "boolean",
+      },
+    ]);
+    expect(properties.filter((entry) => entry.on === "regexp")).toEqual([]);
     expect(
       methods.find(
         (entry) => entry.on === "number" && entry.name === "toFixed",
@@ -294,6 +316,7 @@ describe("describeItemQuery functions", () => {
       "list",
       "date",
       "duration",
+      "regexp",
     ]);
   });
 });
@@ -321,6 +344,7 @@ const ARGUMENT: Record<Extract<SchemaParameter["type"], string>, string> = {
   number: "1",
   list: '["a"]',
   date: "now()",
+  regexp: "/a/",
   any: '"a"',
 };
 
@@ -334,6 +358,7 @@ const SUBJECT: Record<string, string> = {
   list: "tags",
   date: "dateAdded",
   duration: 'duration("1d")',
+  regexp: "/a/i",
 };
 
 function call(name: string, entry: Omit<SchemaFunction, "name">): string {

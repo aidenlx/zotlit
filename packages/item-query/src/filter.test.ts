@@ -572,6 +572,57 @@ describe("regular expressions", () => {
     ["/a/.matches([1][0])", null],
     // An argument whose type depends on the Item.
     ["/e/.matches(tags[0])", true],
+    // replace() with a regexp follows JavaScript: g decides whether the
+    // first or every occurrence changes, and $1 names a group.
+    ['"a  b   c".replace(/\\s+/g, " ")', "a b c"],
+    ['"a  b   c".replace(/\\s+/, " ")', "a b   c"],
+    ['"Ada Lovelace".replace(/(\\w+) (\\w+)/, "$2, $1")', "Lovelace, Ada"],
+    ['"abc".replace(/B/i, "x")', "axc"],
+    ['"abc".replace(/x/, "y")', "abc"],
+    ['title.replace(/é/i, "e")', "Ecology of eclairs"],
+    ['title.replace(/o/g, "0")', "Ec0l0gy 0f Éclairs"],
+    ["title.replace(/o/g, null)", null],
+    ['publisher.replace(/o/, "0")', null],
+    // split() with a regexp: n keeps the first n parts.
+    ['"a:b—c".split(/[:—]/)', ["a", "b", "c"]],
+    ['"a:b—c".split(/[:—]/, 2)', ["a", "b"]],
+    ['"a1b22c".split(/\\d+/)', ["a", "b", "c"]],
+    ['"abc".split(/x/)', ["abc"]],
+    ["title.split(/\\s+/)[2]", "Éclairs"],
+    ["title.split(/ /, -1)", null],
+    ["publisher.split(/ /)", null],
+    // Equality by source and flags; toString() gives /source/flags.
+    ["/a/ == /a/", true],
+    ["/a/i == /a/i", true],
+    ["/a/ == /a/i", false],
+    ["/a/ == /b/", false],
+    ['/a/ == "/a/"', false],
+    ["/a/ != /a/g", true],
+    ["[/a/] == [/a/]", true],
+    ["/a/.toString()", "/a/"],
+    ["/^the /i.toString()", "/^the /i"],
+    ["/a\\/b/.toString()", "/a\\/b/"],
+    ['"x" + /a/g', "x/a/g"],
+    ['[/a/, /b/].join("|")', "/a/|/b/"],
+    // A regexp is truthy, has no order, and names its type.
+    ["/a/.isTruthy()", true],
+    ["!/a/", false],
+    ["/a/ < /b/", null],
+    ["/a/ >= /a/", null],
+    ['/a/.isType("regexp")', true],
+    ['/a/.isType("string")', false],
+    ['/a/.isType("any")', true],
+    [
+      "[/b/, /a/].sort()",
+      [
+        { type: "regexp", regexp: /b/ },
+        { type: "regexp", regexp: /a/ },
+      ],
+    ],
+    ["[null, /a/, 1].sort()", [1, { type: "regexp", regexp: /a/ }, null]],
+    ["[/a/, /a/, /a/i].unique().length", 2],
+    ["[/a/].contains(/a/)", true],
+    ["list(/a/).length", 1],
   ]);
 });
 
@@ -1200,6 +1251,33 @@ describe("validation", () => {
     ["list()", "wrong-argument-count", [0, 6]],
     ["list(1, 2)", "wrong-argument-count", [0, 10]],
     ["title.list()", "unknown-function", [6, 10]],
+    // Regular expressions: a pattern or flag the engine rejects fails at the
+    // literal; a regexp where a text is required is a wrong argument type.
+    ["/(/.matches(title)", "invalid-filter", [0, 3]],
+    ["title == /[/", "invalid-filter", [9, 12]],
+    ["/a/gg.matches(title)", "invalid-filter", [0, 5]],
+    // A letter outside the flags of the grammar is a syntax error at the letter.
+    ["/a/x.matches(title)", "invalid-filter", [3, 4]],
+    ["/a/uv.matches(title)", "invalid-filter", [0, 5]],
+    ["/\\p{Letter/u.matches(title)", "invalid-filter", [0, 12]],
+    ["title.startsWith(/a/)", "wrong-argument-type", [17, 20]],
+    ["title.endsWith(/a/)", "wrong-argument-type", [15, 18]],
+    ['title.containsAny("a", /b/)', "wrong-argument-type", [23, 26]],
+    ["tags.join(/a/)", "wrong-argument-type", [10, 13]],
+    ["/a/.matches(1)", "wrong-argument-type", [12, 13]],
+    ["/a/.matches(tags)", "wrong-argument-type", [12, 16]],
+    ["/a/.matches(/b/)", "wrong-argument-type", [12, 15]],
+    ["/a/.matches()", "wrong-argument-count", [0, 13]],
+    ['/a/.matches("a", "b")', "wrong-argument-count", [0, 21]],
+    ["title.matches(/a/)", "unknown-function", [6, 13]],
+    ["tags.matches(/a/)", "unknown-function", [5, 12]],
+    ["/a/.isEmpty()", "unknown-function", [4, 11]],
+    ["/a/.lower()", "unknown-function", [4, 9]],
+    ["/a/.sort()", "unknown-function", [4, 8]],
+    ["/a/.length", "unknown-property", [4, 10]],
+    ["title.replace(/a/)", "wrong-argument-count", [0, 18]],
+    ["title.replace(/a/, /b/)", "wrong-argument-type", [19, 22]],
+    ['title.split(/a/, "2")', "wrong-argument-type", [17, 20]],
     ["list == 1", "unknown-field", [0, 4]],
     ["custom", "unfilterable-field", [0, 6]],
     ["custom.isEmpty()", "unfilterable-field", [0, 6]],
@@ -1243,6 +1321,22 @@ describe("validation", () => {
       message:
         'Argument 1 of isType is "strng"; isType takes one of "any", "null", "boolean", "number", "string", "list", "date", "duration", "regexp" there.',
       hint: "Call value.isType(type).",
+    });
+  });
+
+  it("points at an invalid regular expression and names its pattern", () => {
+    expect(problem("/(/.matches(title)")).toMatchObject({
+      code: "invalid-filter",
+      message: expect.stringContaining("/(/"),
+      hint: expect.stringContaining("/pattern/flags"),
+    });
+    expect(problem("/a/gg.matches(title)").message).toContain("/a/gg");
+  });
+
+  it("names the owner type of matches when the subject is a text", () => {
+    expect(problem("title.matches(/a/)")).toMatchObject({
+      message: 'A string has no method "matches".',
+      hint: expect.stringContaining("matches is a method of a regexp."),
     });
   });
 
@@ -1296,6 +1390,17 @@ describe("validation", () => {
     "null.isEmpty()",
     "null.lower()",
     "null.isTruthy()",
+    // A regexp where a text or a regexp pattern is taken, and a subject
+    // whose type depends on the Item.
+    "/a/.matches(tags[0])",
+    "/a/.matches(publisher)",
+    'title.replace(/a/, "b")',
+    "title.split(/a/, 2)",
+    'tags[0].replace(/a/, "b")',
+    "if(attachments, /a/, title).matches(title)",
+    "/\\//.matches(title)",
+    "/a/dgimsuy.matches(title)",
+    "/a/v.matches(title)",
     "tags[0].trim()",
     'title.split(":")[0].trim()',
     'list(tags[0]).contains("a")',

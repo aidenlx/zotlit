@@ -131,6 +131,18 @@ TEXT HELPERS
     ${filter("publisher.isTruthy()")}
     ${filter('list(custom["review.status"]).contains("done")')}
 
+REGULAR EXPRESSIONS
+  Write a regular expression as /pattern/flags, with JavaScript syntax
+  and the flags i (ignore case), g (every occurrence), m, s, u, v, y, and d.
+  matches(text) tests a text. replace and split take a regular expression
+  in place of a text pattern: with a regular expression, replace changes
+  the first occurrence, or every occurrence with the g flag, and $1 names
+  a group. The query fails at the literal when the pattern is invalid.
+    ${filter("/^the /i.matches(title)")}
+    ${filter('title.replace(/\\s+/g, " ") == "Lab Report"')}
+    ${filter('title.replace(/(\\w+), (\\w+)/, "$2 $1").startsWith("Ada")')}
+    ${filter('title.split(/[:—]/, 2)[0].trim() == "Climate"')}
+
 TAGS, COLLECTIONS, AND CREATORS
   tags, collections, and creators are lists of text.
     ${filter('tags.contains("to-read")')}

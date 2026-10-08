@@ -18,6 +18,7 @@ import {
   equals,
   isDate,
   isList,
+  isRegexp,
   toText,
   truthy,
   typeOf,
@@ -357,25 +358,38 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
         call: (subject, [start, end]) =>
           (subject as string).slice(start as number, end as number | undefined),
       },
-      // Every occurrence of the pattern; the replacement is literal text.
+      // A text pattern: every occurrence, with the replacement as literal
+      // text. A regexp pattern follows JavaScript: `g` decides whether the
+      // first or every occurrence changes, and `$1` names a group.
       replace: {
-        parameters: [string("pattern"), string("replacement")],
+        parameters: [
+          { name: "pattern", type: ["string", "regexp"] },
+          string("replacement"),
+        ],
         returns: "string",
-        call: (subject, [pattern, replacement]) =>
-          (subject as string).replaceAll(
+        call: (subject, [pattern = null, replacement]) => {
+          if (isRegexp(pattern)) {
+            pattern.regexp.lastIndex = 0;
+            return (subject as string).replace(
+              pattern.regexp,
+              replacement as string,
+            );
+          }
+          return (subject as string).replaceAll(
             pattern as string,
             () => replacement as string,
-          ),
+          );
+        },
       },
       // `n` keeps the first `n` parts.
       split: {
-        parameters: [string("separator")],
+        parameters: [{ name: "separator", type: ["string", "regexp"] }],
         optional: [number("n")],
         returns: "list",
-        call: (subject, [separator, n]) => {
+        call: (subject, [separator = null, n]) => {
           if (n !== undefined && !isCount(n, Infinity)) return null;
           return (subject as string).split(
-            separator as string,
+            isRegexp(separator) ? separator.regexp : (separator as string),
             n as number | undefined,
           );
         },
