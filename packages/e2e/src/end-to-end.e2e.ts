@@ -2735,6 +2735,69 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe("true");
   }, 180_000);
 
+  it("writes the database worker's log records to the plugin's log file at the configured level", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const logPath =
+      "app.plugins.plugins.zotlit.manifest.dir+'/zotlit.log.jsonl'";
+    /** Note where the log file ends, then refresh the database. */
+    const refresh = `(async function(){window.zotlitE2ELogStart=(await app.vault.adapter.read(${logPath})).length;await ${services}.zoteroReads.refresh();return true;})()`;
+    /**
+     * Once the refresh's `Opened Zotero database` record is in the file, the
+     * count of `DEBUG` records the refresh added under categories only the
+     * database worker logs to; `pending` before.
+     */
+    const workerDebugRecords = `(async function(){var added=(await app.vault.adapter.read(${logPath})).slice(window.zotlitE2ELogStart).split('\\n').filter(Boolean).map(function(line){return JSON.parse(line);});if(!added.some(function(record){return record.message==='Opened Zotero database';}))return 'pending';return String(added.filter(function(record){return record.level==='DEBUG'&&/^zotlit\\.(db|item-lookup|obsidian\\.database)\\./.test(record.logger);}).length);})()`;
+    /** Refresh, and count its worker `DEBUG` records once they are written. */
+    const workerDebugRecordsOfARefresh = async () => {
+      await obEval(vaultId, refresh);
+      let count = "pending";
+      await waitFor(async () => {
+        count = await obEval(vaultId, workerDebugRecords);
+        return count !== "pending";
+      });
+      return count;
+    };
+    const previous = await obEval(
+      vaultId,
+      `JSON.stringify({'log.level':${services}.settings.current['log.level'],'log.to-file':${services}.settings.current['log.to-file']})`,
+    );
+    try {
+      await obEval(
+        vaultId,
+        `${services}.settings.update({'log.level':'debug','log.to-file':true});true`,
+      );
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `app.vault.adapter.exists(${logPath}).then(String)`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      // At `debug`, the worker's read snapshot and Item Index records reach the file.
+      expect(
+        await waitFor(
+          async () => Number(await workerDebugRecordsOfARefresh()) > 0,
+          10,
+        ),
+      ).toBe(true);
+      // At `info`, the worker forwards its `Opened Zotero database` record and
+      // none of them. The level reaches the worker after the settings change,
+      // so a refresh repeats until it does.
+      await obEval(
+        vaultId,
+        `${services}.settings.update({'log.level':'info'});true`,
+      );
+      expect(
+        await waitFor(
+          async () => (await workerDebugRecordsOfARefresh()) === "0",
+          10,
+        ),
+      ).toBe(true);
+    } finally {
+      await obEval(vaultId, `${services}.settings.update(${previous});true`);
+    }
+  }, 180_000);
+
   it("reflects a Scope Case switch through zotlit:library-scope", async () => {
     const availableCase = findScopeCase("available");
     const dataPath = join(

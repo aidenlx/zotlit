@@ -57,7 +57,12 @@ import { Connection, toDbUnavailable } from "./connection";
 import { layerConnectionItemSource, pinnedClient } from "./item-source";
 import { listCollectionChoices, resolveMembershipFacts } from "./membership";
 import { DbUnavailable, SnapshotExpired, SnapshotId, ZoteroReads } from "./rpc";
-import type { SearchHit, SegmenterBinary, WorkLabelSource } from "./rpc";
+import type {
+  ReadsConfig,
+  SearchHit,
+  SegmenterBinary,
+  WorkLabelSource,
+} from "./rpc";
 import { makeSegmenterSwitch } from "./segmenter";
 import type { ReadSegmenter } from "./segmenter";
 
@@ -104,6 +109,11 @@ export interface HandlersOptions {
    * reads as unavailable.
    */
   readSegmenter?: ReadSegmenter;
+  /**
+   * Applies the log level `Configure` sends: the worker reconfigures the
+   * logger that forwards its records. Without it the level goes unused.
+   */
+  applyLogLevel?: (level: ReadsConfig["logLevel"]) => void;
 }
 
 /** Run a synchronous read; a SQLite throw becomes a {@link DbUnavailable}. */
@@ -536,6 +546,9 @@ export function handlersLayer(options?: HandlersOptions) {
             ),
             Effect.provideService(IndexConfig, indexConfig),
             Effect.andThen(connection.configure(config)),
+            Effect.andThen(
+              Effect.sync(() => options?.applyLogLevel?.(config.logLevel)),
+            ),
             configuring.withPermits(1),
           ),
         Ping: () => Effect.void,

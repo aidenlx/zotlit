@@ -1303,6 +1303,7 @@ describe("ZoteroReads connection lifetime", () => {
       autoRefresh: true,
       locale: null,
       chineseSegmenter: null,
+      logLevel: null,
     };
     const seen = await withReads(open, (reads) =>
       Effect.gen(function* () {
@@ -1745,6 +1746,7 @@ describe("ZoteroReads SearchItems", () => {
           autoRefresh: true,
           locale: null,
           chineseSegmenter: null,
+          logLevel: null,
         });
         return yield* eventually(
           reads.SearchItems({ ...everything, query: "quagga" }),
@@ -1908,6 +1910,7 @@ describe("ZoteroReads SearchItems", () => {
       autoRefresh: true,
       locale,
       chineseSegmenter: null,
+      logLevel: null,
     });
     const builds = await withConnection(quiet, (reads) =>
       Effect.gen(function* () {
@@ -1978,6 +1981,7 @@ describe("ZoteroReads SearchItems", () => {
       autoRefresh: true,
       locale: null,
       chineseSegmenter,
+      logLevel: null,
     });
 
     /**

@@ -560,6 +560,7 @@ const readsConfig = (databasePath: string): ReadsConfig => ({
   autoRefresh: true,
   locale: null,
   chineseSegmenter: null,
+  logLevel: null,
 });
 
 /** Open one connection in its own scope, once its worker got its spawn message. */

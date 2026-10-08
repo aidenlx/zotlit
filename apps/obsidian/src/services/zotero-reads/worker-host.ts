@@ -1,5 +1,7 @@
 // Web Worker adapter, renderer side: spawns the ZoteroReads worker and keeps one client across worker deaths.
 import * as BrowserWorker from "@effect/platform-browser/BrowserWorker";
+import { getLogger as getLogTapeLogger } from "@logtape/logtape";
+import type { LogRecord } from "@logtape/logtape";
 import {
   Cause,
   Deferred,
@@ -70,8 +72,9 @@ export interface WorkerConnection {
  * Spawn one worker from the embedded bundle and connect a client to it. The
  * worker gets `config` with its spawn and lives for the caller's scope; the
  * scope's end terminates it, since the platform layer only sends the close
- * message. Its read snapshots carry an owner tag of this connection's own, so
- * the scope's end also removes the ones a crashed worker left behind.
+ * message. Its log records reach the plugin's logger under their own
+ * categories. Its read snapshots carry an owner tag of this connection's own,
+ * so the scope's end also removes the ones a crashed worker left behind.
  */
 export const connectWorker = Effect.fnUntraced(function* (
   source: string,
@@ -83,6 +86,8 @@ export const connectWorker = Effect.fnUntraced(function* (
   );
   /** Live workers, each with a promise that settles once it shut down. */
   const workers = new Map<Worker, Promise<void>>();
+  /** The port the live worker posts its log records to. */
+  let logs: MessagePort | undefined;
   const died = yield* Deferred.make<DbUnavailable>();
   const snapshotOwner = crypto.randomUUID().replaceAll("-", "").slice(0, 12);
   /** Every database path a worker of this connection was given. */
@@ -110,6 +115,7 @@ export const connectWorker = Effect.fnUntraced(function* (
         Effect.sync(() => {
           for (const worker of workers.keys()) worker.terminate();
           workers.clear();
+          logs?.close();
           URL.revokeObjectURL(url);
         }),
       ),
@@ -153,7 +159,14 @@ export const connectWorker = Effect.fnUntraced(function* (
           WorkerInitSchema,
           Effect.map(config, (current) => {
             databasePaths.add(current.databasePath);
-            return { ...current, snapshotOwner };
+            // Each worker gets its own channel; the one it replaces is
+            // terminated already.
+            logs?.close();
+            const { port1, port2 } = new MessageChannel();
+            port1.onmessage = ({ data: record }: MessageEvent<LogRecord>) =>
+              getLogTapeLogger(record.category).emit(record);
+            logs = port1;
+            return { ...current, snapshotOwner, logs: port2 };
           }),
         ),
       ),

@@ -64,6 +64,7 @@ function config(patch: Partial<ReadsConfig> = {}): ReadsConfig {
     autoRefresh: true,
     locale: null,
     chineseSegmenter: null,
+    logLevel: null,
     ...patch,
   };
 }

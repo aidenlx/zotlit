@@ -1,6 +1,7 @@
 // The ZoteroReads contract: one RpcGroup and the Schema codecs both sides share.
 import { Predicate, Schema, SchemaGetter } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
+import { Transferable } from "effect/workers";
 
 import type {
   Annotation,
@@ -27,7 +28,7 @@ import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { ItemFields } from "@zotlit/zotero-types";
 
 import type { EffectiveReadMode } from "@/services/database/read-source";
-import type { ZoteroReadMode } from "@/services/settings/schema";
+import type { Settings, ZoteroReadMode } from "@/services/settings/schema";
 
 /** Compile-time assert: `T` must be `true`. */
 type Expect<T extends true> = T;
@@ -388,19 +389,26 @@ export const ReadsConfigSchema = Schema.Struct({
   locale: Schema.NullOr(Schema.String),
   /** The installed Chinese Segmenter binary the Item Index cuts CJK text with; `null` for none. */
   chineseSegmenter: Schema.NullOr(SegmenterBinarySchema),
+  /** The lowest level the worker forwards to the plugin's logger; `null` for none. */
+  logLevel: Schema.NullOr(
+    Schema.Literals(["trace", "debug", "info", "warning", "error", "fatal"]),
+  ),
 });
 export type ReadsConfig = typeof ReadsConfigSchema.Type;
 
 /**
- * What the renderer sends with each worker spawn: the settings to open, and
- * the owner tag the worker names its read snapshots with, so the renderer can
- * reap them once that worker is gone.
+ * What the renderer sends with each worker spawn: the settings to open, the
+ * owner tag the worker names its read snapshots with, so the renderer can
+ * reap them once that worker is gone, and the port the worker posts its log
+ * records to.
  */
 export const WorkerInitSchema = Schema.Struct({
   ...ReadsConfigSchema.fields,
   snapshotOwner: Schema.String,
+  logs: Transferable.MessagePort,
 });
 type _ReadMode = Expect<Equals<ReadsConfig["readMode"], ZoteroReadMode>>;
+type _LogLevel = Expect<Equals<ReadsConfig["logLevel"], Settings["log.level"]>>;
 
 /** The Read Mode a serving client opened with; absent when the source has none. */
 const readMode = {

@@ -56,6 +56,7 @@ function readsConfig(
     autoRefresh: settings["zotero.auto-refresh"],
     locale: getLanguage(),
     chineseSegmenter: installedSegmenter(chineseSegmenter, reported),
+    logLevel: settings["log.level"],
   };
 }
 
@@ -64,12 +65,13 @@ const sameConfig = (a: ReadsConfig, b: ReadsConfig) =>
   a.readMode === b.readMode &&
   a.autoRefresh === b.autoRefresh &&
   a.locale === b.locale &&
-  sameBinary(a.chineseSegmenter, b.chineseSegmenter);
+  sameBinary(a.chineseSegmenter, b.chineseSegmenter) &&
+  a.logLevel === b.logLevel;
 
 /**
  * A client on the ZoteroReads Web Worker for the caller's scope. Every worker
  * it spawns starts with the current database path, Read Mode, auto-refresh
- * setting, UI locale, and installed Chinese Segmenter; a later change reaches the live worker through
+ * setting, UI locale, installed Chinese Segmenter, and log level; a later change reaches the live worker through
  * `Configure`. The scope's end terminates the worker.
  */
 export const workerClient = Effect.fnUntraced(function* ({

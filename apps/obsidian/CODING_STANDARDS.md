@@ -30,7 +30,7 @@ import { getLogger } from "@/lib/log";
 const logger = getLogger("settings");
 ```
 
-`LoggingService` owns `configure()` — don't call it anywhere else.
+`LoggingService` owns `configure()` — don't call it anywhere else. The ZoteroReads worker has its own LogTape instance: `zotero-reads/worker.ts` configures it to forward records to the renderer at the plugin's log level.
 
 ## View state and menus
 
