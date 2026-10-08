@@ -6,8 +6,10 @@ import { configureSync, getConsoleSink } from "@logtape/logtape";
 import { Effect, Layer } from "effect";
 import { RpcServer, RpcWorker } from "effect/rpc";
 
+import { prepareRead } from "@/services/database/read-source";
+
 import { handlersLayer } from "./handlers";
-import { ReadsConfigSchema, ZoteroReads } from "./rpc";
+import { WorkerInitSchema, ZoteroReads } from "./rpc";
 import { readSegmenterFromOpfs } from "./segmenter";
 import { layerSource } from "./source";
 import { WORKER_CLOSED } from "./worker-signal";
@@ -35,17 +37,28 @@ const ProtocolLive = RpcServer.layerProtocolWorkerRunner.pipe(
 
 /**
  * The handlers and the source start from the settings the renderer sent with
- * the spawn: the source opens them, the Item Index takes the locale.
+ * the spawn: the source opens them, the Item Index takes the locale. Every
+ * read snapshot carries the owner tag the renderer sent.
  */
 const HandlersLive = Layer.unwrap(
-  RpcWorker.initialMessage(ReadsConfigSchema).pipe(
+  RpcWorker.initialMessage(WorkerInitSchema).pipe(
     Effect.orDie,
-    Effect.map((initial) =>
+    Effect.map(({ snapshotOwner, ...initial }) =>
       handlersLayer({
         locale: initial.locale,
         chineseSegmenter: initial.chineseSegmenter,
         readSegmenter: readSegmenterFromOpfs,
-      }).pipe(Layer.provide(layerSource({ initial }))),
+      }).pipe(
+        Layer.provide(
+          layerSource({
+            initial,
+            ports: {
+              prepareRead: (mode, path) =>
+                prepareRead(mode, path, snapshotOwner),
+            },
+          }),
+        ),
+      ),
     ),
   ),
 );

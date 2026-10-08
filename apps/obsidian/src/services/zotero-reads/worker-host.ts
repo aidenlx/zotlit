@@ -12,13 +12,16 @@ import {
   Stream,
 } from "effect";
 import { RpcClient, RpcClientError, RpcSchema, RpcWorker } from "effect/rpc";
+import { tmpdir } from "node:os";
 
 import { getLogger } from "@/lib/log";
+import { readParentBeside } from "@/services/database/read-parent";
 import type { EffectiveReadMode } from "@/services/database/read-source";
+import { reapWorkerClones } from "@/services/database/reap-temps";
 
 import { makeStateFeed } from "./change-feed";
 import type { ZoteroReadsClient } from "./in-process";
-import { DbUnavailable, ReadsConfigSchema, ZoteroReads } from "./rpc";
+import { DbUnavailable, WorkerInitSchema, ZoteroReads } from "./rpc";
 import type { ChangeEvent, ReadsConfig } from "./rpc";
 import { WORKER_CLOSED } from "./worker-signal";
 
@@ -67,11 +70,13 @@ export interface WorkerConnection {
  * Spawn one worker from the embedded bundle and connect a client to it. The
  * worker gets `config` with its spawn and lives for the caller's scope; the
  * scope's end terminates it, since the platform layer only sends the close
- * message.
+ * message. Its read snapshots carry an owner tag of this connection's own, so
+ * the scope's end also removes the ones a crashed worker left behind.
  */
 export const connectWorker = Effect.fnUntraced(function* (
   source: string,
   config: Effect.Effect<ReadsConfig>,
+  reapClones: typeof reapWorkerClones = reapWorkerClones,
 ): Effect.fn.Return<WorkerConnection, DbUnavailable, Scope.Scope> {
   const url = URL.createObjectURL(
     new Blob([source], { type: "text/javascript" }),
@@ -79,6 +84,22 @@ export const connectWorker = Effect.fnUntraced(function* (
   /** Live workers, each with a promise that settles once it shut down. */
   const workers = new Map<Worker, Promise<void>>();
   const died = yield* Deferred.make<DbUnavailable>();
+  const snapshotOwner = crypto.randomUUID().replaceAll("-", "").slice(0, 12);
+  /** Every database path a worker of this connection was given. */
+  const databasePaths = new Set<string>();
+  // Added first, so it runs last: once every worker here is terminated, no
+  // snapshot with this tag has a reader left. Detached, so neither a respawn
+  // nor unload waits on the file system; the sweep reports its own failures,
+  // and what it cannot remove the next launch reaps.
+  yield* Effect.addFinalizer(() =>
+    Effect.map(config, ({ databasePath }) => {
+      databasePaths.add(databasePath);
+      void reapClones({
+        owner: snapshotOwner,
+        parents: [tmpdir(), ...Array.from(databasePaths, readParentBeside)],
+      });
+    }),
+  );
   // Added before the protocol, so it runs after the protocol's close message:
   // each worker gets to remove its snapshots before it is terminated.
   // A worker that never answers is terminated after a bounded wait.
@@ -127,7 +148,15 @@ export const connectWorker = Effect.fnUntraced(function* (
       concurrency: WORKER_CONCURRENCY,
     }).pipe(
       Layer.provide(BrowserWorker.layer(spawn)),
-      Layer.provide(RpcWorker.layerInitialMessage(ReadsConfigSchema, config)),
+      Layer.provide(
+        RpcWorker.layerInitialMessage(
+          WorkerInitSchema,
+          Effect.map(config, (current) => {
+            databasePaths.add(current.databasePath);
+            return { ...current, snapshotOwner };
+          }),
+        ),
+      ),
     ),
   ).pipe(
     Effect.mapError(

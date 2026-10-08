@@ -29,6 +29,42 @@ export async function reapReadClones({
   });
 }
 
+/**
+ * Remove the clone temp dirs a database worker left behind, once that worker
+ * is gone. A dir carries its worker's owner tag after the PID (see
+ * `prepareRead`), and every worker of this process shares the PID, so the tag
+ * alone tells a dead worker's residue from the clone a live worker reads.
+ * Dirs without that tag are kept for {@link reapReadClones} at the next launch.
+ */
+export async function reapWorkerClones({
+  owner,
+  parents,
+}: {
+  /** The tag the gone worker named its clones with. */
+  owner: string;
+  /** Every directory that worker may have placed a clone in. */
+  parents: readonly string[];
+}): Promise<void> {
+  await Promise.all(
+    parents.map((directory) =>
+      sweepTempDirectory({
+        directory,
+        kind: "database read clone",
+        isResidue: (name) => parseTempOwner(name) === owner,
+      }),
+    ),
+  );
+}
+
+/** The owner tag after the PID, or `null` for a dir that carries none. */
+function parseTempOwner(entry: string): string | null {
+  if (parseTempPid(entry) === null) return null;
+  const rest = entry.slice(ZOTERO_DB_READ_TEMP_PREFIX.length);
+  const tagged = rest.slice(rest.indexOf("-") + 1);
+  const end = tagged.indexOf("-");
+  return end > 0 ? tagged.slice(0, end) : null;
+}
+
 function parseTempPid(entry: string): number | null {
   if (!entry.startsWith(ZOTERO_DB_READ_TEMP_PREFIX)) return null;
   const rest = entry.slice(ZOTERO_DB_READ_TEMP_PREFIX.length);

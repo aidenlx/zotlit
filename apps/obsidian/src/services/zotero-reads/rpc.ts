@@ -390,6 +390,16 @@ export const ReadsConfigSchema = Schema.Struct({
   chineseSegmenter: Schema.NullOr(SegmenterBinarySchema),
 });
 export type ReadsConfig = typeof ReadsConfigSchema.Type;
+
+/**
+ * What the renderer sends with each worker spawn: the settings to open, and
+ * the owner tag the worker names its read snapshots with, so the renderer can
+ * reap them once that worker is gone.
+ */
+export const WorkerInitSchema = Schema.Struct({
+  ...ReadsConfigSchema.fields,
+  snapshotOwner: Schema.String,
+});
 type _ReadMode = Expect<Equals<ReadsConfig["readMode"], ZoteroReadMode>>;
 
 /** The Read Mode a serving client opened with; absent when the source has none. */

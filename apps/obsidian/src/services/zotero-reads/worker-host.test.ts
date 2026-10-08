@@ -1,22 +1,35 @@
 // The worker adapter's lifetime: degraded on a worker death, a new worker on Refresh, termination on scope end.
-import { Deferred, Effect, Layer, Option, Queue, Stream } from "effect";
-import type { Duration, Scope } from "effect";
+import {
+  Deferred,
+  Effect,
+  Exit,
+  Layer,
+  Option,
+  Queue,
+  Scope,
+  Stream,
+} from "effect";
+import type { Duration } from "effect";
 import { TestClock } from "effect/testing";
-import { describe, expect, it, vi } from "vitest";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
+import { ZOTERO_DB_READ_PARENT_DIRNAME } from "@/lib/constants";
 import type { EffectiveReadMode } from "@/services/database/read-source";
 
 import { layerRcRef } from "./connection";
 import { makeInProcessClient } from "./in-process";
 import type { ZoteroReadsClient } from "./in-process";
 import { DbUnavailable } from "./rpc";
-import type { ChangeEvent } from "./rpc";
+import type { ChangeEvent, ReadsConfig } from "./rpc";
 import { ZoteroReadsService } from "./service";
-import { makeWorkerReads } from "./worker-host";
+import { connectWorker, makeWorkerReads } from "./worker-host";
 import type { WorkerConnection } from "./worker-host";
+import { WORKER_CLOSED } from "./worker-signal";
 
 /**
  * Stand-in workers: each connection serves the handler layer in process over
@@ -494,5 +507,160 @@ describe("ZoteroReads worker adapter", () => {
       }).pipe(Effect.scoped),
     );
     expect(workers.ended(1)).toBe(true);
+  });
+});
+
+/**
+ * A stand-in for the browser `Worker`: it signals ready at once, records what
+ * the renderer posts, and raises its error event on `crash()`.
+ */
+class StandInWorker extends EventTarget {
+  static spawned: StandInWorker[] = [];
+  readonly posted: unknown[] = [];
+  terminated = false;
+  constructor() {
+    super();
+    StandInWorker.spawned.push(this);
+    queueMicrotask(() =>
+      this.dispatchEvent(new MessageEvent("message", { data: [0] })),
+    );
+  }
+  postMessage(data: unknown): void {
+    this.posted.push(data);
+    // The close message: a live worker removes its snapshots and says so.
+    if (Array.isArray(data) && data[0] === 1)
+      queueMicrotask(() =>
+        this.dispatchEvent(
+          new MessageEvent("message", { data: WORKER_CLOSED }),
+        ),
+      );
+  }
+  terminate(): void {
+    this.terminated = true;
+  }
+  crash(): void {
+    this.dispatchEvent(
+      Object.assign(new Event("error"), { message: "worker crashed" }),
+    );
+  }
+  /** The snapshot owner tag the renderer sent with this worker's spawn. */
+  get snapshotOwner(): string | undefined {
+    for (const data of this.posted) {
+      const message = (data as [number, { _tag?: string; value?: unknown }])[1];
+      if (message?._tag === "InitialMessage")
+        return (message.value as { snapshotOwner: string }).snapshotOwner;
+    }
+    return undefined;
+  }
+}
+
+const readsConfig = (databasePath: string): ReadsConfig => ({
+  databasePath,
+  readMode: "auto",
+  autoRefresh: true,
+  locale: null,
+  chineseSegmenter: null,
+});
+
+/** Open one connection in its own scope, once its worker got its spawn message. */
+const openConnection = Effect.fnUntraced(function* (
+  config: Effect.Effect<ReadsConfig>,
+  reapClones: Parameters<typeof connectWorker>[2],
+) {
+  const scope = yield* Scope.make();
+  const connection = yield* Scope.provide(
+    connectWorker("", config, reapClones),
+    scope,
+  );
+  const spawned = StandInWorker.spawned.length;
+  const worker = yield* Effect.promise(() =>
+    vi.waitFor(() => {
+      const worker = StandInWorker.spawned[spawned];
+      expect(worker?.snapshotOwner).toBeDefined();
+      return worker!;
+    }),
+  );
+  return { scope, connection, worker, owner: worker.snapshotOwner! };
+});
+
+describe("connectWorker read snapshot cleanup", () => {
+  beforeEach(() => {
+    StandInWorker.spawned = [];
+    vi.stubGlobal("Worker", StandInWorker);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("reaps a crashed worker's snapshots once it is terminated, under its tag and each database path it read", async () => {
+    let terminatedAtReap: boolean | undefined;
+    const reap = vi.fn(async () => {
+      terminatedAtReap = StandInWorker.spawned[0]!.terminated;
+    });
+    let databasePath = join("zotero", "zotero.sqlite");
+    const config = Effect.sync(() => readsConfig(databasePath));
+
+    const owner = await Effect.runPromise(
+      Effect.gen(function* () {
+        const { scope, connection, worker, owner } = yield* openConnection(
+          config,
+          reap,
+        );
+        databasePath = join("moved", "zotero.sqlite");
+        worker.crash();
+        yield* connection.died;
+        expect(reap).not.toHaveBeenCalled();
+        yield* Scope.close(scope, Exit.void);
+        return owner;
+      }),
+    );
+
+    expect(owner).toMatch(/^[0-9a-f]+$/);
+    expect(terminatedAtReap).toBe(true);
+    expect(reap).toHaveBeenCalledExactlyOnceWith({
+      owner,
+      parents: [
+        tmpdir(),
+        join("zotero", ZOTERO_DB_READ_PARENT_DIRNAME),
+        join("moved", ZOTERO_DB_READ_PARENT_DIRNAME),
+      ],
+    });
+  });
+
+  it("tags each connection apart, so a dead worker's reap spares the live one's snapshots", async () => {
+    const reap = vi.fn(async (_options: { owner: string }) => {});
+    const config = Effect.succeed(readsConfig("zotero.sqlite"));
+
+    const [dead, live] = await Effect.runPromise(
+      Effect.gen(function* () {
+        const dead = yield* openConnection(config, reap);
+        dead.worker.crash();
+        yield* Scope.close(dead.scope, Exit.void);
+        const live = yield* openConnection(config, reap);
+        yield* Scope.close(live.scope, Exit.void);
+        return [dead.owner, live.owner];
+      }),
+    );
+
+    expect(dead).not.toBe(live);
+    expect(reap.mock.calls.map(([options]) => options.owner)).toEqual([
+      dead,
+      live,
+    ]);
+  });
+
+  it("closes without waiting on a reap that never settles", async () => {
+    const reap = vi.fn(() => new Promise<void>(() => {}));
+    const config = Effect.succeed(readsConfig("zotero.sqlite"));
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const { scope, worker } = yield* openConnection(config, reap);
+        worker.crash();
+        yield* Scope.close(scope, Exit.void);
+      }),
+    );
+
+    expect(reap).toHaveBeenCalledOnce();
   });
 });
