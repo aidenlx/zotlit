@@ -33,7 +33,6 @@ import type {
 
 import { getLogger } from "@/lib/log";
 import { yieldToMain } from "@/lib/yield-to-main";
-import type { DatabaseReadLease } from "@/services/database/service";
 import { compareSelectors, selectorKey } from "@/services/library-scope/scope";
 import type {
   LibraryScope,
@@ -176,7 +175,10 @@ export function failure(
 }
 
 /** A pinned read of the active Zotero source, released on dispose. */
-export type ItemQueryLease = DatabaseReadLease;
+export interface ItemQueryLease extends Disposable {
+  readonly client: NodeDatabaseClient;
+  readonly source: WorkbenchIdentity["source"];
+}
 
 export interface ItemQueryCliDeps {
   acquireRead(): Promise<ItemQueryLease>;
@@ -206,11 +208,11 @@ export interface ItemQueryRuns {
   answer(params: CliData, signal: AbortSignal): Promise<string>;
   /** @returns `false` when no query with this id is running. */
   cancel(id: string): boolean;
+  schema(params: CliData, signal: AbortSignal): Promise<string>;
 }
 
 export function registerItemQueryCli(
   plugin: Plugin,
-  deps: Omit<ItemQueryCliDeps, "signal">,
   runs: ItemQueryRuns,
 ): void {
   const unload = new AbortController();
@@ -231,7 +233,7 @@ export function registerItemQueryCli(
     ITEM_QUERY_SCHEMA_COMMAND,
     "Describe the fields, functions, and defaults of Item Query as JSON",
     null,
-    createItemQuerySchemaHandler({ ...deps, signal: unload.signal }),
+    (params) => runs.schema(params, unload.signal),
   );
   plugin.registerCliHandler(
     ITEM_QUERY_GUIDE_COMMAND,
@@ -535,7 +537,7 @@ function outputStep<A>(
       return failed ? Effect.fail(failed) : Effect.die(error);
     }),
     // File acquisition/writes must settle before the job disposes its files.
-    // The parent can still stop the whole process if native I/O blocks.
+    // Cancellation waits for native I/O before releasing the connection borrow.
     Effect.uninterruptible,
   );
 }

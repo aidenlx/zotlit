@@ -1,3 +1,4 @@
+import { Effect, Stream } from "effect";
 import { basename } from "node:path/posix";
 import { TFile } from "obsidian";
 import type {
@@ -9,10 +10,8 @@ import type {
 } from "obsidian";
 
 import type { LibraryCitekey } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
-import type { DatabaseEvents } from "@/services/database/service";
 import type {
   AvailableLibrary,
   ResolvedLibraryScope,
@@ -23,10 +22,21 @@ import { QueryClientService } from "@/services/query-client/service";
 import { testClock } from "@/services/query-client/test-clock";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
+import type {
+  ZoteroReadLease,
+  ZoteroReadsEvents,
+  ZoteroReadsReady,
+  ZoteroReadsService,
+} from "@/services/zotero-reads/service";
+import {
+  inProcessReadsService,
+  memoryOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import { CitationIndex } from "./service";
 import type { CitekeyRecord, CitekeyStore } from "./service";
-import type { ReadCitekeys } from "./snapshot";
 
 export const KEY_A = "ABCD2345";
 export const KEY_B = "ZZZ99999g7";
@@ -241,27 +251,62 @@ export class NoteIndexStub {
   }
 }
 
-export class DatabaseStub {
+/**
+ * The ZoteroReads stand-in. The test drives its lifecycle (`state`, `ready`,
+ * the `changed` event); its reads run through the in-process adapter over a
+ * `:memory:` fixture database. With no `seed`, that database is empty and the
+ * citation-key read answers from {@link citekeys}; with `seed`, it holds the
+ * seeded rows and every read, the citation-key read included, answers from
+ * them.
+ */
+export class DatabaseStub implements AsyncDisposable {
   state: "loading" | "ready" | "degraded" = "ready";
-  readonly client = {} as NodeDatabaseClient;
+  readonly citekeys = new CitekeysStub(defaultCitekeys());
+  readonly #service: ZoteroReadsService;
   readonly #listeners = new Set<() => void>();
   readonly #ready = Promise.withResolvers<void>();
 
-  constructor({ readyImmediately = true } = {}) {
+  constructor({
+    readyImmediately = true,
+    seed,
+  }: { readyImmediately?: boolean; seed?: string } = {}) {
     if (readyImmediately) this.#ready.resolve();
+    this.#service = inProcessReadsService(
+      memoryOpener(() => seed ?? "").open,
+      seed === undefined
+        ? {
+            wrap: (client) => ({
+              ...client,
+              CitekeySnapshot: this.citekeys.read,
+            }),
+          }
+        : {},
+    );
   }
 
-  get ready(): Promise<void> {
-    return this.#ready.promise;
+  get ready(): Promise<ZoteroReadsReady> {
+    return this.#ready.promise.then(() => this.#service.ready);
+  }
+
+  async acquireRead(): Promise<ZoteroReadLease> {
+    await this.#ready.promise;
+    return this.#service.acquireRead();
+  }
+
+  get snapshot(): ZoteroReadsService["snapshot"] {
+    return Effect.andThen(
+      Effect.promise(() => this.#ready.promise),
+      this.#service.snapshot,
+    );
   }
 
   settle(): void {
     this.#ready.resolve();
   }
 
-  on<K extends keyof DatabaseEvents>(
+  on<K extends keyof ZoteroReadsEvents>(
     event: K,
-    cb: DatabaseEvents[K],
+    cb: ZoteroReadsEvents[K],
   ): () => void {
     const listener = cb as () => void;
     if (event === "changed") this.#listeners.add(listener);
@@ -271,8 +316,13 @@ export class DatabaseStub {
   changed(): void {
     for (const listener of this.#listeners) listener();
   }
+
+  [Symbol.asyncDispose](): Promise<void> {
+    return this.#service[Symbol.asyncDispose]();
+  }
 }
 
+/** The citation-key rows the {@link DatabaseStub} answers, with each read it served. */
 export class CitekeysStub {
   rows: LibraryCitekey[];
   error: unknown = null;
@@ -282,11 +332,20 @@ export class CitekeysStub {
     this.rows = rows;
   }
 
-  read: ReadCitekeys = (_db, libraryID) => {
-    this.calls.push(libraryID);
-    if (this.error) throw this.error;
-    return this.rows.filter((row) => row.libraryID === libraryID);
-  };
+  read = (({ libraryID }: { libraryID: number }) =>
+    Stream.suspend(() => {
+      this.calls.push(libraryID);
+      if (this.error)
+        return Stream.fail(
+          new DbUnavailable({
+            message:
+              this.error instanceof Error ? this.error.message : "read failed",
+          }),
+        );
+      return Stream.make(
+        this.rows.filter((row) => row.libraryID === libraryID),
+      );
+    })) as unknown as ZoteroReadsClient["CitekeySnapshot"];
 }
 
 /**
@@ -296,7 +355,7 @@ export class CitekeysStub {
 export class LibraryScopeStub {
   libraries: AvailableLibrary[];
   ready = Promise.resolve();
-  readonly #listeners = new Set<() => void>();
+  readonly #listeners = new Map<keyof LibraryScopeEvents, Set<() => void>>();
   #current: ResolvedLibraryScope | null;
 
   constructor(libraries: AvailableLibrary[] = [personalLibrary()]) {
@@ -309,12 +368,22 @@ export class LibraryScopeStub {
   }
 
   on(
-    _event: keyof LibraryScopeEvents,
+    event: keyof LibraryScopeEvents,
     cb: LibraryScopeEvents[keyof LibraryScopeEvents],
   ): () => void {
     const notify = () => cb(this.#current);
-    this.#listeners.add(notify);
-    return () => this.#listeners.delete(notify);
+    const listeners = this.#listeners.get(event) ?? new Set();
+    this.#listeners.set(event, listeners.add(notify));
+    return () => listeners.delete(notify);
+  }
+
+  /**
+   * The database now holds `libraries`, and the saved scope resolves as it
+   * did: only `libraries-changed` reports it.
+   */
+  holdLibraries(libraries: AvailableLibrary[]): void {
+    this.libraries = libraries;
+    this.#emit("libraries-changed");
   }
 
   /** Narrow or widen the scope over the Libraries the database already holds. */
@@ -335,8 +404,8 @@ export class LibraryScopeStub {
     this.#emit();
   }
 
-  #emit(): void {
-    for (const listener of this.#listeners) listener();
+  #emit(event: keyof LibraryScopeEvents = "changed"): void {
+    for (const listener of this.#listeners.get(event) ?? []) listener();
   }
 }
 
@@ -355,8 +424,8 @@ function defaultCitekeys(): LibraryCitekey[] {
     },
     {
       itemID: 2,
-      libraryID: MY_LIBRARY_ID,
-      key: "ROE2025",
+      libraryID: GROUP_LIBRARY_ID,
+      key: "ZZZ99999",
       indexedKey: KEY_B,
       citekey: "roe2025",
     },
@@ -499,6 +568,11 @@ export interface CitationIndexHarnessOptions {
   store?: MemoryStore;
   citekeys?: LibraryCitekey[];
   db?: DatabaseStub;
+  /**
+   * SQL for the rows the default {@link DatabaseStub}'s database holds; its
+   * citation-key read then answers from them too.
+   */
+  zoteroRows?: string;
   notes?: boolean;
   settingsService?: SettingsStub;
   awaitReady?: boolean;
@@ -515,9 +589,15 @@ export async function createCitationIndexHarness(
   const workspace = new MockWorkspace();
   const noteIndex = new NoteIndexStub();
   const store = options.store ?? new MemoryStore();
-  const db = options.db ?? new DatabaseStub();
-  const citekeys = new CitekeysStub(options.citekeys ?? defaultCitekeys());
-  const libraryScope = options.libraryScope ?? new LibraryScopeStub();
+  const db = stack.use(
+    options.db ?? new DatabaseStub({ seed: options.zoteroRows }),
+  );
+  const { citekeys } = db;
+  if (options.citekeys) citekeys.rows = options.citekeys;
+  // The default rows hold an Item of My Library and one of group 7's Library.
+  const libraryScope =
+    options.libraryScope ??
+    new LibraryScopeStub([personalLibrary(), groupLibrary()]);
 
   const addFile = (path: string, body: string): TFile => {
     const added = makeFile(path, body);
@@ -556,9 +636,8 @@ export async function createCitationIndexHarness(
       app,
       noteIndex,
       settings,
-      db,
+      reads: db,
       libraryScope,
-      readCitekeys: citekeys.read,
       openStore: () => Promise.resolve(store),
       queryClient,
     }),

@@ -162,13 +162,27 @@ export class CollectionCache {
       node.parentID == null
         ? []
         : (this.#resolvePath(node.parentID, nodes)?.path ?? []);
-    const collection = defineToString(
-      { key: node.key, name: node.name, path: [...parentPath, node.name] },
-      function () {
-        return this.name;
-      },
-    );
+    const collection = toTemplateCollection({
+      key: node.key,
+      name: node.name,
+      path: [...parentPath, node.name],
+    });
     this.#resolved.set(collectionID, collection);
     return collection;
   }
+}
+
+/**
+ * Give a plain collection record its string coercion to `name`. A collection
+ * that crossed a structured clone has lost it; this restores it.
+ */
+export function toTemplateCollection(
+  collection: TemplateCollection,
+): TemplateCollection {
+  return defineToString(
+    { key: collection.key, name: collection.name, path: collection.path },
+    function () {
+      return this.name;
+    },
+  );
 }

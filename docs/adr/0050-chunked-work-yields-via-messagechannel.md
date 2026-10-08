@@ -1,4 +1,10 @@
+---
+status: amended by ADR-0068
+---
+
 # Chunked work yields via MessageChannel, not setTimeout or scheduler.yield
+
+> **Amended by [ADR 0068](0068-the-zotero-database-runs-in-a-web-worker-behind-zoteroreads.md).** Database reads run in a Web Worker and stream in slices; they no longer yield on the main thread. The `MessageChannel` yield stays for loops over the vault and the UI.
 
 Long batch loops (e.g. `classifyChunked` in `batch-run.ts`) yield between fixed-size slices so the loading bar paints and Cancel stays responsive. We standardize that yield on a `MessageChannel`-based primitive — post a message and await its delivery — rather than the obvious `setTimeout(0)` or the newer `scheduler.yield()`. A `MessageChannel` callback is a normal macrotask that Chromium does **not** subject to timer throttling and does **not** reorder ahead of pending timers, so it drains a chunk queue promptly even when the Obsidian window is backgrounded while leaving other scheduled work alone.
 

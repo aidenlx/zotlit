@@ -8,27 +8,22 @@
  * Library Scope in canonical order. An exact target bypasses Library Scope
  * entirely, so a link keeps working for a Library the user never selected.
  */
-import {
-  getCollectionIDByKey,
-  getIndexedItemIDsByCollection,
-  getIndexedItemIDsByLibrary,
-  getLibraries,
-  getLibraryByGroupID,
-  getNoteItemIDsByCollection,
-  getNoteItemIDsByLibrary,
-  USER_LIBRARY_ID,
-} from "@zotlit/db";
+import { Effect } from "effect";
+
+import { USER_LIBRARY_ID } from "@zotlit/db";
 import type { Library } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import type { DatabaseService } from "@/services/database/service";
 import { libraryLabel } from "@/services/library-scope/label";
 import { compareSelectors, selectorOf } from "@/services/library-scope/scope";
 import type { ResolvedLibraryScope } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { SettingsService } from "@/services/settings/service";
+import type {
+  ZoteroReadsApi,
+  ZoteroReadsService,
+} from "@/services/zotero-reads/service";
 import type { FlatGroupDef } from "@/views/batch-modal";
 
 const logger = getLogger("batch-scope");
@@ -60,10 +55,12 @@ export type BatchTarget =
 export interface BatchScopeRequest {
   target: BatchTarget;
   /**
-   * Library Scope resolved against the caller's pinned client. Read only for an
+   * Library Scope resolved against the caller's Snapshot. Read only for an
    * unqualified run.
    */
   scope: ResolvedLibraryScope;
+  /** The Libraries the caller's Snapshot holds. Read only for an exact target. */
+  libraries: readonly Library[];
 }
 
 export type BatchScope =
@@ -71,18 +68,6 @@ export type BatchScope =
   | { outcome: "unavailable-target" }
   | { outcome: "collection-not-found" }
   | { outcome: "resolved"; itemIDs: number[] };
-
-/** The id query each kind runs, per scope. */
-const SCOPE_QUERIES = {
-  "literature-items": {
-    byLibrary: getIndexedItemIDsByLibrary,
-    byCollection: getIndexedItemIDsByCollection,
-  },
-  notes: {
-    byLibrary: getNoteItemIDsByLibrary,
-    byCollection: getNoteItemIDsByCollection,
-  },
-} as const satisfies Record<BatchScopeKind, unknown>;
 
 /**
  * Resolve which item ids a batch run covers, rejecting a link aimed at a
@@ -95,18 +80,18 @@ const SCOPE_QUERIES = {
  * needed and the order the confirmation groups by is the order Library Scope
  * already defines.
  */
-export function resolveBatchScope(
-  client: NodeDatabaseClient,
+export async function resolveBatchScope(
+  reads: ZoteroReadsApi,
   kind: BatchScopeKind,
   request: BatchScopeRequest,
-): BatchScope {
+): Promise<BatchScope> {
   const { groupID, collectionKey } = request.target;
 
   let libraryIDs: number[];
   if (groupID === undefined) {
     libraryIDs = request.scope.available.map((library) => library.libraryID);
   } else {
-    const libraryID = exactLibraryID(client, groupID);
+    const libraryID = exactLibraryID(request.libraries, groupID);
     if (libraryID === null) {
       logger.debug("Batch scope: target library unavailable", {
         kind,
@@ -117,31 +102,33 @@ export function resolveBatchScope(
     libraryIDs = [libraryID];
   }
 
-  const queries = SCOPE_QUERIES[kind];
   const itemIDs: number[] = [];
   for (const libraryID of libraryIDs) {
-    if (collectionKey === undefined) {
-      itemIDs.push(...queries.byLibrary(client, libraryID));
-      continue;
-    }
-    const collection = { libraryID, collectionKey };
-    if (getCollectionIDByKey(client, collection) === undefined) {
+    const ids = await Effect.runPromise(
+      reads.ScopeItemIDs({
+        kind,
+        libraryID,
+        ...(collectionKey !== undefined && { collectionKey }),
+      }),
+    );
+    if (ids === null) {
       logger.debug("Batch scope: collection not found", {
         kind,
-        ...collection,
+        libraryID,
+        collectionKey,
       });
       return { outcome: "collection-not-found" };
     }
-    itemIDs.push(...queries.byCollection(client, collection));
+    itemIDs.push(...ids);
   }
   return { outcome: "resolved", itemIDs };
 }
 
 /** The services a library-wide run reaches its Library Scope through. */
 export interface BatchScopePlanDeps {
-  db: Pick<DatabaseService, "acquireRead">;
+  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   settings: Pick<SettingsService, "loaded">;
-  libraryScope: Pick<LibraryScopeService, "resolveWith">;
+  libraryScope: Pick<LibraryScopeService, "resolveLibraries">;
 }
 
 export type BatchScopePlan =
@@ -161,8 +148,8 @@ export type BatchScopePlan =
 
 /**
  * The planning phase both library-wide runners share: wait for the saved scope,
- * take one read lease, resolve Library Scope against the pinned client, and
- * gather the item ids the run covers. The lease ends with this call, so nothing
+ * open one Snapshot, resolve Library Scope against its Libraries, and gather
+ * the item ids the run covers. The Snapshot ends with this call, so nothing
  * downstream — classification, confirmation, writes — runs under it.
  */
 export async function planBatchScope(
@@ -171,11 +158,12 @@ export async function planBatchScope(
   target: BatchTarget,
 ): Promise<BatchScopePlan> {
   // The saved scope is read through the settings snapshot, so wait for it before
-  // resolving against the pinned client.
+  // resolving against the Snapshot's Libraries.
   await deps.settings.loaded;
 
-  using lease = await deps.db.acquireRead();
-  const libraryScope = deps.libraryScope.resolveWith(lease.client);
+  await using lease = await deps.zoteroReads.acquireRead();
+  const libraries = await Effect.runPromise(lease.reads.Libraries({}));
+  const libraryScope = deps.libraryScope.resolveLibraries(libraries);
   let unavailableLibraries = 0;
   if (target.groupID === undefined) {
     if (libraryScope.available.length === 0) {
@@ -185,9 +173,10 @@ export async function planBatchScope(
     unavailableLibraries = libraryScope.unavailable.length;
   }
 
-  const scope = resolveBatchScope(lease.client, kind, {
+  const scope = await resolveBatchScope(lease.reads, kind, {
     target,
     scope: libraryScope,
+    libraries,
   });
   if (scope.outcome !== "resolved") return { outcome: scope.outcome };
   return { outcome: "resolved", itemIDs: scope.itemIDs, unavailableLibraries };
@@ -195,11 +184,13 @@ export async function planBatchScope(
 
 /** @returns the local id of the named Library, or `null` when it is absent. */
 function exactLibraryID(
-  client: NodeDatabaseClient,
+  libraries: readonly Library[],
   groupID: number,
 ): number | null {
   if (groupID === 0) return USER_LIBRARY_ID;
-  return getLibraryByGroupID(client, groupID)?.libraryID ?? null;
+  return (
+    libraries.find((library) => library.groupID === groupID)?.libraryID ?? null
+  );
 }
 
 /** One Library that contributed rows to a run, as its confirmation names it. */
@@ -215,10 +206,10 @@ export interface BatchLibrary {
  * several Libraries groups the same way an expanded Library Scope does.
  */
 export function batchLibraries(
-  client: NodeDatabaseClient,
+  libraries: readonly Library[],
   libraryIDs: ReadonlySet<number>,
 ): BatchLibrary[] {
-  return getLibraries(client)
+  return libraries
     .filter((library) => libraryIDs.has(library.libraryID))
     .sort(compareLibraries)
     .map((library) => ({

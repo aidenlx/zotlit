@@ -30,7 +30,6 @@ import {
   getNoteRefsByItemIDs,
   getRelatedKeysByItemID,
   getSchemaVersions,
-  getTrashedNoteItemIDs,
   isItemKey,
   resolveItemTags,
 } from "@zotlit/db";
@@ -556,8 +555,7 @@ describe("the generated Zotero database", () => {
   it("reads a trashed Note through the public trash query", () => {
     using db = openClient();
 
-    expect(getTrashedNoteItemIDs(db, [19])).toEqual(new Set([19]));
-    expect(getNoteRefsByItemIDs(db, [19])).toEqual([]);
+    expect(getNoteRefsByItemIDs(db, [19]).get(19)?.trashed).toBe(true);
   });
 
   it("resolves every file-backed Attachment and preserves one deliberate miss", async () => {
@@ -1123,7 +1121,9 @@ describe("the generated Zotero database", () => {
     using db = openClient();
 
     expect(
-      getNoteRefsByItemIDs(db, [13, 16]).map((note) => note.indexedKey),
+      [...getNoteRefsByItemIDs(db, [13, 16]).values()].map(
+        ({ note }) => note.indexedKey,
+      ),
     ).toEqual(["NNNNAAAA", "NNNNAAAAg4200309"]);
   });
 
@@ -2079,10 +2079,12 @@ describe("the generated Obsidian vault", () => {
   it("mirrors every Child Note under its resolvable Indexed Key", async () => {
     using db = openClient();
     const childNotes = NOTES.filter((note) => note.parentItemID !== null);
-    const refs = getNoteRefsByItemIDs(
-      db,
-      childNotes.map(({ itemID }) => itemID),
-    );
+    const refs = [
+      ...getNoteRefsByItemIDs(
+        db,
+        childNotes.map(({ itemID }) => itemID),
+      ).values(),
+    ].flatMap(({ note, trashed }) => (trashed ? [] : [note]));
 
     expect(await readdir(join(layout.vaultDir, "zotero_notes"))).toEqual(
       refs.map(({ indexedKey }) => `${indexedKey}.md`).sort(),

@@ -1,4 +1,5 @@
 import { ToggleComponent, controlsOf } from "@mock/obsidian";
+import { Effect } from "effect";
 // @vitest-environment happy-dom
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -308,7 +309,7 @@ async function importerFixture(kind: "fresh" | "replace" = "fresh") {
   );
   const releaseRead = vi.fn();
   const acquireRead = vi.fn(async () => ({
-    client: {},
+    reads: { Libraries: () => Effect.succeed([]) },
     [Symbol.dispose]: releaseRead,
   }));
   const opened = stack.use(
@@ -321,10 +322,10 @@ async function importerFixture(kind: "fresh" | "replace" = "fresh") {
   const suggestions = stack.use(vi.spyOn(SuggestModal.prototype, "open"));
   const run = createProfileImporter({
     ...f.deps,
-    db: { acquireRead },
+    zoteroReads: { acquireRead },
     libraryScope: {
       ready: Promise.resolve(),
-      resolveWith: () => ({ available: [] }),
+      resolveLibraries: () => ({ available: [] }),
     },
     zoteroPref: { dataDir: null },
   } as unknown as ProfileDialogServices);

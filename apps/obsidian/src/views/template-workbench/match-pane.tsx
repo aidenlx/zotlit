@@ -11,7 +11,7 @@ import {
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import type { DatabaseService } from "@/services/database/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { loadMatchFacts } from "./match-data";
 import { templateWorkbenchTheme } from "./theme";
@@ -36,7 +36,7 @@ export function NativeMatchPane({
   onChooseItem,
 }: {
   controller: WorkbenchDocumentController;
-  db: Pick<DatabaseService, "acquireRead" | "on">;
+  db: Pick<ZoteroReadsService, "acquireRead" | "on">;
   onChooseItem?: () => void;
 }) {
   const [vocabularyRevision, setVocabularyRevision] = useState(0);

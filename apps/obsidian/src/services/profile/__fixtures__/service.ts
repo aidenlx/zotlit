@@ -5,14 +5,17 @@ import { SettingsService } from "@/services/settings/service";
 import { TemplateService } from "@/services/template/service";
 import { createObsidianHost, PluginStub } from "@/lib/__fixtures__/obsidian-host";
 
+import { Effect } from "effect";
+
 import { LibraryScopeService } from "@/services/library-scope/service";
-import type { DatabaseService } from "@/services/database/service";
+import { QueryClientService } from "@/services/query-client/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { ProfileService } from "@/services/profile/service";
 
 export async function profileServiceFixture(
   files: Record<string, string> = {},
-  db?: DatabaseService,
+  reads?: Pick<ZoteroReadsService, "ready" | "on">,
 ) {
   await using stack = new AsyncDisposableStack();
   const host = createObsidianHost(files);
@@ -47,8 +50,16 @@ export async function profileServiceFixture(
     new NoteIndex({ app, plugin: plugin as unknown as Plugin }),
   );
   const libraryScope = stack.use(new LibraryScopeService({ settings,
-    db: db ?? { ready: Promise.resolve(), state: "ready", client: {}, on: () => () => {} } as unknown as DatabaseService,
-    ...(db ? {} : { loadLibraries: () => [{ libraryID: 1, type: "user", version: 0, clientVersion: null, groupID: null, name: null }] }),
+    queries: stack.use(new QueryClientService()),
+    reads: reads ?? ({
+      ready: Promise.resolve({
+        reads: {
+          Libraries: () =>
+            Effect.succeed([{ libraryID: 1, type: "user", version: 0, clientVersion: null, groupID: null, name: null }]),
+        },
+      }),
+      on: () => () => {},
+    } as unknown as ZoteroReadsService),
   }));
   const profile = stack.use(
     new ProfileService({ app, settings, template, noteIndex, libraryScope }),

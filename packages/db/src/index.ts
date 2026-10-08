@@ -43,6 +43,7 @@ export {
 export {
   getItemDisplayInfoByID,
   getItemDisplayRefByID,
+  getItemDisplayRefsByIDs,
   getItemRefByID,
   type ItemDisplayInfo,
   type ItemRef,
@@ -61,6 +62,7 @@ export {
   parseIndexedKey,
   type ParsedIndexedKey,
   resolveIndexedKeyLibrary,
+  resolveIndexedKeyLibraryIn,
 } from "./lib/zt-key";
 export { isItemKey } from "./lib/zt-item-key";
 export {
@@ -71,38 +73,44 @@ export {
 export { USER_LIBRARY_ID } from "./lib/constants";
 export {
   getAnnotationsByKey,
-  getAnnotationsByItemId,
   getAnnotationsByParent,
 } from "./queries/annotations";
 export {
-  getAllAttachments,
   getAttachmentByItemId,
+  getAttachmentPage,
   getAttachmentByKey,
+  getAttachmentsByKey,
   getAttachmentsByParents,
   type AttachmentWithParentKey,
 } from "./queries/attachments";
 export {
   getChildNotesByParentIDs,
-  getNoteByItemID,
   getNoteByKey,
+  getNotesByKey,
   getNoteRefsByItemIDs,
-  getTrashedNoteItemIDs,
   type ChildNote,
   type Note,
+  type NoteRef,
 } from "./queries/notes";
 export {
   getCitekeyByItemKey,
+  getCitekeyPage,
   getCitekeysByLibrary,
   getItemIDByCitekey,
   type LibraryCitekey,
 } from "./queries/citekey";
 export {
+  getAllTagNames,
   getLibraryTagNames,
   resolveItemTags,
   type TagMemo,
 } from "./queries/tags";
 export { getRelatedKeysByItemID } from "./queries/item-relations";
-export { CollectionCache, type TemplateCollection } from "./lib/zt-collection";
+export {
+  CollectionCache,
+  toTemplateCollection,
+  type TemplateCollection,
+} from "./lib/zt-collection";
 export {
   getCollectionIDsByItem,
   getCollectionNodesByLibrary,
@@ -212,11 +220,19 @@ export {
   type TemplateNoteLink,
 } from "./lib/context/zt-template-note";
 export {
+  buildAnnotationParents,
+  buildAnnotationsTemplateData,
+  buildNoteContextFromSource,
+  fetchAnnotationSources,
   fetchAnnotationsTemplateData,
-  fetchAnnotationParentContext,
+  fetchAttachmentSources,
   fetchNoteContext,
+  fetchNoteSource,
+  type AnnotationParent,
   type AnnotationResolvers,
+  type AnnotationSources,
   type NoteResolvers,
+  type NoteSource,
 } from "./lib/context/note-context";
 export {
   CONTRACT_ROOTS,

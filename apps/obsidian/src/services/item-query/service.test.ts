@@ -1,15 +1,7 @@
-import {
-  chmod,
-  mkdir,
-  readFile,
-  readdir,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { Effect } from "effect";
+import { chmod, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { Worker } from "node:worker_threads";
 import type { Vault } from "obsidian";
-import workerSource from "virtual:item-query-worker";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -19,34 +11,40 @@ import {
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
-import type { DatabaseService } from "@/services/database/service";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { ConnectionOpener } from "@/services/zotero-reads/connection";
+import {
+  inProcessReadsService,
+  sharedClientOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import { ItemQueryService } from "./service";
-import type { QueryWorkerFactory } from "./workers";
 
 function setup(
   scenario: ScenarioDatabase,
-  createWorker: QueryWorkerFactory = () =>
-    new Worker(workerSource, { eval: true }),
+  opener: ConnectionOpener = sharedClientOpener(scenario.db),
 ) {
   let leases = 0;
+  const reads = inProcessReadsService(opener, {
+    wrap: (client) => ({
+      ...client,
+      ItemQuery: (payload, options) =>
+        Effect.acquireUseRelease(
+          Effect.sync(() => {
+            leases++;
+          }),
+          () => client.ItemQuery(payload, options),
+          () =>
+            Effect.sync(() => {
+              leases--;
+            }),
+        ),
+    }),
+  });
   const service = new ItemQueryService({
-    db: {
-      ready: Promise.resolve(),
-      acquireRead: async () => {
-        leases++;
-        return {
-          client: scenario.db,
-          uri: scenario.path,
-          source: { id: "captured-source", databasePath: scenario.path },
-          [Symbol.dispose]: () => {
-            leases--;
-          },
-        };
-      },
-    } as unknown as DatabaseService,
+    reads,
+    zoteroPref: { sourceId: "captured-source", databasePath: scenario.path },
     libraryScope: {
       ready: Promise.resolve(),
       effective: MY_LIBRARY_SCOPE,
@@ -55,8 +53,12 @@ function setup(
       getName: () => "Query tests",
       adapter: { getBasePath: () => dirname(scenario.path) },
     } as unknown as Vault,
-    createWorker,
   });
+  const dispose = service[Symbol.asyncDispose].bind(service);
+  service[Symbol.asyncDispose] = async () => {
+    await dispose();
+    await reads[Symbol.asyncDispose]();
+  };
   return { service, leases: () => leases };
 }
 const signal = () => new AbortController().signal;
@@ -67,6 +69,31 @@ const bulk = {
 };
 
 describe("Item Query worker jobs", () => {
+  it("answers the schema through the worker and maps an unavailable connection for both commands", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    const available = setup(scenario);
+    await using _available = available.service;
+    expect(
+      JSON.parse(await available.service.schema({}, signal())),
+    ).toMatchObject({
+      command: "zotlit:item-query-schema",
+      ok: true,
+    });
+    const unavailable = setup(scenario, () => {
+      throw new Error("source closed");
+    });
+    await using _unavailable = unavailable.service;
+    for (const answer of [
+      await unavailable.service.answer({}, signal()),
+      await unavailable.service.schema({}, signal()),
+    ])
+      expect(JSON.parse(answer)).toMatchObject({
+        ok: false,
+        diagnostic: { code: "source-unavailable" },
+      });
+    expect(unavailable.leases()).toBe(0);
+  });
+
   it("exports the same envelope as inline, preserves existing files, and releases each lease", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     const { service, leases } = setup(scenario);
@@ -129,22 +156,6 @@ describe("Item Query worker jobs", () => {
     expect(leases()).toBe(0);
   });
 
-  it("reports a snapshot that cannot be reopened as an unavailable source", async () => {
-    using scenario = openScenarioDatabase({ storage: "temp-directory" });
-    const { service, leases } = setup(scenario);
-    await using _owned = service;
-    await service.ready;
-    await rm(scenario.path);
-    expect(
-      JSON.parse(await service.answer({ limit: "zero" }, signal())),
-    ).toMatchObject({ ok: false, diagnostic: { code: "invalid-argument" } });
-    expect(JSON.parse(await service.answer({}, signal()))).toMatchObject({
-      ok: false,
-      diagnostic: { code: "source-unavailable" },
-    });
-    expect(leases()).toBe(0);
-  });
-
   it("bounds inline replies and exports every row of a large result", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     seedBulkLibrary(scenario.sqlite, 6000);
@@ -192,7 +203,7 @@ describe("Item Query worker jobs", () => {
     const rejectedQueue = expect(waiting).rejects.toMatchObject({
       name: "AbortError",
     });
-    await vi.waitFor(() => expect(leases()).toBe(3), { interval: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
     queued.abort();
     await rejectedQueue;
     await vi.waitFor(
@@ -212,47 +223,6 @@ describe("Item Query worker jobs", () => {
     const files = await readdir(dirname(output));
     expect(files).not.toContain("cancelled.json");
     expect(files.filter((name) => name.endsWith(".tmp"))).toEqual([]);
-    expect(
-      JSON.parse(await service.answer({ limit: "1" }, signal())),
-    ).toMatchObject({ ok: true, returnedCount: 1 });
-  });
-
-  it("stops an unresponsive process before releasing its read lease", async () => {
-    using scenario = openScenarioDatabase({ storage: "temp-directory" });
-    const blocked = Promise.withResolvers<void>();
-    let leaseAtExit: number | undefined;
-    let created = 0;
-    const { service, leases } = setup(scenario, () => {
-      const source =
-        created++ < 2
-          ? `${workerSource}
-        require('node:worker_threads').parentPort.on('message', text => {
-          if (JSON.parse(text).type !== 'query') return;
-          require('node:worker_threads').parentPort.postMessage(JSON.stringify({type:'test-blocked'}));
-          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
-        });
-      `
-          : workerSource;
-      const worker = new Worker(source, { eval: true });
-      worker.on("message", (text: string) => {
-        if (JSON.parse(text).type === "test-blocked") blocked.resolve();
-      });
-      worker.once("exit", () => {
-        leaseAtExit = leases();
-      });
-      return worker;
-    });
-    await using _owned = service;
-    const cancel = new AbortController();
-    const running = service.answer({ limit: "1" }, cancel.signal);
-    const rejected = expect(running).rejects.toMatchObject({
-      name: "AbortError",
-    });
-    await blocked.promise;
-    cancel.abort();
-    await rejected;
-    expect(leaseAtExit).toBe(1);
-    expect(leases()).toBe(0);
     expect(
       JSON.parse(await service.answer({ limit: "1" }, signal())),
     ).toMatchObject({ ok: true, returnedCount: 1 });

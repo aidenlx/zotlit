@@ -1,40 +1,31 @@
 // Resolves an Indexed Key and builds side-effect-free Template data.
 
+import { Effect } from "effect";
 import type { App } from "obsidian";
 
 import {
+  buildAnnotationsTemplateData,
   buildFilenameContext,
+  buildNoteContextFromSource,
   citekeysToCiteTemplateData,
-  CollectionCache,
-  fetchNoteContext,
-  fetchAnnotationsTemplateData,
-  getAnnotationsByKey,
-  getAttachmentByKey,
-  getZoteroIdentity,
-  getItemsByID,
-  getItemTypeByKey,
-  getItemsByKey,
-  getNoteByKey,
-  resolveIndexedKeyLibrary,
-  resolveItemTags,
   withAnnotationCitation,
 } from "@zotlit/db";
 import type {
-  Annotation,
+  AnnotationSources,
   CitationTemplateData,
   CitationVariant,
   ContractRoot,
   Item,
   NoteResolvers,
+  NoteSource,
 } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { TemplateError } from "@zotlit/templates/facade";
 import { citationExampleData } from "@zotlit/workbench/render";
 import type { CitationExampleId } from "@zotlit/workbench/render";
 
 import { annotationCitation } from "@/lib/annotation-render";
 import { creatorSummary } from "@/lib/item-summary";
-import type { DatabaseService } from "@/services/database/service";
+import { itemFacets } from "@/services/note-feature/context";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
@@ -47,6 +38,11 @@ import {
 } from "@/services/template/inert-resolver-host";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import { readDisplayRef } from "@/services/zotero-reads/display-ref";
+import type {
+  ZoteroReadsApi,
+  ZoteroReadsService,
+} from "@/services/zotero-reads/service";
 
 /**
  * The object one Citation's data is built from: a built-in example set, or an
@@ -70,7 +66,8 @@ export type CitationDataLoadResult =
 
 export interface TemplateDataDeps {
   app: App;
-  db: Pick<DatabaseService, "acquireRead">;
+  /** Each root reads its Item's bundle through a lease. */
+  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   noteIndex: Pick<
     NoteIndex,
     "getNotesByItemKey" | "getImportedNoteByNoteKey" | "whenIndexed"
@@ -122,16 +119,15 @@ export async function loadTemplateData(
     deps.zoteroPref.ready,
     deps.templates.ready,
   ]);
-  using lease = await deps.db.acquireRead();
   if (root === "annotation") {
-    const selected = resolveAnnotation(lease.client, indexedKey);
-    if (selected.kind !== "annotation") return selected;
-    const resolvers = await createInertResolvers(deps, settings, selected.item);
-    const data = fetchAnnotationsTemplateData(
-      lease.client,
-      [selected.annotation],
-      { resolvers: resolvers.annotation },
-    ).get(selected.annotation.key);
+    await using lease = await deps.zoteroReads.acquireRead();
+    const selected = await readAnnotationSources(lease.reads, indexedKey);
+    if (selected.kind !== "sources") return selected;
+    const { sources, item } = selected;
+    const resolvers = await createInertResolvers(deps, settings, item);
+    const data = buildAnnotationsTemplateData(sources, resolvers.annotation)
+      .values()
+      .next().value;
     if (!data) return { kind: "not-found" };
     return {
       kind: "data",
@@ -141,35 +137,30 @@ export async function loadTemplateData(
     };
   }
 
-  const selected = resolveNoteItem(lease.client, indexedKey);
-  if (selected.kind !== "item") return selected;
-
-  const item = selected.item;
+  const selected = await (async () => {
+    await using lease = await deps.zoteroReads.acquireRead();
+    return await readNoteItemSource(lease.reads, indexedKey);
+  })();
+  if (selected.kind !== "source") return selected;
+  const { source } = selected;
   if (root === "filename") {
-    const collectionCache = new CollectionCache();
+    const { itemTags, itemCollections } = itemFacets(source);
     return {
       kind: "data",
       data: buildFilenameContext({
-        item,
-        tags: resolveItemTags(lease.client, item.itemID, new Map()),
-        collections:
-          collectionCache
-            .byItemIDs(lease.client, item.libraryID, [item.itemID])
-            .get(item.itemID) ?? [],
+        item: source.item,
+        tags: itemTags,
+        collections: itemCollections,
         authorsShort: creatorSummary,
       }),
     };
   }
 
-  const resolvers = await createInertResolvers(deps, settings, item);
+  const resolvers = await createInertResolvers(deps, settings, source.item);
 
   return {
     kind: "data",
-    data: fetchNoteContext(lease.client, item, {
-      resolvers,
-      collectionCache: new CollectionCache(),
-      username: getZoteroIdentity(lease.client).username,
-    }),
+    data: buildNoteContextFromSource(source, resolvers),
   };
 }
 
@@ -181,7 +172,7 @@ export async function loadTemplateData(
  * database.
  */
 export async function loadCitationData(
-  deps: Pick<TemplateDataDeps, "db" | "settings">,
+  deps: Pick<TemplateDataDeps, "zoteroReads" | "settings">,
   selector: CitationSelector,
   variant: CitationVariant,
 ): Promise<CitationDataLoadResult> {
@@ -192,8 +183,8 @@ export async function loadCitationData(
     };
   }
   await deps.settings.loaded;
-  using lease = await deps.db.acquireRead();
-  const selected = resolveNoteItem(lease.client, selector.key);
+  await using lease = await deps.zoteroReads.acquireRead();
+  const selected = await readNoteItem(lease.reads, selector.key);
   if (selected.kind !== "item") return selected;
   const { item } = selected;
   const citationKey =
@@ -257,71 +248,37 @@ async function createInertResolvers(
   });
 }
 
-type ClassifiedObject =
-  | { kind: "item"; item: Item }
-  | { kind: "annotation"; annotation: Annotation }
-  | { kind: "attachment"; parentItemID: number | null }
-  | { kind: "note"; parentItemID: number | null }
-  | { kind: "not-found" }
-  | { kind: "annotation-attachment-missing" };
-
-function classifyObject(
-  client: NodeDatabaseClient,
-  indexedKey: string,
-): ClassifiedObject {
-  const selector = resolveIndexedKeyLibrary(client, indexedKey);
-  if (!selector) return { kind: "not-found" };
-  const { key, libraryID } = selector;
-  const itemType = getItemTypeByKey(client, libraryID, key);
-  if (itemType === null) return { kind: "not-found" };
-
-  if (itemType === "annotation") {
-    const annotation = getAnnotationsByKey(client, [key], libraryID)[0];
-    return annotation
-      ? { kind: "annotation", annotation }
-      : { kind: "annotation-attachment-missing" };
-  }
-  if (itemType === "attachment") {
-    const attachment = getAttachmentByKey(client, key, libraryID);
-    return attachment
-      ? { kind: "attachment", parentItemID: attachment.parentItemID }
-      : { kind: "not-found" };
-  }
-  if (itemType === "note") {
-    const note = getNoteByKey(client, key, { libraryID });
-    return note
-      ? { kind: "note", parentItemID: note.parentItemID }
-      : { kind: "not-found" };
-  }
-
-  const item = getItemsByKey(client, libraryID, [key])[0];
-  return item ? { kind: "item", item } : { kind: "not-found" };
-}
-
 type AnnotationResult =
-  | { kind: "annotation"; annotation: Annotation; item: Item | null }
+  | { kind: "sources"; sources: AnnotationSources; item: Item | null }
   | { kind: "not-found" }
   | { kind: "annotation-required" }
   | { kind: "annotation-attachment-missing" };
 
-function resolveAnnotation(
-  client: NodeDatabaseClient,
+/**
+ * The {@link AnnotationSources} of the Annotation an Indexed Key names, with
+ * its parent Item, `null` for a standalone attachment.
+ */
+async function readAnnotationSources(
+  reads: ZoteroReadsApi,
   indexedKey: string,
-): AnnotationResult {
-  const selected = classifyObject(client, indexedKey);
-  if (selected.kind === "annotation-attachment-missing") return selected;
-  if (selected.kind === "not-found") return selected;
-  if (selected.kind !== "annotation") return { kind: "annotation-required" };
-
-  const attachment = getAttachmentByKey(
-    client,
-    selected.annotation.parentKey,
-    selected.annotation.libraryID,
+): Promise<AnnotationResult> {
+  const selected = await Effect.runPromise(reads.ItemType({ indexedKey }));
+  if (!selected) return { kind: "not-found" };
+  if (selected.itemType !== "annotation")
+    return { kind: "annotation-required" };
+  const sources = await Effect.runPromise(
+    reads.AnnotationSources({
+      libraryID: selected.libraryID,
+      keys: [selected.key],
+    }),
   );
-  const item = attachment?.parentItemID
-    ? (getItemsByID(client, [attachment.parentItemID])[0] ?? null)
-    : null;
-  return { ...selected, item };
+  const [attachment] = sources.attachments;
+  if (!attachment) return { kind: "annotation-attachment-missing" };
+  const item =
+    sources.parentItems.find(
+      ({ itemID }) => itemID === attachment.parentItemID,
+    ) ?? null;
+  return { kind: "sources", sources, item };
 }
 
 type NoteItemResult =
@@ -330,35 +287,96 @@ type NoteItemResult =
   | { kind: "no-parent-item" }
   | { kind: "annotation-attachment-missing" };
 
-function resolveNoteItem(
-  client: NodeDatabaseClient,
+/** Where {@link resolveNoteItemID} found the Item, and what its absence means. */
+type NoteItemTarget =
+  | {
+      kind: "target";
+      itemID: number;
+      /** The Item itself, when the Indexed Key named it directly. */
+      item?: Item;
+      /** The outcome when no live Item has the id. */
+      missing: "not-found" | "no-parent-item";
+    }
+  | Exclude<NoteItemResult, { kind: "item" }>;
+
+/**
+ * The id of the Item an Indexed Key names, or of the parent Item of the
+ * attachment, note, or annotation it names. Pass Snapshot-bound reads, so
+ * every step reads one database state.
+ */
+async function resolveNoteItemID(
+  reads: ZoteroReadsApi,
   indexedKey: string,
-): NoteItemResult {
-  const selected = classifyObject(client, indexedKey);
-  if (
-    selected.kind === "not-found" ||
-    selected.kind === "annotation-attachment-missing" ||
-    selected.kind === "item"
-  ) {
-    return selected;
-  }
-  if (selected.kind === "annotation") {
-    const attachment = getAttachmentByKey(
-      client,
-      selected.annotation.parentKey,
-      selected.annotation.libraryID,
+): Promise<NoteItemTarget> {
+  const run = Effect.runPromise;
+  const selected = await run(reads.ItemType({ indexedKey }));
+  if (!selected) return { kind: "not-found" };
+  const { libraryID, key, itemType } = selected;
+  let parentItemID: number | null;
+  if (itemType === "annotation") {
+    const sources = await run(
+      reads.AnnotationSources({ libraryID, keys: [key], username: null }),
     );
+    const attachment = sources.attachments[0];
     if (!attachment) return { kind: "annotation-attachment-missing" };
-    return resolveParentItem(client, attachment.parentItemID);
+    parentItemID = attachment.parentItemID;
+  } else if (itemType === "attachment") {
+    const [attachment] = await run(
+      reads.AttachmentsByKeys({ libraryID, keys: [key] }),
+    );
+    if (!attachment) return { kind: "not-found" };
+    parentItemID = attachment.parentItemID;
+  } else if (itemType === "note") {
+    const [note] = await run(reads.NoteBodies({ libraryID, keys: [key] }));
+    if (!note) return { kind: "not-found" };
+    parentItemID = note.parentItemID;
+  } else {
+    const items = await run(
+      reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
+    );
+    const item = items.values().next().value;
+    return item
+      ? { kind: "target", itemID: item.itemID, item, missing: "not-found" }
+      : { kind: "not-found" };
   }
-  return resolveParentItem(client, selected.parentItemID);
+  if (!parentItemID) return { kind: "no-parent-item" };
+  return { kind: "target", itemID: parentItemID, missing: "no-parent-item" };
 }
 
-function resolveParentItem(
-  client: NodeDatabaseClient,
-  parentItemID: number | null,
-): NoteItemResult {
-  if (!parentItemID) return { kind: "no-parent-item" };
-  const item = getItemsByID(client, [parentItemID])[0];
-  return item ? { kind: "item", item } : { kind: "no-parent-item" };
+/**
+ * {@link resolveNoteItemID}'s Item, read as a {@link NoteSource}. Pass
+ * Snapshot-bound reads.
+ */
+async function readNoteItemSource(
+  reads: ZoteroReadsApi,
+  indexedKey: string,
+): Promise<
+  | { kind: "source"; source: NoteSource }
+  | Exclude<NoteItemResult, { kind: "item" }>
+> {
+  const target = await resolveNoteItemID(reads, indexedKey);
+  if (target.kind !== "target") return target;
+  const source = await Effect.runPromise(
+    reads.NoteSource({ itemID: target.itemID }),
+  );
+  return source ? { kind: "source", source } : { kind: target.missing };
+}
+
+/** {@link resolveNoteItemID}'s Item alone. Pass Snapshot-bound reads. */
+async function readNoteItem(
+  reads: ZoteroReadsApi,
+  indexedKey: string,
+): Promise<NoteItemResult> {
+  const target = await resolveNoteItemID(reads, indexedKey);
+  if (target.kind !== "target") return target;
+  if (target.item) return { kind: "item", item: target.item };
+  const ref = await readDisplayRef(reads, target.itemID);
+  const item =
+    ref &&
+    (
+      await Effect.runPromise(
+        reads.ItemsByIndexedKeys({ indexedKeys: [ref.indexedKey] }),
+      )
+    ).get(ref.indexedKey);
+  return item ? { kind: "item", item } : { kind: target.missing };
 }

@@ -10,7 +10,6 @@ import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
-import type { DatabaseEvents } from "@/services/database/service";
 import { QueryClientService } from "@/services/query-client/service";
 import {
   annotationItem,
@@ -32,6 +31,14 @@ import type {
   ZoteroRequest,
 } from "@/services/zotero-local-api/__fixtures__";
 import type { WireTag } from "@/services/zotero-local-api/wire";
+import type {
+  ZoteroReadLease,
+  ZoteroReadsEvents,
+} from "@/services/zotero-reads/service";
+import {
+  inProcessReadsService,
+  sharedClientOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import { AnnotationRepository } from "./service";
 import type { AnnotationRepositoryDeps } from "./service";
@@ -194,20 +201,16 @@ export async function setup(
   );
   if (group) moveToGroup(client, group);
 
-  const dbEvents = createNanoEvents<DatabaseEvents>();
-  const acquireRead = vi.fn(() =>
-    Promise.resolve({
-      client,
-      uri: ":memory:",
-      source: { id: null, databasePath: ":memory:" },
-      [Symbol.dispose]: () => undefined,
-    }),
-  );
+  const dbEvents = createNanoEvents<ZoteroReadsEvents>();
+  const reads = stack.use(inProcessReadsService(sharedClientOpener(client)));
+  const acquireRead = vi.fn(() => reads.acquireRead());
   const db = {
     acquireRead,
     refresh: vi.fn(() => Promise.resolve()),
-    on: <K extends keyof DatabaseEvents>(event: K, cb: DatabaseEvents[K]) =>
-      dbEvents.on(event, cb),
+    on: <K extends keyof ZoteroReadsEvents>(
+      event: K,
+      cb: ZoteroReadsEvents[K],
+    ) => dbEvents.on(event, cb),
   };
 
   const {
@@ -243,6 +246,36 @@ export async function setup(
     serverEvents,
     prefEvents,
   };
+}
+
+/**
+ * Fake the timers and the clock, and leave `setImmediate` real: the ZoteroReads
+ * client runs on Effect, whose scheduler yields through it, so a faked one
+ * stalls every database read.
+ */
+export function useFakeTimers(): void {
+  vi.useFakeTimers({
+    toFake: [
+      "setTimeout",
+      "clearTimeout",
+      "setInterval",
+      "clearInterval",
+      "Date",
+    ],
+  });
+}
+
+/**
+ * A ZoteroReads lease over another database `client`: what a read that
+ * started before a refresh holds.
+ */
+export function leaseOver(
+  stack: AsyncDisposableStack,
+  client: ReturnType<typeof createClient>,
+): Promise<ZoteroReadLease> {
+  return stack
+    .use(inProcessReadsService(sharedClientOpener(client)))
+    .acquireRead();
 }
 
 /**

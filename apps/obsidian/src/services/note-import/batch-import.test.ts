@@ -1,24 +1,12 @@
+import { Effect, Exit, Stream } from "effect";
 import type { TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  formatIndexedKey,
-  getChildNotesByParentIDs,
-  getCollectionIDByKey,
-  getItemDisplayRefByID,
-  getItemsByKey,
-  getLibraries,
-  getLibraryByGroupID,
-  getNoteByItemID,
-  getNoteByKey,
-  getNoteItemIDsByCollection,
-  getNoteItemIDsByLibrary,
-  getNoteRefsByItemIDs,
-  getTrashedNoteItemIDs,
-  USER_LIBRARY_ID,
-} from "@zotlit/db";
+import { formatIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
 import type { ChildNote, Library, Note } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
@@ -34,6 +22,14 @@ import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import { ProfileAnnotationError } from "@/services/template/service";
+import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
+import {
+  inProcessReadsService,
+  withState,
+  recordCalls,
+  sharedClientOpener,
+} from "@/services/zotero-reads/test-utils";
 import type {
   BatchClassifyControls,
   BatchModalOptions,
@@ -50,26 +46,6 @@ import {
 } from "./batch-import-notices";
 import { NoteImportProfileError } from "./service";
 import type { NoteImporter } from "./service";
-
-vi.mock("@zotlit/db", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@zotlit/db")>();
-  return {
-    ...actual,
-    getNoteRefsByItemIDs: vi.fn(),
-    getTrashedNoteItemIDs: vi.fn(),
-    getChildNotesByParentIDs: vi.fn(),
-    getItemDisplayRefByID: vi.fn(),
-    getNoteByItemID: vi.fn(),
-    getItemsByKey: vi.fn(),
-    getItemsByID: vi.fn(() => []),
-    getNoteByKey: vi.fn(),
-    getLibraries: vi.fn(),
-    getLibraryByGroupID: vi.fn(),
-    getCollectionIDByKey: vi.fn(),
-    getNoteItemIDsByLibrary: vi.fn(),
-    getNoteItemIDsByCollection: vi.fn(),
-  };
-});
 
 /** Captured options of every batch modal the runner opened via its view port. */
 const openedModals: BatchModalOptions[] = [];
@@ -118,12 +94,86 @@ function makeRef(itemID: number, libraryID = USER_LIBRARY_ID): ChildNote {
     itemID,
     libraryID,
     groupID: libraryID === USER_LIBRARY_ID ? null : 7,
-    parentItemID: 1,
+    parentItemID: PARENT_ITEM_ID,
     key,
     indexedKey: formatIndexedKey(key, null),
     title: `Note ${itemID}`,
     dateModified: Temporal.Instant.from("2024-02-03T08:30:00Z"),
   };
+}
+
+/**
+ * The `:memory:` Zotero database every fixture reads: My Library, the
+ * "Reading group" library (local id 12, group 7), and the regular item
+ * {@link PARENT_ITEM_ID}, the parent {@link makeRef} names. Each test seeds
+ * the notes it reads.
+ */
+let db: NodeDatabaseClient;
+
+/** The regular item every seeded note hangs from unless a test says otherwise. */
+const PARENT_ITEM_ID = 900;
+
+const BASE_ROWS = `
+  insert into libraries (libraryID, type) values (1, 'user'), (12, 'group');
+  insert into groups (groupID, libraryID, name) values (7, 12, 'Reading group');
+  insert into itemTypes (itemTypeID, typeName)
+    values (1, 'journalArticle'), (3, 'note');
+  insert into fieldsCombined (fieldID, fieldName, custom) values (10, 'title', 0);
+  insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+    values (900, 1, '2024-01-01 10:00:00', '2024-01-01 10:00:00', 1, 'PARENT01');
+  insert into itemDataValues (valueID, value) values (1, 'Parent paper');
+  insert into itemData (itemID, fieldID, valueID) values (900, 10, 1);
+`;
+
+/**
+ * Seed the live notes `itemIDs`, each as {@link makeNote} describes it: key
+ * `NOTE<id>` (or `key`), title `Note <id>`, a child of `parentItemID`.
+ */
+function seedNotes(
+  itemIDs: readonly number[],
+  {
+    libraryID = USER_LIBRARY_ID,
+    parentItemID = PARENT_ITEM_ID as number | null,
+    key,
+  }: { libraryID?: number; parentItemID?: number | null; key?: string } = {},
+): void {
+  for (const itemID of itemIDs) {
+    db.$client
+      .prepare(
+        `insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+           values (?, 3, '2024-01-01 10:00:00', '2024-02-03 08:30:00', ?, ?)`,
+      )
+      .run(itemID, libraryID, key ?? `NOTE${itemID}`);
+    db.$client
+      .prepare(
+        "insert into itemNotes (itemID, parentItemID, note, title) values (?, ?, ?, ?)",
+      )
+      .run(
+        itemID,
+        parentItemID,
+        "<h1>Methods</h1><p>body</p>",
+        `Note ${itemID}`,
+      );
+  }
+}
+
+/** Seed a collection of `libraryID` holding the standalone notes `itemIDs`. */
+function seedCollection(
+  key: string,
+  libraryID: number,
+  itemIDs: readonly number[],
+): void {
+  db.$client
+    .prepare(
+      "insert into collections (collectionID, collectionName, libraryID, key) values (100, 'Reading', ?, ?)",
+    )
+    .run(libraryID, key);
+  for (const itemID of itemIDs)
+    db.$client
+      .prepare(
+        "insert into collectionItems (collectionID, itemID) values (100, ?)",
+      )
+      .run(itemID);
 }
 
 function makeNote(itemID: number): Note {
@@ -207,12 +257,13 @@ function makeDeps(
     existing?: TFile[];
     /** Per-file frontmatter cache for metadataCache.getFileCache. */
     frontmatter?: Map<TFile, Record<string, unknown>>;
+    /** Observes or replaces operations at the ZoteroReads interface. */
+    wrap?: (client: ZoteroReadsClient) => ZoteroReadsClient;
   } = {},
 ): {
   deps: NoteImportDeps;
   importNote: ReturnType<typeof vi.fn>;
 } {
-  const client = createClient(":memory:");
   const importNote = vi.fn(
     async () => options.importNoteResult ?? ("created" as const),
   );
@@ -226,21 +277,17 @@ function makeDeps(
         shouldAsk: false,
       }),
     },
-    db: {
-      state: options.dbState ?? "ready",
-      client,
-      acquireRead: async () => ({
-        client,
-        uri: ":memory:",
-        source: { id: null, databasePath: ":memory:" },
-        [Symbol.dispose]() {},
-      }),
-    },
+    zoteroReads: withState(
+      caseResources.use(
+        inProcessReadsService(sharedClientOpener(db), { wrap: options.wrap }),
+      ),
+      options.dbState ?? "ready",
+    ),
     settings: {
       loaded: Promise.resolve({ ...defaults, ...settings }),
       update: vi.fn(),
     },
-    libraryScope: { resolveWith: () => currentScope },
+    libraryScope: { resolveLibraries: () => currentScope },
     noteImport: {
       importNote,
       prepareExplicitImport: vi.fn<NoteImporter["prepareExplicitImport"]>(),
@@ -286,11 +333,7 @@ it("lets the batch chip change only orphans while existing and parent stamps rem
   const existing = { path: "Books/Imported.md" } as TFile;
   deps.noteIndex.getImportedNoteByNoteKey = (key) =>
     key === makeRef(1).indexedKey ? [existing] : [];
-  vi.mocked(getNoteRefsByItemIDs).mockReturnValue([
-    makeRef(1),
-    makeRef(2),
-    makeRef(3),
-  ]);
+  seedNotes([1, 2, 3]);
   const imports = vi.fn(async (note: Note) =>
     note.itemID === 1 ? ("overwritten" as const) : ("created" as const),
   );
@@ -345,9 +388,6 @@ it("lets the batch chip change only orphans while existing and parent stamps rem
     manifest.options.tasks[1].kind,
   );
   expect(settingsUpdate).not.toHaveBeenCalled();
-  vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
-    makeNote(itemID),
-  );
   const result = await options.onRun({
     onItemSettled: vi.fn(),
     signal: new AbortController().signal,
@@ -380,7 +420,7 @@ it("keeps parent-only imports read-only without a settings write", async () => {
     ...defaults,
     profiles: [{ id: books, label: "Books" }],
   });
-  vi.mocked(getChildNotesByParentIDs).mockReturnValue([makeRef(1), makeRef(2)]);
+  seedNotes([1, 2], { parentItemID: 10 });
   vi.mocked(deps.noteImport.prepareExplicitImport).mockImplementation(
     async (note) => ({
       source: "parent",
@@ -399,9 +439,6 @@ it("keeps parent-only imports read-only without a settings write", async () => {
     { profile: "Books" },
     { profile: "Books" },
   ]);
-  vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
-    makeNote(itemID),
-  );
   expect(
     await options.onRun({
       onItemSettled: vi.fn(),
@@ -430,8 +467,7 @@ it.each([true, false])(
     const error = new NoteImportProfileError(stamp, { path: file.path });
     vi.mocked(deps.noteImport.prepareExplicitImport).mockRejectedValue(error);
     importNote.mockRejectedValue(error);
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(1)]);
-    vi.mocked(getNoteByItemID).mockReturnValue(makeNote(1));
+    seedNotes([1]);
     await createBatchImport(deps).runBatchImport("note", [1, 2]);
     const options = openedModals.at(-1)!;
     const manifest = (await options.onClassify(classifyControls())) as any;
@@ -464,28 +500,101 @@ it.each([true, false])(
   },
 );
 
+/** The database and the read services the current case opened over it. */
+let caseResources: AsyncDisposableStack;
+
 beforeEach(() => {
   openedModals.length = 0;
-  vi.mocked(getNoteRefsByItemIDs).mockReset();
-  vi.mocked(getTrashedNoteItemIDs).mockReset().mockReturnValue(new Set());
-  vi.mocked(getChildNotesByParentIDs).mockReset();
-  vi.mocked(getItemDisplayRefByID).mockReset();
-  vi.mocked(getNoteByItemID).mockReset();
-  vi.mocked(getItemsByKey).mockReset();
-  vi.mocked(getNoteByKey).mockReset();
+  caseResources = new AsyncDisposableStack();
+  db = caseResources.adopt(createClient(":memory:"), (client) =>
+    client.$client.close(),
+  );
+  createFixtureSchema(db.$client);
+  db.$client.exec(BASE_ROWS);
   currentScope = scopeOf([PERSONAL_LIBRARY]);
-  vi.mocked(getLibraries)
-    .mockReset()
-    .mockReturnValue([PERSONAL_LIBRARY, GROUP_LIBRARY]);
-  vi.mocked(getLibraryByGroupID)
-    .mockReset()
-    .mockImplementation((_client, groupID) =>
-      groupID === GROUP_LIBRARY.groupID ? GROUP_LIBRARY : null,
-    );
-  vi.mocked(getCollectionIDByKey).mockReset().mockReturnValue(100);
-  vi.mocked(getNoteItemIDsByLibrary).mockReset().mockReturnValue([]);
-  vi.mocked(getNoteItemIDsByCollection).mockReset().mockReturnValue([]);
   confirmMock.mockReset();
+  return () => caseResources.disposeAsync();
+});
+
+describe("classify through the NoteRefs stream", () => {
+  it("classifies from one NoteRefs stream and loads each note under the run's Snapshot", async () => {
+    const recorded = recordCalls(["NoteRefs", "NoteBodies"]);
+    const { deps, importNote } = makeDeps({}, { wrap: recorded.wrap });
+    seedNotes([1, 2]);
+    const progress: number[] = [];
+
+    await createBatchImport(deps).runBatchImport("note", [1, 2, 3]);
+    const modal = openedModals.at(-1)!;
+    const manifest = (await modal.onClassify({
+      onProgress: (classified) => progress.push(classified),
+      signal: new AbortController().signal,
+    })) as any;
+    const result = await modal.onRun({
+      onItemSettled: vi.fn(),
+      signal: new AbortController().signal,
+    });
+
+    expect(progress).toEqual([3]);
+    expect(manifest.options.notFound).toEqual([
+      { itemID: 3, label: m.batch_import_item_not_note({ id: 3 }) },
+    ]);
+    expect(result).toMatchObject({ created: 2, failed: 0 });
+    expect(importNote).toHaveBeenCalledTimes(2);
+    const [classify, ...loads] = recorded.calls;
+    expect(classify).toMatchObject({
+      operation: "NoteRefs",
+      payload: { itemIDs: [1, 2, 3] },
+    });
+    expect(loads.map(({ operation }) => operation)).toEqual([
+      "NoteBodies",
+      "NoteBodies",
+    ]);
+    // Classify reads its own Snapshot; the run's note loads share another.
+    const [classifySnapshot, runSnapshot] = recorded.snapshots;
+    expect(classify!.payload.snapshot).toBe(classifySnapshot);
+    for (const load of loads) expect(load.payload.snapshot).toBe(runSnapshot);
+    expect(runSnapshot).not.toBe(classifySnapshot);
+  });
+
+  it("interrupts the NoteRefs stream when Cancel lands during classify", async () => {
+    let interrupted = false;
+    const { deps } = makeDeps(
+      {},
+      {
+        wrap: (client) => ({
+          ...client,
+          // The first slice arrives; the next one never does until interrupted.
+          NoteRefs: ((payload: object, options?: object) =>
+            Stream.concat(
+              (
+                client.NoteRefs as unknown as (
+                  payload: object,
+                  options?: object,
+                ) => Stream.Stream<unknown>
+              )(payload, options),
+              Stream.never,
+            ).pipe(
+              Stream.onExit((exit) =>
+                Effect.sync(() => {
+                  interrupted = Exit.hasInterrupts(exit);
+                }),
+              ),
+            )) as unknown as ZoteroReadsClient["NoteRefs"],
+        }),
+      },
+    );
+    seedNotes([1]);
+    const abort = new AbortController();
+
+    await createBatchImport(deps).runBatchImport("note", [1, 2]);
+    const classified = openedModals.at(-1)!.onClassify({
+      onProgress: () => abort.abort(),
+      signal: abort.signal,
+    });
+
+    await expect(classified).rejects.toThrow();
+    expect(interrupted).toBe(true);
+  });
 });
 
 describe("runBatchImportAll", () => {
@@ -502,32 +611,30 @@ describe("runBatchImportAll", () => {
 
   it("reports an empty library scope before querying any note", async () => {
     currentScope = scopeOf([], [{ type: "group", groupID: 7 }]);
-    const { deps } = makeDeps({});
+    const recorded = recordCalls(["ScopeItemIDs"]);
+    const { deps } = makeDeps({}, { wrap: recorded.wrap });
 
     await expect(createBatchImport(deps).runBatchImportAll()).resolves.toEqual({
       outcome: "no-library-in-scope",
     });
-    expect(getNoteItemIDsByLibrary).not.toHaveBeenCalled();
+    expect(recorded.calls).toEqual([]);
     expect(openedModals).toHaveLength(0);
   });
 
   it("imports every note of every library in scope, in canonical order", async () => {
     currentScope = scopeOf([PERSONAL_LIBRARY, GROUP_LIBRARY]);
-    vi.mocked(getNoteItemIDsByLibrary).mockImplementation(
-      (_client, libraryID) => (libraryID === USER_LIBRARY_ID ? [50] : [51]),
-    );
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([
-      makeRef(50),
-      makeRef(51, GROUP_LIBRARY.libraryID),
-    ]);
-    const { deps } = makeDeps({});
+    seedNotes([50]);
+    seedNotes([51], { libraryID: GROUP_LIBRARY.libraryID });
+    const recorded = recordCalls(["ScopeItemIDs"]);
+    const { deps } = makeDeps({}, { wrap: recorded.wrap });
 
     const result = await createBatchImport(deps).runBatchImportAll();
 
     expect(result).toEqual({ outcome: "batch-modal" });
-    expect(
-      vi.mocked(getNoteItemIDsByLibrary).mock.calls.map(([, id]) => id),
-    ).toEqual([USER_LIBRARY_ID, GROUP_LIBRARY.libraryID]);
+    expect(recorded.calls.map(({ payload }) => payload.libraryID)).toEqual([
+      USER_LIBRARY_ID,
+      GROUP_LIBRARY.libraryID,
+    ]);
     const { manifest } = await driveLastModal();
     expect(manifest.options.tasks.map((task: FlatTask) => task.id)).toEqual([
       50, 51,
@@ -544,10 +651,7 @@ describe("runBatchImportAll", () => {
 
   it("keeps action-only headings while one library contributes", async () => {
     currentScope = scopeOf([PERSONAL_LIBRARY, GROUP_LIBRARY]);
-    vi.mocked(getNoteItemIDsByLibrary).mockImplementation(
-      (_client, libraryID) => (libraryID === USER_LIBRARY_ID ? [50, 51] : []),
-    );
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50), makeRef(51)]);
+    seedNotes([50, 51]);
     const { deps } = makeDeps({});
 
     await createBatchImport(deps).runBatchImportAll();
@@ -566,8 +670,7 @@ describe("runBatchImportAll", () => {
         { type: "group", groupID: 9 },
       ],
     );
-    vi.mocked(getNoteItemIDsByLibrary).mockReturnValue([50, 51]);
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50), makeRef(51)]);
+    seedNotes([50, 51]);
     const { deps } = makeDeps({});
 
     await createBatchImport(deps).runBatchImportAll();
@@ -581,13 +684,7 @@ describe("runBatchImportAll", () => {
 
   it("routes a one-note multi-library expansion to the single-note path", async () => {
     currentScope = scopeOf([PERSONAL_LIBRARY, GROUP_LIBRARY]);
-    vi.mocked(getNoteItemIDsByLibrary).mockImplementation(
-      (_client, libraryID) => (libraryID === USER_LIBRARY_ID ? [] : [51]),
-    );
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([
-      makeRef(51, GROUP_LIBRARY.libraryID),
-    ]);
-    vi.mocked(getNoteByItemID).mockReturnValue(makeNote(51));
+    seedNotes([51], { libraryID: GROUP_LIBRARY.libraryID });
     const { deps } = makeDeps({});
 
     const result = await createBatchImport(deps).runBatchImportAll();
@@ -599,58 +696,52 @@ describe("runBatchImportAll", () => {
   describe("exact target", () => {
     it("resolves the named group outside library scope", async () => {
       currentScope = scopeOf([PERSONAL_LIBRARY]);
-      vi.mocked(getNoteItemIDsByLibrary).mockReturnValue([50, 51]);
-      vi.mocked(getNoteRefsByItemIDs).mockReturnValue([
-        makeRef(50),
-        makeRef(51),
-      ]);
-      const { deps } = makeDeps({});
+      seedNotes([50, 51], { libraryID: GROUP_LIBRARY.libraryID });
+      const recorded = recordCalls(["ScopeItemIDs"]);
+      const { deps } = makeDeps({}, { wrap: recorded.wrap });
 
       const result = await createBatchImport(deps).runBatchImportAll({
         groupID: 7,
       });
 
       expect(result).toEqual({ outcome: "batch-modal" });
-      expect(getNoteItemIDsByLibrary).toHaveBeenCalledExactlyOnceWith(
-        expect.anything(),
-        GROUP_LIBRARY.libraryID,
-      );
+      expect(recorded.calls).toMatchObject([
+        { payload: { libraryID: GROUP_LIBRARY.libraryID } },
+      ]);
     });
 
     it("resolves an absent library parameter to My Library", async () => {
       currentScope = scopeOf([GROUP_LIBRARY]);
-      vi.mocked(getNoteItemIDsByLibrary).mockReturnValue([50, 51]);
-      vi.mocked(getNoteRefsByItemIDs).mockReturnValue([
-        makeRef(50),
-        makeRef(51),
-      ]);
-      const { deps } = makeDeps({});
+      seedNotes([50, 51]);
+      const recorded = recordCalls(["ScopeItemIDs"]);
+      const { deps } = makeDeps({}, { wrap: recorded.wrap });
 
       await createBatchImport(deps).runBatchImportAll({ groupID: 0 });
 
-      expect(getNoteItemIDsByLibrary).toHaveBeenCalledExactlyOnceWith(
-        expect.anything(),
-        USER_LIBRARY_ID,
-      );
+      expect(recorded.calls).toMatchObject([
+        { payload: { libraryID: USER_LIBRARY_ID } },
+      ]);
     });
 
     it("reports an unavailable group instead of a settings mismatch", async () => {
-      const { deps } = makeDeps({});
+      const recorded = recordCalls(["ScopeItemIDs"]);
+      const { deps } = makeDeps({}, { wrap: recorded.wrap });
 
       await expect(
         createBatchImport(deps).runBatchImportAll({ groupID: 99 }),
       ).resolves.toEqual({ outcome: "unavailable-target" });
-      expect(getNoteItemIDsByLibrary).not.toHaveBeenCalled();
+      expect(recorded.calls).toEqual([]);
       expect(openedModals).toHaveLength(0);
     });
 
     it("resolves a collection inside the named library only", async () => {
-      vi.mocked(getNoteItemIDsByCollection).mockReturnValue([50, 51]);
-      vi.mocked(getNoteRefsByItemIDs).mockReturnValue([
-        makeRef(50),
-        makeRef(51),
-      ]);
-      const { deps } = makeDeps({});
+      seedNotes([50, 51], {
+        libraryID: GROUP_LIBRARY.libraryID,
+        parentItemID: null,
+      });
+      seedCollection(COLLECTION, GROUP_LIBRARY.libraryID, [50, 51]);
+      const recorded = recordCalls(["ScopeItemIDs"]);
+      const { deps } = makeDeps({}, { wrap: recorded.wrap });
 
       const result = await createBatchImport(deps).runBatchImportAll({
         groupID: 7,
@@ -658,15 +749,18 @@ describe("runBatchImportAll", () => {
       });
 
       expect(result).toEqual({ outcome: "batch-modal" });
-      expect(getNoteItemIDsByCollection).toHaveBeenCalledExactlyOnceWith(
-        expect.anything(),
-        { libraryID: GROUP_LIBRARY.libraryID, collectionKey: COLLECTION },
-      );
-      expect(getNoteItemIDsByLibrary).not.toHaveBeenCalled();
+      // One collection read, and no library-wide read.
+      expect(recorded.calls).toMatchObject([
+        {
+          payload: {
+            libraryID: GROUP_LIBRARY.libraryID,
+            collectionKey: COLLECTION,
+          },
+        },
+      ]);
     });
 
     it("reports an unknown collection key instead of an empty scope", async () => {
-      vi.mocked(getCollectionIDByKey).mockReturnValue(undefined);
       const { deps } = makeDeps({});
 
       await expect(
@@ -675,10 +769,11 @@ describe("runBatchImportAll", () => {
           collectionKey: COLLECTION,
         }),
       ).resolves.toEqual({ outcome: "collection-not-found" });
-      expect(getNoteItemIDsByCollection).not.toHaveBeenCalled();
+      expect(openedModals).toHaveLength(0);
     });
 
     it("reports an empty selection for a collection that holds no notes", async () => {
+      seedCollection(COLLECTION, USER_LIBRARY_ID, []);
       const { deps } = makeDeps({});
 
       await expect(
@@ -714,7 +809,7 @@ describe("runBatchImport routing", () => {
   });
 
   it("opens a modal for ≥2 note ids instead of importing inline", async () => {
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50), makeRef(51)]);
+    seedNotes([50, 51]);
     const { deps, importNote } = makeDeps({});
 
     const result = await createBatchImport(deps).runBatchImport(
@@ -728,18 +823,12 @@ describe("runBatchImport routing", () => {
   });
 
   it("opens a modal for child mode", async () => {
-    vi.mocked(getChildNotesByParentIDs).mockReturnValue([makeRef(50)]);
-    vi.mocked(getItemDisplayRefByID).mockReturnValue({
-      itemID: 1,
-      key: "PARENT01",
-      libraryID: USER_LIBRARY_ID,
-      groupID: null,
-      indexedKey: formatIndexedKey("PARENT01", null),
-      title: "Parent",
-    });
+    seedNotes([50]);
     const { deps } = makeDeps({});
 
-    const result = await createBatchImport(deps).runBatchImport("child", [1]);
+    const result = await createBatchImport(deps).runBatchImport("child", [
+      PARENT_ITEM_ID,
+    ]);
 
     expect(result).toEqual({ outcome: "batch-modal" });
     expect(openedModals).toHaveLength(1);
@@ -748,17 +837,16 @@ describe("runBatchImport routing", () => {
 
 describe("single note import (mode=note, 1 id)", () => {
   it("imports and reports the created title without a modal", async () => {
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50)]);
-    vi.mocked(getNoteByItemID).mockReturnValue(makeNote(50));
+    seedNotes([50]);
     const { deps, importNote } = makeDeps({});
 
     const result = await createBatchImport(deps).runBatchImport("note", [50]);
 
     expect(openedModals).toHaveLength(0);
     expect(importNote).toHaveBeenCalledTimes(1);
-    // The shared group memo is threaded so a run memoizes group-library lookups.
+    // The write reads through the Snapshot its read opened.
     expect(importNote.mock.calls[0]![1]).toMatchObject({
-      groupIdMemo: expect.any(Map),
+      reads: expect.any(Object),
     });
     expect(result).toEqual({
       outcome: "single",
@@ -769,7 +857,6 @@ describe("single note import (mode=note, 1 id)", () => {
   });
 
   it("reports not-found when the single id does not resolve", async () => {
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([]);
     const { deps, importNote } = makeDeps({});
 
     const result = await createBatchImport(deps).runBatchImport("note", [99]);
@@ -779,8 +866,7 @@ describe("single note import (mode=note, 1 id)", () => {
   });
 
   it("confirms before overwriting an existing imported note", async () => {
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50)]);
-    vi.mocked(getNoteByItemID).mockReturnValue(makeNote(50));
+    seedNotes([50]);
     confirmMock.mockResolvedValue(true);
     const target = makeFile("Imported/Note 50.md");
     const { deps, importNote } = makeDeps(
@@ -801,7 +887,7 @@ describe("single note import (mode=note, 1 id)", () => {
   });
 
   it("cancels when the overwrite confirm is declined", async () => {
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50)]);
+    seedNotes([50]);
     confirmMock.mockResolvedValue(false);
     const { deps, importNote } = makeDeps(
       {},
@@ -816,8 +902,7 @@ describe("single note import (mode=note, 1 id)", () => {
   });
 
   it("waits for template readiness before writing", async () => {
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50)]);
-    vi.mocked(getNoteByItemID).mockReturnValue(makeNote(50));
+    seedNotes([50]);
     const templateReady = deferred();
     const { deps, importNote } = makeDeps(
       {},
@@ -837,8 +922,7 @@ describe("single note import (mode=note, 1 id)", () => {
 
 describe("note-mode modal classify + run", () => {
   it("keeps the single-import collector alive until the write completes", async () => {
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50)]);
-    vi.mocked(getNoteByItemID).mockReturnValue(makeNote(50));
+    seedNotes([50]);
     const { deps } = makeDeps({});
     const started = Promise.withResolvers<void>();
     const finish = Promise.withResolvers<void>();
@@ -863,10 +947,7 @@ describe("note-mode modal classify + run", () => {
   });
 
   it("keeps admitted writes and their pooled report alive when the modal's signal aborts mid-run", async () => {
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50), makeRef(51)]);
-    vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
-      makeNote(itemID),
-    );
+    seedNotes([50, 51]);
     const { deps } = makeDeps({});
     const started = Promise.withResolvers<void>();
     const finish = Promise.withResolvers<void>();
@@ -908,14 +989,7 @@ describe("note-mode modal classify + run", () => {
   });
 
   it("pools excerpt outcomes across completed notes when another note fails", async () => {
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([
-      makeRef(50),
-      makeRef(51),
-      makeRef(52),
-    ]);
-    vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
-      makeNote(itemID),
-    );
+    seedNotes([50, 51, 52]);
     const { deps } = makeDeps({});
     deps.noteImport.importNote = async (note, options) => {
       if (note.itemID === 52) throw new Error("note write failed");
@@ -939,14 +1013,7 @@ describe("note-mode modal classify + run", () => {
   });
 
   it("runs every note of one import batch under one outcome scope, released after the run", async () => {
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([
-      makeRef(50),
-      makeRef(51),
-      makeRef(52),
-    ]);
-    vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
-      makeNote(itemID),
-    );
+    seedNotes([50, 51, 52]);
     const { deps, importNote } = makeDeps({});
     await using probe = excerptReuseProbe();
     const scopes: (ExcerptOutcomeScope | undefined)[] = [];
@@ -975,41 +1042,37 @@ describe("note-mode modal classify + run", () => {
     expect(probe.renders()).toBe(2);
   });
 
-  it("threads the shared group memo to every imported note", async () => {
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50), makeRef(51)]);
-    vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
-      makeNote(itemID),
-    );
+  it("threads the run's Snapshot reads to every imported note", async () => {
+    seedNotes([50, 51]);
     const { deps, importNote } = makeDeps({});
 
     await createBatchImport(deps).runBatchImport("note", [50, 51]);
     await driveLastModal();
 
     expect(importNote).toHaveBeenCalledTimes(2);
-    // Both writes share one memo instance, so group-library lookups memoize.
-    const memo = importNote.mock.calls[0]![1].groupIdMemo;
-    expect(memo).toBeInstanceOf(Map);
+    // Both writes read one Snapshot, held for the run.
+    const reads = importNote.mock.calls[0]![1].reads;
+    expect(reads).toEqual(expect.any(Object));
     for (const call of importNote.mock.calls) {
-      expect(call[1].groupIdMemo).toBe(memo);
+      expect(call[1].reads).toBe(reads);
     }
   });
 
   it("dedupes itemIDs so one note never mints two mirrors", async () => {
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50)]);
-    vi.mocked(getNoteByItemID).mockReturnValue(makeNote(50));
-    const { deps, importNote } = makeDeps({});
+    seedNotes([50]);
+    const recorded = recordCalls(["NoteRefs"]);
+    const { deps, importNote } = makeDeps({}, { wrap: recorded.wrap });
 
     await createBatchImport(deps).runBatchImport("note", [50, 50]);
     const { manifest } = await driveLastModal();
 
-    expect(vi.mocked(getNoteRefsByItemIDs).mock.calls[0]![1]).toEqual([50]);
+    expect(recorded.calls[0]!.payload.itemIDs).toEqual([50]);
     expect(manifest.options.tasks).toHaveLength(1);
     expect(importNote).toHaveBeenCalledTimes(1);
   });
 
   it("buckets unresolved ids as not-found while importing the rest", async () => {
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50)]);
-    vi.mocked(getNoteByItemID).mockReturnValue(makeNote(50));
+    seedNotes([50]);
     const { deps, importNote } = makeDeps({});
 
     await createBatchImport(deps).runBatchImport("note", [50, 99]);
@@ -1021,10 +1084,10 @@ describe("note-mode modal classify + run", () => {
   });
 
   it("labels a trashed note distinctly from a genuine non-note id", async () => {
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50)]);
-    vi.mocked(getNoteByItemID).mockReturnValue(makeNote(50));
+    seedNotes([50]);
     // 60 is a note that's in Zotero's trash; 99 isn't a note at all.
-    vi.mocked(getTrashedNoteItemIDs).mockReturnValue(new Set([60]));
+    seedNotes([60]);
+    db.$client.exec("insert into deletedItems (itemID) values (60)");
     const { deps, importNote } = makeDeps({});
 
     await createBatchImport(deps).runBatchImport("note", [50, 60, 99]);
@@ -1041,8 +1104,7 @@ describe("note-mode modal classify + run", () => {
   });
 
   it("classifies an existing mirror as an overwrite with its target file", async () => {
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50)]);
-    vi.mocked(getNoteByItemID).mockReturnValue(makeNote(50));
+    seedNotes([50]);
     const target = makeFile("Imported/Note 50.md");
     const { deps, importNote } = makeDeps(
       {},
@@ -1057,12 +1119,21 @@ describe("note-mode modal classify + run", () => {
   });
 
   it("settles a vanished note as skipped, not failed", async () => {
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50)]);
-    vi.mocked(getNoteByItemID).mockReturnValue(null);
+    seedNotes([50]);
     const { deps, importNote } = makeDeps({});
 
     await createBatchImport(deps).runBatchImport("note", [50, 51]);
-    const { onItemSettled } = await driveLastModal();
+    const options = openedModals.at(-1)!;
+    await options.onClassify(classifyControls());
+    // The note leaves Zotero between classify and the write.
+    db.$client.exec(
+      "delete from itemNotes where itemID = 50; delete from items where itemID = 50",
+    );
+    const onItemSettled = vi.fn();
+    await options.onRun({
+      onItemSettled,
+      signal: new AbortController().signal,
+    });
 
     expect(importNote).not.toHaveBeenCalled();
     expect(onItemSettled).toHaveBeenCalledWith({ id: 50, status: "skipped" });
@@ -1072,10 +1143,7 @@ describe("note-mode modal classify + run", () => {
 describe("up-to-date classification", () => {
   it("classifies a note as up-to-date when zotero-lastmod matches", async () => {
     const ref50 = makeRef(50);
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([ref50, makeRef(51)]);
-    vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
-      makeNote(itemID),
-    );
+    seedNotes([50, 51]);
     const target = makeFile("Imported/Note 50.md");
     const { deps, importNote } = makeDeps(
       {},
@@ -1100,10 +1168,7 @@ describe("up-to-date classification", () => {
 
   it("classifies as overwrite when zotero-lastmod is missing (self-healing)", async () => {
     const ref50 = makeRef(50);
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([ref50, makeRef(51)]);
-    vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
-      makeNote(itemID),
-    );
+    seedNotes([50, 51]);
     const target = makeFile("Imported/Note 50.md");
     const { deps, importNote } = makeDeps(
       {},
@@ -1122,10 +1187,7 @@ describe("up-to-date classification", () => {
 
   it("classifies as overwrite when zotero-lastmod is older than dateModified", async () => {
     const ref50 = makeRef(50);
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([ref50, makeRef(51)]);
-    vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
-      makeNote(itemID),
-    );
+    seedNotes([50, 51]);
     const target = makeFile("Imported/Note 50.md");
     const { deps, importNote } = makeDeps(
       {},
@@ -1149,10 +1211,7 @@ describe("up-to-date classification", () => {
 
   it("classifies as overwrite when zotero-lastmod is newer than dateModified", async () => {
     const ref50 = makeRef(50);
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([ref50, makeRef(51)]);
-    vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
-      makeNote(itemID),
-    );
+    seedNotes([50, 51]);
     const target = makeFile("Imported/Note 50.md");
     const { deps, importNote } = makeDeps(
       {},
@@ -1175,10 +1234,7 @@ describe("up-to-date classification", () => {
   });
 
   it("classifies as create when no existing file exists", async () => {
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50), makeRef(51)]);
-    vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
-      makeNote(itemID),
-    );
+    seedNotes([50, 51]);
     const { deps, importNote } = makeDeps({});
 
     await createBatchImport(deps).runBatchImport("note", [50, 51]);
@@ -1194,24 +1250,10 @@ describe("up-to-date classification", () => {
 
 describe("child-mode modal classify", () => {
   it("groups child notes under their parent display ref", async () => {
-    vi.mocked(getChildNotesByParentIDs).mockReturnValue([
-      makeRef(50),
-      makeRef(51),
-    ]);
-    vi.mocked(getItemDisplayRefByID).mockReturnValue({
-      itemID: 1,
-      key: "PARENT01",
-      libraryID: USER_LIBRARY_ID,
-      groupID: null,
-      indexedKey: formatIndexedKey("PARENT01", null),
-      title: "Parent paper",
-    });
-    vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
-      makeNote(itemID),
-    );
+    seedNotes([50, 51]);
     const { deps, importNote } = makeDeps({});
 
-    await createBatchImport(deps).runBatchImport("child", [1]);
+    await createBatchImport(deps).runBatchImport("child", [PARENT_ITEM_ID]);
     const { manifest } = await driveLastModal();
 
     expect(manifest.options.parents).toHaveLength(1);
@@ -1223,10 +1265,9 @@ describe("child-mode modal classify", () => {
   });
 
   it("builds an empty tree when no child notes exist", async () => {
-    vi.mocked(getChildNotesByParentIDs).mockReturnValue([]);
     const { deps, importNote } = makeDeps({});
 
-    await createBatchImport(deps).runBatchImport("child", [1]);
+    await createBatchImport(deps).runBatchImport("child", [PARENT_ITEM_ID]);
     const { manifest } = await driveLastModal();
 
     expect(manifest.options.parents).toHaveLength(0);
@@ -1246,7 +1287,6 @@ describe("runChildImportByKey", () => {
   });
 
   it("returns null when the indexed key does not resolve to an item", async () => {
-    vi.mocked(getItemsByKey).mockReturnValue([]);
     const { deps } = makeDeps({});
 
     await expect(
@@ -1257,12 +1297,11 @@ describe("runChildImportByKey", () => {
   });
 
   it("opens the child-import modal when the key resolves", async () => {
-    vi.mocked(getItemsByKey).mockReturnValue([
-      { itemID: 7, key: "ABCD2345", libraryID: USER_LIBRARY_ID },
-    ] as any);
-    vi.mocked(getChildNotesByParentIDs).mockReturnValue([makeRef(50)]);
-    vi.mocked(getItemDisplayRefByID).mockReturnValue(null);
-    vi.mocked(getNoteByItemID).mockReturnValue(makeNote(50));
+    db.$client.exec(`
+      insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+        values (7, 1, '2024-01-01 10:00:00', '2024-01-01 10:00:00', 1, 'ABCD2345');
+    `);
+    seedNotes([50], { parentItemID: 7 });
     const { deps, importNote } = makeDeps({});
 
     const result = await createBatchImport(deps).runChildImportByKey(
@@ -1275,10 +1314,19 @@ describe("runChildImportByKey", () => {
   });
 
   it("returns a rejected promise when synchronous key lookup throws", async () => {
-    vi.mocked(getItemsByKey).mockImplementation(() => {
-      throw new Error("sqlite read failed");
-    });
-    const { deps } = makeDeps({});
+    // A read that fails inside SQLite answers with a tagged DbUnavailable.
+    const { deps } = makeDeps(
+      {},
+      {
+        wrap: (client) => ({
+          ...client,
+          ItemsByIndexedKeys: (() =>
+            Effect.fail(
+              new DbUnavailable({ message: "sqlite read failed" }),
+            )) as unknown as ZoteroReadsClient["ItemsByIndexedKeys"],
+        }),
+      },
+    );
 
     await expect(
       createBatchImport(deps).runChildImportByKey(
@@ -1330,7 +1378,7 @@ describe("runChildImportByKey", () => {
 describe("reimportNoteByKey", () => {
   it("reports retained images once for the explicit re-import", async () => {
     const note = makeIndexedNote();
-    vi.mocked(getNoteByKey).mockReturnValue(note);
+    seedNotes([note.itemID], { key: note.key });
     const { deps } = makeDeps({});
     deps.noteImport.importNote = async (_note, options) => {
       options.reportExcerpts?.({
@@ -1367,7 +1415,6 @@ describe("reimportNoteByKey", () => {
   });
 
   it("returns not-found when the note key does not resolve", async () => {
-    vi.mocked(getNoteByKey).mockReturnValue(null);
     const { deps } = makeDeps({});
 
     await expect(
@@ -1381,7 +1428,7 @@ describe("reimportNoteByKey", () => {
   it("passes the clicked file as the overwrite target", async () => {
     const note = makeIndexedNote();
     const targetFile = makeFile("Imported/Clicked.md");
-    vi.mocked(getNoteByKey).mockReturnValue(note);
+    seedNotes([note.itemID], { key: note.key });
     const { deps, importNote } = makeDeps(
       {},
       { importNoteResult: "overwritten" },
@@ -1396,7 +1443,7 @@ describe("reimportNoteByKey", () => {
 
   it("preserves a skipped write outcome", async () => {
     const note = makeIndexedNote();
-    vi.mocked(getNoteByKey).mockReturnValue(note);
+    seedNotes([note.itemID], { key: note.key });
     const { deps } = makeDeps({}, { importNoteResult: "skipped" });
 
     await expect(

@@ -1,6 +1,6 @@
 import { appendFile, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -92,6 +92,16 @@ describe("prepareRead placement", () => {
     await using prepared = await prepareRead("copy", source);
 
     expect(dirname(dirname(prepared.path))).toBe(diverted);
+  });
+
+  it("names the snapshot dir with this process and the owner it is given", async () => {
+    plan(tmpdir());
+
+    await using prepared = await prepareRead("copy", source, "0123456789ab");
+
+    expect(basename(dirname(prepared.path))).toMatch(
+      new RegExp(`^zotlit-db-${process.pid}-0123456789ab-[^-]+$`),
+    );
   });
 
   it("propagates a failure that is not the parent's, leaving it untried", async () => {

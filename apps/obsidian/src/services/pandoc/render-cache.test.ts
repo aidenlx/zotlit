@@ -7,13 +7,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
-import type { DatabaseEvents } from "@/services/database/service";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import type { Held } from "@/services/query-client/service";
 import { QueryClientService } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 import type { ZoteroPrefEvents } from "@/services/zotero-pref/service";
+import type { ZoteroReadsEvents } from "@/services/zotero-reads/service";
 
 import type { Inlines } from "./ast";
 import type {
@@ -128,9 +128,9 @@ class PandocEngineStub {
 class DatabaseStub {
   readonly #listeners = new Set<() => void>();
 
-  on<K extends keyof DatabaseEvents>(
+  on<K extends keyof ZoteroReadsEvents>(
     event: K,
-    cb: DatabaseEvents[K],
+    cb: ZoteroReadsEvents[K],
   ): () => void {
     const listener = cb as () => void;
     if (event === "changed") this.#listeners.add(listener);
@@ -564,6 +564,68 @@ describe("BibliographyRenderCache", () => {
     expect(engine.requests).toHaveLength(2);
   });
 
+  it.each(["bibliography", "citations"] as const)(
+    "uses current item data after an in-flight %s render is invalidated",
+    async (kind) => {
+      await using h = await makeHarness();
+      const started = Promise.withResolvers<void>();
+      const gate = Promise.withResolvers<void>();
+      const titles: string[] = [];
+      const content = async (items: readonly CslItemData[]) => {
+        const title = String(items[0]?.title);
+        titles.push(title);
+        if (titles.length === 1) {
+          started.resolve();
+          await gate.promise;
+        }
+        return inlines(title);
+      };
+      h.engine.renderBibliography = async ({ items }) => [
+        { id: "alpha", marker: undefined, content: await content(items) },
+      ];
+      h.engine.renderCitations = async ({ items }) => [
+        { citations: [], content: await content(items) },
+      ];
+      const read = (title: string) => {
+        const items = [{ ...item("alpha"), title }];
+        return kind === "bibliography"
+          ? h.cache.readBibliography(items).then((value) => value?.entries)
+          : h.cache.readCitations(["[@alpha]"], items);
+      };
+      const first = read("Old title");
+      await started.promise;
+      h.db.changed();
+      const updated = read("Current title");
+      gate.resolve();
+      await first;
+
+      expect((await updated)?.[0]?.content).toEqual(inlines("Current title"));
+      expect((await read("Current title"))?.[0]?.content).toEqual(
+        inlines("Current title"),
+      );
+    },
+  );
+
+  it.each(["bibliography", "citations"] as const)(
+    "reports a failed %s read to an owner that composes it",
+    async (kind) => {
+      await using h = await makeHarness();
+      const read = () =>
+        kind === "bibliography"
+          ? h.cache.readBibliography([item("alpha")])
+          : h.cache.readCitations(["[@alpha]"], [item("alpha")]);
+      await read();
+      h.db.changed();
+      h.engine.fails = true;
+
+      await expect(read()).rejects.toThrow("no");
+      await expect(read()).rejects.toThrow("no");
+      expect(
+        kind === "bibliography" ? h.engine.requests : h.engine.citationRequests,
+      ).toHaveLength(2);
+    },
+  );
+
   it("hands the settled render to the surfaces that hold it", async () => {
     await using harness = await makeHarness();
     const { cache } = harness;
@@ -592,19 +654,26 @@ describe("BibliographyRenderCache", () => {
     ]);
   });
 
-  it("answers a failed replacement with the render it still holds", async () => {
+  it("keeps a failed replacement available to display reads", async () => {
     await using harness = await makeHarness();
     const { cache, engine, db } = harness;
     const items = [item("alpha")];
-    await expect(cache.readBibliography(items)).resolves.toMatchObject({
-      entries: [{ content: inlines("entry for alpha") }],
+    await expect(cache.render(items)).resolves.toMatchObject({
+      kind: "held",
     });
 
     engine.fails = true;
     db.changed();
 
-    await expect(cache.readBibliography(items)).resolves.toMatchObject({
-      entries: [{ content: inlines("entry for alpha") }],
+    const replacing = await cache.render(items);
+    if (replacing.kind !== "held") throw new Error("Missing held render");
+    await replacing.record.settled;
+    await expect(cache.render(items)).resolves.toMatchObject({
+      kind: "held",
+      record: {
+        status: "failed",
+        value: { entries: [{ content: inlines("entry for alpha") }] },
+      },
     });
     expect(engine.requests).toHaveLength(2);
   });

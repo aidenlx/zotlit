@@ -1532,23 +1532,15 @@ describe("registerItemQueryCli", () => {
       registerCliHandler,
       register: (callback: () => void) => onUnload.push(callback),
     } as unknown as Plugin;
-    const acquireRead = vi.fn();
 
-    registerItemQueryCli(
-      plugin,
-      {
-        acquireRead,
-        vault: () => IDENTITY.vault,
-        libraryScope: async () => MY_LIBRARY_SCOPE,
+    registerItemQueryCli(plugin, {
+      answer: async (_params, signal) => {
+        signal.throwIfAborted();
+        return "";
       },
-      {
-        answer: async (_params, signal) => {
-          signal.throwIfAborted();
-          return "";
-        },
-        cancel: (id) => id === "export-a",
-      },
-    );
+      cancel: (id) => id === "export-a",
+      schema: async () => "",
+    });
 
     expect(registerCliHandler).toHaveBeenCalledWith(
       ITEM_QUERY_COMMAND,
@@ -1591,6 +1583,5 @@ describe("registerItemQueryCli", () => {
     const handler = registerCliHandler.mock.calls[0]![3] as CliHandler;
     for (const callback of onUnload) callback();
     await expect(handler({})).rejects.toMatchObject({ name: "AbortError" });
-    expect(acquireRead).not.toHaveBeenCalled();
   });
 });

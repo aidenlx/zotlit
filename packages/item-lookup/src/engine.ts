@@ -1,82 +1,31 @@
 import { regex } from "arkregex";
+import { Effect, Stream } from "effect";
 import MiniSearch from "minisearch";
+import type { SearchResult } from "minisearch";
 
 import { parseItemDate, parseItemLanguage } from "@zotlit/db";
 import type { IndexedItem, LanguageNameLookup } from "@zotlit/db";
 
 import { formatCreator } from "./format-creator";
-import { normalize, normalizeWithIndexMap, tokenize } from "./tokenizer";
-import type { Tokenizer, TokenizerOptions } from "./tokenizer";
+import { Segmenter } from "./segmenter";
+import { normalize, normalizeWithIndexMap } from "./tokenizer";
 
 /** Structurally compatible with Obsidian's `SearchMatches`. */
 export type SearchMatches = [number, number][];
 
-export interface SearchHit<T> {
-  item: T;
-  score: number;
+/**
+ * One ranked Item of a search, lean enough to cross a worker boundary: the
+ * caller hydrates it by {@link ItemHit.indexedKey}.
+ */
+export interface ItemHit {
+  itemID: number;
+  indexedKey: string;
+  libraryID: number;
+  /** Highlight ranges in the original offsets of the Item's title. */
   matches: SearchMatches;
 }
 
-export interface SearchIndex {
-  /**
-   * Canonical rank of each Library in the index, by local `libraryID`. One
-   * composite index spans every Library in scope, so ordering needs a stable
-   * Library tie-breaker that does not depend on database row order.
-   */
-  libraryRank: ReadonlyMap<number, number>;
-  /** Every indexed item in global order: newest first, then Library, then item. */
-  items: readonly IndexedItem[];
-  byId: ReadonlyMap<number, IndexedItem>;
-  yearById: ReadonlyMap<number, string>;
-  citationKeyById: ReadonlyMap<number, string>;
-  mini: MiniSearch<IndexedSearchDocument>;
-}
-
-export type SearchField =
-  | "title"
-  | "creators"
-  | "publicationTitle"
-  | "shortTitle"
-  | "court";
-
-export interface ScoringConfig {
-  boosts: Record<SearchField, number>;
-  /** Recency multiplier `1 + maxBoost * exp(-days / halfLifeDays)`. */
-  recencyMaxBoost: number;
-  recencyHalfLifeDays: number;
-  /** Additive bonus when a query token equals an item's year exactly. */
-  exactYearBonus: number;
-  /** MiniSearch fuzzy threshold per query term length. */
-  fuzzy: (term: string) => number;
-  prefix: boolean;
-}
-
-export const DEFAULT_SCORING: ScoringConfig = {
-  boosts: {
-    title: 2.5,
-    shortTitle: 2.5,
-    creators: 2,
-    publicationTitle: 1.5,
-    court: 1,
-  },
-  // Recency boost: items modified in the last few weeks score slightly higher
-  // than equally relevant stale ones. Cap ≤1.1× keeps BM25 dominant. The
-  // empty-query path uses `dateModified DESC` directly; this only applies to
-  // scored queries.
-  recencyMaxBoost: 0.1,
-  recencyHalfLifeDays: 30,
-  exactYearBonus: 0.25,
-  fuzzy: (term) => (term.length <= 3 ? 0 : term.length <= 5 ? 0.1 : 0.2),
-  prefix: true,
-};
-
-export interface SearchIndexOptions {
-  tokenizer: Tokenizer;
-  limit: number;
-  scoring?: ScoringConfig;
-}
-
-export interface BuildIndexOptions {
+export interface EngineIndexOptions {
   /**
    * Local `libraryID`s of every Library the index covers, in canonical order.
    * Their positions become the Library tie-breaker; a `libraryID` absent from
@@ -86,72 +35,207 @@ export interface BuildIndexOptions {
   languageLookup?: LanguageNameLookup | null;
 }
 
-interface IndexedSearchDocument {
-  id: number;
-  title: string;
-  creators: string;
-  publicationTitle: string;
-  shortTitle: string;
-  court: string;
-}
+/** The fields an Item is indexed under; each query term may match any of them. */
+export type SearchField =
+  | "title"
+  | "shortTitle"
+  | "creators"
+  | "publicationTitle"
+  | "court"
+  | "citationKey"
+  | "key"
+  | "year";
 
 const SEARCH_FIELDS = [
   "title",
+  "shortTitle",
   "creators",
   "publicationTitle",
-  "shortTitle",
   "court",
+  "citationKey",
+  "key",
+  "year",
 ] as const satisfies readonly SearchField[];
 
-/** Accumulates a {@link SearchIndex} across batches so a large library can be
- * indexed in chunks with the caller yielding between {@link add} calls. */
-export interface SearchIndexBuilder {
-  /** Index a batch of items; {@link build} imposes the global order. */
-  add(items: readonly IndexedItem[]): void;
-  build(): SearchIndex;
+const BOOSTS: Record<SearchField, number> = {
+  title: 2.5,
+  shortTitle: 2.5,
+  creators: 2,
+  citationKey: 2,
+  publicationTitle: 1.5,
+  court: 1,
+  key: 1,
+  year: 1,
+};
+
+/** Terms of three characters or fewer match exactly or by prefix only. */
+function fuzziness(term: string): number {
+  return term.length <= 3 ? 0 : term.length <= 5 ? 0.1 : 0.2;
 }
 
-export function createIndexBuilder(
-  tokenizerOpts: Tokenizer,
-  { libraries, languageLookup = null }: BuildIndexOptions,
-): SearchIndexBuilder {
+type IndexedSearchDocument = { id: number } & Record<SearchField, string>;
+
+/** What a hit needs from its Item after the build, without the Item itself. */
+interface IndexedRecord {
+  itemID: number;
+  indexedKey: string;
+  libraryID: number;
+  title: string;
+  /** The normalized citation key, or `null` when the Item has none. */
+  citationKey: string | null;
+  /** Position in the global order; see {@link orderComparator}. */
+  order: number;
+}
+
+/**
+ * A built search index over the Items of one or more Libraries. Opaque: read
+ * it through {@link searchEngineIndex}.
+ */
+export interface EngineIndex {
+  readonly size: number;
+  /** @internal */
+  readonly mini: MiniSearch<IndexedSearchDocument>;
+  /** @internal Every record in global order. */
+  readonly ordered: readonly IndexedRecord[];
+  /** @internal */
+  readonly byId: ReadonlyMap<number, IndexedRecord>;
+  /** @internal The word splitter the index was built with, reused for queries. */
+  readonly words: (text: string) => string[];
+}
+
+/** Accumulates an {@link EngineIndex} one slice of Items at a time. */
+export interface EngineIndexBuilder {
+  /** Index a slice of Items, then yield to the scheduler. */
+  add(slice: readonly IndexedItem[]): Effect.Effect<void>;
+  /** Impose the global order and return the index. */
+  readonly build: Effect.Effect<EngineIndex>;
+}
+
+/** A builder over the words of the current {@link Segmenter}. */
+export const makeEngineIndexBuilder = (
+  options: EngineIndexOptions,
+): Effect.Effect<EngineIndexBuilder, never, Segmenter> =>
+  Effect.map(Effect.service(Segmenter), ({ words }) => {
+    const core = createCore(words, options);
+    return {
+      add: (slice) =>
+        Effect.andThen(
+          Effect.sync(() => core.add(slice)),
+          Effect.yieldNow,
+        ),
+      build: Effect.sync(() => core.build()),
+    };
+  });
+
+/**
+ * Build an index from a stream of Item slices. Each slice ends at a yield, so
+ * an interrupt stops the build between slices and no index comes out.
+ */
+export const buildEngineIndex = <E, R>(
+  slices: Stream.Stream<readonly IndexedItem[], E, R>,
+  options: EngineIndexOptions,
+): Effect.Effect<EngineIndex, E, R | Segmenter> =>
+  Effect.gen(function* () {
+    const builder = yield* makeEngineIndexBuilder(options);
+    yield* Stream.runForEach(slices, (slice) => builder.add(slice));
+    return yield* builder.build;
+  });
+
+/**
+ * Rank the Items that match `query`, best first, up to `limit`.
+ *
+ * - Every query term must match some field, by prefix, and fuzzily when it is
+ *   longer than three characters; MiniSearch's score orders the matches.
+ * - Items whose citation key starts with the whole query come first, shortest
+ *   key first.
+ * - A bare Zotero key answers every Item holding that key.
+ * - The empty query answers the global order: newest `dateModified` first,
+ *   then canonical Library order, then item id. The same order breaks ties.
+ *
+ * The lookup and the ranking are separate steps with a yield between them, so
+ * an interrupt can end a search mid-query.
+ */
+export const searchEngineIndex = (
+  index: EngineIndex,
+  query: string,
+  limit: number,
+): Effect.Effect<readonly ItemHit[]> =>
+  Effect.gen(function* () {
+    if (limit <= 0) return [];
+    const lookup = lookupQuery(index, query, index.words);
+    if (lookup.kind !== "ranked") return finishLookup(index, lookup, limit);
+    yield* Effect.yieldNow;
+    return finishLookup(index, lookup, limit);
+  });
+
+// ---------------------------------------------------------------------------
+// Synchronous core behind the Effect API.
+
+interface EngineCore {
+  add(slice: readonly IndexedItem[]): void;
+  build(): EngineIndex;
+}
+
+function createCore(
+  words: (text: string) => string[],
+  { libraries, languageLookup = null }: EngineIndexOptions,
+): EngineCore {
   const mini = new MiniSearch<IndexedSearchDocument>({
     idField: "id",
     fields: [...SEARCH_FIELDS],
     storeFields: [],
-    tokenize: (text) => tokenize(text, tokenizerOpts),
+    // The whole citation key is one term too, so the citation key rule can
+    // find it by prefix wherever word segmentation would cut it.
+    tokenize: (text, field) =>
+      field === "citationKey" ? [text, ...words(text)] : words(text),
     processTerm,
   });
   const libraryRank = new Map(libraries.map((id, rank) => [id, rank]));
-  const items: IndexedItem[] = [];
-  const byId = new Map<number, IndexedItem>();
-  const yearById = new Map<number, string>();
-  const citationKeyById = new Map<number, string>();
+  const pending: { item: IndexedItem; record: IndexedRecord }[] = [];
   return {
-    add(batch) {
-      const indexed = batch.map((item) => {
-        items.push(item);
-        byId.set(item.itemID, item);
-        const year = parseItemDate(item.date)?.year?.toString() ?? "";
-        yearById.set(item.itemID, year);
-        if (item.citationKey) {
-          citationKeyById.set(item.itemID, normalize(item.citationKey));
-        }
-        return toSearchDocument(item, languageLookup);
-      });
-      mini.addAll(indexed);
+    add(slice) {
+      mini.addAll(
+        slice.map((item) => {
+          pending.push({
+            item,
+            record: {
+              itemID: item.itemID,
+              indexedKey: item.indexedKey,
+              libraryID: item.libraryID,
+              title: item.title ?? "",
+              citationKey: item.citationKey
+                ? normalize(item.citationKey)
+                : null,
+              order: 0,
+            },
+          });
+          return toSearchDocument(item, languageLookup);
+        }),
+      );
     },
     build() {
-      // Chunks arrive one Library at a time, so the composite order is imposed
+      // Slices arrive one Library at a time, so the composite order is imposed
       // here rather than by insertion: one global sort over the whole corpus.
-      items.sort(orderComparator(libraryRank));
-      return { libraryRank, items, byId, yearById, citationKeyById, mini };
+      const compare = orderComparator(libraryRank);
+      pending.sort((a, b) => compare(a.item, b.item));
+      const ordered = pending.map(({ record }, order) => {
+        record.order = order;
+        return record;
+      });
+      pending.length = 0;
+      return {
+        size: ordered.length,
+        mini,
+        ordered,
+        byId: new Map(ordered.map((record) => [record.itemID, record])),
+        words,
+      };
     },
   };
 }
 
 /**
- * Canonical global order — most recently modified first, then canonical Library
+ * Canonical global order: most recently modified first, then canonical Library
  * order, then item id. Every ranking path ends here, so equal scores and equal
  * timestamps still produce one stable order across identical searches.
  */
@@ -166,18 +250,6 @@ function orderComparator(
     a.itemID - b.itemID;
 }
 
-export function buildIndex(
-  items: readonly IndexedItem[],
-  tokenizerOpts: Tokenizer,
-  options: BuildIndexOptions,
-): SearchIndex {
-  const builder = createIndexBuilder(tokenizerOpts, options);
-  builder.add(items);
-  return builder.build();
-}
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
 const DOI_RE = regex("\\b10\\.\\d{4,9}/[^\\s\\]\\)]+", "iu");
 const ISBN_RE = regex(
   "\\b(?:ISBN[-: ]*)?(?=(?:\\D*\\d){10}(?:(?:\\D*\\d){3})?\\D*\\b)\\d[\\d -]{8,16}[\\dXx]\\b",
@@ -190,7 +262,6 @@ const AND_RE = regex("\\band\\b", "giu");
 const LEADING_AT_RE = regex("^\\s*@", "u");
 const WHITESPACE_RE = regex("\\s+", "gu");
 const ZOTERO_KEY_RE = regex("^[A-Z0-9]{8}$", "u");
-const YEAR_PREFIX_RE = regex("^\\d{1,4}$", "u");
 
 export function cleanQuery(input: string): string {
   if (DOI_RE.test(input) || ISBN_RE.test(input)) return input;
@@ -205,256 +276,167 @@ export function cleanQuery(input: string): string {
     .trim();
 }
 
-export function searchIndex(
-  index: SearchIndex,
+type Lookup =
+  | { kind: "all" }
+  | { kind: "none" }
+  | { kind: "key"; records: IndexedRecord[] }
+  | {
+      kind: "ranked";
+      /** The cleaned query, normalized, for the citation key rule. */
+      whole: string;
+      results: SearchResult[];
+    };
+
+function lookupQuery(
+  index: EngineIndex,
   query: string,
-  opts: SearchIndexOptions,
-): SearchHit<IndexedItem>[] {
-  const scoring = opts.scoring ?? DEFAULT_SCORING;
-  const compareOrder = orderComparator(index.libraryRank);
+  words: (text: string) => string[],
+): Lookup {
+  if (query.trim().length === 0) return { kind: "all" };
   const cleaned = cleanQuery(query);
   const keyQuery = cleaned.toUpperCase();
   if (ZOTERO_KEY_RE.test(keyQuery)) {
     // A bare Zotero Key is unique only inside one Library, so every Library in
     // scope that holds it contributes a result rather than the first one found.
-    return index.items
-      .filter((candidate) => candidate.key === keyQuery)
-      .slice(0, opts.limit)
-      .map((item) => ({ item, score: Infinity, matches: [] }));
+    const records = index.mini
+      .search(keyQuery.toLowerCase(), {
+        fields: ["key"],
+        prefix: false,
+        fuzzy: false,
+        tokenize: (text) => [text],
+        processTerm: (term) => term,
+      })
+      .flatMap((result) => recordOf(index, result));
+    return { kind: "key", records };
   }
 
-  const tokens = queryTokens(cleaned, opts.tokenizer);
-  if (tokens.length === 0) return [];
+  const tokens = queryTokens(cleaned, words);
+  if (tokens.length === 0) return { kind: "none" };
 
-  const candidates = intersectTokenCandidates(index, tokens, scoring);
-  if (candidates.size === 0) return [];
+  const whole = normalize(cleaned);
+  // One lookup: every token across the fields, or the whole query as a
+  // prefix of a whole citation key.
+  const results = index.mini.search({
+    combineWith: "OR",
+    queries: [
+      {
+        queries: [cleaned],
+        combineWith: "AND",
+        prefix: true,
+        fuzzy: fuzziness,
+        boost: BOOSTS,
+        tokenize: () => tokens,
+        processTerm: (term) => term,
+      },
+      {
+        queries: [whole],
+        fields: ["citationKey"],
+        prefix: true,
+        fuzzy: false,
+        tokenize: (text) => [text],
+        processTerm: (term) => term,
+      },
+    ],
+  });
+  return { kind: "ranked", whole, results };
+}
 
-  const ctx: SearchContext = {
-    nowMs: Temporal.Now.instant().epochMilliseconds,
-    scoring,
+function finishLookup(
+  index: EngineIndex,
+  lookup: Lookup,
+  limit: number,
+): ItemHit[] {
+  switch (lookup.kind) {
+    case "all":
+      return index.ordered.slice(0, limit).map((record) => hitOf(record, []));
+    case "none":
+      return [];
+    case "key":
+      return lookup.records
+        .sort((a, b) => a.order - b.order)
+        .slice(0, limit)
+        .map((record) => hitOf(record, []));
+    case "ranked":
+      return rankResults(index, lookup, limit);
+  }
+}
+
+interface RankedResult {
+  record: IndexedRecord;
+  score: number;
+  terms: readonly string[];
+  /** The citation key length when the key starts with the whole query. */
+  keyLength: number | null;
+}
+
+function rankResults(
+  index: EngineIndex,
+  { whole, results }: Extract<Lookup, { kind: "ranked" }>,
+  limit: number,
+): ItemHit[] {
+  const ranked: RankedResult[] = results.flatMap((result) =>
+    recordOf(index, result).map((record) => ({
+      record,
+      score: result.score,
+      terms: result.terms,
+      keyLength: record.citationKey?.startsWith(whole)
+        ? record.citationKey.length
+        : null,
+    })),
+  );
+  ranked.sort(compareRanked);
+  const top = ranked.slice(0, limit);
+
+  const terms = new Set<string>();
+  for (const result of top) for (const term of result.terms) terms.add(term);
+  const highlightRe = buildHighlightRegex(terms);
+
+  return top.map(({ record }) =>
+    hitOf(
+      record,
+      highlightRe && record.title
+        ? highlightRanges(highlightRe, record.title)
+        : [],
+    ),
+  );
+}
+
+function compareRanked(a: RankedResult, b: RankedResult): number {
+  if (a.keyLength !== null || b.keyLength !== null) {
+    if (a.keyLength === null) return 1;
+    if (b.keyLength === null) return -1;
+    return a.keyLength - b.keyLength || a.record.order - b.record.order;
+  }
+  return b.score - a.score || a.record.order - b.record.order;
+}
+
+function recordOf(index: EngineIndex, result: SearchResult): IndexedRecord[] {
+  const record = index.byId.get(result.id as number);
+  return record ? [record] : [];
+}
+
+function hitOf(record: IndexedRecord, matches: SearchMatches): ItemHit {
+  return {
+    itemID: record.itemID,
+    indexedKey: record.indexedKey,
+    libraryID: record.libraryID,
+    matches,
   };
-  const scored = [...candidates.values()]
-    .map((candidate) => rankCandidate(candidate, tokens, ctx))
-    .sort((a, b) => compareRankedCandidates(a, b, compareOrder))
-    .slice(0, opts.limit);
-
-  const termsUnion = new Set<string>();
-  for (const { terms } of scored)
-    for (const term of terms) termsUnion.add(term);
-  const highlightRe = buildHighlightRegex(termsUnion);
-
-  return scored.map(({ item, score }) => ({
-    item,
-    score,
-    matches:
-      highlightRe && item.title ? highlightRanges(highlightRe, item.title) : [],
-  }));
 }
 
-interface SearchContext {
-  nowMs: number;
-  scoring: ScoringConfig;
-}
-
-function recencyMultiplier(item: IndexedItem, ctx: SearchContext): number {
-  const daysElapsed = Math.max(
-    0,
-    (ctx.nowMs - item.dateModified.epochMilliseconds) / MS_PER_DAY,
-  );
-  return (
-    1 +
-    ctx.scoring.recencyMaxBoost *
-      Math.exp(-daysElapsed / ctx.scoring.recencyHalfLifeDays)
-  );
-}
-
-interface TokenEvidence {
-  miniScore: number;
-  terms: Set<string>;
-  exactYear: boolean;
-}
-
-interface CandidateEvidence {
-  item: IndexedItem;
-  miniScore: number;
-  terms: Set<string>;
-  exactYear: boolean;
-  citationKey: string | null;
-}
-
-type RankedCandidate =
-  | {
-      tier: 1;
-      item: IndexedItem;
-      score: number;
-      citationKeyLength: number;
-      terms: ReadonlySet<string>;
-    }
-  | {
-      tier: 2;
-      item: IndexedItem;
-      score: number;
-      terms: ReadonlySet<string>;
-    };
-
-function queryTokens(query: string, opts: Tokenizer): string[] {
+function queryTokens(
+  query: string,
+  words: (text: string) => string[],
+): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
-  for (const token of tokenize(query, opts)) {
+  for (const token of words(query)) {
     const normalized = normalize(token);
     if (!normalized || seen.has(normalized)) continue;
     seen.add(normalized);
     result.push(normalized);
   }
   return result;
-}
-
-function intersectTokenCandidates(
-  index: SearchIndex,
-  tokens: readonly string[],
-  scoring: ScoringConfig,
-): Map<number, CandidateEvidence> {
-  let candidates: Map<number, CandidateEvidence> | null = null;
-
-  for (const token of tokens) {
-    const tokenCandidates = candidatesForToken(index, token, scoring);
-    if (tokenCandidates.size === 0) return new Map();
-
-    if (!candidates) {
-      candidates = new Map(
-        [...tokenCandidates].flatMap(([itemID, evidence]) => {
-          const item = index.byId.get(itemID);
-          return item
-            ? [
-                [
-                  itemID,
-                  {
-                    item,
-                    miniScore: evidence.miniScore,
-                    terms: evidence.terms,
-                    exactYear: evidence.exactYear,
-                    citationKey: index.citationKeyById.get(itemID) ?? null,
-                  },
-                ] satisfies [number, CandidateEvidence],
-              ]
-            : [];
-        }),
-      );
-      continue;
-    }
-
-    for (const [itemID, candidate] of candidates) {
-      const evidence = tokenCandidates.get(itemID);
-      if (!evidence) {
-        candidates.delete(itemID);
-        continue;
-      }
-      candidate.miniScore += evidence.miniScore;
-      candidate.exactYear ||= evidence.exactYear;
-      for (const term of evidence.terms) candidate.terms.add(term);
-    }
-  }
-
-  return candidates ?? new Map();
-}
-
-function candidatesForToken(
-  index: SearchIndex,
-  token: string,
-  scoring: ScoringConfig,
-): Map<number, TokenEvidence> {
-  const candidates = new Map<number, TokenEvidence>();
-
-  for (const hit of index.mini.search(token, {
-    combineWith: "AND",
-    prefix: scoring.prefix,
-    fuzzy: scoring.fuzzy,
-    boost: scoring.boosts,
-    tokenize: (text) => [text],
-    processTerm: (term) => term,
-  })) {
-    candidates.set(hit.id as number, {
-      miniScore: hit.score,
-      terms: new Set(hit.terms),
-      exactYear: false,
-    });
-  }
-
-  const isYearPrefix = YEAR_PREFIX_RE.test(token);
-  for (const item of index.items) {
-    const citationKey = index.citationKeyById.get(item.itemID);
-    const year = index.yearById.get(item.itemID);
-    const citationKeyMatch = citationKey?.startsWith(token) ?? false;
-    const yearMatch = isYearPrefix && !!year && year.startsWith(token);
-    if (!citationKeyMatch && !yearMatch) continue;
-
-    const evidence = candidates.get(item.itemID) ?? {
-      miniScore: 0,
-      terms: new Set<string>(),
-      exactYear: false,
-    };
-    evidence.exactYear ||= yearMatch && year === token;
-    candidates.set(item.itemID, evidence);
-  }
-
-  return candidates;
-}
-
-function rankCandidate(
-  candidate: CandidateEvidence,
-  tokens: readonly string[],
-  ctx: SearchContext,
-): RankedCandidate {
-  const { citationKey } = candidate;
-  if (citationKey && tokens.every((token) => citationKey.startsWith(token))) {
-    return {
-      tier: 1,
-      item: candidate.item,
-      score: Infinity,
-      citationKeyLength: citationKey.length,
-      terms: candidate.terms,
-    };
-  }
-
-  return {
-    tier: 2,
-    item: candidate.item,
-    score:
-      candidate.miniScore * recencyMultiplier(candidate.item, ctx) +
-      (candidate.exactYear ? ctx.scoring.exactYearBonus : 0),
-    terms: candidate.terms,
-  };
-}
-
-function compareRankedCandidates(
-  a: RankedCandidate,
-  b: RankedCandidate,
-  compareOrder: (a: IndexedItem, b: IndexedItem) => number,
-): number {
-  if (a.tier !== b.tier) return a.tier - b.tier;
-  if (a.tier === 1 && b.tier === 1) {
-    return (
-      a.citationKeyLength - b.citationKeyLength || compareOrder(a.item, b.item)
-    );
-  }
-  return b.score - a.score || compareOrder(a.item, b.item);
-}
-
-/** Prepare the exact indexed text with the host's optional Chinese segmenter. */
-export function tokenizeIndexItems(
-  items: readonly IndexedItem[],
-  tokenizer: TokenizerOptions,
-  languageLookup: LanguageNameLookup | null,
-): [string, string[]][] {
-  const tokens = new Map<string, string[]>();
-  for (const item of items) {
-    const document = toSearchDocument(item, languageLookup);
-    for (const field of SEARCH_FIELDS) {
-      const text = document[field];
-      if (!tokens.has(text)) tokens.set(text, tokenize(text, tokenizer));
-    }
-  }
-  return [...tokens];
 }
 
 function toSearchDocument(
@@ -465,13 +447,16 @@ function toSearchDocument(
   return {
     id: item.itemID,
     title: item.title ?? "",
+    shortTitle: item.shortTitle ?? "",
     creators: item.creators
       .map((creator) => formatCreator(creator, language))
       .filter((name) => name.length > 0)
       .join("; "),
     publicationTitle: item.publicationTitle ?? "",
-    shortTitle: item.shortTitle ?? "",
     court: item.court ?? "",
+    citationKey: item.citationKey ?? "",
+    key: item.key,
+    year: parseItemDate(item.date)?.year?.toString() ?? "",
   };
 }
 
@@ -480,8 +465,8 @@ function processTerm(term: string): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
-// `hit.terms` is the indexed terms that actually matched (after prefix
-// and fuzzy expansion). `hit.queryTerms` is the raw user input, which for
+// `result.terms` is the indexed terms that actually matched (after prefix
+// and fuzzy expansion). `result.queryTerms` is the raw user input, which for
 // a fuzzy hit like `utilz` → `util` never appears in the title and would
 // render no highlight.
 function buildHighlightRegex(terms: ReadonlySet<string>): RegExp | null {

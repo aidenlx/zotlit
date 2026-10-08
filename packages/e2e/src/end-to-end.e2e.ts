@@ -95,6 +95,9 @@ const attachmentAnnotations = ANNOTATIONS.filter(
   ({ parentItemID }) => parentItemID === annotationAttachment.itemID,
 );
 const annotationKeys = attachmentAnnotations.map(({ key }) => key);
+/** The Annotation Copy citation copies, and the Item it cites. */
+const copiedAnnotation = ANNOTATIONS.find(({ key }) => key === "FDRFQ7C2")!;
+const annotationItem = ITEMS.find(({ key }) => key === "RUGIER24")!;
 /** The tag vocabulary those Annotations carry, which is what the tag Chooser lists. */
 const attachmentTags = [
   ...new Set(
@@ -371,14 +374,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         targetVaultId,
-        "(function(){var command=app.commands.commands['zotlit:note-quick-switcher'];if(!command)return false;command.callback();return true;})()",
+        "String(!!app.commands.commands['zotlit:note-quick-switcher'])",
         { expected: "true" },
       ),
     ).toBe(true);
+    // The picker and its backdrop stay transparent until the first answer
+    // settles, then show with rows, or with a loading row when that answer is
+    // slow; no visible frame holds an empty list.
+    expect(
+      await obEval(
+        targetVaultId,
+        "(function(){app.commands.commands['zotlit:note-quick-switcher'].callback();var modal=Array.from(activeDocument.querySelectorAll('.modal-container')).at(-1);return activeWindow.getComputedStyle(modal).opacity==='0';})()",
+      ),
+    ).toBe("true");
     expect(
       await obEvalUntil(
         targetVaultId,
-        "String(!!activeDocument.querySelector('.prompt input'))",
+        "(function(){var modal=Array.from(activeDocument.querySelectorAll('.modal-container')).at(-1);return String(activeWindow.getComputedStyle(modal).opacity==='1'&&!!modal.querySelector('.prompt .suggestion-item, .prompt .suggestion-empty'));})()",
         { expected: "true" },
       ),
     ).toBe(true);
@@ -756,6 +768,83 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     },
     120000,
   );
+
+  it("closes the annotation sidebar while its worker read is pending", async () => {
+    const result = await obEval(
+      vaultId,
+      `(async()=>{
+        await using cleanup=new AsyncDisposableStack();
+        const pending=[];
+        const started=Promise.withResolvers();
+        const post=Worker.prototype.postMessage;
+        const release=()=>{
+          Worker.prototype.postMessage=post;
+          for(const [worker,args] of pending.splice(0))post.apply(worker,args);
+        };
+        cleanup.defer(release);
+        Worker.prototype.postMessage=function(...args){
+          const request=args[0]?.[1];
+          if(request?.tag==='AnnotViewAttachments'&&request.payload.key===${JSON.stringify(annotationItem.key)}){
+            pending.push([this,args]);started.resolve();return;
+          }
+          return post.apply(this,args);
+        };
+        const leaf=cleanup.adopt(app.workspace.getRightLeaf(true),leaf=>leaf.detach());
+        await leaf.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:${JSON.stringify(annotationItem.key)}}});
+        await started.promise;
+        let settled=false;
+        const reading=leaf.view.read.then(()=>{settled=true;});
+        await Promise.resolve();
+        if(settled)throw new Error('View read settled before its attachments loaded');
+        leaf.detach();
+        const repository=app.plugins.plugins.zotlit.services.annotationRepository;
+        const on=repository.on,read=repository.read;
+        const afterClose={subscriptions:0,reads:0};
+        cleanup.defer(()=>{repository.on=on;repository.read=read;});
+        repository.on=function(event,...args){if(event==='annotations-changed')afterClose.subscriptions++;return on.call(this,event,...args);};
+        repository.read=function(...args){afterClose.reads++;return read.apply(this,args);};
+        release();
+        await reading;
+        return JSON.stringify(afterClose);
+      })()`,
+    );
+    expect(JSON.parse(result)).toEqual({ subscriptions: 0, reads: 0 });
+  });
+
+  it("copies an Annotation's citation after the database read, through Electron when the web clipboard refuses", async () => {
+    const citation = `[@${annotationItem.citationKey}, {p. ${copiedAnnotation.pageLabel}}]`;
+    const copy = (refuse: boolean) =>
+      obEval(
+        vaultId,
+        `(async()=>{
+          await using cleanup=new AsyncDisposableStack();
+          const leaf=cleanup.adopt(app.workspace.getRightLeaf(true),leaf=>leaf.detach());
+          await leaf.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:${JSON.stringify(annotationItem.key)}}});
+          const view=leaf.view;await view.read;
+          let button=null;
+          for(let i=0;i<100&&!button;i++){button=view.contentEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(copiedAnnotation.key)}] [aria-label=${JSON.stringify(m.annot_view_more_tooltip())}]');if(!button)await new Promise(r=>setTimeout(r,50));}
+          if(!button)throw new Error('Annotation card menu missing');
+          const clipboard=require('electron').clipboard;
+          const saved={text:clipboard.readText(),html:clipboard.readHTML(),rtf:clipboard.readRTF(),image:clipboard.readImage()};
+          const bookmark=clipboard.readBookmark();if(bookmark.title)saved.bookmark=bookmark.title;
+          cleanup.defer(()=>clipboard.write(saved));
+          const write=navigator.clipboard.writeText;
+          cleanup.defer(()=>{navigator.clipboard.writeText=write;});
+          await navigator.clipboard.writeText('');
+          if(${refuse})navigator.clipboard.writeText=()=>Promise.reject(new Error('Clipboard write refused'));
+          button.click();
+          let item=null;
+          for(let i=0;i<50&&!item;i++){item=Array.from(activeDocument.querySelectorAll('.menu .menu-item')).find(e=>e.textContent.trim()===${JSON.stringify(m.annot_view_menu_copy_citation())});if(!item)await new Promise(r=>setTimeout(r,50));}
+          if(!item)throw new Error('Copy citation missing from the card menu');
+          item.click();
+          let text='';
+          for(let i=0;i<50&&!text;i++){text=await navigator.clipboard.readText().catch(()=>'');if(!text)await new Promise(r=>setTimeout(r,100));}
+          return text;
+        })()`,
+      );
+    expect(await copy(false)).toBe(citation);
+    expect(await copy(true)).toBe(citation);
+  });
 
   it.each([
     ["main", "main"],
@@ -1327,6 +1416,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
 
     await using notices = await observeNotices(vaultId);
+    await using frames = await recordFrames(vaultId);
     const triggered = await obEvalUntil(
       vaultId,
       "app.commands.executeCommandById('zotlit:update-all-notes')",
@@ -1384,6 +1474,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       }),
     );
     expect(await clickModalButton(vaultId, m.batch_update_close())).toBe(true);
+    // The batch's database reads run in the worker: the window kept painting
+    // from the command to the summary.
+    const painted = await frames.read();
+    console.info("update-all frame gaps", painted);
+    expect(painted.frames).toBeGreaterThan(1);
+    expect(painted.maxFrameGapMs).toBeLessThan(250);
+    expect(painted.longestTaskMs).toBeLessThan(250);
 
     // The seed file the Fixture Vault ships already carries the title
     // heading and the `zotero-key`/`citekey` frontmatter, so polling for
@@ -2536,8 +2633,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
     expect(await readFile(exportPath, "utf8")).toBe(exportedText);
 
-    // A held read keeps its source when preferences change. The next copy
-    // also carries a numeric field beyond JavaScript's exact integer range.
+    // A held Snapshot leaves new queries free to read a changed source. The
+    // new copy carries a numeric field beyond JavaScript's exact integer range.
     const otherDir = join(e2eFixture.root, "query-other-source");
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(() => rm(otherDir, { recursive: true, force: true }));
@@ -2549,9 +2646,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         if(!state)return true;
         const services=app.plugins.plugins.zotlit.services;
         services.zoteroPref.setDataDir(state.previous);
-        state.lease?.[Symbol.dispose]();
+        await state.lease?.[Symbol.asyncDispose]();
         delete window.__zotlitQuerySource;
-        await services.db.refresh();
+        await services.zoteroReads.refresh();
         return true;
       })()`,
       );
@@ -2572,9 +2669,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       vaultId,
       `(async()=>{
       const services=app.plugins.plugins.zotlit.services;
-      const lease=await services.db.acquireRead();
+      const lease=await services.zoteroReads.acquireRead();
       window.__zotlitQuerySource={lease,previous:services.zoteroPref.dataDirOverride};
       services.zoteroPref.setDataDir(${JSON.stringify(otherDir)});
+      await services.zoteroReads.refresh();
       return true;
     })()`,
     );
@@ -2583,23 +2681,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       filter: 'volume == "9007199254740993"',
       fields: '["volume"]',
     };
-    const pinned = JSON.parse(
-      await cliCommand(vaultId, "zotlit:item-query", { args: integerQuery }),
-    ) as ItemQueryReport;
-    expect(pinned).toMatchObject({
-      ok: true,
-      identity: limited.identity,
-      rows: [],
-    });
-    await obEval(
-      vaultId,
-      `(async()=>{
-      window.__zotlitQuerySource.lease[Symbol.dispose]();
-      window.__zotlitQuerySource.lease=null;
-      await app.plugins.plugins.zotlit.services.db.refresh();
-      return true;
-    })()`,
-    );
     for (const filter of [
       integerQuery.filter,
       'volume.lower() == "9007199254740993"',
@@ -2697,6 +2778,408 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "Zebra",
     ]);
   });
+  it("refreshes the database from a Freshness Signal", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const autoRefresh = await obEval(
+      vaultId,
+      `String(${services}.settings.current['zotero.auto-refresh'])`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    // Only the signal may refresh: the file watchers stay unbound.
+    await obEval(
+      vaultId,
+      `${services}.settings.update({'zotero.auto-refresh':false});true`,
+    );
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `${services}.settings.update({'zotero.auto-refresh':${autoRefresh}});true`,
+      );
+    });
+    await obEval(
+      vaultId,
+      `window.zotlitE2EChanged=0;window.zotlitE2EOffChanged=${services}.zoteroReads.on('changed',function(){window.zotlitE2EChanged++;});true`,
+    );
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        "window.zotlitE2EOffChanged();delete window.zotlitE2EOffChanged;delete window.zotlitE2EChanged;true",
+      );
+    });
+    // The annotation sidebar keeps its cards while the refresh reads again.
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        "(async()=>{await window.zotlitE2ESidebar?.cleanup.disposeAsync();delete window.zotlitE2ESidebar;return true;})()",
+      );
+    });
+    expect(
+      await obEval(
+        vaultId,
+        `(async()=>{
+          await using cleanup=new AsyncDisposableStack();
+          const leaf=cleanup.adopt(app.workspace.getRightLeaf(true),leaf=>leaf.detach());
+          await leaf.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:${JSON.stringify(annotationItem.key)}}});
+          const view=leaf.view;await view.read;
+          const count=()=>view.contentEl.querySelectorAll('.zt-annot-card').length;
+          for(let i=0;i<100&&count()===0;i++)await new Promise(r=>setTimeout(r,50));
+          const watch={before:count(),least:count()};
+          watch.observer=new MutationObserver(()=>{watch.least=Math.min(watch.least,count());});
+          cleanup.defer(()=>watch.observer.disconnect());
+          watch.observer.observe(view.contentEl,{childList:true,subtree:true});
+          watch.cleanup=cleanup.move();window.zotlitE2ESidebar=watch;
+          return String(watch.before);
+        })()`,
+      ),
+    ).toBe(String(attachmentAnnotations.length));
+    const signal = () => signalDatabaseUpdated(vaultId);
+    // A Zotero edit moves the Item's title and its modification time.
+    const edit = (title: string, dateModified: string) => {
+      using database = new DatabaseSync(e2eFixture.databasePath);
+      database
+        .prepare(
+          "update itemDataValues set value = ? where valueID = (select itemData.valueID from itemData join fieldsCombined using (fieldID) where itemData.itemID = ? and fieldsCombined.fieldName = 'title')",
+        )
+        .run(title, targetItem.itemID);
+      database
+        .prepare("update items set dateModified = ? where itemID = ?")
+        .run(dateModified, targetItem.itemID);
+    };
+    const original = (() => {
+      using database = new DatabaseSync(e2eFixture.databasePath);
+      return database
+        .prepare("select dateModified from items where itemID = ?")
+        .get(targetItem.itemID) as { dateModified: string };
+    })();
+    const finds = (query: string) =>
+      obEvalUntil(
+        vaultId,
+        `(async function(){var hits=await ${services}.itemLookup.search(${JSON.stringify(query)});return String(hits.some(function(hit){return hit.item.itemID===${targetItem.itemID};}));})()`,
+        { expected: "true" },
+      );
+
+    edit("Freshness signal probe zqxv", "2031-01-01 00:00:00");
+    cleanup.defer(async () => {
+      edit(targetItem.title, original.dateModified);
+      await signal();
+      expect(await finds(targetItem.title)).toBe(true);
+    });
+    await signal();
+    expect(
+      await obEvalUntil(vaultId, "String(window.zotlitE2EChanged>=1)", {
+        expected: "true",
+      }),
+    ).toBe(true);
+    expect(await finds("zqxv")).toBe(true);
+    expect(
+      await obEval(
+        vaultId,
+        "JSON.stringify({least:window.zotlitE2ESidebar.least,now:window.zotlitE2ESidebar.observer&&document.querySelectorAll('.workspace-leaf .zt-annot-card').length>0})",
+      ),
+    ).toBe(JSON.stringify({ least: attachmentAnnotations.length, now: true }));
+  });
+
+  it("rebuilds the worker's Item Index off the renderer, then inserts a citation from it", async () => {
+    const finds = (query: string, itemID: number) =>
+      `(async function(){var hits=await app.plugins.plugins.zotlit.services.itemLookup.search(${JSON.stringify(query)});return String(hits.some(function(hit){return hit.item.itemID===${itemID};}));})()`;
+    // An empty index answers fast; it fails the run here, before any timing.
+    expect(
+      await obEval(vaultId, finds("simple rules", annotationItem.itemID)),
+    ).toBe("true");
+    await using cleanup = new AsyncDisposableStack();
+
+    // A sync lands a large Library: the worker builds its index while the
+    // renderer keeps painting.
+    const corpus = syntheticTitles(SYNTHETIC_CORPUS_SIZE);
+    const lastTitleQuery = `${SYNTHETIC_MARKER} ${corpus.at(-1)!.split(" ").at(-1)!}`;
+    const heapBefore = await rendererHeap(vaultId);
+    await using frames = await recordFrames(vaultId);
+    const added = addMyLibraryItems(e2eFixture.databasePath, corpus);
+    const lastItemID = added.firstItemID + corpus.length - 1;
+    cleanup.defer(async () => {
+      added[Symbol.dispose]();
+      await signalDatabaseUpdated(vaultId);
+      expect(
+        await obEvalUntil(vaultId, finds(lastTitleQuery, lastItemID), {
+          expected: "false",
+        }),
+      ).toBe(true);
+    });
+    await signalDatabaseUpdated(vaultId);
+    // Until the build completes, the held index answers: a known Item stays
+    // found. The new Items show once it completes.
+    const rebuild = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async function(){var lookup=app.plugins.plugins.zotlit.services.itemLookup;var has=function(hits,id){return hits.some(function(hit){return hit.item.itemID===id;});};var start=performance.now();var waits=[];var staleMisses=0;while(performance.now()-start<60000){if(has(await lookup.search(${JSON.stringify(lastTitleQuery)}),${lastItemID}))return JSON.stringify({builtMs:Math.round(performance.now()-start),polls:waits.length,staleMisses:staleMisses,waitMedianMs:waits.sort(function(a,b){return a-b;})[waits.length>>1],waitMaxMs:waits.at(-1)});var t0=performance.now();if(!has(await lookup.search('simple rules'),${annotationItem.itemID}))staleMisses++;waits.push(Math.round((performance.now()-t0)*10)/10);await new Promise(function(resolve){setTimeout(resolve,10);});}return JSON.stringify({builtMs:null});})()`,
+        90_000,
+      ),
+    ) as {
+      builtMs: number | null;
+      polls: number;
+      staleMisses: number;
+      waitMedianMs: number;
+      waitMaxMs: number;
+    };
+    const painted = await frames.read();
+    const heapGrowth = (await rendererHeap(vaultId)) - heapBefore;
+    console.info("Item Index rebuild, 10,000 Items", {
+      ...rebuild,
+      ...painted,
+      rendererHeapGrowthMB: Math.round(heapGrowth / 1e5) / 10,
+    });
+    expect(rebuild.builtMs).not.toBeNull();
+    // A search that misses the new Items answered before the build ended, so
+    // the held index answered at least once.
+    expect(rebuild.polls).toBeGreaterThan(0);
+    expect(rebuild.staleMisses).toBe(0);
+    expect(painted.frames).toBeGreaterThan(1);
+    // The renderer may take a short long task of its own; none blocks it
+    // for more than 100 ms while the worker builds.
+    expect(painted.longestTaskMs).toBeLessThanOrEqual(100);
+    // ADR 0069 measured about 1 MB of index per 1,000 Items; the renderer
+    // keeps less than a quarter of that.
+    expect(heapGrowth).toBeLessThan((corpus.length * 1000) / 4);
+
+    // Query cost through the shipped adapter, for ADR 0069's Measurements.
+    // Each query must find Items, so its time includes the hydration.
+    const words = corpus[123]!.split(" ");
+    const queries = [
+      "k",
+      words[2]!,
+      `${SYNTHETIC_MARKER} ${words[3]!}`,
+      `Synthauthor${added.firstItemID + 12}`,
+      lastTitleQuery,
+    ];
+    const timings = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async function(){var lookup=app.plugins.plugins.zotlit.services.itemLookup;var out={};for(var query of ${JSON.stringify(queries)}){var times=[];var hits=0;for(var i=0;i<21;i++){var t0=performance.now();hits=(await lookup.search(query)).length;times.push(performance.now()-t0);}times.sort(function(a,b){return a-b;});out[query]={hits:hits,medianMs:Math.round(times[10]*10)/10,p95Ms:Math.round(times[19]*10)/10};}return JSON.stringify(out);})()`,
+        90_000,
+      ),
+    ) as Record<string, { hits: number; medianMs: number; p95Ms: number }>;
+    console.info("Item Index queries, 10,000 Items", timings);
+    for (const query of queries)
+      expect(timings[query]!.hits).toBeGreaterThan(0);
+
+    // A large classification bounds renderer request encoding as well as
+    // worker replies, while every request uses the same Snapshot (#1351).
+    await obEval(
+      vaultId,
+      `(()=>{const original=Worker.prototype.postMessage;const requests=[];Worker.prototype.postMessage=function(message,...rest){const request=message?.[1];if(request?.tag==='DisplayRefs')requests.push({count:request.payload.itemIDs.length,snapshot:request.payload.snapshot});return original.call(this,message,...rest);};window.zotlitE2EClassifyRequests={requests,restore:()=>{Worker.prototype.postMessage=original;}};return true;})()`,
+    );
+    try {
+      expect(
+        await obEval(
+          vaultId,
+          "app.commands.executeCommandById('zotlit:update-all-notes')",
+        ),
+      ).toBe("true");
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `String(Array.from(activeDocument.querySelectorAll('.modal button')).some(button=>button.textContent.trim()===${JSON.stringify(m.batch_update_confirm_button())}))`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      const requests = JSON.parse(
+        await obEval(
+          vaultId,
+          "JSON.stringify(window.zotlitE2EClassifyRequests.requests)",
+        ),
+      ) as { count: number; snapshot: string }[];
+      expect(
+        requests.reduce((total, request) => total + request.count, 0),
+      ).toBeGreaterThanOrEqual(SYNTHETIC_CORPUS_SIZE);
+      expect(requests.every(({ count }) => count <= 500)).toBe(true);
+      expect(requests[0]?.snapshot).toBeDefined();
+      expect(new Set(requests.map(({ snapshot }) => snapshot)).size).toBe(1);
+    } finally {
+      await clickModalButton(vaultId, m.modal_cancel());
+      await obEval(
+        vaultId,
+        "window.zotlitE2EClassifyRequests.restore();delete window.zotlitE2EClassifyRequests;true",
+      );
+    }
+
+    // The Citation Suggester over that Library. It comes after the
+    // measurement: a rendered citation can start the Pandoc engine, and that
+    // start is renderer work of its own.
+    const source = "Citation suggester source.md";
+    await obEval(
+      vaultId,
+      `(async function(){var file=await app.vault.create(${JSON.stringify(source)},'');var leaf=app.workspace.getLeaf(true);await leaf.openFile(file,{state:{mode:'source',source:true}});leaf.view.editor.focus();return true;})()`,
+    );
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async function(){var file=app.vault.getAbstractFileByPath(${JSON.stringify(source)});for(var leaf of app.workspace.getLeavesOfType('markdown'))if(leaf.view.file===file)leaf.detach();await app.fileManager.trashFile(file);return true;})()`,
+      );
+    });
+    const editor = `app.workspace.getLeavesOfType('markdown').find(function(leaf){return leaf.view.file?.path===${JSON.stringify(source)};}).view.editor`;
+    // One key every 70 ms, past Obsidian's 50 ms suggester delay, so each
+    // keystroke sends its own search. The popup opens at `[@` and stays
+    // open through every answer after it.
+    expect(
+      await obEval(
+        vaultId,
+        `(async function(){var cm=${editor}.cm;var watch={opened:false,closed:false};var observer=new MutationObserver(function(records){for(var record of records)for(var node of record.removedNodes)if(node.classList?.contains('suggestion-container'))watch.closed=true;});try{for(var ch of ${JSON.stringify("[@ten simple")}){cm.dispatch(cm.state.replaceSelection(ch),{userEvent:'input.type'});await new Promise(function(resolve){setTimeout(resolve,70);});if(!watch.opened&&activeDocument.querySelector('.suggestion-container')){watch.opened=true;observer.observe(activeDocument.body,{childList:true,subtree:true});}}}finally{observer.disconnect();}return JSON.stringify(watch);})()`,
+      ),
+    ).toBe(JSON.stringify({ opened: true, closed: false }));
+    const popup =
+      "Array.from(activeDocument.querySelectorAll('.suggestion-container')).at(-1)";
+    // The list matches the final query: its Item comes first.
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(!!${popup}?.querySelector('.suggestion-item')?.textContent.includes(${JSON.stringify(annotationItem.title)}))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){var row=${popup}.querySelector('.suggestion-item');row.dispatchEvent(new activeWindow.MouseEvent('mousemove',{bubbles:true}));row.dispatchEvent(new activeWindow.MouseEvent('click',{bubbles:true}));return true;})()`,
+    );
+    expect(
+      await obEvalUntil(vaultId, `${editor}.getValue()`, {
+        expected: `[@${annotationItem.citationKey}]`,
+      }),
+    ).toBe(true);
+  }, 180_000);
+
+  it("finds a word inside a Chinese title once the Chinese Segmenter is installed, with no reload", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const segmenter = `${services}.chineseSegmenter`;
+    await using cleanup = new AsyncDisposableStack();
+    // The binary cache is device-wide: copy it now and put the copy back at
+    // the end, whatever happens between.
+    await obEval(
+      vaultId,
+      `(async function(){var saved=[];try{var dir=await (await (await navigator.storage.getDirectory()).getDirectoryHandle('zotlit')).getDirectoryHandle(${JSON.stringify(SEGMENTER_CACHE_DIR)});for await(var [name,handle] of dir.entries())if(handle.kind==='file')saved.push({name:name,bytes:new Uint8Array(await (await handle.getFile()).arrayBuffer())});}catch(error){if(error.name!=='NotFoundError')throw error;}window.zotlitE2ESegmenterCache=saved;return true;})()`,
+    );
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async function(){var root=await (await navigator.storage.getDirectory()).getDirectoryHandle('zotlit',{create:true});await root.removeEntry(${JSON.stringify(SEGMENTER_CACHE_DIR)},{recursive:true}).catch(function(error){if(error.name!=='NotFoundError')throw error;});var saved=window.zotlitE2ESegmenterCache;if(saved.length>0){var dir=await root.getDirectoryHandle(${JSON.stringify(SEGMENTER_CACHE_DIR)},{create:true});for(var entry of saved){var writable=await (await dir.getFileHandle(entry.name,{create:true})).createWritable();await writable.write(entry.bytes);await writable.close();}}delete window.zotlitE2ESegmenterCache;return true;})()`,
+      );
+    });
+    // Start from no binary, as a user who has not installed it yet.
+    await obEval(
+      vaultId,
+      `${segmenter}.uninstall().then(function(){return true;})`,
+    );
+    const added = addMyLibraryItems(e2eFixture.databasePath, [
+      "长江流域的城市化研究",
+    ]);
+    cleanup.defer(async () => {
+      added[Symbol.dispose]();
+      await signalDatabaseUpdated(vaultId);
+    });
+    await signalDatabaseUpdated(vaultId);
+    const finds = (query: string) =>
+      `(async function(){var hits=await ${services}.itemLookup.search(${JSON.stringify(query)});return String(hits.some(function(hit){return hit.item.itemID===${added.firstItemID};}));})()`;
+    expect(
+      await obEvalUntil(vaultId, finds("长江流域"), { expected: "true" }),
+    ).toBe(true);
+    // `Intl.Segmenter` keeps `长江流域` one word, so the word inside misses.
+    expect(await obEval(vaultId, finds("流域"))).toBe("false");
+
+    await obEval(
+      vaultId,
+      "window.zotlitE2EPlugin=app.plugins.plugins.zotlit;true",
+    );
+    cleanup.defer(async () => {
+      await obEval(vaultId, "delete window.zotlitE2EPlugin;true");
+    });
+    expect(
+      await obEval(
+        vaultId,
+        `${segmenter}.install().then(function(){return ${segmenter}.getStatus().kind;})`,
+        120_000,
+      ),
+    ).toBe("installed");
+    expect(
+      await obEvalUntil(vaultId, finds("流域"), { expected: "true" }),
+    ).toBe(true);
+
+    await obEval(
+      vaultId,
+      `${segmenter}.uninstall().then(function(){return true;})`,
+    );
+    expect(
+      await obEvalUntil(vaultId, finds("流域"), { expected: "false" }),
+    ).toBe(true);
+    expect(await obEval(vaultId, finds("长江流域"))).toBe("true");
+    expect(
+      await obEval(
+        vaultId,
+        "String(window.zotlitE2EPlugin===app.plugins.plugins.zotlit)",
+      ),
+    ).toBe("true");
+  }, 180_000);
+
+  it("writes the database worker's log records to the plugin's log file at the configured level", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const logPath =
+      "app.plugins.plugins.zotlit.manifest.dir+'/zotlit.log.jsonl'";
+    /** Note where the log file ends, then refresh the database. */
+    const refresh = `(async function(){window.zotlitE2ELogStart=(await app.vault.adapter.read(${logPath})).length;await ${services}.zoteroReads.refresh();return true;})()`;
+    /**
+     * Once the refresh's `Opened Zotero database` record is in the file, the
+     * count of `DEBUG` records the refresh added under categories only the
+     * database worker logs to; `pending` before.
+     */
+    const workerDebugRecords = `(async function(){var added=(await app.vault.adapter.read(${logPath})).slice(window.zotlitE2ELogStart).split('\\n').filter(Boolean).map(function(line){return JSON.parse(line);});if(!added.some(function(record){return record.message==='Opened Zotero database';}))return 'pending';return String(added.filter(function(record){return record.level==='DEBUG'&&/^zotlit\\.(db|item-lookup|obsidian\\.database)\\./.test(record.logger);}).length);})()`;
+    /** Refresh, and count its worker `DEBUG` records once they are written. */
+    const workerDebugRecordsOfARefresh = async () => {
+      await obEval(vaultId, refresh);
+      let count = "pending";
+      await waitFor(async () => {
+        count = await obEval(vaultId, workerDebugRecords);
+        return count !== "pending";
+      });
+      return count;
+    };
+    const previous = await obEval(
+      vaultId,
+      `JSON.stringify({'log.level':${services}.settings.current['log.level'],'log.to-file':${services}.settings.current['log.to-file']})`,
+    );
+    try {
+      await obEval(
+        vaultId,
+        `${services}.settings.update({'log.level':'debug','log.to-file':true});true`,
+      );
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `app.vault.adapter.exists(${logPath}).then(String)`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      // At `debug`, the worker's read snapshot and Item Index records reach the file.
+      expect(
+        await waitFor(
+          async () => Number(await workerDebugRecordsOfARefresh()) > 0,
+          10,
+        ),
+      ).toBe(true);
+      // At `info`, the worker forwards its `Opened Zotero database` record and
+      // none of them. The level reaches the worker after the settings change,
+      // so a refresh repeats until it does.
+      await obEval(
+        vaultId,
+        `${services}.settings.update({'log.level':'info'});true`,
+      );
+      expect(
+        await waitFor(
+          async () => (await workerDebugRecordsOfARefresh()) === "0",
+          10,
+        ),
+      ).toBe(true);
+    } finally {
+      await obEval(vaultId, `${services}.settings.update(${previous});true`);
+    }
+  }, 180_000);
 
   it("reflects a Scope Case switch through zotlit:library-scope", async () => {
     const availableCase = findScopeCase("available");
@@ -2723,6 +3206,27 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     data[LIBRARY_SCOPE_SETTING_KEY] = availableCase.scope;
     await writeFile(dataPath, JSON.stringify(data, null, 2));
 
+    // The plugin toggle is also the Zotero database worker's whole life:
+    // record every worker spawned and every worker ended across it.
+    await obEval(
+      vaultId,
+      "(function(){var Original=window.Worker;var record={spawned:[],Original:Original,terminate:Original.prototype.terminate,ended:new WeakSet()};record.Recording=class extends Original{constructor(url,options){super(url,options);record.spawned.push({worker:this,name:options&&options.name});}};Original.prototype.terminate=function(){record.ended.add(this);return record.terminate.call(this);};window.Worker=record.Recording;window.zotlitE2EWorkers=record;return true;})()",
+    );
+    const workers = (expression: string) =>
+      `(function(){var record=window.zotlitE2EWorkers;return ${expression};})()`;
+    await using restoreWorkers = new AsyncDisposableStack();
+    restoreWorkers.defer(async () => {
+      await obEval(
+        vaultId,
+        workers(
+          "(window.Worker=record.Original,record.Original.prototype.terminate=record.terminate,delete window.zotlitE2EWorkers,true)",
+        ),
+      );
+      await obEval(
+        vaultId,
+        "(app.plugins.plugins.zotlit?Promise.resolve():app.plugins.enablePlugin('zotlit')).then(function(){return true;})",
+      );
+    });
     // An ordinary user action (the Community Plugins toggle), not a bypass —
     // it makes the plugin re-read data.json from disk.
     const toggled = await obEvalUntil(
@@ -2769,6 +3273,39 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(gotLibraryIDs).toEqual(
         expectedLibraryIDs(availableCase.scope.libraries),
       );
+    }
+
+    {
+      // The load spawned one database worker, and it serves.
+      expect(
+        await obEval(
+          vaultId,
+          workers(
+            "String(record.spawned.filter(function(entry){return entry.name==='zotlit-zotero-reads';}).length)",
+          ),
+        ),
+      ).toBe("1");
+      expect(
+        await obEvalUntil(
+          vaultId,
+          "String(app.plugins.plugins.zotlit.services.zoteroReads.state)",
+          { expected: "ready" },
+        ),
+      ).toBe(true);
+      // Unload ends it.
+      await obEval(
+        vaultId,
+        "app.plugins.disablePlugin('zotlit').then(function(){return true;})",
+      );
+      expect(
+        await obEvalUntil(
+          vaultId,
+          workers(
+            "String(record.ended.has(record.spawned.find(function(entry){return entry.name==='zotlit-zotero-reads';}).worker))",
+          ),
+          { expected: "true" },
+        ),
+      ).toBe(true);
     }
   });
 });
@@ -3065,6 +3602,47 @@ async function createFixtureNote(
   return JSON.parse(response) as CreateOperationReply;
 }
 
+/**
+ * Watch the window's frames from now on: the longest gap between two
+ * animation frames, and the long tasks the renderer reported.
+ */
+async function recordFrames(vaultId: string): Promise<
+  AsyncDisposable & {
+    read(): Promise<{
+      frames: number;
+      maxFrameGapMs: number;
+      longTasks: number;
+      longestTaskMs: number;
+    }>;
+  }
+> {
+  await obEval(
+    vaultId,
+    "(function(){var record={frames:0,maxFrameGapMs:0,longTasks:0,longestTaskMs:0,live:true};var previous=performance.now();var tick=function(now){record.frames++;record.maxFrameGapMs=Math.max(record.maxFrameGapMs,now-previous);previous=now;if(record.live)requestAnimationFrame(tick);};requestAnimationFrame(tick);record.observer=new PerformanceObserver(function(list){for(var entry of list.getEntries()){record.longTasks++;record.longestTaskMs=Math.max(record.longestTaskMs,entry.duration);}});record.observer.observe({type:'longtask'});window.zotlitE2EFrames=record;return true;})()",
+  );
+  return {
+    async read() {
+      return JSON.parse(
+        await obEval(
+          vaultId,
+          "(function(){var r=window.zotlitE2EFrames;return JSON.stringify({frames:r.frames,maxFrameGapMs:Math.round(r.maxFrameGapMs),longTasks:r.longTasks,longestTaskMs:Math.round(r.longestTaskMs)});})()",
+        ),
+      ) as {
+        frames: number;
+        maxFrameGapMs: number;
+        longTasks: number;
+        longestTaskMs: number;
+      };
+    },
+    async [Symbol.asyncDispose]() {
+      await obEval(
+        vaultId,
+        "(function(){var r=window.zotlitE2EFrames;r.live=false;r.observer.disconnect();delete window.zotlitE2EFrames;return true;})()",
+      );
+    },
+  };
+}
+
 function hasOneIndexedNote(
   vaultId: string,
   indexedKey: string,
@@ -3203,4 +3781,193 @@ async function observeNotices(vaultId: string) {
       );
     },
   };
+}
+
+/** The Chinese Segmenter's device-wide cache directory under OPFS `zotlit/`. */
+const SEGMENTER_CACHE_DIR = "chinese-segmenter";
+
+/** Items a synthetic sync adds: the scale ADR 0069 measured at. */
+const SYNTHETIC_CORPUS_SIZE = 10_000;
+/** A word only synthetic Items carry. */
+const SYNTHETIC_MARKER = "zqsynth";
+
+/**
+ * Deterministic synthetic titles, each with {@link SYNTHETIC_MARKER} and a
+ * last word no other title has.
+ */
+function syntheticTitles(count: number): string[] {
+  let seed = 42;
+  const random = () => (seed = (seed * 1103515245 + 12345) % 2147483648);
+  const syllables = "ka ri mo ne lu ta si po ve ga ro mi da ze nu fo".split(
+    " ",
+  );
+  const vocabulary = Array.from({ length: 600 }, () =>
+    Array.from(
+      { length: 2 + (random() % 3) },
+      () => syllables[random() % syllables.length],
+    ).join(""),
+  );
+  return Array.from({ length: count }, (_, index) =>
+    [
+      SYNTHETIC_MARKER,
+      ...Array.from(
+        { length: 6 + (random() % 8) },
+        () => vocabulary[random() % vocabulary.length],
+      ),
+      `v${index}`,
+    ].join(" "),
+  );
+}
+
+/**
+ * Writes journal articles into the Fixture's My Library the way Zotero stores
+ * them: a title, a journal, and one to three authors each. Disposing deletes
+ * every row it wrote.
+ */
+function addMyLibraryItems(
+  databasePath: string,
+  titles: readonly string[],
+): Disposable & { firstItemID: number } {
+  using database = new DatabaseSync(databasePath);
+  const id = (sql: string, ...params: string[]) =>
+    Number(Object.values(database.prepare(sql).get(...params)!)[0]);
+  const itemTypeID = id(
+    "select itemTypeID from itemTypes where typeName = 'journalArticle'",
+  );
+  const field = (name: string) =>
+    id("select fieldID from fieldsCombined where fieldName = ?", name);
+  const titleField = field("title");
+  const journalField = field("publicationTitle");
+  const authorTypeID = id(
+    "select creatorTypeID from creatorTypes where creatorType = 'author'",
+  );
+  const firstItemID = id("select max(itemID) + 1 from items");
+  const firstValueID = id("select max(valueID) + 1 from itemDataValues");
+  const firstCreatorID = id(
+    "select coalesce(max(creatorID), 0) + 1 from creators",
+  );
+  const libraryID = LIBRARIES.find(
+    ({ groupID }) => groupID === null,
+  )!.libraryID;
+
+  // One transaction: a failed write leaves no row behind.
+  database.exec("begin");
+  using rollback = new DisposableStack();
+  rollback.defer(() => database.exec("rollback"));
+  const value = database.prepare(
+    "insert into itemDataValues (valueID, value) values (?, ?)",
+  );
+  // Names carry the first new itemID, so a second call writes new rows too.
+  const journals = Array.from({ length: 40 }, (_, index) => {
+    value.run(
+      firstValueID + index,
+      `${SYNTHETIC_MARKER} journal ${firstItemID + index}`,
+    );
+    return firstValueID + index;
+  });
+  const creator = database.prepare(
+    "insert into creators (creatorID, firstName, lastName, fieldMode) values (?, ?, ?, 0)",
+  );
+  const creators = Array.from({ length: 400 }, (_, index) => {
+    creator.run(
+      firstCreatorID + index,
+      "A.",
+      `Synthauthor${firstItemID + index}`,
+    );
+    return firstCreatorID + index;
+  });
+  const item = database.prepare(
+    "insert into items (itemID, itemTypeID, libraryID, key, dateAdded, dateModified, clientDateModified) values (?, ?, ?, ?, '2030-01-01 00:00:00', '2030-01-01 00:00:00', '2030-01-01 00:00:00')",
+  );
+  const data = database.prepare(
+    "insert into itemData (itemID, fieldID, valueID) values (?, ?, ?)",
+  );
+  const author = database.prepare(
+    "insert into itemCreators (itemID, creatorID, creatorTypeID, orderIndex) values (?, ?, ?, ?)",
+  );
+  const titleValueID = firstValueID + journals.length;
+  titles.forEach((title, index) => {
+    const itemID = firstItemID + index;
+    item.run(itemID, itemTypeID, libraryID, zoteroKey(itemID));
+    value.run(titleValueID + index, title);
+    data.run(itemID, titleField, titleValueID + index);
+    data.run(itemID, journalField, journals[index % journals.length]!);
+    for (let order = 0; order <= index % 3; order++) {
+      author.run(
+        itemID,
+        creators[(index * 7 + order) % creators.length]!,
+        authorTypeID,
+        order,
+      );
+    }
+  });
+  database.exec("commit");
+  rollback.move();
+
+  const lastItemID = firstItemID + titles.length - 1;
+  return {
+    firstItemID,
+    [Symbol.dispose]() {
+      using database = new DatabaseSync(databasePath);
+      database.exec("begin");
+      for (const table of ["itemCreators", "itemData", "items"])
+        database
+          .prepare(`delete from ${table} where itemID between ? and ?`)
+          .run(firstItemID, lastItemID);
+      database
+        .prepare("delete from itemDataValues where valueID between ? and ?")
+        .run(firstValueID, titleValueID + titles.length - 1);
+      database
+        .prepare("delete from creators where creatorID between ? and ?")
+        .run(firstCreatorID, firstCreatorID + creators.length - 1);
+      database.exec("commit");
+    },
+  };
+}
+
+/** A Zotero Item key, `ZQ` and six more of Zotero's key characters, one per `itemID`. */
+function zoteroKey(itemID: number): string {
+  const alphabet = "23456789ABCDEFGHIJKLMNPQRSTUVWXYZ";
+  let key = "";
+  for (let rest = itemID, place = 0; place < 6; place++) {
+    key = alphabet[rest % alphabet.length] + key;
+    rest = Math.floor(rest / alphabet.length);
+  }
+  return `ZQ${key}`;
+}
+
+/** Tells the plugin the Zotero database changed, as the Companion's Freshness Signal does. */
+async function signalDatabaseUpdated(vaultId: string): Promise<void> {
+  const server = JSON.parse(
+    await obEval(
+      vaultId,
+      "(function(){var services=app.plugins.plugins.zotlit.services;var settings=services.settings.current;return JSON.stringify({hostname:settings['server.hostname'],port:settings['server.port'],sourceId:services.zoteroPref.sourceId});})()",
+    ),
+  ) as { hostname: string; port: number; sourceId: string };
+  const response = await fetch(
+    `http://${server.hostname}:${server.port}/notify`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        [PROTOCOL_VERSION_HEADER]: String(PROTOCOL_VERSION),
+        [SOURCE_ID_HEADER]: server.sourceId,
+      },
+      body: JSON.stringify({ event: "db/updated" }),
+    },
+  );
+  expect(response.status).toBe(204);
+}
+
+/**
+ * The renderer's used JavaScript heap, in bytes, after a full garbage
+ * collection. A Web Worker's heap is its own and stays out of this figure.
+ */
+async function rendererHeap(vaultId: string): Promise<number> {
+  return Number(
+    await obEval(
+      vaultId,
+      "(function(){require('v8').setFlagsFromString('--expose-gc');var gc=require('vm').runInNewContext('gc');gc();gc();return String(process.memoryUsage().heapUsed);})()",
+    ),
+  );
 }

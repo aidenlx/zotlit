@@ -42,7 +42,7 @@ export interface TagEditorProps {
    */
   hint: string | null;
   /** The tag names of the Annotation's Library, read when the editor opens. */
-  libraryNames: () => readonly string[];
+  libraryNames: () => Promise<readonly string[]>;
   onChange: (names: string[]) => void;
   /** The session ends, once: after this call the editor changes nothing. */
   onClose: () => void;
@@ -247,7 +247,12 @@ function TagField({
       if (close) latest.current.onClose();
       else latest.current.onLeave?.();
     };
-    const library = latest.current.libraryNames();
+    // Read once as the editor opens. The popup answers Enter synchronously,
+    // so it offers the names once they land and none before.
+    let library: readonly string[] = [];
+    void latest.current.libraryNames().then((names) => {
+      library = names;
+    });
     suggest.current = new TagSuggest(app, input, {
       names: () => library,
       taken: () => latest.current.value,

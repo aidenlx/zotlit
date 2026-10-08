@@ -2,6 +2,12 @@ import { itemBaseFields, resolveVenue } from "@zotlit/db";
 import type { BaseItem, Creator, IndexedItem, Item } from "@zotlit/db";
 import type { ItemFields, JournalArticleFields } from "@zotlit/zotero-types";
 
+export {
+  makeMemoryItemSource,
+  type MemoryItemSource,
+  type MemoryItemSourceReads,
+} from "./memory-item-source";
+
 /** The fields Zotero records for one item type, minus its discriminant. */
 type FieldsOf<TType extends ItemFields["itemType"]> = Omit<
   Extract<ItemFields, { itemType: TType }>,

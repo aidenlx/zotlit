@@ -96,17 +96,6 @@ export interface ResolvedLibraryScope {
   unavailable: readonly LibrarySelector[];
 }
 
-/**
- * Cache identity of a set of available Libraries — the selectors paired with
- * the local ids an index would be built against. Library names are left out, so
- * a rename refreshes labels without discarding a built index.
- */
-export function availableKey(libraries: readonly AvailableLibrary[]): string {
-  return libraries
-    .map((library) => `${selectorKey(library.selector)}@${library.libraryID}`)
-    .join(",");
-}
-
 /** Stable identity of a selector, for set membership and equality. */
 export function selectorKey(selector: LibrarySelector): string {
   return selector.type === "personal"

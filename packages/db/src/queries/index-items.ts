@@ -9,7 +9,7 @@ import { getBaseFieldTable } from "./_base-fields";
 import type { BaseFieldTable } from "./_base-fields";
 import { groupsQuery, resolveGroupID } from "./_groups";
 import type { GroupIDMemo } from "./_groups";
-import { CHILD_ITEM_TYPES, defineQuery } from "./_shared";
+import { CHILD_ITEM_TYPES, defineQuery, defineKeyedQuery } from "./_shared";
 import type { FindManyOptions, QueryRow } from "./_shared";
 
 export interface IndexedCreator {
@@ -120,17 +120,24 @@ const indexedItemIDsByLibraryQuery = defineQuery<{ libraryID: number }>()(
     }),
 );
 
-/** Single-id hydration matching {@link indexedItemsQuery}'s projection. */
-const indexedItemByIdQuery = defineQuery<{ itemID: number }>()(
-  (db, { placeholder }, args: { indexedFieldIDs: readonly number[] }) =>
+/** Hydration of a chunk of ids, matching {@link indexedItemsQuery}'s projection. */
+const indexedItemsByIdsQuery = defineKeyedQuery<number>()(
+  (
+    db,
+    { contains },
+    args: {
+      indexedFieldIDs: readonly number[];
+    },
+  ) =>
     db.query.items.findMany({
       where: {
-        itemID: placeholder("itemID"),
+        RAW: (item) => contains(item.itemID),
         itemType: { typeName: { notIn: [...CHILD_ITEM_TYPES] } },
         deletedItem: false,
       },
       ...indexedItemRelations(args.indexedFieldIDs),
     }),
+  { keyOf: (row) => row.itemID },
 );
 
 type IndexedItemRow = QueryRow<typeof indexedItemsQuery>;
@@ -162,26 +169,22 @@ export function getIndexedItemIDsByLibrary(
 }
 
 /**
- * Hydrate {@link IndexedItem}s for a chunk of item ids with one prepared per-id
- * query each, mirroring {@link getItemsByID}. Item ids are unique across
- * libraries, so each row resolves its own `groupID`/`indexedKey`.
+ * Hydrate {@link IndexedItem}s through one cached keyed read, in
+ * `itemIDs` order. Item ids are unique across libraries, so each row resolves
+ * its own `groupID`/`indexedKey`.
  */
 export function getIndexedItemsByID(
   db: NodeDatabaseClient,
   itemIDs: readonly number[],
+  opts?: { memo?: GroupIDMemo },
 ): IndexedItem[] {
   if (itemIDs.length === 0) return [];
   const table = getBaseFieldTable(db, INDEXED_FIELD_NAMES);
-  const stmt = indexedItemByIdQuery.prepared(db, {
-    indexedFieldIDs: table.fieldIDs,
-  });
-  const memo: GroupIDMemo = new Map();
-  return itemIDs.flatMap((itemID) =>
-    stmt
-      .all({ itemID })
-      .map((row) =>
-        toIndexedItem(row, resolveGroupID(db, row.libraryID, memo), table),
-      ),
+  const memo = opts?.memo ?? new Map();
+  return indexedItemsByIdsQuery(db, itemIDs, {
+    args: { indexedFieldIDs: table.fieldIDs },
+  }).map((row) =>
+    toIndexedItem(row, resolveGroupID(db, row.libraryID, memo), table),
   );
 }
 

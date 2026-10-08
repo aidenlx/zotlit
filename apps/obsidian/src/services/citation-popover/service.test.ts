@@ -3,16 +3,25 @@ import type { TFile } from "obsidian";
 import { act } from "preact/test-utils";
 import type { ReactElement } from "react";
 import { createRoot } from "react-dom/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getItemsByKey } from "@zotlit/db";
-import { makeCreator, makeItem } from "@zotlit/item-lookup/fixtures";
+import { createClient } from "@zotlit/db/client/node";
+import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { DocumentCitations } from "@/services/citation-text/service";
 import type { BibliographyRenderResult } from "@/services/pandoc/render-cache";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import {
+  CLEAR_WORKS_SQL,
+  inProcessReadsService,
+  seedWorksSql,
+  sharedClientOpener,
+  worksSql,
+} from "@/services/zotero-reads/test-utils";
+import type { SeededWork } from "@/services/zotero-reads/test-utils";
 
 import type { CitationPopoverContentProps } from "./content";
 import { CitationPopover } from "./service";
@@ -44,16 +53,45 @@ vi.mock("./popover", () => ({
   },
 }));
 
-vi.mock("@zotlit/db", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@zotlit/db")>()),
-  getZoteroIdentity: () => ({
-    userID: null,
-    localUserKey: null,
-    username: null,
-  }),
-  getItemsByKey: vi.fn(() => []),
-  getAttachmentsByParents: vi.fn(() => []),
-}));
+/** Every reads stand-in a test opened, disposed after it. */
+const opened: AsyncDisposable[] = [];
+afterEach(async () => {
+  for (const reads of opened.splice(0)) await reads[Symbol.asyncDispose]();
+});
+
+/**
+ * ZoteroReads on the in-process adapter over a `:memory:` database holding
+ * `works`. The test sets `state`; `holds` replaces the works the database
+ * holds, and `lock`/`unlock` make the item table unreadable and readable.
+ */
+function reads(works: readonly SeededWork[] = []) {
+  const client = createClient(":memory:");
+  createFixtureSchema(client.$client);
+  client.$client.exec(seedWorksSql(works));
+  const service = inProcessReadsService(sharedClientOpener(client));
+  const stub = {
+    state: "ready" as ZoteroReadsService["state"],
+    get ready() {
+      return service.ready;
+    },
+    acquireRead: () => service.acquireRead(),
+    holds(next: readonly SeededWork[]) {
+      client.$client.exec(`${CLEAR_WORKS_SQL}\n${worksSql(next)}`);
+    },
+    lock() {
+      client.$client.exec("alter table items rename to lockedItems");
+    },
+    unlock() {
+      client.$client.exec("alter table lockedItems rename to items");
+    },
+    async [Symbol.asyncDispose]() {
+      await service[Symbol.asyncDispose]();
+      client.$client.close();
+    },
+  };
+  opened.push(stub);
+  return stub;
+}
 
 const NOTE = { path: "note.md" } as TFile;
 
@@ -81,7 +119,7 @@ function harness(read: () => Promise<DocumentCitations | null>) {
         },
       },
     },
-    db: { state: "ready", client: {} },
+    db: reads(),
     citationIndex: {
       getDocumentCitationSet: () =>
         Promise.resolve({ occurrences: [], citations: [], errors: [] }),
@@ -194,9 +232,6 @@ function noteText(note: string): DocumentCitations {
 
 describe("source-less Citation Popover", () => {
   it("shows an uncited Item without a citation key under the vault presentation", async () => {
-    vi.mocked(getItemsByKey).mockReturnValue([
-      makeItem({ key: "ABCD2345", title: "Alpha kernels", citationKey: null }),
-    ]);
     const readBibliography = vi.fn(async () => ({
       entries: [
         {
@@ -209,7 +244,7 @@ describe("source-less Citation Popover", () => {
     }));
     await using service = new CitationPopover({
       app: {},
-      db: { state: "ready", client: {} },
+      db: reads([{ itemID: 1, key: "ABCD2345", title: "Alpha kernels" }]),
       citationIndex: { resolution: null },
       libraryScope: { current: [] },
       profile: profileReader(),
@@ -256,7 +291,7 @@ function workHarness() {
       group.delete(listener);
     };
   };
-  const db = { state: "ready", client: {} };
+  const db = reads();
   const citationIndex = {
     resolution: {} as object | null,
     resolveCitekey: vi.fn<() => CitekeyResolution | null>(() => ({
@@ -317,13 +352,9 @@ function workHarness() {
 }
 
 describe("source-less lookup states", () => {
-  beforeEach(() => {
-    vi.mocked(getItemsByKey).mockReturnValue([]);
-  });
-
   it("distinguishes an unavailable database from an absent exact Item", async () => {
     await using run = workHarness();
-    run.db.state = "loading";
+    run.db.state = "degraded";
     run.show();
     const element = await run.shown();
     expect(element.textContent).toBe(m.citation_popover_database_unavailable());
@@ -357,12 +388,13 @@ describe("source-less Citation Key refresh", () => {
       ),
     );
 
-    vi.mocked(getItemsByKey).mockReturnValue([
-      makeItem({
+    run.db.holds([
+      {
+        itemID: 1,
         key: "ABCD2345",
         title: "Alpha kernels",
         citationKey: "doe2024",
-      }),
+      },
     ]);
     const item = {
       itemID: 1,
@@ -401,12 +433,13 @@ describe("source-less Citation Key refresh", () => {
 describe("source-less Item actions", () => {
   it("keeps the displayed Item identity and reports deletion before an action", async () => {
     await using run = workHarness();
-    vi.mocked(getItemsByKey).mockReturnValue([
-      makeItem({
+    run.db.holds([
+      {
+        itemID: 1,
         key: "ABCD2345",
         title: "Alpha kernels",
         citationKey: "shared2024",
-      }),
+      },
     ]);
     run.show();
     const element = await run.shown();
@@ -415,20 +448,28 @@ describe("source-less Item actions", () => {
         `[aria-label="${m.references_open_note()}"]`,
       )!
       .click();
-    expect(run.open).toHaveBeenCalledExactlyOnceWith("ABCD2345", false);
+    // The action reads the Item again first, so it lands once that read does.
+    await vi.waitFor(() =>
+      expect(run.open).toHaveBeenCalledExactlyOnceWith("ABCD2345", false),
+    );
 
+    // The open hid that card; the next hover shows the Item again.
     run.open.mockClear();
+    run.show();
+    const again = await run.shown();
     popovers.at(-1)!.hide.mockClear();
-    vi.mocked(getItemsByKey).mockReturnValue([]);
-    element
+    run.db.holds([]);
+    again
       .querySelector<HTMLButtonElement>(
         `[aria-label="${m.references_open_note()}"]`,
       )!
       .click();
+    await vi.waitFor(async () => {
+      expect((await run.shown()).textContent).toBe(
+        m.citation_popover_item_unavailable(),
+      );
+    });
     expect(run.open).not.toHaveBeenCalled();
-    expect((await run.shown()).textContent).toBe(
-      m.citation_popover_item_unavailable(),
-    );
     expect(popovers.at(-1)!.hide).not.toHaveBeenCalled();
   });
 });
@@ -436,9 +477,7 @@ describe("source-less Item actions", () => {
 describe("popover failure and lifetime", () => {
   it("keeps a readable Item when the formatting request throws", async () => {
     await using run = workHarness();
-    vi.mocked(getItemsByKey).mockReturnValue([
-      makeItem({ key: "ABCD2345", title: "Alpha kernels" }),
-    ]);
+    run.db.holds([{ itemID: 1, key: "ABCD2345", title: "Alpha kernels" }]);
     run.readBibliography.mockRejectedValue(new Error("Engine stopped"));
     run.show();
     expect((await run.shown()).textContent).toContain("Alpha kernels");
@@ -459,9 +498,7 @@ describe("popover failure and lifetime", () => {
 describe("source-less presentation updates", () => {
   it("keeps Item actions when nothing could be formatted", async () => {
     await using run = workHarness();
-    vi.mocked(getItemsByKey).mockReturnValue([
-      makeItem({ key: "ABCD2345", title: "Alpha kernels", citationKey: null }),
-    ]);
+    run.db.holds([{ itemID: 1, key: "ABCD2345", title: "Alpha kernels" }]);
     run.readBibliography.mockResolvedValue(null);
     run.show();
     const element = await run.shown();
@@ -475,14 +512,10 @@ describe("source-less presentation updates", () => {
     await using run = workHarness();
     const pending = Promise.withResolvers<BibliographyRenderResult | null>();
     run.readBibliography.mockReturnValueOnce(pending.promise);
-    vi.mocked(getItemsByKey).mockReturnValue([
-      makeItem({ key: "ABCD2345", title: "Old title" }),
-    ]);
+    run.db.holds([{ itemID: 1, key: "ABCD2345", title: "Old title" }]);
     run.show();
     await vi.waitFor(() => expect(run.readBibliography).toHaveBeenCalledOnce());
-    vi.mocked(getItemsByKey).mockReturnValue([
-      makeItem({ key: "ABCD2345", title: "Corrected title" }),
-    ]);
+    run.db.holds([{ itemID: 1, key: "ABCD2345", title: "Corrected title" }]);
     run.emit("invalidated");
     expect((await run.shown()).textContent).toContain("Corrected title");
     pending.resolve(null);
@@ -493,16 +526,13 @@ describe("source-less presentation updates", () => {
 
   it("recovers from a database read failure without changing exact identity", async () => {
     await using run = workHarness();
-    vi.mocked(getItemsByKey).mockImplementationOnce(() => {
-      throw new Error("Database locked");
-    });
+    run.db.lock();
     run.show();
     expect((await run.shown()).textContent).toBe(
       m.citation_popover_database_unavailable(),
     );
-    vi.mocked(getItemsByKey).mockReturnValue([
-      makeItem({ key: "ABCD2345", title: "Recovered Item", citationKey: null }),
-    ]);
+    run.db.unlock();
+    run.db.holds([{ itemID: 1, key: "ABCD2345", title: "Recovered Item" }]);
     run.emit("invalidated");
     await vi.waitFor(async () =>
       expect((await run.shown()).textContent).toContain("Recovered Item"),
@@ -516,9 +546,7 @@ describe("source-less bibliography revalidation", () => {
     "draws the bibliography the read settled on (success: %s)",
     async (success) => {
       await using run = workHarness();
-      vi.mocked(getItemsByKey).mockReturnValue([
-        makeItem({ key: "ABCD2345", title: "Alpha kernels" }),
-      ]);
+      run.db.holds([{ itemID: 1, key: "ABCD2345", title: "Alpha kernels" }]);
       const settled = Promise.withResolvers<BibliographyRenderResult | null>();
       run.readBibliography.mockReturnValue(settled.promise);
       run.show();
@@ -551,16 +579,16 @@ describe("source-less bibliography revalidation", () => {
 describe("source-less empty bibliography entries", () => {
   it("shows the LETTERS5 summary when the engine returns an empty entry", async () => {
     await using run = workHarness();
-    vi.mocked(getItemsByKey).mockReturnValue([
-      makeItem({
+    run.db.holds([
+      {
+        itemID: 5,
         key: "LETTERS5",
         itemType: "letter",
         title: "A letter that records no Venue at all",
         citationKey: "chenLetterNoVenue2015",
         date: "2015",
-        creators: [makeCreator("Mei", "Chen")],
-        primaryCreatorType: "author",
-      }),
+        creators: [["Mei", "Chen"]],
+      },
     ]);
     const bibliography: BibliographyRenderResult = {
       entries: [{ id: "LETTERS5", marker: undefined, content: [] }],

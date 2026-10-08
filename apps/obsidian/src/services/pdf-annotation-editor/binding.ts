@@ -1,5 +1,5 @@
 // One open Obsidian PDF view bound to the Zotero attachment it shows.
-import { Platform } from "obsidian";
+import { Platform, TExternalFile } from "obsidian";
 import type {
   FileSystemAdapter,
   HoverParent,
@@ -18,7 +18,6 @@ import type {
   SelectedText,
 } from "@zotlit/pdf-structure";
 
-import { EXTERNAL_FILE_PREFIX } from "@/lib/constants";
 import {
   registerDomEvent,
   registerMigratingWindowEvent,
@@ -91,7 +90,7 @@ import type { PdfPageAnnotation } from "./render";
 import {
   loadedPageOf,
   onPageRendered,
-  openFilePathOf,
+  openFileOf,
   pageViewOf,
   pdfDocumentOf,
   PdfSeamProbeLog,
@@ -207,7 +206,7 @@ export interface PdfViewBindingDeps {
   /** The Literature Notes a rendered comment's links resolve against. */
   noteIndex: CommentNotes;
   /** The tag names of an Annotation's Library, which the tag editor suggests. */
-  libraryTagNames: (annotationKey: string) => readonly string[];
+  libraryTagNames: (annotationKey: string) => Promise<readonly string[]>;
   /** The clock the affordance's cooldown countdown is read against. */
   now?: () => Temporal.Instant;
 }
@@ -531,13 +530,13 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
 
   load(): void {
     this.#probes.record(probeFileView(this.#view));
-    const filePath = openFilePathOf(this.#view);
-    this.#filePath = filePath;
-    if (filePath === null) {
+    const file = openFileOf(this.#view);
+    this.#filePath = file?.path ?? null;
+    if (file === null) {
       logger.debug("PDF view holds no file yet");
       return;
     }
-    const absolutePath = absolutePathOf(filePath, this.#adapter);
+    const absolutePath = absolutePathOf(file, this.#adapter);
     this.#absolutePath = absolutePath;
     // A view bound while the Zotero database is still loading — plugin startup
     // over an open PDF tab — is told `pending`, and takes its answer here.
@@ -1572,12 +1571,15 @@ function pagesDrawing(
 }
 
 /**
- * An external file carries its absolute path behind {@link EXTERNAL_FILE_PREFIX},
- * already normalised by Obsidian; a vault path goes through the adapter's own
- * normalisation rather than a join onto the base path.
+ * An external file gives its absolute path itself, already normalised by
+ * Obsidian; a vault path goes through the adapter's own normalisation rather
+ * than a join onto the base path.
  */
-function absolutePathOf(filePath: string, adapter: FileSystemAdapter): string {
-  return filePath.startsWith(EXTERNAL_FILE_PREFIX)
-    ? filePath.slice(EXTERNAL_FILE_PREFIX.length)
-    : adapter.getFullPath(filePath);
+function absolutePathOf(
+  file: { path: string },
+  adapter: FileSystemAdapter,
+): string {
+  return file instanceof TExternalFile
+    ? file.getRealPath()
+    : adapter.getFullPath(file.path);
 }

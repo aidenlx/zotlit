@@ -97,9 +97,9 @@ describe("scenario seed", () => {
   const item = (scenario: ScenarioDatabase, name: ScenarioItemName): Item => {
     const { db } = scenario!;
     const { key, library } = SCENARIO_ITEMS[name];
-    const [found] = getItemsByKey(db, SCENARIO_LIBRARIES[library].libraryID, [
-      key,
-    ]);
+    const [found] = getItemsByKey(db, [key], {
+      libraryID: SCENARIO_LIBRARIES[library].libraryID,
+    });
     if (!found) throw new Error(`no live top-level Item ${name}`);
     return found;
   };

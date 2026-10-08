@@ -1,17 +1,18 @@
-import { createHash } from "node:crypto";
 // The plugin-wide cache of whole-bibliography renders every consumer of rendered citation text reads.
+
+import { hashKey } from "@tanstack/query-core";
 
 import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
-import type { DatabaseService } from "@/services/database/service";
 import type { ProfileService } from "@/services/profile/service";
 import type { Held, QueryClientService } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import {
   effectivePresentation,
@@ -52,7 +53,7 @@ interface BibliographyRenderEvents {
 
 export interface BibliographyRenderCacheOptions {
   profile: Pick<ProfileService, "ready" | "on">;
-  db: Pick<DatabaseService, "on">;
+  db: Pick<ZoteroReadsService, "on">;
   pandocEngine: Pick<
     PandocEngineService,
     "getStatus" | "subscribe" | "getEngine"
@@ -189,7 +190,8 @@ export class BibliographyRenderCache extends Service<void> {
    *   vault selection where it names none.
    * @param signal ends the wait; the shared render runs on for every other
    *   caller that joined it.
-   * @returns null where nothing can be rendered or the render failed.
+   * @returns the settled render, or null where the engine or style is unavailable.
+   * @throws the render failure, including while its retry cooldown is active.
    */
   async readBibliography(
     items: readonly CslItemData[],
@@ -200,7 +202,7 @@ export class BibliographyRenderCache extends Service<void> {
   ): Promise<BibliographyRenderResult | null> {
     const prepared = await this.#prepare(presentation);
     if ("reason" in prepared) return null;
-    return await this.#queries.read<BibliographyRenderResult>(
+    return await this.#queries.readFresh<BibliographyRenderResult>(
       [BIBLIOGRAPHY_RENDER, renderKey({ ...prepared, items })],
       () => this.#runBibliography(items, prepared.style),
       signal,
@@ -251,7 +253,8 @@ export class BibliographyRenderCache extends Service<void> {
    *   vault selection where it names none.
    * @param signal ends the wait; the shared render runs on for every other
    *   caller that joined it.
-   * @returns null where nothing can be rendered or the render failed.
+   * @returns the settled render, or null where the engine or style is unavailable.
+   * @throws the render failure, including while its retry cooldown is active.
    */
   async readCitations(
     citations: readonly string[],
@@ -263,7 +266,7 @@ export class BibliographyRenderCache extends Service<void> {
   ): Promise<readonly RenderedCitation[] | null> {
     const prepared = await this.#prepare(presentation);
     if ("reason" in prepared) return null;
-    return await this.#queries.read<readonly RenderedCitation[]>(
+    return await this.#queries.readFresh<readonly RenderedCitation[]>(
       [CITATION_RENDER, renderKey({ ...prepared, items, citations })],
       () => this.#runCitations(citations, items, prepared.style),
       signal,
@@ -477,19 +480,9 @@ function enginePresentation(style: RenderStyle): {
 }
 
 /**
- * The identity of one render: the style and Citation Locale that format it, the
- * independent parent the style resolved through, the very CSL content it is
- * formatted by, the works it covers in the order they are cited, and — for an
- * in-text render — the citations it formats.
- *
- * The parent belongs to that identity because a dependent style that starts
- * naming another parent renders another way under the same style ID, and the
- * content belongs to it because a style edited in Zotero renders another way
- * under the same style ID and the same parent.
- *
- * A CSL id names one Item — a Zotero item URI, an Indexed Key, or a citation
- * key — and none of the three can carry the separator, so the empty line
- * between the two lists keeps them apart.
+ * Full style and item content separate a cancelled render's captured inputs
+ * from updated data under the same IDs. Query Core's stable JSON serialization
+ * ignores object property order while preserving item and citation order.
  */
 function renderKey({
   request,
@@ -502,29 +495,17 @@ function renderKey({
   items: readonly CslItemData[];
   citations?: readonly string[];
 }): string {
-  return [
+  return hashKey([
     request.styleId ?? "",
     style.kind === "installed" ? (style.parentId ?? "") : "",
     request.locale ?? "",
-    contentIdentity(style),
-    ...items.map((item) => item.id),
-    ...(citations.length > 0 ? ["", ...citations] : []),
-  ].join("\n");
+    style.kind === "installed" ? style.xml : "",
+    items,
+    citations,
+  ]);
 }
 
 /** The {@link renderKey} a held render's query key carries. */
 function renderKeyOf(key: readonly unknown[]): string {
   return String(key[1]);
-}
-
-/**
- * What the resolved style formats with, as a value that changes with it: the
- * digest of the CSL content the engine is handed. The embedded default style
- * ships with the engine and carries no content of its own here, so it stands
- * on the request alone.
- */
-function contentIdentity(style: RenderStyle): string {
-  return style.kind === "installed"
-    ? createHash("sha256").update(style.xml).digest("base64")
-    : "";
 }

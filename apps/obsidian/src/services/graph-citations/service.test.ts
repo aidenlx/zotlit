@@ -2,6 +2,7 @@ import { settingsOf } from "@mock/obsidian";
 import type { ToggleComponent } from "@mock/obsidian";
 // @vitest-environment happy-dom
 import { Keymap, Menu } from "@mock/obsidian";
+import { Effect } from "effect";
 import { around } from "monkey-around";
 import { PopoverState } from "obsidian";
 import type {
@@ -31,6 +32,9 @@ import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
 import type { NoteIndex } from "@/services/note-index/service";
 import { NoteIndexStub } from "@/services/note-index/test-stub";
 import type { Settings } from "@/services/settings/schema";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
+import type { WorkLabelSource } from "@/services/zotero-reads/rpc";
+import type { ZoteroReadsEvents } from "@/services/zotero-reads/service";
 
 import type { LinkMap } from "./adapter";
 import { GraphCitations } from "./service";
@@ -44,16 +48,16 @@ vi.mock("@/lib/log", () => ({
   getLogger: () => ({ trace: vi.fn(), debug: vi.fn(), info: vi.fn(), warn }),
 }));
 
-const labelReads = vi.hoisted(() => vi.fn());
-vi.mock("@zotlit/db", async (original) => ({
-  ...(await original<typeof import("@zotlit/db")>()),
-  resolveIndexedKeyLibrary: (_client: unknown, key: string) => ({
-    libraryID: 1,
-    key,
-  }),
-  getItemsByKey: (_client: unknown, _libraryID: number, keys: string[]) =>
-    labelReads(keys),
-}));
+/** The keys of each `WorkLabels` read, answered with the rows it returns. */
+const labelReads = vi.fn();
+
+/** A row `labelReads` answers: one work's label inputs. */
+interface LabelRow {
+  key: string;
+  primaryCreatorType: string | null;
+  creators: WorkLabelSource["creators"];
+  fields: { title?: string; shortTitle?: string; date?: string };
+}
 
 const DOE = {
   itemID: 1,
@@ -584,12 +588,39 @@ function makeFixture(options: FixtureOptions = {}) {
   const openCitekey = vi.fn(() => Promise.resolve());
   const openIndexedKey = vi.fn(() => Promise.resolve());
   const citationPopover = { show: vi.fn(), showWork: vi.fn(), hide: vi.fn() };
+  const readsEvents = createNanoEvents<ZoteroReadsEvents>();
+  const reads = {
+    ready: Promise.resolve({
+      reads: {
+        WorkLabels: ({ indexedKeys }: { indexedKeys: readonly string[] }) =>
+          options.labelDatabase
+            ? Effect.promise(
+                async () =>
+                  new Map(
+                    ((await labelReads([...indexedKeys])) as LabelRow[]).map(
+                      (row) => [
+                        row.key,
+                        {
+                          libraryID: 1,
+                          creators: row.creators,
+                          primaryCreatorType: row.primaryCreatorType,
+                          title: row.fields.title ?? null,
+                          shortTitle: row.fields.shortTitle ?? null,
+                          date: row.fields.date ?? null,
+                        },
+                      ],
+                    ),
+                  ),
+              )
+            : Effect.fail(new DbUnavailable({ message: "disconnected" })),
+      },
+    }),
+    on: readsEvents.on.bind(readsEvents),
+    emit: readsEvents.emit.bind(readsEvents),
+  };
   const service = new GraphCitations({
     app,
-    db: {
-      state: options.labelDatabase ? "ready" : "disconnected",
-      client: {},
-    } as unknown as import("./service").GraphCitationsDeps["db"],
+    reads: reads as unknown as import("./service").GraphCitationsDeps["reads"],
     libraryScope: {
       current: {
         mode: "all",
@@ -618,6 +649,7 @@ function makeFixture(options: FixtureOptions = {}) {
     citationIndex,
     noteIndex,
     settings,
+    reads,
     openCitekey,
     openIndexedKey,
     citationPopover,
@@ -3205,8 +3237,7 @@ describe("Graph Work Labels", () => {
     expect(labelReads).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(150);
     expect(labelReads.mock.calls.map(([keys]) => keys)).toEqual([
-      ["DEE23456"],
-      ["PINE2345g4"],
+      ["DEE23456", "PINE2345g4"],
     ]);
     const doe = engine.renderer.nodes.find(
       (node) => node.id === "Literature/Doe 2024.md",
@@ -3246,7 +3277,7 @@ describe("Graph Work Labels", () => {
     expect(labelLines(doe)[0]!.style.wordWrap).toBe(false);
     engine.render();
     expect(doe).toHaveProperty("initGraphics", init);
-    expect(labelReads).toHaveBeenCalledTimes(2);
+    expect(labelReads).toHaveBeenCalledOnce();
     const oldLines = labelLines(doe);
     doe.clearGraphics();
     expect(oldLines.every((line) => line.destroyed)).toBe(true);
@@ -3287,6 +3318,47 @@ describe("Graph Work Labels", () => {
       "initGraphics",
       Reflect.get(FakeLabelNode.prototype, "initGraphics"),
     );
+  });
+
+  it("keeps the held labels on screen while a database change reads them again", async () => {
+    vi.useFakeTimers();
+    using _pixi = installFakeLabelPixi();
+    const fixture = makePresentationFixture({ labelDatabase: true });
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    engine.nodes = () => ({ "Literature/Doe 2024.md": graphNode("") });
+    fixture.layoutReady();
+    engine.setOptions({ "zotlit-author-title-labels": true });
+    await vi.advanceTimersByTimeAsync(150);
+    const doe = engine.renderer.nodes[0]!;
+    doe.initGraphics();
+    expect(labelLines(doe)[0]!.text).toBe("Doe 2024");
+
+    const reading = Promise.withResolvers<LabelRow[]>();
+    labelReads.mockReturnValue(reading.promise);
+    fixture.reads.emit("changed");
+    await vi.advanceTimersByTimeAsync(150);
+
+    expect(labelReads).toHaveBeenCalledTimes(2);
+    expect(labelLines(doe)[0]!.text).toBe("Doe 2024");
+    reading.resolve([
+      {
+        key: "DEE23456",
+        primaryCreatorType: "author",
+        creators: [
+          {
+            creatorType: "author",
+            lastName: "Lee",
+            firstName: "",
+            fieldMode: 0,
+          },
+        ],
+        fields: { title: "Graph study", date: "2025" },
+      },
+    ]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(labelLines(doe)[0]!.text).toBe("Lee 2025");
   });
 
   it("keeps native labels for unreadable items and missing PIXI", async () => {
@@ -3350,7 +3422,6 @@ describe("Graph Work Labels", () => {
     for (const engine of [first, second])
       engine.setOptions({ "zotlit-author-title-labels": true });
     await vi.advanceTimersByTimeAsync(150);
-    expect(labelReads).not.toHaveBeenCalled();
     for (const engine of [first, second]) {
       engine.renderer.nodes[0]!.initGraphics();
       expect(engine.renderer.nodes[0]!.text).toBeInstanceOf(FakeLabelText);

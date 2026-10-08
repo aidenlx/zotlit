@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import {
   mkdir,
   mkdtemp,
@@ -15,18 +16,12 @@ import {
   TFolder,
 } from "obsidian";
 import type { App } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  buildNoteContextFromSource,
   citekeysToCiteTemplateData,
-  CollectionCache,
-  fetchAnnotationsTemplateData,
-  fetchNoteContext,
-  getAnnotationsByItemId,
-  getChildNotesByParentIDs,
-  getItemsByKey,
   itemBaseFields,
-  resolveIndexedKeyLibrary,
   resolveVenue,
 } from "@zotlit/db";
 import type {
@@ -38,6 +33,7 @@ import type {
   TemplateItemData,
 } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import {
@@ -97,18 +93,25 @@ import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fi
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
-import { ProfileAnnotationError } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
+import {
+  ATTACHMENT_TYPE_ID,
+  inProcessReadsService,
+  recordCalls,
+  seedWorksSql,
+  sharedClientOpener,
+  worksSql,
+} from "@/services/zotero-reads/test-utils";
 
-import type {
-  NoteFeatureDeps,
-  SyncRenderDeps as RuntimeSyncRenderDeps,
-} from "./context";
-type SyncRenderDeps = Omit<RuntimeSyncRenderDeps, "profile"> &
-  Partial<Pick<RuntimeSyncRenderDeps, "profile">>;
+import type { NoteFeatureDeps } from "./context";
+/** The note feature's deps, with the fixture database its reads serve. */
+type TestDeps = Omit<NoteFeatureDeps, "profile"> &
+  Partial<Pick<NoteFeatureDeps, "profile">> & {
+    db: { client: NodeDatabaseClient };
+  };
 import { createNoteFeature as createFeature } from "./operations";
-function createNoteFeature(deps: SyncRenderDeps) {
-  return createFeature({
+function createNoteFeature(deps: TestDeps) {
+  const feature = createFeature({
     ...deps,
     profile:
       deps.profile ??
@@ -117,6 +120,23 @@ function createNoteFeature(deps: SyncRenderDeps) {
         deps.app.metadataCache,
       ),
   });
+  // The caller hands over an Item it read from Zotero, so the database holds it.
+  const know = (item: Item) => seedItem(deps.db.client, item);
+  return {
+    ...feature,
+    createNote: (...args) => {
+      know(args[0]);
+      return feature.createNote(...args);
+    },
+    prepareCreationProfiles: (item) => {
+      know(item);
+      return feature.prepareCreationProfiles(item);
+    },
+    prepareBatchCreationProfiles: (...args) => {
+      args[0].forEach(know);
+      return feature.prepareBatchCreationProfiles(...args);
+    },
+  } satisfies NoteFeature;
 }
 import type { NoteFeature, UpdateScope } from "./operations";
 
@@ -147,46 +167,20 @@ const blockedAttachmentImport = {
   }),
 };
 
+// Every read runs in the in-process handlers over seeded fixture rows. Only
+// the pure build stays a stub: `buildNoteContextFromSource` runs in the
+// consumer, after the read, and each test stubs it to apply the caller's
+// resolvers to a small fixture context, so resolver wiring (notePath /
+// noteLink resolution) is exercised apart from the template data the
+// @zotlit/db suites cover.
 vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();
-  return {
-    ...actual,
-    // The mock DB client can't run real queries; stub the caches so the
-    // note-feature flow under test stays DB-free.
-    CollectionCache: class {
-      byItemIDs() {
-        return new Map();
-      }
-    },
-    resolveItemTags: () => [],
-    // The single-item create / update paths resolve the account identity from
-    // the pinned client; stub it so the note-feature flow under test stays
-    // DB-free.
-    getZoteroIdentity: () => ({
-      userID: null,
-      localUserKey: null,
-      username: null,
-    }),
-    // `fetchNoteContext` normally fetches every row from the DB; each test
-    // stubs it to apply the caller's resolvers to a small fixture instead, so
-    // resolver wiring (notePath / noteLink resolution) is exercised without a
-    // real DB.
-    fetchNoteContext: vi.fn(),
-    // `overwriteNote`'s indexedKey lookup path; stubbed per-test so it doesn't
-    // need a real Zotero item table.
-    resolveIndexedKeyLibrary: vi.fn(),
-    getItemsByKey: vi.fn(),
-    getChildNotesByParentIDs: vi.fn(),
-    // renderAnnotation's drag-insert path; stubbed per-test so the annotation
-    // template data (parent item + page label) is supplied without a real DB.
-    getAnnotationsByItemId: vi.fn(),
-    fetchAnnotationsTemplateData: vi.fn(),
-  };
+  return { ...actual, buildNoteContextFromSource: vi.fn() };
 });
 
 /**
  * Minimal `NoteTemplateContext` stand-in: applies `resolvers.item` to `item`
- * and `relatedItems` the way the real (db-package-tested) `fetchNoteContext`
+ * and `relatedItems` the way the real (db-package-tested) `buildNoteContextFromSource`
  * would, so a test can assert on resolver wiring — byItemKey / byCitekey /
  * synthetic-fallback note-path resolution — without a real DB.
  */
@@ -235,7 +229,7 @@ describe("Companion note target", () => {
       const file = harness.file("Paper.md");
       harness.deps.noteIndex.getNotesByItemKey = () => [file];
       await expect(
-        createNoteFeature(harness.deps).resolveCompanionNote("ABC12345", {
+        createNoteFeature(harness.deps).resolveCompanionNote("ABC23456", {
           profile,
         }),
       ).resolves.toMatchObject({
@@ -264,7 +258,7 @@ describe("Companion note target", () => {
     const feature = createNoteFeature(harness.deps);
     for (const profile of [undefined, books]) {
       await expect(
-        feature.resolveCompanionNote("ABC12345", { profile }),
+        feature.resolveCompanionNote("ABC23456", { profile }),
       ).resolves.toEqual({
         outcome: "existing",
         files: [file, duplicate],
@@ -276,7 +270,7 @@ describe("Companion note target", () => {
   it("offers creation only when there is no existing note and the requested Profile resolves", async () => {
     const { deps } = makeUpdateHarness({ content: "" });
     await expect(
-      createNoteFeature(deps).resolveCompanionNote("ABC12345", {
+      createNoteFeature(deps).resolveCompanionNote("ABC23456", {
         profile: "default",
       }),
     ).resolves.toEqual({ outcome: "create" });
@@ -293,7 +287,7 @@ describe("Companion note target", () => {
       harness.deps.noteIndex.getNotesByItemKey = () =>
         existing ? [harness.file("Paper.md")] : [];
       await expect(
-        createNoteFeature(harness.deps).resolveCompanionNote("ABC12345", {
+        createNoteFeature(harness.deps).resolveCompanionNote("ABC23456", {
           profile: missing,
         }),
       ).resolves.toMatchObject({
@@ -301,7 +295,7 @@ describe("Companion note target", () => {
         diagnostic: {
           code: "unknown-literature-note-profile",
           stamp: missing,
-          indexedKey: "ABC12345",
+          indexedKey: "ABC23456",
         },
       });
       expect(harness.processMock).not.toHaveBeenCalled();
@@ -326,7 +320,7 @@ describe("Companion note target", () => {
     const feature = createNoteFeature(harness.deps);
 
     await expect(
-      feature.resolveCompanionNote("ABC12345", { profile: papers }),
+      feature.resolveCompanionNote("ABC23456", { profile: papers }),
     ).resolves.toEqual({
       outcome: "existing",
       files: [file],
@@ -434,7 +428,7 @@ describe("Profile source selection", () => {
     });
     expect(preview.path).not.toBe("Reading/Paper.md");
     expect(preview.properties).toEqual({
-      "zotero-key": "ABC12345",
+      "zotero-key": "ABC23456",
       "zotlit-profile": "Reading (Bk3Qn7XvT2Lp)",
       topic: "Research",
     });
@@ -454,9 +448,8 @@ describe("Profile source selection", () => {
       ...makeTemplate(),
       renderFilename: () => `Root${filenameSuffix()}`,
     };
-    vi.mocked(fetchNoteContext).mockImplementation(
-      (_client, current, options) =>
-        stubNoteContext(current, [], options!.resolvers),
+    vi.mocked(buildNoteContextFromSource).mockImplementation(
+      ({ item: current }, resolvers) => stubNoteContext(current, [], resolvers),
     );
     await app.vault.create("Literature/Root.md", "Occupied");
     const feature = createNoteFeature(deps);
@@ -528,9 +521,8 @@ describe("Profile source selection", () => {
       getLiteratureNoteTemplate: (reference) =>
         reference === "books.md" ? document : undefined,
     };
-    vi.mocked(fetchNoteContext).mockImplementation(
-      (_client, current, options) =>
-        stubNoteContext(current, [], options!.resolvers),
+    vi.mocked(buildNoteContextFromSource).mockImplementation(
+      ({ item: current }, resolvers) => stubNoteContext(current, [], resolvers),
     );
     const feature = createNoteFeature(deps);
     using update = vi.spyOn(deps.settings, "update");
@@ -701,19 +693,26 @@ describe("createNote", () => {
       });
       const client = deps.db.client;
       let leaseReleased = false;
-      deps.db.acquireRead = async () => ({
-        client,
-        uri: ":memory:",
-        source: { id: null, databasePath: ":memory:" },
-        [Symbol.dispose]() {
-          leaseReleased = true;
+      const zoteroReads = deps.zoteroReads;
+      deps.zoteroReads = {
+        ready: zoteroReads.ready,
+        acquireRead: async () => {
+          const lease = await zoteroReads.acquireRead();
+          return {
+            reads: lease.reads,
+            [Symbol.asyncDispose]() {
+              leaseReleased = true;
+              return lease[Symbol.asyncDispose]();
+            },
+          };
         },
-      });
-      cleanup.defer(() => client.$client.close());
+      };
+      // The create seeds the Item "Paper" (RTKEY234) itself; its PDF holds an
+      // image and an ink annotation.
       client.$client.exec(`
+        insert into itemTypes (itemTypeID, typeName) values (4, 'annotation');
         insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key) values
-          (1, 1, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'ROOT1234'),
-          (90, 2, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'RGRPDF24'),
+          (90, ${ATTACHMENT_TYPE_ID}, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'RGRPDF24'),
           (91, 4, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'FDRFQ7C2'),
           (92, 4, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'TYY6Z6ZF');
         insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path) values
@@ -724,7 +723,10 @@ describe("createNote", () => {
       `);
       const actual =
         await vi.importActual<typeof import("@zotlit/db")>("@zotlit/db");
-      vi.mocked(fetchNoteContext).mockImplementation(actual.fetchNoteContext);
+      // This case builds its template data from the seeded rows for real.
+      vi.mocked(buildNoteContextFromSource).mockImplementation(
+        actual.buildNoteContextFromSource,
+      );
       const app = makeApp();
       app.vault.createFolder = vi.fn(async (path: string) => {
         await mkdir(`${root}/${path}`, { recursive: true });
@@ -790,11 +792,12 @@ describe("createNote", () => {
           };
         },
       };
-      deps.excerptImages = createExcerptPreparation({
+      const prepareExcerpts = createExcerptPreparation({
         app: app as unknown as App,
         resolver,
         paths: deps.zoteroPref,
       });
+      deps.excerptImages = (options) => prepareExcerpts(options);
       if (mode === "write-failure")
         await writeFile(`${root}/Images`, "occupied");
       const engine = new TemplateEngine();
@@ -821,8 +824,8 @@ describe("createNote", () => {
       feature.on("excerpt-images-reported", (summary) => notices.push(summary));
       const result = await feature.createNote(
         makeItem({
-          key: "ROOT1234",
-          indexedKey: "ROOT1234",
+          key: "RTKEY234",
+          indexedKey: "RTKEY234",
           title: "Paper",
           citationKey: "paper2026",
         }),
@@ -957,7 +960,7 @@ describe("createNote", () => {
       ) {
         const file = app.host.file("Literature/Paper.md");
         const priorAssets = await readdir(`${root}/Images`);
-        const properties = "---\nzotero-key: ROOT1234\n---\n";
+        const properties = "---\nzotero-key: RTKEY234\n---\n";
         const body = `User introduction\n${formatManagedRegion(markdown)}\nUser conclusion`;
         const original = `${properties}${body}`;
         let current =
@@ -996,18 +999,6 @@ describe("createNote", () => {
         Object.assign(app.metadataCache, {
           getFirstLinkpathDest: (path: string) => makeFile(path),
         });
-        vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-          key: "ROOT1234",
-          libraryID: 1,
-        });
-        vi.mocked(getItemsByKey).mockReturnValue([
-          makeItem({
-            key: "ROOT1234",
-            indexedKey: "ROOT1234",
-            title: "Paper",
-            citationKey: "paper2026",
-          }),
-        ]);
         engine.define(
           "content",
           `<% zt.countRender() %><% for (const a of zt.annotations) { %><%= ${mode === "retain-link" ? "a.imgLink()" : "embed(a.imgLink)"} %>\n<% } %>`,
@@ -1057,8 +1048,8 @@ describe("createNote", () => {
             },
           });
         leaseReleased = false;
-        if (mode === "overwrite") await feature.overwriteNote(file, "ROOT1234");
-        else await feature.updateNote(file, { indexedKey: "ROOT1234" });
+        if (mode === "overwrite") await feature.overwriteNote(file, "RTKEY234");
+        else await feature.updateNote(file, { indexedKey: "RTKEY234" });
         current = app.host.text(file.path)!;
         expect(runs).toBe(2);
         expect(await readFile(otherNote, "utf8")).toBe(original);
@@ -1100,29 +1091,29 @@ describe("createNote", () => {
   it("resolves note helpers by item key, then filename fallback", async () => {
     const root = makeItem({
       itemID: 1,
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
+      key: "RTKEY234",
+      indexedKey: "RTKEY234",
       title: "Root",
       citationKey: "root2024",
     });
     const byItemKey = makeItem({
       itemID: 2,
-      key: "RELKEY01",
-      indexedKey: "RELKEY01",
+      key: "RELKEY23",
+      indexedKey: "RELKEY23",
       title: "B Related",
       citationKey: "relkey2024",
     });
     const byCitekey = makeItem({
       itemID: 3,
-      key: "RELCITE1",
-      indexedKey: "RELCITE1",
+      key: "RELCITE2",
+      indexedKey: "RELCITE2",
       title: "C Related",
       citationKey: "relcite2024",
     });
     const fallback = makeItem({
       itemID: 4,
-      key: "RELFALL1",
-      indexedKey: "RELFALL1",
+      key: "RELFALL2",
+      indexedKey: "RELFALL2",
       title: "A Related",
       citationKey: "relfallback2024",
     });
@@ -1130,20 +1121,17 @@ describe("createNote", () => {
     // Related items pre-sorted by title (A, B, C) — this test asserts on
     // notePath/noteLink resolver wiring, not title sorting (already covered
     // by @zotlit/db's zt-template-note.test.ts).
-    vi.mocked(fetchNoteContext).mockImplementation((_client, item, options) =>
-      stubNoteContext(
-        item,
-        [fallback, byItemKey, byCitekey],
-        options.resolvers,
-      ),
+    vi.mocked(buildNoteContextFromSource).mockImplementation(
+      ({ item }, resolvers) =>
+        stubNoteContext(item, [fallback, byItemKey, byCitekey], resolvers),
     );
 
     const existingByItemKey = makeFile("Notes/Existing by item.md");
     const app = makeApp();
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app,
       template: makeTemplate(),
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1211,8 +1199,8 @@ describe("createNote", () => {
   it("feeds the filename template the same item-own shape in creation and synthetic fallback", async () => {
     const root = makeItem({
       itemID: 1,
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
+      key: "RTKEY234",
+      indexedKey: "RTKEY234",
       title: "Root",
       citationKey: null,
     });
@@ -1220,18 +1208,18 @@ describe("createNote", () => {
     // miss and resolution falls through to the synthetic fallback.
     const related = makeItem({
       itemID: 2,
-      key: "RELFALL1",
-      indexedKey: "RELFALL1",
+      key: "RELFALL2",
+      indexedKey: "RELFALL2",
       title: "Related",
       citationKey: null,
     });
 
-    vi.mocked(fetchNoteContext).mockImplementation((_client, item, options) =>
-      stubNoteContext(item, [related], options.resolvers),
+    vi.mocked(buildNoteContextFromSource).mockImplementation(
+      ({ item }, resolvers) => stubNoteContext(item, [related], resolvers),
     );
 
     const app = makeApp();
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app,
       template: {
         ready: Promise.resolve(),
@@ -1258,7 +1246,7 @@ describe("createNote", () => {
           return `root:${ctx.noteLink()}\nrelated:${ctx.relatedItems[0]!.noteLink()}`;
         },
       },
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1306,15 +1294,15 @@ describe("createNote", () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const item = makeItem({
       itemID: 1,
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
+      key: "RTKEY234",
+      indexedKey: "RTKEY234",
       title: "Root",
       citationKey: null,
     });
 
     // `render` below ignores its context entirely, so the stub just needs to
     // avoid throwing.
-    vi.mocked(fetchNoteContext).mockReturnValue({
+    vi.mocked(buildNoteContextFromSource).mockReturnValue({
       relatedItems: [],
     } as unknown as NoteTemplateContext);
 
@@ -1331,13 +1319,13 @@ describe("createNote", () => {
       filename: `Root${filenameSuffix()}`,
     });
 
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app,
       template: {
         ...makeTemplate(),
         getLiteratureNoteTemplate: () => document,
       },
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1379,6 +1367,61 @@ describe("createNote", () => {
     expect(document.renderForCreate).toHaveBeenCalledTimes(1);
   });
 
+  it("renders and flushes Child Notes under one Snapshot", async () => {
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
+    const { db } = makeDbDeps();
+    const { wrap, calls, snapshots } = recordCalls([
+      "NoteSource",
+      "NoteBodies",
+    ]);
+    await using zoteroReads = inProcessReadsService(
+      sharedClientOpener(db.client),
+      { wrap },
+    );
+    const deps: TestDeps = {
+      app: makeApp(),
+      template: makeTemplate(),
+      db,
+      zoteroReads,
+      noteIndex: {
+        getImportedNoteByNoteKey: () => [],
+        ready: Promise.resolve(),
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings(),
+      attachmentImport: blockedAttachmentImport,
+      noteImport: {
+        // The Child Note flush reads through the reads the create handed it.
+        prepare: async ({ reads }) => ({
+          resolveChildNote: () => ({
+            key: "",
+            indexedKey: "",
+            title: null,
+            noteLink: () => "",
+          }),
+          flush: async () => {
+            await Effect.runPromise(
+              reads.NoteBodies({ libraryID: 1, keys: ["NTED2345"] }),
+            );
+            return { created: 0, skipped: 0, failed: 0 };
+          },
+        }),
+      },
+    };
+
+    createdFile(await createNoteFeature(deps).createNote(makeCreateGateItem()));
+
+    expect(snapshots).toHaveLength(1);
+    expect(
+      calls.map(({ operation, payload }) => [operation, payload.snapshot]),
+    ).toEqual([
+      ["NoteSource", snapshots[0]],
+      ["NoteBodies", snapshots[0]],
+    ]);
+  });
+
   it("awaits noteIndex.whenIndexed (not just ready) before writing the note", async () => {
     // Regression: `ready` settles once listeners are registered, before the
     // first metadataCache scan populates the index. Gating on `ready` alone
@@ -1387,12 +1430,12 @@ describe("createNote", () => {
     // stronger gate that actually waits for the scan.
     const item = makeItem({
       itemID: 1,
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
+      key: "RTKEY234",
+      indexedKey: "RTKEY234",
       title: "Root",
       citationKey: null,
     });
-    vi.mocked(fetchNoteContext).mockReturnValue({
+    vi.mocked(buildNoteContextFromSource).mockReturnValue({
       relatedItems: [],
     } as unknown as NoteTemplateContext);
 
@@ -1408,7 +1451,7 @@ describe("createNote", () => {
       createCalledBeforeSignal = true;
       return create(path, content);
     });
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app,
       template: {
         ready: Promise.resolve(),
@@ -1420,7 +1463,7 @@ describe("createNote", () => {
         renderFilename: () => "Root",
         render: () => "body",
       },
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1455,14 +1498,14 @@ describe("createNote", () => {
   });
 
   it("refuses creation after the index settles when the item already has a literature note", async () => {
-    const item = { indexedKey: "ROOT1234" } as Item;
+    const item = makeCreateGateItem();
     const existing = makeFile("Literature/Existing.md");
     const app = makeApp();
     let indexed = false;
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app,
       template: makeTemplate(),
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1500,7 +1543,7 @@ describe("createNote", () => {
       diagnostic: {
         code: "literature-note-exists",
         hint: "Open the existing Literature Note instead of creating another.",
-        indexedKey: "ROOT1234",
+        indexedKey: "RTKEY234",
         paths: ["Literature/Existing.md"],
       },
     });
@@ -1509,12 +1552,12 @@ describe("createNote", () => {
   });
 
   it("returns a diagnostic that lists every duplicate literature note", async () => {
-    const item = { indexedKey: "ROOT1234" } as Item;
+    const item = makeCreateGateItem();
     const app = makeApp();
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app,
       template: makeTemplate(),
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1548,7 +1591,7 @@ describe("createNote", () => {
       diagnostic: {
         code: "duplicate-literature-notes",
         hint: "Resolve the duplicate Literature Notes, then run create again.",
-        indexedKey: "ROOT1234",
+        indexedKey: "RTKEY234",
         paths: ["Literature/Newer.md", "Archive/Older.md"],
       },
     });
@@ -1557,7 +1600,7 @@ describe("createNote", () => {
 
   it("serializes concurrent creates and refuses the second result", async () => {
     const item = makeCreateGateItem();
-    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
     const app = makeApp();
     let releaseCreate!: () => void;
     const createGate = new Promise<void>((resolve) => {
@@ -1572,7 +1615,7 @@ describe("createNote", () => {
     const feature = createNoteFeature({
       app,
       template: makeTemplate(),
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1606,7 +1649,7 @@ describe("createNote", () => {
       diagnostic: {
         code: "literature-note-exists",
         hint: "Open the existing Literature Note instead of creating another.",
-        indexedKey: "ROOT1234",
+        indexedKey: "RTKEY234",
         paths: ["Literature/Root.md"],
       },
     });
@@ -1615,14 +1658,14 @@ describe("createNote", () => {
 
   it("refuses an immediate repeat before the Note Index observes the created file", async () => {
     const item = makeCreateGateItem();
-    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
     const app = makeApp();
     app.metadataCache.hold();
     const create = app.vault.create;
     const feature = createNoteFeature({
       app,
       template: makeTemplate(),
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1655,7 +1698,7 @@ describe("createNote", () => {
 
   it("allows recreation after the created file loses its Zotero key", async () => {
     const item = makeCreateGateItem();
-    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
     const app = makeApp();
     app.metadataCache.hold();
     const feature = createNoteFeature({
@@ -1664,7 +1707,7 @@ describe("createNote", () => {
         ...makeTemplate(),
         renderFilename: () => `Root${filenameSuffix()}`,
       },
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1701,7 +1744,7 @@ describe("createNote", () => {
 
   it("refuses a retry when post-create import flushing fails", async () => {
     const item = makeCreateGateItem();
-    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
     const app = makeApp();
     app.metadataCache.hold();
     const template = makeTemplate();
@@ -1709,7 +1752,7 @@ describe("createNote", () => {
     const feature = createNoteFeature({
       app,
       template,
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1756,12 +1799,12 @@ describe("createNote", () => {
       // Protocol-driven creation waits for both document compilation and Profile discovery.
       const item = makeItem({
         itemID: 1,
-        key: "ROOT1234",
-        indexedKey: "ROOT1234",
+        key: "RTKEY234",
+        indexedKey: "RTKEY234",
         title: "Root",
         citationKey: null,
       });
-      vi.mocked(fetchNoteContext).mockReturnValue({
+      vi.mocked(buildNoteContextFromSource).mockReturnValue({
         relatedItems: [],
       } as unknown as NoteTemplateContext);
 
@@ -1772,7 +1815,7 @@ describe("createNote", () => {
       let renderFilenameCalledBeforeSignal = false;
 
       const app = makeApp();
-      const deps: SyncRenderDeps = {
+      const deps: TestDeps = {
         app,
         profile: {
           ...profileReader(makeSettings().current!),
@@ -1791,7 +1834,7 @@ describe("createNote", () => {
           },
           render: () => "body",
         },
-        db: makeDb(),
+        ...makeDbDeps(),
         noteIndex: {
           getImportedNoteByNoteKey: () => [],
           ready: Promise.resolve(),
@@ -1830,17 +1873,17 @@ describe("createNote", () => {
   it("creates under an explicit Profile with its folder, stamp, and citation style", async () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const item = makeItem({
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
+      key: "RTKEY234",
+      indexedKey: "RTKEY234",
       title: "Root",
       citationKey: "root2024",
     });
-    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
     const app = makeApp();
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app,
       template: makeTemplate(),
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1888,14 +1931,14 @@ describe("createNote", () => {
   });
 
   it("keeps the default Profile on legacy rendering while conversion is pending", async () => {
-    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
     const app = makeApp();
     const template = makeTemplate();
     const renderLegacy = vi.spyOn(template, "render");
     const result = await createNoteFeature({
       app,
       template,
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1928,7 +1971,7 @@ describe("createNote", () => {
     const result = await createNoteFeature({
       app,
       template: makeTemplate(),
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -1950,14 +1993,14 @@ describe("createNote", () => {
         code: "literature-note-template-conversion-required",
         hint: expect.stringContaining("Convert"),
         profileId,
-        indexedKey: "ROOT1234",
+        indexedKey: "RTKEY234",
       },
     });
     expect(app.vault.create).not.toHaveBeenCalled();
   });
 
   it("uses the converted document for the default Profile", async () => {
-    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
     const app = makeApp();
     const document = makeDocumentTemplate({
       createBody: `# Converted\n\n${formatManagedRegion("BODY")}`,
@@ -1970,7 +2013,7 @@ describe("createNote", () => {
         getLiteratureNoteTemplate: (reference) =>
           reference === "zotlit-profile.default.md" ? document : undefined,
       },
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -2003,7 +2046,7 @@ describe("createNote", () => {
   it("creates a Profile note from its document body, filename, and frontmatter", async () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const item = makeCreateGateItem();
-    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
     const app = makeApp();
     const document = makeDocumentTemplate({
       createBody: `# Books layout\n\n${formatManagedRegion("BOOK BODY")}`,
@@ -2015,16 +2058,16 @@ describe("createNote", () => {
         { key: "1", merge: "replace", value: "one" },
       ]),
     });
-    const template: SyncRenderDeps["template"] = {
+    const template: TestDeps["template"] = {
       ...makeTemplate(),
       getLiteratureNoteTemplate: (reference) =>
         reference === "books.md" ? document : undefined,
     };
     const renderLegacy = vi.spyOn(template, "render");
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app,
       template,
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -2075,7 +2118,7 @@ describe("createNote", () => {
     expect(content.indexOf("__proto__: safe")).toBeLessThan(
       content.indexOf('"1": one'),
     );
-    expect(content).toContain(`${FIELD_ZOTERO_KEY}: ROOT1234`);
+    expect(content).toContain(`${FIELD_ZOTERO_KEY}: RTKEY234`);
     expect(content).toContain(
       `${FIELD_LITERATURE_NOTE_PROFILE}: Books (Bk3Qn7XvT2Lp)`,
     );
@@ -2087,7 +2130,7 @@ describe("createNote", () => {
   it("rejects with MissingTemplateError and writes nothing when the Profile document calls a Shared Partial the vault holds no document for", async () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const item = makeCreateGateItem();
-    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
     const app = makeApp();
     // The error a Profile document render raises for a call to a partial the
     // folder holds no document for; `template/service.test.ts` proves the real
@@ -2096,14 +2139,14 @@ describe("createNote", () => {
     document.renderForCreate.mockImplementation(() => {
       throw new MissingTemplateError("venue-line");
     });
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app,
       template: {
         ...makeTemplate(),
         getLiteratureNoteTemplate: (reference) =>
           reference === "books.md" ? document : undefined,
       },
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -2144,7 +2187,9 @@ describe("createNote", () => {
     "refuses create before writing when document $field is inert",
     async ({ entry, field }) => {
       const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
-      vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+      vi.mocked(buildNoteContextFromSource).mockReturnValue(
+        createGateContext(),
+      );
       const app = makeApp();
       const document = makeDocumentTemplate({
         frontmatter: compileDocumentFrontmatter(
@@ -2158,7 +2203,7 @@ describe("createNote", () => {
           ...makeTemplate(),
           getLiteratureNoteTemplate: () => document,
         },
-        db: makeDb(),
+        ...makeDbDeps(),
         noteIndex: {
           ready: Promise.resolve(),
           whenIndexed: async () => {},
@@ -2204,13 +2249,13 @@ describe("createNote", () => {
   it("refuses create when a Profile document is missing", async () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const app = makeApp();
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app,
       template: {
         ...makeTemplate(),
         getLiteratureNoteTemplate: () => undefined,
       },
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -2242,7 +2287,7 @@ describe("createNote", () => {
         code: "missing-literature-note-template",
         hint: expect.stringContaining("Restore"),
         document: "missing.md",
-        indexedKey: "ROOT1234",
+        indexedKey: "RTKEY234",
       },
     });
     expect(app.vault.create).not.toHaveBeenCalled();
@@ -2255,10 +2300,10 @@ describe("createNote", () => {
       "Books/Root.md": `---\n${FIELD_LITERATURE_NOTE_PROFILE}: ${existingProfileId}\n---\n`,
     });
     const existing = app.host.file("Books/Root.md");
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app,
       template: makeTemplate(),
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -2288,7 +2333,7 @@ describe("createNote", () => {
       diagnostic: {
         code: "literature-note-profile-conflict",
         hint: expect.stringContaining("Keep"),
-        indexedKey: "ROOT1234",
+        indexedKey: "RTKEY234",
         path: "Books/Root.md",
         existingProfile: existingProfileId,
         requestedProfile: requestedProfileId,
@@ -2299,21 +2344,21 @@ describe("createNote", () => {
   it("runs the created note and its Child Note import under one outcome scope", async () => {
     const root = makeItem({
       itemID: 1,
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
+      key: "RTKEY234",
+      indexedKey: "RTKEY234",
       title: "Root",
       citationKey: "root2024",
     });
-    vi.mocked(fetchNoteContext).mockImplementation((_client, item, options) =>
-      stubNoteContext(item, [], options.resolvers),
+    vi.mocked(buildNoteContextFromSource).mockImplementation(
+      ({ item }, resolvers) => stubNoteContext(item, [], resolvers),
     );
     const excerptScopes: (ExcerptOutcomeScope | undefined)[] = [];
     const importScopes: (ExcerptOutcomeScope | undefined)[] = [];
     await using probe = excerptReuseProbe();
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app: makeApp(),
       template: makeTemplate(),
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -2372,27 +2417,23 @@ describe("overwriteNote", () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const item = makeItem({
       itemID: 1,
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
+      key: "RTKEY234",
+      indexedKey: "RTKEY234",
       title: "Root",
       citationKey: null,
     });
-    vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-      key: item.key,
-      libraryID: item.libraryID,
-    });
-    vi.mocked(getItemsByKey).mockReturnValue([item]);
-    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(updateContext());
     const harness = makeUpdateHarness({
       content: "Old body content",
       frontmatter: {
-        [FIELD_ZOTERO_KEY]: "ROOT1234",
+        [FIELD_ZOTERO_KEY]: "RTKEY234",
         [FIELD_LITERATURE_NOTE_PROFILE]: `Reading notes (${profileId})`,
       },
       settings: {
         profiles: [{ id: profileId, label: "Books" }],
       },
     });
+    seedItem(harness.deps.db.client, item);
 
     const result = await createNoteFeature(harness.deps).overwriteNote(
       harness.file("Books/Root.md"),
@@ -2408,23 +2449,19 @@ describe("overwriteNote", () => {
   it("writes the new body right after the Properties block, as create does", async () => {
     const item = makeItem({
       itemID: 1,
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
+      key: "RTKEY234",
+      indexedKey: "RTKEY234",
       title: "Root",
       citationKey: null,
     });
-    vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-      key: item.key,
-      libraryID: item.libraryID,
-    });
-    vi.mocked(getItemsByKey).mockReturnValue([item]);
-    vi.mocked(fetchNoteContext).mockReturnValue(
-      updateContext({ indexedKey: "ROOT1234" }),
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(
+      updateContext({ indexedKey: "RTKEY234" }),
     );
     const harness = makeUpdateHarness({
       content: "\n\nOld body content",
-      frontmatter: { [FIELD_ZOTERO_KEY]: "ROOT1234" },
+      frontmatter: { [FIELD_ZOTERO_KEY]: "RTKEY234" },
     });
+    seedItem(harness.deps.db.client, item);
     harness.deps.template.render = ((name: string) =>
       name === "note"
         ? "New body content"
@@ -2443,17 +2480,12 @@ describe("overwriteNote", () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const item = makeItem({
       itemID: 1,
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
+      key: "RTKEY234",
+      indexedKey: "RTKEY234",
       title: "Root",
       citationKey: null,
     });
-    vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-      key: item.key,
-      libraryID: item.libraryID,
-    });
-    vi.mocked(getItemsByKey).mockReturnValue([item]);
-    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(updateContext());
     const harness = makeUpdateHarness({
       content: "Old body content",
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
@@ -2461,6 +2493,7 @@ describe("overwriteNote", () => {
         profiles: [{ id: profileId, label: "Books", document: "books.md" }],
       },
     });
+    seedItem(harness.deps.db.client, item);
     harness.deps.template.getLiteratureNoteTemplate = () =>
       makeDocumentTemplate({
         frontmatter: compileDocumentFrontmatter([
@@ -2486,35 +2519,31 @@ describe("overwriteNote", () => {
     // bytes and writes the Properties between them with `stringifyYaml`.
     const item = makeItem({
       itemID: 1,
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
+      key: "RTKEY234",
+      indexedKey: "RTKEY234",
       title: "Root",
       citationKey: null,
     });
-    vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-      key: item.key,
-      libraryID: item.libraryID,
-    });
-    vi.mocked(getItemsByKey).mockReturnValue([item]);
-    vi.mocked(fetchNoteContext).mockReturnValue(
-      updateContext({ indexedKey: "ROOT1234" }),
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(
+      updateContext({ indexedKey: "RTKEY234" }),
     );
 
     const harness = makeUpdateHarness({ content: "" });
+    seedItem(harness.deps.db.client, item);
     harness.deps.template.render = ((name: string) =>
       name === "note"
         ? "New body content"
         : "") as typeof harness.deps.template.render;
     harness.host.vault.createFile(
       "Literature/Root.md",
-      "---\r\nzotero-key: ROOT1234\r\n---\r\nOld body content",
+      "---\r\nzotero-key: RTKEY234\r\n---\r\nOld body content",
     );
     const file = harness.file("Literature/Root.md");
 
     await createNoteFeature(harness.deps).overwriteNote(file, item.indexedKey);
 
     expect(harness.host.text(file.path)).toBe(
-      "---\r\nzotero-key: ROOT1234\n---\r\nNew body content",
+      "---\r\nzotero-key: RTKEY234\n---\r\nNew body content",
     );
   });
 });
@@ -2525,7 +2554,7 @@ describe("overwriteNote", () => {
  * test can assert on the rewritten body and frontmatter after an update.
  */
 interface UpdateHarness {
-  deps: SyncRenderDeps;
+  deps: TestDeps;
   host: ObsidianHost;
   /**
    * The note at `path`, placed on first use. The first path placed is the note
@@ -2556,10 +2585,11 @@ function makeUpdateHarness(options: {
 }): UpdateHarness {
   // The note file as the vault holds it: a Properties block, stamped with its
   // Zotero key like any Literature Note, then `options.content` as the body.
-  const text = `---\n${stringifyYaml({
-    [FIELD_ZOTERO_KEY]: "ABC12345",
+  const properties = {
+    [FIELD_ZOTERO_KEY]: "ABC23456",
     ...options.frontmatter,
-  })}---\n${options.content}`;
+  };
+  const text = `---\n${stringifyYaml(properties)}---\n${options.content}`;
   const host = createObsidianHost();
   const processMock = vi.fn(host.vault.process.bind(host.vault));
   host.vault.process = processMock;
@@ -2572,7 +2602,7 @@ function makeUpdateHarness(options: {
     () => options.renderedRegion ?? formatManagedRegion("NEW BODY"),
   );
 
-  const template: SyncRenderDeps["template"] = {
+  const template: TestDeps["template"] = {
     ready: Promise.resolve(),
     loaded: true,
     frontmatterFields: options.frontmatterFields ?? [],
@@ -2584,7 +2614,7 @@ function makeUpdateHarness(options: {
       name === "content" ? renderContent() : "",
   };
 
-  const deps: SyncRenderDeps = {
+  const deps: TestDeps = {
     app: {
       ...host.app,
       fileManager: {
@@ -2593,7 +2623,7 @@ function makeUpdateHarness(options: {
       },
     },
     template,
-    db: makeDb(),
+    ...makeDbDeps(),
     noteIndex: {
       getImportedNoteByNoteKey: () => [],
       ready: Promise.resolve(),
@@ -2616,6 +2646,19 @@ function makeUpdateHarness(options: {
     },
   };
 
+  // Zotero holds the Item the note is stamped with: "A Study" (smith2024).
+  const stamped = properties[FIELD_ZOTERO_KEY];
+  if (typeof stamped === "string")
+    seedItem(
+      deps.db.client,
+      makeItem({
+        key: stamped,
+        indexedKey: stamped,
+        title: "A Study",
+        citationKey: "smith2024",
+      }),
+    );
+
   return {
     deps,
     host,
@@ -2633,12 +2676,12 @@ function makeUpdateHarness(options: {
   };
 }
 
-/** Context the (mocked) `fetchNoteContext` hands back for an update. */
+/** Context the (mocked) `buildNoteContextFromSource` hands back for an update. */
 function updateContext(
   overrides: Partial<NoteTemplateContext> = {},
 ): NoteTemplateContext {
   return {
-    indexedKey: "ABC12345",
+    indexedKey: "ABC23456",
     citationKey: "smith2024",
     title: "A Study",
     relatedItems: [],
@@ -2646,21 +2689,9 @@ function updateContext(
   } as unknown as NoteTemplateContext;
 }
 
-/** Point the indexedKey lookup path at a resolvable item returning `context`. */
+/** Build `context` from the Item a note update reads. */
 function stubIndexedKeyUpdate(context: NoteTemplateContext): void {
-  vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-    key: "ABC12345",
-    libraryID: 1,
-  });
-  vi.mocked(getItemsByKey).mockReturnValue([
-    makeItem({
-      key: "ABC12345",
-      indexedKey: "ABC12345",
-      title: "A Study",
-      citationKey: "smith2024",
-    }),
-  ]);
-  vi.mocked(fetchNoteContext).mockReturnValue(context);
+  vi.mocked(buildNoteContextFromSource).mockReturnValue(context);
 }
 
 describe("updateNote", () => {
@@ -2671,9 +2702,6 @@ describe("updateNote", () => {
         content: formatManagedRegion("OLD"),
       });
       stubIndexedKeyUpdate(updateContext());
-      using _database = {
-        [Symbol.dispose]: () => harness.deps.db.client.$client.close(),
-      };
       const failed = Promise.withResolvers<void>();
       const finishChild = Promise.withResolvers<void>();
       const copyError = new Error("attachment copy failed");
@@ -2701,8 +2729,8 @@ describe("updateNote", () => {
       const file = harness.file("Literature/Test.md");
       const pending =
         operation === "update"
-          ? feature.updateNote(file, { indexedKey: "ABC12345", scope: "full" })
-          : feature.overwriteNote(file, "ABC12345");
+          ? feature.updateNote(file, { indexedKey: "ABC23456", scope: "full" })
+          : feature.overwriteNote(file, "ABC23456");
       const rejected = expect(pending).rejects.toBe(copyError);
       await failed.promise;
       expect(report).not.toHaveBeenCalled();
@@ -2735,7 +2763,7 @@ describe("updateNote", () => {
       };
       const unavailable = new Error("Originating note changed");
       const updating = createNoteFeature(harness.deps).updateNote(original, {
-        indexedKey: "ABC12345",
+        indexedKey: "ABC23456",
         scope,
         beforeWrite: () => {
           if (currentFile !== original) throw unavailable;
@@ -2748,7 +2776,7 @@ describe("updateNote", () => {
       await refused;
       expect(harness.content()).toBe(replacementBody);
       expect(harness.frontmatter()).toEqual({
-        [FIELD_ZOTERO_KEY]: "ABC12345",
+        [FIELD_ZOTERO_KEY]: "ABC23456",
         title: "Replacement",
       });
     },
@@ -2765,7 +2793,7 @@ describe("updateNote", () => {
       createNoteFeature(harness.deps).updateNote(
         harness.file("Literature/Original.md"),
         {
-          indexedKey: "ABC12345",
+          indexedKey: "ABC23456",
           beforeWrite: () => {
             throw unavailable;
           },
@@ -2774,7 +2802,7 @@ describe("updateNote", () => {
     ).rejects.toBe(unavailable);
     expect(harness.content()).toBe(formatManagedRegion("BODY"));
     expect(harness.frontmatter()).toEqual({
-      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_ZOTERO_KEY]: "ABC23456",
       title: "Personal title",
     });
   });
@@ -2785,14 +2813,24 @@ describe("updateNote", () => {
       const harness = makeUpdateHarness({
         content: formatManagedRegion("BODY"),
         frontmatter: {
-          [FIELD_ZOTERO_KEY]: "OTHER234",
+          [FIELD_ZOTERO_KEY]: "QTHER234",
           title: "Personal title",
         },
       });
+      seedItem(
+        harness.deps.db.client,
+        makeItem({
+          itemID: 2,
+          key: "ABC23456",
+          indexedKey: "ABC23456",
+          title: "A Study",
+          citationKey: "smith2024",
+        }),
+      );
       stubIndexedKeyUpdate(updateContext());
       const result = await createNoteFeature(harness.deps).updateNote(
         harness.file("Literature/Original.md"),
-        { indexedKey: "ABC12345", scope },
+        { indexedKey: "ABC23456", scope },
       );
       expect(result).toEqual({
         bodyUpdated: false,
@@ -2800,13 +2838,13 @@ describe("updateNote", () => {
         diagnostic: {
           code: "literature-note-key-changed",
           hint: expect.any(String),
-          indexedKey: "ABC12345",
+          indexedKey: "ABC23456",
           path: "Literature/Original.md",
         },
       });
       expect(harness.content()).toBe(formatManagedRegion("BODY"));
       expect(harness.frontmatter()).toEqual({
-        [FIELD_ZOTERO_KEY]: "OTHER234",
+        [FIELD_ZOTERO_KEY]: "QTHER234",
         title: "Personal title",
       });
     },
@@ -2825,7 +2863,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result).toEqual({
@@ -2854,7 +2892,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345", profile: requestedId },
+      { indexedKey: "ABC23456", profile: requestedId },
     );
 
     expect(result).toEqual({
@@ -2863,7 +2901,7 @@ describe("updateNote", () => {
       diagnostic: {
         code: "literature-note-profile-conflict",
         hint: expect.stringContaining("Follow"),
-        indexedKey: "ABC12345",
+        indexedKey: "ABC23456",
         path: "Books/Root.md",
         existingProfile: stampedId,
         requestedProfile: requestedId,
@@ -2894,11 +2932,11 @@ describe("updateNote", () => {
 
     await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.frontmatter()).toMatchObject({
-      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_ZOTERO_KEY]: "ABC23456",
       [FIELD_LITERATURE_NOTE_PROFILE]: "Books (Bk3Qn7XvT2Lp)",
       [FIELD_CITATION_STYLE]: "apa",
     });
@@ -2925,7 +2963,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result.diagnostic).toBeUndefined();
@@ -2965,7 +3003,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result.diagnostic).toBeUndefined();
@@ -2989,7 +3027,7 @@ describe("updateNote", () => {
     await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
       {
-        indexedKey: "ABC12345",
+        indexedKey: "ABC23456",
       },
     );
 
@@ -3009,7 +3047,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result).toEqual({
@@ -3037,7 +3075,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result.diagnostic).toMatchObject({
@@ -3062,7 +3100,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result.diagnostic).toMatchObject({
@@ -3095,7 +3133,7 @@ describe("updateNote", () => {
 
     await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.frontmatter()).not.toHaveProperty(FIELD_CITATION_STYLE);
@@ -3123,7 +3161,7 @@ describe("updateNote", () => {
 
     await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(prepare).toHaveBeenCalledWith(
@@ -3159,7 +3197,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.content()).toBe(
@@ -3177,7 +3215,7 @@ describe("updateNote", () => {
       run: (harness: UpdateHarness) =>
         createNoteFeature(harness.deps).updateNote(
           harness.file("Books/Root.md"),
-          { indexedKey: "ABC12345" },
+          { indexedKey: "ABC23456" },
         ),
       render: "renderForUpdate" as const,
     },
@@ -3186,7 +3224,7 @@ describe("updateNote", () => {
       run: (harness: UpdateHarness) =>
         createNoteFeature(harness.deps).overwriteNote(
           harness.file("Books/Root.md"),
-          "ABC12345",
+          "ABC23456",
         ),
       render: "renderForCreate" as const,
     },
@@ -3225,7 +3263,7 @@ describe("updateNote", () => {
       // block nor the body may carry a render that never finished.
       expect(harness.content()).toBe(original);
       expect(harness.frontmatter()).toEqual({
-        [FIELD_ZOTERO_KEY]: "ABC12345",
+        [FIELD_ZOTERO_KEY]: "ABC23456",
         [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
         title: "Old title",
       });
@@ -3266,7 +3304,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result.diagnostic).toBeUndefined();
@@ -3276,7 +3314,7 @@ describe("updateNote", () => {
       [FIELD_LITERATURE_NOTE_PROFILE]: "Books (Bk3Qn7XvT2Lp)",
       tags: ["A Study"],
       label: "A Study!",
-      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_ZOTERO_KEY]: "ABC23456",
     });
     expect(harness.frontmatter()).not.toHaveProperty("legacy-only");
   });
@@ -3301,7 +3339,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345", scope: "metadata" },
+      { indexedKey: "ABC23456", scope: "metadata" },
     );
 
     expect(result).toEqual({ bodyUpdated: false, duplicateRegionCount: 0 });
@@ -3309,7 +3347,7 @@ describe("updateNote", () => {
     expect(harness.processMock).toHaveBeenCalledOnce();
     expect(harness.frontmatter()).toMatchObject({
       title: "A Study",
-      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_ZOTERO_KEY]: "ABC23456",
       [FIELD_LITERATURE_NOTE_PROFILE]: "Books (Bk3Qn7XvT2Lp)",
     });
   });
@@ -3344,7 +3382,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result.diagnostic).toMatchObject({
@@ -3363,7 +3401,7 @@ describe("updateNote", () => {
       ],
     });
     expect(harness.frontmatter()).toEqual({
-      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_ZOTERO_KEY]: "ABC23456",
       status: "reading",
       [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
     });
@@ -3401,7 +3439,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result.diagnostic).toMatchObject({
@@ -3435,7 +3473,7 @@ describe("updateNote", () => {
       ],
     });
     expect(harness.frontmatter()).toEqual({
-      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_ZOTERO_KEY]: "ABC23456",
       status: "reading",
       [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
     });
@@ -3474,7 +3512,7 @@ describe("updateNote", () => {
 
       const result = await createNoteFeature(harness.deps).updateNote(
         harness.file("Books/Root.md"),
-        { indexedKey: "ABC12345" },
+        { indexedKey: "ABC23456" },
       );
 
       expect(result.diagnostic).toBeUndefined();
@@ -3506,12 +3544,12 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.content()).toBe("Static user-owned body");
     expect(harness.frontmatter()).toMatchObject({
-      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_ZOTERO_KEY]: "ABC23456",
     });
     expect(harness.processMock).toHaveBeenCalledOnce();
     expect(document.renderForUpdate).not.toHaveBeenCalled();
@@ -3541,7 +3579,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result).toEqual({
@@ -3566,7 +3604,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result).toEqual({
@@ -3591,7 +3629,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result).toEqual({
@@ -3812,17 +3850,17 @@ describe("updateNote", () => {
     const first = makeFile("Imported/First.md");
     const second = makeFile("Imported/Second.md");
     stubIndexedKeyUpdate(updateContext());
-    vi.mocked(getChildNotesByParentIDs).mockReturnValueOnce([
-      { indexedKey: "NOTE0001" },
-      { indexedKey: "NOTE0002" },
-      { indexedKey: "NOTEGONE" },
-    ] as never);
     const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
+    seedChildNotes(harness.deps.db.client, 1, [
+      "NTEB2345",
+      "NTEC2345",
+      "NTEGNE23",
+    ]);
     harness.deps.noteIndex.getImportedNoteByNoteKey = (key) =>
-      key === "NOTE0001" ? [first] : key === "NOTE0002" ? [second] : [];
+      key === "NTEB2345" ? [first] : key === "NTEC2345" ? [second] : [];
 
     await expect(
-      createNoteFeature(harness.deps).getImportedNotesForItem("ABC12345"),
+      createNoteFeature(harness.deps).getImportedNotesForItem("ABC23456"),
     ).resolves.toEqual([first, second]);
   });
 
@@ -3831,10 +3869,6 @@ describe("updateNote", () => {
     const papers = "Rz9Wm4YfH6Kd" as ProfileId;
     const imported = makeFile("Imported/First.md");
     stubIndexedKeyUpdate(updateContext());
-    vi.mocked(getChildNotesByParentIDs).mockReturnValueOnce([
-      { indexedKey: "NOTE0001" },
-      { indexedKey: "NOTEGONE" },
-    ] as never);
     const harness = makeUpdateHarness({
       content: "My content",
       frontmatter: {
@@ -3859,8 +3893,9 @@ describe("updateNote", () => {
         ],
       },
     });
+    seedChildNotes(harness.deps.db.client, 1, ["NTEB2345", "NTEGNE23"]);
     harness.deps.noteIndex.getImportedNoteByNoteKey = (key) =>
-      key === "NOTE0001" ? [imported] : [];
+      key === "NTEB2345" ? [imported] : [];
     const plan = await createNoteFeature(harness.deps).prepareProfileSwitch(
       harness.file("Books/My title.md"),
     );
@@ -3897,9 +3932,9 @@ describe("updateNote", () => {
         settings: { profiles: [{ id: target, label: "Papers" }] },
       });
       if (failure === "missing item")
-        vi.mocked(getItemsByKey).mockReturnValueOnce([]);
+        forgetItem(harness.deps.db.client, "ABCD2345");
       else
-        harness.deps.db.acquireRead = async () => {
+        harness.deps.zoteroReads.acquireRead = async () => {
           throw new Error("Database unavailable");
         };
       const file = harness.file("Literature/Paper.md");
@@ -3974,7 +4009,7 @@ describe("updateNote", () => {
         ],
       },
     });
-    harness.deps.db.acquireRead = async () => {
+    harness.deps.zoteroReads.acquireRead = async () => {
       throw new Error("Recovery must not need a parent lookup");
     };
     const file = harness.file("Imports/Child.md");
@@ -4132,7 +4167,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.content()).toBe(
@@ -4157,7 +4192,7 @@ describe("updateNote", () => {
 
     await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.content()).toBe(
@@ -4177,7 +4212,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345", scope: "metadata" },
+      { indexedKey: "ABC23456", scope: "metadata" },
     );
 
     expect(harness.content()).toBe(original);
@@ -4185,7 +4220,7 @@ describe("updateNote", () => {
     expect(harness.processMock).toHaveBeenCalledOnce();
     expect(harness.frontmatter()).toEqual({
       status: "reading",
-      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_ZOTERO_KEY]: "ABC23456",
     });
     expect(result).toEqual({ bodyUpdated: false, duplicateRegionCount: 0 });
   });
@@ -4211,13 +4246,13 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(result).toEqual({ bodyUpdated: true, duplicateRegionCount: 0 });
     expect(harness.content()).toBe(formatManagedRegion("NEW BODY"));
     expect(harness.frontmatter()).toMatchObject({
-      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_ZOTERO_KEY]: "ABC23456",
       title: "A Study",
     });
     expect(harness.processMock).toHaveBeenCalledOnce();
@@ -4232,7 +4267,7 @@ describe("updateNote", () => {
     const save = vi.spyOn(view, "save");
 
     const result = await createNoteFeature(harness.deps).updateNote(file, {
-      indexedKey: "ABC12345",
+      indexedKey: "ABC23456",
     });
 
     expect(result).toEqual({ bodyUpdated: true, duplicateRegionCount: 0 });
@@ -4248,12 +4283,12 @@ describe("updateNote", () => {
     const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
     const file = harness.file("Literature/Root.md");
     const view = harness.host.openInEditor(file);
-    view.edit(view.getViewData().replace("ABC12345", "OTHER234"));
+    view.edit(view.getViewData().replace("ABC23456", "QTHER234"));
     const save = vi.spyOn(view, "save");
     const edited = view.getViewData();
 
     const result = await createNoteFeature(harness.deps).updateNote(file, {
-      indexedKey: "ABC12345",
+      indexedKey: "ABC23456",
     });
 
     expect(result.diagnostic?.code).toBe("literature-note-key-changed");
@@ -4297,7 +4332,7 @@ describe("updateNote", () => {
       const save = vi.spyOn(view, "save");
 
       const result = await createNoteFeature(harness.deps).updateNote(file, {
-        indexedKey: "ABC12345",
+        indexedKey: "ABC23456",
       });
 
       expect(result.diagnostic?.code).toBe("literature-note-profile-changed");
@@ -4320,7 +4355,7 @@ describe("updateNote", () => {
       const switched = harness.host.text(file.path);
 
       const result = await createNoteFeature(harness.deps).updateNote(file, {
-        indexedKey: "ABC12345",
+        indexedKey: "ABC23456",
       });
 
       expect(result.diagnostic?.code).toBe("literature-note-profile-changed");
@@ -4340,7 +4375,7 @@ describe("updateNote", () => {
         );
 
       const result = await createNoteFeature(harness.deps).updateNote(file, {
-        indexedKey: "ABC12345",
+        indexedKey: "ABC23456",
       });
 
       expect(result.diagnostic).toBeUndefined();
@@ -4356,7 +4391,7 @@ describe("updateNote", () => {
       content: formatManagedRegion("OLD"),
       frontmatter: {
         status: "reading",
-        [FIELD_ZOTERO_KEY]: "ABC12345",
+        [FIELD_ZOTERO_KEY]: "ABC23456",
         title: "Old title",
       },
       frontmatterFields: compileFrontmatterFields(
@@ -4374,13 +4409,13 @@ describe("updateNote", () => {
 
     await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.frontmatter()).toEqual({
       status: "reading",
       title: "A Study",
-      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_ZOTERO_KEY]: "ABC23456",
     });
   });
 
@@ -4408,10 +4443,10 @@ describe("updateNote", () => {
     feature.on("frontmatter-eval-failed", (payload) => events.push(payload));
 
     await feature.updateNote(harness.file("Literature/Root.md"), {
-      indexedKey: "ABC12345",
+      indexedKey: "ABC23456",
     });
 
-    expect(events).toEqual([{ itemKey: "ABC12345", fields: ["broken"] }]);
+    expect(events).toEqual([{ itemKey: "ABC23456", fields: ["broken"] }]);
   });
 
   it("defers the content render and reports no update when the note has no managed region", async () => {
@@ -4423,7 +4458,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.content()).toBe(original);
@@ -4441,7 +4476,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.content()).toBe(original);
@@ -4458,7 +4493,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.content()).toBe(original);
@@ -4478,7 +4513,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.content()).toBe(
@@ -4499,40 +4534,53 @@ describe("updateNote", () => {
 
     await createNoteFeature(harness.deps).updateNote(
       harness.file("Literature/Root.md"),
-      { indexedKey: "ABC12345" },
+      { indexedKey: "ABC23456" },
     );
 
     expect(harness.frontmatter()[FIELD_CITEKEY]).toBe("stale2020");
-    expect(harness.frontmatter()[FIELD_ZOTERO_KEY]).toBe("ABC12345");
+    expect(harness.frontmatter()[FIELD_ZOTERO_KEY]).toBe("ABC23456");
   });
 
   it("rejects without touching the file when the indexed key resolves to no item", async () => {
-    vi.mocked(resolveIndexedKeyLibrary).mockReturnValue(null);
     const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
 
     await expect(
       createNoteFeature(harness.deps).updateNote(
         harness.file("Literature/Root.md"),
-        { indexedKey: "MISSING1" },
+        { indexedKey: "MSSNG234" },
       ),
-    ).rejects.toThrow("Zotero item not found: MISSING1");
+    ).rejects.toThrow("Zotero item not found: MSSNG234");
     expect(harness.processMock).not.toHaveBeenCalled();
   });
 });
+
+// The batch's reads for `writeNoteUpdate`: an unbound interface over its own
+// fixture database, which holds the Item the batch hands over.
+const writeFixtures = new AsyncDisposableStack();
+afterAll(() => writeFixtures.disposeAsync());
+const writeFixture = openDbDeps(writeFixtures);
+seedItem(
+  writeFixture.db.client,
+  makeItem({
+    key: "ABC23456",
+    indexedKey: "ABC23456",
+    title: "A Study",
+    citationKey: "smith2024",
+  }),
+);
+const { reads } = await writeFixture.zoteroReads.ready;
 
 describe("writeNoteUpdate", () => {
   const writeOptions = (
     scope?: UpdateScope,
   ): Parameters<NoteFeature["writeNoteUpdate"]>[1] => ({
-    client: makeDb().client,
+    reads,
     item: makeItem({
-      key: "ABC12345",
-      indexedKey: "ABC12345",
+      key: "ABC23456",
+      indexedKey: "ABC23456",
       title: "A Study",
       citationKey: "smith2024",
     }),
-    tagMemo: new Map(),
-    collectionCache: new CollectionCache(),
     settings: {
       ...settingsDefaults,
       "note.default-profile": {
@@ -4548,7 +4596,7 @@ describe("writeNoteUpdate", () => {
   });
 
   it("replaces the region and preserves user content from the already-fetched item", async () => {
-    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(updateContext());
 
     const prefix = "user prefix\n\n";
     const suffix = "\n\nuser suffix";
@@ -4569,7 +4617,7 @@ describe("writeNoteUpdate", () => {
   });
 
   it("shares one outcome scope with the Child Note import and releases it after the update", async () => {
-    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(updateContext());
     const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
     await using probe = excerptReuseProbe();
     const excerptScopes: (ExcerptOutcomeScope | undefined)[] = [];
@@ -4611,7 +4659,7 @@ describe("writeNoteUpdate", () => {
   });
 
   it("leaves a caller's batch scope open for the rest of its run", async () => {
-    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(updateContext());
     const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
     const outcomes = new ExcerptOutcomeScope();
     await using probe = excerptReuseProbe();
@@ -4639,7 +4687,7 @@ describe("writeNoteUpdate", () => {
   });
 
   it("honors scope 'metadata' by leaving the body untouched", async () => {
-    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(updateContext());
 
     const original = `prefix\n${formatManagedRegion("OLD")}\nsuffix`;
     const harness = makeUpdateHarness({ content: original });
@@ -4655,7 +4703,7 @@ describe("writeNoteUpdate", () => {
   });
 
   it("uses document Managed Frontmatter for a headless metadata update", async () => {
-    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+    vi.mocked(buildNoteContextFromSource).mockReturnValue(updateContext());
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const original = `prefix\n${formatManagedRegion("OLD")}\nsuffix`;
     const harness = makeUpdateHarness({
@@ -4688,7 +4736,7 @@ describe("writeNoteUpdate", () => {
     expect(harness.processMock).toHaveBeenCalledOnce();
     expect(harness.frontmatter()).toMatchObject({
       title: "A Study",
-      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_ZOTERO_KEY]: "ABC23456",
       [FIELD_LITERATURE_NOTE_PROFILE]: "Books (Bk3Qn7XvT2Lp)",
     });
   });
@@ -4765,7 +4813,7 @@ describe("renderCitation", () => {
     // cold-start citation insert returns null instead of throwing
     // TemplateService's "service is not ready" through the handler.
     const render = vi.fn();
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app: makeApp(),
       template: {
         ready: Promise.resolve(),
@@ -4780,7 +4828,7 @@ describe("renderCitation", () => {
             render("citation", citekeysToCiteTemplateData(refs, variant)),
           ),
       },
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -4847,7 +4895,7 @@ describe("renderCitation", () => {
     // Citation-suggest passes the selected search hit's full item alongside
     // its citationKey; a data-driven (author-year) Citation Template should see
     // the item's title/date, not just a citekey-only stub.
-    const deps: SyncRenderDeps = {
+    const deps: TestDeps = {
       app: makeApp(),
       template: {
         ready: Promise.resolve(),
@@ -4862,7 +4910,7 @@ describe("renderCitation", () => {
             .citations.map((c) => c.item.title)
             .join("; "),
       },
-      db: makeDb(),
+      ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
@@ -4886,8 +4934,8 @@ describe("renderCitation", () => {
     };
 
     const item = makeItem({
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
+      key: "RTKEY234",
+      indexedKey: "RTKEY234",
       title: "Stated choice methods",
       citationKey: "root2024",
     });
@@ -4901,181 +4949,11 @@ describe("renderCitation", () => {
   });
 });
 
-describe("renderAnnotation", () => {
-  it("returns null instead of throwing when the template isn't loaded yet", () => {
-    // renderAnnotation runs inside the annot-view's dragstart handler, which
-    // can't await `template.ready`; drag-insert.ts already falls back to
-    // plain text when this returns null.
-    const deps: SyncRenderDeps = {
-      app: makeApp(),
-      template: {
-        ready: Promise.resolve(),
-        loaded: false,
-        frontmatterFields: [],
-        getLiteratureNoteTemplate: () => undefined,
-        renderProfileAnnotation: vi.fn(),
-        renderCitation: () => "",
-        renderFilename: () => "",
-        render: vi.fn(),
-      },
-      db: makeDb(),
-      noteIndex: {
-        getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
-        whenIndexed: async () => {},
-        getNotesByItemKey: () => [],
-      },
-      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
-      settings: makeSettings(),
-      attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        prepare: async () => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
-          }),
-          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-        }),
-      },
-    };
-
-    const result = createNoteFeature(deps).renderAnnotation(1, {
-      attachmentImport: { decide: blockedDecide, resolveLink: () => () => "" },
-    });
-
-    expect(result).toBeNull();
-  });
-
-  it("uses the annotation parent item's stamped Profile at drag start", () => {
-    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
-    vi.mocked(getAnnotationsByItemId).mockReturnValue([
-      { key: "ANN1" } as never,
-    ]);
-    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
-      new Map([["ANN1", annData("Hensher2011", "62", "PARENT1")]]),
-    );
-    const app = makeApp({
-      "Literature/Parent.md": `---\n${FIELD_LITERATURE_NOTE_PROFILE}: ${profileId}\n---\n`,
-    });
-    const file = app.host.file("Literature/Parent.md");
-    const template = citationTemplate();
-    template.renderProfileAnnotation = vi.fn(() => "PROFILE ANNOTATION");
-    const deps = {
-      ...annotDeps(template),
-      app,
-      noteIndex: {
-        getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
-        whenIndexed: async () => {},
-        getNotesByItemKey: (indexedKey: string) =>
-          indexedKey === "PARENT1" ? [file] : [],
-      },
-      settings: makeSettings({
-        profiles: [
-          {
-            id: profileId,
-            label: "Books",
-            document: "books.md",
-          },
-        ],
-      }),
-    };
-
-    createNoteFeature(deps).renderAnnotation(1, {
-      attachmentImport: { decide: blockedDecide, resolveLink: () => () => "" },
-    });
-
-    expect(template.renderProfileAnnotation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        parentItem: expect.objectContaining({ indexedKey: "PARENT1" }),
-      }),
-      expect.objectContaining({
-        profile: expect.objectContaining({
-          selector: profileId,
-          label: "Books",
-          stamp: `Books (${profileId})`,
-        }),
-      }),
-    );
-  });
-
-  it("uses the default Profile when the annotation parent has no stamped note", () => {
-    vi.mocked(getAnnotationsByItemId).mockReturnValue([
-      { key: "ANN1" } as never,
-    ]);
-    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
-      new Map([["ANN1", annData("Hensher2011", "62", "PARENT1")]]),
-    );
-    const template = citationTemplate();
-    template.renderProfileAnnotation = vi.fn(() => "DEFAULT ANNOTATION");
-    const deps = annotDeps(template);
-
-    createNoteFeature(deps).renderAnnotation(1, {
-      attachmentImport: { decide: blockedDecide, resolveLink: () => () => "" },
-    });
-
-    expect(template.renderProfileAnnotation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        profile: expect.objectContaining({ selector: "default" }),
-      }),
-    );
-  });
-
-  it("throws when the annotation parent's stamped Profile names none configured", () => {
-    vi.mocked(getAnnotationsByItemId).mockReturnValue([
-      { key: "ANN1" } as never,
-    ]);
-    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
-      new Map([["ANN1", annData("Hensher2011", "62", "PARENT1")]]),
-    );
-    const app = makeApp({
-      "Literature/Parent.md": `---\n${FIELD_LITERATURE_NOTE_PROFILE}: Deleted (Nn4Pp6Qq8Rr0)\n---\n`,
-    });
-    const file = app.host.file("Literature/Parent.md");
-    const template = citationTemplate();
-    template.renderProfileAnnotation = vi.fn(() => "PROFILE ANNOTATION");
-    const deps = {
-      ...annotDeps(template),
-      app,
-      noteIndex: {
-        getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
-        whenIndexed: async () => {},
-        getNotesByItemKey: (indexedKey: string) =>
-          indexedKey === "PARENT1" ? [file] : [],
-      },
-    };
-
-    let thrown: unknown;
-    try {
-      createNoteFeature(deps).renderAnnotation(1, {
-        attachmentImport: {
-          decide: blockedDecide,
-          resolveLink: () => () => "",
-        },
-      });
-    } catch (error) {
-      thrown = error;
-    }
-
-    expect(thrown).toBeInstanceOf(ProfileAnnotationError);
-    expect((thrown as ProfileAnnotationError).diagnostic).toMatchObject({
-      code: "unknown-literature-note-profile",
-      recovery: { action: "switch-profile" },
-      stamp: "Deleted (Nn4Pp6Qq8Rr0)",
-      path: "Literature/Parent.md",
-    });
-  });
-});
-
 /** A template service backed by the real engine, with a `citation` + optional `annotation` pair. */
 function citationTemplate(
   citationSource = defaultCitation,
   opts?: { annotation?: string; language?: TemplateLanguage },
-): SyncRenderDeps["template"] {
+): TestDeps["template"] {
   const facade = new TemplateFacade();
   facade.define("citation", citationSource, opts?.language ?? "liquid");
   if (opts?.annotation !== undefined) {
@@ -5098,24 +4976,11 @@ function citationTemplate(
   };
 }
 
-/** One annotation's template data with a parent item carrying `citekey`. */
-const annData = (
-  citekey: string | null,
-  pageLabel: string | null,
-  indexedKey = "PARENT1",
-) =>
-  ({
-    key: "ANN1",
-    pageLabel,
-    parentItem:
-      citekey === null ? null : { citationKey: citekey, citekey, indexedKey },
-  }) as never;
-
-function annotDeps(template: SyncRenderDeps["template"]): SyncRenderDeps {
+function annotDeps(template: TestDeps["template"]): TestDeps {
   return {
     app: makeApp(),
     template,
-    db: makeDb(),
+    ...makeDbDeps(),
     noteIndex: {
       getImportedNoteByNoteKey: () => [],
       ready: Promise.resolve(),
@@ -5138,136 +5003,6 @@ function annotDeps(template: SyncRenderDeps["template"]): SyncRenderDeps {
     },
   };
 }
-
-describe("renderAnnotation — zt.citation (9.2-CSL #05)", () => {
-  const render = (deps: SyncRenderDeps) =>
-    createNoteFeature(deps).renderAnnotation(1, {
-      attachmentImport: { decide: blockedDecide, resolveLink: () => () => "" },
-    });
-
-  it("renders a page-pinned Pandoc cite from the parent item + page label", () => {
-    vi.mocked(getAnnotationsByItemId).mockReturnValue([
-      { key: "ANN1" } as never,
-    ]);
-    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
-      new Map([["ANN1", annData("Hensher2011", "62")]]),
-    );
-    const result = render(
-      annotDeps(
-        citationTemplate(defaultCitation, { annotation: "<%= zt.citation %>" }),
-      ),
-    );
-    expect(result).toContain("[@Hensher2011, {p. 62}]");
-  });
-
-  it("routes the annotation citation through the user's Citation Template (locator = page label)", () => {
-    vi.mocked(getAnnotationsByItemId).mockReturnValue([
-      { key: "ANN1" } as never,
-    ]);
-    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
-      new Map([["ANN1", annData("Hensher2011", "62")]]),
-    );
-    const cite =
-      "<%= zt.citations.map(c => `{{${c.item.citationKey}|${c.locator}}}`).join('') %>";
-    const result = render(
-      annotDeps(
-        citationTemplate(cite, {
-          annotation: "<%= zt.citation %>",
-          language: "eta",
-        }),
-      ),
-    );
-    expect(result).toContain("{{Hensher2011|62}}");
-  });
-
-  it("leaves zt.citation null when the parent item has no citation key", () => {
-    vi.mocked(getAnnotationsByItemId).mockReturnValue([
-      { key: "ANN1" } as never,
-    ]);
-    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
-      new Map([["ANN1", annData(null, "62")]]),
-    );
-    const result = render(
-      annotDeps(
-        citationTemplate(defaultCitation, {
-          annotation: "<%= JSON.stringify(zt.citation) %>",
-        }),
-      ),
-    );
-    expect(result).toBe("null");
-  });
-});
-
-describe("renderAnnotationCitation (9.2-CSL #06)", () => {
-  const renderCite = (deps: SyncRenderDeps): string | null =>
-    createNoteFeature(deps).renderAnnotationCitation(1);
-
-  it("produces a page-pinned Pandoc cite from the parent item + page label", () => {
-    // The copy-citation action resolves the annotation's parent through the DB
-    // and renders it via the shared annotation-citation path (page label as
-    // locator), so the string the user pastes is `[@key, p. N]`.
-    vi.mocked(getAnnotationsByItemId).mockReturnValue([
-      { key: "ANN1" } as never,
-    ]);
-    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
-      new Map([["ANN1", annData("Hensher2011", "62")]]),
-    );
-    expect(renderCite(annotDeps(citationTemplate()))).toContain(
-      "[@Hensher2011, {p. 62}]",
-    );
-  });
-
-  it("routes the copied citation through the user's Citation Template (locator = page label)", () => {
-    vi.mocked(getAnnotationsByItemId).mockReturnValue([
-      { key: "ANN1" } as never,
-    ]);
-    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
-      new Map([["ANN1", annData("Hensher2011", "62")]]),
-    );
-    const cite =
-      "<%= zt.citations.map(c => `{{${c.item.citationKey}|${c.locator}}}`).join('') %>";
-    expect(
-      renderCite(annotDeps(citationTemplate(cite, { language: "eta" }))),
-    ).toContain("{{Hensher2011|62}}");
-  });
-
-  it("returns null when the parent item has no citation key (so the action can notice instead of copying)", () => {
-    vi.mocked(getAnnotationsByItemId).mockReturnValue([
-      { key: "ANN1" } as never,
-    ]);
-    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
-      new Map([["ANN1", annData(null, "62")]]),
-    );
-    expect(renderCite(annotDeps(citationTemplate()))).toBeNull();
-  });
-
-  it("asks the template service for the main variant with the page as locator", () => {
-    // The Citation Template owns the text and its inline normalization; this
-    // path decides only which refs and which variant render, and copies what
-    // comes back.
-    vi.mocked(getAnnotationsByItemId).mockReturnValue([
-      { key: "ANN1" } as never,
-    ]);
-    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
-      new Map([["ANN1", annData("Hensher2011", "62")]]),
-    );
-    const renderCitation = vi.fn(() => "[@Hensher2011, {p. 62}]");
-
-    expect(
-      renderCite(annotDeps({ ...citationTemplate(), renderCitation })),
-    ).toBe("[@Hensher2011, {p. 62}]");
-    expect(renderCitation).toHaveBeenCalledWith(
-      [
-        expect.objectContaining({
-          citationKey: "Hensher2011",
-          label: "page",
-          locator: "62",
-        }),
-      ],
-      "main",
-    );
-  });
-});
 
 // `render` / `renderFilename` are generic (`<T extends object>`) on the real
 // service, so the mocks mirror that signature and narrow the erased payload to
@@ -5358,23 +5093,95 @@ function compileDocumentFrontmatter(
   });
 }
 
-function makeDb(): SyncRenderDeps["db"] {
-  const client = createClient(":memory:");
-  // Known Libraries with no memberships.
-  createFixtureSchema(client.$client);
-  client.$client.exec(
-    "insert into libraries (libraryID, type) values (1, 'user'), (2, 'group'); insert into groups (groupID, libraryID, name) values (118, 2, 'Team');",
+/** The fixture databases and services the current case opened. */
+let caseFixtures = new AsyncDisposableStack();
+afterEach(async () => {
+  const opened = caseFixtures;
+  caseFixtures = new AsyncDisposableStack();
+  await opened.disposeAsync();
+});
+
+/**
+ * A fixture database and the ZoteroReads service over the same client, both
+ * held by `stack`: the service closes before the database.
+ */
+function openDbDeps(stack: AsyncDisposableStack) {
+  const db = stack.adopt(makeDb(), ({ client }) => client.$client.close());
+  const zoteroReads = stack.use(
+    inProcessReadsService(sharedClientOpener(db.client)),
   );
-  return {
-    state: "ready",
-    client,
-    acquireRead: async () => ({
-      client,
-      uri: ":memory:",
-      source: { id: null, databasePath: ":memory:" },
-      [Symbol.dispose]() {},
-    }),
-  };
+  return { db, zoteroReads };
+}
+
+/** {@link openDbDeps} for one case: both close after it. */
+function makeDbDeps() {
+  return openDbDeps(caseFixtures);
+}
+
+/**
+ * A fixture database holding My Library (1) and the group library 2 of group
+ * 118, with no Items and no memberships.
+ */
+function makeDb(): TestDeps["db"] {
+  const client = createClient(":memory:");
+  createFixtureSchema(client.$client);
+  client.$client.exec(`
+    ${seedWorksSql([])}
+    insert into libraries (libraryID, type) values (2, 'group');
+    insert into groups (groupID, libraryID, name) values (118, 2, 'Team');
+  `);
+  return { client };
+}
+
+/**
+ * Write `item` into the fixture database as a regular Item with its title and
+ * citation key. It replaces any Item that holds the same id, or the same key
+ * in the same library.
+ */
+function seedItem(client: NodeDatabaseClient, item: Item): void {
+  const fields = item.fields as unknown as Record<string, string | null>;
+  const held = `select itemID from items where itemID = ${item.itemID} or (libraryID = ${item.libraryID} and key = '${item.key}')`;
+  client.$client.exec(`
+    delete from itemDataValues where valueID in (select valueID from itemData where itemID in (${held}));
+    delete from itemData where itemID in (${held});
+    delete from items where itemID in (${held});
+    ${worksSql([
+      {
+        itemID: item.itemID,
+        key: item.key,
+        libraryID: item.libraryID,
+        title: fields.title ?? undefined,
+        citationKey: fields.citationKey ?? undefined,
+      },
+    ])}
+  `);
+}
+
+/** Remove the Item `key` of My Library from the fixture database. */
+function forgetItem(client: NodeDatabaseClient, key: string): void {
+  client.$client.exec(
+    `delete from items where libraryID = 1 and key = '${key}';`,
+  );
+}
+
+/** Child Notes of Item `parentItemID`, one per key, in key order. */
+function seedChildNotes(
+  client: NodeDatabaseClient,
+  parentItemID: number,
+  keys: readonly string[],
+): void {
+  client.$client.exec(`
+    insert into itemTypes (itemTypeID, typeName) values (98, 'note');
+    ${keys
+      .map(
+        (key, index) => `
+          insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+            values (${50 + index}, 98, '2024-01-15 10:00:00', '2024-01-15 10:00:00', 1, '${key}');
+          insert into itemNotes (itemID, parentItemID, note, title)
+            values (${50 + index}, ${parentItemID}, '<p>Note</p>', null);`,
+      )
+      .join("\n")}
+  `);
 }
 
 function makeSettings(
@@ -5532,10 +5339,10 @@ function makeCreateGateItem(): Item {
   return {
     itemID: 1,
     libraryID: 1,
-    key: "ROOT1234",
-    indexedKey: "ROOT1234",
-    dateAdded: {} as Temporal.Instant,
-    dateModified: {} as Temporal.Instant,
+    key: "RTKEY234",
+    indexedKey: "RTKEY234",
+    dateAdded: Temporal.Instant.from("2024-01-15T10:00:00Z"),
+    dateModified: Temporal.Instant.from("2024-01-15T10:00:00Z"),
     creators: [],
     primaryCreatorType: "author",
     customFields: new Map(),
@@ -5558,7 +5365,7 @@ function makeCreateGateItem(): Item {
 
 function createGateContext(): NoteTemplateContext {
   return {
-    indexedKey: "ROOT1234",
+    indexedKey: "RTKEY234",
     notePath: "Literature/Root.md",
     noteLink: () => "[[Literature/Root.md]]",
     relatedItems: [],

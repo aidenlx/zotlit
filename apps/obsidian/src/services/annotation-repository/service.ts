@@ -1,30 +1,27 @@
 // The Annotations of one Attachment, read from one Annotation Source at a time.
 import type { Mutation, QueryFunction, QueryKey } from "@tanstack/query-core";
+import { Effect } from "effect";
 
 import {
   annotationTypeToName,
-  getAccountUserID,
-  getAnnotationsByParent,
-  getAttachmentByKey,
-  getLibraries,
-  getZoteroDatabaseIdentity,
   parseAnnotationPosition,
   parseIndexedKey,
-  resolveIndexedKeyLibrary,
+  resolveIndexedKeyLibraryIn,
   tagTypeToName,
 } from "@zotlit/db";
 import type {
   Annotation,
   AnnotationPosition,
   AnnotationPositionRaw,
+  Attachment,
+  Library,
   ResolvedAnnotationTypeName,
   TemplateTag,
+  ZoteroDatabaseIdentity,
 } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
-import type { DatabaseService } from "@/services/database/service";
 import { excerptFingerprint } from "@/services/excerpt-image/contract";
 import type { Held, QueryClientService } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
@@ -38,6 +35,7 @@ import {
   libraryPath,
   readCreateResult,
 } from "@/services/zotero-local-api/wire";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { capabilityReason, editingCapabilityOf } from "./capability";
 import type { EditingCapability } from "./capability";
@@ -493,7 +491,7 @@ export interface AnnotationRepositoryEvents {
 }
 
 export interface AnnotationRepositoryDeps {
-  db: Pick<DatabaseService, "acquireRead" | "on" | "refresh">;
+  db: Pick<ZoteroReadsService, "acquireRead" | "on" | "refresh">;
   queryClient: Pick<
     QueryClientService,
     "client" | "invalidate" | "keysUnder" | "peek" | "read" | "update"
@@ -936,7 +934,11 @@ export class AnnotationRepository extends Service<void> {
   async #refresh(attachmentKey: string): Promise<AnnotationList | null> {
     await this.#localApi.probe();
     if (this.#compatibleApiSource(attachmentKey) === null) {
-      await this.#db.refresh();
+      // A failed refresh keeps the previous database serving, so the read
+      // below still answers; a database that cannot serve fails that read.
+      await this.#db.refresh().catch((error: unknown) => {
+        logger.debug("The Zotero database refresh failed", { error });
+      });
     }
     const { queryKey } = this.#activePartition(attachmentKey);
     this.#emitter.emit("annotations-changed", attachmentKey);
@@ -3665,10 +3667,16 @@ export class AnnotationRepository extends Service<void> {
    * @see apps/obsidian/docs/adr/0067-annotation-locks-come-from-the-zotero-database.md
    */
   async #readLocks(attachmentKey: string): Promise<boolean> {
+    const generation = this.#databaseGeneration;
     let annotations: readonly AnnotationRecord[];
     try {
-      using lease = await this.#db.acquireRead();
-      annotations = readAttachmentAnnotations(lease.client, attachmentKey);
+      await using lease = await this.#db.acquireRead();
+      annotations = toRecords(
+        attachmentKey,
+        await Effect.runPromise(
+          lease.reads.AnnotationsOfAttachment({ attachmentKey }),
+        ),
+      );
     } catch (error) {
       logger.debug("No lock facts could be read from the Zotero database", {
         attachmentKey,
@@ -3676,6 +3684,9 @@ export class AnnotationRepository extends Service<void> {
       });
       return false;
     }
+    // A read a database change overtook holds the old locks; the change reads
+    // them again.
+    if (generation !== this.#databaseGeneration) return false;
     return this.#keepLocks(attachmentKey, annotations);
   }
 
@@ -3723,10 +3734,22 @@ export class AnnotationRepository extends Service<void> {
   }
 
   async #readFromDatabase(attachmentKey: string): Promise<AnnotationList> {
-    using lease = await this.#db.acquireRead();
-    const annotations = readAttachmentAnnotations(lease.client, attachmentKey);
-    const source = databaseAnnotationSource(lease.client, attachmentKey);
-    this.#keepLocks(attachmentKey, annotations);
+    const generation = this.#databaseGeneration;
+    await using lease = await this.#db.acquireRead();
+    const [found, libraries, database] = await Effect.runPromise(
+      Effect.all(
+        [
+          lease.reads.AnnotationsOfAttachment({ attachmentKey }),
+          lease.reads.Libraries({}),
+          lease.reads.DatabaseIdentity({}),
+        ],
+        { concurrency: "unbounded" },
+      ),
+    );
+    const annotations = toRecords(attachmentKey, found);
+    const source = databaseAnnotationSource(attachmentKey, libraries, database);
+    if (generation === this.#databaseGeneration)
+      this.#keepLocks(attachmentKey, annotations);
     logger.debug("Annotations read from the Zotero database", {
       attachmentKey,
       annotations: annotations.length,
@@ -4226,38 +4249,40 @@ function describeCapability(capability: EditingCapability): string {
  *   named an Attachment the database has since dropped reads as no Annotations
  *   rather than as a failure.
  */
-function readAttachmentAnnotations(
-  client: NodeDatabaseClient,
+function toRecords(
   attachmentKey: string,
+  found: {
+    readonly attachment: Attachment | null;
+    readonly annotations: readonly Annotation[];
+    readonly accountUserID: number | null;
+  },
 ): readonly AnnotationRecord[] {
-  const library = resolveIndexedKeyLibrary(client, attachmentKey);
-  const attachment =
-    library && getAttachmentByKey(client, library.key, library.libraryID);
+  const { attachment } = found;
   if (!attachment) {
     logger.debug("No Zotero attachment answers this key", { attachmentKey });
     return [];
   }
   const contentType = attachment.contentType ?? "";
   // Read with each list, so an account's first sync moves the locks too.
-  const userID = getAccountUserID(client);
-  return getAnnotationsByParent(client, attachment.itemID).map((annotation) =>
+  const userID = found.accountUserID;
+  return found.annotations.map((annotation) =>
     toRecord(annotation, { attachmentKey, contentType, userID }),
   );
 }
 
 function databaseAnnotationSource(
-  client: NodeDatabaseClient,
   attachmentKey: string,
+  libraries: readonly Library[],
+  database: ZoteroDatabaseIdentity,
 ): DatabaseAnnotationSource {
-  const target = resolveIndexedKeyLibrary(client, attachmentKey);
+  const target = resolveIndexedKeyLibraryIn(libraries, attachmentKey);
   if (!target)
     throw new Error(
       `Cannot resolve the Annotation Library for ${attachmentKey}`,
     );
-  const library = getLibraries(client).find(
+  const library = libraries.find(
     ({ libraryID }) => libraryID === target.libraryID,
   );
-  const database = getZoteroDatabaseIdentity(client);
   return {
     kind: "zotero-db",
     database,

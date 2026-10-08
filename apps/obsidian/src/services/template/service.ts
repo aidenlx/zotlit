@@ -527,7 +527,7 @@ export class TemplateService extends Service<void> {
   }
 
   /** Synchronous readiness check for callers that can't await {@link ready} —
-   *  e.g. `dragstart` and `selectSuggestion` handlers. */
+   *  e.g. `selectSuggestion` handlers. */
   get loaded(): boolean {
     return this.#loaded;
   }

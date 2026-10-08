@@ -27,7 +27,6 @@ function declaredFlags(): Map<string, CliFlags | null> {
     profile: {},
     templates: {},
     zoteroPref: {},
-    db: {},
     noteIndex: {},
   } as never);
   return flags;

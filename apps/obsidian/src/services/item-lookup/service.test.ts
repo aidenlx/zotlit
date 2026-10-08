@@ -1,167 +1,64 @@
-import { Worker } from "node:worker_threads";
-import workerSource from "virtual:item-lookup-worker";
-import { describe, expect, it, vi } from "vitest";
+import { Effect } from "effect";
+import { describe, expect, it } from "vitest";
 
-import type { IndexedItem, IndexSignature, Item } from "@zotlit/db";
 import { USER_LIBRARY_ID } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-import {
-  makeCreator as creator,
-  makeIndexedItem as indexedItem,
-  makeItem as item,
-} from "@zotlit/item-lookup/fixtures";
-import type { ItemFixtureOptions } from "@zotlit/item-lookup/fixtures";
+import type { Library } from "@zotlit/db";
 
-import { DatabaseError } from "@/services/database/service";
-import type { DatabaseService } from "@/services/database/service";
 import type {
   AvailableLibrary,
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
+import {
+  inProcessReadsService,
+  memoryOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import { ItemLookup } from "./service";
+import type { SearchHit } from "./service";
 
 describe("ItemLookup", () => {
-  it("prewarms and reuses the cache", async () => {
-    const alpha = itemPair({ key: "A", title: "Alpha" });
-    const deps = createDeps({
-      indexItems: [alpha.indexed],
-      hydratedItems: [alpha.full],
-    });
-    await using lookup = new ItemLookup(deps);
+  it("answers through SearchItems with the Library Scope's ids", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
+    await using lookup = itemLookup(
+      reads,
+      new FakeLibraryScope([library(USER_LIBRARY_ID), library(2)]),
+    );
 
-    await lookup.ready;
-    await waitForCallCount(deps.loadItems, 1);
-    expect(await lookup.search("", { limit: 1 })).toHaveLength(1);
-    expect(await lookup.search("Alpha", { limit: 1 })).toHaveLength(1);
-    expect(deps.loadItems).toHaveBeenCalledOnce();
+    const hits = await lookup.search("Alpha", { limit: 5 });
+
+    expect(hits.map((hit) => hit.item.key)).toEqual(["LIBRARY2", "LIBRARY3"]);
+    expect(hits[0]!.matches).toEqual([[0, 5]]);
+    expect(reads.searches.at(-1)).toEqual({
+      libraryIDs: [USER_LIBRARY_ID, 2],
+      query: "Alpha",
+      limit: 5,
+    });
   });
 
-  it("uses the host Chinese segmenter for worker indexing and searches", async () => {
-    const paper = itemPair({ key: "CHINESE1", title: "量子" });
-    const deps = createDeps({
-      indexItems: [paper.indexed],
-      hydratedItems: [paper.full],
-    });
-    const cut = vi.fn(() => ["quanta"]);
-    await using lookup = new ItemLookup({
-      ...deps,
-      getChsSegmenter: () => ({ cut }),
-    });
-    expect(
-      (await lookup.search("quanta")).map(({ item }) => item.itemID),
-    ).toEqual([paper.full.itemID]);
-    expect(
-      (await lookup.search("量子")).map(({ item }) => item.itemID),
-    ).toEqual([paper.full.itemID]);
-    expect((await lookup.search("CHINESE1"))[0]?.score).toBe(Infinity);
-    expect(cut).toHaveBeenCalled();
-  });
-
-  it("prewarms only after db.ready resolves", async () => {
-    const db = new FakeDb({ ready: "pending" });
-    const alpha = itemPair({ key: "A", title: "Alpha" });
-    const deps = createDeps({
-      db,
-      indexItems: [alpha.indexed],
-      hydratedItems: [alpha.full],
-    });
-    await using lookup = new ItemLookup(deps);
-
-    await Promise.resolve();
-    expect(deps.loadItems).not.toHaveBeenCalled();
-
-    db.resolveReady();
-    await lookup.ready;
-    await waitForCallCount(deps.loadItems, 1);
-  });
-
-  it("deduplicates parallel loads", async () => {
-    const alpha = itemPair({ key: "A", title: "Alpha" });
-    let resolveLoad: (items: IndexedItem[]) => void = () => undefined;
-    const deps = createDeps({
-      indexItems: [alpha.indexed],
-      hydratedItems: [alpha.full],
-      loadItems: vi.fn(
-        () =>
-          new Promise<IndexedItem[]>((resolve) => {
-            resolveLoad = resolve;
-          }),
-      ),
-    });
-    await using lookup = new ItemLookup(deps);
-    await lookup.ready;
-
-    const first = lookup.search("", { limit: 1 });
-    const second = lookup.search("Alpha", { limit: 1 });
-    await waitForCallCount(deps.loadItems, 1);
-
-    expect(deps.loadItems).toHaveBeenCalledOnce();
-    resolveLoad([alpha.indexed]);
-    await expect(Promise.all([first, second])).resolves.toHaveLength(2);
-  });
-
-  it("rebuilds on a database change when the signature moves", async () => {
-    const db = new FakeDb();
-    const alpha = itemPair({ key: "A", title: "Alpha" });
-    let count = 1;
-    const deps = createDeps({
-      db,
-      indexItems: [alpha.indexed],
-      hydratedItems: [alpha.full],
-      loadSignature: vi.fn(() => ({ count, checksum: 0 })),
-    });
-    await using lookup = new ItemLookup(deps);
-
-    await lookup.search("");
-    await waitForCallCount(deps.loadItems, 1);
-    count = 2;
-    db.emitChanged();
-    await waitForCallCount(deps.loadItems, 2);
-
-    expect(deps.loadItems).toHaveBeenCalledTimes(2);
-  });
-
-  it("skips the rebuild when a database change leaves the signature unchanged", async () => {
-    const db = new FakeDb();
-    const alpha = itemPair({ key: "A", title: "Alpha" });
-    const deps = createDeps({
-      db,
-      indexItems: [alpha.indexed],
-      hydratedItems: [alpha.full],
-      loadSignature: vi.fn(() => ({ count: 1, checksum: 0 })),
-    });
-    await using lookup = new ItemLookup(deps);
-
-    await lookup.search("");
-    await waitForCallCount(deps.loadItems, 1);
-    db.emitChanged();
-    await waitForCallCount(deps.loadSignature, 2);
-    expect(deps.loadItems).toHaveBeenCalledOnce();
-  });
-
-  it("hard-invalidates when the library scope changes", async () => {
+  it("labels hits only when two Libraries are in scope", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
     const libraryScope = new FakeLibraryScope();
-    const deps = createDeps({ libraryScope, ...perLibraryData() });
-    await using lookup = new ItemLookup(deps);
+    await using lookup = itemLookup(reads, libraryScope);
 
-    expect((await lookup.search(""))[0]?.item.libraryID).toBe(USER_LIBRARY_ID);
-    libraryScope.setLibraries([library(2)]);
-    expect((await lookup.search(""))[0]?.item.libraryID).toBe(2);
-    expect(deps.loadItems).toHaveBeenCalledTimes(2);
+    expect((await lookup.search("")).map((hit) => hit.library)).toEqual([null]);
+
+    libraryScope.setLibraries([library(USER_LIBRARY_ID), library(2)]);
+    expect(
+      (await lookup.search("")).map((hit) => hit.library?.libraryID),
+    ).toEqual([USER_LIBRARY_ID, 2]);
   });
 
-  it("refreshes labels without rebuilding when a refresh only renames a group", async () => {
+  it("takes labels from the scope it asked with, so a rename shows at once", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
     const libraryScope = new FakeLibraryScope([
       library(USER_LIBRARY_ID),
       library(2),
     ]);
-    const deps = createDeps({ libraryScope, ...perLibraryData() });
-    await using lookup = new ItemLookup(deps);
-
+    await using lookup = itemLookup(reads, libraryScope);
     await lookup.search("");
-    const builds = deps.loadItems.mock.calls.length;
+
     libraryScope.setLibraries([
       library(USER_LIBRARY_ID),
       { ...library(2), name: "Renamed" },
@@ -169,355 +66,310 @@ describe("ItemLookup", () => {
     const hits = await lookup.search("");
 
     expect(hits.map((hit) => hit.library?.name)).toEqual([null, "Renamed"]);
-    expect(deps.loadItems).toHaveBeenCalledTimes(builds);
   });
 
-  it("indexes every library in scope in canonical order", async () => {
-    const libraryScope = new FakeLibraryScope([
-      library(USER_LIBRARY_ID),
-      library(2),
-    ]);
-    const deps = createDeps({ libraryScope, ...perLibraryData() });
-    await using lookup = new ItemLookup(deps);
+  it("makes the next search after a scope change cover the new list only", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
+    const libraryScope = new FakeLibraryScope();
+    await using lookup = itemLookup(reads, libraryScope);
+    expect((await lookup.search(""))[0]?.item.libraryID).toBe(USER_LIBRARY_ID);
 
+    libraryScope.setLibraries([library(2)]);
     const hits = await lookup.search("");
 
-    expect(hits.map((hit) => hit.item.libraryID)).toEqual([USER_LIBRARY_ID, 2]);
-    expect(deps.loadItemIDs.mock.calls.map((call) => call[1])).toEqual([
-      USER_LIBRARY_ID,
-      2,
-    ]);
+    expect(hits.map((hit) => hit.item.libraryID)).toEqual([2]);
+    expect(reads.searches.at(-1)?.libraryIDs).toEqual([2]);
   });
 
-  it("labels results only when several libraries can contribute", async () => {
-    const libraryScope = new FakeLibraryScope();
-    const deps = createDeps({ libraryScope, ...perLibraryData() });
-    await using lookup = new ItemLookup(deps);
+  it("answers empty when the database is unavailable", async () => {
+    await using reads = readsOver(() => null);
+    await using lookup = itemLookup(reads);
 
-    expect((await lookup.search("")).map((hit) => hit.library)).toEqual([null]);
+    await expect(lookup.search("anything")).resolves.toEqual([]);
+  });
+
+  it("answers empty without a request while no Library is in scope", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
+    const libraryScope = new FakeLibraryScope(null);
+    await using lookup = itemLookup(reads, libraryScope);
+
+    await expect(lookup.search("")).resolves.toEqual([]);
+    libraryScope.setLibraries([]);
+    await expect(lookup.search("")).resolves.toEqual([]);
+    expect(reads.searches).toEqual([]);
+  });
+
+  it("answers empty for a limit of zero", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
+    await using lookup = itemLookup(reads);
+    await lookup.ready;
+    const before = reads.searches.length;
+
+    await expect(lookup.search("", { limit: 0 })).resolves.toEqual([]);
+    expect(reads.searches).toHaveLength(before);
+  });
+
+  it("interrupts the previous request when the next keystroke searches, and answers both with the newest list", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
+    await using lookup = itemLookup(
+      reads,
+      new FakeLibraryScope([library(USER_LIBRARY_ID), library(2)]),
+    );
+    await lookup.search("");
+    const gate = reads.gateSearch();
+
+    const first = lookup.search("Alpha");
+    await expect.poll(() => reads.held).toBe(1);
+    const second = lookup.search("LIBRARY3");
+
+    const keys = async (answer: Promise<SearchHit[]>) =>
+      (await answer).map((hit) => hit.item.key);
+    expect(await keys(second)).toEqual(["LIBRARY3"]);
+    // A list drawn from the interrupted answer still matches the box.
+    expect(await keys(first)).toEqual(["LIBRARY3"]);
+    expect(reads.interrupted).toEqual(["Alpha"]);
+    gate.resolve();
+  });
+
+  it("answers a chain of interrupted keystrokes with the newest list", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
+    await using lookup = itemLookup(
+      reads,
+      new FakeLibraryScope([library(USER_LIBRARY_ID), library(2)]),
+    );
+    await lookup.search("");
+    const gates = [reads.gateSearch(), reads.gateSearch()];
+
+    const first = lookup.search("A");
+    await expect.poll(() => reads.held).toBe(1);
+    const second = lookup.search("Al");
+    await expect.poll(() => reads.searches.at(-1)?.query).toBe("Al");
+    const third = lookup.search("LIBRARY2");
+
+    const answers = await Promise.all([first, second, third]);
+    expect(answers.map((answer) => answer.map((hit) => hit.item.key))).toEqual([
+      ["LIBRARY2"],
+      ["LIBRARY2"],
+      ["LIBRARY2"],
+    ]);
+    expect(reads.interrupted).toEqual(["A", "Al"]);
+    for (const gate of gates) gate.resolve();
+  });
+
+  it("prewarms with an empty query and a limit of one on ready", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
+    await using lookup = itemLookup(reads);
+
+    await lookup.ready;
+
+    await expect
+      .poll(() => reads.searches)
+      .toEqual([{ libraryIDs: [USER_LIBRARY_ID], query: "", limit: 1 }]);
+  });
+
+  it("prewarms the new list on a Library Scope change", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
+    const libraryScope = new FakeLibraryScope();
+    await using lookup = itemLookup(reads, libraryScope);
+    await lookup.ready;
+    await expect.poll(() => reads.searches).toHaveLength(1);
 
     libraryScope.setLibraries([library(USER_LIBRARY_ID), library(2)]);
 
-    expect(
-      (await lookup.search("")).map((hit) => hit.library?.libraryID),
-    ).toEqual([USER_LIBRARY_ID, 2]);
+    await expect
+      .poll(() => reads.searches.at(-1))
+      .toEqual({ libraryIDs: [USER_LIBRARY_ID, 2], query: "", limit: 1 });
   });
 
-  it("rebuilds when any covered library's signature moves", async () => {
-    const db = new FakeDb();
+  it("keeps a pending search running through a rename and its prewarm", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
     const libraryScope = new FakeLibraryScope([
       library(USER_LIBRARY_ID),
       library(2),
     ]);
-    let groupCount = 1;
-    const deps = createDeps({
-      db,
-      libraryScope,
-      ...perLibraryData(),
-      loadSignature: vi.fn((_client, libraryID) => ({
-        count: libraryID === USER_LIBRARY_ID ? 1 : groupCount,
-        checksum: 0,
-      })),
-    });
-    await using lookup = new ItemLookup(deps);
-
+    await using lookup = itemLookup(reads, libraryScope);
     await lookup.search("");
-    const builds = deps.loadItems.mock.calls.length;
-    groupCount = 2;
-    db.emitChanged();
-    await waitForCallCount(deps.loadItems, builds * 2);
-
-    expect(deps.loadItems.mock.calls.length).toBeGreaterThan(builds);
-  });
-
-  it("serves an empty result for a scope with no available library", async () => {
-    const deps = createDeps({
-      libraryScope: new FakeLibraryScope([]),
-      ...perLibraryData(),
-    });
-    await using lookup = new ItemLookup(deps);
-
-    await expect(lookup.search("")).resolves.toEqual([]);
-    expect(deps.loadItemIDs).not.toHaveBeenCalled();
-  });
-
-  it("returns an empty list while the database is degraded", async () => {
-    const db = new FakeDb();
-    db.error = new DatabaseError("degraded");
-    const deps = createDeps({ db });
-    await using lookup = new ItemLookup(deps);
-
-    await expect(lookup.search("anything")).resolves.toEqual([]);
-    expect(deps.loadItems).not.toHaveBeenCalled();
-  });
-
-  it("does not serve cached items after the database degrades", async () => {
-    const db = new FakeDb();
-    const alpha = itemPair({ key: "A", title: "Alpha" });
-    const deps = createDeps({
-      db,
-      indexItems: [alpha.indexed],
-      hydratedItems: [alpha.full],
-    });
-    await using lookup = new ItemLookup(deps);
-
-    await expect(lookup.search("")).resolves.toHaveLength(1);
-    db.error = new DatabaseError("degraded");
-
-    await expect(lookup.search("")).resolves.toEqual([]);
-    expect(deps.loadItems).toHaveBeenCalledOnce();
-  });
-
-  it("degrades to empty when a background rebuild throws a non-database error", async () => {
-    const db = new FakeDb();
-    const deps = createDeps({
-      db,
-      loadItemIDs: vi.fn(() => [1]),
-      loadItems: vi.fn(() => {
-        throw new TypeError("malformed row");
-      }),
-    });
-    await using lookup = new ItemLookup(deps);
-
-    await expect(lookup.search("anything")).resolves.toEqual([]);
-  });
-
-  it("returns recent items for an empty query", async () => {
-    const alpha = itemPair({ key: "A", title: "Alpha" });
-    const beta = itemPair({ key: "B", title: "Beta" });
-    await using lookup = new ItemLookup(
-      createDeps({
-        indexItems: [alpha.indexed, beta.indexed],
-        hydratedItems: [alpha.full, beta.full],
-      }),
-    );
-
-    await expect(lookup.search(" ", { limit: 1 })).resolves.toEqual([
-      { item: alpha.full, score: 0, matches: [], library: null },
-    ]);
-  });
-
-  it("searches across title, creators, and date", async () => {
-    const alpha = itemPair({
-      key: "A",
-      title: "Senior citizen transit ID cards",
-      creators: [creator("Transit", "SEPTA")],
-      date: "2015-01-01",
-    });
-    const beta = itemPair({
-      key: "B",
-      title: "Senior services overview",
-      creators: [creator("Jane", "Doe")],
-      date: "2015-01-01",
-    });
-    await using lookup = new ItemLookup(
-      createDeps({
-        indexItems: [alpha.indexed, beta.indexed],
-        hydratedItems: [alpha.full, beta.full],
-      }),
-    );
-
-    const hits = await lookup.search("senior septa 2015", { limit: 3 });
-
-    expect(hits.map((hit) => hit.item.key)).toEqual(["A"]);
-  });
-
-  it("lets an in-flight build finish and serves it stale while rebuilding", async () => {
-    const db = new FakeDb();
-    const stale = itemPair({ key: "A", title: "Stale" });
-    const fresh = itemPair({ key: "B", title: "Fresh" });
-    const loadResolvers: ((items: IndexedItem[]) => void)[] = [];
-    let count = 1;
-    const deps = createDeps({
-      db,
-      hydratedItems: [stale.full, fresh.full],
-      loadItemIDs: vi.fn(() => [1]),
-      loadItems: vi.fn(
-        () =>
-          new Promise<IndexedItem[]>((resolve) => {
-            loadResolvers.push(resolve);
-          }),
-      ),
-      loadSignature: vi.fn(() => ({ count, checksum: 0 })),
-    });
-    await using lookup = new ItemLookup(deps);
-    await lookup.ready;
-
-    await waitForCallCount(deps.loadItems, 1);
-    // A change arrives mid-build; the signature moves so a rebuild is owed.
-    count = 2;
-    db.emitChanged();
-    // The first build is not aborted — finishing it populates the stale cache.
-    loadResolvers[0]!([stale.indexed]);
-    await waitForCallCount(deps.loadItems, 2);
-
-    // SWR: the trailing rebuild is in flight, yet search returns the stale index.
-    await expect(lookup.search("", { limit: 1 })).resolves.toMatchObject([
-      { item: { key: "A" } },
-    ]);
-
-    loadResolvers[1]!([fresh.indexed]);
-    // The rebuild's chunk yields land on the message-task queue, so poll for
-    // the swapped-in index instead of counting macrotasks.
-    await vi.waitFor(async () => {
-      await expect(lookup.search("", { limit: 1 })).resolves.toMatchObject([
-        { item: { key: "B" } },
-      ]);
-    });
-  });
-
-  it("drops search results when the scope changes mid-hydration", async () => {
-    const db = new FakeDb();
-    const libraryScope = new FakeLibraryScope();
-    const alpha = itemPair({ key: "A", title: "Alpha" });
-    let resolveHydration: (items: Item[]) => void = () => undefined;
-    const deps = createDeps({
-      db,
-      libraryScope,
-      indexItems: [alpha.indexed],
-      hydratedItems: [alpha.full],
-      hydrateItems: vi.fn(
-        () =>
-          new Promise<Item[]>((resolve) => {
-            resolveHydration = resolve;
-          }),
-      ),
-    });
-    await using lookup = new ItemLookup(deps);
-    await lookup.ready;
-    await waitForCallCount(deps.loadItems, 1);
+    const gate = reads.gateSearch();
 
     const search = lookup.search("Alpha");
-    await waitForCallCount(deps.hydrateItems, 1);
-    libraryScope.setLibraries([library(2)]);
-    resolveHydration([alpha.full]);
+    await expect.poll(() => reads.held).toBe(1);
+    libraryScope.setLibraries([
+      library(USER_LIBRARY_ID),
+      { ...library(2), name: "Renamed" },
+    ]);
+    await expect.poll(() => reads.searches.at(-1)?.limit).toBe(1);
+    gate.resolve();
+
+    await expect(search).resolves.toHaveLength(2);
+    expect(reads.interrupted).toEqual([]);
+  });
+
+  it("drops a pending search's answer when a database switch gives its local id to another group", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
+    const group = (groupID: number): AvailableLibrary => ({
+      selector: { type: "group", groupID },
+      libraryID: 2,
+      name: `Group ${groupID}`,
+    });
+    const libraryScope = new FakeLibraryScope([group(10)]);
+    await using lookup = itemLookup(reads, libraryScope);
+    await lookup.search("");
+    const gate = reads.gateSearch();
+
+    const search = lookup.search("Alpha");
+    await expect.poll(() => reads.held).toBe(1);
+    libraryScope.setLibraries([group(20)]);
 
     await expect(search).resolves.toEqual([]);
+    expect(reads.interrupted).toEqual(["Alpha"]);
+    gate.resolve();
   });
 
-  it("drops hits that fail hydration", async () => {
-    const alpha = itemPair({ key: "A", title: "Alpha" });
-    await using lookup = new ItemLookup(
-      createDeps({
-        indexItems: [alpha.indexed],
-        hydrateItems: vi.fn(() => []),
-      }),
-    );
+  it.each([
+    ["another Library", [library(2)]],
+    ["no Library", []],
+  ])(
+    "drops a pending search's answer when the scope changes to %s",
+    async (_case, libraries) => {
+      await using reads = readsOver(() => seed(perLibraryRows()));
+      const libraryScope = new FakeLibraryScope();
+      await using lookup = itemLookup(reads, libraryScope);
+      await lookup.search("");
+      const gate = reads.gateSearch();
 
-    await expect(lookup.search("Alpha")).resolves.toEqual([]);
-  });
+      const search = lookup.search("Alpha");
+      await expect.poll(() => reads.held).toBe(1);
+      libraryScope.setLibraries(libraries);
+
+      await expect(search).resolves.toEqual([]);
+      expect(reads.interrupted).toEqual(["Alpha"]);
+      gate.resolve();
+    },
+  );
 });
 
-async function waitForCallCount(
-  fn: ReturnType<typeof vi.fn>,
-  count: number,
-): Promise<void> {
-  await vi.waitFor(() =>
-    expect(fn.mock.calls.length).toBeGreaterThanOrEqual(count),
-  );
+function itemLookup(
+  reads: ObservedReads,
+  libraryScope: FakeLibraryScope = new FakeLibraryScope(),
+): ItemLookup {
+  return new ItemLookup({
+    reads: reads.service,
+    libraryScope: libraryScope as unknown as LibraryScopeService,
+  });
 }
 
-function createDeps(
-  options: {
-    db?: FakeDb;
-    libraryScope?: FakeLibraryScope;
-    indexItems?: IndexedItem[];
-    hydratedItems?: Item[];
-    loadItemIDs?: (
-      db: NodeDatabaseClient,
-      libraryID: number,
-    ) => number[] | Promise<number[]>;
-    loadItems?: (
-      db: NodeDatabaseClient,
-      itemIDs: readonly number[],
-    ) => IndexedItem[] | Promise<IndexedItem[]>;
-    loadSignature?: (
-      db: NodeDatabaseClient,
-      libraryID: number,
-    ) => IndexSignature | Promise<IndexSignature>;
-    hydrateItems?: (
-      db: NodeDatabaseClient,
-      itemIDs: readonly number[],
-    ) => Item[] | Promise<Item[]>;
-  } = {},
-) {
-  const indexItems = options.indexItems ?? [];
-  const hydratedItems = options.hydratedItems ?? [];
+interface SearchPayload {
+  libraryIDs: readonly number[];
+  query: string;
+  limit: number;
+}
+
+interface ObservedReads extends AsyncDisposable {
+  readonly service: ReturnType<typeof inProcessReadsService>;
+  /** The payload of each `SearchItems` call, in call order. */
+  readonly searches: SearchPayload[];
+  /** The query of each `SearchItems` call that ended interrupted. */
+  readonly interrupted: string[];
+  /** `SearchItems` calls the gate holds now. */
+  readonly held: number;
+  /** Hold the next `SearchItems` call until `resolve()`. */
+  gateSearch(): { resolve(): void };
+}
+
+/**
+ * A reads service on the in-process adapter over seeded `:memory:` databases;
+ * open #N runs `seedFor(N)`, and a `null` seed fails the open. `SearchItems`
+ * is observed: each call is recorded, and a test can hold the next one.
+ */
+function readsOver(seedFor: (open: number) => string | null): ObservedReads {
+  const searches: SearchPayload[] = [];
+  const interrupted: string[] = [];
+  const gates: Promise<void>[] = [];
+  let held = 0;
+
+  const wrap = (client: ZoteroReadsClient): ZoteroReadsClient => ({
+    ...client,
+    SearchItems: ((payload: SearchPayload, options?: object) => {
+      searches.push(payload);
+      const gate = gates.shift();
+      const call = (
+        client.SearchItems as (
+          payload: SearchPayload,
+          options?: object,
+        ) => Effect.Effect<unknown, unknown>
+      )(payload, options);
+      return Effect.andThen(
+        gate
+          ? Effect.acquireUseRelease(
+              Effect.sync(() => (held += 1)),
+              () => Effect.promise(() => gate),
+              () => Effect.sync(() => (held -= 1)),
+            )
+          : Effect.void,
+        call,
+      ).pipe(
+        Effect.onInterrupt(() =>
+          Effect.sync(() => interrupted.push(payload.query)),
+        ),
+      );
+    }) as unknown as ZoteroReadsClient["SearchItems"],
+  });
+
+  const service = inProcessReadsService(memoryOpener(seedFor).open, { wrap });
   return {
-    createWorker: () => new Worker(workerSource, { eval: true }),
-    db: (options.db ?? new FakeDb()) as unknown as DatabaseService,
-    libraryScope: (options.libraryScope ??
-      new FakeLibraryScope()) as unknown as LibraryScopeService,
-    loadItemIDs: vi.fn(
-      options.loadItemIDs ?? (() => indexItems.map((item) => item.itemID)),
-    ),
-    loadItems: vi.fn(
-      options.loadItems ??
-        ((_db, itemIDs) =>
-          indexItems.filter((item) => itemIDs.includes(item.itemID))),
-    ),
-    loadSignature: vi.fn(
-      options.loadSignature ??
-        (() => ({ count: indexItems.length, checksum: 0 })),
-    ),
-    hydrateItems: vi.fn(
-      options.hydrateItems ??
-        ((_db, itemIDs) =>
-          hydratedItems.filter((candidate) =>
-            itemIDs.includes(candidate.itemID),
-          )),
-    ),
+    service,
+    searches,
+    interrupted,
+    get held() {
+      return held;
+    },
+    gateSearch: () => {
+      const signal = Promise.withResolvers<void>();
+      gates.push(signal.promise);
+      return { resolve: () => signal.resolve() };
+    },
+    [Symbol.asyncDispose]: () => service[Symbol.asyncDispose](),
   };
 }
 
-class FakeDb {
-  error: DatabaseError | null = null;
-  readonly #client = {} as NodeDatabaseClient;
-  readonly #changed = new Set<() => void>();
-  #resolveReady: () => void = () => undefined;
-  readonly #ready: Promise<void>;
+/** One "Alpha" journal article per Library, keyed `LIBRARY<libraryID + 1>`. */
+function perLibraryRows(): {
+  key: string;
+  itemID: number;
+  libraryID: number;
+}[] {
+  return [USER_LIBRARY_ID, 2].map((libraryID) => ({
+    key: `LIBRARY${libraryID + 1}`,
+    itemID: libraryID * 100,
+    libraryID,
+  }));
+}
 
-  constructor(options: { ready?: "resolved" | "pending" } = {}) {
-    this.#ready =
-      options.ready === "pending"
-        ? new Promise((resolve) => {
-            this.#resolveReady = resolve;
-          })
-        : Promise.resolve();
-  }
-
-  get state(): "ready" | "degraded" {
-    return this.error ? "degraded" : "ready";
-  }
-
-  get ready(): Promise<void> {
-    return this.#ready;
-  }
-
-  get client(): NodeDatabaseClient {
-    if (this.error) throw this.error;
-    return this.#client;
-  }
-
-  acquireRead(): { client: NodeDatabaseClient } & Disposable {
-    if (this.error) throw this.error;
-    return { client: this.#client, [Symbol.dispose]: () => undefined };
-  }
-
-  on(event: "changed", cb: () => void): () => void {
-    this.#changed.add(cb);
-    return () => {
-      this.#changed.delete(cb);
-    };
-  }
-
-  emitChanged(): void {
-    for (const cb of this.#changed) cb();
-  }
-
-  resolveReady(): void {
-    this.#resolveReady();
-  }
+/**
+ * SQL for a user library (1) and a group library (2, group 2) holding `rows`
+ * as journal articles titled "Alpha"; the user library's row is the newer.
+ */
+function seed(
+  rows: readonly { key: string; itemID: number; libraryID: number }[],
+): string {
+  const items = rows
+    .map(
+      (r) =>
+        `(${r.itemID}, 1, '2024-01-01 00:00:00', '2024-01-0${r.libraryID === USER_LIBRARY_ID ? 2 : 1} 00:00:00', ${r.libraryID}, '${r.key}')`,
+    )
+    .join(", ");
+  const data = rows.map((r) => `(${r.itemID}, 10, 1)`).join(", ");
+  return `
+    insert into libraries (libraryID, type, version, clientVersion)
+      values (1, 'user', 1, 0), (2, 'group', 1, 0);
+    insert into groups (groupID, libraryID, name) values (2, 2, 'Group 2');
+    insert into itemTypes (itemTypeID, typeName) values (1, 'journalArticle');
+    insert into fieldsCombined (fieldID, fieldName, custom) values (10, 'title', 0);
+    insert into itemDataValues (valueID, value) values (1, 'Alpha');
+    insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+      values ${items};
+    insert into itemData (itemID, fieldID, valueID) values ${data};
+  `;
 }
 
 /** An available Library named by its local id; group ids mirror it for brevity. */
@@ -532,29 +384,26 @@ function library(libraryID: number): AvailableLibrary {
 }
 
 class FakeLibraryScope {
-  #libraries: readonly AvailableLibrary[];
+  #libraries: readonly AvailableLibrary[] | null;
   readonly #subscribers = new Set<
     (scope: ResolvedLibraryScope | null) => void
   >();
 
   readonly ready = Promise.resolve();
 
+  /** `null` leaves the scope unresolved. */
   constructor(
-    libraries: readonly AvailableLibrary[] = [library(USER_LIBRARY_ID)],
+    libraries: readonly AvailableLibrary[] | null = [library(USER_LIBRARY_ID)],
   ) {
     this.#libraries = libraries;
   }
 
-  get current(): ResolvedLibraryScope {
+  get current(): ResolvedLibraryScope | null {
     return this.#resolved();
   }
 
-  get invalid(): boolean {
-    return false;
-  }
-
-  resolveWith(): ResolvedLibraryScope {
-    return this.#resolved();
+  resolveLibraries(_libraries: readonly Library[]): ResolvedLibraryScope {
+    return this.#resolved()!;
   }
 
   on(
@@ -572,48 +421,14 @@ class FakeLibraryScope {
     for (const cb of this.#subscribers) cb(this.#resolved());
   }
 
-  #resolved(): ResolvedLibraryScope {
-    return {
-      mode: "all",
-      invalid: false,
-      available: this.#libraries,
-      unavailable: [],
-    };
+  #resolved(): ResolvedLibraryScope | null {
+    return (
+      this.#libraries && {
+        mode: "all",
+        invalid: false,
+        available: this.#libraries,
+        unavailable: [],
+      }
+    );
   }
-}
-
-function itemPair(options: ItemFixtureOptions): {
-  indexed: IndexedItem;
-  full: Item;
-} {
-  return {
-    indexed: indexedItem(options),
-    full: item(options),
-  };
-}
-
-/**
- * Loaders serving exactly one item per Library, with the item id derived from
- * the Library id, so a hit traces back to the Library that produced it.
- */
-function perLibraryData() {
-  const itemIDOf = (libraryID: number): number => libraryID * 100;
-  const optionsOf = (itemID: number): ItemFixtureOptions => ({
-    key: `L${itemID / 100}`,
-    itemID,
-    libraryID: itemID / 100,
-  });
-  return {
-    loadItemIDs: vi.fn((_client: NodeDatabaseClient, libraryID: number) => [
-      itemIDOf(libraryID),
-    ]),
-    loadItems: vi.fn(
-      (_client: NodeDatabaseClient, itemIDs: readonly number[]) =>
-        itemIDs.map((itemID) => indexedItem(optionsOf(itemID))),
-    ),
-    hydrateItems: vi.fn(
-      (_client: NodeDatabaseClient, itemIDs: readonly number[]) =>
-        itemIDs.map((itemID) => item(optionsOf(itemID))),
-    ),
-  };
 }

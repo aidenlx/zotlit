@@ -17,6 +17,10 @@ import type { CitationExampleId } from "@zotlit/workbench/render";
 
 import { defaults as settingsDefaults } from "@/services/settings/schema";
 import { InertTemplateError } from "@/services/template/errors";
+import {
+  inProcessReadsService,
+  sharedClientOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import {
   createTemplateWorkbenchHandlers,
@@ -64,7 +68,7 @@ function registeredData(deps: FixtureDeps) {
 
 describe("registered field discovery", () => {
   it("joins real values with definitions and expressions, with note and environment identity", async () => {
-    using fixture = createFixture();
+    await using fixture = createFixture();
     const run = registeredData(fixture.deps);
     const result = await run({
       note: "Notes/Paper.md",
@@ -100,7 +104,7 @@ describe("registered field discovery", () => {
   });
 
   it("builds data from the selected note when an item has several", async () => {
-    using fixture = createFixture();
+    await using fixture = createFixture();
     const run = registeredData(fixture.deps);
     // A resolved note makes the excerpt-image context read the attachment
     // folder, which the base fixture's FileManager does not answer.
@@ -129,7 +133,7 @@ describe("registered field discovery", () => {
   });
 
   it("inspects nested annotations and preserves empty arrays and absent fields", async () => {
-    using fixture = createFixture();
+    await using fixture = createFixture();
     const run = registeredData(fixture.deps);
     const selected = { key: "MAIN2345", root: "note" };
     expect(
@@ -166,7 +170,7 @@ describe("registered field discovery", () => {
   });
 
   it("keeps focused reads independent of unrelated getters and rejects a different source", async () => {
-    using fixture = createFixture({
+    await using fixture = createFixture({
       renderError: new Error("Citation must not run"),
     });
     const run = registeredData(fixture.deps);
@@ -185,7 +189,7 @@ describe("registered field discovery", () => {
   });
 
   it("keeps Annotation and Citation caller roots distinct and evaluates inert helpers", async () => {
-    using fixture = createFixture();
+    await using fixture = createFixture();
     const run = registeredData(fixture.deps);
     expect(
       await run({ key: "ANNA2345", root: "annotation", path: "zt.pageLabel" }),
@@ -216,7 +220,7 @@ describe("registered field discovery", () => {
   });
 
   it("inspects dictionary keys and retains each possible date-day type", async () => {
-    using fixture = createFixture();
+    await using fixture = createFixture();
     const run = registeredData(fixture.deps);
     const field = (
       await run({
@@ -249,7 +253,7 @@ describe("registered field discovery", () => {
   });
 
   it("runs Eta helper examples for present, null, and absent selected values", async () => {
-    using fixture = createFixture();
+    await using fixture = createFixture();
     const run = registeredData(fixture.deps);
     const engine = new TemplateEngine();
     const present = (
@@ -305,7 +309,7 @@ describe("registered field discovery", () => {
     { key: "MAIN2345", root: "note", query: "title", full: "" },
     { note: "missing", root: "note", query: "title" },
   ])("gives recovery for invalid discovery %j", async (params) => {
-    using fixture = createFixture();
+    await using fixture = createFixture();
     const result = await registeredData(fixture.deps)(params);
     expect(result).toMatchObject({
       ok: false,
@@ -317,7 +321,7 @@ describe("registered field discovery", () => {
 
 describe("zotlit:template-data with the real loader", () => {
   it("renders through inert resolvers without invoking a write surface", async () => {
-    using fixture = createFixture({
+    await using fixture = createFixture({
       render: (name, data) => {
         const noteLink = (
           data as { notes: { noteLink: () => string }[] }
@@ -346,7 +350,7 @@ describe("zotlit:template-data with the real loader", () => {
   ] as const)(
     "serializes fixture data that conforms to the %s schema",
     async (root, key, schema) => {
-      using fixture = createFixture();
+      await using fixture = createFixture();
       const result = await runTemplateData(fixture.deps, key, root);
       const validate = new Ajv2020({ strict: true }).compile(schema);
 
@@ -359,7 +363,7 @@ describe("zotlit:template-data with the real loader", () => {
   );
 
   it("returns the selected annotation at the annotation root", async () => {
-    using fixture = createFixture();
+    await using fixture = createFixture();
 
     const result = await runTemplateData(
       fixture.deps,
@@ -407,7 +411,7 @@ describe("zotlit:template-data with the real loader", () => {
   ] as const)(
     "returns $code when citation evaluation fails",
     async ({ error, compileError, code }) => {
-      using fixture = createFixture({ renderError: error, compileError });
+      await using fixture = createFixture({ renderError: error, compileError });
 
       expect(
         await runTemplateData(fixture.deps, "ANNA2345", "annotation"),
@@ -433,7 +437,7 @@ describe("zotlit:template-data with the real loader", () => {
   );
 
   it("resolves a group-library annotation at the annotation root", async () => {
-    using fixture = createFixture();
+    await using fixture = createFixture();
 
     expect(
       await runTemplateData(fixture.deps, "GANN2345g42", "annotation"),
@@ -449,7 +453,7 @@ describe("zotlit:template-data with the real loader", () => {
   it.each(["MAIN2345", "ATCH2345", "NATE2345"])(
     "requires an annotation for selector %s at the annotation root",
     async (key) => {
-      using fixture = createFixture();
+      await using fixture = createFixture();
 
       expect(
         await runTemplateData(fixture.deps, key, "annotation"),
@@ -461,7 +465,7 @@ describe("zotlit:template-data with the real loader", () => {
   );
 
   it("distinguishes an unknown annotation selector", async () => {
-    using fixture = createFixture();
+    await using fixture = createFixture();
 
     expect(
       await runTemplateData(fixture.deps, "MISS2345", "annotation"),
@@ -472,7 +476,7 @@ describe("zotlit:template-data with the real loader", () => {
   });
 
   it("reports an Annotation whose parent Attachment row is absent", async () => {
-    using fixture = createFixture();
+    await using fixture = createFixture();
 
     expect(
       await runTemplateData(fixture.deps, "RPHM2345", "annotation"),
@@ -489,7 +493,7 @@ describe("zotlit:template-data with the real loader", () => {
   });
 
   it("serves a standalone annotation with a null parent item", async () => {
-    using fixture = createFixture();
+    await using fixture = createFixture();
 
     const result = await runTemplateData(
       fixture.deps,
@@ -520,7 +524,7 @@ describe("zotlit:template-data with the real loader", () => {
   });
 
   it("returns the Filename Template's single-item data", async () => {
-    using fixture = createFixture();
+    await using fixture = createFixture();
 
     const result = await runTemplateData(fixture.deps, "MAIN2345", "filename");
 
@@ -551,7 +555,7 @@ describe("zotlit:template-data with the real loader", () => {
   });
 
   it("cites the selected Item alone, with no locator", async () => {
-    using fixture = createFixture();
+    await using fixture = createFixture();
 
     const result = await runTemplateData(fixture.deps, "MAIN2345", "citation");
 
@@ -582,7 +586,7 @@ describe("zotlit:template-data with the real loader", () => {
   });
 
   it("renders the Citation Template for the Item an Indexed Key names", async () => {
-    using fixture = createFixture();
+    await using fixture = createFixture();
 
     const result = await runTemplateRender(
       fixture.deps,
@@ -615,7 +619,7 @@ describe("zotlit:template-data with the real loader", () => {
   it.each(CITATION_EXAMPLE_IDS)(
     "returns the %s example set without reading the database",
     async (example) => {
-      using fixture = createFixture();
+      await using fixture = createFixture();
 
       const result = await runTemplateData(
         fixture.deps,
@@ -637,7 +641,7 @@ describe("zotlit:template-data with the real loader", () => {
   );
 
   it("cites the journal article and the book for the two-items example", async () => {
-    using fixture = createFixture();
+    await using fixture = createFixture();
 
     const result = await runTemplateData(
       fixture.deps,
@@ -666,7 +670,7 @@ describe("zotlit:template-data with the real loader", () => {
   ])(
     "walks selector %s to Item %s at the filename root",
     async (key, itemKey) => {
-      using fixture = createFixture();
+      await using fixture = createFixture();
 
       expect(
         await runTemplateData(fixture.deps, key, "filename"),
@@ -684,7 +688,7 @@ describe("zotlit:template-data with the real loader", () => {
     ["NATE2345", "MAIN2345"],
     ["GRUP2345g42", "GRUP2345g42"],
   ])("builds note data for selector %s from item %s", async (key, itemKey) => {
-    using fixture = createFixture();
+    await using fixture = createFixture();
     const result = await runTemplateData(fixture.deps, key);
 
     expect(result).toMatchObject({
@@ -697,7 +701,7 @@ describe("zotlit:template-data with the real loader", () => {
   it.each(["FREE2345", "LANE2345"])(
     "rejects standalone child %s",
     async (key) => {
-      using fixture = createFixture();
+      await using fixture = createFixture();
       expect(await runTemplateData(fixture.deps, key)).toMatchObject({
         ok: false,
         diagnostic: { code: "NO_PARENT_ITEM" },
@@ -708,7 +712,7 @@ describe("zotlit:template-data with the real loader", () => {
   it.each(["FREE2345", "LANE2345"])(
     "rejects standalone child %s at the filename root",
     async (key) => {
-      using fixture = createFixture();
+      await using fixture = createFixture();
 
       expect(
         await runTemplateData(fixture.deps, key, "filename"),
@@ -722,7 +726,7 @@ describe("zotlit:template-data with the real loader", () => {
   it.each(["MISS2345", "MAIN2345g999"])(
     "reports unresolved selector %s",
     async (key) => {
-      using fixture = createFixture();
+      await using fixture = createFixture();
       expect(await runTemplateData(fixture.deps, key)).toMatchObject({
         ok: false,
         diagnostic: { code: "KEY_NOT_FOUND" },
@@ -731,7 +735,7 @@ describe("zotlit:template-data with the real loader", () => {
   );
 
   it("serializes real inert resolvers without invoking a write surface", async () => {
-    using fixture = createFixture();
+    await using fixture = createFixture();
 
     const result = await runTemplateData(fixture.deps, "MAIN2345");
 
@@ -769,7 +773,7 @@ function createFixture(options?: {
 }): {
   deps: FixtureDeps;
   writeCalls: string[];
-  [Symbol.dispose](): void;
+  [Symbol.asyncDispose](): Promise<void>;
 } {
   const client = createClient(":memory:");
   const sqlite = client.$client as DatabaseSync;
@@ -777,6 +781,12 @@ function createFixture(options?: {
   try {
     seed(sqlite);
     sqlite.exec("PRAGMA query_only = ON");
+    // The service closes before the database it reads.
+    const resources = new AsyncDisposableStack();
+    resources.adopt(sqlite, (database) => database.close());
+    const zoteroReads = resources.use(
+      inProcessReadsService(sharedClientOpener(client)),
+    );
     return {
       deps: {
         app: {
@@ -799,13 +809,7 @@ function createFixture(options?: {
             },
           },
         } as never,
-        db: {
-          acquireRead: async () =>
-            ({
-              client,
-              [Symbol.dispose]() {},
-            }) as never,
-        },
+        zoteroReads,
         noteIndex: {
           getNotesByItemKey: () => [],
           getImportedNoteByNoteKey: () => [],
@@ -842,9 +846,7 @@ function createFixture(options?: {
         },
       },
       writeCalls,
-      [Symbol.dispose]() {
-        sqlite.close();
-      },
+      [Symbol.asyncDispose]: () => resources.disposeAsync(),
     };
   } catch (error) {
     sqlite.close();

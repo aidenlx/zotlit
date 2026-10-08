@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
-import { FileSystemAdapter, Scope } from "obsidian";
+import { FileSystemAdapter, Scope, TExternalFile } from "obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
@@ -131,7 +131,7 @@ function standingDeps() {
     markGestures: markGestures(),
     settings: readerSettings(),
     noteIndex: new NoteIndexStub(),
-    libraryTagNames: () => [],
+    libraryTagNames: async () => [],
   };
 }
 
@@ -541,9 +541,11 @@ it("waits for the first render when Obsidian is still opening the document", asy
   expect(failedIn(binding.probes)).toEqual(["P11"]);
 });
 
-it("reads an external file's absolute path from its `file:` prefix", async () => {
+it("reads an external file's absolute path from the file itself", async () => {
   const attachments = attachmentReads(RESOLVED);
-  const view = pdfView("file:/Users/reader/Zotero/storage/ABCD2345/paper.pdf");
+  const file = new TExternalFile();
+  file.path = "file:/Users/reader/Zotero/storage/ABCD2345/paper.pdf";
+  const view = { ...pdfView(null), file };
   const { app } = workspace([{ view }]);
 
   await using service = new PdfAnnotationEditor({

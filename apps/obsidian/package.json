@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@bjorn3/browser_wasi_shim": "^0.4.2",
+    "@effect/platform-browser": "4.0.0",
     "@hono/node-server": "catalog:",
     "@hono/valibot-validator": "^0.6.1",
     "@lezer/markdown": "catalog:",
@@ -85,6 +86,7 @@
     "ajv": "catalog:",
     "electron": "43.3.0",
     "happy-dom": "catalog:",
+    "jieba-wasm": "catalog:",
     "obsidian": "workspace:*",
     "oxlint": "catalog:",
     "pandoc-wasm": "^1.1.0",
@@ -100,7 +102,7 @@
   "obsidian": {
     "id": "zotlit",
     "name": "ZotLit",
-    "minAppVersion": "1.14.2",
+    "minAppVersion": "1.14.4",
     "minElectronVersion": "43.0.0",
     "isDesktopOnly": true,
     "fundingUrl": {

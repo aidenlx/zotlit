@@ -4,10 +4,15 @@ import { expect, it, vi } from "vitest";
 import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
+import {
+  inProcessReadsService,
+  sharedClientOpener,
+} from "@/services/zotero-reads/test-utils";
+
 import { createMatchData, loadMatchFacts } from "./match-data";
 
 it("includes Libraries outside the chosen paper and keeps automatic Tags and direct Collection paths", async () => {
-  using stack = new DisposableStack();
+  await using stack = new AsyncDisposableStack();
   const client = createClient(":memory:");
   stack.defer(() => client.$client.close());
   createFixtureSchema(client.$client);
@@ -22,14 +27,19 @@ it("includes Libraries outside the chosen paper and keeps automatic Tags and dir
     insert into collections (collectionID,collectionName,parentCollectionID,libraryID,key) values (1,'Project',null,1,'PROJ0001'), (2,'Drafts',1,1,'DRFT0001'), (3,'Team only',null,2,'TEAM0001'), (4,'A/B',null,1,'SLASH222');
     insert into collectionItems (collectionID,itemID) values (2,1), (4,1);
   `);
+  const service = stack.use(inProcessReadsService(sharedClientOpener(client)));
   const dispose = vi.fn();
   const db = {
-    acquireRead: async () => ({
-      client,
-      uri: ":memory:",
-      source: { id: null, databasePath: ":memory:" },
-      [Symbol.dispose]: dispose,
-    }),
+    acquireRead: async () => {
+      const lease = await service.acquireRead();
+      return {
+        reads: lease.reads,
+        [Symbol.asyncDispose]: () => {
+          dispose();
+          return lease[Symbol.asyncDispose]();
+        },
+      };
+    },
   };
   const data = createMatchData(db);
   await expect(data.tags()).resolves.toEqual([

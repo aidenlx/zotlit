@@ -7,7 +7,11 @@ import type { NodeDatabaseClient } from "@/client/node";
 import { USER_LIBRARY_ID } from "@/lib/constants";
 import { createFixtureSchema } from "@/test-utils";
 
-import { getIndexedItemsByLibrary, getIndexSignature } from "./index-items";
+import {
+  getIndexedItemsByID,
+  getIndexedItemsByLibrary,
+  getIndexSignature,
+} from "./index-items";
 
 let sqlite: DatabaseSync;
 let db: NodeDatabaseClient;
@@ -59,6 +63,19 @@ describe("getIndexedItemsByLibrary", () => {
         ["attachment", "note", "annotation"].includes(item.itemType),
       ),
     ).toBe(false);
+  });
+});
+
+describe("getIndexedItemsByID", () => {
+  it("keeps request order, duplicates and field aliases while filtering child and deleted items", () => {
+    const items = getIndexedItemsByID(db, [2, 999, 1, 3, 4, 5, 6, 2]);
+    expect(
+      items.map(({ key, publicationTitle }) => [key, publicationTitle]),
+    ).toEqual([
+      ["BOOKSEC", "Collected Essays"],
+      ["ARTICLE", "Journal of Kernels"],
+      ["BOOKSEC", "Collected Essays"],
+    ]);
   });
 });
 

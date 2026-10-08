@@ -3,6 +3,8 @@
 
 import type { CslItemData } from "@zotlit/db";
 
+import type { SeededWork } from "@/services/zotero-reads/test-utils";
+
 /** Everything the clipboard double was handed, newest last. */
 export const clipboardWrites: { html: string; text: string }[] = [];
 
@@ -41,11 +43,8 @@ export function answerExportModal(
 
 /** One cited work, as both Zotero itself and an export read it. */
 export interface CitedWork {
-  libraryID: number;
-  /** The Item key the Zotero database answers under. */
-  key: string;
-  /** The row the database hands the app. */
-  row: unknown;
+  /** The work as the Zotero database holds it. */
+  work: SeededWork;
   /** The same work as CSL-JSON, as Zotero hands it to an export. */
   csl: CslItemData;
 }
@@ -64,30 +63,6 @@ export function fetchCitedBibliography(): Promise<{
       [...citedWorks].map(([indexedKey, work]) => [indexedKey, work.csl]),
     ),
   });
-}
-
-/** The Zotero database, answering for those same works and nothing else. */
-export function zoteroDatabaseDoubles(): Record<string, unknown> {
-  return {
-    getZoteroIdentity: () => ({
-      userID: 1,
-      localUserKey: null,
-      username: null,
-    }),
-    resolveIndexedKeyLibrary: (_client: unknown, indexedKey: string) => {
-      const work = citedWorks.get(indexedKey);
-      return work ? { libraryID: work.libraryID, key: work.key } : null;
-    },
-    getItemsByKey: (
-      _client: unknown,
-      _libraryID: number,
-      keys: readonly string[],
-    ) =>
-      [...citedWorks.values()]
-        .filter((work) => keys.includes(work.key))
-        .map((work) => work.row),
-    getAttachmentsByParents: () => [],
-  };
 }
 
 /** Leave no clipboard write, export run, or cited work behind for the next test. */

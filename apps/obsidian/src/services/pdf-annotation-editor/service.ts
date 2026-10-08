@@ -23,7 +23,7 @@ import type {
   CapabilityGestures,
   CommentNotes,
 } from "./binding";
-import { openFilePathOf, PDF_VIEW_TYPE } from "./seam";
+import { openFileOf, PDF_VIEW_TYPE } from "./seam";
 import type { MarkGestures } from "./selection";
 import { toolColorStore } from "./tools";
 
@@ -58,7 +58,7 @@ export interface PdfAnnotationEditorDeps {
   /** The Literature Notes a rendered comment's links resolve against. */
   noteIndex: CommentNotes;
   /** The tag names of an Annotation's Library, which the tag editor suggests. */
-  libraryTagNames: (annotationKey: string) => readonly string[];
+  libraryTagNames: (annotationKey: string) => Promise<readonly string[]>;
   /** Where each annotation tool's colour is kept, so it holds across PDFs. */
   settings: Pick<SettingsService, "current" | "update">;
   /** The clock each binding's cooldown countdown is read against. */
@@ -224,7 +224,11 @@ export class PdfAnnotationEditor extends Service<void> {
     for (const [view, binding] of this.#bindings) {
       // A view that swapped files gets a fresh binding, so the seam probes and
       // the attachment resolution both run again for the file now on screen.
-      if (open.has(view) && binding.filePath === openFilePathOf(view)) continue;
+      if (
+        open.has(view) &&
+        binding.filePath === (openFileOf(view)?.path ?? null)
+      )
+        continue;
       binding[Symbol.dispose]();
       this.#bindings.delete(view);
     }

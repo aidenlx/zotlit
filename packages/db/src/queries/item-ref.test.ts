@@ -10,6 +10,7 @@ import { createFixtureSchema } from "@/test-utils";
 import {
   getItemDisplayInfoByID,
   getItemDisplayRefByID,
+  getItemDisplayRefsByIDs,
   getItemRefByID,
 } from "./item-ref";
 
@@ -96,6 +97,19 @@ describe("getItemDisplayRefByID", () => {
 
   it("returns null for an unknown item id", () => {
     expect(getItemDisplayRefByID(db, 9999)).toBeNull();
+  });
+});
+
+describe("getItemDisplayRefsByIDs", () => {
+  it("answers each live id as getItemDisplayRefByID does, and leaves out the rest", () => {
+    const refs = getItemDisplayRefsByIDs(db, [1, 6, 7, 2, 9999, 1]);
+    expect([...refs.keys()].toSorted()).toEqual([1, 6, 7]);
+    for (const itemID of [1, 6, 7])
+      expect(refs.get(itemID)).toEqual(getItemDisplayRefByID(db, itemID));
+  });
+
+  it("answers an empty list with no refs", () => {
+    expect(getItemDisplayRefsByIDs(db, []).size).toBe(0);
   });
 });
 

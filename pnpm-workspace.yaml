@@ -25,8 +25,8 @@ catalog:
   "@codemirror/autocomplete": 6.20.3
   "@codemirror/commands": 6.11.0
   "@codemirror/language": 6.12.3
-  "@codemirror/state": 6.5.0
-  "@codemirror/view": 6.38.6
+  "@codemirror/state": 6.7.6
+  "@codemirror/view": 6.43.13
   "@lezer/common": 1.5.2
   "@lezer/highlight": 1.2.3
   "@lezer/lr": 1.4.10
@@ -57,8 +57,9 @@ catalog:
   eta: 4.6.0
   drizzle-kit: 1.0.0-rc.4
   drizzle-orm: 1.0.0-rc.4
-  effect: ^4.0.0
+  effect: 4.0.0
   fflate: ^0.8.2
+  jieba-wasm: 2.4.0
   monkey-around: 3.0.0
   oxfmt: ^0.55.0
   oxlint: ^1.70.0
@@ -85,8 +86,8 @@ overrides:
   "@codemirror/language": 6.12.3
   # The last lint release built for the pinned view; newer ones need view 6.42.
   "@codemirror/lint": 6.9.5
-  "@codemirror/state": 6.5.0
-  "@codemirror/view": 6.38.6
+  "@codemirror/state": 6.7.6
+  "@codemirror/view": 6.43.13
   "zotero-types>epubjs": 0.3.93
   "zotero-types>pdfjs-dist": workspace:*
   # ajv pins fast-uri to ^3.0.1; force the patched version (GHSA-7p8r-x3mc-p8w7).

@@ -1,51 +1,86 @@
-import { builtinModules } from "node:module";
-import { resolve } from "node:path";
-import { build } from "vite";
-import type { Plugin } from "vite";
+// Build-time bundle of a Web Worker entry, embedded in the plugin bundle as a string module.
 
-/** Embed an independent Node bundle in the plugin's single distributable main.js. */
-export function embeddedWorker(service: "item-query" | "item-lookup"): Plugin {
-  const id = `virtual:${service}-worker`;
+import { regex } from "arkregex";
+import { build } from "vite";
+import type { InlineConfig, Plugin } from "vite";
+
+export interface EmbeddedWorkerOptions {
+  /** The module id the plugin code imports, e.g. `virtual:zotero-reads-worker`. */
+  id: string;
+  /** Absolute path of the worker entry. */
+  entry: string;
+  /**
+   * Build settings the worker shares with the plugin bundle (`define`,
+   * `resolve`, `minify`, ...). Node builtins listed in `external` stay
+   * `require()` calls that resolve through the worker's Node integration.
+   */
+  config: Pick<InlineConfig, "define" | "resolve" | "mode"> & {
+    external: string[];
+    minify: boolean;
+    sourcemap: boolean | "inline";
+    target: string;
+  };
+}
+
+/** A worker must never load the Obsidian API: it does not exist off the main thread. */
+const FORBIDDEN_REQUIRE = regex(
+  `\\brequire\\(\\s*["'](?<module>obsidian|electron)["']\\s*\\)`,
+);
+
+/**
+ * Serves `id` as `export default "<worker source>"`: the entry bundled on its
+ * own as one CommonJS file, so the plugin ships no extra file and spawns the
+ * worker from a blob URL. Every module in the worker bundle is watched, so a
+ * watch build rebuilds the worker when any of them changes.
+ */
+export function embeddedWorker(options: EmbeddedWorkerOptions): Plugin {
+  const resolvedId = `\0${options.id}`;
+  const { external, minify, sourcemap, target, ...shared } = options.config;
   return {
-    name: `${service}-worker`,
-    resolveId(source) {
-      if (source === id) return `\0${id}`;
+    name: "embedded-worker",
+    resolveId(id) {
+      return id === options.id ? resolvedId : null;
     },
-    async load(source) {
-      if (source !== `\0${id}`) return;
-      const root = resolve(import.meta.dirname, "..");
+    async load(id) {
+      if (id !== resolvedId) return null;
       const result = await build({
+        ...shared,
         configFile: false,
-        root,
         logLevel: "warn",
-        resolve: {
-          alias: { "@": resolve(root, "src") },
-          conditions: ["module", "node"],
-        },
         build: {
           write: false,
-          target: "node24",
-          minify: true,
+          reportCompressedSize: false,
+          emptyOutDir: false,
+          copyPublicDir: false,
+          minify,
+          sourcemap,
+          target,
           lib: {
-            entry: resolve(root, `src/services/${service}/worker.ts`),
+            entry: options.entry,
             formats: ["cjs"],
-            fileName: () => `${service}.cjs`,
+            fileName: () => "worker.js",
           },
           rolldownOptions: {
-            external: [
-              ...builtinModules,
-              ...builtinModules.map((name) => `node:${name}`),
-            ],
+            external: ["obsidian", "electron", ...external],
             output: { codeSplitting: false },
           },
         },
       });
-      const built = Array.isArray(result) ? result[0]! : result;
-      if (!("output" in built))
-        throw new Error(`${service} worker build returned no bundle`);
-      const chunk = built.output.find((entry) => entry.type === "chunk");
-      if (!chunk) throw new Error(`${service} worker build returned no code`);
-      for (const path of Object.keys(chunk.modules)) this.addWatchFile(path);
+      const outputs = Array.isArray(result) ? result : [result];
+      const chunk = outputs
+        .flatMap((output) => ("output" in output ? output.output : []))
+        .find((item) => item.type === "chunk");
+      if (!chunk)
+        this.error(`The worker build of ${options.entry} emitted no chunk`);
+      const forbidden = FORBIDDEN_REQUIRE.exec(chunk.code);
+      if (forbidden) {
+        this.error(
+          `The worker bundle of ${options.entry} requires "${forbidden.groups.module}", which a worker cannot load`,
+        );
+      }
+      for (const moduleId of chunk.moduleIds) {
+        if (!moduleId.startsWith("\0")) this.addWatchFile(moduleId);
+      }
       return `export default ${JSON.stringify(chunk.code)};`;
     },
   };

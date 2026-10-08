@@ -4,7 +4,6 @@ import { configDefaults, defineConfig } from "vitest/config";
 
 import { testDefaults } from "@zotlit/config/vitest";
 
-import { embeddedWorker } from "./scripts/embedded-worker.ts";
 import { pandocFilterVariants } from "./scripts/lua-filter.ts";
 
 const packageRoot = import.meta.dirname;
@@ -42,13 +41,13 @@ export default defineConfig({
       url: "https://example.invalid/pandoc.wasm.zip",
       sha256: "0".repeat(64),
     }),
+    __CHINESE_SEGMENTER__: JSON.stringify({
+      version: "0.0.0",
+      url: "https://example.invalid/jieba_rs_wasm_bg.wasm",
+      sha256: "0".repeat(64),
+    }),
   },
-  plugins: [
-    preact(),
-    pandocFilterVariants(),
-    embeddedWorker("item-query"),
-    embeddedWorker("item-lookup"),
-  ],
+  plugins: [preact(), pandocFilterVariants()],
   test: {
     ...testDefaults,
     // `include`/`exclude` live on the two projects below, not here: Vite's

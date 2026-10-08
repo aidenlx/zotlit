@@ -6,7 +6,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { NodeDatabaseClient } from "@/client/node";
 import { USER_LIBRARY_ID } from "@/lib/constants";
 import { parseItemLanguage } from "@/lib/zt-lang";
-import { createFixtureSchema } from "@/test-utils";
+import {
+  countCompiles,
+  countStatements,
+  createFixtureSchema,
+} from "@/test-utils";
 
 import {
   getItemsByID,
@@ -285,6 +289,35 @@ describe("getItemsByID", () => {
     });
   });
 
+  it("returns items in request order, repeating a repeated id and leaving misses out", () => {
+    expect(getItemsByID(db, [7, 1, 2, 7, 999, 6]).map((i) => i.itemID)).toEqual(
+      [7, 1, 7, 6],
+    );
+  });
+
+  it("reads more ids than one statement can bind", () => {
+    const misses = Array.from({ length: 40_000 }, (_, i) => 1_000 + i);
+    expect(getItemsByID(db, [6, ...misses, 1]).map((i) => i.itemID)).toEqual([
+      6, 1,
+    ]);
+  });
+
+  it("runs the same cached statements for one id as for many", () => {
+    const statements = countStatements(sqlite);
+    const compiles = countCompiles(sqlite);
+    const cost = (itemIDs: number[]) => {
+      const before = statements();
+      getItemsByID(db, itemIDs);
+      return statements() - before;
+    };
+    cost([1]);
+    // Every id is in the user library, so each read resolves one group.
+    expect(cost([1, 6, 2, 3, 999, 6])).toBe(cost([1]));
+    const compiled = compiles();
+    cost([1, 6, 2, 3, 999, 6]);
+    expect(compiles()).toBe(compiled);
+  });
+
   it("returns an empty array for empty input", () => {
     expect(getItemsByID(db, [])).toEqual([]);
   });
@@ -292,13 +325,11 @@ describe("getItemsByID", () => {
 
 describe("getItemsByKey", () => {
   it("hydrates only requested regular items from the requested library", () => {
-    const result = getItemsByKey(db, USER_LIBRARY_ID, [
-      "USER1",
-      "USER2",
-      "DELETED",
-      "ATTACH",
-      "GRP1",
-    ]);
+    const result = getItemsByKey(
+      db,
+      ["USER1", "USER2", "DELETED", "ATTACH", "GRP1"],
+      { libraryID: USER_LIBRARY_ID },
+    );
     const byKey = new Map(result.map((item) => [item.key, item]));
 
     expect([...byKey.keys()].sort()).toEqual(["USER1", "USER2"]);
@@ -318,11 +349,48 @@ describe("getItemsByKey", () => {
   });
 
   it("returns an empty array for empty input", () => {
-    expect(getItemsByKey(db, USER_LIBRARY_ID, [])).toEqual([]);
+    expect(getItemsByKey(db, [], { libraryID: USER_LIBRARY_ID })).toEqual([]);
   });
 
   it("returns an empty array when no key matches", () => {
-    expect(getItemsByKey(db, USER_LIBRARY_ID, ["NOPE"])).toEqual([]);
+    expect(getItemsByKey(db, ["NOPE"], { libraryID: USER_LIBRARY_ID })).toEqual(
+      [],
+    );
+  });
+
+  it("returns items in request order, repeating a repeated key and leaving misses out", () => {
+    expect(
+      getItemsByKey(db, ["USER2", "NOPE", "USER1", "USER2"], {
+        libraryID: USER_LIBRARY_ID,
+      }).map((item) => item.key),
+    ).toEqual(["USER2", "USER1", "USER2"]);
+  });
+
+  it("reads more keys than one statement can bind", () => {
+    const misses = Array.from({ length: 40_000 }, (_, i) => `MISS${i}`);
+    expect(
+      getItemsByKey(db, ["USER2", ...misses, "USER1"], {
+        libraryID: USER_LIBRARY_ID,
+      }).map((item) => item.key),
+    ).toEqual(["USER2", "USER1"]);
+  });
+
+  it("runs the same cached statements for one key as for fifty", () => {
+    const statements = countStatements(sqlite);
+    const compiles = countCompiles(sqlite);
+    const cost = (keys: string[]) => {
+      const before = statements();
+      getItemsByKey(db, keys, { libraryID: USER_LIBRARY_ID });
+      return statements() - before;
+    };
+    cost(["USER1"]);
+    const fifty = Array.from({ length: 50 }, (_, i) =>
+      i % 2 === 0 ? "USER1" : `MISS${i}`,
+    );
+    expect(cost(["USER2", ...fifty.slice(1)])).toBe(cost(["USER1"]));
+    const compiled = compiles();
+    cost(["USER2", ...fifty.slice(1)]);
+    expect(compiles()).toBe(compiled);
   });
 });
 

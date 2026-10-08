@@ -10,7 +10,7 @@
  * whenever the profile override changes ({@link setProfileDir}); there is no
  * file watcher (init-only by design). Read failures leave the service
  * `degraded` with an empty pref map rather than rejecting `ready`, mirroring
- * `DatabaseService`.
+ * `ZoteroReadsService`.
  */
 
 import { readFile } from "node:fs/promises";

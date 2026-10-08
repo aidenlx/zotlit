@@ -103,8 +103,7 @@ export interface AttachmentImport {
   /**
    * Decide whether `path` may be read as an attachment source, against the
    * service's standing canonical-roots snapshot as it stands at the call.
-   * Synchronous and memory-only, so a template render and a `dragstart`
-   * handler can both call it inline.
+   * Synchronous and memory-only, so a template render can call it inline.
    */
   decide(path: string, origin: SourceOrigin): AttachmentSource;
   /**
