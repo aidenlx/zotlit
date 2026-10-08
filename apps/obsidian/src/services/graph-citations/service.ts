@@ -425,6 +425,7 @@ export class GraphCitations extends Service<void> {
       citekeyOf: (id) => installation.additions.citedWorkNodes.get(id),
       resolveCitekey: (citekey) => this.#citationIndex.resolveCitekey(citekey),
       open: this.#open,
+      workspace: this.#app.workspace,
     };
     restores.use(wrapNodeClick(renderer, nodeDeps));
     restores.use(wrapNodeRightClick(renderer, nodeDeps));

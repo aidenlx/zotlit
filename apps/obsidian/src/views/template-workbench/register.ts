@@ -5,8 +5,10 @@ import type { App, Plugin, WorkspaceLeaf } from "obsidian";
 import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { MENU_SECTION } from "@/lib/menu-section";
 import { BaseNotice } from "@/lib/notice";
 import type { ArrivingProblem } from "@/lib/workbench-recovery";
+import type { FileMenuSegment } from "@/services/file-menu";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { ProfileService } from "@/services/profile/service";
@@ -33,11 +35,12 @@ type RegistrationDeps = TemplateWorkbenchDeps & {
     | "restoreDefault"
   >;
 };
-export function registerTemplateWorkbenchView(
-  plugin: Plugin,
-  deps: RegistrationDeps,
-): void {
-  if (!Platform.isDesktopApp) return;
+/**
+ * What the Workbench's commands, header action, and file-menu entries ask of a
+ * file: which kind of Template Document it is, which Profile a note opens, and
+ * the Customize launch for that Profile.
+ */
+function workbenchTargets(app: App, deps: RegistrationDeps) {
   /** A plain document — the Citation Template or a Shared Partial — which the
    *  view opens on its own tab without any Profile flow. */
   const isPlainDocument = (file: TFile | null): file is TFile =>
@@ -49,20 +52,9 @@ export function registerTemplateWorkbenchView(
     (file.path === deps.profile.defaultDocumentPath ||
       deps.profile.profiles.some((profile) => profile.path === file.path) ||
       file.basename.startsWith("zotlit-profile."));
-  plugin.registerView(
-    TEMPLATE_WORKBENCH_VIEW_TYPE,
-    (leaf) =>
-      new TemplateWorkbenchView(leaf, {
-        ...deps,
-        pluginVersion: plugin.manifest.version,
-      }),
-  );
   const targetOf = (file: TFile | null) => {
     if (isProfile(file)) return file;
-    if (
-      !file ||
-      !itemKeyFromFrontmatter(plugin.app.metadataCache.getFileCache(file))
-    )
+    if (!file || !itemKeyFromFrontmatter(app.metadataCache.getFileCache(file)))
       return null;
     const resolved = deps.profile.profileOf(file);
     if (!resolved.ok) return null;
@@ -70,7 +62,7 @@ export function registerTemplateWorkbenchView(
     const profile = deps.profile.profiles.find(
       (entry) => entry.id === resolved.profile.selector,
     );
-    return profile ? plugin.app.vault.getFileByPath(profile.path) : null;
+    return profile ? app.vault.getFileByPath(profile.path) : null;
   };
   const customizeTarget = (
     target: TFile | RegistrationDeps["profile"],
@@ -85,7 +77,7 @@ export function registerTemplateWorkbenchView(
             )?.id
         : "default";
     if (!profileId)
-      return openNativeProfile(plugin.app, target, {
+      return openNativeProfile(app, target, {
         ...options,
         customize: true,
       });
@@ -97,6 +89,25 @@ export function registerTemplateWorkbenchView(
         : {}),
     });
   };
+  return { isPlainDocument, isProfile, targetOf, customizeTarget };
+}
+
+/** Register the Template Workbench view, its commands, and its header actions. */
+export function registerTemplateWorkbenchView(
+  plugin: Plugin,
+  deps: RegistrationDeps,
+): void {
+  if (!Platform.isDesktopApp) return;
+  const { isPlainDocument, isProfile, targetOf, customizeTarget } =
+    workbenchTargets(plugin.app, deps);
+  plugin.registerView(
+    TEMPLATE_WORKBENCH_VIEW_TYPE,
+    (leaf) =>
+      new TemplateWorkbenchView(leaf, {
+        ...deps,
+        pluginVersion: plugin.manifest.version,
+      }),
+  );
   plugin.addCommand({
     id: "customize-profile",
     name: m.template_workbench_open_layout(),
@@ -177,88 +188,6 @@ export function registerTemplateWorkbenchView(
       );
     }),
   );
-  plugin.registerEvent(
-    // `origin` holds the source and, on a pane menu, the leaf that raised it.
-    plugin.app.workspace.on("file-menu", (menu, file, ...origin) => {
-      if (!(file instanceof TFile)) return;
-      // The Workbench view's own pane menu raises this event too. Inside the
-      // view these entries repeat the routes it already offers, so the file
-      // menu keeps them for the surfaces that stand outside the Workbench.
-      if (origin[1]?.view instanceof TemplateWorkbenchView) return;
-      if (isPlainDocument(file)) {
-        const leaf = activeLeafFor(plugin.app, file);
-        menu.addItem((item) =>
-          item
-            .setSection("zotlit")
-            .setTitle(m.template_workbench_open())
-            .setIcon("file-pen-line")
-            .onClick(
-              () =>
-                void runTemplateWorkbenchAction("open-editor", () =>
-                  openTemplateWorkbench(plugin.app, file, {
-                    explainUnsupported: false,
-                    ...(leaf ? { leaf } : {}),
-                  }),
-                ),
-            ),
-        );
-        return;
-      }
-      const target = targetOf(file);
-      if (!target) return;
-      const itemIndexedKey = itemKeyFromFrontmatter(
-        plugin.app.metadataCache.getFileCache(file),
-      );
-      const options = itemIndexedKey ? { itemIndexedKey } : {};
-      if (isProfile(file))
-        menu.addItem((item) =>
-          item
-            .setSection("zotlit")
-            .setTitle(m.template_workbench_open_layout())
-            .setIcon("pencil")
-            .onClick(
-              () =>
-                void runTemplateWorkbenchAction("customize", () =>
-                  customizeTarget(target, {
-                    ...options,
-                    destination: "native",
-                  }),
-                ),
-            ),
-        );
-      if (deps.webWorkbenchEnabled)
-        menu.addItem((item) =>
-          item
-            .setSection("zotlit")
-            .setTitle(m.template_workbench_web_open())
-            .setIcon("external-link")
-            .onClick(
-              () =>
-                void runTemplateWorkbenchAction("open-web", () =>
-                  customizeTarget(target, {
-                    ...options,
-                    destination: "web",
-                  }),
-                ),
-            ),
-        );
-      menu.addItem((item) =>
-        item
-          .setSection("zotlit")
-          .setTitle(m.template_workbench_open())
-          .setIcon("file-pen-line")
-          .onClick(() => {
-            const leaf = activeLeafFor(plugin.app, file);
-            void runTemplateWorkbenchAction("open-editor", () =>
-              openNativeProfile(plugin.app, target, {
-                ...options,
-                ...(leaf ? { leaf } : {}),
-              }),
-            );
-          }),
-      );
-    }),
-  );
   const actions = new Map<MarkdownView, HTMLElement>();
   function refreshActions() {
     const open = new Set(
@@ -301,6 +230,91 @@ export function registerTemplateWorkbenchView(
     actions.clear();
   });
   plugin.app.workspace.onLayoutReady(refreshActions);
+}
+
+/** The Workbench's entries on Obsidian's file menu; none off the desktop app. */
+export function templateWorkbenchFileMenu(
+  app: App,
+  deps: RegistrationDeps,
+): FileMenuSegment {
+  if (!Platform.isDesktopApp) return () => {};
+  const { isPlainDocument, isProfile, targetOf, customizeTarget } =
+    workbenchTargets(app, deps);
+  return (menu, { file, leaf: menuLeaf, itemKey }) => {
+    // The Workbench view's own pane menu raises this event too. Inside the
+    // view these entries repeat the routes it already offers, so the file
+    // menu keeps them for the surfaces that stand outside the Workbench.
+    if (menuLeaf?.view instanceof TemplateWorkbenchView) return;
+    if (isPlainDocument(file)) {
+      const leaf = activeLeafFor(app, file);
+      menu.addItem((item) =>
+        item
+          .setSection(MENU_SECTION.open)
+          .setTitle(m.template_workbench_open())
+          .setIcon("file-pen-line")
+          .onClick(
+            () =>
+              void runTemplateWorkbenchAction("open-editor", () =>
+                openTemplateWorkbench(app, file, {
+                  explainUnsupported: false,
+                  ...(leaf ? { leaf } : {}),
+                }),
+              ),
+          ),
+      );
+      return;
+    }
+    const target = targetOf(file);
+    if (!target) return;
+    const options = itemKey ? { itemIndexedKey: itemKey } : {};
+    if (isProfile(file))
+      menu.addItem((item) =>
+        item
+          .setSection(MENU_SECTION.open)
+          .setTitle(m.template_workbench_open_layout())
+          .setIcon("panels-top-left")
+          .onClick(
+            () =>
+              void runTemplateWorkbenchAction("customize", () =>
+                customizeTarget(target, {
+                  ...options,
+                  destination: "native",
+                }),
+              ),
+          ),
+      );
+    if (deps.webWorkbenchEnabled)
+      menu.addItem((item) =>
+        item
+          .setSection(MENU_SECTION.open)
+          .setTitle(m.template_workbench_web_open())
+          .setIcon("external-link")
+          .onClick(
+            () =>
+              void runTemplateWorkbenchAction("open-web", () =>
+                customizeTarget(target, {
+                  ...options,
+                  destination: "web",
+                }),
+              ),
+          ),
+      );
+    menu.addItem((item) =>
+      item
+        .setSection(MENU_SECTION.open)
+        .setTitle(m.template_workbench_open())
+        .setIcon("file-pen-line")
+        .onClick(() => {
+          const leaf = activeLeafFor(app, file);
+          void runTemplateWorkbenchAction("open-editor", () =>
+            openNativeProfile(app, target, {
+              ...options,
+              ...(leaf ? { leaf } : {}),
+            }),
+          );
+        }),
+    );
+  };
 }
 
 function activeLeafFor(

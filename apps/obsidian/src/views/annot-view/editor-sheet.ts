@@ -294,6 +294,7 @@ export function renderEditorSheet(
   let disposed = false;
   const editor = createFieldEditor({
     app,
+    surface,
     parent: frame,
     wording: field,
     text: value,

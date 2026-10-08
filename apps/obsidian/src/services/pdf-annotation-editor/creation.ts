@@ -46,6 +46,7 @@ import type {
   InkPosition,
   TextPosition,
 } from "@/services/annotation-repository/write";
+import { raiseMenu } from "@/services/menu-events";
 import {
   capabilityBlock,
   fieldEditorControls,
@@ -776,6 +777,14 @@ export class MarkCreation implements CreationGestures, Disposable {
       addTextFontSizes(menu, colors.textFontSize(), (size) =>
         colors.setTextFontSize(size),
       );
+    raiseMenu(menu, {
+      workspace: this.#deps.app.workspace,
+      name: "zotlit:annotation-color-menu",
+      info: {
+        source: "pdf-tool",
+        tool,
+      },
+    });
     showMenuAtButton(menu, node, "end");
   }
 

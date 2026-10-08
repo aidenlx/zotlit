@@ -8,6 +8,9 @@ import { annotationColorToName } from "@zotlit/db";
 import type { AnnotationColorName } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { menuSections } from "@/services/menu-events";
+
+const SECTION = menuSections("zotlit:annotation-color-menu");
 
 /**
  * The eight colours Zotero's reader offers, in its own order, so a swatch list
@@ -116,6 +119,7 @@ export function buildColorMenu(
   for (const hex of ANNOTATION_COLORS) {
     menu.addItem((item) =>
       item
+        .setSection(SECTION.color)
         .setTitle(swatchTitle(hex))
         .setChecked(
           colors.length > 0 && colors.every((color) => isColor(color, hex)),

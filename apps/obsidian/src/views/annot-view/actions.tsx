@@ -27,6 +27,7 @@ import type {
 } from "@/services/excerpt-image/display";
 import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
+import { menuSections, raiseMenu } from "@/services/menu-events";
 import type { AnnotationCitation, NoteFeature } from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
 
@@ -43,6 +44,8 @@ import { attachmentLine, headerMenu } from "./presentation";
 import type { AnnotState, FollowMode } from "./store";
 
 const logger = getLogger(["views", "annot-view"]);
+
+const SECTION = menuSections("zotlit:annotation-menu");
 
 export interface AnnotActions {
   /**
@@ -373,11 +376,20 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   const fillColorMenu = (
     menu: Menu,
     annots: readonly AnnotationRecord[],
-  ): void =>
+  ): void => {
     buildColorMenu(menu, {
       colors: annots.map(({ color }) => color),
       onSelect: (hex) => setColors(annots, hex),
     });
+    raiseMenu(menu, {
+      workspace: deps.app.workspace,
+      name: "zotlit:annotation-color-menu",
+      info: {
+        source: "annotation-view",
+        annotations: annots,
+      },
+    });
+  };
   /**
    * The copy entry, for one card or a group. It is dimmed where no card has
    * text or a comment to copy.
@@ -388,6 +400,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   ): void => {
     menu.addItem((item) => {
       item
+        .setSection(SECTION.clipboard)
         .setTitle(m.annot_view_menu_copy_text())
         .setIcon("copy")
         .setDisabled(copiedText(annots) === "")
@@ -509,6 +522,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     if (backlink) {
       menu.addItem((item) => {
         item
+          .setSection(SECTION.clipboard)
           .setTitle(m.annot_view_menu_copy_backlink())
           .setIcon("link")
           .onClick(() => {
@@ -523,13 +537,15 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     // One card offers the copy only where it has text or a comment to copy.
     if (copiedText([annot]) !== "") addCopyItem(menu, [annot]);
 
-    addCopyIndexedKeyMenuItem(menu, {
-      indexedKey: annot.key,
-      kind: "annotation",
-    });
+    addCopyIndexedKeyMenuItem(
+      menu,
+      { indexedKey: annot.key, kind: "annotation" },
+      { section: SECTION.clipboard },
+    );
 
     menu.addItem((item) => {
       item
+        .setSection(SECTION.clipboard)
         .setTitle(m.annot_view_menu_copy_citation())
         .setIcon("quote")
         .onClick(async () => {
@@ -565,20 +581,20 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
         });
     });
 
-    menu.addSeparator();
     // The keyboard's route to what a drag does.
     menu.addItem((item) => {
       const insert = deps.offerAnnotationInsert();
       item
+        .setSection(SECTION.insert)
         .setTitle(m.annot_view_menu_insert())
         .setIcon("file-input")
         .setDisabled(!insert)
         .onClick(() => insert?.(annot));
     });
 
-    menu.addSeparator();
     menu.addItem((item) => {
       item
+        .setSection(SECTION.view)
         .setTitle(m.template_data_explorer_menu_explore())
         .setIcon("braces")
         .onClick(() => {
@@ -604,13 +620,13 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     const color = controlOf("color", annots);
     menu.addItem((item) => {
       item
+        .setSection(SECTION.action)
         .setTitle(m.annot_view_card_color())
         .setIcon("palette")
         .setDisabled(color.disabled || color.blocked !== null);
       fillColorMenu(item.setSubmenu(), annots);
     });
     addCopyItem(menu, annots);
-    menu.addSeparator();
     addDeleteItem(menu, annots);
   };
 
@@ -626,6 +642,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     if (!control) return;
     menu.addItem((item) => {
       item
+        .setSection(SECTION.action)
         .setTitle(m.annot_view_menu_edit_text())
         .setIcon("text-cursor-input")
         .setDisabled(control.disabled)
@@ -638,7 +655,6 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
           }),
         );
     });
-    menu.addSeparator();
   };
 
   /**
@@ -654,6 +670,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     const control = controlOf("delete", annots);
     menu.addItem((item) => {
       item
+        .setSection(SECTION.danger)
         .setTitle(
           annots.length === 1
             ? m.annot_view_menu_delete()
@@ -680,11 +697,22 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     return [annot];
   };
 
-  /** The menu a card opens: the group's, or its own. */
+  /**
+   * The menu a card opens: the group's, or its own, then whatever the
+   * `zotlit:annotation-menu` listeners add for the same cards.
+   */
   const fillMenuFor = (menu: Menu, annot: AnnotationRecord): void => {
     const annots = cardsFor(annot);
     if (annots.length > 1) fillGroupMenu(menu, annots);
     else fillCardMenu(menu, annot);
+    raiseMenu(menu, {
+      workspace: deps.app.workspace,
+      name: "zotlit:annotation-menu",
+      info: {
+        source: "annotation-view",
+        annotations: annots,
+      },
+    });
   };
 
   return {

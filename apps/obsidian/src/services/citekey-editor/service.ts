@@ -132,6 +132,7 @@ export class CitekeyEditor extends Service<void> {
     this.#citationIndex = deps.citationIndex;
     this.#libraryScope = deps.libraryScope;
     this.#extension = citekeyEditorExtension({
+      workspace: this.#app.workspace,
       open: (citekey, pane) => {
         void this.openCitekey(citekey, pane);
       },

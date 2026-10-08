@@ -109,6 +109,7 @@ it.each([
             showPopover: () => undefined,
             hoverPreferences: () => hoverPreferences(defaults),
             hoverNotePath: () => null,
+            workspace: { trigger: () => {} },
             resolveCitekey: () => ({
               kind: "missing" as const,
             }),

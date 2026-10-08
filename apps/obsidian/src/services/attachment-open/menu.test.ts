@@ -1,18 +1,18 @@
 import { Menu, TFile, TFolder } from "@mock/obsidian";
-import type { TAbstractFile } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createObsidianAttachmentReader,
   openAttachments,
 } from "@/lib/attachment-open";
+import { fileMenuHandler as handlerFor } from "@/services/__fixtures__/file-menu";
 import {
   inProcessReadsService,
   memoryOpener,
 } from "@/services/zotero-reads/test-utils";
 
 import type { AttachmentOpenDeps } from "./actions";
-import { registerAttachmentOpenFileMenu } from "./menu";
+import { attachmentOpenFileMenu } from "./menu";
 import { toObsidianOpenableAttachments } from "./resolve";
 
 vi.mock("./resolve", async (importOriginal) => ({
@@ -28,12 +28,6 @@ vi.mock("@/lib/attachment-open", async (importOriginal) => ({
     open: vi.fn(),
   })),
 }));
-
-type FileMenuHandler = (
-  menu: Menu,
-  file: TAbstractFile,
-  source: string,
-) => void;
 
 /** Item ABCD2345 with two stored PDFs. */
 const ITEM_WITH_PDFS = `
@@ -66,31 +60,24 @@ afterEach(() => stack.disposeAsync());
 function fileMenuHandler(
   deps: Partial<AttachmentOpenDeps> = {},
   frontmatter: Record<string, unknown> = { "zotero-key": "ABCD2345" },
-): FileMenuHandler {
-  let handler: FileMenuHandler | undefined;
+) {
   const app = {
-    workspace: {
-      on: (name: string, cb: FileMenuHandler) => {
-        if (name === "file-menu") handler = cb;
-        return {};
-      },
-    },
-    metadataCache: { getFileCache: () => ({ frontmatter }) },
     vault: { adapter: { getBasePath: () => "/vault" } },
+    workspace: { trigger: () => {} },
   };
-  registerAttachmentOpenFileMenu(
-    { registerEvent: () => {}, app: app as never },
-    {
-      app,
-      reads: stack.use(
-        inProcessReadsService(memoryOpener(() => ITEM_WITH_PDFS).open),
-      ),
-      zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
-      ...deps,
-    } as unknown as AttachmentOpenDeps,
+  return handlerFor(
+    [
+      attachmentOpenFileMenu({
+        app,
+        reads: stack.use(
+          inProcessReadsService(memoryOpener(() => ITEM_WITH_PDFS).open),
+        ),
+        zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
+        ...deps,
+      } as unknown as AttachmentOpenDeps),
+    ],
+    frontmatter,
   );
-  if (!handler) throw new Error("file-menu handler was not registered");
-  return handler;
 }
 
 function markdownFile(): TFile {
@@ -112,13 +99,13 @@ function anchorRect(): DOMRect {
 }
 
 describe("Literature Note attachment-open file menu", () => {
-  it("adds the Open PDF entry to the zotlit section", () => {
+  it("adds the Open PDF entry to the open section", () => {
     const menu = new Menu();
-    fileMenuHandler()(menu, markdownFile() as never, "more-options");
+    fileMenuHandler()(menu as never, markdownFile() as never, "more-options");
 
     expect(menu.items).toHaveLength(1);
     expect(menu.items[0]!.title).toBe("Open PDF");
-    expect(menu.items[0]!.section).toBe("zotlit");
+    expect(menu.items[0]!.section).toBe("open");
   });
 
   it("opens the resolved Attachments on click", async () => {
@@ -126,44 +113,42 @@ describe("Literature Note attachment-open file menu", () => {
     vi.mocked(toObsidianOpenableAttachments).mockReturnValue(openable as never);
 
     const menu = new Menu();
-    fileMenuHandler()(menu, markdownFile() as never, "more-options");
+    fileMenuHandler()(menu as never, markdownFile() as never, "more-options");
     menu.items[0]!.click();
 
     await vi.waitFor(() =>
       expect(openAttachments).toHaveBeenCalledExactlyOnceWith(openable, {
         reader: expect.anything(),
+        app: expect.anything(),
         event: expect.anything(),
         anchor: undefined,
       }),
     );
   });
 
-  it("stays off a multi-file selection", () => {
-    const menu = new Menu();
-    fileMenuHandler()(menu, markdownFile() as never, "files-menu");
-
-    expect(menu.items).toHaveLength(0);
-  });
-
   it("stays off a non-Markdown file", () => {
     const menu = new Menu();
     const file = new TFile();
     file.extension = "canvas";
-    fileMenuHandler()(menu, file as never, "more-options");
+    fileMenuHandler()(menu as never, file as never, "more-options");
 
     expect(menu.items).toHaveLength(0);
   });
 
   it("stays off a folder", () => {
     const menu = new Menu();
-    fileMenuHandler()(menu, new TFolder() as never, "more-options");
+    fileMenuHandler()(menu as never, new TFolder() as never, "more-options");
 
     expect(menu.items).toHaveLength(0);
   });
 
   it("stays off a note that carries no item key", () => {
     const menu = new Menu();
-    fileMenuHandler({}, {})(menu, markdownFile() as never, "more-options");
+    fileMenuHandler({}, {})(
+      menu as never,
+      markdownFile() as never,
+      "more-options",
+    );
 
     expect(menu.items).toHaveLength(0);
   });
@@ -172,12 +157,13 @@ describe("Literature Note attachment-open file menu", () => {
     vi.mocked(toObsidianOpenableAttachments).mockReturnValue([]);
 
     const menu = new Menu();
-    fileMenuHandler()(menu, markdownFile() as never, "more-options");
+    fileMenuHandler()(menu as never, markdownFile() as never, "more-options");
     menu.items[0]!.click();
 
     await vi.waitFor(() =>
       expect(openAttachments).toHaveBeenCalledExactlyOnceWith([], {
         reader: expect.anything(),
+        app: expect.anything(),
         event: expect.anything(),
         anchor: undefined,
       }),
@@ -206,7 +192,7 @@ describe("Literature Note attachment-open file menu", () => {
 
     Menu.instances.length = 0;
     const menu = new Menu();
-    fileMenuHandler()(menu, markdownFile() as never, "more-options");
+    fileMenuHandler()(menu as never, markdownFile() as never, "more-options");
 
     const rect = anchorRect();
     const evt = {

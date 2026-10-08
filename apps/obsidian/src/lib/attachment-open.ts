@@ -13,13 +13,14 @@ import type { MenuAnchor } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
 import type { ObsidianOpenableAttachment } from "@/services/attachment-open/resolve";
 import type { ZoteroOpenableAttachment } from "@/services/citation-index/service";
+import { menuSections, raiseMenu } from "@/services/menu-events";
 
 const logger = getLogger("attachment-open");
 
+const SECTION = menuSections("zotlit:attachments-menu");
+
 /** One row a picker offers, whichever reader it opens through. */
-interface OpenableRow {
-  label: string;
-}
+type OpenableRow = ObsidianOpenableAttachment | ZoteroOpenableAttachment;
 
 /** Where an Attachment opens, and how — the selection policy stays written once and shared by both. */
 export interface AttachmentReader<T extends OpenableRow> {
@@ -58,12 +59,14 @@ export type AttachmentOpenClickEvent =
 /**
  * A pointer event shows a context menu at the click; no event (the protocol
  * handler, the command palette, the quick switcher) shows a Suggest modal
- * picker instead, which then needs an `App` to host it. The picker differs by
- * invocation, not by reader.
+ * picker instead. The picker differs by invocation, not by reader. Either
+ * picker takes the `App`: the modal is hosted on it, and the menu raises
+ * `zotlit:attachments-menu` on its workspace.
  */
 export type OpenAttachmentsOptions<T extends OpenableRow> =
   | {
       reader: AttachmentReader<T>;
+      app: App;
       event: AttachmentOpenClickEvent;
       /**
        * The box and window the picker anchors to when the trigger cannot be
@@ -108,6 +111,7 @@ export function openAttachments<T extends OpenableRow>(
   }
   if ("event" in options) {
     showAttachmentMenu(attachments, reader, {
+      app: options.app,
       event: options.event,
       anchor: options.anchor,
     });
@@ -171,17 +175,25 @@ export function createObsidianAttachmentReader(
 function showAttachmentMenu<T extends OpenableRow>(
   attachments: readonly T[],
   reader: AttachmentReader<T>,
-  click: { event: AttachmentOpenClickEvent; anchor?: MenuAnchor },
+  click: { app: App; event: AttachmentOpenClickEvent; anchor?: MenuAnchor },
 ): void {
   const menu = new Menu();
   for (const attachment of attachments) {
     menu.addItem((item) =>
       item
+        .setSection(SECTION.open)
         .setTitle(attachment.label)
         .setIcon(reader.icon)
         .onClick((evt) => void reader.open(attachment, Keymap.isModEvent(evt))),
     );
   }
+  raiseMenu(menu, {
+    workspace: click.app.workspace,
+    name: "zotlit:attachments-menu",
+    info: {
+      attachments,
+    },
+  });
 
   const { event, anchor } = click;
   if (anchor) {

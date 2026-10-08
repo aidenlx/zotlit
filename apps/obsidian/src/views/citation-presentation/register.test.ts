@@ -4,13 +4,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import * as m from "@/lib/i18n/generated/messages";
+import { registerFileMenu } from "@/services/file-menu";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
 import type { CitationPresentationModalOptions } from "./modal";
 import type { CitationPresentationChoice } from "./presentation";
-import { registerCitationPresentation } from "./register";
+import {
+  citationPresentationFileMenu,
+  registerCitationPresentation,
+} from "./register";
 
 /** The dialog the action opens, answering with whatever this test chose. */
 const dialog = vi.hoisted(() => ({
@@ -91,6 +95,11 @@ function openVault({ note, settings = {}, loading }: VaultOptions = {}) {
     },
   } as unknown as App;
 
+  const deps = {
+    app,
+    zoteroPref: { ready: Promise.resolve(), dataDir: DATA_DIR },
+    settings: { loaded: vaultSettings.promise },
+  };
   registerCitationPresentation(
     {
       app,
@@ -98,14 +107,12 @@ function openVault({ note, settings = {}, loading }: VaultOptions = {}) {
         command = added;
         return added;
       },
-      registerEvent: () => undefined,
-    } as unknown as Pick<Plugin, "addCommand" | "registerEvent" | "app">,
-    {
-      app,
-      zoteroPref: { ready: Promise.resolve(), dataDir: DATA_DIR },
-      settings: { loaded: vaultSettings.promise },
-    },
+    } as unknown as Pick<Plugin, "addCommand" | "app">,
+    deps,
   );
+  registerFileMenu({ app, registerEvent: () => undefined }, [
+    citationPresentationFileMenu(deps),
+  ]);
 
   if (!command) throw new Error("the action registered no command");
   if (!fileMenu) throw new Error("the action registered no file menu");
@@ -285,7 +292,7 @@ describe("the note's More options menu", () => {
 
     const item = vault.moreOptions().items[0];
     expect(item?.title).toBe(m.command_set_citation_presentation_name());
-    expect(item?.section).toBe("zotlit");
+    expect(item?.section).toBe("action");
 
     item?.click();
     await vi.waitFor(() => expect(vault.writes).toEqual(["draft.md"]));

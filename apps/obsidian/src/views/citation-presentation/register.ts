@@ -1,12 +1,13 @@
 // The Set citation presentation action: its command-palette entry, its place in
 // the active note's More options menu, and the update a confirmed dialog writes.
 
-import { TFile } from "obsidian";
-import type { App, Plugin } from "obsidian";
+import type { App, Plugin, TFile } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { MENU_SECTION } from "@/lib/menu-section";
 import { BaseNotice } from "@/lib/notice";
+import type { FileMenuSegment } from "@/services/file-menu";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
@@ -31,7 +32,7 @@ export interface CitationPresentationDeps {
  * the note but that it be a Markdown note on screen.
  */
 export function registerCitationPresentation(
-  plugin: Pick<Plugin, "addCommand" | "registerEvent" | "app">,
+  plugin: Pick<Plugin, "addCommand" | "app">,
   deps: CitationPresentationDeps,
 ): void {
   plugin.addCommand({
@@ -45,22 +46,25 @@ export function registerCitationPresentation(
       return true;
     },
   });
+}
 
-  // The note's own More options menu, which is where the note on screen is
-  // configured from; every other file menu leaves the action to the palette.
-  plugin.registerEvent(
-    plugin.app.workspace.on("file-menu", (menu, file, source) => {
-      if (source !== "more-options") return;
-      if (!(file instanceof TFile) || file.extension !== "md") return;
-      menu.addItem((item) =>
-        item
-          .setSection("zotlit")
-          .setTitle(m.command_set_citation_presentation_name())
-          .setIcon("quote")
-          .onClick(() => void setCitationPresentation(file, deps)),
-      );
-    }),
-  );
+/**
+ * The action on the note's own More options menu, which is where the note on
+ * screen is configured from; every other file menu leaves it to the palette.
+ */
+export function citationPresentationFileMenu(
+  deps: CitationPresentationDeps,
+): FileMenuSegment {
+  return (menu, { file, source }) => {
+    if (source !== "more-options" || file.extension !== "md") return;
+    menu.addItem((item) =>
+      item
+        .setSection(MENU_SECTION.action)
+        .setTitle(m.command_set_citation_presentation_name())
+        .setIcon("quote")
+        .onClick(() => void setCitationPresentation(file, deps)),
+    );
+  };
 }
 
 /**

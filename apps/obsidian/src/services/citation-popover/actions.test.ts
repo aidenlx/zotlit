@@ -50,6 +50,7 @@ function actions() {
     opened,
     hide,
     ...createCitationPopoverActions({
+      app: { workspace: { trigger: vi.fn() } } as never,
       open: (entry, pane) => opened.push([entry.citekey!, pane]),
       hide,
       switchProfile: vi.fn(),

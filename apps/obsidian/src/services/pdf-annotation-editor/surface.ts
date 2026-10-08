@@ -10,6 +10,7 @@ import { Menu } from "obsidian";
 import { buildColorMenu } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
+import { menuSections } from "@/services/menu-events";
 
 import type { PdfPoint } from "./geometry-edit";
 import type { PageBox, Point } from "./hit-test";
@@ -18,6 +19,8 @@ import type { OverlayPageView } from "./render";
 import { applyTransform, inverseTransform } from "./selection-capture";
 import { INK_WIDTHS, TEXT_FONT_SIZES } from "./tools";
 import type { InkWidth, TextFontSize } from "./tools";
+
+const SECTION = menuSections("zotlit:annotation-color-menu");
 
 /**
  * Whether a client point falls inside the view's own box. A view with no box at
@@ -100,13 +103,16 @@ export function addInkWidths(
   current: InkWidth,
   onPick: (width: InkWidth) => void,
 ): void {
-  menu.addSeparator();
   menu.addItem((item) =>
-    item.setTitle(m.pdf_toolbar_ink_width()).setIsLabel(true),
+    item
+      .setSection(SECTION["ink-width"])
+      .setTitle(m.pdf_toolbar_ink_width())
+      .setIsLabel(true),
   );
   for (const width of INK_WIDTHS) {
     menu.addItem((item) =>
       item
+        .setSection(SECTION["ink-width"])
         .setTitle(m.pdf_toolbar_ink_width_step({ width: String(width) }))
         .setChecked(width === current)
         .onClick(() => onPick(width)),
@@ -123,13 +129,16 @@ export function addTextFontSizes(
   current: TextFontSize,
   onPick: (size: TextFontSize) => void,
 ): void {
-  menu.addSeparator();
   menu.addItem((item) =>
-    item.setTitle(m.pdf_toolbar_text_font_size()).setIsLabel(true),
+    item
+      .setSection(SECTION["font-size"])
+      .setTitle(m.pdf_toolbar_text_font_size())
+      .setIsLabel(true),
   );
   for (const size of TEXT_FONT_SIZES) {
     menu.addItem((item) =>
       item
+        .setSection(SECTION["font-size"])
         .setTitle(m.pdf_toolbar_text_font_size_step({ size: String(size) }))
         .setChecked(size === current)
         .onClick(() => onPick(size)),
