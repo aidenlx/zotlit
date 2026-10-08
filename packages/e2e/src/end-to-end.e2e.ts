@@ -2612,6 +2612,55 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       byModified([sharedReading!]),
     );
 
+    // The Bases helpers through the shipped plugin: a regular expression and
+    // an element expression over the Creators, each against My Library.
+    const personalKeys = (
+      predicate: (item: (typeof ITEMS)[number]) => boolean,
+    ) => {
+      const keys = new Set(
+        ITEMS.filter(
+          (item) => item.libraryID === myLibrary!.libraryID && predicate(item),
+        ).map((item) => item.key),
+      );
+      return byModified([myLibrary!]).filter((key) => keys.has(key));
+    };
+    const fullName = (creator: (typeof ITEMS)[number]["creators"][number]) =>
+      creator.fieldMode === 1
+        ? creator.lastName
+        : `${creator.firstName} ${creator.lastName}`.trim();
+    for (const [filter, predicate] of [
+      [
+        "/duplicate/i.matches(title)",
+        (item: (typeof ITEMS)[number]) => /duplicate/i.test(item.title),
+      ],
+      [
+        'creators.filter(index > 0).map(value.split(" ")[0]).contains("Michael")',
+        (item: (typeof ITEMS)[number]) =>
+          item.creators
+            .slice(1)
+            .some((creator) => fullName(creator).split(" ")[0] === "Michael"),
+      ],
+    ] as const) {
+      const expected = personalKeys(predicate);
+      expect(expected.length).toBeGreaterThan(1);
+      const helpers = JSON.parse(
+        await cliCommand(vaultId, "zotlit:item-query", {
+          args: {
+            library: selectorOf(myLibrary!),
+            filter,
+            fields: "[]",
+            limit: "all",
+          },
+        }),
+      ) as ItemQueryReport;
+      expect(helpers).toMatchObject({
+        ok: true,
+        returnedCount: expected.length,
+        truncated: false,
+      });
+      expect(helpers.rows!.map((row) => row.indexedKey)).toEqual(expected);
+    }
+
     // The production command exports the same response and keeps an existing file.
     const exportPath = join(e2eFixture.root, "query-export.json");
     await using exportCleanup = new AsyncDisposableStack();
@@ -2743,6 +2792,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
     expect(answer.schema!.customFields).toEqual(expect.any(Array));
     expect(answer.schema!.functions.map(({ name }) => name)).toContain("today");
+    expect(answer.schema!.types).toContain("regexp");
+    expect(answer.schema!.methods).toContainEqual(
+      expect.objectContaining({
+        name: "filter",
+        on: "list",
+        scope: ["value", "index"],
+      }),
+    );
   });
 
   it("answers an invalid zotlit:item-query with the code, location, and hint", async () => {
@@ -3361,6 +3418,8 @@ interface ItemQuerySchemaReport {
     }[];
     customFields: { name: string; path: string; bareName: boolean }[];
     functions: { name: string }[];
+    methods: { name: string; on: string; scope?: string[] }[];
+    types: string[];
     defaults: object;
   };
 }
