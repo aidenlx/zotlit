@@ -3834,7 +3834,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const highlight = seededMark(highlightKey, { image: false });
         const highlightMarks = `[...${pdfView}.containerEl.querySelectorAll('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(highlightKey)}]')]`;
         /** The client box of the first run of `word` in page one's text layer. */
-        const wordRect = `const wordRect=(word)=>{const walker=document.createTreeWalker(${pdfView}.containerEl.querySelector('.page[data-page-number="1"] .textLayer'),NodeFilter.SHOW_TEXT);let node;while((node=walker.nextNode())){const at=node.data.indexOf(word);if(at>=0){const range=document.createRange();range.setStart(node,at);range.setEnd(node,at+word.length);return range.getBoundingClientRect();}}return null;};`;
+        const wordRect = `const wordRect=(word)=>{const layer=${pdfView}.containerEl.querySelector('.page[data-page-number="1"] .textLayer');if(!layer)return null;const walker=document.createTreeWalker(layer,NodeFilter.SHOW_TEXT);let node;while((node=walker.nextNode())){const at=node.data.indexOf(word);if(at>=0){const range=document.createRange();range.setStart(node,at);range.setEnd(node,at+word.length);return range.getBoundingClientRect();}}return null;};`;
         /** Whether the highlight's Annotation Card quotes text `test` accepts. */
         const cardQuotes = (test: string) =>
           `(function(){const card=app.workspace.getLeavesOfType('zotero-annotation-view').map(({view})=>view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(highlightKey)}]')).find(Boolean);if(!card)return 'no card';return String([...card.querySelectorAll('*')].some((node)=>node.childElementCount===0&&(${test})(node.textContent)));})()`;
@@ -3902,6 +3902,15 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             from?: string;
           },
         ): Promise<string> {
+          // Annotation overlays can appear before PDF.js finishes the text layer.
+          // Wait for the word we will hit before sending the gesture once.
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(function(){${wordRect}const box=wordRect(${JSON.stringify(word)});return String(!!box&&box.width>0&&box.height>0);})()`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
           const pressed = await obJson<{ grip: string; to: number[] }>(
             vaultId!,
             `(function(){${FIRE}${wordRect}const box=wordRect(${JSON.stringify(word)});const x=box.left+box.width*${at},y=box.top+box.height/2;const node=fire('pointerdown',${handle.x},${handle.y});const container=${pdfView}.containerEl;fire('pointermove',(${handle.x}+x)/2,(${handle.y}+y)/2,container);fire('pointermove',x,y,container);window.__ztTo=[x,y];return JSON.stringify({grip:node.dataset.ztGrip,to:[x,y]});})()`,
