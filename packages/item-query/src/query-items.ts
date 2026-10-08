@@ -4,20 +4,12 @@ import { Effect } from "effect";
 import { formatIndexedKey } from "@zotlit/db";
 import {
   HYDRATE_CHUNK_SIZE,
-  readCollectionPaths,
-  readFieldVocabulary,
-  readHydrateChunk,
   readLibraryRowCount,
   readScanPage,
   readUniverseRows,
   SCAN_PAGE_SIZE,
 } from "@zotlit/db/item-query";
 import type {
-  CollectionPaths,
-  FieldVocabulary,
-  HydratedItem,
-  HydrateFields,
-  HydrateRelation,
   ItemQueryDatabase,
   ItemQueryDatabaseError,
   ItemQueryLayoutError,
@@ -26,14 +18,12 @@ import type {
 
 import { planCandidates, readCandidates } from "./candidate-plan";
 import { compareStrings } from "./collation";
-import { ItemQueryError } from "./error";
-import type { FieldNeeds, QueryItem, SortKey } from "./fields";
+import type { ItemQueryError } from "./error";
+import type { SortKey } from "./fields";
 import { matches as isMatch } from "./filter-evaluate";
-import { hasBareForm } from "./filter-plan";
-import type { FilterPlan } from "./filter-plan";
+import { openHydration } from "./hydration";
 import { allMatches, firstMatches } from "./matches";
 import { readPath } from "./projection";
-import type { PlannedPath } from "./projection";
 import { readQueryClock } from "./query-clock";
 import { planRequest } from "./request";
 import type {
@@ -118,68 +108,10 @@ export function consumeQueryItems<A, E, R>(
       HYDRATE_CHUNK_SIZE,
     );
 
-    const pathNeeds = paths.map((path) => path.needs);
-    // The scan pass loads what the filter and the sort read.
-    const scanNeeds = [
-      ...(filter?.needs ?? []),
-      ...sorts.map((sort) => sort.needs),
-    ];
-    const vocabulary = [...pathNeeds, ...scanNeeds].some(needsHydration)
-      ? yield* readFieldVocabulary()
-      : null;
-    if (vocabulary) {
-      if (filter) yield* checkFilterCustomFields(filter, vocabulary);
-      yield* checkCustomFields(paths, vocabulary);
-    }
-    // A Collection path belongs to one Library: a leaf of the filter reads
-    // the paths of the Library it runs in. A Collection ID names one
-    // Collection of the copy, so hydration reads the paths of them all.
-    const pathsOf = new Map<TargetLibrary, CollectionPaths>();
-    if (
-      [...pathNeeds, ...scanNeeds].some((needs) =>
-        needs.relations?.includes("collections"),
-      )
-    ) {
-      for (const library of libraries) {
-        pathsOf.set(library, yield* readCollectionPaths(library));
-      }
-    }
-    const collectionPaths: CollectionPaths | undefined =
-      pathsOf.size > 0
-        ? new Map([...pathsOf.values()].flatMap((paths) => [...paths]))
-        : undefined;
-    const itemOf = (
-      scan: ScanRow,
-      hydrated: ReadonlyMap<number, HydratedItem>,
-    ): QueryItem => ({
-      scan,
-      hydrated: hydrated.get(scan.itemID) ?? NOTHING_HYDRATED,
-      customFieldNames: vocabulary?.customFieldNames ?? [],
-    });
-
-    /**
-     * Load what one pass needs for the Items of a chunk. A pass that reads
-     * only scan rows runs no statement.
-     */
-    const hydrate = function* (
-      needs: ReturnType<typeof hydrateFields> | null,
-      itemIDs: readonly number[],
-    ) {
-      if (!vocabulary || !needs) return NOTHING_HYDRATED_CHUNK;
-      return yield* readHydrateChunk({
-        vocabulary,
-        itemIDs,
-        ...needs,
-        collectionPaths,
-      });
-    };
+    const hydration = yield* openHydration({ filter, paths, sorts }, libraries);
 
     // The scan pass: every Item is hydrated with the filter and sort fields
     // only, and the query keeps the scan row and the sort keys of a match.
-    const scanFields =
-      vocabulary && scanNeeds.some(needsHydration)
-        ? hydrateFields(scanNeeds, vocabulary)
-        : null;
     const compare = byKeysThenKey(sorts, libraries);
     const matches =
       limit === null
@@ -190,17 +122,13 @@ export function consumeQueryItems<A, E, R>(
     /** Hydrate one chunk of a page and keep its matches. */
     const takeChunk = (library: number, chunk: readonly ScanRow[]) =>
       Effect.gen(function* () {
-        const hydrated = yield* hydrate(
-          scanFields,
-          chunk.map((row) => row.itemID),
-        );
+        const items = yield* hydration.scan.load(chunk);
         yield* Effect.sync(() => {
           const matching: Match[] = [];
-          for (const scan of chunk) {
-            const item = itemOf(scan, hydrated);
+          for (const item of items) {
             if (filter && !isMatch(filter.root, item, clock)) continue;
             const keys = sorts.map((sort) => sort.key(item, clock));
-            matching.push({ scan, keys, library });
+            matching.push({ scan: item.scan, keys, library });
           }
           matches.add(matching);
         });
@@ -208,7 +136,7 @@ export function consumeQueryItems<A, E, R>(
     /** Hydrate one page of the query universe and keep its matches. */
     const takePage = (library: number, page: readonly ScanRow[]) =>
       Effect.gen(function* () {
-        const chunkSize = scanFields ? hydrateChunkSize : scanPageSize;
+        const chunkSize = hydration.scan.plan ? hydrateChunkSize : scanPageSize;
         for (let start = 0; start < page.length; start += chunkSize) {
           yield* takeChunk(library, page.slice(start, start + chunkSize));
         }
@@ -234,10 +162,7 @@ export function consumeQueryItems<A, E, R>(
       const { libraryID } = library;
       const candidatePlan =
         filter && !tuning.forceScan
-          ? planCandidates(filter.root, {
-              vocabulary,
-              collectionPaths: pathsOf.get(library),
-            })
+          ? planCandidates(filter.root, hydration.candidateSources(library))
           : null;
       const candidateCap = candidatePlan
         ? Math.floor((yield* readLibraryRowCount(libraryID)) * tuning.capRatio)
@@ -285,10 +210,6 @@ export function consumeQueryItems<A, E, R>(
     const returned = truncated ? ordered.slice(0, limit) : ordered;
 
     // The projection pass: only the returned rows are hydrated.
-    const fields =
-      vocabulary && pathNeeds.some(needsHydration)
-        ? hydrateFields(pathNeeds, vocabulary)
-        : null;
     const consumer = yield* begin({
       query,
       returnedCount: returned.length,
@@ -296,14 +217,13 @@ export function consumeQueryItems<A, E, R>(
     });
     for (let start = 0; start < returned.length; start += hydrateChunkSize) {
       const chunk = returned.slice(start, start + hydrateChunkSize);
-      const hydrated = yield* hydrate(
-        fields,
-        chunk.map((row) => row.scan.itemID),
+      const items = yield* hydration.projection.load(
+        chunk.map((row) => row.scan),
       );
       const rows = yield* Effect.sync(() => {
         const rows: QueryRow[] = [];
-        for (const { library, scan } of chunk) {
-          const item = itemOf(scan, hydrated);
+        for (const [index, { library, scan }] of chunk.entries()) {
+          const item = items[index]!;
           rows.push({
             indexedKey: formatIndexedKey(scan.key, libraries[library]!.groupID),
             values: Object.fromEntries(
@@ -322,94 +242,6 @@ export function consumeQueryItems<A, E, R>(
 /** A tuned size as a whole number from one to the upper limit of its reader. */
 function sizeWithin(size: number, limit: number): number {
   return Math.max(1, Math.min(Math.floor(size), limit));
-}
-
-const NOTHING_HYDRATED: HydratedItem = { fields: new Map(), custom: new Map() };
-const NOTHING_HYDRATED_CHUNK: ReadonlyMap<number, HydratedItem> = new Map();
-
-/** A custom field that the source does not define fails the query. */
-function checkCustomFields(
-  paths: readonly PlannedPath[],
-  vocabulary: FieldVocabulary,
-): Effect.Effect<void, ItemQueryError> {
-  const known = new Set(vocabulary.customFieldNames);
-  const index = paths.findIndex(
-    (path) => path.customField !== null && !known.has(path.customField),
-  );
-  if (index === -1) return Effect.void;
-  const names = vocabulary.customFieldNames;
-  return Effect.fail(
-    new ItemQueryError({
-      code: "unknown-field",
-      location: { argument: "fields", index },
-      message: `The Zotero source has no custom field named ${JSON.stringify(paths[index]!.customField)}.`,
-      hint:
-        names.length === 0
-          ? "The Zotero source has no custom fields."
-          : `Use the exact name of a custom field: ${names.map((name) => JSON.stringify(name)).join(", ")}.`,
-    }),
-  );
-}
-
-/**
- * A custom field that the source does not define fails the query. A bare name
- * outside the built-in names is a custom field of the source or an unknown
- * field.
- */
-function checkFilterCustomFields(
-  filter: FilterPlan,
-  vocabulary: FieldVocabulary,
-): Effect.Effect<void, ItemQueryError> {
-  const names = vocabulary.customFieldNames;
-  const known = new Set(names);
-  const missing = filter.customFields.find((field) => !known.has(field.name));
-  if (!missing) return Effect.void;
-  const { from, to, name, bare } = missing;
-  const bareNames = names.filter(hasBareForm);
-  return Effect.fail(
-    new ItemQueryError({
-      code: "unknown-field",
-      location: { argument: "filter", span: { from, to } },
-      message: bare
-        ? `${JSON.stringify(name)} is not a field of Item Query.`
-        : `The Zotero source has no custom field named ${JSON.stringify(name)}.`,
-      hint: bare
-        ? `Use a field of the Item Query Schema; field names are case-sensitive.${
-            bareNames.length === 0
-              ? ""
-              : ` The custom fields with a bare name: ${bareNames.join(", ")}.`
-          } Reach every custom field with custom["exact name"].`
-        : names.length === 0
-          ? "The Zotero source has no custom fields."
-          : `Use the exact name of a custom field: ${names.map((entry) => JSON.stringify(entry)).join(", ")}.`,
-    }),
-  );
-}
-
-function needsHydration(needs: FieldNeeds): boolean {
-  return Boolean(
-    needs.builtIn?.length || needs.custom?.length || needs.relations?.length,
-  );
-}
-
-function hydrateFields(
-  allNeeds: readonly FieldNeeds[],
-  vocabulary: FieldVocabulary,
-): { fields: HydrateFields; relations: HydrateRelation[] } {
-  const builtIn = new Set<string>();
-  const custom = new Set<string>();
-  const relations = new Set<HydrateRelation>();
-  for (const needs of allNeeds) {
-    for (const name of needs.builtIn ?? []) builtIn.add(name);
-    const names =
-      needs.custom === "all" ? vocabulary.customFieldNames : needs.custom;
-    for (const name of names ?? []) custom.add(name);
-    for (const relation of needs.relations ?? []) relations.add(relation);
-  }
-  return {
-    fields: { builtIn: [...builtIn], custom: [...custom] },
-    relations: [...relations],
-  };
 }
 
 /**
