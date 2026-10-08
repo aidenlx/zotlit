@@ -5728,12 +5728,18 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               rects: [[100, 560 - n * 30, 300, 580 - n * 30]],
             },
           }));
-          const made = await obJson<string[]>(
-            vaultId!,
-            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const keys=[];for(const draft of ${JSON.stringify(drafts)}){const outcome=await repository.createAnnotation(${JSON.stringify(attachment.key)},draft);keys.push(outcome.annotationKey);}return JSON.stringify(keys);})()`,
-          );
           try {
-            expect(made).toHaveLength(2);
+            const outcomes = await obJson<
+              { kind: string; annotationKey?: string }[]
+            >(
+              vaultId!,
+              `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const outcomes=[];for(const draft of ${JSON.stringify(drafts)})outcomes.push(await repository.createAnnotation(${JSON.stringify(attachment.key)},draft));return JSON.stringify(outcomes);})()`,
+            );
+            expect(outcomes).toEqual([
+              { kind: "created", annotationKey: expect.any(String) },
+              { kind: "created", annotationKey: expect.any(String) },
+            ]);
+            const made = outcomes.map(({ annotationKey }) => annotationKey!);
             const [first, second] = made as [string, string];
             /** A card's rendered comment, scrolled into the list's view. */
             const comment = (key: string) =>
@@ -6468,13 +6474,16 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const color = "#a28ae5";
           if (pending === "in-flight write") {
             await installClosingPaneProbe(vaultId!, createdKey, color);
-            expect(
-              await obEvalUntil(
-                vaultId!,
-                "String(window.__zotlitWriteOutcomeProbe?.reached)",
-                { expected: "true" },
-              ),
-            ).toBe(true);
+            await expect
+              .poll(
+                () =>
+                  obJson(
+                    vaultId!,
+                    `JSON.stringify({reached:window.__zotlitWriteOutcomeProbe?.reached,outcome:window.__zotlitWriteOutcomeProbe?.outcome})`,
+                  ),
+                { timeout: 10_000 },
+              )
+              .toEqual({ reached: true, outcome: null });
           }
           const stored = await annotationState(api, serverID, createdKey);
           if (pending === "in-flight write") {
@@ -6591,25 +6600,22 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         );
         try {
           await installClosingPaneProbe(vaultId!, createdKey, committed);
-          expect(
-            await obEvalUntil(
+          const state = () =>
+            obJson(
               vaultId!,
-              "String(window.__zotlitWriteOutcomeProbe?.reached)",
-              { expected: "true" },
-            ),
-          ).toBe(true);
+              `JSON.stringify({reached:window.__zotlitWriteOutcomeProbe?.reached,outcome:window.__zotlitWriteOutcomeProbe?.outcome})`,
+            );
+          await expect
+            .poll(state, { timeout: 10_000 })
+            .toEqual({ reached: true, outcome: null });
 
           await obEval(
             vaultId!,
             "app.workspace.getLeavesOfType('pdf').forEach(leaf=>leaf.detach());app.workspace.detachLeavesOfType('zotero-annotation-view');window.__zotlitWriteOutcomeProbe.release();true",
           );
-          expect(
-            await obEvalUntil(
-              vaultId!,
-              "String(window.__zotlitWriteOutcomeProbe?.outcome?.kind)",
-              { expected: "idle" },
-            ),
-          ).toBe(true);
+          await expect
+            .poll(state, { timeout: 10_000 })
+            .toMatchObject({ outcome: { kind: "idle" } });
           expect(await writeOutcomeCalls(vaultId!)).toBe(1);
           expect(await annotationColor(api, serverID, createdKey)).toBe(
             committed,
