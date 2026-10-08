@@ -93,6 +93,44 @@ describe("ManagedBinaryService with a bare .wasm pin", () => {
     expect(service.getStatus()).toEqual({
       kind: "installed",
       version: SEGMENTER.pin.version,
+      binary: { directory: "chinese-segmenter", name: CACHED },
+    });
+  });
+
+  it("reports no readable binary while a first install runs", async () => {
+    const device = memoryDevice();
+    await using service = open(SEGMENTER, device);
+    await service.ready;
+
+    const done = service.install();
+
+    expect(service.getStatus()).toEqual({
+      kind: "installing",
+      done,
+      binary: null,
+    });
+    await done;
+  });
+
+  it("keeps the installed binary readable while a reinstall runs", async () => {
+    const device = memoryDevice();
+    await using service = open(SEGMENTER, device);
+    await service.ready;
+    await service.install();
+    const installed = { directory: "chinese-segmenter", name: CACHED };
+
+    const done = service.install();
+
+    expect(service.getStatus()).toEqual({
+      kind: "installing",
+      done,
+      binary: installed,
+    });
+    await done;
+    expect(service.getStatus()).toEqual({
+      kind: "installed",
+      version: SEGMENTER.pin.version,
+      binary: installed,
     });
   });
 
@@ -151,6 +189,7 @@ describe("ManagedBinaryService with a bare .wasm pin", () => {
     expect(service.getStatus()).toEqual({
       kind: "installed",
       version: SEGMENTER.pin.version,
+      binary: { directory: "chinese-segmenter", name: CACHED },
     });
   });
 
