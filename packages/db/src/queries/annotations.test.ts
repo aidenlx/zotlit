@@ -6,7 +6,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { NodeDatabaseClient } from "@/client/node";
 import { USER_LIBRARY_ID } from "@/lib/constants";
 import { parseAnnotationPosition } from "@/lib/zt-annot-pos";
-import { countStatements, createFixtureSchema } from "@/test-utils";
+import {
+  countCompiles,
+  countStatements,
+  createFixtureSchema,
+} from "@/test-utils";
 
 import { getAnnotationsByKey, getAnnotationsByParent } from "./annotations";
 
@@ -165,8 +169,9 @@ describe("getAnnotationsByKey", () => {
     ).toEqual(["V78IHLM9", "JDJKX3N6", "V78IHLM9"]);
   });
 
-  it("runs the same statements for one key as for many", () => {
+  it("runs the same cached statements for one key as for many", () => {
     const statements = countStatements(sqlite);
+    const compiles = countCompiles(sqlite);
     const cost = (keys: string[]) => {
       const before = statements();
       getAnnotationsByKey(db, keys, USER_LIBRARY_ID);
@@ -176,6 +181,9 @@ describe("getAnnotationsByKey", () => {
     expect(
       cost(["JDJKX3N6", "V78IHLM9", "DBKE89L9", "463QFRLZ", "MISSING"]),
     ).toBe(cost(["JDJKX3N6"]));
+    const compiled = compiles();
+    cost(["JDJKX3N6", "V78IHLM9", "DBKE89L9", "463QFRLZ", "MISSING"]);
+    expect(compiles()).toBe(compiled);
   });
 });
 

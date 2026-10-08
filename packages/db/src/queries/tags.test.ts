@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { NodeDatabaseClient } from "@/client/node";
 import { tagTypeToName } from "@/lib/zt-tag";
-import { countStatements, createFixtureSchema } from "@/test-utils";
+import {
+  countCompiles,
+  countStatements,
+  createFixtureSchema,
+} from "@/test-utils";
 
 import {
   getAllTagNames,
@@ -104,8 +108,9 @@ describe("getTagsByItemIDs", () => {
     ]);
   });
 
-  it("runs the same statements for one id as for many", () => {
+  it("runs the same cached statements for one id as for many", () => {
     const statements = countStatements(sqlite);
+    const compiles = countCompiles(sqlite);
     const cost = (itemIDs: number[]) => {
       const before = statements();
       getTagsByItemIDs(db, itemIDs);
@@ -114,6 +119,9 @@ describe("getTagsByItemIDs", () => {
     cost([4]);
     // The many-id read holds more items and more distinct tags than item 4.
     expect(cost([1, 2, 3, 4, 999, 2])).toBe(cost([4]));
+    const compiled = compiles();
+    cost([1, 2, 3, 4, 999, 2]);
+    expect(compiles()).toBe(compiled);
   });
 });
 

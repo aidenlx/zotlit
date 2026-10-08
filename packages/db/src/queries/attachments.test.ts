@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { NodeDatabaseClient } from "@/client/node";
 import { USER_LIBRARY_ID } from "@/lib/constants";
-import { countStatements, createFixtureSchema } from "@/test-utils";
+import {
+  countCompiles,
+  countStatements,
+  createFixtureSchema,
+} from "@/test-utils";
 
 import {
   getAttachmentPage,
@@ -92,8 +96,9 @@ describe("getAttachmentsByParents", () => {
     ).toEqual(["ATTB1", "ATTA1", "ATTA2", "ATTB1"]);
   });
 
-  it("runs the same statements for one parent as for many", () => {
+  it("runs the same cached statements for one parent as for many", () => {
     const statements = countStatements(sqlite);
+    const compiles = countCompiles(sqlite);
     const cost = (parentItemIDs: number[]) => {
       const before = statements();
       getAttachmentsByParents(db, parentItemIDs);
@@ -102,6 +107,9 @@ describe("getAttachmentsByParents", () => {
     cost([200]);
     // Every parent is in the user library, so each read resolves one group.
     expect(cost([100, 200, 400, 999, 100])).toBe(cost([200]));
+    const compiled = compiles();
+    cost([100, 200, 400, 999, 100]);
+    expect(compiles()).toBe(compiled);
   });
 });
 
@@ -139,8 +147,9 @@ describe("getAttachmentsByKey", () => {
     expect(getAttachmentsByKey(db, USER_LIBRARY_ID, [])).toEqual([]);
   });
 
-  it("runs the same statements for one key as for many", () => {
+  it("runs the same cached statements for one key as for many", () => {
     const statements = countStatements(sqlite);
+    const compiles = countCompiles(sqlite);
     const cost = (keys: string[]) => {
       const before = statements();
       getAttachmentsByKey(db, USER_LIBRARY_ID, keys);
@@ -150,6 +159,9 @@ describe("getAttachmentsByKey", () => {
     expect(cost(["ATTA1", "ATTA2", "ATTB1", "URLATTCH", "MISSING"])).toBe(
       cost(["ATTA1"]),
     );
+    const compiled = compiles();
+    cost(["ATTA1", "ATTA2", "ATTB1", "URLATTCH", "MISSING"]);
+    expect(compiles()).toBe(compiled);
   });
 });
 

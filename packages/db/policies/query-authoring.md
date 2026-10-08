@@ -4,6 +4,6 @@
 - Wrap with `defineQuery(...)` from `src/queries/_shared.ts`; prefer `.prepared` (cached). See `defineQuery` JSDoc for cached vs one-shot variants.
 - Add an `…Async` twin only when a web consumer actually needs it — not for parity.
 - Every read runs in the database worker on synchronous `node:sqlite` ([ADR 0068](../../../docs/adr/0068-the-zotero-database-runs-in-a-web-worker-behind-zoteroreads.md)). Design for the statements one ZoteroReads slice or operation runs: a fixed count, whatever the number of ids.
-- **Batch by default.** Read many ids or keys through `rowsByID` in `src/queries/_shared.ts`. A function that reads one id calls a `.prepared` query directly.
-- Prove each multi-id read with `countStatements` from `@zotlit/db/test-utils`: many ids run the same statements as one.
+- **Batch by default, in fixed slots.** Read many ids or keys through `rowsByID` in `src/queries/_shared.ts`, with a `.prepared` query whose `in` list is `idSlots(placeholder)`: one cached statement binds `BATCH_SLOTS` ids, and unused slots bind `null`. A function that reads one id calls a `.prepared` query directly.
+- Prove each multi-id read with `countStatements` and `countCompiles` from `@zotlit/db/test-utils`: many ids run the same statements as one, and a warm read compiles none.
 - `.prepared(db)` is cache-keyed on `(query, db)` — call inline, don't hoist.

@@ -144,7 +144,7 @@ function sliced<I, O>(
 /**
  * Live items for Indexed Keys, keyed by Indexed Key in request order. Each
  * Library the keys span resolves once and reads its items through
- * `getItemsByKey`: one statement per `IN_BATCH_SIZE` distinct keys.
+ * `getItemsByKey`: one cached statement per `BATCH_SLOTS` distinct keys.
  */
 function itemsByIndexedKeys(
   client: NodeDatabaseClient,

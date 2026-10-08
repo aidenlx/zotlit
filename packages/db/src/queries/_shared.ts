@@ -340,33 +340,46 @@ export type QueryRow<Q> =
     : never;
 
 /**
- * Most values one dynamic `IN (...)` binds. Each value is one bound
- * parameter, and SQLite allows 32,766 in one statement.
+ * Ids one fixed-slot batch query binds, as placeholders `id0` … `id255`. Far
+ * under SQLite's 32,766 bound parameters; past 256, a larger statement reads
+ * 40,000 ids no faster.
  */
-export const IN_BATCH_SIZE = 10_000;
+export const BATCH_SLOTS = 256;
+
+/** Placeholder values of a fixed-slot batch query; an unused slot is `null`. */
+export type SlotParams<K> = Record<`id${number}`, K | null>;
 
 /**
- * Read the rows for `ids` in batched statements and return them in request
- * order: the rows of `ids[0]`, then those of `ids[1]`, and so on. An id with no
- * row adds nothing; a repeated id repeats its rows; an id keeps its rows in the
- * order the query returns them. One distinct id runs `one`, a cached
- * single-id query. More run `many`, a dynamic `IN` query, once per
- * {@link IN_BATCH_SIZE} distinct ids.
+ * The `in` list of a fixed-slot batch query: {@link BATCH_SLOTS} placeholders.
+ * The SQL never changes with the number of ids, so `.prepared` caches one
+ * statement for every batch.
+ */
+export function idSlots(
+  placeholder: (name: `id${number}`) => Placeholder,
+): Placeholder[] {
+  return Array.from({ length: BATCH_SLOTS }, (_, i) => placeholder(`id${i}`));
+}
+
+/**
+ * Read the rows for `ids` and return them in request order: the rows of
+ * `ids[0]`, then those of `ids[1]`, and so on. An id with no row adds
+ * nothing; a repeated id repeats its rows; an id keeps its rows in the order
+ * the query returns them. `batch` runs a cached fixed-slot query (see
+ * {@link idSlots}) once per {@link BATCH_SLOTS} distinct ids; unused slots
+ * bind `null`, which matches no row.
  */
 export function rowsByID<K, R>(
   ids: readonly K[],
   read: {
-    one: (id: K) => readonly R[];
-    many: (ids: K[]) => readonly R[];
+    batch: (slots: SlotParams<K>) => readonly R[];
     idOf: (row: R) => K;
   },
 ): R[] {
-  const distinct = [...new Set(ids)];
-  if (distinct.length === 0) return [];
-  const rows =
-    distinct.length === 1
-      ? read.one(distinct[0]!)
-      : chunk(distinct, IN_BATCH_SIZE).flatMap((batch) => read.many(batch));
+  const rows = chunk([...new Set(ids)], BATCH_SLOTS).flatMap((batch) => {
+    const slots: SlotParams<K> = {};
+    for (let i = 0; i < BATCH_SLOTS; i++) slots[`id${i}`] = batch[i] ?? null;
+    return read.batch(slots);
+  });
   const byID = Map.groupBy(rows, read.idOf);
   return ids.flatMap((id) => byID.get(id) ?? []);
 }
