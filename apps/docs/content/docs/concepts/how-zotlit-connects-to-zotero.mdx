@@ -78,7 +78,7 @@ The database checkpoint that writes those changes into the main file works indep
 
 Live updates require two things enabled:
 
-- **In Obsidian:** the ZotLit server (a local HTTP listener on port 9091 by default).
+- **In Obsidian:** the ZotLit server (a local HTTP listener on port 9091 by default), with <UiLabel name={m.settings_live_updates_enabled_name()} /> on.
 - **In Zotero:** the Companion's notify preference, pointed at the same address.
 
 Both sides carry a source identifier and a protocol version. The server discards requests from unrecognized Zotero installs (source mismatch) and rejects requests with an incompatible protocol version.

@@ -48,7 +48,7 @@ Reading needs no permission. Editing needs four things:
 - Zotero 10 or later. With Zotero 9, the PDF opens and shows its annotations, but changes cannot be saved from Obsidian, and ZotLit tells you to update Zotero.
 - Zotero is running on the same computer.
 - In Zotero, **Allow other applications on this computer to communicate with Zotero** is on, under Settings → Advanced. ZotLit tells you when it is off.
-- ZotLit has your permission, given once. Select <UiLabel name={m.capability_enable_editing()} /> in the annotation view, or <UiLabel name={m.settings_zotero_editing_enable()} /> on the <UiLabel name={m.settings_zotero_editing_name()} /> row under <SettingsPath page={m.settings_page_zotero()} setting={m.settings_zotero_connection_heading()} />. When Zotero asks, choose **Always Allow**. **Allow** alone leaves editing off.
+- ZotLit has your permission, given once. Select <UiLabel name={m.capability_enable_editing()} /> in the annotation view, or <UiLabel name={m.settings_zotero_editing_enable()} /> on the <UiLabel name={m.settings_zotero_editing_name()} /> row under <SettingsPath page={m.settings_page_zotero()} />. When Zotero asks, choose **Always Allow**. **Allow** alone leaves editing off.
 
 When an annotation changed in Zotero while you were editing it in Obsidian, the card shows <UiLabel name={m.annot_view_conflict_title()} /> with both versions, and you choose which one to keep. Annotations that Zotero will not let you change are locked in Obsidian too. Examples are annotations Zotero imported from the PDF file itself, and in a group library, annotations another member made. A lock icon on the card gives the reason.
 
