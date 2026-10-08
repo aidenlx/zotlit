@@ -894,6 +894,7 @@ export class AnnotationRepository extends Service<void> {
     if (candidate && this.#canPublish(attachmentKey, candidate, queryKey)) {
       if (candidate.source.kind === "zotero-db") {
         this.#adoptDatabaseSource(attachmentKey, candidate.source);
+        this.#coverDatabaseDeletions(attachmentKey, candidate);
       } else if (
         coversConfirmations(candidate, this.#confirmedWrites.get(attachmentKey))
       ) {
@@ -4065,7 +4066,8 @@ export class AnnotationRepository extends Service<void> {
       )
         return true;
       const generation = this.#databaseGeneration;
-      const { source } = await this.#readFromDatabase(attachmentKey);
+      const snapshot = await this.#readFromDatabase(attachmentKey);
+      const { source } = snapshot;
       // A refresh can replace the snapshot while verification acquires it.
       // Verify the current generation before deciding whether identity changed.
       if (generation !== this.#databaseGeneration) continue;
@@ -4075,10 +4077,36 @@ export class AnnotationRepository extends Service<void> {
         this.#localApi.demandSource()?.serverID === expected.serverID;
       if (source.kind === "zotero-db") {
         this.#adoptDatabaseSource(attachmentKey, source);
+        this.#coverDatabaseDeletions(attachmentKey, snapshot);
       }
       return verified;
     }
     return false;
+  }
+
+  /** A newer database snapshot can prove a confirmed record was deleted. */
+  #coverDatabaseDeletions(
+    attachmentKey: string,
+    snapshot: AnnotationList,
+  ): void {
+    if (snapshot.source.kind !== "zotero-db") return;
+    const revision = snapshot.source.libraryRevision;
+    const confirmations = this.#confirmedWrites.get(attachmentKey);
+    if (revision === null || !confirmations) return;
+    const keys = new Set(snapshot.annotations.map((record) => record.key));
+    this.#confirmedWrites.set(
+      attachmentKey,
+      confirmations.map((confirmation) => {
+        if (
+          confirmation.kind === "deleted" ||
+          confirmation.record.version === null ||
+          revision <= confirmation.record.version ||
+          keys.has(confirmation.record.key)
+        )
+          return confirmation;
+        return { kind: "deleted", annotationKey: confirmation.record.key };
+      }),
+    );
   }
 
   #canPublish(

@@ -3298,6 +3298,42 @@ it.each([false, true])(
   },
 );
 
+it.each([false, true])(
+  "accepts a live list after a newer database snapshot covers an externally deleted create (API lost: %s)",
+  async (lost) => {
+    await using stack = new AsyncDisposableStack();
+    let apiLost = false;
+    const { repository, client, dbEvents, serverEvents } = await writable(
+      stack,
+      {
+        root: () => (apiLost ? unreachable() : rootOk()),
+        write: () => {
+          apiLost = lost;
+          return createAccepted(MADE);
+        },
+      },
+    );
+    expect(await repository.createAnnotation("RGRPDF24", DRAFT)).toEqual({
+      kind: "created",
+      annotationKey: MADE.key,
+    });
+    client.$client.exec(
+      "update libraries set clientVersion = 43 where libraryID = 1",
+    );
+    dbEvents.emit("changed");
+    expect((await repository.read("RGRPDF24"))?.source.kind).toBe(
+      lost ? "zotero-db" : "zotero-local-api",
+    );
+    apiLost = false;
+    const restored = nextChange(repository);
+    freshnessSignal(serverEvents);
+    await restored;
+    expect((await repository.read("RGRPDF24"))?.source.kind).toBe(
+      "zotero-local-api",
+    );
+  },
+);
+
 it("publishes the created record without rereading the collection", async () => {
   await using stack = new AsyncDisposableStack();
   const { repository, requests } = await writable(
