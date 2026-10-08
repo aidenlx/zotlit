@@ -1,6 +1,6 @@
 // The worker adapter's lifetime: degraded on a worker death, a new worker on Refresh, termination on scope end.
 import { Deferred, Effect, Layer, Option, Queue, Stream } from "effect";
-import type { Scope } from "effect";
+import type { Duration, Scope } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it, vi } from "vitest";
 
@@ -21,8 +21,10 @@ import type { WorkerConnection } from "./worker-host";
 /**
  * Stand-in workers: each connection serves the handler layer in process over
  * a fresh `:memory:` database whose library 1 reports the worker's number.
- * `kill(n)` raises worker #n's error event; `ended(n)` tells whether its
- * scope (the real adapter terminates the worker there) has closed.
+ * `kill(n)` raises worker #n's error event; `cut(n, how)` makes its
+ * `Changes` feed fail or end, as a transport gone with no error event.
+ * `ended(n)` tells whether its scope (the real adapter terminates the worker
+ * there) has closed; `abandoned(n)` whether its close wait was skipped.
  */
 function fakeWorkers(
   options: {
@@ -35,15 +37,28 @@ function fakeWorkers(
      * `Infinity` is a worker stuck in a loop.
      */
     unanswered?: (n: number) => number;
+    /**
+     * How long worker #n's scope waits for its graceful close, as a worker
+     * that never confirms it; an abandoned worker skips the wait.
+     */
+    closeWait?: (n: number) => Duration.Input | undefined;
   } = {},
 ) {
   let spawned = 0;
   const deaths = new Map<number, Deferred.Deferred<DbUnavailable>>();
+  const cuts = new Map<number, Deferred.Deferred<void, Error>>();
   const ended = new Set<number>();
+  const abandoned = new Set<number>();
   const connect: Effect.Effect<WorkerConnection, DbUnavailable, Scope.Scope> =
     Effect.gen(function* () {
       const n = ++spawned;
-      yield* Effect.addFinalizer(() => Effect.sync(() => ended.add(n)));
+      yield* Effect.addFinalizer(() => {
+        const wait = abandoned.has(n) ? undefined : options.closeWait?.(n);
+        return Effect.andThen(
+          wait === undefined ? Effect.void : Effect.sleep(wait),
+          Effect.sync(() => ended.add(n)),
+        );
+      });
       if (options.failStart?.(n)) {
         return yield* new DbUnavailable({
           message: `worker #${n} did not start`,
@@ -78,9 +93,16 @@ function fakeWorkers(
               )) as typeof served.Changes,
           }
         : served;
+      const cut = yield* Deferred.make<void, Error>();
+      cuts.set(n, cut);
       let missed = 0;
       const client: ZoteroReadsClient = {
         ...answering,
+        Changes: ((...args: Parameters<typeof answering.Changes>) =>
+          Stream.interruptWhen(
+            answering.Changes(...args) as Stream.Stream<ChangeEvent, unknown>,
+            Deferred.await(cut),
+          )) as typeof answering.Changes,
         Ping: ((...args: Parameters<typeof answering.Ping>) =>
           missed++ < (options.unanswered?.(n) ?? 0)
             ? Effect.never
@@ -88,11 +110,20 @@ function fakeWorkers(
       };
       const died = yield* Deferred.make<DbUnavailable>();
       deaths.set(n, died);
-      return { client, died: Deferred.await(died) };
+      return {
+        client,
+        died: Deferred.await(died),
+        abandon: Effect.sync(() => abandoned.add(n)),
+      };
     });
   return {
     connect,
     spawned: () => spawned,
+    cut: (n: number, how: "fails" | "ends") =>
+      how === "fails"
+        ? Deferred.fail(cuts.get(n)!, new Error(`worker #${n} port closed`))
+        : Deferred.succeed(cuts.get(n)!, undefined),
+    abandoned: (n: number) => abandoned.has(n),
     kill: (n: number) =>
       Deferred.succeed(
         deaths.get(n)!,
@@ -258,7 +289,14 @@ describe("ZoteroReads worker adapter", () => {
         const read = yield* Effect.flip(reads.Libraries({}));
         const ended = workers.ended(1);
         yield* reads.Refresh();
-        return { before, after, read, ended, seen: yield* workerSeen(reads) };
+        return {
+          before,
+          after,
+          read,
+          ended,
+          abandoned: workers.abandoned(1),
+          seen: yield* workerSeen(reads),
+        };
       }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
     );
     expect(result.before).toMatchObject({ _tag: "state", state: "ready" });
@@ -272,8 +310,59 @@ describe("ZoteroReads worker adapter", () => {
     });
     expect(result.read).toMatchObject({ _tag: "RpcClientError" });
     expect(result.ended).toBe(true);
+    // A hung worker keeps its transport: it still gets the bounded close.
+    expect(result.abandoned).toBe(false);
     expect(result.seen).toBe(2);
   });
+
+  it.each([
+    ["fails", "The database worker connection broke"],
+    ["ends", "The database worker connection ended"],
+  ] as const)(
+    "a transport that %s with no error event lets Refresh respawn without the close wait",
+    async (how, message) => {
+      const workers = fakeWorkers({
+        closeWait: (n) => (n === 1 ? "5 seconds" : undefined),
+      });
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const reads = yield* makeWorkerReads(workers.connect);
+          yield* workerSeen(reads);
+          const changes = yield* Stream.toPull(reads.Changes());
+          yield* workers.cut(1, how);
+          // The death runs on its own fiber; let it start before Refresh.
+          for (let turn = 0; turn < 100; turn++) yield* Effect.yieldNow;
+          // The clock stands still: a respawn that waits out the close
+          // never finishes.
+          const refresh = yield* Effect.forkChild(reads.Refresh());
+          for (let turn = 0; turn < 100 && !refresh.pollUnsafe(); turn++)
+            yield* Effect.yieldNow;
+          const exit = refresh.pollUnsafe();
+          // Let a pending close run out, so the scope can end.
+          if (!exit) yield* TestClock.adjust("5 seconds");
+          const events = exit ? yield* until(changes, "changed") : [];
+          return {
+            exit,
+            events,
+            ended: workers.ended(1),
+            abandoned: workers.abandoned(1),
+            seen: exit ? yield* workerSeen(reads) : undefined,
+          };
+        }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
+      );
+      expect(result.exit).toMatchObject({ _tag: "Success" });
+      expect(result.events).toContainEqual(
+        expect.objectContaining({
+          error: expect.objectContaining({
+            message: expect.stringContaining(message),
+          }),
+        }),
+      );
+      expect(result.abandoned).toBe(true);
+      expect(result.ended).toBe(true);
+      expect(result.seen).toBe(2);
+    },
+  );
 
   it("a worker that misses one ping and answers the next stays connected", async () => {
     const workers = fakeWorkers({ unanswered: () => 1 });
@@ -390,6 +479,8 @@ describe("ZoteroReads worker adapter", () => {
     await service[Symbol.asyncDispose]();
 
     expect(workers.ended(1)).toBe(true);
+    // A live worker gets its graceful close on unload.
+    expect(workers.abandoned(1)).toBe(false);
     expect(degraded).toEqual([]);
     expect(service.state).toBe("ready");
   });

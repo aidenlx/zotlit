@@ -56,6 +56,11 @@ export interface WorkerConnection {
   readonly client: ZoteroReadsClient;
   /** Completes with the reason when the worker reports an error. */
   readonly died: Effect.Effect<DbUnavailable>;
+  /**
+   * Terminates the worker at once, for a transport that is already gone: the
+   * scope's end then skips the wait for a close the worker cannot confirm.
+   */
+  readonly abandon: Effect.Effect<void>;
 }
 
 /**
@@ -135,7 +140,12 @@ export const connectWorker = Effect.fnUntraced(function* (
   const client = yield* RpcClient.make(ZoteroReads).pipe(
     Effect.provideContext(protocol),
   );
-  return { client, died: Deferred.await(died) };
+  // With no live workers left, the finalizer has nothing to wait for.
+  const abandon = Effect.sync(() => {
+    for (const worker of workers.keys()) worker.terminate();
+    workers.clear();
+  });
+  return { client, died: Deferred.await(died), abandon };
 });
 
 /** The answer while no worker serves: the caller sees a client error. */
@@ -159,8 +169,11 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
   connect: Effect.Effect<WorkerConnection, DbUnavailable, Scope.Scope>,
 ): Effect.fn.Return<ZoteroReadsClient, never, Scope.Scope> {
   const hostScope = yield* Effect.scope;
-  let current: { client: ZoteroReadsClient; scope: Scope.Closeable } | null =
-    null;
+  let current: {
+    client: ZoteroReadsClient;
+    scope: Scope.Closeable;
+    abandon: Effect.Effect<void>;
+  } | null = null;
   let state: "loading" | "ready" | "degraded" = "loading";
   let lastError: DbUnavailable | null = null;
   /** `db-file-missing` is raised once per launch, whichever worker saw it. */
@@ -178,8 +191,13 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
   /**
    * End `connection` and report why; a no-op once it was replaced. Holds the
    * connect permit, so no new worker reports before this one's `degraded`.
+   * With `transportGone`, the worker is abandoned instead of closed.
    */
-  const die = (connection: NonNullable<typeof current>, error: DbUnavailable) =>
+  const die = (
+    connection: NonNullable<typeof current>,
+    error: DbUnavailable,
+    transportGone = false,
+  ) =>
     connecting.withPermits(1)(
       Effect.suspend(() => {
         if (current !== connection) return Effect.void;
@@ -188,8 +206,11 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
         lastError = error;
         logger.error("Database worker stopped", { error });
         return Effect.andThen(
-          Scope.close(connection.scope, Exit.void),
-          publish({ _tag: "degraded", error }),
+          transportGone ? connection.abandon : Effect.void,
+          Effect.andThen(
+            Scope.close(connection.scope, Exit.void),
+            publish({ _tag: "degraded", error }),
+          ),
         );
       }),
     );
@@ -253,12 +274,19 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
       yield* publish({ _tag: "degraded", error: reason });
       return yield* reason;
     }
-    const connection = { client: result.value.client, scope };
+    const connection = {
+      client: result.value.client,
+      scope,
+      abandon: result.value.abandon,
+    };
     current = connection;
     // Either signal ends the connection: the worker's error event, or its
     // feed ending, which only happens when the transport broke.
-    const lost = (message: string) =>
-      Effect.forkIn(die(connection, new DbUnavailable({ message })), hostScope);
+    const lost = (message: string, transportGone = false) =>
+      Effect.forkIn(
+        die(connection, new DbUnavailable({ message }), transportGone),
+        hostScope,
+      );
     yield* Effect.forkIn(
       Effect.flatMap(result.value.died, (error) =>
         Effect.forkIn(die(connection, error), hostScope),
@@ -297,8 +325,9 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
               ? Effect.void
               : lost(
                   `The database worker connection broke: ${Cause.pretty(cause)}`,
+                  true,
                 ),
-          onSuccess: () => lost("The database worker connection ended"),
+          onSuccess: () => lost("The database worker connection ended", true),
         }),
       ),
       scope,
