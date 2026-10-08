@@ -48,7 +48,7 @@ export class ObsidianUnreachableError extends Error {
         "reloaded during the call; or the window's renderer crashed while the\n" +
         "vault registry still reports it open, so every call to it waits forever.\n\n" +
         "Restart Obsidian if a quick call to the same vault, such as\n" +
-        "`eval code=1`, also gets no answer, then rerun the command.",
+        "`obsidian-cli.ts --code 1`, also gets no answer, then rerun the command.",
     );
     this.name = "ObsidianUnreachableError";
     this.vault = vault;

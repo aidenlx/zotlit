@@ -60,7 +60,7 @@ When the check is done, close what the check opened, in this order:
 | `obsidian-cli.ts vault=<id> plugin:reload id=zotlit` | Reload the plugin after a build |
 | `obsidian-cli.ts vault=<id> commands filter=zotlit` | List available plugin commands |
 | `obsidian-cli.ts vault=<id> command id=zotlit:<cmd>` | Run a command |
-| `obsidian-cli.ts vault=<id> eval code='<js>'` | Run JS in the app, returns the value |
+| `obsidian-cli.ts --code '<js>' vault=<id>` | Run JS in the app, returns the value |
 | `obsidian-cli.ts --js <file.js> vault=<id>` | Run a JS file in the app; use it for multi-line probes |
 | `obsidian-cli.ts --shot <file> --selector <css> vault=<id>` | Capture one element; `--sample x,y` reads a pixel's colour |
 | `obsidian-cli.ts vault=<id> dev:screenshot path=<abs>` | Capture the window (absolute path required) |
@@ -70,14 +70,17 @@ When the check is done, close what the check opened, in this order:
 Read the output text: `=> ` prefixes a result, and command failures come back as `Error: …` or
 `Vault not found.`
 
+Write each call as one plain command with literal values: `<id>` is the vault ID
+`obsidian-vault.ts status` prints, typed out, and JS goes through `--code` or `--js`.
+
 ## Loop
 
 1. **Build** — the two build commands from Vault setup step 5. The second copies the
    bundle into this worktree's Development Vault; prefix it with `ZT_VAULT_CASE=<case>`
    to copy into a Vault Case vault, such as the `upgrader` vault.
 2. **Reload** — `obsidian-cli.ts vault=<id> plugin:reload id=zotlit`.
-3. **Open** — `obsidian-cli.ts vault=<id> command id=zotlit:<cmd>`, or `eval` to mount a view in a specific split.
-4. **Probe** — `obsidian-cli.ts vault=<id> eval code='…'` with `getComputedStyle(el)` /
+3. **Open** — `obsidian-cli.ts vault=<id> command id=zotlit:<cmd>`, or `--code` to mount a view in a specific split.
+4. **Probe** — `obsidian-cli.ts --code '…' vault=<id>` with `getComputedStyle(el)` /
    `el.getBoundingClientRect()` to assert what actually rendered. A computed-style assertion is
    worth more than eyeballing a screenshot, and it is the only way to catch a state that expires
    on its own — a flash class is gone by the time the capture lands.
@@ -104,14 +107,14 @@ and put it back when you are done.
 
 ### Settings land in their own window
 
-`app.setting.open()` renders into a separate Electron window by default since 1.13.4, and `eval`,
+`app.setting.open()` renders into a separate Electron window by default since 1.13.4, and `--code`,
 `dev:dom`, and `dev:screenshot` all address the main one — so settings read as never opened. Run
 `/obsidian-settings` → "Verifying on screen" for the config that brings the modal back into the
 main window, and for reaching the separate window when its own chrome is the thing under test.
 
-### Async work in CLI eval
+### Async work in `--code`
 
-CLI `eval` code runs in a non-async wrapper — top-level `await` is a syntax error. Return the
+Code run through `--code` or `--js` runs in a non-async wrapper — top-level `await` is a syntax error. Return the
 promise from an async IIFE; the CLI awaits it and prints the settled value. Hold the leaf from `getLeaf(...)`
 and `revealLeaf(it)` in the same call rather than re-querying `getLeavesOfType(...)` after an
 async `setViewState` (races, returns `[]`).
@@ -127,21 +130,21 @@ poll until the editor exists before you drive it, as `annotationEditor` in
 ### Stale screenshots
 
 A capture taken right after reload or `revealLeaf` may show old DOM while the change is already
-live. Cross-check against an `eval` DOM/computed-style query — if they disagree, the DOM query
+live. Cross-check against a `--code` DOM/computed-style query — if they disagree, the DOM query
 wins. Re-shoot. A DevTools window open over Obsidian can also steal the capture — close it first.
 
 ### Confirm which vault answered
 
 A command without a leading `vault=` goes to the vault that holds the current folder, else to
 the focused window — either may belong to another worktree. Pass
-`vault=<id>` as the first argument, and confirm with `eval code='app.vault.adapter.basePath'` — it must print the
+`vault=<id>` as the first argument, and confirm with `--code 'app.vault.adapter.basePath'` — it must print the
 Development Vault path reported by `obsidian-vault.ts --help` for the worktree you build
 from. `data.json` edits target that same path.
 
 ### Hidden window
 
-A hidden, minimized, or covered window is throttled: `requestAnimationFrame` never fires, so an
-eval that awaits one never answers; scroll events never dispatch; and screenshots lag one frame
+A hidden, minimized, or covered window is throttled: `requestAnimationFrame` never fires, so a
+probe that awaits one never answers; scroll events never dispatch; and screenshots lag one frame
 behind the DOM. Pass `--no-throttle` to every call that probes, scrolls, or captures: it lifts
 throttling from the main window and its popouts for that call and puts it back after.
 `document.visibilityState` can still read `hidden` — judge by frames and events.
@@ -152,15 +155,15 @@ Build a Stress Build with `pnpm fixture stress`. Read the current Device Overrid
 change it:
 
 ```bash
-packages/scripts/scripts/obsidian-cli.ts vault=<id> eval \
-  code='app.plugins.plugins.zotlit.services.zoteroPref.dataDirOverride'
+packages/scripts/scripts/obsidian-cli.ts \
+  --code 'app.plugins.plugins.zotlit.services.zoteroPref.dataDirOverride' vault=<id>
 ```
 
 Point the live plugin at the absolute `.scratch/acceptance-fixture/zotero-data` path:
 
 ```bash
-packages/scripts/scripts/obsidian-cli.ts vault=<id> eval \
-  code='app.plugins.plugins.zotlit.services.zoteroPref.setDataDir("<absolute path>")'
+packages/scripts/scripts/obsidian-cli.ts \
+  --code 'app.plugins.plugins.zotlit.services.zoteroPref.setDataDir("<absolute path>")' vault=<id>
 ```
 
 Afterwards, call `setDataDir` again with the previous value, or `null` when it was empty. This

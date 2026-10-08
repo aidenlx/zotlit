@@ -22,7 +22,7 @@ the launch command, and main-process scope.
 6. **Restore** — once the work is done, close every door you opened: an open inspector or
    debugging port lets any local process drive Obsidian.
    - After `--main`, close the main-process inspector:
-     `packages/scripts/scripts/obsidian-cli.ts vault=<id> eval code='require("@electron/remote").require("inspector").close()||"closed"'`.
+     `packages/scripts/scripts/obsidian-cli.ts --code 'require("@electron/remote").require("inspector").close()||"closed"' vault=<id>`.
      Done when it prints `=> closed`.
    - After step 3, start Obsidian normally again. Done when `obsidian-cdp.ts windows` reports
      no endpoint.
