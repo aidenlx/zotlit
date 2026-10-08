@@ -19,8 +19,7 @@ import { queryCancelledText } from "./contract";
 import { decodeItemQuery, decodeSchemaArguments } from "./decode";
 import { QueryExport } from "./export";
 import type { QueryObserver } from "./trace";
-import type { QueryAnswer } from "./worker";
-import type { QueryCommand } from "./worker-protocol";
+import type { QueryAnswer, QueryCommand } from "./worker-protocol";
 
 interface ItemQueryServiceDeps {
   reads: ZoteroReadsService;
@@ -175,11 +174,12 @@ export class ItemQueryService extends Service {
         })
         .pipe(
           Effect.catchTag("DbUnavailable", (error) =>
-            Effect.succeed({
+            Effect.succeed<QueryAnswer>({
               answer: failure(
                 schema ? ITEM_QUERY_SCHEMA_COMMAND : ITEM_QUERY_COMMAND,
                 diagnostic("source-unavailable", error.message),
               ),
+              receipt: { kind: "inline" },
             }),
           ),
         ),
@@ -202,7 +202,7 @@ export class ItemQueryService extends Service {
       if (result.cancelled)
         throw new DOMException("Item Query cancelled", "AbortError");
       if (result.measurement) measure?.completed(result.measurement);
-      await output.publish(result.answer, signal);
+      await output.publish(result.receipt, signal);
       return result.answer;
     } catch (error) {
       signal.throwIfAborted();

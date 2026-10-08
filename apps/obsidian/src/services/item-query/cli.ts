@@ -1,8 +1,8 @@
-// Registers the Item Query commands with Obsidian's CLI: the only Promise edge
-// of `@zotlit/item-query` (ADR 0066). The query command takes the query that
-// `decode.ts` decoded from the flat arguments, resolves the Target Libraries on
-// the borrowed client, runs the query, and answers the versioned envelope of
-// ADR 0065. The cancel command stops one running query that the caller named
+// Registers the Item Query commands with Obsidian's CLI (ADR 0066), and answers
+// the versioned envelope of ADR 0065 for one Query Job. The query answer takes
+// the query that `decode.ts` decoded from the flat arguments, resolves the
+// Target Libraries on the database of the job, runs the query, and encodes the
+// envelope. The cancel command stops one running query that the caller named
 // with `id`. The schema command answers the Item Query Schema of the source in
 // the same envelope; the guide command prints plain text.
 //
@@ -10,15 +10,16 @@
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 
-import { Cause, Data, Effect, Exit } from "effect";
+import { Cause, Data, Effect } from "effect";
+import type { Scope } from "effect";
 import type { CliData, CliFlag, CliFlags, CliHandler, Plugin } from "obsidian";
 
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import type {
+  ItemQueryDatabase,
   ItemQueryDatabaseError,
   ItemQueryLayoutError,
 } from "@zotlit/db/item-query";
-import { SLICE_BUDGET_MS } from "@zotlit/item-query";
+import { describeItemQuery, SLICE_BUDGET_MS } from "@zotlit/item-query";
 import type {
   ItemQueryError,
   ItemQuerySchema,
@@ -27,7 +28,6 @@ import type {
 } from "@zotlit/item-query";
 
 import { getLogger } from "@/lib/log";
-import { yieldToMain } from "@/lib/yield-to-main";
 import { selectorKey } from "@/services/library-scope/scope";
 import type {
   LibraryScope,
@@ -50,8 +50,9 @@ import type { Diagnostic, ItemQueryCommand } from "./contract";
 import { invalid, rejectParameters, rejectQueryId } from "./decode";
 import type { DecodedQuery, NamedLibraries } from "./decode";
 import { GUIDE_TOPIC_NAMES, parseGuideTopic, renderGuide } from "./guide";
-import { runDescribeItemQuery, runItemQueryTo } from "./run";
+import { runItemQueryTo } from "./run";
 import type { ItemQueryInstrument, TargetLibrariesUnavailable } from "./run";
+import type { QueryReply } from "./worker-protocol";
 
 const logger = getLogger(["item-query"]);
 
@@ -127,17 +128,14 @@ export function failure(
   return envelope(command, { ok: false, diagnostic });
 }
 
-/** Runs inside the caller's connection scope; the caller owns the client. */
+/** The parameters of one query or schema answer inside a Query Job. */
 export interface ItemQueryCliDeps {
-  client: NodeDatabaseClient;
   identity: WorkbenchIdentity;
   /**
    * The Library Scope in force: the default Target Libraries of a query are
    * its available Libraries.
    */
-  libraryScope(): Promise<LibraryScope>;
-  /** Cancels every run, such as when the plugin unloads. */
-  signal: AbortSignal;
+  scope: LibraryScope;
   /** Observes the engine of each query run; the measurement command sets it. */
   instrument?: ItemQueryInstrument;
   /**
@@ -145,10 +143,18 @@ export interface ItemQueryCliDeps {
    * milliseconds; the measurement command sets it.
    */
   onAnswerStep?: (ms: number) => void;
-  /** Get the job-owned output writer after validation. The caller closes it. */
-  openOutput?: (path: string) => Promise<{
-    write(text: string): Promise<void>;
-  }>;
+  /**
+   * Opens the job-owned output writer after validation. The scope of the job
+   * closes it.
+   */
+  openOutput?: (
+    path: string,
+  ) => Effect.Effect<QueryWriter, ItemQueryOutputError, Scope.Scope>;
+}
+
+/** The output file of an export: each write finishes before the next. */
+export interface QueryWriter {
+  write(text: string): Effect.Effect<void, ItemQueryOutputError>;
 }
 
 export interface ItemQueryRuns {
@@ -191,40 +197,32 @@ export function registerItemQueryCli(
 }
 
 /**
- * The schema handler answers the envelope for the schema and for every typed
- * failure. Cancellation and a defect reject, as in the query handler. The
- * caller rejects parameters first, with `decodeSchemaArguments`.
+ * The schema answer is the envelope for the schema and for every typed
+ * failure. Cancellation interrupts it, and a defect dies, as in the query
+ * answer. The caller rejects parameters first, with `decodeSchemaArguments`.
  */
-export function createItemQuerySchemaHandler(
-  deps: ItemQueryCliDeps,
-): () => Promise<string> {
-  return async (): Promise<string> => {
-    deps.signal.throwIfAborted();
-
-    const exit = await runDescribeItemQuery({
-      client: deps.client,
-      signal: deps.signal,
-    });
-
-    if (Exit.isSuccess(exit)) {
-      const schema = exit.value;
-      return envelope(ITEM_QUERY_SCHEMA_COMMAND, {
-        ok: true,
-        identity: deps.identity,
-        schema: {
-          ...schema,
-          defaults: {
-            ...schema.defaults,
-            limit: DEFAULT_CLI_LIMIT,
-            libraries: { source: "library-scope" },
+export function answerItemQuerySchema(
+  deps: Pick<ItemQueryCliDeps, "identity">,
+): Effect.Effect<QueryReply, never, ItemQueryDatabase> {
+  return describeItemQuery().pipe(
+    Effect.map((schema) =>
+      inline(
+        envelope(ITEM_QUERY_SCHEMA_COMMAND, {
+          ok: true,
+          identity: deps.identity,
+          schema: {
+            ...schema,
+            defaults: {
+              ...schema.defaults,
+              limit: DEFAULT_CLI_LIMIT,
+              libraries: { source: "library-scope" },
+            },
           },
-        },
-      });
-    }
-    return answerFailure(exit.cause, ITEM_QUERY_SCHEMA_COMMAND, {
-      signal: deps.signal,
-    });
-  };
+        }),
+      ),
+    ),
+    answerFailure(ITEM_QUERY_SCHEMA_COMMAND),
+  );
 }
 
 /** The guide is plain text; an unknown topic answers the diagnostic envelope. */
@@ -288,81 +286,47 @@ export function queryIdInUseFailure(id: string): string {
 }
 
 /**
- * The handler answers the envelope of a decoded query for a result and for
- * every typed failure. It rejects with the abort reason when the run is
- * cancelled, and with an `Error` for an implementation defect.
+ * The answer of a decoded query is the envelope for a result and for every
+ * typed failure. Cancellation interrupts it, and an implementation defect dies
+ * with an `Error`.
  */
-export function createItemQueryHandler(
+export function answerItemQuery(
   deps: ItemQueryCliDeps,
-): (query: DecodedQuery) => Promise<string> {
-  return async (decoded: DecodedQuery): Promise<string> => {
-    deps.signal.throwIfAborted();
-
-    const named = decoded.libraries;
-    let scope: LibraryScope;
-    if (named) scope = named.scope;
-    else {
-      try {
-        scope = await deps.libraryScope();
-      } catch (error) {
-        deps.signal.throwIfAborted();
-        logger.warn("Item Query could not read the Library Scope", { error });
-        return failure(
-          ITEM_QUERY_COMMAND,
-          diagnostic(
-            "source-unavailable",
-            `The Library Scope of ZotLit is not readable: ${messageOf(error)}`,
-          ),
-        );
-      }
-      deps.signal.throwIfAborted();
-    }
-    const exit = await runItemQueryTo(
-      { scope, requireEach: named !== null },
-      {
-        filter: decoded.filter,
-        fields: decoded.fields,
-        sort: decoded.sort,
-        limit: decoded.limit,
-      },
-      {
-        client: deps.client,
-        signal: deps.signal,
-        instrument: deps.instrument,
-        begin: (summary, libraries) =>
-          outputStep(() =>
-            createAnswer(summary, {
-              identity: deps.identity,
-              libraries: libraries.available.map(({ selector, name }) =>
-                selector.type === "group"
-                  ? { ...selector, name: name ?? "" }
-                  : selector,
-              ),
-              signal: deps.signal,
-              onAnswerStep: deps.onAnswerStep,
-              output: decoded.output,
-              openOutput: deps.openOutput,
-            }),
-          ).pipe(
-            Effect.map((answer) => ({
-              write: (rows) => outputStep(() => answer.write(rows)),
-              end: () => outputStep(() => answer.end()),
-            })),
-          ),
-      },
-    );
-
-    if (Exit.isFailure(exit)) {
-      return answerFailure(exit.cause, ITEM_QUERY_COMMAND, {
-        signal: deps.signal,
-        parameter: named?.parameter,
-      });
-    }
-    return exit.value.result;
-  };
+  decoded: DecodedQuery,
+): Effect.Effect<QueryReply, never, ItemQueryDatabase | Scope.Scope> {
+  const named = decoded.libraries;
+  const operation = runItemQueryTo(
+    { scope: named ? named.scope : deps.scope, requireEach: named !== null },
+    {
+      filter: decoded.filter,
+      fields: decoded.fields,
+      sort: decoded.sort,
+      limit: decoded.limit,
+    },
+    (summary, libraries) =>
+      createAnswer(summary, {
+        identity: deps.identity,
+        libraries: libraries.available.map(({ selector, name }) =>
+          selector.type === "group"
+            ? { ...selector, name: name ?? "" }
+            : selector,
+        ),
+        onAnswerStep: deps.onAnswerStep,
+        output: decoded.output,
+        openOutput: deps.openOutput,
+      }),
+  );
+  return (deps.instrument?.(operation) ?? operation).pipe(
+    answerFailure(ITEM_QUERY_COMMAND, named?.parameter),
+  );
 }
 
-/** Keep cancellation observable between serialization chunks in the worker. */
+const inline = (answer: string): QueryReply => ({
+  answer,
+  receipt: { kind: "inline" },
+});
+
+/** The time of one step of the answer that `onAnswerStep` reports. */
 const ANSWER_STEP_BUDGET_MS = SLICE_BUDGET_MS / 2;
 const NO_ROWS = "[]\n}";
 const CHUNK_START = '{\n  "rows": [';
@@ -375,40 +339,27 @@ interface AnswerContext {
   identity: WorkbenchIdentity;
   /** The Target Libraries of the run, in the canonical order. */
   libraries: readonly LibraryWire[];
-  signal: AbortSignal;
   onAnswerStep?: (ms: number) => void;
   output?: string;
   openOutput?: ItemQueryCliDeps["openOutput"];
 }
 
-class ItemQueryOutputError extends Data.TaggedError("ItemQueryOutputError")<{
+/** The output of the answer failed: the envelope carries `diagnostic`. */
+export class ItemQueryOutputError extends Data.TaggedError(
+  "ItemQueryOutputError",
+)<{
   diagnostic: Diagnostic;
 }> {}
 
-function outputFailure(error: unknown): ItemQueryOutputError | undefined {
-  if (error instanceof ItemQueryOutputError) return error;
-  if (error instanceof Error && "code" in error)
-    return new ItemQueryOutputError({
-      diagnostic: diagnostic("output-error", error.message),
-    });
-}
-
-function outputStep<A>(
-  step: () => Promise<A>,
-): Effect.Effect<A, ItemQueryOutputError> {
-  return Effect.tryPromise({ try: step, catch: (error) => error }).pipe(
-    Effect.catch((error) => {
-      const failed = outputFailure(error);
-      return failed ? Effect.fail(failed) : Effect.die(error);
-    }),
-    // File acquisition/writes must settle before the job disposes its files.
-    // Cancellation waits for native I/O before releasing the connection borrow.
-    Effect.uninterruptible,
-  );
-}
-
-/** Byte-identical pretty JSON; only the current projection chunk is retained. */
-async function createAnswer(result: QuerySummary, context: AnswerContext) {
+/**
+ * Byte-identical pretty JSON; only the current projection chunk is retained.
+ * Each chunk is one step of the job fiber, so the scheduler of the job can end
+ * a slice and an interrupt can land between two chunks.
+ */
+const createAnswer = Effect.fnUntraced(function* (
+  result: QuerySummary,
+  context: AnswerContext,
+) {
   const summary = {
     ok: true as const,
     identity: context.identity,
@@ -423,35 +374,38 @@ async function createAnswer(result: QuerySummary, context: AnswerContext) {
   let first = true;
   let chunkRows = FIRST_CHUNK_ROWS;
   // Open only after query validation and Library resolution succeed.
-  const file =
-    context.output === undefined
-      ? undefined
-      : await context.openOutput?.(context.output);
-  if (context.output !== undefined && !file)
-    throw new Error("Item Query export has no file writer");
-  const append = async (chunk: string) => {
-    context.signal.throwIfAborted();
-    bytes += Buffer.byteLength(chunk);
-    if (file) await file.write(chunk);
-    else {
+  const { output, openOutput } = context;
+  let file: QueryWriter | undefined;
+  if (output !== undefined) {
+    if (!openOutput)
+      return yield* Effect.die(
+        new Error("Item Query export has no file writer"),
+      );
+    file = yield* openOutput(output);
+  }
+  const append = (chunk: string) =>
+    Effect.suspend(() => {
+      bytes += Buffer.byteLength(chunk);
+      if (file) return file.write(chunk);
       if (bytes > INLINE_MAX_BYTES)
-        throw new ItemQueryOutputError({
-          diagnostic: diagnostic(
-            "result-too-large",
-            `The JSON response exceeds the inline limit of ${INLINE_MAX_BYTES} bytes.`,
-          ),
-        });
+        return Effect.fail(
+          new ItemQueryOutputError({
+            diagnostic: diagnostic(
+              "result-too-large",
+              `The JSON response exceeds the inline limit of ${INLINE_MAX_BYTES} bytes.`,
+            ),
+          }),
+        );
       text += chunk;
-    }
-  };
-  await append(
+      return Effect.void;
+    });
+  yield* append(
     result.returnedCount === 0 ? head : `${head.slice(0, -NO_ROWS.length)}[`,
   );
   return {
-    write: async (rows: readonly QueryRow[]) => {
+    write: Effect.fnUntraced(function* (rows: readonly QueryRow[]) {
       let stepMs = 0;
       for (let start = 0; start < rows.length; ) {
-        context.signal.throwIfAborted();
         const stepStart = performance.now();
         const chunk = rows.slice(start, start + chunkRows);
         const wire = JSON.stringify({ rows: chunk }, null, 2).slice(
@@ -466,89 +420,96 @@ async function createAnswer(result: QuerySummary, context: AnswerContext) {
           Math.ceil(CHUNK_TEXT_LENGTH / (wire.length / chunk.length)),
         );
         stepMs += performance.now() - stepStart;
-        await append(part);
+        yield* append(part);
         if (stepMs < ANSWER_STEP_BUDGET_MS) continue;
         context.onAnswerStep?.(stepMs);
-        await yieldToMain();
-        context.signal.throwIfAborted();
         stepMs = 0;
       }
       context.onAnswerStep?.(stepMs);
-    },
-    end: async () => {
-      if (result.returnedCount > 0) await append(CHUNK_END);
-      if (!file) return text;
-      return envelope(ITEM_QUERY_COMMAND, {
-        ...summary,
-        file: { path: context.output!, bytes, format: "json" },
-      });
-    },
+    }),
+    end: Effect.fnUntraced(function* () {
+      if (result.returnedCount > 0) yield* append(CHUNK_END);
+      if (output === undefined) return inline(text);
+      return {
+        answer: envelope(ITEM_QUERY_COMMAND, {
+          ...summary,
+          file: { path: output, bytes, format: "json" },
+        }),
+        receipt: { kind: "file", path: output, bytes },
+      } satisfies QueryReply;
+    }),
   };
-}
+});
 
 /**
  * Map the failure of one run to the answer of `command`: every typed failure
- * becomes the envelope, cancellation rejects with the abort reason, and a
- * defect rejects with an `Error`.
+ * becomes the envelope, and a defect dies with an `Error`. Cancellation stays
+ * an interruption.
  */
 function answerFailure(
-  cause: Cause.Cause<
+  command: ItemQueryCommand,
+  /** The argument that named the Target Libraries, if the caller named them. */
+  parameter?: NamedLibraries["parameter"],
+) {
+  return <R>(
+    run: Effect.Effect<
+      QueryReply,
+      | ItemQueryError
+      | ItemQueryLayoutError
+      | ItemQueryDatabaseError
+      | ItemQueryOutputError
+      | TargetLibrariesUnavailable,
+      R
+    >,
+  ): Effect.Effect<QueryReply, never, R> =>
+    run.pipe(
+      Effect.catch((failed) =>
+        Effect.sync(() => inline(failureText(failed, command, parameter))),
+      ),
+      Effect.catchDefect((defect) => {
+        logger.error("Item Query failed with a defect", {
+          cause: Cause.pretty(Cause.die(defect)),
+        });
+        return Effect.die(
+          new Error("Item Query failed with an internal error.", {
+            cause: defect,
+          }),
+        );
+      }),
+    );
+}
+
+function failureText(
+  failed:
     | ItemQueryError
     | ItemQueryLayoutError
     | ItemQueryDatabaseError
     | ItemQueryOutputError
-    | TargetLibrariesUnavailable
-  >,
+    | TargetLibrariesUnavailable,
   command: ItemQueryCommand,
-  {
-    signal,
-    parameter,
-  }: {
-    signal: AbortSignal;
-    /** The argument that named the Target Libraries, if the caller named them. */
-    parameter?: NamedLibraries["parameter"];
-  },
+  parameter: NamedLibraries["parameter"] | undefined,
 ): string {
-  // A masked file operation can finish with the abort reason as a defect.
-  // The caller's cancelled signal remains the authority at this Promise edge.
-  signal.throwIfAborted();
-  const error = Cause.findErrorOption(cause);
-  if (error._tag === "Some") {
-    const failed = error.value;
-    if (failed._tag === "ItemQueryOutputError")
-      return failure(command, failed.diagnostic);
-    if (failed._tag === "TargetLibrariesUnavailable") {
-      return failure(command, targetLibrariesFailure(failed, parameter));
-    }
-    if (failed._tag === "ItemQueryError") {
-      return failure(command, {
-        code: failed.code,
-        message: failed.message,
-        hint: failed.hint,
-        location: failed.location,
-      });
-    }
-    if (failed._tag === "ItemQueryLayoutError") {
-      // `@zotlit/db` logs the missing layout and the versions once per copy.
-      return failure(
-        command,
-        diagnostic("unsupported-database-layout", failed.message),
-      );
-    }
-    return databaseFailure(command, failed.cause, { logged: failed });
+  if (failed._tag === "ItemQueryOutputError")
+    return failure(command, failed.diagnostic);
+  if (failed._tag === "TargetLibrariesUnavailable") {
+    return failure(command, targetLibrariesFailure(failed, parameter));
   }
-  if (Cause.hasInterruptsOnly(cause)) {
-    throw (
-      signal.reason ??
-      new DOMException("The query was cancelled.", "AbortError")
+  if (failed._tag === "ItemQueryError") {
+    return failure(command, {
+      code: failed.code,
+      message: failed.message,
+      hint: failed.hint,
+      location: failed.location,
+    });
+  }
+  if (failed._tag === "ItemQueryLayoutError") {
+    // `@zotlit/db` logs the missing layout and the versions once per copy.
+    return failure(
+      command,
+      diagnostic("unsupported-database-layout", failed.message),
     );
   }
-  logger.error("Item Query failed with a defect", {
-    cause: Cause.pretty(cause),
-  });
-  throw new Error("Item Query failed with an internal error.", {
-    cause: Cause.squash(cause),
-  });
+  return databaseFailure(command, failed.cause, { logged: failed });
 }
 
 /** The diagnostic of a run that has no Target Library. */
