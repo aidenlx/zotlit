@@ -174,10 +174,10 @@ function seedDatabase(): NodeDatabaseClient {
  */
 function itemsIn(byLibrary: ReadonlyMap<number, number>): void {
   for (const [itemID, libraryID] of byLibrary) {
-    const modified = new Date(Date.UTC(2024, 0, 1, 0, 1000 - itemID))
-      .toISOString()
-      .replace("T", " ")
-      .slice(0, 19);
+    const modified = Temporal.PlainDateTime.from("2024-01-01T00:00")
+      .add({ minutes: 1000 - itemID })
+      .toString({ smallestUnit: "second" })
+      .replace("T", " ");
     db.$client.exec(`
       insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
         values (${itemID}, 1, '${modified}', '${modified}', ${libraryID}, 'ITEM${itemID}');
