@@ -12,13 +12,11 @@ import {
   consumeQueryItems,
   describeItemQuery,
   ItemQueryScheduler,
-  queryItems,
 } from "@zotlit/item-query";
 import type {
   ItemQueryError,
   ItemQueryRequest,
   ItemQuerySchema,
-  QueryResult,
   QueryConsumer,
   QuerySummary,
 } from "@zotlit/item-query";
@@ -51,7 +49,7 @@ export interface RunLibraries {
   readonly requireEach: boolean;
 }
 
-export interface ItemQueryRun<A = QueryResult> {
+export interface ItemQueryRun<A> {
   /**
    * `scope` on the Libraries of the borrowed source. The Target Libraries are
    * its available ones, in the canonical order.
@@ -66,30 +64,14 @@ export interface ItemQueryRun<A = QueryResult> {
 
 /**
  * Resolve the Target Libraries and run one Item Query on the borrowed client to
- * its `Exit`. Each run gets its own time-budget scheduler; the Query Clock is
- * the system clock and zone. The caller owns the connection scope until the returned
- * promise settles.
+ * its `Exit`; the consumer of `begin` receives the projection chunks. Each run
+ * gets its own time-budget scheduler; the Query Clock is the system clock and
+ * zone. The caller owns the connection scope until the returned promise
+ * settles.
  *
  * Effect starts a run on a signal that is already aborted, so the abort check
  * comes first.
  */
-export function runItemQuery(
-  { scope, requireEach }: RunLibraries,
-  request: Omit<ItemQueryRequest, "libraries">,
-  options: RunOptions,
-): Promise<
-  Exit.Exit<
-    ItemQueryRun,
-    ItemQueryError | ItemQueryLayoutError | ItemQueryDatabaseError
-  >
-> {
-  return runItemQueryWith({ scope, requireEach }, request, {
-    ...options,
-    execute: (request) => queryItems(request),
-  });
-}
-
-/** Consume projection chunks under the same scope, scheduler, and connection borrow. */
 export function runItemQueryTo<A, E>(
   libraries: RunLibraries,
   request: Omit<ItemQueryRequest, "libraries">,
@@ -156,7 +138,7 @@ function runItemQueryWith<A, E>(
   );
 }
 
-/** Read the Item Query Schema of the borrowed source to its `Exit`, as {@link runItemQuery} does. */
+/** Read the Item Query Schema of the borrowed source to its `Exit`, as {@link runItemQueryTo} does. */
 export function runDescribeItemQuery(
   options: RunOptions,
 ): Promise<

@@ -25,7 +25,6 @@ import { SLICE_BUDGET_MS } from "@zotlit/item-query";
 import type {
   ItemQueryError,
   ItemQuerySchema,
-  QueryResult,
   QueryRow,
   QuerySummary,
   SortSpec,
@@ -435,33 +434,6 @@ export function createItemQueryHandler(deps: ItemQueryCliDeps): CliHandler {
   };
 }
 
-type ItemQueryExit = Exit.Exit<
-  QueryResult,
-  ItemQueryError | ItemQueryLayoutError | ItemQueryDatabaseError
->;
-
-/**
- * Map the `Exit` of one run to the answer. A result and every typed failure
- * become the envelope. Cancellation rejects with the abort reason, and a defect
- * rejects with an `Error`, so neither reads as an answer.
- */
-export async function answerExit(
-  exit: ItemQueryExit,
-  context: {
-    /** The identity of the source the run leased. */
-    identity: WorkbenchIdentity;
-    /** The Target Libraries of the run, in the canonical order. */
-    libraries: readonly LibraryWire[];
-    signal: AbortSignal;
-    onAnswerStep?: (ms: number) => void;
-    output?: string;
-    openOutput?: ItemQueryCliDeps["openOutput"];
-  },
-): Promise<string> {
-  if (Exit.isSuccess(exit)) return answerResult(exit.value, context);
-  return answerFailure(exit.cause, ITEM_QUERY_COMMAND, context.signal);
-}
-
 /** Keep cancellation observable between serialization chunks in the worker. */
 const ANSWER_STEP_BUDGET_MS = SLICE_BUDGET_MS / 2;
 const NO_ROWS = "[]\n}";
@@ -470,7 +442,16 @@ const CHUNK_END = "\n  ]\n}";
 const FIRST_CHUNK_ROWS = 64;
 const CHUNK_TEXT_LENGTH = 256 * 1024;
 
-type AnswerContext = Parameters<typeof answerExit>[1];
+interface AnswerContext {
+  /** The identity of the source the run leased. */
+  identity: WorkbenchIdentity;
+  /** The Target Libraries of the run, in the canonical order. */
+  libraries: readonly LibraryWire[];
+  signal: AbortSignal;
+  onAnswerStep?: (ms: number) => void;
+  output?: string;
+  openOutput?: ItemQueryCliDeps["openOutput"];
+}
 
 class ItemQueryOutputError extends Data.TaggedError("ItemQueryOutputError")<{
   diagnostic: Diagnostic;
@@ -496,23 +477,6 @@ function outputStep<A>(
     // Cancellation waits for native I/O before releasing the connection borrow.
     Effect.uninterruptible,
   );
-}
-
-/** The materialized-result adapter shares the incremental wire encoder. */
-async function answerResult(
-  result: QueryResult,
-  context: AnswerContext,
-): Promise<string> {
-  try {
-    const answer = await createAnswer(result, context);
-    await answer.write(result.rows);
-    return await answer.end();
-  } catch (error) {
-    context.signal.throwIfAborted();
-    const failed = outputFailure(error);
-    if (failed) return failure(ITEM_QUERY_COMMAND, failed.diagnostic);
-    throw error;
-  }
 }
 
 /** Byte-identical pretty JSON; only the current projection chunk is retained. */

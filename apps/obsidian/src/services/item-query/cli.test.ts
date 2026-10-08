@@ -1,12 +1,7 @@
-import { Exit } from "effect";
 import { StatementSync } from "node:sqlite";
 import type { CliData, CliHandler, Plugin } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  ItemQueryDatabaseError,
-  ItemQueryLayoutError,
-} from "@zotlit/db/item-query";
 import {
   BULK_LIBRARY,
   openScenarioDatabase,
@@ -21,7 +16,6 @@ import {
 import type { LibraryScope } from "@/services/library-scope/scope";
 
 import {
-  answerExit,
   createItemQueryCancelHandler,
   createItemQueryHandler,
   createItemQuerySchemaHandler,
@@ -215,6 +209,20 @@ describe("zotlit:item-query answer", () => {
 
     await expect(answering).rejects.toBe(reason);
     expect(events).toEqual(["step"]);
+  });
+
+  it("rejects with an AbortError when the run is cancelled without a reason", async () => {
+    using scenario = openScenarioDatabase();
+    seedBulkLibrary(scenario.sqlite, 600);
+    fastClock();
+    const controller = new AbortController();
+
+    const answering = handlerOf(scenario, {
+      signal: controller.signal,
+      onAnswerStep: () => controller.abort(),
+    })({ ...BULK, fields: "[]" });
+
+    await expect(answering).rejects.toMatchObject({ name: "AbortError" });
   });
 });
 
@@ -976,8 +984,56 @@ describe("zotlit:item-query borrowed source", () => {
 
     expect(answer).toMatchObject({
       ok: false,
-      diagnostic: { code: "database-error", hint: expect.any(String) },
+      diagnostic: {
+        code: "database-error",
+        message: expect.stringContaining(
+          "Item Query could not read the Zotero database: ",
+        ),
+        hint: expect.any(String),
+      },
     });
+  });
+
+  it("answers unsupported-database-layout for a copy that lacks a manifest table or column", async () => {
+    using scenario = openScenarioDatabase();
+    scenario.sqlite.exec(
+      'pragma foreign_keys = off; drop table "itemDataValues"; alter table "fieldsCombined" drop column "custom"',
+    );
+    const { run } = setup(scenario);
+
+    const answer = await run();
+
+    expect(answer).toMatchObject({
+      contractVersion: 1,
+      command: ITEM_QUERY_COMMAND,
+      ok: false,
+      diagnostic: {
+        code: "unsupported-database-layout",
+        message: expect.stringContaining("fieldsCombined.custom"),
+        hint: expect.stringContaining("update ZotLit"),
+      },
+    });
+    expect((answer.diagnostic as { message: string }).message).toContain(
+      "the table itemDataValues",
+    );
+  });
+
+  it("rejects with an Error for a defect, distinct from a cancellation", async () => {
+    using scenario = openScenarioDatabase();
+    const defect = new TypeError("boom");
+    const { run } = setup(scenario, {
+      openOutput: async () => {
+        throw defect;
+      },
+    });
+
+    const answering = run({ output: "/exports/items.json" });
+
+    await expect(answering).rejects.toThrow(
+      "Item Query failed with an internal error.",
+    );
+    await expect(answering).rejects.toMatchObject({ cause: defect });
+    await expect(answering).rejects.not.toMatchObject({ name: "AbortError" });
   });
 });
 
@@ -1073,78 +1129,6 @@ describe("zotlit:item-query cancellation", () => {
     events.push("settled");
 
     expect(events).toEqual(["read", "read", "read", "settled"]);
-  });
-});
-
-describe("answerExit", () => {
-  const context = {
-    identity: IDENTITY,
-    libraries: [{ type: "personal" }] as const,
-    signal: new AbortController().signal,
-  };
-
-  it("answers database-error for a database failure", async () => {
-    const exit = Exit.fail(
-      new ItemQueryDatabaseError({
-        query: "select 1",
-        params: [],
-        cause: new Error("disk I/O error"),
-      }),
-    );
-
-    const answer = JSON.parse(await answerExit(exit, context));
-
-    expect(answer).toMatchObject({
-      contractVersion: 1,
-      ok: false,
-      diagnostic: {
-        code: "database-error",
-        message: expect.stringContaining("disk I/O error"),
-      },
-    });
-  });
-
-  it("answers unsupported-database-layout for a layout this ZotLit cannot read", async () => {
-    const exit = Exit.fail(
-      new ItemQueryLayoutError({
-        missing: [
-          { table: "itemData", column: null },
-          { table: "items", column: "itemTypeID" },
-        ],
-        versions: { userdata: 131, compatibility: 10 },
-      }),
-    );
-
-    const answer = JSON.parse(await answerExit(exit, context));
-
-    expect(answer).toMatchObject({
-      contractVersion: 1,
-      command: "zotlit:item-query",
-      ok: false,
-      diagnostic: {
-        code: "unsupported-database-layout",
-        message: expect.stringContaining("items.itemTypeID"),
-        hint: expect.stringContaining("update ZotLit"),
-      },
-    });
-    expect(answer.diagnostic.message).toContain("the table itemData");
-  });
-
-  it("rejects with an Error for a defect, distinct from a cancellation", async () => {
-    const defect = new TypeError("boom");
-
-    const answering = answerExit(Exit.die(defect), context);
-
-    await expect(answering).rejects.toThrow(
-      "Item Query failed with an internal error.",
-    );
-    await expect(answering).rejects.toMatchObject({ cause: defect });
-  });
-
-  it("rejects with an AbortError for an interruption without an abort reason", async () => {
-    const answering = answerExit(Exit.interrupt(), context);
-
-    await expect(answering).rejects.toMatchObject({ name: "AbortError" });
   });
 });
 
