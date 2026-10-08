@@ -94,7 +94,7 @@ import type { NativePreviewState } from "./session";
 
 export interface PreviewViewDeps extends NativeRenderDeps {
   settings: SettingsService;
-  itemLookup: Pick<ItemLookup, "search">;
+  itemLookup: Pick<ItemLookup, "search" | "openSession">;
   profile: Pick<
     ProfileService,
     "getBuiltInSource" | "profiles" | "resolveProfile"

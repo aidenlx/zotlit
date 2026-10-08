@@ -186,7 +186,7 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
       ...fixture.deps,
       settings: fixture.deps.settings as SettingsService,
       profile,
-      itemLookup: { search: vi.fn() },
+      itemLookup: { search: vi.fn(), openSession: vi.fn() },
     });
     // The lightweight ItemView mock leaves this native base property to its test.
     Object.defineProperty(preview, "app", { value: app });

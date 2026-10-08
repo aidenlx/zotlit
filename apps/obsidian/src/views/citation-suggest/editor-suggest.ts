@@ -15,7 +15,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
-import type { SearchHit } from "@/services/item-lookup/service";
+import type { SearchHit, SearchSession } from "@/services/item-lookup/service";
 import { InertTemplateError } from "@/services/template/errors";
 
 import type { CitationSuggestDeps } from "./register";
@@ -30,6 +30,8 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
   readonly #deps: CitationSuggestDeps;
   /** Set in {@link onTrigger}: the Citation Variant the open query asks for. */
   #variant: CitationVariant = "main";
+  /** The searches of the open dropdown: its first search opens it, and {@link close} ends it. */
+  #session: SearchSession | null = null;
 
   constructor(deps: CitationSuggestDeps) {
     super(deps.app);
@@ -81,7 +83,14 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
   override getSuggestions(
     context: EditorSuggestContext,
   ): SearchHit[] | Promise<SearchHit[]> {
-    return this.#deps.lookup.search(context.query, { limit: this.limit });
+    this.#session ??= this.#deps.lookup.openSession();
+    return this.#session.search(context.query, { limit: this.limit });
+  }
+
+  override close(): void {
+    this.#session?.close();
+    this.#session = null;
+    super.close();
   }
 
   override renderSuggestion(hit: SearchHit, el: HTMLElement): void {

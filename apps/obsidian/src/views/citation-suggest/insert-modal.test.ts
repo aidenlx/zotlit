@@ -13,7 +13,7 @@ function makeModal(
 ): InsertCitationModal {
   const deps = {
     app: {} as App,
-    lookup: { search: vi.fn().mockReturnValue([]) },
+    lookup: { openSession: vi.fn() },
     noteFeature: { renderCitation: vi.fn() },
     settings: { current: {} },
     citationIndex: {
