@@ -1,4 +1,4 @@
-import { Keymap, MarkdownView, Platform, SuggestModal } from "obsidian";
+import { Keymap, MarkdownView, Platform } from "obsidian";
 import type { PaneType, TFile } from "obsidian";
 
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
@@ -7,8 +7,7 @@ import {
   createPdfReader,
   resolveLiteratureNoteAttachments,
 } from "@/services/attachment-open/actions";
-import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
-import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
+import { ItemSearchModal } from "@/services/item-lookup/search-modal";
 import type { SearchHit } from "@/services/item-lookup/service";
 import { createNoteInteractively } from "@/services/note-feature";
 import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
@@ -25,13 +24,12 @@ function shiftGlyph(): string {
   return Platform.isMacOS ? "⇧" : "Shift";
 }
 
-export class QuickSwitchModal extends SuggestModal<SearchHit> {
+export class QuickSwitchModal extends ItemSearchModal {
   readonly #deps: QuickSwitchDeps;
 
   constructor(deps: QuickSwitchDeps) {
-    super(deps.app);
+    super(deps);
     this.#deps = deps;
-    this.limit = DEFAULT_LIMIT;
     this.setPlaceholder(m.modal_literature_search_placeholder());
     this.setInstructions([
       { command: "↑↓", purpose: m.instruction_navigate() },
@@ -55,14 +53,6 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
       this.selectActiveSuggestion(evt);
       return false;
     });
-  }
-
-  override getSuggestions(query: string): SearchHit[] | Promise<SearchHit[]> {
-    return this.#deps.lookup.search(query, { limit: this.limit });
-  }
-
-  override renderSuggestion(hit: SearchHit, el: HTMLElement): void {
-    renderSearchHit(this.#deps.settings, hit, el);
   }
 
   override async onChooseSuggestion(

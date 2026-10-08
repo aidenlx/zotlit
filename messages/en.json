@@ -720,6 +720,7 @@
   "profile_match_problem_unknown_item_type": "{text} is not a Zotero item type.",
   "modal_profile_problem_invalid_selector": "The requested profile “{selector}” is unavailable. Choose a profile for this note.",
   "modal_literature_search_placeholder": "Search by title, author, year, or citation key…",
+  "modal_item_search_loading": "Loading Zotero items…",
   "modal_profile_choose_placeholder": "Choose a profile…",
   "modal_select_pdf_placeholder": "Select a PDF to open",
   "modal_profile_preselected": "Selected",

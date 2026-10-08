@@ -372,14 +372,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         targetVaultId,
-        "(function(){var command=app.commands.commands['zotlit:note-quick-switcher'];if(!command)return false;command.callback();return true;})()",
+        "String(!!app.commands.commands['zotlit:note-quick-switcher'])",
         { expected: "true" },
       ),
     ).toBe(true);
+    // The picker and its backdrop stay transparent until the first answer
+    // settles, then show with rows, or with a loading row when that answer is
+    // slow; no visible frame holds an empty list.
+    expect(
+      await obEval(
+        targetVaultId,
+        "(function(){app.commands.commands['zotlit:note-quick-switcher'].callback();var modal=Array.from(activeDocument.querySelectorAll('.modal-container')).at(-1);return activeWindow.getComputedStyle(modal).opacity==='0';})()",
+      ),
+    ).toBe("true");
     expect(
       await obEvalUntil(
         targetVaultId,
-        "String(!!activeDocument.querySelector('.prompt input'))",
+        "(function(){var modal=Array.from(activeDocument.querySelectorAll('.modal-container')).at(-1);return String(activeWindow.getComputedStyle(modal).opacity==='1'&&!!modal.querySelector('.prompt .suggestion-item, .prompt .suggestion-empty'));})()",
         { expected: "true" },
       ),
     ).toBe(true);
