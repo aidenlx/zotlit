@@ -2885,6 +2885,7 @@ describe("Template Workbench Item choice", () => {
             library: null,
           },
         ],
+        openSession: () => ({ search: async () => [], [Symbol.dispose]() {} }),
       },
     } as unknown as Partial<TemplateWorkbenchDeps>);
     using open = vi.spyOn(SuggestModal.prototype, "open");

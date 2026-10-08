@@ -133,7 +133,7 @@ export class ItemLookup extends Service<ItemLookupReady> {
     };
   }
 
-  /** Runs one search through `run`; answers empty without a request when the limit or the scope leaves nothing to ask. */
+  /** Answers empty without a request when the limit or the scope leaves nothing to ask. */
   async #run(
     run: RunSearch,
     query: string,

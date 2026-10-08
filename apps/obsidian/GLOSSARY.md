@@ -668,7 +668,7 @@ The search index over the Items of the Libraries in Library Scope, held by the Z
 _Avoid_: search cache, item-lookup index (names the package, not the thing), MiniSearch index (names the engine)
 
 **Search Session**:
-The searches one search surface — a picker or the Citation Suggester — asks of the Item Index while it is open. A new keystroke replaces the search before it in the same session, and the replaced search answers with the newest list; other sessions and one-shot searches, such as the template workbench's recent Items, run beside it and keep their own answers. A change of the Libraries in Library Scope drops the pending search of every session.
+The searches one search surface — a picker or the Citation Suggester — asks of the Item Index while it is open: each new keystroke replaces the search before it, and a change of the Libraries in Library Scope drops the pending one. Other sessions and one-shot searches, such as the template workbench's recent Items, run beside it and keep their own answers.
 _Avoid_: search handle (names the mechanism), query session
 
 **Chinese Segmenter**:

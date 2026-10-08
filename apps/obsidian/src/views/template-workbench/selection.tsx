@@ -149,6 +149,8 @@ export async function chooseWorkbenchItem(
   const retained =
     selected && !choices.some(({ id }) => id === selected.id) ? [selected] : [];
   const found = new Map<string, WorkbenchItemChoice>();
+  // The chooser's typed searches; the recent Items above stay one-shot.
+  using session = deps.lookup.openSession();
   const request: NativeWorkbenchSuggesterRequest = {
     title: m.workbench_choose_item(),
     selected: selected?.id,
@@ -184,7 +186,7 @@ export async function chooseWorkbenchItem(
       },
     ],
     searchItems: async (query) => {
-      const hits = await deps.lookup.search(query, { limit: DEFAULT_LIMIT });
+      const hits = await session.search(query, { limit: DEFAULT_LIMIT });
       return hits.flatMap(({ item }) => {
         if (isChildItemFields(item.fields)) return [];
         const choice = {

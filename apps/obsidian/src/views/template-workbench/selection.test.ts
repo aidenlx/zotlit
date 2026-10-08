@@ -25,7 +25,10 @@ it("searches Zotero from the first item chooser and selects a matching paper", a
   const app = {} as App;
   const deps = {
     app,
-    lookup: { search },
+    lookup: {
+      search,
+      openSession: () => ({ search, close() {}, [Symbol.dispose]() {} }),
+    },
     settings: { current: {} },
   } as unknown as Parameters<typeof chooseWorkbenchItem>[1];
   using open = vi.spyOn(SuggestModal.prototype, "open");
