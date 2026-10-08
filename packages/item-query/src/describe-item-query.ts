@@ -89,6 +89,12 @@ export interface SchemaFunction {
 export interface SchemaMethod extends SchemaFunction {
   /** `any`: a method of every value, null included. */
   readonly on: FilterValueType | "any";
+  /**
+   * Present on an element-expression method: the names its first parameter
+   * can use. `value` is the element, `index` its position, `acc` the running
+   * result of `reduce`.
+   */
+  readonly scope?: readonly string[];
 }
 
 /** A property, read as `value.name` on a value of type `on`. */
@@ -286,7 +292,12 @@ const FUNCTIONS: readonly SchemaFunction[] = [
 ];
 
 const METHODS: readonly SchemaMethod[] = METHOD_ENTRIES.map(
-  ([on, name, definition]) => ({ name, on, ...signature(definition) }),
+  ([on, name, definition]) => ({
+    name,
+    on,
+    ...signature(definition),
+    ...(definition.scope && { scope: definition.scope }),
+  }),
 );
 
 const PROPERTIES: readonly SchemaProperty[] = PROPERTY_ENTRIES.map(

@@ -17,6 +17,16 @@ import {
 import type { FilterValue } from "./filter-values";
 import type { QueryClock } from "./query-clock";
 
+/** The values of the names the enclosing element expressions bind. */
+type Bindings = ReadonlyMap<string, FilterValue>;
+
+/** What one evaluation reads: the Item, the Query Clock, and the bindings. */
+interface Context {
+  readonly item: QueryItem;
+  readonly clock: QueryClock;
+  readonly bindings: Bindings;
+}
+
 /** Whether the filter selects the Item: null is falsy. */
 export function matches(
   root: FilterNode,
@@ -35,58 +45,57 @@ export function evaluate(
   item: QueryItem,
   clock: QueryClock,
 ): FilterValue {
+  return valueOf(node, { item, clock, bindings: new Map() });
+}
+
+/** The value of a node in `context`. */
+function valueOf(node: FilterNode, context: Context): FilterValue {
+  const { item, clock, bindings } = context;
+  const value = (child: FilterNode) => valueOf(child, context);
   switch (node.kind) {
     case "literal":
       return node.value;
     case "list":
-      return node.elements.map((element) => evaluate(element, item, clock));
+      return node.elements.map(value);
     case "field":
     case "custom-field":
       return node.value.read(item);
+    case "binding":
+      return bindings.get(node.name) ?? null;
     case "unary": {
-      const operand = evaluate(node.operand, item, clock);
+      const operand = value(node.operand);
       // Null is falsy, so `!` of null is true.
       if (node.operator === "!") return !truthy(operand);
       return typeof operand === "number" ? -operand : null;
     }
     case "binary":
-      return binary(node, item, clock);
+      return binary(node, context);
     case "if": {
-      if (truthy(evaluate(node.condition, item, clock))) {
-        return evaluate(node.whenTrue, item, clock);
-      }
-      return node.whenFalse ? evaluate(node.whenFalse, item, clock) : null;
+      if (truthy(value(node.condition))) return value(node.whenTrue);
+      return node.whenFalse ? value(node.whenFalse) : null;
     }
     case "function":
       return invoke(
         node.definition,
-        {
-          subject: null,
-          args: node.args.map((arg) => evaluate(arg, item, clock)),
-        },
+        { subject: null, args: node.args.map(value) },
         clock,
       );
     case "method": {
-      const subject = evaluate(node.subject, item, clock);
+      const subject = value(node.subject);
       const method = methodOf(typeOf(subject), node.name);
       if (!method) return null;
-      return invoke(
-        method,
-        {
-          subject,
-          args: node.args.map((arg) => evaluate(arg, item, clock)),
-        },
-        clock,
-      );
+      return invoke(method, { subject, args: node.args.map(value) }, clock);
     }
+    case "element":
+      return element(node, context);
     case "property": {
-      const subject = evaluate(node.subject, item, clock);
+      const subject = value(node.subject);
       const property = propertyOf(typeOf(subject), node.name);
       return property ? property.read(subject, clock) : null;
     }
     case "index": {
-      const subject = evaluate(node.subject, item, clock);
-      const index = evaluate(node.index, item, clock);
+      const subject = value(node.subject);
+      const index = value(node.index);
       if (typeof index !== "number" || !Number.isInteger(index)) return null;
       if (!isList(subject) && typeof subject !== "string") return null;
       // A negative index counts from the end.
@@ -95,27 +104,59 @@ export function evaluate(
   }
 }
 
+/**
+ * An element expression: the expression runs once for each element of the
+ * list with `value` and `index` bound, and `acc` in `reduce`. A subject that
+ * is not a list gives null; `initial` is evaluated once, outside the binding.
+ */
+function element(
+  node: Extract<FilterNode, { kind: "element" }>,
+  context: Context,
+): FilterValue {
+  const subject = valueOf(node.subject, context);
+  if (!isList(subject)) return null;
+  const args = node.args.map((arg) => valueOf(arg, context));
+  const at = (index: number, acc?: FilterValue): FilterValue =>
+    valueOf(node.expression, {
+      ...context,
+      bindings: new Map([
+        ...context.bindings,
+        ["value", subject[index]!],
+        ["index", index],
+        ...(acc === undefined ? [] : [["acc", acc] as const]),
+      ]),
+    });
+  switch (node.name) {
+    case "filter":
+      return subject.filter((_element, index) => truthy(at(index)));
+    case "map":
+      return subject.map((_element, index) => at(index));
+    case "reduce":
+      return subject.reduce<FilterValue>(
+        (acc, _element, index) => at(index, acc),
+        args[0] ?? null,
+      );
+    default:
+      return null;
+  }
+}
+
 function binary(
   node: Extract<FilterNode, { kind: "binary" }>,
-  item: QueryItem,
-  clock: QueryClock,
+  context: Context,
 ): FilterValue {
   const { operator } = node;
+  const { clock } = context;
+  const value = (child: FilterNode) => valueOf(child, context);
   // `&&` and `||` evaluate the right side only when the left side needs it.
   if (operator === "&&") {
-    return (
-      truthy(evaluate(node.left, item, clock)) &&
-      truthy(evaluate(node.right, item, clock))
-    );
+    return truthy(value(node.left)) && truthy(value(node.right));
   }
   if (operator === "||") {
-    return (
-      truthy(evaluate(node.left, item, clock)) ||
-      truthy(evaluate(node.right, item, clock))
-    );
+    return truthy(value(node.left)) || truthy(value(node.right));
   }
-  const left = evaluate(node.left, item, clock);
-  const right = evaluate(node.right, item, clock);
+  const left = value(node.left);
+  const right = value(node.right);
   switch (operator) {
     case "==":
       return equals(left, right, clock);

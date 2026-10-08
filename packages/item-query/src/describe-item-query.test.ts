@@ -253,6 +253,31 @@ describe("describeItemQuery functions", () => {
         returns: "list",
       });
     }
+    // An element-expression method names the scope its expression can use.
+    for (const name of ["filter", "map"]) {
+      expect(listMethod(name)).toEqual({
+        name,
+        on: "list",
+        parameters: [{ name: "expression", type: "any" }],
+        optional: [],
+        rest: null,
+        returns: "list",
+        scope: ["value", "index"],
+      });
+    }
+    expect(listMethod("reduce")).toEqual({
+      name: "reduce",
+      on: "list",
+      parameters: [
+        { name: "expression", type: "any" },
+        { name: "initial", type: "any" },
+      ],
+      optional: [],
+      rest: null,
+      returns: null,
+      scope: ["value", "index", "acc"],
+    });
+    expect(listMethod("slice")).not.toHaveProperty("scope");
     expect(
       properties.filter((entry) => entry.name === "length").map((e) => e.on),
     ).toEqual(["string", "list"]);

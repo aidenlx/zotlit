@@ -594,6 +594,84 @@ describe("list helpers", () => {
   ]);
 });
 
+describe("element expressions", () => {
+  vectors([
+    // filter keeps the elements for which the expression is truthy.
+    ['tags.filter(value.contains("read"))', ["to-read"]],
+    ['tags.filter(value.lower() == "to-read")', ["to-read", "To-Read"]],
+    ['creators.filter(value.contains("Lovelace")).length', 2],
+    ["creators.filter(index == 0)", ["Ada Lovelace"]],
+    ["[1, 2, 3].filter(value > 1)", [2, 3]],
+    ["tags.filter(true)", ["methods", "to-read", "To-Read"]],
+    ["tags.filter(null)", []],
+    // map collects the value of the expression for each element.
+    ["tags.map(value.lower())", ["methods", "to-read", "to-read"]],
+    ["tags.map(index)", [0, 1, 2]],
+    ["[1, 2].map(value * 2)", [2, 4]],
+    ["[1, null].map(value.isEmpty())", [false, true]],
+    // A built-in field keeps its meaning inside the expression.
+    ["[1, 2].map(title)", ["Ecology of Éclairs", "Ecology of Éclairs"]],
+    // reduce folds the list: acc starts at initial.
+    ["tags.reduce(acc + value.length, 0)", 21],
+    ["[1, 2, 3].reduce(acc + value, 0)", 6],
+    ["[1, 2, 3].reduce(acc * value, 1)", 6],
+    ['tags.reduce(acc + ", " + value, "")', ", methods, to-read, To-Read"],
+    ["[1, 2].reduce(index, null)", 1],
+    // A null initial: null adds no text and gives null in arithmetic.
+    ["tags.reduce(acc + value, null)", "methodsto-readTo-Read"],
+    ["[1, 2].reduce(acc + value, null)", null],
+    ["[].reduce(acc, null)", null],
+    // An empty list gives an empty list, or initial.
+    ["[].filter(value)", []],
+    ["[].map(value)", []],
+    ["[].reduce(acc + value, 0)", 0],
+    // A null or non-list subject gives null.
+    ["tags[9].filter(value)", null],
+    ["if(false, tags).map(value)", null],
+    ["tags[9].reduce(acc, 0)", null],
+    ["tags[0].filter(value)", null],
+    ["tags[0].map(value)", null],
+    ["tags[0].reduce(acc, 0)", null],
+    // A nested element expression binds the innermost names; the outer
+    // names stay bound.
+    ["[[1, 2], [3]].map(value.map(value * 10))", [[10, 20], [30]]],
+    ['[["a"], ["b", "c"]].map(value.filter(index == 0))', [["a"], ["b"]]],
+    ["[[1, 2], [3]].reduce(acc + value.filter(value > acc).length, 0)", 3],
+    ["[1, 2].reduce(acc + [10, 20].reduce(acc + value, 0), 0)", 60],
+    ["[[1], [2, 3]].map(index + value.length)", [1, 3]],
+  ]);
+
+  it("binds value, index, and acc only inside the expression", () => {
+    const named = item({
+      custom: { value: "field", index: "5", acc: "sum" },
+      tags: ["a", "b"],
+    });
+    expect(valueOf("value", named)).toBe("field");
+    expect(valueOf("index", named)).toBe("5");
+    expect(valueOf("acc", named)).toBe("sum");
+    expect(valueOf("tags.map(value)", named)).toEqual(["a", "b"]);
+    expect(valueOf("tags.map(index)", named)).toEqual([0, 1]);
+    expect(valueOf('tags.map(custom["value"])', named)).toEqual([
+      "field",
+      "field",
+    ]);
+    expect(valueOf("tags.reduce(acc + value, index)", named)).toBe("5ab");
+    // acc is bound in reduce alone.
+    expect(valueOf("tags.map(acc)", named)).toEqual(["sum", "sum"]);
+    expect(valueOf("tags.filter(acc)", named)).toEqual(["a", "b"]);
+    expect(valueOf("tags.map(acc)")).toEqual([null, null, null]);
+    expect(plan("tags.filter(acc)").customFields).toMatchObject([
+      { name: "acc", bare: true },
+    ]);
+    expect(plan("tags.reduce(acc, value)").customFields).toMatchObject([
+      { name: "value", bare: true },
+    ]);
+    expect(plan("tags.reduce(acc + value + index, 0)").customFields).toEqual(
+      [],
+    );
+  });
+});
+
 describe("relation lists", () => {
   vectors([
     // The same person as author and as editor is two elements.
@@ -971,6 +1049,25 @@ describe("validation", () => {
     ["tags.unique(1)", "wrong-argument-count", [0, 14]],
     ["tags.flat(1)", "wrong-argument-count", [0, 12]],
     ["tags.reverse(1)", "wrong-argument-count", [0, 15]],
+    // An element expression is validated like every other part, also on an
+    // empty list; value and acc have no known type, index is a number.
+    ["tags.filter(noSuchFunction(value))", "unknown-function", [12, 26]],
+    ["[].map(value.noSuchMethod())", "unknown-function", [13, 25]],
+    ["[].reduce(acc.lenght, 0)", "unknown-property", [14, 20]],
+    ["tags.filter(index.lower())", "unknown-function", [18, 23]],
+    ["tags.filter(value.startsWith(index))", "wrong-argument-type", [29, 34]],
+    ["tags.map(value.contains())", "wrong-argument-count", [9, 25]],
+    ["tags.filter()", "wrong-argument-count", [0, 13]],
+    ["tags.map(value, 1)", "wrong-argument-count", [0, 18]],
+    ["tags.reduce(acc)", "wrong-argument-count", [0, 16]],
+    ["tags.reduce(acc, 0, 1)", "wrong-argument-count", [0, 22]],
+    // An element method on a subject of a definite non-list type.
+    ["title.filter(value)", "unknown-function", [6, 12]],
+    ["(1).map(value)", "unknown-function", [4, 7]],
+    ["attachments.reduce(acc, 0)", "unknown-function", [12, 18]],
+    ["dateAdded.map(value)", "unknown-function", [10, 13]],
+    // The names are bound inside the expression alone.
+    ["value.filter(value)", "unknown-function", [6, 12]],
     // A global function called as a method, and a method called as a global.
     ["title.number()", "unknown-function", [6, 12]],
     ['contains(title, "a")', "unknown-function", [0, 8]],

@@ -49,6 +49,13 @@ export interface FunctionDefinition {
   /** The type of the result when it is not null; `null` when it varies. */
   readonly returns: Exclude<FilterValueType, "null"> | null;
   /**
+   * Present on an element-expression method, a special form of the
+   * evaluator: the names its first parameter can use. The evaluator runs the
+   * expression once for each element with these names bound, so `call` does
+   * not run.
+   */
+  readonly scope?: readonly string[];
+  /**
    * `subject` is the value the method is called on, and null for a global
    * function. `clock` is the Query Clock of the query. A null result is a
    * failure that depends on the Item's data.
@@ -208,6 +215,24 @@ function sortOrder(a: FilterValue, b: FilterValue, clock: QueryClock): number {
   return 0;
 }
 
+/**
+ * An element-expression method of a list: `filter(expression)`,
+ * `map(expression)`, and `reduce(expression, initial)`. The evaluator binds
+ * `value` and `index` for each element, and `acc` in `reduce`.
+ */
+const elementMethod = (
+  entry: Pick<FunctionDefinition, "returns" | "scope"> & {
+    readonly after?: readonly FunctionParameter[];
+  },
+): FunctionDefinition => ({
+  parameters: [any("expression"), ...(entry.after ?? [])],
+  returns: entry.returns,
+  scope: entry.scope,
+  call: () => {
+    throw new Error("An element expression runs in the evaluator.");
+  },
+});
+
 /** The methods of each value type. A type also has {@link ANY_METHODS}. */
 const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
   {
@@ -347,6 +372,15 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
             [],
           ),
       },
+      // The element expressions of Bases: each one evaluates its expression
+      // once for each element.
+      filter: elementMethod({ returns: "list", scope: ["value", "index"] }),
+      map: elementMethod({ returns: "list", scope: ["value", "index"] }),
+      reduce: elementMethod({
+        returns: null,
+        scope: ["value", "index", "acc"],
+        after: [any("initial")],
+      }),
       // A Collection element is its root-first path: `within` matches the
       // Collection at `path` and every Collection below it.
       within: {
