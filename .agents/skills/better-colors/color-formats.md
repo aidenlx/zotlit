@@ -22,7 +22,7 @@ oklch(L C H / alpha)  /* alpha uses a slash, never a comma */
 
 ## Converting
 
-Convert when the user asks, when an agreed migration is in scope, or when the project is standardizing on a notation and this value is the straggler. Never convert an isolated value in a project that deliberately uses something else and never because this skill happened to load.
+Convert when the user asks, when an agreed migration is in scope or when the project is standardizing on a notation and this value is the straggler. Never convert an isolated value in a project that deliberately uses something else and never because this skill happened to load.
 
 When conversion is in scope, change the values and nothing else:
 
@@ -45,25 +45,25 @@ Bulk conversion is a migration, not cleanup. It shifts every rendered color by a
 
 ## Gamut
 
-Every sRGB color exists in Display P3, but not the reverse. P3 covers roughly 50% more colors, which matters only for the most saturated values. A color at 60% of maximum vividness looks the same on both.
+Every sRGB color exists in Display P3, but not the reverse. The extra room is only at high chroma and varies by hue. At OKLCH `L` `0.65`, green gains about `0.07` of chroma while blue gains about `0.015`.
 
-A color more vivid than its display can render gets clipped, and clipping is not graceful. It flattens neighbouring steps into one rendered color, so the top of a ramp can lose its distinctions on an sRGB screen. Maximum vividness varies by hue and lightness. Cyans top out far lower than reds and purples, so a clipping ramp clips at some steps and not others.
+A color more vivid than its display can render gets gamut-mapped, which in current browsers mostly means clipped. It flattens neighbouring steps into one rendered color, so the top of a ramp can lose its distinctions on an sRGB screen. Maximum vividness varies by hue and lightness. Cyans top out far lower than reds and purples, so a clipping ramp clips at some steps and not others.
 
 The fix is to reduce vividness while holding hue and lightness. Generate ramps against sRGB unless the product is display-restricted, and add P3 as an enhancement:
 
 ```css
-.accent {
-  background: #3b82f6;
+.success {
+  background: #11ad32; /* oklch(0.65 0.2 145), inside sRGB */
 }
 
 @media (color-gamut: p3) {
-  .accent {
-    background: oklch(0.62 0.24 259);
+  .success {
+    background: oklch(0.65 0.27 145);
   }
 }
 ```
 
-Order matters. The sRGB value comes first so every display gets something, and the P3 rule overrides only where it will render. A P3 color with no fallback is a `HIGH` finding; it does not degrade, it fails.
+Order matters. The sRGB value comes first, so an sRGB screen shows a color you chose rather than one the browser clipped. The P3 rule overrides only where it will render.
 
 For browser matrices predating `oklch()` support, the same layering works with `@supports`:
 
@@ -87,4 +87,4 @@ Check the project's actual browser matrix before adding this. On a modern baseli
 - **Relative color syntax** adjusts one channel of an existing color. `oklch(from var(--color-accent-solid) calc(l - 0.1) c h)` darkens the accent by hand. Powerful and easy to overuse, since a token defined by three chained derivations is unreadable.
 - **`light-dark()`** puts both appearances in one declaration. See [palette-generation.md](palette-generation.md).
 
-All three compute at render time, so their output cannot be contrast-checked statically. Measure the rendered result.
+All three resolve at render time. Compute the resolved value with a color library, or measure the rendered result, before reporting contrast.

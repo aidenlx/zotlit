@@ -1,18 +1,12 @@
 # Surfaces
 
-Border radius, optical alignment, shadows and image outlines.
+Recipes for concentric radius, optical alignment, shadow rings and image outlines.
 
 ## Concentric border radius
 
-When nesting rounded elements, the outer radius must equal the inner radius plus the padding between them:
-
 ```
-outerRadius = innerRadius + padding
+outerRadius = innerRadius + padding + borderWidth
 ```
-
-The rule matters most when nested surfaces sit close together. Past `24px` of padding, treat the layers as separate surfaces and choose each radius independently rather than forcing concentric math.
-
-### Example
 
 ```css
 /* Good: concentric radii */
@@ -34,43 +28,36 @@ The rule matters most when nested surfaces sit close together. Past `24px` of pa
 }
 ```
 
-### Tailwind example
-
 ```tsx
 // Good: outer radius accounts for padding
 <div className="rounded-2xl p-2">       {/* 16px radius, 8px padding */}
-  <div className="rounded-lg">          {/* 8px radius = 16 - 8 ✓ */}
+  <div className="rounded-lg">          {/* 8px radius = 16 - 8 */}
     ...
   </div>
 </div>
 
 // Bad: same radius on both
 <div className="rounded-xl p-2">
-  <div className="rounded-xl">          {/* same radius, looks off */}
+  <div className="rounded-xl">
     ...
   </div>
 </div>
 ```
 
-Mismatched radii on closely nested surfaces are a common source of visual tension. Calculate concentrically where the layers share a visible, even inset. Keep an established component token where they are independent or the padding is deliberately asymmetric.
-
 ## Optical alignment
 
-When geometric centering looks off, align optically instead.
+### Buttons with text and an icon
 
-### Buttons with text + icon
-
-Where an icon makes symmetric padding look unbalanced, use slightly less on the icon side. A starting point:
-`icon-side padding = text-side padding - 2px`.
+Start the icon side at `2px` less padding than the text side, then judge by eye.
 
 ```css
-/* Good: less padding on icon side */
+/* Good: less padding on the trailing icon side */
 .button-with-icon {
   padding-inline-start: 16px;
-  padding-inline-end: 14px; /* trailing icon side = text side - 2px */
+  padding-inline-end: 14px;
 }
 
-/* Bad: equal padding looks like icon is pushed too far right */
+/* Bad: equal padding pushes the icon visually outward */
 .button-with-icon {
   padding-inline: 16px;
 }
@@ -86,43 +73,29 @@ Where an icon makes symmetric padding look unbalanced, use slightly less on the 
 
 ### Play button triangles
 
-Play icons are triangular and their geometric center is not their visual center. Shift slightly right:
+A triangle's geometric center sits left of its visual center, so shift it toward its point:
 
 ```css
-/* Good: optically centered */
 .play-button svg {
-  transform: translateX(2px); /* physical correction to the glyph itself */
-}
-
-/* Bad: geometrically centered but looks off */
-.play-button svg {
-  /* no adjustment */
+  transform: translateX(2px); /* physical on purpose: playback icons never mirror */
 }
 ```
 
-### Asymmetric icons (stars, arrows, carets)
+### Asymmetric icons
 
-Some icons carry uneven visual weight. The best fix is adjusting the SVG directly, so the component needs no extra margin or padding.
+Stars, arrows and carets carry uneven visual weight. Fix the `viewBox` or path in the SVG, so the component needs no extra offset. Where the asset cannot change, nudge its wrapper:
 
 ```tsx
-// Best: fix in the SVG itself
-// Adjust the viewBox or path to visually center the icon
-
-// Fallback: adjust with margin
 <span className="translate-x-px">
   <StarIcon />
 </span>
 ```
 
-## Shadows instead of borders
+## Shadow recipes
 
-Where **buttons, cards and containers** use a border for depth or elevation, replace it with a subtle `box-shadow`. Shadows use transparency, so they adapt to any background where solid borders do not. That matters most over images or multiple background colors, which a fixed border color was never designed for.
+### Light mode
 
-**Never apply this to dividers**, meaning `border-b`, `border-t` and side borders, or any border whose purpose is layout separation rather than depth. Those stay borders.
-
-### Shadow as border (light mode)
-
-Three layers. The first acts as a 1px border ring, the second adds subtle lift, the third ambient depth:
+Three layers. The first acts as a 1px ring, the second adds lift and the third ambient depth:
 
 ```css
 :root {
@@ -137,23 +110,21 @@ Three layers. The first acts as a 1px border ring, the second adds subtle lift, 
 }
 ```
 
-### Shadow as border (dark mode)
+### Dark mode
 
-In dark mode, simplify to one white ring, since layered depth shadows are invisible on dark backgrounds:
+Depth shadows vanish on dark backgrounds, so dark mode keeps one white ring:
 
 ```css
-/* Dark mode: adapt to whatever setup the project uses
-   (prefers-color-scheme, class, data attribute, etc.) */
+/* Redefine under the project's dark selector */
 --shadow-border: 0 0 0 1px oklch(1 0 0 / 0.08);
 --shadow-border-hover: 0 0 0 1px oklch(1 0 0 / 0.13);
 ```
 
-### Usage with hover transition
-
-Apply the variable and add `transition-[box-shadow]` for a smooth hover:
+### Usage
 
 ```css
 .card {
+  border: 1px solid transparent; /* forced-colors mode drops box-shadow and paints this border */
   box-shadow: var(--shadow-border);
   transition-property: box-shadow;
   transition-duration: 150ms;
@@ -165,46 +136,22 @@ Apply the variable and add `transition-[box-shadow]` for a smooth hover:
 }
 ```
 
-### When to use shadows vs. borders
-
-| Use shadows | Use borders |
-| --- | --- |
-| Cards, containers with depth | Dividers between list items |
-| Buttons with bordered styles | Table cell boundaries |
-| Elevated elements (dropdowns, modals) | Form input outlines (for accessibility) |
-| Elements on varied backgrounds | Hairline separators in dense UI |
-| Hover/focus states for lift effect | |
+The transparent border keeps the box the same size as the border it replaces.
 
 ## Image outlines
 
-Add a `1px` outline at low opacity to images for consistent depth, especially where other elements use borders or shadows.
-
-### Color rules (non-negotiable)
-
-- **Light mode**: pure black, `oklch(0 0 0 / 0.1)`.
-- **Dark mode**: pure white, `oklch(1 0 0 / 0.1)`.
-- Never a near-black or near-white from the project palette, such as slate-900, zinc-900, `#0a0a0a`, `#111827`, or `#f5f5f7`. Tinted outlines pick up the surrounding surface color and read as dirt on the image edge.
-- Never match the outline to the project's accent or ink color. The outline is a neutral separator, not a themed element.
-
-### Light mode
-
 ```css
-img {
-  outline: 1px solid oklch(0 0 0 / 0.1);
-  outline-offset: -1px; /* draw the ring just inside the image edge */
+:root {
+  --image-outline: oklch(0 0 0 / 0.1);
 }
-```
+/* Redefine under the project's dark selector */
+--image-outline: oklch(1 0 0 / 0.1);
 
-### Dark mode
-
-```css
-img {
-  outline: 1px solid oklch(1 0 0 / 0.1);
+.content-image {
+  outline: 1px solid var(--image-outline);
   outline-offset: -1px;
 }
 ```
-
-### Tailwind with dark mode
 
 ```tsx
 <img
@@ -214,6 +161,6 @@ img {
 />
 ```
 
-Use `outline-black/10` and `outline-white/10` specifically, not `outline-slate-*`, `outline-zinc-*`, `outline-neutral-*`, or any tinted scale.
+Never `outline-slate-*`, `outline-zinc-*`, `outline-neutral-*` or a palette near-black such as `#111827`.
 
-**Why outline instead of border?** `outline` never affects layout, adding no width or height at any offset, and `outline-offset: -1px` draws the ring just inside the image edge so it hugs the corner radius.
+Use `outline` rather than `border` because it never changes the image's size. At `outline-offset: -1px` it sits just inside the edge and follows the corner radius.

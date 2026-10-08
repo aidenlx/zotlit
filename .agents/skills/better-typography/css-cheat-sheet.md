@@ -16,7 +16,7 @@ One-line lookup for every typography CSS declaration covered by this skill, with
 | `font-synthesis: none` | Disable all synthesized forms after verifying fallbacks and emphasis | `[font-synthesis:none]` |
 | `font-feature-settings` | Toggle OpenType features | `[font-feature-settings:"ss01"]` |
 | `font-variation-settings` | Tune variable font axes | `[font-variation-settings:"GRAD"_80]` |
-| `font-optical-sizing` | Adjust details per size | `[font-optical-sizing:auto]` |
+| `font-optical-sizing: auto` | Optical size follows font size; the default, so leave it | none needed |
 | `font-variant-caps` | Real small capitals | `[font-variant-caps:small-caps]` |
 | `font-variant-position` | Real super and subscripts | `[font-variant-position:super]` |
 | `font-variant-numeric: tabular-nums` | Equal-width digits | `tabular-nums` |
@@ -30,7 +30,7 @@ One-line lookup for every typography CSS declaration covered by this skill, with
 | `line-height` | Space between lines | `leading-*` |
 | `font-kerning` | Kerning on or off | `[font-kerning:none]` |
 | `text-box: trim-both` | Trim space above and below | `[text-box:trim-both_cap_alphabetic]` |
-| `max-width` on text columns | Cap at ~60–75 characters per line | `max-w-xl` / `max-w-2xl` / `max-w-[65ch]` |
+| `max-width` on text columns | Cap at ~60–75 characters per line | `max-w-xl` / `max-w-2xl` / `max-w-prose` |
 | `text-align` | Where lines start and end | `text-start` / `text-center` |
 
 ## Wrapping and overflow
@@ -38,12 +38,14 @@ One-line lookup for every typography CSS declaration covered by this skill, with
 | Declaration | What it does | Tailwind |
 | --- | --- | --- |
 | `text-wrap: balance` | Even out heading lines | `text-balance` |
-| `text-wrap: pretty` | Avoid orphaned words | `text-pretty` |
-| `text-overflow: ellipsis` | Ellipsis for clipped text | `truncate` |
-| `line-clamp` | Cut off after N lines | `line-clamp-*` |
+| `text-wrap: pretty` | Keep a lone word off the last line | `text-pretty` |
+| `text-overflow: ellipsis` | Ellipsis for clipped text | `text-ellipsis` |
+| `overflow: hidden` + `text-overflow: ellipsis` + `white-space: nowrap` | Single-line truncation | `truncate` |
+| `-webkit-line-clamp` + `display: -webkit-box` + `-webkit-box-orient: vertical` + `overflow: hidden` | Cut off after N lines | `line-clamp-*` |
 | `overflow-wrap: break-word` | Break long strings | `break-words` |
 | `white-space: nowrap` | Stop wrapping | `whitespace-nowrap` |
 | `text-transform` | Change the casing | `uppercase` / `capitalize` |
+| `hyphens: auto` | Hyphenate by the element's `lang` | `hyphens-auto` |
 
 ## Decoration and interaction
 
@@ -56,7 +58,7 @@ One-line lookup for every typography CSS declaration covered by this skill, with
 | `text-underline-position: from-font` | Underline position from the font | `[text-underline-position:from-font]` |
 | `text-decoration-style` | Dotted, dashed or wavy | `decoration-dotted` / `decoration-wavy` |
 | `text-decoration-thickness: from-font` | Underline set by the font | `decoration-from-font` |
-| `text-decoration-skip-ink` | Gaps around descenders | `[text-decoration-skip-ink:auto]` |
+| `text-decoration-skip-ink` | Gaps around descenders; `auto` is the default | `[text-decoration-skip-ink:auto]` |
 | `caret-color` | Tint the text cursor | `caret-*` |
 | `user-select: none` | Suppress selection on a verified drag/gesture conflict only | `select-none` |
 | `text-shadow` | Shadow behind the letters | `text-shadow-*` |
