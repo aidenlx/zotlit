@@ -667,6 +667,10 @@ _Avoid_: citation cache (names the persistence, not the index), citation scanner
 The search index over the Items of the Libraries in Library Scope, held by the ZoteroReads worker and answered through one `SearchItems` operation. Its identity is the list of covered Libraries and the connection it was built on; the worker rebuilds it from its own change feed, serves the last complete index while a rebuild runs, and hydrates the hits before it answers. It keeps the index of the list the latest search asked for; the index of another list leaves at the next change when no search asked for it since the change before. The renderer never holds the index.
 _Avoid_: search cache, item-lookup index (names the package, not the thing), MiniSearch index (names the engine)
 
+**Search Session**:
+The searches one search surface — a picker or the Citation Suggester — asks of the Item Index while it is open: each new keystroke replaces the search before it, and a change of the Libraries in Library Scope drops the pending one. Other sessions and one-shot searches, such as the template workbench's recent Items, run beside it and keep their own answers.
+_Avoid_: search handle (names the mechanism), query session
+
 **Chinese Segmenter**:
 The Managed Binary that cuts Chinese text into search words for the Item Index: the pinned `jieba-wasm` binary, loaded inside the ZoteroReads worker for indexing and for queries. Optional; without it, Chinese runs segment through the browser's own word segmentation.
 _Avoid_: jieba plugin, cm-chs-patch (a separate third-party plugin ZotLit no longer reads), tokenizer (the whole word-splitting step, of which the segmenter is one part)
