@@ -623,6 +623,9 @@ describe("regular expressions", () => {
     ["[/a/, /a/, /a/i].unique().length", 2],
     ["[/a/].contains(/a/)", true],
     ["list(/a/).length", 1],
+    // A regexp inside an element expression.
+    ["tags.filter(/read/i.matches(value)).length", 2],
+    ["creators.map(/^Ada/.matches(value)).contains(false)", true],
   ]);
 });
 
