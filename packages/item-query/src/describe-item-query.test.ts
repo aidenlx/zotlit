@@ -224,6 +224,35 @@ describe("describeItemQuery functions", () => {
       on: "any",
       parameters: [{ name: "type", type: "string", values: ["any", ...types] }],
     });
+    // The list helpers of Bases that take no element expression.
+    const listMethod = (name: string) =>
+      methods.find((entry) => entry.on === "list" && entry.name === name);
+    expect(listMethod("slice")).toEqual({
+      name: "slice",
+      on: "list",
+      parameters: [{ name: "start", type: "number" }],
+      optional: [{ name: "end", type: "number" }],
+      rest: null,
+      returns: "list",
+    });
+    expect(listMethod("join")).toEqual({
+      name: "join",
+      on: "list",
+      parameters: [{ name: "separator", type: "string" }],
+      optional: [],
+      rest: null,
+      returns: "string",
+    });
+    for (const name of ["flat", "reverse", "sort", "unique"]) {
+      expect(listMethod(name)).toEqual({
+        name,
+        on: "list",
+        parameters: [],
+        optional: [],
+        rest: null,
+        returns: "list",
+      });
+    }
     expect(
       properties.filter((entry) => entry.name === "length").map((e) => e.on),
     ).toEqual(["string", "list"]);

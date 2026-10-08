@@ -486,6 +486,114 @@ describe("list methods", () => {
   ]);
 });
 
+describe("list helpers", () => {
+  vectors([
+    // flat opens one level of nested lists.
+    ["[1, [2, 3]].flat()", [1, 2, 3]],
+    ["[1, [2, [3]]].flat()", [1, 2, [3]]],
+    ["[[], [null]].flat()", [null]],
+    ["tags.flat()", ["methods", "to-read", "To-Read"]],
+    ["[].flat()", []],
+    // A null subject gives null.
+    ["null.flat()", null],
+    ["if(attachments, null, tags).flat()", null],
+    // join writes each element as toString() does, and null as empty text.
+    ['tags.join("; ")', "methods; to-read; To-Read"],
+    [
+      'creators.join(", ")',
+      "Ada Lovelace, World Health Organization, Ada Lovelace",
+    ],
+    ['[1, null, "a", true].join("-")', "1--a-true"],
+    ['[null, null].join(",")', ","],
+    ['[[1, 2], 3].join("|")', "1, 2|3"],
+    ['[today(), duration("P1D")].join(" ")', "2024-07-15 P1D"],
+    ['[].join(",")', ""],
+    ['tags.join("")', "methodsto-readTo-Read"],
+    ["tags.join(publisher)", null],
+    ['null.join(",")', null],
+    // reverse and slice give a new list; the subject stays as it is.
+    ["tags.reverse()", ["To-Read", "to-read", "methods"]],
+    ["[1, [2, 3], null].reverse()", [null, [2, 3], 1]],
+    ["[].reverse()", []],
+    ["tags.reverse() == tags", false],
+    ["tags.reverse().reverse() == tags", true],
+    ["null.reverse()", null],
+    // slice follows the index rules of JavaScript, negative indexes included.
+    ["tags.slice(0, 2)", ["methods", "to-read"]],
+    ["tags.slice(1)", ["to-read", "To-Read"]],
+    ["tags.slice(-1)", ["To-Read"]],
+    ["tags.slice(-2, -1)", ["to-read"]],
+    ["tags.slice(0, -1)", ["methods", "to-read"]],
+    ["tags.slice(2, 1)", []],
+    ["tags.slice(5)", []],
+    ["tags.slice(0, 99)", ["methods", "to-read", "To-Read"]],
+    ["tags.slice(0, 0)", []],
+    ["tags.slice(1.5)", ["to-read", "To-Read"]],
+    ["[].slice(0)", []],
+    ["tags.slice(0, 2).length", 2],
+    ["tags.slice(null)", null],
+    ["tags.slice(0, null)", null],
+    ["null.slice(0)", null],
+    // unique keeps the first of the elements that == makes equal.
+    ['["b", "a", "b", "a"].unique()', ["b", "a"]],
+    ["creators.unique()", ["Ada Lovelace", "World Health Organization"]],
+    // Exact equality: case counts, and no coercion between types.
+    ['["a", "A"].unique()', ["a", "A"]],
+    ['[1, "1", true].unique()', [1, "1", true]],
+    ["[null, null, 1].unique()", [null, 1]],
+    [
+      "[[1, 2], [1, 2], [2, 1]].unique()",
+      [
+        [1, 2],
+        [2, 1],
+      ],
+    ],
+    // Two dates are equal when they share a calendar day; the first stays.
+    [
+      '[date("2020-01-15 10:30"), date("2020-01-15"), date("2020")].unique().toString()',
+      "2020-01-15T10:30:00Z",
+    ],
+    ['[date("2020-01-15"), date("2020-01-16")].unique().length', 2],
+    ['[duration("1d"), duration("24h"), duration("P1D")].unique().length', 2],
+    ["[].unique()", []],
+    ["null.unique()", null],
+    // sort: numbers by value, texts in the Item Query string order, dates by
+    // their start, booleans false first.
+    ["[3, 1, 2].sort()", [1, 2, 3]],
+    ["[1.5, -2, 0].sort()", [-2, 0, 1.5]],
+    ['["b", "a", "c"].sort()', ["a", "b", "c"]],
+    // Digits compare digit by digit, so 10 comes before 9.
+    [
+      '["9", "10", "Zebra", "Éclair", "eclair"].sort()',
+      ["10", "9", "eclair", "Éclair", "Zebra"],
+    ],
+    ["tags.reverse().sort()", ["methods", "to-read", "To-Read"]],
+    ["[true, false, true].sort()", [false, true, true]],
+    [
+      '[date("2020-06"), date("2020-01-15 10:30"), date("2020"), date("2020-01-15")].sort().toString()',
+      "2020, 2020-01-15, 2020-01-15T10:30:00Z, 2020-06",
+    ],
+    // Elements of different types group in the order boolean, number, text,
+    // date, duration, list; null comes last.
+    [
+      '[null, [1], duration("1d"), today(), "a", 2, true].sort().toString()',
+      "true, 2, a, 2024-07-15, P1D, 1, null",
+    ],
+    ['[null, "b", null, "a"].sort()', ["a", "b", null, null]],
+    ['[2, "1", 1, "2"].sort()', [1, 2, "1", "2"]],
+    // Stable: equal elements, durations, and lists keep their order.
+    ['[duration("2d"), duration("1d")].sort().toString()', "P2D, P1D"],
+    ["[[2], [1]].sort()", [[2], [1]]],
+    [
+      '[date("2020-01-15"), date("2020-01-15 00:00")].sort().toString()',
+      "2020-01-15, 2020-01-15T00:00:00Z",
+    ],
+    ["[].sort()", []],
+    ["tags.sort() == tags", true],
+    ["null.sort()", null],
+  ]);
+});
+
 describe("relation lists", () => {
   vectors([
     // The same person as author and as editor is two elements.
@@ -845,6 +953,24 @@ describe("validation", () => {
     ["title.round()", "unknown-function", [6, 11]],
     ["attachments.isEmpty()", "unknown-function", [12, 19]],
     ['title.within("a")', "unknown-function", [6, 12]],
+    // A list helper on a subject of a definite non-list type.
+    ["title.sort()", "unknown-function", [6, 10]],
+    ['title.join(",")', "unknown-function", [6, 10]],
+    ["title.flat()", "unknown-function", [6, 10]],
+    ["attachments.unique()", "unknown-function", [12, 18]],
+    ["attachments.reverse()", "unknown-function", [12, 19]],
+    ["(1).slice(0)", "unknown-function", [4, 9]],
+    ["dateAdded.flat()", "unknown-function", [10, 14]],
+    ["tags.join()", "wrong-argument-count", [0, 11]],
+    ["tags.join(1)", "wrong-argument-type", [10, 11]],
+    ["tags.slice()", "wrong-argument-count", [0, 12]],
+    ["tags.slice(0, 1, 2)", "wrong-argument-count", [0, 19]],
+    ['tags.slice("0")', "wrong-argument-type", [11, 14]],
+    ["tags.slice(0, tags)", "wrong-argument-type", [14, 18]],
+    ["tags.sort(1)", "wrong-argument-count", [0, 12]],
+    ["tags.unique(1)", "wrong-argument-count", [0, 14]],
+    ["tags.flat(1)", "wrong-argument-count", [0, 12]],
+    ["tags.reverse(1)", "wrong-argument-count", [0, 15]],
     // A global function called as a method, and a method called as a global.
     ["title.number()", "unknown-function", [6, 12]],
     ['contains(title, "a")', "unknown-function", [0, 8]],
@@ -935,6 +1061,13 @@ describe("validation", () => {
     });
   });
 
+  it("names the owner type of a list helper called on another type", () => {
+    expect(problem("title.sort()")).toMatchObject({
+      message: 'A string has no method "sort".',
+      hint: expect.stringContaining("sort is a method of a list."),
+    });
+  });
+
   it("tells a method from a global function in the hint", () => {
     expect(problem('contains(title, "a")').hint).toContain(
       "value.contains(...)",
@@ -967,6 +1100,11 @@ describe("validation", () => {
     "null.isEmpty()",
     "null.lower()",
     "min(number(volume), 3)",
+    // A list helper on a subject whose type depends on the Item, and on the
+    // list another list helper gives.
+    "tags[0].sort()",
+    'if(attachments, title, tags).join(",")',
+    "tags.sort().unique().reverse().slice(0, 1).flat().length",
     // A date before and after date arithmetic keeps its methods.
     '(now() - duration("1d")).format("YYYY")',
     '(duration("1d") + today()).relative()',

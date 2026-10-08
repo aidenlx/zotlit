@@ -129,6 +129,19 @@ TAGS, COLLECTIONS, AND CREATORS
   A Creator is the full name, given name first:
     ${filter('creators.contains("Ada Lovelace")')}
 
+LIST HELPERS
+  sort() orders a list: text in the order of text, then dates, with null
+  last; unique() keeps the first of equal elements; reverse() turns the
+  list around; slice(start, end) takes a part, and a negative index counts
+  from the end; join(separator) writes the elements as one text, a null
+  element as empty text; flat() opens one level of nested lists. Each one
+  gives a new list and leaves the field as it is.
+    ${filter('tags.sort()[0] == "to-read"')}
+    ${filter("creators.unique().length == 1")}
+    ${filter('tags.slice(0, 2).contains("methods")')}
+    ${filter('creators.join("; ").contains("Lovelace; ")')}
+    ${filter('[tags, collections].flat().contains("to-read")')}
+
 DATES
   date and the other Zotero date fields are calendar dates at the precision
   the Item gives: a year, a month, or a day. dateAdded and dateModified are

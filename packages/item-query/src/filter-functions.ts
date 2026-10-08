@@ -1,3 +1,4 @@
+import { compareStrings } from "./collation";
 // The function registry of the Filter Expression evaluator. Validation,
 // execution, and the Item Query Schema read the same entries, so a function,
 // a method, or a property exists only here.
@@ -174,6 +175,39 @@ const includes = (
 const candidates = (args: readonly FilterValue[]): readonly FilterValue[] =>
   args.length === 1 && isList(args[0]!) ? args[0] : args;
 
+/** The group of each value type in the order of `sort`; null comes last. */
+const SORT_GROUPS: Readonly<Record<FilterValueType, number>> = {
+  boolean: 0,
+  number: 1,
+  string: 2,
+  date: 3,
+  duration: 4,
+  list: 5,
+  null: 6,
+};
+
+/**
+ * The order of `sort`: numbers by value, texts in the Item Query string
+ * order, dates by their start, booleans false first. Elements of different
+ * types group in the order of {@link SORT_GROUPS}; durations and lists keep
+ * their order.
+ */
+function sortOrder(a: FilterValue, b: FilterValue, clock: QueryClock): number {
+  const group = SORT_GROUPS[typeOf(a)] - SORT_GROUPS[typeOf(b)];
+  if (group !== 0) return group;
+  if (typeof a === "number" && typeof b === "number") return a - b;
+  if (typeof a === "string" && typeof b === "string") {
+    return compareStrings(a, b);
+  }
+  if (typeof a === "boolean" && typeof b === "boolean") {
+    return Number(a) - Number(b);
+  }
+  if (isDate(a) && isDate(b)) {
+    return datePart(a, "timestamp", clock)! - datePart(b, "timestamp", clock)!;
+  }
+  return 0;
+}
+
 /** The methods of each value type. A type also has {@link ANY_METHODS}. */
 const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
   {
@@ -259,6 +293,58 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
         call: (subject, args, clock) =>
           candidates(args).every((value) =>
             includes(subject as readonly FilterValue[], value, clock),
+          ),
+      },
+      // The list helpers of Bases that take no element expression.
+      flat: {
+        parameters: NONE,
+        returns: "list",
+        call: (subject) =>
+          (subject as readonly FilterValue[]).flatMap((element) =>
+            isList(element) ? element : [element],
+          ),
+      },
+      join: {
+        parameters: [string("separator")],
+        returns: "string",
+        call: (subject, [separator]) =>
+          (subject as readonly FilterValue[])
+            .map((element) => (element === null ? "" : toText(element)))
+            .join(separator as string),
+      },
+      reverse: {
+        parameters: NONE,
+        returns: "list",
+        call: (subject) => (subject as readonly FilterValue[]).toReversed(),
+      },
+      // The index rules of JavaScript: a negative index counts from the end.
+      slice: {
+        parameters: [number("start")],
+        optional: [number("end")],
+        returns: "list",
+        call: (subject, [start, end]) =>
+          (subject as readonly FilterValue[]).slice(
+            start as number,
+            end as number | undefined,
+          ),
+      },
+      sort: {
+        parameters: NONE,
+        returns: "list",
+        call: (subject, _args, clock) =>
+          (subject as readonly FilterValue[]).toSorted((a, b) =>
+            sortOrder(a, b, clock),
+          ),
+      },
+      // The first of the elements that `==` makes equal stays.
+      unique: {
+        parameters: NONE,
+        returns: "list",
+        call: (subject, _args, clock) =>
+          (subject as readonly FilterValue[]).reduce<FilterValue[]>(
+            (kept, element) =>
+              includes(kept, element, clock) ? kept : [...kept, element],
+            [],
           ),
       },
       // A Collection element is its root-first path: `within` matches the
