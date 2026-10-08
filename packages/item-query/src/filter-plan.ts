@@ -614,8 +614,15 @@ class Validator {
     span: Span,
   ): FilterNode {
     const { name, nameSpan, subject } = call;
-    const [definition] = this.#candidates(name, nameSpan, subject);
-    const scope = definition!.scope!;
+    const definition = this.#candidates(name, nameSpan, subject).find(
+      (method) => method.scope,
+    );
+    const scope = definition?.scope;
+    // The subject selects a same-named method without a scope.
+    if (!definition || !scope) {
+      const args = call.args.map((arg) => this.node(arg));
+      return this.#methodCall({ ...call, args }, span);
+    }
     const [first, ...others] = call.args;
     let expression: FilterNode | null = null;
     if (first) {
@@ -627,10 +634,10 @@ class Validator {
       }
     }
     const args = others.map((arg) => this.node(arg));
-    if (!expression || !takesCount(definition!, args.length + 1)) {
+    if (!expression || !takesCount(definition, args.length + 1)) {
       return fail("wrong-argument-count", span, {
-        message: `${name} takes ${describeCount(definition!)}, not ${call.args.length}.`,
-        hint: `Call ${signature(`value.${name}`, definition!)}.`,
+        message: `${name} takes ${describeCount(definition)}, not ${call.args.length}.`,
+        hint: `Call ${signature(`value.${name}`, definition)}.`,
       });
     }
     return {
@@ -641,7 +648,7 @@ class Validator {
       scope,
       expression,
       args,
-      valueType: definition!.returns ?? "unknown",
+      valueType: definition.returns ?? "unknown",
     };
   }
 
