@@ -134,10 +134,11 @@ TEXT HELPERS
 REGULAR EXPRESSIONS
   Write a regular expression as /pattern/flags, with JavaScript syntax
   and the flags i (ignore case), g (every occurrence), m, s, u, v, y, and d.
-  matches(text) tests a text. replace and split take a regular expression
-  in place of a text pattern: with a regular expression, replace changes
-  the first occurrence, or every occurrence with the g flag, and $1 names
-  a group. The query fails at the literal when the pattern is invalid.
+  matches(text) is true when the pattern matches the text. replace and
+  split take a regular expression in place of a text pattern: replace
+  changes the first occurrence, or every occurrence with the g flag, and
+  $1 names a group. The query fails at the literal when the pattern is
+  invalid.
     ${filter("/^the /i.matches(title)")}
     ${filter('title.replace(/\\s+/g, " ") == "Lab Report"')}
     ${filter('title.replace(/(\\w+), (\\w+)/, "$2 $1").startsWith("Ada")')}
@@ -156,12 +157,13 @@ TAGS, COLLECTIONS, AND CREATORS
     ${filter('creators.contains("Ada Lovelace")')}
 
 LIST HELPERS
-  sort() orders a list: text in the order of text, then dates, with null
-  last; unique() keeps the first of equal elements; reverse() turns the
-  list around; slice(start, end) takes a part, and a negative index counts
-  from the end; join(separator) writes the elements as one text, a null
-  element as empty text; flat() opens one level of nested lists. Each one
-  gives a new list and leaves the field as it is.
+  sort() orders a list: numbers by value, text in the order a sort on a
+  text field uses, dates by their start, and null last; unique() keeps
+  the first of equal elements; reverse() turns the list around;
+  slice(start, end) takes a part, and a negative index counts from the
+  end; join(separator) writes the elements as one text, a null element as
+  empty text; flat() opens one level of nested lists. Each one gives a new
+  list and leaves the field as it is.
     ${filter('tags.sort()[0] == "to-read"')}
     ${filter("creators.unique().length == 1")}
     ${filter('tags.slice(0, 2).contains("methods")')}
