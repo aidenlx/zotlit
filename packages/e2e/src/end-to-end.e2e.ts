@@ -505,12 +505,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         throw new Error(`Annotation cards did not render: ${state}`);
       }
       expect(JSON.parse(await obEval(vaultId, visibleCards))).toEqual(expected);
-      // Both selection colors must interpolate. Seek the actual transitions
-      // to their midpoint so CPU load cannot move a timer past their end.
+      // Wait for the card's growing excerpt to settle before starting a transition.
+      // Seek each transition to its midpoint so a late timer cannot sample its end.
       // Under reduced motion neither property has an intermediate value.
-      const selectionEase = `(()=>{
+      const selectionEase = `(async()=>{
         const card=app.workspace.getLeavesOfType('zotero-annotation-view')[0].view.containerEl.querySelector('.zt-annot-card:not([data-selected])');
         const read=()=>{const s=getComputedStyle(card);return{fill:s.backgroundColor,ring:s.boxShadow};};
+        const sleep=(ms)=>new Promise(resolve=>setTimeout(resolve,ms));
+        for(let height=-1,steady=0;steady<300;steady=card.offsetHeight===height?steady+50:0,height=card.offsetHeight)await sleep(50);
         const probe=(on)=>{
           const start=read();
           card.toggleAttribute('data-selected',on);
