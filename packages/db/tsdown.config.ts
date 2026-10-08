@@ -1,8 +1,8 @@
-import { defineConfig } from "tsdown";
+import { defineLibrary } from "@zotlit/config/tsdown";
 
 import { CONTRACT_ROOTS } from "./src/contract/roots.ts";
 
-export default defineConfig({
+export default defineLibrary({
   entry: [
     {
       index: "./src/index.ts",
