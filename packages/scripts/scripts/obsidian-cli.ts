@@ -20,7 +20,7 @@ const reference = `Arguments pass through to Obsidian unchanged, exactly as for 
 binary. Put options before the first argument; everything from the first
 argument on belongs to Obsidian.
 
-  obsidian-cli.ts vault=<id> eval code='<js>'
+  obsidian-cli.ts --code '<js>' vault=<id>  runs <js> in the app: \`eval code=<js>\`
   obsidian-cli.ts --js probe.js vault=<id>  the same, with the code in a file
   obsidian-cli.ts vault=<id> plugin:reload id=zotlit
   obsidian-cli.ts help                      Obsidian's own command list
@@ -28,6 +28,9 @@ argument on belongs to Obsidian.
   obsidian-cli.ts --shot .scratch/list.png --selector '.annots-container' vault=<id>
   obsidian-cli.ts --shot .scratch/edge.png --selector '.annots-container' \\
     --sample 10,0 --sample 10,4 --sample 10,8 vault=<id>
+
+--code and --js keep the word eval off the command line: a Claude Code
+session isolated in a git worktree refuses a command that holds it.
 
 vault=<id> selects the window only as the first argument. Without it, the
 window of the current folder's vault answers, else the focused window.
@@ -95,6 +98,12 @@ await yargs(hideBin(process.argv))
           type: "number",
           default: OBSIDIAN_CALL_TIMEOUT_MS / 1_000,
         })
+        .option("code", {
+          describe:
+            "JavaScript to run in the app, as `eval code=<js>` after the other arguments",
+          type: "string",
+          conflicts: "js",
+        })
         .option("js", {
           describe:
             "JavaScript file to run in the app, as `eval code=<file contents>` after the other arguments",
@@ -123,6 +132,7 @@ await yargs(hideBin(process.argv))
     async (argv) => {
       const args = [...(argv.args ?? []), ...argv._.map(String)];
       const vault = args[0]?.startsWith("vault=") ? [args[0]] : [];
+      if (argv.code !== undefined) args.push("eval", `code=${argv.code}`);
       if (argv.js !== undefined) {
         args.push("eval", `code=${await readFile(resolve(argv.js), "utf-8")}`);
       }

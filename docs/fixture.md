@@ -106,7 +106,7 @@ This command builds the development plugin, creates or synchronizes the vault, a
 Name that vault in each Obsidian CLI command, as the first argument. A command without a leading `vault=` option reaches the window that answers first, so a machine with more than one open vault can answer from another worktree's Development Vault or from the repository's own. A probe that reports code you already replaced is the usual symptom, and `restart` or `plugin:reload` then acts on that other vault:
 
 ```sh
-packages/scripts/scripts/obsidian-cli.ts vault=fixture-vault-<worktree-folder-name> eval code='app.vault.adapter.basePath'
+packages/scripts/scripts/obsidian-cli.ts --code 'app.vault.adapter.basePath' vault=fixture-vault-<worktree-folder-name>
 ```
 
 The open and sync operations rebuild the Fixture Vault before they copy it. A normal sync keeps files that exist only in the Development Vault. Use a purge sync to restore the complete generated seed:

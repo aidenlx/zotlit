@@ -311,11 +311,11 @@ macrotask after the confirm click therefore finds the whole plan in flight, and
 the run reports "Done.". Click Cancel in the same JavaScript turn as the
 confirm button to reach the write-phase abort:
 
-  packages/scripts/scripts/obsidian-cli.ts vault=zt-fixture-vault eval code='
+  packages/scripts/scripts/obsidian-cli.ts --code '
   const modal = document.querySelector(".modal-container .modal");
   [...modal.querySelectorAll("button")].find((b) => b.classList.contains("mod-cta")).click();
   [...modal.querySelectorAll("button")].find((b) => /cancel/i.test(b.textContent)).click();
-  '
+  ' vault=zt-fixture-vault
 
 The confirm click renders the progress phase before it returns, so the second
 click aborts the run that phase already started. The modal reports
