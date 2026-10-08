@@ -22,6 +22,7 @@ import { itemSummary } from "@/lib/item-summary";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemSearchDeps } from "@/services/item-lookup/search-modal";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
+import type { ItemLookup } from "@/services/item-lookup/service";
 
 import type { NativeWorkbenchSuggesterRequest } from "./host";
 import {
@@ -107,7 +108,7 @@ export function sampleTypeLabel(id: string): string {
 }
 
 export async function recentItemChoices(
-  lookup: ItemSearchDeps["lookup"],
+  lookup: Pick<ItemLookup, "search">,
 ): Promise<readonly WorkbenchItemChoice[]> {
   try {
     const hits = await lookup.search("", { limit: 3 });
@@ -140,7 +141,7 @@ export async function searchWorkbenchItem(
 
 export async function chooseWorkbenchItem(
   host: WorkbenchHost,
-  deps: ItemSearchDeps,
+  deps: ItemSearchDeps & { lookup: Pick<ItemLookup, "search"> },
   selected?: WorkbenchItemChoice,
 ): Promise<WorkbenchItemChoice | null> {
   const recent = await recentItemChoices(deps.lookup);
@@ -361,7 +362,7 @@ export function ItemSelectionList({
   onSelect,
   onSearch,
 }: {
-  lookup: ItemSearchDeps["lookup"];
+  lookup: Pick<ItemLookup, "search">;
   onSelect: (item: WorkbenchItemChoice) => void;
   onSearch: () => void;
 }) {

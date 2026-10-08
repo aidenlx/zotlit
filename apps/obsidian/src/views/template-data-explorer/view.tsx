@@ -67,7 +67,7 @@ export interface ExplorerViewDeps extends TemplateDataDeps {
     ZoteroReadsService,
     "state" | "ready" | "on" | "acquireRead"
   >;
-  itemLookup: Pick<ItemLookup, "search">;
+  itemLookup: Pick<ItemLookup, "search" | "openSession">;
   settings: SettingsService;
   templates: Pick<
     TemplateService,

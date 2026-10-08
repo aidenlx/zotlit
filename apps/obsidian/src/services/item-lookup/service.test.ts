@@ -116,11 +116,12 @@ describe("ItemLookup", () => {
       new FakeLibraryScope([library(USER_LIBRARY_ID), library(2)]),
     );
     await lookup.search("");
+    using session = lookup.openSession();
     const gate = reads.gateSearch();
 
-    const first = lookup.search("Alpha");
+    const first = session.search("Alpha");
     await expect.poll(() => reads.held).toBe(1);
-    const second = lookup.search("LIBRARY3");
+    const second = session.search("LIBRARY3");
 
     const keys = async (answer: Promise<SearchHit[]>) =>
       (await answer).map((hit) => hit.item.key);
@@ -138,13 +139,14 @@ describe("ItemLookup", () => {
       new FakeLibraryScope([library(USER_LIBRARY_ID), library(2)]),
     );
     await lookup.search("");
+    using session = lookup.openSession();
     const gates = [reads.gateSearch(), reads.gateSearch()];
 
-    const first = lookup.search("A");
+    const first = session.search("A");
     await expect.poll(() => reads.held).toBe(1);
-    const second = lookup.search("Al");
+    const second = session.search("Al");
     await expect.poll(() => reads.searches.at(-1)?.query).toBe("Al");
-    const third = lookup.search("LIBRARY2");
+    const third = session.search("LIBRARY2");
 
     const answers = await Promise.all([first, second, third]);
     expect(answers.map((answer) => answer.map((hit) => hit.item.key))).toEqual([
@@ -154,6 +156,77 @@ describe("ItemLookup", () => {
     ]);
     expect(reads.interrupted).toEqual(["A", "Al"]);
     for (const gate of gates) gate.resolve();
+  });
+
+  it("runs two sessions side by side, each answering its own list", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
+    await using lookup = itemLookup(
+      reads,
+      new FakeLibraryScope([library(USER_LIBRARY_ID), library(2)]),
+    );
+    await lookup.search("");
+    using picker = lookup.openSession();
+    using suggester = lookup.openSession();
+    const gates = [reads.gateSearch(), reads.gateSearch()];
+
+    const first = picker.search("Alpha");
+    await expect.poll(() => reads.held).toBe(1);
+    const second = suggester.search("LIBRARY3");
+    await expect.poll(() => reads.held).toBe(2);
+    for (const gate of gates) gate.resolve();
+
+    const keys = async (answer: Promise<SearchHit[]>) =>
+      (await answer).map((hit) => hit.item.key);
+    expect(await keys(first)).toEqual(["LIBRARY2", "LIBRARY3"]);
+    expect(await keys(second)).toEqual(["LIBRARY3"]);
+    expect(reads.interrupted).toEqual([]);
+  });
+
+  it("answers each one-shot search with its own list, beside a session's keystrokes and each other", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
+    await using lookup = itemLookup(
+      reads,
+      new FakeLibraryScope([library(USER_LIBRARY_ID), library(2)]),
+    );
+    await lookup.search("");
+    using session = lookup.openSession();
+    const gates = [reads.gateSearch(), reads.gateSearch(), reads.gateSearch()];
+
+    const recent = lookup.search("", { limit: 1 });
+    await expect.poll(() => reads.held).toBe(1);
+    const other = lookup.search("LIBRARY3");
+    await expect.poll(() => reads.held).toBe(2);
+    const keystroke = session.search("Alpha");
+    await expect.poll(() => reads.held).toBe(3);
+    const nextKeystroke = session.search("LIBRARY2");
+    await expect(nextKeystroke).resolves.toHaveLength(1);
+    for (const gate of gates) gate.resolve();
+
+    const keys = async (answer: Promise<SearchHit[]>) =>
+      (await answer).map((hit) => hit.item.key);
+    expect(await keys(recent)).toEqual(["LIBRARY2"]);
+    expect(await keys(other)).toEqual(["LIBRARY3"]);
+    expect(await keys(keystroke)).toEqual(["LIBRARY2"]);
+    expect(reads.interrupted).toEqual(["Alpha"]);
+  });
+
+  it("interrupts a session's pending search on close, and answers it and every later search empty", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
+    await using lookup = itemLookup(reads);
+    await lookup.search("");
+    const session = lookup.openSession();
+    const gate = reads.gateSearch();
+
+    const pending = session.search("Alpha");
+    await expect.poll(() => reads.held).toBe(1);
+    session.close();
+
+    await expect(pending).resolves.toEqual([]);
+    expect(reads.interrupted).toEqual(["Alpha"]);
+    const before = reads.searches.length;
+    await expect(session.search("Alpha")).resolves.toEqual([]);
+    expect(reads.searches).toHaveLength(before);
+    gate.resolve();
   });
 
   it("prewarms with an empty query and a limit of one on ready", async () => {
@@ -189,9 +262,10 @@ describe("ItemLookup", () => {
     ]);
     await using lookup = itemLookup(reads, libraryScope);
     await lookup.search("");
+    using session = lookup.openSession();
     const gate = reads.gateSearch();
 
-    const search = lookup.search("Alpha");
+    const search = session.search("Alpha");
     await expect.poll(() => reads.held).toBe(1);
     libraryScope.setLibraries([
       library(USER_LIBRARY_ID),
@@ -214,15 +288,34 @@ describe("ItemLookup", () => {
     const libraryScope = new FakeLibraryScope([group(10)]);
     await using lookup = itemLookup(reads, libraryScope);
     await lookup.search("");
+    using session = lookup.openSession();
     const gate = reads.gateSearch();
 
-    const search = lookup.search("Alpha");
+    const search = session.search("Alpha");
     await expect.poll(() => reads.held).toBe(1);
     libraryScope.setLibraries([group(20)]);
 
     await expect(search).resolves.toEqual([]);
     expect(reads.interrupted).toEqual(["Alpha"]);
     gate.resolve();
+  });
+
+  it("drops the pending search of every open session when the scope changes", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
+    const libraryScope = new FakeLibraryScope();
+    await using lookup = itemLookup(reads, libraryScope);
+    await lookup.search("");
+    using picker = lookup.openSession();
+    using suggester = lookup.openSession();
+    const gates = [reads.gateSearch(), reads.gateSearch()];
+
+    const pending = [picker.search("Alpha"), suggester.search("LIBRARY2")];
+    await expect.poll(() => reads.held).toBe(2);
+    libraryScope.setLibraries([library(2)]);
+
+    await expect(Promise.all(pending)).resolves.toEqual([[], []]);
+    expect(reads.interrupted.toSorted()).toEqual(["Alpha", "LIBRARY2"]);
+    for (const gate of gates) gate.resolve();
   });
 
   it.each([

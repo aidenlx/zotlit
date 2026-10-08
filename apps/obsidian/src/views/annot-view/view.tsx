@@ -207,7 +207,7 @@ export interface AnnotViewDeps {
     "renderAnnotationCitation" | "prepareAnnotationInsert"
   >;
   noteIndex: Pick<NoteIndex, "getNotesByItemKey">;
-  itemLookup: Pick<ItemLookup, "search">;
+  itemLookup: Pick<ItemLookup, "openSession">;
   settings: SettingsService;
 }
 

@@ -11,16 +11,18 @@ import type { SettingsService } from "@/services/settings/service";
 import { FirstAnswerGate } from "./first-answer";
 import { renderSuggestion as renderSearchHit } from "./render-hit";
 import { DEFAULT_LIMIT } from "./service";
-import type { ItemLookup, SearchHit } from "./service";
+import type { ItemLookup, SearchHit, SearchSession } from "./service";
 
 export interface ItemSearchDeps {
   app: App;
-  lookup: Pick<ItemLookup, "search">;
+  lookup: Pick<ItemLookup, "openSession">;
   settings: SettingsService;
 }
 
 export abstract class ItemSearchModal extends SuggestModal<SearchHit> {
   readonly #search: ItemSearchDeps;
+  /** The searches of this picker while it is open. */
+  #session: SearchSession | null = null;
   readonly #firstAnswer = new FirstAnswerGate({
     // The container holds the dim backdrop too, so both show in one frame. A
     // layered utility holds while Obsidian sets no opacity on
@@ -43,17 +45,21 @@ export abstract class ItemSearchModal extends SuggestModal<SearchHit> {
   override onOpen(): void {
     // Before super, which asks for the first answer.
     this.#firstAnswer.open();
+    this.#session = this.#search.lookup.openSession();
     void super.onOpen();
   }
 
   override onClose(): void {
     this.#firstAnswer.close();
+    this.#session?.close();
+    this.#session = null;
     super.onClose();
   }
 
   override getSuggestions(query: string): SearchHit[] | Promise<SearchHit[]> {
     return this.#firstAnswer.track(
-      this.#search.lookup.search(query, { limit: this.limit }),
+      this.#session?.search(query, { limit: this.limit }) ??
+        Promise.resolve([]),
     );
   }
 
