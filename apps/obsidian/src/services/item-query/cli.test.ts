@@ -22,8 +22,10 @@ import type { LibraryScope } from "@/services/library-scope/scope";
 
 import {
   answerExit,
+  createItemQueryCancelHandler,
   createItemQueryHandler,
   createItemQuerySchemaHandler,
+  ITEM_QUERY_CANCEL_COMMAND,
   ITEM_QUERY_COMMAND,
   ITEM_QUERY_GUIDE_COMMAND,
   ITEM_QUERY_SCHEMA_COMMAND,
@@ -888,6 +890,90 @@ describe("zotlit:item-query parameters", () => {
 
     expect(answer.ok).toBe(true);
   });
+
+  it("accepts a query ID and keeps it out of the request", async () => {
+    using scenario = openScenarioDatabase();
+    const { run } = setup(scenario);
+
+    const answer = await run({ id: "export-2024.v1_a", limit: "1" });
+
+    expect(answer).toMatchObject({ ok: true, returnedCount: 1 });
+    expect(answer.request).not.toHaveProperty("id");
+  });
+
+  it.each(["", "two words", "a/b", "x".repeat(129)])(
+    "rejects the query ID %j before it takes a lease",
+    async (id) => {
+      using scenario = openScenarioDatabase();
+      const { run, acquireRead } = setup(scenario);
+
+      const answer = await run({ id });
+
+      expect(answer).toMatchObject({
+        ok: false,
+        diagnostic: { code: "invalid-argument", details: { parameter: "id" } },
+      });
+      expect(acquireRead).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe("zotlit:item-query-cancel", () => {
+  function cancelOf(active: readonly string[]) {
+    const requested: string[] = [];
+    const handler = createItemQueryCancelHandler((id) => {
+      requested.push(id);
+      return active.includes(id);
+    });
+    return {
+      requested,
+      run: async (params: CliData) =>
+        JSON.parse(await handler(params)) as Record<string, unknown>,
+    };
+  }
+
+  it("answers that it requested the cancel of an active query", async () => {
+    const { run, requested } = cancelOf(["export-a"]);
+
+    const answer = await run({ id: "export-a" });
+
+    expect(answer).toEqual({
+      contractVersion: 1,
+      command: ITEM_QUERY_CANCEL_COMMAND,
+      ok: true,
+      id: "export-a",
+      cancelRequested: true,
+    });
+    expect(requested).toEqual(["export-a"]);
+  });
+
+  it("answers that it requested no cancel for an ID with no active query", async () => {
+    const { run } = cancelOf(["export-a"]);
+
+    expect(await run({ id: "export-b" })).toEqual({
+      contractVersion: 1,
+      command: ITEM_QUERY_CANCEL_COMMAND,
+      ok: true,
+      id: "export-b",
+      cancelRequested: false,
+    });
+  });
+
+  it.each<[CliData, string]>([
+    [{}, "id"],
+    [{ id: "" }, "id"],
+    [{ id: "a b" }, "id"],
+    [{ id: "export-a", limit: "1" }, "limit"],
+  ])("rejects %j and cancels nothing", async (params, parameter) => {
+    const { run, requested } = cancelOf(["export-a"]);
+
+    expect(await run(params)).toMatchObject({
+      command: ITEM_QUERY_CANCEL_COMMAND,
+      ok: false,
+      diagnostic: { code: "invalid-argument", details: { parameter } },
+    });
+    expect(requested).toEqual([]);
+  });
 });
 
 describe("zotlit:item-query source and lease", () => {
@@ -1333,6 +1419,7 @@ describe("zotlit:item-query-guide", () => {
     expect(() => JSON.parse(output)).toThrow();
     for (const command of [
       ITEM_QUERY_COMMAND,
+      ITEM_QUERY_CANCEL_COMMAND,
       ITEM_QUERY_SCHEMA_COMMAND,
       ITEM_QUERY_GUIDE_COMMAND,
     ]) {
@@ -1377,6 +1464,17 @@ describe("zotlit:item-query-guide", () => {
     ["fields", ['custom["<exact name>"]', "fields='[]'", "null"]],
     ["sort", ["10 comes before 9", "first possible day", "limit", "all"]],
     ["results", ["diagnostic.hint", "location", "span"]],
+    [
+      "cancel",
+      [
+        "id=",
+        "obsidian zotlit:item-query-cancel id=",
+        "cancelRequested",
+        "already finished",
+        "query-id-in-use",
+        "Without id",
+      ],
+    ],
   ])("prints topic=%s", (topic, facts) => {
     const output = itemQueryGuideHandler({ topic });
 
@@ -1443,9 +1541,12 @@ describe("registerItemQueryCli", () => {
         vault: () => IDENTITY.vault,
         libraryScope: async () => MY_LIBRARY_SCOPE,
       },
-      async (_params, signal) => {
-        signal.throwIfAborted();
-        return "";
+      {
+        answer: async (_params, signal) => {
+          signal.throwIfAborted();
+          return "";
+        },
+        cancel: (id) => id === "export-a",
       },
     );
 
@@ -1459,9 +1560,22 @@ describe("registerItemQueryCli", () => {
         limit: expect.any(Object),
         library: expect.any(Object),
         libraries: expect.any(Object),
+        id: expect.any(Object),
       }),
       expect.any(Function),
     );
+    expect(registerCliHandler).toHaveBeenCalledWith(
+      ITEM_QUERY_CANCEL_COMMAND,
+      expect.any(String),
+      expect.objectContaining({ id: expect.any(Object) }),
+      expect.any(Function),
+    );
+    const cancel = registerCliHandler.mock.calls.find(
+      ([command]) => command === ITEM_QUERY_CANCEL_COMMAND,
+    )![3] as CliHandler;
+    expect(JSON.parse(await cancel({ id: "export-a" }))).toMatchObject({
+      cancelRequested: true,
+    });
     expect(registerCliHandler).toHaveBeenCalledWith(
       ITEM_QUERY_SCHEMA_COMMAND,
       expect.any(String),
@@ -1476,7 +1590,8 @@ describe("registerItemQueryCli", () => {
     );
     const handler = registerCliHandler.mock.calls[0]![3] as CliHandler;
     for (const callback of onUnload) callback();
-    await expect(handler({})).rejects.toMatchObject({ name: "AbortError" });
+    // Obsidian prints only a string reason; it prints an object as [object Object].
+    await expect(handler({})).rejects.toBe("This operation was aborted");
     expect(acquireRead).not.toHaveBeenCalled();
   });
 });

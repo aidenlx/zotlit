@@ -9,11 +9,14 @@ import { DEFAULT_FIELDS, DEFAULT_SORT } from "@zotlit/item-query";
 import {
   DEFAULT_CLI_LIMIT,
   DIAGNOSTIC_HINTS,
+  ITEM_QUERY_CANCEL_COMMAND,
   ITEM_QUERY_COMMAND,
   INLINE_MAX_BYTES,
   ITEM_QUERY_GUIDE_COMMAND,
   ITEM_QUERY_SCHEMA_COMMAND,
   itemQueryFlags,
+  QUERY_ID_FORM,
+  queryCancelledText,
 } from "./contract";
 
 /** One query command of the guide, as flat CLI arguments. */
@@ -239,12 +242,41 @@ DIAGNOSTICS
   codes, each with its hint:
   ${diagnosticCodes()}`;
 
+const CANCEL_SECTION = `CANCEL A RUNNING QUERY
+
+NAME THE QUERY
+  Give a query an id when you start it; a second CLI call can then stop it.
+  An id has ${QUERY_ID_FORM}, and names one
+  running query in this vault:
+    ${example({ id: "export-1", limit: "all", fields: "[]" })}
+  A second query with the id of a running query fails with
+  query-id-in-use; the running query continues. The id is free again when
+  its query finishes, fails, or is cancelled.
+  Without id, a query runs as before, and only a plugin unload stops it.
+
+CANCEL
+  From a second terminal, while the query runs:
+    obsidian ${ITEM_QUERY_CANCEL_COMMAND} id=export-1
+  The answer is JSON with contractVersion, command, ok, id, and
+  cancelRequested. cancelRequested is true when a query with this id was
+  running: it stops within a moment. The cancelled call prints this text in
+  place of JSON, and leaves no file at its output path:
+    Error: ${queryCancelledText("export-1")}
+  Queries with other ids, and queries in other vaults, continue.
+
+QUERY ALREADY FINISHED
+  cancelRequested is false when no query with this id runs in this vault:
+  the query already finished, or the id was never used. This is not an
+  error, and nothing changes. A query that finishes its result while the
+  cancel arrives can still return it; read the answer of that call.`;
+
 /** Canonical topic registry shared by parsing, generated help, and the index. */
 export const GUIDE_TOPICS = {
   filter: FILTER_SECTION,
   fields: FIELDS_SECTION,
   sort: SORT_SECTION,
   results: RESULTS_SECTION,
+  cancel: CANCEL_SECTION,
 } as const satisfies Record<string, string>;
 
 export type GuideTopic = keyof typeof GUIDE_TOPICS;
@@ -270,6 +302,7 @@ WORKFLOW
 SYNOPSIS
   obsidian ${ITEM_QUERY_SCHEMA_COMMAND}
   ${querySynopsis()}
+  obsidian ${ITEM_QUERY_CANCEL_COMMAND} id=<id>
   obsidian ${ITEM_QUERY_GUIDE_COMMAND} [topic=<${GUIDE_TOPIC_NAMES.join("|")}>]
 
 DEFAULTS

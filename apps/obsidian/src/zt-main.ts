@@ -548,9 +548,7 @@ export default class ZotLitPlugin extends Plugin {
         return services.libraryScope.effective;
       },
     };
-    registerItemQueryCli(this, itemQueryCliDeps, (params, signal) =>
-      services.itemQuery.answer(params, signal),
-    );
+    registerItemQueryCli(this, itemQueryCliDeps, services.itemQuery);
 
     // Measurement-only: lets packages/e2e/src/item-query-measure.ts read the
     // slices, statements, heap, and cancel times of a run. A dev-build port,

@@ -258,6 +258,189 @@ describe("Item Query worker jobs", () => {
     ).toMatchObject({ ok: true, returnedCount: 1 });
   });
 
+  it("cancels a named export while it writes rows, and leaves other queries running", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    seedBulkLibrary(scenario.sqlite, 20000);
+    const { service, leases } = setup(scenario);
+    await using _owned = service;
+    await service.ready;
+    const output = join(dirname(scenario.path), "named.json");
+    const running = service.answer({ ...bulk, id: "export", output }, signal());
+    const rejected = expect(running).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    const other = service.answer(
+      { ...bulk, id: "other", limit: "100" },
+      signal(),
+    );
+    const unnamed = service.answer({ ...bulk, limit: "100" }, signal());
+    // The private file exists from the first row the export writes.
+    await vi.waitFor(
+      async () => {
+        expect(
+          (await readdir(dirname(output))).some((name) =>
+            name.endsWith(".tmp"),
+          ),
+        ).toBe(true);
+      },
+      { timeout: 15000, interval: 1 },
+    );
+
+    expect(service.cancel("export")).toBe(true);
+    await rejected;
+
+    expect(JSON.parse(await other)).toMatchObject({ ok: true });
+    expect(JSON.parse(await unnamed)).toMatchObject({ ok: true });
+    expect(leases()).toBe(0);
+    const files = await readdir(dirname(output));
+    expect(files).not.toContain("named.json");
+    expect(files.filter((name) => name.endsWith(".tmp"))).toEqual([]);
+    // Each ID is free once its query settles.
+    expect(service.cancel("export")).toBe(false);
+    expect(service.cancel("other")).toBe(false);
+    expect(
+      JSON.parse(await service.answer({ id: "export", limit: "1" }, signal())),
+    ).toMatchObject({ ok: true, returnedCount: 1 });
+  });
+
+  it("answers query-id-in-use for an active ID and leaves the running query alone", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    seedBulkLibrary(scenario.sqlite, 6000);
+    const { service } = setup(scenario);
+    await using _owned = service;
+    await service.ready;
+    const output = join(dirname(scenario.path), "first.json");
+    const first = service.answer({ ...bulk, id: "job", output }, signal());
+
+    const duplicate = JSON.parse(
+      await service.answer({ ...bulk, id: "job" }, signal()),
+    );
+
+    expect(duplicate).toMatchObject({
+      contractVersion: 1,
+      command: "zotlit:item-query",
+      ok: false,
+      diagnostic: {
+        code: "query-id-in-use",
+        details: { parameter: "id" },
+      },
+    });
+    expect(JSON.parse(await first)).toMatchObject({
+      ok: true,
+      returnedCount: 6000,
+    });
+    expect(service.cancel("job")).toBe(false);
+  });
+
+  it("frees the ID of a query that fails, and of a request that is invalid", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    const { service, leases } = setup(scenario);
+    await using _owned = service;
+    expect(
+      JSON.parse(
+        await service.answer({ id: "job", fields: '["notAField"]' }, signal()),
+      ),
+    ).toMatchObject({ diagnostic: { code: "unknown-field" } });
+    expect(
+      JSON.parse(await service.answer({ id: "job", limit: "0" }, signal())),
+    ).toMatchObject({ diagnostic: { code: "invalid-argument" } });
+    const missing = join(dirname(scenario.path), "missing", "items.json");
+    expect(
+      JSON.parse(
+        await service.answer({ id: "job", output: missing }, signal()),
+      ),
+    ).toMatchObject({ diagnostic: { code: "output-error" } });
+    expect(service.cancel("job")).toBe(false);
+    expect(
+      JSON.parse(await service.answer({ id: "job", limit: "1" }, signal())),
+    ).toMatchObject({ ok: true });
+    expect(leases()).toBe(0);
+  });
+
+  it("settles each race of completion and cancel with one outcome and a free ID", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    const { service, leases } = setup(scenario);
+    await using _owned = service;
+    await service.ready;
+    const outcomes = new Set<string>();
+    // Cancel after a growing number of timer turns, from before the lease
+    // until completion wins.
+    for (let turns = 0; !outcomes.has("answered") && turns < 1 << 16; ) {
+      const output = join(dirname(scenario.path), `race-${turns}.json`);
+      const running = service
+        .answer({ id: "race", limit: "all", output }, signal())
+        .then(
+          (answer) => ({ answer: JSON.parse(answer) as { ok: boolean } }),
+          (error: unknown) => ({ error }),
+        );
+      for (let turn = 0; turn < turns; turn++) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      const requested = service.cancel("race");
+      const settled = await running;
+      expect(service.cancel("race")).toBe(false);
+      expect(leases()).toBe(0);
+      const files = await readdir(dirname(output));
+      expect(files.filter((name) => name.endsWith(".tmp"))).toEqual([]);
+      if ("answer" in settled) {
+        // Completion won: the export is published, also after a cancel request.
+        expect(settled.answer.ok).toBe(true);
+        expect(files).toContain(`race-${turns}.json`);
+        outcomes.add("answered");
+      } else {
+        expect(requested).toBe(true);
+        expect(settled.error).toMatchObject({ name: "AbortError" });
+        expect(files).not.toContain(`race-${turns}.json`);
+        outcomes.add("cancelled");
+      }
+      turns = turns === 0 ? 1 : turns * 2;
+    }
+    expect([...outcomes].toSorted()).toEqual(["answered", "cancelled"]);
+  });
+
+  it("keeps the query of another vault with the same ID running", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    seedBulkLibrary(scenario.sqlite, 6000);
+    const first = setup(scenario);
+    const second = setup(scenario);
+    await using _first = first.service;
+    await using _second = second.service;
+    await Promise.all([first.service.ready, second.service.ready]);
+    const output = join(dirname(scenario.path), "second.json");
+    const cancelled = first.service.answer({ ...bulk, id: "job" }, signal());
+    const rejected = expect(cancelled).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    const kept = second.service.answer(
+      { ...bulk, id: "job", output },
+      signal(),
+    );
+
+    expect(first.service.cancel("job")).toBe(true);
+    await rejected;
+
+    expect(JSON.parse(await kept)).toMatchObject({
+      ok: true,
+      returnedCount: 6000,
+    });
+  });
+
+  it("cancels every named query on unload and frees their IDs", async () => {
+    using scenario = openScenarioDatabase({ storage: "temp-directory" });
+    seedBulkLibrary(scenario.sqlite, 2000);
+    const { service, leases } = setup(scenario);
+    await service.ready;
+    const runs = ["a", "b", "c"].map((id) =>
+      expect(service.answer({ ...bulk, id }, signal())).rejects.toMatchObject({
+        name: "AbortError",
+      }),
+    );
+    await service[Symbol.asyncDispose]();
+    await Promise.all(runs);
+    expect(leases()).toBe(0);
+    for (const id of ["a", "b", "c"]) expect(service.cancel(id)).toBe(false);
+  });
+
   it("unloads after active jobs release their connections and leases", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
     seedBulkLibrary(scenario.sqlite, 2000);

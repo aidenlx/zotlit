@@ -3,7 +3,8 @@
 // them to read what `zotlit:item-query` cannot report: the slices of the
 // engine, its statements, the heap, and the time from a cancel request to
 // settlement. Each run goes through the handler of `zotlit:item-query` itself,
-// with the two observer references of the engine provided.
+// with the two observer references of the engine provided. A run with `id` is
+// a named query: the production `zotlit:item-query-cancel` stops it.
 //
 // Command, flag, and diagnostic text is all hardcoded English: an
 // agent-facing contract surface, not localized UI. See
@@ -18,8 +19,6 @@ import type { ItemQueryService } from "./service";
 import type { CancellationEvent, WorkerMeasurement } from "./trace";
 
 export const ITEM_QUERY_MEASURE_COMMAND = "zotlit:item-query-measure" as const;
-export const ITEM_QUERY_MEASURE_CANCEL_COMMAND =
-  "zotlit:item-query-measure-cancel" as const;
 
 const itemQueryMeasureFlags: CliFlags = {
   ...itemQueryFlags,
@@ -129,13 +128,11 @@ export function registerItemQueryMeasureCli(
 ): void {
   const unload = new AbortController();
   plugin.register(() => unload.abort());
-  const inFlight = new Set<AbortController>();
 
   const measure: CliHandler = async (params: CliData): Promise<string> => {
     const { cancelAfterMs: cancelAfter, heap, ...query } = params;
     const cancelAfterMs = decodeCancelAfterMs(cancelAfter);
     const own = new AbortController();
-    inFlight.add(own);
     const signal = AbortSignal.any([unload.signal, own.signal]);
     let measurement: WorkerMeasurement | undefined;
     const cancellationEvents: CancellationEvent[] = [];
@@ -157,8 +154,9 @@ export function registerItemQueryMeasureCli(
 
     const startedAt = now();
     const startedAtEpochMs = Date.now();
+    // The service reports the request from any source: the timer, an unload,
+    // or `zotlit:item-query-cancel` for a run with `id`.
     let firedAt: number | undefined;
-    signal.addEventListener("abort", () => (firedAt = now()), { once: true });
     const timer =
       cancelAfterMs === undefined
         ? undefined
@@ -172,19 +170,22 @@ export function registerItemQueryMeasureCli(
         completed: (report) => {
           measurement = report;
         },
-        cancelled: (event) => cancellationEvents.push(event),
+        cancelled: (event) => {
+          if (event.phase === "requested") firedAt ??= now();
+          cancellationEvents.push(event);
+        },
         heap: heap === "true",
       });
       outcome = "answered";
     } catch (caught) {
-      outcome = signal.aborted ? "cancelled" : "failed";
+      // The service reports each cancel request, also one that names the run.
+      outcome = firedAt === undefined ? "failed" : "cancelled";
       error = caught instanceof Error ? caught.message : String(caught);
     }
     sampleUi();
     window.clearInterval(uiTimer);
     const settledAt = now();
     window.clearTimeout(timer);
-    inFlight.delete(own);
     document.removeEventListener("visibilitychange", onVisibility);
 
     const envelope =
@@ -247,19 +248,5 @@ export function registerItemQueryMeasureCli(
     "Run one Item Query and report its slices, statements, heap, and cancel times (dev build)",
     itemQueryMeasureFlags,
     measure,
-  );
-  plugin.registerCliHandler(
-    ITEM_QUERY_MEASURE_CANCEL_COMMAND,
-    "Request a cancel of every measured Item Query run in progress (dev build)",
-    null,
-    () => {
-      const arrivedAtEpochMs = Date.now();
-      const cancelled = inFlight.size;
-      for (const controller of inFlight) controller.abort();
-      return JSON.stringify({
-        cancelled,
-        arrivedAtEpochMs,
-      });
-    },
   );
 }
