@@ -16,6 +16,7 @@ import type {
   SourceFingerprint,
 } from "@/services/database/read-source";
 
+import { Connection } from "./connection";
 import { makeInProcessClient } from "./in-process";
 import type { ZoteroReadsClient } from "./in-process";
 import type { ChangeEvent, ReadsConfig } from "./rpc";
@@ -494,6 +495,55 @@ describe("ZoteroReads source", () => {
     await refresh;
 
     await expect(source.version()).resolves.toBe(3);
+  });
+
+  describe("databaseGeneration", () => {
+    /** The generation of the client a borrow gets now. */
+    const generationNow = Effect.scoped(
+      Effect.gen(function* () {
+        const connection = yield* Connection;
+        return connection.databaseGeneration(yield* connection.borrow);
+      }),
+    );
+
+    it("keeps the generation when a refresh reopens the same database", async () => {
+      const { ports } = testPorts();
+      await using source = await startSource(config(), ports);
+      await expect(source.run(generationNow)).resolves.toBe(1);
+      writeLibrary(dbPath, 2);
+      await source.run(source.reads.Refresh());
+      await expect(source.version()).resolves.toBe(2);
+      await expect(source.run(generationNow)).resolves.toBe(1);
+    });
+
+    it("gives a higher generation after a Configure to another database file", async () => {
+      const { ports } = testPorts();
+      await mkdir(join(dir, "next"));
+      const next = join(dir, "next", "zotero.sqlite");
+      writeLibrary(next, 3);
+      await using source = await startSource(config(), ports);
+      const before = await source.run(generationNow);
+      await source.run(source.reads.Configure(config({ databasePath: next })));
+      await source.run(source.reads.Refresh());
+      await expect(source.version()).resolves.toBe(3);
+      expect(await source.run(generationNow)).toBeGreaterThan(before);
+    });
+
+    it("gives a higher generation to another database at the same path", async () => {
+      const { ports } = testPorts();
+      await using source = await startSource(config(), ports);
+      const before = await source.run(generationNow);
+      {
+        using sqlite = new DatabaseSync(dbPath);
+        sqlite.exec(
+          "insert into settings (setting, key, value) values ('account', 'localUserKey', 'OTHERDB');",
+        );
+      }
+      writeLibrary(dbPath, 2);
+      await source.run(source.reads.Refresh());
+      await expect(source.version()).resolves.toBe(2);
+      expect(await source.run(generationNow)).toBeGreaterThan(before);
+    });
   });
 
   describe("watcher self-echo gate", () => {

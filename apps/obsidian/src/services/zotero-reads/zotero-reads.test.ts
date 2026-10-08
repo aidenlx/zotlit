@@ -1425,6 +1425,87 @@ describe("ZoteroReads connection lifetime", () => {
   });
 });
 
+describe("Connection databaseGeneration", () => {
+  /** The generation of the client a borrow gets now. */
+  const generationNow = Effect.scoped(
+    Effect.gen(function* () {
+      const connection = yield* Connection;
+      return connection.databaseGeneration(yield* connection.borrow);
+    }),
+  );
+
+  it("a refresh of the same database keeps the generation for the new client", async () => {
+    const { open } = fixtureOpener();
+    const result = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        const before = yield* generationNow;
+        yield* reads.Refresh();
+        return {
+          before,
+          after: yield* generationNow,
+          seen: yield* connectionSeen(reads),
+        };
+      }),
+    );
+    expect(result.seen).toBe(2);
+    expect(result.before).toBe(1);
+    expect(result.after).toBe(1);
+  });
+
+  it("a Configure to another database file gives the next client a higher generation", async () => {
+    const { open } = fixtureOpener();
+    const other: ReadsConfig = {
+      databasePath: "/Backup/zotero.sqlite",
+      readMode: "auto",
+      autoRefresh: true,
+      locale: null,
+      chineseSegmenter: null,
+      logLevel: null,
+    };
+    const result = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        const before = yield* generationNow;
+        yield* reads.Configure(other);
+        return {
+          before,
+          after: yield* generationNow,
+          seen: yield* connectionSeen(reads),
+        };
+      }),
+    );
+    expect(result.seen).toBe(2);
+    expect(result.after).toBeGreaterThan(result.before);
+  });
+
+  it("another database at the same path gives the next client a higher generation", async () => {
+    // Open #2 holds another local user key, open #3 another account.
+    const { open } = fixtureOpener((id) =>
+      id === 2
+        ? "insert into settings (setting, key, value) values ('account', 'localUserKey', 'OTHERDB2');"
+        : id === 3
+          ? "update settings set value = 43 where setting = 'account' and key = 'userID';"
+          : "",
+    );
+    const result = await withReads(open, (reads) =>
+      Effect.gen(function* () {
+        const first = yield* generationNow;
+        yield* reads.Refresh();
+        const second = yield* generationNow;
+        yield* reads.Refresh();
+        return {
+          first,
+          second,
+          third: yield* generationNow,
+          seen: yield* connectionSeen(reads),
+        };
+      }),
+    );
+    expect(result.seen).toBe(3);
+    expect(result.second).toBeGreaterThan(result.first);
+    expect(result.third).toBeGreaterThan(result.second);
+  });
+});
+
 describe("ZoteroReads citation operations", () => {
   it("AttachmentsAt returns an attachment itself, a regular item's attachments, or nothing", async () => {
     const { open } = fixtureOpener();
