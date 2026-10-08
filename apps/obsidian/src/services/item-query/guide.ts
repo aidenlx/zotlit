@@ -168,6 +168,20 @@ LIST HELPERS
     ${filter('creators.join("; ").contains("Lovelace; ")')}
     ${filter('[tags, collections].flat().contains("to-read")')}
 
+ELEMENT EXPRESSIONS
+  filter(expression), map(expression), and reduce(expression, initial)
+  run an expression once for each element of a list. Inside it, value is
+  the element, index is its position from 0, and in reduce acc is the
+  running result, which starts at initial. filter keeps the elements for
+  which the expression is true; map gives the list of results; reduce
+  gives the final acc. Outside the expression, value, index, and acc are
+  custom fields with those names. schema.methods[].scope lists the names.
+    ${filter('creators.filter(value.contains("Lovelace")).length > 0')}
+    ${filter('tags.map(value.lower()).contains("to-read")')}
+    ${filter("tags.reduce(acc + value.length, 0) > 20")}
+    ${filter('creators.filter(index == 0).contains("Ada Lovelace")')}
+    ${filter("[tags, collections].map(value.length).reduce(acc + value, 0) > 2")}
+
 DATES
   date and the other Zotero date fields are calendar dates at the precision
   the Item gives: a year, a month, or a day. dateAdded and dateModified are
