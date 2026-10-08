@@ -219,7 +219,7 @@ export function registerItemQueryCli(
     ITEM_QUERY_COMMAND,
     "Query the Items of Zotero Libraries and return the matches as JSON",
     itemQueryFlags,
-    (params) => runs.answer(params, unload.signal).catch(rejectWithCancelText),
+    (params) => runs.answer(params, unload.signal),
   );
   plugin.registerCliHandler(
     ITEM_QUERY_CANCEL_COMMAND,
@@ -295,19 +295,6 @@ export function itemQueryGuideHandler(params: CliData): string {
     );
   }
   return renderGuide(topic);
-}
-
-/**
- * Obsidian prints a rejected string as `Error: <text>`, and prints any other
- * rejection as `[object Object]`. A cancelled query rejects with the text of
- * its cancel, so the caller reads why it stopped; other rejections pass.
- */
-function rejectWithCancelText(error: unknown): never {
-  if (error instanceof DOMException && error.name === "AbortError") {
-    // oxlint-disable-next-line no-throw-literal, typescript/only-throw-error -- Obsidian prints only a string reason.
-    throw error.message;
-  }
-  throw error;
 }
 
 /**

@@ -1590,8 +1590,7 @@ describe("registerItemQueryCli", () => {
     );
     const handler = registerCliHandler.mock.calls[0]![3] as CliHandler;
     for (const callback of onUnload) callback();
-    // Obsidian prints only a string reason; it prints an object as [object Object].
-    await expect(handler({})).rejects.toBe("This operation was aborted");
+    await expect(handler({})).rejects.toMatchObject({ name: "AbortError" });
     expect(acquireRead).not.toHaveBeenCalled();
   });
 });
