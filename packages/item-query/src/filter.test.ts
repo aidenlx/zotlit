@@ -1147,7 +1147,7 @@ describe("validation", () => {
     ["tags.trim()", "unknown-function", [5, 9]],
     ["(1).title()", "unknown-function", [4, 9]],
     ["attachments.repeat(2)", "unknown-function", [12, 18]],
-    ["tags.reverse()", "unknown-function", [5, 12]],
+    ["dateAdded.reverse()", "unknown-function", [10, 17]],
     ["dateAdded.slice(0)", "unknown-function", [10, 15]],
     ['tags.replace("a", "b")', "unknown-function", [5, 12]],
     ['tags.split(":")', "unknown-function", [5, 10]],
