@@ -3,7 +3,7 @@ import { formatIndexedKey } from "@/lib/zt-key";
 
 import { groupIDForLibrary, resolveGroupID } from "./_groups";
 import type { GroupIDMemo } from "./_groups";
-import { defineQuery } from "./_shared";
+import { defineQuery, defineKeyedQuery } from "./_shared";
 import type { Item } from "./items";
 
 /**
@@ -108,11 +108,11 @@ export function getItemDisplayRefByID(
   };
 }
 
-const itemDisplayRefsByIdsQuery = defineQuery<void>()(
-  (db, _operators, args: { itemIDs: readonly number[] }) =>
+const itemDisplayRefsByIdsQuery = defineKeyedQuery<number>()(
+  (db, { contains }) =>
     db.query.items.findMany({
       columns: { itemID: true, key: true, libraryID: true },
-      where: { itemID: { in: [...args.itemIDs] }, deletedItem: false },
+      where: { RAW: (item) => contains(item.itemID), deletedItem: false },
       with: {
         itemData: {
           columns: {},
@@ -126,11 +126,11 @@ const itemDisplayRefsByIdsQuery = defineQuery<void>()(
         },
       },
     }),
+  { keyOf: (row) => row.itemID },
 );
 
 /**
- * {@link getItemDisplayRefByID} for many ids in one statement, for a stream
- * slice. The ids inline into the SQL, so the statement is not cached.
+ * {@link getItemDisplayRefByID} for many ids through one cached keyed read.
  *
  * @returns each live item's {@link ItemDisplayRef} by item id; an id with no
  *   live item is absent.
@@ -143,9 +143,7 @@ export function getItemDisplayRefsByIDs(
   const refs = new Map<number, ItemDisplayRef>();
   if (itemIDs.length === 0) return refs;
   const memo = opts?.memo ?? new Map();
-  for (const row of itemDisplayRefsByIdsQuery
-    .prepare(db, { itemIDs: [...new Set(itemIDs)] })
-    .all()) {
+  for (const row of itemDisplayRefsByIdsQuery(db, itemIDs)) {
     const groupID = resolveGroupID(db, row.libraryID, memo);
     refs.set(row.itemID, {
       itemID: row.itemID,

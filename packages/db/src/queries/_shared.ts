@@ -1,7 +1,6 @@
 import type { relations } from "@drizzle/relations";
-import { chunk } from "@std/collections";
-import { sql } from "drizzle-orm";
-import type { DBQueryConfig, Placeholder } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
+import type { AnyColumn, DBQueryConfig, Placeholder, SQL } from "drizzle-orm";
 import type {
   SQLiteAsyncRelationalQuery,
   SQLiteAsyncSelectBase,
@@ -185,9 +184,6 @@ type ArgsRest<T extends CacheArgs> = [Record<string, never>] extends [T]
  * - `.prepared(db, args)` returns a cached prepared statement, re-typed via
  *   {@link WithParams} so `.all` / `.get` / `.run` / `.values` / `.execute`
  *   check against `TParams`.
- * - `.prepare(db, args)` returns the same typed prepared statement but
- *   without caching — for one-shots where args inline into SQL and the
- *   stringified args would balloon the cache.
  *
  * Carrying the sync return type on the interface itself (rather than only
  * via SwapKind) lets {@link QueryRow} recover the row shape from the
@@ -208,14 +204,6 @@ export interface DefinedQuery<
     ...rest: ArgsRest<TBuildArgs>
   ): WithParams<Prepared<TSyncResult>, TParams>;
   prepared(
-    db: SQLocalDatabaseClient,
-    ...rest: ArgsRest<TBuildArgs>
-  ): WithParams<Prepared<SwapKind<TSyncResult, "async">>, TParams>;
-  prepare(
-    db: NodeDatabaseClient,
-    ...rest: ArgsRest<TBuildArgs>
-  ): WithParams<Prepared<TSyncResult>, TParams>;
-  prepare(
     db: SQLocalDatabaseClient,
     ...rest: ArgsRest<TBuildArgs>
   ): WithParams<Prepared<SwapKind<TSyncResult, "async">>, TParams>;
@@ -300,9 +288,6 @@ export function defineQuery<TParams = Record<string, unknown>>(): <
       return stmt;
     };
 
-    const prepare = (db: AnyClient, args?: TBuildArgs) =>
-      (build(db, args) as { prepare: () => unknown }).prepare();
-
     const fn = call as unknown as DefinedQuery<
       TParams,
       TBuildArgs,
@@ -313,11 +298,6 @@ export function defineQuery<TParams = Record<string, unknown>>(): <
       TBuildArgs,
       TSyncResult
     >["prepared"];
-    fn.prepare = prepare as DefinedQuery<
-      TParams,
-      TBuildArgs,
-      TSyncResult
-    >["prepare"];
     return fn;
   };
 }
@@ -337,49 +317,83 @@ export type QueryRow<Q> =
     ? Awaited<R> extends ArrayLike<infer E>
       ? E
       : never
-    : never;
+    : Q extends (db: NodeDatabaseClient, ...args: any[]) => (infer R)[]
+      ? R
+      : never;
+
+type KeyedOptions<P, A> = ([Record<string, never>] extends [P]
+  ? { params?: P }
+  : { params: P }) &
+  ([Record<string, never>] extends [A] ? { args?: A } : { args: A });
+
+type KeyedOptionsRest<P, A> = [Record<string, never>] extends [
+  KeyedOptions<P, A>,
+]
+  ? [options?: KeyedOptions<P, A>]
+  : [options: KeyedOptions<P, A>];
 
 /**
- * Ids one fixed-slot batch query binds, as placeholders `id0` … `id255`. Far
- * under SQLite's 32,766 bound parameters; past 256, a larger statement reads
- * 40,000 ids no faster.
+ * A keyed read owns its membership predicate, cached statement, and result
+ * ordering. The input keys bind as one JSON array, so list length changes
+ * neither the SQL nor its parameter count. Empty input executes no statement.
+ * Misses add no rows; duplicates repeat their rows in request order.
+ *
+ * `contains(column)` belongs in an RQB `RAW` filter and must select the same
+ * key that `keyOf` returns. The query describes independent keyed rows; global
+ * limits and aggregates belong in a different query.
  */
-export const BATCH_SLOTS = 256;
-
-/** Placeholder values of a fixed-slot batch query; an unused slot is `null`. */
-export type SlotParams<K> = Record<`id${number}`, K | null>;
-
-/**
- * The `in` list of a fixed-slot batch query: {@link BATCH_SLOTS} placeholders.
- * The SQL never changes with the number of ids, so `.prepared` caches one
- * statement for every batch.
- */
-export function idSlots(
-  placeholder: (name: `id${number}`) => Placeholder,
-): Placeholder[] {
-  return Array.from({ length: BATCH_SLOTS }, (_, i) => placeholder(`id${i}`));
-}
-
-/**
- * Read the rows for `ids` and return them in request order: the rows of
- * `ids[0]`, then those of `ids[1]`, and so on. An id with no row adds
- * nothing; a repeated id repeats its rows; an id keeps its rows in the order
- * the query returns them. `batch` runs a cached fixed-slot query (see
- * {@link idSlots}) once per {@link BATCH_SLOTS} distinct ids; unused slots
- * bind `null`, which matches no row.
- */
-export function rowsByID<K, R>(
-  ids: readonly K[],
-  read: {
-    batch: (slots: SlotParams<K>) => readonly R[];
-    idOf: (row: R) => K;
-  },
-): R[] {
-  const rows = chunk([...new Set(ids)], BATCH_SLOTS).flatMap((batch) => {
-    const slots: SlotParams<K> = {};
-    for (let i = 0; i < BATCH_SLOTS; i++) slots[`id${i}`] = batch[i] ?? null;
-    return read.batch(slots);
-  });
-  const byID = Map.groupBy(rows, read.idOf);
-  return ids.flatMap((id) => byID.get(id) ?? []);
+export function defineKeyedQuery<
+  K extends string | number,
+  TParams extends Record<string, unknown> = Record<string, never>,
+>() {
+  return <R, TBuildArgs extends CacheArgs = Record<string, never>>(
+    build: (
+      db: NodeDatabaseClient,
+      operators: {
+        contains: (column: AnyColumn) => SQL;
+        placeholder: ParamsPlaceholder<TParams>;
+      },
+      args: TBuildArgs,
+    ) => { prepare(): { all(params?: Record<string, unknown>): R[] } },
+    {
+      keyOf,
+      orderWithinKey,
+    }: {
+      keyOf: (row: NoInfer<R>) => K;
+      orderWithinKey?: (a: NoInfer<R>, b: NoInfer<R>) => number;
+    },
+  ): ((
+    db: NodeDatabaseClient,
+    keys: readonly K[],
+    ...options: KeyedOptionsRest<TParams, TBuildArgs>
+  ) => R[]) => {
+    const query = defineQuery()((db, { placeholder }, args: TBuildArgs) =>
+      build(
+        db,
+        {
+          contains: (column) =>
+            inArray(
+              column,
+              sql`(select value from json_each(${placeholder("__keys")}))`,
+            ),
+          placeholder: placeholder as ParamsPlaceholder<TParams>,
+        },
+        args,
+      ),
+    );
+    return (db, keys, ...[options]) => {
+      if (keys.length === 0) return [];
+      const rows = query
+        .prepared(db, ...([options?.args] as ArgsRest<TBuildArgs>))
+        .all({
+          ...options?.params,
+          __keys: JSON.stringify([...new Set(keys)]),
+        });
+      const byKey = Map.groupBy(rows, keyOf);
+      if (orderWithinKey) {
+        for (const group of byKey.values()) group.sort(orderWithinKey);
+      }
+      return keys.flatMap((key) => byKey.get(key) ?? []);
+    };
+  };
 }

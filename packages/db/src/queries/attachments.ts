@@ -4,8 +4,8 @@ import { formatIndexedKey } from "@/lib/zt-key";
 
 import { groupIDForLibrary, resolveGroupID } from "./_groups";
 import type { GroupIDMemo } from "./_groups";
-import { defineQuery, idSlots, rowsByID } from "./_shared";
-import type { FindManyOptions, QueryRow, SlotParams } from "./_shared";
+import { defineQuery, defineKeyedQuery } from "./_shared";
+import type { FindManyOptions, QueryRow } from "./_shared";
 
 const attachmentFindOptions = {
   columns: {
@@ -36,16 +36,17 @@ const attachmentFindOptions = {
   },
 } satisfies FindManyOptions<"itemAttachments">;
 
-const attachmentsByParentsQuery = defineQuery<SlotParams<number>>()(
-  (db, { placeholder }) =>
+const attachmentsByParentsQuery = defineKeyedQuery<number>()(
+  (db, { contains }) =>
     db.query.itemAttachments.findMany({
       where: {
-        parentItemID: { in: idSlots(placeholder) },
+        RAW: (attachment) => contains(attachment.parentItemID),
         item_itemID: { deletedItem: false },
       },
       ...attachmentFindOptions,
       orderBy: { itemID: "asc" },
     }),
+  { keyOf: (row) => row.parentItemID! },
 );
 
 const attachmentByKeyQuery = defineQuery<{
@@ -64,19 +65,22 @@ const attachmentByKeyQuery = defineQuery<{
   }),
 );
 
-const attachmentsByKeysQuery = defineQuery<
-  { libraryID: number } & SlotParams<string>
->()((db, { placeholder }) =>
-  db.query.itemAttachments.findMany({
-    where: {
-      item_itemID: {
-        key: { in: idSlots(placeholder) },
-        libraryID: placeholder("libraryID"),
-        deletedItem: false,
+const attachmentsByKeysQuery = defineKeyedQuery<
+  string,
+  { libraryID: number }
+>()(
+  (db, { placeholder, contains }) =>
+    db.query.itemAttachments.findMany({
+      where: {
+        item_itemID: {
+          RAW: (item) => contains(item.key),
+          libraryID: placeholder("libraryID"),
+          deletedItem: false,
+        },
       },
-    },
-    ...attachmentFindOptions,
-  }),
+      ...attachmentFindOptions,
+    }),
+  { keyOf: (row) => row.item_itemID.key },
 );
 
 const attachmentByItemIdQuery = defineQuery<{ itemID: number }>()(
@@ -134,7 +138,7 @@ function toAttachment(row: AttachmentRow, groupID: number | null): Attachment {
 
 /**
  * Fetch the live attachments of each parent item, in `parentItemIDs` order and
- * in `itemID` order within one parent, through {@link rowsByID}. A parent with
+ * in `itemID` order within one parent, through one cached keyed read. A parent with
  * no live attachment adds nothing; a repeated parent repeats its attachments.
  */
 export function getAttachmentsByParents(
@@ -143,18 +147,14 @@ export function getAttachmentsByParents(
   opts?: { memo?: GroupIDMemo },
 ): Attachment[] {
   const memo = opts?.memo ?? new Map();
-  return rowsByID(parentItemIDs, {
-    batch: (slots) => attachmentsByParentsQuery.prepared(db).all(slots),
-    // The query matches only a non-null parent.
-    idOf: (row) => row.parentItemID!,
-  }).map((row) =>
+  return attachmentsByParentsQuery(db, parentItemIDs).map((row) =>
     toAttachment(row, resolveGroupID(db, row.item_itemID.libraryID, memo)),
   );
 }
 
 /**
  * Fetch attachments of one library by key, in `keys` order, through
- * {@link rowsByID}. A key that names no live attachment has no entry; a
+ * one cached keyed read. A key that names no live attachment has no entry; a
  * repeated key repeats its attachment.
  */
 export function getAttachmentsByKey(
@@ -162,11 +162,7 @@ export function getAttachmentsByKey(
   libraryID: number,
   keys: readonly string[],
 ): Attachment[] {
-  const rows = rowsByID(keys, {
-    batch: (slots) =>
-      attachmentsByKeysQuery.prepared(db).all({ libraryID, ...slots }),
-    idOf: (row) => row.item_itemID.key,
-  });
+  const rows = attachmentsByKeysQuery(db, keys, { params: { libraryID } });
   if (rows.length === 0) return [];
   const groupID = groupIDForLibrary(db, libraryID);
   return rows.map((row) => toAttachment(row, groupID));

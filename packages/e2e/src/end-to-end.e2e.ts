@@ -767,31 +767,77 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     120000,
   );
 
+  it("closes the annotation sidebar while its worker read is pending", async () => {
+    const result = await obEval(
+      vaultId,
+      `(async()=>{
+        await using cleanup=new AsyncDisposableStack();
+        const pending=[];
+        const started=Promise.withResolvers();
+        const post=Worker.prototype.postMessage;
+        const release=()=>{
+          Worker.prototype.postMessage=post;
+          for(const [worker,args] of pending.splice(0))post.apply(worker,args);
+        };
+        cleanup.defer(release);
+        Worker.prototype.postMessage=function(...args){
+          const request=args[0]?.[1];
+          if(request?.tag==='AnnotViewAttachments'&&request.payload.key===${JSON.stringify(annotationItem.key)}){
+            pending.push([this,args]);started.resolve();return;
+          }
+          return post.apply(this,args);
+        };
+        const leaf=cleanup.adopt(app.workspace.getRightLeaf(true),leaf=>leaf.detach());
+        await leaf.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:${JSON.stringify(annotationItem.key)}}});
+        await started.promise;
+        let settled=false;
+        const reading=leaf.view.read.then(()=>{settled=true;});
+        await Promise.resolve();
+        if(settled)throw new Error('View read settled before its attachments loaded');
+        leaf.detach();
+        const repository=app.plugins.plugins.zotlit.services.annotationRepository;
+        const on=repository.on,read=repository.read;
+        const afterClose={subscriptions:0,reads:0};
+        cleanup.defer(()=>{repository.on=on;repository.read=read;});
+        repository.on=function(event,...args){if(event==='annotations-changed')afterClose.subscriptions++;return on.call(this,event,...args);};
+        repository.read=function(...args){afterClose.reads++;return read.apply(this,args);};
+        release();
+        await reading;
+        return JSON.stringify(afterClose);
+      })()`,
+    );
+    expect(JSON.parse(result)).toEqual({ subscriptions: 0, reads: 0 });
+  });
+
   it("copies an Annotation's citation after the database read, through Electron when the web clipboard refuses", async () => {
     const citation = `[@${annotationItem.citationKey}, {p. ${copiedAnnotation.pageLabel}}]`;
     const copy = (refuse: boolean) =>
       obEval(
         vaultId,
         `(async()=>{
-          const leaf=app.workspace.getRightLeaf(false);
+          await using cleanup=new AsyncDisposableStack();
+          const leaf=cleanup.adopt(app.workspace.getRightLeaf(true),leaf=>leaf.detach());
           await leaf.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:${JSON.stringify(annotationItem.key)}}});
           const view=leaf.view;await view.read;
           let button=null;
           for(let i=0;i<100&&!button;i++){button=view.contentEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(copiedAnnotation.key)}] [aria-label=${JSON.stringify(m.annot_view_more_tooltip())}]');if(!button)await new Promise(r=>setTimeout(r,50));}
           if(!button)throw new Error('Annotation card menu missing');
-          await navigator.clipboard.writeText('');
+          const clipboard=require('electron').clipboard;
+          const saved={text:clipboard.readText(),html:clipboard.readHTML(),rtf:clipboard.readRTF(),image:clipboard.readImage()};
+          const bookmark=clipboard.readBookmark();if(bookmark.title)saved.bookmark=bookmark.title;
+          cleanup.defer(()=>clipboard.write(saved));
           const write=navigator.clipboard.writeText;
+          cleanup.defer(()=>{navigator.clipboard.writeText=write;});
+          await navigator.clipboard.writeText('');
           if(${refuse})navigator.clipboard.writeText=()=>Promise.reject(new Error('Clipboard write refused'));
-          try{
-            button.click();
-            let item=null;
-            for(let i=0;i<50&&!item;i++){item=Array.from(activeDocument.querySelectorAll('.menu .menu-item')).find(e=>e.textContent.trim()===${JSON.stringify(m.annot_view_menu_copy_citation())});if(!item)await new Promise(r=>setTimeout(r,50));}
-            if(!item)throw new Error('Copy citation missing from the card menu');
-            item.click();
-            let text='';
-            for(let i=0;i<50&&!text;i++){text=await navigator.clipboard.readText().catch(()=>'');if(!text)await new Promise(r=>setTimeout(r,100));}
-            return text;
-          }finally{navigator.clipboard.writeText=write;}
+          button.click();
+          let item=null;
+          for(let i=0;i<50&&!item;i++){item=Array.from(activeDocument.querySelectorAll('.menu .menu-item')).find(e=>e.textContent.trim()===${JSON.stringify(m.annot_view_menu_copy_citation())});if(!item)await new Promise(r=>setTimeout(r,50));}
+          if(!item)throw new Error('Copy citation missing from the card menu');
+          item.click();
+          let text='';
+          for(let i=0;i<50&&!text;i++){text=await navigator.clipboard.readText().catch(()=>'');if(!text)await new Promise(r=>setTimeout(r,100));}
+          return text;
         })()`,
       );
     expect(await copy(false)).toBe(citation);
@@ -2466,29 +2512,31 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
     });
     // The annotation sidebar keeps its cards while the refresh reads again.
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        "(async()=>{await window.zotlitE2ESidebar?.cleanup.disposeAsync();delete window.zotlitE2ESidebar;return true;})()",
+      );
+    });
     expect(
       await obEval(
         vaultId,
         `(async()=>{
-          const leaf=app.workspace.getRightLeaf(false);
+          await using cleanup=new AsyncDisposableStack();
+          const leaf=cleanup.adopt(app.workspace.getRightLeaf(true),leaf=>leaf.detach());
           await leaf.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:${JSON.stringify(annotationItem.key)}}});
           const view=leaf.view;await view.read;
           const count=()=>view.contentEl.querySelectorAll('.zt-annot-card').length;
           for(let i=0;i<100&&count()===0;i++)await new Promise(r=>setTimeout(r,50));
           const watch={before:count(),least:count()};
           watch.observer=new MutationObserver(()=>{watch.least=Math.min(watch.least,count());});
+          cleanup.defer(()=>watch.observer.disconnect());
           watch.observer.observe(view.contentEl,{childList:true,subtree:true});
-          window.zotlitE2ESidebar=watch;
+          watch.cleanup=cleanup.move();window.zotlitE2ESidebar=watch;
           return String(watch.before);
         })()`,
       ),
     ).toBe(String(attachmentAnnotations.length));
-    cleanup.defer(async () => {
-      await obEval(
-        vaultId,
-        "window.zotlitE2ESidebar?.observer.disconnect();delete window.zotlitE2ESidebar;true",
-      );
-    });
     const signal = () => signalDatabaseUpdated(vaultId);
     // A Zotero edit moves the Item's title and its modification time.
     const edit = (title: string, dateModified: string) => {

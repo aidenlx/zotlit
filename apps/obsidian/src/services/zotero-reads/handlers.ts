@@ -144,7 +144,7 @@ function sliced<I, O>(
 /**
  * Live items for Indexed Keys, keyed by Indexed Key in request order. Each
  * Library the keys span resolves once and reads its items through
- * `getItemsByKey`: one cached statement per `BATCH_SLOTS` distinct keys.
+ * `getItemsByKey`: one cached keyed read per Library.
  */
 function itemsByIndexedKeys(
   client: NodeDatabaseClient,
@@ -328,7 +328,6 @@ export function handlersLayer(options?: HandlersOptions) {
       // earlier one that reads its Chinese Segmenter binary.
       const configuring = yield* Semaphore.make(1);
       const pinned = new Map<SnapshotId, Pinned>();
-      let snapshots = 0;
 
       const releasePinned = (entry: Pinned) =>
         Effect.suspend(() => {
@@ -541,7 +540,7 @@ export function handlersLayer(options?: HandlersOptions) {
                 const client = yield* restore(
                   Scope.provide(connection.borrow, scope),
                 ).pipe(Effect.onError(() => Scope.close(scope, Exit.void)));
-                const id = SnapshotId.make(`snapshot-${++snapshots}`);
+                const id = SnapshotId.make(crypto.randomUUID());
                 const entry: Pinned = {
                   client,
                   memos: noteMemos(),

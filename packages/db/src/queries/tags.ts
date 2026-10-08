@@ -3,31 +3,30 @@ import { distinct } from "@std/collections";
 import type { NodeDatabaseClient } from "@/client/node";
 import type { ItemTag, Tag } from "@/lib/zt-tag";
 
-import { defineQuery, idSlots, rowsByID } from "./_shared";
-import type { FindManyOptions, QueryRow, SlotParams } from "./_shared";
+import { defineQuery, defineKeyedQuery } from "./_shared";
+import type { FindManyOptions } from "./_shared";
 
 const itemTagOptions = {
   columns: { itemID: true, tagID: true, type: true },
   with: { tag: { columns: { tagID: true, name: true } } },
 } satisfies FindManyOptions<"itemTags">;
 
-const itemTagsByItemsQuery = defineQuery<SlotParams<number>>()(
-  (db, { placeholder }) =>
+const itemTagsByItemsQuery = defineKeyedQuery<number>()(
+  (db, { contains }) =>
     db.query.itemTags.findMany({
       where: {
-        itemID: { in: idSlots(placeholder) },
+        RAW: (itemTag) => contains(itemTag.itemID),
         item: { deletedItem: false },
       },
       ...itemTagOptions,
     }),
+  {
+    keyOf: (row) => row.itemID,
+    orderWithinKey: (a, b) => tagName(a).localeCompare(tagName(b)),
+  },
 );
 
-type ItemTagRow = QueryRow<typeof itemTagsByItemsQuery>;
-
-const byTagName = (a: ItemTagRow, b: ItemTagRow): number =>
-  tagName(a).localeCompare(tagName(b));
-
-function tagName(row: ItemTagRow): string {
+function tagName(row: { tagID: number; tag: Tag | null }): string {
   if (!row.tag) {
     throw new Error(`Missing tag row for tagID ${row.tagID}`);
   }
@@ -36,7 +35,7 @@ function tagName(row: ItemTagRow): string {
 
 /**
  * Tag applications of each item, in `itemIDs` order and in tag-name order
- * within one item, through {@link rowsByID}. An item with no tag adds
+ * within one item, through one cached keyed read. An item with no tag adds
  * nothing; a repeated id repeats its tags. Items that share a tag share one
  * {@link Tag} object.
  */
@@ -44,12 +43,7 @@ export function getTagsByItemIDs(
   db: NodeDatabaseClient,
   itemIDs: readonly number[],
 ): ItemTag[] {
-  const rows = rowsByID(itemIDs, {
-    // Sorting each batch keeps each item's rows in tag-name order.
-    batch: (slots) =>
-      itemTagsByItemsQuery.prepared(db).all(slots).toSorted(byTagName),
-    idOf: (row) => row.itemID,
-  });
+  const rows = itemTagsByItemsQuery(db, itemIDs);
   const tagsByID = new Map<number, Tag>();
   return rows.map((row) => {
     const tag = tagsByID.get(row.tagID) ?? {

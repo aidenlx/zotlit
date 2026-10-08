@@ -9,7 +9,7 @@ import { getBaseFieldTable } from "./_base-fields";
 import type { BaseFieldTable } from "./_base-fields";
 import { groupsQuery, resolveGroupID } from "./_groups";
 import type { GroupIDMemo } from "./_groups";
-import { CHILD_ITEM_TYPES, defineQuery } from "./_shared";
+import { CHILD_ITEM_TYPES, defineQuery, defineKeyedQuery } from "./_shared";
 import type { FindManyOptions, QueryRow } from "./_shared";
 
 export interface IndexedCreator {
@@ -121,23 +121,23 @@ const indexedItemIDsByLibraryQuery = defineQuery<{ libraryID: number }>()(
 );
 
 /** Hydration of a chunk of ids, matching {@link indexedItemsQuery}'s projection. */
-const indexedItemsByIdsQuery = defineQuery<void>()(
+const indexedItemsByIdsQuery = defineKeyedQuery<number>()(
   (
     db,
-    _operators,
+    { contains },
     args: {
-      itemIDs: readonly number[];
       indexedFieldIDs: readonly number[];
     },
   ) =>
     db.query.items.findMany({
       where: {
-        itemID: { in: [...args.itemIDs] },
+        RAW: (item) => contains(item.itemID),
         itemType: { typeName: { notIn: [...CHILD_ITEM_TYPES] } },
         deletedItem: false,
       },
       ...indexedItemRelations(args.indexedFieldIDs),
     }),
+  { keyOf: (row) => row.itemID },
 );
 
 type IndexedItemRow = QueryRow<typeof indexedItemsQuery>;
@@ -169,10 +169,9 @@ export function getIndexedItemIDsByLibrary(
 }
 
 /**
- * Hydrate {@link IndexedItem}s for a chunk of item ids in one statement, in
+ * Hydrate {@link IndexedItem}s through one cached keyed read, in
  * `itemIDs` order. Item ids are unique across libraries, so each row resolves
- * its own `groupID`/`indexedKey`. The ids inline into the SQL, so the
- * statement is not cached.
+ * its own `groupID`/`indexedKey`.
  */
 export function getIndexedItemsByID(
   db: NodeDatabaseClient,
@@ -181,22 +180,12 @@ export function getIndexedItemsByID(
 ): IndexedItem[] {
   if (itemIDs.length === 0) return [];
   const table = getBaseFieldTable(db, INDEXED_FIELD_NAMES);
-  const rows = new Map(
-    indexedItemsByIdsQuery
-      .prepare(db, {
-        itemIDs: [...new Set(itemIDs)],
-        indexedFieldIDs: table.fieldIDs,
-      })
-      .all()
-      .map((row) => [row.itemID, row]),
-  );
   const memo = opts?.memo ?? new Map();
-  return itemIDs.flatMap((itemID) => {
-    const row = rows.get(itemID);
-    return row
-      ? [toIndexedItem(row, resolveGroupID(db, row.libraryID, memo), table)]
-      : [];
-  });
+  return indexedItemsByIdsQuery(db, itemIDs, {
+    args: { indexedFieldIDs: table.fieldIDs },
+  }).map((row) =>
+    toIndexedItem(row, resolveGroupID(db, row.libraryID, memo), table),
+  );
 }
 
 /** Cheap change-detection signature for a library's indexed items. */

@@ -15,13 +15,8 @@ import { getBaseFieldTable, getBaseFieldTableAsync } from "./_base-fields";
 import type { BaseFieldTable } from "./_base-fields";
 import { groupIDForLibrary, groupsQuery, resolveGroupID } from "./_groups";
 import type { GroupIDMemo } from "./_groups";
-import { CHILD_ITEM_TYPES, defineQuery, idSlots, rowsByID } from "./_shared";
-import type {
-  ChildItemType,
-  FindManyOptions,
-  QueryRow,
-  SlotParams,
-} from "./_shared";
+import { CHILD_ITEM_TYPES, defineQuery, defineKeyedQuery } from "./_shared";
+import type { ChildItemType, FindManyOptions, QueryRow } from "./_shared";
 
 export interface Creator {
   firstName: string | null;
@@ -146,30 +141,31 @@ const itemsByLibraryQuery = defineQuery<{ libraryID: number }>()(
     }),
 );
 
-const itemsByIdsQuery = defineQuery<SlotParams<number>>()(
-  (db, { placeholder }) =>
+const itemsByIdsQuery = defineKeyedQuery<number>()(
+  (db, { contains }) =>
     db.query.items.findMany({
       where: {
-        itemID: { in: idSlots(placeholder) },
+        RAW: (item) => contains(item.itemID),
         itemType: { typeName: { notIn: [...CHILD_ITEM_TYPES] } },
         deletedItem: false,
       },
       ...itemFindOptions,
     }),
+  { keyOf: (row) => row.itemID },
 );
 
-const itemsByKeysQuery = defineQuery<
-  { libraryID: number } & SlotParams<string>
->()((db, { placeholder }) =>
-  db.query.items.findMany({
-    where: {
-      libraryID: placeholder("libraryID"),
-      key: { in: idSlots(placeholder) },
-      itemType: { typeName: { notIn: [...CHILD_ITEM_TYPES] } },
-      deletedItem: false,
-    },
-    ...itemFindOptions,
-  }),
+const itemsByKeysQuery = defineKeyedQuery<string, { libraryID: number }>()(
+  (db, { placeholder, contains }) =>
+    db.query.items.findMany({
+      where: {
+        libraryID: placeholder("libraryID"),
+        RAW: (item) => contains(item.key),
+        itemType: { typeName: { notIn: [...CHILD_ITEM_TYPES] } },
+        deletedItem: false,
+      },
+      ...itemFindOptions,
+    }),
+  { keyOf: (row) => row.key },
 );
 
 const itemTypeByKeyQuery = defineQuery<{
@@ -278,9 +274,9 @@ export async function getItemsByLibraryAsync(
 }
 
 /**
- * Fetch items by global item id, in `itemIDs` order, through {@link rowsByID}:
- * one cached statement per {@link BATCH_SLOTS} distinct ids. An id that names
- * no live regular item has no entry; a repeated id repeats its item. Item ids
+ * Fetch items by global item id, in `itemIDs` order, through one cached keyed
+ * read. An id that names no live regular item has no entry; a repeated id
+ * repeats its item. Item ids
  * are unique across libraries, so the batch may span libraries; each row's
  * `groupID`/`indexedKey` resolves from its own `libraryID`.
  *
@@ -297,10 +293,7 @@ export function getItemsByID(
 
   const memo = opts?.memo ?? new Map();
   const baseFieldTable = getBaseFieldTable(db, ITEM_BASE_FIELDS);
-  return rowsByID(itemIDs, {
-    batch: (slots) => itemsByIdsQuery.prepared(db).all(slots),
-    idOf: (row) => row.itemID,
-  }).map((row) =>
+  return itemsByIdsQuery(db, itemIDs).map((row) =>
     toItem(row, resolveGroupID(db, row.libraryID, memo), baseFieldTable),
   );
 }
@@ -318,7 +311,7 @@ export function getItemTypeByKey(
 
 /**
  * Fetch regular items of one library by key, in `keys` order, through
- * {@link rowsByID}: one cached statement per {@link BATCH_SLOTS} distinct keys.
+ * one cached keyed read.
  * A key that names no live regular item has no entry; a repeated key repeats
  * its item.
  *
@@ -334,11 +327,7 @@ export function getItemsByKey(
   if (keys.length === 0) return [];
 
   const { libraryID } = opts;
-  const rows = rowsByID(keys, {
-    batch: (slots) =>
-      itemsByKeysQuery.prepared(db).all({ libraryID, ...slots }),
-    idOf: (row) => row.key,
-  });
+  const rows = itemsByKeysQuery(db, keys, { params: { libraryID } });
   if (rows.length === 0) return [];
   const groupId = resolveGroupID(db, libraryID, opts.memo ?? new Map());
   const baseFieldTable = getBaseFieldTable(db, ITEM_BASE_FIELDS);

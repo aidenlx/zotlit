@@ -797,6 +797,8 @@ export class AnnotationView extends ItemView implements HistorySurface {
 
   protected override async onClose(): Promise<void> {
     this.#closed = true;
+    this.#loading = null;
+    this.#reads += 1;
     this.#submitOpenEditor();
     this.#loadDisposables?.[Symbol.dispose]();
     this.#loadDisposables = null;
@@ -921,6 +923,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
   // #region resolve + load
 
   #reload(): void {
+    if (this.#closed) return;
     // Only Active Tab follows an open PDF's own session, so the subscription
     // stands exactly as long as that mode does.
     this.#followLeafSession(
@@ -1081,12 +1084,12 @@ export class AnnotationView extends ItemView implements HistorySurface {
     void this.#resolveItemSummary(target).then((itemDisplay) => {
       if (this.#loading === load) this.#store.setState({ itemDisplay });
     });
-    void this.#readAttachments(target).then(
+    this.#reading = this.#readAttachments(target).then(
       (attachments) => {
         if (this.#loading !== load) return;
         this.#loadDisposables?.[Symbol.dispose]();
         this.#loadDisposables = new DisposableStack();
-        this.#showAttachments(target, attachments, {
+        return this.#showAttachments(target, attachments, {
           load: this.#loadDisposables,
           memoryKey,
           memoryChanged,
@@ -1126,7 +1129,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
       memoryKey,
       memoryChanged,
     }: { load: DisposableStack; memoryKey: string; memoryChanged: boolean },
-  ): void {
+  ): Promise<void> | undefined {
     this.#store.setState({ attachments });
 
     const held = (k: string | null): string | null =>
@@ -1153,6 +1156,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
 
     this.#store.setState({ selectedAttachmentKey: activeKey });
     this.#readAnnotations(activeKey, { restoreFilter: memoryChanged });
+    const reading = this.#reading;
 
     load.defer(
       this.#store.subscribe(
@@ -1200,6 +1204,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
       libraryID,
       attachments: attachments.length,
     });
+    return reading;
   }
 
   /**

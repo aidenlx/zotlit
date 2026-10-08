@@ -241,6 +241,28 @@ describe("ZoteroReads worker adapter", () => {
     expect(result.seen).toBe(2);
   });
 
+  it("rejects an old Snapshot after another worker opens a Snapshot", async () => {
+    const workers = fakeWorkers();
+    await using service = new ZoteroReadsService({
+      client: makeWorkerReads(workers.connect),
+    });
+    await using oldLease = await service.acquireRead();
+    expect(await Effect.runPromise(workerSeen(oldLease.reads))).toBe(1);
+
+    const degraded = Promise.withResolvers<void>();
+    const off = service.on("degraded", () => degraded.resolve());
+    await Effect.runPromise(workers.kill(1));
+    await degraded.promise;
+    off();
+    await service.refresh();
+
+    await using newLease = await service.acquireRead();
+    expect(await Effect.runPromise(workerSeen(newLease.reads))).toBe(2);
+    await expect(
+      Effect.runPromise(workerSeen(oldLease.reads)),
+    ).rejects.toMatchObject({ _tag: "SnapshotExpired" });
+  });
+
   it("passes on the Read Mode each worker's connection opened with", async () => {
     const workers = fakeWorkers({
       readMode: (n) => (n === 1 ? "copy" : "immutable"),

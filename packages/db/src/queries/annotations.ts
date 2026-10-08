@@ -4,8 +4,8 @@ import { formatIndexedKey } from "@/lib/zt-key";
 
 import { groupIDForLibrary, resolveGroupID } from "./_groups";
 import type { GroupIDMemo } from "./_groups";
-import { defineQuery, idSlots, rowsByID } from "./_shared";
-import type { FindManyOptions, QueryRow, SlotParams } from "./_shared";
+import { defineQuery, defineKeyedQuery } from "./_shared";
+import type { FindManyOptions, QueryRow } from "./_shared";
 import { hasClientRevisions } from "./schema-version";
 
 const annotationFindOptions = {
@@ -72,34 +72,40 @@ const legacyAnnotationsByParentQuery = defineQuery<{ parentItemID: number }>()(
     }),
 );
 
-const annotationsByKeysQuery = defineQuery<
-  { libraryID: number } & SlotParams<string>
->()((db, { placeholder }) =>
-  db.query.itemAnnotations.findMany({
-    where: {
-      item: {
-        key: { in: idSlots(placeholder) },
-        libraryID: placeholder("libraryID"),
-        deletedItem: false,
+const annotationsByKeysQuery = defineKeyedQuery<
+  string,
+  { libraryID: number }
+>()(
+  (db, { placeholder, contains }) =>
+    db.query.itemAnnotations.findMany({
+      where: {
+        item: {
+          RAW: (item) => contains(item.key),
+          libraryID: placeholder("libraryID"),
+          deletedItem: false,
+        },
       },
-    },
-    ...annotationFindOptions,
-  }),
+      ...annotationFindOptions,
+    }),
+  { keyOf: (row) => row.item.key },
 );
 
-const legacyAnnotationsByKeysQuery = defineQuery<
-  { libraryID: number } & SlotParams<string>
->()((db, { placeholder }) =>
-  db.query.itemAnnotations.findMany({
-    where: {
-      item: {
-        key: { in: idSlots(placeholder) },
-        libraryID: placeholder("libraryID"),
-        deletedItem: false,
+const legacyAnnotationsByKeysQuery = defineKeyedQuery<
+  string,
+  { libraryID: number }
+>()(
+  (db, { placeholder, contains }) =>
+    db.query.itemAnnotations.findMany({
+      where: {
+        item: {
+          RAW: (item) => contains(item.key),
+          libraryID: placeholder("libraryID"),
+          deletedItem: false,
+        },
       },
-    },
-    ...legacyAnnotationFindOptions,
-  }),
+      ...legacyAnnotationFindOptions,
+    }),
+  { keyOf: (row) => row.item.key },
 );
 
 type AnnotationRow = QueryRow<typeof annotationsByParentQuery>;
@@ -120,7 +126,7 @@ export function getAnnotationsByParent(
 
 /**
  * Fetch annotations of one library by key, in `keys` order, through
- * {@link rowsByID}. A key that names no live annotation has no entry; a
+ * one cached keyed read. A key that names no live annotation has no entry; a
  * repeated key repeats its annotation.
  */
 export function getAnnotationsByKey(
@@ -134,10 +140,7 @@ export function getAnnotationsByKey(
   const byKeys = hasClientRevisions(db)
     ? annotationsByKeysQuery
     : legacyAnnotationsByKeysQuery;
-  return rowsByID(keys, {
-    batch: (slots) => byKeys.prepared(db).all({ libraryID, ...slots }),
-    idOf: (row) => row.item.key,
-  }).flatMap((row) =>
+  return byKeys(db, keys, { params: { libraryID } }).flatMap((row) =>
     row.parentAttachment ? [toAnnotation(row, groupId)] : [],
   );
 }
