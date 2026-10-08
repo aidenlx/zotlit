@@ -13,7 +13,14 @@ import {
   today,
 } from "./filter-dates";
 import type { DateValue } from "./filter-dates";
-import { equals, isDate, isList, toText, typeOf } from "./filter-values";
+import {
+  equals,
+  isDate,
+  isList,
+  toText,
+  truthy,
+  typeOf,
+} from "./filter-values";
 import type { FilterValue, FilterValueType } from "./filter-values";
 import type { QueryClock } from "./query-clock";
 
@@ -87,6 +94,22 @@ export function finite(value: number): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+/** The largest count `repeat` takes: one query cannot exhaust the worker. */
+const MAX_REPEAT = 10_000;
+
+/** The largest precision `toFixed` takes, as JavaScript's `toFixed`. */
+const MAX_PRECISION = 100;
+
+/** Whether `value` is an integer from 0 to `max`. */
+function isCount(value: FilterValue | undefined, max: number): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= max
+  );
+}
+
 /** `min` and `max`: the pick among the numbers; null without a number. */
 function extreme(pick: (...values: number[]) => number): FunctionDefinition {
   return {
@@ -142,6 +165,14 @@ export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
     returns: "duration",
     call: (_subject, [text]) => parseDuration(text as string),
   },
+  // A list stays as it is; null is the empty list; any other value is a
+  // one-element list.
+  list: {
+    parameters: [any("value")],
+    returns: "list",
+    call: (_subject, [value = null]) =>
+      value === null ? [] : isList(value) ? value : [value],
+  },
 });
 
 /** The parameters of the `if` special form: `if(condition, then, else?)`. */
@@ -193,6 +224,15 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
       ceil: rounding(Math.ceil),
       floor: rounding(Math.floor),
       abs: rounding(Math.abs),
+      // A text with `precision` decimals; a precision outside 0 to 100 is null.
+      toFixed: {
+        parameters: [number("precision")],
+        returns: "string",
+        call: (subject, [precision]) =>
+          isCount(precision, MAX_PRECISION)
+            ? (subject as number).toFixed(precision)
+            : null,
+      },
     }),
     string: functions({
       isEmpty: isEmpty((subject) => subject === ""),
@@ -231,6 +271,69 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
         returns: "boolean",
         call: (subject, texts) =>
           texts.every((text) => (subject as string).includes(text as string)),
+      },
+      trim: {
+        parameters: NONE,
+        returns: "string",
+        call: (subject) => (subject as string).trim(),
+      },
+      // The first code point of each word that starts the text or follows
+      // whitespace is upper-cased; the rest stays as it is.
+      title: {
+        parameters: NONE,
+        returns: "string",
+        call: (subject) =>
+          (subject as string).replaceAll(
+            /(^|\s)(\S)/gu,
+            (_match, before: string, first: string) =>
+              before + first.toUpperCase(),
+          ),
+      },
+      repeat: {
+        parameters: [number("count")],
+        returns: "string",
+        call: (subject, [count]) =>
+          isCount(count, MAX_REPEAT) ? (subject as string).repeat(count) : null,
+      },
+      // By code point, so an emoji survives.
+      reverse: {
+        parameters: NONE,
+        returns: "string",
+        call: (subject) =>
+          Array.from(subject as string)
+            .reverse()
+            .join(""),
+      },
+      // In code units, as `length` and index access.
+      slice: {
+        parameters: [number("start")],
+        optional: [number("end")],
+        returns: "string",
+        call: (subject, [start, end]) =>
+          (subject as string).slice(start as number, end as number | undefined),
+      },
+      // Every occurrence of the pattern; the replacement is literal text.
+      replace: {
+        parameters: [string("pattern"), string("replacement")],
+        returns: "string",
+        call: (subject, [pattern, replacement]) =>
+          (subject as string).replaceAll(
+            pattern as string,
+            () => replacement as string,
+          ),
+      },
+      // `n` keeps the first `n` parts.
+      split: {
+        parameters: [string("separator")],
+        optional: [number("n")],
+        returns: "list",
+        call: (subject, [separator, n]) => {
+          if (n !== undefined && !isCount(n, Infinity)) return null;
+          return (subject as string).split(
+            separator as string,
+            n as number | undefined,
+          );
+        },
       },
     }),
     list: functions({
@@ -325,6 +428,14 @@ const ANY_METHODS: Registry<FunctionDefinition> = new Map<
       parameters: [{ ...string("type"), values: ["any", ...VALUE_TYPES] }],
       returns: "boolean",
       call: (subject, [type]) => type === "any" || type === typeOf(subject),
+    },
+  ],
+  [
+    "isTruthy",
+    {
+      parameters: NONE,
+      returns: "boolean",
+      call: (subject) => truthy(subject),
     },
   ],
 ]);
