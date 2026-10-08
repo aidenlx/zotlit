@@ -13,6 +13,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import {
   afterAll,
   afterEach,
@@ -2876,12 +2877,15 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // Zotero holds the predicted rect, read straight off the Local API.
           const expected = [48.75, 365.509, 590, 743.723];
           expect(
-            await waitFor(
-              async () =>
-                (await image.stored()).data.annotationPosition !==
-                image.seed.annotationPosition,
+            await waitFor(async () =>
+              rectIs(
+                (await image.stored()).data.annotationPosition,
+                expected,
+                0.005,
+              ),
             ),
           ).toBe(true);
+          await image.settled();
           const stored = await image.stored();
           const position = JSON.parse(stored.data.annotationPosition) as {
             pageIndex: number;
@@ -2925,7 +2929,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               { expected: "true" },
             ),
           ).toBe(true);
-          expect(await pixels.keys()).toContain(imageKey);
+          await expect
+            .poll(() => pixels.keys(), { timeout: 10_000 })
+            .toContain(imageKey);
         }, 120000);
 
         it("puts the image's geometry back for the undo key, and drags it out again for redo", async () => {
@@ -2942,8 +2948,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await waitFor(
               async () =>
-                (await image.stored()).data.annotationPosition !==
-                image.seed.annotationPosition,
+                !isDeepStrictEqual(
+                  JSON.parse((await image.stored()).data.annotationPosition),
+                  image.seeded.position,
+                ),
             ),
           ).toBe(true);
           await image.settled();
@@ -3343,8 +3351,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await waitFor(
               async () =>
-                (await ink.stored()).data.annotationPosition !==
-                ink.seed.annotationPosition,
+                !isDeepStrictEqual(
+                  JSON.parse((await ink.stored()).data.annotationPosition),
+                  ink.seeded.position,
+                ),
             ),
           ).toBe(true);
           await ink.settled();
@@ -3361,7 +3371,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect((await ink.held())?.position).toBe(
             stored.data.annotationPosition,
           );
-          expect(await pixels.keys()).toContain(inkKey);
+          await expect
+            .poll(() => pixels.keys(), { timeout: 10_000 })
+            .toContain(inkKey);
           return JSON.parse(stored.data.annotationPosition) as InkPosition;
         }
 
@@ -3599,8 +3611,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await waitFor(
               async () =>
-                (await mark.stored()).data.annotationPosition !==
-                mark.seed.annotationPosition,
+                !isDeepStrictEqual(
+                  JSON.parse((await mark.stored()).data.annotationPosition),
+                  mark.seeded.position,
+                ),
             ),
           ).toBe(true);
           await mark.settled();
