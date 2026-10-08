@@ -107,6 +107,10 @@ Default label vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `read
 
 Multi-context layout — `GLOSSARY-MAP.md` at the repo root points to per-workspace `GLOSSARY.md` files under `apps/*` and `packages/*`. See `docs/agents/domain.md`. Context names there (e.g. "Zotero Data Model") are heading labels for that map; code, comments, and user-facing copy keep the casing their own convention calls for (see i18n above for UI text).
 
+## Effect
+
+Effect's API evolves between versions and may differ from your training data. Resolve the `effect` package from the relevant workspace. Read `AGENTS.md` inside the installed package before writing Effect code; follow its linked examples for the area being changed. Search the installed source before adding helpers.
+
 <!-- BEGIN:turborepo-agent-rules -->
 
 # This is NOT the Turborepo you know
