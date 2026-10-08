@@ -1,6 +1,7 @@
 // Reports the Zotero schema versions of the database being read.
 import type { NodeDatabaseClient } from "@/client/node";
 import type { SQLocalDatabaseClient } from "@/client/web";
+import { readDatabaseLayout } from "@/layout";
 
 import { defineQuery } from "./_shared";
 
@@ -45,30 +46,25 @@ const versionQuery = defineQuery<void>()((db) =>
  * against, so a query may return wrong data or none. The caller decides what to
  * do with that; the read itself stays allowed, because a stale range would
  * otherwise block a working Zotero upgrade.
+ *
+ * The stamps come from the layout of the copy (`readDatabaseLayout`), which
+ * reads them once for each copy.
  */
 export function getSchemaVersions(
   db: NodeDatabaseClient,
 ): ZoteroSchemaVersions {
-  const rows = versionQuery.prepared(db).all();
-  const readVersion = (schema: string): number | null => {
-    const version = rows.find((row) => row.schema === schema)?.version;
-    return typeof version === "number" ? version : null;
-  };
-  const userdata = readVersion("userdata");
-  const compatibility = readVersion("compatibility");
+  const { userdata, compatibility } = readDatabaseLayout(db).versions;
   const supported =
     inRange(userdata, SUPPORTED_SCHEMA_VERSIONS.userdata) &&
     inRange(compatibility, SUPPORTED_SCHEMA_VERSIONS.compatibility);
   return { userdata, compatibility, supported };
 }
 
-/** Whether local client revision columns added in userdata 129 are available. */
-export function hasClientRevisions(db: NodeDatabaseClient): boolean {
-  const { userdata } = getSchemaVersions(db);
-  return userdata !== null && userdata >= 129;
-}
-
-/** Async-client form of {@link hasClientRevisions}. */
+/**
+ * Whether the local client revision columns of userdata 129 are available, by
+ * the `userdata` stamp. The async client has no layout read; a synchronous
+ * reader asks `readDatabaseLayout` for the columns.
+ */
 export async function hasClientRevisionsAsync(
   db: SQLocalDatabaseClient,
 ): Promise<boolean> {

@@ -4,7 +4,7 @@ export {
   getLibraryByGroupID,
   type Library,
 } from "./queries/libraries";
-export { type GroupIDMemo } from "./queries/_groups";
+export { type GroupIDMemo } from "./queries/libraries";
 export {
   getItemsByID,
   getItemTypeByKey,
@@ -35,6 +35,12 @@ export {
   type ZoteroDatabaseIdentity,
   type ZoteroUserIdentity,
 } from "./queries/account";
+export {
+  readDatabaseLayout,
+  type DatabaseLayout,
+  type LayoutGap,
+  type LayoutVersions,
+} from "./layout";
 export {
   getSchemaVersions,
   SUPPORTED_SCHEMA_VERSIONS,

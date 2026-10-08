@@ -13,10 +13,14 @@ import type { ItemBaseFieldName, ItemBaseFields } from "@/lib/zt-venue";
 
 import { getBaseFieldTable, getBaseFieldTableAsync } from "./_base-fields";
 import type { BaseFieldTable } from "./_base-fields";
-import { groupIDForLibrary, groupsQuery, resolveGroupID } from "./_groups";
-import type { GroupIDMemo } from "./_groups";
 import { CHILD_ITEM_TYPES, defineQuery, defineKeyedQuery } from "./_shared";
 import type { ChildItemType, FindManyOptions, QueryRow } from "./_shared";
+import {
+  groupIDForLibrary,
+  groupIDForLibraryAsync,
+  resolveGroupID,
+} from "./libraries";
+import type { GroupIDMemo } from "./libraries";
 
 export interface Creator {
   firstName: string | null;
@@ -265,12 +269,12 @@ export async function getItemsByLibraryAsync(
   db: SQLocalDatabaseClient,
   libraryID: number,
 ): Promise<Item[]> {
-  const [rows, [group], baseFieldTable] = await Promise.all([
+  const [rows, groupID, baseFieldTable] = await Promise.all([
     itemsByLibraryQuery.prepared(db).all({ libraryID }),
-    groupsQuery.prepared(db).all({ libraryID }),
+    groupIDForLibraryAsync(db, libraryID),
     getBaseFieldTableAsync(db, ITEM_BASE_FIELDS),
   ]);
-  return rows.map((r) => toItem(r, group?.groupID ?? null, baseFieldTable));
+  return rows.map((r) => toItem(r, groupID, baseFieldTable));
 }
 
 /**
