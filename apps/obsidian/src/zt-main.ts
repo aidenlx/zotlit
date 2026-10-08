@@ -2,6 +2,7 @@ import { getLanguage, Plugin, requestUrl, View } from "obsidian";
 import type { FileSystemAdapter } from "obsidian";
 import semverGte from "semver/functions/gte";
 
+import { printableCliHandler } from "@/lib/cli-rejection";
 import { DOCS_SITE_URL, WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
@@ -190,6 +191,23 @@ export default class ZotLitPlugin extends Plugin {
   get services(): unknown {
     if (!this.#services) throw new Error("Plugin not loaded");
     return this.#services;
+  }
+
+  /**
+   * Every zotlit:* command registers here, so each handler rejects with the
+   * text of its error: Obsidian prints any other rejection as [object Object].
+   */
+  override registerCliHandler(
+    ...[command, description, flags, handler]: Parameters<
+      Plugin["registerCliHandler"]
+    >
+  ): void {
+    super.registerCliHandler(
+      command,
+      description,
+      flags,
+      printableCliHandler(handler),
+    );
   }
 
   /** Show the installer notice independently of the version check. */
