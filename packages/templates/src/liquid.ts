@@ -391,6 +391,7 @@ function flatten(items: unknown, depth = 1): unknown[] {
  * objects and would otherwise parse a stringified `PlainDate` as UTC via
  * `new Date(string)`.
  */
+/* oxlint-disable no-restricted-globals -- LiquidJS's builtin date filter takes a Date. */
 function normalizeDateInput(v: unknown): unknown {
   if (v instanceof Temporal.Instant) {
     return new Date(v.epochMilliseconds);
@@ -413,3 +414,4 @@ function normalizeDateInput(v: unknown): unknown {
   }
   return v;
 }
+/* oxlint-enable no-restricted-globals */

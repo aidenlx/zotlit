@@ -929,6 +929,7 @@ describe("buildFilteredDisplayTree — getters", () => {
 
 describe("buildFilteredDisplayTree — opaque values", () => {
   it("does not match an opaque object's string representation", () => {
+    // oxlint-disable-next-line no-restricted-globals -- a Date is the opaque object under test.
     const root = { createdAt: new Date("2024-01-02T00:00:00.000Z") };
 
     const { nodes } = buildFilteredDisplayTree(root, "2024");

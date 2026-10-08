@@ -9,6 +9,7 @@
  */
 export function coerceOutput(value: unknown): string {
   if (value === null || value === undefined) return "";
+  // oxlint-disable-next-line no-restricted-globals -- a template value can be a Date from frontmatter or LiquidJS.
   if (value instanceof Date) return value.toISOString();
   if (value instanceof Temporal.Instant) {
     return value

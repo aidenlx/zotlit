@@ -76,6 +76,7 @@ export function lastmodFromFrontmatter(
 ): Temporal.Instant | null {
   const value = cache?.frontmatter?.[FIELD_ZOTERO_LASTMOD];
   if (value == null) return null;
+  // oxlint-disable-next-line no-restricted-globals -- Obsidian parses a YAML date in frontmatter into a Date.
   if (value instanceof Date) {
     return Temporal.Instant.fromEpochMilliseconds(value.getTime());
   }

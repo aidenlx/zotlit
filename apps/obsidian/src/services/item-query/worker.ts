@@ -74,7 +74,7 @@ const receive = (text: string) => {
     if (request.job.measure)
       send({
         type: "cancel-progress",
-        event: { phase, atEpochMs: Date.now() },
+        event: { phase, atEpochMs: Temporal.Now.instant().epochMilliseconds },
       });
   };
   controller.signal.addEventListener(

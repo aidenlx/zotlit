@@ -257,7 +257,7 @@ class Slot {
   #observeCancel(phase: CancellationEvent["phase"]): void {
     this.#observer?.cancelled?.({
       phase,
-      atEpochMs: Date.now(),
+      atEpochMs: Temporal.Now.instant().epochMilliseconds,
     });
   }
 

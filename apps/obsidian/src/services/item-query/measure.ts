@@ -153,7 +153,7 @@ export function registerItemQueryMeasureCli(
     document.addEventListener("visibilitychange", onVisibility);
 
     const startedAt = now();
-    const startedAtEpochMs = Date.now();
+    const startedAtEpochMs = Temporal.Now.instant().epochMilliseconds;
     // The service reports the request from any source: the timer, an unload,
     // or `zotlit:item-query-cancel` for a run with `id`.
     let firedAt: number | undefined;

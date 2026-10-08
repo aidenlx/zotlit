@@ -137,10 +137,10 @@ describe("getItemsByLibrary", () => {
     // '2024-02-01 00:00:00' (UTC) — assert via epoch ms to confirm the UTC
     // interpretation without depending on the runner's local timezone.
     expect(recent?.dateModified.epochMilliseconds).toBe(
-      Date.UTC(2024, 6, 1, 0, 0, 0),
+      Temporal.Instant.from("2024-07-01T00:00:00Z").epochMilliseconds,
     );
     expect(older?.dateModified.epochMilliseconds).toBe(
-      Date.UTC(2024, 1, 1, 0, 0, 0),
+      Temporal.Instant.from("2024-02-01T00:00:00Z").epochMilliseconds,
     );
   });
 

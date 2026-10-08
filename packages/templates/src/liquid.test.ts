@@ -658,6 +658,7 @@ describe("output coercion", () => {
 
   it("renders a JS Date via toISOString", () => {
     const engine = createLiquidEngine();
+    // oxlint-disable-next-line no-restricted-globals -- the test renders a JS Date.
     const date = new Date("2026-06-21T04:00:00Z");
     expect(
       engine.parseAndRenderSync("{{ zt.value }}", { zt: { value: date } }),

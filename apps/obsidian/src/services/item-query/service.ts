@@ -211,7 +211,7 @@ export class ItemQueryService extends Service<QueryWorkers> {
       if (signal.aborted)
         measure?.cancelled?.({
           phase: "cleanup-finished",
-          atEpochMs: Date.now(),
+          atEpochMs: Temporal.Now.instant().epochMilliseconds,
         });
     }
   }

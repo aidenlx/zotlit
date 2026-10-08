@@ -12,6 +12,7 @@ describe("classifyDiskData", () => {
     expect(classifyDiskData([1, 2, 3]).kind).toBe("malformed");
     expect(classifyDiskData("string").kind).toBe("malformed");
     expect(classifyDiskData(42).kind).toBe("malformed");
+    // oxlint-disable-next-line no-restricted-globals -- a Date is one of the values on disk that is not plain data.
     expect(classifyDiskData(new Date()).kind).toBe("malformed");
     expect(classifyDiskData(new Map()).kind).toBe("malformed");
   });
@@ -102,6 +103,7 @@ describe("isPlainObject", () => {
     expect(isPlainObject(null)).toBe(false);
     expect(isPlainObject(undefined)).toBe(false);
     expect(isPlainObject([])).toBe(false);
+    // oxlint-disable-next-line no-restricted-globals -- a Date is an object that is not plain.
     expect(isPlainObject(new Date())).toBe(false);
     expect(isPlainObject(new Map())).toBe(false);
     expect(isPlainObject("string")).toBe(false);
