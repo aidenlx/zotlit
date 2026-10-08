@@ -59,6 +59,19 @@ export interface ManagedBinary<Engine extends AsyncDisposable | Disposable> {
   readonly startOnInstall?: boolean;
 }
 
+/**
+ * One file of the device-wide store: `<directory>/<name>`, where `directory` is
+ * the binary's `id` and `name` its cached name, `<sha256>.wasm`. The shape
+ * matches `SegmenterBinary`, so a location passes straight through to the
+ * ZoteroReads worker.
+ *
+ * @see SegmenterBinary in `@zotlit/item-lookup`
+ */
+export interface BinaryLocation {
+  readonly directory: string;
+  readonly name: string;
+}
+
 /** Why a binary is unusable, in the terms the fallback surface guides out of. */
 export type ManagedBinaryFailure =
   | { code: "download-failed"; url: string; detail: string }
@@ -75,8 +88,13 @@ export type ManagedBinaryStatus =
   | { kind: "absent" }
   /** No binary is cached, and this vault dismissed the offer. */
   | { kind: "declined" }
-  | { kind: "installing"; done: Promise<void> }
-  | { kind: "installed"; version: string }
+  /**
+   * An install runs. `binary` is the location that stays readable meanwhile:
+   * the one installed before a reinstall, or `null`.
+   */
+  | { kind: "installing"; done: Promise<void>; binary: BinaryLocation | null }
+  /** A verified binary is cached at `binary`. */
+  | { kind: "installed"; version: string; binary: BinaryLocation }
   | { kind: "failed"; failure: ManagedBinaryFailure };
 
 export interface ManagedBinaryPorts {
@@ -89,7 +107,7 @@ export interface ManagedBinaryPorts {
 }
 
 /** The name a verified binary is cached under: its pinned hash. */
-export function cachedBinaryName(pin: BinaryPin): string {
+function cachedBinaryName(pin: BinaryPin): string {
   return `${pin.sha256}${BINARY_SUFFIX}`;
 }
 
@@ -182,7 +200,13 @@ export class ManagedBinaryService<
     // No-op side chain: keeps the status's copy of the promise from tripping
     // unhandledrejection when the caller attaches no handler of its own.
     done.catch(() => undefined);
-    this.#setStatus({ kind: "installing", done });
+    // A reinstall leaves the old binary on disk until the new one verifies
+    // and prune runs, so the old location stays readable throughout.
+    this.#setStatus({
+      kind: "installing",
+      done,
+      binary: current.kind === "installed" ? current.binary : null,
+    });
     return done;
   }
 
@@ -225,7 +249,11 @@ export class ManagedBinaryService<
     stack.defer(() => this.#dropEngine());
 
     if (await this.#isCached()) {
-      this.#setStatus({ kind: "installed", version: this.#binary.pin.version });
+      this.#setStatus({
+        kind: "installed",
+        version: this.#binary.pin.version,
+        binary: this.#location,
+      });
     }
     this.commit(stack.move());
   }
@@ -245,6 +273,10 @@ export class ManagedBinaryService<
 
   get #binaryName(): string {
     return cachedBinaryName(this.#binary.pin);
+  }
+
+  get #location(): BinaryLocation {
+    return { directory: this.#binary.id, name: this.#binaryName };
   }
 
   async #loadEngine(): Promise<Engine> {
@@ -327,7 +359,7 @@ export class ManagedBinaryService<
       await using _engine = await this.#startEngine();
     }
     this.#logger.info("Installed the binary", { binary, version, sha256 });
-    this.#setStatus({ kind: "installed", version });
+    this.#setStatus({ kind: "installed", version, binary: this.#location });
   }
 
   /**
