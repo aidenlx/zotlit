@@ -39,32 +39,20 @@ import {
   getZoteroIdentity,
   getZoteroDatabaseIdentity,
   isChildItemFields,
-  parseIndexedKey,
   resolveIndexedKeyLibrary,
 } from "@zotlit/db";
 import type { Attachment, GroupIDMemo, Item, TagMemo } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-import {
-  IndexConfig,
-  ItemIndex,
-  layerIndexConfig,
-  layerItemIndex,
-  layerSegmenterNone,
-  updateIndexSettings,
-} from "@zotlit/item-lookup";
+import { ItemIndex, layerItemIndex } from "@zotlit/item-lookup";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 
 import { Connection, toDbUnavailable } from "./connection";
-import { layerConnectionItemSource, pinnedClient } from "./item-source";
+import { layerConnectionItemSource } from "./item-source";
+import { itemsByIndexedKeys } from "./items-by-indexed-keys";
 import { listCollectionChoices, resolveMembershipFacts } from "./membership";
 import { DbUnavailable, SnapshotExpired, SnapshotId, ZoteroReads } from "./rpc";
-import type {
-  ReadsConfig,
-  SearchHit,
-  SegmenterBinary,
-  WorkLabelSource,
-} from "./rpc";
-import { makeSegmenterSwitch } from "./segmenter";
+import type { ReadsConfig, SegmenterBinary, WorkLabelSource } from "./rpc";
+import { layerSegmenterBinaryReader } from "./segmenter";
 import type { ReadSegmenter } from "./segmenter";
 
 /** The id queries {@link ZoteroReads} `ScopeItemIDs` runs, per kind. */
@@ -139,58 +127,6 @@ function sliced<I, O>(
   return Stream.fromIterable(slices, { chunkSize: 1 }).pipe(
     Stream.mapEffect((slice) => read(client, (c) => query(c, slice))),
   );
-}
-
-/**
- * Live items for Indexed Keys, keyed by Indexed Key in request order. Each
- * Library the keys span resolves once and reads its items through
- * `getItemsByKey`: one cached keyed read per Library.
- */
-function itemsByIndexedKeys(
-  client: NodeDatabaseClient,
-  indexedKeys: readonly string[],
-): Map<string, Item> {
-  const libraryByGroupID = new Map<number | null, number | null>();
-  // The group of each resolved Library, so hydration skips the group read.
-  const groupIDMemo: GroupIDMemo = new Map();
-  // Each requested spelling (`g7` or `g007`) with the Library and item key it resolves to.
-  const requested: { indexedKey: string; libraryID: number; key: string }[] =
-    [];
-  const keysByLibrary = new Map<number, string[]>();
-  for (const indexedKey of indexedKeys) {
-    const parsed = parseIndexedKey(indexedKey);
-    if (!parsed) continue;
-    if (!libraryByGroupID.has(parsed.groupID)) {
-      libraryByGroupID.set(
-        parsed.groupID,
-        resolveIndexedKeyLibrary(client, indexedKey)?.libraryID ?? null,
-      );
-    }
-    const libraryID = libraryByGroupID.get(parsed.groupID);
-    if (libraryID == null) continue;
-    groupIDMemo.set(libraryID, parsed.groupID);
-    requested.push({ indexedKey, libraryID, key: parsed.key });
-    const keys = keysByLibrary.get(libraryID);
-    if (keys) keys.push(parsed.key);
-    else keysByLibrary.set(libraryID, [parsed.key]);
-  }
-  const found = new Map<number, Map<string, Item>>();
-  for (const [libraryID, keys] of keysByLibrary) {
-    found.set(
-      libraryID,
-      new Map(
-        getItemsByKey(client, keys, { libraryID, memo: groupIDMemo }).map(
-          (item) => [item.key, item],
-        ),
-      ),
-    );
-  }
-  const items = new Map<string, Item>();
-  for (const { indexedKey, libraryID, key } of requested) {
-    const item = found.get(libraryID)?.get(key);
-    if (item) items.set(indexedKey, item);
-  }
-  return items;
 }
 
 /** Live attachments for Indexed Keys, in request order; misses drop out. */
@@ -303,29 +239,22 @@ export function handlersLayer(options?: HandlersOptions) {
     });
   };
 
-  /** The Item Index over the connection, with the none Segmenter. */
-  const itemIndexLayer = layerItemIndex.pipe(
-    Layer.provideMerge(
-      Layer.merge(
-        layerConnectionItemSource,
-        layerIndexConfig({ locale: options?.locale ?? null }).pipe(
-          Layer.provide(layerSegmenterNone),
-        ),
-      ),
-    ),
+  /** The Item Index over the connection, with the start settings. */
+  const itemIndexLayer = layerItemIndex({
+    locale: options?.locale ?? null,
+    segmenterBinary: options?.chineseSegmenter ?? null,
+  }).pipe(
+    Layer.provide([
+      layerConnectionItemSource,
+      layerSegmenterBinaryReader(options?.readSegmenter),
+    ]),
   );
 
   const handlers = ZoteroReads.toLayer(
     Effect.gen(function* () {
       const connection = yield* Connection;
       const itemIndex = yield* ItemIndex;
-      const indexConfig = yield* IndexConfig;
-      const segmenter = makeSegmenterSwitch(options?.readSegmenter);
-      yield* updateIndexSettings({
-        segmenter: yield* segmenter.resolve(options?.chineseSegmenter ?? null),
-      }).pipe(Effect.provideService(IndexConfig, indexConfig));
-      // One Configure at a time, in arrival order: a later one waits for an
-      // earlier one that reads its Chinese Segmenter binary.
+      // One Configure at a time, in arrival order, so the connection rebinds in the order the settings arrived.
       const configuring = yield* Semaphore.make(1);
       const pinned = new Map<SnapshotId, Pinned>();
 
@@ -569,19 +498,18 @@ export function handlersLayer(options?: HandlersOptions) {
         Refresh: () => connection.refresh,
         NotifyExternalChange: () => connection.notifyExternalChange,
         Configure: (config) =>
-          // The locale and the Segmenter land in one change, so the Item
-          // Index rebuilds once for both.
-          segmenter.resolve(config.chineseSegmenter).pipe(
-            Effect.flatMap((next) =>
-              updateIndexSettings({ locale: config.locale, segmenter: next }),
+          itemIndex
+            .configure({
+              locale: config.locale,
+              segmenterBinary: config.chineseSegmenter,
+            })
+            .pipe(
+              Effect.andThen(connection.configure(config)),
+              Effect.andThen(
+                Effect.sync(() => options?.applyLogLevel?.(config.logLevel)),
+              ),
+              configuring.withPermits(1),
             ),
-            Effect.provideService(IndexConfig, indexConfig),
-            Effect.andThen(connection.configure(config)),
-            Effect.andThen(
-              Effect.sync(() => options?.applyLogLevel?.(config.logLevel)),
-            ),
-            configuring.withPermits(1),
-          ),
         Ping: () => Effect.void,
 
         AttachmentsByKeys: ({ libraryID, keys, snapshot }) =>
@@ -731,36 +659,14 @@ export function handlersLayer(options?: HandlersOptions) {
             resolveMembershipFacts(client, { itemID, libraryID }),
           ),
 
-        // Hydration reads the client the answering index holds, so the rows
-        // and the highlight ranges describe one database state. A hit that no
-        // longer resolves there drops.
         SearchItems: ({ libraryIDs, query, limit }) =>
-          Effect.scoped(
-            Effect.gen(function* () {
-              const { hits, source } = yield* itemIndex
-                .searchWithSource(libraryIDs, query, limit)
-                .pipe(
-                  Effect.mapError(
-                    (error) => new DbUnavailable({ message: error.message }),
-                  ),
-                );
-              const client = pinnedClient(source);
-              if (!client)
-                return yield* Effect.die(
-                  new Error("The Item Index holds a source with no client"),
-                );
-              const items = yield* read(client, (c) =>
-                itemsByIndexedKeys(
-                  c,
-                  hits.map((hit) => hit.indexedKey),
-                ),
-              );
-              return hits.flatMap((hit): SearchHit[] => {
-                const item = items.get(hit.indexedKey);
-                return item ? [{ item, matches: hit.matches }] : [];
-              });
-            }),
-          ),
+          itemIndex
+            .search(libraryIDs, query, limit)
+            .pipe(
+              Effect.mapError(
+                (error) => new DbUnavailable({ message: error.message }),
+              ),
+            ),
       });
     }),
   );

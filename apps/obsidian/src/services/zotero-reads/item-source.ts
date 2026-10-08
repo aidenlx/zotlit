@@ -13,6 +13,7 @@ import { ItemSource, SourceUnavailable } from "@zotlit/item-lookup";
 import type { PinnedItemSource } from "@zotlit/item-lookup";
 
 import { Connection, toDbUnavailable } from "./connection";
+import { itemsByIndexedKeys } from "./items-by-indexed-keys";
 
 /** Run a synchronous read; a throw becomes a {@link SourceUnavailable}. */
 function read<A>(
@@ -26,23 +27,12 @@ function read<A>(
   });
 }
 
-/** The client each pinned source of {@link layerConnectionItemSource} reads. */
-const pinnedClients = new WeakMap<PinnedItemSource, NodeDatabaseClient>();
-
-/**
- * The client `source` reads, while its pinned scope is open; `undefined` for
- * a source this module did not pin.
- */
-export const pinnedClient = (
-  source: PinnedItemSource,
-): NodeDatabaseClient | undefined => pinnedClients.get(source);
-
 /**
  * An {@link ItemSource} over {@link Connection}.
  *
  * - `pinned` borrows the current client for the caller's scope; every read of
- *   one build goes to that client, and {@link pinnedClient} names it for
- *   hydration.
+ *   one build, and the hydration of the hits its index answers, goes to that
+ *   client.
  * - The generation names the database a client reads: the configured file,
  *   with the account and Local API identity inside it. Zotero reassigns local
  *   Library ids across databases, so a client on another file, or another
@@ -100,7 +90,7 @@ export const layerConnectionItemSource: Layer.Layer<
         );
         const generation = yield* generationOf(client);
         const memo: GroupIDMemo = new Map();
-        const pinned: PinnedItemSource = {
+        return {
           generation,
           itemIDs: (libraryID) =>
             read(client, (c) => getIndexedItemIDsByLibrary(c, libraryID)),
@@ -108,9 +98,9 @@ export const layerConnectionItemSource: Layer.Layer<
             read(client, (c) => getIndexedItemsByID(c, itemIDs, { memo })),
           signature: (libraryID) =>
             read(client, (c) => getIndexSignature(c, libraryID)),
-        };
-        pinnedClients.set(pinned, client);
-        return pinned;
+          itemsByIndexedKey: (indexedKeys) =>
+            read(client, (c) => itemsByIndexedKeys(c, indexedKeys)),
+        } satisfies PinnedItemSource;
       }),
     };
   }),

@@ -1600,14 +1600,6 @@ describe("ZoteroReads SearchItems", () => {
       return yield* Effect.die(new Error("condition never held"));
     });
 
-  /** SQL for `count` more journal articles in My Library, older than SEED's. */
-  const bulkWorks = (count: number) =>
-    Array.from(
-      { length: count },
-      (_, i) =>
-        `insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key) values (${1000 + i}, 1, '2023-01-01 00:00:00', '2023-01-01 00:00:00', 1, 'BULK${String(i).padStart(4, "0")}');`,
-    ).join("\n");
-
   /**
    * {@link layerRcRef} over `opener`, with controls: `degrade` makes later
    * borrows fail and reports `degraded`, as when no client can serve;
@@ -1688,22 +1680,6 @@ describe("ZoteroReads SearchItems", () => {
     expect(result.third.cost).toBe(result.second.cost);
   });
 
-  it("a fresh adapter builds nothing before the first search", async () => {
-    const { open, ran, closed } = fixtureOpener();
-    const result = await withReads(open, (reads) =>
-      Effect.gen(function* () {
-        // The first open and a refresh each publish `changed`.
-        yield* reads.Libraries({});
-        yield* reads.Refresh();
-        yield* closed(1);
-        const before = ran(ID_READ);
-        yield* reads.SearchItems(everything);
-        return { before, after: ran(ID_READ) };
-      }),
-    );
-    expect(result).toEqual({ before: 0, after: 2 });
-  });
-
   it("two parallel first searches share one build", async () => {
     const { open, ran } = fixtureOpener();
     const [a, b] = await withReads(open, (reads) =>
@@ -1716,60 +1692,6 @@ describe("ZoteroReads SearchItems", () => {
     expect(a).toHaveLength(4);
     // One ids read per Library of one build.
     expect(ran(ID_READ)).toBe(2);
-  });
-
-  it("ranks a Zotero key and a citation key prefix first", async () => {
-    const { open } = fixtureOpener();
-    const result = await withReads(open, (reads) =>
-      Effect.all({
-        key: reads.SearchItems({ ...everything, query: "GRPITEMS" }),
-        citationKey: reads.SearchItems({ ...everything, query: "main20" }),
-        title: reads.SearchItems({ ...everything, query: "alpha" }),
-      }),
-    );
-    expect(keysOf(result.key)).toEqual(["GRPITEMSg900"]);
-    expect(keysOf(result.citationKey)[0]).toBe("MAIN2345");
-    expect(keysOf(result.title)).toEqual(["RELA2345"]);
-    expect(result.title[0]!.matches).toEqual([[0, 5]]);
-  });
-
-  it("answers only the Libraries asked for, best first, up to the limit", async () => {
-    const { open } = fixtureOpener();
-    const result = await withReads(open, (reads) =>
-      Effect.all({
-        user: reads.SearchItems(inLibrary(1)),
-        group: reads.SearchItems(inLibrary(2)),
-        two: reads.SearchItems({ ...everything, limit: 2 }),
-      }),
-    );
-    expect(keysOf(result.user)).toEqual(["MAIN2345", "RELA2345", "RELB2345"]);
-    expect(keysOf(result.group)).toEqual(["GRPITEMSg900"]);
-    expect(keysOf(result.two)).toEqual(["MAIN2345", "GRPITEMSg900"]);
-  });
-
-  it("a refresh that moves a signature rebuilds, and the answer changes", async () => {
-    const { open } = fixtureOpener((id) =>
-      id === 1
-        ? ""
-        : `insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
-             values (4, 1, '2024-03-01 00:00:00', '2024-03-01 00:00:00', 1, 'NEWW2345');
-           insert into itemDataValues (valueID, value) values (50, 'Fresh Find');
-           insert into itemData (itemID, fieldID, valueID) values (4, 10, 50);`,
-    );
-    const result = await withReads(open, (reads) =>
-      Effect.gen(function* () {
-        yield* connect(reads);
-        const before = yield* reads.SearchItems(inLibrary(1, "fresh"));
-        yield* reads.Refresh();
-        const after = yield* eventually(
-          reads.SearchItems(inLibrary(1, "fresh")),
-          (hits) => hits.length > 0,
-        );
-        return { before, after };
-      }),
-    );
-    expect(result.before).toEqual([]);
-    expect(keysOf(result.after)).toEqual(["NEWW2345"]);
   });
 
   it("a refresh of the same database with equal signatures keeps the index", async () => {
@@ -1853,29 +1775,6 @@ describe("ZoteroReads SearchItems", () => {
     expect(keysOf(renamed)).toEqual(["MAIN2345"]);
   });
 
-  it("a Library list no search asked for since the last change is evicted at the next", async () => {
-    const { open, ran } = fixtureOpener();
-    const result = await withReads(open, (reads) =>
-      Effect.gen(function* () {
-        yield* connect(reads);
-        yield* reads.SearchItems(inLibrary(1));
-        yield* reads.SearchItems(inLibrary(2));
-        yield* reads.Refresh();
-        // Only the group list is asked for before the next change.
-        yield* reads.SearchItems(inLibrary(2));
-        yield* reads.Refresh();
-        const before = ran(ID_READ);
-        const user = yield* reads.SearchItems(inLibrary(1));
-        const group = yield* reads.SearchItems(inLibrary(2));
-        return { user, group, builds: ran(ID_READ) - before };
-      }),
-    );
-    expect(keysOf(result.user)).toEqual(["MAIN2345", "RELA2345", "RELB2345"]);
-    expect(keysOf(result.group)).toEqual(["GRPITEMSg900"]);
-    // The user list builds anew; the group list answers from its index.
-    expect(result.builds).toBe(1);
-  });
-
   it("a hit whose Item vanished since the build is left out", async () => {
     const client = createClient(":memory:");
     createFixtureSchema(client.$client);
@@ -1899,45 +1798,6 @@ describe("ZoteroReads SearchItems", () => {
       "RELB2345",
     ]);
     expect(keysOf(answers.after)).toEqual(["MAIN2345", "RELB2345"]);
-  });
-
-  it("hydrates on the database state the answering index was built on while a rebuild waits", async () => {
-    // #2 renames the Item and moves its signature.
-    const { open } = fixtureOpener((id) =>
-      id === 1
-        ? ""
-        : `update itemDataValues set value = 'Quagga Study' where valueID = 1;
-           update items set dateModified = '2024-06-01 00:00:00' where itemID = 1;`,
-    );
-    const { layer, holdBorrows, releaseBorrows } = controlledConnection(open);
-    const result = await withConnection(layer, (reads) =>
-      Effect.gen(function* () {
-        yield* connect(reads);
-        yield* reads.SearchItems(everything);
-        // The rebuild on #2 waits at its borrow.
-        yield* holdBorrows;
-        yield* reads.Refresh();
-        const during = yield* reads.SearchItems({
-          ...everything,
-          query: "study",
-        });
-        yield* releaseBorrows;
-        const after = yield* eventually(
-          reads.SearchItems({ ...everything, query: "quagga" }),
-          (hits) => hits.length > 0,
-        );
-        return { during, after };
-      }),
-    );
-    expect(keysOf(result.during)).toEqual(["MAIN2345"]);
-    expect(result.during[0]!.item.fields).toMatchObject({
-      title: "Main Study",
-    });
-    expect(result.during[0]!.matches).toEqual([[5, 10]]);
-    expect(result.after[0]!.item.fields).toMatchObject({
-      title: "Quagga Study",
-    });
-    expect(result.after[0]!.matches).toEqual([[0, 6]]);
   });
 
   it("a degraded connection fails the search with DbUnavailable", async () => {
@@ -1967,29 +1827,6 @@ describe("ZoteroReads SearchItems", () => {
       Effect.flip(reads.SearchItems(everything)),
     );
     expect(error).toBeInstanceOf(DbUnavailable);
-  });
-
-  it("an interrupted first search leaves its build running for the next search", async () => {
-    const { open, ran } = fixtureOpener(() => bulkWorks(3000));
-    const result = await withReads(open, (reads) =>
-      Effect.gen(function* () {
-        const first = yield* Effect.forkChild(
-          reads.SearchItems(inLibrary(1, "main")),
-        );
-        yield* eventually(
-          Effect.sync(() => ran(ID_READ)),
-          (count) => count > 0,
-        );
-        yield* Fiber.interrupt(first);
-        const exit = yield* Fiber.await(first);
-        const next = yield* reads.SearchItems(inLibrary(1, "main"));
-        return { exit, next, builds: ran(ID_READ) };
-      }),
-    );
-    // The search was still waiting for the build when it was interrupted.
-    expect(Exit.hasInterrupts(result.exit)).toBe(true);
-    expect(keysOf(result.next)).toEqual(["MAIN2345"]);
-    expect(result.builds).toBe(1);
   });
 
   it("a locale change through Configure rebuilds the held index", async () => {
@@ -2056,7 +1893,6 @@ describe("ZoteroReads SearchItems", () => {
     const CHINESE_TITLE =
       "update itemDataValues set value = '长江流域的城市化研究' where valueID = 3;";
     const JIEBA_ONLY = inLibrary(1, "流域");
-    const WHOLE_RUN = inLibrary(1, "长江流域");
     const INSTALLED: SegmenterBinary = {
       directory: "chinese-segmenter",
       name: "pinned.wasm",
@@ -2122,47 +1958,6 @@ describe("ZoteroReads SearchItems", () => {
       expect(keysOf(hits)).toEqual(["RELA2345"]);
     });
 
-    it("with no binary, CJK runs segment through Intl.Segmenter", async () => {
-      const result = await withSegmenter({}, (reads) =>
-        Effect.all({
-          part: reads.SearchItems(JIEBA_ONLY),
-          whole: reads.SearchItems(WHOLE_RUN),
-        }),
-      );
-      expect(keysOf(result.part)).toEqual([]);
-      expect(keysOf(result.whole)).toEqual(["RELA2345"]);
-    });
-
-    it("a Configure that installs the binary rebuilds every held index once", async () => {
-      const bytes = await jiebaBytes();
-      const result = await withSegmenter(
-        { readSegmenter: async () => bytes },
-        (reads, ran) =>
-          Effect.gen(function* () {
-            const before = yield* reads.SearchItems(JIEBA_ONLY);
-            yield* reads.SearchItems(everything);
-            yield* reads.Configure(config(INSTALLED));
-            const after = yield* eventually(
-              reads.SearchItems(JIEBA_ONLY),
-              (hits) => hits.length > 0,
-            );
-            yield* eventually(
-              Effect.sync(() => ran(ID_READ)),
-              (count) => count >= 6,
-            );
-            // The same binary again changes nothing.
-            yield* reads.Configure(config(INSTALLED));
-            yield* reads.SearchItems(everything);
-            yield* reads.SearchItems(JIEBA_ONLY);
-            return { before, after, builds: ran(ID_READ) };
-          }),
-      );
-      expect(keysOf(result.before)).toEqual([]);
-      expect(keysOf(result.after)).toEqual(["RELA2345"]);
-      // One ids read per Library per build: [1] and [1, 2], each built twice.
-      expect(result.builds).toBe(6);
-    });
-
     it("a Configure that changes the locale and installs the binary rebuilds every held index once", async () => {
       const bytes = await jiebaBytes();
       const result = await withSegmenter(
@@ -2184,119 +1979,6 @@ describe("ZoteroReads SearchItems", () => {
       );
       // One ids read per Library per build: [1] and [1, 2], each built twice.
       expect(result).toBe(6);
-    });
-
-    it("a Configure that uninstalls the binary falls back to Intl.Segmenter and still answers", async () => {
-      const bytes = await jiebaBytes();
-      const result = await withSegmenter(
-        { chineseSegmenter: INSTALLED, readSegmenter: async () => bytes },
-        (reads) =>
-          Effect.gen(function* () {
-            const installed = yield* reads.SearchItems(JIEBA_ONLY);
-            yield* reads.Configure(config(null));
-            const part = yield* eventually(
-              reads.SearchItems(JIEBA_ONLY),
-              (hits) => hits.length === 0,
-            );
-            const whole = yield* reads.SearchItems(WHOLE_RUN);
-            return { installed, part, whole };
-          }),
-      );
-      expect(keysOf(result.installed)).toEqual(["RELA2345"]);
-      expect(keysOf(result.part)).toEqual([]);
-      expect(keysOf(result.whole)).toEqual(["RELA2345"]);
-    });
-
-    it.each([
-      ["missing", () => Promise.reject(new Error("NotFoundError"))],
-      ["corrupt", () => Promise.resolve(new Uint8Array([0, 1, 2, 3]))],
-    ])(
-      "a %s binary at start falls back to Intl.Segmenter and search answers",
-      async (_, readSegmenter) => {
-        const result = await withSegmenter(
-          { chineseSegmenter: INSTALLED, readSegmenter },
-          (reads) =>
-            Effect.all({
-              part: reads.SearchItems(JIEBA_ONLY),
-              whole: reads.SearchItems(WHOLE_RUN),
-            }),
-        );
-        expect(keysOf(result.part)).toEqual([]);
-        expect(keysOf(result.whole)).toEqual(["RELA2345"]);
-      },
-    );
-
-    it("an uninstall sent while an install reads its binary wins", async () => {
-      const bytes = await jiebaBytes();
-      const reading = Promise.withResolvers<void>();
-      const release = Promise.withResolvers<void>();
-      const hits = await withSegmenter(
-        {
-          readSegmenter: async () => {
-            reading.resolve();
-            await release.promise;
-            return bytes;
-          },
-        },
-        (reads) =>
-          Effect.gen(function* () {
-            const install = yield* Effect.forkChild(
-              reads.Configure(config(INSTALLED)),
-            );
-            yield* Effect.promise(() => reading.promise);
-            const uninstall = yield* Effect.forkChild(
-              reads.Configure(config(null)),
-            );
-            // The uninstall reached the worker before the install finished.
-            yield* reads.Ping();
-            release.resolve();
-            yield* Fiber.join(install);
-            yield* Fiber.join(uninstall);
-            return yield* reads.SearchItems(JIEBA_ONLY);
-          }),
-      );
-      expect(keysOf(hits)).toEqual([]);
-    });
-
-    it("a Configure with the same binary after a failed load tries it again", async () => {
-      const bytes = await jiebaBytes();
-      let reads = 0;
-      const result = await withSegmenter(
-        {
-          chineseSegmenter: INSTALLED,
-          readSegmenter: async () => {
-            reads++;
-            if (reads === 1) throw new Error("NotFoundError");
-            return bytes;
-          },
-        },
-        (client) =>
-          Effect.gen(function* () {
-            const failed = yield* client.SearchItems(JIEBA_ONLY);
-            yield* client.Configure(config(INSTALLED));
-            const retried = yield* eventually(
-              client.SearchItems(JIEBA_ONLY),
-              (hits) => hits.length > 0,
-            );
-            return { failed, retried };
-          }),
-      );
-      expect(reads).toBe(2);
-      expect(keysOf(result.failed)).toEqual([]);
-      expect(keysOf(result.retried)).toEqual(["RELA2345"]);
-    });
-
-    it("a corrupt binary through Configure keeps search answering", async () => {
-      const result = await withSegmenter(
-        { readSegmenter: async () => new Uint8Array([0, 1, 2, 3]) },
-        (reads) =>
-          Effect.gen(function* () {
-            yield* reads.SearchItems(WHOLE_RUN);
-            yield* reads.Configure(config(INSTALLED));
-            return yield* reads.SearchItems(WHOLE_RUN);
-          }),
-      );
-      expect(keysOf(result)).toEqual(["RELA2345"]);
     });
   });
 });

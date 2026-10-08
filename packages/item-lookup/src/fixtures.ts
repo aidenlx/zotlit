@@ -2,11 +2,18 @@ import { itemBaseFields, resolveVenue } from "@zotlit/db";
 import type { BaseItem, Creator, IndexedItem, Item } from "@zotlit/db";
 import type { ItemFields, JournalArticleFields } from "@zotlit/zotero-types";
 
+import type { MemoryItemRow } from "./memory-item-source";
+
 export {
   makeMemoryItemSource,
+  type MemoryItemRow,
   type MemoryItemSource,
   type MemoryItemSourceReads,
 } from "./memory-item-source";
+export {
+  makeMemorySegmenterBinaryReader,
+  type MemorySegmenterBinaryReader,
+} from "./memory-segmenter-binary-reader";
 
 /** The fields Zotero records for one item type, minus its discriminant. */
 type FieldsOf<TType extends ItemFields["itemType"]> = Omit<
@@ -77,6 +84,11 @@ export function makeIndexedItem(options: ItemFixtureOptions): IndexedItem {
     citationKey: options.citationKey ?? null,
     date: options.date ?? null,
   };
+}
+
+/** One memory source row: the indexed row and the Item, from the same options. */
+export function makeMemoryItemRow(options: ItemFixtureOptions): MemoryItemRow {
+  return { indexed: makeIndexedItem(options), item: makeItem(options) };
 }
 
 export function makeItem(options: ItemFixtureOptions): Item;

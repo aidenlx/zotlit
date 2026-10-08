@@ -16,9 +16,9 @@
  *   to the scheduler after each slice.
  * - A held index keeps the pinned source it was built on, or last verified
  *   against with equal signatures, until a newer index replaces it or the list
- *   leaves. A caller hydrates the hits on that source, so the rows and the
+ *   leaves. A search hydrates its hits on that source, so the rows and the
  *   highlight ranges describe one state.
- * - A locale or Segmenter change in {@link IndexConfig} rebuilds every held
+ * - A locale or Segmenter change through `configure` rebuilds every held
  *   list.
  */
 import { getLogger } from "@logtape/logtape";
@@ -33,20 +33,23 @@ import {
   Layer,
   Schema,
   Scope,
+  Semaphore,
   Stream,
-  SubscriptionRef,
 } from "effect";
 
 import { createLanguageLookup } from "@zotlit/db";
 import type {
   IndexedItem,
   IndexSignature,
+  Item,
   LanguageNameLookup,
 } from "@zotlit/db";
 
 import { makeEngineIndexBuilder, searchEngineIndex } from "./engine";
-import type { EngineIndex, ItemHit } from "./engine";
-import { Segmenter } from "./segmenter";
+import type { EngineIndex, SearchMatches } from "./engine";
+import { layerSegmenterNone, Segmenter } from "./segmenter";
+import { makeSegmenterSwitch, SegmenterBinaryReader } from "./segmenter-switch";
+import type { SegmenterBinary } from "./segmenter-switch";
 
 /** The source behind an {@link ItemSource} cannot answer. */
 export class SourceUnavailable extends Schema.TaggedError<SourceUnavailable>()(
@@ -70,6 +73,10 @@ export interface PinnedItemSource {
   readonly signature: (
     libraryID: number,
   ) => Effect.Effect<IndexSignature, SourceUnavailable>;
+  /** The live Items for Indexed Keys, keyed by Indexed Key; a key that no longer resolves is absent. */
+  readonly itemsByIndexedKey: (
+    indexedKeys: readonly string[],
+  ) => Effect.Effect<ReadonlyMap<string, Item>, SourceUnavailable>;
 }
 
 /** The port the Item Index reads Items through. */
@@ -96,72 +103,15 @@ export class ItemSource extends Context.Service<
 export interface IndexSettings {
   /** The UI locale, for creator-name language lookup; `null` for none. */
   readonly locale: string | null;
-  /** The word splitter for indexing and queries. */
-  readonly segmenter: (typeof Segmenter)["Service"];
+  /** The installed Chinese Segmenter binary; `null` cuts CJK text with `Intl.Segmenter`. */
+  readonly segmenterBinary: SegmenterBinary | null;
 }
 
-/**
- * The settings an index is built with; each change rebuilds every held list,
- * so one change of both settings rebuilds each list once.
- */
-export class IndexConfig extends Context.Service<
-  IndexConfig,
-  { readonly settings: SubscriptionRef.SubscriptionRef<IndexSettings> }
->()("zotlit/item-lookup/IndexConfig") {}
-
-/** An {@link IndexConfig} that starts with `locale` and the provided Segmenter. */
-export const layerIndexConfig = (options: {
-  locale: string | null;
-}): Layer.Layer<IndexConfig, never, Segmenter> =>
-  Layer.effect(IndexConfig)(
-    Effect.gen(function* () {
-      const segmenter = yield* Effect.service(Segmenter);
-      return {
-        settings: yield* SubscriptionRef.make({
-          locale: options.locale,
-          segmenter,
-        }),
-      };
-    }),
-  );
-
-/**
- * Apply `patch` to the {@link IndexConfig} in one change; an absent or
- * `undefined` field keeps its setting. A patch that changes nothing sets
- * nothing, so it rebuilds no index.
- */
-export const updateIndexSettings = (patch: {
-  readonly locale?: string | null | undefined;
-  readonly segmenter?: (typeof Segmenter)["Service"] | undefined;
-}): Effect.Effect<void, never, IndexConfig> =>
-  Effect.gen(function* () {
-    const config = yield* Effect.service(IndexConfig);
-    const current = yield* SubscriptionRef.get(config.settings);
-    const next: IndexSettings = {
-      locale: patch.locale === undefined ? current.locale : patch.locale,
-      segmenter: patch.segmenter ?? current.segmenter,
-    };
-    if (
-      next.locale === current.locale &&
-      next.segmenter === current.segmenter
-    ) {
-      return;
-    }
-    yield* SubscriptionRef.set(config.settings, next);
-  });
-
-/**
- * Build `layer` and make its Segmenter the one every held list is rebuilt
- * with: a Chinese Segmenter install switches to the jieba layer, an uninstall
- * back to the none layer.
- */
-export const switchSegmenter = <E>(
-  layer: Layer.Layer<Segmenter, E>,
-): Effect.Effect<void, E, IndexConfig> =>
-  Effect.flatMap(
-    Effect.provide(Effect.service(Segmenter), layer),
-    (segmenter) => updateIndexSettings({ segmenter }),
-  );
+/** One ranked answer of a search: the hydrated Item and the ranges of its title that matched. */
+export interface SearchHit {
+  readonly item: Item;
+  readonly matches: SearchMatches;
+}
 
 /** Item search over the Libraries a caller names. */
 export class ItemIndex extends Context.Service<
@@ -169,30 +119,22 @@ export class ItemIndex extends Context.Service<
   {
     /**
      * Rank the Items of `libraries` (local ids in canonical order) that match
-     * `query`, best first, up to `limit`. Hydration is the caller's.
+     * `query`, best first, up to `limit`, hydrated on the source the answering
+     * index holds. A hit whose Item no longer resolves there is dropped.
      */
     readonly search: (
       libraries: readonly number[],
       query: string,
       limit: number,
-    ) => Effect.Effect<readonly ItemHit[], SourceUnavailable>;
+    ) => Effect.Effect<readonly SearchHit[], SourceUnavailable>;
     /**
-     * {@link search}, with the pinned source the answering index holds, open
-     * until the caller's scope closes. Hydrate the hits on `source`.
+     * Replace the settings. Calls serialize in arrival order. Returns once the
+     * Segmenter switch is applied and the rebuilds of held lists are scheduled
+     * (not finished).
      */
-    readonly searchWithSource: (
-      libraries: readonly number[],
-      query: string,
-      limit: number,
-    ) => Effect.Effect<SourcedHits, SourceUnavailable, Scope.Scope>;
+    readonly configure: (settings: IndexSettings) => Effect.Effect<void>;
   }
 >()("zotlit/item-lookup/ItemIndex") {}
-
-/** Hits and the pinned source the index that ranked them holds. */
-export interface SourcedHits {
-  readonly hits: readonly ItemHit[];
-  readonly source: PinnedItemSource;
-}
 
 const logger = getLogger(["zotlit", "item-lookup", "item-index"]);
 
@@ -249,14 +191,28 @@ interface Entry {
   waiters: number;
 }
 
-export const layerItemIndex: Layer.Layer<
-  ItemIndex,
-  never,
-  ItemSource | IndexConfig
-> = Layer.effect(ItemIndex)(
-  Effect.gen(function* () {
+/**
+ * The Item Index, starting with `initial`. The initial Segmenter resolves
+ * before the index exists, so no search sees it half-configured.
+ */
+export const layerItemIndex = (
+  initial: IndexSettings,
+): Layer.Layer<ItemIndex, never, ItemSource | SegmenterBinaryReader> =>
+  Layer.effect(ItemIndex)(makeItemIndex(initial));
+
+function makeItemIndex(initial: IndexSettings) {
+  return Effect.gen(function* () {
     const source = yield* Effect.service(ItemSource);
-    const config = yield* Effect.service(IndexConfig);
+    const segmenterSwitch = makeSegmenterSwitch(
+      yield* Effect.service(SegmenterBinaryReader),
+    );
+    let settings = initial;
+    /** The Segmenter every build cuts with. */
+    let segmenter =
+      (yield* segmenterSwitch.resolve(initial.segmenterBinary)) ??
+      (yield* Effect.provide(Effect.service(Segmenter), layerSegmenterNone));
+    /** One `configure` at a time, in arrival order. */
+    const configuring = yield* Semaphore.make(1);
     const entries = new Map<string, Entry>();
     /** The list the latest search asked for; no emission evicts it. */
     let latest: Entry | null = null;
@@ -383,12 +339,9 @@ export const layerItemIndex: Layer.Layer<
                   : "signature",
         });
         const startedAt = performance.now();
-        const { locale, segmenter } = yield* SubscriptionRef.get(
-          config.settings,
-        );
         const builder = yield* makeEngineIndexBuilder({
           libraries: entry.libraries,
-          languageLookup: lookupFor(locale),
+          languageLookup: lookupFor(settings.locale),
         }).pipe(Effect.provideService(Segmenter, segmenter));
         for (const libraryID of entry.libraries) {
           const ids = yield* pinned.itemIDs(libraryID);
@@ -499,10 +452,18 @@ export const layerItemIndex: Layer.Layer<
     yield* Stream.runForEach(source.generation, () => onGeneration).pipe(
       Effect.forkScoped({ startImmediately: true }),
     );
-    yield* Stream.drop(SubscriptionRef.changes(config.settings), 1).pipe(
-      Stream.runForEach(() => onConfig),
-      Effect.forkScoped({ startImmediately: true }),
-    );
+
+    const configure = (next: IndexSettings): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        // The locale and the Segmenter land in one change, so every held
+        // list rebuilds once for both.
+        const switched = yield* segmenterSwitch.resolve(next.segmenterBinary);
+        const changed =
+          switched !== undefined || next.locale !== settings.locale;
+        settings = next;
+        if (switched) segmenter = switched;
+        if (changed) yield* onConfig;
+      }).pipe(configuring.withPermits(1));
 
     /** The list's entry once it holds an index, waiting for a build when none. */
     const indexFor = (
@@ -572,31 +533,32 @@ export const layerItemIndex: Layer.Layer<
           }),
       );
 
-    const searchWithSource = (
+    // Hydration reads the source the answering index holds, so the rows and
+    // the highlight ranges describe one state.
+    const search = (
       libraries: readonly number[],
       query: string,
       limit: number,
-    ): Effect.Effect<SourcedHits, SourceUnavailable, Scope.Scope> =>
-      Effect.gen(function* () {
-        const built = yield* holdIndex(yield* indexFor(libraries));
-        // Dropped in between: wait for the list's next index.
-        if (!built) return yield* searchWithSource(libraries, query, limit);
-        const hits = yield* searchEngineIndex(built.engine, query, limit);
-        return { hits, source: built.binding.source };
-      });
+    ): Effect.Effect<readonly SearchHit[], SourceUnavailable> =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const built = yield* holdIndex(yield* indexFor(libraries));
+          // Dropped in between: wait for the list's next index.
+          if (!built) return yield* search(libraries, query, limit);
+          const hits = yield* searchEngineIndex(built.engine, query, limit);
+          const items = yield* built.binding.source.itemsByIndexedKey(
+            hits.map((hit) => hit.indexedKey),
+          );
+          return hits.flatMap((hit): SearchHit[] => {
+            const item = items.get(hit.indexedKey);
+            return item ? [{ item, matches: hit.matches }] : [];
+          });
+        }),
+      );
 
-    return {
-      search: (libraries, query, limit) =>
-        Effect.scoped(
-          Effect.map(
-            searchWithSource(libraries, query, limit),
-            ({ hits }) => hits,
-          ),
-        ),
-      searchWithSource,
-    };
-  }),
-);
+    return { search, configure };
+  });
+}
 
 function signaturesEqual(
   a: readonly IndexSignature[],

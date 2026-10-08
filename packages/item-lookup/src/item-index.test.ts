@@ -1,33 +1,19 @@
-import {
-  Cause,
-  Context,
-  Effect,
-  Exit,
-  Fiber,
-  Layer,
-  Scheduler,
-  Scope,
-} from "effect";
+import { Cause, Context, Effect, Exit, Fiber, Layer, Scheduler } from "effect";
+import type { Scope } from "effect";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { USER_LIBRARY_ID } from "@zotlit/db";
-import type { IndexedItem } from "@zotlit/db";
 
-import { makeIndexedItem as item } from "./fixtures";
-import {
-  IndexConfig,
-  ItemIndex,
-  layerIndexConfig,
-  layerItemIndex,
-  SourceUnavailable,
-  switchSegmenter,
-  updateIndexSettings,
-} from "./item-index";
+import { makeMemoryItemRow as item } from "./fixtures";
+import { ItemIndex, layerItemIndex, SourceUnavailable } from "./item-index";
+import type { IndexSettings, SearchHit } from "./item-index";
 import { makeMemoryItemSource } from "./memory-item-source";
-import type { MemoryItemSource } from "./memory-item-source";
-import { layerSegmenterJieba, layerSegmenterNone } from "./segmenter";
+import type { MemoryItemRow, MemoryItemSource } from "./memory-item-source";
+import { makeMemorySegmenterBinaryReader } from "./memory-segmenter-binary-reader";
+import type { MemorySegmenterBinaryReader } from "./memory-segmenter-binary-reader";
+import type { SegmenterBinary } from "./segmenter-switch";
 
 const GROUP_LIBRARY_ID = 2;
 
@@ -58,69 +44,104 @@ const delta = item({
   dateModified: "2026-01-01T00:00:00Z",
 });
 
-const TITLE = "中华人民共和国宪法研究";
+// `Intl.Segmenter` keeps `长江流域` whole; jieba's `cut_for_search` adds
+// `长江`, `江流`, `流域`. So `流域` hits only through jieba.
+const chinese = item({
+  key: "CHINA",
+  itemID: 9,
+  title: "长江流域的城市化研究",
+  dateModified: "2022-01-01T00:00:00Z",
+});
+const JIEBA_ONLY = "流域";
+const WHOLE_RUN = "长江流域";
 // The web target binary, as the Chinese Segmenter download delivers it.
 const JIEBA_WASM = readFileSync(
   fileURLToPath(
     new URL("jieba_rs_wasm_bg.wasm", import.meta.resolve("jieba-wasm/web")),
   ),
 );
+const INSTALLED: SegmenterBinary = {
+  directory: "chinese-segmenter",
+  name: "pinned.wasm",
+};
+const MISSING: SegmenterBinary = {
+  directory: "chinese-segmenter",
+  name: "missing.wasm",
+};
+const CORRUPT: SegmenterBinary = {
+  directory: "chinese-segmenter",
+  name: "corrupt.wasm",
+};
+/** The bytes each binary of the tests reads as; another binary is missing. */
+const storedBytes = (binary: SegmenterBinary): BufferSource | undefined =>
+  binary.name === INSTALLED.name
+    ? JIEBA_WASM
+    : binary.name === CORRUPT.name
+      ? new Uint8Array([0, 1, 2, 3])
+      : undefined;
 
 const USER = [USER_LIBRARY_ID] as const;
 const GROUP = [GROUP_LIBRARY_ID] as const;
 
 interface Harness {
   source: MemoryItemSource;
+  reader: MemorySegmenterBinaryReader;
+  /** The Indexed Keys of the hits, best first. */
   search: (
     libraries: readonly number[],
     query: string,
   ) => Effect.Effect<string[], unknown>;
-  config: (typeof IndexConfig)["Service"];
-  /** Hit keys and the generation of the source held for hydration. */
-  sourced: (
+  /** The hydrated hits, best first. */
+  hits: (
     libraries: readonly number[],
     query: string,
-  ) => Effect.Effect<
-    { keys: string[]; generation: number },
-    unknown,
-    Scope.Scope
-  >;
+  ) => Effect.Effect<readonly SearchHit[], SourceUnavailable>;
+  configure: (settings: IndexSettings) => Effect.Effect<void>;
 }
 
-/** Run `body` against a fresh Item Index over an in-memory source. */
+interface Setup {
+  /** The rows of each Library; by default Alpha and Beta in the user Library, Gamma in the group. */
+  rows?: ReadonlyMap<number, readonly MemoryItemRow[]>;
+  /** Yield every few steps, so concurrent fibers interleave finely. */
+  maxOpsBeforeYield?: number;
+  /** @default { locale: "en", segmenterBinary: null } */
+  initial?: IndexSettings;
+  /** @default storedBytes */
+  bytesFor?: (binary: SegmenterBinary) => BufferSource | undefined;
+}
+
+/** Run `body` against a fresh Item Index over in-memory ports. */
 function withIndex<A>(
   body: (harness: Harness) => Effect.Effect<A, unknown, Scope.Scope>,
-  rows: ReadonlyMap<number, readonly IndexedItem[]> = new Map([
-    [USER_LIBRARY_ID, [alpha, beta]],
-    [GROUP_LIBRARY_ID, [gamma]],
-  ]),
-  /** Yield every few steps, so concurrent fibers interleave finely. */
-  maxOpsBeforeYield?: number,
+  setup: Setup = {},
 ): Promise<A> {
+  const { maxOpsBeforeYield } = setup;
   return Effect.gen(function* () {
-    const source = yield* makeMemoryItemSource(rows);
-    const context = yield* Layer.build(
-      layerItemIndex.pipe(
-        Layer.provideMerge(layerIndexConfig({ locale: "en" })),
-        Layer.provide([source.layer, layerSegmenterNone]),
-      ),
+    const source = yield* makeMemoryItemSource(
+      setup.rows ??
+        new Map([
+          [USER_LIBRARY_ID, [alpha, beta]],
+          [GROUP_LIBRARY_ID, [gamma]],
+        ]),
     );
-    const { search, searchWithSource } = Context.get(context, ItemIndex);
-    const config = Context.get(context, IndexConfig);
+    const reader = yield* makeMemorySegmenterBinaryReader(
+      setup.bytesFor ?? storedBytes,
+    );
+    const context = yield* Layer.build(
+      layerItemIndex(
+        setup.initial ?? { locale: "en", segmenterBinary: null },
+      ).pipe(Layer.provide([source.layer, reader.layer])),
+    );
+    const { search, configure } = Context.get(context, ItemIndex);
     return yield* body({
       source,
-      config,
+      reader,
       search: (libraries, query) =>
         search(libraries, query, 50).pipe(
-          Effect.map((hits) => hits.map((hit) => hit.indexedKey)),
+          Effect.map((hits) => hits.map((hit) => hit.item.indexedKey)),
         ),
-      sourced: (libraries, query) =>
-        searchWithSource(libraries, query, 50).pipe(
-          Effect.map(({ hits, source: pinned }) => ({
-            keys: hits.map((hit) => hit.indexedKey),
-            generation: pinned.generation,
-          })),
-        ),
+      hits: (libraries, query) => search(libraries, query, 50),
+      configure,
     });
   }).pipe(
     Effect.scoped,
@@ -151,6 +172,7 @@ describe("Item Index", () => {
       itemIDs: 0,
       items: 0,
       signature: 0,
+      itemsByIndexedKey: 0,
       interrupted: 0,
       released: 0,
     });
@@ -341,8 +363,7 @@ describe("Item Index", () => {
           yield* source.swap;
           return yield* until(search(USER, ""), (keys) => keys.length === 4);
         }),
-      undefined,
-      4,
+      { maxOpsBeforeYield: 4 },
     );
 
     expect(answer).toEqual(["EPSILON", "DELTA", "BETA", "ALPHA"]);
@@ -390,13 +411,11 @@ describe("Item Index", () => {
   });
 
   it("rebuilds every held list on a locale change", async () => {
-    const itemIDs = await withIndex(({ source, search, config }) =>
+    const itemIDs = await withIndex(({ source, search, configure }) =>
       Effect.gen(function* () {
         yield* search(USER, "");
         yield* search(GROUP, "");
-        yield* updateIndexSettings({ locale: "zh" }).pipe(
-          Effect.provideService(IndexConfig, config),
-        );
+        yield* configure({ locale: "zh", segmenterBinary: null });
         yield* eventually(() => source.reads.released === 2);
         return source.reads.itemIDs;
       }),
@@ -405,84 +424,90 @@ describe("Item Index", () => {
     expect(itemIDs).toBe(4);
   });
 
-  it("re-tokenizes every held list when the Segmenter switches", async () => {
-    const chinese = item({ key: "CHINA", itemID: 9, title: TITLE });
-    const result = await withIndex(
-      ({ source, search, config }) =>
-        Effect.gen(function* () {
-          const before = yield* search(USER, "华人");
-          yield* switchSegmenter(layerSegmenterJieba(JIEBA_WASM)).pipe(
-            Effect.provideService(IndexConfig, config),
-          );
-          const jieba = yield* until(
-            search(USER, "华人"),
-            (keys) => keys.length > 0,
-          );
-          yield* switchSegmenter(layerSegmenterNone).pipe(
-            Effect.provideService(IndexConfig, config),
-          );
-          const fallback = yield* until(
-            search(USER, "华人"),
-            (keys) => keys.length === 0,
-          );
-          return { before, jieba, fallback, itemIDs: source.reads.itemIDs };
-        }),
-      new Map([[USER_LIBRARY_ID, [chinese]]]),
-    );
-
-    expect(result).toEqual({
-      before: [],
-      jieba: ["CHINA"],
-      fallback: [],
-      itemIDs: 3,
+  it("hydrates the hits on the source the answering index holds, the old one while a rebuild waits", async () => {
+    const renamed = item({
+      key: "BETA",
+      itemID: 2,
+      title: "Beta transit summary",
+      dateModified: "2025-01-01T00:00:00Z",
     });
-  });
-
-  it("hands out the source the answering index holds, the old one while a rebuild runs", async () => {
-    const result = await withIndex(({ source, sourced }) =>
+    const result = await withIndex(({ source, hits }) =>
       Effect.gen(function* () {
-        const first = yield* Effect.scoped(sourced(USER, ""));
-        yield* source.setItems(USER_LIBRARY_ID, [alpha, beta, delta]);
+        const first = yield* hits(USER, "transit");
+        yield* source.setItems(USER_LIBRARY_ID, [alpha, renamed, delta]);
         yield* source.closeGate;
         yield* source.swap;
         yield* source.held;
-        const during = yield* Effect.scoped(sourced(USER, ""));
+        const during = yield* hits(USER, "transit");
         yield* source.openGate;
         const after = yield* until(
-          Effect.scoped(sourced(USER, "")),
-          ({ keys }) => keys.length === 3,
+          hits(USER, "transit"),
+          (answer) => answer.length === 3,
         );
         return { first, during, after };
       }),
     );
 
-    expect(result.first).toEqual({ keys: ["BETA", "ALPHA"], generation: 0 });
-    expect(result.during).toEqual({ keys: ["BETA", "ALPHA"], generation: 0 });
-    expect(result.after).toEqual({
-      keys: ["DELTA", "BETA", "ALPHA"],
-      generation: 1,
+    expect(titlesOf(result.first)).toEqual({
+      BETA: "Beta transit report",
+      ALPHA: "Alpha transit memo",
     });
+    expect(result.during).toEqual(result.first);
+    expect(titlesOf(result.after)).toEqual({
+      DELTA: "Delta transit notes",
+      BETA: "Beta transit summary",
+      ALPHA: "Alpha transit memo",
+    });
+    // The highlight ranges describe the title the hit carries.
+    for (const hit of [...result.first, ...result.after]) {
+      const title = titleOf(hit) ?? "";
+      expect(
+        hit.matches.map(([start, end]) => title.slice(start, end)),
+      ).toEqual(["transit"]);
+    }
   });
 
-  it("holds an index's source until a newer index replaces it and no search holds it", async () => {
-    const result = await withIndex(({ source, sourced }) =>
+  it("drops a hit whose Item vanished from the source the index holds", async () => {
+    const result = await withIndex(({ source, search }) =>
       Effect.gen(function* () {
-        const scope = yield* Scope.make();
-        yield* Scope.provide(sourced(USER, ""), scope);
-        const built = source.reads.released;
-        yield* source.swap;
-        // The rebuild closes its own scope only when it fails.
-        yield* until(
-          Effect.scoped(sourced(USER, "")),
-          ({ generation }) => generation === 1,
-        );
-        const replaced = source.reads.released;
-        yield* Scope.close(scope, Exit.void);
-        return { built, replaced, closed: source.reads.released };
+        const before = yield* search(USER, "");
+        // No change event: the index still holds the Item.
+        yield* source.vanish("ALPHA");
+        const after = yield* search(USER, "");
+        return { before, after, itemIDs: source.reads.itemIDs };
       }),
     );
 
-    expect(result).toEqual({ built: 0, replaced: 0, closed: 1 });
+    expect(result.before).toEqual(["BETA", "ALPHA"]);
+    expect(result.after).toEqual(["BETA"]);
+    expect(result.itemIDs).toBe(1);
+  });
+
+  it("holds an index's source until a newer index replaces it and no search holds it", async () => {
+    const result = await withIndex(({ source, search }) =>
+      Effect.gen(function* () {
+        yield* search(USER, "");
+        const built = source.reads.released;
+        // A search holds the index's source while it hydrates.
+        yield* source.closeHydrationGate;
+        const held = yield* Effect.forkChild(search(USER, ""));
+        yield* source.hydrationHeld;
+        yield* source.setItems(USER_LIBRARY_ID, [alpha, beta, delta]);
+        yield* source.swap;
+        yield* until(search(USER, ""), (keys) => keys.length === 3);
+        const replaced = source.reads.released;
+        yield* source.openHydrationGate;
+        const answer = yield* Fiber.join(held);
+        return { built, replaced, answer, closed: source.reads.released };
+      }),
+    );
+
+    expect(result).toEqual({
+      built: 0,
+      replaced: 0,
+      answer: ["BETA", "ALPHA"],
+      closed: 1,
+    });
   });
 
   it("releases the source of a list evicted at an emission", async () => {
@@ -558,6 +583,242 @@ describe("Item Index", () => {
     expect(result.itemIDs).toBe(2);
   });
 });
+
+describe("Item Index with the Chinese Segmenter", () => {
+  const rows: Setup = {
+    rows: new Map([
+      [USER_LIBRARY_ID, [chinese, alpha]],
+      [GROUP_LIBRARY_ID, [gamma]],
+    ]),
+  };
+  const EVERYTHING = [USER_LIBRARY_ID, GROUP_LIBRARY_ID] as const;
+  const installed: Setup = {
+    ...rows,
+    initial: { locale: "en", segmenterBinary: INSTALLED },
+  };
+
+  it("cuts Chinese titles and queries with jieba from an installed binary at start", async () => {
+    const result = await withIndex(
+      ({ reader, search }) =>
+        Effect.gen(function* () {
+          const hits = yield* search(USER, JIEBA_ONLY);
+          return { hits, asked: [...reader.asked] };
+        }),
+      installed,
+    );
+
+    expect(result).toEqual({ hits: ["CHINA"], asked: [INSTALLED] });
+  });
+
+  it("segments CJK runs through Intl.Segmenter with no binary", async () => {
+    const result = await withIndex(
+      ({ reader, search }) =>
+        Effect.gen(function* () {
+          const part = yield* search(USER, JIEBA_ONLY);
+          const whole = yield* search(USER, WHOLE_RUN);
+          return { part, whole, asked: reader.asked.length };
+        }),
+      rows,
+    );
+
+    expect(result).toEqual({ part: [], whole: ["CHINA"], asked: 0 });
+  });
+
+  it("rebuilds every held list once on a configure that installs the binary", async () => {
+    const result = await withIndex(
+      ({ source, search, configure }) =>
+        Effect.gen(function* () {
+          const before = yield* search(USER, JIEBA_ONLY);
+          yield* search(EVERYTHING, "");
+          yield* configure({ locale: "en", segmenterBinary: INSTALLED });
+          const after = yield* until(
+            search(USER, JIEBA_ONLY),
+            (keys) => keys.length > 0,
+          );
+          yield* eventually(() => source.reads.itemIDs >= 6);
+          yield* search(EVERYTHING, "");
+          return { before, after, itemIDs: source.reads.itemIDs };
+        }),
+      rows,
+    );
+
+    expect(result.before).toEqual([]);
+    expect(result.after).toEqual(["CHINA"]);
+    // One ids read per Library per build: [1] and [1, 2], each built twice.
+    expect(result.itemIDs).toBe(6);
+  });
+
+  it("rebuilds every held list once on a configure that changes the locale and installs the binary", async () => {
+    const itemIDs = await withIndex(
+      ({ source, search, configure }) =>
+        Effect.gen(function* () {
+          yield* search(USER, JIEBA_ONLY);
+          yield* search(EVERYTHING, JIEBA_ONLY);
+          yield* configure({ locale: "zh", segmenterBinary: INSTALLED });
+          // A jieba hit shows only after a build with both settings.
+          for (const libraries of [USER, EVERYTHING]) {
+            yield* until(
+              search(libraries, JIEBA_ONLY),
+              (keys) => keys.length > 0,
+            );
+          }
+          return source.reads.itemIDs;
+        }),
+      rows,
+    );
+
+    // One ids read per Library per build: [1] and [1, 2], each built twice.
+    expect(itemIDs).toBe(6);
+  });
+
+  it("falls back to Intl.Segmenter and still answers on a configure that uninstalls the binary", async () => {
+    const result = await withIndex(
+      ({ search, configure }) =>
+        Effect.gen(function* () {
+          const before = yield* search(USER, JIEBA_ONLY);
+          yield* configure({ locale: "en", segmenterBinary: null });
+          const part = yield* until(
+            search(USER, JIEBA_ONLY),
+            (keys) => keys.length === 0,
+          );
+          const whole = yield* search(USER, WHOLE_RUN);
+          return { before, part, whole };
+        }),
+      installed,
+    );
+
+    expect(result).toEqual({ before: ["CHINA"], part: [], whole: ["CHINA"] });
+  });
+
+  it.each([
+    ["missing", MISSING],
+    ["corrupt", CORRUPT],
+  ])(
+    "keeps search answering on Intl.Segmenter with a %s binary at start",
+    async (_, binary) => {
+      const result = await withIndex(
+        ({ search }) =>
+          Effect.gen(function* () {
+            const part = yield* search(USER, JIEBA_ONLY);
+            const whole = yield* search(USER, WHOLE_RUN);
+            return { part, whole };
+          }),
+        { ...rows, initial: { locale: "en", segmenterBinary: binary } },
+      );
+
+      expect(result).toEqual({ part: [], whole: ["CHINA"] });
+    },
+  );
+
+  it("keeps search answering on Intl.Segmenter after a configure with a corrupt binary", async () => {
+    const result = await withIndex(
+      ({ source, search, configure }) =>
+        Effect.gen(function* () {
+          yield* search(USER, WHOLE_RUN);
+          yield* configure({ locale: "en", segmenterBinary: CORRUPT });
+          const whole = yield* search(USER, WHOLE_RUN);
+          return { whole, itemIDs: source.reads.itemIDs };
+        }),
+      rows,
+    );
+
+    // The index never left Intl.Segmenter, so nothing rebuilt.
+    expect(result).toEqual({ whole: ["CHINA"], itemIDs: 1 });
+  });
+
+  it("tries the same binary again on a configure after a failed load", async () => {
+    let reads = 0;
+    const result = await withIndex(
+      ({ search, configure }) =>
+        Effect.gen(function* () {
+          const failed = yield* search(USER, JIEBA_ONLY);
+          yield* configure({ locale: "en", segmenterBinary: INSTALLED });
+          const retried = yield* until(
+            search(USER, JIEBA_ONLY),
+            (keys) => keys.length > 0,
+          );
+          return { failed, retried };
+        }),
+      {
+        ...installed,
+        bytesFor: () => {
+          reads++;
+          return reads === 1 ? undefined : JIEBA_WASM;
+        },
+      },
+    );
+
+    expect(reads).toBe(2);
+    expect(result).toEqual({ failed: [], retried: ["CHINA"] });
+  });
+
+  it("applies an uninstall racing an install in arrival order", async () => {
+    const result = await withIndex(
+      ({ reader, search, configure }) =>
+        Effect.gen(function* () {
+          yield* reader.closeGate;
+          const install = yield* Effect.forkChild(
+            configure({ locale: "en", segmenterBinary: INSTALLED }),
+          );
+          yield* reader.held;
+          const uninstall = yield* Effect.forkChild(
+            configure({ locale: "en", segmenterBinary: null }),
+          );
+          yield* Effect.yieldNow;
+          // The uninstall waits for the install that reads its binary.
+          // An unstarted fiber also polls undefined; the final hits still prove arrival order.
+          const waited = uninstall.pollUnsafe() === undefined;
+          yield* reader.openGate;
+          yield* Fiber.join(install);
+          yield* Fiber.join(uninstall);
+          return { waited, hits: yield* search(USER, JIEBA_ONLY) };
+        }),
+      rows,
+    );
+
+    expect(result).toEqual({ waited: true, hits: [] });
+  });
+
+  it.each([
+    ["no binary", null],
+    ["the installed binary", INSTALLED],
+  ])(
+    "rebuilds nothing on a configure with equal settings and %s",
+    async (_, binary) => {
+      const result = await withIndex(
+        ({ source, reader, search, configure }) =>
+          Effect.gen(function* () {
+            yield* search(USER, "");
+            yield* configure({ locale: "en", segmenterBinary: binary });
+            // A change re-checks the list; its release ends the first
+            // rebuild after the configure, so a configure rebuild lands first.
+            yield* source.notify;
+            yield* eventually(() => source.reads.released === 1);
+            yield* search(USER, "");
+            return {
+              itemIDs: source.reads.itemIDs,
+              asked: reader.asked.length,
+            };
+          }),
+        { ...rows, initial: { locale: "en", segmenterBinary: binary } },
+      );
+
+      // One ids read: the first build. The re-check reads only signatures.
+      expect(result).toEqual({ itemIDs: 1, asked: binary ? 1 : 0 });
+    },
+  );
+});
+
+/** The title of each hit, keyed by Indexed Key in rank order. */
+function titlesOf(hits: readonly SearchHit[]): Record<string, string | null> {
+  return Object.fromEntries(
+    hits.map((hit) => [hit.item.indexedKey, titleOf(hit)]),
+  );
+}
+
+function titleOf({ item }: SearchHit): string | null {
+  return "title" in item.fields ? (item.fields.title ?? null) : null;
+}
 
 /** Yield until `check` holds; fail the test when it never does. */
 function eventually(check: () => boolean): Effect.Effect<void> {
