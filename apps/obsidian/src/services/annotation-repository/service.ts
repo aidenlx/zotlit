@@ -887,7 +887,7 @@ export class AnnotationRepository extends Service<void> {
       binding &&
       binding.verifiedGeneration !== this.#databaseGeneration
     ) {
-      await this.#apiSourceStillBound(attachmentKey, source);
+      await this.#sourceStillBound(attachmentKey, source);
     }
     const { queryKey, read } = this.#activePartition(attachmentKey);
     const candidate = await this.#queries.read(queryKey, read);
@@ -1557,7 +1557,7 @@ export class AnnotationRepository extends Service<void> {
       headers: request.headers,
       body: request.body,
     });
-    if (!source || !(await this.#apiSourceStillBound(attachmentKey, source))) {
+    if (!source || !(await this.#sourceStillBound(attachmentKey, source))) {
       return { kind: "failed", failure: { kind: "server-changed" } };
     }
     if ("failure" in reply) {
@@ -2200,7 +2200,7 @@ export class AnnotationRepository extends Service<void> {
     });
     if (
       !source ||
-      !(await this.#apiSourceStillBound(held.attachmentKey, source))
+      !(await this.#sourceStillBound(held.attachmentKey, source))
     ) {
       if (
         this.#databaseBindings.get(held.attachmentKey)?.source.database
@@ -2266,7 +2266,7 @@ export class AnnotationRepository extends Service<void> {
       this.#dropDrafts(annotationKey);
     }
     if (
-      !(await this.#apiSourceStillBound(held.attachmentKey, source)) ||
+      !(await this.#sourceStillBound(held.attachmentKey, source)) ||
       !(await this.#publishApiChange(held.attachmentKey, source, applied.value))
     ) {
       return this.#leave(annotationKey, command.write, {
@@ -2958,7 +2958,17 @@ export class AnnotationRepository extends Service<void> {
     } finally {
       const left = (this.#writesInFlight.get(attachmentKey) ?? 1) - 1;
       if (left > 0) this.#writesInFlight.set(attachmentKey, left);
-      else this.#writesInFlight.delete(attachmentKey);
+      else {
+        this.#writesInFlight.delete(attachmentKey);
+        if (!this.#localApi.demandSource()) {
+          void this.read(attachmentKey).catch((error: unknown) => {
+            logger.debug(
+              "The database fallback after a write could not be read",
+              { attachmentKey, error },
+            );
+          });
+        }
+      }
     }
   }
 
@@ -3161,7 +3171,7 @@ export class AnnotationRepository extends Service<void> {
 
     const record = fromLocalApi(fresh.value);
     if (
-      !(await this.#apiSourceStillBound(held.attachmentKey, source)) ||
+      !(await this.#sourceStillBound(held.attachmentKey, source)) ||
       !(await this.#publishApiChange(held.attachmentKey, source, {
         kind: "observed",
         record,
@@ -3307,7 +3317,7 @@ export class AnnotationRepository extends Service<void> {
     attachmentKey: string,
     source: LocalApiSource,
   ): Promise<boolean> {
-    if (!(await this.#apiSourceStillBound(attachmentKey, source))) return false;
+    if (!(await this.#sourceStillBound(attachmentKey, source))) return false;
     if (
       this.#publishedLists.get(attachmentKey)?.source.kind !==
       "zotero-local-api"
@@ -3330,7 +3340,7 @@ export class AnnotationRepository extends Service<void> {
       list.annotations.some((record) => record.key === annotationKey),
     )?.[0];
     if (attachmentKey) {
-      if (!(await this.#apiSourceStillBound(attachmentKey, source)))
+      if (!(await this.#sourceStillBound(attachmentKey, source)))
         return "server-changed";
       if (
         this.#publishedLists.get(attachmentKey)?.source.kind !==
@@ -4054,34 +4064,35 @@ export class AnnotationRepository extends Service<void> {
     );
   }
 
-  async #apiSourceStillBound(
+  /** Availability can lapse while an acknowledged write keeps its database identity. */
+  async #sourceStillBound(
     attachmentKey: string,
     expected: LocalApiSource,
   ): Promise<boolean> {
-    while (this.#localApi.demandSource()?.serverID === expected.serverID) {
+    for (;;) {
+      const state = this.#localApi.state;
       if (
-        this.#databaseBindings.get(attachmentKey)?.verifiedGeneration ===
-          this.#databaseGeneration &&
-        this.#sameApiSource(attachmentKey, expected)
+        state.kind === "available"
+          ? state.source.serverID !== expected.serverID
+          : state.kind === "unavailable" &&
+            state.failure.kind === "server-changed"
+      )
+        return false;
+      const binding = this.#databaseBindings.get(attachmentKey);
+      if (
+        binding?.verifiedGeneration === this.#databaseGeneration &&
+        binding.source.database.serverID === expected.serverID
       )
         return true;
       const generation = this.#databaseGeneration;
       const snapshot = await this.#readFromDatabase(attachmentKey);
-      const { source } = snapshot;
-      // A refresh can replace the snapshot while verification acquires it.
-      // Verify the current generation before deciding whether identity changed.
       if (generation !== this.#databaseGeneration) continue;
-      const verified =
-        source.kind === "zotero-db" &&
-        source.database.serverID === expected.serverID &&
-        this.#localApi.demandSource()?.serverID === expected.serverID;
-      if (source.kind === "zotero-db") {
-        this.#adoptDatabaseSource(attachmentKey, source);
-        this.#coverDatabaseDeletions(attachmentKey, snapshot);
-      }
-      return verified;
+      const { source } = snapshot;
+      if (source.kind !== "zotero-db") return false;
+      this.#adoptDatabaseSource(attachmentKey, source);
+      this.#coverDatabaseDeletions(attachmentKey, snapshot);
+      if (source.database.serverID !== expected.serverID) return false;
     }
-    return false;
   }
 
   /** A newer database snapshot can prove a confirmed record was deleted. */
@@ -4121,6 +4132,16 @@ export class AnnotationRepository extends Service<void> {
       );
     }
     const { source } = candidate;
+    const current = this.#publishedLists.get(attachmentKey);
+    // Keep the write's API collection until its acknowledgement can be applied.
+    // Availability can change while the request is in flight without changing
+    // the database that owns its records.
+    if (
+      this.#writesInFlight.has(attachmentKey) &&
+      current?.source.kind === "zotero-local-api" &&
+      current.source.serverID === source.database.serverID
+    )
+      return false;
     if (
       queryKey?.[1] === ZOTERO_DB &&
       queryKey[2] !== this.#databaseGeneration

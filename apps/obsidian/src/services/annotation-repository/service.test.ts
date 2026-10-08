@@ -3266,6 +3266,32 @@ it("creates through a one-element multi-object POST carrying a write token", asy
   ]);
 });
 
+it("retains an acknowledged create when a concurrent read loses API availability", async () => {
+  await using stack = new AsyncDisposableStack();
+  let loseRead = async () => {};
+  let unavailable = false;
+  const { repository, localApi } = await writable(stack, {
+    children: () =>
+      unavailable ? unreachable() : annotationPage(ROUGIER_ANNOTATIONS),
+    write: async () => {
+      await loseRead();
+      return createAccepted(MADE);
+    },
+  });
+  loseRead = async () => {
+    unavailable = true;
+    await localApi.listAnnotations("RGRPDF24");
+    await repository.read("RGRPDF24");
+  };
+  expect(await repository.createAnnotation("RGRPDF24", DRAFT)).toEqual({
+    kind: "created",
+    annotationKey: MADE.key,
+  });
+  expect(
+    repository.peek("RGRPDF24")?.value.annotations.map((record) => record.key),
+  ).toContain(MADE.key);
+});
+
 it.each([false, true])(
   "retains a confirmed create across API loss (query collected: %s)",
   async (collected) => {
