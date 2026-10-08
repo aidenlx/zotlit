@@ -85,7 +85,11 @@ describe("managedBinaryDefinition", () => {
   });
 
   it("offers the removal once installed", () => {
-    const actions = binary({ kind: "installed", version: "2.4.0" });
+    const actions = binary({
+      kind: "installed",
+      version: "2.4.0",
+      binary: { directory: "chinese-segmenter", name: "jieba.wasm" },
+    });
     const row = managedBinaryDefinition(actions, COPY);
 
     expect(row).toMatchObject({ desc: "Cuts words. Version 2.4.0." });
@@ -115,7 +119,11 @@ describe("managedBinaryDefinition", () => {
 describe("pandocEngineDefinition", () => {
   it("renders the Pandoc engine row from its own messages", () => {
     const ctx = {
-      pandocEngine: binary({ kind: "installed", version: "3.10" }),
+      pandocEngine: binary({
+        kind: "installed",
+        version: "3.10",
+        binary: { directory: "pandoc-engine", name: "pandoc.wasm" },
+      }),
     } as unknown as SettingTabContext;
     const row = pandocEngineDefinition(ctx);
 

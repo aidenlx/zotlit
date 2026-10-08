@@ -101,7 +101,11 @@ function citationValue(outcome: CitationRenderOutcome) {
 
 class PandocEngineStub {
   readonly engine = new EngineStub();
-  #status: PandocEngineStatus = { kind: "installed", version: "3.10" };
+  #status: PandocEngineStatus = {
+    kind: "installed",
+    version: "3.10",
+    binary: { directory: "pandoc-engine", name: "pandoc.wasm" },
+  };
   readonly #listeners = new Set<() => void>();
 
   getStatus(): PandocEngineStatus {
@@ -485,7 +489,11 @@ describe("BibliographyRenderCache", () => {
     const items = [item("alpha")];
 
     await cache.render(items);
-    pandocEngine.setStatus({ kind: "installed", version: "3.11" });
+    pandocEngine.setStatus({
+      kind: "installed",
+      version: "3.11",
+      binary: { directory: "pandoc-engine", name: "pandoc.wasm" },
+    });
     await cache.render(items);
 
     expect(invalidations).toHaveLength(1);

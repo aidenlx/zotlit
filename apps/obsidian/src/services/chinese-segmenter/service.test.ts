@@ -64,7 +64,11 @@ describe("Chinese Segmenter", () => {
 
     expect(download).toHaveBeenCalledExactlyOnceWith(PIN.url);
     expect(device.names("chinese-segmenter")).toEqual([CACHED]);
-    expect(segmenter.getStatus()).toEqual({ kind: "installed", version });
+    expect(segmenter.getStatus()).toEqual({
+      kind: "installed",
+      version,
+      binary: { directory: "chinese-segmenter", name: CACHED },
+    });
   });
 
   it("cuts a Chinese title with the installed binary", async () => {
@@ -116,7 +120,11 @@ describe("Chinese Segmenter", () => {
     await using second = open(device, { download, consent: vaultConsent() });
     await second.ready;
 
-    expect(second.getStatus()).toEqual({ kind: "installed", version });
+    expect(second.getStatus()).toEqual({
+      kind: "installed",
+      version,
+      binary: { directory: "chinese-segmenter", name: CACHED },
+    });
     expect(download).not.toHaveBeenCalled();
   });
 
@@ -143,7 +151,11 @@ describe("Chinese Segmenter", () => {
     {
       await using dismissed = open(device);
       await dismissed.ready;
-      expect(dismissed.getStatus()).toEqual({ kind: "installed", version });
+      expect(dismissed.getStatus()).toEqual({
+        kind: "installed",
+        version,
+        binary: { directory: "chinese-segmenter", name: CACHED },
+      });
       await dismissed.uninstall();
     }
 

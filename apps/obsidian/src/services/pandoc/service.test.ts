@@ -150,6 +150,7 @@ describe("PandocEngineService", () => {
     expect(service.getStatus()).toEqual({
       kind: "installed",
       version: PIN.version,
+      binary: { directory: "pandoc-engine", name: CACHED_NAME },
     });
     await service[Symbol.asyncDispose]();
   });
@@ -197,6 +198,7 @@ describe("PandocEngineService", () => {
     expect(service.getStatus()).toEqual({
       kind: "installed",
       version: PIN.version,
+      binary: { directory: "pandoc-engine", name: CACHED_NAME },
     });
 
     await service.install();
@@ -251,6 +253,7 @@ describe("PandocEngineService", () => {
     expect(service.getStatus()).toEqual({
       kind: "installed",
       version: PIN.version,
+      binary: { directory: "pandoc-engine", name: CACHED_NAME },
     });
     await service[Symbol.asyncDispose]();
   });

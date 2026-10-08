@@ -456,7 +456,11 @@ describe("CitationText", () => {
           zoteroPref: { dataDir: "/unused", on: () => () => {} },
           settings: { ready: Promise.resolve(), subscribe: () => () => {} },
           pandocEngine: {
-            getStatus: () => ({ kind: "installed", version: "3.10" }),
+            getStatus: () => ({
+              kind: "installed",
+              version: "3.10",
+              binary: { directory: "pandoc-engine", name: "pandoc.wasm" },
+            }),
             subscribe: () => () => {},
             getEngine: async () =>
               ({ renderCitations, renderBibliography }) as never,

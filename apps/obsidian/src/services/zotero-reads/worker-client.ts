@@ -7,9 +7,7 @@ import workerSource from "virtual:zotero-reads-worker";
 
 import { sameSegmenterBinary } from "@zotlit/item-lookup";
 
-import { CHINESE_SEGMENTER } from "@/services/chinese-segmenter/service";
 import type { ChineseSegmenterService } from "@/services/chinese-segmenter/service";
-import { cachedBinaryName } from "@/services/managed-binary/service";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
@@ -25,22 +23,18 @@ export interface WorkerClientDeps {
 }
 
 /**
- * The verified binary in the device-wide store, once the Chinese Segmenter is
- * installed. An install in flight keeps `reported`, the binary the worker
- * holds now, so a reinstall pushes no segmenter change until it lands.
+ * The readable Chinese Segmenter binary the Managed Binary reports: the
+ * installed one, or during a reinstall the one installed before it, so a
+ * reinstall pushes no segmenter change until it lands.
  */
 function installedSegmenter(
   chineseSegmenter: ChineseSegmenterService,
-  reported: SegmenterBinary | null,
 ): SegmenterBinary | null {
-  switch (chineseSegmenter.getStatus().kind) {
+  const status = chineseSegmenter.getStatus();
+  switch (status.kind) {
     case "installed":
-      return {
-        directory: CHINESE_SEGMENTER.id,
-        name: cachedBinaryName(CHINESE_SEGMENTER.pin),
-      };
     case "installing":
-      return reported;
+      return status.binary;
     default:
       return null;
   }
@@ -49,14 +43,13 @@ function installedSegmenter(
 function readsConfig(
   settings: Readonly<Settings>,
   { zoteroPref, chineseSegmenter }: Omit<WorkerClientDeps, "settings">,
-  reported: SegmenterBinary | null,
 ): ReadsConfig {
   return {
     databasePath: zoteroPref.databasePath,
     readMode: settings["zotero.read-mode"],
     autoRefresh: settings["zotero.auto-refresh"],
     locale: getLanguage(),
-    chineseSegmenter: installedSegmenter(chineseSegmenter, reported),
+    chineseSegmenter: installedSegmenter(chineseSegmenter),
     logLevel: settings["log.level"],
   };
 }
@@ -86,7 +79,6 @@ export const workerClient = Effect.fnUntraced(function* ({
       return settings.loaded;
     }),
     { zoteroPref, chineseSegmenter },
-    null,
   );
   // Pushes run in this scope, so the scope's end interrupts one in flight.
   const run = yield* FiberSet.runtime(yield* FiberSet.make())();
@@ -100,11 +92,7 @@ export const workerClient = Effect.fnUntraced(function* ({
   const push = (): void => {
     const current = settings.current;
     if (!current) return;
-    const next = readsConfig(
-      current,
-      { zoteroPref, chineseSegmenter },
-      config.chineseSegmenter,
-    );
+    const next = readsConfig(current, { zoteroPref, chineseSegmenter });
     if (sameConfig(next, config)) return;
     config = next;
     run(Effect.ignore(reads.Configure(next)));

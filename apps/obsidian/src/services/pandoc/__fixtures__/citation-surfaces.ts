@@ -329,7 +329,7 @@ export async function openCitationVault({
       profile: { ...profileReader(), on: (_event, callback) => { let first = true; return settings.subscribe(() => { if (!first) callback(); first = false; }); } },
       db: harness.db,
       pandocEngine: {
-        getStatus: () => ({ kind: "installed", version: "test" }),
+        getStatus: () => ({ kind: "installed", version: "test", binary: { directory: "pandoc-engine", name: "pandoc.wasm" } }),
         subscribe: () => () => undefined,
         getEngine: () => Promise.resolve(engine),
       },
@@ -598,7 +598,7 @@ function exportAdapter({
     db: harness.db,
     citationIndex: harness.index,
     pandocEngine: {
-      getStatus: () => ({ kind: "installed", version: "test" }),
+      getStatus: () => ({ kind: "installed", version: "test", binary: { directory: "pandoc-engine", name: "pandoc.wasm" } }),
       getEngine: () => Promise.resolve(engine),
     },
     zoteroPref: {
