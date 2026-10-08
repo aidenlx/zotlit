@@ -1248,6 +1248,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     }
   }
   async #restoreState(state: unknown, result: ViewStateResult): Promise<void> {
+    const itemGeneration = ++this.#itemGeneration;
     const builtin =
       !!state &&
       typeof state === "object" &&
@@ -1318,7 +1319,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         store.setAdvanced(value.advanced);
     }
 
-    const itemGeneration = ++this.#itemGeneration;
+    // A choice made while the document loaded outranks this saved selection.
+    if (itemGeneration !== this.#itemGeneration) return;
     if (typeof value.itemIndexedKey === "string") {
       store.setItem({ id: value.itemIndexedKey, title: null });
       if (

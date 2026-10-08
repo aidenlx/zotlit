@@ -916,7 +916,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           await waitFor(()=>!!view()?.contentEl.querySelector('[role="tab"]'),true,'Profile editor');
           const el=view().contentEl;
           // Choose item has its own walkthrough; this one starts from the paper.
-          view().selectItem({id:hit.item.indexedKey,title:${JSON.stringify(title)}});
+          if(!await view().selectItem({id:hit.item.indexedKey,title:${JSON.stringify(title)}}))throw new Error('Profile item was not selected');
           Array.from(el.querySelectorAll('[role="tab"]')).find(tab=>tab.textContent===${JSON.stringify(m.workbench_tab_name_and_folder())}).click();
           const preview=()=>el.querySelector('[data-part="filename-output"]')?.textContent;
           await waitFor(()=>/^path-notes\\/[^/]+\\.md$/.test(preview()??''),true,'Preview under the Profile folder');
