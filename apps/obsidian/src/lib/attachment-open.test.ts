@@ -16,9 +16,21 @@ import type {
   AttachmentReader,
 } from "./attachment-open";
 
-interface Row {
-  label: string;
+type Row = ObsidianOpenableAttachment;
+
+/** An Attachment named `label`, opening from the vault. */
+function row(label: string): Row {
+  return {
+    indexedKey: "ATCH2345",
+    label,
+    openPath: `papers/${label}`,
+    absolutePath: `/vault/papers/${label}`,
+  };
 }
+
+/** The workspace the picker raises `zotlit:attachments-menu` on. */
+const trigger = vi.fn();
+const APP = { workspace: { trigger } } as unknown as App;
 
 function fakeReactMouseEvent(
   overrides: Partial<{
@@ -69,15 +81,19 @@ describe("openAttachments", () => {
 
   it("defers to the reader's onEmpty when there are no Attachments", () => {
     const reader = fakeReader();
-    openAttachments([], { reader, event: fakeReactMouseEvent() });
+    openAttachments([], { reader, app: APP, event: fakeReactMouseEvent() });
     expect(reader.calls).toStrictEqual([]);
     expect(reader.emptyCalls).toBe(1);
   });
 
   it("opens a single Attachment straight away, without a picker", () => {
     const reader = fakeReader();
-    const attachment = { label: "Doe 2024.pdf" };
-    openAttachments([attachment], { reader, event: fakeReactMouseEvent() });
+    const attachment = row("Doe 2024.pdf");
+    openAttachments([attachment], {
+      reader,
+      app: APP,
+      event: fakeReactMouseEvent(),
+    });
     expect(reader.calls).toStrictEqual([[attachment, false]]);
     expect(Menu.instances).toHaveLength(0);
   });
@@ -85,23 +101,27 @@ describe("openAttachments", () => {
   it("forwards a Mod-click's new-pane request for a single Attachment", () => {
     using _isModEvent = vi.spyOn(Keymap, "isModEvent").mockReturnValue(true);
     const reader = fakeReader();
-    const attachment = { label: "Doe 2024.pdf" };
-    openAttachments([attachment], { reader, event: fakeReactMouseEvent() });
+    const attachment = row("Doe 2024.pdf");
+    openAttachments([attachment], {
+      reader,
+      app: APP,
+      event: fakeReactMouseEvent(),
+    });
     expect(reader.calls).toStrictEqual([[attachment, true]]);
   });
 
   it("opens a single Attachment with no event and no modifier, for an event-less invocation", () => {
     const reader = fakeReader();
-    const attachment = { label: "Doe 2024.pdf" };
+    const attachment = row("Doe 2024.pdf");
     openAttachments([attachment], { reader, app: {} as App });
     expect(reader.calls).toStrictEqual([[attachment, false]]);
   });
 
   it("shows a Menu for several Attachments when a pointer event is given", () => {
     const reader = fakeReader();
-    const a = { label: "Alpha.pdf" };
-    const b = { label: "Beta.pdf" };
-    openAttachments([a, b], { reader, event: fakeReactMouseEvent() });
+    const a = row("Alpha.pdf");
+    const b = row("Beta.pdf");
+    openAttachments([a, b], { reader, app: APP, event: fakeReactMouseEvent() });
 
     expect(Menu.instances).toHaveLength(1);
     const menu = Menu.instances[0]!;
@@ -112,6 +132,29 @@ describe("openAttachments", () => {
 
     menu.items[1]!.click();
     expect(reader.calls).toStrictEqual([[b, false]]);
+  });
+
+  it("raises the picker for listeners, sectioned, before it shows", () => {
+    trigger.mockClear();
+    const a = row("Alpha.pdf");
+    const b = row("Beta.pdf");
+    openAttachments([a, b], {
+      reader: fakeReader(),
+      app: APP,
+      event: fakeReactMouseEvent(),
+    });
+
+    const menu = Menu.instances[0]!;
+    expect(menu.sections).toStrictEqual(["open", ""]);
+    expect(menu.items.map((item) => item.section)).toStrictEqual([
+      "open",
+      "open",
+    ]);
+    expect(trigger).toHaveBeenCalledExactlyOnceWith(
+      "zotlit:attachments-menu",
+      menu,
+      { attachments: [a, b] },
+    );
   });
 });
 

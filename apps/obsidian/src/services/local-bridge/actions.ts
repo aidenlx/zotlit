@@ -7,10 +7,12 @@ import { TFile } from "obsidian";
 import type { App, Plugin, TAbstractFile } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { MENU_SECTION } from "@/lib/menu-section";
 import { BaseNotice } from "@/lib/notice";
 import { profileRecoveryNotice } from "@/lib/profile-recovery";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
+import type { FileMenuSegment } from "@/services/file-menu";
 import { isLiteratureNote } from "@/services/note-index/service";
 import type { ProfileService } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
@@ -27,7 +29,7 @@ export interface CustomizeActionDeps {
 }
 
 export function addCustomizeActions(
-  plugin: Pick<Plugin, "addCommand" | "registerEvent" | "app">,
+  plugin: Pick<Plugin, "addCommand" | "app">,
   deps: CustomizeActionDeps,
 ): void {
   const { app } = plugin;
@@ -42,22 +44,23 @@ export function addCustomizeActions(
       return true;
     },
   });
+}
 
-  plugin.registerEvent(
-    app.workspace.on("file-menu", (menu, file, source) => {
-      // A multi-file selection acts on files, not on the one note a template
-      // is customized for.
-      if (source === "files-menu") return;
-      if (!customizable(file, app, deps)) return;
-      menu.addItem((item) =>
-        item
-          .setSection("zotlit")
-          .setTitle(m.command_customize_note_template_name())
-          .setIcon("paintbrush")
-          .onClick(() => void customizeNote(file, app, deps)),
-      );
-    }),
-  );
+/** The Customize entry on a Literature Note's file menu. */
+export function customizeFileMenu(
+  app: App,
+  deps: CustomizeActionDeps,
+): FileMenuSegment {
+  return (menu, { file }) => {
+    if (!customizable(file, app, deps)) return;
+    menu.addItem((item) =>
+      item
+        .setSection(MENU_SECTION.action)
+        .setTitle(m.command_customize_note_template_name())
+        .setIcon("paintbrush")
+        .onClick(() => void customizeNote(file, app, deps)),
+    );
+  };
 }
 
 /**

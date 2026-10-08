@@ -155,6 +155,7 @@ it("leaves the history keys to the comment editor holding focus", async () => {
   using editor = createFieldEditor({
     app: editorApp(),
     parent,
+    surface: "popup",
     wording: textFieldWording("comment"),
     text: "Worth citing",
     readOnly: false,

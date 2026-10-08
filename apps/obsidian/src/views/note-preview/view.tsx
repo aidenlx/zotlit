@@ -47,6 +47,7 @@ import { Icon } from "@/components/obsidian/icon";
 import { selectionControl } from "@/components/obsidian/selection-control";
 import * as m from "@/lib/i18n/generated/messages";
 import { readLiveText } from "@/lib/live-text";
+import { MENU_SECTION } from "@/lib/menu-section";
 import { openSettingsTab } from "@/lib/open-settings";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { ProfileService } from "@/services/profile/service";
@@ -94,7 +95,7 @@ import type { NativePreviewState } from "./session";
 
 export interface PreviewViewDeps extends NativeRenderDeps {
   settings: SettingsService;
-  itemLookup: Pick<ItemLookup, "search">;
+  itemLookup: Pick<ItemLookup, "search" | "openSession">;
   profile: Pick<
     ProfileService,
     "getBuiltInSource" | "profiles" | "resolveProfile"
@@ -226,7 +227,7 @@ export class NotePreviewView extends ItemView {
     const mode = state.context ? resultMode(state.context) : "note";
     menu.addItem((item) =>
       item
-        .setSection("zotlit")
+        .setSection(MENU_SECTION.action)
         .setTitle(m.workbench_choose_item())
         .setIcon("search")
         .onClick(() => void this.#chooseItem()),
@@ -237,14 +238,14 @@ export class NotePreviewView extends ItemView {
     if (mode !== "citation")
       menu.addItem((item) =>
         item
-          .setSection("zotlit")
+          .setSection(MENU_SECTION.action)
           .setTitle(m.workbench_choose_annotation())
           .setIcon("highlighter")
           .onClick(() => void this.#chooseAnnotation()),
       );
     menu.addItem((item) =>
       item
-        .setSection("zotlit")
+        .setSection(MENU_SECTION.action)
         .setTitle(m.workbench_refresh_item())
         .setIcon("refresh-cw")
         .onClick(() => this.#session?.refresh()),
@@ -256,7 +257,7 @@ export class NotePreviewView extends ItemView {
     if (mode === "note") {
       menu.addItem((item) =>
         item
-          .setSection("zotlit-preview")
+          .setSection(MENU_SECTION.pane)
           .setTitle(m.workbench_preview_as_new_note())
           .setIcon("file-plus")
           .setChecked(
@@ -272,7 +273,7 @@ export class NotePreviewView extends ItemView {
       );
       menu.addItem((item) =>
         item
-          .setSection("zotlit-preview")
+          .setSection(MENU_SECTION.pane)
           .setTitle(m.workbench_preview_as_updated_note())
           .setIcon("file-pen")
           .setChecked(
@@ -292,7 +293,7 @@ export class NotePreviewView extends ItemView {
       if (mode === "note")
         menu.addItem((item) =>
           item
-            .setSection("zotlit-preview")
+            .setSection(MENU_SECTION.pane)
             .setTitle(m.workbench_preview_updated_section())
             .setIcon("rows-3")
             .setChecked(state.showManaged)
@@ -305,7 +306,7 @@ export class NotePreviewView extends ItemView {
     }
     menu.addItem((item) =>
       item
-        .setSection("zotlit-display")
+        .setSection(MENU_SECTION.pane)
         .setTitle(m.workbench_preview_auto_refresh())
         .setIcon("zap")
         .setChecked(state.preview.live)
@@ -317,7 +318,7 @@ export class NotePreviewView extends ItemView {
     );
     menu.addItem((item) =>
       item
-        .setSection("zotlit-display")
+        .setSection(MENU_SECTION.pane)
         .setTitle(m.workbench_show_markdown())
         .setIcon("code")
         .setChecked(state.showMarkdown)
@@ -337,10 +338,10 @@ export class NotePreviewView extends ItemView {
   #addExampleMenu(menu: Menu, state: NativePreviewState): void {
     menu.addItem((item) => {
       item
-        .setSection("zotlit")
+        .setSection(MENU_SECTION.action)
         .setTitle(m.template_workbench_use_example())
         .setIcon("list");
-      const submenu = item.setSubmenu();
+      const submenu = item.setSubmenu().setNoIcon();
       for (const id of CITATION_EXAMPLE_IDS)
         submenu.addItem((entry) =>
           entry
@@ -362,7 +363,7 @@ export class NotePreviewView extends ItemView {
     ] as const)
       menu.addItem((item) =>
         item
-          .setSection("zotlit-preview")
+          .setSection(MENU_SECTION.pane)
           .setTitle(title)
           .setIcon(icon)
           .setChecked(state.variant === variant)
@@ -388,7 +389,7 @@ export class NotePreviewView extends ItemView {
     ] as const)
       menu.addItem((item) =>
         item
-          .setSection("zotlit-preview")
+          .setSection(MENU_SECTION.pane)
           .setTitle(title)
           .setIcon(icon)
           .setChecked(current === context)
@@ -401,10 +402,10 @@ export class NotePreviewView extends ItemView {
     const selected = state.context?.partial?.profile ?? null;
     menu.addItem((item) => {
       item
-        .setSection("zotlit-preview")
+        .setSection(MENU_SECTION.pane)
         .setTitle(m.template_workbench_use_profile())
         .setIcon("book-user");
-      const submenu = item.setSubmenu();
+      const submenu = item.setSubmenu().setNoIcon();
       for (const [profile, label] of [
         [null, m.settings_profile_default_name()],
         ...profiles.map(({ id, label }) => [id, label] as const),

@@ -28,6 +28,7 @@ import { WorkbenchMessagesProvider } from "@zotlit/workbench/ui";
 import type {
   WorkbenchHost,
   WorkbenchDialogRequest,
+  WorkbenchMenuItem,
   WorkbenchSuggesterRequest,
   WorkbenchSuggesterOption,
   WorkbenchInputSuggestionsRequest,
@@ -289,6 +290,25 @@ const nativeCompletion: TemplateCompletionPresentation = {
   ],
 };
 
+/**
+ * The Workbench's rows on a native menu, each with the icon it names. A menu
+ * whose rows name no icon drops the icon column, so a list of names reads flush.
+ */
+function addWorkbenchMenuItems(
+  menu: Menu,
+  items: readonly WorkbenchMenuItem[],
+): void {
+  if (!items.some((item) => item.icon)) menu.setNoIcon();
+  for (const item of items)
+    menu.addItem((entry) =>
+      entry
+        .setTitle(item.label)
+        .setIcon(item.icon ? templateWorkbenchIcons[item.icon] : null)
+        .setDisabled(item.disabled ?? false)
+        .onClick(item.onSelect),
+    );
+}
+
 export function createTemplateWorkbenchHost(
   app: App,
   ports: Pick<WorkbenchHost, "render" | "matchData" | "insertTarget"> &
@@ -351,25 +371,11 @@ export function createTemplateWorkbenchHost(
     },
     menu({ anchor, pointerEvent, items, submenus }) {
       const menu = new Menu();
-      for (const item of items)
-        menu.addItem((entry) =>
-          entry
-            .setTitle(item.label)
-            .setIcon(item.icon ? templateWorkbenchIcons[item.icon] : null)
-            .setDisabled(item.disabled ?? false)
-            .onClick(item.onSelect),
-        );
+      addWorkbenchMenuItems(menu, items);
       for (const group of submenus ?? [])
         menu.addItem((entry) => {
           entry.setTitle(group.label);
-          const submenu = entry.setSubmenu();
-          for (const item of group.items)
-            submenu.addItem((child) =>
-              child
-                .setTitle(item.label)
-                .setDisabled(item.disabled ?? false)
-                .onClick(item.onSelect),
-            );
+          addWorkbenchMenuItems(entry.setSubmenu(), group.items);
         });
       // A right-click belongs at the pointer, where the reader clicked; a
       // control's menu belongs under the control, so a keyboard activation

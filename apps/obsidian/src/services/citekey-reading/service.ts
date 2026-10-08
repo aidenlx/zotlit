@@ -381,6 +381,7 @@ export class CitekeyReading extends Service<void> {
       showPopover: (request) => this.#citationPopover.show(request),
       hoverPreferences: () => this.#hover,
       hoverNotePath: (citekey) => this.#citekeyEditor.hoverNotePath(citekey),
+      workspace: this.#app.workspace,
       hoverTarget: () => {
         const hoverParent = this.#viewOf(element);
         return hoverParent === null

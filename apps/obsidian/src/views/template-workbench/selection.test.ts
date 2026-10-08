@@ -6,8 +6,6 @@ import { describe, expect, it, vi } from "vitest";
 import { makeItem } from "@zotlit/item-lookup/fixtures";
 import type { WorkbenchSuggesterOption } from "@zotlit/workbench/ui";
 
-import type { ItemSearchDeps } from "@/services/item-lookup/search-modal";
-
 import { createTemplateWorkbenchHost } from "./host";
 import {
   publishWorkbenchSelection,
@@ -27,9 +25,12 @@ it("searches Zotero from the first item chooser and selects a matching paper", a
   const app = {} as App;
   const deps = {
     app,
-    lookup: { search },
+    lookup: {
+      search,
+      openSession: () => ({ search, close() {}, [Symbol.dispose]() {} }),
+    },
     settings: { current: {} },
-  } as unknown as ItemSearchDeps;
+  } as unknown as Parameters<typeof chooseWorkbenchItem>[1];
   using open = vi.spyOn(SuggestModal.prototype, "open");
   using host = createTemplateWorkbenchHost(app, {
     render: async () => {

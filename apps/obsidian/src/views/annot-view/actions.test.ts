@@ -76,7 +76,13 @@ function setup(
     text: control,
   };
   const deps = {
-    app: { workspace: { activeEditor: null, getMostRecentLeaf: () => null } },
+    app: {
+      workspace: {
+        activeEditor: null,
+        getMostRecentLeaf: () => null,
+        trigger: () => {},
+      },
+    },
     annotations,
     // Only a highlight or underline has a Quoted Text, as `cardControls` rules.
     controls: (annot: AnnotationRecord) => ({
@@ -152,6 +158,54 @@ describe("the menu a card opens", () => {
     expect(selectAlone).toHaveBeenCalledExactlyOnceWith(OUTSIDE);
     expect(titles).toContain(m.annot_view_menu_copy_citation());
     expect(titles.at(-1)).toBe(m.annot_view_menu_delete());
+  });
+
+  it("groups one card's entries by section, with the delete last", () => {
+    const { actions } = setup([]);
+
+    const menu = openMenu(actions, QUOTED);
+
+    expect(menu.sections).toStrictEqual([
+      "action",
+      "clipboard",
+      "insert",
+      "view",
+      "",
+      "danger",
+    ]);
+    const sectionOf = (title: string) => entry(menu, title).section;
+    expect(sectionOf(m.annot_view_menu_edit_text())).toBe("action");
+    expect(sectionOf(m.annot_view_menu_copy_citation())).toBe("clipboard");
+    expect(sectionOf(m.annot_view_menu_insert())).toBe("insert");
+    expect(sectionOf(m.template_data_explorer_menu_explore())).toBe("view");
+    expect(sectionOf(m.annot_view_menu_delete())).toBe("danger");
+  });
+
+  it("raises the menu for listeners with the cards it acts on, after its own entries", () => {
+    const trigger = vi.fn((_name: string, menu: Menu) => {
+      // A listener sees ZotLit's entries already in place.
+      expect(menu.items.length).toBeGreaterThan(0);
+    });
+    const { actions } = setup([FIRST, SECOND], LIVE, {
+      app: { workspace: { trigger } },
+    } as unknown as Partial<AnnotActionDeps>);
+
+    const menu = openMenu(actions, SECOND);
+
+    // The group's colour submenu is a colour menu of its own, raised as one.
+    const colors = entry(menu, m.annot_view_card_color()).submenu;
+    expect(trigger.mock.calls).toStrictEqual([
+      [
+        "zotlit:annotation-color-menu",
+        colors,
+        { source: "annotation-view", annotations: [FIRST, SECOND] },
+      ],
+      [
+        "zotlit:annotation-menu",
+        menu,
+        { source: "annotation-view", annotations: [FIRST, SECOND] },
+      ],
+    ]);
   });
 
   it("keeps the press of a locked delete entry, and asks nothing and deletes nothing", () => {

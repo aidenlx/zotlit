@@ -62,7 +62,7 @@ function onPlatform(isMacOS: boolean): void {
 function makeModal(): QuickSwitchModal {
   const deps = {
     app: {} as App,
-    lookup: { search: vi.fn().mockReturnValue([]) },
+    lookup: { openSession: vi.fn() },
     noteFeature: { createNote: vi.fn() },
     noteIndex: { getNotesByItemKey: vi.fn().mockReturnValue([]) },
     settings: { current: {} },
@@ -187,7 +187,7 @@ describe("QuickSwitchModal PDF chord", () => {
     const getNotesByItemKey = vi.fn().mockReturnValue([]);
     const deps = {
       app: {},
-      lookup: { search: vi.fn().mockReturnValue([]) },
+      lookup: { openSession: vi.fn() },
       noteFeature: { createNote: vi.fn() },
       noteIndex: { getNotesByItemKey, whenIndexed: vi.fn() },
       settings: { current: {} },

@@ -1,14 +1,12 @@
 # Icon transitions
 
-Cross-fading an icon when it changes contextually or by state, with and without a motion library. Icon weight, color and direction live in [icons.md](icons.md).
+Cross-fade recipes for an icon that swaps on a state change, with and without a motion library. Icon weight, color and direction live in [icons.md](icons.md).
 
-## Contextual icon animations
+## Which library
 
-When icons appear or disappear contextually, on hover or a state change, animate them with `opacity`, `scale` and `blur` rather than toggling visibility.
+Check the project's `package.json`. Import from `"motion/react"` when `motion` is installed, or `"framer-motion"` when that is. Where both exist, follow the imports the component or its nearest peers already use. Where neither is present, use the CSS cross-fade and never add a dependency just for icon transitions.
 
-### Motion example
-
-This uses the `motion` package. Where the project has `framer-motion`, import the same APIs from `"framer-motion"`. Never mix an installed package with the other's import path.
+## Motion
 
 ```tsx
 import { AnimatePresence, motion } from "motion/react";
@@ -16,7 +14,7 @@ import { AnimatePresence, motion } from "motion/react";
 function IconButton({ isActive, icon: Icon }) {
   return (
     <button>
-      <AnimatePresence mode="popLayout">
+      <AnimatePresence initial={false} mode="popLayout">
         <motion.span
           key={isActive ? "active" : "inactive"}
           initial={{ opacity: 0, scale: 0.25, filter: "blur(4px)" }}
@@ -32,71 +30,43 @@ function IconButton({ isActive, icon: Icon }) {
 }
 ```
 
-### CSS transition approach (no Motion)
+`initial={false}` keeps the default icon from animating in on mount.
 
-Without Motion or Framer Motion, keep both icons in the DOM and cross-fade with CSS transitions. Neither unmounts, so enter and exit both animate smoothly.
+## CSS, both icons in the DOM
 
-One icon is absolutely positioned on top of the other. Toggling state cross-fades them, the entering icon scaling up from `0.25` while the exiting one scales down to `0.25`, both with opacity and blur.
+Both icons stay mounted in one grid cell, so enter and exit both animate and the larger icon sets the size. The `motion-reduce:` classes leave only the opacity fade under reduced motion.
 
 ```tsx
+const layer = cn(
+  "[grid-area:1/1] transition-[opacity,filter,scale] duration-300",
+  "ease-[cubic-bezier(0.2,0,0,1)]",
+  "motion-reduce:scale-100 motion-reduce:blur-[0px]"
+);
+const shown = "scale-100 opacity-100 blur-[0px]";
+const hidden = "scale-[0.25] opacity-0 blur-[4px]";
+
 function IconButton({ isActive, ActiveIcon, InactiveIcon }) {
   return (
     <button>
-      <div className="relative">
-        <div
-          className={cn(
-            "absolute inset-0 flex items-center justify-center",
-            "transition-[opacity,filter,scale] duration-300",
-            "ease-[cubic-bezier(0.2,0,0,1)]",
-            isActive
-              ? "scale-100 opacity-100 blur-0"
-              : "scale-[0.25] opacity-0 blur-[4px]"
-          )}
-        >
+      <span className="grid place-items-center">
+        <span className={cn(layer, isActive ? shown : hidden)}>
           <ActiveIcon />
-        </div>
-        <div
-          className={cn(
-            "transition-[opacity,filter,scale] duration-300",
-            "ease-[cubic-bezier(0.2,0,0,1)]",
-            isActive
-              ? "scale-[0.25] opacity-0 blur-[4px]"
-              : "scale-100 opacity-100 blur-0"
-          )}
-        >
+        </span>
+        <span className={cn(layer, isActive ? hidden : shown)}>
           <InactiveIcon />
-        </div>
-      </div>
+        </span>
+      </span>
     </button>
   );
 }
 ```
 
-The non-absolute icon, `InactiveIcon`, defines the layout size. The absolute one, `ActiveIcon`, overlays it without affecting flow.
+Tailwind 4's `scale-*` utilities write the `scale` property, so `transition-[...scale]` animates them. Tailwind 3's write `transform`, so name `transform` in the transition instead.
 
-### Choosing between Motion and CSS
-
-| | Motion (Framer Motion) | CSS transitions (both icons in DOM) |
-| --- | --- | --- |
-| **Enter animation** | Yes | Yes |
-| **Exit animation** | Yes (via `AnimatePresence`) | Yes (cross-fade, icon never unmounts) |
-| **Spring physics** | Yes | No, use `cubic-bezier(0.2, 0, 0, 1)` as approximation |
-| **When to use** | Project already uses `motion` or `framer-motion` | No motion dependency, or keeping bundle small |
-
-Check the project's `package.json`. Import from `"motion/react"` when `motion` is installed, or `"framer-motion"` when that is. Where both exist, follow the imports the component or its nearest peers already use. Where neither is present, use the CSS cross-fade and never add a dependency just for icon transitions.
-
-### When to animate icons
+## Which icons animate
 
 | Animate | Don't animate |
 | --- | --- |
-| Icons that appear on hover (action buttons) | Static navigation icons |
-| State change icons (play → pause, like → liked) | Decorative icons |
-| Icons in contextual toolbars | Icons that are always visible |
-| Loading/success state indicators | Icon labels (text next to icon) |
-
-Use exactly these values for contextual icon animations. Do not deviate:
-- `scale`: `0.25` → `1` (never use `0.5` or `0.6`)
-- `opacity`: `0` → `1`
-- `filter`: `"blur(4px)"` → `"blur(0px)"`
-- `transition`: `{ type: "spring", duration: 0.3, bounce: 0 }`; **bounce must always be `0`**, never `0.1` or any other value
-
+| Infrequent state swaps such as play to pause, like to liked or copy to copied | Hover-revealed actions in list rows |
+| Icons in a toolbar that appears on selection | Tab and navigation icon swaps |
+| Loading and success indicators | Decorative or always-visible icons |

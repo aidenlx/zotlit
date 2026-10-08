@@ -20,6 +20,8 @@ export function editorApp(): App & { scopes: Scope[] } {
       },
     },
     commands: { editorCommands: {} },
+    // Where the comment editor and the reader's menus raise their menu events.
+    workspace: { trigger: () => {} },
     hotkeyManager: {
       getHotkeys: () => undefined,
       getDefaultHotkeys: () => undefined,

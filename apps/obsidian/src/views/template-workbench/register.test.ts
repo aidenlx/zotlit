@@ -5,6 +5,7 @@ import type { App, Command, Plugin, WorkspaceLeaf } from "obsidian";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { registerFileMenu } from "@/services/file-menu";
 import {
   findWorkbenchLayout,
   openWorkbenchLayout,
@@ -15,6 +16,7 @@ import {
   openNativeProfile,
   openTemplateWorkbench,
   registerTemplateWorkbenchView,
+  templateWorkbenchFileMenu,
 } from "./register";
 import type { TemplateWorkbenchDeps } from "./view";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
@@ -119,6 +121,15 @@ function setup() {
     setViewState,
     focusWindow,
   };
+}
+
+/** Register the view, and place its file-menu entries as the plugin does. */
+function register(
+  plugin: Plugin,
+  deps: Parameters<typeof registerTemplateWorkbenchView>[1],
+): void {
+  registerTemplateWorkbenchView(plugin, deps);
+  registerFileMenu(plugin, [templateWorkbenchFileMenu(plugin.app, deps)]);
 }
 
 describe("Template Workbench entry points", () => {
@@ -330,7 +341,7 @@ Annotation`);
     const { deps, plugin, commands, fileMenu } = setup();
     deps.webWorkbenchEnabled = false;
 
-    registerTemplateWorkbenchView(plugin, deps);
+    register(plugin, deps);
 
     expect(commands.map(({ id }) => id)).toEqual([
       "customize-profile",
@@ -349,7 +360,7 @@ Annotation`);
   it("leaves the Workbench pane menu to the view's own entries", () => {
     setMockPlatform({ isDesktopApp: true });
     const { deps, plugin, fileMenu, file, leaf } = setup();
-    registerTemplateWorkbenchView(plugin, deps);
+    register(plugin, deps);
     const view = Object.assign(Object.create(TemplateWorkbenchView.prototype), {
       file,
       leaf,
@@ -375,7 +386,7 @@ Annotation`);
     const read = vi
       .spyOn(app.vault, "cachedRead")
       .mockRejectedValue(new Error("File unavailable"));
-    registerTemplateWorkbenchView(plugin, deps);
+    register(plugin, deps);
     expect(
       commands.find((command) => command.id === id)!.checkCallback?.(false),
     ).toBe(true);
@@ -390,7 +401,7 @@ Annotation`);
       const read = vi.spyOn(app.vault, "cachedRead");
       deps.profile = { ...deps.profile, defaultDocumentPath: file.path };
       deps.customize = vi.fn(async () => {});
-      registerTemplateWorkbenchView(plugin, deps);
+      register(plugin, deps);
       expect(
         commands.find((entry) => entry.id === id)!.checkCallback?.(false),
       ).toBe(true);
@@ -411,7 +422,7 @@ Annotation`);
     file.path = "templates/zotlit-citation.md";
     file.basename = "zotlit-citation";
     deps.customize = vi.fn(async () => {});
-    registerTemplateWorkbenchView(plugin, deps);
+    register(plugin, deps);
 
     const command = commands.find(
       (entry) => entry.id === "open-template-workbench-view",
@@ -438,7 +449,7 @@ Annotation`);
     file.path = "templates/zotlit-partial.authors.md";
     file.basename = "zotlit-partial.authors";
     deps.customize = vi.fn(async () => {});
-    registerTemplateWorkbenchView(plugin, deps);
+    register(plugin, deps);
 
     const command = commands.find(
       (entry) => entry.id === "open-template-workbench-view",
@@ -462,7 +473,7 @@ Annotation`);
     const { file, deps, plugin, fileMenu } = setup();
     deps.profile = { ...deps.profile, defaultDocumentPath: file.path };
     deps.customize = vi.fn(async () => {});
-    registerTemplateWorkbenchView(plugin, deps);
+    register(plugin, deps);
 
     fileMenu()
       .items.find((item) => item.title === m.template_workbench_open_layout())!
@@ -486,7 +497,7 @@ Annotation`);
       profiles: [{ id: "paper", path: file.path }],
     } as unknown as typeof deps.profile;
     deps.customize = vi.fn(async () => {});
-    registerTemplateWorkbenchView(plugin, deps);
+    register(plugin, deps);
 
     const command = commands.find(
       (entry) => entry.id === "open-template-workbench-view",
@@ -514,7 +525,7 @@ Annotation`);
       profiles: [{ id: "paper", path: file.path }],
     } as unknown as typeof deps.profile;
     deps.customize = vi.fn(async () => {});
-    registerTemplateWorkbenchView(plugin, deps);
+    register(plugin, deps);
 
     fileMenu()
       .items.find((item) => item.title === m.template_workbench_open())!
@@ -546,7 +557,7 @@ Annotation`);
         >,
     );
     deps.profile.getSource = vi.fn(async () => "Configured Default");
-    registerTemplateWorkbenchView(plugin, deps);
+    register(plugin, deps);
     const command = commands.find(
       (entry) => entry.id === "open-template-workbench-view",
     )!;
@@ -646,7 +657,7 @@ Annotation`);
     setMockPlatform({ isDesktopApp: true });
     const { app, file, plugin, deps, commands, registerView, setViewState } =
       setup();
-    registerTemplateWorkbenchView(plugin, deps);
+    register(plugin, deps);
     expect(registerView).toHaveBeenCalledWith(
       TEMPLATE_WORKBENCH_VIEW_TYPE,
       expect.any(Function),
@@ -673,7 +684,7 @@ Annotation`);
   it("keeps registration desktop-only", () => {
     setMockPlatform({ isDesktopApp: false });
     const { plugin, deps, registerView } = setup();
-    registerTemplateWorkbenchView(plugin, deps);
+    register(plugin, deps);
     expect(registerView).not.toHaveBeenCalled();
   });
 });

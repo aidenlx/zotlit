@@ -20,6 +20,7 @@ import {
 import type { WorkbenchItemChoice } from "@zotlit/workbench/ui";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { MENU_SECTION } from "@/lib/menu-section";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
@@ -67,7 +68,7 @@ export interface ExplorerViewDeps extends TemplateDataDeps {
     ZoteroReadsService,
     "state" | "ready" | "on" | "acquireRead"
   >;
-  itemLookup: Pick<ItemLookup, "search">;
+  itemLookup: Pick<ItemLookup, "search" | "openSession">;
   settings: SettingsService;
   templates: Pick<
     TemplateService,
@@ -117,21 +118,21 @@ export class TemplateDataExplorerView extends ItemView {
     super.onPaneMenu(menu, source);
     menu.addItem((item) =>
       item
-        .setSection("zotlit")
+        .setSection(MENU_SECTION.action)
         .setTitle(m.workbench_choose_item())
         .setIcon("search")
         .onClick(() => void this.#chooseItem()),
     );
     menu.addItem((item) =>
       item
-        .setSection("zotlit")
+        .setSection(MENU_SECTION.action)
         .setTitle(m.workbench_choose_annotation())
         .setIcon("highlighter")
         .onClick(() => void this.#chooseAnnotation()),
     );
     menu.addItem((item) =>
       item
-        .setSection("zotlit")
+        .setSection(MENU_SECTION.pane)
         .setTitle(
           this.#allSectionsCollapsed()
             ? m.workbench_explorer_expand_all()
@@ -147,7 +148,7 @@ export class TemplateDataExplorerView extends ItemView {
     this.#actions?.addCopyKeyMenuItem(menu);
     menu.addItem((item) =>
       item
-        .setSection("zotlit")
+        .setSection(MENU_SECTION.action)
         .setTitle(m.workbench_refresh_item())
         .setIcon("refresh-cw")
         .onClick(() => this.#session.refresh()),

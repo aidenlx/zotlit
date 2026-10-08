@@ -1,10 +1,10 @@
 import "./style.css";
-import { TFile } from "obsidian";
 import type { App, PaneType, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { MENU_SECTION } from "@/lib/menu-section";
+import type { FileMenuSegment } from "@/services/file-menu";
 import type { ItemLookup } from "@/services/item-lookup/service";
-import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
@@ -19,7 +19,7 @@ import { EXPLORER_VIEW_TYPE, TemplateDataExplorerView } from "./view";
 
 type ExplorerPlugin = Pick<
   Plugin,
-  "registerView" | "addCommand" | "registerEvent" | "app" | "manifest"
+  "registerView" | "addCommand" | "app" | "manifest"
 >;
 
 export interface ExplorerRegistrationDeps {
@@ -50,8 +50,6 @@ export function registerTemplateDataExplorer(
     name: m.command_open_template_data_explorer_name(),
     callback: () => void openTemplateDataExplorer(plugin.app),
   });
-
-  registerExplorerFileMenu(plugin);
 }
 
 /**
@@ -92,27 +90,18 @@ export async function openTemplateDataExplorer(
   void workspace.revealLeaf(leaf);
 }
 
-function registerExplorerFileMenu(
-  plugin: Pick<Plugin, "registerEvent" | "app">,
-): void {
-  plugin.registerEvent(
-    plugin.app.workspace.on("file-menu", (menu, file, source) => {
-      if (!(file instanceof TFile) || file.extension !== "md") return;
-      if (source === "files-menu") return;
-      const cache = plugin.app.metadataCache.getFileCache(file);
-      const itemKey = itemKeyFromFrontmatter(cache);
-      if (!itemKey) return;
-      menu.addItem((item) =>
-        item
-          .setSection("zotlit")
-          .setTitle(m.template_data_explorer_menu_explore())
-          .setIcon("braces")
-          .onClick(() => {
-            void openTemplateDataExplorer(plugin.app, {
-              itemIndexedKey: itemKey,
-            });
-          }),
-      );
-    }),
-  );
+/** "Explore template data" on a Literature Note's file menu. */
+export function explorerFileMenu(app: App): FileMenuSegment {
+  return (menu, { itemKey }) => {
+    if (!itemKey) return;
+    menu.addItem((item) =>
+      item
+        .setSection(MENU_SECTION.view)
+        .setTitle(m.template_data_explorer_menu_explore())
+        .setIcon("braces")
+        .onClick(() => {
+          void openTemplateDataExplorer(app, { itemIndexedKey: itemKey });
+        }),
+    );
+  };
 }

@@ -3,6 +3,7 @@ import type { Menu } from "obsidian";
 import { createContext } from "react";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { MENU_SECTION } from "@/lib/menu-section";
 import type { IndexedKeyCopyTarget } from "@/services/indexed-key/actions";
 import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
 
@@ -33,7 +34,7 @@ export function createExplorerActions(deps: {
     onRefresh: deps.onRefresh,
     addCopyKeyMenuItem(menu) {
       return addCopyIndexedKeyMenuItem(menu, deps.copyTarget(), {
-        section: "zotlit",
+        section: MENU_SECTION.info,
       });
     },
     addExportMenuItem(menu) {
@@ -42,7 +43,7 @@ export function createExplorerActions(deps: {
       if (!deps.canExport()) return;
       menu.addItem((item) => {
         item
-          .setSection("zotlit")
+          .setSection(MENU_SECTION.action)
           .setTitle(
             deps.exportLabel?.() ?? m.template_data_explorer_menu_export_json(),
           )

@@ -186,7 +186,7 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
       ...fixture.deps,
       settings: fixture.deps.settings as SettingsService,
       profile,
-      itemLookup: { search: vi.fn() },
+      itemLookup: { search: vi.fn(), openSession: vi.fn() },
     });
     // The lightweight ItemView mock leaves this native base property to its test.
     Object.defineProperty(preview, "app", { value: app });
@@ -2073,30 +2073,30 @@ Annotation`,
     await advance();
     expect(menuItem(preview, m.workbench_preview_as_new_note())).toMatchObject({
       checked: true,
-      section: "zotlit-preview",
+      section: "pane",
     });
     expect(
       menuItem(preview, m.workbench_preview_as_updated_note()),
     ).toMatchObject({
       checked: false,
       disabled: true,
-      section: "zotlit-preview",
+      section: "pane",
     });
     expect(
       menuItem(preview, m.workbench_preview_updated_section()),
     ).toMatchObject({
       checked: false,
-      section: "zotlit-preview",
+      section: "pane",
     });
     expect(menuItem(preview, m.workbench_preview_auto_refresh())).toMatchObject(
       {
         checked: true,
-        section: "zotlit-display",
+        section: "pane",
       },
     );
     expect(menuItem(preview, m.workbench_show_markdown())).toMatchObject({
       checked: false,
-      section: "zotlit-display",
+      section: "pane",
     });
     const captionText = () =>
       preview.contentEl.querySelector(".zt-note-preview-heading")

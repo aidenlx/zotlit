@@ -3,7 +3,8 @@ import { Context, Duration, Effect, Layer, RcRef } from "effect";
 import type { Stream } from "effect";
 import type { Scope } from "effect";
 
-import { getLibraries } from "@zotlit/db";
+import { getLibraries, getZoteroDatabaseIdentity } from "@zotlit/db";
+import type { ZoteroDatabaseIdentity } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { makeChangeFeed } from "./change-feed";
@@ -36,23 +37,70 @@ export class Connection extends Context.Service<
     /** New settings for the source; the provider rebinds to them. */
     readonly configure: (config: ReadsConfig) => Effect.Effect<void>;
     /**
-     * The database file a client of this connection reads: the configured
-     * path it opened from, `null` for none. Each refresh of one file opens a
-     * new client with the same answer.
+     * The database a client of this connection reads, as a number. The
+     * number rises each time a client opens a database this connection has
+     * not seen before: another file, or another Zotero identity (account,
+     * local user key, server id) at the same path. Zotero reassigns local
+     * Library ids across databases, so a held index built on an older number
+     * rebuilds. A refresh that reopens the same database keeps the number,
+     * and the signatures decide. Recorded when the client opens and
+     * validates, so the call is synchronous and answers for every client this
+     * connection hands out.
+     */
+    readonly databaseGeneration: (client: NodeDatabaseClient) => number;
+    /**
+     * The database file a client of this connection opened from, or null
+     * when it opened from no file. Recorded with the generation, so it
+     * answers for every client this connection hands out.
      */
     readonly databaseFile: (client: NodeDatabaseClient) => string | null;
   }
 >()("zotlit/zotero-reads/Connection") {}
 
-/** The database file each client opened from, for `Connection.databaseFile`. */
-export function makeDatabaseFiles() {
-  const files = new WeakMap<NodeDatabaseClient, string | null>();
+/** The database each client reads, for `Connection.databaseGeneration`. */
+export function makeDatabaseGenerations() {
+  /** The generation of each database seen so far. */
+  const generations = new Map<string, number>();
+  const clientGenerations = new WeakMap<NodeDatabaseClient, number>();
+  const clientFiles = new WeakMap<NodeDatabaseClient, string | null>();
   return {
+    /**
+     * Record the database a validated client reads: the file it opened from
+     * and the Zotero identity inside it.
+     *
+     * @throws The identity read's error, after the client closes.
+     * @see {@link validateClient}, which closes a client the same way.
+     */
     record: (client: NodeDatabaseClient, file: string | null): void => {
-      files.set(client, file);
+      let identity: ZoteroDatabaseIdentity;
+      try {
+        identity = getZoteroDatabaseIdentity(client);
+      } catch (error) {
+        client.$client.close();
+        throw error;
+      }
+      const key = JSON.stringify([
+        file,
+        identity.userID,
+        identity.localUserKey,
+        identity.serverID,
+      ]);
+      let generation = generations.get(key);
+      if (generation === undefined) {
+        generation = generations.size + 1;
+        generations.set(key, generation);
+      }
+      clientGenerations.set(client, generation);
+      clientFiles.set(client, file);
+    },
+    databaseGeneration: (client: NodeDatabaseClient): number => {
+      const generation = clientGenerations.get(client);
+      if (generation === undefined)
+        throw new Error("The client was not opened by this connection");
+      return generation;
     },
     databaseFile: (client: NodeDatabaseClient): string | null =>
-      files.get(client) ?? null,
+      clientFiles.get(client) ?? null,
   };
 }
 
@@ -174,12 +222,15 @@ export function layerRcRef(opener: ConnectionOpener): Layer.Layer<Connection> {
       let config: ReadsConfig | null = null;
       let state: "loading" | "ready" | "degraded" = "loading";
       let lastError: DbUnavailable | null = null;
-      const databaseFiles = makeDatabaseFiles();
-      /** Open and validate a client, recording the file it opened from. */
+      const databaseGenerations = makeDatabaseGenerations();
+      /** Open and validate a client, recording the database it reads. */
       const openRecorded = Effect.suspend(() => {
         const opened = config?.databasePath ?? null;
         return Effect.tap(openValidated(opener, config), (client) =>
-          Effect.sync(() => databaseFiles.record(client, opened)),
+          Effect.try({
+            try: () => databaseGenerations.record(client, opened),
+            catch: toDbUnavailable,
+          }),
         );
       });
       const { publish, changes } = yield* makeChangeFeed(() => [
@@ -237,7 +288,8 @@ export function layerRcRef(opener: ConnectionOpener): Layer.Layer<Connection> {
             config = next;
             return Effect.ignore(refresh);
           }),
-        databaseFile: databaseFiles.databaseFile,
+        databaseGeneration: databaseGenerations.databaseGeneration,
+        databaseFile: databaseGenerations.databaseFile,
       });
     }),
   );

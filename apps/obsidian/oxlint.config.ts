@@ -4,10 +4,14 @@ import baseConfig from "@zotlit/config/oxlint";
 
 export default defineConfig({
   extends: [baseConfig],
-  jsPlugins: ["./scripts/oxlint-plugin-popout-windows.ts"],
+  jsPlugins: [
+    "./scripts/oxlint-plugin-popout-windows.ts",
+    "./scripts/oxlint-plugin-menu-sections.ts",
+  ],
   rules: {
     "no-console": "error",
     "zotlit-obsidian/no-cross-window-instanceof": "error",
+    "zotlit-menu/no-literal-section": "error",
     // Repeats the base pattern: a rule set here replaces the base entry.
     "no-restricted-imports": [
       "error",
@@ -67,8 +71,8 @@ export default defineConfig({
       },
     },
     {
-      // The rule test reaches the package-local Oxlint module in scripts/.
-      files: ["src/lint/popout-windows.test.ts"],
+      // The rule tests reach the package-local Oxlint modules in scripts/.
+      files: ["src/lint/*.test.ts"],
       rules: {
         "no-restricted-imports": "off",
       },

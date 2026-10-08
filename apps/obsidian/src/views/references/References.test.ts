@@ -84,7 +84,11 @@ async function render(
   {
     formattingFailed = false,
     documentPresentationError = null,
-    engine = { kind: "installed", version: "test" },
+    engine = {
+      kind: "installed",
+      version: "test",
+      binary: { directory: "pandoc-engine", name: "pandoc.wasm" },
+    },
     copy = { kind: "blocked", reason: "pending" },
     citekeyResolution = "fresh",
   }: Partial<
@@ -504,7 +508,7 @@ describe("References banners", () => {
     [
       "the install progress",
       {
-        engine: { kind: "installing", done: Promise.resolve() },
+        engine: { kind: "installing", done: Promise.resolve(), binary: null },
       } satisfies Partial<ReferencesState>,
       "Downloading the Pandoc engine…",
     ],
@@ -641,7 +645,7 @@ describe("References toolbar", () => {
       [summaryEntry],
       { kind: "minimal" },
       {
-        engine: { kind: "installing", done: Promise.resolve() },
+        engine: { kind: "installing", done: Promise.resolve(), binary: null },
       },
     );
     await activateStyleAction(container);

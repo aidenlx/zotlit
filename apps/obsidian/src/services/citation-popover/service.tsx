@@ -247,6 +247,7 @@ async function fill(
     return;
   }
   const actions = createCitationPopoverActions({
+    app: deps.app,
     open: (block, pane) => {
       if ("work" in request) {
         if (read.indexedKey) request.open(read.indexedKey, pane);

@@ -18,7 +18,10 @@ import type { CitedWork, NavigationPane } from "./intent";
 import type { GestureSurface } from "./shell";
 
 const menuMock = Menu as typeof Menu & {
-  instances: { items: { title: string; click: () => void }[] }[];
+  instances: {
+    items: { title: string; click: () => void }[];
+    sections: string[];
+  }[];
 };
 
 const work = (citekey: string, label: string): CitedWork => ({
@@ -38,6 +41,7 @@ function citation(
   const opened: [citekey: string, pane: NavigationPane][] = [];
   const requests: CitationHoverRequest[] = [];
   const links: [event: string, link: HoverLink][] = [];
+  const menus: [event: string, menu: unknown, info: unknown][] = [];
   const navigation = {
     works,
     where,
@@ -47,6 +51,10 @@ function citation(
     hoverPreferences: () => hover,
     hoverNotePath: (citekey: string) =>
       citekey === "doe2024" ? "lit/doe2024.md" : null,
+    workspace: {
+      trigger: (event: string, menu: unknown, info: unknown) =>
+        menus.push([event, menu, info]),
+    },
     hoverTarget: () => ({
       workspace: {
         trigger: (event: string, link: HoverLink) => links.push([event, link]),
@@ -55,7 +63,7 @@ function citation(
       sourcePath: "draft.md",
     }),
   };
-  return { element, opened, requests, links, navigation };
+  return { element, opened, requests, links, menus, navigation };
 }
 
 function attach(
@@ -83,7 +91,7 @@ describe("attachCitationNavigation", () => {
   });
 
   it("shows the existing item menu for a multi-work Citation", () => {
-    const { element, opened } = attach([
+    const { element, opened, menus, navigation } = attach([
       work("doe2024", "Doe (2024)"),
       work("smith2025", "Smith (2025)"),
     ]);
@@ -96,6 +104,10 @@ describe("attachCitationNavigation", () => {
     expect(menu?.items.map((item) => item.title)).toEqual([
       "Doe (2024)",
       "Smith (2025)",
+    ]);
+    expect(menu?.sections).toEqual(["open", ""]);
+    expect(menus).toEqual([
+      ["zotlit:cited-works-menu", menu, { works: navigation.works }],
     ]);
     expect(opened).toEqual([]);
     menu?.items[1]?.click();

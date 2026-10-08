@@ -5,6 +5,7 @@ import type { HoverParent, Workspace } from "obsidian";
 
 import { getLogger } from "@/lib/log";
 import type { ShownCitation } from "@/services/citation-text/present";
+import { menuSections, raiseMenu } from "@/services/menu-events";
 
 import { citationHoverIntent } from "./hover";
 import type { CitationHoverIntent, HoverPreferences } from "./hover";
@@ -23,6 +24,8 @@ import { hoverGesture, mouseGesture, triggerCitekeyHover } from "./shell";
 import type { GestureSurface } from "./shell";
 
 const logger = getLogger("citekey-navigation");
+
+const SECTION = menuSections("zotlit:cited-works-menu");
 
 /** Where the hover of a rendered citation hangs, and what it is written in. */
 export interface CitationHoverTarget {
@@ -84,6 +87,8 @@ export interface CitationHover {
 export interface CitationNavigation extends CitationHover {
   /** The works the citation names, in the order it names them. */
   works: readonly CitedWork[];
+  /** Raises `zotlit:cited-works-menu` when the citation names several works. */
+  workspace: Pick<Workspace, "trigger">;
   /**
    * The vault path of the one Literature Note `citekey` names, or null when
    * zero or several name it — read only by the page preview branch.
@@ -279,11 +284,19 @@ function navigate(event: MouseEvent, navigation: CitationNavigation): void {
   const menu = new Menu();
   for (const work of works) {
     menu.addItem((item) =>
-      item.setTitle(work.label).onClick(() => {
-        navigation.open(work.citekey, intent.pane);
-      }),
+      item
+        .setSection(SECTION.open)
+        .setTitle(work.label)
+        .onClick(() => {
+          navigation.open(work.citekey, intent.pane);
+        }),
     );
   }
+  raiseMenu(menu, {
+    workspace: navigation.workspace,
+    name: "zotlit:cited-works-menu",
+    info: { works },
+  });
   menu.showAtMouseEvent(event);
 }
 

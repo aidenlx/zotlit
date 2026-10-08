@@ -9,9 +9,11 @@ import type {
 
 import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
+import { MENU_SECTION } from "@/lib/menu-section";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
 import { missingPartialNotice } from "@/lib/workbench-recovery";
+import type { FileMenuContext, FileMenuSegment } from "@/services/file-menu";
 import type {
   BatchImport,
   ReimportResult,
@@ -158,36 +160,28 @@ export function addNoteFeatureActions(
       );
     },
   });
-
-  registerFileMenu(plugin, deps);
 }
 
-function registerFileMenu(
-  plugin: Pick<Plugin, "registerEvent" | "app">,
+/**
+ * The note operations on a Literature Note's or a Note Import's file menu.
+ * Overwrite and reimport replace what the user wrote, so they stand with
+ * "Delete" rather than with the updates.
+ */
+export function noteFeatureFileMenu(
   deps: NoteFeatureActionDeps,
-): void {
-  plugin.registerEvent(
-    plugin.app.workspace.on("file-menu", (menu, file, source) => {
-      if (!(file instanceof TFile) || file.extension !== "md") return;
-      if (source === "files-menu") return;
-      buildFileMenu(menu, { file, app: plugin.app }, deps);
-    }),
-  );
+): FileMenuSegment {
+  return (menu, ctx) => buildFileMenu(menu, ctx, deps);
 }
 
 function buildFileMenu(
   menu: Menu,
-  { file, app }: { file: TFile; app: App },
+  { file, itemKey, noteKey }: FileMenuContext,
   deps: NoteFeatureActionDeps,
 ): void {
-  const cache = app.metadataCache.getFileCache(file);
-  const itemKey = itemKeyFromFrontmatter(cache);
-  const noteKey = noteKeyFromFrontmatter(cache);
-
   if (itemKey) {
     menu.addItem((item) =>
       item
-        .setSection("zotlit")
+        .setSection(MENU_SECTION.action)
         .setTitle(m.command_update_note_name())
         .setIcon("refresh-cw")
         .onClick(() => {
@@ -196,7 +190,7 @@ function buildFileMenu(
     );
     menu.addItem((item) =>
       item
-        .setSection("zotlit")
+        .setSection(MENU_SECTION.action)
         .setTitle(m.command_update_note_metadata_name())
         .setIcon("file-text")
         .onClick(() => {
@@ -205,8 +199,9 @@ function buildFileMenu(
     );
     menu.addItem((item) =>
       item
-        .setSection("zotlit")
+        .setSection(MENU_SECTION.danger)
         .setTitle(m.command_overwrite_note_name())
+        .setWarning(true)
         .setIcon("file-x")
         .onClick(() => {
           void handleOverwriteNote(deps, file, itemKey);
@@ -214,18 +209,21 @@ function buildFileMenu(
     );
     menu.addItem((item) =>
       item
-        .setSection("zotlit")
+        .setSection(MENU_SECTION.action)
         .setTitle(m.command_import_child_notes_name())
         .setIcon("download")
         .onClick(() => {
           void handleChildImport(deps, itemKey);
         }),
     );
-  } else if (noteKey) {
+    return;
+  }
+  if (noteKey) {
     menu.addItem((item) =>
       item
-        .setSection("zotlit")
+        .setSection(MENU_SECTION.danger)
         .setTitle(m.command_reimport_note_name())
+        .setWarning(true)
         .setIcon("refresh-cw")
         .onClick(() => {
           void reimportNote(deps, file, noteKey);

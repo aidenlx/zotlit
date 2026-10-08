@@ -12,8 +12,6 @@ Most products need three kinds of ramp and nothing else:
 | Accent | 1 | The brand hue. Interactive and selected states |
 | Status | 0–4 | `danger`, `warning`, `success`, `info`. Add one only when the product shows that state |
 
-A second accent hue must also never sit adjacent to the first. Where it would, the accent ramp's own steps provide the range.
-
 ## Every step has a job
 
 Each step maps to a role. Generate the steps the roles below call for and skip the rest.
@@ -25,11 +23,11 @@ Each step maps to a role. Generate the steps the roles below call for and skip t
 | Component background | `100` | `3` |
 | Component hover | `200` | `4` |
 | Component active / selected | `200` | `5` |
-| Subtle border | `200` | `6` |
-| Border, separator | `300` | `7` |
-| Strong border, focus ring | `400` | `8` |
-| Solid fill | `500` | `9` |
-| Solid fill hover | `600` | `10` |
+| Subtle border, separator | `200` | `6` |
+| Border, focus ring | `300` | `7` |
+| Hovered border | `400` | `8` |
+| Solid fill | `600` | `9` |
+| Solid fill hover | `700` | `10` |
 | Low-contrast text | `700` | `11` |
 | High-contrast text | `900` | `12` |
 
@@ -40,13 +38,13 @@ The two conventions differ in kind, not only in numbering:
 
 Match whichever the project uses. For a new system prefer Radix's model, because a role-defined step survives a theme change that a lightness-defined step does not. On Tailwind, keep `50`–`950` and put the role mapping in the semantic tier.
 
-Tailwind's 11 steps cover 12 roles, so some do double duty. Where the table repeats a step, the two roles are adjacent in practice and the collision is real. A design needing a subtle border and a component hover to be distinguishable needs a 12-step ramp.
+Solid fill sits on `600` because white text on most Tailwind `500` hues fails 4.5:1. Where the table repeats a step, those roles render identically. A design that needs, say, component hover and subtle border to differ needs a 12-step ramp.
 
 ## Neutrals
 
 A pure gray ramp is a perfectly good default. It sits under any accent hue without competing and never needs revisiting when the brand color changes.
 
-Tinting the neutral toward the accent hue is a stylistic option, not a correction. A trace of the accent, a few percent of its vividness, puts the greys in the same family as the accent rather than merely coexisting with it. Enough to measure, not enough to name. Neither choice reads as a mistake.
+Tinting the neutral toward the accent hue is a stylistic option, not a correction. OKLCH chroma `0.005`–`0.02` at the accent's hue puts the grays in the accent's family. Enough to measure, not enough to name.
 
 Warm neutrals, hue toward orange, read approachable and editorial; cool ones, toward blue, read technical and precise. Whichever you pick, including none, hold it across the whole ramp. A warm gray border on a cool gray background is visible even when neither color is nameable alone.
 
@@ -58,19 +56,17 @@ Convention constrains status hues before taste does. Red reads as danger, amber 
 
 Two rules govern them:
 
-- **Keep every status hue distinct from the accent.** If the brand is red, the danger ramp cannot also be red. Move danger toward a deeper crimson and check the two side by side, or the destructive and primary actions are the same button.
+- **Keep every status hue at least `15°` of OKLCH hue from the accent.** If the brand is red, danger cannot also be red. Where convention leaves nowhere to move, give the destructive action a distinct treatment, such as an outlined button with an icon, or it reads as the primary action.
 - **Status ramps need fewer steps than the accent.** Most render four roles: a background, a border, a solid fill and text. Generate the full ramp only where the product styles status components across the whole range.
-
-Status color is never the only signal of a state change; pair it with an icon or text. `better-accessibility` owns that requirement.
 
 ## Auditing an existing palette
 
 Before restructuring a system, inventory it. Most codebases hold several times more colors than the design has decisions.
 
-1. **Collect every literal.** Grep for hex, `rgb(`, `hsl(`, `oklch(` and the project's utility-class prefixes. Include SVG `fill`/`stroke`, chart configs and email templates. Colors hide outside stylesheets.
+1. **Collect every literal.** Grep for hex, `rgb(`, `hsl(`, `oklch(` and the project's utility-class prefixes. Include SVG `fill` and `stroke`, chart configs and email templates.
 2. **Sort by perceived lightness within each hue family.** Duplicates surface immediately as near-identical neighbors.
-3. **Collapse near-duplicates.** Two colors closer than about one ramp step are one color that drifted. Keep the one used most and retire the others. Never average them.
+3. **Collapse near-duplicates.** Two colors within `0.02` of each other in OKLab ΔE are one color that drifted. Keep the one used most and retire the others. Never average them.
 4. **Assign each survivor a role** from the table above. A color matching no role is a missing token or a mistake. Decide which, and say so in the finding.
-5. **Count what is left.** More than one ramp per role above means the palette outgrew its structure, not that the product needs more color.
+5. **Count what is left.** More ramps than **What a system needs** lists means the palette outgrew its structure, not that the product needs more color.
 
 Report the inventory before changing anything. Consolidating a palette changes rendered output on screens nobody asked you to touch, so it stays a proposal until the user accepts it.

@@ -6,11 +6,7 @@ export interface TokenizerOptions {
 
 const DIACRITIC = regex("\\p{Diacritic}", "gu");
 
-/** Local tokenization or tokens prepared by a host-owned segmenter. */
-export type Tokenizer = TokenizerOptions | ((text: string) => string[]);
-
-export function tokenize(text: string, opts: Tokenizer): string[] {
-  if (typeof opts === "function") return opts(text);
+export function tokenize(text: string, opts: TokenizerOptions): string[] {
   const tokens: string[] = [];
   for (const part of opts.intl.segment(text)) {
     if (!part.isWordLike) continue;
