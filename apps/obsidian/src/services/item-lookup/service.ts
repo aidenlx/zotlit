@@ -1,67 +1,38 @@
+// The renderer's Item search facade over the ZoteroReads SearchItems operation.
 /**
- * Search-index lifecycle for the Library Scope, kept fresh with a
- * stale-while-revalidate (SWR) rebuild model:
+ * The renderer's Item search: a thin facade over the ZoteroReads `SearchItems`
+ * operation. The worker owns the Item Index (building, refresh, scope
+ * identity); this facade only
  *
- * - One **composite index** spans every available Library in scope. Per-Library
- *   BM25 scores are not comparable, so they are never merged: the whole corpus
- *   is indexed together and ranked once, globally.
- * - A database refresh (`reads.on("changed")`) rebuilds in the background while
- *   {@link ItemLookup.search} keeps serving the cached index — search never
- *   blocks on a rebuild, so frequent Zotero writes don't freeze suggestions.
- * - A change-gate reads a cheap per-Library `(count, checksum)`
- *   {@link IndexSignature} **vector** first and skips the rebuild when nothing
- *   indexed moved in any covered Library.
- * - Rebuilds are single-flight with a trailing rerun ({@link #scheduleRebuild}):
- *   a refresh arriving mid-build lets the build finish, then reruns once, so a
- *   burst of refreshes converges instead of restarting.
- * - Each rebuild pins one Snapshot ({@link ZoteroReadsService.snapshot}) for
- *   its scope resolution, its signature reads, and its item stream, so the
- *   cached signatures are atomic with the index they label and a concurrent
- *   refresh cannot tear slices across database states. The build reads one
- *   Library at a time from the `IndexItems` stream;
- *   {@link SearchIndexBuilder.build} then imposes the global order over the
- *   whole corpus.
+ * - resolves the current Library Scope to local `libraryIDs`, in canonical
+ *   order, and asks `SearchItems`;
+ * - labels each hit with its Library from the scope it asked with, when two
+ *   or more Libraries are in scope, so a group rename shows without a rebuild;
+ * - runs every search in one `FiberHandle`, so the next keystroke interrupts
+ *   the request before it, and that interrupt reaches the worker;
+ * - prewarms the index once on ready and on each Library Scope change.
  *
- * A Library Scope change is a hard invalidation: the new build replaces the
- * running one in the build FiberHandle, which interrupts it, and search hydration
- * bound to the old scope is dropped. The cache goes too, so the new scope
- * builds from scratch. A group rename leaves the covered Libraries alone, so it
- * refreshes labels without rebuilding.
- *
- * No fixed Library or Item limit applies.
+ * It answers empty while the scope is unresolved and when the database is
+ * unavailable.
  */
-import { Effect, Fiber, FiberHandle, Scope, Stream } from "effect";
-import { getLanguage } from "obsidian";
-
-import { createLanguageLookup } from "@zotlit/db";
-import type { IndexedItem, IndexSignature, Item } from "@zotlit/db";
-import { createIndexBuilder, searchIndex } from "@zotlit/item-lookup";
-import type {
-  ChsSegmenter,
-  SearchHit as EngineSearchHit,
-  SearchIndex,
-  TokenizerOptions,
-} from "@zotlit/item-lookup";
+import { Effect, FiberHandle, FiberSet, Scope } from "effect";
 
 import { openScope } from "@/lib/effect-scope";
 import { getLogger } from "@/lib/log";
-import { availableKey } from "@/services/library-scope/scope";
+import { selectorKey } from "@/services/library-scope/scope";
 import type {
   AvailableLibrary,
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { Service } from "@/services/service-base";
-import { DbUnavailable } from "@/services/zotero-reads/rpc";
-import type {
-  ZoteroReadsApi,
-  ZoteroReadsService,
-} from "@/services/zotero-reads/service";
+import type { SearchHit as ReadsSearchHit } from "@/services/zotero-reads/rpc";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 const logger = getLogger(["item-lookup"]);
 export const DEFAULT_LIMIT = 50;
 
-export interface SearchHit extends EngineSearchHit<Item> {
+export interface SearchHit extends ReadsSearchHit {
   /**
    * The Library this hit came from, for a muted label on the result row, or
    * `null` when one Library is available and the label would say nothing.
@@ -70,56 +41,20 @@ export interface SearchHit extends EngineSearchHit<Item> {
 }
 
 export interface ItemLookupDeps {
-  reads: ZoteroReadsService;
-  libraryScope: Pick<
-    LibraryScopeService,
-    "ready" | "on" | "current" | "resolveLibraries"
-  >;
-  getChsSegmenter?: () => ChsSegmenter | null;
+  reads: Pick<ZoteroReadsService, "ready">;
+  libraryScope: Pick<LibraryScopeService, "ready" | "on" | "current">;
 }
 
 interface ItemLookupReady {
-  /** Holds the running build; a build run in it interrupts the one before. */
-  builds: FiberHandle.FiberHandle<void, never>;
-}
-
-interface ItemCache {
-  /** Identity of the Libraries this index covers; see {@link availableKey}. */
-  scopeKey: string;
-  /** Those Libraries, in canonical order — the source of result labels. */
-  libraries: readonly AvailableLibrary[];
-  index: SearchIndex;
-  /** One signature per covered Library, in the same canonical order. */
-  signatures: readonly IndexSignature[];
-}
-
-function signaturesEqual(
-  a: readonly IndexSignature[],
-  b: readonly IndexSignature[],
-): boolean {
-  return (
-    a.length === b.length &&
-    a.every(
-      (signature, index) =>
-        signature.count === b[index]!.count &&
-        signature.checksum === b[index]!.checksum,
-    )
-  );
+  /** Runs a search in the one search FiberHandle, interrupting the one before. */
+  runSearch: (effect: Effect.Effect<SearchHit[]>) => Promise<SearchHit[]>;
 }
 
 export class ItemLookup extends Service<ItemLookupReady> {
   readonly #reads;
   readonly #libraryScope;
-  readonly #languageLookup;
-  readonly #getChsSegmenter;
-
-  #cache: ItemCache | null = null;
-  #rebuildInFlight: Promise<void> | null = null;
-  #rebuildAgain = false;
-  /** Libraries the index should cover, or `null` while the scope is unresolved. */
-  #scopeKey: string | null = null;
-  readonly #intl = new Intl.Segmenter(undefined, { granularity: "word" });
-  #tokenizerOpts: TokenizerOptions;
+  /** The answer of the newest search the handle runs. */
+  #latest: Promise<SearchHit[]> = Promise.resolve([]);
 
   ready: Promise<ItemLookupReady>;
 
@@ -127,354 +62,132 @@ export class ItemLookup extends Service<ItemLookupReady> {
     super();
     this.#reads = deps.reads;
     this.#libraryScope = deps.libraryScope;
-    this.#languageLookup = createLanguageLookup(getLanguage());
-    this.#getChsSegmenter = deps.getChsSegmenter ?? (() => null);
-    this.#tokenizerOpts = this.#createTokenizerOpts();
     this.ready = this.#load();
   }
 
+  /**
+   * The Items in Library Scope that match `query`, best first, at most
+   * `limit`. A later call interrupts this one, which then answers with the
+   * later call's list, so a list drawn from either matches the newest query.
+   */
   async search(query: string, opts?: { limit?: number }): Promise<SearchHit[]> {
-    await this.ready;
-
+    const { runSearch } = await this.ready;
     const limit = opts?.limit ?? DEFAULT_LIMIT;
-    if (limit <= 0) return [];
-
-    const t0 = performance.now();
-    const cache = await this.#loadIfNeeded();
-    if (!cache) {
-      logger.debug("Search skipped; no index available", {
-        queryLength: query.length,
-      });
-      return [];
-    }
-
-    const trimmed = query.trim();
-    // `index.items` is already in global most-recently-modified order, so the
-    // empty query is that order truncated to the limit.
-    const leanHits =
-      trimmed.length === 0
-        ? cache.index.items.slice(0, limit).map((item) => ({
-            item,
-            score: 0,
-            matches: [],
-          }))
-        : searchIndex(cache.index, trimmed, {
-            tokenizer: this.#tokenizerOpts,
-            limit,
-          });
-    const hits = await this.#hydrateHits(cache, leanHits);
-
-    logger.debug("Search completed", {
-      libraries: cache.libraries.length,
-      queryLength: trimmed.length,
-      hits: hits.length,
-      durationMs: performance.now() - t0,
+    const libraries = this.#libraryScope.current?.available ?? [];
+    if (limit <= 0 || libraries.length === 0) return [];
+    const answer: Promise<SearchHit[]> = runSearch(
+      this.#searchItems(libraries, query, limit),
+    ).catch((error: unknown) => {
+      // A newer search interrupted this one, or the search handle closed.
+      logger.debug("Search interrupted", { error, queryLength: query.length });
+      return this.#latest === answer ? [] : this.#latest;
     });
-    return hits;
+    this.#latest = answer;
+    return answer;
   }
 
   async #load(): Promise<ItemLookupReady> {
     await using stack = new AsyncDisposableStack();
-    const { scope: buildScope, close } = openScope();
+    const { scope, close } = openScope();
     stack.defer(close);
-    const builds = Effect.runSync(
-      Scope.provide(FiberHandle.make<void, never>(), buildScope),
+    const searches = Effect.runSync(
+      Scope.provide(FiberHandle.make<SearchHit[], never>(), scope),
     );
-    stack.defer(this.#reads.on("changed", () => this.#invalidate()));
+    const runSearch = Effect.runSync(FiberHandle.runtimePromise(searches)());
+    const runPrewarm = Effect.runSync(
+      Scope.provide(FiberSet.makeRuntime<never, void, never>(), scope),
+    );
+    const prewarm = (resolved: ResolvedLibraryScope | null) => {
+      const libraries = resolved?.available ?? [];
+      if (libraries.length === 0) return;
+      runPrewarm(Effect.asVoid(this.#searchItems(libraries, "", 1)));
+    };
+    let scopeKey = scopeKeyOf(this.#libraryScope.current);
     stack.defer(
-      this.#libraryScope.on("changed", (scope) => this.#onScopeChanged(scope)),
+      this.#libraryScope.on("changed", (resolved) => {
+        // A pending answer covers the Libraries it asked with; once those
+        // change, it must not reach a picker. A rename keeps it.
+        const next = scopeKeyOf(resolved);
+        if (next !== scopeKey) {
+          scopeKey = next;
+          Effect.runFork(FiberHandle.clear(searches));
+        }
+        prewarm(resolved);
+      }),
     );
 
     this.commit(stack.move());
 
     await Promise.all([this.#reads.ready, this.#libraryScope.ready]);
-    const scope = this.#libraryScope.current;
-    this.#scopeKey = scope && availableKey(scope.available);
-    logger.info("Item lookup ready", { scopeKey: this.#scopeKey });
-
-    void this.#loadIfNeeded().catch((error) => {
-      logger.error("Initial item index load failed", {
-        error,
-        scopeKey: this.#scopeKey,
-      });
-    });
-    return { builds };
+    logger.info("Item lookup ready");
+    scopeKey = scopeKeyOf(this.#libraryScope.current);
+    prewarm(this.#libraryScope.current);
+    return { runSearch };
   }
 
-  /**
-   * A scope change makes the cached index wrong, not merely stale: interrupt
-   * any in-flight build, drop the cache, and build again. A refresh that only
-   * renames a group leaves the covered Libraries alone, so it keeps the index
-   * and only refreshes the labels drawn from it.
-   */
-  #onScopeChanged(scope: ResolvedLibraryScope | null): void {
-    const scopeKey = scope && availableKey(scope.available);
-    if (scopeKey === this.#scopeKey) {
-      if (scope) this.#relabel(scope.available);
-      return;
-    }
-    logger.debug("Library scope changed", {
-      from: this.#scopeKey,
-      to: scopeKey,
-    });
-    this.#scopeKey = scopeKey;
-    this.#cache = null;
-    void this.#scheduleRebuild({ restart: true });
-  }
-
-  /**
-   * Adopt the current names of the Libraries the cached index already covers.
-   * Result labels read from {@link ItemCache.libraries}, so a rename that leaves
-   * the covered Libraries alone still has to reach them.
-   */
-  #relabel(libraries: readonly AvailableLibrary[]): void {
-    if (this.#cache === null) return;
-    if (this.#cache.scopeKey !== availableKey(libraries)) return;
-    this.#cache = { ...this.#cache, libraries };
-  }
-
-  /** Database refresh: keep serving the stale index (SWR) and rebuild in the
-   * background. The in-flight build finishes; a trailing rerun follows it. */
-  #invalidate(): void {
-    logger.debug("Item index invalidated by database change", {
-      scopeKey: this.#scopeKey,
-    });
-    void this.#scheduleRebuild();
-  }
-
-  /** Serve the cached index immediately when present (stale-while-revalidate);
-   * only block on a build when there is no valid index for the current scope. */
-  async #loadIfNeeded(): Promise<ItemCache | null> {
-    if (this.#reads.state === "degraded") {
-      this.#cache = null;
-      logger.debug("Item index load skipped; database degraded");
-      return null;
-    }
-    const scopeKey = this.#scopeKey;
-    if (scopeKey === null) {
-      logger.debug("Item index load skipped; library scope unresolved");
-      return null;
-    }
-    if (this.#cache?.scopeKey === scopeKey) {
-      logger.debug("Item index cache hit", { scopeKey });
-      return this.#cache;
-    }
-    // Join an in-flight rebuild rather than scheduling another — a read must not
-    // inject a trailing rerun into the rebuild lane.
-    const joining = this.#rebuildInFlight !== null;
-    logger.debug(
-      joining
-        ? "Item index load joining in-flight rebuild"
-        : "Item index load triggering rebuild",
-      { scopeKey },
-    );
-    await (this.#rebuildInFlight ?? this.#scheduleRebuild());
-    return this.#cache?.scopeKey === scopeKey ? this.#cache : null;
-  }
-
-  /**
-   * Single-flight rebuild lane with trailing-rerun coalescing: a refresh
-   * arriving mid-rebuild sets a trailing rerun rather than aborting, so a burst
-   * of `"changed"` events collapses into one extra rebuild and the index
-   * converges instead of starving. `restart` (a scope change) runs a new lane in
-   * the build FiberHandle, which interrupts the running one.
-   */
-  #scheduleRebuild(options?: { restart?: boolean }): Promise<void> {
-    if (this.#rebuildInFlight && !options?.restart) {
-      this.#rebuildAgain = true;
-      logger.debug("Item index rebuild coalesced; trailing rerun scheduled", {
-        scopeKey: this.#scopeKey,
-      });
-      return this.#rebuildInFlight;
-    }
-    logger.debug("Item index rebuild lane started", {
-      scopeKey: this.#scopeKey,
-    });
-    // A failed startup leaves no lane to run in; search then finds no index.
-    const done = this.ready.then(
-      async ({ builds }) => {
-        const fiber = Effect.runSync(
-          FiberHandle.run(builds, this.#rebuildLoop),
-        );
-        await Effect.runPromise(Fiber.await(fiber));
-      },
-      () => undefined,
-    );
-    this.#rebuildInFlight = done;
-    void done.finally(() => {
-      if (this.#rebuildInFlight === done) this.#rebuildInFlight = null;
-    });
-    return done;
-  }
-
-  readonly #rebuildLoop: Effect.Effect<void> = Effect.suspend(() => {
-    this.#rebuildAgain = false;
-    return this.#rebuildOnce;
-  }).pipe(
-    Effect.repeat({
-      while: () => {
-        if (!this.#rebuildAgain) return false;
-        logger.debug("Item index rebuild trailing rerun triggered", {
-          scopeKey: this.#scopeKey,
-        });
-        return true;
-      },
-    }),
-    Effect.asVoid,
-  );
-
-  readonly #rebuildOnce: Effect.Effect<void> = Effect.gen(
-    { self: this },
-    function* () {
-      if (this.#reads.state === "degraded") {
-        logger.debug("Item index rebuild skipped; database degraded");
-        return;
-      }
-      const t0 = performance.now();
-      // Pin one Snapshot for the scope resolution, the signature reads and the
-      // whole item stream: a concurrent refresh cannot swap the connection
-      // between slices (a torn index), and the cached signatures describe
-      // exactly the index stored with them.
-      const reads = yield* this.#reads.snapshot;
-      const { available } = this.#libraryScope.resolveLibraries(
-        yield* reads.Libraries({}),
-      );
-      const scopeKey = availableKey(available);
-      const signatures = yield* Effect.forEach(available, (library) =>
-        reads.IndexSignature({ libraryID: library.libraryID }),
-      );
-      if (
-        this.#cache?.scopeKey === scopeKey &&
-        signaturesEqual(this.#cache.signatures, signatures)
-      ) {
-        // Nothing indexed moved, but a group rename would still have landed in
-        // this resolution, and result labels are read from the cache.
-        this.#relabel(available);
-        logger.debug("Item index up to date; skipping rebuild", { scopeKey });
-        return;
-      }
-      this.#tokenizerOpts = this.#createTokenizerOpts();
-      const index = yield* this.#buildCompositeIndex(reads, available);
-      this.#cache = { scopeKey, libraries: available, index, signatures };
-      logger.info("Item index built", {
-        libraries: available.length,
-        count: index.items.length,
-        durationMs: performance.now() - t0,
-      });
-    },
-  ).pipe(
-    Effect.scoped,
-    Effect.catchTag(["DbUnavailable", "SnapshotExpired"], (error) =>
-      // Keep serving the stale index; the next refresh retries the rebuild.
-      Effect.sync(() => {
-        logger.debug("Item index rebuild skipped; database unavailable", {
-          error,
-          scopeKey: this.#scopeKey,
-        });
-      }),
-    ),
-    // A background rebuild must not reject the promise search() awaits — log
-    // and keep serving the stale index. An interrupt passes through.
-    Effect.catch((error) => this.#logRebuildFailure(error)),
-    Effect.catchDefect((defect) => this.#logRebuildFailure(defect)),
-  );
-
-  #logRebuildFailure(error: unknown): Effect.Effect<void> {
-    return Effect.sync(() => {
-      logger.error("Item index rebuild failed", {
-        error,
-        scopeKey: this.#scopeKey,
-      });
-    });
-  }
-
-  /**
-   * Build one composite index over every Library in scope from each Library's
-   * `IndexItems` stream, all read from the caller's Snapshot. An interrupt
-   * (a scope change) stops the stream at its next slice.
-   */
-  #buildCompositeIndex(
-    reads: ZoteroReadsApi,
+  /** One `SearchItems` request over `libraries`, labelled from them. */
+  #searchItems(
     libraries: readonly AvailableLibrary[],
-  ) {
-    const builder = createIndexBuilder(this.#tokenizerOpts, {
-      libraries: libraries.map((library) => library.libraryID),
-      languageLookup: this.#languageLookup,
-    });
-    return Effect.forEach(
-      libraries,
-      (library) => {
-        logger.debug("Item index build started for a library", {
-          libraryID: library.libraryID,
-        });
-        return Stream.runForEach(
-          reads.IndexItems({ libraryID: library.libraryID }),
-          (slice) => Effect.sync(() => builder.add(slice)),
-        );
-      },
-      { discard: true },
-    ).pipe(Effect.map(() => builder.build()));
-  }
-
-  #createTokenizerOpts(): TokenizerOptions {
-    return {
-      intl: this.#intl,
-      chsSegmenter: this.#getChsSegmenter(),
-    };
-  }
-
-  async #hydrateHits(
-    cache: ItemCache,
-    leanHits: readonly EngineSearchHit<IndexedItem>[],
-  ): Promise<SearchHit[]> {
-    if (leanHits.length === 0) return [];
-
-    let hydrated: ReadonlyMap<string, Item>;
-    try {
-      const { reads } = await this.#reads.ready;
-      hydrated = await Effect.runPromise(
-        reads.ItemsByIndexedKeys({
-          indexedKeys: leanHits.map((hit) => hit.item.indexedKey),
-        }),
-      );
-    } catch (error) {
-      if (error instanceof DbUnavailable) {
-        logger.debug(
-          "Search hydration skipped because the database is unavailable",
-          { error, scopeKey: cache.scopeKey },
-        );
-        return [];
-      }
-      throw error;
-    }
-
-    if (cache.scopeKey !== this.#scopeKey) {
-      logger.debug("Search hydration discarded; scope changed", {
-        scopeKey: cache.scopeKey,
-      });
-      return [];
-    }
-
+    query: string,
+    limit: number,
+  ): Effect.Effect<SearchHit[]> {
     // One available Library makes every label identical, so the rows carry none.
     const labels =
-      cache.libraries.length > 1
-        ? new Map(
-            cache.libraries.map((library) => [library.libraryID, library]),
-          )
+      libraries.length > 1
+        ? new Map(libraries.map((library) => [library.libraryID, library]))
         : null;
+    const t0 = performance.now();
+    return Effect.promise(() => this.#reads.ready).pipe(
+      Effect.flatMap(({ reads }) =>
+        reads.SearchItems({
+          libraryIDs: libraries.map((library) => library.libraryID),
+          query,
+          limit,
+        }),
+      ),
+      Effect.map((hits) => {
+        logger.debug("Search completed", {
+          libraries: libraries.length,
+          queryLength: query.length,
+          hits: hits.length,
+          durationMs: performance.now() - t0,
+        });
+        return hits.map(
+          (hit): SearchHit => ({
+            ...hit,
+            library: labels?.get(hit.item.libraryID) ?? null,
+          }),
+        );
+      }),
+      Effect.catchTag("DbUnavailable", (error) =>
+        Effect.sync(() => {
+          logger.debug("Search answered empty; database unavailable", {
+            error,
+          });
+          return [];
+        }),
+      ),
+      // A search answers; a failure of any other kind is logged, not thrown.
+      Effect.catch((error) => this.#logFailure(error)),
+      Effect.catchDefect((defect) => this.#logFailure(defect)),
+    );
+  }
 
-    return leanHits.flatMap((hit) => {
-      const item = hydrated.get(hit.item.indexedKey);
-      return item
-        ? [
-            {
-              item,
-              score: hit.score,
-              matches: hit.matches,
-              library: labels?.get(item.libraryID) ?? null,
-            },
-          ]
-        : [];
+  #logFailure(error: unknown): Effect.Effect<SearchHit[]> {
+    return Effect.sync(() => {
+      logger.error("Search failed", { error });
+      return [];
     });
   }
+}
+
+/**
+ * The Libraries `resolved` covers, as one comparable value: each stable
+ * selector with its local id, since a database switch can give a local id to
+ * another group.
+ */
+function scopeKeyOf(resolved: ResolvedLibraryScope | null): string {
+  return (resolved?.available ?? [])
+    .map((library) => `${selectorKey(library.selector)}@${library.libraryID}`)
+    .join(",");
 }

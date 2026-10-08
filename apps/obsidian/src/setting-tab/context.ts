@@ -11,7 +11,7 @@ import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import type { LocalBridgeService } from "@/services/local-bridge/service";
 import type { LocalServerService } from "@/services/local-server/service";
-import type { PandocEngineService } from "@/services/pandoc/service";
+import type { ManagedBinaryService } from "@/services/managed-binary/service";
 import type { ProfileService } from "@/services/profile/service";
 import type { ReleaseService } from "@/services/release/service";
 import type { Settings } from "@/services/settings/schema";
@@ -35,9 +35,9 @@ export type ReleaseTabActions = Pick<
   "openReleaseNote" | "acknowledgeMigration"
 >;
 
-/** The Pandoc engine surface the setting tab needs: report, watch, and move its status. */
-export type PandocEngineActions = Pick<
-  PandocEngineService,
+/** The Managed Binary surface the setting tab needs: report, watch, and move its status. */
+export type ManagedBinaryActions = Pick<
+  ManagedBinaryService,
   "getStatus" | "subscribe" | "install" | "uninstall"
 >;
 
@@ -131,7 +131,9 @@ export interface SettingTabContext {
    */
   template: TemplateService;
   /** The device-wide Pandoc engine binary, installed and uninstalled from here. */
-  pandocEngine: PandocEngineActions;
+  pandocEngine: ManagedBinaryActions;
+  /** The device-wide Chinese Segmenter binary, installed and uninstalled from here. */
+  chineseSegmenter: ManagedBinaryActions;
   languagePack: LanguagePackLifecycle;
   /** Rebuild the tab's definitions (e.g. after a list mutation or eject). */
   requestUpdate: () => void;

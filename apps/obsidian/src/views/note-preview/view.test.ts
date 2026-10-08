@@ -421,8 +421,9 @@ describe("independent native Note Preview", () => {
       await act(async () => choose().click());
       expect(preview.getState()["item"]).toBe(item);
       const hit = {
-        item: getItemsByKey(test.fixture.client, 1, ["MAIN2345"])[0]!,
-        score: 1,
+        item: getItemsByKey(test.fixture.client, ["MAIN2345"], {
+          libraryID: 1,
+        })[0]!,
         matches: [],
         library: null,
       };
@@ -455,8 +456,9 @@ describe("independent native Note Preview", () => {
           button.textContent === m.template_data_explorer_choose_item(),
       )!;
     const hit = {
-      item: getItemsByKey(test.fixture.client, 1, ["MAIN2345"])[0]!,
-      score: 1,
+      item: getItemsByKey(test.fixture.client, ["MAIN2345"], {
+        libraryID: 1,
+      })[0]!,
       matches: [],
       library: null,
     };
@@ -547,8 +549,8 @@ describe("independent native Note Preview", () => {
       );
     });
     const preview = await test.open();
-    // The linked render of the open settles before the restore lands.
-    await advance();
+    // The editor's read for the open is still in flight, so the context it
+    // publishes when the read lands arrives after the restore.
     vi.mocked(activeTemplateWorkbench).mockReturnValue(test.editor);
     const saved = {
       source: { builtin: true },

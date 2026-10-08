@@ -1,4 +1,10 @@
+---
+status: amended by ADR-0069
+---
+
 # The Zotero database runs in a Web Worker behind ZoteroReads
+
+> **Amended by [ADR 0069](0069-the-item-search-index-runs-in-the-zoteroreads-worker.md).** The item search index runs in the worker behind one `SearchItems` operation; `IndexItems` and `IndexSignature` leave the contract.
 
 Amends [ADR 0050](0050-chunked-work-yields-via-messagechannel.md) for database reads. Applies [ADR 0054](0054-held-reads-serve-the-old-answer-until-a-fresh-read-replaces-it.md) and [ADR 0060](0060-held-reads-are-realized-on-tanstack-query-core.md) unchanged.
 
@@ -41,7 +47,7 @@ The in-process adapter on the main thread blocked 614 ms for the 10,000-item ind
 ## Consequences
 
 - Every database read is asynchronous. Reads that need one database state share a Snapshot.
-- The worker logs to its own console sink; it does not follow the plugin's log level.
+- The worker posts its log records at the plugin's log level to a `MessagePort` it gets with its spawn, and the renderer emits them into the plugin's logger. The port queues records until the renderer reads it; an RPC stream drops records sent before its subscription, and a raw `postMessage` on the worker breaks the RPC protocol.
 - A worker that crashes leaves its read clone in the system temp folder until Obsidian restarts, because the sweep skips clones of the running process.
 
 ## Deviations from the spec

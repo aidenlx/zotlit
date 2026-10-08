@@ -2881,7 +2881,6 @@ describe("Template Workbench Item choice", () => {
         search: async () => [
           {
             item: first,
-            score: 1,
             matches: [],
             library: null,
           },

@@ -1,6 +1,6 @@
 // The ZoteroReads handler layer: each operation composes @zotlit/db query functions over a borrowed Connection.
 import { chunk } from "@std/collections/chunk";
-import { Effect, Exit, Scope, Stream } from "effect";
+import { Effect, Exit, Layer, Scope, Semaphore, Stream } from "effect";
 
 import {
   CollectionCache,
@@ -23,7 +23,6 @@ import {
   getCollectionIDByKey,
   getIndexedItemIDsByCollection,
   getIndexedItemIDsByLibrary,
-  getIndexedItemsByID,
   getIndexSignature,
   getItemDisplayRefsByIDs,
   getItemRefByID,
@@ -40,17 +39,33 @@ import {
   getZoteroIdentity,
   getZoteroDatabaseIdentity,
   isChildItemFields,
+  parseIndexedKey,
   resolveIndexedKeyLibrary,
 } from "@zotlit/db";
 import type { Attachment, GroupIDMemo, Item, TagMemo } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import {
+  IndexConfig,
+  ItemIndex,
+  layerIndexConfig,
+  layerItemIndex,
+  layerSegmenterNone,
+  updateIndexSettings,
+} from "@zotlit/item-lookup";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 
 import { Connection, toDbUnavailable } from "./connection";
+import { layerConnectionItemSource, pinnedClient } from "./item-source";
 import { listCollectionChoices, resolveMembershipFacts } from "./membership";
-import { SnapshotExpired, SnapshotId, ZoteroReads } from "./rpc";
-import type { DbUnavailable } from "./rpc";
-import type { WorkLabelSource } from "./rpc";
+import { DbUnavailable, SnapshotExpired, SnapshotId, ZoteroReads } from "./rpc";
+import type {
+  ReadsConfig,
+  SearchHit,
+  SegmenterBinary,
+  WorkLabelSource,
+} from "./rpc";
+import { makeSegmenterSwitch } from "./segmenter";
+import type { ReadSegmenter } from "./segmenter";
 
 /** The id queries {@link ZoteroReads} `ScopeItemIDs` runs, per kind. */
 const SCOPE_QUERIES = {
@@ -75,6 +90,31 @@ export interface HandlersOptions {
    * @default {@link DEFAULT_SLICE_SIZE}
    */
   sliceSize?: number;
+  /**
+   * The UI locale the Item Index formats creator names with, until
+   * `Configure` sends another.
+   *
+   * @default null
+   */
+  locale?: string | null;
+  /**
+   * The installed Chinese Segmenter binary at start, until `Configure` sends
+   * another.
+   *
+   * @default null
+   */
+  chineseSegmenter?: SegmenterBinary | null;
+  /**
+   * Reads an installed binary's bytes: the worker reads its OPFS store; tests
+   * pass the bytes of the `jieba-wasm` dev dependency. Without it every binary
+   * reads as unavailable.
+   */
+  readSegmenter?: ReadSegmenter;
+  /**
+   * Applies the log level `Configure` sends: the worker reconfigures the
+   * logger that forwards its records. Without it the level goes unused.
+   */
+  applyLogLevel?: (level: ReadsConfig["logLevel"]) => void;
 }
 
 /** Run a synchronous read; a SQLite throw becomes a {@link DbUnavailable}. */
@@ -101,33 +141,54 @@ function sliced<I, O>(
   );
 }
 
-/** Live items for Indexed Keys, keyed by Indexed Key. */
+/**
+ * Live items for Indexed Keys, keyed by Indexed Key in request order. Each
+ * Library the keys span resolves once and reads its items through
+ * `getItemsByKey`: one statement per `IN_BATCH_SIZE` distinct keys.
+ */
 function itemsByIndexedKeys(
   client: NodeDatabaseClient,
   indexedKeys: readonly string[],
 ): Map<string, Item> {
-  // Each requested spelling (`g7` or `g007`) by the item key it resolves to.
-  const requestedByLibrary = new Map<number, Map<string, string[]>>();
+  const libraryByGroupID = new Map<number | null, number | null>();
+  // The group of each resolved Library, so hydration skips the group read.
+  const groupIDMemo: GroupIDMemo = new Map();
+  // Each requested spelling (`g7` or `g007`) with the Library and item key it resolves to.
+  const requested: { indexedKey: string; libraryID: number; key: string }[] =
+    [];
+  const keysByLibrary = new Map<number, string[]>();
   for (const indexedKey of indexedKeys) {
-    const selector = resolveIndexedKeyLibrary(client, indexedKey);
-    if (!selector) continue;
-    const requested =
-      requestedByLibrary.get(selector.libraryID) ?? new Map<string, string[]>();
-    requested.set(selector.key, [
-      ...(requested.get(selector.key) ?? []),
-      indexedKey,
-    ]);
-    requestedByLibrary.set(selector.libraryID, requested);
+    const parsed = parseIndexedKey(indexedKey);
+    if (!parsed) continue;
+    if (!libraryByGroupID.has(parsed.groupID)) {
+      libraryByGroupID.set(
+        parsed.groupID,
+        resolveIndexedKeyLibrary(client, indexedKey)?.libraryID ?? null,
+      );
+    }
+    const libraryID = libraryByGroupID.get(parsed.groupID);
+    if (libraryID == null) continue;
+    groupIDMemo.set(libraryID, parsed.groupID);
+    requested.push({ indexedKey, libraryID, key: parsed.key });
+    const keys = keysByLibrary.get(libraryID);
+    if (keys) keys.push(parsed.key);
+    else keysByLibrary.set(libraryID, [parsed.key]);
+  }
+  const found = new Map<number, Map<string, Item>>();
+  for (const [libraryID, keys] of keysByLibrary) {
+    found.set(
+      libraryID,
+      new Map(
+        getItemsByKey(client, keys, { libraryID, memo: groupIDMemo }).map(
+          (item) => [item.key, item],
+        ),
+      ),
+    );
   }
   const items = new Map<string, Item>();
-  for (const [libraryID, requested] of requestedByLibrary) {
-    for (const item of getItemsByKey(client, libraryID, [
-      ...requested.keys(),
-    ])) {
-      for (const indexedKey of requested.get(item.key) ?? []) {
-        items.set(indexedKey, item);
-      }
-    }
+  for (const { indexedKey, libraryID, key } of requested) {
+    const item = found.get(libraryID)?.get(key);
+    if (item) items.set(indexedKey, item);
   }
   return items;
 }
@@ -242,9 +303,30 @@ export function handlersLayer(options?: HandlersOptions) {
     });
   };
 
-  return ZoteroReads.toLayer(
+  /** The Item Index over the connection, with the none Segmenter. */
+  const itemIndexLayer = layerItemIndex.pipe(
+    Layer.provideMerge(
+      Layer.merge(
+        layerConnectionItemSource,
+        layerIndexConfig({ locale: options?.locale ?? null }).pipe(
+          Layer.provide(layerSegmenterNone),
+        ),
+      ),
+    ),
+  );
+
+  const handlers = ZoteroReads.toLayer(
     Effect.gen(function* () {
       const connection = yield* Connection;
+      const itemIndex = yield* ItemIndex;
+      const indexConfig = yield* IndexConfig;
+      const segmenter = makeSegmenterSwitch(options?.readSegmenter);
+      yield* updateIndexSettings({
+        segmenter: yield* segmenter.resolve(options?.chineseSegmenter ?? null),
+      }).pipe(Effect.provideService(IndexConfig, indexConfig));
+      // One Configure at a time, in arrival order: a later one waits for an
+      // earlier one that reads its Chinese Segmenter binary.
+      const configuring = yield* Semaphore.make(1);
       const pinned = new Map<SnapshotId, Pinned>();
       let snapshots = 0;
 
@@ -306,20 +388,6 @@ export function handlersLayer(options?: HandlersOptions) {
             ),
           })),
 
-        IndexItems: ({ libraryID, snapshot }) =>
-          withClientStream(snapshot, (client) => {
-            const memo: GroupIDMemo = new Map();
-            return Stream.unwrap(
-              Effect.map(
-                read(client, (c) => getIndexedItemIDsByLibrary(c, libraryID)),
-                (ids) =>
-                  sliced(client, slicesOf(ids), (c, slice) =>
-                    getIndexedItemsByID(c, slice, { memo }),
-                  ),
-              ),
-            );
-          }),
-
         ItemsByIndexedKeys: ({ indexedKeys, snapshot }) =>
           withClient(snapshot, (client) =>
             itemsByIndexedKeys(client, indexedKeys),
@@ -332,8 +400,8 @@ export function handlersLayer(options?: HandlersOptions) {
             return {
               relatedItems: getItemsByKey(
                 client,
-                item.libraryID,
                 getRelatedKeysByItemID(client, itemID),
+                { libraryID: item.libraryID },
               ),
               childNotes: getChildNotesByParentIDs(client, [itemID]),
             };
@@ -501,13 +569,21 @@ export function handlersLayer(options?: HandlersOptions) {
 
         Refresh: () => connection.refresh,
         NotifyExternalChange: () => connection.notifyExternalChange,
-        Configure: (config) => connection.configure(config),
-        Ping: () => Effect.void,
-
-        IndexSignature: ({ libraryID, snapshot }) =>
-          withClient(snapshot, (client) =>
-            getIndexSignature(client, libraryID),
+        Configure: (config) =>
+          // The locale and the Segmenter land in one change, so the Item
+          // Index rebuilds once for both.
+          segmenter.resolve(config.chineseSegmenter).pipe(
+            Effect.flatMap((next) =>
+              updateIndexSettings({ locale: config.locale, segmenter: next }),
+            ),
+            Effect.provideService(IndexConfig, indexConfig),
+            Effect.andThen(connection.configure(config)),
+            Effect.andThen(
+              Effect.sync(() => options?.applyLogLevel?.(config.logLevel)),
+            ),
+            configuring.withPermits(1),
           ),
+        Ping: () => Effect.void,
 
         AttachmentsByKeys: ({ libraryID, keys, snapshot }) =>
           withClient(snapshot, (client) =>
@@ -655,7 +731,39 @@ export function handlersLayer(options?: HandlersOptions) {
           withClient(snapshot, (client) =>
             resolveMembershipFacts(client, { itemID, libraryID }),
           ),
+
+        // Hydration reads the client the answering index holds, so the rows
+        // and the highlight ranges describe one database state. A hit that no
+        // longer resolves there drops.
+        SearchItems: ({ libraryIDs, query, limit }) =>
+          Effect.scoped(
+            Effect.gen(function* () {
+              const { hits, source } = yield* itemIndex
+                .searchWithSource(libraryIDs, query, limit)
+                .pipe(
+                  Effect.mapError(
+                    (error) => new DbUnavailable({ message: error.message }),
+                  ),
+                );
+              const client = pinnedClient(source);
+              if (!client)
+                return yield* Effect.die(
+                  new Error("The Item Index holds a source with no client"),
+                );
+              const items = yield* read(client, (c) =>
+                itemsByIndexedKeys(
+                  c,
+                  hits.map((hit) => hit.indexedKey),
+                ),
+              );
+              return hits.flatMap((hit): SearchHit[] => {
+                const item = items.get(hit.indexedKey);
+                return item ? [{ item, matches: hit.matches }] : [];
+              });
+            }),
+          ),
       });
     }),
   );
+  return handlers.pipe(Layer.provide(itemIndexLayer));
 }

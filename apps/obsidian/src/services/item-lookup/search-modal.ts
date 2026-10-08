@@ -8,6 +8,7 @@ import type { App } from "obsidian";
 import * as m from "@/lib/i18n/generated/messages";
 import type { SettingsService } from "@/services/settings/service";
 
+import { FirstAnswerGate } from "./first-answer";
 import { renderSuggestion as renderSearchHit } from "./render-hit";
 import { DEFAULT_LIMIT } from "./service";
 import type { ItemLookup, SearchHit } from "./service";
@@ -20,6 +21,18 @@ export interface ItemSearchDeps {
 
 export abstract class ItemSearchModal extends SuggestModal<SearchHit> {
   readonly #search: ItemSearchDeps;
+  readonly #firstAnswer = new FirstAnswerGate({
+    // The container holds the dim backdrop too, so both show in one frame. A
+    // layered utility holds while Obsidian sets no opacity on
+    // `.modal-container`; the End-to-end Run's quick-switcher step checks it.
+    hide: () => this.containerEl.addClass("zt:opacity-0"),
+    reveal: () => this.containerEl.removeClass("zt:opacity-0"),
+    showLoading: () =>
+      this.resultContainerEl.createDiv({
+        cls: "suggestion-empty",
+        text: m.modal_item_search_loading(),
+      }),
+  });
 
   constructor(deps: ItemSearchDeps) {
     super(deps.app);
@@ -27,8 +40,21 @@ export abstract class ItemSearchModal extends SuggestModal<SearchHit> {
     this.limit = DEFAULT_LIMIT;
   }
 
+  override onOpen(): void {
+    // Before super, which asks for the first answer.
+    this.#firstAnswer.open();
+    void super.onOpen();
+  }
+
+  override onClose(): void {
+    this.#firstAnswer.close();
+    super.onClose();
+  }
+
   override getSuggestions(query: string): SearchHit[] | Promise<SearchHit[]> {
-    return this.#search.lookup.search(query, { limit: this.limit });
+    return this.#firstAnswer.track(
+      this.#search.lookup.search(query, { limit: this.limit }),
+    );
   }
 
   override renderSuggestion(hit: SearchHit, el: HTMLElement): void {

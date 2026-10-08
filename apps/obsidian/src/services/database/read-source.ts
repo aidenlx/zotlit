@@ -136,23 +136,29 @@ export function buildSqliteUri(
  *
  * Capability failures drive the fallback; source-access and transient I/O errors
  * propagate so the caller can report a refresh failure.
+ *
+ * @param owner Names the snapshot dir after the reader that holds it, so its
+ *   residue can be reaped once that reader is gone while this process lives.
+ * @see `reapWorkerClones` in `reap-temps.ts` for that reap.
  */
 export async function prepareRead(
   configuredMode: ConfiguredReadMode,
   sourcePath: string,
+  owner?: string,
 ): Promise<PreparedRead> {
   if (configuredMode === "immutable") {
     const fallbackReason = await staleWalReason(sourcePath);
-    const read = await prepareImmutableRead(sourcePath);
+    const read = await prepareImmutableRead(sourcePath, owner);
     return fallbackReason ? { ...read, fallbackReason } : read;
   }
-  if (configuredMode === "copy") return prepareTempRead("copy", sourcePath);
+  if (configuredMode === "copy")
+    return prepareTempRead("copy", sourcePath, { owner });
 
   try {
-    return await prepareTempRead("reflink", sourcePath);
+    return await prepareTempRead("reflink", sourcePath, { owner });
   } catch (error) {
     if (!(error instanceof ReflinkUnsupportedError)) throw error;
-    const read = await prepareTempRead("copy", sourcePath);
+    const read = await prepareTempRead("copy", sourcePath, { owner });
     return { ...read, fallbackReason: "reflink-unsupported" };
   }
 }
@@ -177,17 +183,22 @@ export async function staleWalReason(
     : undefined;
 }
 
-async function prepareImmutableRead(sourcePath: string): Promise<PreparedRead> {
+async function prepareImmutableRead(
+  sourcePath: string,
+  owner: string | undefined,
+): Promise<PreparedRead> {
   try {
     return await prepareTempRead("reflink", sourcePath, {
       includeWal: false,
       immutable: true,
+      owner,
     });
   } catch (error) {
     if (!(error instanceof ReflinkUnsupportedError)) throw error;
     return prepareTempRead("copy", sourcePath, {
       includeWal: false,
       immutable: true,
+      owner,
     });
   }
 }
@@ -204,7 +215,7 @@ async function prepareImmutableRead(sourcePath: string): Promise<PreparedRead> {
 async function prepareTempRead(
   mode: TempReadMode,
   sourcePath: string,
-  options: { includeWal?: boolean; immutable?: boolean } = {},
+  options: { includeWal?: boolean; immutable?: boolean; owner?: string } = {},
 ): Promise<PreparedRead> {
   const plan = await planParents(sourcePath);
   const lastIndex = plan.parents.length - 1;
@@ -286,15 +297,17 @@ async function cloneInto(
     mode,
     includeWal = true,
     immutable = false,
+    owner,
   }: {
     parent: string;
     mode: TempReadMode;
     includeWal?: boolean;
     immutable?: boolean;
+    owner?: string;
   },
 ): Promise<PreparedRead> {
   for (let attempt = 1; attempt <= CLONE_ATTEMPTS; attempt += 1) {
-    const dir = await createSnapshotDir(parent);
+    const dir = await createSnapshotDir(parent, owner);
     try {
       const path = join(dir, basename(sourcePath));
       const walPath = `${sourcePath}-wal`;
@@ -392,11 +405,17 @@ async function cloneInto(
  *
  * @throws {@link SnapshotParentError} always, wrapping the underlying errno.
  */
-async function createSnapshotDir(parent: string): Promise<string> {
+async function createSnapshotDir(
+  parent: string,
+  owner: string | undefined,
+): Promise<string> {
   try {
     await mkdir(parent, { recursive: true });
     return await mkdtemp(
-      join(parent, `${ZOTERO_DB_READ_TEMP_PREFIX}${process.pid}-`),
+      join(
+        parent,
+        `${ZOTERO_DB_READ_TEMP_PREFIX}${process.pid}-${owner ? `${owner}-` : ""}`,
+      ),
     );
   } catch (cause) {
     throw new SnapshotParentError(parent, cause);

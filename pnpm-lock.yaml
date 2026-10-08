@@ -194,6 +194,9 @@ catalogs:
     drizzle-orm:
       specifier: 1.0.0-rc.4
       version: 1.0.0-rc.4
+    effect:
+      specifier: 4.0.0
+      version: 4.0.0
     eta:
       specifier: 4.6.0
       version: 4.6.0
@@ -206,6 +209,9 @@ catalogs:
     hono:
       specifier: ^4.13.0
       version: 4.13.0
+    jieba-wasm:
+      specifier: 2.4.0
+      version: 2.4.0
     monkey-around:
       specifier: 3.0.0
       version: 3.0.0
@@ -621,7 +627,7 @@ importers:
         specifier: 'catalog:'
         version: 8.0.4
       effect:
-        specifier: 4.0.0
+        specifier: 'catalog:'
         version: 4.0.0
       eta:
         specifier: 'catalog:'
@@ -729,6 +735,9 @@ importers:
       happy-dom:
         specifier: 'catalog:'
         version: 20.9.0
+      jieba-wasm:
+        specifier: 'catalog:'
+        version: 2.4.0
       obsidian:
         specifier: workspace:*
         version: link:../../packages/obsidian-api
@@ -966,6 +975,9 @@ importers:
 
   packages/item-lookup:
     dependencies:
+      '@logtape/logtape':
+        specifier: 'catalog:'
+        version: 2.1.0
       '@zotlit/db':
         specifier: workspace:*
         version: link:../db
@@ -978,6 +990,9 @@ importers:
       arkregex:
         specifier: 'catalog:'
         version: 0.0.5
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0
       minisearch:
         specifier: ^7.2.0
         version: 7.2.0
@@ -989,7 +1004,7 @@ importers:
         specifier: workspace:*
         version: link:../config
       jieba-wasm:
-        specifier: ^2.4.0
+        specifier: 'catalog:'
         version: 2.4.0
       oxlint:
         specifier: 'catalog:'

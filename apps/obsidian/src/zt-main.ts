@@ -288,6 +288,7 @@ export default class ZotLitPlugin extends Plugin {
         template: services.template,
         release: services.release,
         pandocEngine: services.pandocEngine,
+        chineseSegmenter: services.chineseSegmenter,
         languagePack,
       }),
     );

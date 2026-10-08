@@ -317,13 +317,11 @@ describe("getItemsByID", () => {
 
 describe("getItemsByKey", () => {
   it("hydrates only requested regular items from the requested library", () => {
-    const result = getItemsByKey(db, USER_LIBRARY_ID, [
-      "USER1",
-      "USER2",
-      "DELETED",
-      "ATTACH",
-      "GRP1",
-    ]);
+    const result = getItemsByKey(
+      db,
+      ["USER1", "USER2", "DELETED", "ATTACH", "GRP1"],
+      { libraryID: USER_LIBRARY_ID },
+    );
     const byKey = new Map(result.map((item) => [item.key, item]));
 
     expect([...byKey.keys()].sort()).toEqual(["USER1", "USER2"]);
@@ -343,33 +341,44 @@ describe("getItemsByKey", () => {
   });
 
   it("returns an empty array for empty input", () => {
-    expect(getItemsByKey(db, USER_LIBRARY_ID, [])).toEqual([]);
+    expect(getItemsByKey(db, [], { libraryID: USER_LIBRARY_ID })).toEqual([]);
   });
 
   it("returns an empty array when no key matches", () => {
-    expect(getItemsByKey(db, USER_LIBRARY_ID, ["NOPE"])).toEqual([]);
+    expect(getItemsByKey(db, ["NOPE"], { libraryID: USER_LIBRARY_ID })).toEqual(
+      [],
+    );
   });
 
   it("returns items in request order, repeating a repeated key and leaving misses out", () => {
     expect(
-      getItemsByKey(db, USER_LIBRARY_ID, [
-        "USER2",
-        "NOPE",
-        "USER1",
-        "USER2",
-      ]).map((item) => item.key),
+      getItemsByKey(db, ["USER2", "NOPE", "USER1", "USER2"], {
+        libraryID: USER_LIBRARY_ID,
+      }).map((item) => item.key),
     ).toEqual(["USER2", "USER1", "USER2"]);
   });
 
-  it("runs the same statements for one key as for many", () => {
+  it("reads more keys than one statement can bind", () => {
+    const misses = Array.from({ length: 40_000 }, (_, i) => `MISS${i}`);
+    expect(
+      getItemsByKey(db, ["USER2", ...misses, "USER1"], {
+        libraryID: USER_LIBRARY_ID,
+      }).map((item) => item.key),
+    ).toEqual(["USER2", "USER1"]);
+  });
+
+  it("runs the same statements for one key as for fifty", () => {
     const statements = countStatements(sqlite);
     const cost = (keys: string[]) => {
       const before = statements();
-      getItemsByKey(db, USER_LIBRARY_ID, keys);
+      getItemsByKey(db, keys, { libraryID: USER_LIBRARY_ID });
       return statements() - before;
     };
     cost(["USER1"]);
-    expect(cost(["USER1", "USER2", "DELETED", "NOPE"])).toBe(cost(["USER1"]));
+    const fifty = Array.from({ length: 50 }, (_, i) =>
+      i % 2 === 0 ? "USER1" : `MISS${i}`,
+    );
+    expect(cost(["USER2", ...fifty.slice(1)])).toBe(cost(["USER1"]));
   });
 });
 
