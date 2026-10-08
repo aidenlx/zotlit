@@ -146,6 +146,8 @@ const HINTS = {
   global: `Use a global function: ${GLOBAL_FUNCTION_NAMES.join(", ")}. Function names are case-sensitive.`,
   method: `Use a method of the Item Query Schema: ${METHOD_NAMES.join(", ")}. Function names are case-sensitive.`,
   property: `Use a property of the Item Query Schema: ${PROPERTY_NAMES.join(", ")}.`,
+  regexp:
+    "Write a regular expression as /pattern/flags with JavaScript syntax, such as /^the /i, and the flags d, g, i, m, s, u, v, and y at most once each.",
 } as const;
 
 /**
@@ -300,11 +302,10 @@ class Validator {
       case "string":
         return { ...literal(span, ast.value), valueType: "string" };
       case "regexp":
-        return fail("invalid-filter", span, {
-          message:
-            "A Filter Expression of Item Query takes no regular expression.",
-          hint: "Match text with contains, startsWith, or endsWith.",
-        });
+        return {
+          ...literal(span, { type: "regexp", regexp: this.#regexp(ast) }),
+          valueType: "regexp",
+        };
       case "array":
         return {
           ...span,
@@ -362,6 +363,19 @@ class Validator {
       }
       case "call":
         return this.#call(ast, span);
+    }
+  }
+
+  /** The RegExp of a literal, built once; a pattern or flag the engine rejects fails the query. */
+  #regexp(ast: Extract<ExpressionNode, { type: "regexp" }>): RegExp {
+    try {
+      return new RegExp(ast.source, ast.flags);
+    } catch (thrown) {
+      const reason = thrown instanceof Error ? thrown.message : String(thrown);
+      return fail("invalid-filter", ast, {
+        message: `The regular expression /${ast.source}/${ast.flags} is invalid: ${reason}`,
+        hint: HINTS.regexp,
+      });
     }
   }
 

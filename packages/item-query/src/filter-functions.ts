@@ -22,11 +22,21 @@ import {
   truthy,
   typeOf,
 } from "./filter-values";
-import type { FilterValue, FilterValueType } from "./filter-values";
+import type {
+  FilterValue,
+  FilterValueType,
+  RegexpValue,
+} from "./filter-values";
 import type { QueryClock } from "./query-clock";
 
 /** The type a parameter takes. `any` also takes null. */
-export type ParameterType = "string" | "number" | "list" | "date" | "any";
+export type ParameterType =
+  | "string"
+  | "number"
+  | "list"
+  | "date"
+  | "regexp"
+  | "any";
 
 export interface FunctionParameter {
   readonly name: string;
@@ -214,14 +224,15 @@ const SORT_GROUPS: Readonly<Record<FilterValueType, number>> = {
   date: 3,
   duration: 4,
   list: 5,
-  null: 6,
+  regexp: 6,
+  null: 7,
 };
 
 /**
  * The order of `sort`: numbers by value, texts in the Item Query string
  * order, dates by their start, booleans false first. Elements of different
- * types group in the order of {@link SORT_GROUPS}; durations and lists keep
- * their order.
+ * types group in the order of {@link SORT_GROUPS}; durations, lists, and
+ * regexps keep their order.
  */
 function sortOrder(a: FilterValue, b: FilterValue, clock: QueryClock): number {
   const group = SORT_GROUPS[typeOf(a)] - SORT_GROUPS[typeOf(b)];
@@ -490,6 +501,19 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
       },
     }),
     duration: functions({}),
+    regexp: functions({
+      // The match position is reset before each test, so g and y stay
+      // deterministic.
+      matches: {
+        parameters: [string("text")],
+        returns: "boolean",
+        call: (subject, [text]) => {
+          const { regexp } = subject as RegexpValue;
+          regexp.lastIndex = 0;
+          return regexp.test(text as string);
+        },
+      },
+    }),
   };
 
 /** The value types of the Filter Expression language. */
@@ -558,6 +582,7 @@ const PROPERTIES: Readonly<
     timestamp: datePartProperty("timestamp"),
   }),
   duration: properties({}),
+  regexp: properties({}),
 };
 
 /** The method `name` of a value of `type`. */

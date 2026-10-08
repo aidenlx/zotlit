@@ -548,6 +548,33 @@ describe("text helpers", () => {
   ]);
 });
 
+describe("regular expressions", () => {
+  vectors([
+    // A /pattern/flags literal is a regexp value; matches(text) tests a text.
+    ["/^Eco/.matches(title)", true],
+    ["/^eco/.matches(title)", false],
+    ["/^eco/i.matches(title)", true],
+    ["/clairs$/.matches(title)", true],
+    ["/^.{18}$/u.matches(title)", true],
+    ["/\\d+/.matches(volume)", true],
+    ["/\\d+/.matches(pages)", false],
+    ['/to-read/i.matches("TO-READ")', true],
+    // g and y stay deterministic: the match position is reset before each test.
+    ["/o/g.matches(title) && /o/g.matches(title)", true],
+    [
+      "[/o/g.matches(title), /o/g.matches(title), /o/g.matches(title)]",
+      [true, true, true],
+    ],
+    ["/Eco/y.matches(title) && /Eco/y.matches(title)", true],
+    // A null or wrongly typed argument gives null.
+    ["/a/.matches(publisher)", null],
+    ["/a/.matches(null)", null],
+    ["/a/.matches([1][0])", null],
+    // An argument whose type depends on the Item.
+    ["/e/.matches(tags[0])", true],
+  ]);
+});
+
 describe("number methods", () => {
   vectors([
     ["(2.5).round()", 3],
@@ -1068,7 +1095,7 @@ describe("validation", () => {
     ["   ", "invalid-filter", [3, 3]],
     ['title == "a', "invalid-filter", [11, 11]],
     ["title ==", "invalid-filter", [8, 8]],
-    ["title.contains(/ab/)", "invalid-filter", [15, 19]],
+    ["title.contains(/ab/)", "wrong-argument-type", [15, 19]],
     ["(title)(1)", "invalid-filter", [0, 7]],
     ["custom[mood]", "invalid-filter", [7, 11]],
     ['noSuchFunction("a")', "unknown-function", [0, 14]],
@@ -1214,7 +1241,7 @@ describe("validation", () => {
   it("names the type names that isType takes when the literal is none of them", () => {
     expect(problem('title.isType("strng")')).toMatchObject({
       message:
-        'Argument 1 of isType is "strng"; isType takes one of "any", "null", "boolean", "number", "string", "list", "date", "duration" there.',
+        'Argument 1 of isType is "strng"; isType takes one of "any", "null", "boolean", "number", "string", "list", "date", "duration", "regexp" there.',
       hint: "Call value.isType(type).",
     });
   });
@@ -1253,7 +1280,7 @@ describe("validation", () => {
     ["if(true, 1, custom)", "unfilterable-field"],
     ["if(true, now(), date(1))", "wrong-argument-type"],
     ['if(false, title.isType("strng"), true)', "wrong-argument-type"],
-    ["true || title.contains(/a/)", "invalid-filter"],
+    ["true || title.contains(/a/)", "wrong-argument-type"],
     ["[1, noSuchFunction()].length", "unknown-function"],
   ] as const)("rejects the dead branch of %j with %s", (expression, code) => {
     expect(problem(expression).code).toBe(code);
