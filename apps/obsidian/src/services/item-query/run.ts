@@ -1,6 +1,6 @@
 // Runs the operations of `@zotlit/item-query` to an `Exit` on a borrowed
 // client: the scheduler, the abort signal, and the database service of a run.
-import { Effect, Exit } from "effect";
+import { Data, Effect, Exit } from "effect";
 
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { ItemQueryDatabase, readSourceLibraries } from "@zotlit/db/item-query";
@@ -24,6 +24,7 @@ import type {
 import { resolveLibraryScope } from "@/services/library-scope/scope";
 import type {
   LibraryScope,
+  LibrarySelector,
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
 
@@ -49,17 +50,34 @@ export interface RunLibraries {
   readonly requireEach: boolean;
 }
 
+/**
+ * The source holds no Target Library for the run, so the run reads no Item.
+ */
+export class TargetLibrariesUnavailable extends Data.TaggedError(
+  "TargetLibrariesUnavailable",
+)<{
+  /**
+   * - `named-missing`: the caller named a Library that the source does not
+   *   hold.
+   * - `named-none`: the caller named the Libraries, such as all of them, and
+   *   the source holds none.
+   * - `scope-none`: the source holds no Library of the Library Scope in force.
+   */
+  readonly reason: "named-missing" | "named-none" | "scope-none";
+  /**
+   * For `named-missing`: the first named Library that the source does not
+   * hold, in the canonical order.
+   */
+  readonly missing?: LibrarySelector;
+}> {}
+
 export interface ItemQueryRun<A> {
   /**
    * `scope` on the Libraries of the borrowed source. The Target Libraries are
    * its available ones, in the canonical order.
    */
   readonly libraries: ResolvedLibraryScope;
-  /**
-   * `null`: the run read no Item, because the source has no Library of the
-   * scope, or lacks one that the run needs.
-   */
-  readonly result: A | null;
+  readonly result: A;
 }
 
 /**
@@ -84,7 +102,11 @@ export function runItemQueryTo<A, E>(
 ): Promise<
   Exit.Exit<
     ItemQueryRun<A>,
-    ItemQueryError | ItemQueryLayoutError | ItemQueryDatabaseError | E
+    | ItemQueryError
+    | ItemQueryLayoutError
+    | ItemQueryDatabaseError
+    | TargetLibrariesUnavailable
+    | E
   >
 > {
   return runItemQueryWith(libraries, request, {
@@ -106,7 +128,13 @@ function runItemQueryWith<A, E>(
     ) => Effect.Effect<A, E, ItemQueryDatabase>;
   },
 ): Promise<
-  Exit.Exit<ItemQueryRun<A>, E | ItemQueryLayoutError | ItemQueryDatabaseError>
+  Exit.Exit<
+    ItemQueryRun<A>,
+    | E
+    | ItemQueryLayoutError
+    | ItemQueryDatabaseError
+    | TargetLibrariesUnavailable
+  >
 > {
   return run(
     Effect.gen(function* () {
@@ -119,8 +147,17 @@ function runItemQueryWith<A, E>(
         scope,
       );
       const { available, unavailable } = libraries;
-      if (available.length === 0 || (requireEach && unavailable.length > 0)) {
-        return { libraries, result: null };
+      const [missing] = unavailable;
+      if (requireEach && missing) {
+        return yield* new TargetLibrariesUnavailable({
+          reason: "named-missing",
+          missing,
+        });
+      }
+      if (available.length === 0) {
+        return yield* new TargetLibrariesUnavailable({
+          reason: requireEach ? "named-none" : "scope-none",
+        });
       }
       const result = yield* options.execute(
         {

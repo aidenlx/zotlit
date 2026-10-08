@@ -48,10 +48,10 @@ import {
 } from "./contract";
 import type { Diagnostic, ItemQueryCommand } from "./contract";
 import { invalid, rejectParameters, rejectQueryId } from "./decode";
-import type { DecodedQuery } from "./decode";
+import type { DecodedQuery, NamedLibraries } from "./decode";
 import { GUIDE_TOPIC_NAMES, parseGuideTopic, renderGuide } from "./guide";
 import { runDescribeItemQuery, runItemQueryTo } from "./run";
-import type { ItemQueryInstrument } from "./run";
+import type { ItemQueryInstrument, TargetLibrariesUnavailable } from "./run";
 
 const logger = getLogger(["item-query"]);
 
@@ -221,7 +221,9 @@ export function createItemQuerySchemaHandler(
         },
       });
     }
-    return answerFailure(exit.cause, ITEM_QUERY_SCHEMA_COMMAND, deps.signal);
+    return answerFailure(exit.cause, ITEM_QUERY_SCHEMA_COMMAND, {
+      signal: deps.signal,
+    });
   };
 }
 
@@ -351,31 +353,12 @@ export function createItemQueryHandler(
     );
 
     if (Exit.isFailure(exit)) {
-      return answerFailure(exit.cause, ITEM_QUERY_COMMAND, deps.signal);
+      return answerFailure(exit.cause, ITEM_QUERY_COMMAND, {
+        signal: deps.signal,
+        parameter: named?.parameter,
+      });
     }
-    const { libraries, result } = exit.value;
-    if (result === null) {
-      const [missing] = libraries.unavailable;
-      return failure(
-        ITEM_QUERY_COMMAND,
-        named && missing
-          ? diagnostic(
-              "library-not-found",
-              `The connected Zotero source holds no ${describeSelector(missing)}.`,
-              { details: { parameter: named.parameter } },
-            )
-          : named
-            ? diagnostic(
-                "source-unavailable",
-                "The connected Zotero source holds no Library.",
-              )
-            : diagnostic(
-                "no-library-available",
-                "The connected Zotero source holds no Library of the Library Scope.",
-              ),
-      );
-    }
-    return result;
+    return exit.value.result;
   };
 }
 
@@ -514,9 +497,17 @@ function answerFailure(
     | ItemQueryLayoutError
     | ItemQueryDatabaseError
     | ItemQueryOutputError
+    | TargetLibrariesUnavailable
   >,
   command: ItemQueryCommand,
-  signal: AbortSignal,
+  {
+    signal,
+    parameter,
+  }: {
+    signal: AbortSignal;
+    /** The argument that named the Target Libraries, if the caller named them. */
+    parameter?: NamedLibraries["parameter"];
+  },
 ): string {
   // A masked file operation can finish with the abort reason as a defect.
   // The caller's cancelled signal remains the authority at this Promise edge.
@@ -526,6 +517,9 @@ function answerFailure(
     const failed = error.value;
     if (failed._tag === "ItemQueryOutputError")
       return failure(command, failed.diagnostic);
+    if (failed._tag === "TargetLibrariesUnavailable") {
+      return failure(command, targetLibrariesFailure(failed, parameter));
+    }
     if (failed._tag === "ItemQueryError") {
       return failure(command, {
         code: failed.code,
@@ -555,6 +549,30 @@ function answerFailure(
   throw new Error("Item Query failed with an internal error.", {
     cause: Cause.squash(cause),
   });
+}
+
+/** The diagnostic of a run that has no Target Library. */
+function targetLibrariesFailure(
+  { reason, missing }: TargetLibrariesUnavailable,
+  parameter: NamedLibraries["parameter"] | undefined,
+): Diagnostic {
+  if (reason === "named-missing" && missing) {
+    return diagnostic(
+      "library-not-found",
+      `The connected Zotero source holds no ${describeSelector(missing)}.`,
+      { details: parameter && { parameter } },
+    );
+  }
+  if (reason === "named-none") {
+    return diagnostic(
+      "source-unavailable",
+      "The connected Zotero source holds no Library.",
+    );
+  }
+  return diagnostic(
+    "no-library-available",
+    "The connected Zotero source holds no Library of the Library Scope.",
+  );
 }
 
 function databaseFailure(
