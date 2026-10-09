@@ -250,17 +250,16 @@
     ]
   },
   {
-    "name": "F12-unfilterable",
+    "name": "F12-relation-list-property",
     "request": {
-      "filter": "attachments.length > 0"
+      "filter": "attachments.size > 0"
     },
     "report": [
-      "A boolean has no property \"length\".",
-      "attachments.length > 0",
-      "            ^^^^^^",
-      "`attachments` is a boolean in a filter.",
-      "`length` is a property of a string or a list.",
-      "A boolean has no properties."
+      "A list has no property \"size\".",
+      "attachments.size > 0",
+      "            ^^^^",
+      "`attachments` is a list of records in a filter.",
+      "Use a property of a list: length."
     ]
   },
   {
@@ -333,7 +332,7 @@
       "filter": "title.isType(\"strng\")"
     },
     "report": [
-      "Argument 1 of isType is \"strng\"; isType takes one of \"any\", \"null\", \"boolean\", \"number\", \"string\", \"list\", \"date\", \"duration\", \"regexp\" there.",
+      "Argument 1 of isType is \"strng\"; isType takes one of \"any\", \"null\", \"boolean\", \"record\", \"number\", \"string\", \"list\", \"date\", \"duration\", \"regexp\" there.",
       "title.isType(\"strng\")",
       "             ^^^^^^^^^",
       "Call value.isType(type)."

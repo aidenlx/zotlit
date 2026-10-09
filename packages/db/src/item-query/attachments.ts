@@ -154,6 +154,33 @@ export function readAttachmentUniverseRows(chunk: {
 }
 
 const slots = idSlots(HYDRATE_CHUNK_SIZE);
+/** The live Attachments of a chunk of parent Items, in Attachment key order. */
+const itemAttachmentsStatement = defineStatement<Record<IdSlot, number | null>>(
+  "item-attachments",
+)((db, { placeholder }) =>
+  selectAttachments(db)
+    .where(
+      and(
+        inArray(
+          parent.itemID,
+          slots.names.map((name) => placeholder(name)),
+        ),
+        ...universe(db),
+      ),
+    )
+    .orderBy(asc(items.key)),
+);
+
+export function readItemAttachments(itemIDs: readonly number[]) {
+  if (itemIDs.length > HYDRATE_CHUNK_SIZE)
+    return Effect.die(
+      new RangeError("A relation chunk holds at most 250 parent IDs."),
+    );
+  return itemIDs.length
+    ? itemAttachmentsStatement.all(slots.bind(itemIDs))
+    : Effect.succeed([] as AttachmentScanRow[]);
+}
+
 const titleData = alias(itemData, "attachmentTitleData");
 const titleValue = alias(itemDataValues, "attachmentTitleValue");
 const urlData = alias(itemData, "attachmentUrlData");

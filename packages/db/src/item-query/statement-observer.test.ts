@@ -11,6 +11,7 @@ import {
   readCollectionPaths,
   readFieldVocabulary,
   readHydrateChunk,
+  readItemAttachments,
   readLibraryRowCount,
   readScanPage,
   readUniverseRows,
@@ -77,9 +78,10 @@ describe("ItemQueryStatementObserver", () => {
           vocabulary,
           itemIDs,
           fields: { builtIn: ["title"], custom: [] },
-          relations: ["creators", "tags", "collections", "attachments"],
+          relations: ["creators", "tags", "collections"],
           collectionPaths,
         });
+        yield* readItemAttachments(itemIDs);
       }),
     );
 
@@ -97,7 +99,7 @@ describe("ItemQueryStatementObserver", () => {
       "hydrate-chunk",
       "hydrate-chunk",
       "hydrate-chunk",
-      "hydrate-chunk",
+      "item-attachments",
     ]);
   });
 

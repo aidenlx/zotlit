@@ -205,8 +205,9 @@ describe("describeItemQuery fields", () => {
     });
     expect(entry("attachments")).toEqual({
       path: "attachments",
-      type: "boolean",
-      filter: "boolean",
+      relation: "attachments",
+      type: "array",
+      filter: "list",
       projection: true,
       sort: false,
     });
@@ -400,6 +401,7 @@ describe("describeItemQuery functions", () => {
     expect(types).toEqual([
       "null",
       "boolean",
+      "record",
       "number",
       "string",
       "list",

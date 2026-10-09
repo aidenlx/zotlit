@@ -51,6 +51,8 @@ export interface AnnotationScanRow extends ScanRow {
   libraryID: number;
   attachmentID: number;
   attachmentKey: string;
+  attachmentDateAdded: number | null;
+  attachmentDateModified: number | null;
   parent: ScanRow;
   sortIndex: string;
 }
@@ -66,6 +68,12 @@ function selectAnnotations(db: NodeDatabaseClient) {
       libraryID: items.libraryID,
       attachmentID: attachment.itemID,
       attachmentKey: attachment.key,
+      attachmentDateAdded: sql<
+        number | null
+      >`unixepoch(${attachment.dateAdded}) * 1000`,
+      attachmentDateModified: sql<
+        number | null
+      >`unixepoch(${attachment.dateModified}) * 1000`,
       parent: {
         itemID: parent.itemID,
         key: parent.key,
@@ -168,6 +176,50 @@ export function readAnnotationUniverseRows(chunk: {
 }
 
 const slots = idSlots(HYDRATE_CHUNK_SIZE);
+/** A Relation List uses the same universe as Annotation Query. */
+const relationStatement = (level: "item" | "attachment") =>
+  defineStatement<Record<IdSlot, number | null>>(
+    level === "item" ? "item-annotations" : "attachment-annotations",
+  )((db, { placeholder }) =>
+    selectAnnotations(db)
+      .where(
+        and(
+          inArray(
+            level === "item" ? parent.itemID : attachment.itemID,
+            slots.names.map((name) => placeholder(name)),
+          ),
+          ...universe(db),
+        ),
+      )
+      .orderBy(
+        asc(attachment.key),
+        asc(itemAnnotations.sortIndex),
+        asc(items.key),
+      ),
+  );
+const itemAnnotationsStatement = relationStatement("item");
+const attachmentAnnotationsStatement = relationStatement("attachment");
+
+export function readItemAnnotations(itemIDs: readonly number[]) {
+  if (itemIDs.length > HYDRATE_CHUNK_SIZE)
+    return Effect.die(
+      new RangeError("A relation chunk holds at most 250 parent IDs."),
+    );
+  return itemIDs.length
+    ? itemAnnotationsStatement.all(slots.bind(itemIDs))
+    : Effect.succeed([] as AnnotationScanRow[]);
+}
+
+export function readAttachmentAnnotations(itemIDs: readonly number[]) {
+  if (itemIDs.length > HYDRATE_CHUNK_SIZE)
+    return Effect.die(
+      new RangeError("A relation chunk holds at most 250 parent IDs."),
+    );
+  return itemIDs.length
+    ? attachmentAnnotationsStatement.all(slots.bind(itemIDs))
+    : Effect.succeed([] as AnnotationScanRow[]);
+}
+
 const details = defineStatement<Record<IdSlot, number | null>>(
   "annotation-details",
 )((db, { placeholder }) =>

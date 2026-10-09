@@ -18,7 +18,6 @@ import {
   attachmentFilterRegistry,
   attachmentSortableField,
   DEFAULT_ATTACHMENT_FIELDS,
-  planAttachmentFilter,
 } from "./attachment-fields";
 import type { QueryAttachment } from "./attachment-fields";
 import { openAttachmentHydration } from "./attachment-hydration";
@@ -28,6 +27,7 @@ import type { QueryDataset } from "./dataset";
 import type { DatasetRun } from "./execution";
 import { BUILT_IN_NAMES } from "./fields";
 import { matches as isMatch } from "./filter-evaluate";
+import { planFilter } from "./filter-plan";
 import { readPath } from "./projection";
 import type { ItemQueryRequest } from "./request";
 
@@ -50,7 +50,7 @@ export const ATTACHMENTS: QueryDataset<ItemQueryRequest> = {
   sortableFields: ATTACHMENT_SORT_FIELDS,
   definition: attachmentFieldDefinition,
   filterField: (name) => attachmentFilterRegistry.field(name),
-  planFilter: planAttachmentFilter,
+  planFilter: (text) => planFilter(text, attachmentFilterRegistry),
   sortable: attachmentSortableField,
   // A parent field is the two leading segments `item` and its name.
   resolvePath: (segments) => {

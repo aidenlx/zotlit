@@ -19,6 +19,12 @@ import type {
   ScanRow,
 } from "@zotlit/db/item-query";
 
+import type { QueryAnnotation } from "./annotation-fields";
+import { openAnnotationHydration } from "./annotation-hydration";
+import type { AnnotationLoadPlan } from "./annotation-hydration";
+import type { QueryAttachment } from "./attachment-fields";
+import { openAttachmentHydration } from "./attachment-hydration";
+import type { AttachmentLoadPlan } from "./attachment-hydration";
 import type { CandidateSources } from "./candidate-plan";
 import type { QueryDataset } from "./dataset";
 import { ItemQueryError } from "./error";
@@ -26,8 +32,15 @@ import type { ItemQueryErrorLocation } from "./error";
 import type { ItemQueryFault } from "./fault";
 import type { FieldNeeds, QueryItem } from "./fields";
 import type { FilterPlan } from "./filter-plan";
-import type { PlannedPath } from "./projection";
-import type { ItemQueryPlan, PlannedSort, TargetLibrary } from "./request";
+import type { RelationChunk } from "./relation-hydration";
+import {
+  relationChunk,
+  relatedAttachments,
+  relatedItemAnnotations,
+  relationRequest,
+  loadRelation,
+} from "./relation-hydration";
+import type { ItemQueryPlan, TargetLibrary } from "./request";
 
 /** What one pass loads for each Item of a chunk. */
 export interface LoadPlan {
@@ -35,6 +48,8 @@ export interface LoadPlan {
   readonly fields: HydrateFields;
   /** The relations; each one runs one statement for a chunk. */
   readonly relations: readonly HydrateRelation[];
+  readonly attachments?: AttachmentLoadPlan | null;
+  readonly annotations?: AnnotationLoadPlan | null;
 }
 
 /**
@@ -57,6 +72,7 @@ export interface Loader<
   readonly load: (
     chunk: readonly Row[],
     libraryAt: (index: number) => TargetLibrary,
+    relations?: RelationChunk,
   ) => Effect.Effect<readonly Value[], ItemQueryReaderError, ItemQueryDatabase>;
 }
 
@@ -79,15 +95,24 @@ export interface Hydration<
  * against the source, and read the Collection paths of each Target Library
  * when a pass loads Collections.
  */
+export type HydrationRequest<Needs> = Pick<
+  ItemQueryPlan,
+  "dataset" | "query"
+> & {
+  readonly filter: {
+    readonly needs: readonly Needs[];
+    readonly customFields: FilterPlan["customFields"];
+  } | null;
+  readonly paths: readonly {
+    readonly text: string;
+    readonly needs: Needs;
+    readonly customField: string | null;
+  }[];
+  readonly sorts: readonly { readonly needs: Needs }[];
+};
+
 export function openHydration(
-  plan: Pick<ItemQueryPlan, "dataset" | "query"> & {
-    readonly filter: Pick<FilterPlan, "needs" | "customFields"> | null;
-    readonly paths: readonly Pick<
-      PlannedPath,
-      "text" | "needs" | "customField"
-    >[];
-    readonly sorts: readonly Pick<PlannedSort, "needs">[];
-  },
+  plan: HydrationRequest<FieldNeeds>,
   libraries: readonly TargetLibrary[],
 ): Effect.Effect<
   Hydration,
@@ -102,9 +127,12 @@ export function openHydration(
       ...sorts.map((sort) => sort.needs),
     ];
     const allNeeds = [...pathNeeds, ...scanNeeds];
-    const vocabulary = allNeeds.some(needsHydration)
-      ? yield* readFieldVocabulary()
-      : null;
+    const vocabulary =
+      allNeeds.some(needsHydration) ||
+      filter?.customFields.length ||
+      paths.some((path) => path.customField !== null)
+        ? yield* readFieldVocabulary()
+        : null;
     if (vocabulary) {
       const known = new Set(vocabulary.customFieldNames);
       // The filter first, then the Projection Paths.
@@ -173,7 +201,25 @@ export function openHydration(
         : undefined;
     const customFieldNames = vocabulary?.customFieldNames ?? [];
 
-    const loader = (needs: readonly FieldNeeds[]): Loader => {
+    const loader = Effect.fnUntraced(function* (needs: readonly FieldNeeds[]) {
+      const annotations = needs.some((need) => need.annotations !== undefined)
+        ? yield* openAnnotationHydration(
+            relationRequest(
+              plan,
+              needs.flatMap((need) => need.annotations ?? []),
+            ),
+            libraries,
+          )
+        : null;
+      const attachments = needs.some((need) => need.attachments !== undefined)
+        ? yield* openAttachmentHydration(
+            relationRequest(
+              plan,
+              needs.flatMap((need) => need.attachments ?? []),
+            ),
+            libraries,
+          )
+        : null;
       const passPlan =
         vocabulary && needs.some(needsHydration)
           ? loadPlan(needs, vocabulary)
@@ -181,7 +227,15 @@ export function openHydration(
       const itemsOf = (
         chunk: readonly ScanRow[],
         hydrated: ReadonlyMap<number, HydratedItem>,
-        libraryAt: (index: number) => TargetLibrary,
+        {
+          libraryAt,
+          related,
+          marks,
+        }: {
+          readonly libraryAt: (index: number) => TargetLibrary;
+          readonly related?: ReadonlyMap<number, readonly QueryAttachment[]>;
+          readonly marks?: ReadonlyMap<number, readonly QueryAnnotation[]>;
+        },
       ) =>
         chunk.map(
           (scan, index): QueryItem => ({
@@ -189,31 +243,66 @@ export function openHydration(
             groupID: libraryAt(index).groupID,
             hydrated: hydrated.get(scan.itemID) ?? NOTHING_HYDRATED,
             customFieldNames,
+            ...(attachments && {
+              attachments: related?.get(scan.itemID) ?? [],
+            }),
+            ...(annotations && { annotations: marks?.get(scan.itemID) ?? [] }),
           }),
         );
-      return {
-        plan: passPlan,
-        // The Query Items are made in the step of the last hydrate statement.
-        load: (chunk, libraryAt) =>
-          !vocabulary || !passPlan
-            ? Effect.sync(() =>
-                itemsOf(chunk, NOTHING_HYDRATED_CHUNK, libraryAt),
-              )
-            : Effect.map(
-                readHydrateChunk({
+      const result: Loader = {
+        plan:
+          attachments || annotations
+            ? {
+                fields: { builtIn: [], custom: [] },
+                relations: [],
+                ...passPlan,
+                ...(attachments && { attachments: attachments.scan.plan }),
+                ...(annotations && { annotations: annotations.scan.plan }),
+              }
+            : passPlan,
+        load: Effect.fnUntraced(function* (
+          chunk,
+          libraryAt,
+          relations = relationChunk(),
+        ) {
+          const hydrated =
+            vocabulary && passPlan
+              ? yield* readHydrateChunk({
                   vocabulary,
                   itemIDs: chunk.map((row) => row.itemID),
                   ...passPlan,
                   collectionPaths,
-                }),
-                (hydrated) => itemsOf(chunk, hydrated, libraryAt),
-              ),
+                })
+              : NOTHING_HYDRATED_CHUNK;
+          const related = attachments
+            ? yield* loadRelation(
+                attachments.scan,
+                yield* relatedAttachments(
+                  relations,
+                  chunk.map((row) => row.itemID),
+                ),
+                { libraries, relations, parentID: (row) => row.parent.itemID },
+              )
+            : undefined;
+          const marks = annotations
+            ? yield* loadRelation(
+                annotations.scan,
+                yield* relatedItemAnnotations(
+                  relations,
+                  chunk.map((row) => row.itemID),
+                ),
+                { libraries, relations, parentID: (row) => row.parent.itemID },
+              )
+            : undefined;
+          return itemsOf(chunk, hydrated, { libraryAt, related, marks });
+        }),
       };
-    };
+      return result;
+    });
 
     return {
-      scan: loader(scanNeeds),
-      projection: loader(pathNeeds),
+      scan: yield* loader(scanNeeds),
+      projection: yield* loader(pathNeeds),
       candidateSources: (library) => ({
         library,
         vocabulary,

@@ -92,6 +92,7 @@ function valueOf<Item>(
       return element(node, context);
     case "property": {
       const subject = value(node.subject);
+      if (node.read) return node.read(subject);
       const property = propertyOf(typeOf(subject), node.name);
       return property ? property.read(subject, clock) : null;
     }

@@ -15,7 +15,14 @@ export type FilterValue =
   | readonly FilterValue[]
   | DateValue
   | DurationValue
-  | RegexpValue;
+  | RegexpValue
+  | RecordValue;
+
+export interface RecordValue {
+  readonly type: "record";
+  readonly identity: string | object;
+  readonly read: (name: string) => FilterValue;
+}
 
 /**
  * A regular expression, from a `/pattern/flags` literal. A filter-only
@@ -35,13 +42,18 @@ export type FilterValueType =
   | "list"
   | "date"
   | "duration"
-  | "regexp";
+  | "regexp"
+  | "record";
 
 export function typeOf(value: FilterValue): FilterValueType {
   if (value === null) return "null";
   if (isList(value)) return "list";
   if (typeof value === "object") return value.type;
   return typeof value as "boolean" | "number" | "string";
+}
+
+export function isQueryRecord(value: FilterValue): value is RecordValue {
+  return typeOf(value) === "record";
 }
 
 export function isDate(value: FilterValue): value is DateValue {
@@ -84,6 +96,7 @@ export function equals(
   b: FilterValue,
   clock: QueryClock,
 ): boolean {
+  if (isQueryRecord(a)) return isQueryRecord(b) && a.identity === b.identity;
   if (isList(a)) {
     return (
       isList(b) &&
@@ -136,5 +149,6 @@ export function toText(value: FilterValue): string {
   if (isDate(value)) return dateText(value);
   if (isDuration(value)) return value.duration.toString();
   if (isRegexp(value)) return `/${value.regexp.source}/${value.regexp.flags}`;
+  if (isQueryRecord(value)) return toText(value.read("indexedKey"));
   return String(value);
 }

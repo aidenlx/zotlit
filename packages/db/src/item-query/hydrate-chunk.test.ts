@@ -13,6 +13,7 @@ import {
   readHydrateChunk,
 } from ".";
 import type { HydrateFields, HydratedItem, HydrateRelation } from ".";
+import { readItemAttachments } from "./attachments";
 
 function runOk<A, E>(
   scenario: ScenarioDatabase,
@@ -302,14 +303,14 @@ describe("readHydrateChunk", () => {
 
   it("reports whether an Item has a live child Attachment", () => {
     using scenario = openScenarioDatabase();
-    const items = hydrateRelations(
+    const rows = runOk(
       scenario,
-      ["fullDateArticle", "missingDateReport"],
-      ["attachments"],
+      readItemAttachments([
+        itemID(scenario, "fullDateArticle"),
+        itemID(scenario, "missingDateReport"),
+      ]),
     );
-
-    expect(items.get("fullDateArticle")?.hasAttachments).toBe(true);
-    expect(items.get("missingDateReport")?.hasAttachments).toBe(false);
+    expect(rows.map((row) => row.key)).toEqual(["PDF2LIVE"]);
   });
 
   it("ignores a trashed Attachment", () => {
@@ -321,13 +322,12 @@ describe("readHydrateChunk", () => {
       )
       .run(itemID(scenario, "liveAttachment"));
 
-    const items = hydrateRelations(
-      scenario,
-      ["fullDateArticle"],
-      ["attachments"],
-    );
-
-    expect(items.get("fullDateArticle")?.hasAttachments).toBe(false);
+    expect(
+      runOk(
+        scenario,
+        readItemAttachments([itemID(scenario, "fullDateArticle")]),
+      ),
+    ).toEqual([]);
   });
 
   it("rejects a chunk larger than the chunk size", () => {

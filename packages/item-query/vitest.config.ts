@@ -24,6 +24,7 @@ export default defineConfig({
             "src/query-items.test.ts",
             "src/query-annotations.test.ts",
             "src/query-attachments.test.ts",
+            "src/query-relations.test.ts",
             "src/parity.test.ts",
           ],
           env: { ZOTLIT_SCENARIO_LAYOUT: "lowest" },

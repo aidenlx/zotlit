@@ -174,3 +174,21 @@ describe("zotlit:query-guide", () => {
     );
   });
 });
+
+it("teaches two-way Relation Lists, nested navigation, and fixed record summaries", () => {
+  expect(GUIDE_TOPICS.datasets).toContain("through attachments");
+  expect(GUIDE_TOPICS.datasets).toContain("Sort Index");
+  expect(GUIDE_TOPICS.filter).toContain(
+    'attachments.filter(value.contentType == "application/pdf" && value.exists).isEmpty()',
+  );
+  expect(GUIDE_TOPICS.filter).toContain(
+    'value.annotations.filter(value.color == "#ffd400")',
+  );
+  expect(GUIDE_TOPICS.fields).toContain("attachments[].annotations[].text");
+  expect(GUIDE_TOPICS.fields).toContain(
+    "Item: indexedKey, title, citationKey.",
+  );
+  expect(GUIDE_TOPICS.fields).toContain(
+    "Annotation: indexedKey, type, text, comment, pageLabel, pageIndex.",
+  );
+});

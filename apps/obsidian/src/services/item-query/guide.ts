@@ -124,8 +124,19 @@ FIELDS
   Library selector, and the library value that includes it. The query reads
   only the Target Libraries, even when another filter branch matches.
   Check warnings before you report an empty result.
-  attachments is true when the Item has an Attachment outside the trash:
+  attachments is a Relation List of Attachment records. An empty list is
+  falsy, so !attachments and attachments.isEmpty() find papers with no file:
     ${filter("!attachments")}
+  Each element has its dataset's fields. value and index refer to the element
+  and its position, counted from zero, in the current list method, also inside another
+  list method. Papers with no usable PDF on this machine:
+    ${filter('attachments.filter(value.contentType == "application/pdf" && value.exists).isEmpty()')}
+  Papers in a Collection with no highlight yet:
+    ${filter('collections.within("Shared key") && annotations.filter(value.type == "highlight").isEmpty()')}
+  Papers with more than one PDF:
+    ${filter('attachments.filter(value.contentType == "application/pdf").length > 1')}
+  Papers with a yellow mark on any file:
+    ${filter('attachments.filter(value.annotations.filter(value.color == "#ffd400").length > 0).length > 0')}
 
 TEXT
   ==, !=, contains, startsWith, and endsWith match exactly: case and accents
@@ -258,6 +269,20 @@ PATHS
   Use creators[].fullName to read one property of every element in a Relation
   List. The result keeps source order, with null for each missing value.
     ${example({ fields: "creators[].fullName" })}
+  Use [] at each Relation List to reach fields of its records. Nested lists
+  keep their structure. A missing value stays null in its original position:
+    ${example({ fields: "title,attachments[].path,annotations[].text,attachments[].annotations[].text" })}
+  A list's length is available in projection:
+    ${example({ fields: "title,annotations.length" })}
+    ${example({ from: "attachments", fields: "title,annotations.length" })}
+  Projecting a complete record returns its dataset's fixed summary:
+  Item: indexedKey, title, citationKey.
+  Attachment: indexedKey, title, contentType, linkMode, path, exists.
+  Annotation: indexedKey, type, text, comment, pageLabel, pageIndex.
+  The rule applies to attachments and annotations lists, and to the single
+  parent records item and attachment:
+    ${example({ fields: "title,attachments,annotations" })}
+    ${example({ from: "annotations", fields: "item,attachment" })}
   A custom field is the path custom["<exact name>"]; copy it from
   customFields[].path in the schema command's response. On annotations,
   prefix that path with item.; datasets.annotations.customPrefix reports it.
@@ -418,8 +443,15 @@ const DATASETS_SECTION = `Query datasets
   from=annotations reads annotations outside the trash on attachments of
   top-level items outside the trash. Trashed attachments and standalone
   attachments and their annotations are outside this dataset.
-  On annotations, item. reaches the parent item's fields and attachment.
-  reaches the parent attachment's fields. Every annotation has both parents.
+  Items reach their files through attachments and all their marks through
+  annotations. Attachments reach their marks through annotations and their
+  parent Item through item. Annotations reach both parents through item and
+  attachment. Each record has the vocabulary of its Query Dataset.
+  Attachment lists follow Attachment key order. Annotation lists follow
+  Attachment key, then Sort Index; a single file's marks follow Sort Index.
+  These Relation Lists contain only records in the dataset universes above.
+  Use list methods in filters and [] in Projection Paths. A complete record
+  projects as its fixed summary; topic=fields lists the summary fields.
   The Attachment default fields are ${listOf(ATTACHMENTS.defaultFields)}.
   Attachments sort by dateModified descending, then Indexed Key.
   path is null for URL-only or unresolved files; exists is false then.

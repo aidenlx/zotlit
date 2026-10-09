@@ -1,6 +1,6 @@
 // The parity suite: every plan and every chunk size gives the complete Query
 // Result of the forced scan. The queries come from `scenario-queries.ts`.
-import { Cause, Exit } from "effect";
+import { Cause, Effect, Exit } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -9,9 +9,10 @@ import {
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
-import { ATTACHMENTS, collectQuery, ITEMS } from ".";
+import { ATTACHMENTS, AttachmentFileResolver, collectQuery, ITEMS } from ".";
 import type { ItemQueryRequest, SortSpec } from ".";
 import { ATTACHMENT_SCENARIO_QUERIES } from "./attachment-scenario-queries";
+import { RELATION_SCENARIO_QUERIES } from "./relation-scenario-queries";
 import { GENERATED_FILTER_PARTS, SCENARIO_QUERIES } from "./scenario-queries";
 import type { ScenarioQuery } from "./scenario-queries";
 import { ItemQueryScheduler } from "./scheduler";
@@ -393,3 +394,35 @@ it("keeps Attachment results equal to the forced scan for every leaf, cap, chunk
     }
   }
 }, 30000);
+
+it.each(RELATION_SCENARIO_QUERIES)(
+  "keeps scan parity for $name",
+  async ({ dataset, request }) => {
+    using source = openScenarioDatabase({ annotations: true });
+    for (const libraries of [
+      [SCENARIO_LIBRARIES.personal],
+      [SCENARIO_LIBRARIES.group],
+      Object.values(SCENARIO_LIBRARIES),
+    ]) {
+      const query = collectQuery(dataset, { ...request, libraries }).pipe(
+        Effect.provideService(AttachmentFileResolver, (attachment) =>
+          Effect.succeed({
+            path: attachment.key === "PDF2LIVE" ? "/paper.pdf" : null,
+            exists: attachment.key === "PDF2LIVE",
+          }),
+        ),
+      );
+      const oracle = await runEffect(query, {
+        client: source.db,
+        tuning: FORCED_SCAN,
+      });
+      if (oracle.exit._tag === "Failure") throw Cause.squash(oracle.exit.cause);
+      for (const { name, tuning } of PLANS) {
+        const actual = await runEffect(query, { client: source.db, tuning });
+        if (actual.exit._tag === "Failure")
+          throw Cause.squash(actual.exit.cause);
+        expect(actual.exit.value, name).toEqual(oracle.exit.value);
+      }
+    }
+  },
+);

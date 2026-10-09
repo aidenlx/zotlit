@@ -857,3 +857,101 @@ describe("Attachment active cancellation", () => {
     60_000,
   );
 });
+
+it.each([
+  {
+    dataset: ITEMS,
+    field: "attachments",
+    reader: "item-attachments",
+    chunks: 5,
+  },
+  {
+    dataset: ITEMS,
+    field: "annotations",
+    reader: "item-annotations",
+    chunks: 5,
+  },
+  {
+    dataset: ATTACHMENTS,
+    field: "annotations",
+    reader: "attachment-annotations",
+    chunks: 2,
+  },
+] as const)(
+  "loads only the named Relation List on $dataset.id: $field",
+  async ({ dataset, field, reader, chunks }) => {
+    using source = openScenarioDatabase({ annotations: true });
+    const request = {
+      libraries: [SCENARIO_LIBRARIES.personal],
+      fields: [],
+      sort: [],
+    };
+    const tuning = { scanPageSize: 4, hydrateChunkSize: 2 };
+    const bare = await runEffect(collectQuery(dataset, request), {
+      client: source.db,
+      tuning,
+    });
+    expect(bare.exit._tag).toBe("Success");
+    const named = await runEffect(
+      collectQuery(dataset, { ...request, filter: `${field}.length >= 0` }),
+      { client: source.db, tuning },
+    );
+    expect(named.exit._tag).toBe("Success");
+    const relationReaders = new Set([
+      "item-attachments",
+      "item-annotations",
+      "attachment-annotations",
+    ]);
+    const reads = (events: readonly RunEvent[]) =>
+      events.flatMap((event) =>
+        event.type === "statement" &&
+        relationReaders.has(event.statement.reader)
+          ? [event.statement.reader]
+          : [],
+      );
+    expect(reads(bare.events)).toEqual([]);
+    expect(reads(named.events)).toEqual(
+      Array.from({ length: chunks }, () => reader),
+    );
+    expect(
+      named.events.flatMap((event) =>
+        event.type === "statement" &&
+        [
+          "attachment-details",
+          "annotation-details",
+          "annotation-tags",
+        ].includes(event.statement.reader)
+          ? [event.statement.reader]
+          : [],
+      ),
+    ).toEqual([]);
+  },
+);
+
+it("reads a mark's sibling list once even when its paper has several hydrate chunks of marks", async () => {
+  const { exit, events } = await runEffect(
+    collectQuery(ITEMS, {
+      libraries: [BULK_LIBRARY],
+      filter:
+        "annotations.filter(value.attachment.annotations.filter(value.text).length > 0).length > 0",
+      fields: [],
+      limit: 1,
+    }),
+    { client: annotations.db },
+  );
+  expect(exit._tag).toBe("Success");
+  expect(
+    events.filter(
+      (event) =>
+        event.type === "statement" &&
+        event.statement.reader === "attachment-annotations",
+    ),
+  ).toHaveLength(1);
+  expect(
+    events.filter(
+      (event) =>
+        event.type === "statement" &&
+        event.statement.reader === "annotation-details",
+    ),
+  ).toHaveLength(11);
+});

@@ -18,7 +18,6 @@ import {
   annotationFilterRegistry,
   annotationSortableField,
   DEFAULT_ANNOTATION_FIELDS,
-  planAnnotationFilter,
 } from "./annotation-fields";
 import type { QueryAnnotation } from "./annotation-fields";
 import { openAnnotationHydration } from "./annotation-hydration";
@@ -28,6 +27,7 @@ import type { QueryDataset } from "./dataset";
 import type { DatasetRun } from "./execution";
 import { BUILT_IN_NAMES } from "./fields";
 import { matches as isMatch } from "./filter-evaluate";
+import { planFilter } from "./filter-plan";
 import { readPath } from "./projection";
 import type { ItemQueryRequest } from "./request";
 
@@ -57,7 +57,7 @@ export const ANNOTATIONS: QueryDataset<ItemQueryRequest> = {
   sortableFields: ANNOTATION_SORT_FIELDS,
   definition: annotationFieldDefinition,
   filterField: (name) => annotationFilterRegistry.field(name),
-  planFilter: planAnnotationFilter,
+  planFilter: (text) => planFilter(text, annotationFilterRegistry),
   sortable: annotationSortableField,
   // A parent field is the two leading segments `item` and its name.
   resolvePath: (segments) => {

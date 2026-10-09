@@ -249,7 +249,8 @@ const SORT_GROUPS: Readonly<Record<FilterValueType, number>> = {
   duration: 4,
   list: 5,
   regexp: 6,
-  null: 7,
+  record: 7,
+  null: 8,
 };
 
 /**
@@ -295,6 +296,7 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
   {
     null: functions({ isEmpty: isEmpty(() => true) }),
     boolean: functions({}),
+    record: functions({}),
     number: functions({
       isEmpty: isEmpty(() => false),
       round: {
@@ -638,6 +640,7 @@ const PROPERTIES: Readonly<
 > = {
   null: properties({}),
   boolean: properties({}),
+  record: properties({}),
   number: properties({}),
   string: properties({ length }),
   list: properties({ length }),

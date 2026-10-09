@@ -233,7 +233,7 @@ const FILTERS: readonly string[] = [
   'custom["review.status"].isEmpty()',
   'mood == "calm"',
   'custom.mood == "calm"',
-  // Relation lists and Attachment presence.
+  // Relation Lists, including the truth value of the Attachment list.
   "creators.length == 2",
   'creators == ["Grace Hopper", "Grace Hopper"]',
   'creators.contains("Grace Hopper")',

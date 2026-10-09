@@ -2,6 +2,11 @@
 import { describeAnnotationQueryVocabulary } from "./describe-annotation-query";
 import { describeAttachmentQueryVocabulary } from "./describe-attachment-query";
 import { describeItemQueryVocabulary } from "./describe-item-query";
+import {
+  ITEM_SUMMARY,
+  ATTACHMENT_SUMMARY,
+  ANNOTATION_SUMMARY,
+} from "./record-vocabularies";
 
 export {
   describeItemQuery,
@@ -32,7 +37,11 @@ export function describeQueryVocabulary() {
     ...attachments
   } = describeAttachmentQueryVocabulary();
   return {
-    datasets: { items, attachments, annotations },
+    datasets: {
+      items: { ...items, summary: ITEM_SUMMARY },
+      attachments: { ...attachments, summary: ATTACHMENT_SUMMARY },
+      annotations: { ...annotations, summary: ANNOTATION_SUMMARY },
+    },
     functions,
     methods,
     properties,

@@ -261,3 +261,38 @@ it("incremental delivery retains one projected batch instead of the complete res
   expect(projected).toHaveLength(BULK_ITEMS);
   expect(peak).toBeLessThanOrEqual(100);
 });
+
+it("releases a paper's file records with each chunk of a limited query", async () => {
+  const related: WeakRef<object>[] = [];
+  let peak = 0;
+  const run = await runEffect(
+    collectQuery(ITEMS, {
+      libraries: [BULK_LIBRARY],
+      filter:
+        'attachments.filter(value.contentType == "application/pdf").length > 0',
+      fields: [],
+      limit: 10,
+    }),
+    {
+      client: attachments.db,
+      keepStatements: false,
+      onEvent: (event) => {
+        if (event.type !== "statement") return;
+        collectGarbage();
+        collectGarbage();
+        if (event.statement.reader === "item-attachments") {
+          for (const row of event.statement.rows)
+            related.push(new WeakRef(row as object));
+        }
+        peak = Math.max(peak, related.filter((row) => row.deref()).length);
+      },
+    },
+  );
+  expect(run.exit._tag).toBe("Success");
+  expect(related).toHaveLength(BULK_ITEMS);
+  expect(peak).toBe(250);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  collectGarbage();
+  collectGarbage();
+  expect(related.filter((row) => row.deref())).toEqual([]);
+});
