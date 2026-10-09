@@ -1,15 +1,15 @@
 import { randomUUID } from "node:crypto";
-// The release-time measurement of Item Query (spec #1314, "Performance
+// The release-time measurement of ZotLit Query (spec #1314, "Performance
 // acceptance criteria"). Run it before a release and after a planner change:
 //
 //   pnpm exec turbo run build:dev --filter=@zotlit/obsidian
-//   pnpm --filter @zotlit/e2e measure:item-query
+//   pnpm --filter @zotlit/e2e measure:query
 //
 // It needs desktop Obsidian running with the CLI enabled, as the End-to-end Run
 // does (packages/e2e/AGENTS.md). It opens one vault of its own, builds the
 // Stress Build Library of each tier, and measures every query through the
-// dev-build command `zotlit:item-query-measure`, which runs the handler of
-// `zotlit:item-query` with the observers of the engine. After the queries of
+// dev-build command `zotlit:query-measure`, which runs the handler of
+// `zotlit:query` with the observers of the engine. After the queries of
 // one Library, each tier takes the Stress Build of two Libraries (the group
 // Library gets the Item count of the tier too) and measures the queries that
 // read both as one result set.
@@ -21,13 +21,13 @@ import { randomUUID } from "node:crypto";
 // background throttling and emulates focus while leaving OS focus unchanged.
 //
 // "Cancel through the Obsidian CLI" here is the production command
-// `zotlit:item-query-cancel`, called with the `id` of the measured run from a
+// `zotlit:query-cancel`, called with the `id` of the measured run from a
 // second CLI call. The script measures a plugin unload too, which cancels
 // every run.
 //
-// Output: `.scratch/item-query-measure/<time>/raw.json` and `summary.md`. Post
+// Output: `.scratch/query-measure/<time>/raw.json` and `summary.md`. Post
 // `summary.md` as a comment on the release pull request. The thresholds are in
-// `item-query-record.ts`.
+// `query-record.ts`.
 //
 // `--help` prints the options and the thresholds.
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
@@ -52,13 +52,14 @@ import {
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { keepRendering } from "./background-throttling.ts";
+import { cli, cliCommand, obEval, waitFor } from "./obsidian-cli.ts";
 import {
   evaluateTier,
   failedEngineChecks,
   formatSummary,
   median,
   THRESHOLDS,
-} from "./item-query-record.ts";
+} from "./query-record.ts";
 import type {
   CancelMeasurement,
   HeapMeasurement,
@@ -67,8 +68,7 @@ import type {
   QueryClass,
   QueryMeasurement,
   TierMeasurement,
-} from "./item-query-record.ts";
-import { cli, cliCommand, obEval, waitFor } from "./obsidian-cli.ts";
+} from "./query-record.ts";
 import {
   clearVault,
   e2eVaultDir,
@@ -76,14 +76,14 @@ import {
   vaultScript,
 } from "./vault-script.ts";
 
-const MEASURE_COMMAND = "zotlit:item-query-measure";
-const CANCEL_COMMAND = "zotlit:item-query-cancel";
+const MEASURE_COMMAND = "zotlit:query-measure";
+const CANCEL_COMMAND = "zotlit:query-cancel";
 /** One measured call may be a `limit=all` run on 100,000 Items. */
 const CALL_TIMEOUT_MS = 180_000;
 /** Runs to repeat when the window was hidden in a run. */
 const VISIBILITY_RETRIES = 3;
 
-/** The report of `zotlit:item-query-measure` (apps/obsidian/src/services/item-query/measure.ts). */
+/** The report of `zotlit:query-measure` (apps/obsidian/src/services/item-query/measure.ts). */
 interface MeasureReport {
   outcome: "answered" | "cancelled" | "failed";
   error?: string;
@@ -145,7 +145,7 @@ const collectionPath = (...names: string[]): string =>
   [collections.root.name, ...names].join("/");
 const quote = (value: string): string => JSON.stringify(value);
 
-const SORT_BY_TITLE = JSON.stringify([{ field: "title", direction: "asc" }]);
+const SORT_BY_TITLE = "title";
 
 /**
  * The queries of each tier. `selective`: one exact leaf that 0.1% of the
@@ -242,10 +242,7 @@ function querySpecs(uniqueKey: string): QuerySpec[] {
 
 /** The arguments that name My Library and the group Library of the Stress Build. */
 const TWO_LIBRARY_ARGS = {
-  libraries: JSON.stringify([
-    "personal",
-    `group:${STRESS_GROUP_LIBRARY.groupID}`,
-  ]),
+  library: `personal,group:${STRESS_GROUP_LIBRARY.groupID}`,
 };
 /**
  * The queries over two large Libraries as one result set. An unlimited query
@@ -317,7 +314,7 @@ function renderReference(): string {
     ...totals,
     "",
     "Output:",
-    "  .scratch/item-query-measure/<time>/raw.json and summary.md",
+    "  .scratch/query-measure/<time>/raw.json and summary.md",
   ].join("\n");
 }
 
@@ -341,7 +338,7 @@ function parseTiers(text: string): number[] {
 }
 
 const options = await yargs(hideBin(process.argv))
-  .scriptName("measure:item-query")
+  .scriptName("measure:query")
   .usage("$0 [--tiers=<items,...>] [--runs=<n>] [--keep]")
   .option("tiers", {
     describe:
@@ -372,9 +369,9 @@ const { tiers } = options;
 const runCount = options.runs;
 
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
-const scratch = join(workspaceRoot, ".scratch", "item-query-measure");
+const scratch = join(workspaceRoot, ".scratch", "query-measure");
 const fixture = getFixtureLayout(join(scratch, "fixture"));
-const vaultPath = e2eVaultDir(workspaceRoot, "item-query-measure");
+const vaultPath = e2eVaultDir(workspaceRoot, "query-measure");
 const pluginBundleDir = join(workspaceRoot, "apps", "obsidian", "dist-dev");
 const runVaultScript = vaultScript(workspaceRoot, fixture.root);
 const startedAt = Temporal.Now.instant();
@@ -501,7 +498,7 @@ async function loadTier(items: number, groupItems?: number): Promise<void> {
     throw new Error(`ZotLit did not answer a query on the ${items}-Item tier`);
   }
   // Initial fuzzy-search indexing is a separate renderer job. Wait for its
-  // normal completion so this record measures Item Query rather than startup.
+  // normal completion so this record measures ZotLit Query rather than startup.
   log("Waiting for the search index of this Fixture to finish...");
   await obEval(
     vaultId,
@@ -615,7 +612,7 @@ async function measureTier(raw: RawTier): Promise<void> {
   await requireVisible();
 
   const located = JSON.parse(
-    await cliCommand(vaultId, "zotlit:item-query", {
+    await cliCommand(vaultId, "zotlit:query", {
       args: {
         ...STRESS_LIBRARY,
         filter: `title == ${quote(uniqueTitle)}`,
@@ -883,7 +880,7 @@ function findings(rawTiers: RawTier[], tiers: TierMeasurement[]): string[] {
     `JSON encoding runs inside query execution, one projection chunk at a time. Its largest cumulative synchronous encoding time: ${each((raw) => `${Math.max(0, ...raw.queries.filter(({ spec }) => spec.class !== "all").flatMap(({ runs }) => runs.map((run) => run.answerMs ?? 0))).toFixed(1)} ms for \`limit 100\`, ${Math.max(0, ...raw.queries.filter(({ spec }) => spec.class === "all").flatMap(({ runs }) => runs.map((run) => run.answerMs ?? 0))).toFixed(1)} ms for \`limit=all\``)}. File I/O and scheduler waits are included in total query time.`,
   );
   notes.push(
-    "Cancel, timer: a timer in the window aborts the run; the time is from the moment the timer was due to the rejection of the handler. Cancel, cli: a second Obsidian CLI call, the production `zotlit:item-query-cancel` with the `id` of the run, aborts the run; the time is from the arrival of that call in the window to the rejection, and the transport from the terminal to the window is given apart. Cancel, unload: the plugin unloads and cancels every run; the time is from the start of the unload to the rejection.",
+    "Cancel, timer: a timer in the window aborts the run; the time is from the moment the timer was due to the rejection of the handler. Cancel, cli: a second Obsidian CLI call, the production `zotlit:query-cancel` with the `id` of the run, aborts the run; the time is from the arrival of that call in the window to the rejection, and the transport from the terminal to the window is given apart. Cancel, unload: the plugin unloads and cancels every run; the time is from the start of the unload to the rejection.",
   );
   const megabytes = (bytes: number): string => (bytes / 1024 / 1024).toFixed(1);
   notes.push(

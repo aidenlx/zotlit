@@ -13,7 +13,7 @@ export const itemQuerySchemaPaths = [
       "The Item Query Schema is build-only. Import runtime values from @zotlit/item-query.",
   },
   {
-    name: "@zotlit/item-query/item-query.schema.json",
+    name: "@zotlit/item-query/query.schema.json",
     allowTypeImports: true,
     message:
       "The generated Item Query Schema is build-only and must stay out of runtime bundles.",

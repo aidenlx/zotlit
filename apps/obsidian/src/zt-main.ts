@@ -41,8 +41,8 @@ import { registerFileMenu } from "./services/file-menu";
 import { addGraphCitationsActions } from "./services/graph-citations/actions";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { indexedKeyFileMenu } from "./services/indexed-key/menu";
-import { registerItemQueryCli } from "./services/item-query/cli";
-import { registerItemQueryMeasureCli } from "./services/item-query/measure";
+import { registerQueryCli } from "./services/item-query/cli";
+import { registerQueryMeasureCli } from "./services/item-query/measure";
 import { registerLibraryScopeCli } from "./services/library-scope/cli";
 import { registerLibraryScopeNotices } from "./services/library-scope/notices";
 import {
@@ -568,14 +568,14 @@ export default class ZotLitPlugin extends Plugin {
       zoteroPref: services.zoteroPref,
     });
 
-    registerItemQueryCli(this, services.itemQuery);
+    registerQueryCli(this, services.itemQuery);
     registerAnnotationImageCli(this, services);
 
-    // Measurement-only: lets packages/e2e/src/item-query-measure.ts read the
+    // Measurement-only: lets packages/e2e/src/query-measure.ts read the
     // slices, statements, heap, and cancel times of a run. A dev-build port,
     // never registered in a production build.
     if (__DEV__) {
-      registerItemQueryMeasureCli(this, services.itemQuery);
+      registerQueryMeasureCli(this, services.itemQuery);
     }
 
     registerPandocResolve(this, {

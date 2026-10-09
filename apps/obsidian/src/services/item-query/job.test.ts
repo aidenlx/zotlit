@@ -15,8 +15,8 @@ import { ItemQuerySliceObserver } from "@zotlit/item-query";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 
 import { makeAttachmentFileResolver } from "./attachment-files";
-import { ITEM_QUERY_COMMAND } from "./contract";
-import { decodeItemQuery } from "./decode";
+import { QUERY_COMMAND } from "./contract";
+import { decodeQuery } from "./decode";
 import type { DecodedQuery } from "./decode";
 import { runQueryJob } from "./job";
 import type { QueryJob } from "./worker-protocol";
@@ -60,7 +60,7 @@ const ATTACHMENT_PATHS = {
 
 /** The query that the renderer decodes from `params`, as plain JSON. */
 function decoded(params: CliData): DecodedQuery {
-  const query = decodeItemQuery(params);
+  const query = decodeQuery(params);
   if (query.kind === "invalid")
     throw new Error(`Malformed test query: ${query.message}`);
   return JSON.parse(JSON.stringify(query.value)) as DecodedQuery;
@@ -70,7 +70,7 @@ function jobOf(params: CliData, stagePath?: string): QueryJob {
   return {
     schema: false,
     dataset: "items",
-    command: ITEM_QUERY_COMMAND,
+    command: QUERY_COMMAND,
     query: decoded(params),
     id: "job-1",
     ...IDENTITY,

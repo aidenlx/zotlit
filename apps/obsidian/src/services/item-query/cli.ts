@@ -13,72 +13,63 @@ import type { CliData, CliHandler, Plugin } from "obsidian";
 import {
   envelope,
   failure,
-  ITEM_QUERY_CANCEL_COMMAND,
-  itemQueryCancelFlags,
+  QUERY_COMMAND,
+  QUERY_SCHEMA_COMMAND,
+  QUERY_GUIDE_COMMAND,
+  QUERY_CANCEL_COMMAND,
+  queryFlags,
+  queryCancelFlags,
   rejectionDiagnostic,
 } from "./contract";
-import { CLI_DATASETS } from "./datasets";
-import type { CliDataset } from "./datasets";
-import { decodeCancelArguments } from "./decode";
-import type { QueryDatasetId } from "./worker-protocol";
+import { decodeCancelArguments, decodeGuideArguments } from "./decode";
+import { GUIDE_TOPIC_NAMES, renderGuide } from "./guide";
 
-export interface ItemQueryRuns {
-  query(
-    dataset: QueryDatasetId,
-    params: CliData,
-    signal: AbortSignal,
-  ): Promise<string>;
-  schema(
-    dataset: QueryDatasetId,
-    params: CliData,
-    signal: AbortSignal,
-  ): Promise<string>;
-  /** @returns `false` when no query with this id is running. */
+export interface QueryRuns {
+  query(params: CliData, signal: AbortSignal): Promise<string>;
+  schema(params: CliData, signal: AbortSignal): Promise<string>;
   cancel(id: string): boolean;
 }
 
-export function registerItemQueryCli(
-  plugin: Plugin,
-  runs: ItemQueryRuns,
-): void {
+export function registerQueryCli(plugin: Plugin, runs: QueryRuns): void {
   const unload = new AbortController();
   plugin.register(() => unload.abort());
-  for (const dataset of Object.values(CLI_DATASETS)) {
-    plugin.registerCliHandler(
-      dataset.query.name,
-      dataset.query.description,
-      dataset.flags,
-      (params) => runs.query(dataset.id, params, unload.signal),
-    );
-    plugin.registerCliHandler(
-      dataset.schema.name,
-      dataset.schema.description,
-      null,
-      (params) => runs.schema(dataset.id, params, unload.signal),
-    );
-    plugin.registerCliHandler(
-      dataset.guide.name,
-      dataset.guide.description,
-      dataset.guideFlags,
-      guideHandler(dataset),
-    );
-  }
   plugin.registerCliHandler(
-    ITEM_QUERY_CANCEL_COMMAND,
-    "Stop a running Item Query or Annotation Query that was started with id, and return as JSON whether one was running",
-    itemQueryCancelFlags,
-    createItemQueryCancelHandler((id) => runs.cancel(id)),
+    QUERY_COMMAND,
+    "Query Zotero items and annotations as JSON; read zotlit:query-guide for syntax and zotlit:query-schema for the field catalog",
+    queryFlags,
+    (params) => runs.query(params, unload.signal),
+  );
+  plugin.registerCliHandler(
+    QUERY_SCHEMA_COMMAND,
+    "Get the version-pinned schema download, source custom fields, and CLI defaults as JSON",
+    { from: queryFlags.from },
+    (params) => runs.schema(params, unload.signal),
+  );
+  plugin.registerCliHandler(
+    QUERY_GUIDE_COMMAND,
+    "Print the ZotLit Query guide",
+    {
+      topic: {
+        value: `<${GUIDE_TOPIC_NAMES.join("|")}>`,
+        description: "Guide topic; omit it for the whole guide",
+      },
+    },
+    guideHandler,
+  );
+  plugin.registerCliHandler(
+    QUERY_CANCEL_COMMAND,
+    "Stop a running query started with id, and return as JSON whether one was running",
+    queryCancelFlags,
+    createQueryCancelHandler((id) => runs.cancel(id)),
   );
 }
 
 /** The guide is plain text; an unknown topic answers the diagnostic envelope. */
-export function guideHandler(dataset: CliDataset): (params: CliData) => string {
-  return (params) => {
-    const text = dataset.renderGuide(params);
-    return text.kind === "invalid"
-      ? failure(dataset.guide.name, rejectionDiagnostic(text))
-      : text.value;
-  };
+export function guideHandler(params: CliData): string {
+  const topic = decodeGuideArguments(params);
+  return topic.kind === "invalid"
+    ? failure(QUERY_GUIDE_COMMAND, rejectionDiagnostic(topic))
+    : renderGuide(topic.value);
 }
 
 /**
@@ -86,16 +77,16 @@ export function guideHandler(dataset: CliDataset): (params: CliData) => string {
  * query. An id with no running query, such as one that already finished,
  * answers `cancelRequested: false`.
  */
-export function createItemQueryCancelHandler(
+export function createQueryCancelHandler(
   cancel: (id: string) => boolean,
 ): CliHandler {
   return (params: CliData): string => {
     const request = decodeCancelArguments(params);
     if (request.kind === "invalid") {
-      return failure(ITEM_QUERY_CANCEL_COMMAND, rejectionDiagnostic(request));
+      return failure(QUERY_CANCEL_COMMAND, rejectionDiagnostic(request));
     }
     const id = request.value;
-    return envelope(ITEM_QUERY_CANCEL_COMMAND, {
+    return envelope(QUERY_CANCEL_COMMAND, {
       ok: true,
       id,
       cancelRequested: cancel(id),

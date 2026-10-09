@@ -61,6 +61,7 @@ export interface CliRejection {
   /** The first validation issue, at its path inside the CLI parameters. */
   issue?: {
     path: string;
+    span?: { from: number; to: number };
     expected: string;
     received: string;
     keys?: readonly (string | number)[];
@@ -273,6 +274,15 @@ export function decodeCliParams<TSchema extends CliSchema>(
   return {
     ...invalid(parameter, issue.message, {
       path: issuePath(issue.path),
+      ...(issue.path?.at(-1)?.type === "unknown" &&
+      typeof issue.path.at(-1)?.input === "string"
+        ? {
+            span: {
+              from: Number(issue.path.at(-1)!.key),
+              to: Number(issue.path.at(-1)!.key),
+            },
+          }
+        : {}),
       expected:
         issue.expected ??
         (issue.type === "parse_json" ? "JSON" : issue.message),

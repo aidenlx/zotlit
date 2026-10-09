@@ -12,23 +12,20 @@ import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import {
+  QUERY_COMMAND,
+  QUERY_SCHEMA_COMMAND,
   diagnostic,
   failure,
   queryCancelledText,
   queryIdInUseFailure,
   rejectionDiagnostic,
 } from "./contract";
-import type { ItemQueryCommand } from "./contract";
-import { CLI_DATASETS } from "./datasets";
-import { decodeSchemaArguments } from "./decode";
+import type { QueryCliCommand } from "./contract";
+import { decodeQuery, decodeSchemaArguments } from "./decode";
 import type { CancellationEvent, QueryObserver } from "./trace";
-import type {
-  QueryAnswer,
-  QueryCommand,
-  QueryDatasetId,
-} from "./worker-protocol";
+import type { QueryAnswer, QueryCommand } from "./worker-protocol";
 
-interface ItemQueryServiceDeps {
+interface QueryServiceDeps {
   pluginVersion: string;
   reads: ZoteroReadsService;
   zoteroPref: Pick<
@@ -59,7 +56,7 @@ const unnamedKey = (): string => `:${randomUUID()}`;
  * vault, so an id names one query in one vault. Unload interrupts every job
  * and waits for it.
  */
-export class ItemQueryService extends Service {
+export class QueryService extends Service {
   readonly #deps;
   #jobs!: FiberMap.FiberMap<string, string>;
   #run!: JobRunner;
@@ -67,7 +64,7 @@ export class ItemQueryService extends Service {
   #startup: { failed: true; error: unknown } | undefined;
   ready: Promise<void>;
 
-  constructor(deps: ItemQueryServiceDeps) {
+  constructor(deps: QueryServiceDeps) {
     super();
     this.#deps = deps;
     this.ready = this.#load();
@@ -93,52 +90,44 @@ export class ItemQueryService extends Service {
     this.commit(stack.move());
   }
 
-  /** Answer the query command of the CLI dataset `dataset`. */
-  query(
-    dataset: QueryDatasetId,
-    params: CliData,
-    signal: AbortSignal,
-  ): Promise<string> {
-    return this.#query({ dataset, params, signal });
+  /** Decode from and answer the shared query command. */
+  query(params: CliData, signal: AbortSignal): Promise<string> {
+    return this.#query({ params, signal });
   }
 
-  /** Answer an Item Query and report its measurement to `measure`. */
+  /** Answer a query and report its measurement to `measure`. */
   measure(
     params: CliData,
     signal: AbortSignal,
     measure: QueryObserver & { heap: boolean },
   ): Promise<string> {
-    return this.#query({ dataset: "items", params, signal, measure });
+    return this.#query({ params, signal, measure });
   }
 
   #query({
-    dataset,
     params,
     signal,
     measure,
   }: {
-    dataset: QueryDatasetId;
     params: CliData;
     signal: AbortSignal;
     measure?: QueryObserver & { heap: boolean };
   }): Promise<string> {
     // Decode and claim the id synchronously, so two calls with one id
     // cannot both start. The worker receives the decoded query.
-    const { decode, query: command } = CLI_DATASETS[dataset];
-    const request = decode(params);
+    const command = QUERY_COMMAND;
+    const request = decodeQuery(params);
     if (request.kind === "invalid") {
-      return Promise.resolve(
-        failure(command.name, rejectionDiagnostic(request)),
-      );
+      return Promise.resolve(failure(command, rejectionDiagnostic(request)));
     }
     const query = request.value;
     const { id } = query;
     if (id !== undefined && FiberMap.hasUnsafe(this.#jobs, id)) {
-      return Promise.resolve(queryIdInUseFailure(id, command.name));
+      return Promise.resolve(queryIdInUseFailure(id, command));
     }
     return this.#start(
       this.#job(
-        { schema: false, dataset, command: command.name, query },
+        { schema: false, dataset: query.from, command, query },
         measure,
       ),
       signal,
@@ -161,21 +150,19 @@ export class ItemQueryService extends Service {
     return true;
   }
 
-  /** Answer the schema command of the CLI dataset `dataset`. */
-  schema(
-    dataset: QueryDatasetId,
-    params: CliData,
-    signal: AbortSignal,
-  ): Promise<string> {
-    const { name: command } = CLI_DATASETS[dataset].schema;
-    const rejected = decodeSchemaArguments(params, command);
+  /** Answer the shared schema command, optionally narrowed by from. */
+  schema(params: CliData, signal: AbortSignal): Promise<string> {
+    const command = QUERY_SCHEMA_COMMAND;
+    const rejected = decodeSchemaArguments(params);
     if (rejected.kind === "invalid") {
       return Promise.resolve(failure(command, rejectionDiagnostic(rejected)));
     }
     return this.#start(
       this.#job({
         schema: true,
-        dataset,
+        ...(rejected.value.from === undefined
+          ? {}
+          : { dataset: rejected.value.from }),
         command,
         pluginVersion: this.#deps.pluginVersion,
       }),
@@ -317,7 +304,7 @@ function stageExport(
       Effect.promise(() =>
         rm(stagePath, { force: true }).catch((error: unknown) => {
           getLogger(["item-query"]).warn(
-            "Item Query could not remove its temporary export {path}",
+            "ZotLit Query could not remove its temporary export {path}",
             { path: stagePath, error },
           );
         }),
@@ -338,7 +325,7 @@ function publishExport({
   stagePath: string;
   output: string;
   answer: string;
-  command: ItemQueryCommand;
+  command: QueryCliCommand;
 }): Effect.Effect<string> {
   return Effect.tryPromise({
     try: () => link(stagePath, output),

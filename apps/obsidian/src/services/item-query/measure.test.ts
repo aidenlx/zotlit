@@ -1,14 +1,11 @@
 import type { CliHandler, Plugin } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  ITEM_QUERY_MEASURE_COMMAND,
-  registerItemQueryMeasureCli,
-} from "./measure";
+import { QUERY_MEASURE_COMMAND, registerQueryMeasureCli } from "./measure";
 
 function measureHandler(): CliHandler {
   const registerCliHandler = vi.fn();
-  registerItemQueryMeasureCli(
+  registerQueryMeasureCli(
     { registerCliHandler, register: () => {} } as unknown as Plugin,
     {
       measure: async () => {
@@ -17,12 +14,12 @@ function measureHandler(): CliHandler {
     },
   );
   const call = registerCliHandler.mock.calls.find(
-    ([command]) => command === ITEM_QUERY_MEASURE_COMMAND,
+    ([command]) => command === QUERY_MEASURE_COMMAND,
   );
   return call![3] as CliHandler;
 }
 
-describe("zotlit:item-query-measure cancelAfterMs", () => {
+describe("zotlit:query-measure cancelAfterMs", () => {
   it.each(["abc", "-5", "1e999", "NaN"])(
     "rejects %j before the run starts",
     async (cancelAfterMs) => {
@@ -33,7 +30,7 @@ describe("zotlit:item-query-measure cancelAfterMs", () => {
   );
 });
 
-describe("zotlit:item-query-measure heap", () => {
+describe("zotlit:query-measure heap", () => {
   it("rejects a value before the run starts", async () => {
     await expect(measureHandler()({ heap: "garbage" })).rejects.toThrow(
       "heap is a switch: name it alone, as heap.",
@@ -41,7 +38,7 @@ describe("zotlit:item-query-measure heap", () => {
   });
 });
 
-describe("zotlit:item-query-measure parameters", () => {
+describe("zotlit:query-measure parameters", () => {
   it.each<[Record<string, string>, string]>([
     [{ cancelAfterMs: "" }, "cancelAfterMs requires a value."],
     [{ "--heap": "true" }, "Parameter '--heap' is not valid: use heap."],

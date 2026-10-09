@@ -33,7 +33,7 @@ import { ExcerptImageService } from "./excerpt-image/service";
 import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
 import { ItemLookup } from "./item-lookup/service";
-import { ItemQueryService } from "./item-query/service";
+import { QueryService } from "./item-query/service";
 import { LibraryScopeService } from "./library-scope/service";
 import { LocalBridgeService } from "./local-bridge/service";
 import { LocalServerService } from "./local-server/service";
@@ -298,7 +298,7 @@ export function buildServices(
     })
     .use({
       itemQuery: ({ zoteroReads, libraryScope, zoteroPref }) =>
-        new ItemQueryService({
+        new QueryService({
           pluginVersion: plugin.manifest.version,
           reads: zoteroReads,
           libraryScope,

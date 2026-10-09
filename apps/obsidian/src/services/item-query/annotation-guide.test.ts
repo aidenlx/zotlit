@@ -12,20 +12,15 @@ import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 import {
   ANNOTATION_GUIDE_EXAMPLES,
   ANNOTATION_GUIDE_FILTERS,
-  ANNOTATION_GUIDE_TOPICS,
-  ANNOTATION_GUIDE_TOPIC_NAMES,
 } from "./annotation-guide";
 import { answer } from "./answer";
-import { guideHandler, registerItemQueryCli } from "./cli";
-import {
-  ANNOTATION_QUERY_COMMAND,
-  ANNOTATION_QUERY_GUIDE_COMMAND,
-} from "./contract";
-import { CLI_DATASETS } from "./datasets";
-import { decodeAnnotationQuery } from "./decode";
+import { guideHandler, registerQueryCli } from "./cli";
+import { QUERY_COMMAND, QUERY_GUIDE_COMMAND } from "./contract";
+import { decodeQuery } from "./decode";
+import { GUIDE_TOPICS, GUIDE_TOPIC_NAMES } from "./guide";
 import type { QueryReply } from "./worker-protocol";
 
-const annotationQueryGuideHandler = guideHandler(CLI_DATASETS.annotations);
+const annotationQueryGuideHandler = guideHandler;
 
 const IDENTITY = {
   vault: { name: "Research", path: "/vaults/research" },
@@ -36,14 +31,14 @@ function runAnnotationQuery(
   scenario: ScenarioDatabase,
   params: CliData,
 ): Promise<Record<string, unknown>> {
-  const decoded = decodeAnnotationQuery(params);
+  const decoded = decodeQuery({ ...params, from: "annotations" });
   if (decoded.kind === "invalid")
     throw new Error(`Malformed guide query: ${decoded.message}`);
   const reply = answer(
     {
       schema: false,
       dataset: "annotations",
-      command: ANNOTATION_QUERY_COMMAND,
+      command: QUERY_COMMAND,
       query: decoded.value,
       scope: MY_LIBRARY_SCOPE,
     },
@@ -57,21 +52,20 @@ function runAnnotationQuery(
   return Effect.runPromise(reply);
 }
 
-describe("zotlit:annotation-query-guide", () => {
+describe("zotlit:query-guide", () => {
   it("prints its quickstart, commands, and complete topic index", () => {
     const output = annotationQueryGuideHandler({});
 
     expect(() => JSON.parse(output)).toThrow();
-    expect(output).toContain("zotlit:annotation-query");
-    expect(output).toContain("zotlit:annotation-query-guide");
-    for (const topic of ANNOTATION_GUIDE_TOPIC_NAMES)
-      expect(output).toContain(topic);
+    expect(output).toContain("zotlit:query");
+    expect(output).toContain("zotlit:query-guide");
+    for (const topic of GUIDE_TOPIC_NAMES) expect(output).toContain(topic);
   });
 
   it.each([
-    ["command", ["SYNOPSIS", "Library scope", "libraries wins"]],
+    ["datasets", ["from=items", "from=annotations", "item."]],
     ["filter", ["item.title", "tags.contains", "one expression"]],
-    ["keys", ["attachmentIndexedKey", "itemIndexedKey", "combine with AND"]],
+    ["filter", ["attachmentIndexedKey", "itemIndexedKey", "combine with AND"]],
     ["fields", ["position.kind", "unknown", "attachment"]],
     ["sort", ["Sortable Fields", "Sort Index", "truncated"]],
     [
@@ -80,12 +74,12 @@ describe("zotlit:annotation-query-guide", () => {
         "diagnostic.report",
         "diagnostic.hint",
         "warnings",
-        "version 2",
+        "version is 3",
         "file.bytes",
         "returnedCount",
       ],
     ],
-    ["images", ["hasExcerptImage", "provenance", "file-unavailable"]],
+    ["fields", ["hasExcerptImage", "provenance", "file-unavailable"]],
     ["cancel", ["cancelRequested", "query-id", "annotations-1"]],
   ])("prints topic=%s", (topic, facts) => {
     const output = annotationQueryGuideHandler({ topic });
@@ -94,7 +88,7 @@ describe("zotlit:annotation-query-guide", () => {
   });
 
   it("states document location conventions once", () => {
-    const guide = Object.values(ANNOTATION_GUIDE_TOPICS).join("\n");
+    const guide = Object.values(GUIDE_TOPICS).join("\n");
 
     for (const text of ["bottom-left origin", "zero-based", "document's own"])
       expect(guide.split(text)).toHaveLength(2);
@@ -104,7 +98,7 @@ describe("zotlit:annotation-query-guide", () => {
     expect(
       JSON.parse(annotationQueryGuideHandler({ topic: "bogus" })),
     ).toMatchObject({
-      command: ANNOTATION_QUERY_GUIDE_COMMAND,
+      command: QUERY_GUIDE_COMMAND,
       ok: false,
       diagnostic: {
         code: "invalid-argument",
@@ -151,23 +145,23 @@ describe("zotlit:annotation-query-guide", () => {
       registerCliHandler,
     } as unknown as Plugin;
 
-    registerItemQueryCli(plugin, {
+    registerQueryCli(plugin, {
       query: async () => "",
       cancel: () => false,
       schema: async () => "",
     });
 
     expect(registerCliHandler).toHaveBeenCalledWith(
-      ANNOTATION_QUERY_GUIDE_COMMAND,
+      QUERY_GUIDE_COMMAND,
       expect.any(String),
       expect.objectContaining({ topic: expect.any(Object) }),
       expect.any(Function),
     );
     const guide = registerCliHandler.mock.calls.find(
-      ([command]) => command === ANNOTATION_QUERY_GUIDE_COMMAND,
+      ([command]) => command === QUERY_GUIDE_COMMAND,
     )![3] as (params: CliData) => string;
-    expect(guide({ topic: "images" })).toBe(
-      annotationQueryGuideHandler({ topic: "images" }),
+    expect(guide({ topic: "fields" })).toBe(
+      annotationQueryGuideHandler({ topic: "fields" }),
     );
   });
 });

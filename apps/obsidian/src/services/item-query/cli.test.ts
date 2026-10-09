@@ -12,25 +12,24 @@ import type { LibraryScope } from "@/services/library-scope/scope";
 
 import { answer } from "./answer";
 import {
-  createItemQueryCancelHandler,
+  createQueryCancelHandler,
   guideHandler,
-  registerItemQueryCli,
+  registerQueryCli,
 } from "./cli";
 import {
   DIAGNOSTIC_HINTS,
   diagnostic,
   failure,
-  ITEM_QUERY_CANCEL_COMMAND,
-  ITEM_QUERY_COMMAND,
-  ITEM_QUERY_GUIDE_COMMAND,
-  ITEM_QUERY_SCHEMA_COMMAND,
+  QUERY_CANCEL_COMMAND,
+  QUERY_COMMAND,
+  QUERY_GUIDE_COMMAND,
+  QUERY_SCHEMA_COMMAND,
 } from "./contract";
 import type { Diagnostic } from "./contract";
-import { CLI_DATASETS } from "./datasets";
-import { decodeItemQuery, rejectionDiagnostic } from "./decode";
+import { decodeQuery, rejectionDiagnostic } from "./decode";
 import { GUIDE_EXAMPLES, GUIDE_FILTERS, GUIDE_TOPIC_NAMES } from "./guide";
 
-const itemQueryGuideHandler = guideHandler(CLI_DATASETS.items);
+const itemQueryGuideHandler = guideHandler;
 
 /** Runs the Item Query of flat arguments on `scenario`, as a Query Job would. */
 function runnerOf(
@@ -38,15 +37,15 @@ function runnerOf(
   scope: LibraryScope = MY_LIBRARY_SCOPE,
 ) {
   return async (params: CliData = {}) => {
-    const query = decodeItemQuery(params);
+    const query = decodeQuery(params);
     if (query.kind === "invalid")
       throw new Error(`Malformed test query: ${query.message}`);
     const reply = await Effect.runPromise(
       answer(
         {
           schema: false,
-          dataset: "items",
-          command: ITEM_QUERY_COMMAND,
+          dataset: query.value.from,
+          command: QUERY_COMMAND,
           query: query.value,
           scope,
         },
@@ -66,10 +65,10 @@ function runnerOf(
   };
 }
 
-describe("zotlit:item-query-cancel", () => {
+describe("zotlit:query-cancel", () => {
   function cancelOf(active: readonly string[]) {
     const requested: string[] = [];
-    const handler = createItemQueryCancelHandler((id) => {
+    const handler = createQueryCancelHandler((id) => {
       requested.push(id);
       return active.includes(id);
     });
@@ -86,8 +85,8 @@ describe("zotlit:item-query-cancel", () => {
     const answer = await run({ id: "export-a" });
 
     expect(answer).toEqual({
-      contractVersion: 2,
-      command: ITEM_QUERY_CANCEL_COMMAND,
+      contractVersion: 3,
+      command: QUERY_CANCEL_COMMAND,
       ok: true,
       id: "export-a",
       cancelRequested: true,
@@ -99,8 +98,8 @@ describe("zotlit:item-query-cancel", () => {
     const { run } = cancelOf(["export-a"]);
 
     expect(await run({ id: "export-b" })).toEqual({
-      contractVersion: 2,
-      command: ITEM_QUERY_CANCEL_COMMAND,
+      contractVersion: 3,
+      command: QUERY_CANCEL_COMMAND,
       ok: true,
       id: "export-b",
       cancelRequested: false,
@@ -116,7 +115,7 @@ describe("zotlit:item-query-cancel", () => {
     const { run, requested } = cancelOf(["export-a"]);
 
     expect(await run(params)).toMatchObject({
-      command: ITEM_QUERY_CANCEL_COMMAND,
+      command: QUERY_CANCEL_COMMAND,
       ok: false,
       diagnostic: { code: "invalid-argument", details: { parameter } },
     });
@@ -124,34 +123,31 @@ describe("zotlit:item-query-cancel", () => {
   });
 });
 
-describe("zotlit:item-query-guide", () => {
+describe("zotlit:query-guide", () => {
   it("prints the quickstart as plain text with every command and topic", () => {
     const output = itemQueryGuideHandler({});
 
     expect(() => JSON.parse(output)).toThrow();
     for (const command of [
-      ITEM_QUERY_COMMAND,
-      ITEM_QUERY_CANCEL_COMMAND,
-      ITEM_QUERY_SCHEMA_COMMAND,
-      ITEM_QUERY_GUIDE_COMMAND,
+      QUERY_COMMAND,
+      QUERY_CANCEL_COMMAND,
+      QUERY_SCHEMA_COMMAND,
+      QUERY_GUIDE_COMMAND,
     ]) {
       expect(output).toContain(command);
     }
     for (const topic of GUIDE_TOPIC_NAMES) expect(output).toContain(topic);
     expect(output).toContain(
-      "obsidian zotlit:item-query [filter=<expression>] [fields=<json>]",
+      "obsidian zotlit:query [from=<items|annotations>]",
     );
-    expect(output).toContain("[limit=<n|all>] [library=<personal|group:id>]");
-    expect(output).toContain("[libraries=<json|all>]");
-    expect(output).toContain(
-      "returns at most\n  100 rows, sorted by dateModified descending.\n  Each row has itemType, title, creators, date, and dateModified.",
-    );
+    expect(output).toContain("[fields=<list|json>]");
+    expect(output).toContain("[library=<list|all>]");
     expect(output).toContain("Library scope");
-    expect(output).toContain("libraries wins");
+    expect(output).toContain("from=annotations");
   });
 
   it("prints the recovery text of each diagnostic code that the handlers answer", async () => {
-    using scenario = openScenarioDatabase();
+    using scenario = openScenarioDatabase({ annotations: true });
     const output = itemQueryGuideHandler({ topic: "results" });
     const flat = output.replaceAll(/\s+/g, " ");
     const run = runnerOf(scenario, {
@@ -161,7 +157,7 @@ describe("zotlit:item-query-guide", () => {
 
     type Answered = { code: string; hint: string };
     // The renderer answers a malformed argument; the handler, the rest.
-    const malformed = decodeItemQuery({ limit: "0" });
+    const malformed = decodeQuery({ limit: "0" });
     if (malformed.kind === "valid") throw new Error("limit=0 decoded");
     const diagnostics: Answered[] = [rejectionDiagnostic(malformed)];
     const failing: CliData[] = [{}, { library: "group:999" }];
@@ -194,7 +190,7 @@ describe("zotlit:item-query-guide", () => {
       "cancel",
       [
         "id=",
-        "obsidian zotlit:item-query-cancel id=",
+        "obsidian zotlit:query-cancel id=",
         "cancelRequested",
         "already finished",
         "query-id-in-use",
@@ -212,8 +208,8 @@ describe("zotlit:item-query-guide", () => {
     const answer = JSON.parse(itemQueryGuideHandler({ topic: "bogus" }));
 
     expect(answer).toMatchObject({
-      contractVersion: 2,
-      command: ITEM_QUERY_GUIDE_COMMAND,
+      contractVersion: 3,
+      command: QUERY_GUIDE_COMMAND,
       ok: false,
       diagnostic: {
         code: "invalid-argument",
@@ -223,7 +219,7 @@ describe("zotlit:item-query-guide", () => {
   });
 
   it("shows only commands and filters that run", async () => {
-    using scenario = openScenarioDatabase();
+    using scenario = openScenarioDatabase({ annotations: true });
     const run = runnerOf(scenario);
     const failures: string[] = [];
 
@@ -252,7 +248,7 @@ describe("zotlit:item-query-guide", () => {
   });
 });
 
-describe("registerItemQueryCli", () => {
+describe("registerQueryCli", () => {
   it("registers the command with its flags and cancels runs when the plugin unloads", async () => {
     const registerCliHandler = vi.fn();
     const onUnload: (() => void)[] = [];
@@ -261,8 +257,8 @@ describe("registerItemQueryCli", () => {
       register: (callback: () => void) => onUnload.push(callback),
     } as unknown as Plugin;
 
-    registerItemQueryCli(plugin, {
-      query: async (_dataset, _params, signal) => {
+    registerQueryCli(plugin, {
+      query: async (_params, signal) => {
         signal.throwIfAborted();
         return "";
       },
@@ -271,7 +267,7 @@ describe("registerItemQueryCli", () => {
     });
 
     expect(registerCliHandler).toHaveBeenCalledWith(
-      ITEM_QUERY_COMMAND,
+      QUERY_COMMAND,
       expect.any(String),
       expect.objectContaining({
         filter: expect.any(Object),
@@ -279,35 +275,41 @@ describe("registerItemQueryCli", () => {
         sort: expect.any(Object),
         limit: expect.any(Object),
         library: expect.any(Object),
-        libraries: expect.any(Object),
+        from: expect.any(Object),
         id: expect.any(Object),
       }),
       expect.any(Function),
     );
     expect(registerCliHandler).toHaveBeenCalledWith(
-      ITEM_QUERY_CANCEL_COMMAND,
+      QUERY_CANCEL_COMMAND,
       expect.any(String),
       expect.objectContaining({ id: expect.any(Object) }),
       expect.any(Function),
     );
     const cancel = registerCliHandler.mock.calls.find(
-      ([command]) => command === ITEM_QUERY_CANCEL_COMMAND,
+      ([command]) => command === QUERY_CANCEL_COMMAND,
     )![3] as CliHandler;
     expect(JSON.parse(await cancel({ id: "export-a" }))).toMatchObject({
       cancelRequested: true,
     });
     expect(registerCliHandler).toHaveBeenCalledWith(
-      ITEM_QUERY_SCHEMA_COMMAND,
+      QUERY_SCHEMA_COMMAND,
       expect.any(String),
-      null,
+      expect.objectContaining({ from: expect.any(Object) }),
       expect.any(Function),
     );
     expect(registerCliHandler).toHaveBeenCalledWith(
-      ITEM_QUERY_GUIDE_COMMAND,
+      QUERY_GUIDE_COMMAND,
       expect.any(String),
       expect.objectContaining({ topic: expect.any(Object) }),
       expect.any(Function),
     );
+    expect(registerCliHandler.mock.calls.map(([name]) => name)).toEqual([
+      "zotlit:query",
+      "zotlit:query-schema",
+      "zotlit:query-guide",
+      "zotlit:query-cancel",
+    ]);
     const handler = registerCliHandler.mock.calls[0]![3] as CliHandler;
     for (const callback of onUnload) callback();
     await expect(handler({})).rejects.toMatchObject({ name: "AbortError" });
@@ -318,7 +320,7 @@ it.each(Object.keys(DIAGNOSTIC_HINTS) as (keyof typeof DIAGNOSTIC_HINTS)[])(
   "renders operational %s without an excerpt",
   (code) => {
     const value = diagnostic(code, "Operational failure");
-    const answer = JSON.parse(failure(ITEM_QUERY_COMMAND, value)) as {
+    const answer = JSON.parse(failure(QUERY_COMMAND, value)) as {
       diagnostic: Diagnostic;
     };
     expect(answer.diagnostic).toMatchObject({

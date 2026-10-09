@@ -12,7 +12,7 @@ import {
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
 import { makeAttachmentFileResolver } from "@/services/item-query/attachment-files";
-import { decodeItemQuery } from "@/services/item-query/decode";
+import { decodeQuery } from "@/services/item-query/decode";
 import type { DecodedQuery } from "@/services/item-query/decode";
 import type { QueryJob } from "@/services/item-query/worker-protocol";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
@@ -58,13 +58,13 @@ function jobOf(
   params: Record<string, string>,
   stagePath?: string,
 ): QueryJob {
-  const query = decodeItemQuery(params);
+  const query = decodeQuery(params);
   if (query.kind === "invalid")
     throw new Error(`Malformed test query: ${query.message}`);
   return {
     schema: false,
     dataset: "items",
-    command: "zotlit:item-query",
+    command: "zotlit:query",
     query: JSON.parse(JSON.stringify(query.value)) as DecodedQuery,
     id,
     ...IDENTITY,
@@ -186,7 +186,7 @@ describe("ZoteroReads ItemQuery", () => {
     );
 
     expect(answers.cancelled).toEqual({
-      command: "zotlit:item-query",
+      command: "zotlit:query",
       answer: "",
       receipt: { kind: "inline" },
       cancelled: true,

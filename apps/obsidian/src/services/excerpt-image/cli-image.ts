@@ -134,7 +134,8 @@ export async function answerAnnotationImage(
 }
 
 const IMAGE_HINTS = {
-  "annotation-not-found": "Use an Annotation key from zotlit:annotation-query.",
+  "annotation-not-found":
+    "Use an Annotation key from zotlit:query from=annotations.",
   "not-an-image-annotation":
     "Use the key of an image or ink Annotation with hasExcerptImage=true.",
   "file-unavailable":

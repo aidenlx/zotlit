@@ -11,7 +11,7 @@ export default defineLibrary({
   dts: true,
   exports: {
     customExports: {
-      "./item-query.schema.json": "./dist/item-query.schema.json",
+      "./query.schema.json": "./dist/query.schema.json",
     },
   },
 });

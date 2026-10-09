@@ -2605,7 +2605,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
   }, 120_000);
 
-  it("answers zotlit:item-query over the Library Scope and over named Libraries with the Fixture's Indexed Keys", async () => {
+  it("answers zotlit:query over the Library Scope and over named Libraries with the Fixture's Indexed Keys", async () => {
     const [myLibrary, sharedReading] = LIBRARIES;
     const wireOf = (library: (typeof LIBRARIES)[number]) =>
       library.groupID === null
@@ -2651,7 +2651,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(inScope.length).toBeGreaterThan(1);
 
     const limited = JSON.parse(
-      await cliCommand(vaultId, "zotlit:item-query", {
+      await cliCommand(vaultId, "zotlit:query", {
         args: {
           fields: "[]",
           limit: "3",
@@ -2660,11 +2660,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ) as ItemQueryReport;
 
     expect(limited).toMatchObject({
-      contractVersion: 2,
-      command: "zotlit:item-query",
+      contractVersion: 3,
+      command: "zotlit:query",
       ok: true,
       libraries: inScope.map(wireOf),
-      request: { libraries: inScope.map(selectorOf), fields: [], limit: 3 },
+      request: {
+        from: "items",
+        library: inScope.map(selectorOf),
+        fields: [],
+        limit: 3,
+      },
       returnedCount: 3,
       truncated: true,
     });
@@ -2674,12 +2679,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // A named range, in another order than the canonical one.
     const range = JSON.parse(
-      await cliCommand(vaultId, "zotlit:item-query", {
+      await cliCommand(vaultId, "zotlit:query", {
         args: {
-          libraries: JSON.stringify([
-            selectorOf(sharedReading!),
-            selectorOf(myLibrary!),
-          ]),
+          library: [selectorOf(sharedReading!), selectorOf(myLibrary!)].join(
+            ",",
+          ),
           fields: "[]",
           limit: "all",
         },
@@ -2690,7 +2694,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ok: true,
       libraries: [wireOf(myLibrary!), wireOf(sharedReading!)],
       request: {
-        libraries: [selectorOf(myLibrary!), selectorOf(sharedReading!)],
+        library: [selectorOf(myLibrary!), selectorOf(sharedReading!)],
         limit: null,
       },
       truncated: false,
@@ -2700,7 +2704,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
 
     const group = JSON.parse(
-      await cliCommand(vaultId, "zotlit:item-query", {
+      await cliCommand(vaultId, "zotlit:query", {
         args: {
           library: selectorOf(sharedReading!),
           fields: "[]",
@@ -2712,7 +2716,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(group).toMatchObject({
       ok: true,
       libraries: [wireOf(sharedReading!)],
-      request: { libraries: [selectorOf(sharedReading!)], limit: null },
+      request: { library: [selectorOf(sharedReading!)], limit: null },
       truncated: false,
     });
     expect(group.rows!.map((row) => row.indexedKey)).toEqual(
@@ -2751,7 +2755,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       const expected = personalKeys(predicate);
       expect(expected.length).toBeGreaterThan(1);
       const helpers = JSON.parse(
-        await cliCommand(vaultId, "zotlit:item-query", {
+        await cliCommand(vaultId, "zotlit:query", {
           args: {
             library: selectorOf(myLibrary!),
             filter,
@@ -2779,7 +2783,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       output: exportPath,
     };
     const receipt = JSON.parse(
-      await cliCommand(vaultId, "zotlit:item-query", { args: exportArgs }),
+      await cliCommand(vaultId, "zotlit:query", { args: exportArgs }),
     );
     const exportedText = await readFile(exportPath, "utf8");
     expect(receipt).toMatchObject({
@@ -2794,7 +2798,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(receipt).not.toHaveProperty("rows");
     expect(JSON.parse(exportedText)).toEqual(group);
     const repeated = JSON.parse(
-      await cliCommand(vaultId, "zotlit:item-query", { args: exportArgs }),
+      await cliCommand(vaultId, "zotlit:query", { args: exportArgs }),
     );
     expect(repeated).toMatchObject({
       ok: false,
@@ -2848,14 +2852,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const integerQuery = {
       library: "personal",
       filter: 'volume == "9007199254740993"',
-      fields: '["volume"]',
+      fields: "volume",
     };
     for (const filter of [
       integerQuery.filter,
       'volume.lower() == "9007199254740993"',
     ]) {
       const changed = JSON.parse(
-        await cliCommand(vaultId, "zotlit:item-query", {
+        await cliCommand(vaultId, "zotlit:query", {
           args: { ...integerQuery, filter },
         }),
       ) as ItemQueryReport;
@@ -2872,7 +2876,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
   });
 
-  it("queries an Item's reading record through zotlit:annotation-query", async () => {
+  it("queries an Item's reading record through zotlit:query from=annotations", async () => {
     // Own the Fixture and vault so earlier cases cannot leave this query's
     // linked Attachment paths pointing at a vault they have removed.
     const queryFixture = getFixtureLayout(
@@ -2890,13 +2894,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const queryVaultId = created.stdout.trim().split("\n")[0]!.trim();
     await keepRendering(queryVaultId);
     const report = JSON.parse(
-      await cliCommand(queryVaultId, "zotlit:annotation-query", {
-        args: { item: annotationItem.key, limit: "all" },
+      await cliCommand(queryVaultId, "zotlit:query", {
+        args: { from: "annotations", item: annotationItem.key, limit: "all" },
       }),
     ) as ItemQueryReport;
     expect(report).toMatchObject({
-      contractVersion: 2,
-      command: "zotlit:annotation-query",
+      contractVersion: 3,
+      command: "zotlit:query",
+      request: { from: "annotations" },
       ok: true,
       truncated: false,
     });
@@ -2923,19 +2928,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
     expect(report.rows![0]!.values).not.toHaveProperty("position");
     const filtered = JSON.parse(
-      await cliCommand(queryVaultId, "zotlit:annotation-query", {
+      await cliCommand(queryVaultId, "zotlit:query", {
         args: {
+          from: "annotations",
           item: annotationItem.key,
           filter: `type == "image" && item.title == ${JSON.stringify(annotationItem.title)}`,
-          fields: '["type","item.title","item.date"]',
-          sort: '[{"field":"pageIndex","direction":"asc"}]',
+          fields: "type,item.title,item.date",
+          sort: "pageIndex",
           limit: "all",
         },
       }),
     ) as ItemQueryReport;
     expect(filtered).toMatchObject({
       ok: true,
-      command: "zotlit:annotation-query",
+      command: "zotlit:query",
     });
     expect(filtered.rows!.map((row) => row.indexedKey).toSorted()).toEqual(
       expected
@@ -2944,28 +2950,29 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         .toSorted(),
     );
     const schema = JSON.parse(
-      await cliCommand(queryVaultId, "zotlit:annotation-query-schema"),
+      await cliCommand(queryVaultId, "zotlit:query-schema", {
+        args: { from: "annotations" },
+      }),
     ) as ItemQuerySchemaReport;
     expect(schema).toMatchObject({
-      contractVersion: 2,
-      command: "zotlit:annotation-query-schema",
+      contractVersion: 3,
+      command: "zotlit:query-schema",
       ok: true,
-      schema: { url: expect.stringContaining("/annotation-query.schema.json") },
+      schema: { url: expect.stringContaining("/query.schema.json") },
       defaults: {
-        fields: expect.arrayContaining(["type", "item.title"]),
-        limit: 100,
+        annotations: {
+          fields: expect.arrayContaining(["type", "item.title"]),
+          limit: 100,
+        },
       },
     });
     const catalog = JSON.parse(
       await readFile(
-        join(
-          workspaceRoot,
-          "packages/item-query/dist/annotation-query.schema.json",
-        ),
+        join(workspaceRoot, "packages/item-query/dist/query.schema.json"),
         "utf8",
       ),
-    ) as { fields: object[] };
-    expect(catalog.fields).toContainEqual({
+    ) as { datasets: { annotations: { fields: object[] } } };
+    expect(catalog.datasets.annotations.fields).toContainEqual({
       path: "item.title",
       type: "string",
       filter: "string",
@@ -2973,13 +2980,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       sort: true,
     });
     const invalid = JSON.parse(
-      await cliCommand(queryVaultId, "zotlit:annotation-query", {
-        args: { filter: "item.title.startsWith(1)" },
+      await cliCommand(queryVaultId, "zotlit:query", {
+        args: { from: "annotations", filter: "item.title.startsWith(1)" },
       }),
     ) as ItemQueryReport;
     expect(invalid).toMatchObject({
-      contractVersion: 2,
-      command: "zotlit:annotation-query",
+      contractVersion: 3,
+      command: "zotlit:query",
       ok: false,
       diagnostic: {
         code: "wrong-argument-type",
@@ -2988,10 +2995,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
 
     const positions = JSON.parse(
-      await cliCommand(queryVaultId, "zotlit:annotation-query", {
+      await cliCommand(queryVaultId, "zotlit:query", {
         args: {
+          from: "annotations",
           item: JSON.stringify([annotationItem.key, positionDocumentItem.key]),
-          fields: '["position"]',
+          fields: "position",
           limit: "all",
         },
       }),
@@ -3007,28 +3015,82 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
   });
 
-  it("describes Item Query through zotlit:item-query-schema", async () => {
+  it("runs every zotlit:query-guide example on the Fixture", async () => {
+    const guide = await cliCommand(vaultId, "zotlit:query-guide");
+    const prefix = "obsidian zotlit:query ";
+    const examples = guide
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(
+        (line) =>
+          line.startsWith(prefix) && !line.slice(prefix.length).startsWith("["),
+      );
+    expect(examples.length).toBeGreaterThan(10);
+    for (const line of examples) {
+      // Guide examples quote whole values with single quotes; the unit test
+      // verifies that their values contain no single quote themselves.
+      const tokens: string[] = [];
+      let token = "";
+      let quoted = false;
+      for (const char of line.slice(prefix.length)) {
+        if (char === "'") quoted = !quoted;
+        else if (char === " " && !quoted) {
+          if (token) tokens.push(token);
+          token = "";
+        } else token += char;
+      }
+      if (token) tokens.push(token);
+      const result = JSON.parse(
+        await cli([`vault=${vaultId}`, "zotlit:query", ...tokens]),
+      ) as ItemQueryReport;
+      expect(result, line).toMatchObject({
+        contractVersion: 3,
+        command: "zotlit:query",
+        ok: true,
+        warnings: [],
+      });
+    }
+    for (const topic of [
+      "datasets",
+      "filter",
+      "fields",
+      "sort",
+      "results",
+      "schema",
+      "cancel",
+    ]) {
+      const text = await cliCommand(vaultId, "zotlit:query-guide", {
+        args: { topic },
+      });
+      expect(guide).toContain(text);
+      expect(text.length).toBeLessThan(guide.length);
+    }
+  });
+
+  it("describes ZotLit Query through zotlit:query-schema", async () => {
     const version = await obEval(
       vaultId,
       "app.plugins.plugins.zotlit.manifest.version",
     );
     const answer = JSON.parse(
-      await cliCommand(vaultId, "zotlit:item-query-schema"),
+      await cliCommand(vaultId, "zotlit:query-schema"),
     ) as ItemQuerySchemaReport;
 
     expect(answer).toMatchObject({
-      contractVersion: 2,
-      command: "zotlit:item-query-schema",
+      contractVersion: 3,
+      command: "zotlit:query-schema",
       ok: true,
       schema: {
-        url: `https://github.com/aidenlx/zotlit/releases/download/res-${version}/item-query.schema.json`,
-        fileName: `zotlit-item-query-${version}.schema.json`,
+        url: `https://github.com/aidenlx/zotlit/releases/download/res-${version}/query.schema.json`,
+        fileName: `zotlit-query-${version}.schema.json`,
       },
       defaults: {
-        fields: ["itemType", "title", "creators", "date", "dateModified"],
-        sort: [{ field: "dateModified", direction: "desc" }],
-        limit: 100,
-        libraries: { source: "library-scope" },
+        items: {
+          fields: ["itemType", "title", "creators", "date", "dateModified"],
+          sort: [{ field: "dateModified", direction: "desc" }],
+          limit: 100,
+          library: { source: "library-scope" },
+        },
       },
     });
     expect(answer.customFields).toEqual(expect.any(Array));
@@ -3037,16 +3099,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // that release CI stages and verifies at the reported version-pinned URL.
     const catalog = JSON.parse(
       await readFile(
-        join(workspaceRoot, "packages/item-query/dist/item-query.schema.json"),
+        join(workspaceRoot, "packages/item-query/dist/query.schema.json"),
         "utf8",
       ),
     ) as {
-      fields: object[];
+      datasets: { items: { fields: object[] } };
       functions: { name: string }[];
       types: string[];
       methods: object[];
     };
-    expect(catalog.fields).toContainEqual({
+    expect(catalog.datasets.items.fields).toContainEqual({
       path: "title",
       type: "string",
       filter: "string",
@@ -3064,13 +3126,35 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
   });
 
-  it("answers an invalid zotlit:item-query with the code, location, and hint", async () => {
+  it("rejects unavailable datasets and the removed libraries parameter through zotlit:query", async () => {
+    const unsupported = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: { from: "attachments" },
+      }),
+    );
+    expect(unsupported).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "invalid-argument",
+        expected: ["items", "annotations"],
+      },
+    });
+    const removed = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", { args: { libraries: "all" } }),
+    );
+    expect(removed).toMatchObject({
+      ok: false,
+      diagnostic: { hint: expect.stringContaining("Use library=") },
+    });
+  });
+
+  it("answers an invalid zotlit:query with the code, location, and hint", async () => {
     for (const [name, value] of [
       ["filter", 'title == "no such item"'],
       ["limit", "all"],
     ] as const) {
       const malformed = JSON.parse(
-        await cliCommand(vaultId, "zotlit:item-query", {
+        await cliCommand(vaultId, "zotlit:query", {
           args: { [`--${name}`]: value },
         }),
       ) as ItemQueryReport;
@@ -3083,7 +3167,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       });
     }
     const answer = JSON.parse(
-      await cliCommand(vaultId, "zotlit:item-query", {
+      await cliCommand(vaultId, "zotlit:query", {
         args: {
           filter: "title.startsWith(1)",
         },
@@ -3091,8 +3175,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ) as ItemQueryReport;
 
     expect(answer).toMatchObject({
-      contractVersion: 2,
-      command: "zotlit:item-query",
+      contractVersion: 3,
+      command: "zotlit:query",
       ok: false,
       diagnostic: {
         code: "wrong-argument-type",
@@ -3105,7 +3189,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
   // Failure modes: CLI serialization must preserve syntax corrections, ranked
   // names, and successful warnings; report boundaries must match legacy fields.
-  it("reports zotlit:item-query syntax, unknown names, and never-true warnings", async () => {
+  it("reports zotlit:query syntax, unknown names, and never-true warnings", async () => {
     for (const probe of [
       {
         filter: 'itemType == "book" AND date.year > 2010',
@@ -3130,13 +3214,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
     ]) {
       const answer = JSON.parse(
-        await cliCommand(vaultId, "zotlit:item-query", {
+        await cliCommand(vaultId, "zotlit:query", {
           args: { filter: probe.filter, fields: "[]", limit: "1" },
         }),
       ) as ItemQueryReport;
       expect(answer).toMatchObject({
-        contractVersion: 2,
-        command: "zotlit:item-query",
+        contractVersion: 3,
+        command: "zotlit:query",
         ok: probe.ok,
       });
       const diagnostic = probe.ok ? answer.warnings?.[0] : answer.diagnostic;
@@ -3164,7 +3248,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
   });
 
-  it("reports zotlit:annotation-query syntax, unknown names, and never-true warnings", async () => {
+  it("reports zotlit:query from=annotations syntax, unknown names, and never-true warnings", async () => {
     for (const probe of [
       {
         filter: 'type == "image" AND item.date.year > 2010',
@@ -3189,13 +3273,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
     ]) {
       const answer = JSON.parse(
-        await cliCommand(vaultId, "zotlit:annotation-query", {
-          args: { filter: probe.filter, fields: "[]", limit: "1" },
+        await cliCommand(vaultId, "zotlit:query", {
+          args: {
+            from: "annotations",
+            filter: probe.filter,
+            fields: "[]",
+            limit: "1",
+          },
         }),
       ) as ItemQueryReport;
       expect(answer).toMatchObject({
-        contractVersion: 2,
-        command: "zotlit:annotation-query",
+        contractVersion: 3,
+        command: "zotlit:query",
         ok: probe.ok,
       });
       const diagnostic = probe.ok ? answer.warnings?.[0] : answer.diagnostic;
@@ -3223,7 +3312,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
   });
 
-  it("preserves Annotation selector JSON paths and Library conflicts through the CLI", async () => {
+  it("preserves ZotLit Query Annotation selector JSON paths and Library conflicts", async () => {
     for (const probe of [
       { args: { item: '["QANITM22", 3]' }, argument: "item", path: "item[1]" },
       {
@@ -3238,17 +3327,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
     ]) {
       const result = JSON.parse(
-        await cliCommand(vaultId, "zotlit:annotation-query", {
-          args: Object.fromEntries(
-            Object.entries(probe.args).filter(
-              (entry): entry is [string, string] => entry[1] !== undefined,
+        await cliCommand(vaultId, "zotlit:query", {
+          args: {
+            from: "annotations",
+            ...Object.fromEntries(
+              Object.entries(probe.args).filter(
+                (entry): entry is [string, string] => entry[1] !== undefined,
+              ),
             ),
-          ),
+          },
         }),
       ) as ItemQueryReport;
       expect(result).toMatchObject({
-        contractVersion: 2,
-        command: "zotlit:annotation-query",
+        contractVersion: 3,
+        command: "zotlit:query",
         ok: false,
         diagnostic: {
           code: "invalid-argument",
@@ -3293,16 +3385,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
   });
 
-  it("sorts titles in the pinned Item Query string order", async () => {
+  it("sorts titles in the pinned ZotLit Query string order", async () => {
     // The order Node gives in the package tests; this run proves that the
     // collator of Obsidian's Electron gives the same.
     const answer = JSON.parse(
-      await cliCommand(vaultId, "zotlit:item-query", {
+      await cliCommand(vaultId, "zotlit:query", {
         args: {
           filter:
             '["Zebra", "apple", "Éclair", "eclair", "10", "9"].contains(title)',
-          fields: '["title"]',
-          sort: '[{"field":"title","direction":"asc"}]',
+          fields: "title",
+          sort: "title",
           limit: "all",
         },
       }),
@@ -3850,7 +3942,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   });
 });
 
-/** The `zotlit:item-query` reply shape this suite reads (see
+/** The `zotlit:query` reply shape this suite reads (see
  *  apps/obsidian/src/services/item-query/contract.ts and answer.ts). */
 interface ItemQueryReport {
   contractVersion: number;
@@ -3861,7 +3953,12 @@ interface ItemQueryReport {
     | { type: "personal" }
     | { type: "group"; groupID: number; name: string }
   )[];
-  request?: { libraries: string[]; fields: string[]; limit: number | null };
+  request?: {
+    from: "items" | "annotations";
+    library: string[];
+    fields: string[];
+    limit: number | null;
+  };
   returnedCount?: number;
   truncated?: boolean;
   rows?: { indexedKey: string; values: Record<string, unknown> }[];
@@ -3880,7 +3977,7 @@ interface ItemQueryDiagnostic {
   location?: { argument: string; span?: { from: number; to: number } };
 }
 
-/** The `zotlit:item-query-schema` reply shape this suite reads (see
+/** The `zotlit:query-schema` reply shape this suite reads (see
  *  apps/obsidian/src/services/item-query/contract.ts and answer.ts). */
 interface ItemQuerySchemaReport {
   contractVersion: number;
