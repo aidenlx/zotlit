@@ -6,7 +6,7 @@ import type { WorkerMeasurement } from "./trace";
 
 /** The command of a job: the schema, or the query that the renderer decoded. */
 export type QueryCommand =
-  | { schema: true }
+  | { schema: true; pluginVersion: string }
   | { schema: false; query: DecodedQuery };
 
 /** Small request data for the ZoteroReads worker. Query rows stay in that worker. */

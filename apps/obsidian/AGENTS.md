@@ -46,6 +46,10 @@ Run `/i18n-ui-text` for wording style; `/inlang-i18n` for JSON format and runtim
 
 **Tailwind-first.** Run `/obsidian-css` before you write a class list or a stylesheet rule.
 
+## CLI schemas and resources
+
+When adding or changing a CLI schema or downloadable resource, inspect `src/services/template-workbench/schema.ts`, [ADR 0019](../../docs/adr/0019-runtime-assets-ship-on-a-parallel-resource-release.md), and `.github/workflows/release.yml` at the repository root. They own the version-pinned Resource Release pattern.
+
 ## Debugging
 
 Run `/obsidian-debug` to build, reload, and screenshot the running Obsidian instance.

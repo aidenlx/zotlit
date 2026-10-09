@@ -8,13 +8,18 @@ import {
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
-import { describeItemQuery, ItemQueryScheduler, queryItems } from ".";
+import {
+  describeItemQueryCustomFields,
+  ItemQueryScheduler,
+  queryItems,
+} from ".";
 import type {
   ItemQueryRequest,
   ItemQuerySchema,
   SchemaFunction,
   SchemaParameter,
 } from ".";
+import { describeItemQuery, describeItemQueryVocabulary } from "./schema";
 import { runEffect } from "./test-helpers";
 
 async function schema(scenario: ScenarioDatabase): Promise<ItemQuerySchema> {
@@ -68,6 +73,29 @@ describe("describeItemQuery custom fields", () => {
         sort: false,
       },
     ]);
+    const { exit } = await runEffect(describeItemQueryCustomFields(), {
+      client: scenario.db,
+    });
+    if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
+    expect(exit.value).toEqual(customFields);
+  });
+});
+
+describe("the static Item Query vocabulary", () => {
+  it("matches the source-independent part of the complete schema", async () => {
+    using scenario = openScenarioDatabase();
+    const { fields, functions, methods, properties, types } =
+      await schema(scenario);
+
+    expect(describeItemQueryVocabulary()).toEqual({
+      fields,
+      functions,
+      methods,
+      properties,
+      types,
+    });
+    expect(describeItemQueryVocabulary()).not.toHaveProperty("customFields");
+    expect(describeItemQueryVocabulary()).not.toHaveProperty("defaults");
   });
 });
 

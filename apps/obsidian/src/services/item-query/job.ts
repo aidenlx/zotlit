@@ -48,7 +48,7 @@ export function runQueryJob(
     const answerSteps: number[] = [];
     const heapBefore = job.heap ? process.memoryUsage().heapUsed : undefined;
     const reply = job.schema
-      ? yield* answerItemQuerySchema({ identity })
+      ? yield* answerItemQuerySchema({ identity }, job.pluginVersion)
       : yield* answerItemQuery(
           {
             identity,

@@ -44,6 +44,7 @@ function setup(
     }),
   });
   const service = new ItemQueryService({
+    pluginVersion: "2.2.0-beta.2",
     reads,
     zoteroPref: { sourceId: "captured-source", databasePath: scenario.path },
     libraryScope: {
@@ -79,6 +80,10 @@ describe("Item Query worker jobs", () => {
     ).toMatchObject({
       command: "zotlit:item-query-schema",
       ok: true,
+      schema: {
+        url: "https://github.com/aidenlx/zotlit/releases/download/res-2.2.0-beta.2/item-query.schema.json",
+        fileName: "zotlit-item-query-2.2.0-beta.2.schema.json",
+      },
     });
     const unavailable = setup(scenario, () => {
       throw new Error("source closed");
@@ -461,6 +466,7 @@ describe("Item Query worker jobs", () => {
     const failed: Promise<void> = Promise.reject(startup);
     failed.catch(() => {});
     const service = new ItemQueryService({
+      pluginVersion: "2.2.0-beta.2",
       reads,
       zoteroPref: { sourceId: "captured-source", databasePath: scenario.path },
       libraryScope: {

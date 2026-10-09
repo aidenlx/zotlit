@@ -101,8 +101,8 @@ DESCRIPTION
   Write text in double quotes. Names are case-sensitive.
 
 FIELDS
-  A bare name is a built-in field of the schema (schema.fields[].filter
-  gives the type a filter reads). Examples:
+  A bare name is a built-in field. In the downloaded schema catalog,
+  fields[].filter gives the type a filter reads. Examples:
     ${filter('itemType == "book"')}
     ${filter('title.startsWith("The")')}
   key is the Zotero Key of the Item inside its Library. Two Libraries can
@@ -177,7 +177,8 @@ ELEMENT EXPRESSIONS
   running result, which starts at initial. filter keeps the elements for
   which the expression is true; map gives the list of results; reduce
   gives the final acc. Outside the expression, value, index, and acc are
-  custom fields with those names. schema.methods[].scope lists the names.
+  custom fields with those names. The downloaded catalog's methods[].scope
+  lists the names.
     ${filter('creators.filter(value.contains("Lovelace")).length > 0')}
     ${filter('tags.map(value.lower()).contains("to-read")')}
     ${filter("tags.reduce(acc + value.length, 0) > 20")}
@@ -196,8 +197,9 @@ DATES
   A year-only date equals every day of that year.
 
 CUSTOM FIELDS
-  Read a custom field as custom["<exact name>"]. schema.customFields lists
-  each one; its path is ready to use. A custom field whose bareName is true
+  Read a custom field as custom["<exact name>"]. The schema command's
+  customFields list names each one; its path is ready to use. A custom field
+  whose bareName is true
   also has a short form: its name alone. A bare name always means the
   built-in field when one has that name.
 
@@ -210,8 +212,8 @@ ERRORS AND EMPTY VALUES
     ${filter("!(date.year < 2000)")}
 
 SEE ALSO
-  schema.functions, schema.methods, and schema.properties list every call
-  with its parameters.`;
+  The downloaded catalog's functions, methods, and properties list every
+  call with its parameters. Read guide topic=schema to obtain the catalog.`;
 
 const FIELDS_SECTION = `FIELDS AND PROJECTION PATHS
 
@@ -224,11 +226,12 @@ DESCRIPTION
 PATHS
   A path selects a field or a value inside it, as in a ZotLit template:
   date.year, creators[0].fullName, tags[1].name. Each entry of
-  schema.fields with projection true is a path. A list path shows index 0;
+  the downloaded catalog's fields with projection true is a path.
+  A list path shows index 0;
   any index works.
     ${example({ fields: '["title","date.year","creators[0].fullName","tags","attachments"]' })}
   A custom field is the path custom["<exact name>"]; copy it from
-  schema.customFields[].path.
+  customFields[].path in the schema command's response.
 
 VALUES
   Each row has every requested path. A missing value is null; an empty list
@@ -240,7 +243,8 @@ const SORT_SECTION = `SORT AND LIMIT
 SORT
   sort is a JSON array of {"field","direction"} objects; direction is "asc"
   or "desc". The first entry orders first. A Sortable Field has sort true in
-  schema.fields: one value per Item, such as title, date, or dateModified.
+  the downloaded catalog's fields: one value per Item, such as title, date,
+  or dateModified.
     ${example({ sort: '[{"field":"date","direction":"desc"},{"field":"title","direction":"asc"}]' })}
   The default is ${DEFAULT_SORT_TEXT}.
   Items without a value come last in both directions. The Indexed Key orders
@@ -265,7 +269,8 @@ LIMIT
 const RESULTS_SECTION = `RESULTS AND DIAGNOSTICS
 
 ENVELOPE
-  Each answer is JSON with contractVersion, command, and ok.
+  Query, schema, and cancel answers are JSON with contractVersion, command,
+  and ok. The guide prints text.
   On success, the query answer has identity (the vault and the Zotero
   source), libraries, request (the query after defaults), returnedCount,
   truncated, and rows. Each row is {"indexedKey","values"}; values has one
@@ -325,8 +330,36 @@ QUERY ALREADY FINISHED
   error, and nothing changes. A query that finishes its result while the
   cancel arrives can still return it; read the answer of that call.`;
 
+const SCHEMA_SECTION = `SCHEMA DOWNLOAD AND SOURCE FIELDS
+
+PUBLISHED CATALOG
+  ${ITEM_QUERY_SCHEMA_COMMAND} returns identity, schema, customFields, and
+  defaults. schema.url downloads the static catalog for this plugin version;
+  schema.fileName gives a versioned local filename. The catalog contains
+  fields, functions, methods, properties, and types. customFields and defaults
+  belong to the live response, including the source-specific custom paths.
+
+CHOOSE THE CATALOG SOURCE
+  An unpublished development version has no Resource Release. For a .dev
+  build, use the matching source checkout: build @zotlit/item-query and read
+  packages/item-query/dist/item-query.schema.json. For a released version,
+  download schema.url once, using the steps below.
+
+INSPECT LOCALLY
+  Save the small live response:
+    obsidian vault=<vault> ${ITEM_QUERY_SCHEMA_COMMAND} > query-source.json
+    jq '{ok, identity, diagnostic}' query-source.json
+  Continue when ok is true and identity names the intended source:
+    curl --fail --location "$(jq -r '.schema.url' query-source.json)" --output "$(jq -r '.schema.fileName' query-source.json)"
+  The catalog is large. Use jq to read only the entries the task needs:
+    jq '.fields[] | select(.path == "title" or .path == "date.year")' "$(jq -r '.schema.fileName' query-source.json)"
+    jq '.customFields' query-source.json
+  Keep the downloaded catalog while schema.url is unchanged. Refresh the
+  live response when the Zotero source or its custom fields change.`;
+
 /** Canonical topic registry shared by parsing, generated help, and the index. */
 export const GUIDE_TOPICS = {
+  schema: SCHEMA_SECTION,
   filter: FILTER_SECTION,
   fields: FIELDS_SECTION,
   sort: SORT_SECTION,
@@ -350,7 +383,9 @@ select as JSON. It reads the top-level Items outside the trash and changes
 nothing in Zotero.
 
 WORKFLOW
-  1. Read the schema: the fields, functions, and defaults of this source.
+  Put vault=<vault> before each command and check identity in its JSON answer.
+  1. Get the schema download, source custom fields, and CLI defaults.
+     Read topic=schema to download once and inspect entries with jq.
   2. Run a query with filter, fields, sort, and limit.
   3. On ok false, follow diagnostic.hint and run the query again.
 
@@ -365,8 +400,8 @@ DEFAULTS
   Library scope setting) as one result set and returns at most
   ${DEFAULT_CLI_LIMIT} rows, sorted by ${DEFAULT_SORT_TEXT}.
   Each row has ${DEFAULT_FIELD_LIST}.
-  schema.defaults.libraries names the source of the default Libraries, the
-  Library scope setting; it is no value of the libraries argument.
+  defaults.libraries in the schema response names their source: the Library
+  scope setting. It is no value of the libraries argument.
 
 LIBRARIES
   library names one Library: personal (My Library), or group:<groupID>.

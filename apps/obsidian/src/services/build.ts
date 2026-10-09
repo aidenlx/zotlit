@@ -299,6 +299,7 @@ export function buildServices(
     .use({
       itemQuery: ({ zoteroReads, libraryScope, zoteroPref }) =>
         new ItemQueryService({
+          pluginVersion: plugin.manifest.version,
           reads: zoteroReads,
           libraryScope,
           zoteroPref,
