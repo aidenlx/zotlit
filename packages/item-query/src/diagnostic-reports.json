@@ -598,5 +598,53 @@
       "   ^ Opened here; close with \"\\\"\".",
       "Use \"."
     ]
+  },
+  {
+    "name": "list equality warning",
+    "request": {
+      "filter": "tags == \"bulk\""
+    },
+    "report": [
+      "tags is a list and \"bulk\" is a string: == between them is never true.",
+      "tags == \"bulk\"",
+      "----    ^^^^^^^^",
+      "Try: tags.contains(\"bulk\")"
+    ]
+  },
+  {
+    "name": "list inequality warning",
+    "request": {
+      "filter": "tags != \"bulk\""
+    },
+    "report": [
+      "tags is a list and \"bulk\" is a string: != between them is always true. The filter selects every Item.",
+      "tags != \"bulk\"",
+      "----    ^^^^^^^^",
+      "Try: !tags.contains(\"bulk\")"
+    ]
+  },
+  {
+    "name": "numeric text warning",
+    "request": {
+      "filter": "date.year == \"2019\""
+    },
+    "report": [
+      "date.year is a number and \"2019\" is a string: == between them is never true.",
+      "date.year == \"2019\"",
+      "---------    ^^^^^^^^",
+      "Try: date.year == 2019"
+    ]
+  },
+  {
+    "name": "date text warning",
+    "request": {
+      "filter": "dateAdded > \"2020-01-01\""
+    },
+    "report": [
+      "dateAdded is a date and \"2020-01-01\" is a string: > between them is never true.",
+      "dateAdded > \"2020-01-01\"",
+      "---------   ^^^^^^^^^^^^^^",
+      "Try: dateAdded > date(\"2020-01-01\")"
+    ]
   }
 ]
