@@ -108,6 +108,7 @@ RESULT IDENTITIES
 const FIELDS_SECTION = `FIELDS AND POSITION
 
 PROJECTION PATHS
+  library is personal for My Library or group:<groupID> for a group.
   fields is a JSON array of values to return. fields='[]' returns only the
   three row identities. position is available only when requested and stays
   out of the default row.

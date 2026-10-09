@@ -103,16 +103,23 @@ export function openAnnotationHydration(
           hydrates || parent.plan !== null
             ? { ...loads, file, item: parent.plan }
             : null,
-        load: Effect.fnUntraced(function* (chunk) {
+        load: Effect.fnUntraced(function* (chunk, libraryAt) {
           const hydrated = hydrates
             ? yield* readAnnotationHydrateChunk({ rows: chunk, ...loads })
             : null;
+          const parents = [
+            ...new Map(
+              chunk.map((row, index) => [
+                row.parent.itemID,
+                { scan: row.parent, library: libraryAt(index) },
+              ]),
+            ).values(),
+          ];
           const parentItems = new Map(
-            (yield* parent.load([
-              ...new Map(
-                chunk.map((row) => [row.parent.itemID, row.parent]),
-              ).values(),
-            ])).map((item) => [item.scan.itemID, item]),
+            (yield* parent.load(
+              parents.map((row) => row.scan),
+              (index) => parents[index]!.library,
+            )).map((item) => [item.scan.itemID, item]),
           );
           const result: QueryAnnotation[] = [];
           for (const scan of chunk) {

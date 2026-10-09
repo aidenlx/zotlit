@@ -23,6 +23,7 @@ import {
   timestamp,
 } from "./filter-dates";
 import type { FilterValue, FilterValueType } from "./filter-values";
+import { libraryField } from "./library-field";
 import type { PathSegment } from "./projection-path";
 import type { QueryClock } from "./query-clock";
 import type { ProjectionValue } from "./request";
@@ -33,6 +34,7 @@ import type { ProjectionValue } from "./request";
  */
 export interface QueryItem {
   readonly scan: ScanRow;
+  readonly groupID: number | null;
   readonly hydrated: HydratedItem;
   /** The custom fields of the source, for the complete `custom` object. */
   readonly customFieldNames: readonly string[];
@@ -78,6 +80,8 @@ export type SortKey = string | number | null;
  */
 export interface FieldDefinition<Item = QueryItem, Needs = FieldNeeds> {
   readonly shape: ValueShape;
+  /** Documented forms of a text value, with placeholders for variable parts. */
+  readonly valueForms?: readonly string[];
   /** What hydration loads for a path that starts at this field. */
   readonly needs: (rest: readonly PathSegment[]) => Needs;
   /** Reads the complete value of the field. */
@@ -379,7 +383,10 @@ const attachmentsField: FieldDefinition = {
   },
 };
 
-const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map([
+const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map<
+  string,
+  FieldDefinition
+>([
   // Every built-in Zotero field of the bundled schema, with its aliases.
   ...Object.keys(FIELD_LABELS["en-US"]).map(
     (name) => [name, zoteroField(name)] as const,
@@ -394,6 +401,7 @@ const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map([
   ],
   ["dateAdded", scanTimestamp("dateAdded")],
   ["dateModified", scanTimestamp("dateModified")],
+  ["library", libraryField],
   ["custom", customField],
   ["creators", creatorsField],
   ["tags", tagsField],

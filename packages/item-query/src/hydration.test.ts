@@ -51,8 +51,8 @@ async function open(scenario: ScenarioDatabase, request: Request) {
         afterKey: null,
         size: HYDRATE_CHUNK_SIZE,
       });
-      const scanned = yield* hydration.scan.load(page);
-      const projected = yield* hydration.projection.load(page);
+      const scanned = yield* hydration.scan.load(page, () => personal);
+      const projected = yield* hydration.projection.load(page, () => personal);
       return { hydration, opened, scanned, projected };
     }),
     {
