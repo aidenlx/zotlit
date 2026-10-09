@@ -1,0 +1,4641 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>原型：ZotLit 查询命令重设计</title>
+    <!--
+      PROTOTYPE — throwaway. Design question:
+      Can ONE `zotlit:query` command with `from=items|attachments|annotations` and two-way
+      relation lists (item.attachments, attachment.annotations, annotation.item) answer
+      SQL-style cross-entity questions, while the argument form stays as simple as an
+      Obsidian Bases view (filter / fields / sort / limit)?
+      Logic lives in engine.mjs (pure, liftable). This page is the shell. Rebuild: node assemble.mjs
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      @theme inline {
+        --color-ground: var(--ground);
+        --color-panel: var(--panel);
+        --color-line: var(--line);
+        --color-ink: var(--ink);
+        --color-muted: var(--muted);
+        --color-accent: var(--accent);
+        --color-ok: var(--ok);
+        --color-warn: var(--warn);
+        --color-bad: var(--bad);
+        --color-old: var(--old);
+        --font-display: var(--font-display);
+        --font-body: var(--font-body);
+        --font-mono: var(--font-mono);
+      }
+    </style>
+    <style>
+      :root {
+        --ground: #f5f2ea;
+        --panel: #ffffff;
+        --line: #dcd8cc;
+        --ink: #1e3a5f;
+        --muted: #66707b;
+        --accent: #e8622c;
+        --ok: #2f7d4f;
+        --warn: #b7791f;
+        --bad: #b23a3a;
+        --old: #7a6f5a;
+        --font-display: "Archivo", "Noto Sans SC", sans-serif;
+        --font-body: "Noto Sans SC", system-ui, sans-serif;
+        --font-mono: "JetBrains Mono", ui-monospace, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ground: #0f1620;
+          --panel: #16202c;
+          --line: #2a3744;
+          --ink: #d8e2f0;
+          --muted: #8e9aaa;
+          --accent: #f0793f;
+          --ok: #5fbf84;
+          --warn: #e0a84a;
+          --bad: #e06a6a;
+          --old: #b4a98f;
+        }
+      }
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        font-feature-settings: "tnum";
+      }
+      pre {
+        font-family: var(--font-mono);
+        font-size: 12.5px;
+        line-height: 1.5;
+      }
+      textarea {
+        font-family: var(--font-mono);
+      }
+      .tab[aria-selected="true"] {
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+      .changed {
+        background: color-mix(in oklab, var(--accent) 14%, transparent);
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      table.tbl td,
+      table.tbl th {
+        border-bottom: 1px solid var(--line);
+        padding: 4px 8px;
+        vertical-align: top;
+      }
+      table.tbl th {
+        text-align: left;
+        font-weight: 500;
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.02em;
+      }
+      table.tbl td {
+        font-size: 12.5px;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19",
+          "react-dom/client": "https://esm.sh/react-dom@19/client",
+          "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime",
+          "lucide-react": "https://esm.sh/lucide-react@1?external=react",
+          "beautiful-mermaid": "https://esm.sh/beautiful-mermaid@1"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/mermaid" id="er">
+      graph TB
+        I["文献 Item<br/>title · citationKey · date<br/>creators · tags · collections"]
+        A["附件 Attachment<br/>title · contentType · linkMode<br/>path · exists"]
+        N["批注 Annotation<br/>type · text · comment<br/>colorName · pageLabel · tags"]
+        I -- "attachments[]" --> A
+        A -- "item" --> I
+        A -- "annotations[]" --> N
+        N -- "attachment" --> A
+        I -- "annotations[]" --> N
+        N -- "item" --> I
+    </script>
+
+    <script type="text/plain" id="mod-data">
+// PROTOTYPE — sample Zotero data for the query CLI redesign. Throwaway.
+// Two Libraries: personal "My Library" and group 118 "Lab Archive".
+
+export const LIBRARIES = [
+  { selector: "personal", type: "personal", groupID: null, name: "My Library" },
+  { selector: "group:118", type: "group", groupID: 118, name: "Lab Archive" },
+];
+
+const P = "personal";
+const G = "group:118";
+
+export const ITEMS = [
+  {
+    key: "VASW2017",
+    library: P,
+    itemType: "journalArticle",
+    title: "Attention is all you need",
+    citationKey: "vaswaniAttention2017",
+    creators: [
+      ["Vaswani", "Ashish", "author"],
+      ["Shazeer", "Noam", "author"],
+      ["Parmar", "Niki", "author"],
+    ],
+    date: "2017-06-12",
+    dateAdded: "2024-03-02T09:12:00Z",
+    dateModified: "2025-09-30T08:00:00Z",
+    publicationTitle: "NeurIPS",
+    tags: ["to-read", "method", "query-eval"],
+    collections: ["Thesis/Methods"],
+    custom: { "review.status": "include" },
+    abstractNote:
+      "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks.",
+  },
+  {
+    key: "ROUG2014",
+    library: P,
+    itemType: "journalArticle",
+    title: "Ten simple rules for better figures",
+    citationKey: "rougierTenSimpleRules2014",
+    creators: [
+      ["Rougier", "Nicolas P.", "author"],
+      ["Droettboom", "Michael", "author"],
+      ["Bourne", "Philip E.", "author"],
+    ],
+    date: "2014-09-11",
+    dateAdded: "2024-01-15T10:00:00Z",
+    dateModified: "2025-10-01T12:30:00Z",
+    publicationTitle: "PLoS Computational Biology",
+    tags: ["figure", "method", "query-eval"],
+    collections: ["Thesis/Methods", "Teaching"],
+    custom: { "review.status": "include" },
+    abstractNote:
+      "Scientific visualization is classically defined as the process of graphically displaying scientific data.",
+  },
+  {
+    key: "LOVE1843",
+    library: P,
+    itemType: "journalArticle",
+    title: "Notes on the Analytical Engine",
+    citationKey: "lovelaceNotes1843",
+    creators: [
+      ["Lovelace", "Ada", "author"],
+      ["Menabrea", "Luigi", "editor"],
+    ],
+    date: "1843",
+    dateAdded: "2023-11-20T08:00:00Z",
+    dateModified: "2024-02-02T08:00:00Z",
+    publicationTitle: "Scientific Memoirs",
+    tags: ["history", "query-eval"],
+    collections: ["Thesis/Background"],
+    custom: { "review.status": "exclude" },
+    abstractNote:
+      "Translator's notes on the Analytical Engine invented by Charles Babbage.",
+  },
+  {
+    key: "HOCH1997",
+    library: P,
+    itemType: "journalArticle",
+    title: "Long short-term memory",
+    citationKey: "hochreiterLong1997",
+    creators: [
+      ["Hochreiter", "Sepp", "author"],
+      ["Schmidhuber", "Jürgen", "author"],
+    ],
+    date: "1997-11",
+    dateAdded: "2024-05-05T08:00:00Z",
+    dateModified: "2025-06-10T08:00:00Z",
+    publicationTitle: "Neural Computation",
+    tags: ["method", "query-eval"],
+    collections: ["Thesis/Background"],
+    custom: { "review.status": "include" },
+    abstractNote:
+      "Learning to store information over extended time intervals via recurrent backpropagation takes a very long time.",
+  },
+  {
+    key: "ZHOU2023",
+    library: P,
+    itemType: "journalArticle",
+    title: "深度学习在医学影像中的应用综述",
+    citationKey: "zhouShenduXuexi2023",
+    creators: [
+      ["周", "明", "author"],
+      ["李", "华", "author"],
+    ],
+    date: "2023",
+    dateAdded: "2025-02-11T08:00:00Z",
+    dateModified: "2025-09-20T08:00:00Z",
+    publicationTitle: "计算机学报",
+    tags: ["to-read", "survey", "query-eval"],
+    collections: ["Thesis/Background"],
+    custom: { "review.status": "undecided" },
+    abstractNote: "本文综述了深度学习方法在医学影像分析中的研究进展。",
+  },
+  {
+    key: "KNUT1984",
+    library: P,
+    itemType: "book",
+    title: "The TeXbook",
+    citationKey: "knuthTeXbook1984",
+    creators: [["Knuth", "Donald E.", "author"]],
+    date: "1984",
+    dateAdded: "2023-06-01T08:00:00Z",
+    dateModified: "2023-06-01T08:00:00Z",
+    publisher: "Addison-Wesley",
+    tags: ["reference"],
+    collections: ["Teaching"],
+    custom: {},
+    abstractNote: "",
+  },
+  {
+    key: "TUFT2001",
+    library: P,
+    itemType: "book",
+    title: "The visual display of quantitative information",
+    citationKey: "tufteVisual2001",
+    creators: [["Tufte", "Edward R.", "author"]],
+    date: null,
+    dateAdded: "2024-08-08T08:00:00Z",
+    dateModified: "2025-01-05T08:00:00Z",
+    publisher: "Graphics Press",
+    tags: ["figure", "query-eval-edge"],
+    collections: ["Teaching"],
+    custom: { "review.status": "include" },
+    abstractNote: "",
+  },
+  {
+    key: "SMIT2022",
+    library: P,
+    itemType: "thesis",
+    title: "Attention mechanisms for clinical time series",
+    citationKey: "smithAttention2022",
+    creators: [["Smith", "Jordan", "author"]],
+    date: "2022-05",
+    dateAdded: "2025-07-07T08:00:00Z",
+    dateModified: "2025-08-01T08:00:00Z",
+    university: "University of Edinburgh",
+    tags: ["to-read"],
+    collections: ["Thesis/Methods"],
+    custom: { "review.status": "undecided" },
+    abstractNote:
+      "This thesis studies attention over irregularly sampled clinical measurements.",
+  },
+  // Lab Archive (group 118)
+  {
+    key: "ROUG2014",
+    library: G,
+    itemType: "journalArticle",
+    title: "Ten simple rules for better figures",
+    citationKey: "rougierTenSimpleRules2014",
+    creators: [
+      ["Rougier", "Nicolas P.", "author"],
+      ["Droettboom", "Michael", "author"],
+      ["Bourne", "Philip E.", "author"],
+    ],
+    date: "2014-09-11",
+    dateAdded: "2025-03-03T08:00:00Z",
+    dateModified: "2025-09-29T08:00:00Z",
+    publicationTitle: "PLoS Computational Biology",
+    tags: ["figure", "shared", "query-eval"],
+    collections: ["Lab reading/Figures"],
+    custom: { "review.status": "include" },
+    abstractNote:
+      "Scientific visualization is classically defined as the process of graphically displaying scientific data.",
+  },
+  {
+    key: "DEVL2019",
+    library: G,
+    itemType: "conferencePaper",
+    title: "BERT: Pre-training of deep bidirectional transformers",
+    citationKey: "devlinBERT2019",
+    creators: [
+      ["Devlin", "Jacob", "author"],
+      ["Chang", "Ming-Wei", "author"],
+    ],
+    date: "2019-06",
+    dateAdded: "2025-04-01T08:00:00Z",
+    dateModified: "2025-04-01T08:00:00Z",
+    proceedingsTitle: "NAACL",
+    tags: ["method", "shared"],
+    collections: ["Lab reading/NLP"],
+    custom: {},
+    abstractNote:
+      "We introduce a new language representation model called BERT.",
+  },
+  {
+    key: "HAND2020",
+    library: G,
+    itemType: "book",
+    title: "Handbook of research synthesis",
+    citationKey: "cooperHandbook2020",
+    creators: [
+      ["Cooper", "Harris", "editor"],
+      ["Hedges", "Larry V.", "editor"],
+    ],
+    date: "2020",
+    dateAdded: "2025-05-01T08:00:00Z",
+    dateModified: "2025-05-02T08:00:00Z",
+    publisher: "Russell Sage",
+    tags: ["query-eval-edge", "reference"],
+    collections: ["Lab reading/Methods"],
+    custom: {},
+    abstractNote: "",
+  },
+];
+
+// linkMode: imported_file | linked_file | imported_url | linked_url
+export const ATTACHMENTS = [
+  {
+    key: "PDFVASW1",
+    library: P,
+    parent: "VASW2017",
+    title: "Vaswani et al. - 2017 - Attention is all you need.pdf",
+    contentType: "application/pdf",
+    linkMode: "imported_file",
+    path: "/Users/me/Zotero/storage/PDFVASW1/Vaswani et al. - 2017.pdf",
+    exists: true,
+    dateAdded: "2024-03-02T09:13:00Z",
+    dateModified: "2024-03-02T09:13:00Z",
+    tags: [],
+  },
+  {
+    key: "PDFROUG1",
+    library: P,
+    parent: "ROUG2014",
+    title: "Rougier et al. - 2014 - Ten simple rules.pdf",
+    contentType: "application/pdf",
+    linkMode: "imported_file",
+    path: "/Users/me/Zotero/storage/PDFROUG1/Rougier 2014.pdf",
+    exists: true,
+    dateAdded: "2024-01-15T10:01:00Z",
+    dateModified: "2024-01-15T10:01:00Z",
+    tags: [],
+  },
+  {
+    key: "SNPROUG1",
+    library: P,
+    parent: "ROUG2014",
+    title: "Snapshot",
+    contentType: "text/html",
+    linkMode: "imported_url",
+    path: "/Users/me/Zotero/storage/SNPROUG1/journal.pcbi.1003833.html",
+    exists: true,
+    dateAdded: "2024-01-15T10:02:00Z",
+    dateModified: "2024-01-15T10:02:00Z",
+    tags: [],
+  },
+  {
+    key: "PDFLOVE1",
+    library: P,
+    parent: "LOVE1843",
+    title: "Lovelace 1843 scan.pdf",
+    contentType: "application/pdf",
+    linkMode: "linked_file",
+    path: "/Volumes/Archive/scans/Lovelace 1843.pdf",
+    exists: false,
+    dateAdded: "2023-11-20T08:01:00Z",
+    dateModified: "2023-11-20T08:01:00Z",
+    tags: ["scan"],
+  },
+  {
+    key: "PDFHOCH1",
+    library: P,
+    parent: "HOCH1997",
+    title: "Hochreiter and Schmidhuber - 1997 - LSTM.pdf",
+    contentType: "application/pdf",
+    linkMode: "imported_file",
+    path: "/Users/me/Zotero/storage/PDFHOCH1/LSTM.pdf",
+    exists: true,
+    dateAdded: "2024-05-05T08:01:00Z",
+    dateModified: "2024-05-05T08:01:00Z",
+    tags: [],
+  },
+  {
+    key: "EPBTUFT1",
+    library: P,
+    parent: "TUFT2001",
+    title: "Tufte - Visual display.epub",
+    contentType: "application/epub+zip",
+    linkMode: "imported_file",
+    path: "/Users/me/Zotero/storage/EPBTUFT1/Tufte.epub",
+    exists: true,
+    dateAdded: "2024-08-08T08:01:00Z",
+    dateModified: "2024-08-08T08:01:00Z",
+    tags: [],
+  },
+  {
+    key: "PDFSMIT1",
+    library: P,
+    parent: "SMIT2022",
+    title: "Smith - 2022 - thesis.pdf",
+    contentType: "application/pdf",
+    linkMode: "linked_file",
+    path: "/Users/me/Dropbox/theses/smith-2022.pdf",
+    exists: true,
+    dateAdded: "2025-07-07T08:01:00Z",
+    dateModified: "2025-07-07T08:01:00Z",
+    tags: [],
+  },
+  {
+    key: "URLZHOU1",
+    library: P,
+    parent: "ZHOU2023",
+    title: "CNKI link",
+    contentType: null,
+    linkMode: "linked_url",
+    path: null,
+    exists: false,
+    dateAdded: "2025-02-11T08:01:00Z",
+    dateModified: "2025-02-11T08:01:00Z",
+    tags: [],
+  },
+  // Lab Archive
+  {
+    key: "QANPDF22",
+    library: G,
+    parent: "ROUG2014",
+    title: "Rougier 2014 - lab reading copy.pdf",
+    contentType: "application/pdf",
+    linkMode: "imported_file",
+    path: "/Users/me/Zotero/storage/QANPDF22/Rougier lab copy.pdf",
+    exists: true,
+    dateAdded: "2025-03-03T08:01:00Z",
+    dateModified: "2025-03-03T08:01:00Z",
+    tags: [],
+  },
+  {
+    key: "PDFDEVL1",
+    library: G,
+    parent: "DEVL2019",
+    title: "Devlin et al. - 2019 - BERT.pdf",
+    contentType: "application/pdf",
+    linkMode: "imported_file",
+    path: "/Users/me/Zotero/storage/PDFDEVL1/BERT.pdf",
+    exists: true,
+    dateAdded: "2025-04-01T08:01:00Z",
+    dateModified: "2025-04-01T08:01:00Z",
+    tags: [],
+  },
+  {
+    key: "PDFDEVL2",
+    library: G,
+    parent: "DEVL2019",
+    title: "BERT supplementary.pdf",
+    contentType: "application/pdf",
+    linkMode: "imported_file",
+    path: "/Users/me/Zotero/storage/PDFDEVL2/BERT-supp.pdf",
+    exists: true,
+    dateAdded: "2025-04-01T08:02:00Z",
+    dateModified: "2025-04-01T08:02:00Z",
+    tags: [],
+  },
+];
+
+// type: highlight | underline | note | image | ink | text ; color hex → name via palette
+export const ANNOTATIONS = [
+  {
+    key: "ANNVAS01",
+    library: P,
+    attachment: "PDFVASW1",
+    type: "highlight",
+    text: "An attention function can be described as mapping a query and a set of key-value pairs to an output.",
+    comment: "",
+    color: "#ffd400",
+    pageLabel: "3",
+    pageIndex: 2,
+    tags: ["method"],
+    sortIndex: "00002|000120|00210",
+    dateAdded: "2024-03-10T08:00:00Z",
+    dateModified: "2024-03-10T08:00:00Z",
+  },
+  {
+    key: "ANNVAS02",
+    library: P,
+    attachment: "PDFVASW1",
+    type: "highlight",
+    text: "Multi-head attention allows the model to jointly attend to information from different representation subspaces.",
+    comment: "core idea",
+    color: "#ff6666",
+    pageLabel: "4",
+    pageIndex: 3,
+    tags: ["method", "key-claim"],
+    sortIndex: "00003|000040|00100",
+    dateAdded: "2024-03-10T08:05:00Z",
+    dateModified: "2025-09-30T08:00:00Z",
+  },
+  {
+    key: "ANNVAS03",
+    library: P,
+    attachment: "PDFVASW1",
+    type: "image",
+    text: "",
+    comment: "Figure 1: the Transformer architecture",
+    color: "#5fb236",
+    pageLabel: "3",
+    pageIndex: 2,
+    tags: ["figure"],
+    sortIndex: "00002|000300|00400",
+    dateAdded: "2024-03-10T08:07:00Z",
+    dateModified: "2024-03-10T08:07:00Z",
+  },
+  {
+    key: "ANNVAS04",
+    library: P,
+    attachment: "PDFVASW1",
+    type: "note",
+    text: "",
+    comment: "Compare with Hochreiter 1997 on long-range dependencies",
+    color: "#ffd400",
+    pageLabel: "6",
+    pageIndex: 5,
+    tags: [],
+    sortIndex: "00005|000010|00050",
+    dateAdded: "2024-03-11T08:00:00Z",
+    dateModified: "2024-03-11T08:00:00Z",
+  },
+  {
+    key: "ANNROU01",
+    library: P,
+    attachment: "PDFROUG1",
+    type: "highlight",
+    text: "Rule 1: Know Your Audience",
+    comment: "",
+    color: "#ffd400",
+    pageLabel: "1",
+    pageIndex: 0,
+    tags: ["query-annotation-method"],
+    sortIndex: "00000|000100|00100",
+    dateAdded: "2024-01-16T08:00:00Z",
+    dateModified: "2024-01-16T08:00:00Z",
+  },
+  {
+    key: "ANNROU02",
+    library: P,
+    attachment: "PDFROUG1",
+    type: "highlight",
+    text: "Identify Your Message",
+    comment: "the one thing the figure must say",
+    color: "#2ea8e5",
+    pageLabel: "1",
+    pageIndex: 0,
+    tags: ["query-annotation-method"],
+    sortIndex: "00000|000200|00300",
+    dateAdded: "2024-01-16T08:01:00Z",
+    dateModified: "2024-01-16T08:01:00Z",
+  },
+  {
+    key: "ANNROU03",
+    library: P,
+    attachment: "PDFROUG1",
+    type: "underline",
+    text: "Adapt the Figure to the Support Medium",
+    comment: "",
+    color: "#2ea8e5",
+    pageLabel: "2",
+    pageIndex: 1,
+    tags: ["query-annotation-method"],
+    sortIndex: "00001|000050|00100",
+    dateAdded: "2024-01-16T08:02:00Z",
+    dateModified: "2024-01-16T08:02:00Z",
+  },
+  {
+    key: "ANNROU04",
+    library: P,
+    attachment: "PDFROUG1",
+    type: "image",
+    text: "",
+    comment: "Figure 2: the same data, three encodings",
+    color: "#a28ae5",
+    pageLabel: "3",
+    pageIndex: 2,
+    tags: ["figure"],
+    sortIndex: "00002|000100|00200",
+    dateAdded: "2024-01-16T08:03:00Z",
+    dateModified: "2024-01-16T08:03:00Z",
+  },
+  {
+    key: "ANNROU05",
+    library: P,
+    attachment: "PDFROUG1",
+    type: "ink",
+    text: "",
+    comment: "",
+    color: "#ff6666",
+    pageLabel: "4",
+    pageIndex: 3,
+    tags: [],
+    sortIndex: "00003|000010|00010",
+    dateAdded: "2024-01-16T08:04:00Z",
+    dateModified: "2024-01-16T08:04:00Z",
+  },
+  {
+    key: "ANNROU06",
+    library: P,
+    attachment: "PDFROUG1",
+    type: "highlight",
+    text: "Do Not Trust the Defaults",
+    comment: "",
+    color: "#ffd400",
+    pageLabel: "5",
+    pageIndex: 4,
+    tags: ["to-do"],
+    sortIndex: "00004|000020|00100",
+    dateAdded: "2025-10-01T12:00:00Z",
+    dateModified: "2025-10-01T12:30:00Z",
+  },
+  {
+    key: "ANNLOV01",
+    library: P,
+    attachment: "PDFLOVE1",
+    type: "note",
+    text: "",
+    comment: "Check this source when the file arrives",
+    color: "#ffd400",
+    pageLabel: "1",
+    pageIndex: 0,
+    tags: [],
+    sortIndex: "00000|000010|00010",
+    dateAdded: "2023-11-21T08:00:00Z",
+    dateModified: "2023-11-21T08:00:00Z",
+  },
+  {
+    key: "ANNTUF01",
+    library: P,
+    attachment: "EPBTUFT1",
+    type: "highlight",
+    text: "Above all else show the data.",
+    comment: "",
+    color: "#ffd400",
+    pageLabel: "ch. 4",
+    pageIndex: null,
+    tags: ["key-claim"],
+    sortIndex: "00004|000001",
+    dateAdded: "2024-08-09T08:00:00Z",
+    dateModified: "2024-08-09T08:00:00Z",
+  },
+  // Lab Archive annotations
+  {
+    key: "ANNLAB01",
+    library: G,
+    attachment: "QANPDF22",
+    type: "highlight",
+    text: "Identify Your Message",
+    comment: "",
+    color: "#ffd400",
+    pageLabel: "1",
+    pageIndex: 0,
+    tags: ["query-annotation-method"],
+    sortIndex: "00000|000200|00300",
+    dateAdded: "2025-03-04T08:00:00Z",
+    dateModified: "2025-03-04T08:00:00Z",
+  },
+  {
+    key: "ANNLAB02",
+    library: G,
+    attachment: "QANPDF22",
+    type: "highlight",
+    text: "Use Color Effectively",
+    comment: "lab discussion",
+    color: "#5fb236",
+    pageLabel: "4",
+    pageIndex: 3,
+    tags: ["shared"],
+    sortIndex: "00003|000100|00100",
+    dateAdded: "2025-03-04T08:01:00Z",
+    dateModified: "2025-09-29T08:00:00Z",
+  },
+  {
+    key: "ANNLAB03",
+    library: G,
+    attachment: "QANPDF22",
+    type: "image",
+    text: "",
+    comment: "Figure 3 in the lab copy",
+    color: "#a28ae5",
+    pageLabel: "5",
+    pageIndex: 4,
+    tags: ["figure"],
+    sortIndex: "00004|000100|00100",
+    dateAdded: "2025-03-04T08:02:00Z",
+    dateModified: "2025-03-04T08:02:00Z",
+  },
+  {
+    key: "ANNDEV01",
+    library: G,
+    attachment: "PDFDEVL1",
+    type: "highlight",
+    text: "BERT is designed to pre-train deep bidirectional representations from unlabeled text.",
+    comment: "",
+    color: "#ffd400",
+    pageLabel: "1",
+    pageIndex: 0,
+    tags: ["method"],
+    sortIndex: "00000|000100|00100",
+    dateAdded: "2025-04-02T08:00:00Z",
+    dateModified: "2025-04-02T08:00:00Z",
+  },
+];
+
+</script>
+<script type="text/plain" id="mod-engine">
+// PROTOTYPE — the pure query module for the ZotLit query CLI redesign.
+// Throwaway. No DOM. The page calls `createEngine(data).run(commandLine)`.
+//
+// The question: can ONE `zotlit:query` with `from=items|attachments|annotations`
+// and two-way relation lists answer SQL-style cross-entity questions, while the
+// argument form stays as simple as an Obsidian Bases view?
+
+// ---------- values ----------
+export class PartialDate {
+  constructor(year, month = null, day = null, instant = null) {
+    this.year = year;
+    this.month = month;
+    this.day = day;
+    this.instant = instant;
+  }
+  static parse(text) {
+    if (text == null || text === "") return null;
+    if (/T/.test(text)) {
+      const ms = Date.parse(text);
+      if (Number.isNaN(ms)) return null;
+      const d = new Date(ms);
+      return new PartialDate(
+        d.getUTCFullYear(),
+        d.getUTCMonth() + 1,
+        d.getUTCDate(),
+        ms,
+      );
+    }
+    const m = /^(\d{4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?$/.exec(text.trim());
+    if (!m) return null;
+    return new PartialDate(+m[1], m[2] ? +m[2] : null, m[3] ? +m[3] : null);
+  }
+  get precision() {
+    return this.day != null ? 3 : this.month != null ? 2 : 1;
+  }
+  startMs() {
+    return (
+      this.instant ?? Date.UTC(this.year, (this.month ?? 1) - 1, this.day ?? 1)
+    );
+  }
+  toJSON() {
+    if (this.instant != null)
+      return new Date(this.instant).toISOString().replace(/\.\d{3}Z$/, "Z");
+    const p = (n) => String(n).padStart(2, "0");
+    return this.day != null
+      ? `${this.year}-${p(this.month)}-${p(this.day)}`
+      : this.month != null
+        ? `${this.year}-${p(this.month)}`
+        : String(this.year);
+  }
+  toString() {
+    return this.toJSON();
+  }
+}
+export class Duration {
+  constructor(ms) {
+    this.ms = ms;
+  }
+  toJSON() {
+    return `${this.ms / 86400000} days`;
+  }
+}
+
+const COLOR_NAMES = {
+  "#ffd400": "yellow",
+  "#ff6666": "red",
+  "#5fb236": "green",
+  "#2ea8e5": "blue",
+  "#a28ae5": "purple",
+  "#e56eee": "magenta",
+  "#f19837": "orange",
+  "#aaaaaa": "gray",
+};
+
+export function indexedKey(key, library) {
+  return library === "personal" ? key : `${key}g${library.slice(6)}`;
+}
+
+// ---------- records (lazy relations, cycles allowed) ----------
+function buildRecords(data) {
+  const items = new Map(),
+    attachments = new Map(),
+    annotations = new Map();
+  const libOf = (sel) => data.LIBRARIES.find((l) => l.selector === sel);
+  const rec = (type, fields) => {
+    const r = { __type: type };
+    for (const [k, v] of Object.entries(fields)) {
+      if (typeof v === "function")
+        Object.defineProperty(r, k, { get: v, enumerable: true });
+      else r[k] = v;
+    }
+    return r;
+  };
+  for (const it of data.ITEMS) {
+    const ik = indexedKey(it.key, it.library);
+    const base = { ...it };
+    delete base.creators;
+    delete base.tags;
+    delete base.collections;
+    delete base.custom;
+    delete base.date;
+    delete base.dateAdded;
+    delete base.dateModified;
+    delete base.library;
+    items.set(
+      ik,
+      rec("item", {
+        ...base,
+        indexedKey: ik,
+        library: libOf(it.library).selector,
+        creators: it.creators.map(([family, given, role]) =>
+          rec("creator", {
+            family,
+            given,
+            role,
+            fullName: `${given} ${family}`.trim(),
+          }),
+        ),
+        tags: [...it.tags].sort(),
+        collections: [...it.collections].sort(),
+        custom: { ...it.custom },
+        date: PartialDate.parse(it.date),
+        dateAdded: PartialDate.parse(it.dateAdded),
+        dateModified: PartialDate.parse(it.dateModified),
+        attachments: () =>
+          [...attachments.values()].filter((a) => a.item === items.get(ik)),
+        annotations: () =>
+          [...annotations.values()].filter((a) => a.item === items.get(ik)),
+      }),
+    );
+  }
+  for (const at of data.ATTACHMENTS) {
+    const ik = indexedKey(at.key, at.library),
+      parentKey = indexedKey(at.parent, at.library);
+    attachments.set(
+      ik,
+      rec("attachment", {
+        indexedKey: ik,
+        key: at.key,
+        library: at.library,
+        title: at.title,
+        contentType: at.contentType,
+        linkMode: at.linkMode,
+        path: at.path,
+        exists: at.exists,
+        tags: [...at.tags].sort(),
+        dateAdded: PartialDate.parse(at.dateAdded),
+        dateModified: PartialDate.parse(at.dateModified),
+        item: () => items.get(parentKey),
+        annotations: () =>
+          [...annotations.values()].filter(
+            (a) => a.attachment === attachments.get(ik),
+          ),
+      }),
+    );
+  }
+  for (const an of data.ANNOTATIONS) {
+    const ik = indexedKey(an.key, an.library),
+      attKey = indexedKey(an.attachment, an.library);
+    annotations.set(
+      ik,
+      rec("annotation", {
+        indexedKey: ik,
+        key: an.key,
+        library: an.library,
+        type: an.type,
+        text: an.text,
+        comment: an.comment,
+        color: an.color,
+        colorName: COLOR_NAMES[an.color] ?? null,
+        pageLabel: an.pageLabel,
+        pageIndex: an.pageIndex,
+        tags: [...an.tags].sort(),
+        sortIndex: an.sortIndex,
+        dateAdded: PartialDate.parse(an.dateAdded),
+        dateModified: PartialDate.parse(an.dateModified),
+        hasExcerptImage: an.type === "image" || an.type === "ink",
+        position:
+          an.pageIndex == null
+            ? { kind: "epub-cfi", value: "epubcfi(/6/14!/4/2/2)" }
+            : {
+                kind: an.type === "ink" ? "pdf-ink" : "pdf-rects",
+                pageIndex: an.pageIndex,
+                rects: [
+                  [72, 500 - an.pageIndex * 7, 300, 512 - an.pageIndex * 7],
+                ],
+              },
+        attachment: () => attachments.get(attKey),
+        item: () => attachments.get(attKey).item,
+      }),
+    );
+  }
+  return { items, attachments, annotations };
+}
+
+// ---------- datasets ----------
+const ITEM_SCALARS = [
+  "itemType",
+  "title",
+  "citationKey",
+  "publicationTitle",
+  "publisher",
+  "proceedingsTitle",
+  "university",
+  "abstractNote",
+  "key",
+  "indexedKey",
+  "library",
+];
+export const DATASETS = {
+  items: {
+    name: "items",
+    label: "Item",
+    root: "items",
+    fields: [
+      ...ITEM_SCALARS,
+      "date",
+      "dateAdded",
+      "dateModified",
+      "creators",
+      "tags",
+      "collections",
+      "custom",
+      "attachments",
+      "annotations",
+    ],
+    relations: { attachments: "attachments", annotations: "annotations" },
+    defaultFields: ["itemType", "title", "creators", "date", "dateModified"],
+    defaultSort: "-dateModified",
+    sortable: [...ITEM_SCALARS, "date", "dateAdded", "dateModified"],
+    summary: ["indexedKey", "title", "citationKey"],
+    searchText: (r) =>
+      [
+        r.title,
+        r.abstractNote,
+        ...r.creators.map((c) => c.fullName),
+        r.publicationTitle ?? "",
+      ].join(" "),
+  },
+  attachments: {
+    name: "attachments",
+    label: "Attachment",
+    root: "attachments",
+    fields: [
+      "indexedKey",
+      "key",
+      "library",
+      "title",
+      "contentType",
+      "linkMode",
+      "path",
+      "exists",
+      "tags",
+      "dateAdded",
+      "dateModified",
+      "item",
+      "annotations",
+    ],
+    relations: { item: "items", annotations: "annotations" },
+    defaultFields: [
+      "title",
+      "contentType",
+      "linkMode",
+      "path",
+      "exists",
+      "item.title",
+    ],
+    defaultSort: "-dateModified",
+    sortable: [
+      "title",
+      "contentType",
+      "linkMode",
+      "path",
+      "exists",
+      "dateAdded",
+      "dateModified",
+      "item.title",
+      "item.date",
+      "item.dateModified",
+    ],
+    summary: ["indexedKey", "title", "contentType", "path", "exists"],
+    searchText: (r) => [r.title, r.path ?? "", r.item.title].join(" "),
+  },
+  annotations: {
+    name: "annotations",
+    label: "Annotation",
+    root: "annotations",
+    fields: [
+      "indexedKey",
+      "key",
+      "library",
+      "type",
+      "text",
+      "comment",
+      "color",
+      "colorName",
+      "pageLabel",
+      "pageIndex",
+      "tags",
+      "sortIndex",
+      "dateAdded",
+      "dateModified",
+      "hasExcerptImage",
+      "position",
+      "attachment",
+      "item",
+    ],
+    relations: { attachment: "attachments", item: "items" },
+    defaultFields: [
+      "type",
+      "text",
+      "comment",
+      "colorName",
+      "pageLabel",
+      "pageIndex",
+      "tags",
+      "hasExcerptImage",
+      "item.title",
+      "item.citationKey",
+    ],
+    defaultSort: "-item.dateModified,attachment.indexedKey,sortIndex",
+    sortable: [
+      "type",
+      "color",
+      "colorName",
+      "pageIndex",
+      "sortIndex",
+      "dateAdded",
+      "dateModified",
+      "item.title",
+      "item.date",
+      "item.dateModified",
+      "attachment.indexedKey",
+      "attachment.title",
+    ],
+    summary: ["indexedKey", "type", "text", "pageLabel"],
+    searchText: (r) => [r.text, r.comment, r.item.title].join(" "),
+  },
+};
+
+// ---------- expression language (Bases-like) ----------
+const PUNCT = [
+  "&&",
+  "||",
+  "==",
+  "!=",
+  "<=",
+  ">=",
+  "<",
+  ">",
+  "(",
+  ")",
+  "[",
+  "]",
+  ",",
+  ".",
+  "+",
+  "-",
+  "*",
+  "/",
+  "%",
+  "!",
+];
+export function tokenize(src) {
+  const out = [];
+  let i = 0;
+  const prevAllowsRegex = () => {
+    const p = out.at(-1);
+    return !p || (p.kind === "punct" && ![")", "]"].includes(p.text));
+  };
+  while (i < src.length) {
+    const ch = src[i];
+    if (/\s/.test(ch)) {
+      i++;
+      continue;
+    }
+    if (/[0-9]/.test(ch)) {
+      const m = /^\d+(\.\d+)?/.exec(src.slice(i));
+      out.push({ kind: "number", value: +m[0], from: i, to: i + m[0].length });
+      i += m[0].length;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      let j = i + 1,
+        s = "";
+      while (j < src.length && src[j] !== ch) {
+        if (src[j] === "\\") {
+          j++;
+          s += src[j] ?? "";
+        } else s += src[j];
+        j++;
+      }
+      if (j >= src.length)
+        throw syntaxFault(src, i, `unclosed ${ch}`, ["closing quote"]);
+      out.push({ kind: "string", value: s, from: i, to: j + 1 });
+      i = j + 1;
+      continue;
+    }
+    if (ch === "/" && prevAllowsRegex()) {
+      let j = i + 1,
+        s = "";
+      while (j < src.length && src[j] !== "/") {
+        if (src[j] === "\\") {
+          s += src[j] + (src[j + 1] ?? "");
+          j += 2;
+          continue;
+        }
+        s += src[j];
+        j++;
+      }
+      if (j >= src.length)
+        throw syntaxFault(src, i, "unclosed /", ["closing /"]);
+      j++;
+      let flags = "";
+      while (j < src.length && /[a-z]/.test(src[j])) flags += src[j++];
+      out.push({ kind: "regexp", value: new RegExp(s, flags), from: i, to: j });
+      i = j;
+      continue;
+    }
+    if (/[A-Za-z_一-鿿]/.test(ch)) {
+      const m = /^[A-Za-z_一-鿿][A-Za-z0-9_一-鿿]*/.exec(src.slice(i));
+      out.push({ kind: "ident", value: m[0], from: i, to: i + m[0].length });
+      i += m[0].length;
+      continue;
+    }
+    const p = PUNCT.find((p) => src.startsWith(p, i));
+    if (!p)
+      throw syntaxFault(src, i, `unexpected ${JSON.stringify(ch)}`, [
+        "an operator",
+        "a name",
+        "a value",
+      ]);
+    out.push({ kind: "punct", text: p, from: i, to: i + p.length });
+    i += p.length;
+  }
+  return out;
+}
+function syntaxFault(src, at, found, expected) {
+  const e = new Error("syntax");
+  e.fault = { code: "syntax-error", at, found, expected, src };
+  return e;
+}
+
+export function parseExpression(src) {
+  const toks = tokenize(src);
+  let i = 0;
+  const peek = () => toks[i],
+    at = (t) => peek()?.kind === "punct" && peek().text === t;
+  const eat = (t) => {
+    if (!at(t))
+      throw syntaxFault(
+        src,
+        peek()?.from ?? src.length,
+        peek()
+          ? JSON.stringify(peek().text ?? peek().value)
+          : "end of expression",
+        [t],
+      );
+    return toks[i++];
+  };
+  const node = (n, from, to) => Object.assign(n, { from, to });
+  function or() {
+    let l = and();
+    while (at("||")) {
+      eat("||");
+      const r = and();
+      l = node({ t: "or", l, r }, l.from, r.to);
+    }
+    return l;
+  }
+  function and() {
+    let l = eq();
+    while (at("&&")) {
+      eat("&&");
+      const r = eq();
+      l = node({ t: "and", l, r }, l.from, r.to);
+    }
+    return l;
+  }
+  function eq() {
+    let l = cmp();
+    while (at("==") || at("!=")) {
+      const op = toks[i++].text;
+      const r = cmp();
+      l = node({ t: "bin", op, l, r }, l.from, r.to);
+    }
+    return l;
+  }
+  function cmp() {
+    let l = add();
+    while (at("<") || at("<=") || at(">") || at(">=")) {
+      const op = toks[i++].text;
+      const r = add();
+      l = node({ t: "bin", op, l, r }, l.from, r.to);
+    }
+    return l;
+  }
+  function add() {
+    let l = mul();
+    while (at("+") || at("-")) {
+      const op = toks[i++].text;
+      const r = mul();
+      l = node({ t: "bin", op, l, r }, l.from, r.to);
+    }
+    return l;
+  }
+  function mul() {
+    let l = unary();
+    while (at("*") || at("/") || at("%")) {
+      const op = toks[i++].text;
+      const r = unary();
+      l = node({ t: "bin", op, l, r }, l.from, r.to);
+    }
+    return l;
+  }
+  function unary() {
+    if (at("!")) {
+      const s = eat("!");
+      const e = unary();
+      return node({ t: "not", e }, s.from, e.to);
+    }
+    if (at("-")) {
+      const s = eat("-");
+      const e = unary();
+      return node({ t: "neg", e }, s.from, e.to);
+    }
+    return postfix();
+  }
+  function args() {
+    eat("(");
+    const a = [];
+    if (!at(")")) {
+      a.push(or());
+      while (at(",")) {
+        eat(",");
+        a.push(or());
+      }
+    }
+    const c = eat(")");
+    return { a, to: c.to };
+  }
+  function postfix() {
+    let e = primary();
+    for (;;) {
+      if (at(".")) {
+        eat(".");
+        const n = peek();
+        if (n?.kind !== "ident")
+          throw syntaxFault(
+            src,
+            n?.from ?? src.length,
+            n ? JSON.stringify(n.text ?? n.value) : "end of expression",
+            ["a name"],
+          );
+        i++;
+        if (at("(")) {
+          const { a, to } = args();
+          e = node(
+            {
+              t: "call",
+              on: e,
+              name: n.value,
+              args: a,
+              nameFrom: n.from,
+              nameTo: n.to,
+            },
+            e.from,
+            to,
+          );
+        } else
+          e = node(
+            {
+              t: "member",
+              on: e,
+              name: n.value,
+              nameFrom: n.from,
+              nameTo: n.to,
+            },
+            e.from,
+            n.to,
+          );
+        continue;
+      }
+      if (at("[")) {
+        eat("[");
+        const idx = or();
+        const c = eat("]");
+        e = node({ t: "index", on: e, idx }, e.from, c.to);
+        continue;
+      }
+      break;
+    }
+    return e;
+  }
+  function primary() {
+    const t = peek();
+    if (!t)
+      throw syntaxFault(src, src.length, "end of expression", ["a value"]);
+    if (t.kind === "number" || t.kind === "string" || t.kind === "regexp") {
+      i++;
+      return node({ t: "lit", v: t.value }, t.from, t.to);
+    }
+    if (t.kind === "ident") {
+      i++;
+      if (t.value === "true" || t.value === "false")
+        return node({ t: "lit", v: t.value === "true" }, t.from, t.to);
+      if (t.value === "null") return node({ t: "lit", v: null }, t.from, t.to);
+      if (at("(")) {
+        const { a, to } = args();
+        return node({ t: "fn", name: t.value, args: a }, t.from, to);
+      }
+      return node({ t: "id", name: t.value }, t.from, t.to);
+    }
+    if (at("(")) {
+      eat("(");
+      const e = or();
+      const c = eat(")");
+      return node({ t: "group", e }, t.from, c.to);
+    }
+    if (at("[")) {
+      eat("[");
+      const xs = [];
+      if (!at("]")) {
+        xs.push(or());
+        while (at(",")) {
+          eat(",");
+          xs.push(or());
+        }
+      }
+      const c = eat("]");
+      return node({ t: "list", xs }, t.from, c.to);
+    }
+    throw syntaxFault(src, t.from, JSON.stringify(t.text ?? t.value), [
+      "a value",
+    ]);
+  }
+  const e = or();
+  if (i < toks.length)
+    throw syntaxFault(
+      src,
+      toks[i].from,
+      JSON.stringify(toks[i].text ?? toks[i].value),
+      ["end of expression", "an operator"],
+    );
+  return e;
+}
+
+const GLOBAL_FNS = new Set([
+  "if",
+  "number",
+  "min",
+  "max",
+  "now",
+  "today",
+  "date",
+  "duration",
+  "list",
+]);
+const LAMBDA_SCOPE = new Set(["value", "index", "acc"]);
+const LIST_FIELDS = new Set([
+  "tags",
+  "collections",
+  "creators",
+  "attachments",
+  "annotations",
+]);
+/** Static check: every bare name resolves to a field of the dataset (or lambda scope). Returns Query Warnings. */
+export function validateExpression(ast, dataset, src) {
+  const faults = [],
+    warnings = [];
+  const walk = (n, inLambda) => {
+    if (!n || typeof n !== "object") return;
+    if (n.t === "id") {
+      if (
+        !(
+          dataset.fields.includes(n.name) ||
+          (inLambda && LAMBDA_SCOPE.has(n.name)) ||
+          n.name === "custom"
+        )
+      )
+        faults.push({
+          code: "unknown-field",
+          from: n.from,
+          to: n.to,
+          found: n.name,
+          candidates: dataset.fields,
+        });
+      return;
+    }
+    if (n.t === "fn") {
+      if (!GLOBAL_FNS.has(n.name))
+        faults.push({
+          code: "unknown-function",
+          from: n.from,
+          to: n.from + n.name.length,
+          found: n.name,
+          candidates: [...GLOBAL_FNS],
+        });
+      n.args.forEach((a) => walk(a, inLambda));
+      return;
+    }
+    if (n.t === "call") {
+      walk(n.on, inLambda);
+      const lam = ["filter", "map", "reduce", "any"].includes(n.name);
+      n.args.forEach((a) => walk(a, inLambda || lam));
+      return;
+    }
+    if (n.t === "bin" && (n.op === "==" || n.op === "!=")) {
+      const listSide = [n.l, n.r].find(
+        (x) =>
+          x.t === "id" &&
+          LIST_FIELDS.has(x.name) &&
+          dataset.fields.includes(x.name),
+      );
+      const other = listSide === n.l ? n.r : n.l;
+      if (listSide && other.t === "lit" && typeof other.v === "string")
+        warnings.push({
+          code: "never-equal",
+          severity: "warning",
+          message: `'${listSide.name}' is a list and never equals the text ${JSON.stringify(other.v)}; this comparison is ${n.op === "==" ? "never" : "always"} true.`,
+          hint: `Use ${listSide.name}.contains(${JSON.stringify(other.v)}) to test membership.`,
+          location: { argument: "filter", span: { from: n.from, to: n.to } },
+          excerpt: {
+            before: src.slice(Math.max(0, n.from - 24), n.from),
+            at: src.slice(n.from, n.to),
+            after: src.slice(n.to, n.to + 24),
+          },
+          report: [
+            `'${listSide.name}' is a list and never equals a text.`,
+            `  ${src.slice(n.from, n.to)}`,
+            `Use ${listSide.name}.contains(${JSON.stringify(other.v)}).`,
+          ],
+        });
+    }
+    for (const k of ["l", "r", "e", "on", "idx"])
+      if (n[k]) walk(n[k], inLambda);
+    if (n.xs) n.xs.forEach((x) => walk(x, inLambda));
+  };
+  walk(ast, false);
+  if (faults.length) {
+    const f = faults[0];
+    const e = new Error(f.code);
+    e.fault = { ...f, src, at: f.from };
+    throw e;
+  }
+  return warnings;
+}
+
+// value helpers
+const isDate = (v) => v instanceof PartialDate,
+  isList = Array.isArray,
+  isRec = (v) => v && typeof v === "object" && v.__type;
+const truthy = (v) =>
+  v !== null &&
+  v !== undefined &&
+  v !== false &&
+  v !== 0 &&
+  v !== "" &&
+  !(isList(v) && v.length === 0);
+const typeOf = (v) =>
+  v == null
+    ? "null"
+    : isDate(v)
+      ? "date"
+      : v instanceof Duration
+        ? "duration"
+        : v instanceof RegExp
+          ? "regexp"
+          : isList(v)
+            ? "list"
+            : isRec(v)
+              ? "object"
+              : typeof v === "object"
+                ? "object"
+                : typeof v;
+const collator = new Intl.Collator("en", {
+  numeric: true,
+  sensitivity: "variant",
+});
+export function compareValues(a, b) {
+  if (a == null || b == null) return null;
+  if (isRec(a) && a.__type === "creator") a = a.fullName;
+  if (isRec(b) && b.__type === "creator") b = b.fullName;
+  const ta = typeOf(a),
+    tb = typeOf(b);
+  if (ta !== tb) return null;
+  if (ta === "number") return a === b ? 0 : a < b ? -1 : 1;
+  if (ta === "string") return collator.compare(a, b);
+  if (ta === "boolean") return a === b ? 0 : a ? 1 : -1;
+  if (ta === "date") {
+    const p = Math.min(a.precision, b.precision);
+    const key = (d) =>
+      p === 1
+        ? [d.year]
+        : p === 2
+          ? [d.year, d.month]
+          : [d.year, d.month, d.day];
+    const ka = key(a),
+      kb = key(b);
+    if (a.instant != null && b.instant != null)
+      return a.instant === b.instant ? 0 : a.instant < b.instant ? -1 : 1;
+    for (let i = 0; i < ka.length; i++)
+      if (ka[i] !== kb[i]) return ka[i] < kb[i] ? -1 : 1;
+    return 0;
+  }
+  if (ta === "duration") return a.ms === b.ms ? 0 : a.ms < b.ms ? -1 : 1;
+  return null;
+}
+const equals = (a, b) => {
+  if (a == null && b == null) return null;
+  if (a == null || b == null) return false;
+  if (isList(a) && isList(b))
+    return a.length === b.length && a.every((x, i) => equals(x, b[i]) === true);
+  const c = compareValues(a, b);
+  return c === null ? false : c === 0;
+};
+const asText = (v) =>
+  v == null
+    ? null
+    : isRec(v) && v.__type === "creator"
+      ? v.fullName
+      : isDate(v)
+        ? v.toJSON()
+        : typeof v === "object" && !isList(v)
+          ? JSON.stringify(v)
+          : String(v);
+
+export function evaluate(ast, row, clock, scope = null) {
+  const ev = (n, sc = scope) => evaluate(n, row, clock, sc);
+  switch (ast.t) {
+    case "lit":
+      return ast.v;
+    case "group":
+      return ev(ast.e);
+    case "list":
+      return ast.xs.map((x) => ev(x));
+    case "id": {
+      if (scope && ast.name in scope) return scope[ast.name];
+      const v = row[ast.name];
+      return v === undefined ? null : v;
+    }
+    case "not":
+      return !truthy(ev(ast.e));
+    case "neg": {
+      const v = ev(ast.e);
+      return typeof v === "number" ? -v : null;
+    }
+    case "and":
+      return truthy(ev(ast.l)) ? ev(ast.r) : false;
+    case "or": {
+      const l = ev(ast.l);
+      return truthy(l) ? l : ev(ast.r);
+    }
+    case "bin": {
+      const l = ev(ast.l),
+        r = ev(ast.r);
+      switch (ast.op) {
+        case "==":
+          return equals(l, r) === true;
+        case "!=":
+          return equals(l, r) !== true && !(l == null && r == null)
+            ? true
+            : l == null && r == null
+              ? false
+              : false;
+        case "<":
+        case "<=":
+        case ">":
+        case ">=": {
+          const c = compareValues(l, r);
+          if (c === null) return null;
+          return ast.op === "<"
+            ? c < 0
+            : ast.op === "<="
+              ? c <= 0
+              : ast.op === ">"
+                ? c > 0
+                : c >= 0;
+        }
+        case "+":
+          if (typeof l === "number" && typeof r === "number") return l + r;
+          if (typeof l === "string" || typeof r === "string")
+            return (asText(l) ?? "") + (asText(r) ?? "");
+          if (isDate(l) && r instanceof Duration)
+            return instantDate(l.startMs() + r.ms);
+          if (isList(l) && isList(r)) return [...l, ...r];
+          return null;
+        case "-":
+          if (typeof l === "number" && typeof r === "number") return l - r;
+          if (isDate(l) && r instanceof Duration)
+            return instantDate(l.startMs() - r.ms);
+          if (isDate(l) && isDate(r))
+            return new Duration(l.startMs() - r.startMs());
+          return null;
+        case "*":
+          return typeof l === "number" && typeof r === "number" ? l * r : null;
+        case "/":
+          return typeof l === "number" && typeof r === "number" && r !== 0
+            ? l / r
+            : null;
+        case "%":
+          return typeof l === "number" && typeof r === "number" && r !== 0
+            ? l % r
+            : null;
+      }
+      return null;
+    }
+    case "member": {
+      const on = ev(ast.on);
+      return member(on, ast.name);
+    }
+    case "index": {
+      const on = ev(ast.on),
+        idx = ev(ast.idx);
+      if (isList(on) && typeof idx === "number") return on.at(idx) ?? null;
+      if (
+        on &&
+        typeof on === "object" &&
+        !isList(on) &&
+        typeof idx === "string"
+      )
+        return on[idx] ?? null;
+      return null;
+    }
+    case "fn": {
+      const a = ast.args;
+      switch (ast.name) {
+        case "if": {
+          const c = ev(a[0]);
+          return truthy(c) ? ev(a[1]) : a[2] ? ev(a[2]) : null;
+        }
+        case "number": {
+          const v = ev(a[0]);
+          const n =
+            typeof v === "number" ? v : typeof v === "string" ? Number(v) : Number.NaN;
+          return Number.isNaN(n) ? null : n;
+        }
+        case "min":
+        case "max": {
+          const xs = a.map((x) => ev(x)).filter((x) => typeof x === "number");
+          return xs.length ? Math[ast.name](...xs) : null;
+        }
+        case "now":
+          return instantDate(clock.now);
+        case "today": {
+          const d = new Date(clock.now);
+          return new PartialDate(
+            d.getUTCFullYear(),
+            d.getUTCMonth() + 1,
+            d.getUTCDate(),
+          );
+        }
+        case "date": {
+          const v = ev(a[0]);
+          return typeof v === "string"
+            ? PartialDate.parse(v)
+            : isDate(v)
+              ? v
+              : null;
+        }
+        case "duration": {
+          const v = ev(a[0]);
+          const m =
+            typeof v === "string" &&
+            /^(\d+)\s*(day|days|d|week|weeks|w|hour|hours|h|month|months|year|years|y)$/.exec(
+              v.trim(),
+            );
+          if (!m) return null;
+          const n = +m[1];
+          const u = m[2][0];
+          return new Duration(
+            n *
+              (u === "d"
+                ? 864e5
+                : u === "w"
+                  ? 7 * 864e5
+                  : u === "h"
+                    ? 36e5
+                    : u === "m"
+                      ? 30 * 864e5
+                      : 365 * 864e5),
+          );
+        }
+        case "list": {
+          const v = ev(a[0]);
+          return v == null ? [] : isList(v) ? v : [v];
+        }
+      }
+      return null;
+    }
+    case "call": {
+      const on = ev(ast.on);
+      const lam = (arg, value, index, acc) =>
+        evaluate(arg, row, clock, { ...scope, value, index, acc });
+      const args = ["filter", "map", "reduce"].includes(ast.name)
+        ? []
+        : ast.args.map((x) => ev(x));
+      return method(on, ast.name, args, ast.args, lam, clock);
+    }
+  }
+  return null;
+}
+function instantDate(ms) {
+  const d = new Date(ms);
+  return new PartialDate(
+    d.getUTCFullYear(),
+    d.getUTCMonth() + 1,
+    d.getUTCDate(),
+    ms,
+  );
+}
+function member(on, name) {
+  if (on == null) return null;
+  if (isDate(on)) {
+    if (name === "year") return on.year;
+    if (name === "month") return on.month;
+    if (name === "day") return on.day;
+    return null;
+  }
+  if (typeof on === "string") return name === "length" ? on.length : null;
+  if (isList(on)) return name === "length" ? on.length : null;
+  if (typeof on === "object") {
+    const v = on[name];
+    return v === undefined ? null : v;
+  }
+  return null;
+}
+function method(on, name, args, rawArgs, lam, clock) {
+  const ty = typeOf(on);
+  if (name === "isTruthy") return truthy(on);
+  if (name === "isType") return ty === args[0];
+  if (name === "toString") return asText(on);
+  if (name === "isEmpty")
+    return on == null || on === "" || (isList(on) && on.length === 0);
+  if (on == null) return null;
+  if (ty === "string") {
+    const a0 = args[0];
+    switch (name) {
+      case "contains":
+        return typeof a0 === "string" ? on.includes(a0) : null;
+      case "containsAny":
+        return args.some((x) => typeof x === "string" && on.includes(x));
+      case "containsAll":
+        return args.every((x) => typeof x === "string" && on.includes(x));
+      case "startsWith":
+        return typeof a0 === "string" ? on.startsWith(a0) : null;
+      case "endsWith":
+        return typeof a0 === "string" ? on.endsWith(a0) : null;
+      case "lower":
+        return on.toLowerCase();
+      case "upper":
+        return on.toUpperCase();
+      case "trim":
+        return on.trim();
+      case "title":
+        return on.replaceAll(/\b\w/g, (c) => c.toUpperCase());
+      case "slice":
+        return on.slice(a0, args[1]);
+      case "repeat":
+        return on.repeat(a0);
+      case "reverse":
+        return [...on].reverse().join("");
+      case "split":
+        return on.split(a0, args[1]);
+      case "replace":
+        return on.replace(a0, args[1]);
+      case "matches":
+        return null;
+    }
+    return null;
+  }
+  if (ty === "regexp") {
+    if (name === "matches")
+      return typeof args[0] === "string" ? on.test(args[0]) : null;
+    return null;
+  }
+  if (ty === "number") {
+    switch (name) {
+      case "round":
+        return Number(on.toFixed(args[0] ?? 0));
+      case "toFixed":
+        return on.toFixed(args[0] ?? 0);
+      case "abs":
+        return Math.abs(on);
+      case "floor":
+        return Math.floor(on);
+      case "ceil":
+        return Math.ceil(on);
+    }
+    return null;
+  }
+  if (ty === "date") {
+    switch (name) {
+      case "date":
+        return new PartialDate(on.year, on.month, on.day);
+      case "format":
+        return on.toJSON();
+      case "relative":
+        return `${Math.round((clock.now - on.startMs()) / 864e5)} days ago`;
+      case "time":
+        return on.instant != null
+          ? new Date(on.instant).toISOString().slice(11, 19)
+          : null;
+    }
+    return null;
+  }
+  if (ty === "list") {
+    switch (name) {
+      case "contains":
+        return on.some((x) => equals(x, args[0]) === true);
+      case "containsAny":
+        return args.some((a) => on.some((x) => equals(x, a) === true));
+      case "containsAll":
+        return args.every((a) => on.some((x) => equals(x, a) === true));
+      case "within":
+        return (
+          typeof args[0] === "string" &&
+          on.some(
+            (x) =>
+              typeof x === "string" &&
+              (x === args[0] || x.startsWith(`${args[0]  }/`)),
+          )
+        );
+      case "filter":
+        return on.filter((v, i) => truthy(lam(rawArgs[0], v, i, null)));
+      case "map":
+        return on.map((v, i) => lam(rawArgs[0], v, i, null));
+      case "reduce": {
+        let acc = rawArgs[1] ? lam(rawArgs[1], null, 0, null) : null;
+        on.forEach((v, i) => {
+          acc = lam(rawArgs[0], v, i, acc);
+        });
+        return acc;
+      }
+      case "sort":
+        return [...on].sort((a, b) => {
+          if (a == null) return 1;
+          if (b == null) return -1;
+          return compareValues(a, b) ?? 0;
+        });
+      case "unique": {
+        const out = [];
+        for (const x of on)
+          if (!out.some((y) => equals(x, y) === true)) out.push(x);
+        return out;
+      }
+      case "reverse":
+        return [...on].reverse();
+      case "slice":
+        return on.slice(args[0], args[1]);
+      case "flat":
+        return on.flat();
+      case "join":
+        return on.map((x) => asText(x) ?? "").join(args[0] ?? ",");
+      case "any":
+        return on.some((v, i) => truthy(lam(rawArgs[0], v, i, null)));
+    }
+    return null;
+  }
+  if (ty === "object") {
+    if (name === "keys") return Object.keys(on).filter((k) => k !== "__type");
+    if (name === "values")
+      return Object.keys(on)
+        .filter((k) => k !== "__type")
+        .map((k) => on[k]);
+    return null;
+  }
+  return null;
+}
+
+// ---------- projection paths ----------
+/** `a.b[0].c`, `a[].b`, `custom["x.y"]` → segments */
+export function parsePath(text) {
+  const segs = [];
+  let i = 0;
+  const s = text.trim();
+  const ident = () => {
+    const m = /^[A-Za-z_][A-Za-z0-9_]*/.exec(s.slice(i));
+    if (!m) throw pathFault(text, i, "a name");
+    i += m[0].length;
+    return m[0];
+  };
+  segs.push({ kind: "name", name: ident() });
+  while (i < s.length) {
+    if (s[i] === ".") {
+      i++;
+      segs.push({ kind: "name", name: ident() });
+      continue;
+    }
+    if (s[i] === "[") {
+      if (s[i + 1] === "]") {
+        i += 2;
+        segs.push({ kind: "each" });
+        continue;
+      }
+      const m = /^\[(\d+)\]/.exec(s.slice(i));
+      if (m) {
+        i += m[0].length;
+        segs.push({ kind: "index", index: +m[1] });
+        continue;
+      }
+      const q = /^\["((?:[^"\\]|\\.)*)"\]/.exec(s.slice(i));
+      if (q) {
+        i += q[0].length;
+        segs.push({ kind: "key", key: JSON.parse(`"${q[1]}"`) });
+        continue;
+      }
+      throw pathFault(text, i, '[n], [] or ["name"]');
+    }
+    throw pathFault(text, i, ". or [");
+  }
+  return segs;
+}
+function pathFault(text, at, expected) {
+  const e = new Error("bad path");
+  e.fault = {
+    code: "invalid-path",
+    src: text,
+    at,
+    found: text[at] ?? "end",
+    expected: [expected],
+  };
+  return e;
+}
+export function readPath(row, segs) {
+  let v = row;
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i];
+    if (v == null) return null;
+    if (s.kind === "each") {
+      if (!isList(v)) return null;
+      const rest = segs.slice(i + 1);
+      return v.map((x) => readPath(x, rest));
+    }
+    if (s.kind === "index") {
+      v = isList(v) ? (v.at(s.index) ?? null) : null;
+      continue;
+    }
+    const key = s.kind === "key" ? s.key : s.name;
+    if (isList(v)) return null;
+    v = member(v, key);
+  }
+  return v;
+}
+/** Serialize a value for the wire: dates → ISO, records → summary objects. */
+export function toWire(v, depth = 0) {
+  if (v == null) return null;
+  if (isDate(v) || v instanceof Duration) return v.toJSON();
+  if (v instanceof RegExp) return String(v);
+  if (isList(v)) return v.map((x) => toWire(x, depth + 1));
+  if (isRec(v)) {
+    if (v.__type === "creator")
+      return {
+        family: v.family,
+        given: v.given,
+        role: v.role,
+        fullName: v.fullName,
+      };
+    const ds =
+      DATASETS[
+        v.__type === "item"
+          ? "items"
+          : v.__type === "attachment"
+            ? "attachments"
+            : "annotations"
+      ];
+    const out = {};
+    for (const f of ds.summary) out[f] = toWire(v[f], depth + 1);
+    return out;
+  }
+  if (typeof v === "object") {
+    const out = {};
+    for (const [k, x] of Object.entries(v)) out[k] = toWire(x, depth + 1);
+    return out;
+  }
+  return v;
+}
+
+// ---------- argument decoding ----------
+/** Split a comma list, keeping commas inside quotes/brackets. */
+export function splitList(text) {
+  const out = [];
+  let cur = "",
+    depth = 0,
+    q = null;
+  for (const ch of text) {
+    if (q) {
+      cur += ch;
+      if (ch === q) q = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      q = ch;
+      cur += ch;
+      continue;
+    }
+    if (ch === "[") depth++;
+    if (ch === "]") depth--;
+    if (ch === "," && depth === 0) {
+      out.push(cur.trim());
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  if (cur.trim() !== "" || out.length) out.push(cur.trim());
+  return out.filter((x) => x !== "");
+}
+export function parseFields(text) {
+  if (text == null) return null;
+  if (text.trim().startsWith("[")) {
+    const arr = JSON.parse(text);
+    return arr;
+  }
+  return splitList(text);
+}
+export function parseSort(text) {
+  if (text == null) return null;
+  if (text.trim().startsWith("["))
+    return JSON.parse(text).map((s) => ({
+      field: s.field,
+      direction: s.direction ?? "asc",
+    }));
+  return splitList(text).map((s) =>
+    s.startsWith("-")
+      ? { field: s.slice(1), direction: "desc" }
+      : s.startsWith("+")
+        ? { field: s.slice(1), direction: "asc" }
+        : { field: s, direction: "asc" },
+  );
+}
+/** Shell-like split of `obsidian vault=x zotlit:query k='v v' k2="v"` */
+export function parseCommandLine(line) {
+  const toks = [];
+  let cur = "",
+    q = null,
+    has = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (q) {
+      if (ch === q) {
+        q = null;
+        continue;
+      }
+      if (
+        ch === "\\" &&
+        q === '"' &&
+        (line[i + 1] === '"' || line[i + 1] === "\\")
+      ) {
+        cur += line[++i];
+        continue;
+      }
+      cur += ch;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      q = ch;
+      has = true;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      if (cur !== "" || has) {
+        toks.push(cur);
+        cur = "";
+        has = false;
+      }
+      continue;
+    }
+    if (ch === "\\" && line[i + 1]) {
+      cur += line[++i];
+      continue;
+    }
+    cur += ch;
+  }
+  if (q) {
+    const e = new Error("unclosed quote");
+    e.fault = { code: "shell-quote", found: `unclosed ${q}` };
+    throw e;
+  }
+  if (cur !== "" || has) toks.push(cur);
+  const words = toks.filter((t) => t !== "obsidian");
+  let command = null;
+  const args = {};
+  for (const w of words) {
+    const m = /^([A-Za-z_][\w-]*)=([\s\S]*)$/.exec(w);
+    if (m) {
+      if (m[1] === "vault") continue;
+      args[m[1]] = m[2];
+    } else if (command === null) command = w;
+    else {
+      const e = new Error("stray");
+      e.fault = {
+        code: "invalid-argument",
+        found: w,
+        expected: ["name=value"],
+      };
+      throw e;
+    }
+  }
+  return { command, args };
+}
+
+// ---------- diagnostics ----------
+function levenshtein(a, b) {
+  const m = a.length,
+    n = b.length;
+  const d = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
+  for (let j = 1; j <= n; j++) d[0][j] = j;
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      d[i][j] = Math.min(
+        d[i - 1][j] + 1,
+        d[i][j - 1] + 1,
+        d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+  return d[m][n];
+}
+function nearMatches(name, candidates) {
+  return candidates
+    .map((c) => [c, levenshtein(name.toLowerCase(), c.toLowerCase())])
+    .filter(([, d]) => d <= Math.max(2, Math.floor(name.length / 3)))
+    .sort((a, b) => a[1] - b[1])
+    .slice(0, 3)
+    .map(([c]) => c);
+}
+function renderDiagnostic(argument, fault, hintOverride) {
+  const d = {
+    code: fault.code,
+    severity: "error",
+    message: "",
+    hint: "",
+    location: { argument },
+    excerpt: null,
+    found: fault.found ?? "",
+    expected: fault.expected ?? [],
+    suggestions: [],
+    report: [],
+  };
+  const src = fault.src ?? "";
+  if (fault.at != null && src) {
+    const at = Math.min(fault.at, src.length);
+    const to =
+      fault.to ??
+      Math.min(src.length, at + Math.max(1, String(fault.found ?? "").length));
+    d.excerpt = {
+      before: src.slice(Math.max(0, at - 24), at),
+      at: src.slice(at, to),
+      after: src.slice(to, to + 24),
+    };
+    d.location.span = { from: at, to };
+  }
+  switch (fault.code) {
+    case "unknown-field":
+      d.suggestions = nearMatches(fault.found, fault.candidates);
+      d.message = `Unknown field '${fault.found}' in ${argument}.`;
+      d.hint = d.suggestions.length
+        ? `Did you mean ${d.suggestions.map((s) => `'${s}'`).join(", ")}? Run zotlit:query-schema from=<dataset> for every field.`
+        : "Run zotlit:query-schema from=<dataset> for every field of this dataset.";
+      break;
+    case "unknown-function":
+      d.suggestions = nearMatches(fault.found, fault.candidates);
+      d.message = `Unknown function '${fault.found}'.`;
+      d.hint = `Use one of ${fault.candidates.join(", ")}.`;
+      break;
+    case "syntax-error":
+      d.message = `Syntax error in ${argument}: found ${fault.found}, expected ${fault.expected.join(" or ")}.`;
+      d.hint =
+        "Correct the expression at the marked place, then run the query again.";
+      break;
+    case "invalid-path":
+      d.message = `Invalid Projection Path '${src}': expected ${fault.expected[0]} at position ${fault.at}.`;
+      d.hint =
+        'Write a path as name, name.name, name[0], name[] or custom["exact name"].';
+      break;
+    default:
+      d.message = fault.message ?? fault.code;
+      d.hint =
+        hintOverride ??
+        fault.hint ??
+        "Correct the argument and run the command again.";
+  }
+  if (hintOverride) d.hint = hintOverride;
+  d.report = [d.message];
+  if (d.excerpt) {
+    const line = `${d.excerpt.before}${d.excerpt.at}${d.excerpt.after}`;
+    d.report.push(
+      `  ${line}`,
+      `  ${" ".repeat(d.excerpt.before.length)}${"^".repeat(Math.max(1, d.excerpt.at.length))}`,
+    );
+  }
+  if (d.suggestions.length)
+    d.report.push(`Suggestions: ${d.suggestions.join(", ")}`);
+  d.report.push(d.hint);
+  return d;
+}
+const err = (code, message, hint, extra = {}) => {
+  const e = new Error(message);
+  e.fault = { code, message, hint, ...extra };
+  return e;
+};
+
+// ---------- the engine ----------
+export function createEngine(data, options = {}) {
+  const records = buildRecords(data);
+  const clock = { now: options.now ?? Date.parse("2025-10-10T09:00:00Z") };
+  const libraryScope =
+    options.libraryScope ?? data.LIBRARIES.map((l) => l.selector);
+  const CONTRACT = 3;
+
+  function resolveLibraries(text) {
+    if (text == null) return [...libraryScope];
+    if (text === "all") return data.LIBRARIES.map((l) => l.selector);
+    const sels = text.trim().startsWith("[")
+      ? JSON.parse(text)
+      : splitList(text);
+    for (const s of sels)
+      if (!data.LIBRARIES.some((l) => l.selector === s))
+        throw err(
+          "library-not-found",
+          `No Library '${s}' in the connected Zotero source.`,
+          "Use personal, or group:<groupID> of a group Library the source holds; library=all reads every Library.",
+          { parameter: "library" },
+        );
+    return data.LIBRARIES.map((l) => l.selector).filter((s) =>
+      sels.includes(s),
+    );
+  }
+  const libraryWire = (sel) => {
+    const l = data.LIBRARIES.find((x) => x.selector === sel);
+    return l.type === "personal"
+      ? { type: "personal" }
+      : { type: "group", groupID: l.groupID, name: l.name };
+  };
+
+  /** Normalized request → result. Shared by both CLI shapes. */
+  function execute(req) {
+    const ds = DATASETS[req.from];
+    if (!ds)
+      throw err(
+        "invalid-argument",
+        `Unknown dataset '${req.from}'.`,
+        "Use from=items, from=attachments, or from=annotations.",
+        { parameter: "from" },
+      );
+    const libraries = resolveLibraries(req.library);
+    let rows = [...records[ds.root].values()].filter((r) =>
+      libraries.includes(r.library),
+    );
+    // restrictions of the OLD shape (so the prototype shows what the current contract can and cannot say):
+    // contract 2 exposes `attachments` on an Item as a boolean, not a list.
+    const restricted = req.restrict ?? null;
+    if (restricted?.booleanAttachments)
+      rows = rows.map(
+        (r) =>
+          new Proxy(r, {
+            get: (t, k) =>
+              k === "attachments" ? t.attachments.length > 0 : t[k],
+          }),
+      );
+    let ast = null;
+    const warnings = [];
+    if (req.filter != null) {
+      if (req.filter.trim() === "")
+        throw err(
+          "invalid-argument",
+          "filter is empty.",
+          "Omit filter to match every row, or give an expression.",
+          { parameter: "filter" },
+        );
+      ast = parseExpression(req.filter);
+      const dsView = restricted
+        ? {
+            ...ds,
+            fields: ds.fields.filter(
+              (f) => !restricted.hiddenFields.includes(f),
+            ),
+          }
+        : ds;
+      warnings.push(...validateExpression(ast, dsView, req.filter));
+    }
+    if (ast) rows = rows.filter((r) => truthy(evaluate(ast, r, clock)));
+    // search (ranked) — a stand-in for the MiniSearch engine of item-lookup
+    let scores = null;
+    if (req.search) {
+      const terms = req.search.toLowerCase().split(/\s+/).filter(Boolean);
+      scores = new Map();
+      rows = rows.filter((r) => {
+        const t = ds.searchText(r).toLowerCase();
+        const hits = terms.filter((x) => t.includes(x)).length;
+        if (hits === 0) return false;
+        scores.set(r, hits + (t.includes(req.search.toLowerCase()) ? 1 : 0));
+        return true;
+      });
+    }
+    // sort
+    const sortSpec = req.sort ?? (scores ? [] : parseSort(ds.defaultSort));
+    for (const s of sortSpec) {
+      if (!ds.sortable.includes(s.field))
+        throw err(
+          "unsortable-field",
+          `'${s.field}' is not a Sortable Field of ${ds.name}.`,
+          `Sort by one of: ${ds.sortable.join(", ")}.`,
+          { parameter: "sort" },
+        );
+      if (!["asc", "desc"].includes(s.direction))
+        throw err(
+          "invalid-argument",
+          `direction '${s.direction}' is not asc or desc.`,
+          "Write sort=-field for descending, sort=field for ascending.",
+          { parameter: "sort" },
+        );
+    }
+    const sortSegs = sortSpec.map((s) => ({ ...s, segs: parsePath(s.field) }));
+    const sortKeyOf = (r, segs) => {
+      let v = readPath(r, segs);
+      if (isDate(v)) v = v.startMs();
+      return v;
+    };
+    rows.sort((a, b) => {
+      if (scores) {
+        const d = scores.get(b) - scores.get(a);
+        if (d) return d;
+      }
+      for (const s of sortSegs) {
+        const va = sortKeyOf(a, s.segs),
+          vb = sortKeyOf(b, s.segs);
+        if (va == null && vb == null) continue;
+        if (va == null) return 1;
+        if (vb == null) return -1;
+        const c =
+          typeof va === "string"
+            ? collator.compare(va, vb)
+            : va < vb
+              ? -1
+              : va > vb
+                ? 1
+                : 0;
+        if (c) return s.direction === "desc" ? -c : c;
+      }
+      return a.indexedKey < b.indexedKey
+        ? -1
+        : a.indexedKey > b.indexedKey
+          ? 1
+          : 0;
+    });
+    // fields
+    const fields = req.fields ?? ds.defaultFields;
+    const fieldSegs = fields.map((f) => {
+      const segs = parsePath(f);
+      const root = segs[0].name;
+      if (
+        !ds.fields.includes(root) ||
+        (restricted && restricted.hiddenFields.includes(root))
+      )
+        throw Object.assign(new Error("unknown-field"), {
+          fault: {
+            code: "unknown-field",
+            src: f,
+            at: 0,
+            to: root.length,
+            found: root,
+            candidates: ds.fields,
+            argument: "fields",
+          },
+        });
+      return { path: f, segs };
+    });
+    const project = (r) => {
+      const values = {};
+      for (const f of fieldSegs) values[f.path] = toWire(readPath(r, f.segs));
+      const row = { indexedKey: r.indexedKey, values };
+      if (ds.name === "annotations") {
+        row.attachmentIndexedKey = r.attachment.indexedKey;
+        row.itemIndexedKey = r.item.indexedKey;
+      }
+      if (ds.name === "attachments") row.itemIndexedKey = r.item.indexedKey;
+      return row;
+    };
+    // limit
+    const limit =
+      req.limit === "all" || (req.limit == null && req.limitDefault === null)
+        ? null
+        : req.limit == null
+          ? 100
+          : req.limit;
+    const normalized = {
+      from: ds.name,
+      library: libraries,
+      ...(req.search ? { search: req.search } : {}),
+      filter: req.filter ?? null,
+      fields,
+      sort: sortSpec,
+      limit,
+      ...(req.group ? { group: req.group } : {}),
+    };
+    // group
+    if (req.group) {
+      const gsegs = parsePath(req.group);
+      if (!ds.fields.includes(gsegs[0].name))
+        throw Object.assign(new Error("unknown-field"), {
+          fault: {
+            code: "unknown-field",
+            src: req.group,
+            at: 0,
+            found: gsegs[0].name,
+            candidates: ds.fields,
+            argument: "group",
+          },
+        });
+      const groups = new Map();
+      for (const r of rows) {
+        const v = toWire(readPath(r, gsegs));
+        const k = JSON.stringify(v);
+        if (!groups.has(k)) groups.set(k, { value: v, count: 0, rows: [] });
+        const g = groups.get(k);
+        g.count++;
+        if (limit == null || g.rows.length < limit) g.rows.push(project(r));
+      }
+      const list = [...groups.values()].sort((a, b) => {
+        if (a.value == null) return 1;
+        if (b.value == null) return -1;
+        return typeof a.value === "string"
+          ? collator.compare(a.value, b.value)
+          : a.value < b.value
+            ? -1
+            : a.value > b.value
+              ? 1
+              : 0;
+      });
+      return {
+        normalized,
+        libraries,
+        warnings,
+        returnedCount: list.reduce((n, g) => n + g.rows.length, 0),
+        totalCount: rows.length,
+        truncated: list.some((g) => g.rows.length < g.count),
+        groups: list,
+        fields,
+      };
+    }
+    const truncated = limit != null && rows.length > limit;
+    const out = (limit == null ? rows : rows.slice(0, limit)).map(project);
+    return {
+      normalized,
+      libraries,
+      warnings,
+      returnedCount: out.length,
+      truncated,
+      rows: out,
+      fields,
+    };
+  }
+
+  // --- the NEW shape: zotlit:query ---
+  const NEW_PARAMS = [
+    "from",
+    "filter",
+    "search",
+    "fields",
+    "sort",
+    "limit",
+    "library",
+    "group",
+    "format",
+    "output",
+    "id",
+  ];
+  function decodeNew(args) {
+    for (const k of Object.keys(args))
+      if (!NEW_PARAMS.includes(k))
+        throw err(
+          "invalid-argument",
+          `Unknown parameter '${k}'.`,
+          `Parameters: ${NEW_PARAMS.join(", ")}.`,
+          { parameter: k },
+        );
+    const limit =
+      args.limit == null
+        ? undefined
+        : args.limit === "all"
+          ? "all"
+          : /^\d+$/.test(args.limit) && +args.limit > 0
+            ? +args.limit
+            : (() => {
+                throw err(
+                  "invalid-argument",
+                  `limit '${args.limit}' is not a positive integer or all.`,
+                  "Use limit=<n> or limit=all.",
+                  { parameter: "limit" },
+                );
+              })();
+    let fields = null;
+    try {
+      fields = parseFields(args.fields);
+    } catch (e) {
+      if (e.fault) throw e;
+      throw err(
+        "invalid-argument",
+        `fields '${args.fields}' is not a comma list or JSON array.`,
+        "Write fields=title,date.year or a JSON array.",
+        { parameter: "fields" },
+      );
+    }
+    let sort = null;
+    try {
+      sort = parseSort(args.sort);
+    } catch (e) {
+      throw err(
+        "invalid-argument",
+        `sort '${args.sort}' is not a comma list or JSON array.`,
+        "Write sort=-dateModified,title.",
+        { parameter: "sort" },
+      );
+    }
+    return {
+      from: args.from ?? "items",
+      filter: args.filter,
+      search: args.search,
+      fields,
+      sort,
+      limit,
+      library: args.library,
+      group: args.group,
+      format: args.format ?? "json",
+      output: args.output,
+      id: args.id,
+    };
+  }
+
+  // --- the OLD shape: zotlit:item-query / zotlit:annotation-query (contract 2) ---
+  const OLD_PARAMS = {
+    "zotlit:item-query": [
+      "filter",
+      "fields",
+      "sort",
+      "limit",
+      "library",
+      "libraries",
+      "output",
+      "id",
+    ],
+    "zotlit:annotation-query": [
+      "filter",
+      "item",
+      "attachment",
+      "fields",
+      "sort",
+      "limit",
+      "library",
+      "libraries",
+      "output",
+      "id",
+    ],
+  };
+  function decodeOld(command, args) {
+    const allowed = OLD_PARAMS[command];
+    for (const k of Object.keys(args))
+      if (!allowed.includes(k))
+        throw err(
+          "invalid-argument",
+          `Unknown parameter '${k}' for ${command}.`,
+          `Parameters: ${allowed.join(", ")}.`,
+          { parameter: k },
+        );
+    const jsonArr = (name) => {
+      if (args[name] == null) return null;
+      let v;
+      try {
+        v = JSON.parse(args[name]);
+      } catch {
+        throw err(
+          "invalid-argument",
+          `${name} is not a JSON array.`,
+          `Write ${name} as a JSON array, such as ${name}='["title","date.year"]'.`,
+          { parameter: name },
+        );
+      }
+      if (!Array.isArray(v))
+        throw err(
+          "invalid-argument",
+          `${name} is not a JSON array.`,
+          `Write ${name} as a JSON array.`,
+          { parameter: name },
+        );
+      return v;
+    };
+    const fields = jsonArr("fields");
+    const sortRaw = jsonArr("sort");
+    const sort = sortRaw
+      ? sortRaw.map((s) => ({ field: s.field, direction: s.direction }))
+      : null;
+    const limit =
+      args.limit == null
+        ? undefined
+        : args.limit === "all"
+          ? "all"
+          : /^\d+$/.test(args.limit) && +args.limit > 0
+            ? +args.limit
+            : (() => {
+                throw err(
+                  "invalid-argument",
+                  `limit '${args.limit}' is not a positive integer or all.`,
+                  "Use limit=<n> or limit=all.",
+                  { parameter: "limit" },
+                );
+              })();
+    let library = args.libraries ?? args.library ?? null; // libraries wins
+    const from = command === "zotlit:item-query" ? "items" : "annotations";
+    let filter = args.filter;
+    if (from === "annotations") {
+      const keyFilter = (name, path) => {
+        if (args[name] == null) return null;
+        const keys = args[name].trim().startsWith("[")
+          ? JSON.parse(args[name])
+          : [args[name]];
+        if (library != null)
+          throw err(
+            "invalid-argument",
+            `${name} selects its own Library; do not add library or libraries.`,
+            `Remove library/libraries, or select by filter instead of ${name}.`,
+            { parameter: name },
+          );
+        return keys.length === 1
+          ? `${path} == ${JSON.stringify(keys[0])}`
+          : `[${keys.map((k) => JSON.stringify(k)).join(", ")}].contains(${path})`;
+      };
+      const parts = [
+        keyFilter("item", "item.indexedKey"),
+        keyFilter("attachment", "attachment.indexedKey"),
+        filter,
+      ].filter(Boolean);
+      if (parts.length) filter = parts.map((p) => `(${p})`).join(" && ");
+      if (args.item != null || args.attachment != null) library = "all";
+    }
+    // what contract 2 cannot say: Items have no attachments LIST and no annotations; `attachments` is a boolean
+    const restrict =
+      from === "items"
+        ? { hiddenFields: ["annotations"], booleanAttachments: true }
+        : { hiddenFields: [] };
+    return {
+      from,
+      filter,
+      fields,
+      sort,
+      limit,
+      library,
+      format: "json",
+      output: args.output,
+      id: args.id,
+      restrict,
+    };
+  }
+
+  function run(line) {
+    let parsed;
+    try {
+      parsed = parseCommandLine(line);
+    } catch (e) {
+      return {
+        ok: false,
+        command: null,
+        text: `Error: ${e.fault?.found ?? e.message}`,
+        envelope: null,
+      };
+    }
+    const { command, args } = parsed;
+    const wrap = (cmd, tail) => ({
+      contractVersion: CONTRACT,
+      command: cmd,
+      ...tail,
+    });
+    const fail = (cmd, e) => {
+      if (!e.fault) throw e;
+      const d = renderDiagnostic(
+        e.fault.argument ?? e.fault.parameter ?? "filter",
+        e.fault,
+      );
+      if (e.fault.parameter) d.details = { parameter: e.fault.parameter };
+      const env = wrap(cmd, { ok: false, diagnostic: d });
+      return {
+        ok: false,
+        command: cmd,
+        envelope: env,
+        text: JSON.stringify(env, null, 2),
+      };
+    };
+    try {
+      if (
+        command === "zotlit:query" ||
+        command === "zotlit:item-query" ||
+        command === "zotlit:annotation-query"
+      ) {
+        const req =
+          command === "zotlit:query"
+            ? decodeNew(args)
+            : decodeOld(command, args);
+        const result = execute(req);
+        const identity = {
+          vault: "demo-vault",
+          source: {
+            kind: "zotero-database",
+            path: "/Users/me/Zotero/zotero.sqlite",
+          },
+        };
+        const body = {
+          ok: true,
+          identity,
+          libraries: result.libraries.map(libraryWire),
+          request: result.normalized,
+          returnedCount: result.returnedCount,
+          truncated: result.truncated,
+          warnings: result.warnings,
+        };
+        if (result.groups) {
+          body.totalCount = result.totalCount;
+          body.groups = result.groups;
+        } else body.rows = result.rows;
+        if (req.output) {
+          delete body.rows;
+          delete body.groups;
+          body.file = {
+            path: req.output,
+            bytes: JSON.stringify(
+              wrap(command, { ...body, rows: result.rows ?? result.groups }),
+            ).length,
+            format: "json",
+          };
+        }
+        const env = wrap(command, body);
+        return {
+          ok: true,
+          command,
+          envelope: env,
+          request: req,
+          result,
+          text: formatResult(req.format, env, result, DATASETS[req.from]),
+        };
+      }
+      if (
+        command === "zotlit:query-schema" ||
+        command === "zotlit:item-query-schema" ||
+        command === "zotlit:annotation-query-schema"
+      ) {
+        const from =
+          command === "zotlit:query-schema"
+            ? (args.from ?? null)
+            : command === "zotlit:item-query-schema"
+              ? "items"
+              : "annotations";
+        const describe = (ds) => ({
+          dataset: ds.name,
+          fields: ds.fields.map((f) => ({
+            path: f,
+            relation: ds.relations[f] ?? null,
+            sort: ds.sortable.includes(f),
+          })),
+          defaultFields: ds.defaultFields,
+          defaultSort: ds.defaultSort,
+        });
+        const env = wrap(command, {
+          ok: true,
+          datasets: (from ? [DATASETS[from]] : Object.values(DATASETS)).map(
+            describe,
+          ),
+          customFields: [{ path: 'custom["review.status"]', bareName: false }],
+          defaults: {
+            limit: 100,
+            library: { source: "library-scope", value: libraryScope },
+          },
+        });
+        return {
+          ok: true,
+          command,
+          envelope: env,
+          text: JSON.stringify(env, null, 2),
+        };
+      }
+      if (command === "zotlit:annotation-image") {
+        const a = records.annotations.get(args.key ?? "");
+        if (!a)
+          throw err(
+            "annotation-not-found",
+            `No Annotation with the key '${args.key ?? ""}'.`,
+            "Pass the indexedKey of an Annotation Row.",
+            { parameter: "key" },
+          );
+        if (!a.hasExcerptImage)
+          throw err(
+            "not-an-image-annotation",
+            `Annotation '${a.indexedKey}' is a ${a.type}; it has no Excerpt Image.`,
+            "Call this command for an image or ink Annotation (hasExcerptImage true).",
+            { parameter: "key" },
+          );
+        if (!a.attachment.exists)
+          throw err(
+            "file-unavailable",
+            "The source PDF is not on this device and Zotero has no cached image.",
+            "Make the file available, then run the command again.",
+            { parameter: "key" },
+          );
+        const env = wrap(command, {
+          ok: true,
+          key: a.indexedKey,
+          path: `/tmp/zotlit-excerpts/${a.indexedKey}.png`,
+          format: "png",
+          provenance: a.type === "image" ? "zotero" : "rendered",
+        });
+        return {
+          ok: true,
+          command,
+          envelope: env,
+          text: JSON.stringify(env, null, 2),
+        };
+      }
+      if (
+        command === "zotlit:query-cancel" ||
+        command === "zotlit:item-query-cancel"
+      ) {
+        const env = wrap(command, {
+          ok: true,
+          id: args.id ?? null,
+          cancelRequested: false,
+        });
+        return {
+          ok: true,
+          command,
+          envelope: env,
+          text: JSON.stringify(env, null, 2),
+        };
+      }
+      return {
+        ok: false,
+        command,
+        envelope: null,
+        text: `Error: unknown command '${command ?? ""}'. Try zotlit:query, zotlit:query-schema, zotlit:item-query, zotlit:annotation-query.`,
+      };
+    } catch (e) {
+      return fail(command, e);
+    }
+  }
+
+  return {
+    run,
+    records,
+    datasets: DATASETS,
+    libraries: data.LIBRARIES,
+    clock,
+    execute,
+  };
+}
+
+// ---------- output formats ----------
+const cell = (v) =>
+  v == null
+    ? ""
+    : typeof v === "string"
+      ? v
+      : isList(v)
+        ? v
+            .map((x) =>
+              x == null
+                ? ""
+                : typeof x === "object"
+                  ? (x.fullName ?? x.indexedKey ?? JSON.stringify(x))
+                  : String(x),
+            )
+            .join("; ")
+        : typeof v === "object"
+          ? (v.fullName ?? JSON.stringify(v))
+          : String(v);
+const dispWidth = (s) =>
+  [...s].reduce(
+    (n, ch) =>
+      n +
+      (/[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/.test(
+        ch,
+      )
+        ? 2
+        : 1),
+    0,
+  );
+export function formatResult(format, env, result, ds) {
+  if (format === "json" || !result.rows) return JSON.stringify(env, null, 2);
+  const cols = ["indexedKey", ...result.fields];
+  const rows = result.rows.map((r) => [
+    r.indexedKey,
+    ...result.fields.map((f) => cell(r.values[f])),
+  ]);
+  if (format === "csv") {
+    const q = (s) => (/[",\n]/.test(s) ? `"${s.replaceAll(/"/g, '""')}"` : s);
+    return [cols.map(q).join(","), ...rows.map((r) => r.map(q).join(","))].join(
+      "\n",
+    );
+  }
+  if (format === "md")
+    return [
+      `| ${cols.join(" | ")} |`,
+      `| ${cols.map(() => "---").join(" | ")} |`,
+      ...rows.map(
+        (r) => `| ${r.map((c) => c.replaceAll(/\|/g, "\\|")).join(" | ")} |`,
+      ),
+    ].join("\n");
+  if (format === "table") {
+    const widths = cols.map((c, i) =>
+      Math.min(40, Math.max(dispWidth(c), ...rows.map((r) => dispWidth(r[i])))),
+    );
+    const fit = (s, w) => {
+      let t = s;
+      while (dispWidth(t) > w) t = `${[...t].slice(0, -2).join("")  }…`;
+      return t + " ".repeat(Math.max(0, w - dispWidth(t)));
+    };
+    const lines = [
+      cols.map((c, i) => fit(c, widths[i])).join("  "),
+      widths.map((w) => "─".repeat(w)).join("  "),
+      ...rows.map((r) => r.map((c, i) => fit(c, widths[i])).join("  ")),
+    ];
+    lines.push(
+      `${result.returnedCount} row(s)${result.truncated ? ", truncated" : ""}`,
+    );
+    return lines.join("\n");
+  }
+  return JSON.stringify(env, null, 2);
+}
+
+/** The same request as a saved query file (the Bases-shaped form). */
+export function toQueryFile(req) {
+  const lines = [`from: ${req.from}`];
+  if (req.library)
+    lines.push(
+      `library: ${Array.isArray(req.library) ? `[${req.library.join(", ")}]` : req.library}`,
+    );
+  if (req.search) lines.push(`search: ${JSON.stringify(req.search)}`);
+  if (req.filter) {
+    const parts = splitTopLevelAnd(req.filter);
+    if (parts.length > 1) {
+      lines.push("filters:", "  and:");
+      for (const p of parts) lines.push(`    - ${yamlStr(p)}`);
+    } else lines.push(`filters: ${yamlStr(req.filter)}`);
+  }
+  if (req.fields) {
+    lines.push("fields:");
+    for (const f of req.fields) lines.push(`  - ${yamlStr(f)}`);
+  }
+  if (req.sort) {
+    lines.push("sort:");
+    for (const s of req.sort)
+      lines.push(`  - ${s.direction === "desc" ? "-" : ""}${s.field}`);
+  }
+  if (req.limit != null) lines.push(`limit: ${req.limit}`);
+  if (req.group) lines.push(`group: ${req.group}`);
+  return lines.join("\n");
+}
+const yamlStr = (s) =>
+  /[:#'"[\]{}&*!|>%@`]/.test(s) || /^\s|\s$/.test(s) ? JSON.stringify(s) : s;
+function splitTopLevelAnd(src) {
+  try {
+    const ast = parseExpression(src);
+    const out = [];
+    const walk = (n) => {
+      if (n.t === "and") {
+        walk(n.l);
+        walk(n.r);
+      } else out.push(src.slice(n.from, n.to));
+    };
+    walk(ast);
+    return out;
+  } catch {
+    return [src];
+  }
+}
+
+</script>
+<script type="text/plain" id="mod-cases">
+// PROTOTYPE — research questions used to evaluate the two CLI shapes on the same data.
+// `persona` cases mirror skills/zotlit-query/evals/cases.json; `extra` cases are cross-entity
+// questions academics ask that the evals do not cover.
+// old: the commands contract 2 needs; `null` = cannot be asked. client: work left to the caller.
+
+const q = (s) => s.replaceAll(/`/g, "'");
+export const CASES = [
+  // ----- persona cases (the 15 published evals) -----
+  {
+    id: "include",
+    group: "persona",
+    question:
+      "系统综述：所有图书馆里，标签 query-eval、review.status 为 include 的期刊论文。要标题、年份、第一作者。",
+    new: [
+      q(
+        `zotlit:query library=all filter='itemType == "journalArticle" && tags.contains("query-eval") && custom["review.status"] == "include"' fields=title,date.year,creators[0].fullName limit=all`,
+      ),
+    ],
+    old: [
+      q(
+        `zotlit:item-query libraries=all filter='itemType == "journalArticle" && tags.contains("query-eval") && custom["review.status"] == "include"' fields='["title","date.year","creators[0].fullName"]' limit=all`,
+      ),
+    ],
+    client: "两边都要自己数「没有年份」的行",
+  },
+  {
+    id: "export",
+    group: "persona",
+    question:
+      "导出所有图书馆里标签 query-eval 的期刊论文到文件：标题、年份、作者、review.status、摘要。",
+    new: [
+      q(
+        `zotlit:query library=all filter='itemType == "journalArticle" && tags.contains("query-eval")' fields='title,date.year,creators,custom["review.status"],abstractNote' limit=all output=/tmp/export.json`,
+      ),
+    ],
+    old: [
+      q(
+        `zotlit:item-query libraries=all filter='itemType == "journalArticle" && tags.contains("query-eval")' fields='["title","date.year","creators","custom[\\"review.status\\"]","abstractNote"]' limit=all output=/tmp/export.json`,
+      ),
+    ],
+    client: null,
+  },
+  {
+    id: "edge",
+    group: "persona",
+    question:
+      "标签 query-eval-edge 的图书：所属图书馆、Indexed Key、标题、年份、第一作者（含角色，找出编者）。",
+    new: [
+      q(
+        `zotlit:query library=all filter='itemType == "book" && tags.contains("query-eval-edge")' fields=library,title,date.year,creators[0].fullName,creators[0].role limit=all`,
+      ),
+    ],
+    old: [
+      q(
+        `zotlit:item-query libraries=all filter='itemType == "book" && tags.contains("query-eval-edge")' fields='["title","date.year","creators[0].fullName","creators[0].role"]' limit=all`,
+      ),
+    ],
+    client: "现行：行里没有 library 字段，要从 Indexed Key 的 g 后缀推断",
+  },
+  {
+    id: "annotations",
+    group: "persona",
+    question:
+      "Citation Key 为 rougierTenSimpleRules2014 的论文的全部批注，按阅读顺序：类型、页码、引文/评论、源文件路径。",
+    new: [
+      q(
+        `zotlit:query from=annotations filter='item.citationKey == "rougierTenSimpleRules2014"' fields=type,pageLabel,text,comment,attachment.path sort=attachment.indexedKey,sortIndex limit=all`,
+      ),
+    ],
+    old: [
+      q(
+        `zotlit:annotation-query filter='item.citationKey == "rougierTenSimpleRules2014"' fields='["type","pageLabel","text","comment","attachment"]' sort='[{"field":"attachment.indexedKey","direction":"asc"},{"field":"sortIndex","direction":"asc"}]' limit=all`,
+      ),
+    ],
+    client: null,
+  },
+  {
+    id: "mixed",
+    group: "persona",
+    question:
+      "标签 figure 的图片批注，且父条目 Citation Key 为 rougierTenSimpleRules2014：一个过滤式同时写批注条件和父条目条件。",
+    new: [
+      q(
+        `zotlit:query from=annotations filter='type == "image" && tags.contains("figure") && item.citationKey == "rougierTenSimpleRules2014"' fields=item.title,tags,hasExcerptImage limit=all`,
+      ),
+    ],
+    old: [
+      q(
+        `zotlit:annotation-query filter='type == "image" && tags.contains("figure") && item.citationKey == "rougierTenSimpleRules2014"' fields='["item.title","tags","hasExcerptImage"]' limit=all`,
+      ),
+    ],
+    client: null,
+  },
+  {
+    id: "position",
+    group: "persona",
+    question:
+      "引用了 “Identify Your Message” 的批注，要位置（kind、页索引、矩形坐标）和源文件路径。",
+    new: [
+      q(
+        `zotlit:query from=annotations filter='text.contains("Identify Your Message") && item.citationKey == "rougierTenSimpleRules2014"' fields=position,attachment.path limit=all`,
+      ),
+    ],
+    old: [
+      q(
+        `zotlit:annotation-query filter='text.contains("Identify Your Message") && item.citationKey == "rougierTenSimpleRules2014"' fields='["position","attachment"]' limit=all`,
+      ),
+    ],
+    client: null,
+  },
+  {
+    id: "image",
+    group: "persona",
+    question: "标签 figure 的图片批注，确认 hasExcerptImage 后取出截图文件。",
+    new: [
+      q(
+        `zotlit:query from=annotations filter='type == "image" && tags.contains("figure") && item.citationKey == "rougierTenSimpleRules2014"' fields=hasExcerptImage limit=all`,
+      ),
+      "zotlit:annotation-image key=ANNROU04",
+    ],
+    old: [
+      q(
+        `zotlit:annotation-query filter='type == "image" && tags.contains("figure") && item.citationKey == "rougierTenSimpleRules2014"' fields='["hasExcerptImage"]' limit=all`,
+      ),
+      "zotlit:annotation-image key=ANNROU04",
+    ],
+    client: null,
+  },
+  {
+    id: "reading_plan",
+    group: "persona",
+    question:
+      "阅读计划：标签 query-eval 的期刊论文，包括还没做批注的；每篇给图书馆、标题、批注数量，再列出批注。",
+    new: [
+      q(
+        `zotlit:query library=all filter='itemType == "journalArticle" && tags.contains("query-eval")' fields=library,title,annotations.length,annotations[].text limit=all`,
+      ),
+    ],
+    old: [
+      q(
+        `zotlit:item-query libraries=all filter='itemType == "journalArticle" && tags.contains("query-eval")' fields='["title"]' limit=all`,
+      ),
+      q(
+        `zotlit:annotation-query libraries=all filter='item.itemType == "journalArticle" && item.tags.contains("query-eval")' fields='["text","item.title"]' limit=all`,
+      ),
+    ],
+    client:
+      "现行：两次调用后按 itemIndexedKey 自己合并、自己计数，才能保留零批注的论文",
+  },
+  {
+    id: "shared_marks",
+    group: "persona",
+    question:
+      "My Library 和 Lab Archive 各有一份同一篇论文，找两份上引用 “Identify Your Message” 的高亮，给父条目 Key、图书馆、颜色。",
+    new: [
+      q(
+        `zotlit:query from=annotations library=all filter='type == "highlight" && text.contains("Identify Your Message")' fields=item.indexedKey,library,colorName,text limit=all`,
+      ),
+    ],
+    old: [
+      q(
+        `zotlit:annotation-query libraries=all filter='type == "highlight" && text.contains("Identify Your Message")' fields='["colorName","text"]' limit=all`,
+      ),
+    ],
+    client: "现行：图书馆要从 itemIndexedKey 的 g 后缀推断",
+  },
+  {
+    id: "attachment",
+    group: "persona",
+    question: "Lab Archive 附件 QANPDF22g118 上的全部批注，按阅读顺序。",
+    new: [
+      q(
+        `zotlit:query from=annotations filter='attachment.indexedKey == "QANPDF22g118"' fields=type,pageLabel,text,comment,attachment.path sort=sortIndex limit=all`,
+      ),
+    ],
+    old: [
+      q(
+        `zotlit:annotation-query attachment=QANPDF22g118 fields='["type","pageLabel","text","comment","attachment"]' sort='[{"field":"sortIndex","direction":"asc"}]' limit=all`,
+      ),
+    ],
+    client: null,
+  },
+  {
+    id: "colors",
+    group: "persona",
+    question:
+      "My Library 那份论文上，第 1 页、蓝色、标签 query-annotation-method 的高亮。",
+    new: [
+      q(
+        `zotlit:query from=annotations library=personal filter='type == "highlight" && colorName == "blue" && pageLabel == "1" && tags.contains("query-annotation-method")' fields=text,colorName,tags,pageIndex limit=all`,
+      ),
+    ],
+    old: [
+      q(
+        `zotlit:annotation-query library=personal filter='type == "highlight" && colorName == "blue" && pageLabel == "1" && tags.contains("query-annotation-method")' fields='["text","colorName","tags","pageIndex"]' limit=all`,
+      ),
+    ],
+    client: null,
+  },
+  {
+    id: "reverse_pages",
+    group: "persona",
+    question: "My Library 那份论文的批注，从最后一页倒着列到第一页。",
+    new: [
+      q(
+        `zotlit:query from=annotations filter='item.indexedKey == "ROUG2014"' fields=type,pageLabel,pageIndex,text sort=-pageIndex,-sortIndex limit=all`,
+      ),
+    ],
+    old: [
+      q(
+        `zotlit:annotation-query item=ROUG2014 fields='["type","pageLabel","pageIndex","text"]' sort='[{"field":"pageIndex","direction":"desc"},{"field":"sortIndex","direction":"desc"}]' limit=all`,
+      ),
+    ],
+    client: null,
+  },
+  {
+    id: "missing_source",
+    group: "persona",
+    question:
+      "评论写着 “Check this source when the file arrives” 的批注：源文件路径、文件是否存在。",
+    new: [
+      q(
+        `zotlit:query from=annotations filter='comment.contains("Check this source when the file arrives")' fields=comment,attachment.path,attachment.exists limit=all`,
+      ),
+    ],
+    old: [
+      q(
+        `zotlit:annotation-query filter='comment.contains("Check this source when the file arrives")' fields='["comment","attachment"]' limit=all`,
+      ),
+    ],
+    client: null,
+  },
+  {
+    id: "repair_filter",
+    group: "persona",
+    question:
+      '用户写了 tags == "query-annotation-method" 没结果；先看诊断/警告，再找出真正带该标签的批注。',
+    new: [
+      q(
+        `zotlit:query from=annotations library=all filter='tags == "query-annotation-method"' fields=[] limit=all`,
+      ),
+      q(
+        `zotlit:query from=annotations library=all filter='tags.contains("query-annotation-method")' fields=item.indexedKey,text,colorName limit=all`,
+      ),
+    ],
+    old: [
+      q(
+        `zotlit:annotation-query libraries=all filter='tags == "query-annotation-method"' fields='[]' limit=all`,
+      ),
+      q(
+        `zotlit:annotation-query libraries=all filter='tags.contains("query-annotation-method")' fields='["text","colorName"]' limit=all`,
+      ),
+    ],
+    client: null,
+  },
+  {
+    id: "export_annotations",
+    group: "persona",
+    question: "把附件 QANPDF22g118 上的全部批注导出到 JSON 文件。",
+    new: [
+      q(
+        `zotlit:query from=annotations filter='attachment.indexedKey == "QANPDF22g118"' fields=type,pageLabel,text,comment,attachment.path limit=all output=/tmp/annotations.json`,
+      ),
+    ],
+    old: [
+      q(
+        `zotlit:annotation-query attachment=QANPDF22g118 fields='["type","pageLabel","text","comment","attachment"]' limit=all output=/tmp/annotations.json`,
+      ),
+    ],
+    client: null,
+  },
+
+  // ----- extra cross-entity questions -----
+  {
+    id: "no_usable_pdf",
+    group: "extra",
+    question:
+      "哪些文献在这台电脑上没有可打开的 PDF？（没有附件，或 PDF 文件丢失）",
+    new: [
+      q(
+        `zotlit:query filter='attachments.filter(value.contentType == "application/pdf" && value.exists).isEmpty()' fields=title,attachments[].path limit=all`,
+      ),
+    ],
+    old: [
+      q(`zotlit:item-query filter='!attachments' fields='["title"]' limit=all`),
+    ],
+    client:
+      "现行只能问「完全没有附件」；「PDF 文件丢失」问不到（Item 上 attachments 是布尔值，没有附件数据集）",
+    partial: true,
+  },
+  {
+    id: "broken_links",
+    group: "extra",
+    question: "哪些附件是链接文件（linked_file）但文件已经不在磁盘上？",
+    new: [
+      q(
+        `zotlit:query from=attachments filter='linkMode == "linked_file" && !exists' fields=title,path,item.title limit=all`,
+      ),
+    ],
+    old: null,
+    client: "现行没有附件数据集；批注查询只看得到「有批注的附件」",
+  },
+  {
+    id: "duplicate_pdfs",
+    group: "extra",
+    question: "哪些文献挂了两个以上 PDF？（查重）",
+    new: [
+      q(
+        `zotlit:query filter='attachments.filter(value.contentType == "application/pdf").length > 1' fields=title,attachments[].title limit=all`,
+      ),
+    ],
+    old: null,
+    client: "现行 Item 上 attachments 只是布尔值",
+  },
+  {
+    id: "recently_annotated",
+    group: "extra",
+    question: "最近 120 天我做过批注的文献有哪些？（每篇只列一次）",
+    new: [
+      q(
+        `zotlit:query filter='annotations.filter(value.dateModified >= today() - duration("120 days")).length > 0' fields=title,annotations.length sort=-dateModified limit=all`,
+      ),
+    ],
+    old: [
+      q(
+        `zotlit:annotation-query filter='dateModified >= today() - duration("120 days")' fields='["item.title"]' limit=all`,
+      ),
+    ],
+    client: "现行返回的是批注行，要自己按 itemIndexedKey 去重",
+  },
+  {
+    id: "count_per_paper",
+    group: "extra",
+    question: "每篇论文有多少条批注？",
+    new: [
+      q(
+        `zotlit:query from=annotations group=item.citationKey fields=[] limit=all`,
+      ),
+    ],
+    old: [q(`zotlit:annotation-query fields='[]' limit=all`)],
+    client: "现行：拿到全部批注行后自己按 itemIndexedKey 计数",
+  },
+  {
+    id: "count_by_year",
+    group: "extra",
+    question: "Thesis 收藏夹里的文献按年份分别有几篇？",
+    new: [
+      q(
+        `zotlit:query filter='collections.within("Thesis")' group=date.year fields=[] limit=all`,
+      ),
+    ],
+    old: [
+      q(
+        `zotlit:item-query filter='collections.within("Thesis")' fields='["date.year"]' limit=all`,
+      ),
+    ],
+    client: "现行：自己按 date.year 计数",
+  },
+  {
+    id: "unread_in_collection",
+    group: "extra",
+    question: "Thesis 收藏夹里还没读过（一条高亮都没有）的论文。",
+    new: [
+      q(
+        `zotlit:query filter='collections.within("Thesis") && annotations.filter(value.type == "highlight").isEmpty()' fields=title limit=all`,
+      ),
+    ],
+    old: [
+      q(
+        `zotlit:item-query filter='collections.within("Thesis")' fields='["title"]' limit=all`,
+      ),
+      q(
+        `zotlit:annotation-query filter='type == "highlight" && item.collections.within("Thesis")' fields='[]' limit=all`,
+      ),
+    ],
+    client: "现行：两次调用，自己做差集",
+  },
+  {
+    id: "attachment_types",
+    group: "extra",
+    question: "附件按类型（PDF / EPUB / 网页快照）各有多少？",
+    new: [
+      q(`zotlit:query from=attachments group=contentType fields=[] limit=all`),
+    ],
+    old: null,
+    client: "现行没有附件数据集",
+  },
+  {
+    id: "fuzzy_search",
+    group: "extra",
+    question:
+      "找跟 “attention clinical” 相关的论文（模糊检索），只要有 PDF 的。",
+    new: [
+      q(
+        `zotlit:query search="attention clinical" filter='attachments.filter(value.contentType == "application/pdf").length > 0' fields=title,date.year limit=10`,
+      ),
+    ],
+    old: [
+      q(
+        `zotlit:item-query filter='title.lower().contains("attention") && attachments' fields='["title","date.year"]' limit=10`,
+      ),
+    ],
+    client: "现行没有检索参数，只能猜 title.contains，排名和分词都没有",
+    partial: true,
+  },
+  {
+    id: "files_of_paper",
+    group: "extra",
+    question:
+      "某篇论文（vaswaniAttention2017）的全部附件和文件路径，用来打开文件。",
+    new: [
+      q(
+        `zotlit:query from=attachments filter='item.citationKey == "vaswaniAttention2017"' fields=title,contentType,path,exists limit=all`,
+      ),
+    ],
+    old: null,
+    client: "现行：只有带批注的附件能通过批注行看到 attachment.path",
+  },
+  {
+    id: "csv_for_advisor",
+    group: "extra",
+    question: "把 Thesis 收藏夹的文献导成 CSV 发给导师。",
+    new: [
+      q(
+        `zotlit:query filter='collections.within("Thesis")' fields=title,date.year,creators,publicationTitle limit=all format=csv`,
+      ),
+    ],
+    old: [
+      q(
+        `zotlit:item-query filter='collections.within("Thesis")' fields='["title","date.year","creators","publicationTitle"]' limit=all`,
+      ),
+    ],
+    client: "现行只有 JSON，要自己转 CSV",
+  },
+  {
+    id: "recent_with_pdf_unread",
+    group: "extra",
+    question: "2019 年起、有附件、还没打上 to-read 标签的文献。",
+    new: [
+      q(
+        `zotlit:query filter='date.year >= 2019 && !attachments.isEmpty() && !tags.contains("to-read")' fields=title,date.year limit=all`,
+      ),
+    ],
+    old: [
+      q(
+        `zotlit:item-query filter='date.year >= 2019 && attachments && !tags.contains("to-read")' fields='["title","date.year"]' limit=all`,
+      ),
+    ],
+    client: null,
+  },
+  {
+    id: "chinese_title",
+    group: "extra",
+    question: "标题含「深度学习」的文献。",
+    new: [
+      q(
+        `zotlit:query filter='title.contains("深度学习")' fields=title,publicationTitle limit=all`,
+      ),
+    ],
+    old: [
+      q(
+        `zotlit:item-query filter='title.contains("深度学习")' fields='["title","publicationTitle"]' limit=all`,
+      ),
+    ],
+    client: null,
+  },
+];
+
+</script>
+<script type="text/plain" id="mod-scenarios">
+// PROTOTYPE — guided walkthroughs for the query CLI prototype page. Domain language, Chinese.
+export const SCENARIOS = [
+  {
+    id: "one-command",
+    title: "一条命令，三种数据",
+    intro:
+      "现在要查条目用 zotlit:item-query，查批注用 zotlit:annotation-query，附件根本查不了。提案里只有一条 zotlit:query，用 from= 选「查什么」，其余参数完全一样。留意三步的参数形状是否一致。",
+    steps: [
+      {
+        label: "查文献（默认 from=items）",
+        cmd: `zotlit:query fields=title,date.year limit=5 format=table`,
+        watch: "没写 from 就是查文献；默认按修改时间倒序，最多 100 行。",
+      },
+      {
+        label: "查附件（from=attachments）",
+        cmd: `zotlit:query from=attachments fields=title,contentType,exists,item.title limit=5 format=table`,
+        watch: "附件是新数据集。item.title 顺着「附件 → 父条目」拿到论文标题。",
+      },
+      {
+        label: "查批注（from=annotations）",
+        cmd: `zotlit:query from=annotations fields=type,text,pageLabel,item.citationKey limit=5 format=table`,
+        watch: "同样的参数名、同样的结果信封。换的只有 from。",
+      },
+      {
+        label: "一次看全部字段（schema）",
+        cmd: `zotlit:query-schema`,
+        watch:
+          "一个 schema 命令列出三种数据的字段和它们之间的关系（relation 列）。",
+      },
+    ],
+  },
+  {
+    id: "join-pdf",
+    title: "像 SQL 一样跨表：没有可用 PDF 的论文",
+    intro:
+      "研究者常问「哪些论文我其实打不开」：要么没附件，要么 PDF 文件在这台电脑上丢了。这需要从文献走到它的附件再看文件是否存在。看现行写法能走多远。",
+    steps: [
+      {
+        label: "现行：只能问「完全没附件」",
+        cmd: `zotlit:item-query filter='!attachments' fields='["title","attachments"]'`,
+        watch:
+          "现行合同里 attachments 是个布尔值。Lovelace 那篇有一个丢失的扫描件，它被当作「有附件」漏掉了。",
+        old: true,
+      },
+      {
+        label: "提案：附件是一个列表，可以 filter",
+        cmd: `zotlit:query filter='attachments.filter(value.contentType == "application/pdf" && value.exists).isEmpty()' fields=title,attachments[].path format=table`,
+        watch:
+          "5 行：含 Lovelace（文件丢失）和周明（只有一个网址链接）。写法和 Obsidian Bases 的 list.filter 一模一样。",
+      },
+      {
+        label: "反过来从附件出发",
+        cmd: `zotlit:query from=attachments filter='linkMode == "linked_file" && !exists' fields=title,path,item.title format=table`,
+        watch: "同一个问题从另一张表问：哪些链接文件坏了。现行完全问不到。",
+      },
+    ],
+  },
+  {
+    id: "reading-plan",
+    title: "阅读计划：还没做批注的论文",
+    intro:
+      "评测里最难的一题：列出某标签的论文，包括零批注的，并给每篇的批注数。现行要两次调用再自己合并。",
+    steps: [
+      {
+        label: "现行第 1 步：查论文",
+        cmd: `zotlit:item-query libraries=all filter='itemType == "journalArticle" && tags.contains("query-eval")' fields='["title"]' limit=all`,
+        watch: "6 篇论文。但不知道每篇有几条批注。",
+        old: true,
+      },
+      {
+        label: "现行第 2 步：查批注",
+        cmd: `zotlit:annotation-query libraries=all filter='item.itemType == "journalArticle" && item.tags.contains("query-eval")' fields='["item.title"]' limit=all`,
+        watch:
+          "14 条批注行。接下来得自己按 itemIndexedKey 合并计数，零批注的论文只在第一步里出现。",
+        old: true,
+      },
+      {
+        label: "提案：一次调用",
+        cmd: `zotlit:query library=all filter='itemType == "journalArticle" && tags.contains("query-eval")' fields=title,annotations.length,annotations[].text limit=all format=table`,
+        watch:
+          "annotations.length 直接给数量，annotations[].text 像 jq 一样把列表展开取字段。零批注的论文也在。",
+      },
+    ],
+  },
+  {
+    id: "arg-form",
+    title: "参数写法：逗号列表 vs JSON 数组",
+    intro:
+      "同一个查询，两种写法，结果完全一样。比一比在 shell 里的长度和引号数量。",
+    steps: [
+      {
+        label: "现行：fields 和 sort 是 JSON 数组",
+        cmd: `zotlit:item-query filter='date.year >= 2014' fields='["title","date.year","creators[0].fullName"]' sort='[{"field":"date","direction":"desc"},{"field":"title","direction":"asc"}]' limit=5`,
+        watch: 'sort 要写 {"field":…,"direction":…}，一不小心就少个引号。',
+        old: true,
+      },
+      {
+        label: "提案：逗号列表，- 表示倒序",
+        cmd: `zotlit:query filter='date.year >= 2014' fields=title,date.year,creators[0].fullName sort=-date,title limit=5 format=table`,
+        watch:
+          "sort=-date,title 是 JSON:API / Django 的写法；fields=a,b 是 gh --json 的写法。JSON 数组仍然接受。",
+      },
+      {
+        label: "自定义字段名里有点号时要加引号",
+        cmd: `zotlit:query fields='title,custom["review.status"]' limit=5 format=table`,
+        watch:
+          'custom["…"] 的方括号写法照旧；放进 shell 要用单引号包住整个值，这点和现在一样。',
+      },
+    ],
+  },
+  {
+    id: "group",
+    title: "分组统计：每篇论文几条批注",
+    intro:
+      "「每年几篇」「每篇几条批注」「附件各类型多少」是研究者最常见的统计问题。Obsidian Bases 有 groupBy，SQL 有 GROUP BY；提案用 group= 表达同一件事。",
+    steps: [
+      {
+        label: "每篇论文的批注数",
+        cmd: `zotlit:query from=annotations group=item.citationKey fields=[] limit=all`,
+        watch:
+          "groups 里每组有 value、count 和该组的行。fields=[] 让行只剩身份。",
+      },
+      {
+        label: "Thesis 收藏夹按年份计数",
+        cmd: `zotlit:query filter='collections.within("Thesis")' group=date.year fields=title limit=all`,
+        watch: "没有年份的归到 value: null 一组，排在最后。",
+      },
+      {
+        label: "附件按类型计数",
+        cmd: `zotlit:query from=attachments group=contentType fields=[] limit=all`,
+        watch: "现行根本没有附件数据集，这题问不了。",
+      },
+    ],
+  },
+  {
+    id: "diagnose",
+    title: "写错了怎么办",
+    intro:
+      "新手最怕的是「没报错但结果为空」。看三种错误各自怎么回报：拼错字段、列表和文本比较、少了括号。",
+    steps: [
+      {
+        label: "拼错字段名",
+        cmd: `zotlit:query filter='titel.contains("rules")'`,
+        watch:
+          "ok:false，diagnostic.suggestions 给出 title，report 里有 ^ 标记位置。",
+      },
+      {
+        label: 'tags == "…"（永远不成立）',
+        cmd: `zotlit:query from=annotations filter='tags == "query-annotation-method"'`,
+        watch:
+          "查询成功但 0 行；warnings 说明列表永远不等于文本，并建议改成 tags.contains(…)。",
+      },
+      {
+        label: "改正后",
+        cmd: `zotlit:query from=annotations filter='tags.contains("query-annotation-method")' fields=text,colorName,item.indexedKey format=table`,
+        watch: "4 条批注，跨两个图书馆。",
+      },
+      {
+        label: "少了右括号",
+        cmd: `zotlit:query filter='title.contains("rules"'`,
+        watch: "语法错误指向表达式末尾，expected 列出 )。",
+      },
+    ],
+  },
+  {
+    id: "query-file",
+    title: "保存成查询文件（Bases 的形状）",
+    intro:
+      "命令行参数适合代理和一次性问题；研究者反复用的查询应该能存成文件，像 Obsidian 的 .base 一样。切到「查询文件」页签，看同一个请求的 YAML 形态。",
+    steps: [
+      {
+        label: "一个常用查询",
+        cmd: `zotlit:query filter='collections.within("Thesis") && annotations.filter(value.type == "highlight").isEmpty()' fields=title,date.year sort=-date limit=all format=table`,
+        watch:
+          "切到「查询文件」页签：filters 的 && 被拆成 and: 列表，和 .base 的写法一致。",
+      },
+      {
+        label: "搜索 + 筛选",
+        cmd: `zotlit:query search="attention clinical" filter='!attachments.isEmpty()' fields=title,date.year format=table`,
+        watch:
+          "search= 用的是 ZotLit 已有的模糊检索（item-lookup）；有 search 时默认按相关度排。",
+      },
+    ],
+  },
+];
+
+</script>
+
+    <script type="text/jsx" id="app">
+      import React, { useState, useEffect, useMemo, useRef } from "react";
+      import { createRoot } from "react-dom/client";
+      import {
+        Play,
+        ChevronRight,
+        RotateCcw,
+        FileText,
+        Table2,
+        Braces,
+        History,
+        ListChecks,
+      } from "lucide-react";
+      import { createEngine, toQueryFile, formatResult } from "__ENGINE__";
+      import * as data from "__DATA__";
+      import { CASES } from "__CASES__";
+      import { SCENARIOS } from "__SCENARIOS__";
+
+      // --- Diagram ---
+      function dedent(s) {
+        const lines = s.replace(/\t/g, "  ").split("\n");
+        const widths = lines
+          .filter((l) => l.trim())
+          .map((l) => l.match(/^ */)[0].length);
+        const pad = widths.length ? Math.min(...widths) : 0;
+        return lines
+          .map((l) => l.slice(pad))
+          .join("\n")
+          .trim();
+      }
+      let mermaidMod = null;
+      function Diagram({ src }) {
+        const [mod, setMod] = useState(mermaidMod);
+        useEffect(() => {
+          if (!mod)
+            import("beautiful-mermaid").then((m) => {
+              mermaidMod = m;
+              setMod(m);
+            });
+        }, [mod]);
+        const { svg, error } = useMemo(() => {
+          const el = document.getElementById(src);
+          if (!el) return { svg: null, error: `no diagram ${src}` };
+          if (!mod) return { svg: null, error: null };
+          try {
+            return {
+              svg: mod.renderMermaidSVG(dedent(el.textContent), {
+                bg: "var(--panel)",
+                fg: "var(--ink)",
+                transparent: true,
+              }),
+              error: null,
+            };
+          } catch (e) {
+            return { svg: null, error: String(e) };
+          }
+        }, [mod, src]);
+        if (error)
+          return (
+            <pre className="text-bad text-xs whitespace-pre-wrap">{error}</pre>
+          );
+        return (
+          <div
+            className="overflow-x-auto"
+            dangerouslySetInnerHTML={{ __html: svg ?? "" }}
+          />
+        );
+      }
+      // --- Diagram END ---
+
+      const engine = createEngine(data);
+      const EXAMPLES = [
+        {
+          group: "基础",
+          items: [
+            [
+              "最近改过的 5 篇",
+              `zotlit:query fields=title,dateModified limit=5 format=table`,
+            ],
+            [
+              "标签 to-read",
+              `zotlit:query filter='tags.contains("to-read")' fields=title,date.year,creators[0].fullName format=table`,
+            ],
+            [
+              "收藏夹子树",
+              `zotlit:query filter='collections.within("Thesis")' fields=title,collections format=table`,
+            ],
+            [
+              "只在 Lab Archive",
+              `zotlit:query library=group:118 fields=title format=table`,
+            ],
+            [
+              "日期函数",
+              `zotlit:query filter='dateAdded >= today() - duration("365 days")' fields=title,dateAdded format=table`,
+            ],
+          ],
+        },
+        {
+          group: "跨表（像 SQL）",
+          items: [
+            [
+              "没有可用 PDF 的论文",
+              `zotlit:query filter='attachments.filter(value.contentType == "application/pdf" && value.exists).isEmpty()' fields=title,attachments[].path format=table`,
+            ],
+            [
+              "挂了 2 个以上 PDF",
+              `zotlit:query filter='attachments.filter(value.contentType == "application/pdf").length > 1' fields=title,attachments[].title format=table`,
+            ],
+            [
+              "一条高亮都没有的论文",
+              `zotlit:query filter='annotations.filter(value.type == "highlight").isEmpty()' fields=title format=table`,
+            ],
+            [
+              "某论文的全部文件",
+              `zotlit:query from=attachments filter='item.citationKey == "vaswaniAttention2017"' fields=title,contentType,path,exists format=table`,
+            ],
+            [
+              "批注 + 父条目条件",
+              `zotlit:query from=annotations filter='type == "image" && item.creators.contains("Nicolas P. Rougier")' fields=comment,item.title,library format=table`,
+            ],
+          ],
+        },
+        {
+          group: "排序、字段、输出",
+          items: [
+            [
+              "sort=-date,title",
+              `zotlit:query sort=-date,title fields=title,date limit=6 format=table`,
+            ],
+            [
+              "jq 式展开 creators[].family",
+              `zotlit:query fields=title,creators[].family limit=4 format=table`,
+            ],
+            [
+              "Markdown 表格",
+              `zotlit:query filter='itemType == "book"' fields=title,publisher format=md`,
+            ],
+            [
+              "CSV",
+              `zotlit:query filter='collections.within("Thesis")' fields=title,date.year,creators format=csv`,
+            ],
+            ["只要身份", `zotlit:query fields=[] limit=3`],
+          ],
+        },
+        {
+          group: "统计与检索",
+          items: [
+            [
+              "每篇论文几条批注",
+              `zotlit:query from=annotations group=item.citationKey fields=[] limit=all`,
+            ],
+            [
+              "批注按颜色",
+              `zotlit:query from=annotations group=colorName fields=text limit=2`,
+            ],
+            [
+              "模糊检索",
+              `zotlit:query search="transformer bert" fields=title,date.year format=table`,
+            ],
+          ],
+        },
+        {
+          group: "现行写法（contract 2）",
+          items: [
+            [
+              "item-query",
+              `zotlit:item-query filter='tags.contains("to-read")' fields='["title","date.year","creators[0].fullName"]' limit=20`,
+            ],
+            [
+              "annotation-query item=",
+              `zotlit:annotation-query item=ROUG2014 fields='["text","pageLabel"]' limit=all`,
+            ],
+            [
+              "item-query 想问批注 → 报错",
+              `zotlit:item-query filter='annotations.length > 0'`,
+            ],
+            ["schema", `zotlit:item-query-schema`],
+          ],
+        },
+      ];
+
+      const Chip = ({ children, onClick, active, tone }) => (
+        <button
+          onClick={onClick}
+          className={`text-[12px] px-2.5 py-1 rounded-sm border transition-colors ${active ? "border-accent text-accent" : "border-line text-ink hover:border-accent"} ${tone === "old" ? "text-old" : ""}`}
+        >
+          {children}
+        </button>
+      );
+      const Label = ({ children }) => (
+        <div className="text-[11px] uppercase tracking-wider text-muted font-medium">
+          {children}
+        </div>
+      );
+
+      function fmtValue(v) {
+        if (v == null) return "—";
+        if (Array.isArray(v)) return v.map((x) => fmtValue(x)).join("; ");
+        if (typeof v === "object")
+          return v.fullName ?? v.indexedKey ?? JSON.stringify(v);
+        return String(v);
+      }
+      function RowsTable({ env }) {
+        const rows =
+          env.rows ??
+          env.groups?.flatMap((g) =>
+            g.rows.map((r) => ({
+              ...r,
+              __group: fmtValue(g.value),
+              __count: g.count,
+            })),
+          );
+        if (!rows)
+          return (
+            <div className="text-muted text-sm">
+              （文件导出：{env.file?.path}，{env.file?.bytes} 字节）
+            </div>
+          );
+        const fields = env.request.fields;
+        const grouped = !!env.groups;
+        return (
+          <div className="overflow-x-auto">
+            {grouped && (
+              <div className="text-sm mb-2">
+                {env.groups.length} 组 · 共 {env.totalCount} 行：
+                {env.groups.map((g) => (
+                  <span key={String(g.value)} className="inline-block mr-3">
+                    <b>{fmtValue(g.value)}</b>{" "}
+                    <span className="text-muted">×{g.count}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+            <table className="tbl w-full">
+              <thead>
+                <tr>
+                  {grouped && <th>组</th>}
+                  <th>indexedKey</th>
+                  {fields.map((f) => (
+                    <th key={f}>{f}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.indexedKey + i}>
+                    {grouped && <td className="text-muted">{r.__group}</td>}
+                    <td className="font-mono text-[12px]">{r.indexedKey}</td>
+                    {fields.map((f) => (
+                      <td key={f}>{fmtValue(r.values[f])}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {rows.length === 0 && (
+              <div className="text-muted text-sm py-2">0 行</div>
+            )}
+          </div>
+        );
+      }
+
+      function StatePanel({ run, prev }) {
+        if (!run) return <div className="text-muted text-sm">还没运行过。</div>;
+        const env = run.envelope;
+        if (!run.ok) {
+          const d = env?.diagnostic;
+          return (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-bad" />
+                <span className="font-medium">失败：{d?.code ?? "错误"}</span>
+              </div>
+              {d ? (
+                <pre className="whitespace-pre-wrap text-bad">
+                  {d.report.join("\n")}
+                </pre>
+              ) : (
+                <pre className="whitespace-pre-wrap text-bad">{run.text}</pre>
+              )}
+            </div>
+          );
+        }
+        if (!env.request)
+          return (
+            <div className="text-sm">
+              命令 <code className="font-mono">{env.command}</code> 成功。
+            </div>
+          );
+        const r = env.request,
+          p = prev?.envelope?.request;
+        const field = (k, label, render) => {
+          const changed = p && JSON.stringify(p[k]) !== JSON.stringify(r[k]);
+          return (
+            <div
+              className={`flex gap-3 py-1 px-1 rounded-sm ${changed ? "changed" : ""}`}
+            >
+              <div className="w-16 shrink-0 text-muted text-[12px] pt-0.5">
+                {label}
+              </div>
+              <div className="font-mono text-[12.5px] break-all">
+                {render(r[k])}
+              </div>
+            </div>
+          );
+        };
+        return (
+          <div>
+            {field(
+              "from",
+              "查什么",
+              (v) =>
+                ({
+                  items: "文献 (items)",
+                  attachments: "附件 (attachments)",
+                  annotations: "批注 (annotations)",
+                })[v],
+            )}
+            {field("library", "图书馆", (v) => v.join(", "))}
+            {r.search != null &&
+              field("search", "检索", (v) => JSON.stringify(v))}
+            {field(
+              "filter",
+              "筛选",
+              (v) => v ?? <span className="text-muted">（无：全部）</span>,
+            )}
+            {field("fields", "字段", (v) =>
+              v.length ? (
+                v.join(", ")
+              ) : (
+                <span className="text-muted">（只要身份）</span>
+              ),
+            )}
+            {field("sort", "排序", (v) =>
+              v.length ? (
+                v
+                  .map((s) => (s.direction === "desc" ? "-" : "") + s.field)
+                  .join(", ")
+              ) : (
+                <span className="text-muted">（按相关度）</span>
+              ),
+            )}
+            {field("limit", "上限", (v) => (v == null ? "all" : v))}
+            {r.group != null && field("group", "分组", (v) => v)}
+            <div className="mt-2 pt-2 border-t border-line flex flex-wrap gap-x-5 gap-y-1 text-[13px]">
+              <span>
+                <span className="text-muted">返回</span>{" "}
+                <b>{env.returnedCount}</b> 行
+                {env.groups ? `（${env.groups.length} 组）` : ""}
+              </span>
+              <span>
+                <span className="text-muted">截断</span>{" "}
+                {env.truncated ? <b className="text-warn">是</b> : "否"}
+              </span>
+              <span>
+                <span className="text-muted">警告</span>{" "}
+                {env.warnings.length ? (
+                  <b className="text-warn">{env.warnings.length}</b>
+                ) : (
+                  "0"
+                )}
+              </span>
+              <span>
+                <span className="text-muted">图书馆</span>{" "}
+                {env.libraries
+                  .map((l) => (l.type === "personal" ? "My Library" : l.name))
+                  .join(" + ")}
+              </span>
+            </div>
+            {env.warnings.map((w, i) => (
+              <pre key={i} className="mt-2 whitespace-pre-wrap text-warn">
+                {w.report.join("\n")}
+              </pre>
+            ))}
+          </div>
+        );
+      }
+
+      function App() {
+        const [cmd, setCmd] = useState(EXAMPLES[1].items[0][1]);
+        const [history, setHistory] = useState([]);
+        const [tab, setTab] = useState("table");
+        const [scenario, setScenario] = useState(SCENARIOS[0].id);
+        const [stepIdx, setStepIdx] = useState({});
+        const [evalRows, setEvalRows] = useState(null);
+        const [oldEquiv, setOldEquiv] = useState(null);
+        const ref = useRef(null);
+        const run = history[0] ?? null,
+          prev = history[1] ?? null;
+
+        const execute = (line, meta = {}) => {
+          const r = engine.run(line);
+          setHistory((h) =>
+            [{ ...r, line, at: Date.now() }, ...h].slice(0, 20),
+          );
+          setCmd(line);
+          if (meta.old !== undefined) setOldEquiv(meta.old);
+          if (meta.clearOld) setOldEquiv(null);
+          if (r.ok && r.command === "zotlit:query" && tab === "old")
+            setTab("table");
+        };
+        useEffect(() => {
+          execute(cmd, { clearOld: true });
+        }, []);
+        const onKey = (e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") execute(cmd);
+        };
+
+        const sc = SCENARIOS.find((s) => s.id === scenario);
+        const si = stepIdx[scenario] ?? 0;
+        const runStep = (i) => {
+          const st = sc.steps[i];
+          execute(st.cmd, { clearOld: true });
+          setStepIdx((m) => ({ ...m, [scenario]: i + 1 }));
+          setTab(
+            st.cmd.includes("query-schema") || !st.cmd.includes("format=")
+              ? "json"
+              : "table",
+          );
+        };
+
+        const runEval = () => {
+          const rows = CASES.map((c) => {
+            const go = (cmds) =>
+              cmds == null
+                ? null
+                : cmds.map((x) => {
+                    const r = engine.run(x);
+                    return {
+                      ok: r.ok,
+                      count: r.envelope?.returnedCount ?? null,
+                      groups: r.envelope?.groups?.length ?? null,
+                      warn: r.envelope?.warnings?.length ?? 0,
+                      code: r.envelope?.diagnostic?.code ?? null,
+                    };
+                  });
+            return { ...c, newRuns: go(c.new), oldRuns: go(c.old) };
+          });
+          setEvalRows(rows);
+        };
+        const evalSummary = useMemo(() => {
+          if (!evalRows) return null;
+          const n1 = evalRows.filter((r) => r.new.length === 1).length;
+          const o1 = evalRows.filter(
+            (r) => r.old && r.old.length === 1 && !r.client && !r.partial,
+          ).length;
+          const oNo = evalRows.filter((r) => !r.old).length;
+          const oClient = evalRows.filter(
+            (r) => r.old && (r.client || r.partial),
+          ).length;
+          return { n1, o1, oNo, oClient, total: evalRows.length };
+        }, [evalRows]);
+
+        const yaml = run?.ok && run.request ? toQueryFile(run.request) : null;
+
+        return (
+          <main className="bg-ground text-ink font-body min-h-full">
+            <header className="px-6 md:px-10 pt-8 pb-6 border-b border-line">
+              <div className="flex items-baseline gap-3 flex-wrap">
+                <span className="font-display font-semibold text-xl">
+                  <span>Zot</span>
+                  <span className="text-accent">Lit</span>
+                </span>
+                <span className="text-[11px] uppercase tracking-wider text-muted border border-line px-1.5 py-0.5 rounded-sm">
+                  原型 · 可丢弃
+                </span>
+              </div>
+              <h1 className="font-display font-semibold text-3xl mt-3 text-balance">
+                查询命令重设计：一条{" "}
+                <code className="font-mono text-accent">zotlit:query</code>{" "}
+                能不能把文献、附件、批注一起查？
+              </h1>
+              <p className="mt-3 max-w-[68ch] leading-relaxed text-[15px]">
+                这个页面里有一份假的 Zotero 资料库（两个图书馆、11 篇文献、11
+                个附件、16 条批注）和一个只在浏览器里运行的小查询引擎。
+                你可以直接敲命令，也可以按右侧的走查一步步点。要回答的问题是：
+                <b>
+                  用 from= 选「查什么」、用 Obsidian Bases
+                  一样的表达式顺着关系走（文献 → 附件 →
+                  批注，或反过来），能不能像 SQL
+                  一样回答跨表问题，同时参数仍然像 Bases 一样简单？
+                </b>
+                浅棕色标记的命令是
+                <span className="text-old">现行合同（contract 2）</span>
+                的写法，同一引擎同一数据，方便对照。
+              </p>
+            </header>
+
+            <div className="grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6 px-6 md:px-10 py-6">
+              {/* LEFT: composer, state, result */}
+              <section className="space-y-5 min-w-0">
+                <div className="bg-panel border border-line rounded-sm p-4">
+                  <Label>命令（⌘/Ctrl + Enter 运行）</Label>
+                  <textarea
+                    ref={ref}
+                    value={cmd}
+                    onChange={(e) => setCmd(e.target.value)}
+                    onKeyDown={onKey}
+                    rows={3}
+                    spellCheck={false}
+                    className="mt-2 w-full bg-ground border border-line rounded-sm p-2 text-[13px] leading-relaxed resize-y"
+                  />
+                  <div className="mt-2 flex items-center gap-2 flex-wrap">
+                    <button
+                      onClick={() => execute(cmd)}
+                      className="inline-flex items-center gap-1.5 bg-accent text-white px-3 py-1.5 rounded-sm text-sm font-medium"
+                    >
+                      <Play size={14} /> 运行
+                    </button>
+                    <span className="text-muted text-[12px] ml-1">
+                      查什么：
+                    </span>
+                    {["items", "attachments", "annotations"].map((d) => (
+                      <Chip
+                        key={d}
+                        onClick={() =>
+                          setCmd((c) =>
+                            c
+                              .replace(/\bfrom=\w+\s?/, "")
+                              .replace(
+                                /^zotlit:query/,
+                                `zotlit:query from=${d}`,
+                              ),
+                          )
+                        }
+                      >
+                        {d}
+                      </Chip>
+                    ))}
+                    <span className="text-muted text-[12px] ml-1">输出：</span>
+                    {["table", "json", "md", "csv"].map((f) => (
+                      <Chip
+                        key={f}
+                        onClick={() =>
+                          setCmd((c) =>
+                            /\bformat=\w+/.test(c)
+                              ? c.replace(/\bformat=\w+/, `format=${f}`)
+                              : `${c} format=${f}`,
+                          )
+                        }
+                      >
+                        {f}
+                      </Chip>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-panel border border-line rounded-sm p-4">
+                  <div className="flex items-center justify-between">
+                    <Label>请求（套用默认值之后）与结果</Label>
+                    {prev && (
+                      <span className="text-[11px] text-muted">
+                        橙底 = 和上一次相比变了的部分
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-2">
+                    <StatePanel run={run} prev={prev} />
+                  </div>
+                </div>
+
+                <div className="bg-panel border border-line rounded-sm">
+                  <div
+                    className="flex border-b border-line text-sm"
+                    role="tablist"
+                  >
+                    {[
+                      ["table", "表格", Table2],
+                      ["json", "JSON 信封", Braces],
+                      ["file", "查询文件", FileText],
+                      ["old", "现行写法", History],
+                    ].map(([k, label, Icon]) => (
+                      <button
+                        key={k}
+                        role="tab"
+                        aria-selected={tab === k}
+                        onClick={() => setTab(k)}
+                        className="tab inline-flex items-center gap-1.5 px-3 py-2 border-b-2 border-transparent -mb-px"
+                      >
+                        <Icon size={14} />
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="p-4 min-h-[200px]">
+                    {tab === "table" &&
+                      ((run?.ok && run.envelope?.rows !== undefined) ||
+                      run?.envelope?.groups ? (
+                        <RowsTable env={run.envelope} />
+                      ) : (
+                        <pre className="whitespace-pre-wrap">{run?.text}</pre>
+                      ))}
+                    {tab === "json" && (
+                      <pre className="whitespace-pre-wrap overflow-x-auto max-h-[520px] overflow-y-auto">
+                        {run?.text}
+                      </pre>
+                    )}
+                    {tab === "file" &&
+                      (yaml ? (
+                        <div>
+                          <p className="text-sm text-muted mb-2">
+                            同一个请求存成文件的样子（和 Obsidian .base
+                            同一形状；<code>from</code> 是 SQL 的 FROM）。
+                            <code className="font-mono">
+                              zotlit:query file=thesis.zotquery
+                            </code>{" "}
+                            读取它。
+                          </p>
+                          <pre className="whitespace-pre-wrap">{yaml}</pre>
+                        </div>
+                      ) : (
+                        <div className="text-muted text-sm">
+                          运行一条成功的 zotlit:query 后，这里显示它的文件形态。
+                        </div>
+                      ))}
+                    {tab === "old" && (
+                      <div className="space-y-2 text-sm">
+                        {run?.command?.startsWith("zotlit:query") ? (
+                          <>
+                            <p className="text-muted">
+                              找一个「同一问题」的现行写法：下方评测表里每一行都给了两种写法；走查里标了浅棕色的步骤就是现行写法。
+                            </p>
+                            {oldEquiv ? (
+                              <pre className="whitespace-pre-wrap text-old">
+                                {oldEquiv}
+                              </pre>
+                            ) : null}
+                          </>
+                        ) : (
+                          <p className="text-muted">
+                            当前运行的就是现行写法（{run?.command}）。
+                          </p>
+                        )}
+                        <p className="text-muted">
+                          现行合同的限制在这个引擎里也照样生效：Item 上{" "}
+                          <code>attachments</code> 只是布尔值、没有{" "}
+                          <code>annotations</code>、没有附件数据集、
+                          <code>fields</code>/<code>sort</code> 必须是 JSON
+                          数组。
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </section>
+
+              {/* RIGHT: walkthroughs, examples */}
+              <section className="space-y-5 min-w-0">
+                <div className="bg-panel border border-line rounded-sm">
+                  <div className="px-4 pt-3">
+                    <Label>走查（按顺序点）</Label>
+                  </div>
+                  <div className="flex flex-wrap gap-1 px-4 pt-2 pb-3 border-b border-line">
+                    {SCENARIOS.map((s) => (
+                      <Chip
+                        key={s.id}
+                        active={scenario === s.id}
+                        onClick={() => {
+                          setScenario(s.id);
+                        }}
+                      >
+                        {s.title}
+                      </Chip>
+                    ))}
+                  </div>
+                  <div className="p-4">
+                    <p className="text-[14px] leading-relaxed">{sc.intro}</p>
+                    <ol className="mt-3 space-y-2">
+                      {sc.steps.map((st, i) => (
+                        <li
+                          key={i}
+                          className={`border rounded-sm p-2.5 ${i === si ? "border-accent" : "border-line"} ${i < si ? "opacity-80" : ""}`}
+                        >
+                          <div className="flex items-start gap-2">
+                            <button
+                              onClick={() => runStep(i)}
+                              className={`shrink-0 inline-flex items-center gap-1 text-[12px] px-2 py-1 rounded-sm border ${i === si ? "bg-accent text-white border-accent" : "border-line"} ${st.old ? "text-old" : ""}`}
+                            >
+                              <ChevronRight size={12} />第 {i + 1} 步
+                            </button>
+                            <div className="min-w-0">
+                              <div
+                                className={`text-[13.5px] font-medium ${st.old ? "text-old" : ""}`}
+                              >
+                                {st.label}
+                                {st.old && (
+                                  <span className="ml-1.5 text-[11px] font-normal">
+                                    现行写法
+                                  </span>
+                                )}
+                              </div>
+                              <pre className="mt-1 whitespace-pre-wrap text-[12px] text-muted">
+                                {st.cmd}
+                              </pre>
+                              {i < si && (
+                                <div className="mt-1 text-[12.5px]">
+                                  <span className="text-accent">看这里：</span>
+                                  {st.watch}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                    <button
+                      onClick={() =>
+                        setStepIdx((m) => ({ ...m, [scenario]: 0 }))
+                      }
+                      className="mt-3 inline-flex items-center gap-1 text-[12px] text-muted"
+                    >
+                      <RotateCcw size={12} /> 重来
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-panel border border-line rounded-sm p-4">
+                  <Label>随便点（自由玩）</Label>
+                  <div className="mt-2 space-y-2">
+                    {EXAMPLES.map((g) => (
+                      <div
+                        key={g.group}
+                        className="flex flex-wrap items-center gap-1.5"
+                      >
+                        <span
+                          className={`text-[12px] w-28 shrink-0 ${g.group.startsWith("现行") ? "text-old" : "text-muted"}`}
+                        >
+                          {g.group}
+                        </span>
+                        {g.items.map(([label, line]) => (
+                          <Chip
+                            key={label}
+                            tone={
+                              g.group.startsWith("现行") ? "old" : undefined
+                            }
+                            onClick={() => {
+                              execute(line, { clearOld: true });
+                              setTab(
+                                line.includes("format=") ? "table" : "json",
+                              );
+                            }}
+                          >
+                            {label}
+                          </Chip>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-panel border border-line rounded-sm p-4">
+                  <Label>这份假资料库长什么样</Label>
+                  <p className="text-[13px] mt-1 text-muted">
+                    三种记录，两条关系，每条关系都能双向走。Lovelace
+                    那篇的扫描件文件丢失；周明那篇只有一个网址附件；Knuth 和
+                    Cooper 两本书没有附件；Rougier
+                    那篇在两个图书馆各有一份（同一个 Zotero key）。
+                  </p>
+                  <div className="mt-2">
+                    <Diagram src="er" />
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            {/* EVAL */}
+            <section className="px-6 md:px-10 pb-12">
+              <div className="bg-panel border border-line rounded-sm p-4">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <Label>
+                      评测：{CASES.length} 个研究问题，两种写法在同一数据上跑
+                    </Label>
+                    <p className="text-[13px] text-muted mt-1">
+                      前 15 题是已发布的 zotlit-query 技能评测题；后 13
+                      题是评测没覆盖的跨表问题。点一行把「提案写法」装进上面的命令框。
+                    </p>
+                  </div>
+                  <button
+                    onClick={runEval}
+                    className="inline-flex items-center gap-1.5 bg-accent text-white px-3 py-1.5 rounded-sm text-sm font-medium"
+                  >
+                    <ListChecks size={14} /> 全部运行
+                  </button>
+                </div>
+                {evalSummary && (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+                    {[
+                      ["提案：一次调用解决", evalSummary.n1, "ok"],
+                      ["现行：一次调用、无需额外处理", evalSummary.o1, "ink"],
+                      [
+                        "现行：要调用方自己合并/计数/猜",
+                        evalSummary.oClient,
+                        "warn",
+                      ],
+                      ["现行：问不了", evalSummary.oNo, "bad"],
+                    ].map(([t, n, tone]) => (
+                      <div
+                        key={t}
+                        className="border border-line rounded-sm p-3"
+                      >
+                        <div className="text-[12px] text-muted">{t}</div>
+                        <div
+                          className={`font-display text-3xl font-semibold text-${tone}`}
+                        >
+                          {n}
+                          <span className="text-base text-muted font-body">
+                            {" "}
+                            / {evalSummary.total}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="overflow-x-auto mt-4">
+                  <table className="tbl w-full">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>研究问题</th>
+                        <th>提案写法</th>
+                        <th className="text-old">现行写法（contract 2）</th>
+                        <th>现行还要调用方做什么</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(evalRows ?? CASES).map((c, i) => (
+                        <tr
+                          key={c.id}
+                          className="cursor-pointer hover:bg-ground"
+                          onClick={() => {
+                            execute(c.new[0], {
+                              old: c.old ? c.old.join("\n") : "（现行问不了）",
+                            });
+                            setTab(
+                              c.new[0].includes("format=") ||
+                                c.new[0].includes("group=")
+                                ? "table"
+                                : "json",
+                            );
+                            window.scrollTo({ top: 0, behavior: "smooth" });
+                          }}
+                        >
+                          <td className="text-muted">
+                            {i + 1}
+                            <div className="text-[10px]">
+                              {c.group === "persona" ? "评测题" : "补充"}
+                            </div>
+                          </td>
+                          <td className="min-w-[16rem]">{c.question}</td>
+                          <td className="min-w-[18rem]">
+                            <pre className="whitespace-pre-wrap text-[11.5px]">
+                              {c.new.join("\n")}
+                            </pre>
+                            {c.newRuns && (
+                              <div className="mt-1 text-[12px]">
+                                {c.newRuns.map((r, j) => (
+                                  <span
+                                    key={j}
+                                    className={`mr-2 ${r.ok ? "text-ok" : "text-bad"}`}
+                                  >
+                                    {r.ok
+                                      ? `✓ ${r.groups != null ? r.groups + " 组 / " : ""}${r.count} 行${r.warn ? " ⚠" : ""}`
+                                      : `✗ ${r.code}`}
+                                  </span>
+                                ))}
+                                <span className="text-muted">
+                                  {c.new.length} 次调用
+                                </span>
+                              </div>
+                            )}
+                          </td>
+                          <td className="min-w-[18rem]">
+                            {c.old ? (
+                              <pre className="whitespace-pre-wrap text-[11.5px] text-old">
+                                {c.old.join("\n")}
+                              </pre>
+                            ) : (
+                              <span className="text-bad">问不了</span>
+                            )}
+                            {c.oldRuns && (
+                              <div className="mt-1 text-[12px]">
+                                {c.oldRuns.map((r, j) => (
+                                  <span
+                                    key={j}
+                                    className={`mr-2 ${r.ok ? "text-ok" : "text-bad"}`}
+                                  >
+                                    {r.ok
+                                      ? `✓ ${r.count} 行${r.warn ? " ⚠" : ""}`
+                                      : `✗ ${r.code}`}
+                                  </span>
+                                ))}
+                                <span className="text-muted">
+                                  {c.old.length} 次调用
+                                </span>
+                              </div>
+                            )}
+                          </td>
+                          <td className="min-w-[12rem] text-[12.5px]">
+                            {c.client ?? <span className="text-muted">—</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <p className="text-[12px] text-muted mt-4 max-w-[80ch]">
+                引擎说明：这是为了「摸形状」写的内存小引擎，不是真实现。排序用
+                Intl.Collator，日期按 UTC，search 是简化的词匹配（真实现复用
+                item-lookup 的 MiniSearch）。关系列表在真实现里要走 ZoteroReads
+                的分块加载，这里一次全在内存。
+              </p>
+            </section>
+          </main>
+        );
+      }
+
+      createRoot(document.getElementById("root")).render(<App />);
+    </script>
+    <script type="module">
+      import { transform } from "https://esm.sh/sucrase@3";
+      const blobUrl = (id) =>
+        URL.createObjectURL(
+          new Blob([document.getElementById(id).textContent], {
+            type: "text/javascript",
+          }),
+        );
+      const urls = {
+        __ENGINE__: blobUrl("mod-engine"),
+        __DATA__: blobUrl("mod-data"),
+        __CASES__: blobUrl("mod-cases"),
+        __SCENARIOS__: blobUrl("mod-scenarios"),
+      };
+      let src = document.getElementById("app").textContent;
+      for (const [k, v] of Object.entries(urls))
+        src = src.replaceAll(`"${k}"`, JSON.stringify(v));
+      const { code } = transform(src, {
+        transforms: ["jsx"],
+        production: true,
+      });
+      const url = URL.createObjectURL(
+        new Blob([code], { type: "text/javascript" }),
+      );
+      await import(url);
+    </script>
+  </body>
+</html>

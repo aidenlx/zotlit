@@ -1,0 +1,1091 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>原型：ZotLit 查询命令重设计</title>
+    <!--
+      PROTOTYPE — throwaway. Design question:
+      Can ONE `zotlit:query` command with `from=items|attachments|annotations` and two-way
+      relation lists (item.attachments, attachment.annotations, annotation.item) answer
+      SQL-style cross-entity questions, while the argument form stays as simple as an
+      Obsidian Bases view (filter / fields / sort / limit)?
+      Logic lives in engine.mjs (pure, liftable). This page is the shell. Rebuild: node assemble.mjs
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      @theme inline {
+        --color-ground: var(--ground);
+        --color-panel: var(--panel);
+        --color-line: var(--line);
+        --color-ink: var(--ink);
+        --color-muted: var(--muted);
+        --color-accent: var(--accent);
+        --color-ok: var(--ok);
+        --color-warn: var(--warn);
+        --color-bad: var(--bad);
+        --color-old: var(--old);
+        --font-display: var(--font-display);
+        --font-body: var(--font-body);
+        --font-mono: var(--font-mono);
+      }
+    </style>
+    <style>
+      :root {
+        --ground: #f5f2ea;
+        --panel: #ffffff;
+        --line: #dcd8cc;
+        --ink: #1e3a5f;
+        --muted: #66707b;
+        --accent: #e8622c;
+        --ok: #2f7d4f;
+        --warn: #b7791f;
+        --bad: #b23a3a;
+        --old: #7a6f5a;
+        --font-display: "Archivo", "Noto Sans SC", sans-serif;
+        --font-body: "Noto Sans SC", system-ui, sans-serif;
+        --font-mono: "JetBrains Mono", ui-monospace, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ground: #0f1620;
+          --panel: #16202c;
+          --line: #2a3744;
+          --ink: #d8e2f0;
+          --muted: #8e9aaa;
+          --accent: #f0793f;
+          --ok: #5fbf84;
+          --warn: #e0a84a;
+          --bad: #e06a6a;
+          --old: #b4a98f;
+        }
+      }
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        font-feature-settings: "tnum";
+      }
+      pre {
+        font-family: var(--font-mono);
+        font-size: 12.5px;
+        line-height: 1.5;
+      }
+      textarea {
+        font-family: var(--font-mono);
+      }
+      .tab[aria-selected="true"] {
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+      .changed {
+        background: color-mix(in oklab, var(--accent) 14%, transparent);
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      table.tbl td,
+      table.tbl th {
+        border-bottom: 1px solid var(--line);
+        padding: 4px 8px;
+        vertical-align: top;
+      }
+      table.tbl th {
+        text-align: left;
+        font-weight: 500;
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.02em;
+      }
+      table.tbl td {
+        font-size: 12.5px;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19",
+          "react-dom/client": "https://esm.sh/react-dom@19/client",
+          "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime",
+          "lucide-react": "https://esm.sh/lucide-react@1?external=react",
+          "beautiful-mermaid": "https://esm.sh/beautiful-mermaid@1"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/mermaid" id="er">
+      graph TB
+        I["文献 Item<br/>title · citationKey · date<br/>creators · tags · collections"]
+        A["附件 Attachment<br/>title · contentType · linkMode<br/>path · exists"]
+        N["批注 Annotation<br/>type · text · comment<br/>colorName · pageLabel · tags"]
+        I -- "attachments[]" --> A
+        A -- "item" --> I
+        A -- "annotations[]" --> N
+        N -- "attachment" --> A
+        I -- "annotations[]" --> N
+        N -- "item" --> I
+    </script>
+
+    <!--MODULES-->
+
+    <script type="text/jsx" id="app">
+      import React, { useState, useEffect, useMemo, useRef } from "react";
+      import { createRoot } from "react-dom/client";
+      import {
+        Play,
+        ChevronRight,
+        RotateCcw,
+        FileText,
+        Table2,
+        Braces,
+        History,
+        ListChecks,
+      } from "lucide-react";
+      import { createEngine, toQueryFile, formatResult } from "__ENGINE__";
+      import * as data from "__DATA__";
+      import { CASES } from "__CASES__";
+      import { SCENARIOS } from "__SCENARIOS__";
+
+      // --- Diagram ---
+      function dedent(s) {
+        const lines = s.replace(/\t/g, "  ").split("\n");
+        const widths = lines
+          .filter((l) => l.trim())
+          .map((l) => l.match(/^ */)[0].length);
+        const pad = widths.length ? Math.min(...widths) : 0;
+        return lines
+          .map((l) => l.slice(pad))
+          .join("\n")
+          .trim();
+      }
+      let mermaidMod = null;
+      function Diagram({ src }) {
+        const [mod, setMod] = useState(mermaidMod);
+        useEffect(() => {
+          if (!mod)
+            import("beautiful-mermaid").then((m) => {
+              mermaidMod = m;
+              setMod(m);
+            });
+        }, [mod]);
+        const { svg, error } = useMemo(() => {
+          const el = document.getElementById(src);
+          if (!el) return { svg: null, error: `no diagram ${src}` };
+          if (!mod) return { svg: null, error: null };
+          try {
+            return {
+              svg: mod.renderMermaidSVG(dedent(el.textContent), {
+                bg: "var(--panel)",
+                fg: "var(--ink)",
+                transparent: true,
+              }),
+              error: null,
+            };
+          } catch (e) {
+            return { svg: null, error: String(e) };
+          }
+        }, [mod, src]);
+        if (error)
+          return (
+            <pre className="text-bad text-xs whitespace-pre-wrap">{error}</pre>
+          );
+        return (
+          <div
+            className="overflow-x-auto"
+            dangerouslySetInnerHTML={{ __html: svg ?? "" }}
+          />
+        );
+      }
+      // --- Diagram END ---
+
+      const engine = createEngine(data);
+      const EXAMPLES = [
+        {
+          group: "基础",
+          items: [
+            [
+              "最近改过的 5 篇",
+              `zotlit:query fields=title,dateModified limit=5 format=table`,
+            ],
+            [
+              "标签 to-read",
+              `zotlit:query filter='tags.contains("to-read")' fields=title,date.year,creators[0].fullName format=table`,
+            ],
+            [
+              "收藏夹子树",
+              `zotlit:query filter='collections.within("Thesis")' fields=title,collections format=table`,
+            ],
+            [
+              "只在 Lab Archive",
+              `zotlit:query library=group:118 fields=title format=table`,
+            ],
+            [
+              "日期函数",
+              `zotlit:query filter='dateAdded >= today() - duration("365 days")' fields=title,dateAdded format=table`,
+            ],
+          ],
+        },
+        {
+          group: "跨表（像 SQL）",
+          items: [
+            [
+              "没有可用 PDF 的论文",
+              `zotlit:query filter='attachments.filter(value.contentType == "application/pdf" && value.exists).isEmpty()' fields=title,attachments[].path format=table`,
+            ],
+            [
+              "挂了 2 个以上 PDF",
+              `zotlit:query filter='attachments.filter(value.contentType == "application/pdf").length > 1' fields=title,attachments[].title format=table`,
+            ],
+            [
+              "一条高亮都没有的论文",
+              `zotlit:query filter='annotations.filter(value.type == "highlight").isEmpty()' fields=title format=table`,
+            ],
+            [
+              "某论文的全部文件",
+              `zotlit:query from=attachments filter='item.citationKey == "vaswaniAttention2017"' fields=title,contentType,path,exists format=table`,
+            ],
+            [
+              "批注 + 父条目条件",
+              `zotlit:query from=annotations filter='type == "image" && item.creators.contains("Nicolas P. Rougier")' fields=comment,item.title,library format=table`,
+            ],
+          ],
+        },
+        {
+          group: "排序、字段、输出",
+          items: [
+            [
+              "sort=-date,title",
+              `zotlit:query sort=-date,title fields=title,date limit=6 format=table`,
+            ],
+            [
+              "jq 式展开 creators[].family",
+              `zotlit:query fields=title,creators[].family limit=4 format=table`,
+            ],
+            [
+              "Markdown 表格",
+              `zotlit:query filter='itemType == "book"' fields=title,publisher format=md`,
+            ],
+            [
+              "CSV",
+              `zotlit:query filter='collections.within("Thesis")' fields=title,date.year,creators format=csv`,
+            ],
+            ["只要身份", `zotlit:query fields=[] limit=3`],
+          ],
+        },
+        {
+          group: "统计与检索",
+          items: [
+            [
+              "每篇论文几条批注",
+              `zotlit:query from=annotations group=item.citationKey fields=[] limit=all`,
+            ],
+            [
+              "批注按颜色",
+              `zotlit:query from=annotations group=colorName fields=text limit=2`,
+            ],
+            [
+              "模糊检索",
+              `zotlit:query search="transformer bert" fields=title,date.year format=table`,
+            ],
+          ],
+        },
+        {
+          group: "现行写法（contract 2）",
+          items: [
+            [
+              "item-query",
+              `zotlit:item-query filter='tags.contains("to-read")' fields='["title","date.year","creators[0].fullName"]' limit=20`,
+            ],
+            [
+              "annotation-query item=",
+              `zotlit:annotation-query item=ROUG2014 fields='["text","pageLabel"]' limit=all`,
+            ],
+            [
+              "item-query 想问批注 → 报错",
+              `zotlit:item-query filter='annotations.length > 0'`,
+            ],
+            ["schema", `zotlit:item-query-schema`],
+          ],
+        },
+      ];
+
+      const Chip = ({ children, onClick, active, tone }) => (
+        <button
+          onClick={onClick}
+          className={`text-[12px] px-2.5 py-1 rounded-sm border transition-colors ${active ? "border-accent text-accent" : "border-line text-ink hover:border-accent"} ${tone === "old" ? "text-old" : ""}`}
+        >
+          {children}
+        </button>
+      );
+      const Label = ({ children }) => (
+        <div className="text-[11px] uppercase tracking-wider text-muted font-medium">
+          {children}
+        </div>
+      );
+
+      function fmtValue(v) {
+        if (v == null) return "—";
+        if (Array.isArray(v)) return v.map((x) => fmtValue(x)).join("; ");
+        if (typeof v === "object")
+          return v.fullName ?? v.indexedKey ?? JSON.stringify(v);
+        return String(v);
+      }
+      function RowsTable({ env }) {
+        const rows =
+          env.rows ??
+          env.groups?.flatMap((g) =>
+            g.rows.map((r) => ({
+              ...r,
+              __group: fmtValue(g.value),
+              __count: g.count,
+            })),
+          );
+        if (!rows)
+          return (
+            <div className="text-muted text-sm">
+              （文件导出：{env.file?.path}，{env.file?.bytes} 字节）
+            </div>
+          );
+        const fields = env.request.fields;
+        const grouped = !!env.groups;
+        return (
+          <div className="overflow-x-auto">
+            {grouped && (
+              <div className="text-sm mb-2">
+                {env.groups.length} 组 · 共 {env.totalCount} 行：
+                {env.groups.map((g) => (
+                  <span key={String(g.value)} className="inline-block mr-3">
+                    <b>{fmtValue(g.value)}</b>{" "}
+                    <span className="text-muted">×{g.count}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+            <table className="tbl w-full">
+              <thead>
+                <tr>
+                  {grouped && <th>组</th>}
+                  <th>indexedKey</th>
+                  {fields.map((f) => (
+                    <th key={f}>{f}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.indexedKey + i}>
+                    {grouped && <td className="text-muted">{r.__group}</td>}
+                    <td className="font-mono text-[12px]">{r.indexedKey}</td>
+                    {fields.map((f) => (
+                      <td key={f}>{fmtValue(r.values[f])}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {rows.length === 0 && (
+              <div className="text-muted text-sm py-2">0 行</div>
+            )}
+          </div>
+        );
+      }
+
+      function StatePanel({ run, prev }) {
+        if (!run) return <div className="text-muted text-sm">还没运行过。</div>;
+        const env = run.envelope;
+        if (!run.ok) {
+          const d = env?.diagnostic;
+          return (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-bad" />
+                <span className="font-medium">失败：{d?.code ?? "错误"}</span>
+              </div>
+              {d ? (
+                <pre className="whitespace-pre-wrap text-bad">
+                  {d.report.join("\n")}
+                </pre>
+              ) : (
+                <pre className="whitespace-pre-wrap text-bad">{run.text}</pre>
+              )}
+            </div>
+          );
+        }
+        if (!env.request)
+          return (
+            <div className="text-sm">
+              命令 <code className="font-mono">{env.command}</code> 成功。
+            </div>
+          );
+        const r = env.request,
+          p = prev?.envelope?.request;
+        const field = (k, label, render) => {
+          const changed = p && JSON.stringify(p[k]) !== JSON.stringify(r[k]);
+          return (
+            <div
+              className={`flex gap-3 py-1 px-1 rounded-sm ${changed ? "changed" : ""}`}
+            >
+              <div className="w-16 shrink-0 text-muted text-[12px] pt-0.5">
+                {label}
+              </div>
+              <div className="font-mono text-[12.5px] break-all">
+                {render(r[k])}
+              </div>
+            </div>
+          );
+        };
+        return (
+          <div>
+            {field(
+              "from",
+              "查什么",
+              (v) =>
+                ({
+                  items: "文献 (items)",
+                  attachments: "附件 (attachments)",
+                  annotations: "批注 (annotations)",
+                })[v],
+            )}
+            {field("library", "图书馆", (v) => v.join(", "))}
+            {r.search != null &&
+              field("search", "检索", (v) => JSON.stringify(v))}
+            {field(
+              "filter",
+              "筛选",
+              (v) => v ?? <span className="text-muted">（无：全部）</span>,
+            )}
+            {field("fields", "字段", (v) =>
+              v.length ? (
+                v.join(", ")
+              ) : (
+                <span className="text-muted">（只要身份）</span>
+              ),
+            )}
+            {field("sort", "排序", (v) =>
+              v.length ? (
+                v
+                  .map((s) => (s.direction === "desc" ? "-" : "") + s.field)
+                  .join(", ")
+              ) : (
+                <span className="text-muted">（按相关度）</span>
+              ),
+            )}
+            {field("limit", "上限", (v) => (v == null ? "all" : v))}
+            {r.group != null && field("group", "分组", (v) => v)}
+            <div className="mt-2 pt-2 border-t border-line flex flex-wrap gap-x-5 gap-y-1 text-[13px]">
+              <span>
+                <span className="text-muted">返回</span>{" "}
+                <b>{env.returnedCount}</b> 行
+                {env.groups ? `（${env.groups.length} 组）` : ""}
+              </span>
+              <span>
+                <span className="text-muted">截断</span>{" "}
+                {env.truncated ? <b className="text-warn">是</b> : "否"}
+              </span>
+              <span>
+                <span className="text-muted">警告</span>{" "}
+                {env.warnings.length ? (
+                  <b className="text-warn">{env.warnings.length}</b>
+                ) : (
+                  "0"
+                )}
+              </span>
+              <span>
+                <span className="text-muted">图书馆</span>{" "}
+                {env.libraries
+                  .map((l) => (l.type === "personal" ? "My Library" : l.name))
+                  .join(" + ")}
+              </span>
+            </div>
+            {env.warnings.map((w, i) => (
+              <pre key={i} className="mt-2 whitespace-pre-wrap text-warn">
+                {w.report.join("\n")}
+              </pre>
+            ))}
+          </div>
+        );
+      }
+
+      function App() {
+        const [cmd, setCmd] = useState(EXAMPLES[1].items[0][1]);
+        const [history, setHistory] = useState([]);
+        const [tab, setTab] = useState("table");
+        const [scenario, setScenario] = useState(SCENARIOS[0].id);
+        const [stepIdx, setStepIdx] = useState({});
+        const [evalRows, setEvalRows] = useState(null);
+        const [oldEquiv, setOldEquiv] = useState(null);
+        const ref = useRef(null);
+        const run = history[0] ?? null,
+          prev = history[1] ?? null;
+
+        const execute = (line, meta = {}) => {
+          const r = engine.run(line);
+          setHistory((h) =>
+            [{ ...r, line, at: Date.now() }, ...h].slice(0, 20),
+          );
+          setCmd(line);
+          if (meta.old !== undefined) setOldEquiv(meta.old);
+          if (meta.clearOld) setOldEquiv(null);
+          if (r.ok && r.command === "zotlit:query" && tab === "old")
+            setTab("table");
+        };
+        useEffect(() => {
+          execute(cmd, { clearOld: true });
+        }, []);
+        const onKey = (e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") execute(cmd);
+        };
+
+        const sc = SCENARIOS.find((s) => s.id === scenario);
+        const si = stepIdx[scenario] ?? 0;
+        const runStep = (i) => {
+          const st = sc.steps[i];
+          execute(st.cmd, { clearOld: true });
+          setStepIdx((m) => ({ ...m, [scenario]: i + 1 }));
+          setTab(
+            st.cmd.includes("query-schema") || !st.cmd.includes("format=")
+              ? "json"
+              : "table",
+          );
+        };
+
+        const runEval = () => {
+          const rows = CASES.map((c) => {
+            const go = (cmds) =>
+              cmds == null
+                ? null
+                : cmds.map((x) => {
+                    const r = engine.run(x);
+                    return {
+                      ok: r.ok,
+                      count: r.envelope?.returnedCount ?? null,
+                      groups: r.envelope?.groups?.length ?? null,
+                      warn: r.envelope?.warnings?.length ?? 0,
+                      code: r.envelope?.diagnostic?.code ?? null,
+                    };
+                  });
+            return { ...c, newRuns: go(c.new), oldRuns: go(c.old) };
+          });
+          setEvalRows(rows);
+        };
+        const evalSummary = useMemo(() => {
+          if (!evalRows) return null;
+          const n1 = evalRows.filter((r) => r.new.length === 1).length;
+          const o1 = evalRows.filter(
+            (r) => r.old && r.old.length === 1 && !r.client && !r.partial,
+          ).length;
+          const oNo = evalRows.filter((r) => !r.old).length;
+          const oClient = evalRows.filter(
+            (r) => r.old && (r.client || r.partial),
+          ).length;
+          return { n1, o1, oNo, oClient, total: evalRows.length };
+        }, [evalRows]);
+
+        const yaml = run?.ok && run.request ? toQueryFile(run.request) : null;
+
+        return (
+          <main className="bg-ground text-ink font-body min-h-full">
+            <header className="px-6 md:px-10 pt-8 pb-6 border-b border-line">
+              <div className="flex items-baseline gap-3 flex-wrap">
+                <span className="font-display font-semibold text-xl">
+                  <span>Zot</span>
+                  <span className="text-accent">Lit</span>
+                </span>
+                <span className="text-[11px] uppercase tracking-wider text-muted border border-line px-1.5 py-0.5 rounded-sm">
+                  原型 · 可丢弃
+                </span>
+              </div>
+              <h1 className="font-display font-semibold text-3xl mt-3 text-balance">
+                查询命令重设计：一条{" "}
+                <code className="font-mono text-accent">zotlit:query</code>{" "}
+                能不能把文献、附件、批注一起查？
+              </h1>
+              <p className="mt-3 max-w-[68ch] leading-relaxed text-[15px]">
+                这个页面里有一份假的 Zotero 资料库（两个图书馆、11 篇文献、11
+                个附件、16 条批注）和一个只在浏览器里运行的小查询引擎。
+                你可以直接敲命令，也可以按右侧的走查一步步点。要回答的问题是：
+                <b>
+                  用 from= 选「查什么」、用 Obsidian Bases
+                  一样的表达式顺着关系走（文献 → 附件 →
+                  批注，或反过来），能不能像 SQL
+                  一样回答跨表问题，同时参数仍然像 Bases 一样简单？
+                </b>
+                浅棕色标记的命令是
+                <span className="text-old">现行合同（contract 2）</span>
+                的写法，同一引擎同一数据，方便对照。
+              </p>
+            </header>
+
+            <div className="grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6 px-6 md:px-10 py-6">
+              {/* LEFT: composer, state, result */}
+              <section className="space-y-5 min-w-0">
+                <div className="bg-panel border border-line rounded-sm p-4">
+                  <Label>命令（⌘/Ctrl + Enter 运行）</Label>
+                  <textarea
+                    ref={ref}
+                    value={cmd}
+                    onChange={(e) => setCmd(e.target.value)}
+                    onKeyDown={onKey}
+                    rows={3}
+                    spellCheck={false}
+                    className="mt-2 w-full bg-ground border border-line rounded-sm p-2 text-[13px] leading-relaxed resize-y"
+                  />
+                  <div className="mt-2 flex items-center gap-2 flex-wrap">
+                    <button
+                      onClick={() => execute(cmd)}
+                      className="inline-flex items-center gap-1.5 bg-accent text-white px-3 py-1.5 rounded-sm text-sm font-medium"
+                    >
+                      <Play size={14} /> 运行
+                    </button>
+                    <span className="text-muted text-[12px] ml-1">
+                      查什么：
+                    </span>
+                    {["items", "attachments", "annotations"].map((d) => (
+                      <Chip
+                        key={d}
+                        onClick={() =>
+                          setCmd((c) =>
+                            c
+                              .replace(/\bfrom=\w+\s?/, "")
+                              .replace(
+                                /^zotlit:query/,
+                                `zotlit:query from=${d}`,
+                              ),
+                          )
+                        }
+                      >
+                        {d}
+                      </Chip>
+                    ))}
+                    <span className="text-muted text-[12px] ml-1">输出：</span>
+                    {["table", "json", "md", "csv"].map((f) => (
+                      <Chip
+                        key={f}
+                        onClick={() =>
+                          setCmd((c) =>
+                            /\bformat=\w+/.test(c)
+                              ? c.replace(/\bformat=\w+/, `format=${f}`)
+                              : `${c} format=${f}`,
+                          )
+                        }
+                      >
+                        {f}
+                      </Chip>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-panel border border-line rounded-sm p-4">
+                  <div className="flex items-center justify-between">
+                    <Label>请求（套用默认值之后）与结果</Label>
+                    {prev && (
+                      <span className="text-[11px] text-muted">
+                        橙底 = 和上一次相比变了的部分
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-2">
+                    <StatePanel run={run} prev={prev} />
+                  </div>
+                </div>
+
+                <div className="bg-panel border border-line rounded-sm">
+                  <div
+                    className="flex border-b border-line text-sm"
+                    role="tablist"
+                  >
+                    {[
+                      ["table", "表格", Table2],
+                      ["json", "JSON 信封", Braces],
+                      ["file", "查询文件", FileText],
+                      ["old", "现行写法", History],
+                    ].map(([k, label, Icon]) => (
+                      <button
+                        key={k}
+                        role="tab"
+                        aria-selected={tab === k}
+                        onClick={() => setTab(k)}
+                        className="tab inline-flex items-center gap-1.5 px-3 py-2 border-b-2 border-transparent -mb-px"
+                      >
+                        <Icon size={14} />
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="p-4 min-h-[200px]">
+                    {tab === "table" &&
+                      ((run?.ok && run.envelope?.rows !== undefined) ||
+                      run?.envelope?.groups ? (
+                        <RowsTable env={run.envelope} />
+                      ) : (
+                        <pre className="whitespace-pre-wrap">{run?.text}</pre>
+                      ))}
+                    {tab === "json" && (
+                      <pre className="whitespace-pre-wrap overflow-x-auto max-h-[520px] overflow-y-auto">
+                        {run?.text}
+                      </pre>
+                    )}
+                    {tab === "file" &&
+                      (yaml ? (
+                        <div>
+                          <p className="text-sm text-muted mb-2">
+                            同一个请求存成文件的样子（和 Obsidian .base
+                            同一形状；<code>from</code> 是 SQL 的 FROM）。
+                            <code className="font-mono">
+                              zotlit:query file=thesis.zotquery
+                            </code>{" "}
+                            读取它。
+                          </p>
+                          <pre className="whitespace-pre-wrap">{yaml}</pre>
+                        </div>
+                      ) : (
+                        <div className="text-muted text-sm">
+                          运行一条成功的 zotlit:query 后，这里显示它的文件形态。
+                        </div>
+                      ))}
+                    {tab === "old" && (
+                      <div className="space-y-2 text-sm">
+                        {run?.command?.startsWith("zotlit:query") ? (
+                          <>
+                            <p className="text-muted">
+                              找一个「同一问题」的现行写法：下方评测表里每一行都给了两种写法；走查里标了浅棕色的步骤就是现行写法。
+                            </p>
+                            {oldEquiv ? (
+                              <pre className="whitespace-pre-wrap text-old">
+                                {oldEquiv}
+                              </pre>
+                            ) : null}
+                          </>
+                        ) : (
+                          <p className="text-muted">
+                            当前运行的就是现行写法（{run?.command}）。
+                          </p>
+                        )}
+                        <p className="text-muted">
+                          现行合同的限制在这个引擎里也照样生效：Item 上{" "}
+                          <code>attachments</code> 只是布尔值、没有{" "}
+                          <code>annotations</code>、没有附件数据集、
+                          <code>fields</code>/<code>sort</code> 必须是 JSON
+                          数组。
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </section>
+
+              {/* RIGHT: walkthroughs, examples */}
+              <section className="space-y-5 min-w-0">
+                <div className="bg-panel border border-line rounded-sm">
+                  <div className="px-4 pt-3">
+                    <Label>走查（按顺序点）</Label>
+                  </div>
+                  <div className="flex flex-wrap gap-1 px-4 pt-2 pb-3 border-b border-line">
+                    {SCENARIOS.map((s) => (
+                      <Chip
+                        key={s.id}
+                        active={scenario === s.id}
+                        onClick={() => {
+                          setScenario(s.id);
+                        }}
+                      >
+                        {s.title}
+                      </Chip>
+                    ))}
+                  </div>
+                  <div className="p-4">
+                    <p className="text-[14px] leading-relaxed">{sc.intro}</p>
+                    <ol className="mt-3 space-y-2">
+                      {sc.steps.map((st, i) => (
+                        <li
+                          key={i}
+                          className={`border rounded-sm p-2.5 ${i === si ? "border-accent" : "border-line"} ${i < si ? "opacity-80" : ""}`}
+                        >
+                          <div className="flex items-start gap-2">
+                            <button
+                              onClick={() => runStep(i)}
+                              className={`shrink-0 inline-flex items-center gap-1 text-[12px] px-2 py-1 rounded-sm border ${i === si ? "bg-accent text-white border-accent" : "border-line"} ${st.old ? "text-old" : ""}`}
+                            >
+                              <ChevronRight size={12} />第 {i + 1} 步
+                            </button>
+                            <div className="min-w-0">
+                              <div
+                                className={`text-[13.5px] font-medium ${st.old ? "text-old" : ""}`}
+                              >
+                                {st.label}
+                                {st.old && (
+                                  <span className="ml-1.5 text-[11px] font-normal">
+                                    现行写法
+                                  </span>
+                                )}
+                              </div>
+                              <pre className="mt-1 whitespace-pre-wrap text-[12px] text-muted">
+                                {st.cmd}
+                              </pre>
+                              {i < si && (
+                                <div className="mt-1 text-[12.5px]">
+                                  <span className="text-accent">看这里：</span>
+                                  {st.watch}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                    <button
+                      onClick={() =>
+                        setStepIdx((m) => ({ ...m, [scenario]: 0 }))
+                      }
+                      className="mt-3 inline-flex items-center gap-1 text-[12px] text-muted"
+                    >
+                      <RotateCcw size={12} /> 重来
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-panel border border-line rounded-sm p-4">
+                  <Label>随便点（自由玩）</Label>
+                  <div className="mt-2 space-y-2">
+                    {EXAMPLES.map((g) => (
+                      <div
+                        key={g.group}
+                        className="flex flex-wrap items-center gap-1.5"
+                      >
+                        <span
+                          className={`text-[12px] w-28 shrink-0 ${g.group.startsWith("现行") ? "text-old" : "text-muted"}`}
+                        >
+                          {g.group}
+                        </span>
+                        {g.items.map(([label, line]) => (
+                          <Chip
+                            key={label}
+                            tone={
+                              g.group.startsWith("现行") ? "old" : undefined
+                            }
+                            onClick={() => {
+                              execute(line, { clearOld: true });
+                              setTab(
+                                line.includes("format=") ? "table" : "json",
+                              );
+                            }}
+                          >
+                            {label}
+                          </Chip>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-panel border border-line rounded-sm p-4">
+                  <Label>这份假资料库长什么样</Label>
+                  <p className="text-[13px] mt-1 text-muted">
+                    三种记录，两条关系，每条关系都能双向走。Lovelace
+                    那篇的扫描件文件丢失；周明那篇只有一个网址附件；Knuth 和
+                    Cooper 两本书没有附件；Rougier
+                    那篇在两个图书馆各有一份（同一个 Zotero key）。
+                  </p>
+                  <div className="mt-2">
+                    <Diagram src="er" />
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            {/* EVAL */}
+            <section className="px-6 md:px-10 pb-12">
+              <div className="bg-panel border border-line rounded-sm p-4">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <Label>
+                      评测：{CASES.length} 个研究问题，两种写法在同一数据上跑
+                    </Label>
+                    <p className="text-[13px] text-muted mt-1">
+                      前 15 题是已发布的 zotlit-query 技能评测题；后 13
+                      题是评测没覆盖的跨表问题。点一行把「提案写法」装进上面的命令框。
+                    </p>
+                  </div>
+                  <button
+                    onClick={runEval}
+                    className="inline-flex items-center gap-1.5 bg-accent text-white px-3 py-1.5 rounded-sm text-sm font-medium"
+                  >
+                    <ListChecks size={14} /> 全部运行
+                  </button>
+                </div>
+                {evalSummary && (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+                    {[
+                      ["提案：一次调用解决", evalSummary.n1, "ok"],
+                      ["现行：一次调用、无需额外处理", evalSummary.o1, "ink"],
+                      [
+                        "现行：要调用方自己合并/计数/猜",
+                        evalSummary.oClient,
+                        "warn",
+                      ],
+                      ["现行：问不了", evalSummary.oNo, "bad"],
+                    ].map(([t, n, tone]) => (
+                      <div
+                        key={t}
+                        className="border border-line rounded-sm p-3"
+                      >
+                        <div className="text-[12px] text-muted">{t}</div>
+                        <div
+                          className={`font-display text-3xl font-semibold text-${tone}`}
+                        >
+                          {n}
+                          <span className="text-base text-muted font-body">
+                            {" "}
+                            / {evalSummary.total}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="overflow-x-auto mt-4">
+                  <table className="tbl w-full">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>研究问题</th>
+                        <th>提案写法</th>
+                        <th className="text-old">现行写法（contract 2）</th>
+                        <th>现行还要调用方做什么</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(evalRows ?? CASES).map((c, i) => (
+                        <tr
+                          key={c.id}
+                          className="cursor-pointer hover:bg-ground"
+                          onClick={() => {
+                            execute(c.new[0], {
+                              old: c.old ? c.old.join("\n") : "（现行问不了）",
+                            });
+                            setTab(
+                              c.new[0].includes("format=") ||
+                                c.new[0].includes("group=")
+                                ? "table"
+                                : "json",
+                            );
+                            window.scrollTo({ top: 0, behavior: "smooth" });
+                          }}
+                        >
+                          <td className="text-muted">
+                            {i + 1}
+                            <div className="text-[10px]">
+                              {c.group === "persona" ? "评测题" : "补充"}
+                            </div>
+                          </td>
+                          <td className="min-w-[16rem]">{c.question}</td>
+                          <td className="min-w-[18rem]">
+                            <pre className="whitespace-pre-wrap text-[11.5px]">
+                              {c.new.join("\n")}
+                            </pre>
+                            {c.newRuns && (
+                              <div className="mt-1 text-[12px]">
+                                {c.newRuns.map((r, j) => (
+                                  <span
+                                    key={j}
+                                    className={`mr-2 ${r.ok ? "text-ok" : "text-bad"}`}
+                                  >
+                                    {r.ok
+                                      ? `✓ ${r.groups != null ? r.groups + " 组 / " : ""}${r.count} 行${r.warn ? " ⚠" : ""}`
+                                      : `✗ ${r.code}`}
+                                  </span>
+                                ))}
+                                <span className="text-muted">
+                                  {c.new.length} 次调用
+                                </span>
+                              </div>
+                            )}
+                          </td>
+                          <td className="min-w-[18rem]">
+                            {c.old ? (
+                              <pre className="whitespace-pre-wrap text-[11.5px] text-old">
+                                {c.old.join("\n")}
+                              </pre>
+                            ) : (
+                              <span className="text-bad">问不了</span>
+                            )}
+                            {c.oldRuns && (
+                              <div className="mt-1 text-[12px]">
+                                {c.oldRuns.map((r, j) => (
+                                  <span
+                                    key={j}
+                                    className={`mr-2 ${r.ok ? "text-ok" : "text-bad"}`}
+                                  >
+                                    {r.ok
+                                      ? `✓ ${r.count} 行${r.warn ? " ⚠" : ""}`
+                                      : `✗ ${r.code}`}
+                                  </span>
+                                ))}
+                                <span className="text-muted">
+                                  {c.old.length} 次调用
+                                </span>
+                              </div>
+                            )}
+                          </td>
+                          <td className="min-w-[12rem] text-[12.5px]">
+                            {c.client ?? <span className="text-muted">—</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <p className="text-[12px] text-muted mt-4 max-w-[80ch]">
+                引擎说明：这是为了「摸形状」写的内存小引擎，不是真实现。排序用
+                Intl.Collator，日期按 UTC，search 是简化的词匹配（真实现复用
+                item-lookup 的 MiniSearch）。关系列表在真实现里要走 ZoteroReads
+                的分块加载，这里一次全在内存。
+              </p>
+            </section>
+          </main>
+        );
+      }
+
+      createRoot(document.getElementById("root")).render(<App />);
+    </script>
+    <script type="module">
+      import { transform } from "https://esm.sh/sucrase@3";
+      const blobUrl = (id) =>
+        URL.createObjectURL(
+          new Blob([document.getElementById(id).textContent], {
+            type: "text/javascript",
+          }),
+        );
+      const urls = {
+        __ENGINE__: blobUrl("mod-engine"),
+        __DATA__: blobUrl("mod-data"),
+        __CASES__: blobUrl("mod-cases"),
+        __SCENARIOS__: blobUrl("mod-scenarios"),
+      };
+      let src = document.getElementById("app").textContent;
+      for (const [k, v] of Object.entries(urls))
+        src = src.replaceAll(`"${k}"`, JSON.stringify(v));
+      const { code } = transform(src, {
+        transforms: ["jsx"],
+        production: true,
+      });
+      const url = URL.createObjectURL(
+        new Blob([code], { type: "text/javascript" }),
+      );
+      await import(url);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>报告：ZotLit 查询命令重设计（提案与评测）</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      @theme inline {
+        --color-ground: var(--ground);
+        --color-panel: var(--panel);
+        --color-line: var(--line);
+        --color-ink: var(--ink);
+        --color-muted: var(--muted);
+        --color-accent: var(--accent);
+        --color-ok: var(--ok);
+        --color-warn: var(--warn);
+        --color-bad: var(--bad);
+        --color-old: var(--old);
+        --font-display: var(--font-display);
+        --font-body: var(--font-body);
+        --font-mono: var(--font-mono);
+      }
+    </style>
+    <style>
+      :root {
+        --ground: #f5f2ea;
+        --panel: #ffffff;
+        --line: #dcd8cc;
+        --ink: #1e3a5f;
+        --muted: #66707b;
+        --accent: #e8622c;
+        --ok: #2f7d4f;
+        --warn: #b7791f;
+        --bad: #b23a3a;
+        --old: #7a6f5a;
+        --font-display: "Archivo", "Noto Sans SC", sans-serif;
+        --font-body: "Noto Sans SC", system-ui, sans-serif;
+        --font-mono: "JetBrains Mono", ui-monospace, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ground: #0f1620;
+          --panel: #16202c;
+          --line: #2a3744;
+          --ink: #d8e2f0;
+          --muted: #8e9aaa;
+          --accent: #f0793f;
+          --ok: #5fbf84;
+          --warn: #e0a84a;
+          --bad: #e06a6a;
+          --old: #b4a98f;
+        }
+      }
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+      pre,
+      code {
+        font-family: var(--font-mono);
+      }
+      pre {
+        font-size: 12.5px;
+        line-height: 1.55;
+      }
+      code {
+        font-size: 0.92em;
+      }
+      h2 {
+        text-wrap: balance;
+      }
+      .prose p {
+        max-width: 70ch;
+        line-height: 1.8;
+      }
+      .prose li {
+        line-height: 1.75;
+      }
+      table.tbl td,
+      table.tbl th {
+        border-bottom: 1px solid var(--line);
+        padding: 6px 10px;
+        vertical-align: top;
+        text-align: left;
+      }
+      table.tbl th {
+        font-weight: 500;
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.02em;
+      }
+      table.tbl td {
+        font-size: 13.5px;
+      }
+      .d-del {
+        color: var(--bad);
+        background: color-mix(in oklab, var(--bad) 9%, transparent);
+      }
+      .d-add {
+        color: var(--ok);
+        background: color-mix(in oklab, var(--ok) 10%, transparent);
+      }
+      .d-ctx {
+        color: var(--muted);
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19",
+          "react-dom/client": "https://esm.sh/react-dom@19/client",
+          "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime",
+          "lucide-react": "https://esm.sh/lucide-react@1?external=react",
+          "beautiful-mermaid": "https://esm.sh/beautiful-mermaid@1"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/mermaid" id="three-records">
+      graph LR
+        I["文献 Item<br/>标题 · 作者 · 年份 · 标签 · 收藏夹"]
+        A["附件 Attachment<br/>PDF / EPUB / 快照 · 路径 · 文件在不在"]
+        N["批注 Annotation<br/>高亮 · 评论 · 颜色 · 页码"]
+        I -- "attachments[]" --> A
+        A -- "annotations[]" --> N
+        A -. item .-> I
+        N -. attachment .-> A
+        N -. item .-> I
+        I -. "annotations[]" .-> N
+    </script>
+    <script type="text/mermaid" id="today">
+      graph LR
+        I["文献 Item"]
+        A["附件（只剩一个布尔值 attachments）"]
+        N["批注 Annotation"]
+        N -- "item.*  ✓" --> I
+        I -. "annotations  ✗ 没有" .-> N
+        I -. "attachments.*  ✗ 只有 true/false" .-> A
+        A -. "from=attachments  ✗ 不存在" .-> A
+    </script>
+    <script type="text/mermaid" id="two-calls">
+      sequenceDiagram
+        participant U as 代理 / 研究者
+        participant C as zotlit:item-query
+        participant D as zotlit:annotation-query
+        U->>C: 标签 query-eval 的论文
+        C-->>U: 6 篇（不知道各有几条批注）
+        U->>D: 这些论文的批注
+        D-->>U: 14 条批注行
+        Note over U: 自己按 itemIndexedKey 合并、计数，<br/>零批注的论文只能从第一步补回来
+    </script>
+    <script type="text/mermaid" id="one-call">
+      sequenceDiagram
+        participant U as 代理 / 研究者
+        participant Q as zotlit:query
+        U->>Q: from=items filter=… fields=title,annotations.length
+        Q-->>U: 6 篇，每篇带批注数量（含 0）
+    </script>
+    <script type="text/mermaid" id="pipeline">
+      graph LR
+        A["命令行参数<br/>或 file=查询文件"] --> B["同一个请求<br/>from · filter · fields · sort · limit · group"]
+        B --> C["数据集描述符<br/>ITEMS / ATTACHMENTS / ANNOTATIONS"]
+        C --> D["共用执行：候选集 → 分块加载 → 求值 → 排序 → 投影"]
+        D --> E["同一个信封<br/>json · table · csv · md · 文件"]
+    </script>
+
+    <script type="text/jsx" id="app">
+      import React, { useState, useEffect, useMemo } from "react";
+      import { createRoot } from "react-dom/client";
+      import { ExternalLink } from "lucide-react";
+
+      function dedent(s) { const lines = s.replace(/\t/g, "  ").split("\n"); const widths = lines.filter((l) => l.trim()).map((l) => l.match(/^ */)[0].length); const pad = widths.length ? Math.min(...widths) : 0; return lines.map((l) => l.slice(pad)).join("\n").trim(); }
+      let mermaidMod = null;
+      function Diagram({ src }) {
+        const [mod, setMod] = useState(mermaidMod);
+        useEffect(() => { if (!mod) import("beautiful-mermaid").then((m) => { mermaidMod = m; setMod(m); }); }, [mod]);
+        const { svg, error } = useMemo(() => { const el = document.getElementById(src); if (!el) return { svg: null, error: `no diagram ${src}` }; if (!mod) return { svg: null, error: null }; try { return { svg: mod.renderMermaidSVG(dedent(el.textContent), { bg: "var(--panel)", fg: "var(--ink)", transparent: true }), error: null }; } catch (e) { return { svg: null, error: String(e) }; } }, [mod, src]);
+        if (error) return <pre className="text-bad text-xs whitespace-pre-wrap">{error}</pre>;
+        return <div className="overflow-x-auto" dangerouslySetInnerHTML={{ __html: svg ?? "" }} />;
+      }
+
+      const PROTO = "./prototype-query-cli.html";
+      const Diff = ({ lines }) => (
+        <pre className="border border-line rounded-sm overflow-x-auto bg-panel">{lines.map((l, i) => { const k = l.startsWith("+") ? "d-add" : l.startsWith("-") ? "d-del" : "d-ctx"; return <div key={i} className={`px-3 ${k}`}>{l}</div>; })}</pre>
+      );
+      const H2 = ({ n, children }) => <h2 className="font-display font-semibold text-2xl mt-14 mb-4 flex items-baseline gap-3"><span className="text-accent font-mono text-base">{n}</span>{children}</h2>;
+      const H3 = ({ children }) => <h3 className="font-display font-semibold text-lg mt-8 mb-2">{children}</h3>;
+      const Card = ({ title, children, tone }) => (<div className={`bg-panel border rounded-sm p-4 ${tone === "accent" ? "border-accent" : "border-line"}`}>{title && <div className="text-[11px] uppercase tracking-wider text-muted font-medium mb-2">{title}</div>}{children}</div>);
+      const Pill = ({ tone, children }) => <span className={`inline-block text-[11px] px-1.5 py-0.5 rounded-sm border font-medium ${tone === "p0" ? "border-accent text-accent" : tone === "p1" ? "border-ink text-ink" : "border-line text-muted"}`}>{children}</span>;
+
+      const PROPOSALS = [
+        { id: 1, p: "p0", title: "一条命令，用 from= 选「查什么」", one: "zotlit:item-query 和 zotlit:annotation-query 合并成 zotlit:query；schema、guide、cancel 各一条。",
+          diff: [
+            "- obsidian zotlit:item-query        filter=… fields=… sort=… limit=…",
+            "- obsidian zotlit:annotation-query  filter=… item=… attachment=… fields=…",
+            "- obsidian zotlit:item-query-schema | zotlit:annotation-query-schema",
+            "- obsidian zotlit:item-query-guide  | zotlit:annotation-query-guide",
+            "- obsidian zotlit:item-query-cancel id=…",
+            "+ obsidian zotlit:query [from=items|attachments|annotations] filter=… fields=… sort=… limit=…",
+            "+ obsidian zotlit:query-schema [from=…]      # 不给 from 就把三种一起给，含关系",
+            "+ obsidian zotlit:query-guide  [topic=…]",
+            "+ obsidian zotlit:query-cancel id=…",
+            "  obsidian zotlit:annotation-image key=…      # 不是查询，保留",
+          ],
+          why: ["SQL 的 FROM 就是这件事：先说查哪张表，其余子句一样。代理不用先猜「我该用哪个命令族」。", "引擎里已经是这么做的：ADR 0066 修订后，一个规划器、一个诊断器、一条执行路径，靠 ITEMS / ANNOTATIONS 两个描述符分支。CLI 的两套命令名只是历史包袱。", "新手只需学一条命令；附件作为第三种数据加进来时不再多三条命令。"],
+          cost: "命令名是破坏性变更（contract 3）。技能、评测、e2e、guide 要一起改名；greenfield 下可接受。" },
+        { id: 2, p: "p0", title: "关系双向，列表化：附件成为真正的数据", one: "Item 上 attachments 从布尔值变成附件列表，新增 annotations 列表；附件成为第三个数据集，也能反向走到 item。",
+          diff: [
+            "  Item",
+            "-   attachments: boolean          # 只能问「有没有」",
+            "+   attachments: Attachment[]     # title · contentType · linkMode · path · exists · tags · annotations[]",
+            "+   annotations: Annotation[]     # 这篇文献所有附件上的批注",
+            "  Attachment（新数据集）",
+            "+   item, annotations[]",
+            "  Annotation",
+            "    item.*, attachment.*          # 现在已有",
+          ],
+          why: ["研究者的问题天然跨三张表：「没有可打开 PDF 的论文」「还没读的论文」「每篇几条批注」「坏掉的链接文件」。评测里 4 题现行问不了，7 题要调用方自己合并。", "不需要发明 JOIN 语法：Obsidian Bases 的 list.filter(…)、.length、.isEmpty() 已经在 Filter Expression 里。attachments.filter(value.exists).isEmpty() 读起来就是一句话。", "投影用 jq 的 attachments[].path 展开列表（现有 Projection Path 不隐式向量化，[] 是显式的）。"],
+          cost: "引擎：关系列表走现有的 needs 分块加载，只在 filter/fields 点名时加载；候选集下推可按「超集规则」做（attachments.filter(value.contentType == X).length > 0 可下推为「有该类型附件的条目」，.isEmpty() 走全扫）。ADR 0064 要修订。" },
+        { id: 3, p: "p0", title: "schema 一次给三种数据，带关系", one: "zotlit:query-schema 回答「有哪些字段、每个字段通向哪张表、能不能筛选/排序」。",
+          diff: [
+            "- 两个 schema 命令，各自一份目录，关系只在 guide 的文字里",
+            "+ datasets: [ { dataset: \"items\", fields: [ { path: \"attachments\", relation: \"attachments\", … } ] }, … ]",
+          ],
+          why: ["代理一次调用就知道「从 items 可以走到 attachments，再走到 annotations」，不用读两份 guide 再自己拼。"], cost: "目录生成已在 build-only 入口，加一个数据集即可。" },
+        { id: 4, p: "p1", title: "fields / sort 用逗号列表，JSON 数组照旧接受", one: "fields=title,date.year,creators[0].fullName；sort=-dateModified,title。",
+          diff: [
+            "- fields='[\"title\",\"date.year\",\"creators[0].fullName\"]'",
+            "- sort='[{\"field\":\"date\",\"direction\":\"desc\"},{\"field\":\"title\",\"direction\":\"asc\"}]'",
+            "+ fields=title,date.year,creators[0].fullName",
+            "+ sort=-date,title",
+            "  fields='title,custom[\"review.status\"]'      # 名字里有特殊字符时整体加引号，和现在一样",
+          ],
+          why: ["gh --json a,b、kubectl -o custom-columns、JSON:API 的 sort=-created,title、Django 的 order_by：都是这个写法，研究者在别处见过。", "24 题的命令里引号从 354 个降到 134 个；总长度几乎不变（3900 → 3779 字符），少的是引号不是信息。", "ADR 0065 选 JSON 数组是为了保住自定义字段名里的标点；逗号切分只在引号和方括号之外切，这个目标仍然达成。"],
+          cost: "解码器多一个分支；诊断要能指到逗号列表里的第几项。" },
+        { id: 5, p: "p1", title: "图书馆只留一个参数", one: "library=personal | group:118 | personal,group:118 | all。",
+          diff: ["- library=personal              libraries='[\"personal\",\"group:118\"]'   libraries=all", "+ library=personal              library=personal,group:118             library=all"],
+          why: ["同一个概念两个名字（library / libraries），还有「两个都给时谁赢」的规则要解释。一个名字收一个列表就够了。"], cost: "无。" },
+        { id: 6, p: "p1", title: "选条目只用 filter，不再有 item= / attachment= 专用键", one: "filter='item.citationKey == \"…\"' 或 filter='attachment.indexedKey == \"…\"'。",
+          diff: ["- zotlit:annotation-query item=ROUG2014g118", "+ zotlit:query from=annotations filter='item.indexedKey == \"ROUG2014g118\"'", "- zotlit:annotation-query attachment=QANPDF22g118 sort='[{\"field\":\"sortIndex\",…}]'", "+ zotlit:query from=annotations filter='attachment.indexedKey == \"QANPDF22g118\"' sort=sortIndex"],
+          why: ["SQL 里选哪一行就是 WHERE；多一种「选择机制」就多一套规则（键和 library 冲突、键和 filter 怎么 AND）。", "评测里大多数批注题本来就用 citationKey 找论文，走 filter 更自然。"], cost: "规划器要把 indexedKey == … 下推成候选集（现在 key == … 已经能下推），否则按键查会退化成全扫。可以先留 item= 作语法糖，但文档只教一种。" },
+        { id: 7, p: "p1", title: "输出格式：format=json | table | csv | md", one: "代理用 json（信封不变），人在终端看 table，发给导师用 csv，贴进笔记用 md。",
+          diff: ["- 只有 JSON 信封；大结果写文件", "+ format=table      # 终端对齐表格，末行写「n 行，截断」", "+ format=csv        # Excel / 导师", "+ format=md         # 直接贴进 Obsidian 笔记", "  output=… 仍写完整 JSON 信封文件"],
+          why: ["kubectl -o、gh --template、sqlite3 -csv：工具界的共识。非技术用户不会在终端读 JSON。"], cost: "编码器多三个输出器；table 要处理 CJK 宽度。" },
+        { id: 8, p: "p2", title: "分组统计：group=<path>", one: "每篇几条批注、每年几篇、附件各类型多少。",
+          diff: ["- 拿全部行回来自己数", "+ zotlit:query from=annotations group=item.citationKey fields=[] limit=all", "+ groups: [ { value: \"rougierTenSimpleRules2014\", count: 9, rows: […] }, … ]"],
+          why: ["Bases 的 groupBy、SQL 的 GROUP BY。研究者的统计问题几乎都是「按什么分、各多少」。", "引擎本来就在内存里排序，分组是同一趟。"], cost: "limit 在组内还是全局、要不要 count 以外的汇总（Bases 的 summaries）——先只做 count。" },
+        { id: 9, p: "p2", title: "模糊检索：search=<text>", one: "search=\"attention clinical\" 和 filter 叠加；有 search 时默认按相关度排。",
+          diff: ["- filter='title.lower().contains(\"attention\")'   # 猜字段、猜大小写、没分词、没排名", "+ search=\"attention clinical\" filter='!attachments.isEmpty()'"],
+          why: ["Zotero 自己的快速检索、Zotero Web API 的 q=、GitHub 的搜索框：精确过滤之外总要有一个「我记得大概叫什么」的入口。", "ZotLit 已经有 item-lookup（MiniSearch + 中文分词，并且已经跑在 ZoteroReads worker 里，#1356）。这是复用，不是新轮子。"], cost: "排名和 sort 的优先级要定清楚；只对 items 先做，attachments/annotations 的检索再议。" },
+        { id: 10, p: "p2", title: "查询文件：file=<path>，形状照抄 .base", one: "反复用的查询存成文件；命令行参数和文件解码成同一个请求。",
+          diff: ["+ # thesis-unread.zotquery", "+ from: items", "+ filters:", "+   and:", "+     - collections.within(\"Thesis\")", "+     - annotations.filter(value.type == \"highlight\").isEmpty()", "+ fields: [title, date.year]", "+ sort: [-date]", "+ limit: all", "+ ", "+ obsidian zotlit:query file=thesis-unread.zotquery format=table"],
+          why: ["研究者不会把 200 字符的命令背下来；Obsidian 用户已经认识 .base 的 filters / and / or / not。", "它也是将来 GUI（表格视图）的落点：视图读同一个文件。原型里「查询文件」页签展示的就是这个形态。"], cost: "一个 YAML 解析器；filters 的 and/or/not 对象形态要映射到表达式。这是最后做的一项。" },
+      ];
+
+      const CONVENTIONS = [
+        ["查哪张表", "FROM items", "（.base 永远是笔记）", "from=items|attachments|annotations", "SQL"],
+        ["选哪些行", "WHERE …", "filters: / and / or / not", "filter='…'（表达式不变）", "Bases"],
+        ["要哪些列", "SELECT a, b", "order: [a, b]", "fields=a,b（jq 的 a[].b 展开列表）", "gh --json / jq"],
+        ["怎么排", "ORDER BY a DESC, b", "sort: [{property, direction}]", "sort=-a,b", "JSON:API / Django"],
+        ["取几行", "LIMIT n", "limit: n", "limit=n | all", "SQL"],
+        ["按什么分", "GROUP BY a", "groupBy: {property}", "group=a", "Bases / SQL"],
+        ["跨表", "JOIN … ON …", "file.links / list.filter(…)", "attachments.filter(value.exists).isEmpty()", "Bases（无新语法）"],
+        ["怎么输出", "（客户端决定）", "views: table / cards", "format=json|table|csv|md", "kubectl -o"],
+        ["存起来", "VIEW / 保存的查询", ".base 文件", "file=x.zotquery", "Bases"],
+      ];
+
+      const EVAL = { total: 28, n1: 26, o1: 11, oClient: 11, oNo: 4, quotesOld: 354, quotesNew: 134, charsOld: 3900, charsNew: 3779 };
+      const EXTRA = [
+        ["没有可用 PDF 的论文（没附件或文件丢失）", "1 次", "现行只能问「完全没附件」，文件丢失问不到", "bad"],
+        ["链接文件已经不在磁盘上的附件", "1 次", "问不了（没有附件数据集）", "bad"],
+        ["挂了 2 个以上 PDF 的论文（查重）", "1 次", "问不了（attachments 是布尔值）", "bad"],
+        ["最近 120 天做过批注的论文，每篇一行", "1 次", "拿批注行回来自己去重", "warn"],
+        ["每篇论文几条批注", "1 次 group=", "拿全部批注行回来自己数", "warn"],
+        ["Thesis 收藏夹按年份计数", "1 次 group=", "自己数", "warn"],
+        ["Thesis 收藏夹里一条高亮都没有的论文", "1 次", "2 次调用，自己做差集", "warn"],
+        ["附件按类型计数", "1 次 group=", "问不了", "bad"],
+        ["模糊检索「attention clinical」且有 PDF", "1 次 search=", "猜 title.contains，没排名没分词", "warn"],
+        ["某篇论文的全部附件和路径", "1 次", "问不了（除非附件上恰好有批注）", "bad"],
+        ["Thesis 收藏夹导成 CSV 给导师", "1 次 format=csv", "只有 JSON，自己转", "warn"],
+        ["2019 年起、有附件、没打 to-read 的文献", "1 次", "1 次（布尔值够用）", "ok"],
+        ["标题含「深度学习」的文献", "1 次", "1 次", "ok"],
+      ];
+
+      function App() {
+        return (
+          <main className="bg-ground text-ink font-body min-h-full">
+            <div className="max-w-[1080px] mx-auto px-6 md:px-10 py-10 prose">
+              <div className="flex items-baseline gap-3 flex-wrap">
+                <span className="font-display font-semibold text-xl"><span>Zot</span><span className="text-accent">Lit</span></span>
+                <span className="text-[11px] uppercase tracking-wider text-muted border border-line px-1.5 py-0.5 rounded-sm">设计报告 · 草稿 · 2026-10-10</span>
+              </div>
+              <h1 className="font-display font-semibold text-3xl md:text-4xl mt-3 text-balance leading-tight">查询命令重设计：把文献、附件、批注当成一张可以「顺着关系走」的表来查</h1>
+              <p className="mt-4 text-[15.5px]">写给还没碰过查询命令的 ZotLit 开发者。先说结论，再用一分钟讲清现状，然后是 10 条可以逐条拍板的改动提案，最后是在同一份假数据上跑 28 个研究问题的评测。配套的原型可以边读边点。</p>
+
+              <div className="mt-6 grid md:grid-cols-[1fr_auto] gap-4 items-start">
+                <Card title="一句话结论" tone="accent">
+                  <p className="text-[15px] font-medium">用一条 <code>zotlit:query</code>、一个 <code>from=</code>、把「附件」和「批注」变成文献上可以筛选的列表，就能像 SQL 一样回答跨表问题；表达式和参数形状继续照抄 Obsidian Bases，不发明任何新语法。</p>
+                  <ul className="mt-3 text-[14px] list-disc pl-5 space-y-1">
+                    <li>28 个研究问题里，提案 <b>26 题一次调用</b>解决（另 2 题天然要两步：取图片、先看警告再改）。</li>
+                    <li>现行写法 <b>11 题</b>一次调用无需额外处理，<b>11 题</b>要调用方自己合并、计数或猜，<b>4 题根本问不了</b>（都是附件相关）。</li>
+                    <li>参数改逗号写法后，命令里的引号从 354 个降到 134 个，总长度几乎不变。</li>
+                  </ul>
+                </Card>
+                <a href={PROTO} className="inline-flex items-center gap-2 bg-accent text-white px-4 py-3 rounded-sm font-medium text-sm whitespace-nowrap">打开原型，边读边点 <ExternalLink size={14} /></a>
+              </div>
+
+              <H2 n="01">一分钟看懂现状</H2>
+              <p>Zotero 资料库里有三种东西：<b>文献</b>（一篇论文、一本书）、挂在文献下面的<b>附件</b>（PDF、EPUB、网页快照），以及你在附件上画的<b>批注</b>（高亮、评论、图片框）。它们之间是「一对多」的关系，顺着关系可以正着走也可以反着走：</p>
+              <Card><Diagram src="three-records" /></Card>
+              <p className="mt-4">现在 ZotLit 在 Obsidian 命令行里提供两套查询：<code>zotlit:item-query</code> 查文献，<code>zotlit:annotation-query</code> 查批注。两套的参数差不多，结果都是一个 JSON 信封（<code>ok</code>、<code>rows</code>、<code>returnedCount</code>、<code>truncated</code>、<code>warnings</code>）。筛选用的表达式语言抄自 Obsidian Bases，比如 <code>tags.contains("to-read") && date.year >= 2020</code>。这一套在实现上是好的：一个规划器、一个诊断器、一条执行路径，worker 里跑，不卡编辑器。</p>
+              <p>问题出在「能问什么」。今天的关系图长这样：</p>
+              <Card><Diagram src="today" /></Card>
+              <ul className="list-disc pl-5 mt-3 space-y-1 text-[14.5px]">
+                <li>批注能看到自己的父文献（<code>item.title</code>），但文献看不到自己的批注，所以「还没读的论文」要两次调用再自己合并。</li>
+                <li>文献上的 <code>attachments</code> 只是一个 true/false。「PDF 文件丢了」「挂了两个 PDF」「某篇论文的文件路径」都问不了。</li>
+                <li>附件不是一种可以查的数据。「坏掉的链接文件有哪些」「附件各类型多少」没有入口。</li>
+                <li>参数里 <code>fields</code> 和 <code>sort</code> 必须写 JSON 数组，在 shell 里引号套引号；图书馆有 <code>library</code> 和 <code>libraries</code> 两个参数；只有 JSON 输出。</li>
+              </ul>
+              <p className="mt-3">用评测题里最难的一题「阅读计划」对比一下：</p>
+              <div className="grid md:grid-cols-2 gap-4">
+                <Card title="现行：两次调用 + 自己合并"><Diagram src="two-calls" /></Card>
+                <Card title="提案：一次调用"><Diagram src="one-call" /></Card>
+              </div>
+
+              <H2 n="02">从第一性原理重推一遍</H2>
+              <H3>用户要什么</H3>
+              <p>两类用户。<b>研究者</b>（非技术背景）问的是研究问题：「我这个月读了什么」「系统综述里哪些还没打标签」「哪些 PDF 在这台电脑上打不开」「每篇论文我划了几条」。<b>代理</b>替研究者干活，要的是一次调用拿到结构化、可信、带诊断的答案，能先问 schema 再写查询。两类用户问的内容一样，只是研究者想看表格，代理想看 JSON。</p>
+              <H3>必须守住的约束</H3>
+              <ul className="list-disc pl-5 space-y-1 text-[14.5px]">
+                <li>只读；Zotero 的数据一个字都不改。</li>
+                <li>走 Obsidian CLI：参数是扁平的 <code>name=value</code>，每个值是一个 shell 字符串。</li>
+                <li>性能不变量不变：切片 16 ms、50 ms 内可取消、limit + 1 行驻留（ADR 0066、#596）。</li>
+                <li>信封、诊断报告、警告（ADR 0070）继续有效；代理的工作流不退步。</li>
+              </ul>
+              <H3>现有设计里被当成前提、其实可以检验的假设</H3>
+              <table className="tbl w-full mt-2"><thead><tr><th>假设</th><th>检验结果</th></tr></thead><tbody>
+                <tr><td>文献和批注是两个命令族</td><td>引擎早就是一个；命令族只是 CLI 名字。SQL 用 FROM 解决同一件事。</td></tr>
+                <tr><td>文献上的 attachments 用布尔值够了</td><td>4 道附件题问不了，3 道要绕。「文件在不在」是研究者最常撞到的现实问题。</td></tr>
+                <tr><td>关系只需要批注 → 文献这一个方向</td><td>阅读计划、未读论文、最近批注过的论文都需要反向。</td></tr>
+                <tr><td>fields / sort 得是 JSON 数组才能保住标点</td><td>逗号切分只在引号和方括号外切，标点照样保住；引号少 62%。</td></tr>
+                <tr><td>JSON 是唯一输出</td><td>研究者在终端读不了 JSON；导师要 CSV；笔记要 Markdown。</td></tr>
+                <tr><td>统计交给调用方</td><td>「每篇几条」「每年几篇」是最常见的研究问题；引擎本来就在内存排序，分组是同一趟。</td></tr>
+                <tr><td>精确过滤够用，不需要检索</td><td>人记得的是「大概叫什么」；item-lookup 的模糊检索已经在 worker 里，白放着。</td></tr>
+              </tbody></table>
+              <H3>借的都是谁的轮子</H3>
+              <p>每个概念都对应一个大家已经认识的东西。表达式语言一个字不动。</p>
+              <table className="tbl w-full mt-2"><thead><tr><th>想表达</th><th>SQL</th><th>Obsidian Bases</th><th>提案的写法</th><th>来源</th></tr></thead><tbody>
+                {CONVENTIONS.map((r) => <tr key={r[0]}><td className="font-medium">{r[0]}</td><td><code>{r[1]}</code></td><td><code>{r[2]}</code></td><td><code>{r[3]}</code></td><td className="text-muted">{r[4]}</td></tr>)}
+              </tbody></table>
+
+              <H2 n="03">10 条提案，逐条可拍板</H2>
+              <p>每条给一句话、一个 diff、为什么、代价。<Pill tone="p0">P0</Pill> 是形状的根本，<Pill tone="p1">P1</Pill> 是顺手该一起改的，<Pill tone="p2">P2</Pill> 可以后做。红色是现在，绿色是提案。</p>
+              <div className="space-y-8 mt-6">
+                {PROPOSALS.map((p) => (
+                  <section key={p.id} className="bg-panel border border-line rounded-sm p-5">
+                    <div className="flex items-center gap-2 flex-wrap"><span className="font-mono text-accent text-sm">{String(p.id).padStart(2, "0")}</span><Pill tone={p.p}>{p.p.toUpperCase()}</Pill><h3 className="font-display font-semibold text-lg">{p.title}</h3></div>
+                    <p className="mt-1 text-[14.5px]">{p.one}</p>
+                    <div className="mt-3"><Diff lines={p.diff} /></div>
+                    <div className="grid md:grid-cols-[1fr_1fr] gap-4 mt-3 text-[13.5px]">
+                      <div><div className="text-[11px] uppercase tracking-wider text-muted font-medium mb-1">为什么</div><ul className="list-disc pl-5 space-y-1">{p.why.map((w, i) => <li key={i}>{w}</li>)}</ul></div>
+                      <div><div className="text-[11px] uppercase tracking-wider text-muted font-medium mb-1">代价 / 内部影响</div><p className="!max-w-none">{p.cost}</p></div>
+                    </div>
+                  </section>
+                ))}
+              </div>
+              <H3>不变的部分</H3>
+              <ul className="list-disc pl-5 space-y-1 text-[14.5px]">
+                <li>Filter Expression 语言、null 语义、日期语义、字段名规则（ADR 0064 的六条边界策略）。</li>
+                <li>信封：<code>contractVersion</code>、<code>ok</code>、<code>identity</code>、<code>libraries</code>、<code>request</code>、<code>returnedCount</code>、<code>truncated</code>、<code>warnings</code>、<code>rows</code>；诊断报告和警告（ADR 0070）。</li>
+                <li>每行 <code>{"{ indexedKey, values }"}</code>；批注行和附件行额外带父对象的 Indexed Key。</li>
+                <li>大结果写文件（<code>output=</code>）、<code>id=</code> 与取消、1 MiB 内联上限、100 行默认、<code>limit=all</code>。</li>
+                <li><code>zotlit:annotation-image</code>。</li>
+              </ul>
+
+              <H2 n="04">评测：同一份数据，两种写法跑 28 个研究问题</H2>
+              <p>原型里内置了一个小引擎，同时实现「现行合同」和「提案」两种命令形状，跑在同一份假资料库上（两个图书馆、11 篇文献、11 个附件、16 条批注，故意放了一个丢失的扫描件、一个只有网址的附件、两本没附件的书、一篇在两个图书馆各有一份的论文）。前 15 题照抄已发布的 zotlit-query 技能评测题；后 13 题是评测没覆盖、研究者却常问的跨表问题。点原型底部的「全部运行」可以当场复现。</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+                {[["提案：一次调用解决", EVAL.n1, "ok"], ["现行：一次调用、无需额外处理", EVAL.o1, "ink"], ["现行：要自己合并 / 计数 / 猜", EVAL.oClient, "warn"], ["现行：问不了", EVAL.oNo, "bad"]].map(([t, n, tone]) => (
+                  <div key={t} className="bg-panel border border-line rounded-sm p-3"><div className="text-[12px] text-muted">{t}</div><div className={`font-display text-3xl font-semibold text-${tone}`}>{n}<span className="text-base text-muted font-body"> / {EVAL.total}</span></div></div>
+                ))}
+              </div>
+              <p className="mt-4 text-[14px]">前 15 道评测题两种写法都能一次（或天然两次）完成，差别只在参数形状：这说明提案没有让代理已经会做的事变难。差距全在后 13 题：</p>
+              <table className="tbl w-full mt-2"><thead><tr><th>研究问题</th><th>提案</th><th className="text-old">现行</th></tr></thead><tbody>
+                {EXTRA.map((r) => <tr key={r[0]}><td>{r[0]}</td><td className="text-ok whitespace-nowrap">{r[1]}</td><td className={`text-${r[3]}`}>{r[2]}</td></tr>)}
+              </tbody></table>
+              <p className="mt-4 text-[14px]">参数形状的数字（24 道两边都能写的题）：引号 <b>{EVAL.quotesOld} → {EVAL.quotesNew}</b>，总字符 <b>{EVAL.charsOld} → {EVAL.charsNew}</b>。信息量没变，少的是转义负担。</p>
+              <p className="text-[13px] text-muted">评测的局限：数据是手造的小样本，引擎是内存版，没有测性能，也没有让真实代理去跑新写法。它回答的是「形状对不对」，不是「实现快不快」。</p>
+
+              <H2 n="05">内部实现：次要，但要心里有数</H2>
+              <Card><Diagram src="pipeline" /></Card>
+              <ul className="list-disc pl-5 mt-4 space-y-2 text-[14.5px]">
+                <li><b>第三个数据集描述符。</b>ADR 0066 修订后引擎就是靠 <code>ITEMS</code> / <code>ANNOTATIONS</code> 描述符分支的；加一个 <code>ATTACHMENTS</code>，规划器、诊断器、schema 不用改结构。@zotlit/db 里批注读取器已经 join 了附件表，扫描与候选集读取器照它的样子补。</li>
+                <li><b>关系列表 = 分块加载的 needs。</b>只有 filter / fields / sort 点名了 <code>attachments</code> 或 <code>annotations</code> 才加载；每块 250 条的边界不变。驻留仍是 limit + 1 行加一块。</li>
+                <li><b>候选集下推按「超集规则」。</b>候选集只要是匹配集的超集就合法，求值器仍是裁判。<code>annotations.filter(value.tags.contains("x")).length > 0</code> 可下推成「有该标签批注的文献」；<code>.isEmpty()</code> 和否定走全扫。这与现在 <code>||</code>、<code>!</code> 走全扫的规则一致。</li>
+                <li><b>group 在内存里做。</b>排序本来就是内存的；分组是同一趟的分桶。<code>limit=all</code> 时的分组行数和现在的无上限排序一样记录峰值内存。</li>
+                <li><b>search 复用 worker 里的索引。</b>#1356 已把 item 索引放进 ZoteroReads worker；search 的结果就是一个候选集，再交给 filter。</li>
+                <li><b>要修订的记录：</b>ADR 0064（关系列表与附件数据集）、ADR 0065（命令名与参数编码、contract 3）、ADR 0066（第三个数据集）、item-query 的 GLOSSARY（Attachment Query、Query Dataset 的三种）。</li>
+              </ul>
+
+              <H2 n="06">还没定的，留给 grilling</H2>
+              <ol className="list-decimal pl-5 space-y-2 text-[14.5px]">
+                <li><b>参数名。</b><code>from</code>（SQL）还是 <code>of</code>？<code>library</code> 单数收列表会不会别扭？<code>group</code> 还是 <code>groupBy</code>（Bases 用后者）？</li>
+                <li><b>列表展开符号。</b>投影里的 <code>attachments[].path</code>（jq）对研究者是否自明？备选是只允许 <code>attachments</code> 整体返回摘要对象。</li>
+                <li><b>group 的输出形状。</b><code>limit</code> 管每组还是全局？要不要 Bases 的 summaries（sum / mean）？</li>
+                <li><b><code>item=</code> / <code>attachment=</code> 留不留作语法糖。</b>去掉最干净；留着要定义和 filter 的组合规则。</li>
+                <li><b>search 与 sort 的优先级。</b>有 search 时默认按相关度，用户再给 sort 时谁赢？</li>
+                <li><b>查询文件的扩展名和位置。</b><code>.zotquery</code>？放在 vault 里还是插件目录？这决定将来 GUI 视图的落点。</li>
+                <li><b>Item 上的 <code>annotations</code> 要不要包含独立附件（没有父文献）上的批注。</b>现在的批注宇宙排除它们；保持一致最省事。</li>
+              </ol>
+
+              <H2 n="07">下一步</H2>
+              <ol className="list-decimal pl-5 space-y-1 text-[14.5px]">
+                <li>拿原型做一轮 grilling，先拍 P0 三条。</li>
+                <li>按拍板结果修订 ADR 0064 / 0065 / 0066，更新 GLOSSARY。</li>
+                <li>把原型提交到 <code>prototype/query-cli-redesign</code> 分支，作为一手资料；在实现 issue 上留链接。</li>
+                <li>再开 tickets：附件数据集与关系列表 → 单一命令与参数编码 → format → group / search / file。</li>
+              </ol>
+              <p className="mt-10 text-[12.5px] text-muted">文件：<code>.scratch/query-cli-redesign/</code> 下的 <code>prototype-query-cli.html</code>（原型，双击打开）、<code>engine.mjs</code>（纯逻辑，可移植）、<code>data.mjs</code>（假数据）、<code>cases.mjs</code>（28 题）、<code>scenarios.mjs</code>（走查）。重建原型：<code>node assemble.mjs</code>。</p>
+            </div>
+          </main>
+        );
+      }
+      createRoot(document.getElementById("root")).render(<App />);
+    </script>
+    <script type="module">
+      import { transform } from "https://esm.sh/sucrase@3";
+      const src = document.getElementById("app").textContent;
+      const { code } = transform(src, {
+        transforms: ["jsx"],
+        production: true,
+      });
+      const url = URL.createObjectURL(
+        new Blob([code], { type: "text/javascript" }),
+      );
+      await import(url);
+    </script>
+  </body>
+</html>
