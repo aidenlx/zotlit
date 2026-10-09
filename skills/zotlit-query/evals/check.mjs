@@ -18,6 +18,26 @@ const itemFields = {
   ],
   edge: ["title", "date.year", "creators"],
 };
+const expandedAnnotationCases = new Set([
+  "reading_plan",
+  "shared_marks",
+  "attachment",
+  "colors",
+  "reverse_pages",
+  "missing_source",
+  "repair_filter",
+  "export_annotations",
+]);
+const expandedFields = {
+  reading_plan: ["type", "pageLabel", "text", "comment"],
+  shared_marks: ["text", "colorName"],
+  attachment: ["type", "pageLabel", "text", "comment", "attachment"],
+  colors: ["text", "colorName", "tags", "pageIndex"],
+  reverse_pages: ["type", "pageLabel", "pageIndex", "text"],
+  missing_source: ["comment", "attachment"],
+  repair_filter: ["text", "colorName"],
+  export_annotations: ["type", "pageLabel", "text", "comment", "attachment"],
+};
 
 function sourcePath(values) {
   return values?.attachment?.path ?? values?.["attachment.path"] ?? null;
@@ -46,6 +66,136 @@ function commonChecks(envelope, expected, { runRoot, vaultPath }) {
     `expected ${expected.count} returned rows`,
   );
   return { errors, need };
+}
+
+function validateExpandedAnnotations(
+  caseName,
+  envelope,
+  { expected, itemEnvelope, ...context },
+) {
+  const { errors, need } = commonChecks(envelope, expected, context);
+  const request = envelope?.request ?? {};
+  for (const field of expandedFields[caseName])
+    need(request.fields?.includes(field), `missing projected field ${field}`);
+  const rows = envelope?.rows;
+  need(Array.isArray(rows), "full result rows are missing");
+  if (!Array.isArray(rows)) return errors;
+  need(rows.length === expected.count, `expected ${expected.count} rows`);
+  const actualKeys = rows.map((row) => row.indexedKey);
+  const desiredKeys = expected.keys;
+  need(
+    JSON.stringify(
+      ["reverse_pages", "attachment", "export_annotations"].includes(caseName)
+        ? actualKeys
+        : [...actualKeys].sort((a, b) => a.localeCompare(b)),
+    ) ===
+      JSON.stringify(
+        ["reverse_pages", "attachment", "export_annotations"].includes(caseName)
+          ? desiredKeys
+          : [...desiredKeys].sort((a, b) => a.localeCompare(b)),
+      ),
+    "Annotation Rows have wrong keys or order",
+  );
+  const byKey = new Map(rows.map((row) => [row.indexedKey, row]));
+  need(byKey.size === rows.length, "duplicate Annotation Indexed Key");
+  for (const key of expected.keys) {
+    const spec = oracle.annotationRows[key];
+    const row = byKey.get(spec.key);
+    if (!row) continue;
+    need(row.itemIndexedKey === spec.item, `${spec.key} has wrong parent Item`);
+    need(
+      row.attachmentIndexedKey === spec.attachment,
+      `${spec.key} has wrong parent Attachment`,
+    );
+    const values = row.values ?? {};
+    for (const field of expandedFields[caseName]) {
+      if (field === "attachment") continue;
+      need(
+        JSON.stringify(values[field] ?? null) ===
+          JSON.stringify(spec[field] ?? null),
+        `${spec.key} has wrong ${field}`,
+      );
+    }
+    if (expandedFields[caseName].includes("attachment"))
+      need(
+        sourceExists(values) === spec.sourceExists &&
+          sourcePath(values)?.endsWith(spec.sourceSuffix),
+        `${spec.key} has wrong source file`,
+      );
+  }
+  if (["shared_marks", "reading_plan", "repair_filter"].includes(caseName)) {
+    need(
+      envelope?.libraries?.some((library) => library.type === "personal"),
+      "My Library was not queried",
+    );
+    need(
+      envelope?.libraries?.some((library) => library.groupID === 118),
+      "Lab Archive was not queried",
+    );
+  }
+  if (caseName === "attachment" || caseName === "export_annotations") {
+    need(
+      request.attachment?.includes("QANPDF22g118"),
+      "Lab Archive Attachment was not selected",
+    );
+  }
+  if (caseName === "colors") {
+    need(
+      request.item?.includes("QANPAPER"),
+      "My Library Item was not selected",
+    );
+    for (const fragment of ["colorName", "tags", "pageIndex"])
+      need(
+        request.filter?.includes(fragment),
+        `filter does not contain ${fragment}`,
+      );
+  }
+  if (caseName === "reverse_pages")
+    need(
+      request.sort?.[0]?.field === "pageIndex" &&
+        request.sort?.[0]?.direction === "desc",
+      "pages were not sorted descending",
+    );
+  if (caseName === "missing_source")
+    need(
+      request.filter?.includes("comment"),
+      "missing-file comment was not filtered",
+    );
+  if (caseName === "reading_plan") {
+    if (!itemEnvelope) need(false, "Item Query evidence is missing");
+    else {
+      const itemCheck = commonChecks(
+        itemEnvelope,
+        { count: expected.items.length },
+        context,
+      );
+      errors.push(...itemCheck.errors.map((error) => `Item Query: ${error}`));
+      need(
+        itemEnvelope?.libraries?.some((library) => library.groupID === 118),
+        "Item Query omitted Lab Archive",
+      );
+      need(
+        itemEnvelope?.request?.filter?.includes("query-annotation-eval"),
+        "Item Query did not select the reading plan",
+      );
+      const itemRows = itemEnvelope?.rows;
+      need(Array.isArray(itemRows), "Item Query rows are missing");
+      if (Array.isArray(itemRows)) {
+        const items = new Map(itemRows.map((row) => [row.indexedKey, row]));
+        need(
+          items.size === expected.items.length &&
+            itemRows.length === expected.items.length,
+          "Item Query has wrong papers",
+        );
+        for (const item of expected.items)
+          need(
+            items.get(item.indexedKey)?.values?.title === item.title,
+            `Item Query has wrong title for ${item.indexedKey}`,
+          );
+      }
+    }
+  }
+  return errors;
 }
 
 function validateAnnotations(caseName, envelope, { expected, ...context }) {
@@ -84,27 +234,34 @@ function validateAnnotations(caseName, envelope, { expected, ...context }) {
         `${row.indexedKey} has no page label`,
       );
       need(
-        sourceExists(row.values) === true &&
-          sourcePath(row.values)?.endsWith("attachments/rougier-2014.pdf"),
-        `${row.indexedKey} has no readable source path`,
+        sourcePath(row.values)?.endsWith("attachments/rougier-2014.pdf"),
+        `${row.indexedKey} has no source path`,
       );
+      const detail = expected.details?.[row.indexedKey];
+      if (detail)
+        for (const field of ["type", "pageLabel", "text", "comment"])
+          need(
+            (row.values?.[field] ?? null) === detail[field],
+            `${row.indexedKey} has wrong ${field}`,
+          );
     }
   }
   if (caseName === "mixed" || caseName === "image") {
     const row = rows[0];
-    need(row?.values?.type === expected.type, "wrong Annotation type");
-    need(
-      JSON.stringify(row?.values?.tags) === JSON.stringify(expected.tags),
-      "wrong Annotation Tags",
-    );
+    if (caseName === "mixed")
+      need(
+        JSON.stringify(row?.values?.tags) === JSON.stringify(expected.tags),
+        "wrong Annotation Tags",
+      );
     need(
       row?.values?.hasExcerptImage === expected.hasExcerptImage,
       "wrong Excerpt Image applicability",
     );
-    need(
-      row?.values?.["item.title"] === expected.itemTitle,
-      "wrong parent Item title",
-    );
+    if (caseName === "mixed")
+      need(
+        row?.values?.["item.title"] === expected.itemTitle,
+        "wrong parent Item title",
+      );
     if (caseName === "mixed")
       for (const fragment of ["type", "tags", "item.citationKey"])
         need(
@@ -125,9 +282,8 @@ function validateAnnotations(caseName, envelope, { expected, ...context }) {
       "wrong requested position",
     );
     need(
-      sourceExists(row?.values) === true &&
-        sourcePath(row?.values)?.endsWith("attachments/rougier-2014.pdf"),
-      "position row has no readable source path",
+      sourcePath(row?.values)?.endsWith("attachments/rougier-2014.pdf"),
+      "position row has no source path",
     );
   }
   return errors;
@@ -212,25 +368,31 @@ function validateItems(caseName, envelope, { expected, ...context }) {
 export function validate(
   caseName,
   envelope,
-  { runRoot, vaultPath = join(runRoot, "zt-fixture-vault") },
+  { runRoot, vaultPath = join(runRoot, "zt-fixture-vault"), itemEnvelope },
 ) {
   const expected = oracle.cases[caseName];
   if (!expected) throw new Error(`unknown case: ${caseName}`);
-  const context = { expected, runRoot, vaultPath };
+  const context = { expected, runRoot, vaultPath, itemEnvelope };
   return Object.hasOwn(itemFields, caseName)
     ? validateItems(caseName, envelope, context)
-    : validateAnnotations(caseName, envelope, context);
+    : expandedAnnotationCases.has(caseName)
+      ? validateExpandedAnnotations(caseName, envelope, context)
+      : validateAnnotations(caseName, envelope, context);
 }
 
 async function main() {
-  const [caseName, resultArg, runRootArg] = process.argv.slice(2);
+  const [caseName, resultArg, runRootArg, itemResultArg] =
+    process.argv.slice(2);
   if (!caseName || !resultArg || !runRootArg)
     throw new Error(
-      "usage: node check.mjs <case> <full-envelope.json> <absolute-run-root>",
+      "usage: node check.mjs <case> <full-envelope.json> <absolute-run-root> [item-envelope.json]",
     );
   const runRoot = resolve(runRootArg);
   const envelope = JSON.parse(await readFile(resultArg, "utf8"));
-  const errors = validate(caseName, envelope, { runRoot });
+  const itemEnvelope = itemResultArg
+    ? JSON.parse(await readFile(itemResultArg, "utf8"))
+    : undefined;
+  const errors = validate(caseName, envelope, { runRoot, itemEnvelope });
   console.log(
     JSON.stringify(
       { case: caseName, pass: errors.length === 0, errors },

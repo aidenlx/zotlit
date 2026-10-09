@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { readFile, rm } from "node:fs/promises";
+import { readFile, rm, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
@@ -90,6 +90,99 @@ await test("a generated Fixture stays unchanged and gives byte-identical seeded 
         )
         .get().n,
       3,
+    );
+    const seededMarks = db
+      .prepare(
+        "select i.key, i.libraryID, a.text, a.comment, a.color, a.pageLabel, a.position from items i join itemAnnotations a on a.itemID = i.itemID where i.key like 'QAN%' order by i.key, i.libraryID",
+      )
+      .all();
+    assert.equal(seededMarks.length, 5);
+    assert.deepEqual(
+      seededMarks
+        .filter((row) => row.key === "QANMARK2")
+        .map((row) => [
+          row.libraryID,
+          row.text,
+          row.color,
+          JSON.parse(row.position).rects[0],
+        ]),
+      [
+        [
+          1,
+          "Identify Your Message",
+          "#2ea8e5",
+          [265.833, 611.202, 374.503, 620.019],
+        ],
+        [
+          3,
+          "Identify Your Message",
+          "#2ea8e5",
+          [265.833, 611.202, 374.503, 620.019],
+        ],
+      ],
+    );
+    assert.equal(
+      await digest(
+        join(first, "zotero-data", "storage", "QANPDF22", "rougier-2014.pdf"),
+      ),
+      await digest(
+        join(source, "zt-fixture-vault", "attachments", "rougier-2014.pdf"),
+      ),
+    );
+    assert.equal(
+      db
+        .prepare(
+          "select count(*) as n from items i join itemTags it on it.itemID = i.itemID join tags t on t.tagID = it.tagID where t.name = 'query-annotation-eval'",
+        )
+        .get().n,
+      3,
+    );
+    assert.equal(
+      db
+        .prepare(
+          "select count(*) as n from items i join itemAnnotations a on a.itemID = i.itemID join itemTags it on it.itemID = i.itemID join tags t on t.tagID = it.tagID where t.name = 'query-annotation-method'",
+        )
+        .get().n,
+      2,
+    );
+    assert.deepEqual(
+      db
+        .prepare(
+          "select i.libraryID, a.path from items i join itemAttachments a on a.itemID = i.itemID where i.key = 'QANPDF22' order by i.libraryID",
+        )
+        .all()
+        .map((row) => [row.libraryID, row.path]),
+      [
+        [1, "storage:rougier-2014.pdf"],
+        [3, "storage:rougier-2014.pdf"],
+      ],
+    );
+    assert.equal(
+      db
+        .prepare(
+          "select count(*) as n from items p join items a on a.key = 'QANPDF22' and a.libraryID = p.libraryID join itemAttachments f on f.itemID = a.itemID and f.parentItemID = p.itemID where p.key = 'QANPAPER'",
+        )
+        .get().n,
+      2,
+    );
+    assert.equal(
+      db
+        .prepare(
+          "select count(*) as n from items i where i.key = 'QANZERO2' and not exists (select 1 from itemAttachments a where a.parentItemID = i.itemID)",
+        )
+        .get().n,
+      1,
+    );
+    await assert.rejects(
+      stat(
+        join(
+          first,
+          "zotero-data",
+          "storage",
+          "MISSNG22",
+          "deliberately-missing.pdf",
+        ),
+      ),
     );
     assert.throws(() =>
       execFileSync(

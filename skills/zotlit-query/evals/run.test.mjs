@@ -19,6 +19,7 @@ async function exercise(
     removalFailure = false,
     noQuery = false,
     wrongDetail = false,
+    wrongExportReceipt = false,
     caseName = "edge",
     changeAnnotation = () => {},
   } = {},
@@ -68,6 +69,178 @@ async function exercise(
       assert.doesNotMatch(options.input, /oracle\.json/);
       if (agentTimedOut)
         return { code: null, stdout: "", stderr: "", timedOut: true };
+      if (
+        oracle.annotationRows[oracle.cases[caseName]?.keys?.[0]]?.sourceSuffix
+      ) {
+        const expected = oracle.cases[caseName];
+        const schema = JSON.parse(
+          await readFile(args[args.indexOf("--output-schema") + 1], "utf8"),
+        );
+        assert.deepEqual(
+          Object.hasOwn(schema.properties, "papers"),
+          caseName === "reading_plan",
+        );
+        const identity = {
+          source: {
+            databasePath: join(corpus, "zotero-data", "zotero.sqlite"),
+          },
+          vault: { path: vault },
+        };
+        const rows = expected.keys
+          .map((key) => oracle.annotationRows[key])
+          .map((spec) => ({
+            indexedKey: spec.key,
+            itemIndexedKey: spec.item,
+            attachmentIndexedKey: spec.attachment,
+            values: {
+              type: spec.type,
+              pageLabel: spec.pageLabel,
+              text: spec.text,
+              comment: spec.comment,
+              colorName: spec.colorName,
+              tags: spec.tags,
+              pageIndex: spec.pageIndex,
+              attachment: {
+                path: join(corpus, "zotero-data", spec.sourceSuffix),
+                exists: spec.sourceExists,
+              },
+            },
+          }));
+        const envelope = {
+          ok: true,
+          identity,
+          libraries: [{ type: "personal" }, { type: "group", groupID: 118 }],
+          request: {
+            limit: null,
+            fields: [
+              "type",
+              "pageLabel",
+              "text",
+              "comment",
+              "colorName",
+              "tags",
+              "pageIndex",
+              "attachment",
+            ],
+            filter:
+              caseName === "colors"
+                ? 'colorName == "blue" && tags.contains("query-annotation-method") && pageIndex == 0'
+                : caseName === "missing_source"
+                  ? 'comment == "Check this source when the file arrives."'
+                  : null,
+            item: caseName === "colors" ? ["QANPAPER"] : null,
+            attachment:
+              caseName === "attachment" || caseName === "export_annotations"
+                ? ["QANPDF22g118"]
+                : null,
+            sort:
+              caseName === "reverse_pages"
+                ? [{ field: "pageIndex", direction: "desc" }]
+                : [],
+          },
+          returnedCount: expected.count,
+          truncated: false,
+          rows,
+        };
+        const answer = {
+          answer: "Complete matches",
+          count: expected.count,
+          annotations: rows.map((row) => {
+            const result = { indexedKey: row.indexedKey };
+            for (const field of schema.properties.annotations.items.required) {
+              if (field === "indexedKey") continue;
+              result[field] =
+                field === "attachmentPath"
+                  ? row.values.attachment.path
+                  : field === "library"
+                    ? row.indexedKey.endsWith("g118")
+                      ? "Lab Archive"
+                      : "My Library"
+                    : field === "itemIndexedKey" ||
+                        field === "attachmentIndexedKey"
+                      ? row[field]
+                      : row.values[field];
+            }
+            return result;
+          }),
+          ...(caseName === "reading_plan" ? { papers: expected.items } : {}),
+          ...(caseName === "export_annotations"
+            ? { exportPath: join(root, "result.json") }
+            : {}),
+          imagePath: null,
+          imageProvenance: null,
+          imageFormat: null,
+          validPng: null,
+        };
+        changeAnnotation(answer, envelope);
+        await writeFile(
+          join(options.cwd, "query-result.json"),
+          JSON.stringify(envelope),
+        );
+        if (caseName === "export_annotations")
+          await writeFile(
+            join(options.cwd, "export-receipt.json"),
+            JSON.stringify({
+              ok: true,
+              file: {
+                path: join(options.cwd, "query-result.json"),
+                bytes:
+                  Buffer.byteLength(JSON.stringify(envelope)) +
+                  (wrongExportReceipt ? 1 : 0),
+                format: "json",
+              },
+            }),
+          );
+        if (caseName === "reading_plan") {
+          const itemEnvelope = {
+            ok: true,
+            identity,
+            libraries: envelope.libraries,
+            request: {
+              limit: null,
+              fields: ["title"],
+              filter: 'tags.contains("query-annotation-eval")',
+            },
+            returnedCount: expected.items.length,
+            truncated: false,
+            rows: expected.items.map((item) => ({
+              indexedKey: item.indexedKey,
+              values: { title: item.title },
+            })),
+          };
+          await writeFile(
+            join(options.cwd, "item-result.json"),
+            JSON.stringify(itemEnvelope),
+          );
+        }
+        await writeFile(
+          join(options.cwd, "answer.json"),
+          JSON.stringify(answer),
+        );
+        const events = [
+          "zotlit:annotation-query",
+          ...(caseName === "reading_plan" ? ["zotlit:item-query"] : []),
+        ];
+        return {
+          code: 0,
+          stderr: "",
+          timedOut: false,
+          stdout: `${events
+            .map((name, index) =>
+              JSON.stringify({
+                type: "item.completed",
+                item: {
+                  id: `query-${index}`,
+                  type: "command_execution",
+                  command: `node obsidian-cli.ts vault=fake-vault-id ${name}`,
+                  aggregated_output: "result",
+                  exit_code: 0,
+                },
+              }),
+            )
+            .join("\n")}\n`,
+        };
+      }
       if (caseName !== "edge") {
         const schema = JSON.parse(
           await readFile(args[args.indexOf("--output-schema") + 1], "utf8"),
@@ -107,10 +280,14 @@ async function exercise(
                   "item.title": expected.itemTitle,
                 }
               : {
-                  type: indexedKey === "FDRFQ7C2" ? "image" : "highlight",
-                  pageLabel: "1",
-                  text: expected.text ?? "Quoted text",
-                  comment: null,
+                  type:
+                    expected.details?.[indexedKey]?.type ??
+                    (indexedKey === "FDRFQ7C2" ? "image" : "highlight"),
+                  pageLabel: expected.details?.[indexedKey]?.pageLabel ?? "1",
+                  text: expected.details?.[indexedKey]
+                    ? expected.details[indexedKey].text
+                    : (expected.text ?? "Quoted text"),
+                  comment: expected.details?.[indexedKey]?.comment ?? null,
                   ...(source ? { attachment: { path, exists: true } } : {}),
                   ...(caseName === "position"
                     ? { position: expected.position }
@@ -160,9 +337,9 @@ async function exercise(
                   ...(caseName === "annotations"
                     ? {
                         type: row.values.type,
-                        pageLabel: "1",
-                        text: "Quoted text",
-                        comment: null,
+                        pageLabel: row.values.pageLabel,
+                        text: row.values.text,
+                        comment: row.values.comment,
                       }
                     : { position: expected.position }),
                   attachmentPath: path,
@@ -448,6 +625,39 @@ await test("mixed answer accepts its requested projection without attachment met
   assert.equal(report.state, "passed", report.errors.join("\n"));
 });
 
+await test("expanded cases pass through the runner and reject a wrong paper count", async () => {
+  for (const caseName of [
+    "reading_plan",
+    "shared_marks",
+    "attachment",
+    "colors",
+    "reverse_pages",
+    "missing_source",
+    "repair_filter",
+    "export_annotations",
+  ]) {
+    const report = await exercise(null, { caseName });
+    assert.equal(report.state, "passed", report.errors.join("\n"));
+  }
+  const wrong = await exercise(null, {
+    caseName: "reading_plan",
+    changeAnnotation(answer) {
+      answer.papers[1].annotationCount = 1;
+    },
+  });
+  assert.equal(wrong.failureKind, "task");
+  assert.match(wrong.errors.join("\n"), /wrong paper counts/);
+  const badReceipt = await exercise(null, {
+    caseName: "export_annotations",
+    wrongExportReceipt: true,
+  });
+  assert.equal(badReceipt.failureKind, "task");
+  assert.match(
+    badReceipt.errors.join("\n"),
+    /wrong Annotation Query export receipt/,
+  );
+});
+
 for (const caseName of ["annotations", "position"]) {
   await test(`${caseName} answer accepts requested details and rejects a wrong source path`, async () => {
     const valid = await exercise(null, { caseName });
@@ -468,7 +678,7 @@ for (const caseName of ["annotations", "position"]) {
       },
     });
     assert.equal(omitted.failureKind, "task");
-    assert.match(omitted.errors.join("\n"), /no readable source path/);
+    assert.match(omitted.errors.join("\n"), /no source path/);
   });
 }
 

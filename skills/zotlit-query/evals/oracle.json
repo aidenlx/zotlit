@@ -1394,7 +1394,57 @@
       ],
       "itemKey": "RUGIER24",
       "itemTitle": "Ten Simple Rules for Better Figures",
-      "attachmentKey": "RGRPDF24"
+      "attachmentKey": "RGRPDF24",
+      "details": {
+        "TYY6Z6ZF": {
+          "type": "ink",
+          "pageLabel": "1",
+          "text": null,
+          "comment": null
+        },
+        "4PE492KU": {
+          "type": "ink",
+          "pageLabel": "1",
+          "text": null,
+          "comment": null
+        },
+        "HRK7BG32": {
+          "type": "text",
+          "pageLabel": "1",
+          "text": null,
+          "comment": "Making figures is hard :("
+        },
+        "K3JRFLFQ": {
+          "type": "underline",
+          "pageLabel": "1",
+          "text": "Scientific visualization is classically defined as the process of graphically displaying scientific data.",
+          "comment": null
+        },
+        "Q8ZR4TDH": {
+          "type": "highlight",
+          "pageLabel": "1",
+          "text": "There are so many different ways to represent the same data: scatter plots, linear plots, bar plots, and pie charts, to name just a few.",
+          "comment": null
+        },
+        "PUPR5FG5": {
+          "type": "highlight",
+          "pageLabel": "1",
+          "text": "Identify Your Message",
+          "comment": null
+        },
+        "C94NJNYG": {
+          "type": "note",
+          "pageLabel": "1",
+          "text": null,
+          "comment": "some text comment"
+        },
+        "FDRFQ7C2": {
+          "type": "image",
+          "pageLabel": "2",
+          "text": null,
+          "comment": null
+        }
+      }
     },
     "mixed": {
       "count": 1,
@@ -1424,6 +1474,130 @@
       "hasExcerptImage": true,
       "format": "png",
       "provenance": ["zotero", "rendered"]
+    },
+    "reading_plan": {
+      "count": 4,
+      "keys": ["QANMARK2", "QANPAGE2", "QANMARK2g118", "QANNOTE2g118"],
+      "items": [
+        {
+          "indexedKey": "QANPAPER",
+          "title": "Figure design reading copy",
+          "annotationCount": 2,
+          "library": "My Library"
+        },
+        {
+          "indexedKey": "QANZERO2",
+          "title": "Figure design reading plan",
+          "annotationCount": 0,
+          "library": "My Library"
+        },
+        {
+          "indexedKey": "QANPAPERg118",
+          "title": "Figure design reading copy",
+          "annotationCount": 2,
+          "library": "Lab Archive"
+        }
+      ]
+    },
+    "shared_marks": {
+      "count": 2,
+      "keys": ["QANMARK2", "QANMARK2g118"]
+    },
+    "attachment": {
+      "count": 2,
+      "keys": ["QANMARK2g118", "QANNOTE2g118"]
+    },
+    "colors": {
+      "count": 1,
+      "keys": ["QANMARK2"]
+    },
+    "reverse_pages": {
+      "count": 2,
+      "keys": ["QANPAGE2", "QANMARK2"]
+    },
+    "missing_source": {
+      "count": 1,
+      "keys": ["QANMISS2"]
+    },
+    "repair_filter": {
+      "count": 2,
+      "keys": ["QANMARK2", "QANMARK2g118"]
+    },
+    "export_annotations": {
+      "count": 2,
+      "keys": ["QANMARK2g118", "QANNOTE2g118"]
+    }
+  },
+  "annotationRows": {
+    "QANMARK2": {
+      "key": "QANMARK2",
+      "item": "QANPAPER",
+      "attachment": "QANPDF22",
+      "type": "highlight",
+      "pageLabel": "1",
+      "text": "Identify Your Message",
+      "comment": null,
+      "colorName": "blue",
+      "tags": ["query-annotation-method"],
+      "pageIndex": 0,
+      "sourceSuffix": "storage/QANPDF22/rougier-2014.pdf",
+      "sourceExists": true
+    },
+    "QANPAGE2": {
+      "key": "QANPAGE2",
+      "item": "QANPAPER",
+      "attachment": "QANPDF22",
+      "type": "image",
+      "pageLabel": "2",
+      "text": null,
+      "comment": null,
+      "colorName": "yellow",
+      "tags": [],
+      "pageIndex": 1,
+      "sourceSuffix": "storage/QANPDF22/rougier-2014.pdf",
+      "sourceExists": true
+    },
+    "QANMARK2g118": {
+      "key": "QANMARK2g118",
+      "item": "QANPAPERg118",
+      "attachment": "QANPDF22g118",
+      "type": "highlight",
+      "pageLabel": "1",
+      "text": "Identify Your Message",
+      "comment": null,
+      "colorName": "blue",
+      "tags": ["query-annotation-method"],
+      "pageIndex": 0,
+      "sourceSuffix": "storage/QANPDF22/rougier-2014.pdf",
+      "sourceExists": true
+    },
+    "QANNOTE2g118": {
+      "key": "QANNOTE2g118",
+      "item": "QANPAPERg118",
+      "attachment": "QANPDF22g118",
+      "type": "note",
+      "pageLabel": "1",
+      "text": null,
+      "comment": "Compare the chart with the methods section.",
+      "colorName": "red",
+      "tags": [],
+      "pageIndex": 0,
+      "sourceSuffix": "storage/QANPDF22/rougier-2014.pdf",
+      "sourceExists": true
+    },
+    "QANMISS2": {
+      "key": "QANMISS2",
+      "item": "SAKIMA22",
+      "attachment": "MISSNG22",
+      "type": "note",
+      "pageLabel": "2",
+      "text": null,
+      "comment": "Check this source when the file arrives.",
+      "colorName": "red",
+      "tags": [],
+      "pageIndex": 1,
+      "sourceSuffix": "deliberately-missing.pdf",
+      "sourceExists": false
     }
   }
 }
