@@ -1,5 +1,7 @@
 # Item Query CLI is versioned and self-describing
 
+> Amended 2026-10-10 by ADR 0071: contract version 3 exposes one `zotlit:query` command with `from=`, comma-list `fields` and `sort` beside the JSON form, one `library` argument, `group=`, and selection through the filter alone.
+
 > Amended 2026-10-09: contract version 2 keeps every version-1 field of a diagnostic and adds the Diagnostic Report, the structured excerpt, what was found and expected, suggestions, severity, and `warnings` on a successful answer. Version 2 grows by additions without a bump; a changed meaning of an existing field bumps. See ADR 0070.
 
 The Obsidian CLI exposes Item Query through flat arguments and returns the established ZotLit JSON envelope: an independent Item Query `contractVersion`, `command`, and `ok`, followed by command-specific top-level fields. Query success adds the existing Workbench source identity, the stable Target Libraries, the normalized request, `returnedCount`, `truncated`, and Query Rows. `fields` is a JSON array of Projection Path strings, and `sort` is a JSON array of `{ field, direction }` objects. These encodings preserve punctuation in custom field names without a second escaping grammar. A tiered guide and a machine-readable schema expose the current fields, relations, functions, and types from the same registries that the query command uses.
