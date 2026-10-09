@@ -23,6 +23,8 @@ export default defineConfig({
         },
       },
     ],
+    reporters: ["./src/reporter.ts", "json"],
+    outputFile: { json: "../../.scratch/e2e-results/results.json" },
     environment: "node",
     // Every file drives the one desktop Obsidian and opens its own Fixture and
     // vault, so two files at once would take focus and windows from each other.
