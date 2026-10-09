@@ -1,12 +1,20 @@
 # Item Query
 
-The field-oriented query capability for Zotero Items. It evaluates ZotLit Filter Expressions and returns one result set from one or more Libraries.
+The field-oriented query capability for Zotero Items and their Annotations. It evaluates ZotLit Filter Expressions and returns one result set from one or more Libraries.
 
 ## Language
 
 **Item Query**:
 A query over the top-level, non-trashed Items of its Target Libraries. It contains one optional Filter Expression, selected fields, sort fields, and an optional result limit. The Items of all its Target Libraries are filtered, sorted, and limited as one set.
 _Avoid_: Base Query, Zotero Query, DB Query
+
+**Annotation Query**:
+A query over the non-trashed Annotations of the non-trashed Attachments of top-level, non-trashed Items in its Target Libraries. It selects Annotations by their parent Item, by named Items or Attachments, and by Annotation predicates, and returns one Annotation Row per Annotation. A sibling of Item Query: the two share Target Libraries, the result envelope, and the Query Clock.
+_Avoid_: PDF annotation query (Attachments can be PDF, EPUB, or snapshot), annotation search, highlight query
+
+**Annotation Row**:
+One Annotation in the result of an Annotation Query. It carries the Annotation's Indexed Key, its parent Attachment and parent Item identities, and a flat map from each requested Projection Path to its value. Its position and Excerpt Image are available on request rather than by default.
+_Avoid_: annotation entry, annotation object, highlight row
 
 **Query Result**:
 The complete ordered set of projected Item rows that an Item Query returns.
