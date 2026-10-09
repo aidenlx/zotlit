@@ -100,6 +100,12 @@ DESCRIPTION
   Join conditions with &&, ||, and !. Group them with parentheses.
   Write text in double quotes. Names are case-sensitive.
 
+  A comparison of incompatible types can produce a warning on a successful
+  query. Read warnings before you report an empty result. Each warning marks
+  the comparison and can suggest a correction. Equality warnings require proof
+  that the operands cannot both be null; ordering different types is never true.
+  A warning describes the marked comparison, which can be part of a larger filter.
+
 FIELDS
   A bare name is a built-in field. In the downloaded schema catalog,
   fields[].filter gives the type a filter reads. Examples:

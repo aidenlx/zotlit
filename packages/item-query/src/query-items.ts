@@ -18,6 +18,7 @@ import type {
 
 import { planCandidates, readCandidates } from "./candidate-plan";
 import { compareStrings } from "./collation";
+import { diagnoseWarning } from "./diagnose";
 import type { ItemQueryError } from "./error";
 import type { SortKey } from "./fields";
 import { matches as isMatch } from "./filter-evaluate";
@@ -97,7 +98,8 @@ export function consumeQueryItems<A, E, R>(
 > {
   return Effect.gen(function* () {
     const { libraries } = request;
-    const { query, filter, paths, sorts } = yield* planRequest(request);
+    const { query, filter, paths, sorts, warnings } =
+      yield* planRequest(request);
     const { limit } = query;
     // One instant and one time zone for every date in the query.
     const clock = yield* readQueryClock;
@@ -212,6 +214,9 @@ export function consumeQueryItems<A, E, R>(
     // The projection pass: only the returned rows are hydrated.
     const consumer = yield* begin({
       query,
+      warnings: warnings.map((fault) =>
+        diagnoseWarning(fault, query.filter!, clock),
+      ),
       returnedCount: returned.length,
       truncated,
     });

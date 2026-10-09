@@ -122,6 +122,7 @@ export type FilterNode = NodeBase &
 /** A validated Filter Expression. */
 export interface FilterPlan {
   readonly root: FilterNode;
+  readonly warnings: readonly Extract<Fault, { kind: "constant" }>[];
   /** What hydration loads before the filter runs: one entry for each field. */
   readonly needs: readonly FieldNeeds[];
   /**
@@ -134,13 +135,16 @@ export interface FilterPlan {
   })[];
 }
 
-export type FilterProblem = Extract<
+type FilterFailure = Extract<
   Fault,
   { readonly kind: "plain" | "arity" | "argument-type" | "unreadable" }
 > & { readonly at: Span };
+export type FilterProblem =
+  | FilterFailure
+  | Extract<Fault, { readonly kind: "syntax" }>;
 
 class Invalid extends Error {
-  constructor(readonly problem: FilterProblem) {
+  constructor(readonly problem: FilterFailure) {
     super(problem.kind);
   }
 }
@@ -148,8 +152,6 @@ class Invalid extends Error {
 const quote = (text: string): string => JSON.stringify(text);
 
 const HINTS = {
-  syntax:
-    'Write one Filter Expression, such as itemType == "book" && tags.contains("to-read"). Omit the filter to match every Item.',
   field: `Use a field of the Item Query Schema, such as ${DEFAULT_FIELDS.join(", ")}. Field names are case-sensitive. Reach a custom field with custom["exact name"].`,
   custom: 'Name one custom field, such as custom["review.status"].',
   global: `Use a global function: ${GLOBAL_FUNCTION_NAMES.join(", ")}. Function names are case-sensitive.`,
@@ -167,22 +169,15 @@ const HINTS = {
 export function planFilter(text: string): FilterPlan | FilterProblem {
   const { ast, error } = parseExpressionAst(text);
   if (!ast) {
-    return {
-      kind: "plain",
-      code: "invalid-filter",
-      at: error,
-      message:
-        text.trim() === ""
-          ? "The filter is empty."
-          : `The filter has a syntax error at position ${error.from}.`,
-      action: HINTS.syntax,
-    };
+    return { kind: "syntax", fault: error };
   }
   const needs: FieldNeeds[] = [];
   const customFields: (Span & { name: string; bare: boolean })[] = [];
   try {
-    const root = new Validator(needs, customFields).node(ast);
-    return { root, needs, customFields };
+    const warnings: Extract<Fault, { kind: "constant" }>[] = [];
+    const root = new Validator(needs, customFields, warnings).node(ast);
+    warnings.sort((a, b) => a.at.from - b.at.from);
+    return { root, needs, customFields, warnings };
   } catch (thrown) {
     if (thrown instanceof Invalid) return thrown.problem;
     throw thrown;
@@ -206,7 +201,7 @@ const RESERVED_NAMES: ReadonlySet<string> = new Set([
   ...GLOBAL_FUNCTION_NAMES,
 ]);
 
-function fail(fault: FilterProblem): never {
+function fail(fault: FilterFailure): never {
   throw new Invalid(fault);
 }
 
@@ -306,6 +301,7 @@ class Validator {
   constructor(
     needs: FieldNeeds[],
     customFields: (Span & { name: string; bare: boolean })[],
+    readonly warnings: Extract<Fault, { kind: "constant" }>[],
   ) {
     this.#needs = needs;
     this.#customFields = customFields;
@@ -352,6 +348,32 @@ class Validator {
       case "binary": {
         const left = this.node(ast.left);
         const right = this.node(ast.right);
+        const equality = ast.operator === "==" || ast.operator === "!=";
+        const ordering = ["<", "<=", ">", ">="].includes(ast.operator);
+        const nonNull = (node: FilterNode) =>
+          node.kind === "list" ||
+          (node.kind === "literal" && node.value !== null);
+        if (
+          (ordering || (equality && (nonNull(left) || nonNull(right)))) &&
+          left.valueType !== "unknown" &&
+          right.valueType !== "unknown" &&
+          left.valueType !== right.valueType
+        ) {
+          this.warnings.push({
+            kind: "constant",
+            value: ast.operator === "!=",
+            operator: ast.operator,
+            left: {
+              type: left.valueType,
+              at: { from: ast.left.from, to: ast.left.to },
+            },
+            right: {
+              type: right.valueType,
+              at: { from: ast.right.from, to: ast.right.to },
+            },
+            at: span,
+          });
+        }
         return {
           ...span,
           kind: "binary",

@@ -88,7 +88,7 @@ const ARTICLE = item({
 function plan(expression: string): FilterPlan {
   const planned = planFilter(expression);
   if ("kind" in planned) {
-    throw new Error(`${expression}: ${planned.kind}`);
+    throw new Error(`${expression}: ${JSON.stringify(planned)}`);
   }
   return planned;
 }
@@ -1501,7 +1501,12 @@ describe("validation", () => {
     ["min == 1", "unknown-field", [0, 3]],
     ['if == "a"', "unknown-field", [0, 2]],
   ] as const)("rejects %j with %s at %j", (expression, code, [from, to]) => {
-    expect(problem(expression)).toMatchObject({
+    const fault = problem(expression);
+    if (fault.kind === "syntax") {
+      expect(fault.fault).toMatchObject({ from, to });
+      return;
+    }
+    expect(fault).toMatchObject({
       ...faultShape(code),
       at: { from, to },
     });
@@ -1519,7 +1524,9 @@ describe("validation", () => {
     ["true || title.contains(/a/)", "wrong-argument-type"],
     ["[1, noSuchFunction()].length", "unknown-function"],
   ] as const)("rejects the dead branch of %j with %s", (expression, code) => {
-    expect(problem(expression)).toMatchObject(faultShape(code));
+    const fault = problem(expression);
+    if (fault.kind === "syntax") expect(code).toBe("invalid-filter");
+    else expect(fault).toMatchObject(faultShape(code));
   });
 
   it.each([
@@ -1652,4 +1659,42 @@ describe("hydration needs", () => {
       { relations: ["collections"] },
     ]);
   });
+});
+
+// Failure modes: nullable cross-type values can both be null; an unknown
+// value can match; ordering stays null; a warning never changes evaluation.
+it.each([
+  ['tags == "bulk"', false, false],
+  ['tags != "bulk"', true, true],
+  ['date.year == "2019"', false, false],
+  ['dateAdded > "2020-01-01"', null, false],
+  ['number("bad") == date("bad")', true, undefined],
+  ['number("bad") != date("bad")', false, undefined],
+  ['number("bad") > date("bad")', null, false],
+  ['tags[0] == "bulk"', false, undefined],
+  ["date.year == null", true, undefined],
+  ['"a" == "b"', false, undefined],
+  ['if(true, 1, "x") == "x"', false, undefined],
+] as const)(
+  "warns only on a proven constant comparison: %s",
+  (text, value, warning) => {
+    const planned = plan(text);
+    expect(evaluate(planned.root, ARTICLE, CLOCK)).toEqual(value);
+    expect(planned.warnings).toEqual(
+      warning === undefined
+        ? []
+        : [
+            expect.objectContaining({
+              kind: "constant",
+              value: warning,
+            }),
+          ],
+    );
+  },
+);
+
+it("keeps the null value of a warned ordering inside a larger expression", () => {
+  const planned = plan('(number("bad") > date("bad")) == null');
+  expect(evaluate(planned.root, ARTICLE, CLOCK)).toBe(true);
+  expect(planned.warnings).toHaveLength(1);
 });

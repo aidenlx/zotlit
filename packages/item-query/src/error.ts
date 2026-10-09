@@ -32,7 +32,7 @@ export interface ItemQueryErrorLocation {
  * reads the database.
  */
 export class ItemQueryError extends Data.TaggedError("ItemQueryError")<{
-  readonly fault: Fault;
+  readonly fault: Exclude<Fault, { kind: "constant" }>;
   readonly location: ItemQueryErrorLocation;
 }> {
   get code(): ItemQueryErrorCode {

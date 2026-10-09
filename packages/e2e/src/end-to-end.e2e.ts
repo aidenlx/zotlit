@@ -2568,7 +2568,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ) as ItemQueryReport;
 
     expect(limited).toMatchObject({
-      contractVersion: 1,
+      contractVersion: 2,
       command: "zotlit:item-query",
       ok: true,
       libraries: inScope.map(wireOf),
@@ -2790,7 +2790,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ) as ItemQuerySchemaReport;
 
     expect(answer).toMatchObject({
-      contractVersion: 1,
+      contractVersion: 2,
       command: "zotlit:item-query-schema",
       ok: true,
       schema: {
@@ -2864,7 +2864,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ) as ItemQueryReport;
 
     expect(answer).toMatchObject({
-      contractVersion: 1,
+      contractVersion: 2,
       command: "zotlit:item-query",
       ok: false,
       diagnostic: {

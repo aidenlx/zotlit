@@ -106,7 +106,7 @@ type EnvelopeTail =
       request: object;
       returnedCount: number;
       truncated: boolean;
-      warnings: readonly Diagnostic[];
+      warnings: QuerySummary["warnings"];
       rows?: readonly { indexedKey: string; values: object }[];
       file?: { path: string; bytes: number; format: "json" };
     }
@@ -370,7 +370,7 @@ const createAnswer = Effect.fnUntraced(function* (
     request: { libraries: context.libraries.map(selectorKey), ...result.query },
     returnedCount: result.returnedCount,
     truncated: result.truncated,
-    warnings: [],
+    warnings: result.warnings,
   };
   const head = envelope(ITEM_QUERY_COMMAND, { ...summary, rows: [] });
   let text = "";

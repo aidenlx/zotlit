@@ -2,6 +2,7 @@
 // applies the defaults and resolves each name against the registries.
 import { Effect } from "effect";
 
+import type { Diagnostic } from "./diagnose";
 import { ItemQueryError } from "./error";
 import { DEFAULT_FIELDS, fieldDefinition } from "./fields";
 import type { FieldNeeds, QueryItem, SortKey } from "./fields";
@@ -79,6 +80,7 @@ export interface QueryRow {
 }
 
 export interface QueryResult {
+  readonly warnings: readonly Diagnostic<"never-true" | "always-true">[];
   /** The normalized request. */
   readonly query: ItemQuery;
   readonly rows: readonly QueryRow[];
@@ -89,6 +91,7 @@ export interface QueryResult {
 
 /** The validated form of a request that the engine executes. */
 export interface ItemQueryPlan {
+  readonly warnings: FilterPlan["warnings"];
   readonly query: ItemQuery;
   /** `null`: every Item matches. */
   readonly filter: FilterPlan | null;
@@ -136,7 +139,13 @@ export function planRequest(
       if ("kind" in planned) {
         return yield* new ItemQueryError({
           fault: planned,
-          location: { argument: "filter", span: planned.at },
+          location: {
+            argument: "filter",
+            span:
+              planned.kind === "syntax"
+                ? { from: planned.fault.from, to: planned.fault.to }
+                : planned.at,
+          },
         });
       }
       filter = planned;
@@ -203,6 +212,7 @@ export function planRequest(
         limit,
       },
       filter,
+      warnings: filter?.warnings ?? [],
       paths,
       sorts,
     };
