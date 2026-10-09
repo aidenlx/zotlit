@@ -526,6 +526,8 @@ describe("source-less presentation updates", () => {
 
   it("recovers from a database read failure without changing exact identity", async () => {
     await using run = workHarness();
+    // The connection validates the copy first; the read fails after it.
+    await (await run.db.acquireRead())[Symbol.asyncDispose]();
     run.db.lock();
     run.show();
     expect((await run.shown()).textContent).toBe(

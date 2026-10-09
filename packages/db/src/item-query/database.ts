@@ -1,19 +1,28 @@
 // The database seam of Item Query: the leased client as a service, the one
 // place where a statement becomes an Effect, and the layout check of a copy.
-import { version } from "@drizzle/schema";
-import { getLogger } from "@logtape/logtape";
-import { fillPlaceholders, inArray, sql } from "drizzle-orm";
+import { fillPlaceholders, sql } from "drizzle-orm";
 import type { AnyColumn, Query, SQL } from "drizzle-orm";
 import { Context, Data, Effect } from "effect";
 
 import type { NodeDatabaseClient } from "@/client/node";
+import {
+  columnsByTable,
+  hasVersionStamps,
+  knownLayout,
+  recordLayout,
+  selectLayoutColumns,
+  selectLayoutVersions,
+} from "@/layout";
+import type {
+  DatabaseLayout,
+  LayoutColumnRow,
+  LayoutVersionRow,
+} from "@/layout";
 import { defineQuery } from "@/queries/_shared";
 import type { QueryOperators } from "@/queries/_shared";
 
-import { findLayoutGaps, ItemQueryLayoutError } from "./layout";
-import type { LayoutVersions } from "./layout";
-
-const logger = getLogger(["zotlit", "db", "item-query"]);
+import { layoutErrorOf } from "./layout";
+import type { ItemQueryLayoutError } from "./layout";
 
 /**
  * A statement of an Item Query reader failed. It carries the statement, in the
@@ -55,7 +64,7 @@ export type ItemQueryReaderError =
 /** The reader a statement belongs to. */
 export type ItemQueryReader =
   | "layout"
-  | "source-libraries"
+  | "libraries"
   | "library-row-count"
   | "scan-page"
   | "candidate-set"
@@ -223,104 +232,49 @@ function uncheckedStatement<TParams extends Record<string, unknown>, TRow>(
 
 const columnsStatement = uncheckedStatement<
   Record<string, never>,
-  { table: string; column: string }
->("layout", (db) =>
-  db
-    .select({
-      table: sql<string>`m.name`,
-      column: sql<string>`c.name`,
-    })
-    .from(
-      sql`sqlite_schema as m join pragma_table_info(m.name) as c where m.type in ('table', 'view')`,
-    ),
-);
+  LayoutColumnRow
+>("layout", selectLayoutColumns);
 
 const versionsStatement = uncheckedStatement<
   Record<string, never>,
-  {
-    schema: string;
-    version: number;
-  }
->("layout", (db) =>
-  db
-    .select({ schema: version.schema, version: version.version })
-    .from(version)
-    .where(inArray(version.schema, ["userdata", "compatibility"])),
-);
+  LayoutVersionRow
+>("layout", selectLayoutVersions);
 
 /**
- * Read the layout of the copy: the columns of each table and view, and the
- * `userdata` and `compatibility` stamps when the copy has a `version` table.
+ * Read the layout of the copy through the Layout module (`src/layout/`), once
+ * for each copy. On a copy that a synchronous caller read first, no statement
+ * runs; else the two layout statements run through this seam, and the
+ * statement observer gets them.
  */
 export function readLayout(): Effect.Effect<
-  {
-    columns: ReadonlyMap<string, ReadonlySet<string>>;
-    versions: LayoutVersions;
-  },
+  DatabaseLayout,
   ItemQueryDatabaseError,
   ItemQueryDatabase
 > {
   return Effect.gen(function* () {
-    const columns = new Map(
-      [...Map.groupBy(yield* columnsStatement.all({}), (row) => row.table)].map(
-        ([table, rows]) => [table, new Set(rows.map((row) => row.column))],
-      ),
-    );
-    const stamped =
-      columns.get("version")?.has("schema") &&
-      columns.get("version")?.has("version");
-    const rows = stamped ? yield* versionsStatement.all({}) : [];
-    const stamp = (schema: string) =>
-      rows.find((row) => row.schema === schema)?.version ?? null;
-    return {
-      columns,
-      versions: {
-        userdata: stamp("userdata"),
-        compatibility: stamp("compatibility"),
-      },
-    };
+    const { client } = yield* ItemQueryDatabase;
+    const known = knownLayout(client);
+    if (known) return known;
+    const columns = columnsByTable(yield* columnsStatement.all({}));
+    const versionRows = hasVersionStamps(columns)
+      ? yield* versionsStatement.all({})
+      : [];
+    return recordLayout(client, columns, versionRows);
   });
 }
 
-/** The check result of each copy; a copy has one client. */
-const checkedCopies = new WeakMap<
-  NodeDatabaseClient,
-  ItemQueryLayoutError | null
->();
-
 /**
- * Verify once for each copy that it has every table and column of
- * `ITEM_QUERY_LAYOUT`. The result is kept for the life of the copy. The
- * version stamps are logged and do not gate the query.
+ * Verify that the copy has every table and column of `ITEM_QUERY_LAYOUT`,
+ * and give its layout. The layout is read once for each copy and kept for the
+ * life of the copy. The version stamps are logged and do not gate the query.
  */
 export function checkLayout(): Effect.Effect<
-  void,
+  DatabaseLayout,
   ItemQueryLayoutError | ItemQueryDatabaseError,
   ItemQueryDatabase
 > {
-  return Effect.gen(function* () {
-    const { client } = yield* ItemQueryDatabase;
-    let result = checkedCopies.get(client);
-    if (result === undefined) {
-      const layout = yield* readLayout();
-      const missing = findLayoutGaps(layout.columns);
-      result =
-        missing.length === 0
-          ? null
-          : new ItemQueryLayoutError({ missing, versions: layout.versions });
-      checkedCopies.set(client, result);
-      if (result) {
-        logger.warn(
-          "Item Query cannot read the layout of the Zotero database (userdata {userdata}, compatibility {compatibility}): {message}",
-          { ...layout.versions, message: result.message },
-        );
-      } else {
-        logger.debug(
-          "Item Query read the layout of the Zotero database (userdata {userdata}, compatibility {compatibility})",
-          { ...layout.versions },
-        );
-      }
-    }
-    if (result) return yield* Effect.fail(result);
+  return Effect.flatMap(readLayout(), (layout) => {
+    const error = layoutErrorOf(layout);
+    return error ? Effect.fail(error) : Effect.succeed(layout);
   });
 }

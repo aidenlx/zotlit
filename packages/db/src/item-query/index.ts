@@ -25,8 +25,13 @@ export {
   readFieldVocabulary,
   readHydrateChunk,
 } from "./hydrate-chunk";
-export { ItemQueryLayoutError, type LayoutVersions } from "./layout";
-export { readSourceLibraries, type SourceLibrary } from "./source-libraries";
+export {
+  checkDatabaseLayout,
+  ItemQueryLayoutError,
+  type LayoutGap,
+  type LayoutVersions,
+} from "./layout";
+export { readLibraries } from "./libraries";
 export {
   readScanPage,
   readUniverseRows,
