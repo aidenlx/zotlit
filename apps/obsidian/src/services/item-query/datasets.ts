@@ -1,11 +1,11 @@
 // The Query Dataset selected by from; command registration is shared.
 import { ANNOTATIONS, ATTACHMENTS, ITEMS } from "@zotlit/item-query";
-import type { AnnotationQueryRequest, QueryDataset } from "@zotlit/item-query";
+import type { ItemQueryRequest, QueryDataset } from "@zotlit/item-query";
 
 import type { QueryDatasetId } from "./worker-protocol";
 
 export interface CliDataset {
-  readonly engine: QueryDataset<AnnotationQueryRequest>;
+  readonly engine: QueryDataset<ItemQueryRequest>;
 }
 
 export const CLI_DATASETS: Readonly<Record<QueryDatasetId, CliDataset>> = {

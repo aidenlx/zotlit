@@ -283,6 +283,7 @@ export const readAttachmentRowCount = (libraryID: number) =>
   Effect.map(attachmentCount.all({ libraryID }), (rows) => rows[0]?.rows ?? 0);
 
 export type AttachmentCandidateLeaf =
+  | { readonly kind: "keys"; readonly keys: readonly string[] }
   | { readonly kind: "parent"; readonly leaf: CandidateLeaf }
   | {
       readonly kind: "key" | "contentType" | "linkMode";
@@ -302,11 +303,13 @@ interface AttachmentCandidateParams extends Record<string, unknown> {
 const attachmentCandidates = (
   kind:
     | "key"
+    | "keys"
     | "contentType"
     | "linkMode"
     | "tag"
     | "parent-tag"
     | "parent-key"
+    | "parent-keys"
     | "parent-field"
     | "parent-collection",
 ) =>
@@ -324,11 +327,13 @@ const attachmentCandidates = (
         );
       const condition = {
         key: eq(items.key, p("value")),
+        keys: sql`${items.key} in (${list})`,
         contentType: eq(itemAttachments.contentType, p("value")),
         linkMode: sql`case ${itemAttachments.linkMode} when 0 then 'imported_file' when 1 then 'imported_url' when 2 then 'linked_file' when 3 then 'linked_url' end = ${p("value")}`,
         tag: tagged(items.itemID),
         "parent-tag": tagged(parent.itemID),
         "parent-key": eq(parent.key, p("value")),
+        "parent-keys": sql`${parent.key} in (${list})`,
         "parent-field": inArray(
           parent.itemID,
           db
@@ -368,11 +373,13 @@ const attachmentCandidates = (
   );
 const attachmentCandidateStatements = {
   key: attachmentCandidates("key"),
+  keys: attachmentCandidates("keys"),
   contentType: attachmentCandidates("contentType"),
   linkMode: attachmentCandidates("linkMode"),
   tag: attachmentCandidates("tag"),
   "parent-tag": attachmentCandidates("parent-tag"),
   "parent-key": attachmentCandidates("parent-key"),
+  "parent-keys": attachmentCandidates("parent-keys"),
   "parent-field": attachmentCandidates("parent-field"),
   "parent-collection": attachmentCandidates("parent-collection"),
 };
@@ -396,6 +403,9 @@ export function readAttachmentCandidateSet({
       case "tag":
         value = leaf.leaf.name;
         break;
+      case "keys":
+        list = leaf.leaf.keys;
+        break;
       case "key":
         value = leaf.leaf.key;
         break;
@@ -407,6 +417,9 @@ export function readAttachmentCandidateSet({
         list = leaf.leaf.collectionIDs;
         break;
     }
+  } else if (leaf.kind === "keys") {
+    kind = "keys";
+    list = leaf.keys;
   } else {
     kind = leaf.kind;
     value = leaf.value;

@@ -367,7 +367,7 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
           "type": "object",
         },
         {
-          "filter": null,
+          "filter": "string",
           "path": "attachment.indexedKey",
           "projection": true,
           "sort": true,
@@ -1729,7 +1729,21 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
           "type": "string",
         },
         {
-          "filter": null,
+          "filter": "string",
+          "path": "key",
+          "projection": false,
+          "sort": false,
+          "type": "string",
+        },
+        {
+          "filter": "string",
+          "path": "indexedKey",
+          "projection": false,
+          "sort": false,
+          "type": "string",
+        },
+        {
+          "filter": "string",
           "path": "item.indexedKey",
           "projection": true,
           "sort": false,
@@ -4724,6 +4738,13 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
         {
           "filter": "string",
           "path": "key",
+          "projection": false,
+          "sort": false,
+          "type": "string",
+        },
+        {
+          "filter": "string",
+          "path": "indexedKey",
           "projection": false,
           "sort": false,
           "type": "string",

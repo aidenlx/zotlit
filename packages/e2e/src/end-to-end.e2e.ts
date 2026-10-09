@@ -2680,6 +2680,35 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           },
         ],
       });
+      for (const filter of [
+        'indexedKey == "RGRPDF24"',
+        '["RGRPDF24"].contains(indexedKey)',
+        `item.indexedKey == ${JSON.stringify(paper.key)}`,
+        `[${JSON.stringify(paper.key)}].contains(item.indexedKey)`,
+      ]) {
+        const selected = await query({
+          filter,
+          fields: "title,contentType,path",
+          limit: "all",
+        });
+        expect(selected).toMatchObject({
+          ok: true,
+          rows: answer.rows,
+          warnings: [],
+        });
+      }
+      const outsideKey = `RGRPDF24g${LIBRARIES.find((library) => library.groupID !== null)!.groupID}`;
+      const scoped = await query({
+        library: "personal",
+        filter: `indexedKey == "${outsideKey}" || indexedKey == "RGRPDF24"`,
+        fields: "title,contentType,path",
+      });
+      expect(scoped).toMatchObject({
+        ok: true,
+        libraries: [{ type: "personal" }],
+        rows: answer.rows,
+        warnings: [{ code: "key-outside-target-libraries", found: outsideKey }],
+      });
       const schema = JSON.parse(
         await cliCommand(queryVaultId, "zotlit:query-schema", {
           args: { from: "attachments" },
@@ -3102,7 +3131,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await keepRendering(queryVaultId);
     const report = JSON.parse(
       await cliCommand(queryVaultId, "zotlit:query", {
-        args: { from: "annotations", item: annotationItem.key, limit: "all" },
+        args: {
+          from: "annotations",
+          filter: `item.indexedKey == "${annotationItem.key}"`,
+          limit: "all",
+        },
       }),
     ) as ItemQueryReport;
     expect(report).toMatchObject({
@@ -3138,8 +3171,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await cliCommand(queryVaultId, "zotlit:query", {
         args: {
           from: "annotations",
-          item: annotationItem.key,
-          filter: `type == "image" && item.title == ${JSON.stringify(annotationItem.title)}`,
+          filter: `item.indexedKey == "${annotationItem.key}" && type == "image" && item.title == ${JSON.stringify(annotationItem.title)}`,
           fields: "type,item.title,item.date",
           sort: "pageIndex",
           limit: "all",
@@ -3205,7 +3237,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await cliCommand(queryVaultId, "zotlit:query", {
         args: {
           from: "annotations",
-          item: JSON.stringify([annotationItem.key, positionDocumentItem.key]),
+          filter: `${JSON.stringify([annotationItem.key, positionDocumentItem.key])}.contains(item.indexedKey)`,
           fields: "position",
           limit: "all",
         },
@@ -3519,44 +3551,61 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
   });
 
-  it("preserves ZotLit Query Annotation selector JSON paths and Library conflicts", async () => {
-    for (const probe of [
-      { args: { item: '["QANITM22", 3]' }, argument: "item", path: "item[1]" },
-      {
-        args: { attachment: '["QANPDF22", "invalid"]' },
-        argument: "attachment",
-        path: "attachment[1]",
-      },
-      {
-        args: { item: "QANITM22", library: "personal" },
-        argument: "library",
-        path: "library",
-      },
-    ]) {
+  it("rejects retired ZotLit Query selectors with filter guidance", async () => {
+    for (const parameter of ["item", "attachment"]) {
       const result = JSON.parse(
         await cliCommand(vaultId, "zotlit:query", {
           args: {
             from: "annotations",
-            ...Object.fromEntries(
-              Object.entries(probe.args).filter(
-                (entry): entry is [string, string] => entry[1] !== undefined,
-              ),
-            ),
+            [parameter]: "QANITM22",
+            library: "personal",
           },
         }),
       ) as ItemQueryReport;
       expect(result).toMatchObject({
-        contractVersion: 3,
-        command: "zotlit:query",
         ok: false,
         diagnostic: {
           code: "invalid-argument",
-          location: { argument: probe.argument, path: probe.path },
+          location: { argument: parameter },
+          hint: `Use filter='${parameter}.indexedKey == "<key>"' to select by Indexed Key.`,
         },
       });
-      expect(result.diagnostic!.report[0]).toBe(result.diagnostic!.message);
       expect(result.diagnostic!.report.at(-1)).toBe(result.diagnostic!.hint);
     }
+  });
+
+  it("warns for a ZotLit Query Indexed Key outside the Target Libraries", async () => {
+    const groupLibrary = LIBRARIES.find((library) => library.groupID !== null)!;
+    const groupItem = ITEMS.find(
+      (item) => item.libraryID === groupLibrary.libraryID,
+    )!;
+    const indexedKey = `${groupItem.key}g${groupLibrary.groupID}`;
+    const result = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: {
+          library: "personal",
+          filter: `indexedKey == "${indexedKey}"`,
+          fields: "[]",
+          limit: "all",
+        },
+      }),
+    ) as ItemQueryReport;
+    expect(result).toMatchObject({
+      ok: true,
+      rows: [],
+      returnedCount: 0,
+      truncated: false,
+      libraries: [{ type: "personal" }],
+      request: { library: ["personal"] },
+      warnings: [
+        {
+          code: "key-outside-target-libraries",
+          severity: "warning",
+          found: indexedKey,
+          suggestions: [`library=personal,group:${groupLibrary.groupID}`],
+        },
+      ],
+    });
   });
 
   it("answers a -- token on a required or format parameter with the zotlit decoder's diagnostic", async () => {

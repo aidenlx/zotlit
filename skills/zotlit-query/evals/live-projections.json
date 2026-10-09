@@ -300,7 +300,7 @@
       "request": {
         "from": "annotations",
         "library": ["group:118"],
-        "filter": null,
+        "filter": "[\"QANPDF22g118\"].contains(attachment.indexedKey)",
         "fields": [
           "type",
           "pageLabel",
@@ -315,8 +315,7 @@
             "direction": "asc"
           }
         ],
-        "limit": null,
-        "attachment": ["QANPDF22g118"]
+        "limit": null
       },
       "returnedCount": 2,
       "truncated": false,
@@ -586,7 +585,7 @@
       "request": {
         "from": "annotations",
         "library": ["group:118"],
-        "filter": null,
+        "filter": "[\"QANPDF22g118\"].contains(attachment.indexedKey)",
         "fields": ["type", "pageLabel", "text", "comment", "attachment.path"],
         "sort": [
           {
@@ -602,8 +601,7 @@
             "direction": "asc"
           }
         ],
-        "limit": null,
-        "attachment": ["QANPDF22g118"]
+        "limit": null
       },
       "returnedCount": 2,
       "truncated": false,
@@ -690,7 +688,7 @@
       "request": {
         "from": "annotations",
         "library": ["group:118"],
-        "filter": null,
+        "filter": "[\"QANPDF22g118\"].contains(attachment.indexedKey)",
         "fields": ["type", "pageLabel", "text", "comment", "attachment.path"],
         "sort": [
           {
@@ -706,8 +704,7 @@
             "direction": "asc"
           }
         ],
-        "limit": null,
-        "attachment": ["QANPDF22g118"]
+        "limit": null
       },
       "returnedCount": 2,
       "truncated": false,

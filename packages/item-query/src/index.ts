@@ -38,7 +38,6 @@ export {
 } from "./query";
 export { COUNT_FIELDS, UNLIMITED_LIMIT } from "./request";
 export type {
-  AnnotationQueryRequest,
   ItemQuery,
   ItemQueryRequest,
   ProjectionValue,

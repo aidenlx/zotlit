@@ -112,6 +112,18 @@ FIELDS
   key is the Zotero Key of the Item inside its Library. Two Libraries can
   hold the same key; the Indexed Key of a row names one Item:
     ${filter('key == "ABCD2345"')}
+  Select one Indexed Key, or a list of Indexed Keys, on any Query Dataset.
+  On Attachments and Annotations, item.indexedKey selects the parent Item.
+  The same equality and list forms apply to these parent paths:
+    ${example({ filter: 'indexedKey == "ART2FULL"' })}
+    ${example({ filter: '["ART2FULL", "BK2MNTH2"].contains(indexedKey)', library: "personal" })}
+  An Indexed Key without a suffix names My Library. A g<groupID> suffix names
+  that group. key == "ART2FULL" matches that bare Zotero key in each Target
+  Library; indexedKey == "ART2FULL" matches My Library only.
+  A key outside the Target Libraries gives a Query Warning with its key,
+  Library selector, and the library value that includes it. The query reads
+  only the Target Libraries, even when another filter branch matches.
+  Check warnings before you report an empty result.
   attachments is true when the Item has an Attachment outside the trash:
     ${filter("!attachments")}
 
@@ -418,7 +430,8 @@ const DATASETS_SECTION = `Query datasets
   The annotation default fields are ${listOf(ANNOTATIONS.defaultFields)}.
   Its default sort is ${listOf(ANNOTATIONS.defaultSort.map(({ field, direction }) => `${field} ${direction}`))}.
     ${example({ from: "items", fields: "title,date.year", limit: "5" })}
-    ${example({ from: "annotations", fields: "text,item.title,attachment.path", limit: "5" })}`;
+    ${example({ from: "annotations", fields: "text,item.title,attachment.path", limit: "5" })}
+    ${example({ from: "annotations", filter: 'item.indexedKey == "ART2FULL"', fields: "text,item.title", limit: "all" })}`;
 
 /** Canonical topic registry shared by parsing, generated help, and the index. */
 export const GUIDE_TOPICS = {

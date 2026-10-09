@@ -45,7 +45,6 @@ export const ATTACHMENTS: QueryDataset<ItemQueryRequest> = {
   names: [
     ...ATTACHMENT_FIELDS.keys(),
     "item",
-    "item.indexedKey",
     ...BUILT_IN_NAMES.map((name) => PARENT + name),
   ],
   sortableFields: ATTACHMENT_SORT_FIELDS,

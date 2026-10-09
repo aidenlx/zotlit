@@ -3142,3 +3142,68 @@ describe.each(DATASETS)(
     });
   },
 );
+
+// Failure modes: an out-of-scope Indexed Key widens the read, loses its warning
+// on an empty result, or hides a warning when another branch matches.
+it.each([false, true])(
+  "warns for an Indexed Key outside the Target Libraries (matching branch: %s)",
+  async (matching) => {
+    using scenario = openScenarioDatabase();
+    const found = await result(scenario, {
+      libraries: [personal],
+      filter: `indexedKey == "ART2FULLg4815"${matching ? ' || indexedKey == "ART2FULL"' : ""}`,
+      fields: [],
+    });
+    expect(keys(found)).toEqual(matching ? ["ART2FULL"] : []);
+    expect(found.warnings).toMatchObject([
+      {
+        code: "key-outside-target-libraries",
+        severity: "warning",
+        found: "ART2FULLg4815",
+        suggestions: ["library=personal,group:4815"],
+      },
+    ]);
+    expect(found.warnings[0]?.message).toContain("group:4815");
+  },
+);
+
+// Indexed Keys are Library-specific; bare Zotero keys are Library-local.
+it.each([
+  ['indexedKey == "ART2FULL"', ["ART2FULL"]],
+  ['indexedKey == "ART2FULLg4815"', ["ART2FULLg4815"]],
+  [
+    '["ART2FULL", "ART2FULLg4815"].contains(indexedKey)',
+    ["ART2FULL", "ART2FULLg4815"],
+  ],
+  ['key == "ART2FULL"', ["ART2FULL", "ART2FULLg4815"]],
+  ['indexedKey == "bad"', []],
+] as const)(
+  "selects Items across two Libraries with %s",
+  async (filter, expected) => {
+    using scenario = openScenarioDatabase();
+    const found = await result(scenario, {
+      libraries: [personal, group],
+      filter,
+      fields: [],
+      sort: [],
+    });
+    expect(keys(found)).toEqual(expected);
+    expect(found.warnings).toEqual([]);
+  },
+);
+it("warns that a bare Indexed Key names My Library under a group-only scope", async () => {
+  using scenario = openScenarioDatabase();
+  const found = await result(scenario, {
+    libraries: [group],
+    filter: 'indexedKey == "ART2FULL"',
+    fields: [],
+  });
+  expect(found.rows).toEqual([]);
+  expect(found.warnings).toMatchObject([
+    {
+      found: "ART2FULL",
+      expected: ["personal"],
+      suggestions: ["library=group:4815,personal"],
+    },
+  ]);
+});

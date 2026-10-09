@@ -257,3 +257,142 @@ it("keeps the Library and parent identity of the same Attachment key in two Libr
     },
   ]);
 });
+
+// Failure modes: selecting the wrong Library or parent, losing list members,
+// widening scope, dropping warnings on a matching branch, and scan fallback.
+it.each([
+  ['indexedKey == "PDF2LIVE"', ["PDF2LIVE"]],
+  ['"PDF2GRUPg4815" == indexedKey', ["PDF2GRUPg4815"]],
+  [
+    '["PDF2LIVE", "PDF2GRUPg4815"].contains(indexedKey)',
+    ["PDF2GRUPg4815", "PDF2LIVE"],
+  ],
+  ['item.indexedKey == "ART2FULLg4815"', ["PDF2GRUPg4815"]],
+  ['["ART2FULLg4815"].contains(item.indexedKey)', ["PDF2GRUPg4815"]],
+] as const)(
+  "selects Attachments across two Libraries with %s",
+  async (filter, expected) => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    for (const forceScan of [false, true]) {
+      const { exit, events } = await runEffect(
+        collectQuery(ATTACHMENTS, {
+          libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
+          filter,
+          fields: [],
+          sort: [],
+        }),
+        { client: scenario.db, tuning: { forceScan, capRatio: 1 } },
+      );
+      if (exit._tag === "Failure") throw new Error(String(exit.cause));
+      expect(exit.value.rows.map((row) => row.indexedKey).toSorted()).toEqual(
+        expected,
+      );
+      expect(exit.value.warnings).toEqual([]);
+      expect(
+        events.some(
+          (event) =>
+            event.type === "statement" &&
+            event.statement.reader === "attachment-candidate-set",
+        ),
+      ).toBe(!forceScan);
+    }
+  },
+);
+
+it.each(["indexedKey", "item.indexedKey"])(
+  "warns without widening Attachment scope for %s",
+  async (field) => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    const key = field === "indexedKey" ? "PDF2GRUPg4815" : "ART2FULLg4815";
+    for (const matching of [false, true]) {
+      for (const forceScan of [false, true]) {
+        const { exit } = await runEffect(
+          collectQuery(ATTACHMENTS, {
+            libraries: [SCENARIO_LIBRARIES.personal],
+            filter: `${field} == "${key}"${matching ? ' || indexedKey == "PDF2LIVE"' : ""}`,
+            fields: [],
+          }),
+          { client: scenario.db, tuning: { forceScan } },
+        );
+        if (exit._tag === "Failure") throw new Error(String(exit.cause));
+        expect(exit.value.rows.map((row) => row.indexedKey)).toEqual(
+          matching ? ["PDF2LIVE"] : [],
+        );
+        expect(exit.value.warnings).toMatchObject([
+          {
+            code: "key-outside-target-libraries",
+            found: key,
+            expected: ["group:4815"],
+            suggestions: ["library=personal,group:4815"],
+          },
+        ]);
+      }
+    }
+  },
+);
+
+it.each(["indexedKey", "item.indexedKey"])(
+  "warns for a personal %s in a group-only Attachment list selection",
+  async (field) => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    const key = field === "indexedKey" ? "PDF2GRUP" : "ART2FULL";
+    for (const forceScan of [false, true]) {
+      const { exit } = await runEffect(
+        collectQuery(ATTACHMENTS, {
+          libraries: [SCENARIO_LIBRARIES.group],
+          filter: `["${key}", "${key}g4815"].contains(${field})`,
+          fields: [],
+        }),
+        { client: scenario.db, tuning: { forceScan } },
+      );
+      if (exit._tag === "Failure") throw new Error(String(exit.cause));
+      expect(exit.value.rows.map((row) => row.indexedKey)).toEqual([
+        "PDF2GRUPg4815",
+      ]);
+      expect(exit.value.warnings).toMatchObject([
+        {
+          code: "key-outside-target-libraries",
+          found: key,
+          expected: ["personal"],
+          suggestions: ["library=group:4815,personal"],
+        },
+      ]);
+    }
+  },
+);
+
+it("caps parent Indexed Key expansion and falls back to the Attachment scan", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const request = {
+    libraries: [SCENARIO_LIBRARIES.personal],
+    filter: 'item.indexedKey == "ART2FULL"',
+    fields: [],
+    sort: [],
+  };
+  const limited = await runEffect(collectQuery(ATTACHMENTS, request), {
+    client: scenario.db,
+  });
+  const scanned = await runEffect(collectQuery(ATTACHMENTS, request), {
+    client: scenario.db,
+    tuning: { forceScan: true },
+  });
+  expect(limited.exit).toEqual(scanned.exit);
+  if (limited.exit._tag === "Failure")
+    throw new Error(String(limited.exit.cause));
+  expect(limited.exit.value.returnedCount).toBe(4);
+  expect(
+    limited.events.some(
+      (event) =>
+        event.type === "statement" &&
+        event.statement.reader === "attachment-scan-page",
+    ),
+  ).toBe(true);
+  const candidate = limited.events.find(
+    (event) =>
+      event.type === "statement" &&
+      event.statement.reader === "attachment-candidate-set",
+  );
+  expect(candidate).toMatchObject({ statement: { rows: expect.any(Array) } });
+  if (candidate?.type === "statement")
+    expect(candidate.statement.rows).toHaveLength(2);
+});

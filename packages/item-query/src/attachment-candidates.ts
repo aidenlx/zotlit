@@ -4,11 +4,21 @@ import type { QueryAttachment } from "./attachment-fields";
 import { equality, lowerItemCandidate } from "./candidate-plan";
 import type { CandidateSources } from "./candidate-plan";
 import type { FilterNode } from "./filter-plan";
+import { lowerIndexedKeySelection } from "./indexed-key-selection";
 
 export function lowerAttachmentCandidate(
   node: FilterNode<QueryAttachment>,
   sources: CandidateSources,
 ): AttachmentCandidateLeaf | null {
+  const selection = lowerIndexedKeySelection(
+    node,
+    "attachments",
+    sources.library,
+  );
+  if (selection?.target === "self")
+    return { kind: "keys", keys: selection.keys };
+  if (selection?.target === "item")
+    return { kind: "parent", leaf: { kind: "keys", keys: selection.keys } };
   const equals = equality(
     node,
     (name) => name === "key" || name === "contentType" || name === "linkMode",

@@ -135,3 +135,55 @@ it("reads Tags and parent Collection candidates in one statement per requested c
   run(readAttachmentHydrateChunk({ rows, details: true }));
   expect(readers).toEqual(["attachment-details"]);
 });
+
+it("reads bounded Attachment and parent key lists inside one Library", () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const run = <A, E>(effect: Effect.Effect<A, E, ItemQueryDatabase>) =>
+    Effect.runSync(
+      Effect.provideService(effect, ItemQueryDatabase, { client: scenario.db }),
+    );
+  const live = (
+    libraryID: number,
+    leaf: Parameters<typeof readAttachmentCandidateSet>[0]["leaf"],
+  ) =>
+    run(
+      readAttachmentUniverseRows({
+        libraryID,
+        itemIDs: run(
+          readAttachmentCandidateSet({ libraryID, leaf, limit: 100 }),
+        ),
+      }),
+    ).map((row) => row.key);
+  expect(
+    live(1, {
+      kind: "keys",
+      keys: [
+        "PDF2LIVE",
+        "PDF2TRSH",
+        "PDF2SOLO",
+        "PDF2DEAD",
+        "PDF2CHLD",
+        "PDF2GRUP",
+      ],
+    }),
+  ).toEqual(["PDF2LIVE"]);
+  expect(
+    live(SCENARIO_LIBRARIES.group.libraryID, {
+      kind: "keys",
+      keys: ["PDF2LIVE", "PDF2GRUP"],
+    }),
+  ).toEqual(["PDF2GRUP"]);
+  expect(
+    live(1, { kind: "parent", leaf: { kind: "keys", keys: ["ART2FULL"] } }),
+  ).toEqual(["PDF2LINK", "PDF2LIVE", "URL2LIVE", "WEB2LIVE"]);
+  expect(live(1, { kind: "keys", keys: [] })).toEqual([]);
+  expect(
+    run(
+      readAttachmentCandidateSet({
+        libraryID: 1,
+        leaf: { kind: "parent", leaf: { kind: "keys", keys: ["ART2FULL"] } },
+        limit: 2,
+      }),
+    ),
+  ).toHaveLength(2);
+});

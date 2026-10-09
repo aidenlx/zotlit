@@ -32,11 +32,13 @@ export function describeAttachmentQueryVocabulary() {
     ],
   );
   fields.push(
-    ...item.fields.map((field) => ({
-      ...field,
-      path: `item.${field.path}`,
-      sort: false,
-    })),
+    ...item.fields
+      .filter((field) => field.path !== "indexedKey")
+      .map((field) => ({
+        ...field,
+        path: `item.${field.path}`,
+        sort: false,
+      })),
   );
   fields.push(
     {

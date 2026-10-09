@@ -154,3 +154,50 @@ it("counts the live Annotation universe and applies a candidate limit after the 
     ),
   ).toHaveLength(1);
 });
+
+// Failure modes: keys select the wrong parent level, cross Libraries, or exceed
+// the cap after the parent join. The universe reader proves the returned rows.
+it.each([
+  ["self", ["ANN2HGHT", "ANN2GRUP"], 1],
+  ["item", ["ART2FULL"], 12],
+  ["attachment", ["PDF2LIVE", "PDF2GRUP"], 6],
+] as const)(
+  "reads bounded Annotation key candidates through %s",
+  (target, keys, count) => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    const run = <A, E>(effect: Effect.Effect<A, E, ItemQueryDatabase>) =>
+      Effect.runSync(
+        Effect.provideService(effect, ItemQueryDatabase, {
+          client: scenario.db,
+        }),
+      );
+    const leaf = { kind: "keys" as const, target, keys };
+    const ids = run(
+      readAnnotationCandidateSet({ libraryID: 1, leaf, limit: 100 }),
+    );
+    expect(
+      run(readAnnotationUniverseRows({ libraryID: 1, itemIDs: ids })),
+    ).toHaveLength(count);
+    expect(
+      run(
+        readAnnotationCandidateSet({
+          libraryID: SCENARIO_LIBRARIES.group.libraryID,
+          leaf,
+          limit: 100,
+        }),
+      ),
+    ).toHaveLength(1);
+    expect(
+      run(readAnnotationCandidateSet({ libraryID: 1, leaf, limit: 1 })),
+    ).toHaveLength(1);
+    expect(
+      run(
+        readAnnotationCandidateSet({
+          libraryID: 1,
+          leaf: { ...leaf, keys: [] },
+          limit: 100,
+        }),
+      ),
+    ).toEqual([]);
+  },
+);

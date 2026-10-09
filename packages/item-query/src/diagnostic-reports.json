@@ -971,5 +971,17 @@
       "         ^",
       "Use !, (, -, [, a name, a number, a regular expression, a string, false, null, true."
     ]
+  },
+  {
+    "name": "Indexed Key outside Target Libraries",
+    "request": {
+      "filter": "indexedKey == \"ART2FULLg4815\""
+    },
+    "report": [
+      "Indexed Key \"ART2FULLg4815\" names group:4815, which is outside the Target Libraries.",
+      "indexedKey == \"ART2FULLg4815\"",
+      "              ^^^^^^^^^^^^^^^^^",
+      "Use library=personal,group:4815 to include group:4815."
+    ]
   }
 ]

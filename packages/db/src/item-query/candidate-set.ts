@@ -43,6 +43,7 @@ export type CandidateLeaf =
   | { readonly kind: "tag"; readonly name: string }
   /** The Item with this Zotero Key. */
   | { readonly kind: "key"; readonly key: string }
+  | { readonly kind: "keys"; readonly keys: readonly string[] }
   /**
    * The Items that store this exact value in one of these fields. Give every
    * field ID of a built-in field and its aliases (`FieldVocabulary.fieldIDsOf`).
@@ -80,6 +81,18 @@ interface CollectionParams extends CandidateParams {
 }
 
 const candidateStatements = {
+  keys: defineStatement<ValueParams>("candidate-set")((db, { placeholder }) =>
+    db
+      .select({ itemID: items.itemID })
+      .from(items)
+      .where(
+        and(
+          eq(items.libraryID, placeholder("libraryID")),
+          sql`${items.key} in (select value from json_each(${placeholder("value")}))`,
+        ),
+      )
+      .limit(placeholder("limit")),
+  ),
   tag: defineStatement<ValueParams>("candidate-set")((db, { placeholder }) =>
     db
       .select({ itemID: itemTags.itemID })
@@ -188,6 +201,11 @@ function leafRows(
   switch (leaf.kind) {
     case "tag":
       return candidateStatements.tag.all({ ...scope, value: leaf.name });
+    case "keys":
+      return candidateStatements.keys.all({
+        ...scope,
+        value: JSON.stringify(leaf.keys),
+      });
     case "key":
       return candidateStatements.key.all({ ...scope, value: leaf.key });
     case "field":

@@ -98,6 +98,17 @@ describe("the rows a limited query retains", () => {
       request: { filter, fields: ["title"], limit: LIMIT },
       items: 520,
     })),
+    ...[
+      'indexedKey == "ATT22222g2718"',
+      '["ATT22222g2718"].contains(indexedKey)',
+      'item.indexedKey == "BLK22222g2718"',
+      '["BLK22222g2718"].contains(item.indexedKey)',
+    ].map((filter) => ({
+      name: `an Attachment Indexed Key candidate for ${filter}`,
+      attachment: true,
+      request: { filter, fields: ["title"], limit: LIMIT },
+      items: 1,
+    })),
     {
       name: "an Attachment key candidate",
       attachment: true,
