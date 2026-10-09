@@ -2606,9 +2606,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   }, 120_000);
 
   it("projects library selectors through zotlit:item-query across the Fixture Libraries", async () => {
-    const sharedReading = LIBRARIES.find(
-      (library) => library.groupID !== null,
-    )!;
     const answer = JSON.parse(
       await cliCommand(vaultId, "zotlit:item-query", {
         args: { libraries: "all", fields: '["citationKey","library"]' },
@@ -2618,7 +2615,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(answer.returnedCount).toBe(ITEMS.length);
     expect(answer.truncated).toBe(false);
     expect(new Set(answer.rows!.map((row) => row.values.library))).toEqual(
-      new Set(["personal", `group:${sharedReading.groupID}`]),
+      new Set(
+        LIBRARIES.map(({ groupID }) =>
+          groupID === null ? "personal" : `group:${groupID}`,
+        ),
+      ),
     );
     for (const library of LIBRARIES) {
       for (const item of ITEMS.filter(
