@@ -80,9 +80,8 @@ jobs:
       - name: Lint
         run: pnpm lint -- -f github
 
-      # Vitest's `github-actions` reporter emits ::error for inline test
-      # annotations; `default` provides console output. Reporters are passed
-      # via turbo passthrough.
+      # Vitest enables its GitHub Actions reporter from GITHUB_ACTIONS.
+      # Each runner uses its own defaults: @zotlit/config uses node --test.
       #
       # One package at a time: the runner has 4 vCPU, and turbo's default
       # concurrency of 10 against the `maxWorkers` in vitest.base.ts puts up to
@@ -90,4 +89,4 @@ jobs:
       # however little the test does, so each package keeps its own pool on the
       # cores it has.
       - name: Test
-        run: pnpm turbo run test --concurrency=1 -- --reporter=default --reporter=github-actions
+        run: pnpm turbo run test --concurrency=1

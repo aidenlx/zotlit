@@ -27,7 +27,8 @@
       "dependsOn": ["^build", "transit"]
     },
     "test": {
-      "dependsOn": ["^build", "transit"]
+      "dependsOn": ["^build", "transit"],
+      "env": ["GITHUB_ACTIONS"]
     },
     "fixture": {
       "dependsOn": [
