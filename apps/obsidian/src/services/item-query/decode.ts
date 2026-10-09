@@ -11,14 +11,17 @@ import { isAbsolute } from "node:path";
 import type { CliData } from "obsidian";
 import * as v from "valibot";
 
+import { UNLIMITED_LIMIT } from "@zotlit/item-query";
+
 import {
+  cliMaybeEmpty,
   cliParams,
   cliText,
   cliVariants,
   decodeCliParams,
   noCliParams,
 } from "@/lib/cli-params";
-import type { CliParamName, CliRejection, CliRequest } from "@/lib/cli-params";
+import type { CliParamName, CliRequest } from "@/lib/cli-params";
 import {
   compareSelectors,
   selectorKey,
@@ -31,7 +34,6 @@ import type {
 
 import {
   DEFAULT_CLI_LIMIT,
-  diagnostic,
   ITEM_QUERY_CANCEL_COMMAND,
   ITEM_QUERY_COMMAND,
   ITEM_QUERY_GUIDE_COMMAND,
@@ -39,9 +41,10 @@ import {
   QUERY_ID_FORM,
   QUERY_ID_MAX_LENGTH,
 } from "./contract";
-import type { Diagnostic } from "./contract";
 import { GUIDE_TOPIC_NAMES } from "./guide";
 import type { GuideTopic } from "./guide";
+
+export { rejectionDiagnostic } from "./contract";
 
 /** The Libraries the caller names, as a scope that needs each of them. */
 export interface NamedLibraries {
@@ -64,24 +67,17 @@ const queryId = v.pipe(
 
 /**
  * A parameter that carries JSON. Text that is no JSON answers its own
- * message; JSON of another shape answers `<parameter> is not <expected>.`
- * unless a check of `schema` gives a message of its own.
+ * message; valid JSON keeps the first issue raised by `schema`.
  */
 function jsonParameter<TSchema extends v.GenericSchema>(
   parameter: string,
   expected: string,
   schema: TSchema,
 ) {
-  return v.config(
-    v.pipe(
-      v.string(),
-      v.parseJson(
-        undefined,
-        `${parameter} is not valid JSON: use ${expected}.`,
-      ),
-      schema,
-    ),
-    { message: `${parameter} is not ${expected}.` },
+  return v.pipe(
+    v.string(),
+    v.parseJson(undefined, `${parameter} is not valid JSON: use ${expected}.`),
+    schema,
   );
 }
 
@@ -139,9 +135,9 @@ const notPositiveInteger = (issue: { input: unknown }) =>
   `limit '${String(issue.input)}' is not a positive integer: use a positive integer, or all for every match.`;
 
 const limit = v.lazy((input) =>
-  input === "all"
+  input === UNLIMITED_LIMIT
     ? v.pipe(
-        v.literal("all"),
+        v.literal(UNLIMITED_LIMIT),
         v.transform(() => null),
       )
     : v.pipe(
@@ -229,7 +225,7 @@ const queryParams = cliVariants(
       // `libraries` wins over `library`, which this variant reads no further.
       cliParams({
         libraries,
-        library: v.optional(v.string()),
+        library: cliMaybeEmpty(),
         ...queryOptions,
       }),
       v.transform(({ libraries: scope, library: _, ...options }) =>
@@ -304,14 +300,4 @@ export function decodeCancelArguments(params: CliData): CliRequest<string> {
   return decodeCliParams(params, cancelParams, {
     command: ITEM_QUERY_CANCEL_COMMAND,
   });
-}
-
-/** The diagnostic of a rejected argument. */
-export function rejectionDiagnostic(rejection: CliRejection): Diagnostic {
-  const rejected = diagnostic("invalid-argument", rejection.message, {
-    details: { parameter: rejection.parameter },
-  });
-  return rejection.hint === undefined
-    ? rejected
-    : { ...rejected, hint: rejection.hint };
 }

@@ -24,6 +24,7 @@ import {
   answerItemQuery,
   answerItemQuerySchema,
   createItemQueryCancelHandler,
+  failure,
   ITEM_QUERY_CANCEL_COMMAND,
   ITEM_QUERY_COMMAND,
   ITEM_QUERY_GUIDE_COMMAND,
@@ -32,6 +33,8 @@ import {
   registerItemQueryCli,
 } from "./cli";
 import type { ItemQueryCliDeps } from "./cli";
+import { DIAGNOSTIC_HINTS, diagnostic } from "./contract";
+import type { Diagnostic } from "./contract";
 import { decodeItemQuery, rejectionDiagnostic } from "./decode";
 import type { DecodedQuery } from "./decode";
 import { GUIDE_EXAMPLES, GUIDE_FILTERS, GUIDE_TOPIC_NAMES } from "./guide";
@@ -154,7 +157,7 @@ describe("zotlit:item-query without arguments", () => {
     const answer = await run();
 
     expect(answer).toMatchObject({
-      contractVersion: 1,
+      contractVersion: 2,
       command: ITEM_QUERY_COMMAND,
       ok: true,
       identity: IDENTITY,
@@ -167,6 +170,7 @@ describe("zotlit:item-query without arguments", () => {
       },
       returnedCount: 10,
       truncated: false,
+      warnings: [],
     });
     expect(keys(answer)).toEqual(PERSONAL_BY_MODIFIED);
     expect(Object.keys(answer)).toEqual([
@@ -178,6 +182,7 @@ describe("zotlit:item-query without arguments", () => {
       "request",
       "returnedCount",
       "truncated",
+      "warnings",
       "rows",
     ]);
   });
@@ -187,7 +192,7 @@ describe("zotlit:item-query without arguments", () => {
 
     const answer = await Effect.runPromise(queryOf(scenario)({ limit: "1" }));
 
-    expect(answer).toMatch(/^\{\n {2}"contractVersion": 1,\n/);
+    expect(answer).toMatch(/^\{\n {2}"contractVersion": 2,\n/);
   });
 });
 
@@ -272,6 +277,7 @@ describe("zotlit:item-query limit", () => {
       request: { limit: 3 },
       returnedCount: 3,
       truncated: true,
+      warnings: [],
     });
   });
 
@@ -285,6 +291,7 @@ describe("zotlit:item-query limit", () => {
     expect(answer).toMatchObject({
       request: { limit: null },
       truncated: false,
+      warnings: [],
     });
   });
 });
@@ -341,7 +348,7 @@ describe("zotlit:item-query library", () => {
       ok: false,
       diagnostic: {
         code: "library-not-found",
-        message: expect.stringContaining("999"),
+        report: { 0: expect.stringContaining("999") },
         details: { parameter: "library" },
       },
     });
@@ -361,6 +368,7 @@ describe("zotlit:item-query libraries", () => {
       request: { libraries: ["personal", "group:4815"] },
       returnedCount: 12,
       truncated: false,
+      warnings: [],
     });
     expect(keys(answer)).toEqual(BOTH_BY_MODIFIED);
   });
@@ -436,7 +444,7 @@ describe("zotlit:item-query libraries", () => {
       ok: false,
       diagnostic: {
         code: "source-unavailable",
-        message: "The connected Zotero source holds no Library.",
+        severity: "error",
       },
     });
     expect(JSON.stringify(answer)).not.toContain("libraries=all");
@@ -461,7 +469,7 @@ describe("zotlit:item-query libraries", () => {
       ok: false,
       diagnostic: {
         code: "library-not-found",
-        message: expect.stringContaining("999"),
+        report: { 0: expect.stringContaining("999") },
         details: { parameter: "libraries" },
       },
     });
@@ -537,7 +545,7 @@ describe("zotlit:item-query default Libraries", () => {
     const answer = await run();
 
     expect(answer).toMatchObject({
-      contractVersion: 1,
+      contractVersion: 2,
       command: ITEM_QUERY_COMMAND,
       ok: false,
       diagnostic: {
@@ -611,7 +619,7 @@ describe("zotlit:item-query fields", () => {
       diagnostic: {
         code: "unknown-field",
         location: { argument: "fields", index: 1 },
-        message: expect.stringContaining("nope"),
+        found: "nope",
         hint: expect.any(String),
       },
     });
@@ -641,7 +649,7 @@ describe("zotlit:item-query filter and sort", () => {
       diagnostic: {
         code: "wrong-argument-type",
         location: { argument: "filter", span: { from: 17, to: 18 } },
-        hint: "Call value.startsWith(prefix).",
+        hint: expect.any(String),
       },
     });
   });
@@ -705,7 +713,7 @@ describe("zotlit:item-query-cancel", () => {
     const answer = await run({ id: "export-a" });
 
     expect(answer).toEqual({
-      contractVersion: 1,
+      contractVersion: 2,
       command: ITEM_QUERY_CANCEL_COMMAND,
       ok: true,
       id: "export-a",
@@ -718,7 +726,7 @@ describe("zotlit:item-query-cancel", () => {
     const { run } = cancelOf(["export-a"]);
 
     expect(await run({ id: "export-b" })).toEqual({
-      contractVersion: 1,
+      contractVersion: 2,
       command: ITEM_QUERY_CANCEL_COMMAND,
       ok: true,
       id: "export-b",
@@ -777,9 +785,7 @@ describe("zotlit:item-query borrowed source", () => {
       ok: false,
       diagnostic: {
         code: "database-error",
-        message: expect.stringContaining(
-          "Item Query could not read the Zotero database: ",
-        ),
+        severity: "error",
         hint: expect.any(String),
       },
     });
@@ -795,16 +801,16 @@ describe("zotlit:item-query borrowed source", () => {
     const answer = await run();
 
     expect(answer).toMatchObject({
-      contractVersion: 1,
+      contractVersion: 2,
       command: ITEM_QUERY_COMMAND,
       ok: false,
       diagnostic: {
         code: "unsupported-database-layout",
-        message: expect.stringContaining("fieldsCombined.custom"),
-        hint: expect.stringContaining("update ZotLit"),
+        report: { 0: expect.stringContaining("fieldsCombined.custom") },
+        hint: expect.any(String),
       },
     });
-    expect((answer.diagnostic as { message: string }).message).toContain(
+    expect((answer.diagnostic as Diagnostic).report[0]).toContain(
       "the table itemDataValues",
     );
   });
@@ -939,14 +945,14 @@ describe("zotlit:item-query-schema", () => {
     const output = await text();
     const answer = JSON.parse(output) as Record<string, unknown>;
 
-    expect(output).toMatch(/^\{\n {2}"contractVersion": 1,\n/);
+    expect(output).toMatch(/^\{\n {2}"contractVersion": 2,\n/);
     expect(Object.keys(answer).slice(0, 3)).toEqual([
       "contractVersion",
       "command",
       "ok",
     ]);
     expect(answer).toMatchObject({
-      contractVersion: 1,
+      contractVersion: 2,
       command: ITEM_QUERY_SCHEMA_COMMAND,
       ok: true,
       identity: IDENTITY,
@@ -1006,7 +1012,7 @@ describe("zotlit:item-query-schema", () => {
       ok: false,
       diagnostic: {
         code: "unsupported-database-layout",
-        message: expect.stringContaining("fieldsCombined.custom"),
+        report: { 0: expect.stringContaining("fieldsCombined.custom") },
       },
     });
   });
@@ -1069,7 +1075,17 @@ describe("zotlit:item-query-guide", () => {
     ["filter", ["key is the Zotero Key", "attachments", "lower()", "within"]],
     ["fields", ['custom["<exact name>"]', "fields='[]'", "null"]],
     ["sort", ["10 comes before 9", "first possible day", "limit", "all"]],
-    ["results", ["diagnostic.hint", "location", "span"]],
+    [
+      "results",
+      [
+        "diagnostic.report",
+        "warnings",
+        "suggestions",
+        "severity",
+        "location",
+        "span",
+      ],
+    ],
     [
       "cancel",
       [
@@ -1092,7 +1108,7 @@ describe("zotlit:item-query-guide", () => {
     const answer = JSON.parse(itemQueryGuideHandler({ topic: "bogus" }));
 
     expect(answer).toMatchObject({
-      contractVersion: 1,
+      contractVersion: 2,
       command: ITEM_QUERY_GUIDE_COMMAND,
       ok: false,
       diagnostic: {
@@ -1110,10 +1126,12 @@ describe("zotlit:item-query-guide", () => {
     for (const args of GUIDE_EXAMPLES) {
       const answer = await run(args);
       if (!answer.ok) failures.push(JSON.stringify({ args, answer }));
+      else expect(answer.warnings).toEqual([]);
     }
     for (const filter of GUIDE_FILTERS) {
       const answer = await run({ filter, fields: "[]" });
       if (!answer.ok) failures.push(JSON.stringify({ filter, answer }));
+      else expect(answer.warnings).toEqual([]);
     }
 
     expect(GUIDE_EXAMPLES.length).toBeGreaterThan(0);
@@ -1190,4 +1208,83 @@ describe("registerItemQueryCli", () => {
     for (const callback of onUnload) callback();
     await expect(handler({})).rejects.toMatchObject({ name: "AbortError" });
   });
+});
+
+it("answers contract v2 reports and warnings through the query envelope", async () => {
+  using scenario = openScenarioDatabase();
+  const run = setup(scenario).run;
+  const failed = await run({ filter: 'creators.lastName == "Smith"' });
+  expect(failed.contractVersion).toBe(2);
+  const diagnostic = failed.diagnostic as Diagnostic;
+  expect(diagnostic.report[0]).toBe(diagnostic.message);
+  expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
+  expect(diagnostic.excerpt?.at).toBe("lastName");
+  expect(diagnostic.severity).toBe("error");
+  const success = await run({ limit: "1" });
+  expect(success.warnings).toEqual([]);
+});
+
+it.each(Object.keys(DIAGNOSTIC_HINTS) as (keyof typeof DIAGNOSTIC_HINTS)[])(
+  "renders operational %s without an excerpt",
+  (code) => {
+    const value = diagnostic(code, "Operational failure");
+    const answer = JSON.parse(failure(ITEM_QUERY_COMMAND, value)) as {
+      diagnostic: Diagnostic;
+    };
+    expect(answer.diagnostic).toMatchObject({
+      severity: "error",
+      found: "",
+      expected: [],
+      suggestions: [],
+    });
+    expect(answer.diagnostic.report).toEqual([value.message, value.hint]);
+    expect(answer.diagnostic.excerpt).toBeUndefined();
+  },
+);
+
+it("reports syntax facts and a correction through the CLI envelope", async () => {
+  using scenario = openScenarioDatabase();
+  const failed = await setup(scenario).run({
+    filter: 'itemType == "book" AND date.year > 2010',
+  });
+  const diagnostic = failed.diagnostic as Diagnostic;
+  expect(diagnostic.code).toBe("invalid-filter");
+  expect(diagnostic.location?.span).toEqual({ from: 19, to: 22 });
+  expect(diagnostic.found).toBe("AND");
+  expect(diagnostic.expected).toContain("&&");
+  expect(diagnostic.excerpt?.at).toBe("AND");
+  expect(diagnostic.suggestions[0]).toBe(
+    'itemType == "book" && date.year > 2010',
+  );
+  expect(diagnostic.report[0]).toBe(diagnostic.message);
+  expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
+});
+
+it("keeps warning diagnostics before rows and drops them on failure", async () => {
+  using scenario = openScenarioDatabase();
+  const { run, query } = setup(scenario);
+  const text = await Effect.runPromise(query({ filter: 'tags == "bulk"' }));
+  const answer = JSON.parse(text);
+  expect(answer).toMatchObject({
+    ok: true,
+    rows: [],
+    warnings: [
+      {
+        code: "never-true",
+        severity: "warning",
+        suggestions: ['tags.contains("bulk")'],
+        location: { argument: "filter", span: { from: 0, to: 14 } },
+        excerpt: { at: 'tags == "bulk"' },
+      },
+    ],
+  });
+  expect(text.indexOf('"warnings"')).toBeLessThan(text.indexOf('"rows"'));
+  for (const params of [
+    { filter: 'tags == "bulk"', fields: '["missing"]' },
+    { filter: 'tags == "bulk" && missing == "x"' },
+  ] as CliData[]) {
+    const failed = await run(params);
+    expect(failed.ok).toBe(false);
+    expect(failed).not.toHaveProperty("warnings");
+  }
 });

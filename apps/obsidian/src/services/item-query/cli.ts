@@ -20,6 +20,7 @@ import type {
   ItemQueryLayoutError,
 } from "@zotlit/db/item-query";
 import {
+  diagnose,
   DEFAULT_FIELDS,
   DEFAULT_SORT,
   describeItemQueryCustomFields,
@@ -105,6 +106,7 @@ type EnvelopeTail =
       request: object;
       returnedCount: number;
       truncated: boolean;
+      warnings: QuerySummary["warnings"];
       rows?: readonly { indexedKey: string; values: object }[];
       file?: { path: string; bytes: number; format: "json" };
     }
@@ -281,7 +283,7 @@ export function queryIdInUseFailure(id: string): string {
     diagnostic(
       "query-id-in-use",
       `A query with the id '${id}' is running in this vault.`,
-      { details: { parameter: "id" } },
+      { parameter: "id" },
     ),
   );
 }
@@ -318,7 +320,7 @@ export function answerItemQuery(
       }),
   );
   return (deps.instrument?.(operation) ?? operation).pipe(
-    answerFailure(ITEM_QUERY_COMMAND, named?.parameter),
+    answerFailure(ITEM_QUERY_COMMAND, named?.parameter, decoded.filter),
   );
 }
 
@@ -368,6 +370,7 @@ const createAnswer = Effect.fnUntraced(function* (
     request: { libraries: context.libraries.map(selectorKey), ...result.query },
     returnedCount: result.returnedCount,
     truncated: result.truncated,
+    warnings: result.warnings,
   };
   const head = envelope(ITEM_QUERY_COMMAND, { ...summary, rows: [] });
   let text = "";
@@ -451,6 +454,7 @@ function answerFailure(
   command: ItemQueryCommand,
   /** The argument that named the Target Libraries, if the caller named them. */
   parameter?: NamedLibraries["parameter"],
+  filter = "",
 ) {
   return <R>(
     run: Effect.Effect<
@@ -465,7 +469,9 @@ function answerFailure(
   ): Effect.Effect<QueryReply, never, R> =>
     run.pipe(
       Effect.catch((failed) =>
-        Effect.sync(() => inline(failureText(failed, command, parameter))),
+        Effect.sync(() =>
+          inline(failureText(failed, command, { parameter, filter })),
+        ),
       ),
       Effect.catchDefect((defect) => {
         logger.error("Item Query failed with a defect", {
@@ -488,7 +494,10 @@ function failureText(
     | ItemQueryOutputError
     | TargetLibrariesUnavailable,
   command: ItemQueryCommand,
-  parameter: NamedLibraries["parameter"] | undefined,
+  {
+    parameter,
+    filter,
+  }: { parameter: NamedLibraries["parameter"] | undefined; filter: string },
 ): string {
   if (failed._tag === "ItemQueryOutputError")
     return failure(command, failed.diagnostic);
@@ -496,12 +505,10 @@ function failureText(
     return failure(command, targetLibrariesFailure(failed, parameter));
   }
   if (failed._tag === "ItemQueryError") {
-    return failure(command, {
-      code: failed.code,
-      message: failed.message,
-      hint: failed.hint,
-      location: failed.location,
-    });
+    return failure(
+      command,
+      diagnose(failed.fault, failed.argumentText ?? filter, failed.location),
+    );
   }
   if (failed._tag === "ItemQueryLayoutError") {
     // `@zotlit/db` logs the missing layout and the versions once per copy.
@@ -522,7 +529,7 @@ function targetLibrariesFailure(
     return diagnostic(
       "library-not-found",
       `The connected Zotero source holds no ${describeSelector(missing)}.`,
-      { details: parameter && { parameter } },
+      parameter && { parameter },
     );
   }
   if (reason === "named-none") {

@@ -2568,7 +2568,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ) as ItemQueryReport;
 
     expect(limited).toMatchObject({
-      contractVersion: 1,
+      contractVersion: 2,
       command: "zotlit:item-query",
       ok: true,
       libraries: inScope.map(wireOf),
@@ -2790,7 +2790,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ) as ItemQuerySchemaReport;
 
     expect(answer).toMatchObject({
-      contractVersion: 1,
+      contractVersion: 2,
       command: "zotlit:item-query-schema",
       ok: true,
       schema: {
@@ -2851,7 +2851,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ok: false,
         diagnostic: {
           code: "invalid-argument",
-          hint: expect.stringContaining(`${name}=<value>`),
+          details: { parameter: `--${name}` },
         },
       });
     }
@@ -2864,15 +2864,77 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ) as ItemQueryReport;
 
     expect(answer).toMatchObject({
-      contractVersion: 1,
+      contractVersion: 2,
       command: "zotlit:item-query",
       ok: false,
       diagnostic: {
         code: "wrong-argument-type",
         location: { argument: "filter", span: { from: 17, to: 18 } },
-        hint: "Call value.startsWith(prefix).",
+        found: "a number",
+        expected: ["a string"],
       },
     });
+  });
+
+  // Failure modes: CLI serialization must preserve syntax corrections, ranked
+  // names, and successful warnings; report boundaries must match legacy fields.
+  it("reports zotlit:item-query syntax, unknown names, and never-true warnings", async () => {
+    for (const probe of [
+      {
+        filter: 'itemType == "book" AND date.year > 2010',
+        ok: false,
+        code: "invalid-filter",
+        at: "AND",
+        suggestion: 'itemType == "book" && date.year > 2010',
+      },
+      {
+        filter: "year > 2015",
+        ok: false,
+        code: "unknown-field",
+        at: "year",
+        suggestion: "date.year",
+      },
+      {
+        filter: 'tags == "bulk"',
+        ok: true,
+        code: "never-true",
+        at: 'tags == "bulk"',
+        suggestion: 'tags.contains("bulk")',
+      },
+    ]) {
+      const answer = JSON.parse(
+        await cliCommand(vaultId, "zotlit:item-query", {
+          args: { filter: probe.filter, fields: "[]", limit: "1" },
+        }),
+      ) as ItemQueryReport;
+      expect(answer).toMatchObject({
+        contractVersion: 2,
+        command: "zotlit:item-query",
+        ok: probe.ok,
+      });
+      const diagnostic = probe.ok ? answer.warnings?.[0] : answer.diagnostic;
+      expect(diagnostic).toMatchObject({
+        code: probe.code,
+        severity: probe.ok ? "warning" : "error",
+        excerpt: { at: probe.at },
+      });
+      expect(diagnostic!.suggestions[0]).toBe(probe.suggestion);
+      expect(diagnostic!.message).not.toBe("");
+      expect(diagnostic!.hint).not.toBe("");
+      expect(diagnostic!.report[0]).toBe(diagnostic!.message);
+      expect(diagnostic!.report.at(-1)).toBe(diagnostic!.hint);
+      if (probe.ok) {
+        expect(answer.warnings).toHaveLength(1);
+        expect(answer).toMatchObject({
+          returnedCount: 0,
+          rows: [],
+          truncated: false,
+        });
+        expect(Object.keys(answer).indexOf("warnings")).toBeLessThan(
+          Object.keys(answer).indexOf("rows"),
+        );
+      }
+    }
   });
 
   it("answers a -- token on a required or format parameter with the zotlit decoder's diagnostic", async () => {
@@ -3480,11 +3542,19 @@ interface ItemQueryReport {
   returnedCount?: number;
   truncated?: boolean;
   rows?: { indexedKey: string; values: Record<string, unknown> }[];
-  diagnostic?: {
-    code: string;
-    hint: string;
-    location?: { argument: string; span?: { from: number; to: number } };
-  };
+  diagnostic?: ItemQueryDiagnostic;
+  warnings?: ItemQueryDiagnostic[];
+}
+
+interface ItemQueryDiagnostic {
+  code: string;
+  message: string;
+  hint: string;
+  report: string[];
+  suggestions: string[];
+  severity: "error" | "warning";
+  excerpt?: { before: string; at: string; after: string };
+  location?: { argument: string; span?: { from: number; to: number } };
 }
 
 /** The `zotlit:item-query-schema` reply shape this suite reads (see

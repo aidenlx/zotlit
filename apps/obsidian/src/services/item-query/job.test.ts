@@ -108,26 +108,36 @@ describe("Query Job", () => {
     });
   });
 
-  it("writes an export to the staging file and answers a file receipt", async () => {
-    using scenario = openScenarioDatabase({ storage: "temp-directory" });
-    seedBulkLibrary(scenario.sqlite, 600);
-    const { output, stagePath } = exportPaths(scenario);
-    const inline = await run(scenario, jobOf(BULK));
+  it.each([undefined, 'tags != "absent"'])(
+    "writes an export and warnings to the staging file and receipt: %s",
+    async (filter) => {
+      using scenario = openScenarioDatabase({ storage: "temp-directory" });
+      seedBulkLibrary(scenario.sqlite, 600);
+      const { output, stagePath } = exportPaths(scenario);
+      const params = { ...BULK, ...(filter ? { filter } : {}) };
+      const inline = await run(scenario, jobOf(params));
 
-    const answer = await run(scenario, jobOf({ ...BULK, output }, stagePath));
+      const answer = await run(
+        scenario,
+        jobOf({ ...params, output }, stagePath),
+      );
+      const warnings = JSON.parse(inline.answer).warnings;
+      expect(warnings).toHaveLength(filter ? 1 : 0);
+      expect(JSON.parse(answer.answer).warnings).toEqual(warnings);
 
-    const bytes = Buffer.byteLength(inline.answer);
-    expect(answer.receipt).toEqual({ kind: "file", path: output, bytes });
-    expect(JSON.parse(answer.answer)).toMatchObject({
-      ok: true,
-      returnedCount: 600,
-      file: { path: output, bytes, format: "json" },
-    });
-    expect(JSON.parse(answer.answer)).not.toHaveProperty("rows");
-    expect(await readFile(stagePath, "utf8")).toBe(inline.answer);
-    // The renderer publishes the staging file.
-    expect(await readdir(dirname(output))).not.toContain("items.json");
-  });
+      const bytes = Buffer.byteLength(inline.answer);
+      expect(answer.receipt).toEqual({ kind: "file", path: output, bytes });
+      expect(JSON.parse(answer.answer)).toMatchObject({
+        ok: true,
+        returnedCount: 600,
+        file: { path: output, bytes, format: "json" },
+      });
+      expect(JSON.parse(answer.answer)).not.toHaveProperty("rows");
+      expect(await readFile(stagePath, "utf8")).toBe(inline.answer);
+      // The renderer publishes the staging file.
+      expect(await readdir(dirname(output))).not.toContain("items.json");
+    },
+  );
 
   it("answers result-too-large for an inline result above the limit", async () => {
     using scenario = openScenarioDatabase();
@@ -150,7 +160,10 @@ describe("Query Job", () => {
     });
 
     try {
-      const answer = await run(scenario, jobOf({ output }, stagePath));
+      const answer = await run(
+        scenario,
+        jobOf({ output, filter: 'tags != "absent"' }, stagePath),
+      );
 
       expect(closeFailure.next).toBeUndefined();
       expect(answer.receipt).toEqual({ kind: "inline" });
@@ -161,6 +174,7 @@ describe("Query Job", () => {
           message: "EIO: i/o error, close",
         },
       });
+      expect(JSON.parse(answer.answer)).not.toHaveProperty("warnings");
       // The staging file is not a complete export: no receipt publishes it.
       expect(await readFile(stagePath, "utf8")).not.toBe("");
     } finally {
@@ -297,7 +311,7 @@ describe("Query Job output", () => {
     expect(reply.receipt).toEqual({ kind: "inline" });
     expect(JSON.parse(reply.answer)).toMatchObject({
       ok: false,
-      diagnostic: { code: "output-error", message: "The disk is full." },
+      diagnostic: { code: "output-error", report: { 0: "The disk is full." } },
     });
     expect(events).toEqual(["open", "write", "write", "close", "scope-ended"]);
   });

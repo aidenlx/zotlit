@@ -19,11 +19,11 @@ import type {
 import {
   ambiguousCitekeyDiagnostic,
   citekeyNotFoundDiagnostic,
-  diagnostic,
   envelope,
   fileNotFoundDiagnostic,
   keyNotFoundDiagnostic,
   notSettledDiagnostic,
+  rejectionDiagnostic,
   reportCandidates,
   reportGroups,
   reportOccurrences,
@@ -249,15 +249,9 @@ function invalidRequest(
   command: CitationsCommand,
   request: CliRejection,
 ): string {
-  const rejected = diagnostic("INVALID_SELECTOR", request.message, {
-    parameter: request.parameter,
-  });
   return envelope(command, {
     ok: false,
-    diagnostic:
-      request.hint === undefined
-        ? rejected
-        : { ...rejected, hint: request.hint },
+    diagnostic: rejectionDiagnostic(request),
   });
 }
 

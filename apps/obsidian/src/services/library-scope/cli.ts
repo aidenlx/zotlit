@@ -6,6 +6,7 @@
 
 import type { CliData, CliHandler, Plugin } from "obsidian";
 
+import { createCliDiagnostics } from "@/lib/cli-diagnostic";
 import { decodeCliParams, noCliParams } from "@/lib/cli-params";
 import type { CliRejection } from "@/lib/cli-params";
 import type { LibraryScopeService } from "@/services/library-scope/service";
@@ -27,9 +28,7 @@ type LibraryScopeCommand =
 
 /**
  * The documented diagnostic codes of this CLI Contract, each defined with
- * the recovery action its diagnostic carries — mirrors the citation-index and
- * Template Workbench namespaces' own `DIAGNOSTIC_HINTS`, kept separate per
- * namespace by ADR 0026.
+ * the recovery action its diagnostic carries.
  */
 const DIAGNOSTIC_HINTS = {
   INVALID_SELECTOR:
@@ -48,13 +47,10 @@ interface Diagnostic {
   details?: { parameter: string };
 }
 
-function diagnostic(
-  code: DiagnosticCode,
-  message: string,
-  details?: Diagnostic["details"],
-): Diagnostic {
-  return { code, message, hint: DIAGNOSTIC_HINTS[code], details };
-}
+const { diagnostic, rejectionDiagnostic } = createCliDiagnostics<
+  typeof DIAGNOSTIC_HINTS,
+  Diagnostic["details"]
+>(DIAGNOSTIC_HINTS, "INVALID_SELECTOR");
 
 function envelope(command: LibraryScopeCommand, tail: object): string {
   return JSON.stringify({
@@ -134,12 +130,7 @@ function invalidRequest(
 ): string {
   return envelope(command, {
     ok: false,
-    diagnostic: {
-      ...diagnostic("INVALID_SELECTOR", rejected.message, {
-        parameter: rejected.parameter,
-      }),
-      ...(rejected.hint === undefined ? {} : { hint: rejected.hint }),
-    },
+    diagnostic: rejectionDiagnostic(rejected),
   });
 }
 

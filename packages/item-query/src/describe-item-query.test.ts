@@ -446,7 +446,10 @@ describe("the Item Query Schema and queryItems", () => {
       // tasks that a busy machine runs slowly.
       { client: scenario.db, scheduler: new ItemQueryScheduler() },
     );
-    if (Exit.isSuccess(exit)) return null;
+    if (Exit.isSuccess(exit)) {
+      expect(exit.value.warnings).toEqual([]);
+      return null;
+    }
     const error = Cause.findErrorOption(exit.cause);
     if (error._tag === "None") throw new Error(String(exit.cause));
     return (error.value as { code?: string }).code ?? error.value._tag;

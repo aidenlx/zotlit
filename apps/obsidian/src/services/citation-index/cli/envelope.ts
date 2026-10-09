@@ -8,6 +8,7 @@
 
 import type { Loc } from "obsidian";
 
+import { createCliDiagnostics } from "@/lib/cli-diagnostic";
 import type {
   CitationCoverage,
   CitationKeyResolution,
@@ -97,16 +98,12 @@ export function reportCandidates(
 }
 
 /**
- * Report a fault with the recovery action its code defines. Every diagnostic is
- * built here, so `hint` defaults to the action registered for `code`.
+ * Report a fault with the recovery action registered for its code.
  */
-export function diagnostic(
-  code: DiagnosticCode,
-  message: string,
-  details?: Diagnostic["details"],
-): Diagnostic {
-  return { code, message, hint: DIAGNOSTIC_HINTS[code], details };
-}
+export const { diagnostic, rejectionDiagnostic } = createCliDiagnostics<
+  typeof DIAGNOSTIC_HINTS,
+  Diagnostic["details"]
+>(DIAGNOSTIC_HINTS, "INVALID_SELECTOR");
 
 export type CitationsCommand =
   | "zotlit:cited-by"
