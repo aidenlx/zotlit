@@ -34,6 +34,8 @@ import { registerCitekeyEditorNotices } from "./services/citekey-editor/notices"
 import { addDatabaseActions } from "./services/database/actions";
 import { libraryTagNames } from "./services/database/library-tag-names";
 import { reapReadClones } from "./services/database/reap-temps";
+import { reapExcerptTemps } from "./services/excerpt-image/reap-temps";
+import { registerAnnotationImageCli } from "./services/excerpt-image/register-cli";
 import { savedExcerptRequest } from "./services/excerpt-image/request";
 import { registerFileMenu } from "./services/file-menu";
 import { addGraphCitationsActions } from "./services/graph-citations/actions";
@@ -262,6 +264,7 @@ export default class ZotLitPlugin extends Plugin {
     const reapAbort = stack.use(new DisposableAbortController());
     void reapReadClones({ signal: reapAbort.signal });
     void reapCslStore({ signal: reapAbort.signal });
+    void reapExcerptTemps({ signal: reapAbort.signal });
 
     const { services } = buildServices(this, stack);
 
@@ -565,6 +568,7 @@ export default class ZotLitPlugin extends Plugin {
     });
 
     registerItemQueryCli(this, services.itemQuery);
+    registerAnnotationImageCli(this, services);
 
     // Measurement-only: lets packages/e2e/src/item-query-measure.ts read the
     // slices, statements, heap, and cancel times of a run. A dev-build port,
