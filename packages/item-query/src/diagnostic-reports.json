@@ -207,7 +207,7 @@
       "contains(title, \"x\")",
       "^^^^^^^^",
       "`contains` is a method; call it on a value as `value.contains(...)`.",
-      "Use a global function: if, number, min, max, now, today, date, duration, list."
+      "Call it on a value as `value.contains(...)`."
     ]
   },
   {
@@ -272,7 +272,7 @@
       "now > 3",
       "^^^",
       "`now` is a function; call it as `now()`.",
-      "Use a field from the Item Query Schema; field names are case-sensitive."
+      "Call it as `now()`."
     ]
   },
   {
@@ -400,7 +400,7 @@
       "contains(title, \"a\")",
       "^^^^^^^^",
       "`contains` is a method; call it on a value as `value.contains(...)`.",
-      "Use a global function: if, number, min, max, now, today, date, duration, list."
+      "Call it on a value as `value.contains(...)`."
     ]
   },
   {
@@ -414,7 +414,7 @@
       "      ^^^^^^",
       "`title` is a string in a filter.",
       "`number` is a global function; call it as `number(value)`.",
-      "Use a method of a string: toString, isType, isTruthy, isEmpty, lower, startsWith, endsWith, contains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split."
+      "Call it as `number(value)`."
     ]
   },
   {
@@ -428,7 +428,22 @@
       "      ^^^^",
       "`title` is a string in a filter.",
       "`list` is a global function; call it as `list(value)`.",
-      "Use a method of a string: toString, isType, isTruthy, isEmpty, lower, startsWith, endsWith, contains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split."
+      "Call it as `list(value)`."
+    ]
+  },
+  {
+    "name": "exact cross-role action before unrelated near match",
+    "request": {
+      "filter": "tags.max()"
+    },
+    "report": [
+      "A list has no method \"max\".",
+      "tags.max()",
+      "     ^^^",
+      "`tags` is a list of text in a filter.",
+      "In a Query Row, each `tags` entry has these Projection Paths: `tags[0].name`, `tags[0].type`.",
+      "`max` is a global function; call it as `max(...values)`.",
+      "Call it as `max(...values)`."
     ]
   },
   {
@@ -684,6 +699,34 @@
       "dateAdded > \"2020-01-01\"",
       "---------   ^^^^^^^^^^^^^^",
       "Try: dateAdded > date(\"2020-01-01\")"
+    ]
+  },
+  {
+    "name": "property called as method",
+    "request": {
+      "filter": "title.length()"
+    },
+    "report": [
+      "A string has no method \"length\".",
+      "title.length()",
+      "      ^^^^^^",
+      "`title` is a string in a filter.",
+      "`length` is a property; read it as `value.length`.",
+      "Read it as `value.length`."
+    ]
+  },
+  {
+    "name": "method read as property",
+    "request": {
+      "filter": "title.lower"
+    },
+    "report": [
+      "A string has no property \"lower\".",
+      "title.lower",
+      "      ^^^^^",
+      "`title` is a string in a filter.",
+      "`lower` is a method; call it as `value.lower(...)`.",
+      "Call it as `value.lower(...)`."
     ]
   }
 ]
