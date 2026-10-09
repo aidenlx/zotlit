@@ -551,9 +551,9 @@ describe("the statements of each pass", () => {
     expect(projection).toEqual(["hydrate-chunk"]);
   });
 
-  it("loads the Attachment title alone for its projection", async () => {
+  it("loads the Attachment title through the shared Attachment reader", async () => {
     const { projection } = await passReaders({ fields: ["attachment.title"] });
-    expect(projection).toEqual(["annotation-attachment-titles"]);
+    expect(projection).toEqual(["attachment-details"]);
   });
 
   it("resolves the Attachment file of each returned row in the projection pass only", async () => {
@@ -567,7 +567,7 @@ describe("the statements of each pass", () => {
       (key) => resolved.push(key),
     );
     expect(sorted.scan).toEqual(["annotation-scan-page", "annotation-details"]);
-    expect(sorted.projection).toEqual(["annotation-details"]);
+    expect(sorted.projection).toEqual(["attachment-details"]);
     expect(resolved).toHaveLength(2);
     const none: string[] = [];
     await passReaders({ fields: ["text"] }, (key) => none.push(key));

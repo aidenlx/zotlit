@@ -225,6 +225,7 @@ const BUILT_IN_FIELDS: readonly SchemaField[] = BUILT_IN_NAMES.flatMap(
       projection: true,
       group: definition.shape.kind === "scalar",
       sort: ITEMS.sortable(name) !== undefined,
+      ...(definition.relation && { relation: definition.relation().id }),
       ...(definition.valueForms && { valueForms: definition.valueForms }),
     };
     return [root, ...pathsBelow(name, definition.shape)];
@@ -254,6 +255,9 @@ export function pathsBelow(
   const below = (child: string, childShape: ValueShape): SchemaField[] => [
     {
       path: child,
+      ...(childShape.kind === "record" && {
+        relation: childShape.vocabulary().id,
+      }),
       type: jsonType(childShape),
       filter: capability(child),
       projection: true,
@@ -268,12 +272,19 @@ export function pathsBelow(
     case "custom-fields":
       // The custom fields are listed with the source in `customFields`.
       return [];
+    case "record": {
+      const vocabulary = shape.vocabulary();
+      return vocabulary.summary.flatMap((name) =>
+        below(`${path}.${name}`, vocabulary.field(name)!.shape),
+      );
+    }
     case "object":
       return Object.entries(shape.keys).flatMap(([key, child]) =>
         below(`${path}.${key}`, child),
       );
     case "list":
       return [
+        ...below(`${path}.length`, { kind: "scalar", type: "number" }),
         ...below(`${path}[0]`, shape.element),
         ...below(`${path}[]`, shape.element).map((field) => ({
           ...field,
@@ -291,6 +302,7 @@ export function jsonType(shape: ValueShape): JsonType {
     case "json":
       return "any";
     case "object":
+    case "record":
     case "custom-fields":
       return "object";
     case "list":

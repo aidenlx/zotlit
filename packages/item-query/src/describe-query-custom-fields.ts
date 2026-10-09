@@ -58,6 +58,7 @@ function jsonType(shape: ValueShape): SchemaCustomField["type"] {
     case "json":
       return "any";
     case "object":
+    case "record":
     case "custom-fields":
       return "object";
     case "list":

@@ -218,10 +218,11 @@ describe("describeItemQuery fields", () => {
     });
     expect(entry("attachments")).toEqual({
       path: "attachments",
-      type: "boolean",
-      filter: "boolean",
+      relation: "attachments",
+      type: "array",
+      filter: "list",
       projection: true,
-      group: true,
+      group: false,
       sort: false,
     });
     // The Zotero Key inside the Target Library: a filter reads it, a row
@@ -416,6 +417,7 @@ describe("describeItemQuery functions", () => {
     expect(types).toEqual([
       "null",
       "boolean",
+      "record",
       "number",
       "string",
       "list",

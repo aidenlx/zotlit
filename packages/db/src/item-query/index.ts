@@ -40,6 +40,8 @@ export {
 } from "./scan-page";
 
 export {
+  readItemAnnotations,
+  readAttachmentAnnotations,
   readAnnotationScanPage,
   readAnnotationRowCount,
   readAnnotationCandidateSet,
@@ -52,6 +54,7 @@ export {
 } from "./annotations";
 
 export {
+  readItemAttachments,
   readAttachmentScanPage,
   readAttachmentUniverseRows,
   readAttachmentRowCount,

@@ -631,18 +631,29 @@ describe("collectQuery(ITEMS) relation lists", () => {
     });
   });
 
-  it("projects Attachment presence as true for an Item with a live Attachment", async () => {
+  it("projects the file summary for a paper with a live Attachment", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
       libraries: [personal],
       fields: ["attachments"],
     });
 
-    expect(valuesByKey(found)["ART2FULL"]).toEqual({ attachments: true });
-    expect(valuesByKey(found)["RPT2NDTE"]).toEqual({ attachments: false });
+    expect(valuesByKey(found)["ART2FULL"]).toEqual({
+      attachments: [
+        {
+          indexedKey: "PDF2LIVE",
+          title: "Full Text PDF",
+          contentType: "application/pdf",
+          linkMode: "imported_file",
+          path: null,
+          exists: false,
+        },
+      ],
+    });
+    expect(valuesByKey(found)["RPT2NDTE"]).toEqual({ attachments: [] });
   });
 
-  it("projects Attachment presence as false for an Item with only trashed Attachments", async () => {
+  it("projects an empty list for a paper with only trashed Attachments", async () => {
     using scenario = openScenarioDatabase();
     // ART2FULL keeps only its already trashed Attachment.
     scenario.sqlite.exec(
@@ -654,7 +665,7 @@ describe("collectQuery(ITEMS) relation lists", () => {
       fields: ["attachments"],
     });
 
-    expect(valuesByKey(found)["ART2FULL"]).toEqual({ attachments: false });
+    expect(valuesByKey(found)["ART2FULL"]).toEqual({ attachments: [] });
   });
 
   it("loads each relation only for the rows a limited query returns", async () => {
@@ -671,7 +682,7 @@ describe("collectQuery(ITEMS) relation lists", () => {
     // One statement for each relation, and no field values.
     expect(hydrates(events, "fields")).toEqual([]);
     const relations = hydrates(events, "relation");
-    expect(relations).toHaveLength(4);
+    expect(relations).toHaveLength(3);
     for (const statement of relations) {
       expect(itemIDsBound(statement).toSorted(byNumber)).toEqual(
         returned.toSorted(byNumber),
@@ -687,15 +698,17 @@ describe("collectQuery(ITEMS) relation lists", () => {
     });
 
     if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
-    // The title of the one chunk, and its Attachment presence: each row of
-    // that statement is the ID of a parent Item.
+    // The title and the Attachment Relation List each load once for this chunk.
     expect(hydrates(events, "fields")).toHaveLength(1);
-    const [attachments, ...more] = hydrates(events, "relation");
-    expect(more).toEqual([]);
-    expect(attachments!.rows.length).toBeGreaterThan(0);
-    for (const row of attachments!.rows) {
-      expect(Object.keys(row as object)).toEqual(["itemID"]);
-    }
+    expect(hydrates(events, "relation")).toEqual([]);
+    expect(
+      events.flatMap((event) =>
+        event.type === "statement" &&
+        event.statement.reader === "item-attachments"
+          ? [event.statement]
+          : [],
+      ),
+    ).toHaveLength(1);
   });
 
   it("reaches one Creator by index, with null past the end", async () => {
@@ -1983,7 +1996,7 @@ describe("collectQuery(ITEMS) with a filter", () => {
       );
     });
 
-    it("reads Attachment presence as a boolean", async () => {
+    it("uses the truth value of an Attachment Relation List", async () => {
       using scenario = openScenarioDatabase();
       expect(await matching(scenario, "attachments")).toEqual(["ART2FULL"]);
       expect(await matching(scenario, "!attachments")).toEqual(
@@ -2820,7 +2833,7 @@ const DATASETS: readonly DatasetCase[] = [
       ["tags.name", "unknown-path"],
       ["creators[0].name", "unknown-path"],
       ["collections[0].name", "unknown-path"],
-      ["attachments[0]", "unknown-path"],
+      ["attachments[].unknownField", "unknown-path"],
     ],
     sortFields: [
       ["noSuchField", "unknown-field"],

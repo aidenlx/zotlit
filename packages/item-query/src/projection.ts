@@ -91,7 +91,7 @@ export function planPath<Item = QueryItem, Needs = FieldNeeds>(
         }),
       };
     }
-    if (shape.kind === "custom-fields" && index === 0) {
+    if (shape.kind === "custom-fields") {
       customField = segment as string;
     }
     shape = next;
@@ -113,11 +113,16 @@ function step(shape: ValueShape, segment: PathSegment): ValueShape | null {
     case "scalar":
     case "json":
       return null;
+    case "record":
+      return typeof segment === "string"
+        ? (shape.vocabulary().field(segment)?.shape ?? null)
+        : null;
     case "object":
       return typeof segment === "string" && Object.hasOwn(shape.keys, segment)
         ? shape.keys[segment]!
         : null;
     case "list":
+      if (segment === "length") return { kind: "scalar", type: "number" };
       return typeof segment === "number" || typeof segment === "object"
         ? shape.element
         : null;
@@ -134,10 +139,12 @@ export function readPath<Item>(
   path: PlannedPath<Item, unknown>,
   item: Item,
 ): ProjectionValue {
-  return readSegments(path.field.read(item), path.rest);
+  return path.field.project
+    ? path.field.project(item, path.rest)
+    : readSegments(path.field.read(item), path.rest);
 }
 
-function readSegments(
+export function readSegments(
   source: ProjectionValue,
   segments: readonly PathSegment[],
 ): ProjectionValue {
@@ -151,6 +158,7 @@ function readSegments(
         : null;
     }
     if (Array.isArray(value)) {
+      if (segment === "length") return value.length;
       value = typeof segment === "number" ? (value[segment] ?? null) : null;
     } else if (typeof segment === "string" && Object.hasOwn(value, segment)) {
       value = (value as Record<string, ProjectionValue>)[segment] ?? null;

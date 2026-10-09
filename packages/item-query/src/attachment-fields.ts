@@ -4,6 +4,7 @@ import type {
   HydratedAttachment,
 } from "@zotlit/db/item-query";
 
+import type { QueryAnnotation } from "./annotation-fields";
 import type { AttachmentNeeds } from "./attachment-hydration";
 import { compareStrings } from "./collation";
 import type { SortableField } from "./dataset";
@@ -14,15 +15,18 @@ import type {
   ValueShape,
 } from "./fields";
 import { timestamp } from "./filter-dates";
-import { planFilter } from "./filter-plan";
 import type { FilterRegistry } from "./filter-plan";
 import type { FilterValue } from "./filter-values";
 import { libraryField } from "./library-field";
+import { definitionFilter, mapNavigation, recordField } from "./record-field";
+import { annotationVocabulary } from "./record-vocabularies";
+import { itemVocabulary } from "./record-vocabularies";
 import type { ProjectionValue } from "./request";
 
 type FieldDefinition = ItemFieldDefinition<QueryAttachment, AttachmentNeeds>;
 
 export interface QueryAttachment {
+  readonly annotations?: readonly QueryAnnotation[];
   readonly scan: AttachmentScanRow;
   readonly attachment: HydratedAttachment;
   readonly parent: QueryItem;
@@ -61,6 +65,15 @@ const field = (
 });
 
 export const ATTACHMENT_FIELDS = new Map<string, FieldDefinition>([
+  [
+    "annotations",
+    recordField({
+      vocabulary: () => annotationVocabulary(),
+      list: true,
+      rows: (item) => item.annotations ?? [],
+      needs: (annotations) => ({ annotations }),
+    }),
+  ],
   ["library", libraryField],
   [
     "indexedKey",
@@ -139,24 +152,25 @@ export function attachmentFieldDefinition(
       formatIndexedKey(item.scan.parent.key, item.groupID),
     );
   if (name === "item")
-    return {
-      shape: {
-        kind: "object",
-        keys: { indexedKey: string, title: string, citationKey: string },
-      },
-      needs: () => ({ item: { builtIn: ["title", "citationKey"] } }),
-      read: (item) => ({
-        indexedKey: formatIndexedKey(item.scan.parent.key, item.groupID),
-        title: fieldDefinition("title")!.read(item.parent),
-        citationKey: fieldDefinition("citationKey")!.read(item.parent),
-      }),
-    };
+    return recordField({
+      vocabulary: () => itemVocabulary(),
+      list: false,
+      rows: (item) => [item.parent],
+      needs: (items) => ({ item: items }),
+    });
   if (!name.startsWith("item.")) return ATTACHMENT_FIELDS.get(name);
   const parent = fieldDefinition(name.slice(5));
   return parent
     ? {
         ...parent,
-        needs: (rest) => ({ item: parent.needs(rest) }),
+        needs: (rest) => ({ item: [parent.needs(rest)] }),
+        filterNeeds: { item: [parent.filterNeeds ?? parent.needs([])] },
+        navigation: mapNavigation(parent.navigation, (needs) => ({
+          item: [needs],
+        })),
+        project: parent.project
+          ? (item, rest) => parent.project!(item.parent, rest)
+          : undefined,
         read: (item) => parent.read(item.parent),
         sortKey: parent.sortKey
           ? (item, clock) => parent.sortKey!(item.parent, clock)
@@ -196,36 +210,23 @@ for (const name of ["title", "contentType", "linkMode"]) {
 /**
  * The Sortable Fields of Attachment Query, including its parent scalar paths.
  */
-const ATTACHMENT_SORTABLE = new Map<
-  string,
-  SortableField<QueryAttachment, AttachmentNeeds>
->(
-  [
-    "dateAdded",
-    "dateModified",
-    "title",
-    "contentType",
-    "linkMode",
-    "item.title",
-    "item.date",
-    "item.dateModified",
-  ].map((name) => {
-    const definition = attachmentFieldDefinition(name)!;
-    return [
-      name,
-      { needs: definition.needs([]), key: definition.sortKey! },
-    ] as const;
-  }),
-);
-
 export const ATTACHMENT_SORT_FIELDS: readonly string[] = [
-  ...ATTACHMENT_SORTABLE.keys(),
+  "dateAdded",
+  "dateModified",
+  "title",
+  "contentType",
+  "linkMode",
+  "item.title",
+  "item.date",
+  "item.dateModified",
 ];
 
 export function attachmentSortableField(
   name: string,
 ): SortableField<QueryAttachment, AttachmentNeeds> | undefined {
-  return ATTACHMENT_SORTABLE.get(name);
+  if (!ATTACHMENT_SORT_FIELDS.includes(name)) return undefined;
+  const definition = attachmentFieldDefinition(name)!;
+  return { needs: definition.needs([]), key: definition.sortKey! };
 }
 
 export const attachmentFilterRegistry: FilterRegistry<
@@ -234,6 +235,8 @@ export const attachmentFilterRegistry: FilterRegistry<
 > = {
   prefix: "item",
   field(name) {
+    if (name === "item")
+      return definitionFilter(attachmentFieldDefinition(name));
     if (name === "item.indexedKey") {
       const definition = attachmentFieldDefinition(name)!;
       return { filterable: true, value: definition.filter!, needs: {} };
@@ -243,7 +246,10 @@ export const attachmentFilterRegistry: FilterRegistry<
       return parent?.filterable
         ? {
             ...parent,
-            needs: { item: parent.needs },
+            needs: { item: [parent.needs] },
+            navigation: mapNavigation(parent.navigation, (needs) => ({
+              item: [needs],
+            })),
             value: {
               ...parent.value,
               read: (item) => parent.value.read(item.parent),
@@ -251,22 +257,13 @@ export const attachmentFilterRegistry: FilterRegistry<
           }
         : parent;
     }
-    const definition = ATTACHMENT_FIELDS.get(name);
-    return definition?.filter
-      ? {
-          filterable: true,
-          value: definition.filter,
-          needs: definition.needs([]),
-        }
-      : definition
-        ? { filterable: false }
-        : undefined;
+    return definitionFilter(ATTACHMENT_FIELDS.get(name));
   },
   custom(name) {
     const parent = customFilterValue(name);
     return {
       ...parent,
-      needs: { item: parent.needs },
+      needs: { item: [parent.needs] },
       value: {
         ...parent.value,
         read: (item) => parent.value.read(item.parent),
@@ -274,5 +271,3 @@ export const attachmentFilterRegistry: FilterRegistry<
     };
   },
 };
-export const planAttachmentFilter = (text: string) =>
-  planFilter(text, attachmentFilterRegistry);

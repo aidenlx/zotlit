@@ -11,27 +11,45 @@ import type {
   ItemQueryReaderError,
 } from "@zotlit/db/item-query";
 
+import { openAnnotationHydration } from "./annotation-hydration";
+import type {
+  AnnotationNeeds,
+  AnnotationLoadPlan,
+} from "./annotation-hydration";
 import type { QueryAttachment } from "./attachment-fields";
 import { AttachmentFileResolver } from "./dataset";
 import type { ItemQueryError } from "./error";
 import type { FieldNeeds } from "./fields";
 import { openHydration } from "./hydration";
-import type { Hydration, LoadPlan, Loader } from "./hydration";
-import type { ItemQueryPlan, TargetLibrary } from "./request";
+import type {
+  Hydration,
+  HydrationRequest,
+  LoadPlan,
+  Loader,
+} from "./hydration";
+import {
+  relationChunk,
+  relatedAttachmentAnnotations,
+  relationRequest,
+  loadRelation,
+} from "./relation-hydration";
+import type { TargetLibrary } from "./request";
 
 /** What hydration loads for an Attachment field. */
 export interface AttachmentNeeds {
+  readonly annotations?: readonly AnnotationNeeds[];
   /** The Attachment values and the Attachment metadata. */
   readonly details?: boolean;
   readonly tags?: boolean;
   /** The Attachment file; resolving it reads the details. */
   readonly file?: boolean;
   /** What the parent Item loads. */
-  readonly item?: FieldNeeds;
+  readonly item?: readonly FieldNeeds[];
 }
 
 /** What one pass loads for each Attachment of a chunk. */
 export interface AttachmentLoadPlan {
+  readonly annotations?: AnnotationLoadPlan | null;
   readonly details: boolean;
   readonly tags: boolean;
   readonly file: boolean;
@@ -53,7 +71,7 @@ const NO_FILE = { path: null, exists: false } as const;
  * parent needs, and for each pass the Attachment loads its fields need.
  */
 export function openAttachmentHydration(
-  plan: ItemQueryPlan<QueryAttachment, AttachmentNeeds>,
+  plan: HydrationRequest<AttachmentNeeds>,
   libraries: readonly TargetLibrary[],
 ): Effect.Effect<
   AttachmentHydration,
@@ -62,21 +80,26 @@ export function openAttachmentHydration(
 > {
   return Effect.gen(function* () {
     const { filter, paths, sorts } = plan;
-    const itemNeeds = (needs: AttachmentNeeds): FieldNeeds => needs.item ?? {};
+    const itemNeeds = (needs: AttachmentNeeds): readonly FieldNeeds[] =>
+      needs.item ?? [];
     const parents = yield* openHydration(
       {
         dataset: plan.dataset,
         query: plan.query,
         filter: filter && {
           customFields: filter.customFields,
-          needs: filter.needs.map(itemNeeds),
+          needs: filter.needs.flatMap(itemNeeds),
         },
-        paths: paths.map(({ text, customField, needs }) => ({
-          text,
-          customField,
-          needs: itemNeeds(needs),
-        })),
-        sorts: sorts.map(({ needs }) => ({ needs: itemNeeds(needs) })),
+        paths: paths.flatMap(({ text, customField, needs }) =>
+          (itemNeeds(needs).length ? itemNeeds(needs) : [{}]).map((need) => ({
+            text,
+            customField,
+            needs: need,
+          })),
+        ),
+        sorts: sorts.flatMap(({ needs }) =>
+          itemNeeds(needs).map((need) => ({ needs: need })),
+        ),
       },
       libraries,
     );
@@ -85,22 +108,44 @@ export function openAttachmentHydration(
       libraries.map((library) => [library.libraryID, library.groupID]),
     );
 
-    const loader = (
+    const loader = Effect.fnUntraced(function* (
       needs: readonly AttachmentNeeds[],
       parent: Loader,
-    ): Loader<AttachmentLoadPlan, AttachmentScanRow, QueryAttachment> => {
+    ) {
+      const annotations = needs.some((need) => need.annotations !== undefined)
+        ? yield* openAnnotationHydration(
+            relationRequest(
+              plan,
+              needs.flatMap((need) => need.annotations ?? []),
+            ),
+            libraries,
+          )
+        : null;
       const file = needs.some((each) => each.file === true);
       const loads = {
         details: file || needs.some((each) => each.details === true),
         tags: needs.some((each) => each.tags === true),
       };
       const hydrates = loads.details || loads.tags;
-      return {
+      const loader: Loader<
+        AttachmentLoadPlan,
+        AttachmentScanRow,
+        QueryAttachment
+      > = {
         plan:
-          hydrates || parent.plan !== null
-            ? { ...loads, file, item: parent.plan }
+          hydrates || parent.plan !== null || annotations
+            ? {
+                ...loads,
+                file,
+                item: parent.plan,
+                ...(annotations && { annotations: annotations.scan.plan }),
+              }
             : null,
-        load: Effect.fnUntraced(function* (chunk, libraryAt) {
+        load: Effect.fnUntraced(function* (
+          chunk,
+          libraryAt,
+          relations = relationChunk(),
+        ) {
           const hydrated = hydrates
             ? yield* readAttachmentHydrateChunk({ rows: chunk, ...loads })
             : null;
@@ -116,8 +161,19 @@ export function openAttachmentHydration(
             (yield* parent.load(
               parents.map((row) => row.scan),
               (index) => parents[index]!.library,
+              relations,
             )).map((item) => [item.scan.itemID, item]),
           );
+          const marks = annotations
+            ? yield* loadRelation(
+                annotations.scan,
+                yield* relatedAttachmentAnnotations(
+                  relations,
+                  chunk.map((row) => row.itemID),
+                ),
+                { libraries, relations, parentID: (row) => row.attachmentID },
+              )
+            : null;
           const result: QueryAttachment[] = [];
           for (const scan of chunk) {
             const attachment = hydrated?.get(scan.itemID) ?? NOTHING_HYDRATED;
@@ -139,19 +195,21 @@ export function openAttachmentHydration(
                     })
                   : NO_FILE,
               parent: parentItems.get(scan.parent.itemID)!,
+              ...(marks && { annotations: marks.get(scan.itemID) ?? [] }),
             });
           }
           return result;
         }),
       };
-    };
+      return loader;
+    });
 
     return {
-      scan: loader(
+      scan: yield* loader(
         [...(filter?.needs ?? []), ...sorts.map((sort) => sort.needs)],
         parents.scan,
       ),
-      projection: loader(
+      projection: yield* loader(
         paths.map((path) => path.needs),
         parents.projection,
       ),

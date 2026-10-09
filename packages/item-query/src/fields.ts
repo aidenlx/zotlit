@@ -15,6 +15,10 @@ import type {
 import { FIELD_ALIASES, ZOTERO_DATE_FIELDS } from "@zotlit/zotero-types";
 import { FIELD_LABELS } from "@zotlit/zotero-types/field-labels";
 
+import type { QueryAnnotation } from "./annotation-fields";
+import type { AnnotationNeeds } from "./annotation-hydration";
+import type { QueryAttachment } from "./attachment-fields";
+import type { AttachmentNeeds } from "./attachment-hydration";
 import { compareStrings } from "./collation";
 import {
   datePart,
@@ -27,6 +31,11 @@ import type { FilterValue, FilterValueType } from "./filter-values";
 import { libraryField } from "./library-field";
 import type { PathSegment } from "./projection-path";
 import type { QueryClock } from "./query-clock";
+import type { FilterNavigation, RecordVocabulary } from "./record-field";
+import { recordField } from "./record-field";
+import { definitionFilter } from "./record-field";
+import { annotationVocabulary } from "./record-vocabularies";
+import { attachmentVocabulary } from "./record-vocabularies";
 import type { ProjectionValue } from "./request";
 
 /**
@@ -39,6 +48,8 @@ export interface QueryItem {
   readonly hydrated: HydratedItem;
   /** The custom fields of the source, for the complete `custom` object. */
   readonly customFieldNames: readonly string[];
+  readonly attachments?: readonly QueryAttachment[];
+  readonly annotations?: readonly QueryAnnotation[];
 }
 
 /** The JSON type of a scalar value in a Query Row. */
@@ -50,6 +61,10 @@ export type ScalarType = "string" | "number" | "boolean";
  * whose keys are the custom fields of the source, each one a `value`.
  */
 export type ValueShape =
+  | {
+      readonly kind: "record";
+      readonly vocabulary: () => RecordVocabulary<any, any>;
+    }
   | { readonly kind: "scalar"; readonly type: ScalarType }
   | { readonly kind: "json" }
   | {
@@ -67,6 +82,8 @@ export interface FieldNeeds {
   readonly builtIn?: readonly string[];
   readonly custom?: readonly string[] | "all";
   readonly relations?: readonly HydrateRelation[];
+  readonly attachments?: readonly AttachmentNeeds[];
+  readonly annotations?: readonly AnnotationNeeds[];
 }
 
 /**
@@ -80,6 +97,13 @@ export type SortKey = string | number | boolean | null;
  * Schema read the same entries, so a field exists only here.
  */
 export interface FieldDefinition<Item = QueryItem, Needs = FieldNeeds> {
+  readonly relation?: () => RecordVocabulary<any, any>;
+  readonly project?: (
+    item: Item,
+    rest: readonly PathSegment[],
+  ) => ProjectionValue;
+  readonly filterNeeds?: Needs;
+  readonly navigation?: FilterNavigation<Needs>;
   readonly shape: ValueShape;
   /** Documented forms of a text value, with placeholders for variable parts. */
   readonly valueForms?: readonly string[];
@@ -101,8 +125,8 @@ export interface FieldDefinition<Item = QueryItem, Needs = FieldNeeds> {
 }
 
 /**
- * The value of a field in a Filter Expression. A relation list is a list of
- * strings here; projection gives the richer structure.
+ * The value of a field in a Filter Expression. Creator, Tag, and Collection
+ * lists hold text; cross-dataset Relation Lists hold records.
  */
 export interface FilterValueDefinition<Item = QueryItem> {
   /** The type of the value when the Item has one. */
@@ -112,7 +136,6 @@ export interface FilterValueDefinition<Item = QueryItem> {
 
 const STRING: ValueShape = { kind: "scalar", type: "string" };
 const NUMBER: ValueShape = { kind: "scalar", type: "number" };
-const BOOLEAN: ValueShape = { kind: "scalar", type: "boolean" };
 
 /** The structured value of a Zotero date field, from the template vocabulary. */
 const DATE_SHAPE: ValueShape = {
@@ -373,16 +396,12 @@ const collectionsField: FieldDefinition = {
   filter: { type: "list", read: collectionPaths },
 };
 
-/** Attachment presence: the Item has at least one non-trashed Attachment. */
-const attachmentsField: FieldDefinition = {
-  shape: BOOLEAN,
-  needs: () => ({ relations: ["attachments"] }),
-  read: (item) => item.hydrated.hasAttachments ?? false,
-  filter: {
-    type: "boolean",
-    read: (item) => item.hydrated.hasAttachments ?? false,
-  },
-};
+const attachmentsField: FieldDefinition = recordField({
+  vocabulary: () => attachmentVocabulary(),
+  list: true,
+  rows: (item) => item.attachments ?? [],
+  needs: (attachments) => ({ attachments }),
+});
 
 const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map<
   string,
@@ -408,6 +427,15 @@ const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map<
   ["tags", tagsField],
   ["collections", collectionsField],
   ["attachments", attachmentsField],
+  [
+    "annotations",
+    recordField({
+      vocabulary: () => annotationVocabulary(),
+      list: true,
+      rows: (item) => item.annotations ?? [],
+      needs: (annotations) => ({ annotations }),
+    }),
+  ],
 ]);
 
 /** The projection of a request that names no fields. */
@@ -444,6 +472,8 @@ export type FilterField<Item = QueryItem, Needs = FieldNeeds> =
       readonly filterable: true;
       readonly value: FilterValueDefinition<Item>;
       readonly needs: Needs;
+      readonly customField?: string;
+      readonly navigation?: FilterNavigation<Needs>;
     }
   | { readonly filterable: false };
 
@@ -457,13 +487,7 @@ export function filterField(name: string): FilterField | undefined {
   if (filterOnly) return { filterable: true, value: filterOnly, needs: {} };
   const definition = FIELDS.get(name);
   if (!definition) return undefined;
-  return definition.filter
-    ? {
-        filterable: true,
-        value: definition.filter,
-        needs: definition.needs([]),
-      }
-    : { filterable: false };
+  return definitionFilter(definition);
 }
 
 /** The value of one custom field in a Filter Expression, by exact source name. */

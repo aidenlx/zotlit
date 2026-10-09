@@ -20,7 +20,7 @@ interface ItemSpec {
   creators?: HydratedItem["creators"];
   tags?: readonly string[];
   collections?: readonly (readonly string[])[];
-  hasAttachments?: boolean;
+  attachments?: readonly string[];
   /** An ISO instant; defaults to 2020-01-01T00:00:00Z. */
   dateAdded?: string;
 }
@@ -29,7 +29,7 @@ function item(spec: ItemSpec = {}): QueryItem {
   const epochMilliseconds = (iso: string) =>
     Temporal.Instant.from(iso).epochMilliseconds;
   const instant = epochMilliseconds("2020-01-01T00:00:00Z");
-  return {
+  const parent: QueryItem = {
     groupID: null,
     scan: {
       itemID: 1,
@@ -44,9 +44,25 @@ function item(spec: ItemSpec = {}): QueryItem {
       creators: spec.creators ?? [],
       tags: (spec.tags ?? []).map((name) => ({ name, type: 0 })),
       collections: spec.collections ?? [],
-      hasAttachments: spec.hasAttachments ?? false,
     },
     customFieldNames: Object.keys(spec.custom ?? {}),
+  };
+  return {
+    ...parent,
+    attachments: (spec.attachments ?? []).map((key) => ({
+      scan: {
+        ...parent.scan,
+        itemID: 2,
+        key,
+        itemType: "attachment",
+        libraryID: 1,
+        parent: parent.scan,
+      },
+      parent,
+      groupID: null,
+      attachment: {},
+      file: { path: null, exists: false },
+    })),
   };
 }
 
@@ -85,7 +101,7 @@ const ARTICLE = item({
     ["Thesis", "Methods"],
     ["Course", "Methods"],
   ],
-  hasAttachments: true,
+  attachments: ["PDF2LIVE"],
 });
 
 function plan(expression: string): FilterPlan {
@@ -139,7 +155,11 @@ describe("literals and field values", () => {
     ["publisher", null],
     ["itemType", "journalArticle"],
     ["key", "ART2FULL"],
-    ["attachments", true],
+    ["attachments.length", 1],
+    ["attachments.isEmpty()", false],
+    ["attachments.unique().length", 1],
+    ["attachments.reverse()[0].key", "PDF2LIVE"],
+    ["attachments.reduce(acc, 0)", 0],
     // One element for each source row, in Zotero's creator order.
     ["creators", ["Ada Lovelace", "World Health Organization", "Ada Lovelace"]],
     // Tags and Collections follow the Item Query string order.
@@ -157,7 +177,7 @@ describe("literals and field values", () => {
     expect(valueOf("creators", bare)).toEqual([]);
     expect(valueOf("tags", bare)).toEqual([]);
     expect(valueOf("collections", bare)).toEqual([]);
-    expect(valueOf("attachments", bare)).toBe(false);
+    expect(valueOf("attachments", bare)).toEqual([]);
   });
 });
 
@@ -1391,14 +1411,14 @@ describe("validation", () => {
       },
     ],
     [
-      "attachments.length",
+      "attachments.size",
       {
         kind: "unknown",
         role: "property",
-        name: "length",
-        at: { from: 12, to: 18 },
+        name: "size",
+        at: { from: 12, to: 16 },
         receiver: {
-          type: "boolean",
+          type: "list",
           at: { from: 0, to: 11 },
           field: "attachments",
         },
@@ -1451,14 +1471,11 @@ describe("validation", () => {
     // A method that exists for another type than the subject has.
     ['tags.startsWith("a")', "unknown-function", [5, 15]],
     ["title.round()", "unknown-function", [6, 11]],
-    ["attachments.isEmpty()", "unknown-function", [12, 19]],
     ['title.within("a")', "unknown-function", [6, 12]],
     // A list helper on a subject of a definite non-list type.
     ["title.sort()", "unknown-function", [6, 10]],
     ['title.join(",")', "unknown-function", [6, 10]],
     ["title.flat()", "unknown-function", [6, 10]],
-    ["attachments.unique()", "unknown-function", [12, 18]],
-    ["attachments.reverse()", "unknown-function", [12, 19]],
     ["(1).slice(0)", "unknown-function", [4, 9]],
     ["dateAdded.flat()", "unknown-function", [10, 14]],
     ["tags.join()", "wrong-argument-count", [0, 11]],
@@ -1486,7 +1503,6 @@ describe("validation", () => {
     // An element method on a subject of a definite non-list type.
     ["title.filter(value)", "unknown-function", [6, 12]],
     ["(1).map(value)", "unknown-function", [4, 7]],
-    ["attachments.reduce(acc, 0)", "unknown-function", [12, 18]],
     ["dateAdded.map(value)", "unknown-function", [10, 13]],
     // The names are bound inside the expression alone.
     ["value.filter(value)", "unknown-function", [6, 12]],
@@ -1516,7 +1532,7 @@ describe("validation", () => {
     ["tags[0].startsWith(1)", "wrong-argument-type", [19, 20]],
     ["title.lenght", "unknown-property", [6, 12]],
     ["title.Length", "unknown-property", [6, 12]],
-    ["attachments.length", "unknown-property", [12, 18]],
+    ["attachments.size", "unknown-property", [12, 16]],
     ["(1).length", "unknown-property", [4, 10]],
     // Date functions, methods, and properties.
     ["date(5)", "wrong-argument-type", [5, 6]],
@@ -1737,7 +1753,7 @@ describe("hydration needs", () => {
     expect(needsOf('title.contains("a")')).toEqual([{ builtIn: ["title"] }]);
     expect(needsOf('tags.contains("a") || attachments')).toEqual([
       { relations: ["tags"] },
-      { relations: ["attachments"] },
+      { attachments: [] },
     ]);
     expect(needsOf('custom["review.status"] == mood')).toEqual([
       { custom: ["review.status"] },
@@ -1790,3 +1806,48 @@ it("keeps the null value of a warned ordering inside a larger expression", () =>
   expect(evaluate(planned.root, ARTICLE, CLOCK)).toBe(true);
   expect(planned.warnings).toHaveLength(1);
 });
+
+it.each([
+  ["attachments.map(value.annotations.map(index))", [[0, 1], [0]]],
+  [
+    "attachments.map(value.annotations.filter(index == 0).length + index)",
+    [1, 2],
+  ],
+  [
+    'attachments.filter(index == 1 && value.annotations.filter(index == 0 && value.sortIndex == "second").length > 0).map(value.key)',
+    ["PDFSECOND"],
+  ],
+] as const)(
+  "binds record values and indexes at each level: %s",
+  (expression, expected) => {
+    const source: QueryItem = {
+      ...ARTICLE,
+      attachments: ["PDFFIRST", "PDFSECOND"].map((key, index) => ({
+        ...ARTICLE.attachments![0]!,
+        scan: { ...ARTICLE.attachments![0]!.scan, key, itemID: index + 2 },
+        annotations: Array.from(
+          { length: index === 0 ? 2 : 1 },
+          (_, position) => ({
+            scan: {
+              ...ARTICLE.scan,
+              itemID: index * 2 + position + 10,
+              itemType: "annotation",
+              key: `MARK${index}${position}`,
+              libraryID: 1,
+              parent: ARTICLE.scan,
+              attachmentID: index + 2,
+              attachmentKey: key,
+              attachmentDateAdded: ARTICLE.scan.dateAdded,
+              attachmentDateModified: ARTICLE.scan.dateModified,
+              sortIndex: index === 0 ? "first" : "second",
+            },
+            annotation: {},
+            parent: ARTICLE,
+            groupID: null,
+          }),
+        ),
+      })),
+    };
+    expect(valueOf(expression, source)).toEqual(expected);
+  },
+);

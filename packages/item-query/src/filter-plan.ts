@@ -27,6 +27,7 @@ import {
 } from "./filter-functions";
 import type { FunctionDefinition } from "./filter-functions";
 import type { FilterValue, FilterValueType } from "./filter-values";
+import type { FilterNavigation } from "./record-field";
 
 /**
  * The type of a node's value as validation knows it. Each type also holds
@@ -107,6 +108,7 @@ export type FilterNode<Item = QueryItem> = NodeBase &
       }
     | {
         readonly kind: "property";
+        readonly read?: (subject: FilterValue) => FilterValue;
         readonly name: string;
         readonly subject: FilterNode<Item>;
       }
@@ -363,6 +365,19 @@ class Validator<Item, Needs> {
   readonly #warnings: Extract<Fault, { kind: "constant" }>[];
   /** The names the enclosing element expressions bind, innermost last. */
   readonly #scopes: (readonly string[])[] = [];
+  readonly #elements: (FilterNavigation<Needs> | undefined)[] = [];
+  readonly #navigation = new WeakMap<
+    FilterNode<Item>,
+    FilterNavigation<Needs>
+  >();
+
+  #track(
+    node: FilterNode<Item>,
+    navigation?: FilterNavigation<Needs>,
+  ): FilterNode<Item> {
+    if (navigation) this.#navigation.set(node, navigation);
+    return node;
+  }
 
   constructor(
     {
@@ -505,13 +520,22 @@ class Validator<Item, Needs> {
           }
           return this.#customField(ast.index.value, span, false);
         }
-        return {
-          ...span,
-          kind: "index",
-          subject: this.node(ast.object),
-          index: this.node(ast.index),
-          valueType: "unknown",
-        };
+        const subject = this.node(ast.object);
+        if (
+          ast.index.type === "string" &&
+          this.#navigation.get(subject)?.member
+        )
+          return this.#property(subject, ast.index.value, span);
+        return this.#track(
+          {
+            ...span,
+            kind: "index",
+            subject,
+            index: this.node(ast.index),
+            valueType: "unknown",
+          },
+          this.#navigation.get(subject)?.element,
+        );
       }
       case "call":
         return this.#call(ast, span);
@@ -600,23 +624,35 @@ class Validator<Item, Needs> {
   #identifier(name: string, span: Span): FilterNode<Item> {
     // Inside an element expression, a bound name comes before every field.
     if (this.#scopes.some((scope) => scope.includes(name))) {
-      return {
-        ...span,
-        kind: "binding",
-        name,
-        valueType: name === "index" ? "number" : "unknown",
-      };
+      const navigation = name === "value" ? this.#elements.at(-1) : undefined;
+      return this.#track(
+        {
+          ...span,
+          kind: "binding",
+          name,
+          valueType:
+            name === "index"
+              ? "number"
+              : navigation?.member
+                ? "record"
+                : "unknown",
+        },
+        navigation,
+      );
     }
     const field = this.registry.field(name);
     if (field?.filterable) {
       this.#needs.push(field.needs);
-      return {
-        ...span,
-        kind: "field",
-        name,
-        value: field.value,
-        valueType: field.value.type,
-      };
+      return this.#track(
+        {
+          ...span,
+          kind: "field",
+          name,
+          value: field.value,
+          valueType: field.value.type,
+        },
+        field.navigation,
+      );
     }
     if (name === "custom") {
       return fail(unreadable(name, span));
@@ -667,6 +703,38 @@ class Validator<Item, Needs> {
     name: string,
     span: Span,
   ): FilterNode<Item> {
+    const member = this.#navigation.get(subject)?.member;
+    if (member) {
+      const field = member(name);
+      if (!field)
+        return fail(
+          unknown({
+            role: "property",
+            name,
+            at: span,
+            receiver: receiver(subject),
+          }),
+        );
+      if (!field.filterable) return fail(unreadable(name, span));
+      this.#needs.push(field.needs);
+      if (field.customField)
+        this.#customFields.push({
+          ...span,
+          name: field.customField,
+          bare: false,
+        });
+      return this.#track(
+        {
+          ...span,
+          kind: "property",
+          name,
+          subject,
+          read: field.value.read,
+          valueType: field.value.type,
+        },
+        field.navigation,
+      );
+    }
     const named = propertiesNamed(name);
     const nameSpan = { from: span.to - name.length, to: span.to };
     if (named.length === 0) {
@@ -840,26 +908,35 @@ class Validator<Item, Needs> {
     let expression: FilterNode<Item> | null = null;
     if (first) {
       this.#scopes.push(scope);
+      this.#elements.push(this.#navigation.get(subject)?.element);
       try {
         expression = this.node(first);
       } finally {
         this.#scopes.pop();
+        this.#elements.pop();
       }
     }
     const args = others.map((arg) => this.node(arg));
     if (!expression || !takesCount(definition, args.length + 1)) {
       return fail(arity(this.#callee(name, subject), span, call.args.length));
     }
-    return {
-      ...span,
-      kind: "element",
-      name,
-      subject,
-      scope,
-      expression,
-      args,
-      valueType: definition.returns ?? "unknown",
-    };
+    return this.#track(
+      {
+        ...span,
+        kind: "element",
+        name,
+        subject,
+        scope,
+        expression,
+        args,
+        valueType: definition.returns ?? "unknown",
+      },
+      name === "filter"
+        ? this.#navigation.get(subject)
+        : name === "map"
+          ? { element: this.#navigation.get(expression) }
+          : undefined,
+    );
   }
 
   #methodCall(
@@ -883,14 +960,23 @@ class Validator<Item, Needs> {
       const wrong = mismatch(fitting[0]!, args)!;
       return fail(argumentType(this.#callee(name, subject), args, wrong));
     }
-    return {
-      ...span,
-      kind: "method",
-      name,
-      subject,
-      args,
-      valueType: commonType(fitting.map((method) => method.returns)),
-    };
+    const valueType = commonType(fitting.map((method) => method.returns));
+    return this.#track(
+      {
+        ...span,
+        kind: "method",
+        name,
+        subject,
+        args,
+        valueType,
+      },
+      valueType === "list"
+        ? name === "flat"
+          ? (this.#navigation.get(subject)?.element ??
+            this.#navigation.get(subject))
+          : this.#navigation.get(subject)
+        : undefined,
+    );
   }
 
   #callee(name: string, subject: FilterNode<Item>): Callee {

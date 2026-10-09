@@ -2767,6 +2767,134 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
   });
 
+  describe("ZotLit Query Relation Lists", () => {
+    const queryFixture = getFixtureLayout(
+      join(workspaceRoot, ".scratch", "e2e-relation-query-fixture"),
+    );
+    const queryVaultPath = e2eVaultDir(workspaceRoot, "relation-query-vault");
+    const queryVaultScript = vaultScript(workspaceRoot, queryFixture.root);
+    let queryVaultId: string;
+    beforeAll(async () => {
+      await clearVault(queryVaultScript, queryVaultPath);
+      const created = await queryVaultScript(["create", queryVaultPath]);
+      queryVaultId = created.stdout.trim().split("\n")[0]!.trim();
+      await keepRendering(queryVaultId);
+    });
+    afterAll(async () => {
+      await queryVaultScript(["remove", queryVaultPath, "--purge"]);
+      await discardFixture(queryFixture);
+    });
+    const query = async (args: Record<string, string>) =>
+      JSON.parse(
+        await cliCommand(queryVaultId, "zotlit:query", {
+          args: { library: "personal", limit: "all", sort: "[]", ...args },
+        }),
+      ) as ItemQueryReport;
+    const papers = '["PREPRNT2", "RUGIER24", "SAKIMA22"].contains(key)';
+
+    it("finds papers with no usable PDF on this machine", async () => {
+      const answer = await query({
+        filter: `(${papers} || ["AAAAAAAA", "DMRGRART"].contains(key)) && attachments.filter(value.contentType == "application/pdf" && value.exists).isEmpty()`,
+        fields: "title",
+      });
+      expect(answer.ok).toBe(true);
+      expect(answer.rows!.map((row) => row.indexedKey)).toEqual([
+        "AAAAAAAA",
+        "DMRGRART",
+      ]);
+    });
+    it("finds papers in a Collection with no highlight yet", async () => {
+      const answer = await query({
+        filter: `${papers} && collections.contains("Shared key") && annotations.filter(value.type == "highlight").isEmpty()`,
+        fields: "title",
+      });
+      expect(answer.ok).toBe(true);
+      expect(answer.rows!.map((row) => row.indexedKey)).toEqual(["PREPRNT2"]);
+    });
+    it("finds papers with more than one PDF", async () => {
+      const answer = await query({
+        filter: `${papers} && attachments.filter(value.contentType == "application/pdf").length > 1`,
+        fields: "title",
+      });
+      expect(answer.ok).toBe(true);
+      expect(answer.rows!.map((row) => row.indexedKey)).toEqual([
+        "PREPRNT2",
+        "SAKIMA22",
+      ]);
+    });
+    it("lists each file path with nulls in their source positions", async () => {
+      const answer = await query({
+        filter: 'key == "SAKIMA22"',
+        fields: "attachments[].path",
+      });
+      expect(answer).toMatchObject({
+        ok: true,
+        returnedCount: 1,
+        rows: [
+          {
+            indexedKey: "SAKIMA22",
+            values: {
+              "attachments[].path": [
+                null,
+                join(
+                  queryFixture.dataDir,
+                  "storage",
+                  "HTMLSNAP",
+                  "sakimas-song.html",
+                ),
+                null,
+                join(
+                  queryFixture.dataDir,
+                  "storage",
+                  "MISSNG22",
+                  "deliberately-missing.pdf",
+                ),
+                join(queryFixture.linkedFilesDir, "sakimas-song.pdf"),
+                join(
+                  queryFixture.dataDir,
+                  "storage",
+                  "PDFSTR22",
+                  "sakimas-song.pdf",
+                ),
+              ],
+            },
+          },
+        ],
+      });
+    });
+    it("reports the number of marks for each paper and file", async () => {
+      const answer = await query({
+        filter: papers,
+        fields: "annotations.length",
+      });
+      expect(answer.ok).toBe(true);
+      expect(
+        answer.rows!.map((row) => [
+          row.indexedKey,
+          row.values["annotations.length"],
+        ]),
+      ).toEqual([
+        ["PREPRNT2", 0],
+        ["RUGIER24", attachmentAnnotations.length],
+        ["SAKIMA22", 4],
+      ]);
+      const file = await query({
+        from: "attachments",
+        filter: 'key == "RGRPDF24"',
+        fields: "annotations.length",
+      });
+      expect(file).toMatchObject({
+        ok: true,
+        rows: [
+          {
+            indexedKey: "RGRPDF24",
+            values: { "annotations.length": attachmentAnnotations.length },
+          },
+        ],
+      });
+    });
+  });
+
   it("projects aligned Relation Lists with [] through zotlit:query", async () => {
     const query = async (fields: string[]) =>
       JSON.parse(

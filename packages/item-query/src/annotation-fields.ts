@@ -5,7 +5,6 @@ import {
   annotationTypeToName,
   formatIndexedKey,
 } from "@zotlit/db";
-import { linkModeToName } from "@zotlit/db";
 import type {
   AnnotationScanRow,
   HydratedAnnotation,
@@ -17,6 +16,7 @@ import {
   ANNOTATION_POSITION_SHAPE,
   readAnnotationPosition,
 } from "./annotation-position";
+import type { QueryAttachment } from "./attachment-fields";
 import { compareStrings } from "./collation";
 import type { SortableField } from "./dataset";
 import { fieldDefinition, filterField, customFilterValue } from "./fields";
@@ -26,10 +26,12 @@ import type {
   ValueShape,
 } from "./fields";
 import { timestamp } from "./filter-dates";
-import { planFilter } from "./filter-plan";
 import type { FilterRegistry } from "./filter-plan";
 import type { FilterValue } from "./filter-values";
 import { libraryField } from "./library-field";
+import { definitionFilter, mapNavigation, recordField } from "./record-field";
+import { attachmentVocabulary } from "./record-vocabularies";
+import { itemVocabulary } from "./record-vocabularies";
 import type { ProjectionValue } from "./request";
 
 type FieldDefinition = ItemFieldDefinition<QueryAnnotation, AnnotationNeeds>;
@@ -39,7 +41,7 @@ export interface QueryAnnotation {
   readonly annotation: HydratedAnnotation;
   readonly parent: QueryItem;
   readonly groupID: number | null;
-  readonly file: { readonly path: string | null; readonly exists: boolean };
+  readonly attachmentRecord?: QueryAttachment;
 }
 
 export const DEFAULT_ANNOTATION_FIELDS = [
@@ -79,21 +81,6 @@ const field = (
       }
     : {}),
 });
-
-/** What a path below `attachment` loads. */
-const ATTACHMENT_NEEDS = new Map<string, AnnotationNeeds>([
-  ["indexedKey", {}],
-  ["title", { attachmentTitle: true }],
-  ["contentType", DETAILS],
-  ["linkMode", DETAILS],
-  ["path", { file: true }],
-  ["exists", { file: true }],
-]);
-const WHOLE_ATTACHMENT_NEEDS: AnnotationNeeds = {
-  details: true,
-  attachmentTitle: true,
-  file: true,
-};
 
 export const ANNOTATION_FIELDS = new Map<string, FieldDefinition>([
   ["library", libraryField],
@@ -163,35 +150,12 @@ export const ANNOTATION_FIELDS = new Map<string, FieldDefinition>([
   ],
   [
     "attachment",
-    {
-      shape: {
-        kind: "object",
-        keys: {
-          indexedKey: string,
-          title: string,
-          contentType: string,
-          linkMode: string,
-          path: string,
-          exists: boolean,
-        },
-      },
-      needs: ([key]) =>
-        (typeof key === "string" && ATTACHMENT_NEEDS.get(key)) ||
-        WHOLE_ATTACHMENT_NEEDS,
-      read: ({ scan, annotation, groupID, file }) => {
-        const attachment = annotation.details?.attachment;
-        return {
-          indexedKey: formatIndexedKey(scan.attachmentKey, groupID),
-          title: annotation.attachmentTitle ?? null,
-          contentType: attachment?.contentType ?? null,
-          linkMode:
-            attachment?.linkMode == null
-              ? null
-              : linkModeToName(attachment.linkMode),
-          ...file,
-        };
-      },
-    },
+    recordField({
+      vocabulary: () => attachmentVocabulary(),
+      list: false,
+      rows: (item) => (item.attachmentRecord ? [item.attachmentRecord] : []),
+      needs: (attachment) => ({ attachment }),
+    }),
   ],
 ]);
 
@@ -203,24 +167,25 @@ export function annotationFieldDefinition(
       formatIndexedKey(item.scan.parent.key, item.groupID),
     );
   if (name === "item")
-    return {
-      shape: {
-        kind: "object",
-        keys: { indexedKey: string, title: string, citationKey: string },
-      },
-      needs: () => ({ item: { builtIn: ["title", "citationKey"] } }),
-      read: (item) => ({
-        indexedKey: formatIndexedKey(item.scan.parent.key, item.groupID),
-        title: fieldDefinition("title")!.read(item.parent),
-        citationKey: fieldDefinition("citationKey")!.read(item.parent),
-      }),
-    };
+    return recordField({
+      vocabulary: () => itemVocabulary(),
+      list: false,
+      rows: (item) => [item.parent],
+      needs: (items) => ({ item: items }),
+    });
   if (!name.startsWith("item.")) return ANNOTATION_FIELDS.get(name);
   const parent = fieldDefinition(name.slice(5));
   return parent
     ? {
         ...parent,
-        needs: (rest) => ({ item: parent.needs(rest) }),
+        needs: (rest) => ({ item: [parent.needs(rest)] }),
+        filterNeeds: { item: [parent.filterNeeds ?? parent.needs([])] },
+        navigation: mapNavigation(parent.navigation, (needs) => ({
+          item: [needs],
+        })),
+        project: parent.project
+          ? (item, rest) => parent.project!(item.parent, rest)
+          : undefined,
         read: (item) => parent.read(item.parent),
         sortKey: parent.sortKey
           ? (item, clock) => parent.sortKey!(item.parent, clock)
@@ -261,41 +226,27 @@ for (const name of ["type", "color", "pageIndex", "sortIndex"]) {
  * The Sortable Fields of Annotation Query. `attachment.indexedKey` orders by
  * the Attachment's Indexed Key within its Library.
  */
-const ANNOTATION_SORTABLE = new Map<
-  string,
-  SortableField<QueryAnnotation, AnnotationNeeds>
->([
-  ...[
-    "dateAdded",
-    "dateModified",
-    "type",
-    "color",
-    "pageIndex",
-    "sortIndex",
-    "item.title",
-    "item.date",
-    "item.dateModified",
-  ].map((name) => {
-    const definition = annotationFieldDefinition(name)!;
-    return [
-      name,
-      { needs: definition.needs([]), key: definition.sortKey! },
-    ] as const;
-  }),
-  [
-    "attachment.indexedKey",
-    { needs: {}, key: (item) => item.scan.attachmentKey },
-  ],
-]);
-
 export const ANNOTATION_SORT_FIELDS: readonly string[] = [
-  ...ANNOTATION_SORTABLE.keys(),
+  "dateAdded",
+  "dateModified",
+  "type",
+  "color",
+  "pageIndex",
+  "sortIndex",
+  "item.title",
+  "item.date",
+  "item.dateModified",
+  "attachment.indexedKey",
 ];
 
 export function annotationSortableField(
   name: string,
 ): SortableField<QueryAnnotation, AnnotationNeeds> | undefined {
-  return ANNOTATION_SORTABLE.get(name);
+  if (!ANNOTATION_SORT_FIELDS.includes(name)) return undefined;
+  if (name === "attachment.indexedKey")
+    return { needs: {}, key: (item) => item.scan.attachmentKey };
+  const definition = annotationFieldDefinition(name)!;
+  return { needs: definition.needs([]), key: definition.sortKey! };
 }
 
 export const annotationFilterRegistry: FilterRegistry<
@@ -308,6 +259,8 @@ export const annotationFilterRegistry: FilterRegistry<
       ? "colorName"
       : name,
   field(name) {
+    if (name === "item")
+      return definitionFilter(annotationFieldDefinition(name));
     if (
       name === "indexedKey" ||
       name === "key" ||
@@ -336,7 +289,10 @@ export const annotationFilterRegistry: FilterRegistry<
       return parent?.filterable
         ? {
             ...parent,
-            needs: { item: parent.needs },
+            needs: { item: [parent.needs] },
+            navigation: mapNavigation(parent.navigation, (needs) => ({
+              item: [needs],
+            })),
             value: {
               ...parent.value,
               read: (item) => parent.value.read(item.parent),
@@ -344,22 +300,13 @@ export const annotationFilterRegistry: FilterRegistry<
           }
         : parent;
     }
-    const definition = ANNOTATION_FIELDS.get(name);
-    return definition?.filter
-      ? {
-          filterable: true,
-          value: definition.filter,
-          needs: definition.needs([]),
-        }
-      : definition
-        ? { filterable: false }
-        : undefined;
+    return definitionFilter(ANNOTATION_FIELDS.get(name));
   },
   custom(name) {
     const parent = customFilterValue(name);
     return {
       ...parent,
-      needs: { item: parent.needs },
+      needs: { item: [parent.needs] },
       value: {
         ...parent.value,
         read: (item) => parent.value.read(item.parent),
@@ -367,5 +314,3 @@ export const annotationFilterRegistry: FilterRegistry<
     };
   },
 };
-export const planAnnotationFilter = (text: string) =>
-  planFilter(text, annotationFilterRegistry);

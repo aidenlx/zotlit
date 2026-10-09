@@ -3,9 +3,7 @@ import {
   collectionItems,
   creators,
   creatorTypes,
-  deletedItems,
   fieldsCombined,
-  itemAttachments,
   itemCreators,
   itemData,
   itemDataValues,
@@ -13,7 +11,7 @@ import {
   itemTags,
   tags,
 } from "@drizzle/schema";
-import { and, asc, eq, inArray, notExists, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { Effect } from "effect";
 
@@ -67,11 +65,7 @@ export interface HydrateFields {
 }
 
 /** A relation of an Item that the hydrate reader can load. */
-export type HydrateRelation =
-  | "creators"
-  | "tags"
-  | "collections"
-  | "attachments";
+export type HydrateRelation = "creators" | "tags" | "collections";
 
 /** One `itemCreators` row of an Item, with its creator and creator type. */
 export interface HydratedCreator {
@@ -110,8 +104,6 @@ export interface HydratedItem {
    * directly, in no defined order. See {@link readCollectionPaths}.
    */
   readonly collections?: readonly (readonly string[])[];
-  /** The Item has at least one non-trashed child Attachment. */
-  readonly hasAttachments?: boolean;
 }
 
 const fieldsStatement = defineStatement<Record<string, never>>(
@@ -203,7 +195,6 @@ interface LoadingItem {
   creators?: HydratedCreator[];
   tags?: HydratedTag[];
   collections?: (readonly string[])[];
-  hasAttachments?: boolean;
 }
 
 const fieldValuesStatement = defineStatement<
@@ -293,34 +284,12 @@ const membershipsStatement = defineStatement<Record<IdSlot, number | null>>(
     ),
 );
 
-const attachmentParentsStatement = defineStatement<
-  Record<IdSlot, number | null>
->("hydrate-chunk")((db, { placeholder }) =>
-  db
-    .selectDistinct({ itemID: itemAttachments.parentItemID })
-    .from(itemAttachments)
-    .where(
-      and(
-        inArray(
-          itemAttachments.parentItemID,
-          ID_SLOTS.names.map((slot) => placeholder(slot)),
-        ),
-        notExists(
-          db
-            .select({ itemID: deletedItems.itemID })
-            .from(deletedItems)
-            .where(eq(deletedItems.itemID, itemAttachments.itemID)),
-        ),
-      ),
-    ),
-);
-
 /**
  * Load the field values and relations of at most {@link HYDRATE_CHUNK_SIZE}
  * Items, restricted to the fields and relations the query needs. Every
  * requested Item has an entry. A value is a string whether SQLite stores it as
  * text or as a number. A requested relation that an Item lacks is an empty
- * list, or `false` for Attachment presence.
+ * list.
  */
 export function readHydrateChunk(chunk: {
   vocabulary: FieldVocabulary;
@@ -353,7 +322,6 @@ export function readHydrateChunk(chunk: {
       if (relations.includes("creators")) item.creators = [];
       if (relations.includes("tags")) item.tags = [];
       if (relations.includes("collections")) item.collections = [];
-      if (relations.includes("attachments")) item.hasAttachments = false;
       result.set(id, item);
     }
     if (itemIDs.length === 0) return result;
@@ -434,15 +402,6 @@ export function readHydrateChunk(chunk: {
       });
     }
 
-    if (relations.includes("attachments")) {
-      const rows = yield* attachmentParentsStatement.all(slots);
-      yield* Effect.sync(() => {
-        for (const { itemID } of rows) {
-          const item = itemID === null ? undefined : result.get(itemID);
-          if (item) item.hasAttachments = true;
-        }
-      });
-    }
     return result;
   });
 }

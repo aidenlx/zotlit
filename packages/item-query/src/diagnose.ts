@@ -736,7 +736,9 @@ function receiverNotes(
   const subject = receiver.field ? `\`${receiver.field}\`` : "The receiver";
   const type =
     receiver.type === "list" && receiver.field
-      ? "a list of text"
+      ? dataset.definition(receiver.field)?.relation
+        ? "a list of records"
+        : "a list of text"
       : `a ${receiver.type}`;
   const notes = [`${subject} is ${type} in a filter.`];
   if (!receiver.field) return notes;
@@ -757,6 +759,7 @@ function structuredPaths(path: string, shape: ValueShape): readonly string[] {
   switch (shape.kind) {
     case "scalar":
     case "json":
+    case "record":
     case "custom-fields":
       return [];
     case "object":

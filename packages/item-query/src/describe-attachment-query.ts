@@ -27,6 +27,7 @@ export function describeAttachmentQueryVocabulary() {
         group: definition.shape.kind === "scalar",
         filter: filterCapability(path),
         sort: false,
+        ...(definition.relation && { relation: definition.relation().id }),
         ...(definition.valueForms && { valueForms: definition.valueForms }),
       },
       ...pathsBelow(path, definition.shape, filterCapability),
@@ -56,7 +57,7 @@ export function describeAttachmentQueryVocabulary() {
       relation: "items",
       type: "object",
       projection: true,
-      filter: null,
+      filter: "record",
       sort: false,
     },
   );
