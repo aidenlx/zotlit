@@ -171,7 +171,11 @@ describe("readReferenceSources", () => {
   });
 
   it("keeps the cited Items when the attachment table cannot be read", async () => {
-    await readsOver(`${seedWorksSql([CITED])}\ndrop table itemAttachments;`);
+    // A column the attachment read needs; the layout check needs no more
+    // than `itemID` and `parentItemID` of the table.
+    await readsOver(
+      `${seedWorksSql([CITED])}\nalter table itemAttachments drop column linkMode;`,
+    );
 
     const { sources } = await readReferenceSources(ready, [
       citation(KEY, null),

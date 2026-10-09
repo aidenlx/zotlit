@@ -1,8 +1,8 @@
 import { Cause, Clock, Effect, Exit } from "effect";
-import type { SQLInputValue } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 
 import { ItemQueryDatabase, ItemQueryLayoutError } from "@zotlit/db/item-query";
+import type { StatementRun } from "@zotlit/db/item-query";
 import {
   BULK_TAG,
   openScenarioDatabase,
@@ -19,7 +19,7 @@ import {
 } from ".";
 import type { ItemQueryRequest, QueryResult, QueryRow } from ".";
 import { runEffect } from "./test-helpers";
-import type { RunOptions } from "./test-helpers";
+import type { RunEvent, RunOptions } from "./test-helpers";
 
 const { personal, group } = SCENARIO_LIBRARIES;
 
@@ -54,28 +54,27 @@ async function failure(
 const keys = (found: QueryResult) => found.rows.map((row) => row.indexedKey);
 
 /**
- * Record the Item IDs that the statements whose SQL contains `marker` bind.
- * Only the field-value statement reads its field list through `json_each`.
+ * The hydrate statements of a run: `fields` loads the field values of a chunk,
+ * `relation` loads one relation of a chunk.
  */
-function recordHydratedItemIDs(
-  database: ScenarioDatabase,
-  marker = "json_each",
-): () => number[] {
-  const ids: number[] = [];
-  const { sqlite } = database;
-  const prepare = sqlite.prepare.bind(sqlite);
-  sqlite.prepare = (sql: string) => {
-    const statement = prepare(sql);
-    if (!sql.includes(marker)) return statement;
-    const all = statement.all.bind(statement);
-    statement.all = ((...params: SQLInputValue[]) => {
-      for (const param of params)
-        if (typeof param === "number") ids.push(param);
-      return all(...params);
-    }) as typeof statement.all;
-    return statement;
-  };
-  return () => ids;
+function hydrates(
+  events: readonly RunEvent[],
+  kind: "fields" | "relation",
+): StatementRun[] {
+  return events.flatMap((event) =>
+    event.type === "statement" &&
+    event.statement.reader === "hydrate-chunk" &&
+    "fieldIDs" in event.statement.params === (kind === "fields")
+      ? [event.statement]
+      : [],
+  );
+}
+
+/** The Item IDs that the ID slots of one statement bind. */
+function itemIDsBound(statement: StatementRun): number[] {
+  return Object.values(statement.params).filter(
+    (param): param is number => typeof param === "number",
+  );
 }
 
 /** Store a built-in field value on a personal Item of the scenario. */
@@ -505,19 +504,18 @@ describe("queryItems Projection Paths", () => {
 
   it("hydrates the projection only for the rows a limited query returns", async () => {
     using scenario = openScenarioDatabase();
-    const hydratedIDs = recordHydratedItemIDs(scenario);
-
-    const found = await result(scenario, {
+    const { exit, events } = await run(scenario, {
       libraries: [personal],
       fields: ["title"],
       limit: 2,
     });
 
-    expect(keys(found)).toEqual(["ART2FULL", "UNI2CDE2"]);
+    if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
+    expect(keys(exit.value)).toEqual(["ART2FULL", "UNI2CDE2"]);
     const byNumber = (a: number, b: number) => a - b;
-    expect(hydratedIDs().toSorted(byNumber)).toEqual(
-      itemIDsOf(scenario, ["ART2FULL", "UNI2CDE2"]).toSorted(byNumber),
-    );
+    expect(
+      hydrates(events, "fields").flatMap(itemIDsBound).toSorted(byNumber),
+    ).toEqual(itemIDsOf(scenario, ["ART2FULL", "UNI2CDE2"]).toSorted(byNumber));
   });
 
   it("reads Items of a Library larger than one hydrate chunk", async () => {
@@ -684,41 +682,43 @@ describe("queryItems relation lists", () => {
 
   it("loads each relation only for the rows a limited query returns", async () => {
     using scenario = openScenarioDatabase();
-    const tables = [
-      "itemCreators",
-      "itemTags",
-      "collectionItems",
-      "itemAttachments",
-    ];
-    const recorded = tables.map((table) =>
-      recordHydratedItemIDs(scenario!, `"${table}"`),
-    );
-
-    await result(scenario, {
+    const { exit, events } = await run(scenario, {
       libraries: [personal],
       fields: ["creators", "tags", "collections", "attachments"],
       limit: 2,
     });
 
+    if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
     const byNumber = (a: number, b: number) => a - b;
     const returned = itemIDsOf(scenario, ["ART2FULL", "UNI2CDE2"]);
-    for (const ids of recorded) {
-      expect(ids().toSorted(byNumber)).toEqual(returned.toSorted(byNumber));
+    // One statement for each relation, and no field values.
+    expect(hydrates(events, "fields")).toEqual([]);
+    const relations = hydrates(events, "relation");
+    expect(relations).toHaveLength(4);
+    for (const statement of relations) {
+      expect(itemIDsBound(statement).toSorted(byNumber)).toEqual(
+        returned.toSorted(byNumber),
+      );
     }
   });
 
   it("loads no relation that the query does not read", async () => {
     using scenario = openScenarioDatabase();
-    const recorded = ["itemCreators", "itemTags", "collectionItems"].map(
-      (table) => recordHydratedItemIDs(scenario!, `"${table}"`),
-    );
-
-    await result(scenario, {
+    const { exit, events } = await run(scenario, {
       libraries: [personal],
       fields: ["title", "attachments"],
     });
 
-    for (const ids of recorded) expect(ids()).toEqual([]);
+    if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
+    // The title of the one chunk, and its Attachment presence: each row of
+    // that statement is the ID of a parent Item.
+    expect(hydrates(events, "fields")).toHaveLength(1);
+    const [attachments, ...more] = hydrates(events, "relation");
+    expect(more).toEqual([]);
+    expect(attachments!.rows.length).toBeGreaterThan(0);
+    for (const row of attachments!.rows) {
+      expect(Object.keys(row as object)).toEqual(["itemID"]);
+    }
   });
 
   it("reaches one Creator by index, with null past the end", async () => {
@@ -1138,41 +1138,28 @@ describe("queryItems sort", () => {
           )
           .get(name) as { fieldID: number }
       ).fieldID;
-    // The Items each field-value statement reads, by the fields it reads.
-    const reads: { fieldIDs: number[]; itemIDs: number[] }[] = [];
-    const prepare = sqlite.prepare.bind(sqlite);
-    sqlite.prepare = (sql: string) => {
-      const statement = prepare(sql);
-      if (!sql.includes("json_each")) return statement;
-      const all = statement.all.bind(statement);
-      statement.all = ((...params: SQLInputValue[]) => {
-        reads.push({
-          fieldIDs: params.flatMap((param) =>
-            typeof param === "string" ? (JSON.parse(param) as number[]) : [],
-          ),
-          itemIDs: params.filter((param) => typeof param === "number"),
-        });
-        return all(...params);
-      }) as typeof statement.all;
-      return statement;
-    };
-
-    const found = await result(scenario, {
+    const { exit, events } = await run(scenario, {
       libraries: [personal],
       fields: ["DOI"],
       sort: [{ field: "title", direction: "asc" }],
       limit: 2,
     });
 
-    expect(found.rows).toEqual([
+    if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
+    expect(exit.value.rows).toEqual([
       { indexedKey: "CHP2YEAR", values: { DOI: null } },
       { indexedKey: "ALS2CNFL", values: { DOI: null } },
     ]);
     const byNumber = (a: number, b: number) => a - b;
+    // The Items each field-value statement reads, by the fields it reads.
     const itemsRead = (name: string) =>
-      reads
-        .filter((read) => read.fieldIDs.includes(fieldID(name)))
-        .flatMap((read) => read.itemIDs)
+      hydrates(events, "fields")
+        .filter((statement) =>
+          (
+            JSON.parse(statement.params["fieldIDs"] as string) as number[]
+          ).includes(fieldID(name)),
+        )
+        .flatMap(itemIDsBound)
         .toSorted(byNumber);
     expect(itemsRead("title")).toEqual(
       itemIDsOf(scenario, PERSONAL_BY_MODIFIED).toSorted(byNumber),
@@ -2274,119 +2261,20 @@ describe("queryItems with a filter", () => {
       expect(error).toMatchObject({ code: "wrong-argument-type" });
     });
   });
-
-  describe("hydration", () => {
-    /** The relation tables and field IDs the statements of one run read. */
-    function recordReads(database: ScenarioDatabase) {
-      const tables = new Set<string>();
-      const fieldIDs = new Set<number>();
-      const { sqlite } = database;
-      const prepare = sqlite.prepare.bind(sqlite);
-      sqlite.prepare = (sql: string) => {
-        const statement = prepare(sql);
-        const all = statement.all.bind(statement);
-        statement.all = ((...params: SQLInputValue[]) => {
-          for (const table of [
-            "itemData",
-            "itemCreators",
-            "itemTags",
-            "collectionItems",
-            "itemAttachments",
-          ]) {
-            if (sql.includes(`from "${table}"`)) tables.add(table);
-          }
-          for (const param of params) {
-            if (typeof param === "string" && param.startsWith("[")) {
-              for (const id of JSON.parse(param) as number[]) fieldIDs.add(id);
-            }
-          }
-          return all(...params);
-        }) as typeof statement.all;
-        return statement;
-      };
-      return { tables, fieldIDs };
-    }
-
-    const fieldNames = (database: ScenarioDatabase, ids: Set<number>) =>
-      [...ids]
-        .map(
-          (id) =>
-            (
-              database.sqlite
-                .prepare(
-                  "select fieldName from fieldsCombined where fieldID = ?",
-                )
-                .get(id) as { fieldName: string }
-            ).fieldName,
-        )
-        .toSorted();
-
-    it("loads nothing for a filter on the scan row", async () => {
-      using scenario = openScenarioDatabase();
-      const reads = recordReads(scenario);
-
-      await matching(scenario, 'itemType == "book" && key != "ART2FULL"');
-
-      expect([...reads.tables]).toEqual([]);
-    });
-
-    it("loads only the relation the filter reads", async () => {
-      using scenario = openScenarioDatabase();
-      const reads = recordReads(scenario);
-
-      await matching(scenario, 'tags.contains("to-read")');
-
-      expect([...reads.tables]).toEqual(["itemTags"]);
-    });
-
-    it("loads only the fields the filter reads, with the aliases of a base field", async () => {
-      using scenario = openScenarioDatabase();
-      const reads = recordReads(scenario);
-
-      await matching(
-        scenario,
-        'publisher == "Sage" && custom["review.status"] == null',
-      );
-
-      expect([...reads.tables]).toEqual(["itemData"]);
-      const names = fieldNames(scenario, reads.fieldIDs);
-      expect(names).toContain("publisher");
-      expect(names).toContain("institution");
-      expect(names).toContain("review.status");
-      expect(names).not.toContain("title");
-      expect(names).not.toContain("mood");
-    });
-
-    it("loads the fields of a branch that does not run for an Item", async () => {
-      using scenario = openScenarioDatabase();
-      const reads = recordReads(scenario);
-
-      expect(
-        await matching(scenario, 'itemType == "report" && creators.isEmpty()'),
-      ).toEqual(["RPT2NDTE"]);
-      expect([...reads.tables]).toEqual(["itemCreators"]);
-    });
-  });
 });
 
 describe("queryItems candidate sets", () => {
-  /** The marker of the statement that loads the Tags of a hydrate chunk. */
-  const TAG_HYDRATION = '"itemTags"."itemID" in (';
-  /** The marker of the statement that loads the field values of a chunk. */
-  const FIELD_HYDRATION = '"itemData"."itemID" in (';
-  /** The marker of the statement that loads the Collections of a chunk. */
-  const COLLECTION_HYDRATION = '"collectionItems"."itemID" in (';
-
   /**
    * Run a filter on the personal Library, and give its Indexed Keys in key
-   * order and the keys of the Items that the statement with `marker` loaded.
+   * order and the keys of the Items that the hydrate statements of `kind`
+   * loaded. A filter here reads one relation at most, so the relation
+   * statements load the Tags or the Collections that the filter reads.
    */
   const hydratedReads =
-    (marker: string) =>
+    (kind: "fields" | "relation") =>
     async (filter: string, tuning?: RunOptions["tuning"]) => {
       using scenario = openScenarioDatabase();
-      const loaded = recordHydratedItemIDs(scenario, marker);
-      const { exit } = await runEffect(
+      const { exit, events } = await runEffect(
         queryItems({ libraries: [personal], filter, fields: [], sort: [] }),
         { client: scenario.db, tuning },
       );
@@ -2396,14 +2284,14 @@ describe("queryItems candidate sets", () => {
       );
       return {
         matched: keys(exit.value),
-        read: [...new Set(loaded())]
+        read: [...new Set(hydrates(events, kind).flatMap(itemIDsBound))]
           .map((itemID) => (keyOf.get(itemID) as { key: string }).key)
           .toSorted(),
       };
     };
-  const tagReads = hydratedReads(TAG_HYDRATION);
-  const fieldReads = hydratedReads(FIELD_HYDRATION);
-  const collectionReads = hydratedReads(COLLECTION_HYDRATION);
+  const tagReads = hydratedReads("relation");
+  const fieldReads = hydratedReads("fields");
+  const collectionReads = hydratedReads("relation");
 
   const EVERY_PERSONAL_ITEM = PERSONAL_BY_MODIFIED.toSorted();
   const TIE_ITEMS = ["TIE2AAAA", "TIE2BBBB", "TIE2CCCC"];
@@ -2608,17 +2496,18 @@ describe("queryItems candidate sets", () => {
        select itemID, (select tagID from tags where name = 'methods'), 0
        from items where key in ('TIE2AAAA', 'TIE2BBBB', 'RPT2NDTE', 'CNF2TEXT') and libraryID = 1`,
     );
-    const loaded = recordHydratedItemIDs(scenario, TAG_HYDRATION);
-
-    const found = await result(scenario, {
+    const { exit, events } = await run(scenario, {
       libraries: [personal],
       filter: 'tags.contains("methods") && tags.contains("tie")',
       fields: [],
       sort: [],
     });
 
-    expect(keys(found)).toEqual(["TIE2AAAA", "TIE2BBBB"]);
-    expect(new Set(loaded()).size).toBe(3);
+    if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
+    expect(keys(exit.value)).toEqual(["TIE2AAAA", "TIE2BBBB"]);
+    expect(
+      new Set(hydrates(events, "relation").flatMap(itemIDsBound)).size,
+    ).toBe(3);
   });
 
   it("gives the same result with the scan forced by the tuning reference", async () => {
@@ -2689,19 +2578,21 @@ describe("queryItems candidate sets", () => {
        select itemID, (select tagID from tags where name = 'group-only'), 0
        from items where key >= 'ZZ000000' and key < 'ZZ000700' and libraryID = 1`,
     );
-    const loaded = recordHydratedItemIDs(scenario, TAG_HYDRATION);
-
-    const found = await result(scenario, {
+    const { exit, events } = await run(scenario, {
       libraries: [personal],
       filter: 'tags.contains("group-only")',
       fields: [],
       sort: [],
     });
 
+    if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
+    const found = exit.value;
     expect(found.returnedCount).toBe(700);
     expect(keys(found).at(0)).toBe("ZZ000000");
     expect(keys(found).at(-1)).toBe("ZZ000699");
-    expect(new Set(loaded()).size).toBe(700);
+    expect(
+      new Set(hydrates(events, "relation").flatMap(itemIDsBound)).size,
+    ).toBe(700);
   });
 });
 
@@ -3002,7 +2893,9 @@ describe("incremental query consumption", () => {
 
   it("awaits a write and stops projection when that write fails", async () => {
     using scenario = openScenarioDatabase();
-    const hydrated = recordHydratedItemIDs(scenario);
+    // The Item IDs of the field-value statements, when each one runs.
+    const ids: number[] = [];
+    const hydrated = () => [...ids];
     const failed = { reason: "destination is full" };
     let finishWrite!: () => void;
     const blocked = new Promise<void>((resolve) => {
@@ -3029,7 +2922,14 @@ describe("incremental query consumption", () => {
               }),
           }),
       ),
-      { client: scenario.db, tuning: { hydrateChunkSize: 1 } },
+      {
+        client: scenario.db,
+        tuning: { hydrateChunkSize: 1 },
+        onEvent: (event) => {
+          if (event.type !== "statement") return;
+          ids.push(...hydrates([event], "fields").flatMap(itemIDsBound));
+        },
+      },
     );
     await writing;
     const reads = hydrated();

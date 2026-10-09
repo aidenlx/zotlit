@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { getLibraries } from "@/queries/libraries";
 import {
   BULK_LIBRARY,
   openScenarioDatabase,
@@ -8,41 +9,48 @@ import {
 } from "@/test-scenario";
 import type { ScenarioDatabase } from "@/test-scenario";
 
-import { ItemQueryDatabase, readSourceLibraries } from ".";
+import { ItemQueryDatabase, readLibraries } from ".";
 
 function read(scenario: ScenarioDatabase) {
   return Effect.runSync(
-    Effect.provideService(readSourceLibraries(), ItemQueryDatabase, {
+    Effect.provideService(readLibraries(), ItemQueryDatabase, {
       client: scenario.db,
     }),
   );
 }
 
-const PERSONAL = { libraryID: 1, type: "user", groupID: null, name: null };
+const PERSONAL = {
+  libraryID: 1,
+  type: "user",
+  version: 0,
+  clientVersion: 0,
+  groupID: null,
+  name: null,
+};
 const METHODS_GROUP = {
   libraryID: 2,
   type: "group",
+  version: 0,
+  clientVersion: 0,
   groupID: 4815,
   name: "Methods Reading Group",
 };
 
-describe("readSourceLibraries", () => {
-  it("gives the personal Library first, then each group Library with its group ID and name", () => {
+describe("readLibraries", () => {
+  it("gives the personal Library and each group Library with its group ID and name", () => {
     using scenario = openScenarioDatabase();
 
     expect(read(scenario)).toEqual([PERSONAL, METHODS_GROUP]);
   });
 
-  it("orders the group Libraries by group ID, whatever their local library IDs are", () => {
+  it("gives the rows of getLibraries", () => {
     using scenario = openScenarioDatabase();
-    // The bulk Library has the higher `libraryID` and the lower group ID.
     seedBulkLibrary(scenario.sqlite, 1);
 
-    expect(read(scenario)).toEqual([
-      PERSONAL,
-      { ...BULK_LIBRARY, type: "group" },
-      METHODS_GROUP,
-    ]);
+    expect(read(scenario)).toEqual(getLibraries(scenario.db));
+    expect(read(scenario)).toContainEqual(
+      expect.objectContaining({ ...BULK_LIBRARY, type: "group" }),
+    );
   });
 
   it("leaves out a Library that is no personal or group Library", () => {
@@ -60,6 +68,9 @@ describe("readSourceLibraries", () => {
       "update version set version = 999 where schema = 'userdata'",
     );
 
-    expect(read(scenario)).toEqual([PERSONAL, METHODS_GROUP]);
+    expect(read(scenario)).toEqual([
+      { ...PERSONAL, clientVersion: null },
+      { ...METHODS_GROUP, clientVersion: null },
+    ]);
   });
 });

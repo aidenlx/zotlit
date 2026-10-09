@@ -3,7 +3,7 @@
 // database and the time-budget scheduler.
 import { Data, Effect } from "effect";
 
-import { readSourceLibraries } from "@zotlit/db/item-query";
+import { readLibraries } from "@zotlit/db/item-query";
 import type {
   ItemQueryDatabase,
   ItemQueryDatabaseError,
@@ -83,11 +83,9 @@ export function runItemQueryTo<A, E, R>(
   ItemQueryDatabase | R
 > {
   return Effect.gen(function* () {
-    // The resolution of the Library Scope service, on Library rows from the
-    // layout-checked reader. `LibraryScopeService.resolveWith` loads its
-    // rows with `getLibraries`, which selects columns by the version stamp
-    // and fails on a copy that Item Query can read.
-    const libraries = resolveLibraryScope(yield* readSourceLibraries(), scope);
+    // The resolution of the Library Scope service, on the rows of the one
+    // Library reader of `getLibraries`, read on the borrowed client.
+    const libraries = resolveLibraryScope(yield* readLibraries(), scope);
     const { available, unavailable } = libraries;
     const [missing] = unavailable;
     if (requireEach && missing) {

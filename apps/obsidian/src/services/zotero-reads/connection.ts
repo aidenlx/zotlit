@@ -3,9 +3,10 @@ import { Context, Duration, Effect, Layer, RcRef } from "effect";
 import type { Stream } from "effect";
 import type { Scope } from "effect";
 
-import { getLibraries, getZoteroDatabaseIdentity } from "@zotlit/db";
+import { getZoteroDatabaseIdentity } from "@zotlit/db";
 import type { ZoteroDatabaseIdentity } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import { checkDatabaseLayout } from "@zotlit/db/item-query";
 
 import { makeChangeFeed } from "./change-feed";
 import { DbUnavailable } from "./rpc";
@@ -127,12 +128,16 @@ export function toDbUnavailable(cause: unknown): DbUnavailable {
 }
 
 /**
- * Prove a client reads as a Zotero database before it serves; a client that
- * fails is closed before the throw.
+ * Prove a client reads as a Zotero database before it serves: its layout has
+ * every table and column the readers need, so a copy that validates is a copy
+ * Item Query reads. The layout read stays with the client, so the readers and
+ * `reportSchemaVersions` run no statement for it again. A client that fails is
+ * closed before the throw; a layout the readers cannot read throws
+ * `ItemQueryLayoutError`.
  */
 export function validateClient(client: NodeDatabaseClient): NodeDatabaseClient {
   try {
-    getLibraries(client);
+    checkDatabaseLayout(client);
   } catch (error) {
     client.$client.close();
     throw error;
