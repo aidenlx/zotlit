@@ -23,8 +23,10 @@ import type { CandidateSources } from "./candidate-plan";
 import { ItemQueryError } from "./error";
 import type { ItemQueryErrorLocation } from "./error";
 import type { FieldNeeds, QueryItem } from "./fields";
+import type { FilterPlan } from "./filter-plan";
 import { hasBareForm } from "./filter-plan";
-import type { ItemQueryPlan, TargetLibrary } from "./request";
+import type { PlannedPath } from "./projection";
+import type { PlannedSort, TargetLibrary } from "./request";
 
 /** What one pass loads for each Item of a chunk. */
 export interface LoadPlan {
@@ -67,8 +69,12 @@ export interface Hydration {
  * against the source, and read the Collection paths of each Target Library
  * when a pass loads Collections.
  */
-export function openHydration(
-  plan: Pick<ItemQueryPlan, "filter" | "paths" | "sorts">,
+export function openHydration<Item>(
+  plan: {
+    filter: FilterPlan<Item> | null;
+    paths: readonly PlannedPath<Item>[];
+    sorts: readonly Pick<PlannedSort, "needs">[];
+  },
   libraries: readonly TargetLibrary[],
 ): Effect.Effect<
   Hydration,

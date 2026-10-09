@@ -1,4 +1,7 @@
 import {
+  collectionItems,
+  itemData,
+  itemDataValues,
   deletedItems,
   itemAnnotations,
   itemAttachments,
@@ -9,6 +12,8 @@ import {
 } from "@drizzle/schema";
 import {
   and,
+  count,
+  or,
   asc,
   eq,
   gt,
@@ -22,7 +27,10 @@ import { Effect } from "effect";
 
 import type { NodeDatabaseClient } from "@/client/node";
 import { CHILD_ITEM_TYPES } from "@/lib/item-types";
+import { annotationColorsForName } from "@/lib/zt-color";
 
+import { storedNumberOf, storedIntegerOf } from "./candidate-set";
+import type { CandidateLeaf } from "./candidate-set";
 import { defineStatement, idSlots, unindexed } from "./database";
 import type { IdSlot } from "./database";
 import { HYDRATE_CHUNK_SIZE, readHydrateChunk } from "./hydrate-chunk";
@@ -258,3 +266,177 @@ export type HydratedAnnotation =
   > extends ReadonlyMap<number, infer A>
     ? A
     : never;
+
+export type AnnotationCandidateLeaf =
+  | { readonly kind: "parent"; readonly leaf: CandidateLeaf }
+  | { readonly kind: "type"; readonly value: string }
+  | { readonly kind: "color"; readonly value: string }
+  | { readonly kind: "tag"; readonly value: string }
+  | {
+      readonly kind: "selector";
+      readonly target: "item" | "attachment";
+      readonly keys: readonly string[];
+    };
+
+const annotationCount = defineStatement<{ libraryID: number }>(
+  "annotation-row-count",
+)((db, { placeholder }) =>
+  db.select({ rows: count() }).from(
+    selectAnnotations(db)
+      .where(
+        and(eq(items.libraryID, placeholder("libraryID")), ...universe(db)),
+      )
+      .as("annotationUniverse"),
+  ),
+);
+export const readAnnotationRowCount = (libraryID: number) =>
+  Effect.map(annotationCount.all({ libraryID }), (rows) => rows[0]?.rows ?? 0);
+
+interface AnnotationCandidateParams extends Record<string, unknown> {
+  libraryID: number;
+  limit: number;
+  value: string;
+  list: string;
+  number: number | null;
+  integer: bigint | null;
+}
+
+const annotationCandidates = (
+  kind:
+    | "type"
+    | "color"
+    | "tag"
+    | "item"
+    | "attachment"
+    | "parent-tag"
+    | "parent-key"
+    | "parent-field"
+    | "parent-collection",
+) =>
+  defineStatement<AnnotationCandidateParams>("annotation-candidate-set")(
+    (db, { placeholder: p }) => {
+      const list = sql`select value from json_each(${p("list")})`;
+      const tagged = (id: typeof items.itemID | typeof parent.itemID) =>
+        inArray(
+          id,
+          db
+            .select({ itemID: itemTags.itemID })
+            .from(itemTags)
+            .innerJoin(tags, eq(tags.tagID, itemTags.tagID))
+            .where(eq(tags.name, p("value"))),
+        );
+      const condition = {
+        type: sql`case ${itemAnnotations.type} when 1 then 'highlight' when 2 then 'note' when 3 then 'image' when 4 then 'ink' when 5 then 'underline' when 6 then 'text' else 'unknown' end = ${p("value")}`,
+        color: or(
+          eq(itemAnnotations.color, p("value")),
+          sql`upper(${itemAnnotations.color}) in (${list})`,
+        ),
+        tag: tagged(items.itemID),
+        item: sql`${parent.key} in (${list})`,
+        attachment: sql`${attachment.key} in (${list})`,
+        "parent-tag": tagged(parent.itemID),
+        "parent-key": eq(parent.key, p("value")),
+        "parent-field": inArray(
+          parent.itemID,
+          db
+            .select({ itemID: itemData.itemID })
+            .from(itemDataValues)
+            .innerJoin(
+              itemData,
+              eq(itemData.valueID, unindexed(itemDataValues.valueID)),
+            )
+            .where(
+              and(
+                or(
+                  eq(itemDataValues.value, p("value")),
+                  eq(itemDataValues.value, p("number")),
+                  eq(itemDataValues.value, p("integer")),
+                ),
+                sql`${unindexed(itemData.fieldID)} in (${list})`,
+              ),
+            ),
+        ),
+        "parent-collection": inArray(
+          parent.itemID,
+          db
+            .select({ itemID: collectionItems.itemID })
+            .from(collectionItems)
+            .where(sql`${collectionItems.collectionID} in (${list})`),
+        ),
+      }[kind];
+      return db
+        .select({ itemID: items.itemID })
+        .from(itemAnnotations)
+        .innerJoin(items, eq(items.itemID, itemAnnotations.itemID))
+        .innerJoin(
+          itemAttachments,
+          eq(itemAttachments.itemID, itemAnnotations.parentItemID),
+        )
+        .innerJoin(attachment, eq(attachment.itemID, itemAttachments.itemID))
+        .innerJoin(parent, eq(parent.itemID, itemAttachments.parentItemID))
+        .where(and(eq(unindexed(items.libraryID), p("libraryID")), condition))
+        .limit(p("limit"));
+    },
+  );
+const annotationCandidateStatements = {
+  type: annotationCandidates("type"),
+  color: annotationCandidates("color"),
+  tag: annotationCandidates("tag"),
+  item: annotationCandidates("item"),
+  attachment: annotationCandidates("attachment"),
+  "parent-tag": annotationCandidates("parent-tag"),
+  "parent-key": annotationCandidates("parent-key"),
+  "parent-field": annotationCandidates("parent-field"),
+  "parent-collection": annotationCandidates("parent-collection"),
+};
+
+/** Parent leaves expand to Annotation IDs before the cap is applied. */
+export function readAnnotationCandidateSet({
+  libraryID,
+  leaf,
+  limit,
+}: {
+  libraryID: number;
+  leaf: AnnotationCandidateLeaf;
+  limit: number;
+}) {
+  let value = "";
+  let list: readonly (number | string)[] = [];
+  let kind: keyof typeof annotationCandidateStatements;
+  if (leaf.kind === "parent") {
+    kind = `parent-${leaf.leaf.kind}`;
+    switch (leaf.leaf.kind) {
+      case "tag":
+        value = leaf.leaf.name;
+        break;
+      case "key":
+        value = leaf.leaf.key;
+        break;
+      case "field":
+        value = leaf.leaf.value;
+        list = leaf.leaf.fieldIDs;
+        break;
+      case "collection":
+        list = leaf.leaf.collectionIDs;
+        break;
+    }
+  } else if (leaf.kind === "selector") {
+    kind = leaf.target;
+    list = leaf.keys;
+  } else {
+    kind = leaf.kind;
+    value = leaf.value;
+    if (kind === "color") list = annotationColorsForName(value);
+  }
+  return Effect.map(
+    annotationCandidateStatements[kind].all({
+      libraryID,
+      limit,
+      value,
+      list: JSON.stringify(list),
+      number: storedNumberOf(value),
+      integer: storedIntegerOf(value),
+    }),
+    (rows) => rows.map((row) => row.itemID),
+  );
+}

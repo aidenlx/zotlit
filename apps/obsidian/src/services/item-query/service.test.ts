@@ -592,3 +592,37 @@ describe("Annotation Query worker jobs", () => {
     expect(leases()).toBe(0);
   });
 });
+
+it("runs Annotation schema through the shared worker with its command, asset, defaults and parent custom fields", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const { service, jobs } = setup(scenario);
+  await using _running = service;
+  const answer = JSON.parse(
+    await service.schema({}, new AbortController().signal, "annotations"),
+  );
+  expect(jobs).toContainEqual(
+    expect.objectContaining({ schema: true, kind: "annotations" }),
+  );
+  expect(answer).toMatchObject({
+    contractVersion: 1,
+    command: "zotlit:annotation-query-schema",
+    ok: true,
+    schema: { fileName: "zotlit-annotation-query-2.2.0-beta.2.schema.json" },
+    customFields: expect.arrayContaining([
+      expect.objectContaining({ path: 'item.custom["review.status"]' }),
+    ]),
+    defaults: {
+      limit: 100,
+      fields: expect.arrayContaining(["colorName", "item.title"]),
+    },
+  });
+  expect(
+    JSON.parse(
+      await service.schema(
+        { filter: "true" },
+        new AbortController().signal,
+        "annotations",
+      ),
+    ),
+  ).toMatchObject({ command: "zotlit:annotation-query-schema", ok: false });
+});

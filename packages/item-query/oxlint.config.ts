@@ -20,6 +20,10 @@ export default defineConfig({
               "./schema.*",
               "@/schema",
               "@/schema.*",
+              "./describe-annotation-query",
+              "./describe-annotation-query.*",
+              "@/describe-annotation-query",
+              "@/describe-annotation-query.*",
               "./describe-item-query",
               "./describe-item-query.*",
               "@/describe-item-query",
@@ -40,6 +44,7 @@ export default defineConfig({
       files: [
         "src/schema.ts",
         "src/describe-item-query.ts",
+        "src/describe-annotation-query.ts",
         "src/**/*.{test,spec}.{ts,tsx,js,jsx}",
         "*.{config,setup}.{ts,js,mjs,cjs}",
         "scripts/**",

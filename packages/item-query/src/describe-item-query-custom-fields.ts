@@ -52,3 +52,9 @@ function jsonType(shape: ValueShape): SchemaCustomField["type"] {
       return "array";
   }
 }
+
+/** The active source custom fields under the parent Item prefix. */
+export const describeAnnotationQueryCustomFields = () =>
+  Effect.map(describeItemQueryCustomFields(), (fields) =>
+    fields.map((field) => ({ ...field, path: `item.${field.path}` })),
+  );

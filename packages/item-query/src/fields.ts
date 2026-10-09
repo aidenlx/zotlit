@@ -422,10 +422,10 @@ const FILTER_ONLY_FIELDS: ReadonlyMap<string, FilterValueDefinition> = new Map([
 ]);
 
 /** A built-in name as a Filter Expression reads it. */
-export type FilterField =
+export type FilterField<Item = QueryItem> =
   | {
       readonly filterable: true;
-      readonly value: FilterValueDefinition;
+      readonly value: FilterValueDefinition<Item>;
       readonly needs: FieldNeeds;
     }
   | { readonly filterable: false };
