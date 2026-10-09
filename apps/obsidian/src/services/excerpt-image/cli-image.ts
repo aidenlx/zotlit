@@ -8,11 +8,13 @@ import { renderDiagnostic } from "@zotlit/item-query";
 import { cliParams, decodeCliParams } from "@/lib/cli-params";
 import { diagnostic } from "@/services/item-query/contract";
 import { rejectionDiagnostic } from "@/services/item-query/contract";
-import { contractVersion } from "@/services/item-query/contract-version.json";
 
 import type { ExcerptRequest } from "./contract";
 import type { ExcerptImage } from "./format";
 import type { ExcerptOutcome } from "./service";
+
+// Annotation Image keeps its existing envelope independently of Query v3.
+const contractVersion = 2;
 
 export const ANNOTATION_IMAGE_COMMAND = "zotlit:annotation-image";
 
