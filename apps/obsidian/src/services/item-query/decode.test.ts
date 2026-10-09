@@ -142,6 +142,22 @@ describe("decodeItemQuery libraries", () => {
   ])("rejects libraries with %s", (_name, libraries) => {
     expect(decodeItemQuery({ libraries })).toMatchObject(rejected("libraries"));
   });
+
+  it("keeps the inner issue of a malformed Library selector", () => {
+    expect(
+      decode.decodeItemQuery({ libraries: '["My Library"]' }),
+    ).toMatchObject({
+      kind: "invalid",
+      parameter: "libraries",
+      message:
+        '\'My Library\' in libraries is not a Library: use "personal" or "group:<groupID>".',
+      issue: {
+        path: "libraries[0]",
+        expected: expect.any(String),
+        received: expect.any(String),
+      },
+    });
+  });
 });
 
 describe("decodeItemQuery library and libraries together", () => {
@@ -168,6 +184,12 @@ describe("decodeItemQuery library and libraries together", () => {
     },
   );
 
+  it("ignores an empty library beside libraries=all", () => {
+    expect(decodeItemQuery({ library: "", libraries: "all" })).toMatchObject({
+      libraries: { scope: { mode: "all" }, parameter: "libraries" },
+    });
+  });
+
   it("answers the diagnostic of a malformed libraries beside a valid library", () => {
     expect(
       decodeItemQuery({ library: "personal", libraries: "[]" }),
@@ -192,6 +214,70 @@ describe("decodeItemQuery fields, filter, and sort", () => {
 
   it("decodes fields=[] to identity-only rows", () => {
     expect(decodeItemQuery({ fields: "[]" })).toMatchObject({ fields: [] });
+  });
+
+  it.each([
+    {
+      name: "an unknown direction",
+      value: '[{"field":"title","direction":"ascending"}]',
+      message:
+        'Invalid type: Expected ("asc" | "desc") but received "ascending"',
+      issue: {
+        path: "sort[0].direction",
+        expected: '("asc" | "desc")',
+        received: '"ascending"',
+      },
+    },
+    {
+      name: "a missing direction",
+      value: '[{"field":"title"}]',
+      message: 'Invalid key: Expected "direction" but received undefined',
+      issue: {
+        path: "sort[0].direction",
+        expected: '"direction"',
+        received: "undefined",
+      },
+    },
+    {
+      name: "an object instead of an array",
+      value: '{"field":"title","direction":"asc"}',
+      message: "Invalid type: Expected Array but received Object",
+      issue: { path: "sort", expected: "Array", received: "Object" },
+    },
+  ])("keeps the issue for sort with $name", ({ value, message, issue }) => {
+    expect(decode.decodeItemQuery({ sort: value })).toMatchObject({
+      kind: "invalid",
+      parameter: "sort",
+      message,
+      issue,
+    });
+  });
+
+  it.each([
+    {
+      name: "text that is not JSON",
+      value: "title,date",
+      message:
+        "fields is not valid JSON: use a JSON array of Projection Path strings.",
+      issue: {
+        path: "fields",
+        expected: "JSON",
+        received: expect.any(String),
+      },
+    },
+    {
+      name: "a non-text array entry",
+      value: '["title",5]',
+      message: "Invalid type: Expected string but received 5",
+      issue: { path: "fields[1]", expected: "string", received: "5" },
+    },
+  ])("distinguishes fields with $name", ({ value, message, issue }) => {
+    expect(decode.decodeItemQuery({ fields: value })).toMatchObject({
+      kind: "invalid",
+      parameter: "fields",
+      message,
+      issue,
+    });
   });
 
   it.each([
@@ -232,6 +318,17 @@ describe("decodeItemQuery parameters", () => {
     expect(decodeItemQuery({ fields: "[]", colour: "red" })).toMatchObject(
       rejected("colour"),
     );
+  });
+
+  it("explains a shell-split filter from the received parameter order", () => {
+    expect(
+      decodeItemQuery({ filter: "itemType", "==": "true", '"book"': "true" }),
+    ).toMatchObject({
+      ...rejected("=="),
+      message:
+        "Unknown parameter '==': Obsidian received these parameters in order: filter, ==, \"book\".",
+      hint: "Quote the whole value as one shell argument.",
+    });
   });
 
   it("explains a vault parameter after the command name", () => {
