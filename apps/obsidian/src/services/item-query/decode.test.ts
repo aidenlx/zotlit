@@ -530,3 +530,17 @@ it("preserves shell-split evidence for Annotation filters", () => {
     suggestions: ["filter='tags == \"figure\"'"],
   });
 });
+
+it.each([
+  [{ item: "ART2FULL", library: "personal", limit: "bad" }, "library"],
+  [{ attachment: "PDF2LIVE", libraries: "all", fields: "bad" }, "libraries"],
+] as const)(
+  "rejects an excluded Library argument before other invalid options: %j",
+  (params, parameter) => {
+    expect(decodeAnnotationQuery(params)).toMatchObject({
+      code: "invalid-argument",
+      location: { argument: parameter },
+      message: expect.stringContaining("An Indexed Key selects its Library"),
+    });
+  },
+);

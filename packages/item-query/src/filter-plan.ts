@@ -143,6 +143,7 @@ type FilterFailure = Extract<
   {
     readonly kind:
       | "plain"
+      | "custom-key"
       | "unknown"
       | "arity"
       | "argument-type"
@@ -162,7 +163,6 @@ class Invalid extends Error {
 const quote = (text: string): string => JSON.stringify(text);
 
 const HINTS = {
-  custom: 'Name one custom field, such as custom["review.status"].',
   regexp:
     "Write a regular expression as /pattern/flags with JavaScript syntax, such as /^the /i, and the flags d, g, i, m, s, u, v, and y at most once each.",
 } as const;
@@ -497,12 +497,8 @@ class Validator<Item> {
         if (this.#isCustomRoot(ast.object)) {
           if (ast.index.type !== "string") {
             return fail({
-              kind: "plain",
-              code: "invalid-filter",
+              kind: "custom-key",
               at: { from: ast.index.from, to: ast.index.to },
-              message:
-                "custom takes the name of one custom field as a quoted string.",
-              action: HINTS.custom,
             });
           }
           return this.#customField(ast.index.value, span, false);

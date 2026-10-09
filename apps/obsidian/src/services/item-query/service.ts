@@ -270,7 +270,8 @@ export class ItemQueryService extends Service {
                     ? command.kind === "annotations"
                       ? ANNOTATION_QUERY_SCHEMA_COMMAND
                       : ITEM_QUERY_SCHEMA_COMMAND
-                    : command.query.kind === "annotations"
+                    : "kind" in command.query &&
+                        command.query.kind === "annotations"
                       ? ANNOTATION_QUERY_COMMAND
                       : ITEM_QUERY_COMMAND,
                   diagnostic("source-unavailable", error.message),
@@ -298,7 +299,9 @@ export class ItemQueryService extends Service {
           output: result.receipt.path,
           answer: result.answer,
           command:
-            !command.schema && command.query.kind === "annotations"
+            !command.schema &&
+            "kind" in command.query &&
+            command.query.kind === "annotations"
               ? ANNOTATION_QUERY_COMMAND
               : ITEM_QUERY_COMMAND,
         });

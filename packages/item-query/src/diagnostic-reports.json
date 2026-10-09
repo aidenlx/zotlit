@@ -921,5 +921,18 @@
       "^^^^^^^^^^^^^^^^^^^^^^^^^",
       "Try: item.custom[\"review.status\"] == \"done\""
     ]
+  },
+  {
+    "name": "annotation-custom-key-type",
+    "dataset": "annotations",
+    "request": {
+      "filter": "item.custom[1] == null"
+    },
+    "report": [
+      "custom takes the name of one custom field as a quoted string.",
+      "item.custom[1] == null",
+      "            ^",
+      "Name one custom field, such as item.custom[\"review.status\"]."
+    ]
   }
 ]

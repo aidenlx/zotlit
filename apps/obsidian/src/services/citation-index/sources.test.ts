@@ -1,7 +1,9 @@
+import { Effect } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { Attachment } from "@zotlit/db";
 
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
@@ -171,16 +173,28 @@ describe("readReferenceSources", () => {
   });
 
   it("keeps the cited Items when the attachment table cannot be read", async () => {
-    // A column the attachment read needs; the layout check needs no more
-    // than `itemID` and `parentItemID` of the table.
-    await readsOver(
-      `${seedWorksSql([CITED])}\nalter table itemAttachments drop column linkMode;`,
+    ready = inProcessReadsService(
+      memoryOpener(() => seedWorksSql([CITED])).open,
+      {
+        wrap: (client) => ({
+          ...client,
+          AttachmentsOf: (() =>
+            Effect.fail(
+              new DbUnavailable({ message: "Attachment read failed." }),
+            )) as typeof client.AttachmentsOf,
+        }),
+      },
     );
+    await ready.ready;
 
     const { sources } = await readReferenceSources(ready, [
       citation(KEY, null),
     ]);
 
+    expect(sources.get(KEY)).toMatchObject({
+      itemKey: KEY,
+      itemID: CITED.itemID,
+    });
     expect(sources.get(KEY)?.attachments).toStrictEqual([]);
   });
 
