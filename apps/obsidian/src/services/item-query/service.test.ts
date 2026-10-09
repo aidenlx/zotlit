@@ -21,17 +21,20 @@ import {
 
 import { queryCancelledText } from "./contract";
 import { ItemQueryService } from "./service";
+import type { QueryJob } from "./worker-protocol";
 
 function setup(
   scenario: ScenarioDatabase,
   opener: ConnectionOpener = sharedClientOpener(scenario.db),
 ) {
   let leases = 0;
+  const jobs: QueryJob[] = [];
   const reads = inProcessReadsService(opener, {
     wrap: (client) => ({
       ...client,
-      ItemQuery: (payload, options) =>
-        Effect.acquireUseRelease(
+      ItemQuery: (payload, options) => {
+        jobs.push(payload.job);
+        return Effect.acquireUseRelease(
           Effect.sync(() => {
             leases++;
           }),
@@ -40,13 +43,19 @@ function setup(
             Effect.sync(() => {
               leases--;
             }),
-        ),
+        );
+      },
     }),
   });
   const service = new ItemQueryService({
     pluginVersion: "2.2.0-beta.2",
     reads,
-    zoteroPref: { sourceId: "captured-source", databasePath: scenario.path },
+    zoteroPref: {
+      sourceId: "captured-source",
+      databasePath: scenario.path,
+      dataDir: dirname(scenario.path),
+      baseAttachmentPath: join(dirname(scenario.path), "linked"),
+    },
     libraryScope: {
       ready: Promise.resolve(),
       effective: MY_LIBRARY_SCOPE,
@@ -61,7 +70,7 @@ function setup(
     await dispose();
     await reads[Symbol.asyncDispose]();
   };
-  return { service, leases: () => leases };
+  return { service, leases: () => leases, jobs };
 }
 const signal = () => new AbortController().signal;
 const bulk = {
@@ -121,10 +130,14 @@ describe("Item Query worker jobs", () => {
 
   it("exports the same envelope as inline, preserves existing files, and releases each lease", async () => {
     using scenario = openScenarioDatabase({ storage: "temp-directory" });
-    const { service, leases } = setup(scenario);
+    const { service, leases, jobs } = setup(scenario);
     await using _owned = service;
     const query = { limit: "all", fields: '["title","date","creators"]' };
     const inline = await service.answer(query, signal());
+    expect(jobs[0]?.attachmentPaths).toEqual({
+      dataDir: dirname(scenario.path),
+      baseAttachmentPath: join(dirname(scenario.path), "linked"),
+    });
     const output = join(dirname(scenario.path), "items.json");
     const receipt = JSON.parse(
       await service.answer({ ...query, output }, signal()),
@@ -468,7 +481,12 @@ describe("Item Query worker jobs", () => {
     const service = new ItemQueryService({
       pluginVersion: "2.2.0-beta.2",
       reads,
-      zoteroPref: { sourceId: "captured-source", databasePath: scenario.path },
+      zoteroPref: {
+        sourceId: "captured-source",
+        databasePath: scenario.path,
+        dataDir: dirname(scenario.path),
+        baseAttachmentPath: null,
+      },
       libraryScope: {
         ready: failed,
         effective: MY_LIBRARY_SCOPE,

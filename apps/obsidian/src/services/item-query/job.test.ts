@@ -16,6 +16,7 @@ import { ItemQueryScheduler, ItemQuerySliceObserver } from "@zotlit/item-query";
 
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 
+import { makeAttachmentFileResolver } from "./attachment-files";
 import { answerItemQuery, ItemQueryOutputError } from "./cli";
 import type { QueryWriter } from "./cli";
 import { diagnostic } from "./contract";
@@ -56,6 +57,11 @@ const BULK = {
   fields: '["title","tags"]',
 };
 
+const ATTACHMENT_PATHS = {
+  dataDir: "/zotero",
+  baseAttachmentPath: null,
+};
+
 /** The query that the renderer decodes from `params`, as plain JSON. */
 function decoded(params: CliData): DecodedQuery {
   const query = decodeItemQuery(params);
@@ -71,13 +77,18 @@ function jobOf(params: CliData, stagePath?: string): QueryJob {
     id: "job-1",
     ...IDENTITY,
     scope: MY_LIBRARY_SCOPE,
+    attachmentPaths: ATTACHMENT_PATHS,
     ...(stagePath === undefined ? {} : { stagePath }),
   };
 }
 
 const run = (scenario: ScenarioDatabase, job: QueryJob) =>
   Effect.runPromise(
-    runQueryJob(job, { client: scenario.db, identity: IDENTITY }),
+    runQueryJob(job, {
+      client: scenario.db,
+      identity: IDENTITY,
+      attachmentFiles: makeAttachmentFileResolver(job.attachmentPaths),
+    }),
   );
 
 /** The paths of an export from a scenario in a temporary directory. */
@@ -195,6 +206,7 @@ describe("Query Job", () => {
           runQueryJob(jobOf({ ...BULK, output }, stagePath), {
             client: scenario.db,
             identity: IDENTITY,
+            attachmentFiles: makeAttachmentFileResolver(ATTACHMENT_PATHS),
           }).pipe(
             Effect.provideService(ItemQuerySliceObserver, {
               paused: () => events.push("pause"),

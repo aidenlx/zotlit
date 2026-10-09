@@ -26,7 +26,10 @@ import type { QueryAnswer, QueryCommand } from "./worker-protocol";
 interface ItemQueryServiceDeps {
   pluginVersion: string;
   reads: ZoteroReadsService;
-  zoteroPref: Pick<ZoteroPrefService, "sourceId" | "databasePath">;
+  zoteroPref: Pick<
+    ZoteroPrefService,
+    "sourceId" | "databasePath" | "dataDir" | "baseAttachmentPath"
+  >;
   libraryScope: LibraryScopeService;
   vault: Vault;
 }
@@ -208,6 +211,10 @@ export class ItemQueryService extends Service {
                 path: (deps.vault.adapter as FileSystemAdapter).getBasePath(),
               },
               scope: deps.libraryScope.effective,
+              attachmentPaths: {
+                dataDir: deps.zoteroPref.dataDir,
+                baseAttachmentPath: deps.zoteroPref.baseAttachmentPath,
+              },
               measure: measure !== undefined,
               ...(measure ? { heap: measure.heap } : {}),
             },
