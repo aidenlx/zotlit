@@ -64,7 +64,11 @@ function response(output) {
     } catch {
       /* plain text */
     }
-  return null;
+  const prefix =
+    /^\s*\{\s*"contractVersion"\s*:\s*\d+,\s*"command"\s*:\s*"zotlit:[^"]+",\s*"ok"\s*:\s*(true|false)/.exec(
+      output,
+    );
+  return prefix ? { ok: prefix[1] === "true", partial: true } : null;
 }
 function linkRedirectedResponses(commands) {
   const pending = new Map();
@@ -126,28 +130,38 @@ export function measureEvents(jsonl, agent = "codex") {
     result.calls++;
     result.contextualBytes += Buffer.byteLength(output);
     if (
-      /(?:oracle\.json|(?:skills\/zotlit-query\/)?evals\/|(?:^|[\s/])(?:check|prepare|run)\.(?:test\.)?mjs)/.test(
+      /(?:oracle\.json|(?:^|[\s/])(?:skills\/zotlit-query\/)?evals\/|(?:^|[\s/])(?:check|prepare|run)\.(?:test\.)?mjs)/.test(
         command,
       )
     )
       result.forbiddenReads.push(command);
     const isCli =
       command.includes("obsidian-cli.ts") || /\bobsidian\b/.test(command);
-    const surface =
-      (isCli &&
-        /\bzotlit:(query-schema|query-guide|query-cancel|annotation-image|query)(?=\s|["']|$)/.exec(
-          command,
-        )?.[1]) ||
-      "tool";
-    if (surface === "query-schema") result.schemaAttempts++;
-    if (surface === "query-guide") result.guideAttempts++;
-    if (surface === "annotation-image") {
-      result.imageAttempts++;
-      if (exitCode === 0) result.imageExitZero++;
-    }
+    const surfaces = isCli
+      ? [
+          ...command.matchAll(
+            /\bzotlit:(query-schema|query-guide|query-cancel|annotation-image|query)(?=\s|["']|$)/g,
+          ),
+        ]
+      : [];
+    const surface = surfaces[0]?.[1] ?? "tool";
+    result.schemaAttempts += surfaces.filter(
+      (match) => match[1] === "query-schema",
+    ).length;
+    result.guideAttempts += surfaces.filter(
+      (match) => match[1] === "query-guide",
+    ).length;
+    const images = surfaces.filter(
+      (match) => match[1] === "annotation-image",
+    ).length;
+    result.imageAttempts += images;
+    if (exitCode === 0) result.imageExitZero += images;
     const body = response(tool.responseOutput ?? output);
     const failed =
       exitCode !== 0 ||
+      /^(?:\([^)]*\)|[a-z]+)(?::\s*\d+)?:\s*(?:no such file or directory|command not found)/.test(
+        output,
+      ) ||
       (surface !== "tool" &&
         (body?.ok === false ||
           /^\s*(?:Error|error|Exception|Vault not found)\b/.test(output)));
@@ -160,10 +174,12 @@ export function measureEvents(jsonl, agent = "codex") {
       !failed &&
       !warnings.length &&
       (body?.ok === true || surface === "query-guide" || surface === "tool");
-    if (surface === "query") {
-      const kind = /\bfrom=["']?annotations\b/.test(command)
+    for (const [index, match] of surfaces.entries()) {
+      if (match[1] !== "query") continue;
+      const invocation = command.slice(match.index, surfaces[index + 1]?.index);
+      const kind = /\bfrom=["']?annotations\b/.test(invocation)
         ? "annotation"
-        : /\bfrom=["']?attachments\b/.test(command)
+        : /\bfrom=["']?attachments\b/.test(invocation)
           ? "attachment"
           : "item";
       result.queryAttempts++;
@@ -190,7 +206,7 @@ export function measureEvents(jsonl, agent = "codex") {
         retry,
         diagnostic: body?.diagnostic ?? null,
         warnings,
-        output: body ? null : output,
+        output: body && !body.partial ? null : output,
         recovered: succeeded,
         recoveryCommand: null,
       };

@@ -148,3 +148,45 @@ await test("failed file commands remain in the case report and exact retries rec
   assert.equal(metrics.misreadings[0].output, "file missing");
   assert.equal(metrics.misreadings[0].recovered, true);
 });
+
+await test("owned run folders are readable and shell failures behind a pipe are reported", () => {
+  const own = "/repo/.scratch/zotlit-query-evals/run/agent";
+  const metrics = measureEvents(
+    jsonl([
+      ...claude("read", `cat ${own}/SKILL.md`, "skill"),
+      ...claude(
+        "bad",
+        `cd ${own}; node obsidian-cli.ts zotlit:query-guide | head -150`,
+        "(eval):1: no such file or directory: node obsidian-cli.ts",
+      ),
+      ...claude(
+        "good",
+        "node obsidian-cli.ts zotlit:query-guide",
+        "ZotLit Query",
+      ),
+      ...claude(
+        "topics",
+        "node obsidian-cli.ts zotlit:query-guide topic=fields; node obsidian-cli.ts zotlit:query-guide topic=results",
+        "Guide topics",
+      ),
+    ]),
+    "claude",
+  );
+  assert.deepEqual(metrics.forbiddenReads, []);
+  assert.equal(metrics.guideAttempts, 4);
+  assert.equal(metrics.misreadings[0].recovered, true);
+});
+await test("a truncated schema response can prove recovery without inventing its missing fields", () => {
+  const bad = codex(
+    "bad",
+    "node obsidian-cli.ts zotlit:query-schema",
+    "(eval):1: no such file or directory: node obsidian-cli.ts",
+  );
+  const good = codex(
+    "good",
+    "node obsidian-cli.ts zotlit:query-schema | head -100",
+    '{\n"contractVersion":3,\n"command":"zotlit:query-schema",\n"ok":true,\n"identity":{',
+  );
+  const metrics = measureEvents(jsonl([bad, good]));
+  assert.equal(metrics.misreadings[0].recovered, true);
+});
