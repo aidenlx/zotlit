@@ -12,19 +12,29 @@ import {
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
 import {
-  consumeQueryItems,
+  ANNOTATIONS,
+  consumeQuery,
+  collectQuery,
+  ITEMS,
   ItemQueryError,
   ItemQueryScheduler,
-  queryItems,
 } from ".";
-import type { ItemQueryRequest, QueryResult, QueryRow } from ".";
+import type {
+  ItemQuery,
+  ItemQueryErrorCode,
+  ItemQueryRequest,
+  QueryDataset,
+  QueryResult,
+  QueryRow,
+  SortSpec,
+} from ".";
 import { runEffect } from "./test-helpers";
 import type { RunEvent, RunOptions } from "./test-helpers";
 
 const { personal, group } = SCENARIO_LIBRARIES;
 
 function run(scenario: ScenarioDatabase, request: ItemQueryRequest) {
-  return runEffect(queryItems(request), { client: scenario.db });
+  return runEffect(collectQuery(ITEMS, request), { client: scenario.db });
 }
 
 async function result(
@@ -42,7 +52,7 @@ async function failure(
   request: ItemQueryRequest,
   client = true,
 ) {
-  const { exit } = await runEffect(queryItems(request), {
+  const { exit } = await runEffect(collectQuery(ITEMS, request), {
     client: client ? scenario.db : undefined,
   });
   if (!Exit.isFailure(exit)) throw new Error("the query did not fail.");
@@ -119,7 +129,7 @@ const PERSONAL_BY_MODIFIED = [
   "CNF2TEXT",
 ];
 
-describe("queryItems without a filter", () => {
+describe("collectQuery(ITEMS) without a filter", () => {
   it("returns the live top-level Items of the Library, most recently modified first", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, { libraries: [personal] });
@@ -164,16 +174,7 @@ describe("queryItems without a filter", () => {
   });
 });
 
-describe("queryItems with a limit", () => {
-  it("returns the first rows of the order and reports that more Items match", async () => {
-    using scenario = openScenarioDatabase();
-    const found = await result(scenario, { libraries: [personal], limit: 3 });
-
-    expect(keys(found)).toEqual(PERSONAL_BY_MODIFIED.slice(0, 3));
-    expect(found.returnedCount).toBe(3);
-    expect(found.truncated).toBe(true);
-  });
-
+describe("collectQuery(ITEMS) with a limit", () => {
   it("breaks a tie inside the limit by Indexed Key", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, { libraries: [personal], limit: 5 });
@@ -181,36 +182,9 @@ describe("queryItems with a limit", () => {
     expect(keys(found).slice(3)).toEqual(["TIE2AAAA", "TIE2BBBB"]);
     expect(found.truncated).toBe(true);
   });
-
-  it("is not truncated when exactly `limit` Items match", async () => {
-    using scenario = openScenarioDatabase();
-    const found = await result(scenario, { libraries: [personal], limit: 10 });
-
-    expect(keys(found)).toEqual(PERSONAL_BY_MODIFIED);
-    expect(found.truncated).toBe(false);
-  });
-
-  it("returns every match when the limit is above the match count", async () => {
-    using scenario = openScenarioDatabase();
-    const found = await result(scenario, { libraries: [personal], limit: 11 });
-
-    expect(found.returnedCount).toBe(10);
-    expect(found.truncated).toBe(false);
-  });
-
-  it.each([undefined, null])(
-    "returns every match with the limit %s",
-    async (limit) => {
-      using scenario = openScenarioDatabase();
-      const found = await result(scenario, { libraries: [personal], limit });
-
-      expect(found.returnedCount).toBe(10);
-      expect(found.truncated).toBe(false);
-    },
-  );
 });
 
-describe("queryItems projection", () => {
+describe("collectQuery(ITEMS) projection", () => {
   it("projects the item type, title, creators, date, and modification time when the caller names no fields", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, { libraries: [personal], limit: 1 });
@@ -251,46 +225,13 @@ describe("queryItems projection", () => {
       },
     ]);
   });
-
-  it("returns identity-only rows for an empty field list", async () => {
-    using scenario = openScenarioDatabase();
-    const found = await result(scenario, {
-      libraries: [personal],
-      fields: [],
-      limit: 2,
-    });
-
-    expect(found.rows).toEqual([
-      { indexedKey: "ART2FULL", values: {} },
-      { indexedKey: "UNI2CDE2", values: {} },
-    ]);
-  });
-
-  it("puts every requested field in each row", async () => {
-    using scenario = openScenarioDatabase();
-    const found = await result(scenario, {
-      libraries: [group],
-      fields: ["dateAdded", "itemType"],
-    });
-
-    expect(found.rows.map((row) => row.values)).toEqual([
-      {
-        dateAdded: Temporal.Instant.from("2020-04-01T09:00:00Z"),
-        itemType: "journalArticle",
-      },
-      {
-        dateAdded: Temporal.Instant.from("2022-03-01T09:00:00Z"),
-        itemType: "book",
-      },
-    ]);
-  });
 });
 
 /** The `values` of each row by Indexed Key. */
 const valuesByKey = (found: QueryResult) =>
   Object.fromEntries(found.rows.map((row) => [row.indexedKey, row.values]));
 
-describe("queryItems Projection Paths", () => {
+describe("collectQuery(ITEMS) Projection Paths", () => {
   it("projects full, partial, text, and missing dates as structured values", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
@@ -440,7 +381,7 @@ describe("queryItems Projection Paths", () => {
       });
       for (const forceScan of [false, true]) {
         const { exit } = await runEffect(
-          queryItems({ ...request, filter: `volume == "${value}"` }),
+          collectQuery(ITEMS, { ...request, filter: `volume == "${value}"` }),
           { client: scenario.db, tuning: { forceScan } },
         );
         if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
@@ -546,7 +487,7 @@ describe("queryItems Projection Paths", () => {
   });
 });
 
-describe("queryItems relation lists", () => {
+describe("collectQuery(ITEMS) relation lists", () => {
   it("projects Creators in Zotero's creator order, one element for each row", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
@@ -742,89 +683,7 @@ describe("queryItems relation lists", () => {
   });
 });
 
-describe("queryItems normalized request", () => {
-  it("reports the defaults it applied", async () => {
-    using scenario = openScenarioDatabase();
-    const found = await result(scenario, { libraries: [personal] });
-
-    expect(found.query).toEqual({
-      filter: null,
-      fields: ["itemType", "title", "creators", "date", "dateModified"],
-      sort: [{ field: "dateModified", direction: "desc" }],
-      limit: null,
-    });
-  });
-
-  it("reports the fields and the limit the caller gave", async () => {
-    using scenario = openScenarioDatabase();
-    const found = await result(scenario, {
-      libraries: [personal],
-      fields: ["dateAdded"],
-      limit: 4,
-    });
-
-    expect(found.query).toEqual({
-      filter: null,
-      fields: ["dateAdded"],
-      sort: [{ field: "dateModified", direction: "desc" }],
-      limit: 4,
-    });
-  });
-});
-
-describe("queryItems failures", () => {
-  it("fails an unknown field with ItemQueryError before it reads the database", async () => {
-    using scenario = openScenarioDatabase();
-    const error = await failure(
-      scenario,
-      { libraries: [personal], fields: ["itemType", "noSuchField"] },
-      false,
-    );
-
-    expect(error).toBeInstanceOf(ItemQueryError);
-    expect(error).toMatchObject({
-      _tag: "ItemQueryError",
-      code: "unknown-field",
-      location: { argument: "fields", index: 1 },
-    });
-  });
-
-  it.each([
-    ["date.", "invalid-path"],
-    ["custom[review]", "invalid-path"],
-    ['custom["unterminated]', "invalid-path"],
-    ["", "invalid-path"],
-    ["[0]", "unknown-field"],
-    ["mood", "unknown-field"],
-    ["Title", "unknown-field"],
-    ["date.century", "unknown-path"],
-    ["title.length", "unknown-path"],
-    ["date[0]", "unknown-path"],
-    ["custom[0]", "unknown-path"],
-    // Array access does not vectorize.
-    ["creators.fullName", "unknown-path"],
-    ["tags.name", "unknown-path"],
-    ["creators[0].name", "unknown-path"],
-    ["collections[0].name", "unknown-path"],
-    ["attachments[0]", "unknown-path"],
-  ])(
-    "fails the path %j with ItemQueryError before it reads the database",
-    async (path, code) => {
-      using scenario = openScenarioDatabase();
-      const error = await failure(
-        scenario,
-        { libraries: [personal], fields: ["title", path] },
-        false,
-      );
-
-      expect(error).toMatchObject({
-        _tag: "ItemQueryError",
-        code,
-        location: { argument: "fields", index: 1 },
-      });
-    },
-  );
-
+describe("collectQuery(ITEMS) failures", () => {
   it("fails a custom field that the source does not define", async () => {
     using scenario = openScenarioDatabase();
     const error = await failure(scenario, {
@@ -838,24 +697,6 @@ describe("queryItems failures", () => {
       location: { argument: "fields", index: 0 },
     });
   });
-
-  it.each([0, -1, 1.5, Number.NaN])(
-    "fails the limit %s with ItemQueryError",
-    async (limit) => {
-      using scenario = openScenarioDatabase();
-      const error = await failure(
-        scenario,
-        { libraries: [personal], limit },
-        false,
-      );
-
-      expect(error).toMatchObject({
-        _tag: "ItemQueryError",
-        code: "invalid-limit",
-        location: { argument: "limit" },
-      });
-    },
-  );
 
   it("fails with the tagged database error when a statement fails", async () => {
     using scenario = openScenarioDatabase();
@@ -875,7 +716,7 @@ describe("queryItems failures", () => {
   });
 });
 
-describe("queryItems on the layout of the Zotero database", () => {
+describe("collectQuery(ITEMS) on the layout of the Zotero database", () => {
   function stamp(
     scenario: ScenarioDatabase,
     versions: { userdata: number; compatibility: number },
@@ -921,14 +762,14 @@ describe("queryItems on the layout of the Zotero database", () => {
   });
 });
 
-describe("queryItems under a scheduler", () => {
+describe("collectQuery(ITEMS) under a scheduler", () => {
   it("pauses between operations and gives the result of the exported scheduler", async () => {
     using scenario = openScenarioDatabase();
     const request: ItemQueryRequest = { libraries: [personal], limit: 4 };
 
     const stepped = await run(scenario, request);
     const production = await Effect.runPromiseExit(
-      Effect.provideService(queryItems(request), ItemQueryDatabase, {
+      Effect.provideService(collectQuery(ITEMS, request), ItemQueryDatabase, {
         client: scenario.db,
       }),
       { scheduler: new ItemQueryScheduler() },
@@ -940,7 +781,7 @@ describe("queryItems under a scheduler", () => {
   });
 });
 
-describe("queryItems sort", () => {
+describe("collectQuery(ITEMS) sort", () => {
   const sortedKeys = async (
     scenario: ScenarioDatabase,
     sort: ItemQueryRequest["sort"],
@@ -1079,18 +920,6 @@ describe("queryItems sort", () => {
     ]);
   });
 
-  it("reports the sort the caller gave in the normalized request", async () => {
-    using scenario = openScenarioDatabase();
-    const sort = [{ field: "title", direction: "desc" }] as const;
-    const found = await result(scenario, {
-      libraries: [personal],
-      sort,
-      limit: 1,
-    });
-
-    expect(found.query.sort).toEqual(sort);
-  });
-
   it("sorts strings in the pinned collation order: digits lexically, then letters with case and accents as the last difference", async () => {
     using scenario = openScenarioDatabase();
     const { sqlite } = scenario;
@@ -1166,7 +995,7 @@ describe("queryItems sort", () => {
   });
 });
 
-describe("queryItems sort with a limit", () => {
+describe("collectQuery(ITEMS) sort with a limit", () => {
   const byTitle = [{ field: "title", direction: "asc" }] as const;
   const BY_TITLE = [
     "CHP2YEAR",
@@ -1180,21 +1009,6 @@ describe("queryItems sort with a limit", () => {
     "TIE2BBBB",
     "TIE2CCCC",
   ];
-
-  it("returns no rows from a Library without Items", async () => {
-    using scenario = openScenarioDatabase();
-    const found = await result(scenario, {
-      libraries: [{ libraryID: 9999, groupID: null }],
-      sort: byTitle,
-      limit: 3,
-    });
-
-    expect(found).toMatchObject({
-      rows: [],
-      returnedCount: 0,
-      truncated: false,
-    });
-  });
 
   it.each([
     ["exactly `limit` Items match", 10, false],
@@ -1244,28 +1058,9 @@ describe("queryItems sort with a limit", () => {
     ]);
     expect(found.truncated).toBe(true);
   });
-
-  it("gives the same rows for every limit as the start of the unlimited result", async () => {
-    using scenario = openScenarioDatabase();
-    const sort = [
-      { field: "publicationTitle", direction: "desc" },
-      { field: "date", direction: "asc" },
-    ] as const;
-    const all = await result(scenario, { libraries: [personal], sort });
-
-    for (let limit = 1; limit <= 11; limit++) {
-      const limited = await result(scenario, {
-        libraries: [personal],
-        sort,
-        limit,
-      });
-      expect(limited.rows).toEqual(all.rows.slice(0, limit));
-      expect(limited.truncated).toBe(limit < 10);
-    }
-  });
 });
 
-describe("queryItems sort of a large Library", () => {
+describe("collectQuery(ITEMS) sort of a large Library", () => {
   /** 1,200 more Items whose titles run against their key order. */
   function seedLargeLibrary(database: ScenarioDatabase) {
     const insertItem = database.sqlite.prepare(
@@ -1338,41 +1133,7 @@ describe("queryItems sort of a large Library", () => {
   });
 });
 
-describe("queryItems sort failures", () => {
-  it.each([
-    ["noSuchField", "unknown-field"],
-    ["Title", "unknown-field"],
-    ["", "unknown-field"],
-    ["custom", "unsortable-field"],
-    ['custom["mood"]', "unsortable-field"],
-    ["date.year", "unsortable-field"],
-  ])(
-    "fails the sort field %j with ItemQueryError before it reads the database",
-    async (field, code) => {
-      using scenario = openScenarioDatabase();
-      const error = await failure(
-        scenario,
-        {
-          libraries: [personal],
-          sort: [
-            { field: "title", direction: "asc" },
-            { field, direction: "asc" },
-          ],
-        },
-        false,
-      );
-
-      expect(error).toBeInstanceOf(ItemQueryError);
-      expect(error).toMatchObject({
-        _tag: "ItemQueryError",
-        code,
-        location: { argument: "sort", index: 1 },
-      });
-    },
-  );
-});
-
-describe("queryItems accessDate", () => {
+describe("collectQuery(ITEMS) accessDate", () => {
   // The scenario stores 2020-01-07 04:00:00 (UTC) on RPT2NDTE, the calendar
   // day 2020-01-07 on CHP2YEAR, and "yesterday" on UNI2CDE2. New York is
   // UTC-5 in January, so 7 January starts there at 05:00Z.
@@ -1402,7 +1163,7 @@ describe("queryItems accessDate", () => {
     clock: { now: string; timeZone: string } = NEW_YORK,
   ): Promise<QueryResult> {
     const { exit } = await runEffect(
-      queryItems({ libraries: [personal], ...request }),
+      collectQuery(ITEMS, { libraries: [personal], ...request }),
       { client: scenario.db, ...clock },
     );
     if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
@@ -1535,7 +1296,7 @@ describe("queryItems accessDate", () => {
   });
 });
 
-describe("queryItems with a filter", () => {
+describe("collectQuery(ITEMS) with a filter", () => {
   /** The Indexed Keys the filter selects, in key order. */
   const matching = async (
     scenario: ScenarioDatabase,
@@ -1807,7 +1568,12 @@ describe("queryItems with a filter", () => {
       clock: { now: string; timeZone: string },
     ) => {
       const { exit } = await runEffect(
-        queryItems({ libraries: [personal], filter, fields: [], sort: [] }),
+        collectQuery(ITEMS, {
+          libraries: [personal],
+          filter,
+          fields: [],
+          sort: [],
+        }),
         { client: scenario.db, ...clock },
       );
       if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
@@ -1859,7 +1625,7 @@ describe("queryItems with a filter", () => {
 
       const { exit } = await runEffect(
         Effect.provideService(
-          queryItems({
+          collectQuery(ITEMS, {
             libraries: [personal],
             filter: "now() == now() && today() == now().date()",
             fields: [],
@@ -2250,7 +2016,7 @@ describe("queryItems with a filter", () => {
   });
 });
 
-describe("queryItems candidate sets", () => {
+describe("collectQuery(ITEMS) candidate sets", () => {
   /**
    * Run a filter on the personal Library, and give its Indexed Keys in key
    * order and the keys of the Items that the hydrate statements of `kind`
@@ -2262,7 +2028,12 @@ describe("queryItems candidate sets", () => {
     async (filter: string, tuning?: RunOptions["tuning"]) => {
       using scenario = openScenarioDatabase();
       const { exit, events } = await runEffect(
-        queryItems({ libraries: [personal], filter, fields: [], sort: [] }),
+        collectQuery(ITEMS, {
+          libraries: [personal],
+          filter,
+          fields: [],
+          sort: [],
+        }),
         { client: scenario.db, tuning },
       );
       if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
@@ -2583,7 +2354,7 @@ describe("queryItems candidate sets", () => {
   });
 });
 
-describe("queryItems over several Libraries", () => {
+describe("collectQuery(ITEMS) over several Libraries", () => {
   const both = [personal, group];
   /** Both Libraries, most recently modified first. */
   const BOTH_BY_MODIFIED = [
@@ -2817,21 +2588,6 @@ describe("queryItems over several Libraries", () => {
     ).toEqual(["ART2FULL", "ART2FULLg10", "ART2FULLg4815", "ART2FULLg9"]);
   });
 
-  it("fails a request that names one Library twice", async () => {
-    using scenario = openScenarioDatabase();
-    const error = await failure(
-      scenario,
-      { libraries: [personal, group, { ...personal }], limit: 1 },
-      false,
-    );
-
-    expect(error).toBeInstanceOf(ItemQueryError);
-    expect(error).toMatchObject({
-      code: "duplicate-library",
-      location: { argument: "libraries", index: 2 },
-    });
-  });
-
   it("reads no Item of a Library outside the request", async () => {
     using scenario = openScenarioDatabase();
     seedBulkLibrary(scenario.sqlite, 3);
@@ -2855,7 +2611,7 @@ describe("incremental query consumption", () => {
     async (request) => {
       using scenario = openScenarioDatabase();
       const expected = await result(scenario, request);
-      const operation = consumeQueryItems(request, (summary) =>
+      const operation = consumeQuery(ITEMS, request, (summary) =>
         Effect.sync(() => {
           const rows: QueryRow[] = [];
           return {
@@ -2894,7 +2650,8 @@ describe("incremental query consumption", () => {
     });
     let ended = false;
     const running = runEffect(
-      consumeQueryItems(
+      consumeQuery(
+        ITEMS,
         { libraries: [personal], fields: ["title"], sort: [], limit: null },
         () =>
           Effect.succeed({
@@ -2931,3 +2688,323 @@ describe("incremental query consumption", () => {
     expect(ended).toBe(false);
   });
 });
+
+/** The facts of a request that hold for each Query Dataset. */
+interface DatasetCase {
+  readonly dataset: QueryDataset<ItemQueryRequest>;
+  readonly scenario: { readonly annotations: boolean };
+  readonly defaults: Pick<ItemQuery, "fields" | "sort">;
+  /** Two Projection Paths, and two Sortable Fields, of the dataset. */
+  readonly fields: readonly string[];
+  readonly sort: readonly SortSpec[];
+  /** Invalid Projection Paths and the code of each. */
+  readonly paths: readonly (readonly [string, ItemQueryErrorCode])[];
+  /** Invalid Sortable Fields and the code of each. */
+  readonly sortFields: readonly (readonly [string, ItemQueryErrorCode])[];
+}
+
+const DATASETS: readonly DatasetCase[] = [
+  {
+    dataset: ITEMS,
+    scenario: { annotations: false },
+    defaults: {
+      fields: ["itemType", "title", "creators", "date", "dateModified"],
+      sort: [{ field: "dateModified", direction: "desc" }],
+    },
+    fields: ["dateAdded", "itemType"],
+    sort: [
+      { field: "publicationTitle", direction: "desc" },
+      { field: "date", direction: "asc" },
+    ],
+    paths: [
+      ["date.", "invalid-path"],
+      ["custom[review]", "invalid-path"],
+      ['custom["unterminated]', "invalid-path"],
+      ["title]", "invalid-path"],
+      ["", "invalid-path"],
+      ["[0]", "unknown-field"],
+      ["mood", "unknown-field"],
+      ["Title", "unknown-field"],
+      ["date.century", "unknown-path"],
+      ["title.length", "unknown-path"],
+      ["date[0]", "unknown-path"],
+      ["custom[0]", "unknown-path"],
+      // Array access does not vectorize.
+      ["creators.fullName", "unknown-path"],
+      ["tags.name", "unknown-path"],
+      ["creators[0].name", "unknown-path"],
+      ["collections[0].name", "unknown-path"],
+      ["attachments[0]", "unknown-path"],
+    ],
+    sortFields: [
+      ["noSuchField", "unknown-field"],
+      ["Title", "unknown-field"],
+      ["", "unknown-field"],
+      ["custom", "unsortable-field"],
+      ['custom["mood"]', "unsortable-field"],
+      ["date.year", "unsortable-field"],
+    ],
+  },
+  {
+    dataset: ANNOTATIONS,
+    scenario: { annotations: true },
+    defaults: {
+      fields: [
+        "type",
+        "text",
+        "comment",
+        "color",
+        "colorName",
+        "pageLabel",
+        "pageIndex",
+        "tags",
+        "dateAdded",
+        "dateModified",
+        "hasExcerptImage",
+        "attachment",
+        "item.title",
+        "item.citationKey",
+      ],
+      sort: [
+        { field: "item.dateModified", direction: "desc" },
+        { field: "attachment.indexedKey", direction: "asc" },
+        { field: "sortIndex", direction: "asc" },
+      ],
+    },
+    fields: ["type", "item.title"],
+    sort: [
+      { field: "type", direction: "desc" },
+      { field: "attachment.indexedKey", direction: "asc" },
+    ],
+    paths: [
+      ["text.", "invalid-path"],
+      ['item.custom["unterminated]', "invalid-path"],
+      ["item.title]", "invalid-path"],
+      ["", "invalid-path"],
+      ["[0]", "unknown-field"],
+      ["missing", "unknown-field"],
+      ["Text", "unknown-field"],
+      ["item.noSuchField", "unknown-field"],
+      ["attachment.missing", "unknown-path"],
+      ["item.date.century", "unknown-path"],
+      ["tags.name", "unknown-path"],
+      ["item.creators.fullName", "unknown-path"],
+    ],
+    sortFields: [
+      ["noSuchField", "unknown-field"],
+      ["Type", "unknown-field"],
+      ["", "unknown-field"],
+      ["text", "unsortable-field"],
+      ["attachment.title", "unsortable-field"],
+      ["item.date.year", "unsortable-field"],
+    ],
+  },
+];
+
+describe.each(DATASETS)(
+  "$dataset.family request",
+  ({
+    dataset,
+    scenario: options,
+    defaults,
+    fields,
+    sort,
+    paths,
+    sortFields,
+  }) => {
+    const open = () => openScenarioDatabase(options);
+    const request = (rest: Omit<ItemQueryRequest, "libraries"> = {}) => ({
+      libraries: [personal],
+      ...rest,
+    });
+
+    async function datasetResult(
+      scenario: ScenarioDatabase,
+      query: ItemQueryRequest,
+    ): Promise<QueryResult> {
+      const { exit } = await runEffect(collectQuery(dataset, query), {
+        client: scenario.db,
+      });
+      if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
+      return exit.value;
+    }
+
+    /** The typed failure of a run without a database: it reads nothing. */
+    async function requestFailure(query: ItemQueryRequest) {
+      const { exit, events } = await runEffect(collectQuery(dataset, query));
+      if (!Exit.isFailure(exit)) throw new Error("the query did not fail.");
+      const error = Cause.findErrorOption(exit.cause);
+      if (error._tag === "None") throw new Error(String(exit.cause));
+      expect(events.filter((event) => event.type === "statement")).toEqual([]);
+      expect(error.value).toBeInstanceOf(ItemQueryError);
+      expect(error.value).toMatchObject({ dataset });
+      return error.value as ItemQueryError;
+    }
+
+    describe("normalized request", () => {
+      it("reports the defaults it applied", async () => {
+        using scenario = open();
+        const found = await datasetResult(scenario, request());
+
+        expect(found.query).toEqual({
+          filter: null,
+          fields: defaults.fields,
+          sort: defaults.sort,
+          limit: null,
+        });
+      });
+
+      it("reports the fields, the sort, and the limit the caller gave", async () => {
+        using scenario = open();
+        const found = await datasetResult(
+          scenario,
+          request({ fields, sort, limit: 4 }),
+        );
+
+        expect(found.query).toEqual({ filter: null, fields, sort, limit: 4 });
+      });
+
+      it("gives the same rows when the caller sends the normalized request back", async () => {
+        using scenario = open();
+        const libraries = [personal, group];
+        const first = await datasetResult(scenario, { libraries });
+        const { filter, ...query } = first.query;
+        const replay = await datasetResult(scenario, {
+          ...query,
+          ...(filter === null ? {} : { filter }),
+          libraries,
+        });
+
+        expect(first.rows.length).toBeGreaterThan(1);
+        expect(replay.query).toEqual(first.query);
+        expect(replay.rows).toEqual(first.rows);
+      });
+    });
+
+    describe("limit", () => {
+      it("gives the same rows for every limit as the start of the unlimited result", async () => {
+        using scenario = open();
+        const all = await datasetResult(scenario, request({ sort }));
+        const count = all.rows.length;
+        expect(count).toBeGreaterThan(2);
+
+        for (const limit of [1, count - 1, count, count + 1]) {
+          const limited = await datasetResult(
+            scenario,
+            request({ sort, limit }),
+          );
+          expect(limited.rows).toEqual(all.rows.slice(0, limit));
+          expect(limited.returnedCount).toBe(Math.min(limit, count));
+          expect(limited.truncated).toBe(limit < count);
+        }
+      });
+
+      it.each([undefined, null])(
+        "returns every match with the limit %s",
+        async (limit) => {
+          using scenario = open();
+          const all = await datasetResult(scenario, request({ fields: [] }));
+          const found = await datasetResult(
+            scenario,
+            request({ fields: [], limit }),
+          );
+
+          expect(found.returnedCount).toBe(all.rows.length);
+          expect(found.truncated).toBe(false);
+        },
+      );
+
+      it("returns no rows from a Library without records", async () => {
+        using scenario = open();
+        const found = await datasetResult(scenario, {
+          libraries: [{ libraryID: 9999, groupID: null }],
+          limit: 3,
+        });
+
+        expect(found).toMatchObject({
+          rows: [],
+          returnedCount: 0,
+          truncated: false,
+        });
+      });
+    });
+
+    describe("projection", () => {
+      it("returns identity-only rows for an empty field list", async () => {
+        using scenario = open();
+        const found = await datasetResult(
+          scenario,
+          request({ fields: [], limit: 2 }),
+        );
+
+        expect(found.rows).toHaveLength(2);
+        for (const row of found.rows) expect(row.values).toEqual({});
+      });
+
+      it("puts every requested field in each row", async () => {
+        using scenario = open();
+        const found = await datasetResult(scenario, request({ fields }));
+
+        expect(found.rows.length).toBeGreaterThan(0);
+        for (const row of found.rows)
+          expect(Object.keys(row.values)).toEqual(fields);
+      });
+    });
+
+    describe("failures", () => {
+      it.each([...paths])(
+        "fails the path %j with %s before it reads the database",
+        async (path, code) => {
+          const error = await requestFailure(
+            request({ fields: [fields[0]!, path] }),
+          );
+
+          expect(error).toMatchObject({
+            code,
+            location: { argument: "fields", index: 1 },
+          });
+          // The report marks the whole entry the caller sent.
+          if (path !== "") expect(error.diagnostic.excerpt?.at).toBe(path);
+        },
+      );
+
+      it.each([...sortFields])(
+        "fails the sort field %j with %s before it reads the database",
+        async (field, code) => {
+          const error = await requestFailure(
+            request({ sort: [sort[0]!, { field, direction: "asc" }] }),
+          );
+
+          expect(error).toMatchObject({
+            code,
+            location: { argument: "sort", index: 1 },
+          });
+        },
+      );
+
+      it.each([0, -1, 1.5, Number.NaN])(
+        "fails the limit %s before it reads the database",
+        async (limit) => {
+          const error = await requestFailure(request({ limit }));
+
+          expect(error).toMatchObject({
+            code: "invalid-limit",
+            location: { argument: "limit" },
+          });
+        },
+      );
+
+      it("fails a request that names one Library twice", async () => {
+        const error = await requestFailure({
+          libraries: [personal, group, { ...personal }],
+          limit: 1,
+        });
+
+        expect(error).toMatchObject({
+          code: "duplicate-library",
+          location: { argument: "libraries", index: 2 },
+        });
+      });
+    });
+  },
+);

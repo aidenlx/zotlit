@@ -6,8 +6,9 @@ import { openScenarioDatabase } from "@zotlit/db/test-scenario";
 import { diagnose, diagnoseDecode, renderDiagnostic } from "./diagnose";
 import reports from "./diagnostic-reports.json";
 import { ItemQueryError } from "./error";
-import { queryAnnotations } from "./query-annotations";
-import { queryItems } from "./query-items";
+import { collectQuery } from "./query";
+import { ANNOTATIONS } from "./query-annotations";
+import { ITEMS } from "./query-items";
 import type { ItemQueryRequest } from "./request";
 import { runEffect } from "./test-helpers";
 
@@ -20,7 +21,7 @@ it("reports an unknown global from the function registry", () => {
       at: { from: 0, to: 8 },
     },
     'contains(title, "x")',
-    { argument: "filter" },
+    { argument: "filter", dataset: ITEMS },
   );
 
   expect(diagnostic).toMatchObject({
@@ -52,7 +53,7 @@ it("ranks field name corrections", () => {
       at: { from: 0, to: 5 },
     },
     'Title.contains("x")',
-    { argument: "filter" },
+    { argument: "filter", dataset: ITEMS },
   );
   const year = diagnose(
     {
@@ -62,7 +63,7 @@ it("ranks field name corrections", () => {
       at: { from: 0, to: 4 },
     },
     "year > 2015",
-    { argument: "filter" },
+    { argument: "filter", dataset: ITEMS },
   );
 
   expect(title.report.at(-1)).toBe(title.hint);
@@ -89,7 +90,7 @@ it("uses only the receiver type's registered names without aliases", () => {
       },
     },
     'title.includes("x")',
-    { argument: "filter" },
+    { argument: "filter", dataset: ITEMS },
   );
   const some = diagnose(
     {
@@ -104,7 +105,7 @@ it("uses only the receiver type's registered names without aliases", () => {
       },
     },
     'creators.some(name == "Smith")',
-    { argument: "filter" },
+    { argument: "filter", dataset: ITEMS },
   );
 
   expect(includes.expected).toEqual([
@@ -139,10 +140,11 @@ it("keeps legacy diagnostic fields without source text", () => {
       name: "now",
       at: { from: 0, to: 3 },
     },
+    dataset: ITEMS,
     location: { argument: "filter", span: { from: 0, to: 3 } },
   });
 
-  const diagnostic = diagnose(error.fault, "", error.location);
+  const diagnostic = error.diagnostic;
   expect(diagnostic).toMatchObject({ code: "unknown-field", found: "now" });
   expect(diagnostic.report[0]).toBe(error.message);
   expect(diagnostic.report.at(-1)).toBe(error.hint);
@@ -163,7 +165,7 @@ it("names a method and property used in the other form", () => {
       receiver,
     },
     "title.length()",
-    { argument: "filter" },
+    { argument: "filter", dataset: ITEMS },
   );
   const propertyRead = diagnose(
     {
@@ -174,7 +176,7 @@ it("names a method and property used in the other form", () => {
       receiver,
     },
     "title.lower",
-    { argument: "filter" },
+    { argument: "filter", dataset: ITEMS },
   );
 
   expect(methodCall.report.at(-1)).toBe(methodCall.hint);
@@ -195,7 +197,7 @@ it("uses a registered global signature for a global called as a method", () => {
       },
     },
     "title.number()",
-    { argument: "filter" },
+    { argument: "filter", dataset: ITEMS },
   );
 
   expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
@@ -215,7 +217,7 @@ it("prefers an exact cross-role action to an unrelated near match", () => {
       },
     },
     "tags.max()",
-    { argument: "filter" },
+    { argument: "filter", dataset: ITEMS },
   );
 
   expect(diagnostic.suggestions).toEqual(["map"]);
@@ -236,17 +238,39 @@ it("swaps a receiver with the one argument when the registered method fits", () 
       },
     },
     "title.matches(/re/)",
-    { argument: "filter" },
+    { argument: "filter", dataset: ITEMS },
   );
 
   expect(diagnostic.suggestions).toEqual(["/re/.matches(title)"]);
 });
 
+it("lists attachment.indexedKey among the Annotation Sortable Fields", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const { exit } = await runEffect(
+    collectQuery(ANNOTATIONS, {
+      libraries: [{ libraryID: 1, groupID: null }],
+      sort: [{ field: "noSuchField", direction: "asc" }],
+    }),
+    { client: scenario.db },
+  );
+  const error = Exit.isFailure(exit) ? Cause.findErrorOption(exit.cause) : null;
+  if (error?._tag !== "Some" || error.value._tag !== "ItemQueryError")
+    throw new Error("Expected an Item Query fault");
+  expect(error.value.diagnostic).toMatchObject({
+    code: "unknown-field",
+    found: "noSuchField",
+  });
+  expect(error.value.diagnostic.expected).toContain("attachment.indexedKey");
+});
+
 // Golden diagnostic reports, with excerpt and caret lines. The first 24 entries
 // are the spec's probe cases; the rest replace the former sentence tests.
 it.each(reports)("reports $name", async ({ request, report, ...setup }) => {
-  const annotations = "dataset" in setup && setup.dataset === "annotations";
-  using scenario = openScenarioDatabase({ annotations });
+  const dataset =
+    "dataset" in setup && setup.dataset === "annotations" ? ANNOTATIONS : ITEMS;
+  using scenario = openScenarioDatabase({
+    annotations: dataset === ANNOTATIONS,
+  });
   if ("withoutCustomFields" in setup && setup.withoutCustomFields)
     scenario.sqlite.exec("update fieldsCombined set custom = 0");
   if (setup.customFieldName !== undefined)
@@ -259,10 +283,9 @@ it.each(reports)("reports $name", async ({ request, report, ...setup }) => {
     libraries: [{ libraryID: 1, groupID: null }],
     ...request,
   } as ItemQueryRequest;
-  const { exit } = await runEffect(
-    annotations ? queryAnnotations(query) : queryItems(query),
-    { client: scenario.db },
-  );
+  const { exit } = await runEffect(collectQuery(dataset, query), {
+    client: scenario.db,
+  });
   if (Exit.isSuccess(exit)) {
     expect(exit.value.warnings).toHaveLength(1);
     const diagnostic = exit.value.warnings[0]!;
@@ -275,11 +298,8 @@ it.each(reports)("reports $name", async ({ request, report, ...setup }) => {
   const error = Cause.findErrorOption(exit.cause);
   if (error._tag === "None" || error.value._tag !== "ItemQueryError")
     throw new Error("Expected an Item Query fault");
-  const diagnostic = diagnose(
-    error.value.fault,
-    error.value.argumentText ?? query.filter ?? "",
-    { ...error.value.location, dataset: error.value.dataset },
-  );
+  expect(error.value.dataset).toBe(dataset);
+  const diagnostic = error.value.diagnostic;
   expect(diagnostic.report).toEqual(report);
   expect(diagnostic.report[0]).toBe(diagnostic.message);
   expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
@@ -353,7 +373,7 @@ it("offers an AND correction as data", () => {
       },
     },
     "a AND b",
-    { argument: "filter" },
+    { argument: "filter", dataset: ITEMS },
   );
   expect(diagnostic).toMatchObject({
     found: "AND",
@@ -369,7 +389,7 @@ it("keeps syntax suggestions empty without source text", () => {
       fault: { from: 2, to: 5, found: "AND", expected: ["&&"], opened: null },
     },
     "",
-    { argument: "filter" },
+    { argument: "filter", dataset: ITEMS },
   );
   expect(diagnostic.suggestions).toEqual([]);
 });
@@ -379,7 +399,7 @@ it("keeps syntax suggestions empty without source text", () => {
 it("returns a membership warning with an empty successful result", async () => {
   using scenario = openScenarioDatabase();
   const { exit } = await runEffect(
-    queryItems({
+    collectQuery(ITEMS, {
       libraries: [{ libraryID: 1, groupID: null }],
       filter: 'tags == "bulk"',
     }),
@@ -417,7 +437,10 @@ it.each([
   async (filter, correction) => {
     using scenario = openScenarioDatabase();
     const { exit } = await runEffect(
-      queryItems({ libraries: [{ libraryID: 1, groupID: null }], filter }),
+      collectQuery(ITEMS, {
+        libraries: [{ libraryID: 1, groupID: null }],
+        filter,
+      }),
       { client: scenario.db },
     );
     if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
@@ -431,7 +454,7 @@ it("keeps source order and aligns escaped operand markers", async () => {
   using scenario = openScenarioDatabase();
   const filter = '"a\\tb" == 3 || tags != "x"';
   const { exit } = await runEffect(
-    queryItems({
+    collectQuery(ITEMS, {
       libraries: [{ libraryID: 1, groupID: null }],
       filter,
     }),
@@ -455,7 +478,7 @@ it("renders projection request facts with the JSON entry and a unique correction
       at: { from: 0, to: 4 },
     },
     '["title","Date"]',
-    { argument: "fields", index: 1 },
+    { argument: "fields", index: 1, dataset: ITEMS },
   );
   expect(diagnostic).toMatchObject({
     code: "unknown-field",
@@ -548,7 +571,7 @@ it("marks the received projection entry for a grammar fault", () => {
       at: { from: 0, to: 5 },
     },
     '["title","date."]',
-    { argument: "fields", index: 1, path: "fields[1]" },
+    { argument: "fields", index: 1, path: "fields[1]", dataset: ITEMS },
   );
   expect(diagnostic).toMatchObject({
     excerpt: { at: "date." },

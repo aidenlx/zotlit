@@ -11,7 +11,7 @@ function measureHandler(): CliHandler {
   registerItemQueryMeasureCli(
     { registerCliHandler, register: () => {} } as unknown as Plugin,
     {
-      answer: async () => {
+      measure: async () => {
         throw new Error("the run started.");
       },
     },

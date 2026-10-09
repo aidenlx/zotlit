@@ -11,12 +11,24 @@ import { diagnoseDecode, renderDiagnostic } from "@zotlit/item-query";
 import type {
   Diagnostic as QueryDiagnostic,
   ItemQueryError,
+  QuerySummary,
+  SchemaCustomField,
+  SortSpec,
 } from "@zotlit/item-query";
 
 import { createCliDiagnostics } from "@/lib/cli-diagnostic";
 import type { CliRejection } from "@/lib/cli-params";
+import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
+import type { SchemaAsset } from "@/services/template-workbench/schema";
 
+import contractVersion from "./contract-version.json" with { type: "json" };
 import type { AnnotationQueryParam, ItemQueryParam } from "./decode";
+
+/**
+ * The wire format of the Item Query commands, versioned on its own (ADR 0065):
+ * it evolves independently from the Template Contract.
+ */
+export const CONTRACT_VERSION = contractVersion.contractVersion;
 
 export const ANNOTATION_QUERY_SCHEMA_COMMAND =
   "zotlit:annotation-query-schema" as const;
@@ -165,3 +177,74 @@ export const annotationQueryFlags = {
       "Attachment Indexed Key or JSON array of Attachment keys; selects their Libraries",
   },
 } satisfies Record<AnnotationQueryParam, CliFlag>;
+
+/** A Target Library on the wire: local `libraryID` values stay inside. */
+export type LibraryWire =
+  | { type: "personal" }
+  | { type: "group"; groupID: number; name: string };
+
+export type EnvelopeTail =
+  | { ok: false; diagnostic: Diagnostic }
+  | {
+      ok: true;
+      identity: WorkbenchIdentity;
+      libraries: readonly LibraryWire[];
+      request: object;
+      returnedCount: number;
+      truncated: boolean;
+      warnings: QuerySummary["warnings"];
+      rows?: readonly { indexedKey: string; values: object }[];
+      file?: { path: string; bytes: number; format: "json" };
+    }
+  | {
+      ok: true;
+      identity: WorkbenchIdentity;
+      schema: SchemaAsset;
+      customFields: readonly SchemaCustomField[];
+      defaults: {
+        fields: readonly string[];
+        sort: readonly SortSpec[];
+        limit: number;
+        libraries: { source: "library-scope" };
+      };
+    }
+  | {
+      ok: true;
+      id: string;
+      /** `false`: no query with this id was running in this vault. */
+      cancelRequested: boolean;
+    };
+
+/** The pretty JSON of the versioned envelope of `command`. */
+export function envelope(
+  command: ItemQueryCommand,
+  tail: EnvelopeTail,
+): string {
+  return JSON.stringify(
+    { contractVersion: CONTRACT_VERSION, command, ...tail },
+    null,
+    2,
+  );
+}
+
+export function failure(
+  command: ItemQueryCommand,
+  diagnostic: Diagnostic,
+): string {
+  return envelope(command, { ok: false, diagnostic });
+}
+
+/** The answer of a query whose id names a query that is still running. */
+export function queryIdInUseFailure(
+  id: string,
+  command: ItemQueryCommand,
+): string {
+  return failure(
+    command,
+    diagnostic(
+      "query-id-in-use",
+      `A query with the id '${id}' is running in this vault.`,
+      { parameter: "id" },
+    ),
+  );
+}

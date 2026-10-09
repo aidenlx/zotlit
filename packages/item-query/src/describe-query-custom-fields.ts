@@ -7,6 +7,7 @@ import type {
   ItemQueryLayoutError,
 } from "@zotlit/db/item-query";
 
+import type { QueryDataset } from "./dataset";
 import type { SchemaCustomField } from "./describe-item-query";
 import {
   CUSTOM_FIELD_VALUE_SHAPE,
@@ -16,14 +17,22 @@ import {
 import type { ValueShape } from "./fields";
 import { hasBareForm } from "./filter-plan";
 
-/** The custom fields supplied by the active Zotero source. */
-export function describeItemQueryCustomFields(): Effect.Effect<
+/**
+ * The custom fields supplied by the active Zotero source, at the paths the
+ * Query Dataset reads them.
+ */
+export function describeQueryCustomFields(
+  dataset: QueryDataset<any>,
+): Effect.Effect<
   readonly SchemaCustomField[],
   ItemQueryLayoutError | ItemQueryDatabaseError,
   ItemQueryDatabase
 > {
   return Effect.map(readFieldVocabulary(), ({ customFieldNames }) =>
-    customFieldNames.map(customSchemaField),
+    customFieldNames.map((name) => {
+      const field = customSchemaField(name);
+      return { ...field, path: dataset.customPrefix + field.path };
+    }),
   );
 }
 
@@ -54,9 +63,3 @@ function jsonType(shape: ValueShape): SchemaCustomField["type"] {
       return "array";
   }
 }
-
-/** The active source custom fields under the parent Item prefix. */
-export const describeAnnotationQueryCustomFields = () =>
-  Effect.map(describeItemQueryCustomFields(), (fields) =>
-    fields.map((field) => ({ ...field, path: `item.${field.path}` })),
-  );

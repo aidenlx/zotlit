@@ -9,7 +9,7 @@ import {
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
-import { queryItems } from ".";
+import { collectQuery, ITEMS } from ".";
 import type { ItemQueryRequest, SortSpec } from ".";
 import { GENERATED_FILTER_PARTS, SCENARIO_QUERIES } from "./scenario-queries";
 import type { ScenarioQuery } from "./scenario-queries";
@@ -127,7 +127,7 @@ async function outcome(
     ...query.request,
     libraries: query.libraries.map((name) => SCENARIO_LIBRARIES[name]),
   };
-  const { exit } = await runEffect(queryItems(request), {
+  const { exit } = await runEffect(collectQuery(ITEMS, request), {
     client: database.db,
     now: query.now,
     timeZone: query.timeZone,

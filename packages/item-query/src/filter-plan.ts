@@ -118,11 +118,11 @@ export type FilterNode<Item = QueryItem> = NodeBase &
   );
 
 /** A validated Filter Expression. */
-export interface FilterPlan<Item = QueryItem> {
+export interface FilterPlan<Item = QueryItem, Needs = FieldNeeds> {
   readonly root: FilterNode<Item>;
   readonly warnings: readonly Extract<Fault, { kind: "constant" }>[];
   /** What hydration loads before the filter runs: one entry for each field. */
-  readonly needs: readonly FieldNeeds[];
+  readonly needs: readonly Needs[];
   /**
    * The custom fields the filter names. The source decides whether each one
    * exists, so the engine checks them when it has read the field vocabulary.
@@ -172,28 +172,30 @@ const HINTS = {
  * A custom field is checked against the source later; see
  * {@link FilterPlan.customFields}.
  */
-export interface FilterRegistry<Item> {
-  readonly field: (name: string) => FilterField<Item> | undefined;
+export interface FilterRegistry<Item, Needs = FieldNeeds> {
+  readonly field: (name: string) => FilterField<Item, Needs> | undefined;
   readonly custom: (name: string) => {
     value: FilterValueDefinition<Item>;
-    needs: FieldNeeds;
+    needs: Needs;
   };
   readonly prefix?: string;
   readonly equalityField?: (name: string, literal: string) => string;
 }
 
-export function planFilter<Item = QueryItem>(
+export function planFilter<Item = QueryItem, Needs = FieldNeeds>(
   text: string,
-  registry: FilterRegistry<Item> = {
+  // The default is the Item Query registry, with its `QueryItem` and its
+  // `FieldNeeds`.
+  registry: FilterRegistry<Item, Needs> = {
     field: filterField,
     custom: customFilterValue,
-  } as FilterRegistry<Item>,
-): FilterPlan<Item> | FilterProblem {
+  } as FilterRegistry<any, any>,
+): FilterPlan<Item, Needs> | FilterProblem {
   const { ast, error } = parseExpressionAst(text);
   if (!ast) {
     return { kind: "syntax", fault: error };
   }
-  const needs: FieldNeeds[] = [];
+  const needs: Needs[] = [];
   const customFields: FilterCustomFieldUse[] = [];
   try {
     const warnings: Extract<Fault, { kind: "constant" }>[] = [];
@@ -355,8 +357,8 @@ function mismatch<Item>(
   return null;
 }
 
-class Validator<Item> {
-  readonly #needs: FieldNeeds[];
+class Validator<Item, Needs> {
+  readonly #needs: Needs[];
   readonly #customFields: FilterCustomFieldUse[];
   readonly #warnings: Extract<Fault, { kind: "constant" }>[];
   /** The names the enclosing element expressions bind, innermost last. */
@@ -368,11 +370,11 @@ class Validator<Item> {
       customFields,
       warnings,
     }: {
-      needs: FieldNeeds[];
+      needs: Needs[];
       customFields: FilterCustomFieldUse[];
       warnings: Extract<Fault, { kind: "constant" }>[];
     },
-    readonly registry: FilterRegistry<Item>,
+    readonly registry: FilterRegistry<Item, Needs>,
   ) {
     this.#needs = needs;
     this.#customFields = customFields;

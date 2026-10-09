@@ -8,19 +8,13 @@ import { open } from "node:fs/promises";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { ItemQueryDatabase } from "@zotlit/db/item-query";
 import { ItemQueryScheduler } from "@zotlit/item-query";
+import type { ResolveAttachmentFile } from "@zotlit/item-query";
 
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
-import type { AttachmentFileResolver } from "./attachment-files";
-import {
-  answerItemQuery,
-  answerItemQuerySchema,
-  failure,
-  ITEM_QUERY_COMMAND,
-  ItemQueryOutputError,
-} from "./cli";
-import type { QueryWriter } from "./cli";
-import { ANNOTATION_QUERY_COMMAND, diagnostic } from "./contract";
+import { answer, ItemQueryOutputError } from "./answer";
+import type { QueryWriter } from "./answer";
+import { diagnostic, failure } from "./contract";
 import { createTrace, finishTrace } from "./trace";
 import type { WorkerMeasurement } from "./trace";
 import type { QueryAnswer, QueryJob } from "./worker-protocol";
@@ -29,7 +23,7 @@ import type { QueryAnswer, QueryJob } from "./worker-protocol";
 export interface QueryJobEnv {
   client: NodeDatabaseClient;
   identity: WorkbenchIdentity;
-  attachmentFiles: AttachmentFileResolver;
+  attachmentFiles: ResolveAttachmentFile;
 }
 
 /**
@@ -49,25 +43,15 @@ export function runQueryJob(
     const trace = job.measure ? createTrace(job.heap ?? false) : undefined;
     const answerSteps: number[] = [];
     const heapBefore = job.heap ? process.memoryUsage().heapUsed : undefined;
-    const reply = job.schema
-      ? yield* answerItemQuerySchema(
-          { identity: env.identity },
-          job.pluginVersion,
-          job.kind,
-        )
-      : yield* answerItemQuery(
-          {
-            identity: env.identity,
-            scope: job.scope,
-            attachmentFiles: env.attachmentFiles,
-            instrument: trace?.instrument,
-            onAnswerStep: job.measure
-              ? (ms: number) => answerSteps.push(ms)
-              : undefined,
-            openOutput: () => openStage(job.stagePath, stage),
-          },
-          job.query,
-        );
+    const reply = yield* answer(job, {
+      identity: env.identity,
+      attachmentFiles: env.attachmentFiles,
+      instrument: trace?.instrument,
+      onAnswerStep: job.measure
+        ? (ms: number) => answerSteps.push(ms)
+        : undefined,
+      openOutput: () => openStage(job.stagePath, stage),
+    });
     if (!trace) return reply;
     return {
       ...reply,
@@ -86,14 +70,8 @@ export function runQueryJob(
         Effect.as(answer),
         Effect.catch((failed) =>
           Effect.succeed<QueryAnswer>({
-            answer: failure(
-              !job.schema &&
-                "kind" in job.query &&
-                job.query.kind === "annotations"
-                ? ANNOTATION_QUERY_COMMAND
-                : ITEM_QUERY_COMMAND,
-              failed.diagnostic,
-            ),
+            command: job.command,
+            answer: failure(job.command, failed.diagnostic),
             receipt: { kind: "inline" },
           }),
         ),

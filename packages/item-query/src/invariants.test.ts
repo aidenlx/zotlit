@@ -16,7 +16,7 @@ import {
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
-import { queryAnnotations, queryItems } from ".";
+import { ANNOTATIONS, collectQuery, ITEMS } from ".";
 import type { ItemQueryRequest, QueryResult } from ".";
 import { runEffect } from "./test-helpers";
 import type { Run, RunEvent, RunOptions } from "./test-helpers";
@@ -60,7 +60,7 @@ function run(
 ) {
   const { libraries = [BULK_LIBRARY], annotation = false, ...rest } = options;
   return runEffect(
-    (annotation ? queryAnnotations : queryItems)({ ...request, libraries }),
+    collectQuery(annotation ? ANNOTATIONS : ITEMS, { ...request, libraries }),
     {
       client: annotation ? annotations.db : scenario.db,
       ...rest,
@@ -209,12 +209,9 @@ const PLAN_PATHS: readonly {
     annotation: true,
     request: { fields: ["text"], limit: 10 },
     reads: {
-      "hydrate-chunk": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      // The scan pass reads the scan rows only; the projection loads details.
       "annotation-scan-page": [500, 500, 500, 500, 500, 100],
-      "annotation-hydrate-chunk": [
-        250, 0, 250, 0, 250, 0, 250, 0, 250, 0, 250, 0, 250, 0, 250, 0, 250, 0,
-        250, 0, 100, 0, 10, 0,
-      ],
+      "annotation-details": [10],
     },
   },
   {
@@ -222,10 +219,9 @@ const PLAN_PATHS: readonly {
     annotation: true,
     request: { filter: 'type == "image"', fields: ["text"], limit: 10 },
     reads: {
-      "hydrate-chunk": [0, 0, 0, 0],
       "annotation-candidate-set": [520],
       "annotation-universe-rows": [500, 20],
-      "annotation-hydrate-chunk": [250, 0, 250, 0, 20, 0, 10, 0],
+      "annotation-details": [250, 250, 20, 10],
     },
   },
   {
@@ -233,12 +229,10 @@ const PLAN_PATHS: readonly {
     annotation: true,
     request: { filter: 'type == "highlight"', fields: ["text"], limit: 10 },
     reads: {
-      "hydrate-chunk": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
       "annotation-candidate-set": [BULK_CAP + 1],
       "annotation-scan-page": [500, 500, 500, 500, 500, 100],
-      "annotation-hydrate-chunk": [
-        250, 0, 250, 0, 250, 0, 250, 0, 250, 0, 250, 0, 250, 0, 250, 0, 250, 0,
-        250, 0, 100, 0, 10, 0,
+      "annotation-details": [
+        250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 100, 10,
       ],
     },
   },
@@ -258,7 +252,9 @@ describe("the Items one statement reads", () => {
         "candidate-set",
         "annotation-scan-page",
         "annotation-universe-rows",
-        "annotation-hydrate-chunk",
+        "annotation-details",
+        "annotation-tags",
+        "annotation-attachment-titles",
         "annotation-candidate-set",
       ]) {
         expect(itemsRead(events, reader), reader).toEqual(reads[reader] ?? []);
@@ -270,7 +266,9 @@ describe("the Items one statement reads", () => {
         "hydrate-chunk",
         "annotation-scan-page",
         "annotation-universe-rows",
-        "annotation-hydrate-chunk",
+        "annotation-details",
+        "annotation-tags",
+        "annotation-attachment-titles",
       ]) {
         expect(Math.max(0, ...itemsRead(events, reader))).toBeLessThanOrEqual(
           500,
@@ -561,7 +559,7 @@ describe("Annotation projection and active cancellation", () => {
       const details = complete.events
         .flatMap((event) =>
           event.type === "statement" &&
-          event.statement.reader === "annotation-hydrate-chunk" &&
+          event.statement.reader === "annotation-details" &&
           event.statement.rows.some((row) => "text" in (row as object))
             ? [event.statement.rows as { text: string }[]]
             : [],
@@ -598,7 +596,7 @@ describe("Annotation projection and active cancellation", () => {
             checkpoints.set(`${event.statement.reader}-pause`, pause);
         }
       }
-      expect(checkpoints.has("annotation-hydrate-chunk")).toBe(true);
+      expect(checkpoints.has("annotation-details")).toBe(true);
       for (const index of checkpoints.values()) {
         const controller = new AbortController();
         let seen = 0;

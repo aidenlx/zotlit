@@ -10,7 +10,7 @@ import {
   readAnnotationCandidateSet,
   readAnnotationUniverseRows,
   readAnnotationHydrateChunk,
-  readFieldVocabulary,
+  ItemQueryStatementObserver,
 } from ".";
 
 it("scans only live annotations of live attached Items, across keyset pages", () => {
@@ -66,23 +66,60 @@ it("scans only live annotations of live attached Items, across keyset pages", ()
   const hydrated = run(
     readAnnotationHydrateChunk({
       rows,
-      vocabulary: run(readFieldVocabulary()),
-      fields: { builtIn: ["title", "citationKey"], custom: [] },
+      details: true,
+      tags: true,
+      attachmentTitle: true,
     }),
   );
   expect(
     hydrated.get(rows.find((row) => row.key === "ANN2UNDR")!.itemID),
   ).toMatchObject({
-    text: "A <i>formatted</i> excerpt",
-    comment: "<b>Comment</b>",
+    details: { text: "A <i>formatted</i> excerpt", comment: "<b>Comment</b>" },
     tags: ["method"],
-    parent: {
-      fields: new Map([["title", "Exact Matching in Literature Review"]]),
-    },
+    attachmentTitle: "Full Text PDF",
   });
   expect(
-    hydrated.get(rows.find((row) => row.key === "ANN2BAD2")!.itemID)?.position,
+    hydrated.get(rows.find((row) => row.key === "ANN2BAD2")!.itemID)?.details
+      ?.position,
   ).toBe("invalid JSON");
+});
+
+it("runs one statement for each load the caller names, and none for an unnamed load", () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const readers: string[] = [];
+  const run = <A, E>(effect: Effect.Effect<A, E, ItemQueryDatabase>) =>
+    Effect.runSync(
+      effect.pipe(
+        Effect.provideService(ItemQueryDatabase, { client: scenario.db }),
+        Effect.provideService(ItemQueryStatementObserver, (statement) => {
+          if (statement.reader !== "layout") readers.push(statement.reader);
+        }),
+      ),
+    );
+  const rows = run(readAnnotationScanPage({ libraryID: 1, afterKey: null }));
+  readers.length = 0;
+  const bare = run(readAnnotationHydrateChunk({ rows }));
+  expect(readers).toEqual([]);
+  expect([...bare.values()]).toEqual(rows.map(() => ({})));
+  expect([...bare.keys()]).toEqual(rows.map((row) => row.itemID));
+
+  const tagged = run(readAnnotationHydrateChunk({ rows, tags: true }));
+  expect(readers).toEqual(["annotation-tags"]);
+  const tagless = rows.find((row) => row.key === "ANL2IMAG")!.itemID;
+  expect(tagged.get(tagless)).toEqual({ tags: [] });
+
+  readers.length = 0;
+  const titled = run(
+    readAnnotationHydrateChunk({ rows, attachmentTitle: true }),
+  );
+  expect(readers).toEqual(["annotation-attachment-titles"]);
+  expect(
+    titled.get(rows.find((row) => row.key === "ANN2UNDR")!.itemID),
+  ).toEqual({ attachmentTitle: "Full Text PDF" });
+
+  readers.length = 0;
+  run(readAnnotationHydrateChunk({ rows, details: true }));
+  expect(readers).toEqual(["annotation-details"]);
 });
 
 it("counts the live Annotation universe and applies a candidate limit after the parent join", () => {

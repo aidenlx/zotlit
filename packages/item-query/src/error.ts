@@ -1,6 +1,8 @@
 import { Data } from "effect";
 
+import type { QueryDataset } from "./dataset";
 import { diagnose } from "./diagnose";
+import type { Diagnostic } from "./diagnose";
 import type { ItemQueryFault, Span } from "./fault";
 
 /** Stable codes of an invalid Item Query request. */
@@ -29,29 +31,35 @@ export interface ItemQueryErrorLocation {
 }
 
 /**
- * The request is not a valid Item Query. The query fails as a whole, before it
- * reads the database.
+ * The request is not a valid query of its Query Dataset. The query fails as a
+ * whole, before it reads the database.
  */
 export class ItemQueryError extends Data.TaggedError("ItemQueryError")<{
   readonly fault: ItemQueryFault;
-  readonly dataset?: "annotations";
+  /** The Query Dataset of the request, set where the fault is raised. */
+  readonly dataset: QueryDataset<any>;
+  /** The text of the argument that the location points into. */
   readonly argumentText?: string;
   readonly location: ItemQueryErrorLocation;
 }> {
+  #diagnostic: Diagnostic<ItemQueryErrorCode> | undefined;
+
   get code(): ItemQueryErrorCode {
-    return this.#diagnostic().code;
+    return this.diagnostic.code;
   }
   override get message(): string {
-    return this.#diagnostic().message;
+    return this.diagnostic.message;
   }
   get hint(): string {
-    return this.#diagnostic().hint;
+    return this.diagnostic.hint;
   }
 
-  #diagnostic() {
-    return diagnose(this.fault, this.argumentText ?? "", {
+  /** The rendered Diagnostic Report of the fault. */
+  get diagnostic(): Diagnostic<ItemQueryErrorCode> {
+    this.#diagnostic ??= diagnose(this.fault, this.argumentText ?? "", {
       ...this.location,
       dataset: this.dataset,
     });
+    return this.#diagnostic;
   }
 }

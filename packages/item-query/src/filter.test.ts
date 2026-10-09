@@ -10,6 +10,7 @@ import { hasBareForm, planFilter } from "./filter-plan";
 import type { FilterPlan, FilterProblem } from "./filter-plan";
 import type { FilterValue } from "./filter-values";
 import type { QueryClock } from "./query-clock";
+import { ITEMS } from "./query-items";
 
 interface ItemSpec {
   key?: string;
@@ -89,7 +90,7 @@ const ARTICLE = item({
 function plan(expression: string): FilterPlan {
   const planned = planFilter(expression);
   if ("kind" in planned) {
-    throw new Error(`${expression}: ${codeOfFault(planned)}`);
+    throw new Error(`${expression}: ${codeOfFault(planned, ITEMS)}`);
   }
   return planned;
 }
@@ -1597,7 +1598,7 @@ describe("validation", () => {
     ['if == "a"', "unknown-field", [0, 2]],
   ] as const)("rejects %j with %s at %j", (expression, code, [from, to]) => {
     const fault = problem(expression);
-    expect(codeOfFault(fault)).toBe(code);
+    expect(codeOfFault(fault, ITEMS)).toBe(code);
     expect(fault.kind === "syntax" ? fault.fault : fault.at).toMatchObject({
       from,
       to,
@@ -1616,7 +1617,7 @@ describe("validation", () => {
     ["true || title.contains(/a/)", "wrong-argument-type"],
     ["[1, noSuchFunction()].length", "unknown-function"],
   ] as const)("rejects the dead branch of %j with %s", (expression, code) => {
-    expect(codeOfFault(problem(expression))).toBe(code);
+    expect(codeOfFault(problem(expression), ITEMS)).toBe(code);
   });
 
   it.each([

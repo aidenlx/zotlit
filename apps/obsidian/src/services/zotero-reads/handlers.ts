@@ -363,6 +363,7 @@ export function handlersLayer(options?: HandlersOptions) {
             );
             if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause))
               return {
+                command: job.command,
                 answer: "",
                 receipt: { kind: "inline" },
                 cancelled: true,

@@ -20,13 +20,14 @@ import type {
 } from "@zotlit/db/item-query";
 
 import type { CandidateSources } from "./candidate-plan";
+import type { QueryDataset } from "./dataset";
 import { ItemQueryError } from "./error";
 import type { ItemQueryErrorLocation } from "./error";
 import type { ItemQueryFault } from "./fault";
 import type { FieldNeeds, QueryItem } from "./fields";
 import type { FilterPlan } from "./filter-plan";
 import type { PlannedPath } from "./projection";
-import type { PlannedSort, TargetLibrary } from "./request";
+import type { ItemQueryPlan, PlannedSort, TargetLibrary } from "./request";
 
 /** What one pass loads for each Item of a chunk. */
 export interface LoadPlan {
@@ -36,29 +37,36 @@ export interface LoadPlan {
   readonly relations: readonly HydrateRelation[];
 }
 
-/** One pass of the query over chunks of scan rows. */
-export interface Loader {
+/**
+ * One pass of the query over chunks of scan rows: `Plan` is what the pass
+ * loads, `Row` a scan row and `Value` what the pass gives for it.
+ */
+export interface Loader<
+  Plan extends object = LoadPlan,
+  Row extends ScanRow = ScanRow,
+  Value = QueryItem,
+> {
   /** What the pass loads. `null`: the pass reads the scan rows only. */
-  readonly plan: LoadPlan | null;
+  readonly plan: Plan | null;
   /**
-   * The Query Items of one chunk, in chunk order. With a plan, a chunk holds
-   * at most `HYDRATE_CHUNK_SIZE` rows and each statement runs in its own step;
+   * The records of one chunk, in chunk order. With a plan, a chunk holds at
+   * most `HYDRATE_CHUNK_SIZE` rows and each statement runs in its own step;
    * without one, the pass runs no statement.
    */
   readonly load: (
-    chunk: readonly ScanRow[],
-  ) => Effect.Effect<
-    readonly QueryItem[],
-    ItemQueryReaderError,
-    ItemQueryDatabase
-  >;
+    chunk: readonly Row[],
+  ) => Effect.Effect<readonly Value[], ItemQueryReaderError, ItemQueryDatabase>;
 }
 
-export interface Hydration {
-  /** The scan pass: what the filter and the sort read, for every Item. */
-  readonly scan: Loader;
+export interface Hydration<
+  Plan extends object = LoadPlan,
+  Row extends ScanRow = ScanRow,
+  Value = QueryItem,
+> {
+  /** The scan pass: what the filter and the sort read, for every record. */
+  readonly scan: Loader<Plan, Row, Value>;
   /** The projection pass: what the Projection Paths read, for each row. */
-  readonly projection: Loader;
+  readonly projection: Loader<Plan, Row, Value>;
   /** What the candidate plan of one Target Library reads from the source. */
   readonly candidateSources: (library: TargetLibrary) => CandidateSources;
 }
@@ -69,11 +77,14 @@ export interface Hydration {
  * against the source, and read the Collection paths of each Target Library
  * when a pass loads Collections.
  */
-export function openHydration<Item>(
-  plan: {
-    filter: FilterPlan<Item> | null;
-    paths: readonly PlannedPath<Item>[];
-    sorts: readonly Pick<PlannedSort, "needs">[];
+export function openHydration(
+  plan: Pick<ItemQueryPlan, "dataset" | "query"> & {
+    readonly filter: Pick<FilterPlan, "needs" | "customFields"> | null;
+    readonly paths: readonly Pick<
+      PlannedPath,
+      "text" | "needs" | "customField"
+    >[];
+    readonly sorts: readonly Pick<PlannedSort, "needs">[];
   },
   libraries: readonly TargetLibrary[],
 ): Effect.Effect<
@@ -82,7 +93,7 @@ export function openHydration<Item>(
   ItemQueryDatabase
 > {
   return Effect.gen(function* () {
-    const { filter, paths, sorts } = plan;
+    const { dataset, filter, paths, sorts } = plan;
     const pathNeeds = paths.map((path) => path.needs);
     const scanNeeds = [
       ...(filter?.needs ?? []),
@@ -107,12 +118,14 @@ export function openHydration<Item>(
                     argument: "filter",
                     span: { from: dotted.from, to: dotted.to },
                   },
+                  argumentText: plan.query.filter ?? "",
                 }
               : {
                   name,
                   bare,
                   deferred,
                   location: { argument: "filter", span: { from, to } },
+                  argumentText: plan.query.filter ?? "",
                 },
         ),
         ...paths.flatMap(({ customField: name }, index): CustomFieldUse[] =>
@@ -136,7 +149,11 @@ export function openHydration<Item>(
         ({ name, deferred, dotted }) => dotted || deferred || !known.has(name),
       );
       if (missing) {
-        return yield* unknownCustomField(vocabulary.customFieldNames, missing);
+        return yield* unknownCustomField(
+          dataset,
+          vocabulary.customFieldNames,
+          missing,
+        );
       }
     }
     // A Collection path belongs to one Library: a leaf of the filter reads
@@ -219,6 +236,7 @@ interface CustomFieldUse {
  * field.
  */
 function unknownCustomField(
+  dataset: QueryDataset<any>,
   names: readonly string[],
   { name, bare, location, deferred, dotted, argumentText }: CustomFieldUse,
 ): Effect.Effect<never, ItemQueryError> {
@@ -235,6 +253,7 @@ function unknownCustomField(
         };
   return Effect.fail(
     new ItemQueryError({
+      dataset,
       location,
       ...(argumentText === undefined ? {} : { argumentText }),
       fault,

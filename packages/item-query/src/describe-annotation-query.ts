@@ -1,23 +1,16 @@
-import { Effect } from "effect";
-
-import {
-  ANNOTATION_FIELDS,
-  ANNOTATION_SORT_FIELDS,
-  DEFAULT_ANNOTATION_FIELDS,
-  planAnnotationFilter,
-} from "./annotation-fields";
+import { ANNOTATION_FIELDS } from "./annotation-fields";
 import { ANNOTATION_POSITION_SHAPES } from "./annotation-position";
 import {
   describeItemQueryVocabulary,
+  describeQuery,
   pathsBelow,
   jsonType,
 } from "./describe-item-query";
 import type { SchemaCapabilities, SchemaField } from "./describe-item-query";
-import { describeAnnotationQueryCustomFields } from "./describe-item-query-custom-fields";
-import { DEFAULT_ANNOTATION_SORT } from "./query-annotations";
+import { ANNOTATIONS } from "./query-annotations";
 
 const filterCapability = (path: string): SchemaCapabilities["filter"] => {
-  const plan = planAnnotationFilter(path);
+  const plan = ANNOTATIONS.planFilter(path);
   if ("kind" in plan) return null;
   const type = plan.root.valueType;
   return type === "unknown" ? "any" : type === "null" ? null : type;
@@ -33,7 +26,7 @@ export function describeAnnotationQueryVocabulary() {
         type: jsonType(definition.shape),
         projection: true,
         filter: filterCapability(path),
-        sort: ANNOTATION_SORT_FIELDS.has(path),
+        sort: false,
       },
       ...pathsBelow(path, definition.shape, filterCapability),
     ],
@@ -42,7 +35,7 @@ export function describeAnnotationQueryVocabulary() {
     ...item.fields.map((field) => ({
       ...field,
       path: `item.${field.path}`,
-      sort: ANNOTATION_SORT_FIELDS.has(`item.${field.path}`),
+      sort: false,
     })),
   );
   fields.push(
@@ -61,16 +54,15 @@ export function describeAnnotationQueryVocabulary() {
       sort: false,
     },
   );
-  return { ...item, fields, positionKinds: ANNOTATION_POSITION_SHAPES };
+  return {
+    ...item,
+    fields: fields.map((field) => ({
+      ...field,
+      sort: ANNOTATIONS.sortable(field.path) !== undefined,
+    })),
+    positionKinds: ANNOTATION_POSITION_SHAPES,
+  };
 }
 
 export const describeAnnotationQuery = () =>
-  Effect.map(describeAnnotationQueryCustomFields(), (customFields) => ({
-    ...describeAnnotationQueryVocabulary(),
-    customFields,
-    defaults: {
-      fields: DEFAULT_ANNOTATION_FIELDS,
-      sort: DEFAULT_ANNOTATION_SORT,
-      limit: null,
-    },
-  }));
+  describeQuery(ANNOTATIONS, describeAnnotationQueryVocabulary());

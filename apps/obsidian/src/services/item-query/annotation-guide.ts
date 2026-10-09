@@ -1,10 +1,7 @@
 // The Annotation Query guide. Query commands and Filter Expressions shown by
 // this file are collected below, so tests run them against a real source.
 
-import {
-  DEFAULT_ANNOTATION_FIELDS,
-  DEFAULT_ANNOTATION_SORT,
-} from "@zotlit/item-query";
+import { ANNOTATIONS } from "@zotlit/item-query";
 
 import {
   ANNOTATION_QUERY_COMMAND,
@@ -48,9 +45,9 @@ function listOf(names: readonly string[]): string {
   return new Intl.ListFormat("en", { type: "conjunction" }).format(names);
 }
 
-const DEFAULT_FIELD_LIST = listOf(DEFAULT_ANNOTATION_FIELDS);
+const DEFAULT_FIELD_LIST = listOf(ANNOTATIONS.defaultFields);
 const DEFAULT_SORT_TEXT = listOf(
-  DEFAULT_ANNOTATION_SORT.map(
+  ANNOTATIONS.defaultSort.map(
     ({ field, direction }) =>
       `${field} ${direction === "desc" ? "descending" : "ascending"}`,
   ),

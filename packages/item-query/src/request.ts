@@ -2,11 +2,10 @@
 // applies the defaults and resolves each name against the registries.
 import { Effect } from "effect";
 
+import type { QueryDataset } from "./dataset";
 import type { Diagnostic } from "./diagnose";
 import { ItemQueryError } from "./error";
-import { DEFAULT_FIELDS, fieldDefinition } from "./fields";
 import type { FieldNeeds, QueryItem, SortKey } from "./fields";
-import { planFilter } from "./filter-plan";
 import type { FilterPlan } from "./filter-plan";
 import { planPath } from "./projection";
 import type { PlannedPath } from "./projection";
@@ -40,11 +39,20 @@ export interface ItemQueryRequest {
   readonly fields?: readonly string[] | undefined;
   /**
    * The Sortable Fields that order the result, the first one first. Omitted:
-   * modification time, descending. Indexed Key always breaks the last tie.
+   * the default sort of the Query Dataset. Indexed Key always breaks the last
+   * tie.
    */
   readonly sort?: readonly SortSpec[] | undefined;
   /** The most rows to return. Omitted or `null`: every match. */
   readonly limit?: number | null | undefined;
+}
+
+/** The request of an Annotation Query: an Item Query request with selectors. */
+export interface AnnotationQueryRequest extends ItemQueryRequest {
+  /** The Indexed Keys of the parent Items whose Annotations match. */
+  readonly item?: readonly string[] | undefined;
+  /** The Indexed Keys of the Attachments whose Annotations match. */
+  readonly attachment?: readonly string[] | undefined;
 }
 
 export interface SortSpec {
@@ -59,6 +67,9 @@ export interface ItemQuery {
   readonly fields: readonly string[];
   readonly sort: readonly SortSpec[];
   readonly limit: number | null;
+  /** The Annotation selectors the request named. */
+  readonly item?: readonly string[];
+  readonly attachment?: readonly string[];
 }
 
 /** A value of one Projection Path in a Query Row. */
@@ -92,35 +103,38 @@ export interface QueryResult {
 }
 
 /** The validated form of a request that the engine executes. */
-export interface ItemQueryPlan {
+export interface ItemQueryPlan<Item = any, Needs = any> {
+  readonly dataset: QueryDataset<any>;
   readonly warnings: FilterPlan["warnings"];
   readonly query: ItemQuery;
-  /** `null`: every Item matches. */
-  readonly filter: FilterPlan | null;
-  readonly paths: readonly PlannedPath[];
-  readonly sorts: readonly PlannedSort[];
+  /** `null`: every record matches. */
+  readonly filter: FilterPlan<Item, Needs> | null;
+  readonly paths: readonly PlannedPath<Item, Needs>[];
+  /** The request's sort, then the tie-breakers of the dataset. */
+  readonly order: readonly SortSpec[];
+  /** One entry for each entry of {@link ItemQueryPlan.order}. */
+  readonly sorts: readonly PlannedSort<Item, Needs>[];
 }
 
 /** A validated entry of the sort list. */
-export interface PlannedSort {
+export interface PlannedSort<Item = QueryItem, Needs = FieldNeeds> {
   readonly direction: SortSpec["direction"];
   /** What hydration loads before {@link PlannedSort.key} runs. */
-  readonly needs: FieldNeeds;
-  readonly key: (item: QueryItem, clock: QueryClock) => SortKey;
+  readonly needs: Needs;
+  readonly key: (item: Item, clock: QueryClock) => SortKey;
 }
 
 /** CLI forms for the query that counts every match with identity-only rows. */
 export const COUNT_FIELDS: readonly string[] = [];
 export const UNLIMITED_LIMIT = "all";
 
-/** The sort of a request that names no sort. */
-export const DEFAULT_SORT: readonly SortSpec[] = [
-  { field: "dateModified", direction: "desc" },
-];
-
-/** Validate a request against the registries and apply the defaults. */
+/**
+ * Validate a request against the registries of its Query Dataset and apply
+ * the defaults of the dataset.
+ */
 export function planRequest(
-  request: ItemQueryRequest,
+  dataset: QueryDataset<any>,
+  request: AnnotationQueryRequest,
 ): Effect.Effect<ItemQueryPlan, ItemQueryError> {
   return Effect.gen(function* () {
     const libraryIDs = request.libraries.map((library) => library.libraryID);
@@ -129,6 +143,7 @@ export function planRequest(
     );
     if (repeated !== -1) {
       return yield* new ItemQueryError({
+        dataset,
         location: { argument: "libraries", index: repeated },
         fault: {
           kind: "plain",
@@ -141,9 +156,10 @@ export function planRequest(
 
     let filter: FilterPlan | null = null;
     if (request.filter !== undefined) {
-      const planned = planFilter(request.filter);
+      const planned = dataset.planFilter(request.filter);
       if ("kind" in planned) {
         return yield* new ItemQueryError({
+          dataset,
           fault: planned,
           location: {
             argument: "filter",
@@ -152,17 +168,19 @@ export function planRequest(
                 ? { from: planned.fault.from, to: planned.fault.to }
                 : planned.at,
           },
+          argumentText: request.filter,
         });
       }
       filter = planned;
     }
 
-    const fields = request.fields ?? DEFAULT_FIELDS;
+    const fields = request.fields ?? dataset.defaultFields;
     const paths: PlannedPath[] = [];
     for (const [index, text] of fields.entries()) {
-      const path = planPath(text);
+      const path = planPath(text, dataset.resolvePath);
       if ("kind" in path) {
         return yield* new ItemQueryError({
+          dataset,
           fault: path,
           location: { argument: "fields", index, path: `fields[${index}]` },
           argumentText: JSON.stringify(fields),
@@ -171,12 +189,13 @@ export function planRequest(
       paths.push(path);
     }
 
-    const sort = request.sort ?? DEFAULT_SORT;
-    const sorts: PlannedSort[] = [];
+    const sort = request.sort ?? dataset.defaultSort;
+    const sorts: PlannedSort<any, any>[] = [];
     for (const [index, { field, direction }] of sort.entries()) {
-      const definition = fieldDefinition(field);
-      if (!definition?.sortKey) {
+      const sortable = dataset.sortable(field);
+      if (!sortable) {
         return yield* new ItemQueryError({
+          dataset,
           location: { argument: "sort", index, path: `sort[${index}].field` },
           argumentText: JSON.stringify(sort),
           fault: {
@@ -187,16 +206,20 @@ export function planRequest(
           },
         });
       }
-      sorts.push({
-        direction,
-        needs: definition.needs([]),
-        key: definition.sortKey,
-      });
+      sorts.push({ direction, ...sortable });
+    }
+    // A tie-breaker that the sort already names adds no order.
+    const tieBreakers = dataset.tieBreakers.filter(
+      (tie) => !sort.some(({ field }) => field === tie.field),
+    );
+    for (const { field, direction } of tieBreakers) {
+      sorts.push({ direction, ...dataset.sortable(field)! });
     }
 
     const limit = request.limit ?? null;
     if (limit !== null && !(Number.isSafeInteger(limit) && limit > 0)) {
       return yield* new ItemQueryError({
+        dataset,
         location: { argument: "limit" },
         fault: {
           kind: "plain",
@@ -208,16 +231,24 @@ export function planRequest(
       });
     }
 
+    const normalized = sort.map(({ field, direction }) => ({
+      field,
+      direction,
+    }));
     return {
+      dataset,
       query: {
         filter: request.filter ?? null,
         fields: [...fields],
-        sort: sort.map(({ field, direction }) => ({ field, direction })),
+        sort: normalized,
         limit,
+        ...(request.item ? { item: request.item } : {}),
+        ...(request.attachment ? { attachment: request.attachment } : {}),
       },
       filter,
       warnings: filter?.warnings ?? [],
       paths,
+      order: [...normalized, ...tieBreakers],
       sorts,
     };
   });

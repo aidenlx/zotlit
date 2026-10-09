@@ -42,10 +42,10 @@ import {
   ITEM_QUERY_CANCEL_COMMAND,
   ITEM_QUERY_COMMAND,
   ITEM_QUERY_GUIDE_COMMAND,
-  ITEM_QUERY_SCHEMA_COMMAND,
   QUERY_ID_FORM,
   QUERY_ID_MAX_LENGTH,
 } from "./contract";
+import type { ItemQueryCommand } from "./contract";
 import { GUIDE_TOPIC_NAMES } from "./guide";
 import type { GuideTopic } from "./guide";
 
@@ -253,7 +253,14 @@ const queryVariants = {
 const queryParams = cliVariants(queryVariant, queryVariants);
 
 export type DecodedItemQuery = v.InferOutput<typeof queryParams>;
-export type DecodedQuery = DecodedItemQuery | DecodedAnnotationQuery;
+/**
+ * The decoded arguments of either query command. The Annotation selectors
+ * are optional keys, so a reader takes both datasets in one shape.
+ */
+export type DecodedQuery = (DecodedItemQuery | DecodedAnnotationQuery) & {
+  readonly item?: string[];
+  readonly attachment?: string[];
+};
 
 /** The parameters of `zotlit:item-query`, to type its `CliFlags`. */
 export type ItemQueryParam = CliParamName<typeof queryParams>;
@@ -263,11 +270,12 @@ export function decodeItemQuery(params: CliData): CliRequest<DecodedItemQuery> {
   return decodeCliParams(params, queryParams, { command: ITEM_QUERY_COMMAND });
 }
 
-/** The schema command takes no parameter. */
-export function decodeSchemaArguments(params: CliData): CliRequest<object> {
-  return decodeCliParams(params, noCliParams, {
-    command: ITEM_QUERY_SCHEMA_COMMAND,
-  });
+/** The schema command `command` takes no parameter. */
+export function decodeSchemaArguments(
+  params: CliData,
+  command: ItemQueryCommand,
+): CliRequest<object> {
+  return decodeCliParams(params, noCliParams, { command });
 }
 
 const guideParams = v.pipe(
@@ -337,18 +345,7 @@ const annotationParams = cliVariants(
       ? "selectors"
       : queryVariant(params),
   {
-    libraries: v.pipe(
-      queryVariants.libraries,
-      v.transform((query) => ({ ...query, kind: "annotations" as const })),
-    ),
-    library: v.pipe(
-      queryVariants.library,
-      v.transform((query) => ({ ...query, kind: "annotations" as const })),
-    ),
-    scope: v.pipe(
-      queryVariants.scope,
-      v.transform((query) => ({ ...query, kind: "annotations" as const })),
-    ),
+    ...queryVariants,
     selectors: v.pipe(
       cliParams({
         item: v.optional(annotationSelector("item")),
@@ -374,7 +371,6 @@ const annotationParams = cliVariants(
             );
           }
           return {
-            kind: "annotations" as const,
             ...decodedQuery(options, {
               scope: {
                 mode: "selected",

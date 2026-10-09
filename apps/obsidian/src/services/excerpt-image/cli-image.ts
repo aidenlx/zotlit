@@ -30,7 +30,7 @@ const imageParams = cliParams(
 );
 
 export interface AnnotationImagePorts {
-  read(key: string): Promise<ExcerptRequest | null>;
+  read(key: string, signal?: AbortSignal): Promise<ExcerptRequest | null>;
   resolve(
     request: ExcerptRequest,
     signal?: AbortSignal,
@@ -60,12 +60,15 @@ export async function answerAnnotationImage(
   const { key } = decoded.value;
   let request: ExcerptRequest | null;
   try {
-    request = await ports.read(key);
+    request = await ports.read(key, signal);
   } catch (error) {
     signal?.throwIfAborted();
     return envelope({
       ok: false,
-      diagnostic: diagnostic("source-unavailable", String(error)),
+      diagnostic: diagnostic(
+        "source-unavailable",
+        error instanceof Error ? error.message : String(error),
+      ),
     });
   }
   if (!request)

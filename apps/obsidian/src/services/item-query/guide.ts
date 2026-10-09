@@ -4,7 +4,7 @@
 // Command names, parameters, and defaults come from the constants the
 // handlers run.
 
-import { DEFAULT_FIELDS, DEFAULT_SORT } from "@zotlit/item-query";
+import { ITEMS } from "@zotlit/item-query";
 
 import {
   DEFAULT_CLI_LIMIT,
@@ -44,10 +44,10 @@ function listOf(names: readonly string[]): string {
   return new Intl.ListFormat("en", { type: "conjunction" }).format(names);
 }
 
-const DEFAULT_FIELD_LIST = listOf(DEFAULT_FIELDS);
+const DEFAULT_FIELD_LIST = listOf(ITEMS.defaultFields);
 /** The default sort in words, such as "dateModified descending". */
 const DEFAULT_SORT_TEXT = listOf(
-  DEFAULT_SORT.map(
+  ITEMS.defaultSort.map(
     ({ field, direction }) =>
       `${field} ${direction === "desc" ? "descending" : "ascending"}`,
   ),
