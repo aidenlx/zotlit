@@ -2113,7 +2113,10 @@ export class AnnotationRepository extends Service<void> {
       this.#emitter.emit("annotation-changed", annotationKey);
     };
     void operation.then(settled, settled);
-    return await this.#counted(held?.attachmentKey, operation);
+    return await this.#counted(
+      this.#attachmentHolding(annotationKey),
+      operation,
+    );
   }
 
   async #runCommand(
@@ -3331,14 +3334,19 @@ export class AnnotationRepository extends Service<void> {
     );
   }
 
+  /** Locate the Annotation independently of the source's write readiness. */
+  #attachmentHolding(annotationKey: string): string | undefined {
+    return [...this.#publishedLists].find(([, list]) =>
+      list.annotations.some((record) => record.key === annotationKey),
+    )?.[0];
+  }
+
   async #prepareWrite(
     annotationKey: string,
   ): Promise<HeldAnnotation | null | "server-changed"> {
     const source = this.#localApi.demandSource();
     if (!source) return this.#holding(annotationKey);
-    const attachmentKey = [...this.#publishedLists].find(([, list]) =>
-      list.annotations.some((record) => record.key === annotationKey),
-    )?.[0];
+    const attachmentKey = this.#attachmentHolding(annotationKey);
     if (attachmentKey) {
       if (!(await this.#sourceStillBound(attachmentKey, source)))
         return "server-changed";
