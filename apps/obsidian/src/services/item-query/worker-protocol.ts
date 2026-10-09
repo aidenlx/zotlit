@@ -2,6 +2,7 @@ import type { LibraryScope } from "@/services/library-scope/scope";
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
 import type { DecodedQuery } from "./decode";
+import type { WorkerMeasurement } from "./trace";
 
 /** The command of a job: the schema, or the query that the renderer decoded. */
 export type QueryCommand =
@@ -18,3 +19,24 @@ export type QueryJob = QueryCommand & {
   measure?: boolean;
   heap?: boolean;
 };
+
+/**
+ * Where the result of a job is: in `answer` itself, or in the staging file
+ * that the worker closed. The renderer publishes a `file` receipt.
+ */
+export type QueryReceipt =
+  | { kind: "inline" }
+  | { kind: "file"; path: string; bytes: number };
+
+/** The envelope text of a job, with its receipt. */
+export interface QueryReply {
+  answer: string;
+  receipt: QueryReceipt;
+}
+
+/** The answer of the worker to one job. */
+export interface QueryAnswer extends QueryReply {
+  /** `CancelItemQuery` interrupted the job; `answer` is empty. */
+  cancelled?: true;
+  measurement?: WorkerMeasurement;
+}

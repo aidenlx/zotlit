@@ -31,8 +31,10 @@ import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { ItemFields } from "@zotlit/zotero-types";
 
 import type { EffectiveReadMode } from "@/services/database/read-source";
-import type { QueryAnswer } from "@/services/item-query/worker";
-import type { QueryJob } from "@/services/item-query/worker-protocol";
+import type {
+  QueryAnswer,
+  QueryJob,
+} from "@/services/item-query/worker-protocol";
 import type { Settings, ZoteroReadMode } from "@/services/settings/schema";
 
 /** Compile-time assert: `T` must be `true`. */
