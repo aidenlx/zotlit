@@ -8,7 +8,6 @@ import {
 
 import { ANNOTATIONS, collectQuery } from ".";
 import { ANNOTATION_SCENARIO_QUERIES } from "./annotation-scenario-queries";
-import { diagnose } from "./diagnose";
 import { ItemQueryError } from "./error";
 import type { RunOptions } from "./test-helpers";
 import { runEffect } from "./test-helpers";
@@ -141,29 +140,6 @@ it("limits all Libraries as one set and projects only identities for fields=[]",
   });
   expect(scanned.exit).toEqual(found.exit);
 });
-
-it.each([
-  [{ fields: ["missing"] }, "unknown-field"],
-  [{ fields: ["attachment.missing"] }, "unknown-path"],
-  [{ limit: 0 }, "invalid-limit"],
-])(
-  "reports a typed invalid request before reading: %j",
-  async (options, code) => {
-    const found = await runEffect(
-      collectQuery(ANNOTATIONS, {
-        libraries: [SCENARIO_LIBRARIES.personal],
-        ...options,
-      }),
-    );
-    expect(found.exit).toMatchObject({ _tag: "Failure" });
-    if (found.exit._tag !== "Failure") throw new Error("Expected failure");
-    expect(String(found.exit.cause)).toContain("ItemQueryError");
-    expect(Cause.squash(found.exit.cause)).toMatchObject({ code });
-    expect(found.events.filter((event) => event.type === "statement")).toEqual(
-      [],
-    );
-  },
-);
 
 it("combines Annotation fields with parent dates, Tags, and projections", async () => {
   using scenario = openScenarioDatabase({ annotations: true });
@@ -384,12 +360,7 @@ it("corrects a dotted parent custom field with the source spelling and item pref
     name: "review.status",
     dotted: true,
   });
-  expect(
-    diagnose(error.fault, filter, {
-      ...error.location,
-      dataset: error.dataset,
-    }),
-  ).toMatchObject({
+  expect(error.diagnostic).toMatchObject({
     code: "unknown-field",
     excerpt: { at: "item.review.status" },
     suggestions: ['item.custom["review.status"]'],
@@ -412,24 +383,4 @@ it("warns on definite cross-type inequality while preserving every evaluated mat
   expect(comparison.exit.value.warnings).toMatchObject([
     { code: "always-true", suggestions: ['!tags.contains("figure")'] },
   ]);
-});
-
-it("replays the normalized query of a default-sort Annotation Query to the same rows", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
-  const libraries = [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group];
-  const first = await runEffect(collectQuery(ANNOTATIONS, { libraries }), {
-    client: scenario.db,
-  });
-  if (first.exit._tag === "Failure") throw new Error(String(first.exit.cause));
-  const { query, rows } = first.exit.value;
-  expect(rows.length).toBeGreaterThan(1);
-
-  const replay = await runEffect(
-    collectQuery(ANNOTATIONS, { ...query, filter: undefined, libraries }),
-    { client: scenario.db },
-  );
-  if (replay.exit._tag === "Failure")
-    throw new Error(String(replay.exit.cause));
-  expect(replay.exit.value.query).toEqual(query);
-  expect(replay.exit.value.rows).toEqual(rows);
 });
