@@ -228,7 +228,10 @@ export function excerptRequestForKey(options: {
       Effect.mapError(
         (error) =>
           new ExcerptSourceUnavailable({
-            message: error instanceof Error ? error.message : String(error),
+            message:
+              error instanceof Error && error.message
+                ? error.message
+                : String(error),
           }),
       ),
     ),
