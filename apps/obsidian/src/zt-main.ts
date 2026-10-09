@@ -568,14 +568,14 @@ export default class ZotLitPlugin extends Plugin {
       zoteroPref: services.zoteroPref,
     });
 
-    registerQueryCli(this, services.itemQuery);
+    registerQueryCli(this, services.query);
     registerAnnotationImageCli(this, services);
 
     // Measurement-only: lets packages/e2e/src/query-measure.ts read the
     // slices, statements, heap, and cancel times of a run. A dev-build port,
     // never registered in a production build.
     if (__DEV__) {
-      registerQueryMeasureCli(this, services.itemQuery);
+      registerQueryMeasureCli(this, services.query);
     }
 
     registerPandocResolve(this, {

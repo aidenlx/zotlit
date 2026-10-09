@@ -84,7 +84,7 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
     /** Hydrate one chunk of a page and keep its matches. */
     const takeChunk = (library: number, chunk: readonly I["scan"][]) =>
       Effect.gen(function* () {
-        const items = yield* run.scan.load(chunk);
+        const items = yield* run.scan.load(chunk, () => libraries[library]!);
         yield* Effect.sync(() => {
           const matching: Match<I["scan"]>[] = [];
           for (const item of items) {
@@ -156,7 +156,10 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
     });
     for (let start = 0; start < returned.length; start += hydrateChunkSize) {
       const chunk = returned.slice(start, start + hydrateChunkSize);
-      const items = yield* run.projection.load(chunk.map((row) => row.scan));
+      const items = yield* run.projection.load(
+        chunk.map((row) => row.scan),
+        (index) => libraries[chunk[index]!.library]!,
+      );
       const rows = yield* Effect.sync(() => {
         const rows: QueryRow[] = [];
         for (const [index, { library, scan }] of chunk.entries()) {

@@ -228,6 +228,7 @@ SEE ALSO
 const FIELDS_SECTION = `FIELDS AND PROJECTION PATHS
 
 DESCRIPTION
+  library is personal for My Library or group:<groupID> for a group.
   fields is a comma list or JSON array of Projection Paths: the values each row returns.
   Commas split only outside single or double quotes and [...] brackets.
   Empty elements and trailing commas are request errors.

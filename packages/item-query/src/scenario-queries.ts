@@ -25,6 +25,10 @@ export interface ScenarioQuery {
  * sorted query with a projection.
  */
 const FILTERS: readonly string[] = [
+  'library == "personal"',
+  'library != "personal"',
+  'library == "group:4815"',
+  'library == "group:4815" && key == "ART2FULL"',
   'review.status == "include"',
   'custom.review.status == "include"',
   'custom["reviewStatus"] == "include"',
@@ -607,6 +611,9 @@ export const SCENARIO_QUERIES: readonly ScenarioQuery[] = [
  * form here with values that match no Item, one Item, and several Items.
  */
 export const GENERATED_FILTER_PARTS: readonly string[] = [
+  'library == "personal"',
+  'library != "personal"',
+  'library == "group:4815"',
   'tags == "bulk"',
   'tags != "bulk"',
   // Lowered leaves.

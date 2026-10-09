@@ -1,4 +1,4 @@
-// The measurement commands of Item Query, registered in a dev build only. The
+// The measurement command of ZotLit Query, registered in a dev build only. The
 // release-time measurement script (packages/e2e/src/query-measure.ts) calls
 // them to read what `zotlit:query` cannot report: the slices of the
 // engine, its statements, the heap, and the time from a cancel request to
@@ -277,7 +277,7 @@ export function registerQueryMeasureCli(
 
   plugin.registerCliHandler(
     QUERY_MEASURE_COMMAND,
-    "Run one Item Query and report its slices, statements, heap, and cancel times (dev build)",
+    "Run one ZotLit Query and report its slices, statements, heap, and cancel times (dev build)",
     queryMeasureFlags,
     measure,
   );

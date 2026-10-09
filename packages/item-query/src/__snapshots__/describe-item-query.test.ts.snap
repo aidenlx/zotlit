@@ -6,6 +6,17 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
     "annotations": {
       "fields": [
         {
+          "filter": "string",
+          "path": "library",
+          "projection": true,
+          "sort": false,
+          "type": "string",
+          "valueForms": [
+            "personal",
+            "group:<groupID>",
+          ],
+        },
+        {
           "filter": null,
           "path": "position",
           "projection": true,
@@ -1434,6 +1445,17 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
           "type": "string",
         },
         {
+          "filter": "string",
+          "path": "item.library",
+          "projection": true,
+          "sort": false,
+          "type": "string",
+          "valueForms": [
+            "personal",
+            "group:<groupID>",
+          ],
+        },
+        {
           "filter": null,
           "path": "item.custom",
           "projection": true,
@@ -2850,6 +2872,17 @@ exports[`publishes one catalog with datasets and shared language vocabulary 1`] 
           "projection": true,
           "sort": true,
           "type": "string",
+        },
+        {
+          "filter": "string",
+          "path": "library",
+          "projection": true,
+          "sort": false,
+          "type": "string",
+          "valueForms": [
+            "personal",
+            "group:<groupID>",
+          ],
         },
         {
           "filter": null,

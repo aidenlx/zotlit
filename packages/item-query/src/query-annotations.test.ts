@@ -71,6 +71,51 @@ it("returns the reading record of one Item, with three identities and default fi
     expect(row.values).not.toHaveProperty("position");
 });
 
+it("filters and projects the Library selector of Annotations with the same bare key", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  scenario.sqlite
+    .prepare(
+      "update items set key = 'ANN2HGHT' where key = 'ANN2GRUP' and libraryID = ?",
+    )
+    .run(SCENARIO_LIBRARIES.group.libraryID);
+  const request = {
+    libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
+    fields: ["library", "item.library"],
+    sort: [],
+  };
+  const query = async (filter?: string) => {
+    const { exit } = await runEffect(
+      collectQuery(ANNOTATIONS, { ...request, ...(filter && { filter }) }),
+      { client: scenario.db },
+    );
+    if (exit._tag === "Failure") throw new Error(String(exit.cause));
+    return exit.value.rows;
+  };
+  const rows = await query();
+  expect(rows.find((row) => row.indexedKey === "ANN2HGHT")?.values).toEqual({
+    library: "personal",
+    "item.library": "personal",
+  });
+  expect(
+    rows.find((row) => row.indexedKey === "ANN2HGHTg4815")?.values,
+  ).toEqual({ library: "group:4815", "item.library": "group:4815" });
+  const personalRows = await query('library == "personal"');
+  expect(personalRows).toHaveLength(rows.length - 1);
+  expect(new Set(personalRows.map((row) => row.values.library))).toEqual(
+    new Set(["personal"]),
+  );
+  for (const filter of ['library != "personal"', 'library == "group:4815"']) {
+    expect(await query(filter)).toEqual([
+      {
+        indexedKey: "ANN2HGHTg4815",
+        attachmentIndexedKey: "PDF2GRUPg4815",
+        itemIndexedKey: "ART2FULLg4815",
+        values: { library: "group:4815", "item.library": "group:4815" },
+      },
+    ]);
+  }
+});
+
 it("projects each PDF position kind and preserves an unknown stored position", async () => {
   using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
