@@ -1120,10 +1120,12 @@ describe("zotlit:item-query-guide", () => {
     for (const args of GUIDE_EXAMPLES) {
       const answer = await run(args);
       if (!answer.ok) failures.push(JSON.stringify({ args, answer }));
+      else expect(answer.warnings).toEqual([]);
     }
     for (const filter of GUIDE_FILTERS) {
       const answer = await run({ filter, fields: "[]" });
       if (!answer.ok) failures.push(JSON.stringify({ filter, answer }));
+      else expect(answer.warnings).toEqual([]);
     }
 
     expect(GUIDE_EXAMPLES.length).toBeGreaterThan(0);
@@ -1250,4 +1252,33 @@ it("reports syntax facts and a correction through the CLI envelope", async () =>
   );
   expect(diagnostic.report[0]).toBe(diagnostic.message);
   expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
+});
+
+it("keeps warning diagnostics before rows and drops them on failure", async () => {
+  using scenario = openScenarioDatabase();
+  const { run, query } = setup(scenario);
+  const text = await Effect.runPromise(query({ filter: 'tags == "bulk"' }));
+  const answer = JSON.parse(text);
+  expect(answer).toMatchObject({
+    ok: true,
+    rows: [],
+    warnings: [
+      {
+        code: "never-true",
+        severity: "warning",
+        suggestions: ['tags.contains("bulk")'],
+        location: { argument: "filter", span: { from: 0, to: 14 } },
+        excerpt: { at: 'tags == "bulk"' },
+      },
+    ],
+  });
+  expect(text.indexOf('"warnings"')).toBeLessThan(text.indexOf('"rows"'));
+  for (const params of [
+    { filter: 'tags == "bulk"', fields: '["missing"]' },
+    { filter: 'tags == "bulk" && missing == "x"' },
+  ] as CliData[]) {
+    const failed = await run(params);
+    expect(failed.ok).toBe(false);
+    expect(failed).not.toHaveProperty("warnings");
+  }
 });

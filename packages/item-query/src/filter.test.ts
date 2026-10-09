@@ -1560,3 +1560,41 @@ describe("hydration needs", () => {
     ]);
   });
 });
+
+// Failure modes: nullable cross-type values can both be null; an unknown
+// value can match; ordering stays null; a warning never changes evaluation.
+it.each([
+  ['tags == "bulk"', false, false],
+  ['tags != "bulk"', true, true],
+  ['date.year == "2019"', false, false],
+  ['dateAdded > "2020-01-01"', null, false],
+  ['number("bad") == date("bad")', true, undefined],
+  ['number("bad") != date("bad")', false, undefined],
+  ['number("bad") > date("bad")', null, false],
+  ['tags[0] == "bulk"', false, undefined],
+  ["date.year == null", true, undefined],
+  ['"a" == "b"', false, undefined],
+  ['if(true, 1, "x") == "x"', false, undefined],
+] as const)(
+  "warns only on a proven constant comparison: %s",
+  (text, value, warning) => {
+    const planned = plan(text);
+    expect(evaluate(planned.root, ARTICLE, CLOCK)).toEqual(value);
+    expect(planned.warnings).toEqual(
+      warning === undefined
+        ? []
+        : [
+            expect.objectContaining({
+              kind: "constant",
+              value: warning,
+            }),
+          ],
+    );
+  },
+);
+
+it("keeps the null value of a warned ordering inside a larger expression", () => {
+  const planned = plan('(number("bad") > date("bad")) == null');
+  expect(evaluate(planned.root, ARTICLE, CLOCK)).toBe(true);
+  expect(planned.warnings).toHaveLength(1);
+});

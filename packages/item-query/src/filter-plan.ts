@@ -122,6 +122,7 @@ export type FilterNode = NodeBase &
 /** A validated Filter Expression. */
 export interface FilterPlan {
   readonly root: FilterNode;
+  readonly warnings: readonly Extract<Fault, { kind: "constant" }>[];
   /** What hydration loads before the filter runs: one entry for each field. */
   readonly needs: readonly FieldNeeds[];
   /**
@@ -171,8 +172,10 @@ export function planFilter(text: string): FilterPlan | FilterProblem {
   const needs: FieldNeeds[] = [];
   const customFields: (Span & { name: string; bare: boolean })[] = [];
   try {
-    const root = new Validator(needs, customFields).node(ast);
-    return { root, needs, customFields };
+    const warnings: Extract<Fault, { kind: "constant" }>[] = [];
+    const root = new Validator(needs, customFields, warnings).node(ast);
+    warnings.sort((a, b) => a.at.from - b.at.from);
+    return { root, needs, customFields, warnings };
   } catch (thrown) {
     if (thrown instanceof Invalid) return thrown.problem;
     throw thrown;
@@ -280,6 +283,7 @@ class Validator {
   constructor(
     needs: FieldNeeds[],
     customFields: (Span & { name: string; bare: boolean })[],
+    readonly warnings: Extract<Fault, { kind: "constant" }>[],
   ) {
     this.#needs = needs;
     this.#customFields = customFields;
@@ -326,6 +330,32 @@ class Validator {
       case "binary": {
         const left = this.node(ast.left);
         const right = this.node(ast.right);
+        const equality = ast.operator === "==" || ast.operator === "!=";
+        const ordering = ["<", "<=", ">", ">="].includes(ast.operator);
+        const nonNull = (node: FilterNode) =>
+          node.kind === "list" ||
+          (node.kind === "literal" && node.value !== null);
+        if (
+          (ordering || (equality && (nonNull(left) || nonNull(right)))) &&
+          left.valueType !== "unknown" &&
+          right.valueType !== "unknown" &&
+          left.valueType !== right.valueType
+        ) {
+          this.warnings.push({
+            kind: "constant",
+            value: ast.operator === "!=",
+            operator: ast.operator,
+            left: {
+              type: left.valueType,
+              at: { from: ast.left.from, to: ast.left.to },
+            },
+            right: {
+              type: right.valueType,
+              at: { from: ast.right.from, to: ast.right.to },
+            },
+            at: span,
+          });
+        }
         return {
           ...span,
           kind: "binary",
