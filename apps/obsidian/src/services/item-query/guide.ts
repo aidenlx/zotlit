@@ -234,9 +234,12 @@ PATHS
   A path selects a field or a value inside it, as in a ZotLit template:
   date.year, creators[0].fullName, tags[1].name. Each entry of
   the downloaded catalog's fields with projection true is a path.
-  A list path shows index 0;
+  A numeric list path shows index 0;
   any index works.
     ${example({ fields: '["title","date.year","creators[0].fullName","tags","attachments"]' })}
+  Use creators[].fullName to read one property of every element in a Relation
+  List. The result keeps source order, with null for each missing value.
+    ${example({ fields: '["creators[].fullName"]' })}
   A custom field is the path custom["<exact name>"]; copy it from
   customFields[].path in the schema command's response.
 

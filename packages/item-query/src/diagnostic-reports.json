@@ -934,5 +934,42 @@
       "            ^",
       "Name one custom field, such as item.custom[\"review.status\"]."
     ]
+  },
+  {
+    "name": "projection each creator",
+    "request": {
+      "fields": ["creators.fullName"]
+    },
+    "report": [
+      "\"creators.fullName\" is not a Projection Path of Item Query.",
+      "creators.fullName",
+      "^^^^^^^^^^^^^^^^^",
+      "creators entries have these Projection Paths: family, given, literal, role, fullName.",
+      "Try: fields='[\"creators[].fullName\"]'"
+    ]
+  },
+  {
+    "name": "projection each on scalar",
+    "request": {
+      "fields": ["title[]"]
+    },
+    "report": [
+      "\"title\" is not a list; [] requires a list.",
+      "title[]",
+      "^^^^^^^",
+      "Try: fields='[\"title\"]'"
+    ]
+  },
+  {
+    "name": "filter each is syntax",
+    "request": {
+      "filter": "creators[].fullName"
+    },
+    "report": [
+      "Found \"]\" where the filter takes !, (, -, [, a name, a number, a regular expression, a string, false, null, true.",
+      "creators[].fullName",
+      "         ^",
+      "Use !, (, -, [, a name, a number, a regular expression, a string, false, null, true."
+    ]
   }
 ]

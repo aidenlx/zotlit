@@ -12,6 +12,44 @@ import { ITEMS } from "./query-items";
 import type { ItemQueryRequest } from "./request";
 import { runEffect } from "./test-helpers";
 
+it.each([
+  [ITEMS, "creators.fullName", "creators[].fullName"],
+  [ANNOTATIONS, "item.creators.fullName", "item.creators[].fullName"],
+] as const)(
+  "suggests explicit element projection on $1",
+  async (dataset, path, corrected) => {
+    const { exit } = await runEffect(
+      collectQuery(dataset, { libraries: [], fields: [path] }),
+    );
+    if (!Exit.isFailure(exit)) throw new Error("the query did not fail");
+    const error = Cause.findErrorOption(exit.cause);
+    if (error._tag === "None") throw new Error(String(exit.cause));
+    expect(error.value).toBeInstanceOf(ItemQueryError);
+    expect((error.value as ItemQueryError).diagnostic).toMatchObject({
+      code: "unknown-path",
+      suggestions: [`fields='["${corrected}"]'`],
+      excerpt: { at: path },
+    });
+  },
+);
+
+it("reports a non-list Projection Path before reading rows", async () => {
+  const { exit } = await runEffect(
+    collectQuery(ITEMS, { libraries: [], fields: ["title[]"] }),
+  );
+  if (!Exit.isFailure(exit)) throw new Error("the query did not fail");
+  const error = Cause.findErrorOption(exit.cause);
+  if (error._tag === "None") throw new Error(String(exit.cause));
+  expect((error.value as ItemQueryError).diagnostic).toMatchObject({
+    code: "unknown-path",
+    found: "scalar",
+    expected: ["list"],
+  });
+  expect((error.value as ItemQueryError).diagnostic.message).toContain(
+    "is not a list",
+  );
+});
+
 it("reports an unknown global from the function registry", () => {
   const diagnostic = diagnose(
     {
@@ -311,7 +349,9 @@ it.each(reports)("reports $name", async ({ request, report, ...setup }) => {
       suggestions: [],
     });
   } else if (error.value.fault.kind === "unknown") {
-    expect(diagnostic.found).toBe(error.value.fault.name);
+    expect(diagnostic.found).toBe(
+      error.value.fault.pathResolution?.found ?? error.value.fault.name,
+    );
   }
   const span = diagnostic.location?.span;
   if (span)

@@ -18,6 +18,34 @@ import { ItemQueryError } from "./error";
 import type { RunOptions } from "./test-helpers";
 import { runEffect } from "./test-helpers";
 
+it("projects every parent creator and Annotation Tag with []", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const { exit } = await runEffect(
+    collectQuery(ANNOTATIONS, {
+      libraries: [SCENARIO_LIBRARIES.personal],
+      attachment: ["PDF2LIVE"],
+      filter: 'type == "underline"',
+      fields: ["item.creators[].fullName", "tags[]"],
+    }),
+    { client: scenario.db },
+  );
+  if (exit._tag === "Failure") throw new Error(String(exit.cause));
+  expect(exit.value.rows).toEqual([
+    {
+      indexedKey: "ANN2UNDR",
+      attachmentIndexedKey: "PDF2LIVE",
+      itemIndexedKey: "ART2FULL",
+      values: {
+        "item.creators[].fullName": [
+          "Ada Lovelace",
+          "World Health Organization",
+        ],
+        "tags[]": ["method"],
+      },
+    },
+  ]);
+});
+
 it("returns the reading record of one Item, with three identities and default fields", async () => {
   using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(

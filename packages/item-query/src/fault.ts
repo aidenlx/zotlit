@@ -4,6 +4,7 @@ import type {
 } from "@zotlit/filter-expression";
 
 import type { ItemQueryErrorCode } from "./error";
+import type { ValueShape } from "./fields";
 import type { StaticType } from "./filter-plan";
 
 /** UTF-16 offsets into the caller's argument; `to` is exclusive. */
@@ -46,6 +47,12 @@ export type Fault =
       readonly receiver?: Receiver;
       readonly customFields?: readonly string[];
       readonly dotted?: boolean;
+      readonly pathResolution?: {
+        readonly found: ValueShape["kind"];
+        readonly expected: "list" | "list-element";
+        /** Offset of the accessor that cannot read the preceding value. */
+        readonly offset: number;
+      };
     }
   | {
       readonly kind: "arity";

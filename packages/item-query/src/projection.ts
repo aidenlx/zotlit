@@ -79,6 +79,14 @@ export function planPath<Item = QueryItem, Needs = FieldNeeds>(
         role: "projection-path",
         name: text,
         at: { from: 0, to: text.length },
+        ...((typeof segment === "object" || shape.kind === "list") && {
+          pathResolution: {
+            found: shape.kind,
+            expected: typeof segment === "object" ? "list" : "list-element",
+            offset:
+              parsed.offsets[parsed.segments.length - rest.length + index]!,
+          },
+        }),
       };
     }
     if (shape.kind === "custom-fields" && index === 0) {
@@ -99,7 +107,9 @@ function step(shape: ValueShape, segment: PathSegment): ValueShape | null {
         ? shape.keys[segment]!
         : null;
     case "list":
-      return typeof segment === "number" ? shape.element : null;
+      return typeof segment === "number" || typeof segment === "object"
+        ? shape.element
+        : null;
     case "custom-fields":
       return typeof segment === "string" ? shape.value : null;
   }
@@ -107,15 +117,28 @@ function step(shape: ValueShape, segment: PathSegment): ValueShape | null {
 
 /**
  * The value of a planned path for one Item. A missing key or array element is
- * null; array access does not vectorize.
+ * null. An explicit `[]` maps the remaining path over each list element.
  */
 export function readPath<Item>(
   path: PlannedPath<Item, unknown>,
   item: Item,
 ): ProjectionValue {
-  let value = path.field.read(item);
-  for (const segment of path.rest) {
+  return readSegments(path.field.read(item), path.rest);
+}
+
+function readSegments(
+  source: ProjectionValue,
+  segments: readonly PathSegment[],
+): ProjectionValue {
+  let value = source;
+  for (const [index, segment] of segments.entries()) {
     if (value === null || typeof value !== "object") return null;
+    if (typeof segment === "object") {
+      const rest = segments.slice(index + 1);
+      return Array.isArray(value)
+        ? value.map((element) => readSegments(element, rest))
+        : null;
+    }
     if (Array.isArray(value)) {
       value = typeof segment === "number" ? (value[segment] ?? null) : null;
     } else if (typeof segment === "string" && Object.hasOwn(value, segment)) {
