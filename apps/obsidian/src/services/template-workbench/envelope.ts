@@ -13,7 +13,7 @@ import { MissingTemplateError, TemplateError } from "@zotlit/templates/facade";
 import type { TemplateLanguage } from "@zotlit/templates/facade";
 import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 
-import type { CliRejection } from "@/lib/cli-params";
+import { createCliDiagnostics } from "@/lib/cli-diagnostic";
 import { UNKNOWN_PROFILE_HINT } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
@@ -130,26 +130,12 @@ export interface Diagnostic {
 }
 
 /**
- * Report a fault with the recovery action its code defines. Every diagnostic is
- * built here, so `hint` defaults to the action registered for `code`.
+ * Report a fault with the recovery action registered for its code.
  */
-export function diagnostic(
-  code: DiagnosticCode,
-  message: string,
-  details?: Diagnostic["details"],
-): Diagnostic {
-  return { code, message, hint: DIAGNOSTIC_HINTS[code], details };
-}
-
-/** The `INVALID_SELECTOR` diagnostic of a rejected parameter. */
-export function rejectionDiagnostic(rejection: CliRejection): Diagnostic {
-  const rejected = diagnostic("INVALID_SELECTOR", rejection.message, {
-    parameter: rejection.parameter,
-  });
-  return rejection.hint === undefined
-    ? rejected
-    : { ...rejected, hint: rejection.hint };
-}
+export const { diagnostic, rejectionDiagnostic } = createCliDiagnostics<
+  typeof DIAGNOSTIC_HINTS,
+  Diagnostic["details"]
+>(DIAGNOSTIC_HINTS, "INVALID_SELECTOR");
 
 /** The commands the Workbench answers. */
 export type WorkbenchCommand =

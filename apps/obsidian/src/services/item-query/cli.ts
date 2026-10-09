@@ -281,7 +281,7 @@ export function queryIdInUseFailure(id: string): string {
     diagnostic(
       "query-id-in-use",
       `A query with the id '${id}' is running in this vault.`,
-      { details: { parameter: "id" } },
+      { parameter: "id" },
     ),
   );
 }
@@ -522,7 +522,7 @@ function targetLibrariesFailure(
     return diagnostic(
       "library-not-found",
       `The connected Zotero source holds no ${describeSelector(missing)}.`,
-      { details: parameter && { parameter } },
+      parameter && { parameter },
     );
   }
   if (reason === "named-none") {
