@@ -140,6 +140,17 @@ export function diagnose(
         { found: fault.name, expected },
       );
     }
+    case "custom-key":
+      return renderDiagnostic(
+        {
+          code: "invalid-filter",
+          message:
+            "custom takes the name of one custom field as a quoted string.",
+          hint: `Name one custom field, such as ${dataset === "annotations" ? "item." : ""}custom["review.status"].`,
+          location: faultLocation,
+        },
+        text,
+      );
     case "plain": {
       const entry =
         location.argument === "fields"
@@ -201,7 +212,8 @@ export function codeOfFault(
   dataset?: "annotations",
 ): PlainFault["code"] {
   if (fault.kind === "plain") return fault.code;
-  if (fault.kind === "syntax") return "invalid-filter";
+  if (fault.kind === "syntax" || fault.kind === "custom-key")
+    return "invalid-filter";
   if (fault.kind === "arity") return "wrong-argument-count";
   if (fault.kind === "argument-type") return "wrong-argument-type";
   if (fault.kind === "unreadable") return "unfilterable-field";

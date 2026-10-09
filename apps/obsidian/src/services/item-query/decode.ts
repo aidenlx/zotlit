@@ -16,6 +16,7 @@ import { UNLIMITED_LIMIT } from "@zotlit/item-query";
 
 import {
   cliMaybeEmpty,
+  cliNotApplicable,
   cliParams,
   cliText,
   cliVariants,
@@ -251,17 +252,14 @@ const queryVariants = {
 };
 const queryParams = cliVariants(queryVariant, queryVariants);
 
-export type DecodedQuery = v.InferOutput<typeof queryParams> & {
-  kind?: "annotations";
-  item?: readonly string[];
-  attachment?: readonly string[];
-};
+export type DecodedItemQuery = v.InferOutput<typeof queryParams>;
+export type DecodedQuery = DecodedItemQuery | DecodedAnnotationQuery;
 
 /** The parameters of `zotlit:item-query`, to type its `CliFlags`. */
 export type ItemQueryParam = CliParamName<typeof queryParams>;
 
 /** Decode the flat arguments of a query, or answer the first malformed one. */
-export function decodeItemQuery(params: CliData): CliRequest<DecodedQuery> {
+export function decodeItemQuery(params: CliData): CliRequest<DecodedItemQuery> {
   return decodeCliParams(params, queryParams, { command: ITEM_QUERY_COMMAND });
 }
 
@@ -339,37 +337,32 @@ const annotationParams = cliVariants(
       ? "selectors"
       : queryVariant(params),
   {
-    ...queryVariants,
+    libraries: v.pipe(
+      queryVariants.libraries,
+      v.transform((query) => ({ ...query, kind: "annotations" as const })),
+    ),
+    library: v.pipe(
+      queryVariants.library,
+      v.transform((query) => ({ ...query, kind: "annotations" as const })),
+    ),
+    scope: v.pipe(
+      queryVariants.scope,
+      v.transform((query) => ({ ...query, kind: "annotations" as const })),
+    ),
     selectors: v.pipe(
       cliParams({
         item: v.optional(annotationSelector("item")),
         attachment: v.optional(annotationSelector("attachment")),
-        library: cliMaybeEmpty(),
-        libraries: cliMaybeEmpty(),
+        library: cliNotApplicable(
+          "An Indexed Key selects its Library. Omit library beside Item or Attachment keys.",
+        ),
+        libraries: cliNotApplicable(
+          "An Indexed Key selects its Library. Omit libraries beside Item or Attachment keys.",
+        ),
         ...queryOptions,
       }),
-      v.rawCheck(({ dataset, addIssue }) => {
-        if (!dataset.typed) return;
-        const input = dataset.value;
-        if (input.library === undefined && input.libraries === undefined)
-          return;
-        const key = input.item !== undefined ? "item" : "attachment";
-        addIssue({
-          message:
-            "An Indexed Key selects its Library. Omit library and libraries beside Item or Attachment keys.",
-          path: [
-            { type: "object", origin: "value", input, key, value: input[key] },
-          ],
-        });
-      }),
       v.transform(
-        ({
-          item,
-          attachment,
-          library: _,
-          libraries: __,
-          ...options
-        }): DecodedQuery => {
+        ({ item, attachment, library: _, libraries: __, ...options }) => {
           const selected = new Map<string, LibrarySelector>();
           for (const text of [...(item ?? []), ...(attachment ?? [])]) {
             const key = parseIndexedKey(text)!;
@@ -381,6 +374,7 @@ const annotationParams = cliVariants(
             );
           }
           return {
+            kind: "annotations" as const,
             ...decodedQuery(options, {
               scope: {
                 mode: "selected",
@@ -399,15 +393,15 @@ const annotationParams = cliVariants(
   },
 );
 
+export type DecodedAnnotationQuery = v.InferOutput<typeof annotationParams>;
+export type AnnotationQueryParam = CliParamName<typeof annotationParams>;
+
 export function decodeAnnotationQuery(
   params: CliData,
-): CliRequest<DecodedQuery> {
-  const request = decodeCliParams(params, annotationParams, {
+): CliRequest<DecodedAnnotationQuery> {
+  return decodeCliParams(params, annotationParams, {
     command: ANNOTATION_QUERY_COMMAND,
   });
-  return request.kind === "invalid"
-    ? request
-    : { kind: "valid", value: { ...request.value, kind: "annotations" } };
 }
 
 const annotationGuideParams = v.pipe(

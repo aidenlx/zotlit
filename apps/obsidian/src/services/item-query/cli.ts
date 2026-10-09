@@ -370,7 +370,7 @@ export function answerItemQuery(
   decoded: DecodedQuery,
 ): Effect.Effect<QueryReply, never, ItemQueryDatabase | Scope.Scope> {
   const command =
-    decoded.kind === "annotations"
+    "kind" in decoded && decoded.kind === "annotations"
       ? ANNOTATION_QUERY_COMMAND
       : ITEM_QUERY_COMMAND;
   const named = decoded.libraries;
@@ -378,15 +378,15 @@ export function answerItemQuery(
     {
       scope: named ? named.scope : deps.scope,
       requireEach: named !== null,
-      kind: decoded.kind,
+      kind: "kind" in decoded ? decoded.kind : undefined,
       resolveAttachmentFile: deps.attachmentFiles
         ? (attachment) =>
             Effect.promise(() => deps.attachmentFiles!(attachment))
         : undefined,
     },
     {
-      item: decoded.item,
-      attachment: decoded.attachment,
+      item: "item" in decoded ? decoded.item : undefined,
+      attachment: "attachment" in decoded ? decoded.attachment : undefined,
       filter: decoded.filter,
       fields: decoded.fields,
       sort: decoded.sort,

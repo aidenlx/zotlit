@@ -87,7 +87,9 @@ export function runQueryJob(
         Effect.catch((failed) =>
           Effect.succeed<QueryAnswer>({
             answer: failure(
-              !job.schema && job.query.kind === "annotations"
+              !job.schema &&
+                "kind" in job.query &&
+                job.query.kind === "annotations"
                 ? ANNOTATION_QUERY_COMMAND
                 : ITEM_QUERY_COMMAND,
               failed.diagnostic,

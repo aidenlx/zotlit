@@ -16,7 +16,7 @@ import type {
 import { createCliDiagnostics } from "@/lib/cli-diagnostic";
 import type { CliRejection } from "@/lib/cli-params";
 
-import type { ItemQueryParam } from "./decode";
+import type { AnnotationQueryParam, ItemQueryParam } from "./decode";
 
 export const ANNOTATION_QUERY_SCHEMA_COMMAND =
   "zotlit:annotation-query-schema" as const;
@@ -51,7 +51,7 @@ export function queryCancelledText(id: string): string {
   return `The query '${id}' was cancelled by ${ITEM_QUERY_CANCEL_COMMAND}.`;
 }
 
-export const itemQueryFlags: CliFlags = {
+export const itemQueryFlags = {
   filter: {
     value: "<expression>",
     description:
@@ -152,7 +152,7 @@ export function rejectionDiagnostic(rejection: CliRejection): Diagnostic {
   return { ...value, ...diagnoseDecode(rejection, value.hint) };
 }
 
-export const annotationQueryFlags: CliFlags = {
+export const annotationQueryFlags = {
   ...itemQueryFlags,
   item: {
     value: "<indexed-key|json>",
@@ -164,4 +164,4 @@ export const annotationQueryFlags: CliFlags = {
     description:
       "Attachment Indexed Key or JSON array of Attachment keys; selects their Libraries",
   },
-};
+} satisfies Record<AnnotationQueryParam, CliFlag>;

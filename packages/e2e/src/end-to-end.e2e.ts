@@ -3233,8 +3233,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       {
         args: { item: "QANITM22", library: "personal" },
-        argument: "item",
-        path: "item",
+        argument: "library",
+        path: "library",
       },
     ]) {
       const result = JSON.parse(
