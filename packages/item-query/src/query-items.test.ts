@@ -61,7 +61,7 @@ async function failure(
   return error.value;
 }
 
-const keys = (found: QueryResult) => found.rows.map((row) => row.indexedKey);
+const keys = (found: QueryResult) => found.rows!.map((row) => row.indexedKey);
 
 /**
  * The hydrate statements of a run: `fields` loads the field values of a chunk,
@@ -189,7 +189,7 @@ describe("collectQuery(ITEMS) projection", () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, { libraries: [personal], limit: 1 });
 
-    expect(found.rows).toEqual([
+    expect(found.rows!).toEqual([
       {
         indexedKey: "ART2FULL",
         values: {
@@ -229,7 +229,7 @@ describe("collectQuery(ITEMS) projection", () => {
 
 /** The `values` of each row by Indexed Key. */
 const valuesByKey = (found: QueryResult) =>
-  Object.fromEntries(found.rows.map((row) => [row.indexedKey, row.values]));
+  Object.fromEntries(found.rows!.map((row) => [row.indexedKey, row.values]));
 
 describe("collectQuery(ITEMS) Projection Paths", () => {
   it("projects full, partial, text, and missing dates as structured values", async () => {
@@ -385,7 +385,7 @@ describe("collectQuery(ITEMS) Projection Paths", () => {
           { client: scenario.db, tuning: { forceScan } },
         );
         if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
-        expect(exit.value.rows).toEqual([
+        expect(exit.value.rows!).toEqual([
           { indexedKey: "ART2FULL", values: { volume: String(value) } },
         ]);
       }
@@ -433,7 +433,7 @@ describe("collectQuery(ITEMS) Projection Paths", () => {
       fields: ["title", "DOI", "date.year"],
     });
 
-    for (const row of found.rows) {
+    for (const row of found.rows!) {
       expect(Object.keys(row.values)).toEqual(["title", "DOI", "date.year"]);
     }
     expect(valuesByKey(found)["TIE2CCCC"]).toEqual({
@@ -482,7 +482,7 @@ describe("collectQuery(ITEMS) Projection Paths", () => {
 
     expect(found.returnedCount).toBe(610);
     expect(
-      found.rows.filter((row) => row.values["title"] === "Lab Report"),
+      found.rows!.filter((row) => row.values["title"] === "Lab Report"),
     ).toHaveLength(601);
   });
 });
@@ -520,7 +520,7 @@ describe("collectQuery(ITEMS) relation lists", () => {
       "tags[].name": [],
       "collections[]": [],
     });
-    for (const row of found.rows)
+    for (const row of found.rows!)
       expect(row.values["creators[]"]).toEqual(row.values.creators);
   });
 
@@ -792,7 +792,7 @@ describe("collectQuery(ITEMS) on the layout of the Zotero database", () => {
     });
 
     expect(keys(found)).toEqual(PERSONAL_BY_MODIFIED);
-    expect(found.rows[0]!.values).toEqual({
+    expect(found.rows![0]!.values).toEqual({
       title: "Exact Matching in Literature Review",
     });
   });
@@ -982,8 +982,8 @@ describe("collectQuery(ITEMS) sort", () => {
     });
 
     expect(
-      found.rows
-        .map((row) => row.values["title"])
+      found
+        .rows!.map((row) => row.values["title"])
         .filter((title) => titles.includes(title as string)),
     ).toEqual(["10", "9", "apple", "eclair", "Éclair", "Zebra"]);
   });
@@ -1007,7 +1007,7 @@ describe("collectQuery(ITEMS) sort", () => {
     });
 
     if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
-    expect(exit.value.rows).toEqual([
+    expect(exit.value.rows!).toEqual([
       { indexedKey: "CHP2YEAR", values: { DOI: null } },
       { indexedKey: "ALS2CNFL", values: { DOI: null } },
     ]);
@@ -1389,7 +1389,7 @@ describe("collectQuery(ITEMS) with a filter", () => {
       limit: 2,
     });
 
-    expect(found.rows).toEqual([
+    expect(found.rows!).toEqual([
       {
         indexedKey: "TIE2AAAA",
         values: { title: "Same Title", "tags[0].name": "tie" },
@@ -1577,7 +1577,7 @@ describe("collectQuery(ITEMS) with a filter", () => {
         fields: ["dateAdded", "dateModified"],
         sort: [{ field: "dateAdded", direction: "asc" }],
       });
-      expect(found.rows.at(-1)).toEqual({
+      expect(found.rows!.at(-1)).toEqual({
         indexedKey: "RPT2NDTE",
         values: { dateAdded: null, dateModified: null },
       });
@@ -2498,7 +2498,7 @@ describe("collectQuery(ITEMS) over several Libraries", () => {
       ...request,
       filter: 'key == "ART2FULL"',
     });
-    expect(found.rows).toEqual([
+    expect(found.rows!).toEqual([
       {
         indexedKey: "ART2FULL",
         values: {
@@ -2520,8 +2520,8 @@ describe("collectQuery(ITEMS) over several Libraries", () => {
       ['library == "group:4815"', "group:4815"],
     ]) {
       const selected = await result(scenario, { ...request, filter });
-      expect(selected.rows.length).toBeGreaterThan(0);
-      expect(new Set(selected.rows.map((row) => row.values.library))).toEqual(
+      expect(selected.rows!.length).toBeGreaterThan(0);
+      expect(new Set(selected.rows!.map((row) => row.values.library))).toEqual(
         new Set([expected]),
       );
       expect(keys(selected)).toEqual(
@@ -2590,7 +2590,7 @@ describe("collectQuery(ITEMS) over several Libraries", () => {
       sort: [],
     });
 
-    expect(found.rows).toEqual([
+    expect(found.rows!).toEqual([
       {
         indexedKey: "ART2FULL",
         values: {
@@ -2964,9 +2964,9 @@ describe.each(DATASETS)(
           libraries,
         });
 
-        expect(first.rows.length).toBeGreaterThan(1);
+        expect(first.rows!.length).toBeGreaterThan(1);
         expect(replay.query).toEqual(first.query);
-        expect(replay.rows).toEqual(first.rows);
+        expect(replay.rows).toEqual(first.rows!);
       });
     });
 
@@ -2974,7 +2974,7 @@ describe.each(DATASETS)(
       it("gives the same rows for every limit as the start of the unlimited result", async () => {
         using scenario = open();
         const all = await datasetResult(scenario, request({ sort }));
-        const count = all.rows.length;
+        const count = all.rows!.length;
         expect(count).toBeGreaterThan(2);
 
         for (const limit of [1, count - 1, count, count + 1]) {
@@ -2982,7 +2982,7 @@ describe.each(DATASETS)(
             scenario,
             request({ sort, limit }),
           );
-          expect(limited.rows).toEqual(all.rows.slice(0, limit));
+          expect(limited.rows).toEqual(all.rows!.slice(0, limit));
           expect(limited.returnedCount).toBe(Math.min(limit, count));
           expect(limited.truncated).toBe(limit < count);
         }
@@ -2998,7 +2998,7 @@ describe.each(DATASETS)(
             request({ fields: [], limit }),
           );
 
-          expect(found.returnedCount).toBe(all.rows.length);
+          expect(found.returnedCount).toBe(all.rows!.length);
           expect(found.truncated).toBe(false);
         },
       );
@@ -3026,16 +3026,16 @@ describe.each(DATASETS)(
           request({ fields: [], limit: 2 }),
         );
 
-        expect(found.rows).toHaveLength(2);
-        for (const row of found.rows) expect(row.values).toEqual({});
+        expect(found.rows!).toHaveLength(2);
+        for (const row of found.rows!) expect(row.values).toEqual({});
       });
 
       it("puts every requested field in each row", async () => {
         using scenario = open();
         const found = await datasetResult(scenario, request({ fields }));
 
-        expect(found.rows.length).toBeGreaterThan(0);
-        for (const row of found.rows)
+        expect(found.rows!.length).toBeGreaterThan(0);
+        for (const row of found.rows!)
           expect(Object.keys(row.values)).toEqual(fields);
       });
     });
@@ -3055,7 +3055,7 @@ describe.each(DATASETS)(
       using scenario = open();
       const found = await datasetResult(scenario, request());
       expect(found.query.fields).not.toContain("library");
-      for (const row of found.rows)
+      for (const row of found.rows!)
         expect(row.values).not.toHaveProperty("library");
     });
 
@@ -3198,7 +3198,7 @@ it("warns that a bare Indexed Key names My Library under a group-only scope", as
     filter: 'indexedKey == "ART2FULL"',
     fields: [],
   });
-  expect(found.rows).toEqual([]);
+  expect(found.rows!).toEqual([]);
   expect(found.warnings).toMatchObject([
     {
       found: "ART2FULL",
@@ -3206,4 +3206,200 @@ it("warns that a bare Indexed Key names My Library under a group-only scope", as
       suggestions: ["library=group:4815,personal"],
     },
   ]);
+});
+
+describe("grouped Item Query", () => {
+  it("counts filtered matches per Library and applies the limit inside each group", async () => {
+    using scenario = openScenarioDatabase();
+    const found = await result(scenario, {
+      libraries: [personal, group],
+      group: "library",
+      fields: [],
+      limit: 1,
+    });
+    expect(found).toMatchObject({
+      query: { group: "library" },
+      totalCount: 12,
+      returnedCount: 2,
+      truncated: true,
+      groups: [
+        {
+          value: "group:4815",
+          count: 2,
+          rows: [{ indexedKey: "ART2FULLg4815", values: {} }],
+        },
+        {
+          value: "personal",
+          count: 10,
+          rows: [{ indexedKey: "ART2FULL", values: {} }],
+        },
+      ],
+    });
+    expect(found).not.toHaveProperty("rows");
+  });
+});
+
+it("groups years numerically with null last and counts only filtered matches", async () => {
+  using scenario = openScenarioDatabase();
+  const found = await result(scenario, {
+    libraries: [personal],
+    filter:
+      '["ART2FULL", "BK2MNTH2", "CHP2YEAR", "CNF2TEXT", "RPT2NDTE"].contains(key)',
+    group: "date.year",
+    fields: [],
+    limit: 1,
+  });
+  expect(
+    found.groups?.map(({ value, count, rows }) => [
+      value,
+      count,
+      rows.map((row) => row.indexedKey),
+    ]),
+  ).toEqual([
+    [2018, 1, ["CHP2YEAR"]],
+    [2019, 1, ["BK2MNTH2"]],
+    [2020, 1, ["ART2FULL"]],
+    [null, 2, ["RPT2NDTE"]],
+  ]);
+  expect(found).toMatchObject({
+    totalCount: 5,
+    returnedCount: 4,
+    truncated: true,
+  });
+});
+
+it("groups custom scalar values including empty text and null", async () => {
+  using scenario = openScenarioDatabase();
+  const found = await result(scenario, {
+    libraries: [personal],
+    group: 'custom["review.status"]',
+    fields: [],
+    limit: null,
+  });
+  expect(found.groups?.map(({ value, count }) => [value, count])).toEqual([
+    ["", 1],
+    ["done", 1],
+    [null, 8],
+  ]);
+  expect(found).toMatchObject({
+    totalCount: 10,
+    returnedCount: 10,
+    truncated: false,
+  });
+});
+
+it("orders group values with the sort collation and keeps the request sort inside groups", async () => {
+  using scenario = openScenarioDatabase();
+  setField(scenario, "TIE2AAAA", ["title", "éclair"]);
+  setField(scenario, "TIE2BBBB", ["title", "Zebra"]);
+  setField(scenario, "TIE2CCCC", ["title", "eclair"]);
+  const found = await result(scenario, {
+    libraries: [personal],
+    filter: 'tags.contains("tie")',
+    group: "title",
+    fields: [],
+    sort: [{ field: "title", direction: "desc" }],
+  });
+  expect(found.groups?.map((group) => group.value)).toEqual([
+    "eclair",
+    "éclair",
+    "Zebra",
+  ]);
+  const ordered = await result(scenario, {
+    libraries: [personal],
+    filter: 'tags.contains("tie")',
+    group: "library",
+    fields: [],
+    sort: [{ field: "title", direction: "desc" }],
+    limit: 2,
+  });
+  expect(ordered.groups?.[0]?.rows.map((row) => row.indexedKey)).toEqual([
+    "TIE2BBBB",
+    "TIE2AAAA",
+  ]);
+});
+
+it("normalizes date group values to their projected wire strings", async () => {
+  using scenario = openScenarioDatabase();
+  const found = await result(scenario, {
+    libraries: [personal],
+    filter: 'tags.contains("tie")',
+    group: "dateModified",
+    fields: [],
+  });
+  expect(found.groups).toHaveLength(1);
+  expect(found.groups?.[0]).toMatchObject({
+    value: "2024-03-01T12:00:00Z",
+    count: 3,
+  });
+});
+
+it.each([
+  "tags",
+  "creators",
+  "creators[].fullName",
+  "title[]",
+  "tags[]",
+  "creators[0]",
+  "date",
+  "custom",
+])("rejects a non-scalar group Projection Path: %s", async (group) => {
+  using scenario = openScenarioDatabase();
+  const error = await failure(
+    scenario,
+    { libraries: [personal], group },
+    false,
+  );
+  expect(error).toBeInstanceOf(ItemQueryError);
+  if (!(error instanceof ItemQueryError)) throw error;
+  expect(error.diagnostic).toMatchObject({
+    code: "invalid-group",
+    location: { argument: "group" },
+  });
+  expect(error.diagnostic.report.join("\n")).toContain("scalar");
+});
+
+it("reports the group argument for an unknown custom field", async () => {
+  using scenario = openScenarioDatabase();
+  const error = await failure(scenario, {
+    libraries: [personal],
+    group: 'custom["missing"]',
+  });
+  expect(error).toMatchObject({
+    code: "unknown-field",
+    location: { argument: "group" },
+  });
+});
+
+it("returns empty groups and exact zero counts when no rows match", async () => {
+  using scenario = openScenarioDatabase();
+  const found = await result(scenario, {
+    libraries: [personal],
+    filter: "false",
+    group: "library",
+  });
+  expect(found).toMatchObject({
+    groups: [],
+    totalCount: 0,
+    returnedCount: 0,
+    truncated: false,
+  });
+  expect(found).not.toHaveProperty("rows");
+});
+
+it("keeps invalid group paths and corrections on the group argument", async () => {
+  using scenario = openScenarioDatabase();
+  for (const group of ["titl", 'custom["review.statu"]']) {
+    const error = await failure(scenario, { libraries: [personal], group });
+    if (!(error instanceof ItemQueryError)) throw error;
+    expect(error.diagnostic.location).toMatchObject({
+      argument: "group",
+      path: "group",
+    });
+    expect(
+      error.diagnostic.suggestions.some((suggestion) =>
+        suggestion.startsWith("group="),
+      ),
+    ).toBe(true);
+  }
 });

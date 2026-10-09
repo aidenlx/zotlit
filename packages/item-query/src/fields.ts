@@ -73,7 +73,7 @@ export interface FieldNeeds {
  * The value of a Sortable Field for one Item. One field gives one type; `null`
  * is a missing value. Strings compare in the Item Query string order.
  */
-export type SortKey = string | number | null;
+export type SortKey = string | number | boolean | null;
 
 /**
  * One entry of the field registry. Validation, execution, and the Item Query

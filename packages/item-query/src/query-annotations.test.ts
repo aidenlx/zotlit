@@ -29,7 +29,7 @@ it("projects every parent creator and Annotation Tag with []", async () => {
     { client: scenario.db },
   );
   if (exit._tag === "Failure") throw new Error(String(exit.cause));
-  expect(exit.value.rows).toEqual([
+  expect(exit.value.rows!).toEqual([
     {
       indexedKey: "ANN2UNDR",
       attachmentIndexedKey: "PDF2LIVE",
@@ -56,7 +56,7 @@ it("returns the reading record of one Item, with three identities and default fi
   );
   if (exit._tag === "Failure") throw new Error(String(exit.cause));
   expect(exit.value.returnedCount).toBe(12);
-  expect(exit.value.rows.map((row) => row.indexedKey)).toEqual([
+  expect(exit.value.rows!.map((row) => row.indexedKey)).toEqual([
     "ANN2LINK",
     "ANN2BAD2",
     "ANL2IMAG",
@@ -70,11 +70,11 @@ it("returns the reading record of one Item, with three identities and default fi
     "ANN2UNDR",
     "ANN2TEXT",
   ]);
-  expect(new Set(exit.value.rows.map((row) => row.values.type))).toEqual(
+  expect(new Set(exit.value.rows!.map((row) => row.values.type))).toEqual(
     new Set(["highlight", "underline", "note", "image", "ink", "text"]),
   );
-  expect(exit.value.rows[2]?.values.colorName).toBeNull();
-  expect(exit.value.rows[10]).toMatchObject({
+  expect(exit.value.rows![2]?.values.colorName).toBeNull();
+  expect(exit.value.rows![10]).toMatchObject({
     indexedKey: "ANN2UNDR",
     attachmentIndexedKey: "PDF2LIVE",
     itemIndexedKey: "ART2FULL",
@@ -93,8 +93,8 @@ it("returns the reading record of one Item, with three identities and default fi
       },
     },
   });
-  expect(exit.value.rows[1]?.values.pageIndex).toBeNull();
-  for (const row of exit.value.rows)
+  expect(exit.value.rows![1]?.values.pageIndex).toBeNull();
+  for (const row of exit.value.rows!)
     expect(row.values).not.toHaveProperty("position");
 });
 
@@ -116,7 +116,7 @@ it("filters and projects the Library selector of Annotations with the same bare 
       { client: scenario.db },
     );
     if (exit._tag === "Failure") throw new Error(String(exit.cause));
-    return exit.value.rows;
+    return exit.value.rows!;
   };
   for (const [filter, expected] of [
     ['indexedKey == "ANN2HGHT"', ["ANN2HGHT"]],
@@ -130,7 +130,7 @@ it("filters and projects the Library selector of Annotations with the same bare 
       { client: scenario.db, tuning: { forceScan: true } },
     );
     if (exit._tag === "Failure") throw new Error(String(exit.cause));
-    expect(exit.value.rows).toEqual(selected);
+    expect(exit.value.rows!).toEqual(selected);
   }
   const rows = await query();
   expect(rows.find((row) => row.indexedKey === "ANN2HGHT")?.values).toEqual({
@@ -170,7 +170,7 @@ it("projects each PDF position kind and preserves an unknown stored position", a
   );
   if (exit._tag === "Failure") throw new Error(String(exit.cause));
   const positions = Object.fromEntries(
-    exit.value.rows.map((row) => [row.indexedKey, row.values.position]),
+    exit.value.rows!.map((row) => [row.indexedKey, row.values.position]),
   );
 
   expect(positions).toMatchObject({
@@ -246,8 +246,8 @@ it("combines Annotation fields with parent dates, Tags, and projections", async 
     { client: scenario.db },
   );
   if (exit._tag === "Failure") throw new Error(String(exit.cause));
-  expect(exit.value.rows.map((row) => row.indexedKey)).toEqual(["ANN2UNDR"]);
-  expect(exit.value.rows[0]?.values["item.date.year"]).toBe(2020);
+  expect(exit.value.rows!.map((row) => row.indexedKey)).toEqual(["ANN2UNDR"]);
+  expect(exit.value.rows![0]?.values["item.date.year"]).toBe(2020);
 });
 
 it("reads parent custom fields, relations, timestamps and identities through their Item semantics", async () => {
@@ -270,13 +270,15 @@ it("reads parent custom fields, relations, timestamps and identities through the
   );
   if (exit._tag === "Failure") throw new Error(String(exit.cause));
   expect(exit.value.returnedCount).toBe(1);
-  expect(exit.value.rows[0]?.values).toMatchObject({
+  expect(exit.value.rows![0]?.values).toMatchObject({
     "item.indexedKey": "ART2FULL",
     'item.custom["review.status"]': "done",
     "item.creators[0].family": "Lovelace",
   });
   expect(
-    JSON.parse(JSON.stringify(exit.value.rows[0]?.values["item.dateModified"])),
+    JSON.parse(
+      JSON.stringify(exit.value.rows![0]?.values["item.dateModified"]),
+    ),
   ).toBe("2024-06-01T10:00:00Z");
 });
 
@@ -392,7 +394,7 @@ it.each(["asc", "desc"] as const)(
       { client: scenario.db },
     );
     if (exit._tag === "Failure") throw new Error(String(exit.cause));
-    expect(exit.value.rows.map((row) => row.indexedKey)).toEqual([
+    expect(exit.value.rows!.map((row) => row.indexedKey)).toEqual([
       "ANN2HGHT",
       "ANN2LINK",
       "ANN2NOTE",
@@ -470,7 +472,7 @@ it("warns on definite cross-type inequality while preserving every evaluated mat
   );
   if (all.exit._tag === "Failure" || comparison.exit._tag === "Failure")
     throw new Error("Expected success");
-  expect(comparison.exit.value.rows).toEqual(all.exit.value.rows);
+  expect(comparison.exit.value.rows!).toEqual(all.exit.value.rows!);
   expect(comparison.exit.value.warnings).toMatchObject([
     { code: "always-true", suggestions: ['!tags.contains("figure")'] },
   ]);
@@ -601,7 +603,7 @@ it.each([
         { client: scenario.db, tuning: { forceScan } },
       );
       if (exit._tag === "Failure") throw new Error(String(exit.cause));
-      expect(exit.value.rows.map((row) => row.indexedKey).toSorted()).toEqual(
+      expect(exit.value.rows!.map((row) => row.indexedKey).toSorted()).toEqual(
         expected,
       );
       expect(exit.value.warnings).toEqual([]);
@@ -630,7 +632,7 @@ it.each(["indexedKey", "item.indexedKey", "attachment.indexedKey"])(
           tuning: { forceScan },
         });
         if (exit._tag === "Failure") throw new Error(String(exit.cause));
-        expect(exit.value.rows.map((row) => row.indexedKey)).toEqual(
+        expect(exit.value.rows!.map((row) => row.indexedKey)).toEqual(
           matching ? ["ANN2HGHT"] : [],
         );
         expect(exit.value.warnings).toMatchObject([
@@ -667,7 +669,7 @@ it.each(["indexedKey", "item.indexedKey", "attachment.indexedKey"])(
         { client: scenario.db, tuning: { forceScan } },
       );
       if (exit._tag === "Failure") throw new Error(String(exit.cause));
-      expect(exit.value.rows.map((row) => row.indexedKey)).toEqual([
+      expect(exit.value.rows!.map((row) => row.indexedKey)).toEqual([
         "ANN2GRUPg4815",
       ]);
       expect(exit.value.warnings).toMatchObject([
@@ -678,5 +680,85 @@ it.each(["indexedKey", "item.indexedKey", "attachment.indexedKey"])(
         },
       ]);
     }
+  },
+);
+
+it("groups marks by a parent scalar with exact counts and the three most recent marks per paper", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const { exit } = await runEffect(
+    collectQuery(ANNOTATIONS, {
+      libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
+      group: "item.indexedKey",
+      fields: [],
+      limit: 3,
+      sort: [{ field: "dateModified", direction: "desc" }],
+    }),
+    { client: scenario.db },
+  );
+  if (exit._tag === "Failure") throw new Error(String(exit.cause));
+  expect(exit.value).toMatchObject({
+    totalCount: 13,
+    returnedCount: 4,
+    truncated: true,
+  });
+  expect(
+    exit.value.groups?.map(({ value, count, rows }) => [
+      value,
+      count,
+      rows.map((row) => row.indexedKey),
+    ]),
+  ).toEqual([
+    ["ART2FULL", 12, ["ANN2LINK", "ANN2BAD2", "ANN2NOTE"]],
+    ["ART2FULLg4815", 1, ["ANN2GRUPg4815"]],
+  ]);
+  expect(exit.value).not.toHaveProperty("rows");
+});
+
+it.each([
+  "item.citationKey",
+  "item.date.year",
+  'item.custom["review.status"]',
+  "colorName",
+  "library",
+])("groups Annotation scalar path %s without a limit", async (group) => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const { exit } = await runEffect(
+    collectQuery(ANNOTATIONS, {
+      libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
+      group,
+      fields: [group],
+      limit: null,
+    }),
+    { client: scenario.db },
+  );
+  if (exit._tag === "Failure") throw new Error(String(exit.cause));
+  expect(exit.value).toMatchObject({
+    totalCount: 13,
+    returnedCount: 13,
+    truncated: false,
+  });
+  for (const bucket of exit.value.groups!) {
+    expect(bucket.count).toBe(bucket.rows.length);
+    for (const row of bucket.rows)
+      expect(row.values[group]).toEqual(bucket.value);
+  }
+  if (group === "colorName")
+    expect(exit.value.groups?.at(-1)?.value).toBeNull();
+});
+
+it.each(["tags", "item.creators[].fullName", "item.tags", "attachment"])(
+  "rejects an Annotation group path that is not scalar: %s",
+  async (group) => {
+    const { exit } = await runEffect(
+      collectQuery(ANNOTATIONS, { libraries: [], group }),
+    );
+    if (exit._tag !== "Failure") throw new Error("Expected a request Fault");
+    const error = Cause.findErrorOption(exit.cause);
+    expect(error._tag === "Some" && error.value).toMatchObject({
+      code: "invalid-group",
+      location: { argument: "group" },
+    });
+    if (error._tag === "Some" && error.value instanceof ItemQueryError)
+      expect(error.value.diagnostic.report.join("\n")).toContain("scalar");
   },
 );

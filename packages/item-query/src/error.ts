@@ -8,6 +8,7 @@ import type { ItemQueryFault, Span } from "./fault";
 /** Stable codes of an invalid Item Query request. */
 export type ItemQueryErrorCode =
   | "duplicate-library"
+  | "invalid-group"
   | "invalid-path"
   | "unknown-field"
   | "unknown-path"
@@ -22,7 +23,13 @@ export type ItemQueryErrorCode =
 
 /** The part of the request an {@link ItemQueryError} points at. */
 export interface ItemQueryErrorLocation {
-  readonly argument: "libraries" | "filter" | "fields" | "sort" | "limit";
+  readonly argument:
+    | "libraries"
+    | "filter"
+    | "fields"
+    | "sort"
+    | "limit"
+    | "group";
   /** The position of the entry in a list argument. */
   readonly index?: number;
   readonly path?: string;

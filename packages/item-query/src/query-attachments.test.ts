@@ -20,11 +20,11 @@ it("returns the files of one paper with Attachment defaults and parent identity"
     { client: scenario.db },
   );
   if (exit._tag === "Failure") throw new Error(String(exit.cause));
-  expect(exit.value.rows.map((row) => row.indexedKey)).toEqual([
+  expect(exit.value.rows!.map((row) => row.indexedKey)).toEqual([
     "PDF2LINK",
     "PDF2LIVE",
   ]);
-  expect(exit.value.rows[1]).toEqual({
+  expect(exit.value.rows![1]).toEqual({
     indexedKey: "PDF2LIVE",
     itemIndexedKey: "ART2FULL",
     values: {
@@ -64,14 +64,14 @@ it("projects all four link modes, null file rules, Tags, and parent fields", asy
     { client: scenario.db },
   );
   if (exit._tag === "Failure") throw new Error(String(exit.cause));
-  expect(exit.value.rows.map((row) => row.indexedKey)).toEqual([
+  expect(exit.value.rows!.map((row) => row.indexedKey)).toEqual([
     "PDF2LINK",
     "PDF2LIVE",
     "URL2LIVE",
     "WEB2LIVE",
   ]);
   const rows = Object.fromEntries(
-    exit.value.rows.map((row) => [row.indexedKey, row.values]),
+    exit.value.rows!.map((row) => [row.indexedKey, row.values]),
   );
   expect(rows.PDF2LINK).toMatchObject({
     linkMode: "linked_file",
@@ -143,7 +143,7 @@ it("reads only the requested relations and resolves files only for path or exist
   );
   if (broken.exit._tag === "Failure")
     throw new Error(String(broken.exit.cause));
-  expect(broken.exit.value.rows).toEqual([
+  expect(broken.exit.value.rows!).toEqual([
     {
       indexedKey: "PDF2LINK",
       itemIndexedKey: "ART2FULL",
@@ -160,7 +160,7 @@ it("reads only the requested relations and resolves files only for path or exist
     'linkMode == "linked_url"',
   );
   if (urls.exit._tag === "Failure") throw new Error(String(urls.exit.cause));
-  expect(urls.exit.value.rows[0]?.values).toEqual({
+  expect(urls.exit.value.rows![0]?.values).toEqual({
     path: null,
     exists: false,
     url: "https://example.org/paper",
@@ -185,7 +185,7 @@ it("sorts parent scalar fields and rejects a file path sort", async () => {
   ]);
   if (sorted.exit._tag === "Failure")
     throw new Error(String(sorted.exit.cause));
-  expect(sorted.exit.value.rows.map((row) => row.indexedKey)).toEqual([
+  expect(sorted.exit.value.rows!.map((row) => row.indexedKey)).toEqual([
     "PDF2LIVE",
     "PDF2GRUPg4815",
     "PDF2LINK",
@@ -226,7 +226,7 @@ it.each([
     { client: scenario.db },
   );
   if (exit._tag === "Failure") throw new Error(String(exit.cause));
-  expect(exit.value.rows.map((row) => row.indexedKey)).toEqual(keys);
+  expect(exit.value.rows!.map((row) => row.indexedKey)).toEqual(keys);
 });
 
 it("keeps the Library and parent identity of the same Attachment key in two Libraries", async () => {
@@ -244,7 +244,7 @@ it("keeps the Library and parent identity of the same Attachment key in two Libr
     { client: scenario.db },
   );
   if (exit._tag === "Failure") throw new Error(String(exit.cause));
-  expect(exit.value.rows).toEqual([
+  expect(exit.value.rows!).toEqual([
     {
       indexedKey: "PDF2LIVE",
       itemIndexedKey: "ART2FULL",
@@ -284,7 +284,7 @@ it.each([
         { client: scenario.db, tuning: { forceScan, capRatio: 1 } },
       );
       if (exit._tag === "Failure") throw new Error(String(exit.cause));
-      expect(exit.value.rows.map((row) => row.indexedKey).toSorted()).toEqual(
+      expect(exit.value.rows!.map((row) => row.indexedKey).toSorted()).toEqual(
         expected,
       );
       expect(exit.value.warnings).toEqual([]);
@@ -315,7 +315,7 @@ it.each(["indexedKey", "item.indexedKey"])(
           { client: scenario.db, tuning: { forceScan } },
         );
         if (exit._tag === "Failure") throw new Error(String(exit.cause));
-        expect(exit.value.rows.map((row) => row.indexedKey)).toEqual(
+        expect(exit.value.rows!.map((row) => row.indexedKey)).toEqual(
           matching ? ["PDF2LIVE"] : [],
         );
         expect(exit.value.warnings).toMatchObject([
@@ -346,7 +346,7 @@ it.each(["indexedKey", "item.indexedKey"])(
         { client: scenario.db, tuning: { forceScan } },
       );
       if (exit._tag === "Failure") throw new Error(String(exit.cause));
-      expect(exit.value.rows.map((row) => row.indexedKey)).toEqual([
+      expect(exit.value.rows!.map((row) => row.indexedKey)).toEqual([
         "PDF2GRUPg4815",
       ]);
       expect(exit.value.warnings).toMatchObject([

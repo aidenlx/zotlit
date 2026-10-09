@@ -217,6 +217,9 @@ const limit = v.lazy((input) =>
 /** The arguments every query takes, whichever Libraries it reads. */
 const queryOptions = {
   from: v.optional(from, "items"),
+  group: v.optional(
+    cliText("group is empty: give one scalar Projection Path."),
+  ),
   filter: v.optional(
     cliText(
       "filter is empty: give a Filter Expression, or omit filter to match every row in the dataset.",
@@ -284,11 +287,12 @@ function decodedQuery(
   options: v.InferOutput<v.StrictObjectSchema<typeof queryOptions, undefined>>,
   libraries: NamedLibraries | null,
 ) {
-  const { from, filter, fields, sort, limit, output, id } = options;
+  const { from, filter, fields, sort, limit, output, id, group } = options;
   return {
     from,
     libraries,
     limit,
+    ...(group === undefined ? {} : { group }),
     ...(filter === undefined ? {} : { filter }),
     ...(fields === undefined ? {} : { fields }),
     ...(sort === undefined ? {} : { sort }),

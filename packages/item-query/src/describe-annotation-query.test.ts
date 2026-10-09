@@ -23,6 +23,7 @@ it("publishes executable Annotation and parent Projection Paths with active-sour
     type: "array",
     filter: null,
     projection: true,
+    group: false,
     sort: false,
   });
   expect(schema.fields).toContainEqual({
@@ -30,22 +31,24 @@ it("publishes executable Annotation and parent Projection Paths with active-sour
     type: "array",
     filter: null,
     projection: true,
+    group: false,
     sort: false,
   });
   expect(schema.fields.find((field) => field.path === "library"))
     .toMatchInlineSnapshot(`
-    {
-      "filter": "string",
-      "path": "library",
-      "projection": true,
-      "sort": false,
-      "type": "string",
-      "valueForms": [
-        "personal",
-        "group:<groupID>",
-      ],
-    }
-  `);
+      {
+        "filter": "string",
+        "group": true,
+        "path": "library",
+        "projection": true,
+        "sort": false,
+        "type": "string",
+        "valueForms": [
+          "personal",
+          "group:<groupID>",
+        ],
+      }
+    `);
   expect(schema.customFields).toContainEqual(
     expect.objectContaining({
       path: 'item.custom["review.status"]',

@@ -589,6 +589,16 @@ it("narrows the schema to the requested Query Dataset", () => {
   });
 });
 
+it("decodes one group Projection Path and preserves custom-field punctuation", () => {
+  expect(decodeQuery({ group: 'custom["review,status"]' })).toEqual({
+    from: "items",
+    libraries: null,
+    limit: 100,
+    group: 'custom["review,status"]',
+  });
+  expect(decodeQuery({ group: "" })).toMatchObject(rejected("group"));
+});
+
 it("accepts Attachment queries and narrowed Attachment schemas", () => {
   expect(
     decodeQuery({ from: "attachments", fields: "title,path" }),

@@ -42,6 +42,8 @@ export type {
   ItemQueryRequest,
   ProjectionValue,
   QueryResult,
+  QueryGroup,
+  GroupValue,
   QueryRow,
   SortSpec,
   TargetLibrary,

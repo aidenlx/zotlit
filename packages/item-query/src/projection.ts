@@ -14,6 +14,8 @@ import type { ProjectionValue } from "./request";
 export interface PlannedPath<Item = QueryItem, Needs = FieldNeeds> {
   /** The path as the caller wrote it: the key of the value in a Query Row. */
   readonly text: string;
+  /** The wire value is scalar and the path does not traverse `[]`. */
+  readonly scalar: boolean;
   readonly field: FieldDefinition<Item, Needs>;
   /** The segments after the field name. */
   readonly rest: readonly PathSegment[];
@@ -94,7 +96,16 @@ export function planPath<Item = QueryItem, Needs = FieldNeeds>(
     }
     shape = next;
   }
-  return { text, field, rest, needs: field.needs(rest), customField };
+  return {
+    text,
+    field,
+    rest,
+    needs: field.needs(rest),
+    customField,
+    scalar:
+      shape.kind === "scalar" &&
+      !parsed.segments.some((segment) => typeof segment === "object"),
+  };
 }
 
 function step(shape: ValueShape, segment: PathSegment): ValueShape | null {

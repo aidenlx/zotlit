@@ -3112,6 +3112,97 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
   });
 
+  it("groups marks per paper through zotlit:query", async () => {
+    const report = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: {
+          from: "annotations",
+          group: "item.citationKey",
+          limit: "3",
+          sort: "-dateModified",
+          library: "personal",
+          filter: `item.indexedKey == "${annotationItem.key}"`,
+          fields: "dateModified,item.citationKey",
+        },
+      }),
+    ) as ItemQueryReport;
+    const parents = ATTACHMENTS.filter(
+      (attachment) => attachment.parentItemID === annotationItem.itemID,
+    );
+    const marks = ANNOTATIONS.filter((annotation) =>
+      parents.some((parent) => parent.itemID === annotation.parentItemID),
+    );
+    expect(marks.length).toBeGreaterThan(3);
+    expect(report).toMatchObject({
+      ok: true,
+      request: { group: "item.citationKey" },
+      totalCount: marks.length,
+      returnedCount: 3,
+      truncated: true,
+      groups: [{ value: annotationItem.citationKey, count: marks.length }],
+    });
+    expect(report).not.toHaveProperty("rows");
+    expect(report.groups![0]!.rows.map((row) => row.indexedKey)).toEqual(
+      marks
+        .toSorted(
+          (a, b) =>
+            b.dateModified.localeCompare(a.dateModified) ||
+            a.sortIndex.localeCompare(b.sortIndex) ||
+            a.key.localeCompare(b.key),
+        )
+        .slice(0, 3)
+        .map((mark) => mark.key),
+    );
+  });
+
+  it("groups papers per year through zotlit:query", async () => {
+    const report = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: {
+          group: "date.year",
+          limit: "1",
+          library: "personal",
+          fields: "title,date.year",
+        },
+      }),
+    ) as ItemQueryReport;
+    const papers = ITEMS.filter((item) => item.libraryID === 1);
+    const years = [
+      ...new Set(papers.map((item) => Number(item.date.slice(0, 4)))),
+    ].sort((a, b) => a - b);
+    expect(report).toMatchObject({
+      ok: true,
+      request: { group: "date.year" },
+      totalCount: papers.length,
+      returnedCount: years.length,
+      truncated: true,
+    });
+    expect(report).not.toHaveProperty("rows");
+    expect(
+      report.groups!.map(({ value, count, rows }) => [
+        value,
+        count,
+        rows.length,
+      ]),
+    ).toEqual(
+      years.map((year) => [
+        year,
+        papers.filter((paper) => Number(paper.date.slice(0, 4)) === year)
+          .length,
+        1,
+      ]),
+    );
+    for (const group of report.groups!)
+      expect(group.rows[0]!.values["date.year"]).toBe(group.value);
+    const split = JSON.parse(
+      await cliCommand(vaultId, "zotlit:query", {
+        args: { group: "library", library: "all", limit: "3" },
+      }),
+    ) as ItemQueryReport;
+    expect(split).toMatchObject({ ok: true, totalCount: ITEMS.length });
+    expect(split.groups).toHaveLength(LIBRARIES.length);
+  });
+
   it("queries an Item's reading record through zotlit:query from=annotations", async () => {
     // Own the Fixture and vault so earlier cases cannot leave this query's
     // linked Attachment paths pointing at a vault they have removed.
@@ -3216,6 +3307,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       type: "string",
       filter: "string",
       projection: true,
+      group: true,
       sort: true,
     });
     const invalid = JSON.parse(
@@ -3294,6 +3386,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "filter",
       "fields",
       "sort",
+      "group",
       "results",
       "schema",
       "cancel",
@@ -4216,6 +4309,12 @@ interface ItemQueryReport {
     limit: number | null;
   };
   returnedCount?: number;
+  totalCount?: number;
+  groups?: {
+    value: string | number | boolean | null;
+    count: number;
+    rows: { indexedKey: string; values: Record<string, unknown> }[];
+  }[];
   truncated?: boolean;
   rows?: { indexedKey: string; values: Record<string, unknown> }[];
   diagnostic?: ItemQueryDiagnostic;
