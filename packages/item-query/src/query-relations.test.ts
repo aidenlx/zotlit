@@ -6,7 +6,13 @@ import {
   SCENARIO_LIBRARIES,
 } from "@zotlit/db/test-scenario";
 
-import { collectQuery, ITEMS, ATTACHMENTS, AttachmentFileResolver } from ".";
+import {
+  collectQuery,
+  ITEMS,
+  ATTACHMENTS,
+  ANNOTATIONS,
+  AttachmentFileResolver,
+} from ".";
 import { runEffect } from "./test-helpers";
 
 it("finds papers with no usable PDF on this machine", async () => {
@@ -29,12 +35,12 @@ it("finds papers with no usable PDF on this machine", async () => {
     { client: scenario.db },
   );
   if (exit._tag === "Failure") throw Cause.squash(exit.cause);
-  expect(exit.value.rows.length).toBeGreaterThan(0);
-  expect(exit.value.rows.map((row) => row.indexedKey)).not.toContain(
+  expect(exit.value.rows!.length).toBeGreaterThan(0);
+  expect(exit.value.rows!.map((row) => row.indexedKey)).not.toContain(
     "ART2FULL",
   );
   expect(
-    exit.value.rows.every((row) =>
+    exit.value.rows!.every((row) =>
       Array.isArray(row.values["attachments[].path"]),
     ),
   ).toBe(true);
@@ -53,10 +59,10 @@ it("finds papers with yellow marks inside their files, with value and index boun
     { client: scenario.db },
   );
   if (exit._tag === "Failure") throw Cause.squash(exit.cause);
-  expect(exit.value.rows.map((row) => row.indexedKey)).toEqual(["ART2FULL"]);
-  expect(exit.value.rows[0]!.values["annotations.length"]).toBe(12);
+  expect(exit.value.rows!.map((row) => row.indexedKey)).toEqual(["ART2FULL"]);
+  expect(exit.value.rows![0]!.values["annotations.length"]).toBe(12);
   expect(
-    exit.value.rows[0]!.values["attachments[].annotations[].text"],
+    exit.value.rows![0]!.values["attachments[].annotations[].text"],
   ).toEqual([
     [
       "A <i>formatted</i> excerpt",
@@ -97,8 +103,8 @@ it("reaches a mark's file and paper from a Relation List", async () => {
     { client: scenario.db },
   );
   if (exit._tag === "Failure") throw Cause.squash(exit.cause);
-  expect(exit.value.rows.map((row) => row.indexedKey)).toEqual(["ART2FULL"]);
-  expect(exit.value.rows[0]!.values["annotations[0]"]).toEqual({
+  expect(exit.value.rows!.map((row) => row.indexedKey)).toEqual(["ART2FULL"]);
+  expect(exit.value.rows![0]!.values["annotations[0]"]).toEqual({
     indexedKey: "ANN2LINK",
     type: "highlight",
     text: "A <i>formatted</i> excerpt",
@@ -106,7 +112,7 @@ it("reaches a mark's file and paper from a Relation List", async () => {
     pageLabel: "iv",
     pageIndex: 0,
   });
-  expect(exit.value.rows[0]!.values["attachments[0].item"]).toEqual({
+  expect(exit.value.rows![0]!.values["attachments[0].item"]).toEqual({
     indexedKey: "ART2FULL",
     title: "Exact Matching in Literature Review",
     citationKey: null,
@@ -156,7 +162,7 @@ it.each([
     { client: scenario.db },
   );
   if (exit._tag === "Failure") throw Cause.squash(exit.cause);
-  expect(exit.value.rows.map((row) => row.indexedKey)).toEqual(keys);
+  expect(exit.value.rows!.map((row) => row.indexedKey)).toEqual(keys);
 });
 
 it("lists the number of marks on each file", async () => {
@@ -171,7 +177,7 @@ it("lists the number of marks on each file", async () => {
   );
   if (exit._tag === "Failure") throw Cause.squash(exit.cause);
   expect(
-    exit.value.rows.map((row) => [
+    exit.value.rows!.map((row) => [
       row.indexedKey,
       row.values["annotations.length"],
     ]),
@@ -181,7 +187,7 @@ it("lists the number of marks on each file", async () => {
     ["URL2LIVE", 0],
     ["WEB2LIVE", 0],
   ]);
-  expect(exit.value.rows[0]!.values.item).toEqual({
+  expect(exit.value.rows![0]!.values.item).toEqual({
     indexedKey: "ART2FULL",
     title: "Exact Matching in Literature Review",
     citationKey: null,
@@ -213,7 +219,7 @@ it("keeps missing paths in place and projects fixed summaries for files and mark
     { client: scenario.db },
   );
   if (exit._tag === "Failure") throw Cause.squash(exit.cause);
-  const values = exit.value.rows[0]!.values;
+  const values = exit.value.rows![0]!.values;
   expect(values["attachments[].path"]).toEqual([
     null,
     "/paper.pdf",
@@ -299,9 +305,9 @@ it("uses a paper's custom review status while reading its files", async () => {
     { client: scenario.db },
   );
   if (exit._tag === "Failure") throw Cause.squash(exit.cause);
-  expect(exit.value.rows.map((row) => row.indexedKey)).toEqual(["ART2FULL"]);
+  expect(exit.value.rows!.map((row) => row.indexedKey)).toEqual(["ART2FULL"]);
   expect(
-    exit.value.rows[0]!.values['attachments[].item.custom["review.status"]'],
+    exit.value.rows![0]!.values['attachments[].item.custom["review.status"]'],
   ).toEqual(["done", "done", "done", "done"]);
 });
 
@@ -317,5 +323,25 @@ it("recognizes the same file through repeated list reads", async () => {
     { client: scenario.db },
   );
   if (exit._tag === "Failure") throw Cause.squash(exit.cause);
-  expect(exit.value.rows.map((row) => row.indexedKey)).toEqual(["ART2FULL"]);
+  expect(exit.value.rows!.map((row) => row.indexedKey)).toEqual(["ART2FULL"]);
 });
+
+it.each([
+  [ATTACHMENTS, 'annotations[].item.custom["missing.review"]'],
+  [ANNOTATIONS, 'attachment.item.custom["missing.review"]'],
+] as const)(
+  "checks the source field in %s through %s",
+  async (dataset, field) => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    const { exit } = await runEffect(
+      collectQuery(dataset, {
+        libraries: [SCENARIO_LIBRARIES.personal],
+        fields: [field],
+      }),
+      { client: scenario.db },
+    );
+    expect(exit._tag).toBe("Failure");
+    if (exit._tag === "Failure")
+      expect(Cause.squash(exit.cause)).toMatchObject({ code: "unknown-field" });
+  },
+);

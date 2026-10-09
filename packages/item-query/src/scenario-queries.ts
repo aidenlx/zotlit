@@ -373,6 +373,21 @@ const byAccessDate = (direction: SortSpec["direction"]): SortSpec[] => [
 
 /** The scenario requests that the filter list does not give. */
 const REQUESTS: readonly ScenarioQuery[] = [
+  ...[
+    "library",
+    "date.year",
+    'custom["review.status"]',
+    "dateModified",
+    "creators[0].fullName",
+    "tags",
+    "creators[].fullName",
+  ].flatMap((group) => [
+    {
+      name: `group ${group}`,
+      libraries: ["personal", "group"] as const,
+      request: { group, fields: [], limit: 2 },
+    },
+  ]),
   {
     name: "Relation List element projection",
     libraries: ["personal", "group"],

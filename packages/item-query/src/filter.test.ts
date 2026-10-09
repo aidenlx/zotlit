@@ -1806,3 +1806,48 @@ it("keeps the null value of a warned ordering inside a larger expression", () =>
   expect(evaluate(planned.root, ARTICLE, CLOCK)).toBe(true);
   expect(planned.warnings).toHaveLength(1);
 });
+
+it.each([
+  ["attachments.map(value.annotations.map(index))", [[0, 1], [0]]],
+  [
+    "attachments.map(value.annotations.filter(index == 0).length + index)",
+    [1, 2],
+  ],
+  [
+    'attachments.filter(index == 1 && value.annotations.filter(index == 0 && value.sortIndex == "second").length > 0).map(value.key)',
+    ["PDFSECOND"],
+  ],
+] as const)(
+  "binds record values and indexes at each level: %s",
+  (expression, expected) => {
+    const source: QueryItem = {
+      ...ARTICLE,
+      attachments: ["PDFFIRST", "PDFSECOND"].map((key, index) => ({
+        ...ARTICLE.attachments![0]!,
+        scan: { ...ARTICLE.attachments![0]!.scan, key, itemID: index + 2 },
+        annotations: Array.from(
+          { length: index === 0 ? 2 : 1 },
+          (_, position) => ({
+            scan: {
+              ...ARTICLE.scan,
+              itemID: index * 2 + position + 10,
+              itemType: "annotation",
+              key: `MARK${index}${position}`,
+              libraryID: 1,
+              parent: ARTICLE.scan,
+              attachmentID: index + 2,
+              attachmentKey: key,
+              attachmentDateAdded: ARTICLE.scan.dateAdded,
+              attachmentDateModified: ARTICLE.scan.dateModified,
+              sortIndex: index === 0 ? "first" : "second",
+            },
+            annotation: {},
+            parent: ARTICLE,
+            groupID: null,
+          }),
+        ),
+      })),
+    };
+    expect(valueOf(expression, source)).toEqual(expected);
+  },
+);

@@ -4,6 +4,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
 [
   {
     "filter": "list",
+    "group": false,
     "path": "annotations",
     "projection": true,
     "relation": "annotations",
@@ -12,6 +13,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "number",
+    "group": true,
     "path": "annotations.length",
     "projection": true,
     "sort": false,
@@ -19,6 +21,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "any",
+    "group": false,
     "path": "annotations[0]",
     "projection": true,
     "relation": "annotations",
@@ -27,6 +30,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "string",
+    "group": true,
     "path": "annotations[0].indexedKey",
     "projection": true,
     "sort": false,
@@ -34,6 +38,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "string",
+    "group": true,
     "path": "annotations[0].type",
     "projection": true,
     "sort": false,
@@ -41,6 +46,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "string",
+    "group": true,
     "path": "annotations[0].text",
     "projection": true,
     "sort": false,
@@ -48,6 +54,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "string",
+    "group": true,
     "path": "annotations[0].comment",
     "projection": true,
     "sort": false,
@@ -55,6 +62,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "string",
+    "group": true,
     "path": "annotations[0].pageLabel",
     "projection": true,
     "sort": false,
@@ -62,6 +70,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "number",
+    "group": true,
     "path": "annotations[0].pageIndex",
     "projection": true,
     "sort": false,
@@ -69,6 +78,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": null,
+    "group": false,
     "path": "annotations[]",
     "projection": true,
     "relation": "annotations",
@@ -77,6 +87,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": null,
+    "group": false,
     "path": "annotations[].indexedKey",
     "projection": true,
     "sort": false,
@@ -84,6 +95,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": null,
+    "group": false,
     "path": "annotations[].type",
     "projection": true,
     "sort": false,
@@ -91,6 +103,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": null,
+    "group": false,
     "path": "annotations[].text",
     "projection": true,
     "sort": false,
@@ -98,6 +111,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": null,
+    "group": false,
     "path": "annotations[].comment",
     "projection": true,
     "sort": false,
@@ -105,6 +119,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": null,
+    "group": false,
     "path": "annotations[].pageLabel",
     "projection": true,
     "sort": false,
@@ -112,6 +127,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": null,
+    "group": false,
     "path": "annotations[].pageIndex",
     "projection": true,
     "sort": false,
@@ -119,6 +135,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "string",
+    "group": true,
     "path": "library",
     "projection": true,
     "sort": false,
@@ -130,6 +147,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "string",
+    "group": true,
     "path": "indexedKey",
     "projection": true,
     "sort": false,
@@ -137,6 +155,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "string",
+    "group": true,
     "path": "key",
     "projection": true,
     "sort": false,
@@ -144,6 +163,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "string",
+    "group": true,
     "path": "title",
     "projection": true,
     "sort": true,
@@ -151,6 +171,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "string",
+    "group": true,
     "path": "contentType",
     "projection": true,
     "sort": true,
@@ -158,6 +179,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "string",
+    "group": true,
     "path": "linkMode",
     "projection": true,
     "sort": true,
@@ -171,6 +193,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "string",
+    "group": true,
     "path": "path",
     "projection": true,
     "sort": false,
@@ -178,6 +201,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "boolean",
+    "group": true,
     "path": "exists",
     "projection": true,
     "sort": false,
@@ -185,6 +209,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "string",
+    "group": true,
     "path": "url",
     "projection": true,
     "sort": false,
@@ -192,6 +217,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "list",
+    "group": false,
     "path": "tags",
     "projection": true,
     "sort": false,
@@ -199,6 +225,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "number",
+    "group": true,
     "path": "tags.length",
     "projection": true,
     "sort": false,
@@ -206,6 +233,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "any",
+    "group": true,
     "path": "tags[0]",
     "projection": true,
     "sort": false,
@@ -213,6 +241,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": null,
+    "group": false,
     "path": "tags[]",
     "projection": true,
     "sort": false,
@@ -220,6 +249,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "date",
+    "group": true,
     "path": "dateAdded",
     "projection": true,
     "sort": true,
@@ -227,6 +257,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "date",
+    "group": true,
     "path": "dateModified",
     "projection": true,
     "sort": true,
@@ -234,6 +265,7 @@ exports[`publishes executable Attachment fields, parent paths, defaults and Sort
   },
   {
     "filter": "record",
+    "group": false,
     "path": "item",
     "projection": true,
     "relation": "items",

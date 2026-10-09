@@ -8,14 +8,27 @@ import type {
   ScanRow,
 } from "@zotlit/db/item-query";
 
-import { compareStrings } from "./collation";
+import { compareScalars } from "./collation";
 import type { SortKey } from "./fields";
 import type { Loader } from "./hydration";
+import type { Matches } from "./matches";
 import { allMatches, firstMatches } from "./matches";
 import type { QueryConsumer, QuerySummary } from "./query";
-import type { ItemQuery, QueryRow, TargetLibrary, SortSpec } from "./request";
+import type {
+  GroupValue,
+  ItemQuery,
+  QueryRow,
+  TargetLibrary,
+  SortSpec,
+} from "./request";
 import { ItemQueryTuning } from "./tuning";
 import type { Tuning } from "./tuning";
+
+interface GroupMatches<S> {
+  readonly value: GroupValue;
+  count: number;
+  readonly matches: Matches<Match<S>>;
+}
 
 interface Match<S> {
   readonly scan: S;
@@ -75,10 +88,15 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
     // The scan pass: every Item is hydrated with the filter and sort fields
     // only, and the query keeps the scan row and the sort keys of a match.
     const compare = byKeysThenKey<I["scan"]>(run.sort, libraries);
-    const matches =
+    const retain = () =>
       limit === null
         ? allMatches(compare, sizeWithin(tuning.mergeStepSize, Infinity))
         : firstMatches(limit + 1, compare);
+    const matches = retain();
+    // A grouped query retains limit + 1 compact matches PER GROUP, plus the
+    // current page and hydrate chunk. With limit=all it retains every match.
+    const groups = new Map<GroupValue, GroupMatches<I["scan"]>>();
+    let totalCount = 0;
     // Each page and each chunk lives in the Effect that reads it, so the query
     // holds no row of a page it has finished.
     /** Hydrate one chunk of a page and keep its matches. */
@@ -87,12 +105,32 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
         const items = yield* run.scan.load(chunk, () => libraries[library]!);
         yield* Effect.sync(() => {
           const matching: Match<I["scan"]>[] = [];
+          const grouped = new Map<GroupValue, Match<I["scan"]>[]>();
           for (const item of items) {
             if (!run.matches(item)) continue;
             const keys = run.keys(item);
-            matching.push({ scan: item.scan, keys, library });
+            const match = { scan: item.scan, keys, library };
+            if (query.group !== undefined) {
+              const value = keys[0]!;
+              let group = groups.get(value);
+              if (!group) {
+                group = { value, count: 0, matches: retain() };
+                groups.set(value, group);
+              }
+              group.count++;
+              totalCount++;
+              let chunk = grouped.get(value);
+              if (!chunk) {
+                chunk = [];
+                grouped.set(value, chunk);
+              }
+              chunk.push(match);
+            } else matching.push(match);
           }
-          matches.add(matching);
+          if (query.group === undefined) matches.add(matching);
+          else
+            for (const [value, chunk] of grouped)
+              groups.get(value)!.matches.add(chunk);
         });
       });
     /** Hydrate one page of the query universe and keep its matches. */
@@ -143,6 +181,33 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
       }
     }
 
+    const groupOrder = allMatches<GroupMatches<I["scan"]>>(
+      (a, b) => compareScalars(a.value, b.value),
+      sizeWithin(tuning.mergeStepSize, Infinity),
+    );
+    let groupChunk: GroupMatches<I["scan"]>[] = [];
+    for (const group of groups.values()) {
+      groupChunk.push(group);
+      if (groupChunk.length < hydrateChunkSize) continue;
+      const chunk = groupChunk;
+      yield* Effect.sync(() => groupOrder.add(chunk));
+      groupChunk = [];
+    }
+    yield* Effect.sync(() => groupOrder.add(groupChunk));
+    const orderedGroups = yield* groupOrder.ordered();
+    const batches: {
+      value: GroupValue;
+      count: number;
+      rows: Match<I["scan"]>[];
+    }[] = [];
+    for (const group of orderedGroups) {
+      const ordered = yield* group.matches.ordered();
+      batches.push({
+        value: group.value,
+        count: group.count,
+        rows: limit === null ? ordered : ordered.slice(0, limit),
+      });
+    }
     const ordered = yield* matches.ordered();
     const truncated = limit !== null && ordered.length > limit;
     const returned = truncated ? ordered.slice(0, limit) : ordered;
@@ -151,24 +216,44 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
     const consumer = yield* begin({
       query,
       warnings: run.warnings,
-      returnedCount: returned.length,
-      truncated,
+      returnedCount:
+        query.group === undefined
+          ? returned.length
+          : batches.reduce((sum, group) => sum + group.rows.length, 0),
+      truncated:
+        query.group === undefined
+          ? truncated
+          : batches.some((group) => group.count > group.rows.length),
+      ...(query.group === undefined
+        ? {}
+        : {
+            totalCount,
+            groups: batches.map(({ value, count }) => ({ value, count })),
+          }),
     });
-    for (let start = 0; start < returned.length; start += hydrateChunkSize) {
-      const chunk = returned.slice(start, start + hydrateChunkSize);
-      const items = yield* run.projection.load(
-        chunk.map((row) => row.scan),
-        (index) => libraries[chunk[index]!.library]!,
-      );
-      const rows = yield* Effect.sync(() => {
-        const rows: QueryRow[] = [];
-        for (const [index, { library, scan }] of chunk.entries()) {
-          const item = items[index]!;
-          rows.push(run.project(item, libraries[library]!, scan));
-        }
-        return rows;
-      });
-      yield* consumer.write(rows);
+    const deliveries =
+      query.group === undefined ? [{ rows: returned }] : batches;
+    for (const [groupIndex, delivery] of deliveries.entries()) {
+      const returned = delivery.rows;
+      for (let start = 0; start < returned.length; start += hydrateChunkSize) {
+        const chunk = returned.slice(start, start + hydrateChunkSize);
+        const items = yield* run.projection.load(
+          chunk.map((row) => row.scan),
+          (index) => libraries[chunk[index]!.library]!,
+        );
+        const rows = yield* Effect.sync(() => {
+          const rows: QueryRow[] = [];
+          for (const [index, { library, scan }] of chunk.entries()) {
+            const item = items[index]!;
+            rows.push(run.project(item, libraries[library]!, scan));
+          }
+          return rows;
+        });
+        yield* consumer.write(
+          rows,
+          query.group === undefined ? undefined : groupIndex,
+        );
+      }
     }
     return yield* consumer.end();
   });
@@ -197,10 +282,7 @@ function byKeysThenKey<S extends ScanRow>(
       if (x === y) continue;
       if (x === null) return 1;
       if (y === null) return -1;
-      const order =
-        typeof x === "string"
-          ? compareStrings(x, y as string)
-          : x - (y as number);
+      const order = compareScalars(x, y);
       if (order !== 0) return isDescending ? -order : order;
     }
     if (a.scan.key !== b.scan.key) return a.scan.key < b.scan.key ? -1 : 1;

@@ -46,6 +46,8 @@ export interface SchemaCapabilities {
   readonly projection: boolean;
   /** The `sort` argument takes it. */
   readonly sort: boolean;
+  /** The `group` argument takes this scalar Projection Path. */
+  readonly group: boolean;
 }
 
 /** A built-in field or a Projection Path below one. */
@@ -211,6 +213,7 @@ const BUILT_IN_FIELDS: readonly SchemaField[] = BUILT_IN_NAMES.flatMap(
           type: jsonTypeOf(filterType!),
           filter: filterType,
           projection: false,
+          group: false,
           sort: false,
         },
       ];
@@ -220,6 +223,7 @@ const BUILT_IN_FIELDS: readonly SchemaField[] = BUILT_IN_NAMES.flatMap(
       type: jsonType(definition.shape),
       filter: filterType,
       projection: true,
+      group: definition.shape.kind === "scalar",
       sort: ITEMS.sortable(name) !== undefined,
       ...(definition.relation && { relation: definition.relation().id }),
       ...(definition.valueForms && { valueForms: definition.valueForms }),
@@ -257,6 +261,7 @@ export function pathsBelow(
       type: jsonType(childShape),
       filter: capability(child),
       projection: true,
+      group: childShape.kind === "scalar" && !child.includes("[]"),
       sort: false,
     },
     ...pathsBelow(child, childShape, capability),
@@ -284,6 +289,7 @@ export function pathsBelow(
         ...below(`${path}[]`, shape.element).map((field) => ({
           ...field,
           type: "array" as const,
+          group: false,
         })),
       ];
   }

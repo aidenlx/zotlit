@@ -24,6 +24,7 @@ export function describeAttachmentQueryVocabulary() {
         path,
         type: jsonType(definition.shape),
         projection: true,
+        group: definition.shape.kind === "scalar",
         filter: filterCapability(path),
         sort: false,
         ...(definition.relation && { relation: definition.relation().id }),
@@ -44,6 +45,7 @@ export function describeAttachmentQueryVocabulary() {
   fields.push(
     {
       path: "item.indexedKey",
+      group: true,
       type: "string",
       projection: true,
       filter: "string",
@@ -51,6 +53,7 @@ export function describeAttachmentQueryVocabulary() {
     },
     {
       path: "item",
+      group: false,
       relation: "items",
       type: "object",
       projection: true,

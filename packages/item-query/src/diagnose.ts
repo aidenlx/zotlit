@@ -78,6 +78,20 @@ export function diagnose(
   const at = "at" in fault ? fault.at : undefined;
   const faultLocation = { ...location, ...(at ? { span: at } : {}) };
   switch (fault.kind) {
+    case "group-scalar":
+      return renderDiagnostic(
+        {
+          code: "invalid-group",
+          message: `The group path ${JSON.stringify(fault.name)} must resolve to a scalar value.`,
+          hint: "Use one scalar Projection Path, such as library, date.year, or item.citationKey. List and record values and [] paths cannot group.",
+          location: faultLocation,
+        },
+        text,
+        {
+          found: fault.name,
+          expected: ["one scalar Projection Path without []"],
+        },
+      );
     case "syntax":
       return diagnoseSyntax(fault.fault, text, location);
     case "arity": {
@@ -199,6 +213,7 @@ export function codeOfFault(
   fault: ItemQueryFault,
   dataset: QueryDataset<any>,
 ): PlainFault["code"] {
+  if (fault.kind === "group-scalar") return "invalid-group";
   if (fault.kind === "plain") return fault.code;
   if (fault.kind === "syntax" || fault.kind === "custom-key")
     return "invalid-filter";
@@ -238,7 +253,8 @@ function diagnoseUnknown(
   if (
     fault.role === "projection-path" ||
     fault.role === "sortable-field" ||
-    (fault.role === "custom-field" && location.argument === "fields")
+    (fault.role === "custom-field" &&
+      (location.argument === "fields" || location.argument === "group"))
   )
     return diagnoseRequestName(fault, text, { ...location, dataset });
   const candidates =
@@ -347,18 +363,23 @@ function diagnoseRequestName(
   { dataset, ...location }: DiagnosisContext,
 ): Diagnostic<ItemQueryErrorCode> {
   const sort = fault.role === "sortable-field";
+  const group = location.argument === "group";
   const custom = fault.role === "custom-field";
   const candidates = sort
     ? dataset.sortableFields
     : custom
       ? (fault.customFields ?? [])
-      : projectionCandidates(dataset);
+      : projectionCandidates(dataset).filter((name) => {
+          if (!group) return true;
+          const path = planPath(name, dataset.resolvePath);
+          return !("kind" in path) && path.scalar;
+        });
   const root = dataset.rootName(fault.name);
   const exact = candidates.filter(
     (name) => name.toLowerCase() === fault.name.toLowerCase(),
   );
   const elementPath =
-    fault.pathResolution?.expected === "list-element"
+    !group && fault.pathResolution?.expected === "list-element"
       ? `${fault.name.slice(0, fault.pathResolution.offset)}[]${fault.name.slice(fault.pathResolution.offset)}`
       : undefined;
   const nearby =
@@ -375,20 +396,26 @@ function diagnoseRequestName(
       : sort
         ? [location.index, "field"]
         : [location.index];
-  const argument = sort ? "sort" : "fields";
+  const argument = group ? "group" : sort ? "sort" : "fields";
   const corrected =
     nearby.length === 1
-      ? replaceJsonValue(
-          text,
-          keys,
-          custom
-            ? `${dataset.customPrefix}custom[${JSON.stringify(nearby[0])}]`
-            : nearby[0]!,
-        )
+      ? group
+        ? custom
+          ? `${dataset.customPrefix}custom[${JSON.stringify(nearby[0])}]`
+          : nearby[0]!
+        : replaceJsonValue(
+            text,
+            keys,
+            custom
+              ? `${dataset.customPrefix}custom[${JSON.stringify(nearby[0])}]`
+              : nearby[0]!,
+          )
       : undefined;
-  const entry = custom
-    ? (projectionEntry(text, location.index) ?? fault.name)
-    : fault.name;
+  const entry = group
+    ? text
+    : custom
+      ? (projectionEntry(text, location.index) ?? fault.name)
+      : fault.name;
   const suggestions =
     corrected === undefined ? nearby : [shellArgument(argument, corrected)];
   const hint =
@@ -406,7 +433,9 @@ function diagnoseRequestName(
         ...location,
         path:
           location.path ??
-          `${argument}[${location.index ?? 0}]${sort ? ".field" : ""}`,
+          (group
+            ? "group"
+            : `${argument}[${location.index ?? 0}]${sort ? ".field" : ""}`),
         span: { from: 0, to: entry.length },
       },
     },
@@ -437,11 +466,13 @@ function diagnoseRequestName(
   }
   return {
     ...diagnostic,
-    location: {
-      argument,
-      index: location.index,
-      path: diagnostic.location!.path,
-    },
+    location: group
+      ? diagnostic.location
+      : {
+          argument,
+          index: location.index,
+          path: diagnostic.location!.path,
+        },
     suggestions,
     report: [...diagnostic.report.slice(0, -1), ...notes, hint],
   };

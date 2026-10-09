@@ -90,7 +90,7 @@ export interface FieldNeeds {
  * The value of a Sortable Field for one Item. One field gives one type; `null`
  * is a missing value. Strings compare in the Item Query string order.
  */
-export type SortKey = string | number | null;
+export type SortKey = string | number | boolean | null;
 
 /**
  * One entry of the field registry. Validation, execution, and the Item Query
@@ -125,8 +125,8 @@ export interface FieldDefinition<Item = QueryItem, Needs = FieldNeeds> {
 }
 
 /**
- * The value of a field in a Filter Expression. A relation list is a list of
- * strings here; projection gives the richer structure.
+ * The value of a field in a Filter Expression. Creator, Tag, and Collection
+ * lists hold text; cross-dataset Relation Lists hold records.
  */
 export interface FilterValueDefinition<Item = QueryItem> {
   /** The type of the value when the Item has one. */

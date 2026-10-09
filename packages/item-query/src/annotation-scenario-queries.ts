@@ -5,6 +5,18 @@ export const ANNOTATION_SCENARIO_QUERIES: readonly Omit<
   ItemQueryRequest,
   "libraries"
 >[] = [
+  ...[
+    "library",
+    "colorName",
+    "item.citationKey",
+    "item.date.year",
+    'item.custom["review.status"]',
+    "tags",
+    "item.creators[].fullName",
+  ].flatMap((group) => [
+    { group, fields: [], limit: 3 },
+    { group, fields: [], limit: null },
+  ]),
   { fields: ["item.creators[].fullName", "tags[]", "position.rects[][]"] },
   {},
   { fields: [], limit: 2 },

@@ -71,7 +71,19 @@ describe("the rows a limited query retains", () => {
     request: Request;
     items: number;
     attachment?: boolean;
+    groups?: number;
   }[] = [
+    {
+      name: "a grouped scan of two Libraries",
+      request: {
+        libraries: [SCENARIO_LIBRARIES.personal, BULK_LIBRARY],
+        fields: ["title"],
+        group: "library",
+        limit: LIMIT,
+      },
+      items: 10 + BULK_ITEMS,
+      groups: 2,
+    },
     {
       name: "an Attachment scan",
       attachment: true,
@@ -150,7 +162,7 @@ describe("the rows a limited query retains", () => {
 
   it.each(QUERIES)(
     "holds the limit plus one row, one page, and one hydrate chunk at most in $name",
-    async ({ request, items, attachment }) => {
+    async ({ request, items, attachment, groups = 1 }) => {
       // The rows of the query universe and the rows of the hydrate statements
       // that the collector has not freed.
       const scanned: WeakRef<object>[] = [];
@@ -198,8 +210,8 @@ describe("the rows a limited query retains", () => {
       if (!Exit.isSuccess(limited.exit))
         throw new Error(String(limited.exit.cause));
       expect(limited.exit.value).toMatchObject({
-        returnedCount: Math.min(LIMIT, items),
-        truncated: items > LIMIT,
+        returnedCount: Math.min(LIMIT * groups, items),
+        truncated: items > LIMIT * groups,
       });
       expect(scanned).toHaveLength(items);
       const most = (values: number[]) => Math.max(0, ...values);
@@ -208,7 +220,7 @@ describe("the rows a limited query retains", () => {
         Math.min(items, 500),
       );
       expect(most(samples.map((entry) => entry.rows))).toBeLessThanOrEqual(
-        LIMIT + 1 + 500,
+        (LIMIT + 1) * groups + 500,
       );
       expect(
         most(samples.map((entry) => entry.hydratedItems)),
@@ -216,51 +228,55 @@ describe("the rows a limited query retains", () => {
       // The projection starts with the matches only: the pages are released.
       expect(samples.at(-1)).toEqual({
         at: attachment ? "attachment-details" : "hydrate-chunk",
-        rows: Math.min(LIMIT + 1, items),
-        hydratedItems: Math.min(LIMIT, items),
+        rows: groups === 1 ? Math.min(LIMIT + 1, items) : LIMIT * groups + 1,
+        hydratedItems: groups === 1 ? Math.min(LIMIT, items) : 9,
       });
     },
   );
 });
 
-it("incremental delivery retains one projected batch instead of the complete result", async () => {
-  const projected: WeakRef<object>[] = [];
-  let peak = 0;
-  const run = await runEffect(
-    consumeQuery(
-      ITEMS,
+it.each([undefined, "library"])(
+  "incremental delivery retains one projected batch (group: %s)",
+  async (group) => {
+    const projected: WeakRef<object>[] = [];
+    let peak = 0;
+    const run = await runEffect(
+      consumeQuery(
+        ITEMS,
+        {
+          libraries: [BULK_LIBRARY],
+          fields: ["title", "tags"],
+          group,
+          limit: null,
+        },
+        (summary) =>
+          Effect.succeed({
+            write: (rows) =>
+              Effect.sync(() => {
+                collectGarbage();
+                collectGarbage();
+                for (const row of rows) projected.push(new WeakRef(row));
+                peak = Math.max(
+                  peak,
+                  projected.filter((row) => row.deref()).length,
+                );
+              }),
+            end: () => Effect.succeed(summary),
+          }),
+      ),
       {
-        libraries: [BULK_LIBRARY],
-        fields: ["title", "tags"],
-        limit: null,
+        client: scenario.db,
+        keepStatements: false,
+        tuning: { hydrateChunkSize: 100 },
       },
-      (summary) =>
-        Effect.succeed({
-          write: (rows) =>
-            Effect.sync(() => {
-              collectGarbage();
-              collectGarbage();
-              for (const row of rows) projected.push(new WeakRef(row));
-              peak = Math.max(
-                peak,
-                projected.filter((row) => row.deref()).length,
-              );
-            }),
-          end: () => Effect.succeed(summary),
-        }),
-    ),
-    {
-      client: scenario.db,
-      keepStatements: false,
-      tuning: { hydrateChunkSize: 100 },
-    },
-  );
-  expect(Exit.isSuccess(run.exit) && run.exit.value.returnedCount).toBe(
-    BULK_ITEMS,
-  );
-  expect(projected).toHaveLength(BULK_ITEMS);
-  expect(peak).toBeLessThanOrEqual(100);
-});
+    );
+    expect(Exit.isSuccess(run.exit) && run.exit.value.returnedCount).toBe(
+      BULK_ITEMS,
+    );
+    expect(projected).toHaveLength(BULK_ITEMS);
+    expect(peak).toBeLessThanOrEqual(100);
+  },
+);
 
 it("releases a paper's file records with each chunk of a limited query", async () => {
   const related: WeakRef<object>[] = [];

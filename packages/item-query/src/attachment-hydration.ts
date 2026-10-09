@@ -91,7 +91,11 @@ export function openAttachmentHydration(
           needs: filter.needs.flatMap(itemNeeds),
         },
         paths: paths.flatMap(({ text, customField, needs }) =>
-          itemNeeds(needs).map((need) => ({ text, customField, needs: need })),
+          (itemNeeds(needs).length ? itemNeeds(needs) : [{}]).map((need) => ({
+            text,
+            customField,
+            needs: need,
+          })),
         ),
         sorts: sorts.flatMap(({ needs }) =>
           itemNeeds(needs).map((need) => ({ needs: need })),

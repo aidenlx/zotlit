@@ -44,6 +44,7 @@ describe("describeItemQuery custom fields", () => {
         type: "string",
         filter: "string",
         projection: true,
+        group: true,
         sort: false,
       },
       {
@@ -53,6 +54,7 @@ describe("describeItemQuery custom fields", () => {
         type: "string",
         filter: "string",
         projection: true,
+        group: true,
         sort: false,
       },
       {
@@ -62,6 +64,7 @@ describe("describeItemQuery custom fields", () => {
         type: "string",
         filter: "string",
         projection: true,
+        group: true,
         sort: false,
       },
       {
@@ -71,6 +74,7 @@ describe("describeItemQuery custom fields", () => {
         type: "string",
         filter: "string",
         projection: true,
+        group: true,
         sort: false,
       },
     ]);
@@ -95,6 +99,7 @@ describe("the static Item Query vocabulary", () => {
       type: "array",
       filter: null,
       projection: true,
+      group: false,
       sort: false,
     });
   });
@@ -131,6 +136,7 @@ describe("describeItemQuery fields", () => {
     expect(entry("library")).toMatchInlineSnapshot(`
       {
         "filter": "string",
+        "group": true,
         "path": "library",
         "projection": true,
         "sort": false,
@@ -146,6 +152,7 @@ describe("describeItemQuery fields", () => {
       type: "string",
       filter: "string",
       projection: true,
+      group: true,
       sort: true,
     });
     expect(entry("date")).toEqual({
@@ -153,6 +160,7 @@ describe("describeItemQuery fields", () => {
       type: "object",
       filter: "date",
       projection: true,
+      group: false,
       sort: true,
     });
     expect(entry("date.year")).toEqual({
@@ -160,6 +168,7 @@ describe("describeItemQuery fields", () => {
       type: "number",
       filter: "number",
       projection: true,
+      group: true,
       sort: false,
     });
     expect(entry("dateModified")).toEqual({
@@ -167,6 +176,7 @@ describe("describeItemQuery fields", () => {
       type: "string",
       filter: "date",
       projection: true,
+      group: true,
       sort: true,
     });
     // A timestamp or a calendar day, as ISO text in a Query Row.
@@ -175,6 +185,7 @@ describe("describeItemQuery fields", () => {
       type: "string",
       filter: "date",
       projection: true,
+      group: true,
       sort: true,
     });
     expect(entry("creators")).toEqual({
@@ -182,6 +193,7 @@ describe("describeItemQuery fields", () => {
       type: "array",
       filter: "list",
       projection: true,
+      group: false,
       sort: false,
     });
     expect(entry("creators[0].fullName")).toEqual({
@@ -189,6 +201,7 @@ describe("describeItemQuery fields", () => {
       type: "string",
       filter: null,
       projection: true,
+      group: true,
       sort: false,
     });
     // A filter has no property `kind` on a date and reads a list element by
@@ -209,6 +222,7 @@ describe("describeItemQuery fields", () => {
       type: "array",
       filter: "list",
       projection: true,
+      group: false,
       sort: false,
     });
     // The Zotero Key inside the Target Library: a filter reads it, a row
@@ -218,6 +232,7 @@ describe("describeItemQuery fields", () => {
       type: "string",
       filter: "string",
       projection: false,
+      group: false,
       sort: false,
     });
     expect(entry("custom")).toEqual({
@@ -225,6 +240,7 @@ describe("describeItemQuery fields", () => {
       type: "object",
       filter: null,
       projection: true,
+      group: false,
       sort: false,
     });
   });
@@ -516,6 +532,7 @@ describe("the Item Query Schema and collectQuery", () => {
         { sort: [{ field: path, direction: "asc" }] },
         field.sort,
       );
+      await expect_(`group ${path}`, { group: path }, field.group);
       await expect_(`filter ${path}`, { filter: path }, field.filter !== null);
     }
     for (const field of customFields.filter((entry) => entry.bareName)) {

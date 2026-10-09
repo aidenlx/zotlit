@@ -158,7 +158,7 @@ export function openHydration(
                   argumentText: plan.query.filter ?? "",
                 },
         ),
-        ...paths.flatMap(({ customField: name }, index): CustomFieldUse[] =>
+        ...paths.flatMap(({ customField: name, text }): CustomFieldUse[] =>
           name === null
             ? []
             : [
@@ -167,10 +167,10 @@ export function openHydration(
                   bare: false,
                   location: {
                     argument: "fields",
-                    index,
-                    path: `fields[${index}]`,
+                    index: plan.query.fields.indexOf(text),
+                    path: `fields[${plan.query.fields.indexOf(text)}]`,
                   },
-                  argumentText: JSON.stringify(paths.map((path) => path.text)),
+                  argumentText: JSON.stringify(plan.query.fields),
                 },
               ],
         ),
