@@ -11,6 +11,7 @@ const KEY_PATHS: Record<
   Readonly<Record<string, KeyTarget>>
 > = {
   items: { indexedKey: "self" },
+  attachments: { indexedKey: "self", "item.indexedKey": "item" },
   annotations: {
     indexedKey: "self",
     "item.indexedKey": "item",

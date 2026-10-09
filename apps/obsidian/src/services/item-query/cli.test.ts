@@ -138,7 +138,7 @@ describe("zotlit:query-guide", () => {
     }
     for (const topic of GUIDE_TOPIC_NAMES) expect(output).toContain(topic);
     expect(output).toContain(
-      "obsidian zotlit:query [from=<items|annotations>]",
+      "obsidian zotlit:query [from=<items|attachments|annotations>]",
     );
     expect(output).toContain("[fields=<list|json>]");
     expect(output).toContain("[library=<list|all>]");

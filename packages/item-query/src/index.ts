@@ -69,3 +69,5 @@ export type {
   Callee,
   SyntaxFault,
 } from "./fault";
+
+export { ATTACHMENTS } from "./query-attachments";

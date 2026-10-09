@@ -61,6 +61,8 @@ Read the relevant guide topic:
 - `results`: envelopes, diagnostics, and exports.
 - `cancel`: query IDs and cancellation.
 
+Use `from=attachments` to find files of a paper or broken linked files. Attachment Query reads non-trashed Attachments of top-level, non-trashed Items; `item.` reaches the parent Item. For broken linked files, use `filter='linkMode == "linked_file" && !exists'`; for one paper, use `filter='item.citationKey == "<key>"' fields=title,contentType,path`. Read `zotlit:query-schema from=attachments` for its fields and defaults.
+
 ## Annotation Query
 
 Use Annotation Query for highlights, underlines, notes, image regions, ink, and text boxes. Its Filter Expression reads Annotation fields directly and parent Item fields with the `item.` prefix. For example:

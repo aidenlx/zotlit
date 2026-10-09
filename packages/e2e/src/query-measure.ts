@@ -165,6 +165,20 @@ function querySpecs(uniqueKey: string): QuerySpec[] {
   });
   const common = `tags.contains(${quote(tags.common)})`;
   return [
+    {
+      id: "attachments-default",
+      class: "other",
+      args: { from: "attachments", limit: "100" },
+    },
+    {
+      id: "attachments-broken-files",
+      class: "other",
+      args: {
+        from: "attachments",
+        filter: 'linkMode == "linked_file" && !exists',
+        limit: "100",
+      },
+    },
     limited("key", "selective", `key == ${quote(uniqueKey)}`),
     limited("title-exact", "selective", `title == ${quote(uniqueTitle)}`),
     limited("tag-rare", "selective", `tags.contains(${quote(tags.rare)})`),

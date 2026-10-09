@@ -1359,6 +1359,8 @@ export const EXCERPT_RENDERING_CASES: readonly FixtureExcerptCase[] = [
 ];
 
 interface FixtureAttachmentBase {
+  /** Manual or automatic Zotero Tags on the Attachment. */
+  tags?: readonly { name: string; type: 0 | 1 }[];
   itemID: number;
   libraryID: number;
   /** Bare Zotero key for the Attachment row. */
@@ -1444,6 +1446,21 @@ export const DEMO_ATTACHMENTS: readonly FixtureAttachment[] = [
  * generator deliberately leaves absent.
  */
 export const ATTACHMENTS: readonly FixtureAttachment[] = [
+  {
+    itemID: 150,
+    libraryID: 1,
+    key: "MISSLNK2",
+    parentItemID: 57,
+    linkMode: "linked_file",
+    fileRoot: "linked-files",
+    contentType: "application/pdf",
+    title: "Missing linked PDF",
+    path: "missing-linked.pdf",
+    url: null,
+    sourceAsset: null,
+    tags: [{ name: "repair-file", type: 0 }],
+    dateModified: "2025-01-03 11:15:00",
+  },
   {
     itemID: 21,
     libraryID: 1,

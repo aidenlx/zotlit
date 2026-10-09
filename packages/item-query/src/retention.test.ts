@@ -18,10 +18,11 @@ import {
   openScenarioDatabase,
   SCENARIO_LIBRARIES,
   seedBulkLibrary,
+  seedBulkAttachments,
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
-import { collectQuery, consumeQuery, ITEMS } from ".";
+import { ATTACHMENTS, collectQuery, consumeQuery, ITEMS } from ".";
 import type { ItemQueryRequest } from ".";
 import { runEffect } from "./test-helpers";
 
@@ -34,14 +35,19 @@ const collectGarbage = runInNewContext("gc") as () => void;
 const BULK_ITEMS = 2600;
 
 let scenario: ScenarioDatabase;
+let attachments: ScenarioDatabase;
 
 beforeAll(() => {
   scenario = openScenarioDatabase();
   seedBulkLibrary(scenario.sqlite, BULK_ITEMS);
+  attachments = openScenarioDatabase();
+  seedBulkLibrary(attachments.sqlite, BULK_ITEMS);
+  seedBulkAttachments(attachments.sqlite, BULK_ITEMS);
 });
 
 afterAll(() => {
   scenario.close();
+  attachments.close();
 });
 
 /** A request of the bulk Library, or of the Libraries it names. */
@@ -51,48 +57,100 @@ type Request = Omit<ItemQueryRequest, "libraries"> &
 const byTitle = [{ field: "title", direction: "asc" }] as const;
 
 /** The readers whose rows are the rows of the query universe. */
-const READS_UNIVERSE = new Set(["scan-page", "universe-rows"]);
+const READS_UNIVERSE = new Set([
+  "scan-page",
+  "universe-rows",
+  "attachment-scan-page",
+  "attachment-universe-rows",
+]);
 
 describe("the rows a limited query retains", () => {
   const LIMIT = 10;
-  const QUERIES: readonly { name: string; request: Request; items: number }[] =
-    [
-      {
-        name: "a scan that hydrates the returned rows only",
-        request: { fields: ["title"], limit: LIMIT },
-        items: BULK_ITEMS,
+  const QUERIES: readonly {
+    name: string;
+    request: Request;
+    items: number;
+    attachment?: boolean;
+  }[] = [
+    {
+      name: "an Attachment scan",
+      attachment: true,
+      request: { fields: ["title"], limit: LIMIT },
+      items: BULK_ITEMS,
+    },
+    {
+      name: "an Attachment candidate set",
+      attachment: true,
+      request: {
+        filter: 'contentType == "text/html"',
+        fields: ["title"],
+        limit: LIMIT,
       },
-      {
-        name: "a scan that hydrates every Item for the sort",
-        request: { fields: ["title", "tags"], sort: byTitle, limit: LIMIT },
-        items: BULK_ITEMS,
+      items: 520,
+    },
+    ...[
+      'tags.contains("bulk-fifth")',
+      'linkMode == "linked_url"',
+      'item.collections.contains("Bulk collection")',
+    ].map((filter) => ({
+      name: `an Attachment candidate for ${filter}`,
+      attachment: true,
+      request: { filter, fields: ["title"], limit: LIMIT },
+      items: 520,
+    })),
+    ...[
+      'indexedKey == "ATT22222g2718"',
+      '["ATT22222g2718"].contains(indexedKey)',
+      'item.indexedKey == "BLK22222g2718"',
+      '["BLK22222g2718"].contains(item.indexedKey)',
+    ].map((filter) => ({
+      name: `an Attachment Indexed Key candidate for ${filter}`,
+      attachment: true,
+      request: { filter, fields: ["title"], limit: LIMIT },
+      items: 1,
+    })),
+    {
+      name: "an Attachment key candidate",
+      attachment: true,
+      request: { filter: 'key == "ATT22222"', fields: ["title"], limit: LIMIT },
+      items: 1,
+    },
+    {
+      name: "a scan that hydrates the returned rows only",
+      request: { fields: ["title"], limit: LIMIT },
+      items: BULK_ITEMS,
+    },
+    {
+      name: "a scan that hydrates every Item for the sort",
+      request: { fields: ["title", "tags"], sort: byTitle, limit: LIMIT },
+      items: BULK_ITEMS,
+    },
+    {
+      name: "a candidate set",
+      request: {
+        filter: `tags.contains("${BULK_FIFTH_TAG}")`,
+        fields: ["title"],
+        sort: byTitle,
+        limit: LIMIT,
       },
-      {
-        name: "a candidate set",
-        request: {
-          filter: `tags.contains("${BULK_FIFTH_TAG}")`,
-          fields: ["title"],
-          sort: byTitle,
-          limit: LIMIT,
-        },
-        items: 520,
+      items: 520,
+    },
+    {
+      name: "a scan of two Libraries",
+      // Each of the first rows by title has a title.
+      request: {
+        libraries: [SCENARIO_LIBRARIES.personal, BULK_LIBRARY],
+        fields: ["title"],
+        sort: byTitle,
+        limit: LIMIT,
       },
-      {
-        name: "a scan of two Libraries",
-        // Each of the first rows by title has a title.
-        request: {
-          libraries: [SCENARIO_LIBRARIES.personal, BULK_LIBRARY],
-          fields: ["title"],
-          sort: byTitle,
-          limit: LIMIT,
-        },
-        items: 10 + BULK_ITEMS,
-      },
-    ];
+      items: 10 + BULK_ITEMS,
+    },
+  ];
 
   it.each(QUERIES)(
     "holds the limit plus one row, one page, and one hydrate chunk at most in $name",
-    async ({ request, items }) => {
+    async ({ request, items, attachment }) => {
       // The rows of the query universe and the rows of the hydrate statements
       // that the collector has not freed.
       const scanned: WeakRef<object>[] = [];
@@ -100,9 +158,12 @@ describe("the rows a limited query retains", () => {
       const samples: { at: string; rows: number; hydratedItems: number }[] = [];
 
       const limited = await runEffect(
-        collectQuery(ITEMS, { libraries: [BULK_LIBRARY], ...request }),
+        collectQuery(attachment ? ATTACHMENTS : ITEMS, {
+          libraries: [BULK_LIBRARY],
+          ...request,
+        }),
         {
-          client: scenario.db,
+          client: attachment ? attachments.db : scenario.db,
           keepStatements: false,
           onEvent: (event) => {
             if (event.type !== "statement") return;
@@ -112,8 +173,15 @@ describe("the rows a limited query retains", () => {
             collectGarbage();
             collectGarbage();
             const { reader, rows } = event.statement;
-            const kept = reader === "hydrate-chunk" ? hydrated : scanned;
-            if (reader === "hydrate-chunk" || READS_UNIVERSE.has(reader)) {
+            const kept =
+              reader === "hydrate-chunk" || reader === "attachment-details"
+                ? hydrated
+                : scanned;
+            if (
+              reader === "hydrate-chunk" ||
+              reader === "attachment-details" ||
+              READS_UNIVERSE.has(reader)
+            ) {
               for (const row of rows) kept.push(new WeakRef(row as never));
             }
             samples.push({
@@ -130,8 +198,8 @@ describe("the rows a limited query retains", () => {
       if (!Exit.isSuccess(limited.exit))
         throw new Error(String(limited.exit.cause));
       expect(limited.exit.value).toMatchObject({
-        returnedCount: LIMIT,
-        truncated: true,
+        returnedCount: Math.min(LIMIT, items),
+        truncated: items > LIMIT,
       });
       expect(scanned).toHaveLength(items);
       const most = (values: number[]) => Math.max(0, ...values);
@@ -147,9 +215,9 @@ describe("the rows a limited query retains", () => {
       ).toBeLessThanOrEqual(250);
       // The projection starts with the matches only: the pages are released.
       expect(samples.at(-1)).toEqual({
-        at: "hydrate-chunk",
-        rows: LIMIT + 1,
-        hydratedItems: LIMIT,
+        at: attachment ? "attachment-details" : "hydrate-chunk",
+        rows: Math.min(LIMIT + 1, items),
+        hydratedItems: Math.min(LIMIT, items),
       });
     },
   );

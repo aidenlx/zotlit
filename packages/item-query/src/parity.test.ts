@@ -9,8 +9,9 @@ import {
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
-import { collectQuery, ITEMS } from ".";
+import { ATTACHMENTS, collectQuery, ITEMS } from ".";
 import type { ItemQueryRequest, SortSpec } from ".";
+import { ATTACHMENT_SCENARIO_QUERIES } from "./attachment-scenario-queries";
 import { GENERATED_FILTER_PARTS, SCENARIO_QUERIES } from "./scenario-queries";
 import type { ScenarioQuery } from "./scenario-queries";
 import { ItemQueryScheduler } from "./scheduler";
@@ -366,3 +367,29 @@ it.each(["review.length", "custom.review.length"])(
       expect(await outcome(query, tuning, { database })).toEqual(property);
   },
 );
+
+it("keeps Attachment results equal to the forced scan for every leaf, cap, chunk, and Library", async () => {
+  using attachments = openScenarioDatabase({ annotations: true });
+  for (const libraries of [
+    [SCENARIO_LIBRARIES.personal],
+    [SCENARIO_LIBRARIES.group],
+    [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
+  ]) {
+    for (const request of ATTACHMENT_SCENARIO_QUERIES) {
+      const run = async (tuning: Tuning) => {
+        const { exit } = await runEffect(
+          collectQuery(ATTACHMENTS, { ...request, libraries }),
+          { client: attachments.db, tuning },
+        );
+        if (exit._tag === "Failure") throw new Error(String(exit.cause));
+        return wire(exit.value);
+      };
+      const expected = await run(FORCED_SCAN);
+      for (const plan of PLANS)
+        expect(
+          await run(plan.tuning),
+          JSON.stringify({ request, libraries, plan }),
+        ).toEqual(expected);
+    }
+  }
+}, 30000);

@@ -2605,6 +2605,168 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
   }, 120_000);
 
+  describe("ZotLit Query attachments", () => {
+    const queryFixture = getFixtureLayout(
+      join(workspaceRoot, ".scratch", "e2e-attachment-query-fixture"),
+    );
+    const queryVaultPath = e2eVaultDir(workspaceRoot, "attachment-query-vault");
+    const queryVaultScript = vaultScript(workspaceRoot, queryFixture.root);
+    let queryVaultId: string;
+    beforeAll(async () => {
+      await clearVault(queryVaultScript, queryVaultPath);
+      const created = await queryVaultScript(["create", queryVaultPath]);
+      queryVaultId = created.stdout.trim().split("\n")[0]!.trim();
+      await keepRendering(queryVaultId);
+    });
+    afterAll(async () => {
+      await queryVaultScript(["remove", queryVaultPath, "--purge"]);
+      await discardFixture(queryFixture);
+    });
+    const query = async (args: Record<string, string>) =>
+      JSON.parse(
+        await cliCommand(queryVaultId, "zotlit:query", {
+          args: { from: "attachments", ...args },
+        }),
+      ) as ItemQueryReport;
+
+    it("finds broken linked files", async () => {
+      // Demo paper files are copied only to the demo Vault Case. Their linked
+      // rows remain in the configured Fixture and are also missing here.
+      const answer = await query({
+        filter: 'linkMode == "linked_file" && !exists',
+        fields: "title,path,exists,tags",
+        library: "all",
+        limit: "all",
+      });
+      expect(answer).toMatchObject({
+        ok: true,
+        returnedCount: 3,
+        truncated: false,
+        rows: [
+          {
+            indexedKey: "MISSLNK2",
+            values: {
+              title: "Missing linked PDF",
+              path: join(queryFixture.linkedFilesDir, "missing-linked.pdf"),
+              exists: false,
+              tags: ["repair-file"],
+            },
+          },
+          { indexedKey: "DMRGRPDF", values: { exists: false } },
+          { indexedKey: "DMIANPDF", values: { exists: false } },
+        ],
+      });
+    });
+    it("lists files of one paper", async () => {
+      const paper = ITEMS.find((item) => item.itemID === 46)!;
+      const answer = await query({
+        filter: `item.citationKey == ${JSON.stringify(paper.citationKey)}`,
+        fields: "title,contentType,path",
+        limit: "all",
+      });
+      expect(answer).toMatchObject({
+        ok: true,
+        returnedCount: 1,
+        truncated: false,
+        rows: [
+          {
+            indexedKey: "RGRPDF24",
+            itemIndexedKey: paper.key,
+            values: {
+              title: "Rougier et al. 2014 PDF",
+              contentType: "application/pdf",
+              path: join(queryVaultPath, "attachments", "rougier-2014.pdf"),
+            },
+          },
+        ],
+      });
+      for (const filter of [
+        'indexedKey == "RGRPDF24"',
+        '["RGRPDF24"].contains(indexedKey)',
+        `item.indexedKey == ${JSON.stringify(paper.key)}`,
+        `[${JSON.stringify(paper.key)}].contains(item.indexedKey)`,
+      ]) {
+        const selected = await query({
+          filter,
+          fields: "title,contentType,path",
+          limit: "all",
+        });
+        expect(selected).toMatchObject({
+          ok: true,
+          rows: answer.rows,
+          warnings: [],
+        });
+      }
+      const outsideKey = `RGRPDF24g${LIBRARIES.find((library) => library.groupID !== null)!.groupID}`;
+      const scoped = await query({
+        library: "personal",
+        filter: `indexedKey == "${outsideKey}" || indexedKey == "RGRPDF24"`,
+        fields: "title,contentType,path",
+      });
+      expect(scoped).toMatchObject({
+        ok: true,
+        libraries: [{ type: "personal" }],
+        rows: answer.rows,
+        warnings: [{ code: "key-outside-target-libraries", found: outsideKey }],
+      });
+      const schema = JSON.parse(
+        await cliCommand(queryVaultId, "zotlit:query-schema", {
+          args: { from: "attachments" },
+        }),
+      );
+      expect(Object.keys(schema.datasets)).toEqual(["attachments"]);
+      expect(schema.defaults.attachments.fields).toEqual([
+        "title",
+        "contentType",
+        "linkMode",
+        "path",
+        "exists",
+        "item.title",
+        "item.citationKey",
+      ]);
+    });
+    it("projects Library selectors and parent citation keys across all Libraries", async () => {
+      const answer = await query({
+        library: "all",
+        fields: "title,library,item.citationKey",
+        limit: "all",
+      });
+      expect(answer).toMatchObject({
+        ok: true,
+        returnedCount: 14,
+        truncated: false,
+      });
+      expect(answer.libraries).toHaveLength(LIBRARIES.length);
+      // The three image Attachments of a Note are outside the Query Dataset.
+      const attachedToItems = ATTACHMENTS.filter((attachment) =>
+        ITEMS.some((item) => item.itemID === attachment.parentItemID),
+      );
+      expect(answer.rows!.map((row) => row.indexedKey).toSorted()).toEqual(
+        attachedToItems.map((attachment) => attachment.key).toSorted(),
+      );
+      for (const attachment of attachedToItems) {
+        const library = LIBRARIES.find(
+          (library) => library.libraryID === attachment.libraryID,
+        )!;
+        const parent = ITEMS.find(
+          (item) => item.itemID === attachment.parentItemID,
+        )!;
+        const key =
+          library.groupID === null
+            ? attachment.key
+            : `${attachment.key}g${library.groupID}`;
+        expect(
+          answer.rows!.find((row) => row.indexedKey === key)?.values,
+        ).toEqual({
+          title: attachment.title,
+          library:
+            library.groupID === null ? "personal" : `group:${library.groupID}`,
+          "item.citationKey": parent.citationKey,
+        });
+      }
+    });
+  });
+
   it("projects aligned Relation Lists with [] through zotlit:query", async () => {
     const query = async (fields: string[]) =>
       JSON.parse(
@@ -3206,14 +3368,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   it("rejects unavailable datasets and the removed libraries parameter through zotlit:query", async () => {
     const unsupported = JSON.parse(
       await cliCommand(vaultId, "zotlit:query", {
-        args: { from: "attachments" },
+        args: { from: "unknown" },
       }),
     );
     expect(unsupported).toMatchObject({
       ok: false,
       diagnostic: {
         code: "invalid-argument",
-        expected: ["items", "annotations"],
+        expected: ["items", "attachments", "annotations"],
       },
     });
     const removed = JSON.parse(
@@ -4048,7 +4210,7 @@ interface ItemQueryReport {
     | { type: "group"; groupID: number; name: string }
   )[];
   request?: {
-    from: "items" | "annotations";
+    from: "items" | "attachments" | "annotations";
     library: string[];
     fields: string[];
     limit: number | null;

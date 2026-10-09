@@ -13,10 +13,11 @@ import {
   SCENARIO_LIBRARIES,
   seedBulkLibrary,
   seedBulkAnnotations,
+  seedBulkAttachments,
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
-import { ANNOTATIONS, collectQuery, ITEMS } from ".";
+import { ANNOTATIONS, ATTACHMENTS, collectQuery, ITEMS } from ".";
 import type { ItemQueryRequest, QueryResult } from ".";
 import { runEffect } from "./test-helpers";
 import type { Run, RunEvent, RunOptions } from "./test-helpers";
@@ -31,6 +32,7 @@ const BULK_CAP = 650;
 
 let scenario: ScenarioDatabase;
 let annotations: ScenarioDatabase;
+let attachments: ScenarioDatabase;
 
 beforeAll(async () => {
   scenario = openScenarioDatabase();
@@ -38,6 +40,10 @@ beforeAll(async () => {
   // The first statement on a copy runs the layout check. Its two statements
   // are in the events of that run only, so each test starts after it.
   resultOf(await run({ fields: [], limit: 1 }));
+  attachments = openScenarioDatabase();
+  seedBulkLibrary(attachments.sqlite, BULK_ITEMS);
+  seedBulkAttachments(attachments.sqlite, BULK_ITEMS);
+  resultOf(await run({ fields: [], limit: 1 }, { attachment: true }));
   annotations = openScenarioDatabase();
   seedBulkLibrary(annotations.sqlite, BULK_ITEMS);
   seedBulkAnnotations(annotations.sqlite, BULK_ITEMS);
@@ -47,6 +53,7 @@ beforeAll(async () => {
 afterAll(() => {
   scenario.close();
   annotations.close();
+  attachments.close();
 });
 
 type Request = Omit<ItemQueryRequest, "libraries">;
@@ -56,13 +63,26 @@ function run(
   options: Omit<RunOptions, "client"> & {
     libraries?: ItemQueryRequest["libraries"];
     annotation?: boolean;
+    attachment?: boolean;
   } = {},
 ) {
-  const { libraries = [BULK_LIBRARY], annotation = false, ...rest } = options;
+  const {
+    libraries = [BULK_LIBRARY],
+    annotation = false,
+    attachment = false,
+    ...rest
+  } = options;
   return runEffect(
-    collectQuery(annotation ? ANNOTATIONS : ITEMS, { ...request, libraries }),
+    collectQuery(attachment ? ATTACHMENTS : annotation ? ANNOTATIONS : ITEMS, {
+      ...request,
+      libraries,
+    }),
     {
-      client: annotation ? annotations.db : scenario.db,
+      client: attachment
+        ? attachments.db
+        : annotation
+          ? annotations.db
+          : scenario.db,
       ...rest,
     },
   );
@@ -94,12 +114,108 @@ const PLAN_PATHS: readonly {
   name: string;
   request: Request;
   annotation?: boolean;
+  attachment?: boolean;
   result?: Pick<QueryResult, "returnedCount" | "truncated">;
   /** @default the bulk Library */
   libraries?: ItemQueryRequest["libraries"];
   /** The Items that each statement of a reader reads, in order. */
   reads: Record<string, number[]>;
 }[] = [
+  {
+    name: "Attachment Indexed Key list",
+    attachment: true,
+    request: {
+      filter: '["ATT22222g2718", "ATT22223g2718"].contains(indexedKey)',
+      fields: ["title"],
+      limit: 10,
+    },
+    reads: {
+      "attachment-candidate-set": [2],
+      "attachment-universe-rows": [2],
+      "attachment-details": [2],
+    },
+  },
+  ...[
+    'indexedKey == "ATT22222g2718"',
+    'item.indexedKey == "BLK22222g2718"',
+    '["BLK22222g2718"].contains(item.indexedKey)',
+  ].map((filter) => ({
+    name: `Attachment Indexed Key ${filter}`,
+    attachment: true,
+    request: { filter, fields: ["title"], limit: 10 },
+    reads: {
+      "attachment-candidate-set": [1],
+      "attachment-universe-rows": [1],
+      "attachment-details": [1],
+    },
+  })),
+  {
+    name: "Attachment default scan",
+    attachment: true,
+    request: { fields: ["title"], limit: 10 },
+    reads: {
+      "attachment-scan-page": [500, 500, 500, 500, 500, 100],
+      "attachment-details": [10],
+    },
+  },
+  ...[
+    'tags.contains("bulk-fifth")',
+    'contentType == "text/html"',
+    'linkMode == "linked_url"',
+  ].map((filter) => ({
+    name: `Attachment candidate ${filter}`,
+    attachment: true,
+    request: { filter, fields: ["title"], limit: 10 },
+    reads: {
+      "attachment-candidate-set": [520],
+      "attachment-universe-rows": [500, 20],
+      ...(filter.startsWith("tags")
+        ? { "attachment-tags": [250, 250, 20], "attachment-details": [10] }
+        : { "attachment-details": [250, 250, 20, 10] }),
+    },
+  })),
+  {
+    name: "Attachment key candidate",
+    attachment: true,
+    request: { filter: 'key == "ATT22222"', fields: ["title"], limit: 10 },
+    reads: {
+      "attachment-candidate-set": [1],
+      "attachment-universe-rows": [1],
+      "attachment-details": [1],
+    },
+  },
+  {
+    name: "Attachment parent Collection candidate",
+    attachment: true,
+    request: {
+      filter: 'item.collections.contains("Bulk collection")',
+      fields: ["title"],
+      limit: 10,
+    },
+    reads: {
+      "attachment-candidate-set": [520],
+      "attachment-universe-rows": [500, 20],
+      "hydrate-chunk": [250, 250, 20],
+      "attachment-details": [10],
+    },
+  },
+  {
+    name: "Attachment cap fallback",
+    attachment: true,
+    request: {
+      filter: 'contentType == "application/pdf"',
+      fields: ["title"],
+      limit: 10,
+    },
+    reads: {
+      "attachment-candidate-set": [651],
+      "attachment-scan-page": [500, 500, 500, 500, 500, 100],
+      "attachment-details": [
+        250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 100, 10,
+      ],
+    },
+  },
+
   {
     name: "an Indexed Key list within the candidate cap",
     request: {
@@ -279,8 +395,12 @@ const PLAN_PATHS: readonly {
 describe("the Items one statement reads", () => {
   it.each(PLAN_PATHS)(
     "reads at most 500 Item rows in $name",
-    async ({ request, libraries, reads, annotation }) => {
-      const { events, exit } = await run(request, { libraries, annotation });
+    async ({ request, libraries, reads, annotation, attachment }) => {
+      const { events, exit } = await run(request, {
+        libraries,
+        annotation,
+        attachment,
+      });
       expect(Exit.isSuccess(exit)).toBe(true);
 
       for (const reader of [
@@ -288,11 +408,16 @@ describe("the Items one statement reads", () => {
         "universe-rows",
         "hydrate-chunk",
         "candidate-set",
+        "attachment-scan-page",
+        "attachment-universe-rows",
+        "attachment-details",
+        "attachment-tags",
         "annotation-scan-page",
         "annotation-universe-rows",
         "annotation-details",
         "annotation-tags",
         "annotation-attachment-titles",
+        "attachment-candidate-set",
         "annotation-candidate-set",
       ]) {
         expect(itemsRead(events, reader), reader).toEqual(reads[reader] ?? []);
@@ -302,6 +427,10 @@ describe("the Items one statement reads", () => {
         "scan-page",
         "universe-rows",
         "hydrate-chunk",
+        "attachment-scan-page",
+        "attachment-universe-rows",
+        "attachment-details",
+        "attachment-tags",
         "annotation-scan-page",
         "annotation-universe-rows",
         "annotation-details",
@@ -317,7 +446,11 @@ describe("the Items one statement reads", () => {
           0,
           ...itemsRead(
             events,
-            annotation ? "annotation-candidate-set" : "candidate-set",
+            attachment
+              ? "attachment-candidate-set"
+              : annotation
+                ? "annotation-candidate-set"
+                : "candidate-set",
           ),
         ),
       ).toBeLessThanOrEqual(BULK_CAP + 1);
@@ -328,8 +461,12 @@ describe("the Items one statement reads", () => {
 describe("the pauses between two chunks", () => {
   it.each(PLAN_PATHS)(
     "pauses between every two statements of $name",
-    async ({ request, libraries, annotation }) => {
-      const { events } = await run(request, { libraries, annotation });
+    async ({ request, libraries, annotation, attachment }) => {
+      const { events } = await run(request, {
+        libraries,
+        annotation,
+        attachment,
+      });
 
       const statements = events.filter((event) => event.type === "statement");
       const withoutPause = events.filter(
@@ -637,6 +774,61 @@ describe("Annotation projection and active cancellation", () => {
         }
       }
       expect(checkpoints.has("annotation-details")).toBe(true);
+      for (const index of checkpoints.values()) {
+        const controller = new AbortController();
+        let seen = 0;
+        const cancelled = await run(request, {
+          ...options,
+          signal: controller.signal,
+          onEvent: (event) => {
+            if (seen++ === index) {
+              if (event.type === "pause")
+                queueMicrotask(() => controller.abort());
+              else controller.abort();
+            }
+          },
+        });
+        expect(
+          Exit.isFailure(cancelled.exit) &&
+            Cause.hasInterruptsOnly(cancelled.exit.cause),
+        ).toBe(true);
+        expect(
+          cancelled.events
+            .slice(index + 1)
+            .filter((event) => event.type === "statement"),
+        ).toEqual([]);
+      }
+    },
+    60_000,
+  );
+});
+
+describe("Attachment active cancellation", () => {
+  it.each(PLAN_PATHS.filter((path) => path.attachment))(
+    "starts no statement after active cancellation in $name",
+    async ({ request }) => {
+      const options = {
+        attachment: true,
+      };
+      const complete = await run(request, options);
+      resultOf(complete);
+      const checkpoints = new Map<string, number>();
+      for (const [index, event] of complete.events.entries()) {
+        if (
+          event.type === "statement" &&
+          event.statement.reader.startsWith("attachment-")
+        ) {
+          const first = `${event.statement.reader}-first`;
+          if (!checkpoints.has(first)) checkpoints.set(first, index);
+          checkpoints.set(event.statement.reader, index);
+          const pause = complete.events.findIndex(
+            (next, nextIndex) => nextIndex > index && next.type === "pause",
+          );
+          if (pause !== -1)
+            checkpoints.set(`${event.statement.reader}-pause`, pause);
+        }
+      }
+      expect(checkpoints.has("attachment-details")).toBe(true);
       for (const index of checkpoints.values()) {
         const controller = new AbortController();
         let seen = 0;

@@ -444,6 +444,13 @@ describe("the generated Zotero database", () => {
         url: null,
       },
       {
+        key: "MISSLNK2",
+        path: join(layout.linkedFilesDir, "missing-linked.pdf"),
+        charsetID: null,
+        title: "Missing linked PDF",
+        url: null,
+      },
+      {
         key: "DMRGRPDF",
         path: join(
           layout.vaultDir,
@@ -466,6 +473,20 @@ describe("the generated Zotero database", () => {
         url: null,
       },
     ]);
+  });
+
+  it("seeds a tagged missing linked file for Attachment Query", async () => {
+    using sqlite = new DatabaseSync(layout.databasePath, { readOnly: true });
+    expect(
+      sqlite
+        .prepare(
+          "select t.name from itemTags it join tags t using (tagID) join items i using (itemID) where i.key = 'MISSLNK2'",
+        )
+        .all(),
+    ).toEqual([{ name: "repair-file" }]);
+    await expect(
+      stat(join(layout.linkedFilesDir, "missing-linked.pdf")),
+    ).rejects.toThrow("ENOENT");
   });
 
   it("carries Zotero's own item types and base-field mappings", () => {
@@ -2174,7 +2195,8 @@ describe("the generated Obsidian vault", () => {
         baseAttachmentPath: null,
       });
 
-      if (path === null || attachment.key === "MISSNG22") continue;
+      if (path === null || ["MISSNG22", "MISSLNK2"].includes(attachment.key))
+        continue;
       expect(note).toContain(pathToFileURL(path).href);
     }
   });

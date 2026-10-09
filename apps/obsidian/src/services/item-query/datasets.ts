@@ -1,5 +1,5 @@
 // The Query Dataset selected by from; command registration is shared.
-import { ANNOTATIONS, ITEMS } from "@zotlit/item-query";
+import { ANNOTATIONS, ATTACHMENTS, ITEMS } from "@zotlit/item-query";
 import type { ItemQueryRequest, QueryDataset } from "@zotlit/item-query";
 
 import type { QueryDatasetId } from "./worker-protocol";
@@ -10,5 +10,6 @@ export interface CliDataset {
 
 export const CLI_DATASETS: Readonly<Record<QueryDatasetId, CliDataset>> = {
   items: { engine: ITEMS },
+  attachments: { engine: ATTACHMENTS },
   annotations: { engine: ANNOTATIONS },
 };
