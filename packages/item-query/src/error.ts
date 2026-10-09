@@ -1,7 +1,7 @@
 import { Data } from "effect";
 
 import { diagnose } from "./diagnose";
-import type { Fault, PlainFault, Span } from "./fault";
+import type { Fault, Span } from "./fault";
 
 /** Stable codes of an invalid Item Query request. */
 export type ItemQueryErrorCode =
@@ -32,16 +32,20 @@ export interface ItemQueryErrorLocation {
  * reads the database.
  */
 export class ItemQueryError extends Data.TaggedError("ItemQueryError")<{
-  readonly fault: PlainFault | Extract<Fault, { kind: "syntax" }>;
+  readonly fault: Exclude<Fault, { kind: "constant" }>;
   readonly location: ItemQueryErrorLocation;
 }> {
   get code(): ItemQueryErrorCode {
-    return diagnose(this.fault, "", this.location).code;
+    return this.#diagnostic().code;
   }
   override get message(): string {
-    return diagnose(this.fault, "", this.location).message;
+    return this.#diagnostic().message;
   }
   get hint(): string {
-    return diagnose(this.fault, "", this.location).hint;
+    return this.#diagnostic().hint;
+  }
+
+  #diagnostic() {
+    return diagnose(this.fault, "", this.location);
   }
 }

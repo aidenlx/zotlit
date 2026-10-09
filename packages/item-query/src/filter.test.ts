@@ -99,6 +99,19 @@ function problem(expression: string): FilterProblem {
   return planned;
 }
 
+function faultShape(code: string): object {
+  switch (code) {
+    case "wrong-argument-count":
+      return { kind: "arity" };
+    case "wrong-argument-type":
+      return { kind: "argument-type" };
+    case "unfilterable-field":
+      return { kind: "unreadable" };
+    default:
+      return { kind: "plain", code };
+  }
+}
+
 /** The Query Clock of the vectors: noon UTC, 15 July 2024. */
 const CLOCK: QueryClock = {
   now: Temporal.Instant.from("2024-07-15T12:00:00Z"),
@@ -1239,6 +1252,93 @@ describe("the query time zone", () => {
 });
 
 describe("validation", () => {
+  it("states the registered call and given argument count", () => {
+    expect(problem("title.contains()")).toMatchObject({
+      kind: "arity",
+      callee: {
+        name: "contains",
+        receiver: { type: "string", at: { from: 0, to: 5 }, field: "title" },
+      },
+      at: { from: 0, to: 16 },
+      given: 0,
+    });
+  });
+
+  it.each([
+    [
+      "if(true)",
+      {
+        kind: "arity",
+        callee: { name: "if" },
+        at: { from: 0, to: 8 },
+        given: 1,
+      },
+    ],
+    [
+      "tags.filter()",
+      {
+        kind: "arity",
+        callee: {
+          name: "filter",
+          receiver: {
+            type: "list",
+            at: { from: 0, to: 4 },
+            field: "tags",
+          },
+        },
+        at: { from: 0, to: 13 },
+        given: 0,
+      },
+    ],
+  ] as const)("states the arity fault for %s", (expression, expected) => {
+    expect(problem(expression)).toMatchObject(expected);
+  });
+
+  it.each([
+    [
+      "date(5)",
+      {
+        kind: "argument-type",
+        callee: { name: "date" },
+        at: { from: 5, to: 6 },
+        index: 0,
+        found: "a number",
+        expected: "a string or a date",
+      },
+    ],
+    [
+      "title.startsWith(5)",
+      {
+        kind: "argument-type",
+        callee: {
+          name: "startsWith",
+          receiver: {
+            type: "string",
+            at: { from: 0, to: 5 },
+            field: "title",
+          },
+        },
+        at: { from: 17, to: 18 },
+        index: 0,
+        found: "a number",
+        expected: "a string",
+      },
+    ],
+  ] as const)(
+    "states the argument-type fault for %s",
+    (expression, expected) => {
+      expect(problem(expression)).toMatchObject(expected);
+    },
+  );
+
+  it("states that the custom field collection is unreadable", () => {
+    expect(problem("custom")).toEqual({
+      kind: "unreadable",
+      name: "custom",
+      at: { from: 0, to: 6 },
+    });
+  });
+
   it.each([
     ["", "invalid-filter", [0, 0]],
     ["   ", "invalid-filter", [3, 3]],
@@ -1407,8 +1507,7 @@ describe("validation", () => {
       return;
     }
     expect(fault).toMatchObject({
-      kind: "plain",
-      code,
+      ...faultShape(code),
       at: { from, to },
     });
   });
@@ -1426,7 +1525,8 @@ describe("validation", () => {
     ["[1, noSuchFunction()].length", "unknown-function"],
   ] as const)("rejects the dead branch of %j with %s", (expression, code) => {
     const fault = problem(expression);
-    expect(fault.kind === "syntax" ? "invalid-filter" : fault.code).toBe(code);
+    if (fault.kind === "syntax") expect(code).toBe("invalid-filter");
+    else expect(fault).toMatchObject(faultShape(code));
   });
 
   it.each([

@@ -560,6 +560,18 @@
     ]
   },
   {
+    "name": "custom collection",
+    "request": {
+      "filter": "custom == \"x\""
+    },
+    "report": [
+      "custom is the set of all custom fields; a filter reads one of them.",
+      "custom == \"x\"",
+      "^^^^^^",
+      "Name one custom field, such as custom[\"review.status\"]."
+    ]
+  },
+  {
     "name": "unsortable",
     "request": {
       "sort": [
