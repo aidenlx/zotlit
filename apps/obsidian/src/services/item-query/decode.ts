@@ -56,6 +56,7 @@ export interface DecodedQuery {
 const GROUP_SELECTOR = regex("^group:([1-9]\\d*)$");
 const QUERY_ID = /^[\w.-]+$/;
 const POSITIVE_INTEGER = /^[1-9]\d*$/;
+const OBSIDIAN_CLI_SWITCHES = ["--copy"] as const;
 
 const librariesSchema = v.pipe(v.array(v.string()), v.minLength(1));
 const fieldsSchema = v.array(v.string());
@@ -249,14 +250,41 @@ function decodeJson<K extends JsonArgument>(
 
 /**
  * The diagnostic of the first parameter outside `accepted`. Obsidian passes
- * every caller token through; its own `--` tokens pass.
+ * every caller token through; its known global switches pass.
  */
 export function rejectParameters(
   params: CliData,
   accepted: readonly string[],
 ): Diagnostic | null {
   for (const key of Object.keys(params)) {
-    if (key.startsWith("--") || accepted.includes(key)) continue;
+    if (accepted.includes(key)) continue;
+    if (key.startsWith("--")) {
+      if (OBSIDIAN_CLI_SWITCHES.some((switchName) => switchName === key)) {
+        continue;
+      }
+      const parameter = key.slice(2);
+      if (accepted.includes(parameter)) {
+        return {
+          ...invalid(
+            key,
+            `Parameter '${key}' is not valid: use ${parameter}=<value>.`,
+          ),
+          hint: `Run the command with ${parameter}=<value>, without --.`,
+        };
+      }
+      return {
+        ...invalid(
+          key,
+          accepted.length === 0
+            ? `Unknown parameter '${key}': this command takes no parameters.`
+            : `Unknown parameter '${key}': use ${accepted.map((name) => `${name}=<value>`).join(", ")}.`,
+        ),
+        hint:
+          accepted.length === 0
+            ? `Remove '${key}'; this command takes no parameters.`
+            : "Use a supported parameter as name=value, without --; see the command help for its parameters.",
+      };
+    }
     if (key === "vault") {
       return invalid(
         "vault",

@@ -920,7 +920,7 @@ function setupSchema(
     Effect.runPromise(
       onJob(
         scenario.db,
-        answerItemQuerySchema(overrides).pipe(
+        answerItemQuerySchema(overrides, "2.2.0-beta.2").pipe(
           Effect.map((reply: QueryReply) => reply.answer),
         ),
       ),
@@ -932,7 +932,7 @@ function setupSchema(
 }
 
 describe("zotlit:item-query-schema", () => {
-  it("answers the Item Query Schema of the source in the versioned envelope, as pretty JSON", async () => {
+  it("answers the pinned catalog download and live custom fields without the static catalog", async () => {
     using scenario = openScenarioDatabase();
     const { text } = setupSchema(scenario);
 
@@ -951,24 +951,15 @@ describe("zotlit:item-query-schema", () => {
       ok: true,
       identity: IDENTITY,
       schema: {
-        fields: expect.arrayContaining([
-          {
-            path: "title",
-            type: "string",
-            filter: "string",
-            projection: true,
-            sort: true,
-          },
-        ]),
-        customFields: expect.arrayContaining([
-          expect.objectContaining({ name: "mood", bareName: true }),
-          expect.objectContaining({ name: "review.status", bareName: false }),
-        ]),
-        functions: expect.arrayContaining([
-          expect.objectContaining({ name: "today" }),
-        ]),
+        url: "https://github.com/aidenlx/zotlit/releases/download/res-2.2.0-beta.2/item-query.schema.json",
+        fileName: "zotlit-item-query-2.2.0-beta.2.schema.json",
       },
+      customFields: expect.arrayContaining([
+        expect.objectContaining({ name: "mood", bareName: true }),
+        expect.objectContaining({ name: "review.status", bareName: false }),
+      ]),
     });
+    expect(Object.keys(answer.schema as object)).toEqual(["url", "fileName"]);
   });
 
   it("reports the CLI defaults: 100 rows of the Library Scope, newest modification first", async () => {
@@ -977,7 +968,7 @@ describe("zotlit:item-query-schema", () => {
 
     const answer = await run();
 
-    expect((answer.schema as { defaults: unknown }).defaults).toEqual({
+    expect(answer.defaults).toEqual({
       fields: ["itemType", "title", "creators", "date", "dateModified"],
       sort: [{ field: "dateModified", direction: "desc" }],
       limit: 100,

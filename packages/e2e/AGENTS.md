@@ -5,6 +5,8 @@ The End-to-end Run suite — the plugin running in a real desktop Obsidian windo
 ## Commands
 
 - `pnpm e2e` (root) or `pnpm --filter @zotlit/e2e e2e` — runs the suite.
+- `pnpm e2e:item-query` (root) — builds dependencies and runs only the Item Query CLI cases, including cancellation.
+- For another focused desktop run, pass a file and test name: `pnpm e2e --project=desktop src/end-to-end.e2e.ts -t '<test name>'`. Add the paired project only when the changed behavior needs Zotero. After the build is current, `pnpm --filter @zotlit/e2e exec vitest run` accepts the same selection for an inner loop.
 - `pnpm --filter @zotlit/e2e typecheck` — type-checks the suite.
 
 - `pnpm --filter @zotlit/e2e measure:item-query` — the release-time measurement of Item Query (see below).

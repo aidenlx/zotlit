@@ -1,0 +1,588 @@
+#!/usr/bin/env node
+// One bounded persona evaluation. Run data is private; compact evidence remains.
+import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { parseArgs } from "node:util";
+
+import { validate } from "./check.mjs";
+
+const repo = resolve(fileURLToPath(new URL("../../../", import.meta.url)));
+const cases = JSON.parse(
+  await readFile(new URL("./cases.json", import.meta.url), "utf8"),
+);
+const oracle = JSON.parse(
+  await readFile(new URL("./oracle.json", import.meta.url), "utf8"),
+);
+const fixtureTool = join(repo, "packages/scripts/scripts/obsidian-vault.ts");
+const cliTool = join(repo, "packages/scripts/scripts/obsidian-cli.ts");
+const prepareTool = fileURLToPath(new URL("./prepare.mjs", import.meta.url));
+const skillFile = join(repo, "skills/zotlit-item-query/SKILL.md");
+const catalogFile = join(
+  repo,
+  "packages/item-query/dist/item-query.schema.json",
+);
+const answerItem = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    indexedKey: { type: "string" },
+    title: { type: "string" },
+    publicationYear: { type: ["integer", "null"] },
+    library: { type: "string" },
+    firstAuthor: { type: ["string", "null"] },
+    editor: { type: ["string", "null"] },
+  },
+  required: [
+    "indexedKey",
+    "title",
+    "publicationYear",
+    "library",
+    "firstAuthor",
+    "editor",
+  ],
+};
+const outputSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    answer: { type: "string" },
+    count: { type: "integer" },
+    missingPublicationYears: { type: ["integer", "null"] },
+    items: { type: "array", items: answerItem },
+    duplicateKeyGroups: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          key: { type: "string" },
+          libraries: { type: "array", items: { type: "string" } },
+        },
+        required: ["key", "libraries"],
+      },
+    },
+    exportPath: { type: ["string", "null"] },
+  },
+  required: [
+    "answer",
+    "count",
+    "missingPublicationYears",
+    "items",
+    "duplicateKeyGroups",
+    "exportPath",
+  ],
+};
+
+function fail(message) {
+  throw new Error(message);
+}
+function pause(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+function parseOptions(argv) {
+  const usage =
+    "usage: node run.mjs <include|export|edge> --model <model> --effort <low|medium|high|xhigh> [--timeout-minutes 10]";
+  const { values, positionals } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options: {
+      model: { type: "string" },
+      effort: { type: "string" },
+      "timeout-minutes": { type: "string" },
+      help: { type: "boolean" },
+    },
+  });
+  if (values.help) return null;
+  const [caseName] = positionals;
+  if (
+    positionals.length !== 1 ||
+    !cases[caseName] ||
+    !values.model ||
+    !values.effort
+  )
+    fail(usage);
+  if (!["low", "medium", "high", "xhigh"].includes(values.effort))
+    fail("invalid effort");
+  const minutes = Number(values["timeout-minutes"] ?? 10);
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > 30)
+    fail("timeout must be 1–30 minutes");
+  return {
+    caseName,
+    model: values.model,
+    effort: values.effort,
+    agentTimeoutMs: minutes * 60_000,
+  };
+}
+
+/** A bounded process, with stdout/stderr captured for evidence and test injection. */
+export function runProcess(
+  command,
+  args,
+  { cwd, input = "", timeoutMs = 180_000, signal, spawnImpl = spawn } = {},
+) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      resolve({
+        code: null,
+        stdout: "",
+        stderr: "",
+        timedOut: false,
+        aborted: true,
+      });
+      return;
+    }
+    const child = spawnImpl(command, args, {
+      cwd,
+      stdio: ["pipe", "pipe", "pipe"],
+      detached: process.platform !== "win32",
+    });
+    let stdout = "",
+      stderr = "",
+      timedOut = false,
+      aborted = false,
+      settled = false;
+    let escalation, forceFinish;
+    const kill = (name) => {
+      try {
+        if (process.platform !== "win32" && child.pid)
+          process.kill(-child.pid, name);
+        else child.kill(name);
+      } catch {
+        /* the process group already exited */
+      }
+    };
+    const settle = (code, error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      clearTimeout(escalation);
+      clearTimeout(forceFinish);
+      signal?.removeEventListener("abort", onAbort);
+      if (error) reject(error);
+      else resolve({ code, stdout, stderr, timedOut, aborted });
+    };
+    const stop = (reason) => {
+      if (settled || timedOut || aborted) return;
+      if (reason === "timeout") timedOut = true;
+      else aborted = true;
+      kill("SIGTERM");
+      escalation = setTimeout(() => kill("SIGKILL"), 5_000);
+      forceFinish = setTimeout(() => {
+        child.stdin.destroy();
+        child.stdout.destroy();
+        child.stderr.destroy();
+        settle(null);
+      }, 8_000);
+    };
+    const onAbort = () => stop("abort");
+    const timer = setTimeout(() => stop("timeout"), timeoutMs);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", (error) => settle(null, error));
+    child.on("close", (code) => settle(code));
+    child.stdin.on("error", () => {
+      /* an early process exit is reported by close/error */
+    });
+    child.stdin.end(input);
+  });
+}
+
+function required(result, stage) {
+  if (result.timedOut) fail(`${stage} timed out`);
+  if (result.aborted) fail(`${stage} interrupted`);
+  if (result.code !== 0)
+    fail(`${stage} failed (${result.code}): ${result.stderr.slice(-2000)}`);
+  return result.stdout;
+}
+
+export function measureEvents(jsonl) {
+  let calls = 0,
+    queryAttempts = 0,
+    queryExitZero = 0,
+    queryRetries = 0,
+    contextualBytes = 0,
+    failedQuery = false;
+  const seen = new Set();
+  const forbiddenReads = [];
+  for (const line of jsonl.split("\n")) {
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const item = event.item;
+    if (event.type !== "item.completed" || item?.type !== "command_execution")
+      continue;
+    if (item.id !== undefined) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+    }
+    calls++;
+    if (
+      typeof item.command === "string" &&
+      /(?:oracle\.json|skills\/zotlit-item-query\/evals\/)/.test(item.command)
+    )
+      forbiddenReads.push(item.command);
+    if (
+      typeof item.command === "string" &&
+      item.command.includes("obsidian-cli.ts") &&
+      /\bzotlit:item-query\b/.test(item.command) &&
+      !/\bzotlit:item-query-(guide|schema|cancel)\b/.test(item.command)
+    ) {
+      queryAttempts++;
+      if (failedQuery) queryRetries++;
+      failedQuery = item.exit_code !== 0;
+      try {
+        if (JSON.parse(item.aggregated_output).ok === false) failedQuery = true;
+      } catch {
+        /* a plain-text error is counted by its nonzero exit */
+      }
+      if (item.exit_code === 0) queryExitZero++;
+    }
+    if (typeof item.aggregated_output === "string")
+      contextualBytes += Buffer.byteLength(item.aggregated_output);
+  }
+  return {
+    calls,
+    queryAttempts,
+    queryExitZero,
+    queryRetries,
+    contextualBytes,
+    forbiddenReads,
+  };
+}
+
+function checkAnswer(caseName, answer, resultPath) {
+  const errors = [];
+  const expected = oracle.cases[caseName];
+  if (typeof answer.answer !== "string" || !answer.answer.trim())
+    errors.push("answer text is empty");
+  if (answer.count !== expected.count)
+    errors.push(`answer count should be ${expected.count}`);
+  if (answer.missingPublicationYears !== (expected.missingYear ?? null))
+    errors.push("answer has wrong missing publication-year count");
+  if (answer.exportPath !== (caseName === "export" ? resultPath : null))
+    errors.push("answer has wrong retained export path");
+  const expectedItems =
+    caseName === "export"
+      ? []
+      : expected.rows.map((row) => ({
+          indexedKey: row.indexedKey,
+          title: row.title,
+          publicationYear: row.year,
+          library: row.indexedKey.endsWith("g118")
+            ? "Lab Archive"
+            : "My Library",
+          firstAuthor: row.firstAuthor,
+          editor:
+            caseName === "edge" && row.firstAuthor === null
+              ? row.firstCreator
+              : null,
+        }));
+  if (
+    !Array.isArray(answer.items) ||
+    answer.items.length !== expectedItems.length
+  )
+    errors.push("answer has wrong Item details");
+  else {
+    const actual = new Map(answer.items.map((item) => [item.indexedKey, item]));
+    if (
+      actual.size !== expectedItems.length ||
+      expectedItems.some((item) => {
+        const found = actual.get(item.indexedKey);
+        return (
+          !found || Object.keys(item).some((key) => found[key] !== item[key])
+        );
+      })
+    )
+      errors.push("answer has wrong Item details");
+  }
+  const groups = answer.duplicateKeyGroups;
+  if (caseName === "edge") {
+    if (
+      !Array.isArray(groups) ||
+      groups.length !== 1 ||
+      groups[0]?.key !== "EVALSAME" ||
+      !Array.isArray(groups[0].libraries) ||
+      JSON.stringify(
+        [...groups[0].libraries].sort((a, b) => a.localeCompare(b)),
+      ) !==
+        JSON.stringify(
+          ["My Library", "Lab Archive"].sort((a, b) => a.localeCompare(b)),
+        )
+    )
+      errors.push("answer has wrong shared-key libraries");
+  } else if (!Array.isArray(groups) || groups.length !== 0)
+    errors.push("answer has unexpected shared-key groups");
+  return errors;
+}
+
+function prompt(caseName, vaultId, agentRoot) {
+  const result = join(agentRoot, "query-result.json");
+  const retained = resolve(agentRoot, "..", "result.json");
+  const catalog = join(
+    agentRoot,
+    "packages/item-query/dist/item-query.schema.json",
+  );
+  return `Read ${join(agentRoot, "SKILL.md")} and follow it for this request. Use only the evaluation vault ID ${vaultId}. The Obsidian CLI executable for this session is: node ${cliTool}. Put vault=${vaultId} before every Obsidian command name. The matching development schema catalog is at ${catalog}. Read only the copied skill, that catalog, live CLI output, and files you make for this task; do not read evaluator sources.\n\nUser request: ${cases[caseName]}\n\nSave the complete successful zotlit:item-query JSON envelope at ${result}. If the CLI returns a file receipt, copy the complete file envelope to this evidence path. Read the saved envelope and verify it before answering. The runner will retain this envelope at ${retained} after cleanup. In your final JSON, items must contain every Item detail the user requested (use My Library and Lab Archive as library names); use null for a missing year, author, or editor. For the export case use an empty items array and set exportPath to ${retained}; otherwise use null. Put the libraries that share a bare key in duplicateKeyGroups when the request asks about it; otherwise use an empty array. State the exact count and missing publication-year count (use null when the request does not ask for it).`;
+}
+
+/** The lifecycle seam accepts a fake process runner in tests; production uses spawn. */
+export async function runCase(
+  { caseName, model, effort, agentTimeoutMs = 600_000 },
+  { processRunner = runProcess, runId = randomUUID(), signal } = {},
+) {
+  if (!cases[caseName]) fail(`unknown case: ${caseName}`);
+  if (!/^[a-f0-9-]{36}$/i.test(runId)) fail("run ID must be a UUID");
+  const parent = join(repo, ".scratch", "item-query-evals");
+  await mkdir(parent, { recursive: true });
+  const root = join(parent, runId);
+  await mkdir(root);
+  const base = join(root, "base"),
+    corpus = join(root, "corpus"),
+    vault = join(root, `vault-${runId}`),
+    agent = join(root, "agent");
+  await mkdir(agent);
+  const report = {
+    case: caseName,
+    runId,
+    model,
+    effort,
+    state: "running",
+    failureKind: null,
+    errors: [],
+    metrics: null,
+    cleanupRequired: [],
+    files: {
+      root,
+      report: join(root, "report.json"),
+      result: join(root, "result.json"),
+      answer: join(root, "answer.json"),
+      check: join(root, "check.json"),
+    },
+  };
+  let vaultOpened = false;
+  let vaultId = null;
+  try {
+    vaultOpened = true; // A failed open may still have registered a window.
+    const open = await processRunner(
+      process.execPath,
+      [fixtureTool, "--fixture-root", base, "--inactive", "open", vault],
+      { cwd: repo, timeoutMs: 180_000, signal },
+    );
+    required(open, "Fixture vault setup");
+    vaultId = open.stdout.trim().split("\n")[0];
+    if (!vaultId) fail("vault setup returned no vault ID");
+    const prepared = await processRunner(
+      process.execPath,
+      [prepareTool, base, corpus],
+      { cwd: repo, timeoutMs: 180_000, signal },
+    );
+    required(prepared, "Fixture copy and seed");
+    const data = join(corpus, "zotero-data");
+    const evalCode = `{const pref=app.plugins.plugins.zotlit.services.zoteroPref;pref.setDataDir(${JSON.stringify(data)});"configured"}`;
+    const linked = await processRunner(
+      process.execPath,
+      [cliTool, "--code", evalCode, `vault=${vaultId}`],
+      { cwd: repo, timeoutMs: 35_000, signal },
+    );
+    if (required(linked, "source switch").trim() !== "=> configured")
+      fail(`source switch failed: ${linked.stdout}`);
+    const expectedDb = join(data, "zotero.sqlite");
+    let ready = false;
+    for (let attempt = 0; attempt < 20; attempt++) {
+      if (signal?.aborted) fail("evaluation interrupted");
+      const schema = await processRunner(
+        process.execPath,
+        [cliTool, `vault=${vaultId}`, "zotlit:item-query-schema"],
+        { cwd: repo, timeoutMs: 35_000, signal },
+      );
+      try {
+        const response = JSON.parse(required(schema, "source identity check"));
+        if (
+          response.ok === true &&
+          response.identity?.source?.databasePath === expectedDb &&
+          response.identity?.vault?.path === vault
+        ) {
+          ready = true;
+          break;
+        }
+      } catch {
+        /* source refresh may still be in progress */
+      }
+      await pause(500);
+    }
+    if (!ready) fail("evaluation vault did not resolve the seeded database");
+    report.state = "agent";
+    await cp(skillFile, join(agent, "SKILL.md"));
+    const copiedCatalog = join(
+      agent,
+      "packages/item-query/dist/item-query.schema.json",
+    );
+    await mkdir(resolve(copiedCatalog, ".."), { recursive: true });
+    await cp(catalogFile, copiedCatalog);
+    await writeFile(
+      join(agent, "answer.schema.json"),
+      JSON.stringify(outputSchema, null, 2),
+    );
+    const answerPath = join(agent, "answer.json");
+    const run = await processRunner(
+      "codex",
+      [
+        "exec",
+        "--json",
+        "--ephemeral",
+        "--skip-git-repo-check",
+        "--sandbox",
+        "workspace-write",
+        "--cd",
+        agent,
+        "--model",
+        model,
+        "-c",
+        `model_reasoning_effort=${effort}`,
+        "--output-schema",
+        join(agent, "answer.schema.json"),
+        "--output-last-message",
+        answerPath,
+        "-",
+      ],
+      {
+        cwd: agent,
+        input: prompt(caseName, vaultId, agent),
+        timeoutMs: agentTimeoutMs,
+        signal,
+      },
+    );
+    await writeFile(join(root, "agent-events.jsonl"), run.stdout);
+    await writeFile(join(root, "agent-stderr.txt"), run.stderr);
+    report.metrics = measureEvents(run.stdout);
+    report.metrics.agentExitCode = run.code;
+    report.metrics.agentTimedOut = run.timedOut;
+    report.metrics.agentAborted = run.aborted ?? false;
+    if (run.timedOut || run.aborted || run.code !== 0) {
+      report.failureKind = "environment";
+      fail(
+        `agent execution ${run.timedOut ? "timed out" : run.aborted ? "interrupted" : `exited ${run.code}`}`,
+      );
+    }
+    const answer = JSON.parse(await readFile(answerPath, "utf8"));
+    report.answer = answer;
+    await cp(answerPath, report.files.answer);
+    await cp(join(agent, "query-result.json"), report.files.result);
+    const envelope = JSON.parse(await readFile(report.files.result, "utf8"));
+    report.errors = validate(caseName, envelope, {
+      runRoot: corpus,
+      vaultPath: vault,
+    });
+    report.errors.push(...checkAnswer(caseName, answer, report.files.result));
+    if (report.metrics.queryExitZero < 1)
+      report.errors.push(
+        "agent made no completed Item Query call with exit code zero",
+      );
+    if (report.metrics.forbiddenReads.length)
+      report.errors.push("agent read evaluator sources");
+    report.state = report.errors.length ? "failed" : "passed";
+    if (report.errors.length) report.failureKind = "task";
+  } catch (error) {
+    report.errors.push(error.message);
+    if (!report.failureKind)
+      report.failureKind = report.state === "agent" ? "agent" : "environment";
+    report.state = "failed";
+  } finally {
+    let removed = true;
+    if (vaultOpened) {
+      const removal = await processRunner(
+        process.execPath,
+        [fixtureTool, "remove", vault, "--purge"],
+        { cwd: repo, timeoutMs: 180_000 },
+      ).catch((error) => ({ code: -1, stderr: error.message }));
+      if (removal.code !== 0) {
+        removed = false;
+        report.errors.push(`vault cleanup failed: ${removal.stderr}`);
+        report.state = "failed";
+        report.failureKind ??= "environment";
+        report.cleanupRequired = [vault, base, corpus];
+      }
+    }
+    if (removed) {
+      await rm(base, { recursive: true, force: true });
+      await rm(corpus, { recursive: true, force: true });
+    }
+    await rm(agent, { recursive: true, force: true });
+    await writeFile(
+      report.files.check,
+      `${JSON.stringify(
+        {
+          pass: report.errors.length === 0 && report.state === "passed",
+          errors: report.errors,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await writeFile(
+      report.files.report,
+      `${JSON.stringify(report, null, 2)}\n`,
+    );
+  }
+  return report;
+}
+
+async function main() {
+  const options = parseOptions(process.argv.slice(2));
+  if (!options) {
+    console.log(
+      "usage: node run.mjs <include|export|edge> --model <model> --effort <low|medium|high|xhigh> [--timeout-minutes 10]",
+    );
+    return;
+  }
+  const controller = new AbortController();
+  let interrupted = false;
+  const onInterrupt = () => {
+    interrupted = true;
+    controller.abort();
+  };
+  process.on("SIGINT", onInterrupt);
+  process.on("SIGTERM", onInterrupt);
+  let report;
+  try {
+    report = await runCase(options, { signal: controller.signal });
+  } finally {
+    process.removeListener("SIGINT", onInterrupt);
+    process.removeListener("SIGTERM", onInterrupt);
+  }
+  console.log(
+    JSON.stringify(
+      {
+        state: report.state,
+        failureKind: report.failureKind,
+        errors: report.errors,
+        metrics: report.metrics,
+        report: report.files.report,
+      },
+      null,
+      2,
+    ),
+  );
+  if (interrupted) process.exitCode = 130;
+  else if (report.state !== "passed") process.exitCode = 1;
+}
+
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(resolve(process.argv[1])).href
+)
+  main().catch((error) => {
+    console.error(error.message);
+    process.exitCode = 2;
+  });

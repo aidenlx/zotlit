@@ -19,14 +19,20 @@ import type {
   ItemQueryDatabaseError,
   ItemQueryLayoutError,
 } from "@zotlit/db/item-query";
-import { describeItemQuery, SLICE_BUDGET_MS } from "@zotlit/item-query";
+import {
+  DEFAULT_FIELDS,
+  DEFAULT_SORT,
+  describeItemQueryCustomFields,
+  SLICE_BUDGET_MS,
+} from "@zotlit/item-query";
 import type {
   ItemQueryError,
-  ItemQuerySchema,
+  SchemaCustomField,
   QueryRow,
   QuerySummary,
 } from "@zotlit/item-query";
 
+import { resourceReleaseUrl } from "@/lib/constants";
 import { getLogger } from "@/lib/log";
 import { selectorKey } from "@/services/library-scope/scope";
 import type {
@@ -34,6 +40,7 @@ import type {
   LibrarySelector,
 } from "@/services/library-scope/scope";
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
+import type { SchemaAsset } from "@/services/template-workbench/schema";
 
 import {
   DEFAULT_CLI_LIMIT,
@@ -47,6 +54,7 @@ import {
   itemQueryFlags,
 } from "./contract";
 import type { Diagnostic, ItemQueryCommand } from "./contract";
+import contractVersion from "./contract-version.json" with { type: "json" };
 import { invalid, rejectParameters, rejectQueryId } from "./decode";
 import type { DecodedQuery, NamedLibraries } from "./decode";
 import { GUIDE_TOPIC_NAMES, parseGuideTopic, renderGuide } from "./guide";
@@ -60,7 +68,7 @@ const logger = getLogger(["item-query"]);
  * The wire format of the Item Query commands, versioned on its own (ADR 0065):
  * it evolves independently from the Template Contract.
  */
-export const CONTRACT_VERSION = 1;
+export const CONTRACT_VERSION = contractVersion.contractVersion;
 
 export {
   DEFAULT_CLI_LIMIT,
@@ -96,22 +104,24 @@ type EnvelopeTail =
       rows?: readonly { indexedKey: string; values: object }[];
       file?: { path: string; bytes: number; format: "json" };
     }
-  | { ok: true; identity: WorkbenchIdentity; schema: SchemaWire }
+  | {
+      ok: true;
+      identity: WorkbenchIdentity;
+      schema: SchemaAsset;
+      customFields: readonly SchemaCustomField[];
+      defaults: {
+        fields: readonly string[];
+        sort: typeof DEFAULT_SORT;
+        limit: number;
+        libraries: { source: "library-scope" };
+      };
+    }
   | {
       ok: true;
       id: string;
       /** `false`: no query with this id was running in this vault. */
       cancelRequested: boolean;
     };
-
-/** The Item Query Schema with the defaults of the CLI in place of the package's. */
-type SchemaWire = Omit<ItemQuerySchema, "defaults"> & {
-  defaults: Omit<ItemQuerySchema["defaults"], "limit"> & {
-    limit: number;
-    /** The available Libraries of the Library Scope; no argument value. */
-    libraries: { source: "library-scope" };
-  };
-};
 
 function envelope(command: ItemQueryCommand, tail: EnvelopeTail): string {
   return JSON.stringify(
@@ -172,7 +182,7 @@ export function registerItemQueryCli(
   plugin.register(() => unload.abort());
   plugin.registerCliHandler(
     ITEM_QUERY_COMMAND,
-    "Query the Items of Zotero Libraries and return the matches as JSON",
+    "Query Zotero Items as JSON; read zotlit:item-query-guide for syntax and zotlit:item-query-schema for the published field catalog",
     itemQueryFlags,
     (params) => runs.answer(params, unload.signal),
   );
@@ -184,7 +194,7 @@ export function registerItemQueryCli(
   );
   plugin.registerCliHandler(
     ITEM_QUERY_SCHEMA_COMMAND,
-    "Describe the fields, functions, and defaults of Item Query as JSON",
+    "Get the version-pinned schema download, source custom fields, and CLI defaults as JSON",
     null,
     (params) => runs.schema(params, unload.signal),
   );
@@ -203,20 +213,24 @@ export function registerItemQueryCli(
  */
 export function answerItemQuerySchema(
   deps: Pick<ItemQueryCliDeps, "identity">,
+  pluginVersion: string,
 ): Effect.Effect<QueryReply, never, ItemQueryDatabase> {
-  return describeItemQuery().pipe(
-    Effect.map((schema) =>
+  return describeItemQueryCustomFields().pipe(
+    Effect.map((customFields) =>
       inline(
         envelope(ITEM_QUERY_SCHEMA_COMMAND, {
           ok: true,
           identity: deps.identity,
           schema: {
-            ...schema,
-            defaults: {
-              ...schema.defaults,
-              limit: DEFAULT_CLI_LIMIT,
-              libraries: { source: "library-scope" },
-            },
+            url: `${resourceReleaseUrl(pluginVersion)}/item-query.schema.json`,
+            fileName: `zotlit-item-query-${pluginVersion}.schema.json`,
+          },
+          customFields,
+          defaults: {
+            fields: DEFAULT_FIELDS,
+            sort: DEFAULT_SORT,
+            limit: DEFAULT_CLI_LIMIT,
+            libraries: { source: "library-scope" },
           },
         }),
       ),

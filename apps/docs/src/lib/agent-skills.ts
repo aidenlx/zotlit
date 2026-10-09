@@ -25,6 +25,7 @@ const SKILL_NAMES = [
   "zotlit-template",
   "zotlit-pandoc",
   "zotlit-citations",
+  "zotlit-item-query",
 ] as const;
 type AgentSkillName = (typeof SKILL_NAMES)[number];
 
@@ -80,7 +81,7 @@ function archiveUrl(name: AgentSkillName, commitSha: string): string {
 }
 
 /**
- * The discovery index and the three archives, keyed by the URL each answers at.
+ * The discovery index and the skill archives, keyed by the URL each answers at.
  * @param packageRoot the app's own root, which `vite.config.ts` owns.
  * @see https://schemas.agentskills.io/discovery/0.2.0/schema.json
  */

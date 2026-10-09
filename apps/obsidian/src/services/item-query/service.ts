@@ -24,6 +24,7 @@ import type { CancellationEvent, QueryObserver } from "./trace";
 import type { QueryAnswer, QueryCommand } from "./worker-protocol";
 
 interface ItemQueryServiceDeps {
+  pluginVersion: string;
   reads: ZoteroReadsService;
   zoteroPref: Pick<ZoteroPrefService, "sourceId" | "databasePath">;
   libraryScope: LibraryScopeService;
@@ -126,7 +127,10 @@ export class ItemQueryService extends Service {
     if (rejected) {
       return Promise.resolve(failure(ITEM_QUERY_SCHEMA_COMMAND, rejected));
     }
-    return this.#start(this.#job({ schema: true }), signal);
+    return this.#start(
+      this.#job({ schema: true, pluginVersion: this.#deps.pluginVersion }),
+      signal,
+    );
   }
 
   /**

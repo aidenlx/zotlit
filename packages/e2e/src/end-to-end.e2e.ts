@@ -2781,6 +2781,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   });
 
   it("describes Item Query through zotlit:item-query-schema", async () => {
+    const version = await obEval(
+      vaultId,
+      "app.plugins.plugins.zotlit.manifest.version",
+    );
     const answer = JSON.parse(
       await cliCommand(vaultId, "zotlit:item-query-schema"),
     ) as ItemQuerySchemaReport;
@@ -2790,25 +2794,41 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       command: "zotlit:item-query-schema",
       ok: true,
       schema: {
-        defaults: {
-          fields: ["itemType", "title", "creators", "date", "dateModified"],
-          sort: [{ field: "dateModified", direction: "desc" }],
-          limit: 100,
-          libraries: { source: "library-scope" },
-        },
+        url: `https://github.com/aidenlx/zotlit/releases/download/res-${version}/item-query.schema.json`,
+        fileName: `zotlit-item-query-${version}.schema.json`,
+      },
+      defaults: {
+        fields: ["itemType", "title", "creators", "date", "dateModified"],
+        sort: [{ field: "dateModified", direction: "desc" }],
+        limit: 100,
+        libraries: { source: "library-scope" },
       },
     });
-    expect(answer.schema!.fields).toContainEqual({
+    expect(answer.customFields).toEqual(expect.any(Array));
+    expect(Object.keys(answer.schema!)).toEqual(["url", "fileName"]);
+    // Dev versions have no Resource Release; inspect the same build artifact
+    // that release CI stages and verifies at the reported version-pinned URL.
+    const catalog = JSON.parse(
+      await readFile(
+        join(workspaceRoot, "packages/item-query/dist/item-query.schema.json"),
+        "utf8",
+      ),
+    ) as {
+      fields: object[];
+      functions: { name: string }[];
+      types: string[];
+      methods: object[];
+    };
+    expect(catalog.fields).toContainEqual({
       path: "title",
       type: "string",
       filter: "string",
       projection: true,
       sort: true,
     });
-    expect(answer.schema!.customFields).toEqual(expect.any(Array));
-    expect(answer.schema!.functions.map(({ name }) => name)).toContain("today");
-    expect(answer.schema!.types).toContain("regexp");
-    expect(answer.schema!.methods).toContainEqual(
+    expect(catalog.functions.map(({ name }) => name)).toContain("today");
+    expect(catalog.types).toContain("regexp");
+    expect(catalog.methods).toContainEqual(
       expect.objectContaining({
         name: "filter",
         on: "list",
@@ -2818,6 +2838,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   });
 
   it("answers an invalid zotlit:item-query with the code, location, and hint", async () => {
+    for (const [name, value] of [
+      ["filter", 'title == "no such item"'],
+      ["limit", "all"],
+    ] as const) {
+      const malformed = JSON.parse(
+        await cliCommand(vaultId, "zotlit:item-query", {
+          args: { [`--${name}`]: value },
+        }),
+      ) as ItemQueryReport;
+      expect(malformed).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "invalid-argument",
+          hint: expect.stringContaining(`${name}=<value>`),
+        },
+      });
+    }
     const answer = JSON.parse(
       await cliCommand(vaultId, "zotlit:item-query", {
         args: {
@@ -3423,20 +3460,9 @@ interface ItemQuerySchemaReport {
   contractVersion: number;
   command: string;
   ok: boolean;
-  schema?: {
-    fields: {
-      path: string;
-      type: string;
-      filter: string | null;
-      projection: boolean;
-      sort: boolean;
-    }[];
-    customFields: { name: string; path: string; bareName: boolean }[];
-    functions: { name: string }[];
-    methods: { name: string; on: string; scope?: string[] }[];
-    types: string[];
-    defaults: object;
-  };
+  schema?: { url: string; fileName: string };
+  customFields?: { name: string; path: string; bareName: boolean }[];
+  defaults?: object;
 }
 
 /** The `zotlit:library-scope` reply shape this suite reads (see

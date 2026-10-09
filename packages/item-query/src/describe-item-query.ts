@@ -1,16 +1,14 @@
 import { Effect } from "effect";
 
-import { readFieldVocabulary } from "@zotlit/db/item-query";
 import type {
   ItemQueryDatabase,
   ItemQueryDatabaseError,
   ItemQueryLayoutError,
 } from "@zotlit/db/item-query";
 
+import { describeItemQueryCustomFields } from "./describe-item-query-custom-fields";
 import {
   BUILT_IN_NAMES,
-  CUSTOM_FIELD_VALUE_SHAPE,
-  customFilterValue,
   DEFAULT_FIELDS,
   fieldDefinition,
   filterField,
@@ -24,7 +22,7 @@ import {
   VALUE_TYPES,
 } from "./filter-functions";
 import type { FunctionDefinition, FunctionParameter } from "./filter-functions";
-import { hasBareForm, planFilter } from "./filter-plan";
+import { planFilter } from "./filter-plan";
 import type { FilterValueType } from "./filter-values";
 import { DEFAULT_SORT } from "./request";
 import type { SortSpec } from "./request";
@@ -133,14 +131,10 @@ export function describeItemQuery(): Effect.Effect<
   ItemQueryDatabase
 > {
   return Effect.gen(function* () {
-    const { customFieldNames } = yield* readFieldVocabulary();
+    const customFields = yield* describeItemQueryCustomFields();
     return {
-      fields: BUILT_IN_FIELDS,
-      customFields: customFieldNames.map(customSchemaField),
-      functions: FUNCTIONS,
-      methods: METHODS,
-      properties: PROPERTIES,
-      types: VALUE_TYPES,
+      ...describeItemQueryVocabulary(),
+      customFields,
       defaults: {
         fields: [...DEFAULT_FIELDS],
         sort: DEFAULT_SORT.map(({ field, direction }) => ({
@@ -151,6 +145,20 @@ export function describeItemQuery(): Effect.Effect<
       },
     };
   });
+}
+
+/** The source-independent Item Query vocabulary, generated into the package asset. */
+export function describeItemQueryVocabulary(): Omit<
+  ItemQuerySchema,
+  "customFields" | "defaults"
+> {
+  return {
+    fields: BUILT_IN_FIELDS,
+    functions: FUNCTIONS,
+    methods: METHODS,
+    properties: PROPERTIES,
+    types: VALUE_TYPES,
+  };
 }
 
 const BUILT_IN_FIELDS: readonly SchemaField[] = BUILT_IN_NAMES.flatMap(
@@ -240,20 +248,6 @@ function jsonTypeOf(type: FilterType): JsonType {
     : type === "number" || type === "boolean"
       ? type
       : "string";
-}
-
-function customSchemaField(name: string): SchemaCustomField {
-  const custom = fieldDefinition("custom")!;
-  const { value } = customFilterValue(name);
-  return {
-    name,
-    path: `custom[${JSON.stringify(name)}]`,
-    bareName: hasBareForm(name),
-    type: jsonType(CUSTOM_FIELD_VALUE_SHAPE),
-    filter: value.type,
-    projection: true,
-    sort: custom.sortKey !== undefined,
-  };
 }
 
 const parameter = ({

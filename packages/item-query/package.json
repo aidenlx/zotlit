@@ -10,10 +10,12 @@
   "sideEffects": false,
   "exports": {
     ".": "./dist/index.mjs",
-    "./package.json": "./package.json"
+    "./schema": "./dist/schema.mjs",
+    "./package.json": "./package.json",
+    "./item-query.schema.json": "./dist/item-query.schema.json"
   },
   "scripts": {
-    "build": "tsdown",
+    "build": "tsdown && node scripts/write-schema.mjs",
     "dev": "tsdown --watch",
     "typecheck": "tsc --noEmit -p tsconfig.lib.json",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",

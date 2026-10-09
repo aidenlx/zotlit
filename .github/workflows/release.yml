@@ -78,6 +78,7 @@ jobs:
             cp "$pack" apps/obsidian/dist/resources/
           done
           cp packages/db/src/contract/generated/*.schema.json apps/obsidian/dist/resources/
+          cp packages/item-query/dist/item-query.schema.json apps/obsidian/dist/resources/
 
       # The plugin release carries only the three files the Obsidian community
       # scanner accepts, so everything else lives on a Resource Release pinned to
@@ -89,7 +90,7 @@ jobs:
         run: |
           if ! gh release view "${{ steps.meta.outputs.res_tag }}" >/dev/null 2>&1; then
             notes=$(printf '%s\n\n%s\n%s' \
-              "Runtime resources for ZotLit Obsidian plugin v${{ steps.meta.outputs.version }}: Language Packs and template data JSON Schemas." \
+              "Runtime resources for ZotLit Obsidian plugin v${{ steps.meta.outputs.version }}: Language Packs, template data JSON Schemas, and the Item Query Schema." \
               "The installed plugin downloads these on its own — there is nothing to install by hand." \
               "Get the plugin from the ${{ steps.meta.outputs.tag }} release.")
             gh release create "${{ steps.meta.outputs.res_tag }}" \

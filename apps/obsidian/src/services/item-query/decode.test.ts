@@ -1,7 +1,11 @@
 import type { CliData } from "obsidian";
 import { describe, expect, it } from "vitest";
 
-import { decodeItemQuery, decodeSchemaArguments } from "./decode";
+import {
+  decodeItemQuery,
+  decodeSchemaArguments,
+  rejectParameters,
+} from "./decode";
 
 /** The diagnostic of an argument that the decoder rejects. */
 const rejected = (parameter: string) => ({
@@ -215,11 +219,40 @@ describe("decodeItemQuery parameters", () => {
     });
   });
 
-  it("leaves Obsidian's own -- tokens alone", () => {
+  it("allows Obsidian's --copy switch", () => {
     expect(decodeItemQuery({ "--copy": "true", limit: "1" })).toMatchObject({
       limit: 1,
     });
   });
+
+  it.each(["filter", "limit"])(
+    "rejects --%s and explains the key=value form",
+    (parameter) => {
+      const result = decodeItemQuery({ [`--${parameter}`]: "1" });
+
+      expect(result).toMatchObject({
+        ...rejected(`--${parameter}`),
+        message: expect.stringContaining(`${parameter}=<value>`),
+        hint: expect.stringContaining(`${parameter}=<value>`),
+      });
+    },
+  );
+
+  it("rejects a malformed switch beside a valid parameter", () => {
+    expect(decodeItemQuery({ limit: "1", "--filter": "true" })).toMatchObject(
+      rejected("--filter"),
+    );
+  });
+
+  it.each(["--unknown", "--help", "--verbose"])(
+    "rejects unsupported switch %s",
+    (key) => {
+      expect(decodeItemQuery({ [key]: "true" })).toMatchObject({
+        ...rejected(key),
+        hint: expect.stringContaining("name=value"),
+      });
+    },
+  );
 
   it("decodes a query ID", () => {
     expect(decodeItemQuery({ id: "export-2024.v1_a" })).toMatchObject({
@@ -244,7 +277,22 @@ describe("decodeSchemaArguments", () => {
   it.each<[CliData, string]>([
     [{ library: "personal" }, "library"],
     [{ vault: "Research" }, "vault"],
+    [{ "--limit": "1" }, "--limit"],
   ])("rejects %j", (params, parameter) => {
     expect(decodeSchemaArguments(params)).toMatchObject(rejected(parameter));
+  });
+});
+
+describe("rejectParameters for guide and cancel", () => {
+  it.each([
+    ["topic", "filter"],
+    ["id", "export-a"],
+  ])("rejects --%s and shows the accepted form", (parameter, value) => {
+    expect(
+      rejectParameters({ [`--${parameter}`]: value }, [parameter]),
+    ).toMatchObject({
+      ...rejected(`--${parameter}`),
+      message: expect.stringContaining(`${parameter}=<value>`),
+    });
   });
 });

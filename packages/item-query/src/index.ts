@@ -1,5 +1,4 @@
 export {
-  describeItemQuery,
   type FilterType,
   type ItemQuerySchema,
   type JsonType,
@@ -11,6 +10,7 @@ export {
   type SchemaParameter,
   type SchemaProperty,
 } from "./describe-item-query";
+export { describeItemQueryCustomFields } from "./describe-item-query-custom-fields";
 export {
   ItemQueryError,
   type ItemQueryErrorCode,
@@ -18,7 +18,7 @@ export {
 } from "./error";
 export { DEFAULT_FIELDS } from "./fields";
 // The typed database failures of `queryItems`, `consumeQueryItems`, and
-// `describeItemQuery`, from the readers of `@zotlit/db/item-query`.
+// `describeItemQueryCustomFields`, from the readers of `@zotlit/db/item-query`.
 export {
   ItemQueryDatabaseError,
   ItemQueryLayoutError,
