@@ -270,8 +270,13 @@ describe.skipIf(skip)("Structured Characters and Page Labels", () => {
 describe.skipIf(skip)("the Sort Index", () => {
   it("reproduces every Sort Index Zotero wrote into the Fixture", async () => {
     const attachment = ATTACHMENTS.find(({ key }) => key === "RGRPDF24")!;
+    type RecordedPdfAnnotation = (typeof ANNOTATIONS)[number] & {
+      position: PdfPosition;
+    };
     const recorded = ANNOTATIONS.filter(
-      ({ parentItemID }) => parentItemID === attachment.itemID,
+      (annotation): annotation is RecordedPdfAnnotation =>
+        annotation.parentItemID === attachment.itemID &&
+        "pageIndex" in annotation.position,
     );
     const oracle = await askZotero(attachment.sourceAsset!);
 
@@ -282,7 +287,7 @@ describe.skipIf(skip)("the Sort Index", () => {
         page.viewBox,
         asObsidianItems(page.items),
       );
-      return `${key} ${computeSortIndex(structured, position as PdfPosition)}`;
+      return `${key} ${computeSortIndex(structured, position)}`;
     });
 
     expect(recorded.length).toBeGreaterThan(0);
