@@ -55,9 +55,13 @@ import {
 } from "./contract";
 import type { Diagnostic, ItemQueryCommand } from "./contract";
 import contractVersion from "./contract-version.json" with { type: "json" };
-import { invalid, rejectParameters, rejectQueryId } from "./decode";
+import {
+  decodeCancelArguments,
+  decodeGuideArguments,
+  rejectionDiagnostic,
+} from "./decode";
 import type { DecodedQuery, NamedLibraries } from "./decode";
-import { GUIDE_TOPIC_NAMES, parseGuideTopic, renderGuide } from "./guide";
+import { GUIDE_TOPIC_NAMES, renderGuide } from "./guide";
 import { runItemQueryTo } from "./run";
 import type { ItemQueryInstrument, TargetLibrariesUnavailable } from "./run";
 import type { QueryReply } from "./worker-protocol";
@@ -241,20 +245,11 @@ export function answerItemQuerySchema(
 
 /** The guide is plain text; an unknown topic answers the diagnostic envelope. */
 export function itemQueryGuideHandler(params: CliData): string {
-  const rejected = rejectParameters(params, ["topic"]);
-  if (rejected) return failure(ITEM_QUERY_GUIDE_COMMAND, rejected);
-  if (params.topic === undefined) return renderGuide(null);
-  const topic = parseGuideTopic(params.topic);
-  if (topic === null) {
-    return failure(
-      ITEM_QUERY_GUIDE_COMMAND,
-      invalid(
-        "topic",
-        `topic '${params.topic}' is not a guide topic: use ${GUIDE_TOPIC_NAMES.join(", ")}.`,
-      ),
-    );
+  const topic = decodeGuideArguments(params);
+  if (topic.kind === "invalid") {
+    return failure(ITEM_QUERY_GUIDE_COMMAND, rejectionDiagnostic(topic));
   }
-  return renderGuide(topic);
+  return renderGuide(topic.value);
 }
 
 /**
@@ -266,23 +261,15 @@ export function createItemQueryCancelHandler(
   cancel: (id: string) => boolean,
 ): CliHandler {
   return (params: CliData): string => {
-    const rejected = rejectParameters(params, ["id"]);
-    if (rejected) return failure(ITEM_QUERY_CANCEL_COMMAND, rejected);
-    if (params.id === undefined) {
-      return failure(
-        ITEM_QUERY_CANCEL_COMMAND,
-        invalid(
-          "id",
-          "id is missing: give the id of the query to cancel, as in id=<id>.",
-        ),
-      );
+    const request = decodeCancelArguments(params);
+    if (request.kind === "invalid") {
+      return failure(ITEM_QUERY_CANCEL_COMMAND, rejectionDiagnostic(request));
     }
-    const malformed = rejectQueryId(params.id);
-    if (malformed) return failure(ITEM_QUERY_CANCEL_COMMAND, malformed);
+    const id = request.value;
     return envelope(ITEM_QUERY_CANCEL_COMMAND, {
       ok: true,
-      id: params.id,
-      cancelRequested: cancel(params.id),
+      id,
+      cancelRequested: cancel(id),
     });
   };
 }

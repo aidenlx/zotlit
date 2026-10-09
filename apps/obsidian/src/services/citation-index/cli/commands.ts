@@ -2,6 +2,7 @@
 
 import type { CliData, CliHandler } from "obsidian";
 
+import type { CliRejection } from "@/lib/cli-params";
 import type {
   Citation,
   CitationKeyResolution,
@@ -41,7 +42,7 @@ import {
   parseReferencesRequest,
   targetMismatch,
 } from "./request";
-import type { CitedBySelector, ParsedRequest } from "./request";
+import type { CitedBySelector } from "./request";
 
 export type { CitationsIdentity } from "./envelope";
 
@@ -246,13 +247,17 @@ export function createCitationsCliHandlers(
 
 function invalidRequest(
   command: CitationsCommand,
-  request: Extract<ParsedRequest<never>, { kind: "invalid" }>,
+  request: CliRejection,
 ): string {
+  const rejected = diagnostic("INVALID_SELECTOR", request.message, {
+    parameter: request.parameter,
+  });
   return envelope(command, {
     ok: false,
-    diagnostic: diagnostic("INVALID_SELECTOR", request.message, {
-      parameter: request.parameter,
-    }),
+    diagnostic:
+      request.hint === undefined
+        ? rejected
+        : { ...rejected, hint: request.hint },
   });
 }
 

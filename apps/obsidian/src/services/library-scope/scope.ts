@@ -22,6 +22,7 @@
  * repairs it. A broken value reaches this module as `null`, which resolves to
  * {@link MY_LIBRARY_SCOPE} with `invalid: true`.
  */
+import { regex } from "arkregex";
 import * as v from "valibot";
 
 import type { Library } from "@zotlit/db";
@@ -101,6 +102,36 @@ export function selectorKey(selector: LibrarySelector): string {
   return selector.type === "personal"
     ? "personal"
     : `group:${selector.groupID}`;
+}
+
+const GROUP_SELECTOR_KEY = regex("^group:([1-9]\\d*)$");
+
+/**
+ * A {@link selectorKey} text, decoded to the selector it names.
+ *
+ * @param message the diagnostic for text that names no Library
+ */
+export function selectorKeySchema(message: (text: string) => string) {
+  return v.pipe(
+    v.string(),
+    v.rawTransform<string, LibrarySelector>(({ dataset, addIssue, NEVER }) => {
+      const selector = parseSelectorKey(dataset.value);
+      if (selector) return selector;
+      addIssue({ message: message(dataset.value) });
+      return NEVER;
+    }),
+  );
+}
+
+function parseSelectorKey(text: string): LibrarySelector | null {
+  if (text === "personal") return { type: "personal" };
+  const group = GROUP_SELECTOR_KEY.exec(text);
+  if (!group) return null;
+  const parsed = v.safeParse(librarySelectorSchema, {
+    type: "group",
+    groupID: Number(group[1]),
+  });
+  return parsed.success ? parsed.output : null;
 }
 
 /** Canonical order: My Library first, then groups by ascending group id. */

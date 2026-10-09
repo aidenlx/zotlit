@@ -1,11 +1,24 @@
 import type { CliData } from "obsidian";
 import { describe, expect, it } from "vitest";
 
-import {
-  decodeItemQuery,
-  decodeSchemaArguments,
-  rejectParameters,
-} from "./decode";
+import type { CliRequest } from "@/lib/cli-params";
+
+import * as decode from "./decode";
+
+/** The decoded value, or the diagnostic the handler answers with. */
+const answered =
+  <T>(decoder: (params: CliData) => CliRequest<T>) =>
+  (params: CliData) => {
+    const request = decoder(params);
+    return request.kind === "valid"
+      ? request.value
+      : decode.rejectionDiagnostic(request);
+  };
+
+const decodeItemQuery = answered(decode.decodeItemQuery);
+const decodeGuideArguments = answered(decode.decodeGuideArguments);
+const decodeCancelArguments = answered(decode.decodeCancelArguments);
+const decodeSchemaArguments = answered(decode.decodeSchemaArguments);
 
 /** The diagnostic of an argument that the decoder rejects. */
 const rejected = (parameter: string) => ({
@@ -79,6 +92,15 @@ describe("decodeItemQuery library", () => {
       expect(decodeItemQuery({ library })).toMatchObject(rejected("library"));
     },
   );
+
+  it("answers a malformed Library before a malformed option", () => {
+    expect(decodeItemQuery({ library: "bad", limit: "0" })).toMatchObject(
+      rejected("library"),
+    );
+    expect(decodeItemQuery({ libraries: "bad", limit: "0" })).toMatchObject(
+      rejected("libraries"),
+    );
+  });
 });
 
 describe("decodeItemQuery libraries", () => {
@@ -219,12 +241,6 @@ describe("decodeItemQuery parameters", () => {
     });
   });
 
-  it("allows Obsidian's --copy switch", () => {
-    expect(decodeItemQuery({ "--copy": "true", limit: "1" })).toMatchObject({
-      limit: 1,
-    });
-  });
-
   it.each(["filter", "limit"])(
     "rejects --%s and explains the key=value form",
     (parameter) => {
@@ -269,9 +285,8 @@ describe("decodeItemQuery parameters", () => {
 });
 
 describe("decodeSchemaArguments", () => {
-  it("accepts no parameter, and Obsidian's own -- tokens", () => {
-    expect(decodeSchemaArguments({})).toBeNull();
-    expect(decodeSchemaArguments({ "--copy": "true" })).toBeNull();
+  it("accepts no parameter", () => {
+    expect(decodeSchemaArguments({})).toStrictEqual({});
   });
 
   it.each<[CliData, string]>([
@@ -283,16 +298,29 @@ describe("decodeSchemaArguments", () => {
   });
 });
 
-describe("rejectParameters for guide and cancel", () => {
+describe("decodeGuideArguments and decodeCancelArguments", () => {
   it.each([
-    ["topic", "filter"],
-    ["id", "export-a"],
-  ])("rejects --%s and shows the accepted form", (parameter, value) => {
-    expect(
-      rejectParameters({ [`--${parameter}`]: value }, [parameter]),
-    ).toMatchObject({
+    [decodeGuideArguments, "topic", "filter"],
+    [decodeCancelArguments, "id", "export-a"],
+  ])("rejects --%s and shows the accepted form", (decode, parameter, value) => {
+    expect(decode({ [`--${parameter}`]: value })).toMatchObject({
       ...rejected(`--${parameter}`),
       message: expect.stringContaining(`${parameter}=<value>`),
     });
   });
+
+  it("decodes the guide topic, or null for the quickstart", () => {
+    expect(decodeGuideArguments({ topic: "filter" })).toBe("filter");
+    expect(decodeGuideArguments({})).toBeNull();
+    expect(decodeGuideArguments({ topic: "nope" })).toMatchObject(
+      rejected("topic"),
+    );
+  });
+
+  it.each<CliData>([{}, { id: "two words" }])(
+    "rejects the cancel arguments %j",
+    (params) => {
+      expect(decodeCancelArguments(params)).toMatchObject(rejected("id"));
+    },
+  );
 });

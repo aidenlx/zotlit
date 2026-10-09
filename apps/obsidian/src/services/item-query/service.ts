@@ -19,7 +19,11 @@ import {
   queryIdInUseFailure,
 } from "./cli";
 import { queryCancelledText } from "./contract";
-import { decodeItemQuery, decodeSchemaArguments } from "./decode";
+import {
+  decodeItemQuery,
+  decodeSchemaArguments,
+  rejectionDiagnostic,
+} from "./decode";
 import type { CancellationEvent, QueryObserver } from "./trace";
 import type { QueryAnswer, QueryCommand } from "./worker-protocol";
 
@@ -92,10 +96,13 @@ export class ItemQueryService extends Service {
   ): Promise<string> {
     // Decode and claim the id synchronously, so two calls with one id
     // cannot both start. The worker receives the decoded query.
-    const query = decodeItemQuery(params);
-    if ("code" in query) {
-      return Promise.resolve(failure(ITEM_QUERY_COMMAND, query));
+    const request = decodeItemQuery(params);
+    if (request.kind === "invalid") {
+      return Promise.resolve(
+        failure(ITEM_QUERY_COMMAND, rejectionDiagnostic(request)),
+      );
     }
+    const query = request.value;
     const { id } = query;
     if (id !== undefined && FiberMap.hasUnsafe(this.#jobs, id)) {
       return Promise.resolve(queryIdInUseFailure(id));
@@ -123,9 +130,11 @@ export class ItemQueryService extends Service {
   }
 
   schema(params: CliData, signal: AbortSignal): Promise<string> {
-    const rejected = decodeSchemaArguments(params);
-    if (rejected) {
-      return Promise.resolve(failure(ITEM_QUERY_SCHEMA_COMMAND, rejected));
+    const request = decodeSchemaArguments(params);
+    if (request.kind === "invalid") {
+      return Promise.resolve(
+        failure(ITEM_QUERY_SCHEMA_COMMAND, rejectionDiagnostic(request)),
+      );
     }
     return this.#start(
       this.#job({ schema: true, pluginVersion: this.#deps.pluginVersion }),

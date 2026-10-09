@@ -848,7 +848,7 @@ describe("Template Workbench CLI", () => {
     });
   });
 
-  it("ignores every --* token a CLI binary forwards", async () => {
+  it("rejects a --* token, and gives the name=value form of an accepted parameter", async () => {
     const loadData = vi.fn(async () => ({ kind: "data", data: {} }) as const);
     const handlers = createTemplateWorkbenchHandlers({
       selectNote: noNoteSelection,
@@ -880,11 +880,18 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_DATA_COMMAND]({
       key: "ITEM2345",
       root: "note",
-      "--help": "true",
-      "--verbose": "true",
+      "--path": "zt.title",
     });
 
-    expect(JSON.parse(output)).toMatchObject({ ok: true });
+    expect(JSON.parse(output)).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        message: "Parameter '--path' is not valid: use path=<value>.",
+        details: { parameter: "--path" },
+      },
+    });
+    expect(loadData).not.toHaveBeenCalled();
   });
 
   it("reports vault= placed after the command name as INVALID_SELECTOR", async () => {
@@ -1316,7 +1323,6 @@ describe("Template Workbench CLI", () => {
     });
 
     const output = await handlers[TEMPLATE_SCHEMA_COMMAND]({
-      "--help": "true",
       format: "json",
     });
 
@@ -1955,7 +1961,7 @@ describe("Template Workbench CLI", () => {
       key: "ITEM2345",
       template: "note",
       format: "markdown",
-      root: "note",
+      root: "invalid",
     });
 
     expect(JSON.parse(output)).toMatchObject({
@@ -2344,7 +2350,7 @@ describe("Template Workbench CLI", () => {
       });
     });
 
-    it("tolerates --* tokens for template-status", async () => {
+    it("rejects a --* token for template-status", async () => {
       const waitUntilSettled = vi.fn(async () => "settled" as const);
       const handlers = createTemplateWorkbenchHandlers({
         selectNote: noNoteSelection,
@@ -2377,7 +2383,13 @@ describe("Template Workbench CLI", () => {
         "--help": "true",
       });
 
-      expect(JSON.parse(output)).toMatchObject({ ok: true });
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          details: { parameter: "--help" },
+        },
+      });
     });
 
     it("rejects an unrecognized parameter for template-guide", async () => {
@@ -2692,7 +2704,7 @@ describe("Template Workbench CLI", () => {
       });
     });
 
-    it("tolerates --* tokens", async () => {
+    it("rejects a --* token", async () => {
       const handlers = createTemplateWorkbenchHandlers({
         selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
@@ -2724,7 +2736,13 @@ describe("Template Workbench CLI", () => {
         "--help": "true",
       });
 
-      expect(JSON.parse(output)).toMatchObject({ ok: true });
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          details: { parameter: "--help" },
+        },
+      });
     });
   });
 
@@ -3088,12 +3106,12 @@ describe("Template Workbench CLI", () => {
       expect(parsed.value).toBeUndefined();
     });
 
-    it("rejects language without expr", async () => {
+    it("rejects language without expr before it reads the key", async () => {
       const handlers = makeHandlers();
 
       const output = await handlers[FRONTMATTER_EVAL_COMMAND]({
-        key: "ITEM2345",
-        language: "liquid",
+        key: "not-a-key",
+        language: "python",
       });
 
       expect(JSON.parse(output)).toMatchObject({
@@ -4217,6 +4235,11 @@ describe("zotlit:template-render for the Citation Template", () => {
       "Select the Citation with example=<one-item|two-items|item-with-page|suppressed-author|prefix-and-suffix|annotation-citation> or with key=<indexed-key>, not both.",
     ],
     [
+      { example: "three-items", key: "ITEM2345" },
+      "example",
+      "Select the Citation with example=<one-item|two-items|item-with-page|suppressed-author|prefix-and-suffix|annotation-citation> or with key=<indexed-key>, not both.",
+    ],
+    [
       {},
       "key",
       "key must be an Indexed Key, or select a built-in Citation with example=<one-item|two-items|item-with-page|suppressed-author|prefix-and-suffix|annotation-citation>.",
@@ -4241,9 +4264,9 @@ describe("zotlit:template-render for the Citation Template", () => {
     expect(
       JSON.parse(
         await handlers[TEMPLATE_RENDER_COMMAND]({
-          key: "ITEM2345",
+          key: "not-a-key",
           template: "note",
-          variant: "alt",
+          variant: "bogus",
         }),
       ),
     ).toMatchObject({
@@ -4285,6 +4308,28 @@ describe("zotlit:template-render for the Citation Template", () => {
       ok: false,
       diagnostic: {
         code: "INVALID_SELECTOR",
+        details: { parameter: "example" },
+      },
+    });
+  });
+
+  it("refuses a Citation example set beside a key before checking the set", async () => {
+    const handlers = citationHandlers();
+
+    expect(
+      JSON.parse(
+        await handlers[TEMPLATE_DATA_COMMAND]({
+          root: "citation",
+          key: "ITEM2345",
+          example: "three-items",
+        }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        message:
+          "Select the Citation with example=<one-item|two-items|item-with-page|suppressed-author|prefix-and-suffix|annotation-citation> or with key=<indexed-key>, not both.",
         details: { parameter: "example" },
       },
     });

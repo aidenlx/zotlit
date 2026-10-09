@@ -2875,6 +2875,39 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
   });
 
+  it("answers a -- token on a required or format parameter with the zotlit decoder's diagnostic", async () => {
+    // Obsidian itself checks a required flag and turns a format alias into
+    // format=<value>; each token here must still reach the zotlit decoder.
+    const resolved = JSON.parse(
+      await cliCommand(vaultId, "zotlit:resolve", {
+        args: { "--file": "/tmp/a.md" },
+      }),
+    ) as { errors: { code: string; message: string }[] };
+    expect(resolved.errors).toEqual([
+      {
+        code: "flags-invalid",
+        message: expect.stringContaining("use file=<value>"),
+      },
+    ]);
+
+    const data = JSON.parse(
+      await cli([
+        `vault=${vaultId}`,
+        "zotlit:template-data",
+        "root=note",
+        "key=ABCD2345",
+        "--json",
+      ]),
+    ) as unknown;
+    expect(data).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        details: { parameter: "--json" },
+      },
+    });
+  });
+
   it("sorts titles in the pinned Item Query string order", async () => {
     // The order Node gives in the package tests; this run proves that the
     // collator of Obsidian's Electron gives the same.

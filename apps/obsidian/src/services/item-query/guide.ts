@@ -372,10 +372,6 @@ export const GUIDE_TOPIC_NAMES = Object.keys(
   GUIDE_TOPICS,
 ) as readonly GuideTopic[];
 
-export function parseGuideTopic(value: string): GuideTopic | null {
-  return Object.hasOwn(GUIDE_TOPICS, value) ? (value as GuideTopic) : null;
-}
-
 const QUICKSTART = `ZOTLIT ITEM QUERY
 
 Item Query finds Items in your Zotero Libraries and returns the values you

@@ -7,14 +7,23 @@
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 
-import { regex } from "arkregex";
 import { isAbsolute } from "node:path";
 import type { CliData } from "obsidian";
 import * as v from "valibot";
 
-import type { SortSpec } from "@zotlit/item-query";
-
-import { compareSelectors } from "@/services/library-scope/scope";
+import {
+  cliParams,
+  cliText,
+  cliVariants,
+  decodeCliParams,
+  noCliParams,
+} from "@/lib/cli-params";
+import type { CliParamName, CliRejection, CliRequest } from "@/lib/cli-params";
+import {
+  compareSelectors,
+  selectorKey,
+  selectorKeySchema,
+} from "@/services/library-scope/scope";
 import type {
   LibraryScope,
   LibrarySelector,
@@ -23,11 +32,16 @@ import type {
 import {
   DEFAULT_CLI_LIMIT,
   diagnostic,
-  ITEM_QUERY_PARAMS,
+  ITEM_QUERY_CANCEL_COMMAND,
+  ITEM_QUERY_COMMAND,
+  ITEM_QUERY_GUIDE_COMMAND,
+  ITEM_QUERY_SCHEMA_COMMAND,
   QUERY_ID_FORM,
   QUERY_ID_MAX_LENGTH,
 } from "./contract";
 import type { Diagnostic } from "./contract";
+import { GUIDE_TOPIC_NAMES } from "./guide";
+import type { GuideTopic } from "./guide";
 
 /** The Libraries the caller names, as a scope that needs each of them. */
 export interface NamedLibraries {
@@ -36,107 +50,161 @@ export interface NamedLibraries {
   parameter: "library" | "libraries";
 }
 
-/**
- * The arguments of one query after decoding. Plain JSON, with no undefined
- * value: it crosses the worker seam as it is. An absent key is an argument
- * the caller omitted.
- */
-export interface DecodedQuery {
-  /** `null`: the Library Scope in force decides. */
-  libraries: NamedLibraries | null;
-  filter?: string;
-  fields?: readonly string[];
-  sort?: readonly SortSpec[];
-  limit: number | null;
-  output?: string;
-  /** The id that `zotlit:item-query-cancel` names the query by. */
-  id?: string;
-}
-
-const GROUP_SELECTOR = regex("^group:([1-9]\\d*)$");
 const QUERY_ID = /^[\w.-]+$/;
 const POSITIVE_INTEGER = /^[1-9]\d*$/;
-const OBSIDIAN_CLI_SWITCHES = ["--copy"] as const;
 
-const librariesSchema = v.pipe(v.array(v.string()), v.minLength(1));
-const fieldsSchema = v.array(v.string());
-const sortSchema = v.array(
-  v.strictObject({
-    field: v.string(),
-    direction: v.picklist(["asc", "desc"]),
-  }),
+const notQueryId = (issue: { input: unknown }) =>
+  `id '${String(issue.input)}' is not a query id: use ${QUERY_ID_FORM}.`;
+
+const queryId = v.pipe(
+  v.string(),
+  v.maxLength(QUERY_ID_MAX_LENGTH, notQueryId),
+  v.regex(QUERY_ID, notQueryId),
 );
 
 /**
- * Decode the flat arguments of a query, or answer the diagnostic of the first
- * malformed one. Obsidian passes every caller token through, so an undeclared
- * parameter is rejected here too.
+ * A parameter that carries JSON. Text that is no JSON answers its own
+ * message; JSON of another shape answers `<parameter> is not <expected>.`
+ * unless a check of `schema` gives a message of its own.
  */
-export function decodeItemQuery(params: CliData): DecodedQuery | Diagnostic {
-  const rejected = rejectParameters(params, ITEM_QUERY_PARAMS);
-  if (rejected) return rejected;
+function jsonParameter<TSchema extends v.GenericSchema>(
+  parameter: string,
+  expected: string,
+  schema: TSchema,
+) {
+  return v.config(
+    v.pipe(
+      v.string(),
+      v.parseJson(
+        undefined,
+        `${parameter} is not valid JSON: use ${expected}.`,
+      ),
+      schema,
+    ),
+    { message: `${parameter} is not ${expected}.` },
+  );
+}
 
-  // `libraries` wins over `library`; with neither, the Library Scope decides.
-  const named = decodeLibraries(params);
-  if (named !== undefined && "code" in named) return named;
-  let libraries = named ?? null;
-  if (named === undefined && params.library !== undefined) {
-    const selector = parseSelector(params.library);
-    if (selector === null) {
-      return invalid(
-        "library",
-        `'${params.library}' is not a Library: use personal or group:<groupID>.`,
-      );
-    }
-    libraries = {
-      scope: { mode: "selected", libraries: [selector] },
-      parameter: "library",
-    };
+/** `libraries`: the word `all`, or a JSON array of selector texts. */
+const libraries = v.lazy((input) =>
+  input === "all"
+    ? v.pipe(
+        v.literal("all"),
+        v.transform((): LibraryScope => ({ mode: "all" })),
+      )
+    : jsonParameter(
+        "libraries",
+        'all, or a JSON array of at least one Library, each "personal" or "group:<groupID>"',
+        v.pipe(
+          v.array(
+            selectorKeySchema(
+              (text) =>
+                `'${text}' in libraries is not a Library: use "personal" or "group:<groupID>".`,
+            ),
+          ),
+          v.minLength(1),
+          v.check(
+            (selectors) => !firstRepeat(selectors),
+            (issue) =>
+              `libraries names '${firstRepeat(issue.input)}' twice: name each Library once.`,
+          ),
+          v.transform(
+            (selectors): LibraryScope => ({
+              mode: "selected",
+              libraries: selectors.toSorted(compareSelectors),
+            }),
+          ),
+        ),
+      ),
+);
+
+/** The key of the first selector `selectors` names twice. */
+function firstRepeat(
+  selectors: readonly LibrarySelector[],
+): string | undefined {
+  const seen = new Set<string>();
+  for (const selector of selectors) {
+    const key = selectorKey(selector);
+    if (seen.has(key)) return key;
+    seen.add(key);
   }
+  return undefined;
+}
 
-  const filter = params.filter;
-  if (filter !== undefined && filter.trim() === "") {
-    return invalid(
-      "filter",
+const library = selectorKeySchema(
+  (text) => `'${text}' is not a Library: use personal or group:<groupID>.`,
+);
+
+const notPositiveInteger = (issue: { input: unknown }) =>
+  `limit '${String(issue.input)}' is not a positive integer: use a positive integer, or all for every match.`;
+
+const limit = v.lazy((input) =>
+  input === "all"
+    ? v.pipe(
+        v.literal("all"),
+        v.transform(() => null),
+      )
+    : v.pipe(
+        v.string(),
+        v.regex(POSITIVE_INTEGER, notPositiveInteger),
+        v.check(
+          (text) => Number.isSafeInteger(Number(text)),
+          notPositiveInteger,
+        ),
+        v.transform(Number),
+      ),
+);
+
+/** The arguments every query takes, whichever Libraries it reads. */
+const queryOptions = {
+  filter: v.optional(
+    cliText(
       "filter is empty: give a Filter Expression, or omit filter to match every Item.",
-    );
-  }
+    ),
+  ),
+  fields: v.optional(
+    jsonParameter(
+      "fields",
+      "a JSON array of Projection Path strings",
+      v.array(v.string()),
+    ),
+  ),
+  sort: v.optional(
+    jsonParameter(
+      "sort",
+      'a JSON array of {"field","direction"} objects with direction "asc" or "desc"',
+      v.array(
+        v.strictObject({
+          field: v.string(),
+          direction: v.picklist(["asc", "desc"]),
+        }),
+      ),
+    ),
+  ),
+  limit: v.optional(limit, String(DEFAULT_CLI_LIMIT)),
+  output: v.optional(
+    v.pipe(
+      v.string(),
+      v.check(
+        (output) => isAbsolute(output) && !output.includes("\0"),
+        "output must be an absolute path to a new JSON file.",
+      ),
+    ),
+  ),
+  id: v.optional(queryId),
+};
 
-  const fields = decodeJson(params, "fields");
-  if (fields !== undefined && "code" in fields) return fields;
-
-  const sort = decodeJson(params, "sort");
-  if (sort !== undefined && "code" in sort) return sort;
-
-  let limit: number | null = DEFAULT_CLI_LIMIT;
-  if (params.limit !== undefined) {
-    if (params.limit === "all") limit = null;
-    else if (
-      POSITIVE_INTEGER.test(params.limit) &&
-      Number.isSafeInteger(Number(params.limit))
-    ) {
-      limit = Number(params.limit);
-    } else {
-      return invalid(
-        "limit",
-        `limit '${params.limit}' is not a positive integer: use a positive integer, or all for every match.`,
-      );
-    }
-  }
-
-  const output = params.output;
-  if (output !== undefined && (!isAbsolute(output) || output.includes("\0"))) {
-    return invalid(
-      "output",
-      "output must be an absolute path to a new JSON file.",
-    );
-  }
-
-  const id = params.id;
-  if (id !== undefined) {
-    const malformed = rejectQueryId(id);
-    if (malformed) return malformed;
-  }
+/**
+ * The arguments of one query after decoding. Plain JSON, with no undefined
+ * value: it crosses the worker seam as it is. An absent key is an argument
+ * the caller omitted; `libraries: null` leaves the Libraries to the Library
+ * Scope in force.
+ */
+function decodedQuery(
+  options: v.InferOutput<v.StrictObjectSchema<typeof queryOptions, undefined>>,
+  libraries: NamedLibraries | null,
+) {
+  const { filter, fields, sort, limit, output, id } = options;
   return {
     libraries,
     limit,
@@ -144,163 +212,106 @@ export function decodeItemQuery(params: CliData): DecodedQuery | Diagnostic {
     ...(fields === undefined ? {} : { fields }),
     ...(sort === undefined ? {} : { sort }),
     ...(output === undefined ? {} : { output }),
+    // The id that `zotlit:item-query-cancel` names the query by.
     ...(id === undefined ? {} : { id }),
   };
 }
 
-/** The schema command takes no parameter: the diagnostic of the first one. */
-export function decodeSchemaArguments(params: CliData): Diagnostic | null {
-  return rejectParameters(params, []);
-}
-
-export function rejectQueryId(id: string): Diagnostic | null {
-  if (id.length <= QUERY_ID_MAX_LENGTH && QUERY_ID.test(id)) return null;
-  return invalid("id", `id '${id}' is not a query id: use ${QUERY_ID_FORM}.`);
-}
-
-/** The Library that `personal` or `group:<groupID>` names. */
-function parseSelector(text: string): LibrarySelector | null {
-  if (text === "personal") return { type: "personal" };
-  const group = GROUP_SELECTOR.exec(text);
-  return group ? { type: "group", groupID: Number(group[1]) } : null;
-}
-
-/** Decode `libraries`: the word `all`, or a JSON array of selector texts. */
-function decodeLibraries(
-  params: CliData,
-): NamedLibraries | Diagnostic | undefined {
-  if (params.libraries === "all") {
-    return { scope: { mode: "all" }, parameter: "libraries" };
-  }
-  const texts = decodeJson(params, "libraries");
-  if (texts === undefined || "code" in texts) return texts;
-  const selectors: LibrarySelector[] = [];
-  const seen = new Set<string>();
-  for (const text of texts) {
-    const selector = parseSelector(text);
-    if (selector === null) {
-      return invalid(
-        "libraries",
-        `'${text}' in libraries is not a Library: use "personal" or "group:<groupID>".`,
-      );
-    }
-    if (seen.has(text)) {
-      return invalid(
-        "libraries",
-        `libraries names '${text}' twice: name each Library once.`,
-      );
-    }
-    seen.add(text);
-    selectors.push(selector);
-  }
-  return {
-    scope: {
-      mode: "selected",
-      libraries: selectors.toSorted(compareSelectors),
-    },
-    parameter: "libraries",
-  };
-}
-
-/** The JSON-encoded arguments, with the form each one takes. */
-const JSON_ARGUMENTS = {
-  libraries: {
-    schema: librariesSchema,
-    expected:
-      'all, or a JSON array of at least one Library, each "personal" or "group:<groupID>"',
+const queryParams = cliVariants(
+  ({ libraries, library }) =>
+    libraries !== undefined
+      ? "libraries"
+      : library !== undefined
+        ? "library"
+        : "scope",
+  {
+    libraries: v.pipe(
+      // `libraries` wins over `library`, which this variant reads no further.
+      cliParams({
+        libraries,
+        library: v.optional(v.string()),
+        ...queryOptions,
+      }),
+      v.transform(({ libraries: scope, library: _, ...options }) =>
+        decodedQuery(options, { scope, parameter: "libraries" }),
+      ),
+    ),
+    library: v.pipe(
+      cliParams({ library, ...queryOptions }),
+      v.transform(({ library: selector, ...options }) =>
+        decodedQuery(options, {
+          scope: { mode: "selected", libraries: [selector] },
+          parameter: "library",
+        }),
+      ),
+    ),
+    scope: v.pipe(
+      cliParams(queryOptions),
+      v.transform((options) => decodedQuery(options, null)),
+    ),
   },
-  fields: {
-    schema: fieldsSchema,
-    expected: "a JSON array of Projection Path strings",
-  },
-  sort: {
-    schema: sortSchema,
-    expected:
-      'a JSON array of {"field","direction"} objects with direction "asc" or "desc"',
-  },
-} as const;
+);
 
-type JsonArgument = keyof typeof JSON_ARGUMENTS;
+export type DecodedQuery = v.InferOutput<typeof queryParams>;
 
-function decodeJson<K extends JsonArgument>(
-  params: CliData,
-  parameter: K,
-):
-  | v.InferOutput<(typeof JSON_ARGUMENTS)[K]["schema"]>
-  | Diagnostic
-  | undefined {
-  const { schema, expected } = JSON_ARGUMENTS[parameter];
-  const raw = params[parameter];
-  if (raw === undefined) return undefined;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return invalid(
-      parameter,
-      `${parameter} is not valid JSON: use ${expected}.`,
-    );
-  }
-  const result = v.safeParse(schema, parsed);
-  if (!result.success) {
-    return invalid(parameter, `${parameter} is not ${expected}.`);
-  }
-  return result.output as v.InferOutput<(typeof JSON_ARGUMENTS)[K]["schema"]>;
+/** The parameters of `zotlit:item-query`, to type its `CliFlags`. */
+export type ItemQueryParam = CliParamName<typeof queryParams>;
+
+/** Decode the flat arguments of a query, or answer the first malformed one. */
+export function decodeItemQuery(params: CliData): CliRequest<DecodedQuery> {
+  return decodeCliParams(params, queryParams, { command: ITEM_QUERY_COMMAND });
 }
 
-/**
- * The diagnostic of the first parameter outside `accepted`. Obsidian passes
- * every caller token through; its known global switches pass.
- */
-export function rejectParameters(
-  params: CliData,
-  accepted: readonly string[],
-): Diagnostic | null {
-  for (const key of Object.keys(params)) {
-    if (accepted.includes(key)) continue;
-    if (key.startsWith("--")) {
-      if (OBSIDIAN_CLI_SWITCHES.some((switchName) => switchName === key)) {
-        continue;
-      }
-      const parameter = key.slice(2);
-      if (accepted.includes(parameter)) {
-        return {
-          ...invalid(
-            key,
-            `Parameter '${key}' is not valid: use ${parameter}=<value>.`,
-          ),
-          hint: `Run the command with ${parameter}=<value>, without --.`,
-        };
-      }
-      return {
-        ...invalid(
-          key,
-          accepted.length === 0
-            ? `Unknown parameter '${key}': this command takes no parameters.`
-            : `Unknown parameter '${key}': use ${accepted.map((name) => `${name}=<value>`).join(", ")}.`,
-        ),
-        hint:
-          accepted.length === 0
-            ? `Remove '${key}'; this command takes no parameters.`
-            : "Use a supported parameter as name=value, without --; see the command help for its parameters.",
-      };
-    }
-    if (key === "vault") {
-      return invalid(
-        "vault",
-        "vault must come before the command name (obsidian vault=<name> zotlit:...); placed after, Obsidian ignores it and routes the call by working directory or focused window instead.",
-      );
-    }
-    return invalid(
-      key,
-      accepted.length === 0
-        ? `Unknown parameter '${key}': this command takes no parameters.`
-        : `Unknown parameter '${key}': use ${accepted.join(", ")}.`,
-    );
-  }
-  return null;
+/** The schema command takes no parameter. */
+export function decodeSchemaArguments(params: CliData): CliRequest<object> {
+  return decodeCliParams(params, noCliParams, {
+    command: ITEM_QUERY_SCHEMA_COMMAND,
+  });
 }
 
-export function invalid(parameter: string, message: string): Diagnostic {
-  return diagnostic("invalid-argument", message, { details: { parameter } });
+const guideParams = v.pipe(
+  cliParams({
+    topic: v.optional(
+      v.picklist(
+        GUIDE_TOPIC_NAMES,
+        (issue) =>
+          `topic '${String(issue.input)}' is not a guide topic: use ${GUIDE_TOPIC_NAMES.join(", ")}.`,
+      ),
+    ),
+  }),
+  v.transform(({ topic }) => topic ?? null),
+);
+
+/** The guide topic, or `null` for the quickstart. */
+export function decodeGuideArguments(
+  params: CliData,
+): CliRequest<GuideTopic | null> {
+  return decodeCliParams(params, guideParams, {
+    command: ITEM_QUERY_GUIDE_COMMAND,
+  });
+}
+
+const cancelParams = v.pipe(
+  cliParams(
+    { id: queryId },
+    { id: "id is missing: give the id of the query to cancel, as in id=<id>." },
+  ),
+  v.transform(({ id }) => id),
+);
+
+/** The id of the query to cancel. */
+export function decodeCancelArguments(params: CliData): CliRequest<string> {
+  return decodeCliParams(params, cancelParams, {
+    command: ITEM_QUERY_CANCEL_COMMAND,
+  });
+}
+
+/** The diagnostic of a rejected argument. */
+export function rejectionDiagnostic(rejection: CliRejection): Diagnostic {
+  const rejected = diagnostic("invalid-argument", rejection.message, {
+    details: { parameter: rejection.parameter },
+  });
+  return rejection.hint === undefined
+    ? rejected
+    : { ...rejected, hint: rejection.hint };
 }

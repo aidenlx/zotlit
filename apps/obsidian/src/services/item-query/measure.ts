@@ -11,10 +11,19 @@
 // apps/obsidian/policies/cli-text.md.
 
 import type { CliData, CliFlags, CliHandler, Plugin } from "obsidian";
+import * as v from "valibot";
 
 import type { ItemQueryReader } from "@zotlit/db/item-query";
 
+import {
+  cliParams,
+  cliSwitch,
+  decodeCliParams,
+  rejectionText,
+} from "@/lib/cli-params";
+
 import { itemQueryFlags } from "./cli";
+import { decodeItemQuery } from "./decode";
 import type { ItemQueryService } from "./service";
 import type { CancellationEvent, WorkerMeasurement } from "./trace";
 
@@ -108,19 +117,26 @@ const now = (): number => performance.now();
 const round = (ms: number): number => Math.round(ms * 100) / 100;
 
 /**
- * @throws {Error} when the text is not a finite number from 0: the run has no
- *   envelope for an invalid argument, so the command rejects.
+ * The parameters of a measured run; the rest are the query's own, which
+ * `zotlit:item-query` decodes.
  */
-function decodeCancelAfterMs(raw: string | undefined): number | undefined {
-  if (raw === undefined) return undefined;
-  const ms = raw.trim() === "" ? Number.NaN : Number(raw);
-  if (!Number.isFinite(ms) || ms < 0) {
-    throw new Error(
-      `cancelAfterMs '${raw}' is not a time in milliseconds: use a number from 0.`,
-    );
-  }
-  return ms;
-}
+const measureParams = cliParams({
+  cancelAfterMs: v.optional(
+    v.pipe(
+      v.string(),
+      v.check(
+        (text) =>
+          text.trim() !== "" &&
+          Number.isFinite(Number(text)) &&
+          Number(text) >= 0,
+        (issue) =>
+          `cancelAfterMs '${String(issue.input)}' is not a time in milliseconds: use a number from 0.`,
+      ),
+      v.transform(Number),
+    ),
+  ),
+  heap: cliSwitch("heap is a switch: name it alone, as heap."),
+});
 
 export function registerItemQueryMeasureCli(
   plugin: Plugin,
@@ -130,8 +146,24 @@ export function registerItemQueryMeasureCli(
   plugin.register(() => unload.abort());
 
   const measure: CliHandler = async (params: CliData): Promise<string> => {
-    const { cancelAfterMs: cancelAfter, heap, ...query } = params;
-    const cancelAfterMs = decodeCancelAfterMs(cancelAfter);
+    // A parameter of the run, also as a `--` token, is the run's own; the rest
+    // are the query's. The run has no envelope for an invalid argument, so the
+    // command rejects before it starts.
+    const runParams: CliData = {};
+    const query: CliData = {};
+    for (const [key, value] of Object.entries(params)) {
+      const name = key.replace(/^--/, "");
+      (Object.hasOwn(measureParams.entries, name) ? runParams : query)[key] =
+        value;
+    }
+    const decoded = decodeCliParams(runParams, measureParams, {
+      command: ITEM_QUERY_MEASURE_COMMAND,
+    });
+    if (decoded.kind === "invalid") throw new TypeError(rejectionText(decoded));
+    const forwarded = decodeItemQuery(query);
+    if (forwarded.kind === "invalid")
+      throw new TypeError(rejectionText(forwarded));
+    const measured = decoded.value;
     const own = new AbortController();
     const signal = AbortSignal.any([unload.signal, own.signal]);
     let measurement: WorkerMeasurement | undefined;
@@ -158,9 +190,9 @@ export function registerItemQueryMeasureCli(
     // or `zotlit:item-query-cancel` for a run with `id`.
     let firedAt: number | undefined;
     const timer =
-      cancelAfterMs === undefined
+      measured.cancelAfterMs === undefined
         ? undefined
-        : window.setTimeout(() => own.abort(), cancelAfterMs);
+        : window.setTimeout(() => own.abort(), measured.cancelAfterMs);
 
     let outcome: ItemQueryMeasureReport["outcome"];
     let answer: string | undefined;
@@ -174,7 +206,7 @@ export function registerItemQueryMeasureCli(
           if (event.phase === "requested") firedAt ??= now();
           cancellationEvents.push(event);
         },
-        heap: heap === "true",
+        heap: measured.heap === true,
       });
       outcome = "answered";
     } catch (caught) {
@@ -226,7 +258,7 @@ export function registerItemQueryMeasureCli(
         firedAt === undefined
           ? undefined
           : {
-              intendedAtMs: cancelAfterMs,
+              intendedAtMs: measured.cancelAfterMs,
               firedAtMs: round(firedAt - startedAt),
               settledAtMs: round(settledAt - startedAt),
               firedAtEpochMs: round(startedAtEpochMs + firedAt - startedAt),

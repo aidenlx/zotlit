@@ -59,9 +59,9 @@ const BULK = {
 /** The query that the renderer decodes from `params`, as plain JSON. */
 function decoded(params: CliData): DecodedQuery {
   const query = decodeItemQuery(params);
-  if ("code" in query)
+  if (query.kind === "invalid")
     throw new Error(`Malformed test query: ${query.message}`);
-  return JSON.parse(JSON.stringify(query)) as DecodedQuery;
+  return JSON.parse(JSON.stringify(query.value)) as DecodedQuery;
 }
 
 function jobOf(params: CliData, stagePath?: string): QueryJob {

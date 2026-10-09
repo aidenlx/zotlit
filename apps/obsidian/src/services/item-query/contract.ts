@@ -9,6 +9,8 @@ import type { CliFlag, CliFlags } from "obsidian";
 
 import type { ItemQueryError } from "@zotlit/item-query";
 
+import type { ItemQueryParam } from "./decode";
+
 export const ITEM_QUERY_COMMAND = "zotlit:item-query" as const;
 export const ITEM_QUERY_CANCEL_COMMAND = "zotlit:item-query-cancel" as const;
 export const ITEM_QUERY_SCHEMA_COMMAND = "zotlit:item-query-schema" as const;
@@ -32,19 +34,6 @@ export const QUERY_ID_FORM = `1 to ${QUERY_ID_MAX_LENGTH} ASCII letters, digits,
 export function queryCancelledText(id: string): string {
   return `The query '${id}' was cancelled by ${ITEM_QUERY_CANCEL_COMMAND}.`;
 }
-
-export const ITEM_QUERY_PARAMS = [
-  "filter",
-  "fields",
-  "sort",
-  "limit",
-  "library",
-  "libraries",
-  "output",
-  "id",
-] as const;
-
-type ItemQueryParam = (typeof ITEM_QUERY_PARAMS)[number];
 
 export const itemQueryFlags: CliFlags = {
   filter: {

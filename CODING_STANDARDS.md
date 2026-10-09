@@ -14,6 +14,7 @@ or a direct edit. State the expected behavior and what the reviewer must check.
 - [Function parameters](policies/function-parameters.md)
 - [Grouping](policies/grouping.md)
 - [Host state](policies/host-state.md)
+- [Input validation](policies/input-validation.md)
 - [Logging](policies/logging.md)
 - [Observability](policies/observability.md)
 - [Package and workspace roots](policies/package-roots.md)

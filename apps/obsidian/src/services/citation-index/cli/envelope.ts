@@ -60,7 +60,8 @@ export type DiagnosticCode = keyof typeof DIAGNOSTIC_HINTS;
 export interface Diagnostic {
   code: DiagnosticCode;
   message: string;
-  /** The recovery action for `code`, taken from `DIAGNOSTIC_HINTS`. */
+  /** The recovery action to follow: by default `DIAGNOSTIC_HINTS[code]`; a
+   *  rejected parameter can carry its own, such as its `name=value` form. */
   hint: string;
   details?:
     | { parameter: string }
@@ -97,7 +98,7 @@ export function reportCandidates(
 
 /**
  * Report a fault with the recovery action its code defines. Every diagnostic is
- * built here, so `hint` can never disagree with `code`.
+ * built here, so `hint` defaults to the action registered for `code`.
  */
 export function diagnostic(
   code: DiagnosticCode,

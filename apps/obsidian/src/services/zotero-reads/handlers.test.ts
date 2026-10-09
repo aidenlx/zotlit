@@ -35,11 +35,11 @@ function jobOf(
   stagePath?: string,
 ): QueryJob {
   const query = decodeItemQuery(params);
-  if ("code" in query)
+  if (query.kind === "invalid")
     throw new Error(`Malformed test query: ${query.message}`);
   return {
     schema: false,
-    query: JSON.parse(JSON.stringify(query)) as DecodedQuery,
+    query: JSON.parse(JSON.stringify(query.value)) as DecodedQuery,
     id,
     ...IDENTITY,
     scope: MY_LIBRARY_SCOPE,

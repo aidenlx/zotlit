@@ -13,6 +13,7 @@ import { MissingTemplateError, TemplateError } from "@zotlit/templates/facade";
 import type { TemplateLanguage } from "@zotlit/templates/facade";
 import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 
+import type { CliRejection } from "@/lib/cli-params";
 import { UNKNOWN_PROFILE_HINT } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
@@ -116,7 +117,8 @@ export type DiagnosticCode = keyof typeof DIAGNOSTIC_HINTS;
 export interface Diagnostic {
   code: DiagnosticCode;
   message: string;
-  /** The recovery action for `code`, taken from `DIAGNOSTIC_HINTS`. */
+  /** The recovery action to follow: by default `DIAGNOSTIC_HINTS[code]`; a
+   *  rejected parameter can carry its own, such as its `name=value` form. */
   hint: string;
   details?:
     | { parameter: string }
@@ -129,7 +131,7 @@ export interface Diagnostic {
 
 /**
  * Report a fault with the recovery action its code defines. Every diagnostic is
- * built here, so `hint` can never disagree with `code`.
+ * built here, so `hint` defaults to the action registered for `code`.
  */
 export function diagnostic(
   code: DiagnosticCode,
@@ -137,6 +139,16 @@ export function diagnostic(
   details?: Diagnostic["details"],
 ): Diagnostic {
   return { code, message, hint: DIAGNOSTIC_HINTS[code], details };
+}
+
+/** The `INVALID_SELECTOR` diagnostic of a rejected parameter. */
+export function rejectionDiagnostic(rejection: CliRejection): Diagnostic {
+  const rejected = diagnostic("INVALID_SELECTOR", rejection.message, {
+    parameter: rejection.parameter,
+  });
+  return rejection.hint === undefined
+    ? rejected
+    : { ...rejected, hint: rejection.hint };
 }
 
 /** The commands the Workbench answers. */

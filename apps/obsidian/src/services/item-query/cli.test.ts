@@ -32,7 +32,7 @@ import {
   registerItemQueryCli,
 } from "./cli";
 import type { ItemQueryCliDeps } from "./cli";
-import { decodeItemQuery } from "./decode";
+import { decodeItemQuery, rejectionDiagnostic } from "./decode";
 import type { DecodedQuery } from "./decode";
 import { GUIDE_EXAMPLES, GUIDE_FILTERS, GUIDE_TOPIC_NAMES } from "./guide";
 import type { QueryReply } from "./worker-protocol";
@@ -70,9 +70,9 @@ const PERSONAL_BY_MODIFIED = [
  */
 function decoded(params: CliData = {}): DecodedQuery {
   const query = decodeItemQuery(params);
-  if ("code" in query)
+  if (query.kind === "invalid")
     throw new Error(`Malformed test query: ${query.message}`);
-  return JSON.parse(JSON.stringify(query)) as DecodedQuery;
+  return JSON.parse(JSON.stringify(query.value)) as DecodedQuery;
 }
 
 /** The parameters of an answer, and the client of the database it reads. */
@@ -1051,7 +1051,9 @@ describe("zotlit:item-query-guide", () => {
 
     type Answered = { code: string; hint: string };
     // The renderer answers a malformed argument; the handler, the rest.
-    const diagnostics = [decodeItemQuery({ limit: "0" }) as Answered];
+    const malformed = decodeItemQuery({ limit: "0" });
+    if (malformed.kind === "valid") throw new Error("limit=0 decoded");
+    const diagnostics: Answered[] = [rejectionDiagnostic(malformed)];
     const failing: CliData[] = [{}, { library: "group:999" }];
     for (const params of failing) {
       const answer = (await run(params)) as { diagnostic: Answered };

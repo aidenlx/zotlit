@@ -1,8 +1,9 @@
 // Shared facts for inspection parsing, registered flags, and generated help.
-import type { CliFlags } from "obsidian";
+import type { CliFlag } from "obsidian";
 
 import { RESERVED_PARTIAL_NAME_LIST } from "@/services/template/defaults";
 
+import type { InspectParam } from "./inspect";
 import { quotedList } from "./vocabulary";
 
 export const TEMPLATE_INSPECT_COMMAND = "zotlit:template-inspect";
@@ -35,7 +36,7 @@ export const inspectFlags = {
     value: "<source-id>",
     description: "Required Zotero source identity",
   },
-} satisfies CliFlags;
+} satisfies Record<InspectParam, CliFlag>;
 
 export const INSPECT_DIAGNOSTICS = {
   INVALID_SELECTOR: {

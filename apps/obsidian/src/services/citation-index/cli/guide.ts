@@ -15,7 +15,7 @@ import type {
 
 import { DIAGNOSTIC_HINTS } from "./envelope";
 import type { ReferenceEntry } from "./envelope";
-import type { CITED_BY_PARAMS, REFERENCES_PARAMS } from "./request";
+import type { CitedByParam, ReferencesParam } from "./request";
 
 /** What each selector of the citation commands names. */
 const SELECTORS = {
@@ -25,10 +25,7 @@ const SELECTORS = {
   file: "The vault-relative path of one Markdown note, as file=folder/note.md. Any Markdown note answers: a document need not be a Literature Note to cite works.",
   "expect-source":
     "The Zotero source the call expects, checked before any data load. It asserts the Zotero source, not the vault; put vault=<vault-name> before the command name to select the vault.",
-} as const satisfies Record<
-  (typeof CITED_BY_PARAMS)[number] | (typeof REFERENCES_PARAMS)[number],
-  string
->;
+} as const satisfies Record<CitedByParam | ReferencesParam, string>;
 
 /** What each entry kind of a references answer reports (ADR 0024). */
 const ENTRY_KINDS = {
