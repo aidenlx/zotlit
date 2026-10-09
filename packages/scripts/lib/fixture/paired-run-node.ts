@@ -161,6 +161,11 @@ export function createNodePairedRunPorts({
         cwd: workspaceRoot,
         env,
         forwardStderr: true,
+      }).catch((cause: unknown) => {
+        throw new Error(
+          `Paired Zotero launch failed. Executable: ${getZoteroBinary(applicationDir)}; profile: ${layout.profileDir}`,
+          { cause },
+        );
       });
       const report = parseOpenReport(result.stdout);
       if (typeof report.pid !== "number") {

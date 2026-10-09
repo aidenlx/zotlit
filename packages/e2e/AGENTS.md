@@ -12,9 +12,11 @@ The End-to-end Run suite — the plugin running in a real desktop Obsidian windo
 
 The End-to-end Run and the measurement drive a real Electron app and stay out of `pnpm test` / CI: the `test` script runs the unit tests alone.
 
+The default reporter prints suite progress and the final counts. Read `.scratch/e2e-results/results.json` for individual results and `.scratch/e2e-results/console.log` for console evidence. A Paired Run setup failure writes `paired-startup.log` in that directory with the launch error chain. These files describe the latest run; copy evidence you need to retain before another run.
+
 ## Requirements
 
-Needs desktop Obsidian 1.13.4+ running locally with the CLI enabled (Settings → General → Advanced → "Command line interface"). Without a reachable Obsidian, `pnpm e2e` skips its tests cleanly and exits 0 — it does not fail.
+Needs desktop Obsidian running locally with the CLI enabled (Settings → General → Advanced → "Command line interface"). The app and installer must match the exact version pair in `src/vault-script.ts`; a mismatch fails before Fixture setup. Without a reachable Obsidian, `pnpm e2e` skips its tests cleanly and exits 0.
 
 The suite talks to Obsidian's CLI socket directly, so the `obsidian` command need not be registered. Run `packages/scripts/scripts/obsidian-cli.ts version` to verify that Obsidian answers.
 
@@ -22,7 +24,7 @@ The e2e vault's plugin bundle comes from `@zotlit/obsidian`'s dev build (`build:
 
 ## Isolation
 
-Each suite file builds its own Fixture and new purged vaults under `.scratch/e2e-*`; `paired-run.e2e.ts` also starts its own Paired Zotero (`src/paired-environment.ts`). The file disposes all of them at its end, and the next run clears what a crashed run left. The developer's Fixture, Development Vault, and Paired Run stay open and untouched.
+Each suite builds its own Fixture and new purged vaults under `.scratch/e2e-*`. The paired project's setup (`src/paired-setup.ts`) starts its Paired Zotero before test collection and owns its teardown at the end of the run; startup failure stops the run before tests begin. Desktop-only selections do not start Paired Zotero. The next run clears what a crashed run left. The developer's Fixture, Development Vault, and Paired Run stay open and untouched.
 
 - Files run serially (`fileParallelism: false`): both drive the one desktop Obsidian.
 - The OS focus stays with the developer and with runs in other worktrees. `keepRendering` makes a vault's windows render, and one of them act focused, behind other apps.

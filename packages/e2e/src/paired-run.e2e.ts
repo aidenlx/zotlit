@@ -4,15 +4,16 @@
 //
 // Each run opens a Paired Run of its own (`openPairedEnvironment`): a new
 // Fixture, a new purged vault, and a Paired Zotero started on them, all
-// disposed when the file ends. Every test therefore starts from the Fixture
+// disposed when the test run ends. Every test therefore starts from the Fixture
 // Spec, and a developer's own Paired Run stays as it is.
 //
-// Skips cleanly (not fails) when no desktop Obsidian answers, decided at module
-// scope before collection.
+// Project setup checks desktop readiness before collection and owns teardown.
+// Skips cleanly when no desktop Obsidian answers.
 
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import {
   afterAll,
   afterEach,
@@ -21,10 +22,10 @@ import {
   describe,
   expect,
   it,
+  inject,
 } from "vitest";
 
 import { ANNOTATIONS, ATTACHMENTS } from "@zotlit/scripts/fixture";
-import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { verifyExternalAnnotationLock } from "./annotation-lock.ts";
 import { keepRendering } from "./background-throttling.ts";
@@ -43,7 +44,7 @@ import {
   waitFor,
   WINDOW_DOCUMENTS,
 } from "./obsidian-cli.ts";
-import { openPairedEnvironment } from "./paired-environment.ts";
+import type {} from "./paired-setup.ts";
 import {
   authorizationCount,
   authorize,
@@ -85,9 +86,6 @@ import {
   toolButtonOf,
   watchExcerptPixels,
 } from "./reader-gestures.ts";
-import { isObsidianReachable } from "./vault-script.ts";
-
-const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 
 /** The Fixture Attachment this scenario reads, writes and never rewrites. */
 const attachment = ATTACHMENTS.find(({ key }) => key === "RGRPDF24")!;
@@ -108,13 +106,7 @@ const KEY_SHAPE = expect.stringMatching(
   /^[0-9A-Za-z]{32}$/,
 ) as unknown as string;
 
-const environment = (await isObsidianReachable(workspaceRoot))
-  ? await openPairedEnvironment(workspaceRoot)
-  : null;
-// File scope, so it runs after every suite's own `afterAll` has used the run.
-afterAll(async () => {
-  await environment?.[Symbol.asyncDispose]();
-}, 120000);
+const environment = inject("pairedEnvironment");
 const vaultId = environment?.vaultId ?? null;
 
 const baseUrl = environment?.baseUrl ?? null;
@@ -1378,8 +1370,14 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             ),
           ).toBe(true);
           expect(
-            await obEval(vaultId!, `${tool}.getAttribute('aria-pressed')`),
-          ).toBe("false");
+            await obEvalUntil(
+              vaultId!,
+              `${tool}.getAttribute('aria-pressed')`,
+              {
+                expected: "false",
+              },
+            ),
+          ).toBe(true);
           // The card shows the Excerpt Image, decoded.
           expect(
             await obEvalUntil(
@@ -2876,12 +2874,15 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // Zotero holds the predicted rect, read straight off the Local API.
           const expected = [48.75, 365.509, 590, 743.723];
           expect(
-            await waitFor(
-              async () =>
-                (await image.stored()).data.annotationPosition !==
-                image.seed.annotationPosition,
+            await waitFor(async () =>
+              rectIs(
+                (await image.stored()).data.annotationPosition,
+                expected,
+                0.005,
+              ),
             ),
           ).toBe(true);
+          await image.settled();
           const stored = await image.stored();
           const position = JSON.parse(stored.data.annotationPosition) as {
             pageIndex: number;
@@ -2925,7 +2926,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               { expected: "true" },
             ),
           ).toBe(true);
-          expect(await pixels.keys()).toContain(imageKey);
+          await expect
+            .poll(() => pixels.keys(), { timeout: 10_000 })
+            .toContain(imageKey);
         }, 120000);
 
         it("puts the image's geometry back for the undo key, and drags it out again for redo", async () => {
@@ -2942,8 +2945,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await waitFor(
               async () =>
-                (await image.stored()).data.annotationPosition !==
-                image.seed.annotationPosition,
+                !isDeepStrictEqual(
+                  JSON.parse((await image.stored()).data.annotationPosition),
+                  image.seeded.position,
+                ),
             ),
           ).toBe(true);
           await image.settled();
@@ -3343,8 +3348,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await waitFor(
               async () =>
-                (await ink.stored()).data.annotationPosition !==
-                ink.seed.annotationPosition,
+                !isDeepStrictEqual(
+                  JSON.parse((await ink.stored()).data.annotationPosition),
+                  ink.seeded.position,
+                ),
             ),
           ).toBe(true);
           await ink.settled();
@@ -3361,7 +3368,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect((await ink.held())?.position).toBe(
             stored.data.annotationPosition,
           );
-          expect(await pixels.keys()).toContain(inkKey);
+          await expect
+            .poll(() => pixels.keys(), { timeout: 10_000 })
+            .toContain(inkKey);
           return JSON.parse(stored.data.annotationPosition) as InkPosition;
         }
 
@@ -3599,8 +3608,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await waitFor(
               async () =>
-                (await mark.stored()).data.annotationPosition !==
-                mark.seed.annotationPosition,
+                !isDeepStrictEqual(
+                  JSON.parse((await mark.stored()).data.annotationPosition),
+                  mark.seeded.position,
+                ),
             ),
           ).toBe(true);
           await mark.settled();
@@ -3814,7 +3825,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const highlight = seededMark(highlightKey, { image: false });
         const highlightMarks = `[...${pdfView}.containerEl.querySelectorAll('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(highlightKey)}]')]`;
         /** The client box of the first run of `word` in page one's text layer. */
-        const wordRect = `const wordRect=(word)=>{const walker=document.createTreeWalker(${pdfView}.containerEl.querySelector('.page[data-page-number="1"] .textLayer'),NodeFilter.SHOW_TEXT);let node;while((node=walker.nextNode())){const at=node.data.indexOf(word);if(at>=0){const range=document.createRange();range.setStart(node,at);range.setEnd(node,at+word.length);return range.getBoundingClientRect();}}return null;};`;
+        const wordRect = `const wordRect=(word)=>{const layer=${pdfView}.containerEl.querySelector('.page[data-page-number="1"] .textLayer');if(!layer)return null;const walker=document.createTreeWalker(layer,NodeFilter.SHOW_TEXT);let node;while((node=walker.nextNode())){const at=node.data.indexOf(word);if(at>=0){const range=document.createRange();range.setStart(node,at);range.setEnd(node,at+word.length);return range.getBoundingClientRect();}}return null;};`;
         /** Whether the highlight's Annotation Card quotes text `test` accepts. */
         const cardQuotes = (test: string) =>
           `(function(){const card=app.workspace.getLeavesOfType('zotero-annotation-view').map(({view})=>view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(highlightKey)}]')).find(Boolean);if(!card)return 'no card';return String([...card.querySelectorAll('*')].some((node)=>node.childElementCount===0&&(${test})(node.textContent)));})()`;
@@ -3882,6 +3893,15 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             from?: string;
           },
         ): Promise<string> {
+          // Annotation overlays can appear before PDF.js finishes the text layer.
+          // Wait for the word we will hit before sending the gesture once.
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(function(){${wordRect}const box=wordRect(${JSON.stringify(word)});return String(!!box&&box.width>0&&box.height>0);})()`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
           const pressed = await obJson<{ grip: string; to: number[] }>(
             vaultId!,
             `(function(){${FIRE}${wordRect}const box=wordRect(${JSON.stringify(word)});const x=box.left+box.width*${at},y=box.top+box.height/2;const node=fire('pointerdown',${handle.x},${handle.y});const container=${pdfView}.containerEl;fire('pointermove',(${handle.x}+x)/2,(${handle.y}+y)/2,container);fire('pointermove',x,y,container);window.__ztTo=[x,y];return JSON.stringify({grip:node.dataset.ztGrip,to:[x,y]});})()`,
@@ -5056,10 +5076,47 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               `JSON.stringify({comment:!!${card}?.querySelector('.cm-content'),tags:!!${card}?.querySelector('[data-slot=tags-input]')})`,
             );
 
+          // A collected query leaves the published card on screen.
+          await obEval(
+            vaultId!,
+            `(() => { app.plugins.plugins.zotlit.services.queryClient.client.removeQueries({queryKey:['annotations']}); return true; })()`,
+          );
           await trustedClick(field);
           await expect
             .poll(editors, poll)
             .toEqual({ comment: true, tags: false });
+
+          // Keep the database replacement pending while the user changes
+          // editors: a refresh must preserve the card's editing capability.
+          await using pendingRead = new AsyncDisposableStack();
+          pendingRead.defer(async () => {
+            await obEval(
+              vaultId!,
+              `(() => { window.__zlPendingDatabaseRead?.restore(); delete window.__zlPendingDatabaseRead; return true; })()`,
+            );
+          });
+          await obEval(
+            vaultId!,
+            `(async () => {
+              const db = app.plugins.plugins.zotlit.services.zoteroReads;
+              const acquire = db.acquireRead;
+              const pending = Promise.withResolvers();
+              const state = { changed: false, restore: null };
+              const off = db.on('changed', () => { state.changed = true; });
+              state.restore = () => { db.acquireRead = acquire; off(); pending.resolve(); };
+              window.__zlPendingDatabaseRead = state;
+              db.acquireRead = async () => { await pending.promise; return acquire.call(db); };
+              await db.refresh();
+              return true;
+            })()`,
+          );
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `window.__zlPendingDatabaseRead.changed`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
 
           // The tag toggle saves and closes the comment editor first.
           await trustedClick(toggle("tag"));
@@ -5671,12 +5728,18 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               rects: [[100, 560 - n * 30, 300, 580 - n * 30]],
             },
           }));
-          const made = await obJson<string[]>(
-            vaultId!,
-            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const keys=[];for(const draft of ${JSON.stringify(drafts)}){const outcome=await repository.createAnnotation(${JSON.stringify(attachment.key)},draft);keys.push(outcome.annotationKey);}return JSON.stringify(keys);})()`,
-          );
           try {
-            expect(made).toHaveLength(2);
+            const outcomes = await obJson<
+              { kind: string; annotationKey?: string }[]
+            >(
+              vaultId!,
+              `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const outcomes=[];for(const draft of ${JSON.stringify(drafts)})outcomes.push(await repository.createAnnotation(${JSON.stringify(attachment.key)},draft));return JSON.stringify(outcomes);})()`,
+            );
+            expect(outcomes).toEqual([
+              { kind: "created", annotationKey: expect.any(String) },
+              { kind: "created", annotationKey: expect.any(String) },
+            ]);
+            const made = outcomes.map(({ annotationKey }) => annotationKey!);
             const [first, second] = made as [string, string];
             /** A card's rendered comment, scrolled into the list's view. */
             const comment = (key: string) =>
@@ -5980,12 +6043,18 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               rects: [[100, 560 - n * 30, 300, 580 - n * 30]],
             },
           }));
-          const made = await obJson<string[]>(
-            vaultId!,
-            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const keys=[];for(const draft of ${JSON.stringify(drafts)}){const outcome=await repository.createAnnotation(${JSON.stringify(attachment.key)},draft);keys.push(outcome.annotationKey);}return JSON.stringify(keys);})()`,
-          );
           try {
-            expect(made).toHaveLength(2);
+            const outcomes = await obJson<
+              { kind: string; annotationKey?: string }[]
+            >(
+              vaultId!,
+              `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const outcomes=[];for(const draft of ${JSON.stringify(drafts)})outcomes.push(await repository.createAnnotation(${JSON.stringify(attachment.key)},draft));return JSON.stringify(outcomes);})()`,
+            );
+            expect(outcomes).toEqual([
+              { kind: "created", annotationKey: expect.any(String) },
+              { kind: "created", annotationKey: expect.any(String) },
+            ]);
+            const made = outcomes.map(({ annotationKey }) => annotationKey!);
             const [first, second] = made as [string, string];
             await clickCard(first);
             expect(
@@ -6411,13 +6480,16 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const color = "#a28ae5";
           if (pending === "in-flight write") {
             await installClosingPaneProbe(vaultId!, createdKey, color);
-            expect(
-              await obEvalUntil(
-                vaultId!,
-                "String(window.__zotlitWriteOutcomeProbe?.reached)",
-                { expected: "true" },
-              ),
-            ).toBe(true);
+            await expect
+              .poll(
+                () =>
+                  obJson(
+                    vaultId!,
+                    `JSON.stringify({reached:window.__zotlitWriteOutcomeProbe?.reached,outcome:window.__zotlitWriteOutcomeProbe?.outcome})`,
+                  ),
+                { timeout: 10_000 },
+              )
+              .toEqual({ reached: true, outcome: null });
           }
           const stored = await annotationState(api, serverID, createdKey);
           if (pending === "in-flight write") {
@@ -6534,25 +6606,22 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         );
         try {
           await installClosingPaneProbe(vaultId!, createdKey, committed);
-          expect(
-            await obEvalUntil(
+          const state = () =>
+            obJson(
               vaultId!,
-              "String(window.__zotlitWriteOutcomeProbe?.reached)",
-              { expected: "true" },
-            ),
-          ).toBe(true);
+              `JSON.stringify({reached:window.__zotlitWriteOutcomeProbe?.reached,outcome:window.__zotlitWriteOutcomeProbe?.outcome})`,
+            );
+          await expect
+            .poll(state, { timeout: 10_000 })
+            .toEqual({ reached: true, outcome: null });
 
           await obEval(
             vaultId!,
             "app.workspace.getLeavesOfType('pdf').forEach(leaf=>leaf.detach());app.workspace.detachLeavesOfType('zotero-annotation-view');window.__zotlitWriteOutcomeProbe.release();true",
           );
-          expect(
-            await obEvalUntil(
-              vaultId!,
-              "String(window.__zotlitWriteOutcomeProbe?.outcome?.kind)",
-              { expected: "idle" },
-            ),
-          ).toBe(true);
+          await expect
+            .poll(state, { timeout: 10_000 })
+            .toMatchObject({ outcome: { kind: "idle" } });
           expect(await writeOutcomeCalls(vaultId!)).toBe(1);
           expect(await annotationColor(api, serverID, createdKey)).toBe(
             committed,
