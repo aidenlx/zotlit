@@ -4,6 +4,7 @@ import { redPng } from "./__fixtures__/png";
 import { answerAnnotationImage } from "./cli-image";
 import type { ExcerptRequest } from "./contract";
 import { PNG_FORMAT } from "./format";
+import { ExcerptSourceUnavailable } from "./request";
 
 const request: ExcerptRequest = {
   annotation: {
@@ -144,3 +145,35 @@ it.each(
     expect(answer.diagnostic.hint.length).toBeGreaterThan(10);
   },
 );
+
+it("reports a failed read with the reader's own message", async () => {
+  const controller = new AbortController();
+  const signals: (AbortSignal | undefined)[] = [];
+  const answer = JSON.parse(
+    await answerAnnotationImage(
+      { key: "ABCDEFGH" },
+      {
+        read: async (_, signal) => {
+          signals.push(signal);
+          throw new ExcerptSourceUnavailable({
+            message: "database disk is locked",
+          });
+        },
+        resolve: async () => ({ kind: "unavailable" }),
+        publish: async () => {
+          throw new Error("No bytes");
+        },
+        exists: async () => false,
+      },
+      controller.signal,
+    ),
+  );
+  expect(signals).toEqual([controller.signal]);
+  expect(answer).toMatchObject({
+    ok: false,
+    diagnostic: {
+      code: "source-unavailable",
+      message: "database disk is locked",
+    },
+  });
+});
