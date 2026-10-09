@@ -47,14 +47,6 @@ export interface ItemQueryRequest {
   readonly limit?: number | null | undefined;
 }
 
-/** The request of an Annotation Query: an Item Query request with selectors. */
-export interface AnnotationQueryRequest extends ItemQueryRequest {
-  /** The Indexed Keys of the parent Items whose Annotations match. */
-  readonly item?: readonly string[] | undefined;
-  /** The Indexed Keys of the Attachments whose Annotations match. */
-  readonly attachment?: readonly string[] | undefined;
-}
-
 export interface SortSpec {
   readonly field: string;
   readonly direction: "asc" | "desc";
@@ -67,9 +59,6 @@ export interface ItemQuery {
   readonly fields: readonly string[];
   readonly sort: readonly SortSpec[];
   readonly limit: number | null;
-  /** The Annotation selectors the request named. */
-  readonly item?: readonly string[];
-  readonly attachment?: readonly string[];
 }
 
 /** A value of one Projection Path in a Query Row. */
@@ -93,7 +82,9 @@ export interface QueryRow {
 }
 
 export interface QueryResult {
-  readonly warnings: readonly Diagnostic<"never-true" | "always-true">[];
+  readonly warnings: readonly Diagnostic<
+    "never-true" | "always-true" | "key-outside-target-libraries"
+  >[];
   /** The normalized request. */
   readonly query: ItemQuery;
   readonly rows: readonly QueryRow[];
@@ -134,7 +125,7 @@ export const UNLIMITED_LIMIT = "all";
  */
 export function planRequest(
   dataset: QueryDataset<any>,
-  request: AnnotationQueryRequest,
+  request: ItemQueryRequest,
 ): Effect.Effect<ItemQueryPlan, ItemQueryError> {
   return Effect.gen(function* () {
     const libraryIDs = request.libraries.map((library) => library.libraryID);
@@ -242,8 +233,6 @@ export function planRequest(
         fields: [...fields],
         sort: normalized,
         limit,
-        ...(request.item ? { item: request.item } : {}),
-        ...(request.attachment ? { attachment: request.attachment } : {}),
       },
       filter,
       warnings: filter?.warnings ?? [],

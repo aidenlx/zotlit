@@ -40,7 +40,11 @@ Use the vault's Library scope by default. Use `library=all` for every Library or
 
 Keep every `indexedKey`. A bare Zotero key is unique only inside its Library; a group Indexed Key ends in `g<groupID>`. Compare source identity before joining separate calls.
 
-Read `zotlit:query-guide topic=filter` before selecting Annotations by Item or Attachment. Select the parent Item with Item Query first when the user names a work without its key.
+Select through the filter: `filter='indexedKey == "ART2FULL"'` for one Item or Annotation, or `filter='["ART2FULL","ART2FULLg118"].contains(indexedKey)'` for a list. On Annotations, use `item.indexedKey` for the parent Item and `attachment.indexedKey` for its Attachment. Combine selection with other conditions using `&&`.
+
+An Indexed Key without a suffix names My Library. A group suffix names that group. Set `library` to include the required Libraries. A key outside the Target Libraries produces a Query Warning and leaves the scope unchanged. Read its suggested `library` value before retrying. Use `key == "ART2FULL"` to match the same bare Zotero key across all Target Libraries.
+
+Read `zotlit:query-guide topic=filter` for selection details. Select the parent Item with Item Query first when the user names a work without its key.
 
 ## Item Query
 

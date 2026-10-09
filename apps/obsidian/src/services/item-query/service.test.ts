@@ -101,7 +101,7 @@ const DATASETS = [
     command: "zotlit:query",
     schemaCommand: "zotlit:query-schema",
     asset: "query",
-    params: { item: "ART2FULL", limit: "all" },
+    params: { filter: 'item.indexedKey == "ART2FULL"', limit: "all" },
     returnedCount: 12,
     defaults: {
       fields: [
@@ -755,7 +755,11 @@ it("resolves the file of each Attachment that an Annotation Query projects", asy
   await writeFile(join(directory, "exact.pdf"), "fixture");
   const result = JSON.parse(
     await service.query(
-      { from: "annotations", item: "ART2FULL", limit: "all" },
+      {
+        from: "annotations",
+        filter: 'item.indexedKey == "ART2FULL"',
+        limit: "all",
+      },
       signal(),
     ),
   );

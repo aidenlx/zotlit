@@ -308,6 +308,29 @@ export const annotationFilterRegistry: FilterRegistry<
       ? "colorName"
       : name,
   field(name) {
+    if (
+      name === "indexedKey" ||
+      name === "key" ||
+      name === "item.indexedKey" ||
+      name === "attachment.indexedKey"
+    ) {
+      return {
+        filterable: true,
+        needs: {},
+        value: {
+          type: "string",
+          read: (item) => {
+            const key =
+              name === "item.indexedKey"
+                ? item.scan.parent.key
+                : name === "attachment.indexedKey"
+                  ? item.scan.attachmentKey
+                  : item.scan.key;
+            return name === "key" ? key : formatIndexedKey(key, item.groupID);
+          },
+        },
+      };
+    }
     if (name.startsWith("item.")) {
       const parent = filterField(name.slice(5));
       return parent?.filterable

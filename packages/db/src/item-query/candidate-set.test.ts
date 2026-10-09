@@ -140,6 +140,21 @@ describe("readCandidateSet", () => {
     ).toEqual(["PDF2LIVE"]);
   });
 
+  // Failure modes: list selection crosses Libraries, duplicates IDs, or exceeds its cap.
+  it("reads a bounded set of keys inside one Target Library", () => {
+    using scenario = openScenarioDatabase();
+    const leaf = {
+      kind: "keys" as const,
+      keys: ["ART2FULL", "ART2FULL", "GRP2BK22", "NOSUCHKY"],
+    };
+    expect(candidates(scenario)(personal, leaf)).toEqual(["ART2FULL"]);
+    expect(candidates(scenario)(group, leaf)).toEqual(["ART2FULL", "GRP2BK22"]);
+    expect(candidates(scenario)(group, leaf, 1)).toHaveLength(1);
+    expect(candidates(scenario)(personal, { kind: "keys", keys: [] })).toEqual(
+      [],
+    );
+  });
+
   it("reads at most `limit` Item IDs", () => {
     using scenario = openScenarioDatabase();
     expect(

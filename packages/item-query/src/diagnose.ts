@@ -39,6 +39,8 @@ import { COUNT_FIELDS, UNLIMITED_LIMIT } from "./request";
 interface DiagnosisContext extends ItemQueryErrorLocation {
   readonly dataset: QueryDataset<any>;
 }
+import type { KeyLibraryWarning } from "./indexed-key-selection";
+
 interface WarningContext {
   readonly clock: QueryClock;
   readonly dataset: QueryDataset<any>;
@@ -927,10 +929,27 @@ function diagnoseSyntax(
 
 /** Warnings describe the marked comparison; they never replace its evaluation. */
 export function diagnoseWarning(
-  fault: Extract<Fault, { kind: "constant" }>,
+  fault: Extract<Fault, { kind: "constant" }> | KeyLibraryWarning,
   text: string,
   { clock, dataset }: WarningContext,
-): Diagnostic<"never-true" | "always-true"> {
+): Diagnostic<"never-true" | "always-true" | "key-outside-target-libraries"> {
+  if (fault.kind === "key-library") {
+    const suggestion = `library=${fault.include}`;
+    return {
+      ...renderDiagnostic(
+        {
+          code: "key-outside-target-libraries",
+          message: `Indexed Key "${fault.key}" names ${fault.library}, which is outside the Target Libraries.`,
+          hint: `Use ${suggestion} to include ${fault.library}.`,
+          location: { argument: "filter", span: fault.at },
+        },
+        text,
+        { found: fault.key, expected: [fault.library] },
+      ),
+      severity: "warning",
+      suggestions: [suggestion],
+    };
+  }
   const left = text.slice(fault.left.at.from, fault.left.at.to);
   const right = text.slice(fault.right.at.from, fault.right.at.to);
   const suggestion = constantCorrection(fault, text, { clock, dataset });

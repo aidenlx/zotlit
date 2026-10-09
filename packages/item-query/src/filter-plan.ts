@@ -480,21 +480,21 @@ class Validator<Item, Needs> {
           valueType: binaryType(ast.operator, left.valueType, right.valueType),
         };
       }
-      case "object-access":
+      case "object-access": {
+        const object = ast.object;
         if (
-          this.registry.prefix &&
-          ast.object.type === "identifier" &&
-          ast.object.name === this.registry.prefix
+          object.type === "identifier" &&
+          !this.#scopes.some((scope) => scope.includes(object.name)) &&
+          (object.name === this.registry.prefix ||
+            this.registry.field(`${object.name}.${ast.property}`) !== undefined)
         ) {
-          return this.#identifier(
-            `${this.registry.prefix}.${ast.property}`,
-            span,
-          );
+          return this.#identifier(`${object.name}.${ast.property}`, span);
         }
         if (this.#isCustomRoot(ast.object)) {
           return this.#customField(ast.property, span, false);
         }
         return this.#objectAccess(ast, span);
+      }
       case "array-access": {
         if (this.#isCustomRoot(ast.object)) {
           if (ast.index.type !== "string") {

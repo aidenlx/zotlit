@@ -33,18 +33,29 @@ export function describeAnnotationQueryVocabulary() {
     ],
   );
   fields.push(
-    ...item.fields.map((field) => ({
-      ...field,
-      path: `item.${field.path}`,
-      sort: false,
-    })),
+    ...item.fields
+      .filter((field) => field.path !== "indexedKey")
+      .map((field) => ({
+        ...field,
+        path: `item.${field.path}`,
+        sort: false,
+      })),
   );
   fields.push(
+    ...["key", "indexedKey"].map(
+      (path): SchemaField => ({
+        path,
+        type: "string",
+        projection: false,
+        filter: "string",
+        sort: false,
+      }),
+    ),
     {
       path: "item.indexedKey",
       type: "string",
       projection: true,
-      filter: null,
+      filter: "string",
       sort: false,
     },
     {

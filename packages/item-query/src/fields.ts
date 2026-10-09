@@ -2,6 +2,7 @@
 // hydration needs, and its projection, sort, and filter readers.
 import {
   creatorFieldModeToName,
+  formatIndexedKey,
   parseItemDate,
   tagTypeToName,
 } from "@zotlit/db";
@@ -428,6 +429,13 @@ export function fieldDefinition(name: string): FieldDefinition | undefined {
  */
 const FILTER_ONLY_FIELDS: ReadonlyMap<string, FilterValueDefinition> = new Map([
   ["key", { type: "string", read: (item: QueryItem) => item.scan.key }],
+  [
+    "indexedKey",
+    {
+      type: "string",
+      read: (item: QueryItem) => formatIndexedKey(item.scan.key, item.groupID),
+    },
+  ],
 ]);
 
 /** A built-in name as a Filter Expression reads it. */

@@ -55,11 +55,13 @@ PARENT ITEM FIELDS
 const KEYS_SECTION = `ITEM, ATTACHMENT, AND ANNOTATION KEYS
 
 SELECT PARENTS
-  item and attachment take one Indexed Key or a JSON array of Indexed Keys.
-  Each selector chooses its own Library. When both are present, an Annotation
-  must belong to both selections. A selector and filter also combine with AND.
-    ${example({ item: "ART2FULL", limit: "all" })}
-    ${example({ attachment: "PDF2LIVE", fields: "text,pageLabel", limit: "all" })}
+  Select with item.indexedKey or attachment.indexedKey in the filter.
+  Use indexedKey for the Annotation itself, and && to combine conditions.
+  A literal list selects several keys with .contains(item.indexedKey).
+  Set library to include each key's Library; a key outside the Target Libraries
+  gives a Query Warning and leaves the Target Libraries unchanged.
+    ${example({ filter: 'item.indexedKey == "ART2FULL"', limit: "all" })}
+    ${example({ filter: 'attachment.indexedKey == "PDF2LIVE"', fields: "text,pageLabel", limit: "all" })}
 
 RESULT IDENTITIES
   Every row has indexedKey for the Annotation, attachmentIndexedKey for its
@@ -73,7 +75,7 @@ PROJECTION PATHS
   fields is a comma list or JSON array of values to return. fields='[]' returns only the
   three row identities. position is available only when requested and stays
   out of the default row.
-    ${example({ attachment: "PDF2LIVE", fields: "position", limit: "all" })}
+    ${example({ filter: 'attachment.indexedKey == "PDF2LIVE"', fields: "position", limit: "all" })}
 
 POSITION KINDS
   position.kind is pdf-rects, pdf-ink, pdf-text, epub-cfi, snapshot-css,

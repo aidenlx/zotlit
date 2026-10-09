@@ -12,7 +12,7 @@ import {
   collectQuery,
   consumeQuery,
 } from ".";
-import type { AnnotationQueryRequest } from ".";
+import type { ItemQueryRequest } from ".";
 import { ANNOTATION_SCENARIO_QUERIES } from "./annotation-scenario-queries";
 import { ItemQueryError } from "./error";
 import type { RunOptions } from "./test-helpers";
@@ -23,8 +23,7 @@ it("projects every parent creator and Annotation Tag with []", async () => {
   const { exit } = await runEffect(
     collectQuery(ANNOTATIONS, {
       libraries: [SCENARIO_LIBRARIES.personal],
-      attachment: ["PDF2LIVE"],
-      filter: 'type == "underline"',
+      filter: 'attachment.indexedKey == "PDF2LIVE" && type == "underline"',
       fields: ["item.creators[].fullName", "tags[]"],
     }),
     { client: scenario.db },
@@ -51,7 +50,7 @@ it("returns the reading record of one Item, with three identities and default fi
   const { exit } = await runEffect(
     collectQuery(ANNOTATIONS, {
       libraries: [SCENARIO_LIBRARIES.personal],
-      item: ["ART2FULL"],
+      filter: 'item.indexedKey == "ART2FULL"',
     }),
     { client: scenario.db },
   );
@@ -119,6 +118,20 @@ it("filters and projects the Library selector of Annotations with the same bare 
     if (exit._tag === "Failure") throw new Error(String(exit.cause));
     return exit.value.rows;
   };
+  for (const [filter, expected] of [
+    ['indexedKey == "ANN2HGHT"', ["ANN2HGHT"]],
+    ['indexedKey == "ANN2HGHTg4815"', ["ANN2HGHTg4815"]],
+    ['key == "ANN2HGHT"', ["ANN2HGHT", "ANN2HGHTg4815"]],
+  ] as const) {
+    const selected = await query(filter);
+    expect(selected.map((row) => row.indexedKey)).toEqual(expected);
+    const { exit } = await runEffect(
+      collectQuery(ANNOTATIONS, { ...request, filter }),
+      { client: scenario.db, tuning: { forceScan: true } },
+    );
+    if (exit._tag === "Failure") throw new Error(String(exit.cause));
+    expect(exit.value.rows).toEqual(selected);
+  }
   const rows = await query();
   expect(rows.find((row) => row.indexedKey === "ANN2HGHT")?.values).toEqual({
     library: "personal",
@@ -149,7 +162,7 @@ it("projects each PDF position kind and preserves an unknown stored position", a
   const { exit } = await runEffect(
     collectQuery(ANNOTATIONS, {
       libraries: [SCENARIO_LIBRARIES.personal],
-      attachment: ["PDF2LIVE", "PDF2LINK"],
+      filter: '["PDF2LIVE", "PDF2LINK"].contains(attachment.indexedKey)',
       fields: ["position"],
       limit: null,
     }),
@@ -242,9 +255,8 @@ it("reads parent custom fields, relations, timestamps and identities through the
   const { exit } = await runEffect(
     collectQuery(ANNOTATIONS, {
       libraries: [SCENARIO_LIBRARIES.personal],
-      item: ["ART2FULL"],
       filter:
-        'item.custom["review.status"] == "done" && item.mood == "calm" && item.tags.contains("methods") && item.collections.within("Thesis") && item.dateModified.year == 2024',
+        'item.indexedKey == "ART2FULL" && item.custom["review.status"] == "done" && item.mood == "calm" && item.tags.contains("methods") && item.collections.within("Thesis") && item.dateModified.year == 2024',
       fields: [
         "item.indexedKey",
         'item.custom["review.status"]',
@@ -373,7 +385,7 @@ it.each(["asc", "desc"] as const)(
     const { exit } = await runEffect(
       collectQuery(ANNOTATIONS, {
         libraries: [SCENARIO_LIBRARIES.personal],
-        attachment: ["PDF2LIVE", "PDF2LINK"],
+        filter: '["PDF2LIVE", "PDF2LINK"].contains(attachment.indexedKey)',
         fields: [],
         sort: [{ field: "pageIndex", direction }],
       }),
@@ -466,7 +478,7 @@ it("warns on definite cross-type inequality while preserving every evaluated mat
 
 /** The readers of the scan pass and of the projection pass, in order. */
 async function passReaders(
-  request: Omit<AnnotationQueryRequest, "libraries">,
+  request: Omit<ItemQueryRequest, "libraries">,
   resolve: (indexedKey: string) => void = () => {},
 ) {
   using scenario = openScenarioDatabase({ annotations: true });
@@ -560,3 +572,111 @@ describe("the statements of each pass", () => {
     expect(none).toEqual([]);
   });
 });
+
+// Failure modes: selecting the wrong parent, crossing Library scope, or dropping
+// a warning when another branch matches. Each request also runs as a forced scan.
+it.each([
+  ['indexedKey == "ANN2HGHT"', ["ANN2HGHT"]],
+  ['indexedKey == "ANN2GRUPg4815"', ["ANN2GRUPg4815"]],
+  [
+    '["ANN2HGHT", "ANN2GRUPg4815"].contains(indexedKey)',
+    ["ANN2GRUPg4815", "ANN2HGHT"],
+  ],
+  ['item.indexedKey == "ART2FULLg4815"', ["ANN2GRUPg4815"]],
+  ['attachment.indexedKey == "PDF2GRUPg4815"', ["ANN2GRUPg4815"]],
+  ['["ART2FULLg4815"].contains(item.indexedKey)', ["ANN2GRUPg4815"]],
+  ['["PDF2GRUPg4815"].contains(attachment.indexedKey)', ["ANN2GRUPg4815"]],
+] as const)(
+  "selects Annotations across two Libraries with %s",
+  async (filter, expected) => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    for (const forceScan of [false, true]) {
+      const { exit } = await runEffect(
+        collectQuery(ANNOTATIONS, {
+          libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
+          filter,
+          fields: [],
+          sort: [],
+        }),
+        { client: scenario.db, tuning: { forceScan } },
+      );
+      if (exit._tag === "Failure") throw new Error(String(exit.cause));
+      expect(exit.value.rows.map((row) => row.indexedKey).toSorted()).toEqual(
+        expected,
+      );
+      expect(exit.value.warnings).toEqual([]);
+    }
+  },
+);
+it.each(["indexedKey", "item.indexedKey", "attachment.indexedKey"])(
+  "keeps Target Libraries and warns for %s selections",
+  async (field) => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    const key =
+      field === "indexedKey"
+        ? "ANN2GRUPg4815"
+        : field === "item.indexedKey"
+          ? "ART2FULLg4815"
+          : "PDF2GRUPg4815";
+    for (const matching of [false, true]) {
+      const request = {
+        libraries: [SCENARIO_LIBRARIES.personal],
+        filter: `${field} == "${key}"${matching ? ' || indexedKey == "ANN2HGHT"' : ""}`,
+        fields: [],
+      };
+      for (const forceScan of [false, true]) {
+        const { exit } = await runEffect(collectQuery(ANNOTATIONS, request), {
+          client: scenario.db,
+          tuning: { forceScan },
+        });
+        if (exit._tag === "Failure") throw new Error(String(exit.cause));
+        expect(exit.value.rows.map((row) => row.indexedKey)).toEqual(
+          matching ? ["ANN2HGHT"] : [],
+        );
+        expect(exit.value.warnings).toMatchObject([
+          {
+            code: "key-outside-target-libraries",
+            found: key,
+            expected: ["group:4815"],
+            suggestions: ["library=personal,group:4815"],
+          },
+        ]);
+      }
+    }
+  },
+);
+
+// A bare Indexed Key names My Library even when only the group is read.
+it.each(["indexedKey", "item.indexedKey", "attachment.indexedKey"])(
+  "warns for a bare %s in a group-only list selection",
+  async (field) => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    const key =
+      field === "indexedKey"
+        ? "ANN2GRUP"
+        : field === "item.indexedKey"
+          ? "ART2FULL"
+          : "PDF2GRUP";
+    for (const forceScan of [false, true]) {
+      const { exit } = await runEffect(
+        collectQuery(ANNOTATIONS, {
+          libraries: [SCENARIO_LIBRARIES.group],
+          filter: `["${key}", "${key}g4815"].contains(${field})`,
+          fields: [],
+        }),
+        { client: scenario.db, tuning: { forceScan } },
+      );
+      if (exit._tag === "Failure") throw new Error(String(exit.cause));
+      expect(exit.value.rows.map((row) => row.indexedKey)).toEqual([
+        "ANN2GRUPg4815",
+      ]);
+      expect(exit.value.warnings).toMatchObject([
+        {
+          found: key,
+          expected: ["personal"],
+          suggestions: ["library=group:4815,personal"],
+        },
+      ]);
+    }
+  },
+);

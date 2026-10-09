@@ -25,6 +25,17 @@ export interface ScenarioQuery {
  * sorted query with a projection.
  */
 const FILTERS: readonly string[] = [
+  'indexedKey == "ART2FULL"',
+  '"ART2FULLg4815" == indexedKey',
+  '["ART2FULL", "ART2FULLg4815"].contains(indexedKey)',
+  '["ART2FULL", "bad"].contains(indexedKey)',
+  '["ART2FULL", key].contains(indexedKey)',
+  'indexedKey == "bad"',
+  'indexedKey == "ART2FULLg999" || key == "ART2FULL"',
+  'indexedKey == "ART2FULL" && tags.contains("methods")',
+  '!(indexedKey == "ART2FULL")',
+  "[].contains(indexedKey)",
+
   'library == "personal"',
   'library != "personal"',
   'library == "group:4815"',
@@ -623,6 +634,10 @@ export const SCENARIO_QUERIES: readonly ScenarioQuery[] = [
  * form here with values that match no Item, one Item, and several Items.
  */
 export const GENERATED_FILTER_PARTS: readonly string[] = [
+  'indexedKey == "ART2FULL"',
+  'indexedKey == "ART2FULLg4815"',
+  '["ART2FULL", "ART2FULLg4815"].contains(indexedKey)',
+
   'library == "personal"',
   'library != "personal"',
   'library == "group:4815"',

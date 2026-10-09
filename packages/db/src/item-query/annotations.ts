@@ -347,8 +347,8 @@ export type AnnotationCandidateLeaf =
   | { readonly kind: "color"; readonly value: string }
   | { readonly kind: "tag"; readonly value: string }
   | {
-      readonly kind: "selector";
-      readonly target: "item" | "attachment";
+      readonly kind: "keys";
+      readonly target: "self" | "item" | "attachment";
       readonly keys: readonly string[];
     };
 
@@ -380,10 +380,12 @@ const annotationCandidates = (
     | "type"
     | "color"
     | "tag"
+    | "self"
     | "item"
     | "attachment"
     | "parent-tag"
     | "parent-key"
+    | "parent-keys"
     | "parent-field"
     | "parent-collection",
 ) =>
@@ -411,9 +413,11 @@ const annotationCandidates = (
           sql`upper(${itemAnnotations.color}) in (${list})`,
         ),
         tag: tagged(items.itemID),
+        self: sql`${items.key} in (${list})`,
         item: sql`${parent.key} in (${list})`,
         attachment: sql`${attachment.key} in (${list})`,
         "parent-tag": tagged(parent.itemID),
+        "parent-keys": sql`${parent.key} in (${list})`,
         "parent-key": eq(parent.key, p("value")),
         "parent-field": inArray(
           parent.itemID,
@@ -461,9 +465,11 @@ const annotationCandidateStatements = {
   type: annotationCandidates("type"),
   color: annotationCandidates("color"),
   tag: annotationCandidates("tag"),
+  self: annotationCandidates("self"),
   item: annotationCandidates("item"),
   attachment: annotationCandidates("attachment"),
   "parent-tag": annotationCandidates("parent-tag"),
+  "parent-keys": annotationCandidates("parent-keys"),
   "parent-key": annotationCandidates("parent-key"),
   "parent-field": annotationCandidates("parent-field"),
   "parent-collection": annotationCandidates("parent-collection"),
@@ -488,6 +494,9 @@ export function readAnnotationCandidateSet({
       case "tag":
         value = leaf.leaf.name;
         break;
+      case "keys":
+        list = leaf.leaf.keys;
+        break;
       case "key":
         value = leaf.leaf.key;
         break;
@@ -499,7 +508,7 @@ export function readAnnotationCandidateSet({
         list = leaf.leaf.collectionIDs;
         break;
     }
-  } else if (leaf.kind === "selector") {
+  } else if (leaf.kind === "keys") {
     kind = leaf.target;
     list = leaf.keys;
   } else {
