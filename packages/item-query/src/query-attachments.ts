@@ -5,12 +5,10 @@ import { Effect } from "effect";
 import { formatIndexedKey } from "@zotlit/db";
 import {
   readAttachmentRowCount,
-  readAttachmentCandidateSet,
   readAttachmentScanPage,
   readAttachmentUniverseRows,
 } from "@zotlit/db/item-query";
 
-import { lowerAttachmentCandidate } from "./attachment-candidates";
 import {
   ATTACHMENT_FIELDS,
   ATTACHMENT_SORT_FIELDS,
@@ -21,7 +19,6 @@ import {
 } from "./attachment-fields";
 import type { QueryAttachment } from "./attachment-fields";
 import { openAttachmentHydration } from "./attachment-hydration";
-import { planCandidates, readCandidatePlan } from "./candidate-plan";
 import { fieldRoot } from "./dataset";
 import type { QueryDataset } from "./dataset";
 import type { DatasetRun } from "./execution";
@@ -29,6 +26,10 @@ import { BUILT_IN_NAMES } from "./fields";
 import { matches as isMatch } from "./filter-evaluate";
 import { planFilter } from "./filter-plan";
 import { readPath } from "./projection";
+import {
+  planDatasetCandidates,
+  readDatasetCandidates,
+} from "./relation-candidates";
 import type { ItemQueryRequest } from "./request";
 
 const PARENT = "item.";
@@ -82,19 +83,19 @@ export const ATTACHMENTS: QueryDataset<ItemQueryRequest> = {
             if (tuning.forceScan) return null;
             const candidatePlan =
               filter &&
-              planCandidates(
+              planDatasetCandidates(
                 filter.root,
                 hydration.candidateSources(library),
-                lowerAttachmentCandidate,
+                "attachments",
               );
             if (!candidatePlan) return null;
             const rowCount = yield* readAttachmentRowCount(library.libraryID);
             const cap = Math.floor(rowCount * tuning.capRatio);
-            return yield* readCandidatePlan(candidatePlan, {
-              libraryID: library.libraryID,
+            return yield* readDatasetCandidates(
+              candidatePlan,
+              library.libraryID,
               cap,
-              readLeaf: readAttachmentCandidateSet,
-            });
+            );
           }),
         matches: (item) => !filter || isMatch(filter.root, item, clock),
         project: (item, library) => ({

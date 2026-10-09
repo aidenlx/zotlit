@@ -108,6 +108,9 @@ export function openAttachmentHydration(
       libraries.map((library) => [library.libraryID, library.groupID]),
     );
 
+    const relatedSources: Hydration["candidateSources"][] = [
+      parents.candidateSources,
+    ];
     const loader = Effect.fnUntraced(function* (
       needs: readonly AttachmentNeeds[],
       parent: Loader,
@@ -121,6 +124,7 @@ export function openAttachmentHydration(
             libraries,
           )
         : null;
+      if (annotations) relatedSources.push(annotations.candidateSources);
       const file = needs.some((each) => each.file === true);
       const loads = {
         details: file || needs.some((each) => each.details === true),
@@ -213,7 +217,16 @@ export function openAttachmentHydration(
         paths.map((path) => path.needs),
         parents.projection,
       ),
-      candidateSources: parents.candidateSources,
+      candidateSources: (library) => {
+        const sources = relatedSources.map((source) => source(library));
+        return {
+          library,
+          vocabulary:
+            sources.find((source) => source.vocabulary)?.vocabulary ?? null,
+          collectionPaths: sources.find((source) => source.collectionPaths)
+            ?.collectionPaths,
+        };
+      },
     };
   });
 }

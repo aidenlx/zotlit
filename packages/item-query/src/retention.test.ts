@@ -71,8 +71,21 @@ describe("the rows a limited query retains", () => {
     request: Request;
     items: number;
     attachment?: boolean;
+    relation?: boolean;
     groups?: number;
   }[] = [
+    {
+      name: "a selective Relation List candidate set",
+      attachment: true,
+      relation: true,
+      request: {
+        filter:
+          'attachments.filter(value.contentType == "text/html").length >= 1',
+        fields: ["title"],
+        limit: LIMIT,
+      },
+      items: 520,
+    },
     {
       name: "a grouped scan of two Libraries",
       request: {
@@ -162,7 +175,7 @@ describe("the rows a limited query retains", () => {
 
   it.each(QUERIES)(
     "holds the limit plus one row, one page, and one hydrate chunk at most in $name",
-    async ({ request, items, attachment, groups = 1 }) => {
+    async ({ request, items, attachment, relation, groups = 1 }) => {
       // The rows of the query universe and the rows of the hydrate statements
       // that the collector has not freed.
       const scanned: WeakRef<object>[] = [];
@@ -170,7 +183,7 @@ describe("the rows a limited query retains", () => {
       const samples: { at: string; rows: number; hydratedItems: number }[] = [];
 
       const limited = await runEffect(
-        collectQuery(attachment ? ATTACHMENTS : ITEMS, {
+        collectQuery(relation ? ITEMS : attachment ? ATTACHMENTS : ITEMS, {
           libraries: [BULK_LIBRARY],
           ...request,
         }),
@@ -227,7 +240,7 @@ describe("the rows a limited query retains", () => {
       ).toBeLessThanOrEqual(250);
       // The projection starts with the matches only: the pages are released.
       expect(samples.at(-1)).toEqual({
-        at: attachment ? "attachment-details" : "hydrate-chunk",
+        at: attachment && !relation ? "attachment-details" : "hydrate-chunk",
         rows: groups === 1 ? Math.min(LIMIT + 1, items) : LIMIT * groups + 1,
         hydratedItems: groups === 1 ? Math.min(LIMIT, items) : 9,
       });

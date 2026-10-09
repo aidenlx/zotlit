@@ -1,13 +1,12 @@
 import type { AttachmentCandidateLeaf } from "@zotlit/db/item-query";
 
-import type { QueryAttachment } from "./attachment-fields";
 import { equality, lowerItemCandidate } from "./candidate-plan";
 import type { CandidateSources } from "./candidate-plan";
 import type { FilterNode } from "./filter-plan";
 import { lowerIndexedKeySelection } from "./indexed-key-selection";
 
-export function lowerAttachmentCandidate(
-  node: FilterNode<QueryAttachment>,
+export function lowerAttachmentCandidate<Item>(
+  node: FilterNode<Item>,
   sources: CandidateSources,
 ): AttachmentCandidateLeaf | null {
   const selection = lowerIndexedKeySelection(
@@ -38,9 +37,7 @@ export function lowerAttachmentCandidate(
   ) {
     return { kind: "tag", value: node.args[0].value };
   }
-  const parentField = (
-    field: FilterNode<QueryAttachment>,
-  ): FilterNode<QueryAttachment> =>
+  const parentField = (field: FilterNode<Item>): FilterNode<Item> =>
     field.kind === "field" && field.name.startsWith("item.")
       ? { ...field, name: field.name.slice(5) }
       : field;

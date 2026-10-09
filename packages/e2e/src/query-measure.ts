@@ -54,6 +54,7 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import { keepRendering } from "./background-throttling.ts";
 import { cli, cliCommand, obEval, waitFor } from "./obsidian-cli.ts";
 import {
+  DATASET_QUERY_SPECS,
   evaluateTier,
   failedEngineChecks,
   formatSummary,
@@ -165,11 +166,7 @@ function querySpecs(uniqueKey: string): QuerySpec[] {
   });
   const common = `tags.contains(${quote(tags.common)})`;
   return [
-    {
-      id: "attachments-default",
-      class: "other",
-      args: { from: "attachments", limit: "100" },
-    },
+    ...DATASET_QUERY_SPECS,
     {
       id: "attachments-broken-files",
       class: "other",

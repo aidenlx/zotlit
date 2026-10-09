@@ -51,6 +51,7 @@ it("maps element candidates to live parents in one statement per chunk", () => {
         ? ["PDF2LINK", "PDF2LIVE"]
         : ["ART2FULL"],
     );
+    expect(new Set(itemIDs)).toEqual(new Set(rows.map((row) => row.itemID)));
     expect(new Set(itemIDs).size).toBe(itemIDs.length);
     expect(
       run(readRelationCandidateSet({ relation, libraryID: -1, itemIDs: ids })),
