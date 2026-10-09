@@ -388,6 +388,13 @@ describe("the generated Zotero database", () => {
         url: null,
       },
       {
+        key: "EPUBS222",
+        path: null,
+        charsetID: null,
+        title: "Sakima's Song EPUB",
+        url: "https://example.invalid/sakimas-song.epub",
+      },
+      {
         key: "RGRPDF24",
         path: join(layout.vaultDir, "attachments", "rougier-2014.pdf"),
         charsetID: null,

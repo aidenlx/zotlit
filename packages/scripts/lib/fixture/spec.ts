@@ -1475,13 +1475,11 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     libraryID: 1,
     key: "EPUBS222",
     parentItemID: 20,
-    linkMode: "imported_file",
+    linkMode: "linked_url",
     contentType: "application/epub+zip",
     title: "Sakima's Song EPUB",
-    path: "sakimas-song.epub",
-    url: null,
-    // Annotation Query needs the Zotero row and content type; the Fixture does
-    // not open this query-only Attachment in a reader.
+    path: null,
+    url: "https://example.invalid/sakimas-song.epub",
     sourceAsset: null,
     dateModified: "2025-02-18 18:00:00",
   },
