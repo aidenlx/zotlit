@@ -748,44 +748,72 @@ it("waits for the first API list before writing an Annotation already shown from
   await expect(running).resolves.toEqual({ kind: "idle" });
 });
 
-it("retains an acknowledged delete when API availability is lost during the first handoff", async () => {
-  await using stack = new AsyncDisposableStack();
-  const children = Promise.withResolvers<Response>();
-  const requested = Promise.withResolvers<void>();
-  let unavailable = false;
-  let loseRead = async () => {};
-  const { repository, localApi } = await setup(
-    stack,
-    {
-      children: () => {
-        if (unavailable) return unreachable();
-        requested.resolve();
-        return children.promise;
+it.each([
+  { handoff: true, write: "delete" },
+  { handoff: true, write: "colour" },
+  { handoff: false, write: "delete" },
+  { handoff: false, write: "colour" },
+] as const)(
+  "settles $write across API loss (first handoff: $handoff)",
+  async ({ handoff, write }) => {
+    await using stack = new AsyncDisposableStack();
+    const children = Promise.withResolvers<Response>();
+    const requested = Promise.withResolvers<void>();
+    let unavailable = false;
+    let loseRead = async () => {};
+    const { repository, localApi } = await setup(
+      stack,
+      {
+        children: () => {
+          if (unavailable) return unreachable();
+          requested.resolve();
+          return children.promise;
+        },
+        item: () =>
+          annotationItem(
+            afterWrite("PUPR5FG5", { color: "#5fb236", version: 42 }),
+          ),
+        write: async () => {
+          await loseRead();
+          return writeAccepted(42);
+        },
       },
-      write: async () => {
-        await loseRead();
-        return writeAccepted(42);
-      },
-    },
-    { key: REMEMBERED_KEY },
-  );
-  loseRead = async () => {
-    unavailable = true;
-    await localApi.listAnnotations("RGRPDF24");
+      { key: REMEMBERED_KEY },
+    );
+    loseRead = async () => {
+      unavailable = true;
+      await localApi.listAnnotations("RGRPDF24");
+      await repository.read("RGRPDF24");
+    };
     await repository.read("RGRPDF24");
-  };
-  await repository.read("RGRPDF24");
-  await repository.probe();
-  const reading = repository.read("RGRPDF24");
-  await requested.promise;
-  const running = repository.deleteAnnotation("PUPR5FG5");
-  children.resolve(annotationPage(ROUGIER_ANNOTATIONS));
-  await reading;
-  await expect(running).resolves.toEqual({ kind: "idle" });
-  expect(
-    repository.peek("RGRPDF24")?.value.annotations.map(({ key }) => key),
-  ).not.toContain("PUPR5FG5");
-});
+    await repository.probe();
+    const reading = repository.read("RGRPDF24");
+    await requested.promise;
+    if (!handoff) {
+      children.resolve(annotationPage(ROUGIER_ANNOTATIONS));
+      await reading;
+    }
+    const running =
+      write === "delete"
+        ? repository.deleteAnnotation("PUPR5FG5")
+        : repository.patchColor("PUPR5FG5", "#5fb236");
+    children.resolve(annotationPage(ROUGIER_ANNOTATIONS));
+    await reading;
+    await expect(running).resolves.toEqual(
+      write === "delete"
+        ? { kind: "idle" }
+        : { kind: "failed", failure: { kind: "unreachable" } },
+    );
+    const record = repository
+      .peek("RGRPDF24")
+      ?.value.annotations.find(({ key }) => key === "PUPR5FG5");
+    if (write === "delete") expect(record).toBeUndefined();
+    else {
+      // A PATCH needs its record readback; a DELETE is confirmed by its acknowledgement.
+      expect(record).toMatchObject({ color: "#2ea8e5", version: 11 });
+    }
+  },
+);
 
 it("keeps API-only Annotations visible across a refresh of the same database", async () => {
   await using stack = new AsyncDisposableStack();
