@@ -19,6 +19,8 @@ async function exercise(
     removalFailure = false,
     noQuery = false,
     wrongDetail = false,
+    caseName = "edge",
+    changeAnnotation = () => {},
   } = {},
 ) {
   const runId = randomUUID();
@@ -66,6 +68,137 @@ async function exercise(
       assert.doesNotMatch(options.input, /oracle\.json/);
       if (agentTimedOut)
         return { code: null, stdout: "", stderr: "", timedOut: true };
+      if (caseName !== "edge") {
+        const schema = JSON.parse(
+          await readFile(args[args.indexOf("--output-schema") + 1], "utf8"),
+        );
+        const itemSchema = schema.properties.annotations.items;
+        assert.equal(
+          Object.hasOwn(itemSchema.properties, "attachmentExists"),
+          false,
+        );
+        if (caseName === "mixed") {
+          assert.deepEqual(itemSchema.required, [
+            "indexedKey",
+            "itemTitle",
+            "tags",
+            "hasExcerptImage",
+          ]);
+          assert.equal(
+            Object.hasOwn(itemSchema.properties, "attachmentPath"),
+            false,
+          );
+        } else {
+          assert.ok(itemSchema.required.includes("attachmentPath"));
+        }
+        const expected = oracle.cases[caseName];
+        const path = join(corpus, "attachments/rougier-2014.pdf");
+        const source = caseName === "annotations" || caseName === "position";
+        const rows = expected.keys.map((indexedKey) => ({
+          indexedKey,
+          itemIndexedKey: "RUGIER24",
+          attachmentIndexedKey: "RGRPDF24",
+          values:
+            caseName === "mixed"
+              ? {
+                  type: "image",
+                  tags: ["figure"],
+                  hasExcerptImage: true,
+                  "item.title": expected.itemTitle,
+                }
+              : {
+                  type: indexedKey === "FDRFQ7C2" ? "image" : "highlight",
+                  pageLabel: "1",
+                  text: expected.text ?? "Quoted text",
+                  comment: null,
+                  ...(source ? { attachment: { path, exists: true } } : {}),
+                  ...(caseName === "position"
+                    ? { position: expected.position }
+                    : {}),
+                },
+        }));
+        const envelope = {
+          ok: true,
+          identity: {
+            source: {
+              databasePath: join(corpus, "zotero-data", "zotero.sqlite"),
+            },
+            vault: { path: vault },
+          },
+          request: {
+            limit: null,
+            fields: Object.keys(rows[0].values),
+            filter:
+              'type == "image" && tags.contains("figure") && item.citationKey == "rougierTenSimpleRules2014"',
+          },
+          libraries: [{ type: "personal" }],
+          returnedCount: expected.count,
+          truncated: false,
+          rows,
+        };
+        const answer = {
+          answer: "Complete matches",
+          count: expected.count,
+          annotations: rows.map((row) =>
+            caseName === "mixed"
+              ? {
+                  indexedKey: row.indexedKey,
+                  type: "image",
+                  pageLabel: null,
+                  text: null,
+                  comment: null,
+                  tags: ["figure"],
+                  itemTitle: expected.itemTitle,
+                  attachmentPath: null,
+                  // Reproduce the live answer: the old shared schema forced this unrequested value.
+                  attachmentExists: true,
+                  hasExcerptImage: true,
+                  position: null,
+                }
+              : {
+                  indexedKey: row.indexedKey,
+                  ...(caseName === "annotations"
+                    ? {
+                        type: row.values.type,
+                        pageLabel: "1",
+                        text: "Quoted text",
+                        comment: null,
+                      }
+                    : { position: expected.position }),
+                  attachmentPath: path,
+                },
+          ),
+          imagePath: null,
+          imageProvenance: null,
+          imageFormat: null,
+          validPng: null,
+        };
+        changeAnnotation(answer, envelope);
+        await writeFile(
+          join(options.cwd, "query-result.json"),
+          JSON.stringify(envelope),
+        );
+        await writeFile(
+          join(options.cwd, "answer.json"),
+          JSON.stringify(answer),
+        );
+        return {
+          code: 0,
+          stderr: "",
+          timedOut: false,
+          stdout: `${JSON.stringify({
+            type: "item.completed",
+            item: {
+              id: "annotation",
+              type: "command_execution",
+              command:
+                "node obsidian-cli.ts vault=fake-vault-id zotlit:annotation-query",
+              aggregated_output: "result",
+              exit_code: 0,
+            },
+          })}\n`,
+        };
+      }
       const rows = oracle.cases.edge.rows.map((row) => ({
         indexedKey: row.indexedKey,
         values: {
@@ -152,7 +285,7 @@ async function exercise(
   };
   try {
     const report = await runCase(
-      { caseName: "edge", model: "fake-model", effort: "low" },
+      { caseName, model: "fake-model", effort: "low" },
       { runId, processRunner },
     );
     assert.equal(
@@ -309,3 +442,67 @@ await test("a process timeout and an abort stop the process group", async () => 
     clearTimeout(timer);
   }
 });
+
+await test("mixed answer accepts its requested projection without attachment metadata", async () => {
+  const report = await exercise(1, { caseName: "mixed" });
+  assert.equal(report.state, "passed", report.errors.join("\n"));
+});
+
+for (const caseName of ["annotations", "position"]) {
+  await test(`${caseName} answer accepts requested details and rejects a wrong source path`, async () => {
+    const valid = await exercise(null, { caseName });
+    assert.equal(valid.state, "passed", valid.errors.join("\n"));
+    const wrong = await exercise(null, {
+      caseName,
+      changeAnnotation: (answer) => {
+        answer.annotations[0].attachmentPath = "/wrong.pdf";
+      },
+    });
+    assert.equal(wrong.failureKind, "task");
+    assert.match(wrong.errors.join("\n"), /wrong source path/);
+    const omitted = await exercise(null, {
+      caseName,
+      changeAnnotation: (answer, envelope) => {
+        delete envelope.rows[0].values.attachment;
+        answer.annotations[0].attachmentPath = null;
+      },
+    });
+    assert.equal(omitted.failureKind, "task");
+    assert.match(omitted.errors.join("\n"), /no readable source path/);
+  });
+}
+
+for (const { field, value } of [
+  { field: "tags", value: [] },
+  { field: "hasExcerptImage", value: false },
+  { field: "itemTitle", value: "Wrong title" },
+]) {
+  await test(`mixed answer rejects wrong requested ${field}`, async () => {
+    const report = await exercise(1, {
+      caseName: "mixed",
+      changeAnnotation: (answer) => {
+        answer.annotations[0][field] = value;
+      },
+    });
+    assert.equal(report.failureKind, "task");
+    assert.match(report.errors.join("\n"), new RegExp(`wrong ${field}`));
+  });
+}
+
+for (const [field, value] of [
+  ["type", "note"],
+  ["pageLabel", "9"],
+  ["text", "Wrong quote"],
+  ["comment", "Wrong comment"],
+]) {
+  await test(`annotations answer rejects wrong requested ${field}`, async () => {
+    const report = await exercise(null, {
+      caseName: "annotations",
+      changeAnnotation: (answer) => {
+        answer.annotations[0][field] = value;
+      },
+    });
+    assert.equal(report.failureKind, "task");
+    assert.match(report.errors.join("\n"), new RegExp(`wrong ${field}`));
+  });
+}
