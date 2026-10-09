@@ -74,6 +74,8 @@ export type ProjectionValue =
 
 export interface QueryRow {
   readonly indexedKey: string;
+  readonly attachmentIndexedKey?: string;
+  readonly itemIndexedKey?: string;
   /** One entry for each requested Projection Path. */
   readonly values: Readonly<Record<string, ProjectionValue>>;
 }

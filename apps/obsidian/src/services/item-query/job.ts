@@ -20,7 +20,7 @@ import {
   ItemQueryOutputError,
 } from "./cli";
 import type { QueryWriter } from "./cli";
-import { diagnostic } from "./contract";
+import { ANNOTATION_QUERY_COMMAND, diagnostic } from "./contract";
 import { createTrace, finishTrace } from "./trace";
 import type { WorkerMeasurement } from "./trace";
 import type { QueryAnswer, QueryJob } from "./worker-protocol";
@@ -58,6 +58,7 @@ export function runQueryJob(
           {
             identity: env.identity,
             scope: job.scope,
+            attachmentFiles: env.attachmentFiles,
             instrument: trace?.instrument,
             onAnswerStep: job.measure
               ? (ms: number) => answerSteps.push(ms)
@@ -84,7 +85,12 @@ export function runQueryJob(
         Effect.as(answer),
         Effect.catch((failed) =>
           Effect.succeed<QueryAnswer>({
-            answer: failure(ITEM_QUERY_COMMAND, failed.diagnostic),
+            answer: failure(
+              !job.schema && job.query.kind === "annotations"
+                ? ANNOTATION_QUERY_COMMAND
+                : ITEM_QUERY_COMMAND,
+              failed.diagnostic,
+            ),
             receipt: { kind: "inline" },
           }),
         ),

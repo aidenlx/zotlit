@@ -12,6 +12,7 @@ import { isAbsolute } from "node:path";
 import type { CliData } from "obsidian";
 import * as v from "valibot";
 
+import { formatIndexedKey, parseIndexedKey } from "@zotlit/db";
 import type { SortSpec } from "@zotlit/item-query";
 
 import { compareSelectors } from "@/services/library-scope/scope";
@@ -33,7 +34,7 @@ import type { Diagnostic } from "./contract";
 export interface NamedLibraries {
   scope: LibraryScope;
   /** The argument that names them. */
-  parameter: "library" | "libraries";
+  parameter: "library" | "libraries" | "item" | "attachment";
 }
 
 /**
@@ -42,6 +43,9 @@ export interface NamedLibraries {
  * the caller omitted.
  */
 export interface DecodedQuery {
+  kind?: "annotations";
+  item?: readonly string[];
+  attachment?: readonly string[];
   /** `null`: the Library Scope in force decides. */
   libraries: NamedLibraries | null;
   filter?: string;
@@ -303,4 +307,77 @@ export function rejectParameters(
 
 export function invalid(parameter: string, message: string): Diagnostic {
   return diagnostic("invalid-argument", message, { details: { parameter } });
+}
+
+/** Annotation selectors share the query decoder and infer their own Libraries. */
+export function decodeAnnotationQuery(
+  params: CliData,
+): DecodedQuery | Diagnostic {
+  const rejected = rejectParameters(params, [
+    ...ITEM_QUERY_PARAMS,
+    "item",
+    "attachment",
+  ]);
+  if (rejected) return rejected;
+  const { item, attachment, ...common } = params;
+  const decoded = decodeItemQuery(common);
+  if ("code" in decoded) return decoded;
+  const selected: Partial<Record<"item" | "attachment", string[]>> = {};
+  const libraries = new Map<string, LibrarySelector>();
+  let parameter: "item" | "attachment" | undefined;
+  for (const [name, raw] of [
+    ["item", item],
+    ["attachment", attachment],
+  ] as const) {
+    if (raw === undefined) continue;
+    parameter ??= name;
+    if (params.library !== undefined || params.libraries !== undefined)
+      return invalid(
+        name,
+        "An Indexed Key selects its Library. Omit library and libraries beside Item or Attachment keys.",
+      );
+    let texts: unknown = raw;
+    if (raw.startsWith("[")) {
+      try {
+        texts = JSON.parse(raw);
+      } catch {
+        return invalid(
+          name,
+          `${name} must be an Indexed Key or a JSON array of Indexed Keys.`,
+        );
+      }
+    } else texts = [raw];
+    if (!Array.isArray(texts) || !texts.length)
+      return invalid(name, `${name} needs at least one Indexed Key.`);
+    const keys: string[] = [];
+    for (const text of texts) {
+      const key = typeof text === "string" ? parseIndexedKey(text) : null;
+      if (!key || (key.groupID !== null && key.groupID <= 0))
+        return invalid(name, `${name} contains an invalid Indexed Key.`);
+      keys.push(formatIndexedKey(key.key, key.groupID));
+      libraries.set(
+        String(key.groupID),
+        key.groupID === null
+          ? { type: "personal" }
+          : { type: "group", groupID: key.groupID },
+      );
+    }
+    selected[name] = [...new Set(keys)];
+  }
+  return {
+    ...decoded,
+    kind: "annotations",
+    ...selected,
+    ...(parameter
+      ? {
+          libraries: {
+            scope: {
+              mode: "selected" as const,
+              libraries: [...libraries.values()].toSorted(compareSelectors),
+            },
+            parameter,
+          },
+        }
+      : {}),
+  };
 }

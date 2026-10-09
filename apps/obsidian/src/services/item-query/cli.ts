@@ -42,7 +42,10 @@ import type {
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 import type { SchemaAsset } from "@/services/template-workbench/schema";
 
+import type { AttachmentFileResolver } from "./attachment-files";
 import {
+  ANNOTATION_QUERY_COMMAND,
+  annotationQueryFlags,
   DEFAULT_CLI_LIMIT,
   diagnostic,
   ITEM_QUERY_CANCEL_COMMAND,
@@ -140,6 +143,7 @@ export function failure(
 
 /** The parameters of one query or schema answer inside a Query Job. */
 export interface ItemQueryCliDeps {
+  attachmentFiles?: AttachmentFileResolver;
   identity: WorkbenchIdentity;
   /**
    * The Library Scope in force: the default Target Libraries of a query are
@@ -168,6 +172,7 @@ export interface QueryWriter {
 }
 
 export interface ItemQueryRuns {
+  annotations(params: CliData, signal: AbortSignal): Promise<string>;
   answer(params: CliData, signal: AbortSignal): Promise<string>;
   /** @returns `false` when no query with this id is running. */
   cancel(id: string): boolean;
@@ -187,8 +192,14 @@ export function registerItemQueryCli(
     (params) => runs.answer(params, unload.signal),
   );
   plugin.registerCliHandler(
+    ANNOTATION_QUERY_COMMAND,
+    "Query Zotero Annotations as JSON",
+    annotationQueryFlags,
+    (params) => runs.annotations(params, unload.signal),
+  );
+  plugin.registerCliHandler(
     ITEM_QUERY_CANCEL_COMMAND,
-    "Stop a running Item Query that was started with id, and return as JSON whether one was running",
+    "Stop a running Item Query or Annotation Query that was started with id, and return as JSON whether one was running",
     itemQueryCancelFlags,
     createItemQueryCancelHandler((id) => runs.cancel(id)),
   );
@@ -288,9 +299,12 @@ export function createItemQueryCancelHandler(
 }
 
 /** The answer of a query whose id names a query that is still running. */
-export function queryIdInUseFailure(id: string): string {
+export function queryIdInUseFailure(
+  id: string,
+  command: ItemQueryCommand = ITEM_QUERY_COMMAND,
+): string {
   return failure(
-    ITEM_QUERY_COMMAND,
+    command,
     diagnostic(
       "query-id-in-use",
       `A query with the id '${id}' is running in this vault.`,
@@ -308,10 +322,24 @@ export function answerItemQuery(
   deps: ItemQueryCliDeps,
   decoded: DecodedQuery,
 ): Effect.Effect<QueryReply, never, ItemQueryDatabase | Scope.Scope> {
+  const command =
+    decoded.kind === "annotations"
+      ? ANNOTATION_QUERY_COMMAND
+      : ITEM_QUERY_COMMAND;
   const named = decoded.libraries;
   const operation = runItemQueryTo(
-    { scope: named ? named.scope : deps.scope, requireEach: named !== null },
     {
+      scope: named ? named.scope : deps.scope,
+      requireEach: named !== null,
+      kind: decoded.kind,
+      resolveAttachmentFile: deps.attachmentFiles
+        ? (attachment) =>
+            Effect.promise(() => deps.attachmentFiles!(attachment))
+        : undefined,
+    },
+    {
+      item: decoded.item,
+      attachment: decoded.attachment,
       filter: decoded.filter,
       fields: decoded.fields,
       sort: decoded.sort,
@@ -319,6 +347,7 @@ export function answerItemQuery(
     },
     (summary, libraries) =>
       createAnswer(summary, {
+        command,
         identity: deps.identity,
         libraries: libraries.available.map(({ selector, name }) =>
           selector.type === "group"
@@ -331,7 +360,7 @@ export function answerItemQuery(
       }),
   );
   return (deps.instrument?.(operation) ?? operation).pipe(
-    answerFailure(ITEM_QUERY_COMMAND, named?.parameter),
+    answerFailure(command, named?.parameter),
   );
 }
 
@@ -349,6 +378,7 @@ const FIRST_CHUNK_ROWS = 64;
 const CHUNK_TEXT_LENGTH = 256 * 1024;
 
 interface AnswerContext {
+  command: ItemQueryCommand;
   /** The identity of the source the run leased. */
   identity: WorkbenchIdentity;
   /** The Target Libraries of the run, in the canonical order. */
@@ -382,7 +412,7 @@ const createAnswer = Effect.fnUntraced(function* (
     returnedCount: result.returnedCount,
     truncated: result.truncated,
   };
-  const head = envelope(ITEM_QUERY_COMMAND, { ...summary, rows: [] });
+  const head = envelope(context.command, { ...summary, rows: [] });
   let text = "";
   let bytes = 0;
   let first = true;
@@ -445,7 +475,7 @@ const createAnswer = Effect.fnUntraced(function* (
       if (result.returnedCount > 0) yield* append(CHUNK_END);
       if (output === undefined) return inline(text);
       return {
-        answer: envelope(ITEM_QUERY_COMMAND, {
+        answer: envelope(context.command, {
           ...summary,
           file: { path: output, bytes, format: "json" },
         }),

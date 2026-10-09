@@ -147,6 +147,30 @@ describe.skipIf(!reachable)("Item Query cancel", () => {
       diagnostic: { code: "query-id-in-use", details: { parameter: "id" } },
     });
 
+    // Both worker slots have Item exports. Annotation Query joins their job
+    // namespace and can be cancelled while its export waits for a slot.
+    const annotationDir = join(exportsDir, "annotations");
+    await mkdir(annotationDir);
+    const annotation = cliCommand(vaultId, "zotlit:annotation-query", {
+      args: {
+        id: "annotation-export",
+        library: "personal",
+        limit: "all",
+        output: join(annotationDir, "annotations.json"),
+      },
+      timeoutMs: EXPORT_TIMEOUT_MS,
+    });
+    expect(
+      await waitFor(
+        async () => (await cancel("annotation-export")).cancelRequested,
+        100,
+      ),
+    ).toBe(true);
+    expect(await annotation).toBe(
+      "Error: The query 'annotation-export' was cancelled by zotlit:item-query-cancel.",
+    );
+    expect(await readdir(annotationDir)).toEqual([]);
+
     expect(await cancel("export-a")).toEqual({
       contractVersion: 1,
       command: "zotlit:item-query-cancel",

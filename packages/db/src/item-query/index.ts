@@ -38,3 +38,11 @@ export {
   SCAN_PAGE_SIZE,
   type ScanRow,
 } from "./scan-page";
+
+export {
+  readAnnotationScanPage,
+  readAnnotationUniverseRows,
+  readAnnotationHydrateChunk,
+  type AnnotationScanRow,
+  type HydratedAnnotation,
+} from "./annotations";

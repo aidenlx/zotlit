@@ -134,7 +134,7 @@ export {
   type TemplateTag,
   tagTypeToName,
 } from "./lib/zt-tag";
-export { type Attachment } from "./lib/zt-attach";
+export { type Attachment, linkModeToName } from "./lib/zt-attach";
 export {
   type CreatorFieldMode,
   creatorFieldModeToName,

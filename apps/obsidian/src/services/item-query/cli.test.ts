@@ -1138,6 +1138,7 @@ describe("registerItemQueryCli", () => {
     } as unknown as Plugin;
 
     registerItemQueryCli(plugin, {
+      annotations: async () => "",
       answer: async (_params, signal) => {
         signal.throwIfAborted();
         return "";

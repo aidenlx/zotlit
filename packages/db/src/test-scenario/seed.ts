@@ -49,7 +49,15 @@ interface ScenarioItemSpec {
   /** Name of an earlier {@link ITEMS} entry. */
   parent?: string;
   attachment?: { linkMode: number; contentType: string; path: string };
-  annotation?: { type: number; text: string; color: string };
+  annotation?: {
+    type: number;
+    text: string;
+    color: string;
+    comment?: string;
+    pageLabel?: string;
+    sortIndex?: string;
+    position?: string;
+  };
   note?: { note: string; title: string };
 }
 
@@ -112,7 +120,7 @@ const COLLECTIONS = {
 const SAME_DAY_ADDED = "2021-01-01 00:00:00";
 const SAME_MODIFIED = "2024-03-01 12:00:00";
 
-const ITEMS = {
+const BASE_ITEMS = {
   // Full date, both creator modes, Tags that differ only in case, a number-
   // stored field value, three custom fields, two Collections (one below a
   // trashed ancestor), and every child row kind.
@@ -419,6 +427,328 @@ const ITEMS = {
   },
 } as const satisfies Record<string, ScenarioItemSpec>;
 
+const ANNOTATION_ITEMS = {
+  linkedAttachment: {
+    library: "personal",
+    key: "PDF2LINK",
+    itemType: "attachment",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "fullDateArticle",
+    fields: { title: "linkedAttachment" },
+    attachment: {
+      linkMode: 2,
+      contentType: "application/pdf",
+      path: "attachments:linked.pdf",
+    },
+  },
+  trashedItemAttachment: {
+    library: "personal",
+    key: "PDF2DEAD",
+    itemType: "attachment",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "trashedArticle",
+    fields: { title: "trashedItemAttachment" },
+    attachment: {
+      linkMode: 0,
+      contentType: "application/pdf",
+      path: "storage:paper.pdf",
+    },
+  },
+  groupAttachment: {
+    library: "group",
+    key: "PDF2GRUP",
+    itemType: "attachment",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "groupArticle",
+    fields: { title: "groupAttachment" },
+    attachment: {
+      linkMode: 0,
+      contentType: "application/pdf",
+      path: "storage:paper.pdf",
+    },
+  },
+  standaloneAttachment: {
+    library: "personal",
+    key: "PDF2SOLO",
+    itemType: "attachment",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    fields: { title: "standaloneAttachment" },
+    attachment: {
+      linkMode: 0,
+      contentType: "application/pdf",
+      path: "storage:paper.pdf",
+    },
+  },
+  underlineAnnotation: {
+    library: "personal",
+    key: "ANN2UNDR",
+    itemType: "annotation",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "liveAttachment",
+    tags: [{ name: "method", type: 0 }],
+    annotation: {
+      type: 5,
+      text: "A <i>formatted</i> excerpt",
+      comment: "<b>Comment</b>",
+      color: "#ffd400",
+      pageLabel: "iv",
+      sortIndex: "00000|000005|00000",
+    },
+  },
+  noteAnnotation: {
+    library: "personal",
+    key: "ANN2NOTE",
+    itemType: "annotation",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "liveAttachment",
+    tags: [{ name: "method", type: 0 }],
+    annotation: {
+      type: 2,
+      text: "A <i>formatted</i> excerpt",
+      comment: "<b>Comment</b>",
+      color: "#ffd400",
+      pageLabel: "iv",
+      sortIndex: "00000|000002|00000",
+    },
+  },
+  imageAnnotation: {
+    library: "personal",
+    key: "ANN2IMAG",
+    itemType: "annotation",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "liveAttachment",
+    tags: [{ name: "method", type: 0 }],
+    annotation: {
+      type: 3,
+      text: "A <i>formatted</i> excerpt",
+      comment: "<b>Comment</b>",
+      color: "#ffd400",
+      pageLabel: "iv",
+      sortIndex: "00000|000003|00000",
+    },
+  },
+  inkAnnotation: {
+    library: "personal",
+    key: "ANN2INK2",
+    itemType: "annotation",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "liveAttachment",
+    tags: [{ name: "method", type: 0 }],
+    annotation: {
+      type: 4,
+      text: "A <i>formatted</i> excerpt",
+      comment: "<b>Comment</b>",
+      color: "#ffd400",
+      pageLabel: "iv",
+      sortIndex: "00000|000004|00000",
+    },
+  },
+  textAnnotation: {
+    library: "personal",
+    key: "ANN2TEXT",
+    itemType: "annotation",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "liveAttachment",
+    tags: [{ name: "method", type: 0 }],
+    annotation: {
+      type: 6,
+      text: "A <i>formatted</i> excerpt",
+      comment: "<b>Comment</b>",
+      color: "#ffd400",
+      pageLabel: "iv",
+      sortIndex: "00000|000006|00000",
+    },
+  },
+  linkedHighlight: {
+    library: "personal",
+    key: "ANN2LINK",
+    itemType: "annotation",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "linkedAttachment",
+    tags: [{ name: "method", type: 0 }],
+    annotation: {
+      type: 1,
+      text: "A <i>formatted</i> excerpt",
+      comment: "<b>Comment</b>",
+      color: "#ffd400",
+      pageLabel: "iv",
+      sortIndex: "00000|000001|00000",
+    },
+  },
+  linkedImage: {
+    library: "personal",
+    key: "ANL2IMAG",
+    itemType: "annotation",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "linkedAttachment",
+    annotation: {
+      type: 3,
+      text: "Linked excerpt",
+      color: "#123456",
+      sortIndex: "00000|000003|00000",
+    },
+  },
+  linkedInk: {
+    library: "personal",
+    key: "ANL2INK2",
+    itemType: "annotation",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "linkedAttachment",
+    annotation: {
+      type: 4,
+      text: "Linked excerpt",
+      color: "#123456",
+      sortIndex: "00000|000004|00000",
+    },
+  },
+  linkedUnderline: {
+    library: "personal",
+    key: "ANL2UNDR",
+    itemType: "annotation",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "linkedAttachment",
+    annotation: {
+      type: 5,
+      text: "Linked excerpt",
+      color: "#123456",
+      sortIndex: "00000|000005|00000",
+    },
+  },
+  linkedText: {
+    library: "personal",
+    key: "ANL2TEXT",
+    itemType: "annotation",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "linkedAttachment",
+    annotation: {
+      type: 6,
+      text: "Linked excerpt",
+      color: "#123456",
+      sortIndex: "00000|000006|00000",
+    },
+  },
+  trashedAnnotation: {
+    library: "personal",
+    key: "ANN2TRSH",
+    itemType: "annotation",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "liveAttachment",
+    trashed: true,
+    tags: [{ name: "method", type: 0 }],
+    annotation: {
+      type: 1,
+      text: "A <i>formatted</i> excerpt",
+      comment: "<b>Comment</b>",
+      color: "#ffd400",
+      pageLabel: "iv",
+      sortIndex: "00000|000001|00000",
+    },
+  },
+  trashedAttachmentAnnotation: {
+    library: "personal",
+    key: "ANN2DEAD",
+    itemType: "annotation",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "trashedAttachment",
+    tags: [{ name: "method", type: 0 }],
+    annotation: {
+      type: 1,
+      text: "A <i>formatted</i> excerpt",
+      comment: "<b>Comment</b>",
+      color: "#ffd400",
+      pageLabel: "iv",
+      sortIndex: "00000|000001|00000",
+    },
+  },
+  trashedItemAnnotation: {
+    library: "personal",
+    key: "ANN2GONE",
+    itemType: "annotation",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "trashedItemAttachment",
+    tags: [{ name: "method", type: 0 }],
+    annotation: {
+      type: 1,
+      text: "A <i>formatted</i> excerpt",
+      comment: "<b>Comment</b>",
+      color: "#ffd400",
+      pageLabel: "iv",
+      sortIndex: "00000|000001|00000",
+    },
+  },
+  standaloneAnnotation: {
+    library: "personal",
+    key: "ANN2SOLO",
+    itemType: "annotation",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "standaloneAttachment",
+    tags: [{ name: "method", type: 0 }],
+    annotation: {
+      type: 1,
+      text: "A <i>formatted</i> excerpt",
+      comment: "<b>Comment</b>",
+      color: "#ffd400",
+      pageLabel: "iv",
+      sortIndex: "00000|000001|00000",
+    },
+  },
+  groupAnnotation: {
+    library: "group",
+    key: "ANN2GRUP",
+    itemType: "annotation",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "groupAttachment",
+    tags: [{ name: "method", type: 0 }],
+    annotation: {
+      type: 1,
+      text: "A <i>formatted</i> excerpt",
+      comment: "<b>Comment</b>",
+      color: "#ffd400",
+      pageLabel: "iv",
+      sortIndex: "00000|000001|00000",
+    },
+  },
+  malformedAnnotation: {
+    library: "personal",
+    key: "ANN2BAD2",
+    itemType: "annotation",
+    dateAdded: SAME_DAY_ADDED,
+    dateModified: SAME_MODIFIED,
+    parent: "linkedAttachment",
+    tags: [{ name: "method", type: 0 }],
+    annotation: {
+      type: 2,
+      text: "A <i>formatted</i> excerpt",
+      comment: "<b>Comment</b>",
+      color: "#ffd400",
+      pageLabel: "iv",
+      sortIndex: "00000|000002|00000",
+      position: "invalid JSON",
+    },
+  },
+} as const satisfies Record<string, ScenarioItemSpec>;
+
+const ITEMS = { ...BASE_ITEMS, ...ANNOTATION_ITEMS };
+
 export type ScenarioItemName = keyof typeof ITEMS;
 
 export interface ScenarioItem {
@@ -452,10 +782,10 @@ export const SCENARIO_ITEMS = Object.fromEntries(
 const CUSTOM_ID_OFFSET = 10_000;
 
 /** Insert the scenario into a pristine Zotero database, in one transaction. */
-export function seedScenario(sqlite: DatabaseSync): void {
+export function seedScenario(sqlite: DatabaseSync, annotations = false): void {
   sqlite.exec("begin");
   try {
-    insertScenario(sqlite);
+    insertScenario(sqlite, annotations);
     sqlite.exec("commit");
   } catch (error) {
     sqlite.exec("rollback");
@@ -483,7 +813,7 @@ export function lookupID(
   return row.id;
 }
 
-function insertScenario(sqlite: DatabaseSync): void {
+function insertScenario(sqlite: DatabaseSync, annotations: boolean): void {
   const idOf = (sql: string, name: string): number =>
     lookupID(sqlite, sql, name);
   const itemTypeID = (name: string) =>
@@ -598,7 +928,9 @@ function insertScenario(sqlite: DatabaseSync): void {
   };
 
   const itemIDs = new Map<string, number>();
-  for (const [name, spec] of Object.entries<ScenarioItemSpec>(ITEMS)) {
+  for (const [name, spec] of Object.entries<ScenarioItemSpec>(
+    annotations ? ITEMS : BASE_ITEMS,
+  )) {
     const library = SCENARIO_LIBRARIES[spec.library];
     const itemID = Number(
       sqlite
@@ -679,7 +1011,7 @@ function insertScenario(sqlite: DatabaseSync): void {
     if (spec.annotation) {
       sqlite
         .prepare(
-          "insert into itemAnnotations (itemID, parentItemID, type, text, color, sortIndex, position, isExternal) values (?, ?, ?, ?, ?, ?, ?, 0)",
+          "insert into itemAnnotations (itemID, parentItemID, type, text, color, sortIndex, position, comment, pageLabel, isExternal) values (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
         )
         .run(
           itemID,
@@ -687,8 +1019,10 @@ function insertScenario(sqlite: DatabaseSync): void {
           spec.annotation.type,
           spec.annotation.text,
           spec.annotation.color,
-          "00000|000000|00000",
-          '{"pageIndex":0,"rects":[[0,0,1,1]]}',
+          spec.annotation.sortIndex ?? "00000|000000|00000",
+          spec.annotation.position ?? '{"pageIndex":0,"rects":[[0,0,1,1]]}',
+          spec.annotation.comment ?? null,
+          spec.annotation.pageLabel ?? null,
         );
     }
     if (spec.note) {
