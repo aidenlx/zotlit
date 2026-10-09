@@ -245,9 +245,10 @@ describe("decodeItemQuery fields, filter, and sort", () => {
       message: "Invalid type: Expected Array but received Object",
       issue: { path: "sort", expected: "Array", received: "Object" },
     },
-  ])("keeps the issue for sort with $name", ({ value, message, issue }) => {
+  ])("keeps the issue for sort with $name", ({ value, issue }) => {
     expect(decodeItemQuery({ sort: value })).toMatchObject({
-      report: { 0: message },
+      location: { path: issue.path },
+      found: issue.received,
     });
     expect(decode.decodeItemQuery({ sort: value })).toMatchObject({
       kind: "invalid",
@@ -274,9 +275,10 @@ describe("decodeItemQuery fields, filter, and sort", () => {
       message: "Invalid type: Expected string but received 5",
       issue: { path: "fields[1]", expected: "string", received: "5" },
     },
-  ])("distinguishes fields with $name", ({ value, message, issue }) => {
+  ])("distinguishes fields with $name", ({ value, issue }) => {
     expect(decodeItemQuery({ fields: value })).toMatchObject({
-      report: { 0: message },
+      location: { path: issue.path },
+      found: issue.received,
     });
     expect(decode.decodeItemQuery({ fields: value })).toMatchObject({
       kind: "invalid",
@@ -333,7 +335,7 @@ describe("decodeItemQuery parameters", () => {
       report: {
         0: "Unknown parameter '==': Obsidian received these parameters in order: filter, ==, \"book\".",
       },
-      hint: "Quote the whole value as one shell argument.",
+      hint: "Try: filter='itemType == \"book\"'",
     });
   });
 
@@ -438,9 +440,39 @@ it("renders decoder issue data and the recovery action in contract v2", () => {
     severity: "error",
     location: { path: "sort[0].direction" },
     found: '"ascending"',
-    expected: ['("asc" | "desc")'],
-    suggestions: [],
+    expected: ["asc", "desc"],
+    suggestions: ['sort=\'[{"field":"title","direction":"asc"}]\''],
   });
-  expect(diagnostic.report).toEqual([diagnostic.message, diagnostic.hint]);
-  expect(diagnostic.excerpt).toBeUndefined();
+  expect(diagnostic.report[0]).toBe(diagnostic.message);
+  expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
+});
+
+it("reconstructs the real empty-key shell split without inventing removed quotes", () => {
+  const params = { filter: "itemType", "": "=", book: "true", limit: "5" };
+  const rejection = decode.decodeItemQuery(params);
+  expect(rejection).toMatchObject({
+    kind: "invalid",
+    parameter: "",
+    received: Object.entries(params),
+    shellSplit: true,
+  });
+  expect(decodeItemQuery(params)).toMatchObject({
+    suggestions: ["filter='itemType == book'"],
+  });
+});
+
+it("preserves received quote characters in a reconstructed shell argument", () => {
+  const params = { filter: "title", "": "=", '"O\'Brien"': "true" };
+  expect(decodeItemQuery(params)).toMatchObject({
+    suggestions: ["filter='title == \"O'\"'\"'Brien\"'"],
+  });
+});
+
+it.each(["0", "unlimited"])("gives the count idiom for limit=%s", (limit) => {
+  const diagnostic = decodeItemQuery({ limit });
+  expect(diagnostic).toMatchObject({
+    report: expect.arrayContaining([
+      "To count every match, use fields='[]' limit=all.",
+    ]),
+  });
 });

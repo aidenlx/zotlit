@@ -572,8 +572,10 @@
       "fields": ["noSuchField"]
     },
     "report": [
-      "\"noSuchField\" does not start with a field of Item Query.",
-      "Use a field of the Item Query Schema, such as itemType, title, creators, date, dateModified. Reach a custom field with custom[\"exact name\"]."
+      "\"noSuchField\" is not a Projection Path of Item Query.",
+      "noSuchField",
+      "^^^^^^^^^^^",
+      "Use a Projection Path from the Item Query Schema."
     ]
   },
   {
@@ -609,8 +611,12 @@
       ]
     },
     "report": [
-      "\"creators\" is not a Sortable Field: a sort takes a top-level field with one value.",
-      "Sort by a field that the Item Query Schema lists as sortable, such as title, date, or dateModified."
+      "\"creators\" is not a Sortable Field of Item Query.",
+      "creators",
+      "^^^^^^^^",
+      "A Sortable Field is a top-level field with one value.",
+      "Sortable Fields include itemType, title, date, dateModified.",
+      "Use a Sortable Field from the Item Query Schema."
     ]
   },
   {
@@ -684,6 +690,81 @@
       "dateAdded > \"2020-01-01\"",
       "---------   ^^^^^^^^^^^^^^",
       "Try: dateAdded > date(\"2020-01-01\")"
+    ]
+  },
+  {
+    "name": "ambiguous projection year",
+    "request": {
+      "fields": ["title", "year"]
+    },
+    "report": [
+      "\"year\" is not a Projection Path of Item Query.",
+      "year",
+      "^^^^",
+      "Similar Projection Paths: date.year, issueDate.year, filingDate.year."
+    ]
+  },
+  {
+    "name": "projection nested creators",
+    "request": {
+      "fields": ["creators.lastName"]
+    },
+    "report": [
+      "\"creators.lastName\" is not a Projection Path of Item Query.",
+      "creators.lastName",
+      "^^^^^^^^^^^^^^^^^",
+      "creators entries have these Projection Paths: family, given, literal, role, fullName.",
+      "Use a Projection Path from the Item Query Schema."
+    ]
+  },
+  {
+    "name": "projection case correction",
+    "request": {
+      "fields": ["title", "Date"]
+    },
+    "report": [
+      "\"Date\" is not a Projection Path of Item Query.",
+      "Date",
+      "^^^^",
+      "Try: fields='[\"title\",\"date\"]'"
+    ]
+  },
+  {
+    "name": "sortable subpath",
+    "request": {
+      "sort": [
+        {
+          "field": "date.year",
+          "direction": "desc"
+        }
+      ]
+    },
+    "report": [
+      "\"date.year\" is not a Sortable Field of Item Query.",
+      "date.year",
+      "^^^^^^^^^",
+      "A Sortable Field is a top-level field with one value.",
+      "Sortable Fields include itemType, title, date, dateModified.",
+      "Try: sort='[{\"field\":\"date\",\"direction\":\"desc\"}]'"
+    ]
+  },
+  {
+    "name": "sortable case correction",
+    "request": {
+      "sort": [
+        {
+          "field": "Date",
+          "direction": "asc"
+        }
+      ]
+    },
+    "report": [
+      "\"Date\" is not a Sortable Field of Item Query.",
+      "Date",
+      "^^^^",
+      "A Sortable Field is a top-level field with one value.",
+      "Sortable Fields include itemType, title, date, dateModified.",
+      "Try: sort='[{\"field\":\"date\",\"direction\":\"asc\"}]'"
     ]
   }
 ]

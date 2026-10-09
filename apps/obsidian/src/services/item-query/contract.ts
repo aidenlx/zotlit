@@ -7,7 +7,7 @@
 
 import type { CliFlag, CliFlags } from "obsidian";
 
-import { renderDiagnostic } from "@zotlit/item-query";
+import { diagnoseDecode, renderDiagnostic } from "@zotlit/item-query";
 import type {
   Diagnostic as QueryDiagnostic,
   ItemQueryError,
@@ -140,13 +140,5 @@ export function diagnostic(
 
 export function rejectionDiagnostic(rejection: CliRejection): Diagnostic {
   const value = base.rejectionDiagnostic(rejection);
-  const issue = rejection.issue;
-  return {
-    ...value,
-    ...renderDiagnostic(
-      { ...value, ...(issue ? { location: { path: issue.path } } : {}) },
-      "",
-      issue ? { found: issue.received, expected: [issue.expected] } : {},
-    ),
-  };
+  return { ...value, ...diagnoseDecode(rejection, value.hint) };
 }

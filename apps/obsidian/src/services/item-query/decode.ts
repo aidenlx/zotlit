@@ -11,6 +11,8 @@ import { isAbsolute } from "node:path";
 import type { CliData } from "obsidian";
 import * as v from "valibot";
 
+import { UNLIMITED_LIMIT } from "@zotlit/item-query";
+
 import {
   cliMaybeEmpty,
   cliParams,
@@ -133,9 +135,9 @@ const notPositiveInteger = (issue: { input: unknown }) =>
   `limit '${String(issue.input)}' is not a positive integer: use a positive integer, or all for every match.`;
 
 const limit = v.lazy((input) =>
-  input === "all"
+  input === UNLIMITED_LIMIT
     ? v.pipe(
-        v.literal("all"),
+        v.literal(UNLIMITED_LIMIT),
         v.transform(() => null),
       )
     : v.pipe(

@@ -30,7 +30,7 @@ export {
   type QueryConsumer,
   type QuerySummary,
 } from "./query-items";
-export { DEFAULT_SORT } from "./request";
+export { DEFAULT_SORT, COUNT_FIELDS, UNLIMITED_LIMIT } from "./request";
 export type {
   ItemQuery,
   ItemQueryRequest,
@@ -49,6 +49,7 @@ export {
 
 export {
   diagnose,
+  diagnoseDecode,
   renderDiagnostic,
   type Diagnostic,
   type DiagnosticLocation,
