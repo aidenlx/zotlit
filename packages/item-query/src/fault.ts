@@ -69,4 +69,7 @@ export type Fault =
       readonly at: Span;
     };
 export type PlainFault = Extract<Fault, { kind: "plain" }>;
-export type ItemQueryFault = Extract<Fault, { kind: "plain" | "unknown" }>;
+export type ItemQueryFault = Extract<
+  Fault,
+  { kind: "plain" | "syntax" | "unknown" }
+>;

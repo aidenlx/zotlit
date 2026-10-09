@@ -1,6 +1,6 @@
 import { Data } from "effect";
 
-import { codeOfFault, diagnose } from "./diagnose";
+import { diagnose } from "./diagnose";
 import type { ItemQueryFault, Span } from "./fault";
 
 /** Stable codes of an invalid Item Query request. */
@@ -36,7 +36,7 @@ export class ItemQueryError extends Data.TaggedError("ItemQueryError")<{
   readonly location: ItemQueryErrorLocation;
 }> {
   get code(): ItemQueryErrorCode {
-    return codeOfFault(this.fault);
+    return diagnose(this.fault, "", this.location).code;
   }
   override get message(): string {
     return diagnose(this.fault, "", this.location).message;

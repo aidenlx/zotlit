@@ -59,6 +59,8 @@ export interface FunctionParameter {
  * run.
  */
 export interface FunctionDefinition {
+  /** Semantic eligibility for a diagnostic correction, checked with the signature. */
+  readonly diagnosticCorrection?: "membership" | "conversion";
   /** The required parameters, in order. */
   readonly parameters: readonly FunctionParameter[];
   /** Parameters after the required ones that a call can omit. */
@@ -185,6 +187,7 @@ export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
     call: (_subject, _args, clock) => today(clock),
   },
   date: {
+    diagnosticCorrection: "conversion",
     parameters: [{ name: "text", type: ["string", "date"] }],
     returns: "date",
     // A date stays as it is.
@@ -192,6 +195,7 @@ export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
       typeof text === "string" ? parseDate(text, clock) : text!,
   },
   duration: {
+    diagnosticCorrection: "conversion",
     parameters: [string("text")],
     returns: "duration",
     call: (_subject, [text]) => parseDuration(text as string),
@@ -442,6 +446,7 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
         (subject) => (subject as readonly unknown[]).length === 0,
       ),
       contains: {
+        diagnosticCorrection: "membership",
         parameters: [any("value")],
         returns: "boolean",
         call: (subject, [value = null], clock) =>

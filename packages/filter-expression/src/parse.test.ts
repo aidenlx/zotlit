@@ -2,7 +2,7 @@
 //
 // The raw `parser` is the seam for accepted syntax, node structure, delimiter
 // layout, and source ranges. `parseExpression()` is the seam for the consumer
-// result contract: a tree plus the first syntax-error range.
+// result contract: a tree plus the first Syntax Fault.
 import type { SyntaxNode, Tree } from "@lezer/common";
 import { describe, expect, it } from "vitest";
 
@@ -152,11 +152,11 @@ describe("identifiers", () => {
   });
 
   it("rejects a digit as an identifier start", () => {
-    expect(errorOf("1a")).toEqual({ from: 1, to: 2 });
+    expect(errorOf("1a")).toMatchObject({ from: 1, to: 2 });
   });
 
   it("rejects U+00A0, the code point below the accepted range", () => {
-    expect(errorOf("\u{a0}")).toEqual({ from: 0, to: 1 });
+    expect(errorOf("\u{a0}")).toMatchObject({ from: 0, to: 1 });
   });
 });
 
@@ -190,7 +190,7 @@ describe("whitespace", () => {
     { input: "a\u{c}b", why: "form feed" },
     { input: "a\u{a0}b", why: "no-break space" },
   ])("rejects $why between expressions", ({ input }) => {
-    expect(errorOf(input)).toEqual({ from: 1, to: 3 });
+    expect(errorOf(input)).toMatchObject({ from: 1, to: 2 });
   });
 });
 
@@ -210,9 +210,9 @@ describe("numbers", () => {
   });
 
   it.each([
-    { input: "1e5", error: { from: 1, to: 1 }, why: "exponent notation" },
-    { input: "0x1f", error: { from: 1, to: 1 }, why: "hexadecimal notation" },
-    { input: "1_000", error: { from: 1, to: 1 }, why: "numeric separators" },
+    { input: "1e5", error: { from: 1, to: 3 }, why: "exponent notation" },
+    { input: "0x1f", error: { from: 1, to: 4 }, why: "hexadecimal notation" },
+    { input: "1_000", error: { from: 1, to: 5 }, why: "numeric separators" },
     {
       input: "1.2.3",
       error: { from: 4, to: 5 },
@@ -220,7 +220,7 @@ describe("numbers", () => {
     },
     { input: ".", error: { from: 0, to: 1 }, why: "a bare decimal point" },
   ])("rejects $why in $input", ({ input, error }) => {
-    expect(errorOf(input)).toEqual(error);
+    expect(errorOf(input)).toMatchObject(error);
   });
 });
 
@@ -272,7 +272,7 @@ describe("strings", () => {
     { input: "'unterminated", error: { from: 13, to: 13 } },
     { input: '"\\"', error: { from: 3, to: 3 } },
   ])("reports $input as unterminated", ({ input, error }) => {
-    expect(errorOf(input)).toEqual(error);
+    expect(errorOf(input)).toMatchObject(error);
   });
 });
 
@@ -296,16 +296,16 @@ describe("regular expressions", () => {
   });
 
   it.each([
-    { input: "//", error: { from: 0, to: 2 }, why: "an empty body" },
+    { input: "//", error: { from: 0, to: 1 }, why: "an empty body" },
     { input: "/", error: { from: 0, to: 1 }, why: "a bare slash" },
-    { input: "/\\", error: { from: 0, to: 2 }, why: "a dangling escape" },
+    { input: "/\\", error: { from: 0, to: 1 }, why: "a dangling escape" },
     { input: "/a/q", error: { from: 3, to: 4 }, why: "an unknown flag" },
   ])("rejects $why in $input", ({ input, error }) => {
-    expect(errorOf(input)).toEqual(error);
+    expect(errorOf(input)).toMatchObject(error);
   });
 
   it("ends a regular expression at a line feed", () => {
-    expect(errorOf("/a\nb/")).toEqual({ from: 3, to: 4 });
+    expect(errorOf("/a\nb/")).toMatchObject({ from: 3, to: 4 });
   });
 
   it.each([
@@ -353,16 +353,16 @@ describe("arrays", () => {
   });
 
   it.each([
-    { input: "[1,]", error: { from: 3, to: 3 }, why: "a trailing comma" },
+    { input: "[1,]", error: { from: 3, to: 4 }, why: "a trailing comma" },
     {
       input: "[1, 2,]",
-      error: { from: 6, to: 6 },
+      error: { from: 6, to: 7 },
       why: "a trailing comma after two entries",
     },
     { input: "[,]", error: { from: 1, to: 2 }, why: "a leading comma" },
     { input: "[1 2]", error: { from: 3, to: 4 }, why: "a missing comma" },
   ])("rejects $why in $input", ({ input, error }) => {
-    expect(errorOf(input)).toEqual(error);
+    expect(errorOf(input)).toMatchObject(error);
   });
 });
 
@@ -383,14 +383,14 @@ describe("grouping", () => {
   });
 
   it.each([
-    { input: "()", error: { from: 1, to: 1 }, why: "an empty group" },
+    { input: "()", error: { from: 1, to: 2 }, why: "an empty group" },
     {
       input: "(1, 2)",
       error: { from: 2, to: 3 },
       why: "a comma inside a group",
     },
   ])("rejects $why in $input", ({ input, error }) => {
-    expect(errorOf(input)).toEqual(error);
+    expect(errorOf(input)).toMatchObject(error);
   });
 });
 
@@ -435,15 +435,15 @@ describe("calls", () => {
   });
 
   it.each([
-    { input: "f(1,)", error: { from: 4, to: 4 }, why: "a trailing comma" },
+    { input: "f(1,)", error: { from: 4, to: 5 }, why: "a trailing comma" },
     {
       input: "f(a, b,)",
-      error: { from: 7, to: 7 },
+      error: { from: 7, to: 8 },
       why: "a trailing comma after two arguments",
     },
     { input: "f(,)", error: { from: 2, to: 3 }, why: "a leading comma" },
   ])("rejects $why in $input", ({ input, error }) => {
-    expect(errorOf(input)).toEqual(error);
+    expect(errorOf(input)).toMatchObject(error);
   });
 });
 
@@ -486,13 +486,13 @@ describe("object and array access", () => {
   });
 
   it("requires an identifier after a dot", () => {
-    expect(errorOf("a.1")).toEqual({ from: 2, to: 3 });
-    expect(errorOf("a.")).toEqual({ from: 2, to: 2 });
+    expect(errorOf("a.1")).toMatchObject({ from: 2, to: 3 });
+    expect(errorOf("a.")).toMatchObject({ from: 2, to: 2 });
   });
 
   it("requires an index between the brackets", () => {
     // Empty brackets are a valid array literal, but never a valid access.
-    expect(errorOf("a[]")).toEqual({ from: 2, to: 2 });
+    expect(errorOf("a[]")).toMatchObject({ from: 2, to: 3 });
   });
 });
 
@@ -824,11 +824,11 @@ describe("parseExpression", () => {
 
   it("reports empty input as an error at the grammar boundary", () => {
     // Blank-input meaning is a consumer policy, not a grammar rule.
-    expect(parseExpression("").error).toEqual({ from: 0, to: 0 });
+    expect(parseExpression("").error).toMatchObject({ from: 0, to: 0 });
   });
 
   it("reports whitespace-only input as an error", () => {
-    expect(parseExpression(" ").error).toEqual({ from: 1, to: 1 });
+    expect(parseExpression(" ").error).toMatchObject({ from: 1, to: 1 });
   });
 
   it.each([
@@ -837,7 +837,7 @@ describe("parseExpression", () => {
       error: { from: 4, to: 4 },
       why: "a missing right operand",
     },
-    { input: "&& a", error: { from: 0, to: 0 }, why: "a missing left operand" },
+    { input: "&& a", error: { from: 0, to: 2 }, why: "a missing left operand" },
     {
       input: "1 +",
       error: { from: 3, to: 3 },
@@ -871,11 +871,11 @@ describe("parseExpression", () => {
     { input: "a | b", error: { from: 2, to: 3 }, why: "a single pipe" },
     { input: "a = b", error: { from: 2, to: 3 }, why: "a single equals sign" },
   ])("positions the first error on $why", ({ input, error }) => {
-    expect(parseExpression(input).error).toEqual(error);
+    expect(parseExpression(input).error).toMatchObject(error);
   });
 
   it("reports only the first error in document order", () => {
-    expect(parseExpression("a b c").error).toEqual({ from: 2, to: 3 });
+    expect(parseExpression("a b c").error).toMatchObject({ from: 2, to: 3 });
   });
 
   it("still returns a recovery tree for malformed input", () => {
@@ -886,3 +886,279 @@ describe("parseExpression", () => {
     expect(nodeNames(tree).length).toBeGreaterThan(1);
   });
 });
+
+// Fault seams: token extent, live expectations, EOF acceptance, recovered openers.
+it("reports the whole unexpected word and the grammar's continuations", () => {
+  expect(parseExpression("a AND b").error).toEqual({
+    from: 2,
+    to: 5,
+    found: "AND",
+    opened: null,
+    expected: [
+      "!=",
+      "%",
+      "&&",
+      "(",
+      "*",
+      "+",
+      "-",
+      ".",
+      "/",
+      "<",
+      "<=",
+      "==",
+      ">",
+      ">=",
+      "[",
+      "||",
+      "end of filter",
+    ],
+  });
+});
+
+it.each([
+  {
+    input: 'title == "climate',
+    from: 17,
+    opened: { from: 9, to: 10, closer: '"' },
+    expected: ['"'],
+  },
+  {
+    input: 'f(["x',
+    from: 5,
+    opened: { from: 3, to: 4, closer: '"' },
+    expected: ['"'],
+  },
+  {
+    input: '"\\"',
+    from: 3,
+    opened: { from: 0, to: 1, closer: '"' },
+    expected: ['"'],
+  },
+])(
+  "reports the innermost unclosed quote in $input",
+  ({ input, from, opened, expected }) => {
+    expect(parseExpression(input).error).toEqual({
+      from,
+      to: from,
+      found: null,
+      expected,
+      opened,
+    });
+  },
+);
+
+const OPERAND = [
+  "!",
+  "(",
+  "-",
+  "[",
+  "a name",
+  "a number",
+  "a regular expression",
+  "a string",
+  "false",
+  "null",
+  "true",
+];
+const OPERATOR = [
+  "!=",
+  "%",
+  "&&",
+  "(",
+  "*",
+  "+",
+  "-",
+  ".",
+  "/",
+  "<",
+  "<=",
+  "==",
+  ">",
+  ">=",
+  "[",
+  "||",
+];
+const COMPLETE = [...OPERATOR, "end of filter"];
+const ARGUMENT = [
+  "!",
+  "(",
+  ")",
+  "-",
+  "[",
+  "a name",
+  "a number",
+  "a regular expression",
+  "a string",
+  "false",
+  "null",
+  "true",
+];
+const CALL = [
+  "!=",
+  "%",
+  "&&",
+  "(",
+  ")",
+  "*",
+  "+",
+  ",",
+  "-",
+  ".",
+  "/",
+  "<",
+  "<=",
+  "==",
+  ">",
+  ">=",
+  "[",
+  "||",
+];
+const GROUP = [
+  "!=",
+  "%",
+  "&&",
+  "(",
+  ")",
+  "*",
+  "+",
+  "-",
+  ".",
+  "/",
+  "<",
+  "<=",
+  "==",
+  ">",
+  ">=",
+  "[",
+  "||",
+];
+const ARRAY = [
+  "!=",
+  "%",
+  "&&",
+  "(",
+  "*",
+  "+",
+  ",",
+  "-",
+  ".",
+  "/",
+  "<",
+  "<=",
+  "==",
+  ">",
+  ">=",
+  "[",
+  "]",
+  "||",
+];
+const INDEX = [
+  "!=",
+  "%",
+  "&&",
+  "(",
+  "*",
+  "+",
+  "-",
+  ".",
+  "/",
+  "<",
+  "<=",
+  "==",
+  ">",
+  ">=",
+  "[",
+  "]",
+  "||",
+];
+
+// Each rejected language vector also specifies its full Syntax Fault contract.
+it.each(
+  (
+    [
+      ["1a", 1, "a", COMPLETE],
+      ["\u00a0", 0, "\u00a0", OPERAND],
+      ["a\u000bb", 1, "\u000b", COMPLETE],
+      ["a\u000cb", 1, "\u000c", COMPLETE],
+      ["a\u00a0b", 1, "\u00a0", COMPLETE],
+      ["1e5", 1, "e5", COMPLETE],
+      ["0x1f", 1, "x1f", COMPLETE],
+      ["1_000", 1, "_000", COMPLETE],
+      ["1.2.3", 4, "3", ["a name"]],
+      [".", 0, ".", OPERAND],
+      ['"unterminated', 13, null, ['"'], 0, '"'],
+      ["'unterminated", 13, null, ["'"], 0, "'"],
+      ['"\\"', 3, null, ['"'], 0, '"'],
+      ['"', 1, null, ['"'], 0, '"'],
+      ["//", 0, "/", OPERAND],
+      ["/", 0, "/", OPERAND],
+      ["/\\", 0, "/", OPERAND],
+      ["/a/q", 3, "q", COMPLETE],
+      ["/a\nb/", 3, "b", COMPLETE],
+      ["[1,]", 3, "]", OPERAND],
+      ["[1, 2,]", 6, "]", OPERAND],
+      ["[,]", 1, ",", [...OPERAND.slice(0, 4), "]", ...OPERAND.slice(4)]],
+      ["[1 2]", 3, "2", ARRAY],
+      ["()", 1, ")", OPERAND],
+      ["(1, 2)", 2, ",", GROUP],
+      ["f(1,)", 4, ")", OPERAND],
+      ["f(a, b,)", 7, ")", OPERAND],
+      ["f(,)", 2, ",", ARGUMENT],
+      ["a.1", 2, "1", ["a name"]],
+      ["a.", 2, null, ["a name"]],
+      ["a[]", 2, "]", OPERAND],
+      ["", 0, null, OPERAND],
+      [" ", 1, null, OPERAND],
+      ["a &&", 4, null, OPERAND],
+      ["&& a", 0, "&&", OPERAND],
+      ["1 +", 3, null, OPERAND],
+      ["a b", 2, "b", COMPLETE],
+      ["@", 0, "@", OPERAND],
+      ["a[", 2, null, OPERAND, 1, "]"],
+      ["f(", 2, null, ARGUMENT, 1, ")"],
+      ["(1", 2, null, GROUP, 0, ")"],
+      ["[1", 2, null, ARRAY, 0, "]"],
+      ["a === b", 4, "=", OPERAND],
+      ["title.contains(", 15, null, ARGUMENT, 14, ")"],
+      ["a & b", 2, "&", COMPLETE],
+      ["a | b", 2, "|", COMPLETE],
+      ["a = b", 2, "=", COMPLETE],
+      ["a b c", 2, "b", COMPLETE],
+      ["itemType ==", 11, null, OPERAND],
+      ['itemType = "book"', 9, "=", COMPLETE],
+      ['title == "climate', 17, null, ['"'], 9, '"'],
+      ['title.contains("x"', 18, null, CALL, 14, ")"],
+      ["a AND b", 2, "AND", COMPLETE],
+      ['title contains "x"', 6, "contains", COMPLETE],
+      ['title LIKE "x"', 6, "LIKE", COMPLETE],
+      ['"x" in tags', 4, "in", COMPLETE],
+      ["a 😀word", 2, "😀word", COMPLETE],
+      ["a[0", 3, null, INDEX, 1, "]"],
+      ["f(a b)", 4, "b", CALL],
+      ['f("x") AND (', 7, "AND", COMPLETE],
+      ['f(["x', 5, null, ['"'], 3, '"'],
+      [`title == "${"a".repeat(155)}" )`, 167, ")", COMPLETE],
+      ['a "x\\"y"', 2, '"x\\"y"', COMPLETE],
+    ] as const
+  ).map(([input, from, found, expected, opener, closer]) => ({
+    input,
+    from,
+    found,
+    expected,
+    opener,
+    closer,
+  })),
+)(
+  "reports syntax facts for $input",
+  ({ input, from, found, expected, opener, closer }) => {
+    expect(parseExpression(input).error).toEqual({
+      from,
+      to: from + (found?.length ?? 0),
+      found,
+      expected,
+      opened:
+        opener === undefined ? null : { from: opener, to: opener + 1, closer },
+    });
+  },
+);
