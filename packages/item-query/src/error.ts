@@ -1,7 +1,7 @@
 import { Data } from "effect";
 
 import { diagnose } from "./diagnose";
-import type { Fault, Span } from "./fault";
+import type { ItemQueryFault, Span } from "./fault";
 
 /** Stable codes of an invalid Item Query request. */
 export type ItemQueryErrorCode =
@@ -32,7 +32,7 @@ export interface ItemQueryErrorLocation {
  * reads the database.
  */
 export class ItemQueryError extends Data.TaggedError("ItemQueryError")<{
-  readonly fault: Exclude<Fault, { kind: "constant" }>;
+  readonly fault: ItemQueryFault;
   readonly location: ItemQueryErrorLocation;
 }> {
   get code(): ItemQueryErrorCode {

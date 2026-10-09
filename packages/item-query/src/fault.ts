@@ -75,3 +75,4 @@ export type Fault =
       readonly at: Span;
     };
 export type PlainFault = Extract<Fault, { kind: "plain" }>;
+export type ItemQueryFault = Exclude<Fault, { kind: "constant" }>;

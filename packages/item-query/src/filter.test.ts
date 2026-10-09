@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { HydratedItem } from "@zotlit/db/item-query";
 
+import { codeOfFault } from "./diagnose";
 import type { QueryItem } from "./fields";
 import { evaluate, matches } from "./filter-evaluate";
 import { hasBareForm, planFilter } from "./filter-plan";
@@ -88,7 +89,7 @@ const ARTICLE = item({
 function plan(expression: string): FilterPlan {
   const planned = planFilter(expression);
   if ("kind" in planned) {
-    throw new Error(`${expression}: ${JSON.stringify(planned)}`);
+    throw new Error(`${expression}: ${codeOfFault(planned)}`);
   }
   return planned;
 }
@@ -97,19 +98,6 @@ function problem(expression: string): FilterProblem {
   const planned = planFilter(expression);
   if (!("kind" in planned)) throw new Error(`${expression} is valid.`);
   return planned;
-}
-
-function faultShape(code: string): object {
-  switch (code) {
-    case "wrong-argument-count":
-      return { kind: "arity" };
-    case "wrong-argument-type":
-      return { kind: "argument-type" };
-    case "unfilterable-field":
-      return { kind: "unreadable" };
-    default:
-      return { kind: "plain", code };
-  }
 }
 
 /** The Query Clock of the vectors: noon UTC, 15 July 2024. */
@@ -1339,6 +1327,113 @@ describe("validation", () => {
     });
   });
 
+  it("states an unknown global function as facts", () => {
+    expect(problem('contains(title, "a")')).toEqual({
+      kind: "unknown",
+      role: "global",
+      name: "contains",
+      at: { from: 0, to: 8 },
+    });
+  });
+
+  it.each([
+    [
+      "now > 3",
+      {
+        kind: "unknown",
+        role: "field",
+        name: "now",
+        at: { from: 0, to: 3 },
+      },
+    ],
+    [
+      'title.includes("a")',
+      {
+        kind: "unknown",
+        role: "method",
+        name: "includes",
+        at: { from: 6, to: 14 },
+        receiver: {
+          type: "string",
+          at: { from: 0, to: 5 },
+          field: "title",
+        },
+      },
+    ],
+    [
+      "title.round()",
+      {
+        kind: "unknown",
+        role: "method",
+        name: "round",
+        at: { from: 6, to: 11 },
+        receiver: {
+          type: "string",
+          at: { from: 0, to: 5 },
+          field: "title",
+        },
+      },
+    ],
+    [
+      "title.lenght",
+      {
+        kind: "unknown",
+        role: "property",
+        name: "lenght",
+        at: { from: 6, to: 12 },
+        receiver: {
+          type: "string",
+          at: { from: 0, to: 5 },
+          field: "title",
+        },
+      },
+    ],
+    [
+      "attachments.length",
+      {
+        kind: "unknown",
+        role: "property",
+        name: "length",
+        at: { from: 12, to: 18 },
+        receiver: {
+          type: "boolean",
+          at: { from: 0, to: 11 },
+          field: "attachments",
+        },
+      },
+    ],
+    [
+      'creators.lastName == "Smith"',
+      {
+        kind: "unknown",
+        role: "property",
+        name: "lastName",
+        at: { from: 9, to: 17 },
+        receiver: {
+          type: "list",
+          at: { from: 0, to: 8 },
+          field: "creators",
+        },
+      },
+    ],
+    [
+      'creators.some(name == "Smith")',
+      {
+        kind: "unknown",
+        role: "method",
+        name: "some",
+        at: { from: 9, to: 13 },
+        receiver: {
+          type: "list",
+          at: { from: 0, to: 8 },
+          field: "creators",
+        },
+      },
+    ],
+  ] as const)("states the unknown name in %s as facts", (expression, fault) => {
+    expect(problem(expression)).toEqual(fault);
+  });
+
   it.each([
     ["", "invalid-filter", [0, 0]],
     ["   ", "invalid-filter", [3, 3]],
@@ -1502,13 +1597,10 @@ describe("validation", () => {
     ['if == "a"', "unknown-field", [0, 2]],
   ] as const)("rejects %j with %s at %j", (expression, code, [from, to]) => {
     const fault = problem(expression);
-    if (fault.kind === "syntax") {
-      expect(fault.fault).toMatchObject({ from, to });
-      return;
-    }
-    expect(fault).toMatchObject({
-      ...faultShape(code),
-      at: { from, to },
+    expect(codeOfFault(fault)).toBe(code);
+    expect(fault.kind === "syntax" ? fault.fault : fault.at).toMatchObject({
+      from,
+      to,
     });
   });
 
@@ -1524,9 +1616,7 @@ describe("validation", () => {
     ["true || title.contains(/a/)", "wrong-argument-type"],
     ["[1, noSuchFunction()].length", "unknown-function"],
   ] as const)("rejects the dead branch of %j with %s", (expression, code) => {
-    const fault = problem(expression);
-    if (fault.kind === "syntax") expect(code).toBe("invalid-filter");
-    else expect(fault).toMatchObject(faultShape(code));
+    expect(codeOfFault(problem(expression))).toBe(code);
   });
 
   it.each([

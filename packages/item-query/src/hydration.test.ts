@@ -257,23 +257,31 @@ describe("Hydration", () => {
     {
       request: { filter: 'custom["nope"] == 1' },
       location: { argument: "filter", span: { from: 0, to: 14 } },
+      fault: { kind: "plain", code: "unknown-field" },
     },
     {
       request: { filter: "nope == 1" },
       location: { argument: "filter", span: { from: 0, to: 4 } },
+      fault: {
+        kind: "unknown",
+        role: "field",
+        name: "nope",
+        at: { from: 0, to: 4 },
+      },
     },
     {
       request: { fields: ["title", 'custom["nope"]'] },
       location: { argument: "fields", index: 1 },
+      fault: { kind: "plain", code: "unknown-field" },
     },
   ])(
     "fails a custom field that the source does not define in $location.argument",
-    async ({ request, location }) => {
+    async ({ request, location, fault }) => {
       using scenario = openScenarioDatabase();
       expect(await failure(scenario, request)).toMatchObject({
         code: "unknown-field",
         location,
-        fault: { kind: "plain", code: "unknown-field" },
+        fault,
       });
     },
   );

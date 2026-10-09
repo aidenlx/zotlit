@@ -32,7 +32,7 @@
       "\"book\" is not a field of Item Query.",
       "itemType == book",
       "            ^^^^",
-      "Use a field of the Item Query Schema; field names are case-sensitive. The custom fields with a bare name: mood. Reach every custom field with custom[\"exact name\"]."
+      "Try: itemType == bookTitle"
     ]
   },
   {
@@ -130,7 +130,8 @@
       "\"year\" is not a field of Item Query.",
       "year > 2015",
       "^^^^",
-      "Use a field of the Item Query Schema; field names are case-sensitive. The custom fields with a bare name: mood. Reach every custom field with custom[\"exact name\"]."
+      "Similar fields: date.year, issueDate.year, filingDate.year.",
+      "Try: date.year"
     ]
   },
   {
@@ -142,7 +143,7 @@
       "\"Title\" is not a field of Item Query.",
       "Title.contains(\"x\")",
       "^^^^^",
-      "Use a field of the Item Query Schema; field names are case-sensitive. The custom fields with a bare name: mood. Reach every custom field with custom[\"exact name\"]."
+      "Try: title.contains(\"x\")"
     ]
   },
   {
@@ -151,10 +152,11 @@
       "filter": "review.status == \"include\""
     },
     "report": [
-      "\"status\" is not a property of a value.",
+      "A string has no property \"status\".",
       "review.status == \"include\"",
       "       ^^^^^^",
-      "Use a property of the Item Query Schema: length, year, month, day, hour, minute, second, millisecond, timestamp."
+      "The receiver is a string in a filter.",
+      "Use a property of a string: length."
     ]
   },
   {
@@ -163,10 +165,11 @@
       "filter": "custom.review.status == \"include\""
     },
     "report": [
-      "\"status\" is not a property of a value.",
+      "A string has no property \"status\".",
       "custom.review.status == \"include\"",
       "              ^^^^^^",
-      "Use a property of the Item Query Schema: length, year, month, day, hour, minute, second, millisecond, timestamp."
+      "The receiver is a string in a filter.",
+      "Use a property of a string: length."
     ]
   },
   {
@@ -187,10 +190,11 @@
       "filter": "title.includes(\"x\")"
     },
     "report": [
-      "\"includes\" is not a method of Item Query.",
+      "A string has no method \"includes\".",
       "title.includes(\"x\")",
       "      ^^^^^^^^",
-      "Use a method of the Item Query Schema: toString, isType, isTruthy, isEmpty, round, ceil, floor, abs, toFixed, lower, startsWith, endsWith, contains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split, flat, join, sort, unique, filter, map, reduce, within, date, time, format, relative, matches. Function names are case-sensitive."
+      "`title` is a string in a filter.",
+      "Use a method of a string: toString, isType, isTruthy, isEmpty, lower, startsWith, endsWith, contains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split."
     ]
   },
   {
@@ -202,7 +206,8 @@
       "\"contains\" is not a global function of Item Query.",
       "contains(title, \"x\")",
       "^^^^^^^^",
-      "contains is a method: call it on a value, such as value.contains(...)."
+      "`contains` is a method; call it on a value as `value.contains(...)`.",
+      "Use a global function: if, number, min, max, now, today, date, duration, list."
     ]
   },
   {
@@ -211,10 +216,12 @@
       "filter": "creators.lastName == \"Smith\""
     },
     "report": [
-      "\"lastName\" is not a property of a value.",
+      "A list has no property \"lastName\".",
       "creators.lastName == \"Smith\"",
       "         ^^^^^^^^",
-      "Use a property of the Item Query Schema: length, year, month, day, hour, minute, second, millisecond, timestamp."
+      "`creators` is a list of text in a filter.",
+      "In a Query Row, each `creators` entry has these Projection Paths: `creators[0].family`, `creators[0].given`, `creators[0].literal`, `creators[0].role`, `creators[0].fullName`.",
+      "Use a property of a list: length."
     ]
   },
   {
@@ -250,7 +257,9 @@
       "A boolean has no property \"length\".",
       "attachments.length > 0",
       "            ^^^^^^",
-      "\"length\" is a property of a string or a list. Use a property of the Item Query Schema: length, year, month, day, hour, minute, second, millisecond, timestamp."
+      "`attachments` is a boolean in a filter.",
+      "`length` is a property of a string or a list.",
+      "A boolean has no properties."
     ]
   },
   {
@@ -262,7 +271,8 @@
       "\"now\" is a function, not a field.",
       "now > 3",
       "^^^",
-      "Call it with arguments, such as now(...). Use a field of the Item Query Schema, such as itemType, title, creators, date, dateModified. Field names are case-sensitive. Reach a custom field with custom[\"exact name\"]."
+      "`now` is a function; call it as `now()`.",
+      "Use a field from the Item Query Schema; field names are case-sensitive."
     ]
   },
   {
@@ -271,10 +281,12 @@
       "filter": "creators.some(name == \"Smith\")"
     },
     "report": [
-      "\"some\" is not a method of Item Query.",
+      "A list has no method \"some\".",
       "creators.some(name == \"Smith\")",
       "         ^^^^",
-      "Use a method of the Item Query Schema: toString, isType, isTruthy, isEmpty, round, ceil, floor, abs, toFixed, lower, startsWith, endsWith, contains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split, flat, join, sort, unique, filter, map, reduce, within, date, time, format, relative, matches. Function names are case-sensitive."
+      "`creators` is a list of text in a filter.",
+      "In a Query Row, each `creators` entry has these Projection Paths: `creators[0].family`, `creators[0].given`, `creators[0].literal`, `creators[0].role`, `creators[0].fullName`.",
+      "Use a method of a list: toString, isType, isTruthy, isEmpty, contains, containsAny, containsAll, flat, join, reverse, slice, sort, unique, filter, map, reduce, within."
     ]
   },
   {
@@ -286,7 +298,8 @@
       "\"family\" is not a property of a value.",
       "creators.filter(value.family == \"Hopper\").length > 0",
       "                      ^^^^^^",
-      "Use a property of the Item Query Schema: length, year, month, day, hour, minute, second, millisecond, timestamp."
+      "The receiver's type depends on the Item.",
+      "Use a property of a value: length, year, month, day, hour, minute, second, millisecond, timestamp."
     ]
   },
   {
@@ -358,7 +371,9 @@
       "A string has no method \"matches\".",
       "title.matches(/a/)",
       "      ^^^^^^^",
-      "matches is a method of a regexp. Use a method of the Item Query Schema: toString, isType, isTruthy, isEmpty, round, ceil, floor, abs, toFixed, lower, startsWith, endsWith, contains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split, flat, join, sort, unique, filter, map, reduce, within, date, time, format, relative, matches. Function names are case-sensitive."
+      "`title` is a string in a filter.",
+      "`matches` is a method of a regexp.",
+      "Try: /a/.matches(title)"
     ]
   },
   {
@@ -370,7 +385,9 @@
       "A string has no method \"sort\".",
       "title.sort()",
       "      ^^^^",
-      "sort is a method of a list. Use a method of the Item Query Schema: toString, isType, isTruthy, isEmpty, round, ceil, floor, abs, toFixed, lower, startsWith, endsWith, contains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split, flat, join, sort, unique, filter, map, reduce, within, date, time, format, relative, matches. Function names are case-sensitive."
+      "`title` is a string in a filter.",
+      "`sort` is a method of a list.",
+      "Use a method of a string: toString, isType, isTruthy, isEmpty, lower, startsWith, endsWith, contains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split."
     ]
   },
   {
@@ -382,7 +399,8 @@
       "\"contains\" is not a global function of Item Query.",
       "contains(title, \"a\")",
       "^^^^^^^^",
-      "contains is a method: call it on a value, such as value.contains(...)."
+      "`contains` is a method; call it on a value as `value.contains(...)`.",
+      "Use a global function: if, number, min, max, now, today, date, duration, list."
     ]
   },
   {
@@ -391,10 +409,12 @@
       "filter": "title.number()"
     },
     "report": [
-      "\"number\" is not a method of Item Query.",
+      "A string has no method \"number\".",
       "title.number()",
       "      ^^^^^^",
-      "number is a global function: call it as number(...)."
+      "`title` is a string in a filter.",
+      "`number` is a global function; call it as `number(value)`.",
+      "Use a method of a string: toString, isType, isTruthy, isEmpty, lower, startsWith, endsWith, contains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split."
     ]
   },
   {
@@ -403,10 +423,12 @@
       "filter": "title.list()"
     },
     "report": [
-      "\"list\" is not a method of Item Query.",
+      "A string has no method \"list\".",
       "title.list()",
       "      ^^^^",
-      "list is a global function: call it as list(...)."
+      "`title` is a string in a filter.",
+      "`list` is a global function; call it as `list(value)`.",
+      "Use a method of a string: toString, isType, isTruthy, isEmpty, lower, startsWith, endsWith, contains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split."
     ]
   },
   {
@@ -418,7 +440,10 @@
       "A list has no method \"trim\".",
       "tags.trim()",
       "     ^^^^",
-      "trim is a method of a string. Use a method of the Item Query Schema: toString, isType, isTruthy, isEmpty, round, ceil, floor, abs, toFixed, lower, startsWith, endsWith, contains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split, flat, join, sort, unique, filter, map, reduce, within, date, time, format, relative, matches. Function names are case-sensitive."
+      "`tags` is a list of text in a filter.",
+      "In a Query Row, each `tags` entry has these Projection Paths: `tags[0].name`, `tags[0].type`.",
+      "`trim` is a method of a string.",
+      "Use a method of a list: toString, isType, isTruthy, isEmpty, contains, containsAny, containsAll, flat, join, reverse, slice, sort, unique, filter, map, reduce, within."
     ]
   },
   {
@@ -430,7 +455,9 @@
       "A string has no method \"toFixed\".",
       "title.toFixed(1)",
       "      ^^^^^^^",
-      "toFixed is a method of a number. Use a method of the Item Query Schema: toString, isType, isTruthy, isEmpty, round, ceil, floor, abs, toFixed, lower, startsWith, endsWith, contains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split, flat, join, sort, unique, filter, map, reduce, within, date, time, format, relative, matches. Function names are case-sensitive."
+      "`title` is a string in a filter.",
+      "`toFixed` is a method of a number.",
+      "Use a method of a string: toString, isType, isTruthy, isEmpty, lower, startsWith, endsWith, contains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split."
     ]
   },
   {
@@ -466,7 +493,7 @@
       "\"nope\" is not a field of Item Query.",
       "nope == 1",
       "^^^^",
-      "Use a field of the Item Query Schema; field names are case-sensitive. The custom fields with a bare name: mood. Reach every custom field with custom[\"exact name\"]."
+      "Use a field from the Item Query Schema; field names are case-sensitive."
     ]
   },
   {
@@ -478,7 +505,7 @@
       "\"Mood\" is not a field of Item Query.",
       "Mood == \"calm\"",
       "^^^^",
-      "Use a field of the Item Query Schema; field names are case-sensitive. The custom fields with a bare name: mood. Reach every custom field with custom[\"exact name\"]."
+      "Use a field from the Item Query Schema; field names are case-sensitive."
     ]
   },
   {
@@ -490,7 +517,7 @@
       "\"Title\" is not a field of Item Query.",
       "Title == \"x\"",
       "^^^^^",
-      "Use a field of the Item Query Schema; field names are case-sensitive. The custom fields with a bare name: mood. Reach every custom field with custom[\"exact name\"]."
+      "Try: title == \"x\""
     ]
   },
   {
@@ -502,7 +529,7 @@
       "\"noSuchField\" is not a field of Item Query.",
       "true && noSuchField == \"x\"",
       "        ^^^^^^^^^^^",
-      "Use a field of the Item Query Schema; field names are case-sensitive. The custom fields with a bare name: mood. Reach every custom field with custom[\"exact name\"]."
+      "Use a field from the Item Query Schema; field names are case-sensitive."
     ]
   },
   {

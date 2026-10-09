@@ -22,8 +22,8 @@ import type {
 import type { CandidateSources } from "./candidate-plan";
 import { ItemQueryError } from "./error";
 import type { ItemQueryErrorLocation } from "./error";
+import type { ItemQueryFault } from "./fault";
 import type { FieldNeeds, QueryItem } from "./fields";
-import { hasBareForm } from "./filter-plan";
 import type { ItemQueryPlan, TargetLibrary } from "./request";
 
 /** What one pass loads for each Item of a chunk. */
@@ -188,27 +188,27 @@ function unknownCustomField(
   names: readonly string[],
   { name, bare, location }: CustomFieldUse,
 ): Effect.Effect<never, ItemQueryError> {
-  const bareNames = names.filter(hasBareForm);
-  return Effect.fail(
-    new ItemQueryError({
-      location,
-      fault: {
+  const fault: ItemQueryFault = bare
+    ? {
+        kind: "unknown",
+        role: "field",
+        name,
+        at: location.span!,
+      }
+    : {
         kind: "plain",
         code: "unknown-field",
         ...(location.span ? { at: location.span } : {}),
-        message: bare
-          ? `${JSON.stringify(name)} is not a field of Item Query.`
-          : `The Zotero source has no custom field named ${JSON.stringify(name)}.`,
-        action: bare
-          ? `Use a field of the Item Query Schema; field names are case-sensitive.${
-              bareNames.length === 0
-                ? ""
-                : ` The custom fields with a bare name: ${bareNames.join(", ")}.`
-            } Reach every custom field with custom["exact name"].`
-          : names.length === 0
+        message: `The Zotero source has no custom field named ${JSON.stringify(name)}.`,
+        action:
+          names.length === 0
             ? "The Zotero source has no custom fields."
             : `Use the exact name of a custom field: ${names.map((entry) => JSON.stringify(entry)).join(", ")}.`,
-      },
+      };
+  return Effect.fail(
+    new ItemQueryError({
+      location,
+      fault,
     }),
   );
 }
