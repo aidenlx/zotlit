@@ -204,8 +204,14 @@ CUSTOM FIELDS
   built-in field when one has that name.
 
 ERRORS AND EMPTY VALUES
-  A wrong function name, argument count, or argument type fails the query
-  with a diagnostic that points at the text, also inside an if branch.
+  Invalid syntax, unknown names, and wrong argument counts or types fail the
+  query, also inside an if branch. Read diagnostic.report for the marked text
+  and recovery action; suggestions gives available corrections.
+  A comparison of incompatible types can produce a warning on a successful
+  query. Read warnings before you report an empty result. A warning describes
+  the marked comparison, which can be part of a larger filter. Equality
+  warnings require proof that the operands cannot both be null; ordering
+  different types is never true. A filter without warnings can still match no Items.
   A value that is missing or unreadable for one Item is null for that Item.
   null is false in a filter, so !x is true when x is null. This selects the
   Items from 2000 on and the Items without a year:
@@ -273,8 +279,10 @@ ENVELOPE
   and ok. The guide prints text.
   On success, the query answer has identity (the vault and the Zotero
   source), libraries, request (the query after defaults), returnedCount,
-  truncated, and rows. Each row is {"indexedKey","values"}; values has one
+  truncated, warnings, and rows. Each row is {"indexedKey","values"}; values has one
   entry for each path in request.fields.
+  warnings is an array of diagnostics, empty when there are no warnings.
+  Read warnings before you report an empty result. File receipts include it too.
   libraries lists each Library the query read, My Library first and then
   the groups by group ID. Each entry is {"type":"personal"} or
   {"type":"group","groupID","name"}. request.libraries has the same
@@ -293,13 +301,28 @@ FILE EXPORTS
   Example: add output=/absolute/path/items.json to a limit=all query.
 
 DIAGNOSTICS
-  On failure, ok is false and diagnostic holds code, message, and hint.
-  Follow diagnostic.hint to correct the query, then run it again.
-  diagnostic.location names the argument; index is the position in fields
-  or sort; span gives the characters of the filter text, from (inclusive)
-  to to (exclusive).
-  An invalid query has a code of its own, such as unknown-field. The other
-  codes, each with its hint:
+  Read diagnostic.report first on failure, or each warnings entry's report
+  on success. Each array entry is one line: message first, hint last, with
+  an excerpt, caret, and explanatory notes between them when available.
+  Follow the recovery action, then run the corrected query.
+  On failure, ok is false and diagnostic describes the error. Warnings use
+  the same fields and leave ok true:
+    code identifies the kind of diagnostic.
+    message is the summary; hint is the most specific recovery action.
+    severity is error on failure and warning for a Query Warning.
+    excerpt contains before, at, and after; at is the exact marked text.
+      The caret aligns with the JSON-escaped excerpt in the pretty JSON envelope.
+    found is the received value or type, or an empty string when unavailable.
+    expected lists allowed forms, or an empty array when unavailable.
+    suggestions lists candidate names or corrected arguments, or an empty array.
+      Use the report to distinguish candidates from a complete correction.
+    location.argument names the argument. index is the position in fields or sort.
+      span gives filter character offsets from (inclusive) to to (exclusive),
+      measured in UTF-16. path identifies a JSON position, such as sort[0].direction.
+    details carries additional context, such as the rejected parameter name.
+  Operational failures have two report lines, message and hint, and no excerpt.
+  Query errors have codes such as unknown-field. The adapter's registered codes
+  and default recovery actions follow; a diagnostic can give a more specific action:
   ${diagnosticCodes()}`;
 
 const CANCEL_SECTION = `CANCEL A RUNNING QUERY
@@ -371,10 +394,6 @@ export type GuideTopic = keyof typeof GUIDE_TOPICS;
 export const GUIDE_TOPIC_NAMES = Object.keys(
   GUIDE_TOPICS,
 ) as readonly GuideTopic[];
-
-export function parseGuideTopic(value: string): GuideTopic | null {
-  return Object.hasOwn(GUIDE_TOPICS, value) ? (value as GuideTopic) : null;
-}
 
 const QUICKSTART = `ZOTLIT ITEM QUERY
 

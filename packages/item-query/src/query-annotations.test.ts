@@ -7,6 +7,8 @@ import {
 } from "@zotlit/db/test-scenario";
 
 import { ANNOTATION_SCENARIO_QUERIES } from "./annotation-scenario-queries";
+import { diagnose } from "./diagnose";
+import { ItemQueryError } from "./error";
 import { queryAnnotations } from "./query-annotations";
 import type { RunOptions } from "./test-helpers";
 import { runEffect } from "./test-helpers";
@@ -339,3 +341,72 @@ it.each(["asc", "desc"] as const)(
     ]);
   },
 );
+
+it("reports a never-true comparison before returning an empty Annotation result", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const { exit } = await runEffect(
+    queryAnnotations({
+      libraries: [SCENARIO_LIBRARIES.personal],
+      filter: 'tags == "figure"',
+    }),
+    { client: scenario.db },
+  );
+  if (exit._tag === "Failure") throw new Error(String(exit.cause));
+  expect(exit.value).toMatchObject({
+    returnedCount: 0,
+    rows: [],
+    warnings: [
+      {
+        code: "never-true",
+        severity: "warning",
+        suggestions: ['tags.contains("figure")'],
+      },
+    ],
+  });
+});
+
+it("corrects a dotted parent custom field with the source spelling and item prefix", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const filter = 'item.review.status == "done"';
+  const { exit } = await runEffect(
+    queryAnnotations({ libraries: [SCENARIO_LIBRARIES.personal], filter }),
+    { client: scenario.db },
+  );
+  if (exit._tag !== "Failure") throw new Error("Expected failure");
+  const error = Cause.squash(exit.cause);
+  if (!(error instanceof ItemQueryError)) throw error;
+  expect(error.fault).toMatchObject({
+    kind: "unknown",
+    role: "custom-field",
+    name: "review.status",
+    dotted: true,
+  });
+  expect(
+    diagnose(error.fault, filter, {
+      ...error.location,
+      dataset: error.dataset,
+    }),
+  ).toMatchObject({
+    code: "unknown-field",
+    excerpt: { at: "item.review.status" },
+    suggestions: ['item.custom["review.status"]'],
+  });
+});
+
+it("warns on definite cross-type inequality while preserving every evaluated match", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const request = { libraries: [SCENARIO_LIBRARIES.personal], fields: [] };
+  const all = await runEffect(queryAnnotations(request), {
+    client: scenario.db,
+  });
+  const comparison = await runEffect(
+    queryAnnotations({ ...request, filter: 'tags != "figure"' }),
+    { client: scenario.db },
+  );
+  if (all.exit._tag === "Failure" || comparison.exit._tag === "Failure")
+    throw new Error("Expected success");
+  expect(comparison.exit.value.rows).toEqual(all.exit.value.rows);
+  expect(comparison.exit.value.warnings).toMatchObject([
+    { code: "always-true", suggestions: ['!tags.contains("figure")'] },
+  ]);
+});

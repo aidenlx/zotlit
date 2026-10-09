@@ -1,17 +1,33 @@
 // The renderer-side answer of the local Annotation image command.
 import type { CliData } from "obsidian";
+import * as v from "valibot";
 
 import { parseIndexedKey } from "@zotlit/db";
+import { renderDiagnostic } from "@zotlit/item-query";
 
+import { cliParams, decodeCliParams } from "@/lib/cli-params";
 import { diagnostic } from "@/services/item-query/contract";
+import { rejectionDiagnostic } from "@/services/item-query/contract";
 import { contractVersion } from "@/services/item-query/contract-version.json";
-import { invalid, rejectParameters } from "@/services/item-query/decode";
 
 import type { ExcerptRequest } from "./contract";
 import type { ExcerptImage } from "./format";
 import type { ExcerptOutcome } from "./service";
 
 export const ANNOTATION_IMAGE_COMMAND = "zotlit:annotation-image";
+
+const imageParams = cliParams(
+  {
+    key: v.pipe(
+      v.string(),
+      v.check(
+        (key) => parseIndexedKey(key) !== null,
+        "Give one Annotation Indexed Key as key=<indexed-key>.",
+      ),
+    ),
+  },
+  { key: "Give one Annotation Indexed Key as key=<indexed-key>." },
+);
 
 export interface AnnotationImagePorts {
   read(key: string): Promise<ExcerptRequest | null>;
@@ -36,17 +52,12 @@ export async function answerAnnotationImage(
   ports: AnnotationImagePorts,
   signal?: AbortSignal,
 ): Promise<string> {
-  const rejected = rejectParameters(params, ["key"]);
-  if (rejected) return envelope({ ok: false, diagnostic: rejected });
-  const key = params.key;
-  if (!key || !parseIndexedKey(key))
-    return envelope({
-      ok: false,
-      diagnostic: invalid(
-        "key",
-        "Give one Annotation Indexed Key as key=<indexed-key>.",
-      ),
-    });
+  const decoded = decodeCliParams(params, imageParams, {
+    command: ANNOTATION_IMAGE_COMMAND,
+  });
+  if (decoded.kind === "invalid")
+    return envelope({ ok: false, diagnostic: rejectionDiagnostic(decoded) });
+  const { key } = decoded.value;
   let request: ExcerptRequest | null;
   try {
     request = await ports.read(key);
@@ -134,7 +145,7 @@ const IMAGE_HINTS = {
 function imageFailure(code: keyof typeof IMAGE_HINTS, message: string): string {
   return envelope({
     ok: false,
-    diagnostic: { code, message, hint: IMAGE_HINTS[code] },
+    diagnostic: renderDiagnostic({ code, message, hint: IMAGE_HINTS[code] }),
   });
 }
 

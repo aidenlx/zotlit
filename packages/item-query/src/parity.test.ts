@@ -138,7 +138,10 @@ async function outcome(
   const error = Cause.findErrorOption(exit.cause);
   if (error._tag === "None") throw new Error(String(exit.cause));
   return wire({
-    failure: Object.assign({}, error.value, { message: error.value.message }),
+    failure:
+      error.value._tag === "ItemQueryError"
+        ? { fault: error.value.fault, location: error.value.location }
+        : error.value,
   });
 }
 
@@ -315,3 +318,51 @@ describe("parity of generated filter combinations", () => {
     expect(oracle).toHaveProperty("result");
   });
 });
+
+// Failure modes: a property suffix can hide a dotted source name; an existing
+// prefix keeps its property meaning even when the dotted name also exists.
+it.each(["review.length", "custom.review.length"])(
+  "preserves source-dependent property resolution for %s in every plan",
+  async (access) => {
+    using database = openScenarioDatabase();
+    database.sqlite.exec(
+      "update fieldsCombined set fieldName = 'review.length' where fieldName = 'review.status'; update customFields set fieldName = 'review.length' where fieldName = 'review.status'",
+    );
+    const query: ScenarioQuery = {
+      name: access,
+      libraries: ["personal"],
+      request: { filter: `${access} == 4`, fields: [], sort: [] },
+    };
+    const missing = await outcome(query, FORCED_SCAN, { database });
+    expect(missing).toMatchObject({
+      failure: {
+        fault: {
+          kind: "unknown",
+          name: "review.length",
+          dotted: true,
+          at: { from: 0, to: access.length },
+        },
+      },
+    });
+    for (const { tuning } of PLANS)
+      expect(await outcome(query, tuning, { database })).toEqual(missing);
+    database.sqlite.exec(
+      "update fieldsCombined set fieldName = 'review' where fieldName = 'mood'; update customFields set fieldName = 'review' where fieldName = 'mood'",
+    );
+    const property = await outcome(query, FORCED_SCAN, { database });
+    expect(property).toMatchObject({
+      result: {
+        returnedCount: 1,
+        rows: [{ indexedKey: "ART2FULL", values: {} }],
+        warnings: [],
+      },
+    });
+    for (const { tuning } of PLANS)
+      expect(await outcome(query, tuning, { database })).toEqual(property);
+    database.sqlite.exec(
+      "update fieldsCombined set fieldName = 'review.status' where fieldName = 'review.length'; update customFields set fieldName = 'review.status' where fieldName = 'review.length'",
+    );
+    for (const { tuning } of PLANS)
+      expect(await outcome(query, tuning, { database })).toEqual(property);
+  },
+);

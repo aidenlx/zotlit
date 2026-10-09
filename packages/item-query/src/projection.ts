@@ -1,3 +1,4 @@
+import type { ItemQueryFault } from "./fault";
 import { fieldDefinition } from "./fields";
 import type {
   FieldDefinition,
@@ -21,10 +22,10 @@ export interface PlannedPath<Item = QueryItem> {
   readonly customField: string | null;
 }
 
-export type PathProblem = {
-  readonly code: "invalid-path" | "unknown-field" | "unknown-path";
-  readonly message: string;
-};
+export type PathProblem = Extract<
+  ItemQueryFault,
+  { kind: "plain" | "unknown" }
+>;
 
 /** Check a Projection Path against the field registry. */
 export function planPath<Item = QueryItem>(
@@ -38,7 +39,11 @@ export function planPath<Item = QueryItem>(
   const parsed = parseProjectionPath(text);
   if (!parsed.ok) {
     return {
+      kind: "plain",
       code: "invalid-path",
+      action:
+        'Write the path in the template accessor grammar, such as date.year or custom["review.status"].',
+      at: { from: 0, to: text.length },
       message: `"${text}" is not a valid Projection Path. ${parsed.message}`,
     };
   }
@@ -46,8 +51,10 @@ export function planPath<Item = QueryItem>(
   const field = typeof root === "string" ? resolve(root) : undefined;
   if (!field) {
     return {
-      code: "unknown-field",
-      message: `"${text}" does not start with a field of Item Query.`,
+      kind: "unknown",
+      role: "projection-path",
+      name: text,
+      at: { from: 0, to: text.length },
     };
   }
   let shape: ValueShape = field.shape;
@@ -56,8 +63,10 @@ export function planPath<Item = QueryItem>(
     const next = step(shape, segment);
     if (!next) {
       return {
-        code: "unknown-path",
-        message: `"${text}" has no value at ${describe(segment)}.`,
+        kind: "unknown",
+        role: "projection-path",
+        name: text,
+        at: { from: 0, to: text.length },
       };
     }
     if (shape.kind === "custom-fields" && index === 0) {
@@ -82,12 +91,6 @@ function step(shape: ValueShape, segment: PathSegment): ValueShape | null {
     case "custom-fields":
       return typeof segment === "string" ? shape.value : null;
   }
-}
-
-function describe(segment: PathSegment): string {
-  return typeof segment === "number"
-    ? `index ${segment}`
-    : `key ${JSON.stringify(segment)}`;
 }
 
 /**

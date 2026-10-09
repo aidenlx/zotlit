@@ -1,5 +1,8 @@
 import { Data } from "effect";
 
+import { diagnose } from "./diagnose";
+import type { ItemQueryFault, Span } from "./fault";
+
 /** Stable codes of an invalid Item Query request. */
 export type ItemQueryErrorCode =
   | "duplicate-library"
@@ -20,8 +23,9 @@ export interface ItemQueryErrorLocation {
   readonly argument: "libraries" | "filter" | "fields" | "sort" | "limit";
   /** The position of the entry in a list argument. */
   readonly index?: number;
+  readonly path?: string;
   /** The part of the filter text, in UTF-16 offsets; `to` is exclusive. */
-  readonly span?: { readonly from: number; readonly to: number };
+  readonly span?: Span;
 }
 
 /**
@@ -29,9 +33,25 @@ export interface ItemQueryErrorLocation {
  * reads the database.
  */
 export class ItemQueryError extends Data.TaggedError("ItemQueryError")<{
-  readonly code: ItemQueryErrorCode;
+  readonly fault: ItemQueryFault;
+  readonly dataset?: "annotations";
+  readonly argumentText?: string;
   readonly location: ItemQueryErrorLocation;
-  readonly message: string;
-  /** How the caller can repair the request. */
-  readonly hint: string;
-}> {}
+}> {
+  get code(): ItemQueryErrorCode {
+    return this.#diagnostic().code;
+  }
+  override get message(): string {
+    return this.#diagnostic().message;
+  }
+  get hint(): string {
+    return this.#diagnostic().hint;
+  }
+
+  #diagnostic() {
+    return diagnose(this.fault, this.argumentText ?? "", {
+      ...this.location,
+      dataset: this.dataset,
+    });
+  }
+}

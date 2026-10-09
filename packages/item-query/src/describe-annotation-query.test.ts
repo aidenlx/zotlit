@@ -59,4 +59,5 @@ it("publishes executable Annotation and parent Projection Paths with active-sour
   if (projected.exit._tag === "Failure")
     throw new Error(String(projected.exit.cause));
   expect(projected.exit.value.returnedCount).toBe(1);
+  expect(projected.exit.value.warnings).toEqual([]);
 });

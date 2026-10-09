@@ -7,7 +7,16 @@
 
 import type { CliFlag, CliFlags } from "obsidian";
 
-import type { ItemQueryError } from "@zotlit/item-query";
+import { diagnoseDecode, renderDiagnostic } from "@zotlit/item-query";
+import type {
+  Diagnostic as QueryDiagnostic,
+  ItemQueryError,
+} from "@zotlit/item-query";
+
+import { createCliDiagnostics } from "@/lib/cli-diagnostic";
+import type { CliRejection } from "@/lib/cli-params";
+
+import type { ItemQueryParam } from "./decode";
 
 export const ANNOTATION_QUERY_SCHEMA_COMMAND =
   "zotlit:annotation-query-schema" as const;
@@ -41,19 +50,6 @@ export const QUERY_ID_FORM = `1 to ${QUERY_ID_MAX_LENGTH} ASCII letters, digits,
 export function queryCancelledText(id: string): string {
   return `The query '${id}' was cancelled by ${ITEM_QUERY_CANCEL_COMMAND}.`;
 }
-
-export const ITEM_QUERY_PARAMS = [
-  "filter",
-  "fields",
-  "sort",
-  "limit",
-  "library",
-  "libraries",
-  "output",
-  "id",
-] as const;
-
-type ItemQueryParam = (typeof ITEM_QUERY_PARAMS)[number];
 
 export const itemQueryFlags: CliFlags = {
   filter: {
@@ -131,26 +127,29 @@ export const DIAGNOSTIC_HINTS = {
 type AdapterDiagnosticCode = keyof typeof DIAGNOSTIC_HINTS;
 
 /** The failure of an Item Query command, as its envelope carries it. */
-export interface Diagnostic {
-  code: AdapterDiagnosticCode | ItemQueryError["code"];
-  message: string;
-  hint: string;
-  /** Where an invalid query went wrong. */
-  location?: ItemQueryError["location"];
+export interface Diagnostic extends QueryDiagnostic<
+  AdapterDiagnosticCode | ItemQueryError["code"]
+> {
   details?: { parameter: string };
 }
+
+const base = createCliDiagnostics<
+  typeof DIAGNOSTIC_HINTS,
+  Diagnostic["details"]
+>(DIAGNOSTIC_HINTS, "invalid-argument");
 
 export function diagnostic(
   code: AdapterDiagnosticCode,
   message: string,
-  options: { details?: Diagnostic["details"] } = {},
+  details?: Diagnostic["details"],
 ): Diagnostic {
-  return {
-    code,
-    message,
-    hint: DIAGNOSTIC_HINTS[code],
-    details: options.details,
-  };
+  const value = base.diagnostic(code, message, details);
+  return { ...value, ...renderDiagnostic(value) };
+}
+
+export function rejectionDiagnostic(rejection: CliRejection): Diagnostic {
+  const value = base.rejectionDiagnostic(rejection);
+  return { ...value, ...diagnoseDecode(rejection, value.hint) };
 }
 
 export const annotationQueryFlags: CliFlags = {

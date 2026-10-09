@@ -30,7 +30,7 @@ export {
   type QueryConsumer,
   type QuerySummary,
 } from "./query-items";
-export { DEFAULT_SORT } from "./request";
+export { DEFAULT_SORT, COUNT_FIELDS, UNLIMITED_LIMIT } from "./request";
 export type {
   ItemQuery,
   ItemQueryRequest,
@@ -57,3 +57,20 @@ export {
 export { DEFAULT_ANNOTATION_FIELDS } from "./annotation-fields";
 
 export { describeAnnotationQueryCustomFields } from "./describe-item-query-custom-fields";
+export {
+  diagnose,
+  diagnoseDecode,
+  renderDiagnostic,
+  type Diagnostic,
+  type DiagnosticLocation,
+} from "./diagnose";
+export type {
+  Fault,
+  ItemQueryFault,
+  PlainFault,
+  Span,
+  Role,
+  Receiver,
+  Callee,
+  SyntaxFault,
+} from "./fault";

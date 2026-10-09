@@ -15,7 +15,9 @@ export type ResolveErrorCode =
   | "item-not-found"
   | "citation-key-missing"
   | "duplicate-citation-key"
-  | "unresolved-citation-intent";
+  | "unresolved-citation-intent"
+  /** The command was given a parameter it does not take, or no `file`. */
+  | "flags-invalid";
 
 export interface ResolveError {
   code: ResolveErrorCode;

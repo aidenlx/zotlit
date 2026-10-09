@@ -27,6 +27,7 @@ import {
   decodeAnnotationQuery,
   decodeItemQuery,
   decodeSchemaArguments,
+  rejectionDiagnostic,
 } from "./decode";
 import type { CancellationEvent, QueryObserver } from "./trace";
 import type { QueryAnswer, QueryCommand } from "./worker-protocol";
@@ -119,12 +120,13 @@ export class ItemQueryService extends Service {
     // Decode and claim the id synchronously, so two calls with one id
     // cannot both start. The worker receives the decoded query.
     const command = annotations ? ANNOTATION_QUERY_COMMAND : ITEM_QUERY_COMMAND;
-    const query = annotations
+    const request = annotations
       ? decodeAnnotationQuery(params)
       : decodeItemQuery(params);
-    if ("code" in query) {
-      return Promise.resolve(failure(command, query));
+    if (request.kind === "invalid") {
+      return Promise.resolve(failure(command, rejectionDiagnostic(request)));
     }
+    const query = request.value;
     const { id } = query;
     if (id !== undefined && FiberMap.hasUnsafe(this.#jobs, id)) {
       return Promise.resolve(queryIdInUseFailure(id, command));
@@ -157,13 +159,13 @@ export class ItemQueryService extends Service {
     kind?: "annotations",
   ): Promise<string> {
     const rejected = decodeSchemaArguments(params);
-    if (rejected) {
+    if (rejected.kind === "invalid") {
       return Promise.resolve(
         failure(
           kind === "annotations"
             ? ANNOTATION_QUERY_SCHEMA_COMMAND
             : ITEM_QUERY_SCHEMA_COMMAND,
-          rejected,
+          rejectionDiagnostic(rejected),
         ),
       );
     }

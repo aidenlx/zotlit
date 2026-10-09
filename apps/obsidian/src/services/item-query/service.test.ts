@@ -117,7 +117,7 @@ describe("Item Query worker jobs", () => {
     const answer = await service.schema({ library: "personal" }, signal());
 
     expect(JSON.parse(answer)).toMatchObject({
-      contractVersion: 1,
+      contractVersion: 2,
       command: "zotlit:item-query-schema",
       ok: false,
       diagnostic: {
@@ -210,6 +210,7 @@ describe("Item Query worker jobs", () => {
     expect(receipt).toMatchObject({
       ok: true,
       returnedCount: 6000,
+      warnings: [],
       file: { bytes: Buffer.byteLength(text) },
     });
     expect(JSON.parse(text).rows).toHaveLength(6000);
@@ -217,6 +218,7 @@ describe("Item Query worker jobs", () => {
       ok: true,
       returnedCount: 6000,
       truncated: false,
+      warnings: [],
     });
   });
 
@@ -327,7 +329,7 @@ describe("Item Query worker jobs", () => {
     );
 
     expect(duplicate).toMatchObject({
-      contractVersion: 1,
+      contractVersion: 2,
       command: "zotlit:item-query",
       ok: false,
       diagnostic: {
@@ -523,7 +525,7 @@ describe("Annotation Query worker jobs", () => {
     const result = JSON.parse(inline);
     expect(result).toMatchObject({
       command: "zotlit:annotation-query",
-      contractVersion: 1,
+      contractVersion: 2,
       ok: true,
       returnedCount: 12,
     });
@@ -604,7 +606,7 @@ it("runs Annotation schema through the shared worker with its command, asset, de
     expect.objectContaining({ schema: true, kind: "annotations" }),
   );
   expect(answer).toMatchObject({
-    contractVersion: 1,
+    contractVersion: 2,
     command: "zotlit:annotation-query-schema",
     ok: true,
     schema: { fileName: "zotlit-annotation-query-2.2.0-beta.2.schema.json" },
@@ -626,3 +628,95 @@ it("runs Annotation schema through the shared worker with its command, asset, de
     ),
   ).toMatchObject({ command: "zotlit:annotation-query-schema", ok: false });
 });
+
+it.each([
+  ['type == "image" AND hasExcerptImage', "invalid-filter", "AND"],
+  ['pageLable == "1"', "unknown-field", "pageLable"],
+  ['item.Title == "paper"', "unknown-field", "item.Title"],
+  ['item.creators.lastName == "Hopper"', "unknown-property", "lastName"],
+  ["text.contains(1)", "wrong-argument-type", "1"],
+  [
+    'item.custom["reviewStatus"] == "done"',
+    "unknown-field",
+    'item.custom["reviewStatus"]',
+  ],
+] as const)(
+  "renders Annotation filter faults through the worker: %s",
+  async (filter, code, at) => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    const { service } = setup(scenario);
+    await using _owned = service;
+    const result = JSON.parse(
+      await service.annotations({ filter }, new AbortController().signal),
+    );
+    expect(result).toMatchObject({
+      contractVersion: 2,
+      command: "zotlit:annotation-query",
+      ok: false,
+      diagnostic: {
+        code,
+        severity: "error",
+        location: { argument: "filter" },
+        excerpt: { at },
+      },
+    });
+    expect(result.diagnostic.report[0]).toBe(result.diagnostic.message);
+    expect(result.diagnostic.report.at(-1)).toBe(result.diagnostic.hint);
+  },
+);
+
+it("writes Annotation warnings before rows in inline and exported results", async () => {
+  using scenario = openScenarioDatabase({
+    storage: "temp-directory",
+    annotations: true,
+  });
+  const { service } = setup(scenario);
+  await using _owned = service;
+  const params = { filter: 'item.date.year == "2014"' };
+  const inline = await service.annotations(
+    params,
+    new AbortController().signal,
+  );
+  const result = JSON.parse(inline);
+  expect(result).toMatchObject({
+    warnings: [{ code: "never-true", suggestions: ["item.date.year == 2014"] }],
+    returnedCount: 0,
+    rows: [],
+  });
+  expect(inline.indexOf('"warnings"')).toBeLessThan(inline.indexOf('"rows"'));
+  const output = join(dirname(scenario.path), "warning-annotations.json");
+  await service.annotations(
+    { ...params, output },
+    new AbortController().signal,
+  );
+  expect(await readFile(output, "utf8")).toBe(inline);
+});
+
+it.each([
+  [{ fields: '["pageLable"]' }, "fields[0]", "fields='[\"pageLabel\"]'"],
+  [{ fields: '["item.Title"]' }, "fields[0]", "fields='[\"item.title\"]'"],
+  [
+    { fields: JSON.stringify(['item.custom["Review.Status"]']) },
+    "fields[0]",
+    'fields=\'["item.custom[\\"review.status\\"]"]\'',
+  ],
+  [
+    { sort: '[{"field":"pageIndx","direction":"asc"}]' },
+    "sort[0].field",
+    'sort=\'[{"field":"pageIndex","direction":"asc"}]\'',
+  ],
+] as const)(
+  "corrects Annotation request names in their JSON arguments: %j",
+  async (params, path, suggestion) => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    const { service } = setup(scenario);
+    await using _owned = service;
+    const result = JSON.parse(
+      await service.annotations(params, new AbortController().signal),
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      diagnostic: { location: { path }, suggestions: [suggestion] },
+    });
+  },
+);

@@ -1,7 +1,7 @@
 {
   "reading_plan": {
     "envelope": {
-      "contractVersion": 1,
+      "contractVersion": 2,
       "command": "zotlit:annotation-query",
       "ok": true,
       "identity": {
@@ -63,6 +63,7 @@
       },
       "returnedCount": 4,
       "truncated": false,
+      "warnings": [],
       "rows": [
         {
           "indexedKey": "QANMARK2",
@@ -181,7 +182,7 @@
       "validPng": null
     },
     "itemEnvelope": {
-      "contractVersion": 1,
+      "contractVersion": 2,
       "command": "zotlit:item-query",
       "ok": true,
       "identity": {
@@ -228,6 +229,7 @@
       },
       "returnedCount": 3,
       "truncated": false,
+      "warnings": [],
       "rows": [
         {
           "indexedKey": "QANPAPER",
@@ -273,7 +275,7 @@
   },
   "attachment": {
     "envelope": {
-      "contractVersion": 1,
+      "contractVersion": 2,
       "command": "zotlit:annotation-query",
       "ok": true,
       "identity": {
@@ -315,6 +317,7 @@
       },
       "returnedCount": 2,
       "truncated": false,
+      "warnings": [],
       "rows": [
         {
           "indexedKey": "QANMARK2g118",
@@ -377,7 +380,7 @@
   },
   "colors": {
     "envelope": {
-      "contractVersion": 1,
+      "contractVersion": 2,
       "command": "zotlit:annotation-query",
       "ok": true,
       "identity": {
@@ -424,6 +427,7 @@
       },
       "returnedCount": 1,
       "truncated": false,
+      "warnings": [],
       "rows": [
         {
           "indexedKey": "QANMARK2",
@@ -460,7 +464,7 @@
   },
   "missing_source": {
     "envelope": {
-      "contractVersion": 1,
+      "contractVersion": 2,
       "command": "zotlit:annotation-query",
       "ok": true,
       "identity": {
@@ -520,6 +524,7 @@
       },
       "returnedCount": 1,
       "truncated": false,
+      "warnings": [],
       "rows": [
         {
           "indexedKey": "QANMISS2",
@@ -553,7 +558,7 @@
   },
   "export_annotations": {
     "envelope": {
-      "contractVersion": 1,
+      "contractVersion": 2,
       "command": "zotlit:annotation-query",
       "ok": true,
       "identity": {
@@ -596,6 +601,7 @@
       },
       "returnedCount": 2,
       "truncated": false,
+      "warnings": [],
       "rows": [
         {
           "indexedKey": "QANMARK2g118",
@@ -655,7 +661,7 @@
       "validPng": null
     },
     "receipt": {
-      "contractVersion": 1,
+      "contractVersion": 2,
       "command": "zotlit:annotation-query",
       "ok": true,
       "identity": {
