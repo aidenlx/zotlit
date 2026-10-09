@@ -108,7 +108,7 @@ const attachmentTags = [
 ].sort();
 const annotationKeysByPage = Map.groupBy(
   attachmentAnnotations,
-  ({ position }) => position.pageIndex,
+  ({ position }) => ("pageIndex" in position ? position.pageIndex : -1),
 );
 
 async function availableLoopbackPort(): Promise<number> {

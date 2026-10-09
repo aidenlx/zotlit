@@ -42,9 +42,15 @@ import type {
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 import type { SchemaAsset } from "@/services/template-workbench/schema";
 
+import {
+  ANNOTATION_GUIDE_TOPIC_NAMES,
+  parseAnnotationGuideTopic,
+  renderAnnotationGuide,
+} from "./annotation-guide";
 import type { AttachmentFileResolver } from "./attachment-files";
 import {
   ANNOTATION_QUERY_COMMAND,
+  ANNOTATION_QUERY_GUIDE_COMMAND,
   annotationQueryFlags,
   DEFAULT_CLI_LIMIT,
   diagnostic,
@@ -74,6 +80,7 @@ const logger = getLogger(["item-query"]);
 export const CONTRACT_VERSION = contractVersion.contractVersion;
 
 export {
+  ANNOTATION_QUERY_GUIDE_COMMAND,
   DEFAULT_CLI_LIMIT,
   diagnostic,
   ITEM_QUERY_CANCEL_COMMAND,
@@ -86,6 +93,13 @@ export {
 export const itemQueryGuideFlags: CliFlags = {
   topic: {
     value: `<${GUIDE_TOPIC_NAMES.join("|")}>`,
+    description: "Guide topic; omit it for the quickstart",
+  },
+} satisfies Record<"topic", CliFlag>;
+
+export const annotationQueryGuideFlags: CliFlags = {
+  topic: {
+    value: `<${ANNOTATION_GUIDE_TOPIC_NAMES.join("|")}>`,
     description: "Guide topic; omit it for the quickstart",
   },
 } satisfies Record<"topic", CliFlag>;
@@ -193,9 +207,15 @@ export function registerItemQueryCli(
   );
   plugin.registerCliHandler(
     ANNOTATION_QUERY_COMMAND,
-    "Query Zotero Annotations as JSON",
+    "Query Zotero Annotations as JSON; read zotlit:annotation-query-guide for syntax and zotlit:annotation-query-schema for the published field catalog",
     annotationQueryFlags,
     (params) => runs.annotations(params, unload.signal),
+  );
+  plugin.registerCliHandler(
+    ANNOTATION_QUERY_GUIDE_COMMAND,
+    "Print the ZotLit Annotation Query guide",
+    annotationQueryGuideFlags,
+    annotationQueryGuideHandler,
   );
   plugin.registerCliHandler(
     ITEM_QUERY_CANCEL_COMMAND,
@@ -266,6 +286,24 @@ export function itemQueryGuideHandler(params: CliData): string {
     );
   }
   return renderGuide(topic);
+}
+
+/** The Annotation guide is plain text; an unknown topic is a diagnostic. */
+export function annotationQueryGuideHandler(params: CliData): string {
+  const rejected = rejectParameters(params, ["topic"]);
+  if (rejected) return failure(ANNOTATION_QUERY_GUIDE_COMMAND, rejected);
+  if (params.topic === undefined) return renderAnnotationGuide(null);
+  const topic = parseAnnotationGuideTopic(params.topic);
+  if (topic === null) {
+    return failure(
+      ANNOTATION_QUERY_GUIDE_COMMAND,
+      invalid(
+        "topic",
+        `topic '${params.topic}' is not a guide topic: use ${ANNOTATION_GUIDE_TOPIC_NAMES.join(", ")}.`,
+      ),
+    );
+  }
+  return renderAnnotationGuide(topic);
 }
 
 /**
