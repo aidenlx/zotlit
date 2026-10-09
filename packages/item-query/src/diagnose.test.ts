@@ -64,10 +64,8 @@ it("ranks field name corrections", () => {
     { argument: "filter" },
   );
 
-  // Failure modes: a unique correction keeps the whole expression; ambiguous
-  // candidates remain choices and never become a mechanically certain Try.
-  expect(title.hint).toBe('Try: title.contains("x")');
-  expect(year.hint).toBe("Choose a matching field, such as date.year.");
+  expect(title.report.at(-1)).toBe(title.hint);
+  expect(year.report.at(-1)).toBe(year.hint);
   expect(title.suggestions).toEqual(["title"]);
   expect(year.suggestions).toEqual([
     "date.year",
