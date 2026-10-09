@@ -208,7 +208,11 @@ export function planRequest(
       }
       sorts.push({ direction, ...sortable });
     }
-    for (const { field, direction } of dataset.tieBreakers) {
+    // A tie-breaker that the sort already names adds no order.
+    const tieBreakers = dataset.tieBreakers.filter(
+      (tie) => !sort.some(({ field }) => field === tie.field),
+    );
+    for (const { field, direction } of tieBreakers) {
       sorts.push({ direction, ...dataset.sortable(field)! });
     }
 
@@ -244,7 +248,7 @@ export function planRequest(
       filter,
       warnings: filter?.warnings ?? [],
       paths,
-      order: [...normalized, ...dataset.tieBreakers],
+      order: [...normalized, ...tieBreakers],
       sorts,
     };
   });

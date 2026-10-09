@@ -244,6 +244,25 @@ it("swaps a receiver with the one argument when the registered method fits", () 
   expect(diagnostic.suggestions).toEqual(["/re/.matches(title)"]);
 });
 
+it("lists attachment.indexedKey among the Annotation Sortable Fields", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const { exit } = await runEffect(
+    collectQuery(ANNOTATIONS, {
+      libraries: [{ libraryID: 1, groupID: null }],
+      sort: [{ field: "noSuchField", direction: "asc" }],
+    }),
+    { client: scenario.db },
+  );
+  const error = Exit.isFailure(exit) ? Cause.findErrorOption(exit.cause) : null;
+  if (error?._tag !== "Some" || error.value._tag !== "ItemQueryError")
+    throw new Error("Expected an Item Query fault");
+  expect(error.value.diagnostic).toMatchObject({
+    code: "unknown-field",
+    found: "noSuchField",
+  });
+  expect(error.value.diagnostic.expected).toContain("attachment.indexedKey");
+});
+
 // Golden diagnostic reports, with excerpt and caret lines. The first 24 entries
 // are the spec's probe cases; the rest replace the former sentence tests.
 it.each(reports)("reports $name", async ({ request, report, ...setup }) => {
