@@ -10,6 +10,68 @@ export const RELATION_SCENARIO_QUERIES: readonly {
   readonly dataset: QueryDataset;
   readonly request: Omit<ItemQueryRequest, "libraries">;
 }[] = [
+  ...(
+    [
+      [ITEMS, "attachments", 'value.tags.contains("downloaded")'],
+      [ITEMS, "attachments", 'value.key == "PDF2LIVE"'],
+      [ITEMS, "attachments", 'value.indexedKey == "PDF2LIVE"'],
+      [
+        ITEMS,
+        "attachments",
+        '["PDF2LIVE", "PDF2GRUPg314"].contains(value.indexedKey)',
+      ],
+      [ITEMS, "attachments", 'value.contentType == "application/pdf"'],
+      [ITEMS, "attachments", 'value.linkMode == "linked_file"'],
+      [ITEMS, "attachments", 'value.item.collections.within("Thesis")'],
+      [
+        ITEMS,
+        "annotations",
+        'value.type == "highlight" && value.color == "#ffd400"',
+      ],
+      [
+        ITEMS,
+        "annotations",
+        'value.tags.contains("method") || value.key == "ANN2NOTE"',
+      ],
+      [ATTACHMENTS, "annotations", 'value.tags.contains("method")'],
+      [ATTACHMENTS, "annotations", 'value.attachment.indexedKey == "PDF2LIVE"'],
+      [
+        ITEMS,
+        "attachments",
+        'value.annotations.filter(value.tags.contains("method")).length >= 1',
+      ],
+    ] as const
+  ).flatMap(([dataset, relation, predicate]) =>
+    [
+      `${relation}.filter(${predicate}).length > 0`,
+      `${relation}.filter(${predicate}).length >= 1`,
+      `!${relation}.filter(${predicate}).isEmpty()`,
+    ].map((filter) => ({
+      name: `relation existence: ${filter}`,
+      dataset,
+      request: { filter, fields: [], limit: 2 },
+    })),
+  ),
+  ...[
+    'annotations.filter(value.color == "#ffd400" && value.type == "image").length > 0',
+    'annotations.filter(value.tags.contains("method") && index == 0).length > 0',
+    'annotations.filter(value.tags.contains("method") || index == 0).length > 0',
+    'annotations.filter(key == "ART2FULL" && value.type == "highlight").length > 0',
+    'annotations.filter(key == "ART2FULL").length > 0',
+    'annotations.filter(value.indexedKey == "ANN2HGHTg314").length > 0',
+    'annotations.filter(value.item.collections.contains("Thesis/Methods")).length > 0',
+    'annotations.filter(value.item.title == "A complete article").length > 0',
+    '!(annotations.filter(value.tags.contains("method")).length > 0)',
+    'annotations.filter(value.tags.contains("method")).isEmpty()',
+    'annotations.filter(value.tags.contains("method")).length > 1',
+    'annotations.filter(value.tags.contains("method")).length >= 2',
+    'attachments.filter(value.annotations.filter(value.tags.contains("method")).isEmpty()).length > 0',
+    'attachments.filter(value.contentType == "application/pdf" && value.annotations.filter(value.tags.contains("method")).isEmpty()).length > 0',
+  ].map((filter) => ({
+    name: `relation residual: ${filter}`,
+    dataset: ITEMS,
+    request: { filter, fields: ["title"], limit: 2 },
+  })),
   ...[
     [
       "papers with no usable PDF",

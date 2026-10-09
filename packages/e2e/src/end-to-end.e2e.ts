@@ -2829,6 +2829,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ) as ItemQueryReport;
     const papers = '["PREPRNT2", "RUGIER24", "SAKIMA22"].contains(key)';
 
+    it("finds relation candidates through each existence form and nested marks", async () => {
+      for (const filter of [
+        'annotations.filter(value.tags.contains("methodology")).length > 0',
+        'annotations.filter(value.tags.contains("methodology")).length >= 1',
+        '!annotations.filter(value.tags.contains("methodology")).isEmpty()',
+        'attachments.filter(value.annotations.filter(value.tags.contains("methodology")).length > 0).length > 0',
+      ]) {
+        const answer = await query({ filter, fields: "title" });
+        expect(answer.ok).toBe(true);
+        expect(answer.rows!.map((row) => row.indexedKey)).toEqual(["RUGIER24"]);
+      }
+      const files = await query({
+        from: "attachments",
+        filter:
+          'annotations.filter(value.tags.contains("methodology")).length > 0',
+        fields: "title",
+      });
+      expect(files.ok).toBe(true);
+      expect(files.rows!.map((row) => row.indexedKey)).toEqual(["RGRPDF24"]);
+    });
     it("finds papers with no usable PDF on this machine", async () => {
       const answer = await query({
         filter: `(${papers} || ["AAAAAAAA", "DMRGRART"].contains(key)) && attachments.filter(value.contentType == "application/pdf" && value.exists).isEmpty()`,

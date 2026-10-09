@@ -1,13 +1,12 @@
 import type { AnnotationCandidateLeaf } from "@zotlit/db/item-query";
 
-import type { QueryAnnotation } from "./annotation-fields";
 import { equality, lowerItemCandidate } from "./candidate-plan";
 import type { CandidateSources } from "./candidate-plan";
 import type { FilterNode } from "./filter-plan";
 import { lowerIndexedKeySelection } from "./indexed-key-selection";
 
-export function lowerAnnotationCandidate(
-  node: FilterNode<QueryAnnotation>,
+export function lowerAnnotationCandidate<Item>(
+  node: FilterNode<Item>,
   sources: CandidateSources,
 ): AnnotationCandidateLeaf | null {
   const keys = lowerIndexedKeySelection(node, "annotations", sources.library);
@@ -33,9 +32,7 @@ export function lowerAnnotationCandidate(
   ) {
     return { kind: "tag", value: node.args[0].value };
   }
-  const parentField = (
-    field: FilterNode<QueryAnnotation>,
-  ): FilterNode<QueryAnnotation> =>
+  const parentField = (field: FilterNode<Item>): FilterNode<Item> =>
     field.kind === "field" && field.name.startsWith("item.")
       ? { ...field, name: field.name.slice(5) }
       : field;

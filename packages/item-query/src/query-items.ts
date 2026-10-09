@@ -10,7 +10,6 @@ import {
   readUniverseRows,
 } from "@zotlit/db/item-query";
 
-import { planCandidates, readCandidates } from "./candidate-plan";
 import { fieldRoot } from "./dataset";
 import type { QueryDataset } from "./dataset";
 import type { DatasetRun } from "./execution";
@@ -25,6 +24,10 @@ import { matches as isMatch } from "./filter-evaluate";
 import { planFilter } from "./filter-plan";
 import { openHydration } from "./hydration";
 import { readPath, resolveItemPath } from "./projection";
+import {
+  planDatasetCandidates,
+  readDatasetCandidates,
+} from "./relation-candidates";
 import type { ItemQueryRequest } from "./request";
 
 const logger = getLogger(["zotlit", "item-query"]);
@@ -66,9 +69,10 @@ export const ITEMS: QueryDataset<ItemQueryRequest> = {
           Effect.gen(function* () {
             const candidatePlan =
               filter && !tuning.forceScan
-                ? planCandidates(
+                ? planDatasetCandidates(
                     filter.root,
                     hydration.candidateSources(library),
+                    "items",
                   )
                 : null;
             const cap = candidatePlan
@@ -78,7 +82,11 @@ export const ITEMS: QueryDataset<ItemQueryRequest> = {
                 )
               : null;
             const candidates = candidatePlan
-              ? yield* readCandidates(candidatePlan, library.libraryID, cap!)
+              ? yield* readDatasetCandidates(
+                  candidatePlan,
+                  library.libraryID,
+                  cap!,
+                )
               : null;
             logger.debug("Item Query uses {plan} for Library {libraryID}", {
               libraryID: library.libraryID,
