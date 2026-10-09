@@ -58,6 +58,12 @@ export interface CliRejection {
   kind: "invalid";
   parameter: string;
   message: string;
+  /** The first validation issue, at its path inside the CLI parameters. */
+  issue?: {
+    path: string;
+    expected: string;
+    received: string;
+  };
   /** The recovery action, when it differs from the code's own hint. */
   hint?: string;
 }
@@ -238,7 +244,10 @@ export function decodeCliParams<TSchema extends CliSchema>(
 
   for (const key of Object.keys(params)) {
     if (accepted.includes(key)) continue;
-    return rejectToken(key, entries, options);
+    return rejectToken(key, entries, {
+      ...options,
+      received: Object.keys(params),
+    });
   }
   for (const key of Object.keys(params)) {
     if (params[key] === "" && !takesEmpty(entries[key])) {
@@ -255,7 +264,26 @@ export function decodeCliParams<TSchema extends CliSchema>(
       `The ${options.command} schema raised an issue without a parameter: ${issue.message}`,
     );
   }
-  return invalid(parameter, issue.message);
+  return invalid(parameter, issue.message, {
+    path: issuePath(issue.path),
+    expected:
+      issue.expected ?? (issue.type === "parse_json" ? "JSON" : issue.message),
+    received: issue.received,
+  });
+}
+
+/** A Valibot issue path in the form callers use to address the invalid value. */
+function issuePath(path: readonly v.IssuePathItem[] | undefined): string {
+  let formatted = "";
+  for (const { key } of path ?? []) {
+    formatted +=
+      typeof key === "number"
+        ? `[${key}]`
+        : formatted === ""
+          ? String(key)
+          : `.${String(key)}`;
+  }
+  return formatted;
 }
 
 /**
@@ -294,9 +322,9 @@ export function rejectionText(rejection: CliRejection): string {
 function rejectToken(
   key: string,
   entries: v.ObjectEntries,
-  options: CliCommand,
+  options: CliCommand & { received: readonly string[] },
 ): CliRejection {
-  const { command } = options;
+  const { command, received } = options;
   const accepted = Object.keys(entries);
   if (key === "vault") return invalid("vault", VAULT_AFTER_COMMAND_MESSAGE);
   if (key.startsWith("--")) {
@@ -318,6 +346,15 @@ function rejectToken(
           : "Use a supported parameter as name=value, without --; see the command help for its parameters.",
     };
   }
+  if (SHELL_SPLIT_INITIALS.has(key[0] ?? "")) {
+    return {
+      ...invalid(
+        key,
+        `Unknown parameter '${key}': Obsidian received these parameters in order: ${received.join(", ")}.`,
+      ),
+      hint: "Quote the whole value as one shell argument.",
+    };
+  }
   return invalid(
     key,
     options.misplaced?.[key] ?? unknownMessage(key, accepted, command),
@@ -334,9 +371,41 @@ function unknownMessage(
     : `Unknown parameter '${key}' for ${command}. Accepted parameters: ${accepted.join(", ")}.`;
 }
 
-function invalid(parameter: string, message: string): CliRejection {
-  return { kind: "invalid", parameter, message };
+function invalid(
+  parameter: string,
+  message: string,
+  issue?: CliRejection["issue"],
+): CliRejection {
+  return {
+    kind: "invalid",
+    parameter,
+    message,
+    ...(issue === undefined ? {} : { issue }),
+  };
 }
+
+const SHELL_SPLIT_INITIALS = new Set([
+  "=",
+  "!",
+  "<",
+  ">",
+  "&",
+  "|",
+  "+",
+  "-",
+  "*",
+  "/",
+  "%",
+  '"',
+  "'",
+  "`",
+  "(",
+  ")",
+  "[",
+  "]",
+  "{",
+  "}",
+]);
 
 const VAULT_AFTER_COMMAND_MESSAGE =
   "vault must come before the command name (obsidian vault=<name> zotlit:...); placed after, Obsidian ignores it and routes the call by working directory or focused window instead.";

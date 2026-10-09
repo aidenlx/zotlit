@@ -12,6 +12,7 @@ import type { CliData } from "obsidian";
 import * as v from "valibot";
 
 import {
+  cliMaybeEmpty,
   cliParams,
   cliText,
   cliVariants,
@@ -64,24 +65,17 @@ const queryId = v.pipe(
 
 /**
  * A parameter that carries JSON. Text that is no JSON answers its own
- * message; JSON of another shape answers `<parameter> is not <expected>.`
- * unless a check of `schema` gives a message of its own.
+ * message; valid JSON keeps the first issue raised by `schema`.
  */
 function jsonParameter<TSchema extends v.GenericSchema>(
   parameter: string,
   expected: string,
   schema: TSchema,
 ) {
-  return v.config(
-    v.pipe(
-      v.string(),
-      v.parseJson(
-        undefined,
-        `${parameter} is not valid JSON: use ${expected}.`,
-      ),
-      schema,
-    ),
-    { message: `${parameter} is not ${expected}.` },
+  return v.pipe(
+    v.string(),
+    v.parseJson(undefined, `${parameter} is not valid JSON: use ${expected}.`),
+    schema,
   );
 }
 
@@ -229,7 +223,7 @@ const queryParams = cliVariants(
       // `libraries` wins over `library`, which this variant reads no further.
       cliParams({
         libraries,
-        library: v.optional(v.string()),
+        library: cliMaybeEmpty(),
         ...queryOptions,
       }),
       v.transform(({ libraries: scope, library: _, ...options }) =>

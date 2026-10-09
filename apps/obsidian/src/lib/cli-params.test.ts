@@ -61,11 +61,45 @@ describe("decodeCliParams", () => {
       kind: "invalid",
       parameter: "key",
       message: "key is upper.",
+      issue: {
+        path: "key",
+        expected: "/^[A-Z]+$/",
+        received: '"ab"',
+      },
     });
     expect(decode({ count: "x" })).toStrictEqual({
       kind: "invalid",
       parameter: "count",
       message: "count 'x' is no number.",
+      issue: {
+        path: "count",
+        expected: "/^\\d+$/",
+        received: '"x"',
+      },
+    });
+  });
+
+  it("keeps the path, expected form, and received value of the first schema issue", () => {
+    const nested = cliParams({
+      options: v.pipe(
+        v.string(),
+        v.parseJson(),
+        v.object({ direction: v.picklist(["asc", "desc"]) }),
+      ),
+    });
+
+    expect(
+      decodeCliParams({ options: '{"direction":"ascending"}' }, nested, {
+        command: "nested",
+      }),
+    ).toMatchObject({
+      kind: "invalid",
+      parameter: "options",
+      issue: {
+        path: "options.direction",
+        expected: '("asc" | "desc")',
+        received: '"ascending"',
+      },
     });
   });
 
@@ -74,6 +108,11 @@ describe("decodeCliParams", () => {
       kind: "invalid",
       parameter: "full",
       message: "Use key or full, not both.",
+      issue: {
+        path: "full",
+        expected: "Use key or full, not both.",
+        received: "Object",
+      },
     });
   });
 
@@ -96,6 +135,18 @@ describe("decodeCliParams", () => {
         "Unknown parameter 'colour' for pick. Accepted parameters: key, count, full.",
     });
   });
+
+  it.each(["==", '"value"', "[value]"])(
+    "explains an unknown %s parameter as a shell-split value",
+    (split) => {
+      expect(decode({ key: "AB", [split]: "true", count: "3" })).toEqual({
+        kind: "invalid",
+        parameter: split,
+        message: `Unknown parameter '${split}': Obsidian received these parameters in order: key, ${split}, count.`,
+        hint: "Quote the whole value as one shell argument.",
+      });
+    },
+  );
 
   it("answers the misplaced message of a parameter of another command", () => {
     expect(
@@ -267,6 +318,7 @@ describe("cliVariants", () => {
       kind: "invalid",
       parameter: "root",
       message: NOT_PARTIAL,
+      issue: { path: "root", expected: "never", received: '"nope"' },
     });
     expect(decode({ template: "bogus", root: "item" })).toMatchObject({
       parameter: "template",
@@ -302,6 +354,11 @@ describe("cliOneOf", () => {
       kind: "invalid",
       parameter: "profile",
       message: "Select one target.",
+      issue: {
+        path: "profile",
+        expected: "Select one target.",
+        received: "Object",
+      },
     });
     expect(decode({ profile: "b", document: "c" })).toMatchObject({
       parameter: "document",
@@ -364,6 +421,7 @@ describe("cliNotApplicable", () => {
       kind: "invalid",
       parameter: "root",
       message: "root applies to partials only.",
+      issue: { path: "root", expected: "never", received: '"item"' },
     });
   });
 
