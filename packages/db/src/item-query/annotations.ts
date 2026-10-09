@@ -3,6 +3,7 @@ import {
   itemData,
   itemDataValues,
   deletedItems,
+  fieldsCombined,
   itemAnnotations,
   itemAttachments,
   items,
@@ -33,8 +34,12 @@ import { annotationColorsForName } from "@/lib/zt-color";
 import { storedNumberOf, storedIntegerOf } from "./candidate-set";
 import type { CandidateLeaf } from "./candidate-set";
 import { defineStatement, idSlots, unindexed } from "./database";
-import type { IdSlot } from "./database";
-import { HYDRATE_CHUNK_SIZE, readHydrateChunk } from "./hydrate-chunk";
+import type {
+  IdSlot,
+  ItemQueryDatabase,
+  ItemQueryReaderError,
+} from "./database";
+import { HYDRATE_CHUNK_SIZE } from "./hydrate-chunk";
 import { SCAN_PAGE_SIZE } from "./scan-page";
 import type { ScanRow } from "./scan-page";
 
@@ -43,6 +48,7 @@ const parent = alias(items, "annotationParent");
 
 /** An Annotation identity and the parent values needed for reading order. */
 export interface AnnotationScanRow extends ScanRow {
+  libraryID: number;
   attachmentID: number;
   attachmentKey: string;
   parent: ScanRow;
@@ -57,6 +63,7 @@ function selectAnnotations(db: NodeDatabaseClient) {
       itemType: sql<string>`'annotation'`,
       dateAdded: sql<number | null>`unixepoch(${items.dateAdded}) * 1000`,
       dateModified: sql<number | null>`unixepoch(${items.dateModified}) * 1000`,
+      libraryID: items.libraryID,
       attachmentID: attachment.itemID,
       attachmentKey: attachment.key,
       parent: {
@@ -162,7 +169,7 @@ export function readAnnotationUniverseRows(chunk: {
 
 const slots = idSlots(HYDRATE_CHUNK_SIZE);
 const details = defineStatement<Record<IdSlot, number | null>>(
-  "annotation-hydrate-chunk",
+  "annotation-details",
 )((db, { placeholder }) =>
   db
     .select({
@@ -201,7 +208,7 @@ const details = defineStatement<Record<IdSlot, number | null>>(
     ),
 );
 const annotationTags = defineStatement<Record<IdSlot, number | null>>(
-  "annotation-hydrate-chunk",
+  "annotation-tags",
 )((db, { placeholder }) =>
   db
     .select({ itemID: itemTags.itemID, name: tags.name })
@@ -214,60 +221,125 @@ const annotationTags = defineStatement<Record<IdSlot, number | null>>(
       ),
     ),
 );
+const attachmentTitles = defineStatement<Record<IdSlot, number | null>>(
+  "annotation-attachment-titles",
+)((db, { placeholder }) =>
+  db
+    .select({
+      itemID: itemData.itemID,
+      title: sql<string | number | null>`${itemDataValues.value}`,
+    })
+    .from(itemData)
+    .innerJoin(itemDataValues, eq(itemDataValues.valueID, itemData.valueID))
+    .innerJoin(fieldsCombined, eq(fieldsCombined.fieldID, itemData.fieldID))
+    .where(
+      and(
+        inArray(
+          itemData.itemID,
+          slots.names.map((name) => placeholder(name)),
+        ),
+        eq(fieldsCombined.fieldName, "title"),
+        eq(fieldsCombined.custom, 0),
+      ),
+    ),
+);
 
-/** Load annotation text and Tags, Attachment metadata, and requested parent fields. */
-export const readAnnotationHydrateChunk = Effect.fnUntraced(function* (
-  chunk: Omit<Parameters<typeof readHydrateChunk>[0], "itemIDs"> & {
-    rows: readonly AnnotationScanRow[];
-  },
-) {
-  if (chunk.rows.length > HYDRATE_CHUNK_SIZE)
-    return yield* Effect.die(
-      new RangeError("An Annotation hydrate chunk holds at most 500 rows."),
+/** The values of one Annotation row and its Attachment. */
+export type AnnotationDetails = Effect.Success<
+  ReturnType<typeof details.all>
+>[number] & {
+  readonly attachment: { readonly parentItemID: number };
+};
+
+/**
+ * The loaded values of one Annotation. A load is present when the request
+ * named it.
+ */
+export interface HydratedAnnotation {
+  readonly details?: AnnotationDetails;
+  /** The Tag names of the Annotation, in no defined order. */
+  readonly tags?: readonly string[];
+  /** The title of the Annotation's Attachment. */
+  readonly attachmentTitle?: string | null;
+}
+
+/**
+ * Load the values of at most {@link HYDRATE_CHUNK_SIZE} Annotation rows that
+ * the query needs. Every row has an entry. Each named load runs one statement
+ * for the chunk; the parent Item loads through the Item hydrate reader.
+ */
+export function readAnnotationHydrateChunk(chunk: {
+  rows: readonly AnnotationScanRow[];
+  /** The Annotation values and the Attachment metadata. */
+  details?: boolean;
+  /** The Tag names of each Annotation. */
+  tags?: boolean;
+  /** The title of each Annotation's Attachment. */
+  attachmentTitle?: boolean;
+}): Effect.Effect<
+  ReadonlyMap<number, HydratedAnnotation>,
+  ItemQueryReaderError,
+  ItemQueryDatabase
+> {
+  const { rows } = chunk;
+  if (rows.length > HYDRATE_CHUNK_SIZE)
+    return Effect.die(
+      new RangeError(
+        `An Annotation hydrate chunk holds at most ${HYDRATE_CHUNK_SIZE} rows.`,
+      ),
     );
-  const bound = slots.bind(chunk.rows.map((row) => row.itemID));
-  const rows = chunk.rows.length ? yield* details.all(bound) : [];
-  const tagRows = chunk.rows.length ? yield* annotationTags.all(bound) : [];
-  const parents = yield* readHydrateChunk({
-    ...chunk,
-    itemIDs: [...new Set(chunk.rows.map((row) => row.parent.itemID))],
-  });
-  const attachments = yield* readHydrateChunk({
-    vocabulary: chunk.vocabulary,
-    fields: { builtIn: ["title"], custom: [] },
-    itemIDs: [...new Set(chunk.rows.map((row) => row.attachmentID))],
-  });
-  const byID = new Map(chunk.rows.map((row) => [row.itemID, row]));
-  const tagsByID = new Map<number, string[]>();
-  for (const row of tagRows) {
-    const names = tagsByID.get(row.itemID) ?? [];
-    names.push(row.name);
-    tagsByID.set(row.itemID, names);
-  }
-  return new Map(
-    rows.map((row) => [
-      row.itemID,
+  return Effect.gen(function* () {
+    const result = new Map<
+      number,
       {
-        ...row,
-        tags: tagsByID.get(row.itemID) ?? [],
-        attachment: {
-          ...row.attachment,
-          parentItemID: byID.get(row.itemID)!.parent.itemID,
-          title:
-            attachments.get(row.attachment.itemID)?.fields.get("title") ?? null,
-        },
-        parent: parents.get(byID.get(row.itemID)!.parent.itemID)!,
-      },
-    ]),
-  );
-});
-
-export type HydratedAnnotation =
-  Effect.Success<
-    ReturnType<typeof readAnnotationHydrateChunk>
-  > extends ReadonlyMap<number, infer A>
-    ? A
-    : never;
+        details?: AnnotationDetails;
+        tags?: string[];
+        attachmentTitle?: string | null;
+      }
+    >();
+    for (const row of rows) {
+      result.set(row.itemID, {
+        ...(chunk.tags ? { tags: [] } : {}),
+        ...(chunk.attachmentTitle ? { attachmentTitle: null } : {}),
+      });
+    }
+    if (!rows.length) return result;
+    const bound = slots.bind(rows.map((row) => row.itemID));
+    if (chunk.details) {
+      const found = yield* details.all(bound);
+      const parentOf = new Map(rows.map((row) => [row.itemID, row.parent]));
+      for (const row of found) {
+        result.get(row.itemID)!.details = {
+          ...row,
+          attachment: {
+            ...row.attachment,
+            parentItemID: parentOf.get(row.itemID)!.itemID,
+          },
+        };
+      }
+    }
+    if (chunk.tags) {
+      for (const row of yield* annotationTags.all(bound)) {
+        result.get(row.itemID)!.tags!.push(row.name);
+      }
+    }
+    if (chunk.attachmentTitle) {
+      const titles = new Map(
+        (yield* attachmentTitles.all(
+          slots.bind([...new Set(rows.map((row) => row.attachmentID))]),
+        )).map((row) => [
+          row.itemID,
+          row.title === null ? null : String(row.title),
+        ]),
+      );
+      for (const row of rows) {
+        result.get(row.itemID)!.attachmentTitle =
+          titles.get(row.attachmentID) ?? null;
+      }
+    }
+    return result;
+  });
+}
 
 export type AnnotationCandidateLeaf =
   | { readonly kind: "parent"; readonly leaf: CandidateLeaf }

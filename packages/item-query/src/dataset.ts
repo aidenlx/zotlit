@@ -25,8 +25,8 @@ import type { QueryClock } from "./query-clock";
 import type { ItemQueryPlan, ItemQueryRequest, SortSpec } from "./request";
 
 /** What a Sortable Field gives the planner: its hydration needs and its key. */
-export interface SortableField<Item> {
-  readonly needs: FieldNeeds;
+export interface SortableField<Item, Needs = FieldNeeds> {
+  readonly needs: Needs;
   readonly key: (item: Item, clock: QueryClock) => SortKey;
 }
 
@@ -73,16 +73,16 @@ export interface QueryDataset<
   readonly names: readonly string[];
   /** Every Sortable Field, in the order the diagnoser lists them. */
   readonly sortableFields: readonly string[];
-  readonly definition: (name: string) => FieldDefinition<any> | undefined;
+  readonly definition: (name: string) => FieldDefinition<any, any> | undefined;
   /** The meaning of a bare name in a Filter Expression. */
-  readonly filterField: (name: string) => FilterField<any> | undefined;
-  readonly planFilter: (text: string) => FilterPlan<any> | FilterProblem;
+  readonly filterField: (name: string) => FilterField<any, any> | undefined;
+  readonly planFilter: (text: string) => FilterPlan<any, any> | FilterProblem;
   /** The Sortable Field of a name, or nothing for a name that does not sort. */
-  readonly sortable: (name: string) => SortableField<any> | undefined;
+  readonly sortable: (name: string) => SortableField<any, any> | undefined;
   /** The field that the leading segments of a Projection Path name. */
   readonly resolvePath: (segments: readonly PathSegment[]) =>
     | {
-        readonly field: FieldDefinition<any>;
+        readonly field: FieldDefinition<any, any>;
         readonly rest: readonly PathSegment[];
       }
     | undefined;

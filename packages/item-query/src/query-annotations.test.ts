@@ -1,12 +1,18 @@
-import { Cause } from "effect";
-import { expect, it } from "vitest";
+import { Cause, Effect } from "effect";
+import { describe, expect, it } from "vitest";
 
 import {
   openScenarioDatabase,
   SCENARIO_LIBRARIES,
 } from "@zotlit/db/test-scenario";
 
-import { ANNOTATIONS, collectQuery } from ".";
+import {
+  ANNOTATIONS,
+  AttachmentFileResolver,
+  collectQuery,
+  consumeQuery,
+} from ".";
+import type { AnnotationQueryRequest } from ".";
 import { ANNOTATION_SCENARIO_QUERIES } from "./annotation-scenario-queries";
 import { ItemQueryError } from "./error";
 import type { RunOptions } from "./test-helpers";
@@ -383,4 +389,101 @@ it("warns on definite cross-type inequality while preserving every evaluated mat
   expect(comparison.exit.value.warnings).toMatchObject([
     { code: "always-true", suggestions: ['!tags.contains("figure")'] },
   ]);
+});
+
+/** The readers of the scan pass and of the projection pass, in order. */
+async function passReaders(
+  request: Omit<AnnotationQueryRequest, "libraries">,
+  resolve: (indexedKey: string) => void = () => {},
+) {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const scan: string[] = [];
+  const projection: string[] = [];
+  let projecting = false;
+  const { exit } = await runEffect(
+    Effect.provideService(
+      consumeQuery(
+        ANNOTATIONS,
+        { libraries: [SCENARIO_LIBRARIES.personal], ...request },
+        () =>
+          Effect.sync(() => {
+            projecting = true;
+            return { write: () => Effect.void, end: () => Effect.void };
+          }),
+      ),
+      AttachmentFileResolver,
+      (attachment) =>
+        Effect.sync(() => {
+          resolve(attachment.indexedKey);
+          return { path: "/file.pdf", exists: true };
+        }),
+    ),
+    {
+      client: scenario.db,
+      onEvent: (event) => {
+        if (event.type !== "statement") return;
+        const { reader } = event.statement;
+        if (reader === "layout" || reader === "field-vocabulary") return;
+        (projecting ? projection : scan).push(reader);
+      },
+    },
+  );
+  if (exit._tag === "Failure") throw new Error(String(exit.cause));
+  return { scan, projection };
+}
+
+describe("the statements of each pass", () => {
+  it("runs no hydrate statement in the scan pass of an unfiltered query in the default order", async () => {
+    const { scan } = await passReaders({});
+    expect(scan).toEqual(["annotation-scan-page"]);
+  });
+
+  it("loads the Annotation Tags and nothing else in the scan pass of a Tag filter", async () => {
+    const { scan } = await passReaders({
+      filter: 'tags.contains("method")',
+      fields: [],
+    });
+    // The Tag candidate set is above the cap of the Library: the scan reads it.
+    expect(scan).toEqual([
+      "annotation-row-count",
+      "annotation-candidate-set",
+      "annotation-scan-page",
+      "annotation-tags",
+    ]);
+  });
+
+  it("loads the details of a text projection in the projection pass only", async () => {
+    const { scan, projection } = await passReaders({ fields: ["text"] });
+    expect(scan).toEqual(["annotation-scan-page"]);
+    expect(projection).toEqual(["annotation-details"]);
+  });
+
+  it("loads the parent fields of a parent projection through the Item hydration", async () => {
+    const { scan, projection } = await passReaders({ fields: ["item.title"] });
+    expect(scan).toEqual(["annotation-scan-page"]);
+    expect(projection).toEqual(["hydrate-chunk"]);
+  });
+
+  it("loads the Attachment title alone for its projection", async () => {
+    const { projection } = await passReaders({ fields: ["attachment.title"] });
+    expect(projection).toEqual(["annotation-attachment-titles"]);
+  });
+
+  it("resolves the Attachment file of each returned row in the projection pass only", async () => {
+    const resolved: string[] = [];
+    const sorted = await passReaders(
+      {
+        fields: ["attachment.path"],
+        sort: [{ field: "pageIndex", direction: "asc" }],
+        limit: 2,
+      },
+      (key) => resolved.push(key),
+    );
+    expect(sorted.scan).toEqual(["annotation-scan-page", "annotation-details"]);
+    expect(sorted.projection).toEqual(["annotation-details"]);
+    expect(resolved).toHaveLength(2);
+    const none: string[] = [];
+    await passReaders({ fields: ["text"] }, (key) => none.push(key));
+    expect(none).toEqual([]);
+  });
 });

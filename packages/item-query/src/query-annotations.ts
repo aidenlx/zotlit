@@ -4,17 +4,12 @@ import { Effect } from "effect";
 
 import { formatIndexedKey, parseIndexedKey } from "@zotlit/db";
 import {
-  readAnnotationHydrateChunk,
   readAnnotationRowCount,
   readAnnotationCandidateSet,
   readAnnotationScanPage,
   readAnnotationUniverseRows,
-  readFieldVocabulary,
 } from "@zotlit/db/item-query";
-import type {
-  AnnotationCandidateLeaf,
-  AnnotationScanRow,
-} from "@zotlit/db/item-query";
+import type { AnnotationCandidateLeaf } from "@zotlit/db/item-query";
 
 import { lowerAnnotationCandidate } from "./annotation-candidates";
 import {
@@ -27,14 +22,13 @@ import {
   planAnnotationFilter,
 } from "./annotation-fields";
 import type { QueryAnnotation } from "./annotation-fields";
+import { openAnnotationHydration } from "./annotation-hydration";
 import { planCandidates, readCandidatePlan } from "./candidate-plan";
 import type { CandidatePlan } from "./candidate-plan";
-import { AttachmentFileResolver } from "./dataset";
 import type { QueryDataset } from "./dataset";
 import type { DatasetRun } from "./execution";
 import { BUILT_IN_NAMES } from "./fields";
 import { matches as isMatch } from "./filter-evaluate";
-import { openHydration } from "./hydration";
 import { readPath } from "./projection";
 import type { AnnotationQueryRequest } from "./request";
 
@@ -85,57 +79,10 @@ export const ANNOTATIONS: QueryDataset<AnnotationQueryRequest> = {
   open: (plan, request, clock) =>
     Effect.gen(function* () {
       const { filter, paths } = plan;
-      const hydration = yield* openHydration(plan, request.libraries);
-      const vocabulary = yield* readFieldVocabulary();
-      const resolveAttachmentFile = yield* AttachmentFileResolver;
-      const load = (projection: boolean) =>
-        Effect.fnUntraced(function* (chunk: readonly AnnotationScanRow[]) {
-          const hydrated = yield* readAnnotationHydrateChunk({
-            rows: chunk,
-            vocabulary,
-            fields: { builtIn: [], custom: [] },
-          });
-          const parents = new Map(
-            (yield* (projection ? hydration.projection : hydration.scan).load([
-              ...new Map(
-                chunk.map((row) => [row.parent.itemID, row.parent]),
-              ).values(),
-            ])).map((parent) => [parent.scan.itemID, parent]),
-          );
-          const result: QueryAnnotation[] = [];
-          for (const scan of chunk) {
-            const annotation = hydrated.get(scan.itemID)!;
-            const groupID = request.libraries.find(
-              (library) =>
-                library.libraryID === annotation.attachment.libraryID,
-            )!.groupID;
-            const file =
-              projection &&
-              resolveAttachmentFile &&
-              paths.some(
-                (path) =>
-                  path.text === "attachment" ||
-                  path.text.startsWith("attachment."),
-              )
-                ? yield* resolveAttachmentFile({
-                    ...annotation.attachment,
-                    groupID,
-                    indexedKey: formatIndexedKey(scan.attachmentKey, groupID),
-                  })
-                : { path: null, exists: false };
-            result.push({
-              scan,
-              annotation,
-              groupID,
-              file,
-              parent: parents.get(scan.parent.itemID)!,
-            });
-          }
-          return result;
-        });
+      const hydration = yield* openAnnotationHydration(plan, request.libraries);
       const run: DatasetRun<QueryAnnotation> = {
-        scan: { plan: true, load: load(false) },
-        projection: { plan: true, load: load(true) },
+        scan: hydration.scan,
+        projection: hydration.projection,
         candidates: (library, tuning) =>
           Effect.gen(function* () {
             if (tuning.forceScan) return null;
