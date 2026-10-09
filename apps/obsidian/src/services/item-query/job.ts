@@ -11,6 +11,7 @@ import { ItemQueryScheduler } from "@zotlit/item-query";
 
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
+import type { AttachmentFileResolver } from "./attachment-files";
 import {
   answerItemQuery,
   answerItemQuerySchema,
@@ -28,6 +29,7 @@ import type { QueryAnswer, QueryJob } from "./worker-protocol";
 export interface QueryJobEnv {
   client: NodeDatabaseClient;
   identity: WorkbenchIdentity;
+  attachmentFiles: AttachmentFileResolver;
 }
 
 /**
@@ -39,7 +41,7 @@ export interface QueryJobEnv {
  */
 export function runQueryJob(
   job: QueryJob,
-  { client, identity }: QueryJobEnv,
+  env: QueryJobEnv,
 ): Effect.Effect<QueryAnswer> {
   const stage: StageState = {};
   return Effect.gen(function* () {
@@ -48,10 +50,13 @@ export function runQueryJob(
     const answerSteps: number[] = [];
     const heapBefore = job.heap ? process.memoryUsage().heapUsed : undefined;
     const reply = job.schema
-      ? yield* answerItemQuerySchema({ identity }, job.pluginVersion)
+      ? yield* answerItemQuerySchema(
+          { identity: env.identity },
+          job.pluginVersion,
+        )
       : yield* answerItemQuery(
           {
-            identity,
+            identity: env.identity,
             scope: job.scope,
             instrument: trace?.instrument,
             onAnswerStep: job.measure
@@ -85,7 +90,7 @@ export function runQueryJob(
         ),
       );
     }),
-    Effect.provideService(ItemQueryDatabase, { client }),
+    Effect.provideService(ItemQueryDatabase, { client: env.client }),
     Effect.provideService(Scheduler.Scheduler, new ItemQueryScheduler()),
   );
 }

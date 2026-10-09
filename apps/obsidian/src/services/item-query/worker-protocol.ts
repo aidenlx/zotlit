@@ -1,3 +1,5 @@
+import type { AttachmentPathContext } from "@zotlit/db/path";
+
 import type { LibraryScope } from "@/services/library-scope/scope";
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
@@ -15,6 +17,7 @@ export type QueryJob = QueryCommand & {
   source: WorkbenchIdentity["source"];
   vault: WorkbenchIdentity["vault"];
   scope: LibraryScope;
+  attachmentPaths: AttachmentPathContext;
   stagePath?: string;
   measure?: boolean;
   heap?: boolean;
