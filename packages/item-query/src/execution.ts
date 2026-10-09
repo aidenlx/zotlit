@@ -10,6 +10,7 @@ import type {
 
 import { compareStrings } from "./collation";
 import type { SortKey } from "./fields";
+import type { Loader } from "./hydration";
 import { allMatches, firstMatches } from "./matches";
 import type { QueryConsumer, QuerySummary } from "./query";
 import type { ItemQuery, QueryRow, TargetLibrary, SortSpec } from "./request";
@@ -23,15 +24,11 @@ interface Match<S> {
 }
 
 type Read<A> = Effect.Effect<A, ItemQueryReaderError, ItemQueryDatabase>;
-interface DatasetLoader<S, I> {
-  readonly plan: unknown;
-  readonly load: (chunk: readonly S[]) => Read<readonly I[]>;
-}
 
 /** What the descriptor of a Query Dataset opens for one run. */
 export interface DatasetRun<I extends { scan: ScanRow }> {
-  readonly scan: DatasetLoader<I["scan"], I>;
-  readonly projection: DatasetLoader<I["scan"], I>;
+  readonly scan: Loader<object, I["scan"], I>;
+  readonly projection: Loader<object, I["scan"], I>;
   readonly candidates: (
     library: TargetLibrary,
     tuning: Tuning,
@@ -101,7 +98,9 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
     /** Hydrate one page of the query universe and keep its matches. */
     const takePage = (library: number, page: readonly I["scan"][]) =>
       Effect.gen(function* () {
-        const chunkSize = dataset.scan.plan ? hydrateChunkSize : scanPageSize;
+        // A pass without a plan runs no statement: it takes a page at once.
+        const chunkSize =
+          dataset.scan.plan === null ? scanPageSize : hydrateChunkSize;
         for (let start = 0; start < page.length; start += chunkSize) {
           yield* takeChunk(library, page.slice(start, start + chunkSize));
         }

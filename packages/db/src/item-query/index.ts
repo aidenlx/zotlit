@@ -47,5 +47,6 @@ export {
   readAnnotationUniverseRows,
   readAnnotationHydrateChunk,
   type AnnotationScanRow,
+  type AnnotationDetails,
   type HydratedAnnotation,
 } from "./annotations";

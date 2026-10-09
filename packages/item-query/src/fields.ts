@@ -76,10 +76,10 @@ export type SortKey = string | number | null;
  * One entry of the field registry. Validation, execution, and the Item Query
  * Schema read the same entries, so a field exists only here.
  */
-export interface FieldDefinition<Item = QueryItem> {
+export interface FieldDefinition<Item = QueryItem, Needs = FieldNeeds> {
   readonly shape: ValueShape;
   /** What hydration loads for a path that starts at this field. */
-  readonly needs: (rest: readonly PathSegment[]) => FieldNeeds;
+  readonly needs: (rest: readonly PathSegment[]) => Needs;
   /** Reads the complete value of the field. */
   readonly read: (item: Item) => ProjectionValue;
   /**
@@ -423,11 +423,11 @@ const FILTER_ONLY_FIELDS: ReadonlyMap<string, FilterValueDefinition> = new Map([
 ]);
 
 /** A built-in name as a Filter Expression reads it. */
-export type FilterField<Item = QueryItem> =
+export type FilterField<Item = QueryItem, Needs = FieldNeeds> =
   | {
       readonly filterable: true;
       readonly value: FilterValueDefinition<Item>;
-      readonly needs: FieldNeeds;
+      readonly needs: Needs;
     }
   | { readonly filterable: false };
 

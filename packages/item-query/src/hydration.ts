@@ -27,7 +27,7 @@ import type { ItemQueryFault } from "./fault";
 import type { FieldNeeds, QueryItem } from "./fields";
 import type { FilterPlan } from "./filter-plan";
 import type { PlannedPath } from "./projection";
-import type { ItemQueryPlan, TargetLibrary } from "./request";
+import type { ItemQueryPlan, PlannedSort, TargetLibrary } from "./request";
 
 /** What one pass loads for each Item of a chunk. */
 export interface LoadPlan {
@@ -37,29 +37,36 @@ export interface LoadPlan {
   readonly relations: readonly HydrateRelation[];
 }
 
-/** One pass of the query over chunks of scan rows. */
-export interface Loader {
+/**
+ * One pass of the query over chunks of scan rows: `Plan` is what the pass
+ * loads, `Row` a scan row and `Value` what the pass gives for it.
+ */
+export interface Loader<
+  Plan extends object = LoadPlan,
+  Row extends ScanRow = ScanRow,
+  Value = QueryItem,
+> {
   /** What the pass loads. `null`: the pass reads the scan rows only. */
-  readonly plan: LoadPlan | null;
+  readonly plan: Plan | null;
   /**
-   * The Query Items of one chunk, in chunk order. With a plan, a chunk holds
-   * at most `HYDRATE_CHUNK_SIZE` rows and each statement runs in its own step;
+   * The records of one chunk, in chunk order. With a plan, a chunk holds at
+   * most `HYDRATE_CHUNK_SIZE` rows and each statement runs in its own step;
    * without one, the pass runs no statement.
    */
   readonly load: (
-    chunk: readonly ScanRow[],
-  ) => Effect.Effect<
-    readonly QueryItem[],
-    ItemQueryReaderError,
-    ItemQueryDatabase
-  >;
+    chunk: readonly Row[],
+  ) => Effect.Effect<readonly Value[], ItemQueryReaderError, ItemQueryDatabase>;
 }
 
-export interface Hydration {
-  /** The scan pass: what the filter and the sort read, for every Item. */
-  readonly scan: Loader;
+export interface Hydration<
+  Plan extends object = LoadPlan,
+  Row extends ScanRow = ScanRow,
+  Value = QueryItem,
+> {
+  /** The scan pass: what the filter and the sort read, for every record. */
+  readonly scan: Loader<Plan, Row, Value>;
   /** The projection pass: what the Projection Paths read, for each row. */
-  readonly projection: Loader;
+  readonly projection: Loader<Plan, Row, Value>;
   /** What the candidate plan of one Target Library reads from the source. */
   readonly candidateSources: (library: TargetLibrary) => CandidateSources;
 }
@@ -70,10 +77,14 @@ export interface Hydration {
  * against the source, and read the Collection paths of each Target Library
  * when a pass loads Collections.
  */
-export function openHydration<Item>(
-  plan: Pick<ItemQueryPlan<Item>, "dataset" | "query" | "sorts"> & {
-    readonly filter: FilterPlan<Item> | null;
-    readonly paths: readonly PlannedPath<Item>[];
+export function openHydration(
+  plan: Pick<ItemQueryPlan, "dataset" | "query"> & {
+    readonly filter: Pick<FilterPlan, "needs" | "customFields"> | null;
+    readonly paths: readonly Pick<
+      PlannedPath,
+      "text" | "needs" | "customField"
+    >[];
+    readonly sorts: readonly Pick<PlannedSort, "needs">[];
   },
   libraries: readonly TargetLibrary[],
 ): Effect.Effect<

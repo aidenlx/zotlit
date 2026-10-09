@@ -103,24 +103,24 @@ export interface QueryResult {
 }
 
 /** The validated form of a request that the engine executes. */
-export interface ItemQueryPlan<Item = any> {
+export interface ItemQueryPlan<Item = any, Needs = any> {
   readonly dataset: QueryDataset<any>;
   readonly warnings: FilterPlan["warnings"];
   readonly query: ItemQuery;
   /** `null`: every record matches. */
-  readonly filter: FilterPlan<Item> | null;
-  readonly paths: readonly PlannedPath<Item>[];
+  readonly filter: FilterPlan<Item, Needs> | null;
+  readonly paths: readonly PlannedPath<Item, Needs>[];
   /** The request's sort, then the tie-breakers of the dataset. */
   readonly order: readonly SortSpec[];
   /** One entry for each entry of {@link ItemQueryPlan.order}. */
-  readonly sorts: readonly PlannedSort<Item>[];
+  readonly sorts: readonly PlannedSort<Item, Needs>[];
 }
 
 /** A validated entry of the sort list. */
-export interface PlannedSort<Item = QueryItem> {
+export interface PlannedSort<Item = QueryItem, Needs = FieldNeeds> {
   readonly direction: SortSpec["direction"];
   /** What hydration loads before {@link PlannedSort.key} runs. */
-  readonly needs: FieldNeeds;
+  readonly needs: Needs;
   readonly key: (item: Item, clock: QueryClock) => SortKey;
 }
 
@@ -190,7 +190,7 @@ export function planRequest(
     }
 
     const sort = request.sort ?? dataset.defaultSort;
-    const sorts: PlannedSort[] = [];
+    const sorts: PlannedSort<any, any>[] = [];
     for (const [index, { field, direction }] of sort.entries()) {
       const sortable = dataset.sortable(field);
       if (!sortable) {
