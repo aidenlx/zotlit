@@ -29,6 +29,12 @@ export interface Callee {
   readonly name: string;
   readonly receiver?: Receiver;
 }
+/**
+ * A fact about one invalid Item Query. `plain` is reserved for the six facts
+ * that have no generic source: a duplicate Target Library, an invalid limit,
+ * invalid Projection Path grammar, the regular-expression engine's reason, a
+ * callee that is not a name, and `custom[<non-string>]`.
+ */
 export type Fault =
   | { readonly kind: "syntax"; readonly fault: SyntaxFault }
   | {

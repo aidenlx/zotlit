@@ -4,7 +4,7 @@
 import { parseExpressionAst } from "@zotlit/filter-expression";
 import type { BinaryOperator, ExpressionNode } from "@zotlit/filter-expression";
 
-import type { PlainFault, Span } from "./fault";
+import type { Callee, Fault, Receiver, Span } from "./fault";
 export type { Span } from "./fault";
 import {
   BUILT_IN_NAMES,
@@ -134,11 +134,14 @@ export interface FilterPlan {
   })[];
 }
 
-export type FilterProblem = PlainFault & { readonly at: Span };
+export type FilterProblem = Extract<
+  Fault,
+  { readonly kind: "plain" | "arity" | "argument-type" | "unreadable" }
+> & { readonly at: Span };
 
 class Invalid extends Error {
   constructor(readonly problem: FilterProblem) {
-    super(problem.message);
+    super(problem.kind);
   }
 }
 
@@ -148,8 +151,6 @@ const HINTS = {
   syntax:
     'Write one Filter Expression, such as itemType == "book" && tags.contains("to-read"). Omit the filter to match every Item.',
   field: `Use a field of the Item Query Schema, such as ${DEFAULT_FIELDS.join(", ")}. Field names are case-sensitive. Reach a custom field with custom["exact name"].`,
-  filterable:
-    "Use a field that the Item Query Schema lists as filterable, such as title, itemType, tags, or collections.",
   custom: 'Name one custom field, such as custom["review.status"].',
   global: `Use a global function: ${GLOBAL_FUNCTION_NAMES.join(", ")}. Function names are case-sensitive.`,
   method: `Use a method of the Item Query Schema: ${METHOD_NAMES.join(", ")}. Function names are case-sensitive.`,
@@ -209,16 +210,40 @@ function fail(fault: FilterProblem): never {
   throw new Invalid(fault);
 }
 
-function describeCount(
-  definition: Pick<FunctionDefinition, "parameters" | "optional" | "rest">,
-): string {
-  const least = definition.parameters.length;
-  const most = least + (definition.optional?.length ?? 0);
-  const plural = (count: number) =>
-    `${count} argument${count === 1 ? "" : "s"}`;
-  if (definition.rest) return `at least ${plural(least)}`;
-  return least === most ? plural(least) : `${least} to ${plural(most)}`;
-}
+const arity = (
+  callee: Callee,
+  at: Span,
+  given: number,
+): Extract<Fault, { readonly kind: "arity" }> => ({
+  kind: "arity",
+  callee,
+  at,
+  given,
+});
+
+const argumentType = (
+  callee: Callee,
+  args: readonly FilterNode[],
+  wrong: {
+    readonly index: number;
+    readonly found: string;
+    readonly expected: string;
+  },
+): Extract<Fault, { readonly kind: "argument-type" }> => ({
+  kind: "argument-type",
+  callee,
+  at: { from: args[wrong.index]!.from, to: args[wrong.index]!.to },
+  ...wrong,
+});
+
+const unreadable = (
+  name: string,
+  at: Span,
+): Extract<Fault, { readonly kind: "unreadable" }> => ({
+  kind: "unreadable",
+  name,
+  at,
+});
 
 function takesCount(
   definition: Pick<FunctionDefinition, "parameters" | "optional" | "rest">,
@@ -270,14 +295,6 @@ function mismatch(
     }
   }
   return null;
-}
-
-/** The message of a {@link mismatch} in a call of `name`. */
-function describeMismatch(
-  name: string,
-  wrong: { index: number; found: string; expected: string },
-): string {
-  return `Argument ${wrong.index + 1} of ${name} is ${wrong.found}; ${name} takes ${wrong.expected} there.`;
 }
 
 class Validator {
@@ -414,23 +431,10 @@ class Validator {
       };
     }
     if (name === "custom") {
-      return fail({
-        kind: "plain",
-        code: "unfilterable-field",
-        at: { from: span.from, to: span.to },
-        message:
-          "custom is the set of all custom fields; a filter reads one of them.",
-        action: HINTS.custom,
-      });
+      return fail(unreadable(name, span));
     }
     if (field) {
-      return fail({
-        kind: "plain",
-        code: "unfilterable-field",
-        at: { from: span.from, to: span.to },
-        message: `A filter cannot read ${quote(name)}.`,
-        action: HINTS.filterable,
-      });
+      return fail(unreadable(name, span));
     }
     if (GLOBAL_FUNCTION_NAMES.includes(name)) {
       return fail({
@@ -546,23 +550,11 @@ class Validator {
     // Every argument is validated, also in a branch that never runs.
     const args = call.args.map((arg) => this.node(arg));
     if (!takesCount(definition, args.length)) {
-      return fail({
-        kind: "plain",
-        code: "wrong-argument-count",
-        at: { from: span.from, to: span.to },
-        message: `${name} takes ${describeCount(definition)}, not ${args.length}.`,
-        action: `Call ${signature(name, definition)}.`,
-      });
+      return fail(arity({ name }, span, args.length));
     }
     const wrong = mismatch(definition, args);
     if (wrong) {
-      return fail({
-        kind: "plain",
-        code: "wrong-argument-type",
-        at: { from: args[wrong.index]!.from, to: args[wrong.index]!.to },
-        message: describeMismatch(name, wrong),
-        action: `Call ${signature(name, definition)}.`,
-      });
+      return fail(argumentType({ name }, args, wrong));
     }
     if (name === "if") {
       const [condition, whenTrue, whenFalse = null] = args;
@@ -661,13 +653,7 @@ class Validator {
     }
     const args = others.map((arg) => this.node(arg));
     if (!expression || !takesCount(definition, args.length + 1)) {
-      return fail({
-        kind: "plain",
-        code: "wrong-argument-count",
-        at: { from: span.from, to: span.to },
-        message: `${name} takes ${describeCount(definition)}, not ${call.args.length}.`,
-        action: `Call ${signature(`value.${name}`, definition)}.`,
-      });
+      return fail(arity(this.#callee(name, subject), span, call.args.length));
     }
     return {
       ...span,
@@ -696,23 +682,11 @@ class Validator {
       takesCount(method, args.length),
     );
     if (fitting.length === 0) {
-      return fail({
-        kind: "plain",
-        code: "wrong-argument-count",
-        at: { from: span.from, to: span.to },
-        message: `${name} takes ${describeCount(candidates[0]!)}, not ${args.length}.`,
-        action: `Call ${signature(`value.${name}`, candidates[0]!)}.`,
-      });
+      return fail(arity(this.#callee(name, subject), span, args.length));
     }
     if (fitting.every((method) => mismatch(method, args) !== null)) {
       const wrong = mismatch(fitting[0]!, args)!;
-      return fail({
-        kind: "plain",
-        code: "wrong-argument-type",
-        at: { from: args[wrong.index]!.from, to: args[wrong.index]!.to },
-        message: describeMismatch(name, wrong),
-        action: `Call ${signature(`value.${name}`, fitting[0]!)}.`,
-      });
+      return fail(argumentType(this.#callee(name, subject), args, wrong));
     }
     return {
       ...span,
@@ -722,6 +696,15 @@ class Validator {
       args,
       valueType: commonType(fitting.map((method) => method.returns)),
     };
+  }
+
+  #callee(name: string, subject: FilterNode): Callee {
+    const receiver: Receiver = {
+      type: subject.valueType,
+      at: { from: subject.from, to: subject.to },
+      ...(subject.kind === "field" ? { field: subject.name } : {}),
+    };
+    return { name, receiver };
   }
 }
 
@@ -783,16 +766,4 @@ function binaryType(
     case "%":
       return "number";
   }
-}
-
-function signature(
-  name: string,
-  definition: Pick<FunctionDefinition, "parameters" | "optional" | "rest">,
-): string {
-  const parts = [
-    ...definition.parameters.map((parameter) => parameter.name),
-    ...(definition.optional ?? []).map((parameter) => `${parameter.name}?`),
-    ...(definition.rest ? [`...${definition.rest.name}`] : []),
-  ];
-  return `${name}(${parts.join(", ")})`;
 }

@@ -133,7 +133,7 @@ export function planRequest(
     let filter: FilterPlan | null = null;
     if (request.filter !== undefined) {
       const planned = planFilter(request.filter);
-      if ("code" in planned) {
+      if ("kind" in planned) {
         return yield* new ItemQueryError({
           fault: planned,
           location: { argument: "filter", span: planned.at },

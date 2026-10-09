@@ -32,8 +32,6 @@ it.each(reports)("reports $name", async ({ request, report }) => {
   expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
   expect(diagnostic).toMatchObject({
     severity: "error",
-    found: "",
-    expected: [],
     suggestions: [],
   });
   const span = diagnostic.location?.span;
