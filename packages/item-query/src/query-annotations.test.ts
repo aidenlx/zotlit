@@ -189,7 +189,9 @@ it("matches the forced scan for every Annotation scenario, Library combination, 
         if (failure._tag === "None") throw new Error(String(exit.cause));
         return JSON.parse(
           JSON.stringify({
-            failure: { ...failure.value, message: failure.value.message },
+            failure: Object.assign({}, failure.value, {
+              message: failure.value.message,
+            }),
           }),
         );
       };
@@ -265,3 +267,34 @@ it("caps after parent expansion and uses a bounded Annotation candidate when ava
     ),
   ).toBe(false);
 });
+
+it.each(["asc", "desc"] as const)(
+  "keeps missing pages last and uses Sort Index then Indexed Key for a %s page sort",
+  async (direction) => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    const { exit } = await runEffect(
+      queryAnnotations({
+        libraries: [SCENARIO_LIBRARIES.personal],
+        attachment: ["PDF2LIVE", "PDF2LINK"],
+        fields: [],
+        sort: [{ field: "pageIndex", direction }],
+      }),
+      { client: scenario.db },
+    );
+    if (exit._tag === "Failure") throw new Error(String(exit.cause));
+    expect(exit.value.rows.map((row) => row.indexedKey)).toEqual([
+      "ANN2HGHT",
+      "ANN2LINK",
+      "ANN2NOTE",
+      "ANL2IMAG",
+      "ANN2IMAG",
+      "ANL2INK2",
+      "ANN2INK2",
+      "ANL2UNDR",
+      "ANN2UNDR",
+      "ANL2TEXT",
+      "ANN2TEXT",
+      "ANN2BAD2",
+    ]);
+  },
+);
