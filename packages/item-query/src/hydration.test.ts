@@ -436,7 +436,9 @@ it.each(["review.length", "custom.review.length"])(
     if (!(error instanceof ItemQueryError))
       throw new Error("Expected query fault");
     const diagnostic = diagnose(error.fault, filter, error.location);
-    expect(diagnostic.hint).toBe('Try: custom["review.length"] == 4');
+    expect(diagnostic.suggestions).toEqual(['custom["review.length"]']);
+    expect(diagnostic.location?.span).toEqual({ from: 0, to: access.length });
+    expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
     expect(diagnostic.found).toBe("review.length");
   },
 );
