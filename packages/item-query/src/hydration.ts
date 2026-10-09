@@ -51,10 +51,12 @@ export interface Loader<
   /**
    * The records of one chunk, in chunk order. With a plan, a chunk holds at
    * most `HYDRATE_CHUNK_SIZE` rows and each statement runs in its own step;
-   * without one, the pass runs no statement.
+   * without one, the pass runs no statement. `libraryAt` identifies the Target
+   * Library of each row by its index in the chunk, including mixed Libraries.
    */
   readonly load: (
     chunk: readonly Row[],
+    libraryAt: (index: number) => TargetLibrary,
   ) => Effect.Effect<readonly Value[], ItemQueryReaderError, ItemQueryDatabase>;
 }
 
@@ -179,10 +181,12 @@ export function openHydration(
       const itemsOf = (
         chunk: readonly ScanRow[],
         hydrated: ReadonlyMap<number, HydratedItem>,
+        libraryAt: (index: number) => TargetLibrary,
       ) =>
         chunk.map(
-          (scan): QueryItem => ({
+          (scan, index): QueryItem => ({
             scan,
+            groupID: libraryAt(index).groupID,
             hydrated: hydrated.get(scan.itemID) ?? NOTHING_HYDRATED,
             customFieldNames,
           }),
@@ -190,9 +194,11 @@ export function openHydration(
       return {
         plan: passPlan,
         // The Query Items are made in the step of the last hydrate statement.
-        load: (chunk) =>
+        load: (chunk, libraryAt) =>
           !vocabulary || !passPlan
-            ? Effect.sync(() => itemsOf(chunk, NOTHING_HYDRATED_CHUNK))
+            ? Effect.sync(() =>
+                itemsOf(chunk, NOTHING_HYDRATED_CHUNK, libraryAt),
+              )
             : Effect.map(
                 readHydrateChunk({
                   vocabulary,
@@ -200,7 +206,7 @@ export function openHydration(
                   ...passPlan,
                   collectionPaths,
                 }),
-                (hydrated) => itemsOf(chunk, hydrated),
+                (hydrated) => itemsOf(chunk, hydrated, libraryAt),
               ),
       };
     };

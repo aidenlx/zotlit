@@ -27,6 +27,7 @@ export function describeAnnotationQueryVocabulary() {
         projection: true,
         filter: filterCapability(path),
         sort: false,
+        ...(definition.valueForms && { valueForms: definition.valueForms }),
       },
       ...pathsBelow(path, definition.shape, filterCapability),
     ],

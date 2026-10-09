@@ -2451,6 +2451,54 @@ describe("collectQuery(ITEMS) over several Libraries", () => {
     },
   );
 
+  it("filters and projects the Library selector of Items with the same bare key", async () => {
+    using scenario = openScenarioDatabase();
+    const request = {
+      libraries: both,
+      fields: ["title", "library"],
+      sort: [],
+    };
+    const found = await result(scenario, {
+      ...request,
+      filter: 'key == "ART2FULL"',
+    });
+    expect(found.rows).toEqual([
+      {
+        indexedKey: "ART2FULL",
+        values: {
+          title: "Exact Matching in Literature Review",
+          library: "personal",
+        },
+      },
+      {
+        indexedKey: "ART2FULLg4815",
+        values: {
+          title: "Group Copy of Exact Matching",
+          library: "group:4815",
+        },
+      },
+    ]);
+    for (const [filter, expected] of [
+      ['library == "personal"', "personal"],
+      ['library != "personal"', "group:4815"],
+      ['library == "group:4815"', "group:4815"],
+    ]) {
+      const selected = await result(scenario, { ...request, filter });
+      expect(selected.rows.length).toBeGreaterThan(0);
+      expect(new Set(selected.rows.map((row) => row.values.library))).toEqual(
+        new Set([expected]),
+      );
+      expect(keys(selected)).toEqual(
+        keys(
+          await result(scenario, {
+            ...request,
+            libraries: [expected === "personal" ? personal : group],
+          }),
+        ),
+      );
+    }
+  });
+
   it("matches a Zotero Key in each Library that holds it", async () => {
     using scenario = openScenarioDatabase();
 
@@ -2949,6 +2997,51 @@ describe.each(DATASETS)(
         for (const row of found.rows)
           expect(Object.keys(row.values)).toEqual(fields);
       });
+    });
+
+    it("rejects library sorting with a Diagnostic Report that lists Sortable Fields", async () => {
+      const error = await requestFailure(
+        request({ sort: [{ field: "library", direction: "asc" }] }),
+      );
+      expect(error.code).toBe("unsortable-field");
+      expect(error.diagnostic.expected).toEqual(dataset.sortableFields);
+      expect(error.diagnostic.report.join("\n")).toContain(
+        "Sortable Fields include",
+      );
+    });
+
+    it("keeps library out of the default projection", async () => {
+      using scenario = open();
+      const found = await datasetResult(scenario, request());
+      expect(found.query.fields).not.toContain("library");
+      for (const row of found.rows)
+        expect(row.values).not.toHaveProperty("library");
+    });
+
+    it("filters and projects library without more database reads", async () => {
+      using scenario = open();
+      const libraries = [personal, group];
+      const baseline = await runEffect(
+        collectQuery(dataset, { libraries, fields: [], sort: [] }),
+        { client: scenario.db },
+      );
+      const selected = await runEffect(
+        collectQuery(dataset, {
+          libraries,
+          fields: ["library"],
+          sort: [],
+          filter: 'library == "personal" || library == "group:4815"',
+        }),
+        { client: scenario.db },
+      );
+      expect(Exit.isSuccess(selected.exit)).toBe(true);
+      const reads = (events: readonly RunEvent[]) =>
+        events.flatMap((event) =>
+          event.type === "statement" && event.statement.reader !== "layout"
+            ? [event.statement.reader]
+            : [],
+        );
+      expect(reads(selected.events)).toEqual(reads(baseline.events));
     });
 
     describe("failures", () => {

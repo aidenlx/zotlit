@@ -106,6 +106,19 @@ describe("describeItemQuery fields", () => {
     const { fields } = await schema(scenario);
     const entry = (path: string) => fields.find((field) => field.path === path);
 
+    expect(entry("library")).toMatchInlineSnapshot(`
+      {
+        "filter": "string",
+        "path": "library",
+        "projection": true,
+        "sort": false,
+        "type": "string",
+        "valueForms": [
+          "personal",
+          "group:<groupID>",
+        ],
+      }
+    `);
     expect(entry("title")).toEqual({
       path: "title",
       type: "string",

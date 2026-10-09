@@ -53,6 +53,8 @@ export interface SchemaField extends SchemaCapabilities {
   /** The Projection Path; a field is the path without `.` or `[`. */
   readonly path: string;
   readonly type: JsonType;
+  /** Text forms; angle brackets name variable parts, not literal values. */
+  readonly valueForms?: readonly string[];
 }
 
 /** A custom field of the active Zotero source. */
@@ -198,6 +200,7 @@ const BUILT_IN_FIELDS: readonly SchemaField[] = BUILT_IN_NAMES.flatMap(
       filter: filterType,
       projection: true,
       sort: ITEMS.sortable(name) !== undefined,
+      ...(definition.valueForms && { valueForms: definition.valueForms }),
     };
     return [root, ...pathsBelow(name, definition.shape)];
   },

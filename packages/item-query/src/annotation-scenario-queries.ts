@@ -11,6 +11,9 @@ export const ANNOTATION_SCENARIO_QUERIES: readonly Omit<
   { attachment: ["PDF2LIVE", "PDF2GRUPg4815"] },
   { item: ["ART2FULL"], attachment: ["PDF2LIVE"], filter: 'type == "image"' },
   ...[
+    'library == "personal"',
+    'library != "personal"',
+    'library == "group:4815"',
     'tags == "figure"',
     'item.date.year == "2014"',
     'tags != "figure"',
