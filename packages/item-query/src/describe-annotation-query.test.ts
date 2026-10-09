@@ -17,6 +17,21 @@ it("publishes executable Annotation and parent Projection Paths with active-sour
   if (described.exit._tag === "Failure")
     throw new Error(String(described.exit.cause));
   const schema = described.exit.value;
+  expect(schema).toHaveProperty("projectionPathGrammar.each.syntax", "[]");
+  expect(schema.fields).toContainEqual({
+    path: "item.creators[].fullName",
+    type: "array",
+    filter: null,
+    projection: true,
+    sort: false,
+  });
+  expect(schema.fields).toContainEqual({
+    path: "position.rects[][]",
+    type: "array",
+    filter: null,
+    projection: true,
+    sort: false,
+  });
   expect(schema.customFields).toContainEqual(
     expect.objectContaining({
       path: 'item.custom["review.status"]',

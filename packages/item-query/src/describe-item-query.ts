@@ -106,6 +106,7 @@ export interface SchemaProperty {
 
 /** The Item Query Schema: what a request can name on the active source. */
 export interface ItemQuerySchema {
+  readonly projectionPathGrammar: typeof PROJECTION_PATH_GRAMMAR;
   /** The built-in fields and the Projection Paths below them. */
   readonly fields: readonly SchemaField[];
   readonly customFields: readonly SchemaCustomField[];
@@ -167,6 +168,7 @@ export function describeItemQueryVocabulary(): Omit<
   "customFields" | "defaults"
 > {
   return {
+    projectionPathGrammar: PROJECTION_PATH_GRAMMAR,
     fields: BUILT_IN_FIELDS,
     functions: FUNCTIONS,
     methods: METHODS,
@@ -174,6 +176,23 @@ export function describeItemQueryVocabulary(): Omit<
     types: VALUE_TYPES,
   };
 }
+
+const PROJECTION_PATH_GRAMMAR = {
+  member: { syntax: ".name", description: "Read an object member." },
+  index: {
+    syntax: "[0]",
+    description: "Read one list element by its zero-based index.",
+  },
+  key: {
+    syntax: '["exact key"]',
+    description: "Read an object member with a JSON-quoted key.",
+  },
+  each: {
+    syntax: "[]",
+    description:
+      "Map the remaining path over each list element, preserving order and null positions. Repeat [] for nested lists.",
+  },
+} as const;
 
 const BUILT_IN_FIELDS: readonly SchemaField[] = BUILT_IN_NAMES.flatMap(
   (name) => {
@@ -215,8 +234,8 @@ function filterCapability(path: string): SchemaCapabilities["filter"] {
 }
 
 /**
- * The Projection Paths below a value. A list element is written at index 0;
- * every other index reaches the element at that position.
+ * The Projection Paths below a value. Index 0 represents numeric access;
+ * [] projects the remaining path over every element of a list.
  */
 export function pathsBelow(
   path: string,
@@ -244,7 +263,13 @@ export function pathsBelow(
         below(`${path}.${key}`, child),
       );
     case "list":
-      return below(`${path}[0]`, shape.element);
+      return [
+        ...below(`${path}[0]`, shape.element),
+        ...below(`${path}[]`, shape.element).map((field) => ({
+          ...field,
+          type: "array" as const,
+        })),
+      ];
   }
 }
 

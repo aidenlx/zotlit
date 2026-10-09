@@ -5,6 +5,7 @@ export const ANNOTATION_SCENARIO_QUERIES: readonly Omit<
   AnnotationQueryRequest,
   "libraries"
 >[] = [
+  { fields: ["item.creators[].fullName", "tags[]", "position.rects[][]"] },
   {},
   { fields: [], limit: 2 },
   { item: ["ART2FULL", "ART2FULLg4815"] },
