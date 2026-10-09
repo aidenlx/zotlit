@@ -2513,6 +2513,81 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
   });
 
+  it("answers zotlit:annotation-image with Zotero's PNG and a rendered ink PNG without an open reader", async () => {
+    await obEval(
+      vaultId,
+      "(async()=>{app.workspace.detachLeavesOfType('pdf');app.workspace.detachLeavesOfType('zotero-annotation-view');await app.plugins.plugins.zotlit.services.excerptImage.clear();return true;})()",
+    );
+    const imageKey = "FDRFQ7C2";
+    const inkKey = "TYY6Z6ZF";
+    const cacheDirectory = join(e2eFixture.dataDir, "cache", "library");
+    const imagePath = join(cacheDirectory, `${imageKey}.png`);
+    const inkCachePath = join(cacheDirectory, `${inkKey}.png`);
+    const pdfPath = join(e2eVaultPath, annotationAttachment.path!);
+    const answer = async (key: string) =>
+      JSON.parse(
+        await cliCommand(vaultId, "zotlit:annotation-image", {
+          args: { key },
+          timeoutMs: 60_000,
+        }),
+      ) as {
+        ok: boolean;
+        command: string;
+        key: string;
+        format: string;
+        provenance: string;
+        path: string;
+      };
+    // A local PDF missing on this device exercises the service's Zotero fallback.
+    await rename(pdfPath, `${pdfPath}.image-test`);
+    try {
+      const cached = await answer(imageKey);
+      expect(cached).toMatchObject({
+        ok: true,
+        command: "zotlit:annotation-image",
+        key: imageKey,
+        format: "png",
+        provenance: "zotero",
+        path: imagePath,
+      });
+      expect((await readFile(cached.path)).subarray(0, 8)).toEqual(
+        Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+      );
+    } finally {
+      await rename(`${pdfPath}.image-test`, pdfPath);
+    }
+    await rename(inkCachePath, `${inkCachePath}.image-test`);
+    try {
+      const rendered = await answer(inkKey);
+      expect(rendered).toMatchObject({
+        ok: true,
+        key: inkKey,
+        format: "png",
+        provenance: "rendered",
+      });
+      expect(rendered.path).toContain("zotlit-excerpts");
+      expect((await readFile(rendered.path)).subarray(0, 8)).toEqual(
+        Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+      );
+      const dimensions = JSON.parse(
+        await obEval(
+          vaultId,
+          `(async()=>{const bytes=require('node:fs').readFileSync(${JSON.stringify(rendered.path)});const bitmap=await createImageBitmap(new Blob([bytes],{type:'image/png'}));const result={width:bitmap.width,height:bitmap.height};bitmap.close();return JSON.stringify(result);})()`,
+        ),
+      ) as { width: number; height: number };
+      expect(dimensions.width).toBeGreaterThan(0);
+      expect(dimensions.height).toBeGreaterThan(0);
+      const reused = await answer(inkKey);
+      expect(reused).toMatchObject({
+        ok: true,
+        provenance: "cache",
+        path: rendered.path,
+      });
+    } finally {
+      await rename(`${inkCachePath}.image-test`, inkCachePath);
+    }
+  }, 120_000);
+
   it("answers zotlit:item-query over the Library Scope and over named Libraries with the Fixture's Indexed Keys", async () => {
     const [myLibrary, sharedReading] = LIBRARIES;
     const wireOf = (library: (typeof LIBRARIES)[number]) =>
