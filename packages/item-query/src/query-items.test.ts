@@ -488,6 +488,42 @@ describe("collectQuery(ITEMS) Projection Paths", () => {
 });
 
 describe("collectQuery(ITEMS) relation lists", () => {
+  it("projects each Relation List element in source order and keeps null positions", async () => {
+    using scenario = openScenarioDatabase();
+    const found = await result(scenario, {
+      libraries: [personal],
+      fields: [
+        "creators",
+        "creators[]",
+        "creators[].fullName",
+        "creators[].literal",
+        "tags[].name",
+        "collections[]",
+      ],
+    });
+    const values = valuesByKey(found);
+    expect(values.ART2FULL).toMatchObject({
+      "creators[].fullName": ["Ada Lovelace", "World Health Organization"],
+      "creators[].literal": [null, "World Health Organization"],
+      "tags[].name": ["methods", "to-read", "To-Read"],
+      "collections[]": ["Thesis/Methods"],
+    });
+    expect(values.BK2MNTH2?.["creators[].fullName"]).toEqual([
+      "Grace Hopper",
+      "Grace Hopper",
+    ]);
+    expect(values.RPT2NDTE).toEqual({
+      creators: [],
+      "creators[]": [],
+      "creators[].fullName": [],
+      "creators[].literal": [],
+      "tags[].name": [],
+      "collections[]": [],
+    });
+    for (const row of found.rows)
+      expect(row.values["creators[]"]).toEqual(row.values.creators);
+  });
+
   it("projects Creators in Zotero's creator order, one element for each row", async () => {
     using scenario = openScenarioDatabase();
     const found = await result(scenario, {
@@ -2777,6 +2813,8 @@ const DATASETS: readonly DatasetCase[] = [
       ["title.length", "unknown-path"],
       ["date[0]", "unknown-path"],
       ["custom[0]", "unknown-path"],
+      ["creators[ ]", "invalid-path"],
+      ["title[]", "unknown-path"],
       // Array access does not vectorize.
       ["creators.fullName", "unknown-path"],
       ["tags.name", "unknown-path"],
@@ -2791,6 +2829,7 @@ const DATASETS: readonly DatasetCase[] = [
       ["custom", "unsortable-field"],
       ['custom["mood"]', "unsortable-field"],
       ["date.year", "unsortable-field"],
+      ["creators[].fullName", "unsortable-field"],
     ],
   },
   {
@@ -2837,6 +2876,7 @@ const DATASETS: readonly DatasetCase[] = [
       ["item.date.century", "unknown-path"],
       ["tags.name", "unknown-path"],
       ["item.creators.fullName", "unknown-path"],
+      ["item.title[]", "unknown-path"],
     ],
     sortFields: [
       ["noSuchField", "unknown-field"],
@@ -2845,6 +2885,7 @@ const DATASETS: readonly DatasetCase[] = [
       ["text", "unsortable-field"],
       ["attachment.title", "unsortable-field"],
       ["item.date.year", "unsortable-field"],
+      ["item.creators[].fullName", "unsortable-field"],
     ],
   },
 ];

@@ -32,6 +32,7 @@ import type { FunctionDefinition } from "./filter-functions";
 import { hasBareForm } from "./filter-plan";
 import type { StaticType } from "./filter-plan";
 import { nearMatches } from "./near-match";
+import { planPath } from "./projection";
 import type { QueryClock } from "./query-clock";
 import { COUNT_FIELDS, UNLIMITED_LIMIT } from "./request";
 
@@ -354,12 +355,18 @@ function diagnoseRequestName(
   const exact = candidates.filter(
     (name) => name.toLowerCase() === fault.name.toLowerCase(),
   );
+  const elementPath =
+    fault.pathResolution?.expected === "list-element"
+      ? `${fault.name.slice(0, fault.pathResolution.offset)}[]${fault.name.slice(fault.pathResolution.offset)}`
+      : undefined;
   const nearby =
-    sort && root !== fault.name && candidates.includes(root)
-      ? [root]
-      : exact.length
-        ? exact
-        : nearMatches(fault.name, candidates);
+    elementPath && !("kind" in planPath(elementPath, dataset.resolvePath))
+      ? [elementPath]
+      : sort && root !== fault.name && candidates.includes(root)
+        ? [root]
+        : exact.length
+          ? exact
+          : nearMatches(fault.name, candidates);
   const keys =
     location.index === undefined
       ? []
@@ -402,7 +409,12 @@ function diagnoseRequestName(
       },
     },
     entry,
-    { found: fault.name, expected: candidates },
+    {
+      found: fault.pathResolution?.found ?? fault.name,
+      expected: fault.pathResolution
+        ? [fault.pathResolution.expected]
+        : candidates,
+    },
   );
   const notes = sort
     ? [
@@ -603,6 +615,8 @@ function unknownMessage(
         ? `${quoted} is a custom field of the connected Zotero source; read it with bracket access.`
         : `The Zotero source has no custom field named ${quoted}.`;
     case "projection-path":
+      if (fault.pathResolution?.expected === "list")
+        return `${JSON.stringify(name.slice(0, fault.pathResolution.offset))} is not a list; [] requires a list.`;
       return `${quoted} is not a Projection Path of ${family}.`;
     case "sortable-field":
       return `${quoted} is not a Sortable Field of ${family}.`;

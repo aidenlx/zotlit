@@ -563,7 +563,12 @@ it.each(["fields", "sort", "library"])(
       const result = decodeQuery({ [parameter]: value });
       expect(result).toMatchObject({
         ...rejected(parameter),
-        location: { argument: parameter, span: { from: 6, to: 6 } },
+        location: {
+          argument: parameter,
+          path: `${parameter}[1]`,
+          index: 1,
+          span: { from: 6, to: 6 },
+        },
       });
     }
   },

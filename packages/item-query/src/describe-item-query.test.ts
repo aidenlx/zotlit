@@ -83,10 +83,31 @@ describe("describeItemQuery custom fields", () => {
 });
 
 describe("the static Item Query vocabulary", () => {
+  it("describes explicit list element projection in the Query Schema", () => {
+    const vocabulary = describeItemQueryVocabulary();
+    expect(vocabulary).toHaveProperty("projectionPathGrammar.each", {
+      syntax: "[]",
+      description:
+        "Map the remaining path over each list element, preserving order and null positions. Repeat [] for nested lists.",
+    });
+    expect(vocabulary.fields).toContainEqual({
+      path: "creators[].fullName",
+      type: "array",
+      filter: null,
+      projection: true,
+      sort: false,
+    });
+  });
   it("matches the source-independent part of the complete schema", async () => {
     using scenario = openScenarioDatabase();
-    const { fields, functions, methods, properties, types } =
-      await schema(scenario);
+    const {
+      fields,
+      functions,
+      methods,
+      properties,
+      types,
+      projectionPathGrammar,
+    } = await schema(scenario);
 
     expect(describeItemQueryVocabulary()).toEqual({
       fields,
@@ -94,6 +115,7 @@ describe("the static Item Query vocabulary", () => {
       methods,
       properties,
       types,
+      projectionPathGrammar,
     });
     expect(describeItemQueryVocabulary()).not.toHaveProperty("customFields");
     expect(describeItemQueryVocabulary()).not.toHaveProperty("defaults");

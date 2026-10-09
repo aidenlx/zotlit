@@ -115,13 +115,12 @@ const commaList = v.pipe(
     if (empty !== -1)
       addIssue({
         message: `List element ${empty + 1} is empty at position ${parts[empty]!.start + 1}. Give a value between commas.`,
-        // The position is a UTF-16 offset in the caller's argument.
         path: [
           {
-            type: "unknown",
+            type: "array",
             origin: "value",
-            input: dataset.value,
-            key: parts[empty]!.start,
+            input: parts.map(({ value }) => value),
+            key: empty,
             value: "",
           },
         ],
@@ -446,6 +445,26 @@ export function decodeQuery(params: CliData): CliRequest<DecodedQuery> {
       ...request,
       hint: "Use library=<list|all> to select the Target Libraries.",
     };
+  }
+  if (request.kind === "invalid" && request.issue) {
+    const { parameter, issue } = request;
+    const input = params[parameter];
+    const index = issue.keys?.[0];
+    if (
+      ["fields", "sort", "library"].includes(parameter) &&
+      input !== undefined &&
+      !input.trimStart().startsWith("[") &&
+      typeof index === "number"
+    ) {
+      const part = splitList(input)[index];
+      if (part?.value === "") {
+        // Keep the list element index and the UTF-16 character span distinct.
+        return {
+          ...request,
+          issue: { ...issue, span: { from: part.start, to: part.start } },
+        };
+      }
+    }
   }
   return request;
 }

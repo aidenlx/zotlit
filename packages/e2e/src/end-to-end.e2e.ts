@@ -2605,6 +2605,45 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
   }, 120_000);
 
+  it("projects aligned Relation Lists with [] through zotlit:query", async () => {
+    const query = async (fields: string[]) =>
+      JSON.parse(
+        await cliCommand(vaultId, "zotlit:query", {
+          args: { fields: fields.join(","), limit: "all" },
+        }),
+      ) as ItemQueryReport;
+    const source = await query(["citationKey", "creators", "tags"]);
+    const projected = await query([
+      "citationKey",
+      "creators[].fullName",
+      "tags[].name",
+    ]);
+    expect(source.ok).toBe(true);
+    expect(projected.ok).toBe(true);
+    expect(projected.rows!.length).toBeGreaterThan(0);
+    expect(projected.rows!.map((row) => row.indexedKey)).toEqual(
+      source.rows!.map((row) => row.indexedKey),
+    );
+    expect(
+      source.rows!.some((row) => (row.values.creators as unknown[]).length > 1),
+    ).toBe(true);
+    expect(
+      source.rows!.some((row) => (row.values.tags as unknown[]).length > 0),
+    ).toBe(true);
+    for (const [index, row] of projected.rows!.entries()) {
+      const values = source.rows![index]!.values;
+      expect(row.values).toEqual({
+        citationKey: values.citationKey,
+        "creators[].fullName": (
+          values.creators as { fullName: string | null }[]
+        ).map((creator) => creator.fullName),
+        "tags[].name": (values.tags as { name: string | null }[]).map(
+          (tag) => tag.name,
+        ),
+      });
+    }
+  });
+
   it("projects library selectors through zotlit:query across the Fixture Libraries", async () => {
     const answer = JSON.parse(
       await cliCommand(vaultId, "zotlit:query", {
