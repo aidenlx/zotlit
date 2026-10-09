@@ -29,6 +29,7 @@ const annotationCatalogFile = join(
   "packages/item-query/dist/annotation-query.schema.json",
 );
 const itemCases = new Set(["include", "export", "edge"]);
+const mixedQueryCases = new Set(["reading_plan"]);
 const answerItem = {
   type: "object",
   additionalProperties: false,
@@ -93,7 +94,12 @@ const annotationOutputSchema = {
         additionalProperties: false,
         properties: {
           indexedKey: { type: "string" },
+          itemIndexedKey: { type: "string" },
+          attachmentIndexedKey: { type: "string" },
+          library: { type: "string" },
           type: { type: "string" },
+          colorName: { type: ["string", "null"] },
+          pageIndex: { type: ["integer", "null"] },
           pageLabel: { type: ["string", "null"] },
           text: { type: ["string", "null"] },
           comment: { type: ["string", "null"] },
@@ -126,6 +132,21 @@ const annotationOutputSchema = {
       },
     },
     imagePath: { type: ["string", "null"] },
+    exportPath: { type: "string" },
+    papers: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          indexedKey: { type: "string" },
+          title: { type: "string" },
+          library: { type: "string" },
+          annotationCount: { type: "integer" },
+        },
+        required: ["indexedKey", "title", "library", "annotationCount"],
+      },
+    },
     imageProvenance: { type: ["string", "null"] },
     imageFormat: { type: ["string", "null"] },
     validPng: { type: ["boolean", "null"] },
@@ -146,15 +167,42 @@ const annotationAnswerFields = {
   mixed: ["itemTitle", "tags", "hasExcerptImage"],
   position: ["position", "attachmentPath"],
   image: [],
+  reading_plan: ["itemIndexedKey", "type", "pageLabel", "text", "comment"],
+  shared_marks: ["itemIndexedKey", "library", "text", "colorName"],
+  attachment: [
+    "itemIndexedKey",
+    "attachmentIndexedKey",
+    "type",
+    "pageLabel",
+    "text",
+    "comment",
+    "attachmentPath",
+  ],
+  colors: ["text", "colorName", "tags", "pageIndex"],
+  reverse_pages: ["type", "pageLabel", "pageIndex", "text"],
+  missing_source: ["attachmentIndexedKey", "comment", "attachmentPath"],
+  repair_filter: ["itemIndexedKey", "text", "colorName"],
+  export_annotations: [
+    "itemIndexedKey",
+    "attachmentIndexedKey",
+    "type",
+    "pageLabel",
+    "text",
+    "comment",
+    "attachmentPath",
+  ],
 };
 
 function annotationSchema(caseName) {
   const fields = ["indexedKey", ...annotationAnswerFields[caseName]];
   const annotations = annotationOutputSchema.properties.annotations;
+  const properties = { ...annotationOutputSchema.properties };
+  if (!mixedQueryCases.has(caseName)) delete properties.papers;
+  if (caseName !== "export_annotations") delete properties.exportPath;
   return {
     ...annotationOutputSchema,
     properties: {
-      ...annotationOutputSchema.properties,
+      ...properties,
       annotations: {
         ...annotations,
         items: {
@@ -166,6 +214,11 @@ function annotationSchema(caseName) {
         },
       },
     },
+    required: [
+      ...annotationOutputSchema.required,
+      ...(mixedQueryCases.has(caseName) ? ["papers"] : []),
+      ...(caseName === "export_annotations" ? ["exportPath"] : []),
+    ],
   };
 }
 
@@ -455,7 +508,11 @@ function checkItemAnswer(caseName, answer, resultPath) {
   return errors;
 }
 
-function checkAnnotationAnswer(caseName, answer, { envelope, imageReceipt }) {
+function checkAnnotationAnswer(
+  caseName,
+  answer,
+  { envelope, imageReceipt, resultPath },
+) {
   const errors = [];
   const expected = oracle.cases[caseName];
   if (typeof answer.answer !== "string" || !answer.answer.trim())
@@ -464,8 +521,18 @@ function checkAnnotationAnswer(caseName, answer, { envelope, imageReceipt }) {
     errors.push(`answer count should be ${expected.count}`);
   if (
     !Array.isArray(answer.annotations) ||
-    JSON.stringify(answer.annotations.map(({ indexedKey }) => indexedKey)) !==
-      JSON.stringify(expected.keys)
+    JSON.stringify(
+      ["reverse_pages", "attachment", "export_annotations"].includes(caseName)
+        ? answer.annotations.map(({ indexedKey }) => indexedKey)
+        : answer.annotations
+            .map(({ indexedKey }) => indexedKey)
+            .sort((a, b) => a.localeCompare(b)),
+    ) !==
+      JSON.stringify(
+        ["reverse_pages", "attachment", "export_annotations"].includes(caseName)
+          ? expected.keys
+          : [...expected.keys].sort((a, b) => a.localeCompare(b)),
+      )
   )
     errors.push("answer has wrong Annotation keys or reading order");
   const rows = new Map(
@@ -478,15 +545,40 @@ function checkAnnotationAnswer(caseName, answer, { envelope, imageReceipt }) {
       const value =
         field === "attachmentPath"
           ? (values.attachment?.path ?? values["attachment.path"] ?? null)
-          : field === "itemTitle"
-            ? values["item.title"]
-            : (values[field] ?? null);
+          : field === "library"
+            ? annotation.indexedKey.endsWith("g118")
+              ? "Lab Archive"
+              : "My Library"
+            : field === "itemIndexedKey" || field === "attachmentIndexedKey"
+              ? envelope.rows.find(
+                  (row) => row.indexedKey === annotation.indexedKey,
+                )?.[field]
+              : field === "itemTitle"
+                ? values["item.title"]
+                : (values[field] ?? null);
       if (JSON.stringify(annotation[field]) !== JSON.stringify(value))
         errors.push(
           `answer has wrong ${field === "attachmentPath" ? "source path" : field} for ${annotation.indexedKey}`,
         );
     }
   }
+  if (mixedQueryCases.has(caseName)) {
+    const actual = answer.papers;
+    if (
+      !Array.isArray(actual) ||
+      JSON.stringify(
+        [...actual].sort((a, b) => a.indexedKey.localeCompare(b.indexedKey)),
+      ) !==
+        JSON.stringify(
+          [...expected.items].sort((a, b) =>
+            a.indexedKey.localeCompare(b.indexedKey),
+          ),
+        )
+    )
+      errors.push("answer has wrong paper counts, including unmarked papers");
+  }
+  if (caseName === "export_annotations" && answer.exportPath !== resultPath)
+    errors.push("answer has wrong retained export path");
   if (caseName === "position") {
     const annotation = answer.annotations?.[0];
     if (
@@ -539,7 +631,14 @@ function prompt(caseName, vaultId, agentRoot) {
     caseName === "image"
       ? ` Save the successful zotlit:annotation-image JSON response at ${imageResult}, read the returned file, and verify its PNG signature. Set the four image result fields from that response and check.`
       : " Set imagePath, imageProvenance, imageFormat, and validPng to null.";
-  return `${preamble}Save the complete successful zotlit:annotation-query JSON envelope at ${result}; use limit=all and keep rows inline. Read and verify the saved envelope before answering. In your final JSON, annotations must contain every requested detail from those rows, with null for an unavailable value.${imageInstruction}`;
+  const itemInstruction = mixedQueryCases.has(caseName)
+    ? ` Save the complete successful zotlit:item-query JSON envelope at ${join(agentRoot, "item-result.json")}; use limit=all and keep rows inline. Derive papers, including zero-mark papers, from that Item result.`
+    : "";
+  const queryInstruction =
+    caseName === "export_annotations"
+      ? ` Use zotlit:annotation-query output=${result} to create the complete JSON export with limit=all. Save the command's JSON file receipt at ${join(agentRoot, "export-receipt.json")}. Read and verify the exported envelope. The runner will retain the file at ${retained}; report that retained path as exportPath.`
+      : ` Save the complete successful zotlit:annotation-query JSON envelope at ${result}; use limit=all and keep rows inline. Read and verify the saved envelope before answering.`;
+  return `${preamble}${itemInstruction}${queryInstruction} In your final JSON, annotations must contain every requested detail from those rows, with null for an unavailable value.${imageInstruction}`;
 }
 
 /** The lifecycle seam accepts a fake process runner in tests; production uses spawn. */
@@ -572,6 +671,8 @@ export async function runCase(
       root,
       report: join(root, "report.json"),
       result: join(root, "result.json"),
+      itemResult: join(root, "item-result.json"),
+      exportReceipt: join(root, "export-receipt.json"),
       image: join(root, "image.json"),
       answer: join(root, "answer.json"),
       check: join(root, "check.json"),
@@ -696,6 +797,28 @@ export async function runCase(
     await cp(answerPath, report.files.answer);
     await cp(join(agent, "query-result.json"), report.files.result);
     const envelope = JSON.parse(await readFile(report.files.result, "utf8"));
+    const exportErrors = [];
+    if (caseName === "export_annotations") {
+      await cp(join(agent, "export-receipt.json"), report.files.exportReceipt);
+      const receipt = JSON.parse(
+        await readFile(report.files.exportReceipt, "utf8"),
+      );
+      const bytes = Buffer.byteLength(await readFile(report.files.result));
+      if (
+        receipt.ok !== true ||
+        receipt.file?.path !== join(agent, "query-result.json") ||
+        receipt.file?.format !== "json" ||
+        receipt.file?.bytes !== bytes
+      )
+        exportErrors.push("wrong Annotation Query export receipt");
+    }
+    let itemEnvelope;
+    if (mixedQueryCases.has(caseName)) {
+      await cp(join(agent, "item-result.json"), report.files.itemResult);
+      itemEnvelope = JSON.parse(
+        await readFile(report.files.itemResult, "utf8"),
+      );
+    }
     let imageReceipt = null;
     const imageErrors = [];
     if (caseName === "image") {
@@ -724,7 +847,9 @@ export async function runCase(
     report.errors = validate(caseName, envelope, {
       runRoot: corpus,
       vaultPath: vault,
+      itemEnvelope,
     });
+    report.errors.push(...exportErrors);
     report.errors.push(...imageErrors);
     report.errors.push(
       ...checkAnswer(caseName, answer, {
@@ -740,6 +865,10 @@ export async function runCase(
     if (!itemCases.has(caseName) && report.metrics.annotationQueryExitZero < 1)
       report.errors.push(
         "agent made no completed Annotation Query call with exit code zero",
+      );
+    if (mixedQueryCases.has(caseName) && report.metrics.itemQueryExitZero < 1)
+      report.errors.push(
+        "agent made no completed Item Query call with exit code zero",
       );
     if (caseName === "image" && report.metrics.imageExitZero < 1)
       report.errors.push(
