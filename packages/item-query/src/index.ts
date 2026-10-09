@@ -46,3 +46,12 @@ export {
   SLICE_BUDGET_MS,
   type SliceObserver,
 } from "./scheduler";
+
+export {
+  queryAnnotations,
+  consumeQueryAnnotations,
+  DEFAULT_ANNOTATION_SORT,
+  type AnnotationQueryRequest,
+  type AnnotationQueryOptions,
+} from "./query-annotations";
+export { DEFAULT_ANNOTATION_FIELDS } from "./annotation-fields";

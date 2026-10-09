@@ -506,3 +506,89 @@ describe("Item Query worker jobs", () => {
     await expect(service.schema({}, signal())).rejects.toBe(startup);
   });
 });
+
+describe("Annotation Query worker jobs", () => {
+  it("exports the same annotation envelope as inline and resolves each Attachment file", async () => {
+    using scenario = openScenarioDatabase({
+      storage: "temp-directory",
+      annotations: true,
+    });
+    const { service, leases } = setup(scenario);
+    await using _owned = service;
+    const directory = join(dirname(scenario.path), "storage", "PDF2LIVE");
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, "exact.pdf"), "fixture");
+    const params = { item: "ART2FULL", limit: "all" };
+    const inline = await service.annotations(params, signal());
+    const result = JSON.parse(inline);
+    expect(result).toMatchObject({
+      command: "zotlit:annotation-query",
+      contractVersion: 1,
+      ok: true,
+      returnedCount: 12,
+    });
+    expect(
+      result.rows.find(
+        (row: { indexedKey: string }) => row.indexedKey === "ANN2HGHT",
+      ).values.attachment,
+    ).toMatchObject({ path: join(directory, "exact.pdf"), exists: true });
+    const output = join(dirname(scenario.path), "annotations.json");
+    expect(
+      JSON.parse(await service.annotations({ ...params, output }, signal())),
+    ).toMatchObject({
+      command: "zotlit:annotation-query",
+      ok: true,
+      file: { path: output },
+    });
+    expect(await readFile(output, "utf8")).toBe(inline);
+    expect(
+      JSON.parse(await service.annotations({ ...params, output }, signal())),
+    ).toMatchObject({
+      command: "zotlit:annotation-query",
+      ok: false,
+      diagnostic: { code: "output-error" },
+    });
+    expect(leases()).toBe(0);
+  });
+  it("claims one id namespace across query kinds and cancels an Annotation export", async () => {
+    using scenario = openScenarioDatabase({
+      storage: "temp-directory",
+      annotations: true,
+    });
+    const { service, leases } = setup(scenario);
+    await using _owned = service;
+    await service.ready;
+    const output = join(dirname(scenario.path), "cancelled-annotations.json");
+    const first = service.annotations(
+      { item: "ART2FULL", id: "shared", output },
+      signal(),
+    );
+    const cancelled = expect(first).rejects.toMatchObject({
+      name: "AbortError",
+      message: queryCancelledText("shared"),
+    });
+    expect(
+      JSON.parse(await service.answer({ id: "shared" }, signal())),
+    ).toMatchObject({
+      command: "zotlit:item-query",
+      diagnostic: { code: "query-id-in-use" },
+    });
+    expect(service.cancel("shared")).toBe(true);
+    await cancelled;
+    expect(await readdir(dirname(output))).not.toContain(
+      "cancelled-annotations.json",
+    );
+    expect(
+      (await readdir(dirname(output))).filter((name) => name.endsWith(".tmp")),
+    ).toEqual([]);
+    const second = service.answer({ id: "shared" }, signal());
+    expect(
+      JSON.parse(await service.annotations({ id: "shared" }, signal())),
+    ).toMatchObject({
+      command: "zotlit:annotation-query",
+      diagnostic: { code: "query-id-in-use" },
+    });
+    expect(JSON.parse(await second)).toMatchObject({ ok: true });
+    expect(leases()).toBe(0);
+  });
+});

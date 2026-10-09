@@ -63,6 +63,9 @@ export type ItemQueryReaderError =
 
 /** The reader a statement belongs to. */
 export type ItemQueryReader =
+  | "annotation-scan-page"
+  | "annotation-universe-rows"
+  | "annotation-hydrate-chunk"
   | "layout"
   | "libraries"
   | "library-row-count"

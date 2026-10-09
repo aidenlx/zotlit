@@ -18,8 +18,12 @@ import {
   ITEM_QUERY_SCHEMA_COMMAND,
   queryIdInUseFailure,
 } from "./cli";
-import { queryCancelledText } from "./contract";
-import { decodeItemQuery, decodeSchemaArguments } from "./decode";
+import { ANNOTATION_QUERY_COMMAND, queryCancelledText } from "./contract";
+import {
+  decodeAnnotationQuery,
+  decodeItemQuery,
+  decodeSchemaArguments,
+} from "./decode";
 import type { CancellationEvent, QueryObserver } from "./trace";
 import type { QueryAnswer, QueryCommand } from "./worker-protocol";
 
@@ -88,20 +92,38 @@ export class ItemQueryService extends Service {
     this.commit(stack.move());
   }
 
+  annotations(params: CliData, signal: AbortSignal): Promise<string> {
+    return this.#answer(params, signal, { annotations: true });
+  }
+
   answer(
     params: CliData,
     signal: AbortSignal,
     measure?: QueryObserver & { heap: boolean },
   ): Promise<string> {
+    return this.#answer(params, signal, { measure });
+  }
+
+  #answer(
+    params: CliData,
+    signal: AbortSignal,
+    {
+      annotations = false,
+      measure,
+    }: { annotations?: boolean; measure?: QueryObserver & { heap: boolean } },
+  ): Promise<string> {
     // Decode and claim the id synchronously, so two calls with one id
     // cannot both start. The worker receives the decoded query.
-    const query = decodeItemQuery(params);
+    const command = annotations ? ANNOTATION_QUERY_COMMAND : ITEM_QUERY_COMMAND;
+    const query = annotations
+      ? decodeAnnotationQuery(params)
+      : decodeItemQuery(params);
     if ("code" in query) {
-      return Promise.resolve(failure(ITEM_QUERY_COMMAND, query));
+      return Promise.resolve(failure(command, query));
     }
     const { id } = query;
     if (id !== undefined && FiberMap.hasUnsafe(this.#jobs, id)) {
-      return Promise.resolve(queryIdInUseFailure(id));
+      return Promise.resolve(queryIdInUseFailure(id, command));
     }
     return this.#start(
       this.#job({ schema: false, query }, measure),
@@ -225,7 +247,9 @@ export class ItemQueryService extends Service {
                 answer: failure(
                   command.schema
                     ? ITEM_QUERY_SCHEMA_COMMAND
-                    : ITEM_QUERY_COMMAND,
+                    : command.query.kind === "annotations"
+                      ? ANNOTATION_QUERY_COMMAND
+                      : ITEM_QUERY_COMMAND,
                   diagnostic("source-unavailable", error.message),
                 ),
                 receipt: { kind: "inline" },
@@ -246,11 +270,15 @@ export class ItemQueryService extends Service {
       if (result.cancelled) return yield* Effect.interrupt;
       if (result.measurement) measure?.completed(result.measurement);
       if (stagePath !== undefined && result.receipt.kind === "file")
-        return yield* publishExport(
+        return yield* publishExport({
           stagePath,
-          result.receipt.path,
-          result.answer,
-        );
+          output: result.receipt.path,
+          answer: result.answer,
+          command:
+            !command.schema && command.query.kind === "annotations"
+              ? ANNOTATION_QUERY_COMMAND
+              : ITEM_QUERY_COMMAND,
+        });
       return result.answer;
     }).pipe(
       Effect.scoped,
@@ -282,11 +310,17 @@ function stageExport(
  * Publish the closed staging file at `output`. A file at `output` stays: the
  * answer is then `output-error`.
  */
-function publishExport(
-  stagePath: string,
-  output: string,
-  answer: string,
-): Effect.Effect<string> {
+function publishExport({
+  stagePath,
+  output,
+  answer,
+  command,
+}: {
+  stagePath: string;
+  output: string;
+  answer: string;
+  command: typeof ITEM_QUERY_COMMAND | typeof ANNOTATION_QUERY_COMMAND;
+}): Effect.Effect<string> {
   return Effect.tryPromise({
     try: () => link(stagePath, output),
     catch: (error) => error,
@@ -295,10 +329,7 @@ function publishExport(
     Effect.catch((error) =>
       error instanceof Error && "code" in error
         ? Effect.succeed(
-            failure(
-              ITEM_QUERY_COMMAND,
-              diagnostic("output-error", error.message),
-            ),
+            failure(command, diagnostic("output-error", error.message)),
           )
         : Effect.die(error),
     ),

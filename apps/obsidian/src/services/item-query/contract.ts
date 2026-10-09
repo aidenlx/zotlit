@@ -9,12 +9,15 @@ import type { CliFlag, CliFlags } from "obsidian";
 
 import type { ItemQueryError } from "@zotlit/item-query";
 
+export const ANNOTATION_QUERY_COMMAND = "zotlit:annotation-query" as const;
+
 export const ITEM_QUERY_COMMAND = "zotlit:item-query" as const;
 export const ITEM_QUERY_CANCEL_COMMAND = "zotlit:item-query-cancel" as const;
 export const ITEM_QUERY_SCHEMA_COMMAND = "zotlit:item-query-schema" as const;
 export const ITEM_QUERY_GUIDE_COMMAND = "zotlit:item-query-guide" as const;
 
 export type ItemQueryCommand =
+  | typeof ANNOTATION_QUERY_COMMAND
   | typeof ITEM_QUERY_COMMAND
   | typeof ITEM_QUERY_CANCEL_COMMAND
   | typeof ITEM_QUERY_SCHEMA_COMMAND
@@ -143,3 +146,17 @@ export function diagnostic(
     details: options.details,
   };
 }
+
+export const annotationQueryFlags: CliFlags = {
+  ...itemQueryFlags,
+  item: {
+    value: "<indexed-key|json>",
+    description:
+      "Item Indexed Key or JSON array of Item keys; selects their Libraries",
+  },
+  attachment: {
+    value: "<indexed-key|json>",
+    description:
+      "Attachment Indexed Key or JSON array of Attachment keys; selects their Libraries",
+  },
+};

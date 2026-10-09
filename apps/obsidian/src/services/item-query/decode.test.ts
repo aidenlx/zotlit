@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   decodeItemQuery,
+  decodeAnnotationQuery,
   decodeSchemaArguments,
   rejectParameters,
 } from "./decode";
@@ -293,6 +294,39 @@ describe("rejectParameters for guide and cancel", () => {
     ).toMatchObject({
       ...rejected(`--${parameter}`),
       message: expect.stringContaining(`${parameter}=<value>`),
+    });
+  });
+});
+
+describe("decodeAnnotationQuery", () => {
+  it("infers Libraries from Item keys and keeps the worker request JSON-only", () => {
+    const decoded = decodeAnnotationQuery({
+      item: '["ART2FULLg4815","ART2FULL"]',
+      fields: "[]",
+    });
+    expect(decoded).toEqual({
+      kind: "annotations",
+      item: ["ART2FULLg4815", "ART2FULL"],
+      libraries: {
+        scope: {
+          mode: "selected",
+          libraries: [{ type: "personal" }, { type: "group", groupID: 4815 }],
+        },
+        parameter: "item",
+      },
+      fields: [],
+      limit: 100,
+    });
+    expect(JSON.parse(JSON.stringify(decoded))).toEqual(decoded);
+  });
+  it.each<CliData>([
+    { item: "ART2FULL", library: "personal" },
+    { item: "ART2FULL", libraries: "all" },
+    { item: "invalid" },
+    { attachment: "[]" },
+  ])("rejects a malformed key or key/Library conflict: %j", (params) => {
+    expect(decodeAnnotationQuery(params)).toMatchObject({
+      code: "invalid-argument",
     });
   });
 });

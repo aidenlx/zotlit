@@ -75,33 +75,33 @@ export type SortKey = string | number | null;
  * One entry of the field registry. Validation, execution, and the Item Query
  * Schema read the same entries, so a field exists only here.
  */
-export interface FieldDefinition {
+export interface FieldDefinition<Item = QueryItem> {
   readonly shape: ValueShape;
   /** What hydration loads for a path that starts at this field. */
   readonly needs: (rest: readonly PathSegment[]) => FieldNeeds;
   /** Reads the complete value of the field. */
-  readonly read: (item: QueryItem) => ProjectionValue;
+  readonly read: (item: Item) => ProjectionValue;
   /**
    * Present on a Sortable Field: the value that orders the Item. Hydration
    * loads `needs([])` before it runs. The Query Clock places a calendar-day
    * `accessDate` at its start in the query time zone.
    */
-  readonly sortKey?: (item: QueryItem, clock: QueryClock) => SortKey;
+  readonly sortKey?: (item: Item, clock: QueryClock) => SortKey;
   /**
    * Present on a field that a Filter Expression can read. Hydration loads
    * `needs([])` before it runs.
    */
-  readonly filter?: FilterValueDefinition;
+  readonly filter?: FilterValueDefinition<Item>;
 }
 
 /**
  * The value of a field in a Filter Expression. A relation list is a list of
  * strings here; projection gives the richer structure.
  */
-export interface FilterValueDefinition {
+export interface FilterValueDefinition<Item = QueryItem> {
   /** The type of the value when the Item has one. */
   readonly type: Exclude<FilterValueType, "null">;
-  readonly read: (item: QueryItem) => FilterValue;
+  readonly read: (item: Item) => FilterValue;
 }
 
 const STRING: ValueShape = { kind: "scalar", type: "string" };

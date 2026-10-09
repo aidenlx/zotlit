@@ -9,10 +9,11 @@ import type {
   ItemQueryDatabaseError,
   ItemQueryLayoutError,
 } from "@zotlit/db/item-query";
-import { consumeQueryItems } from "@zotlit/item-query";
+import { consumeQueryItems, consumeQueryAnnotations } from "@zotlit/item-query";
 import type {
   ItemQueryError,
-  ItemQueryRequest,
+  AnnotationQueryRequest,
+  AnnotationQueryOptions,
   QueryConsumer,
   QuerySummary,
 } from "@zotlit/item-query";
@@ -33,7 +34,8 @@ export type ItemQueryInstrument = <A, E, R>(
 ) => Effect.Effect<A, E, R>;
 
 /** The Libraries a run reads. */
-export interface RunLibraries {
+export interface RunLibraries extends AnnotationQueryOptions {
+  readonly kind?: "annotations";
   /** The Library Scope in force, or the scope that the caller names. */
   readonly scope: LibraryScope;
   /** The run needs each Library of `scope`: the caller named them. */
@@ -67,8 +69,8 @@ export class TargetLibrariesUnavailable extends Data.TaggedError(
  * Clock is the system clock and zone.
  */
 export function runItemQueryTo<A, E, R>(
-  { scope, requireEach }: RunLibraries,
-  request: Omit<ItemQueryRequest, "libraries">,
+  { scope, requireEach, ...options }: RunLibraries,
+  request: Omit<AnnotationQueryRequest, "libraries">,
   begin: (
     summary: QuerySummary,
     libraries: ResolvedLibraryScope,
@@ -99,7 +101,11 @@ export function runItemQueryTo<A, E, R>(
         reason: requireEach ? "named-none" : "scope-none",
       });
     }
-    return yield* consumeQueryItems(
+    const consume =
+      options.kind === "annotations"
+        ? consumeQueryAnnotations
+        : consumeQueryItems;
+    return yield* consume(
       {
         ...request,
         libraries: available.map(({ libraryID, selector }) => ({
@@ -108,6 +114,7 @@ export function runItemQueryTo<A, E, R>(
         })),
       },
       (summary) => begin(summary, libraries),
+      options,
     );
   });
 }

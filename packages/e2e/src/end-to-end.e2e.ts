@@ -2780,6 +2780,42 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
   });
 
+  it("queries an Item's reading record through zotlit:annotation-query", async () => {
+    const report = JSON.parse(
+      await cliCommand(vaultId, "zotlit:annotation-query", {
+        args: { item: annotationItem.key, limit: "all" },
+      }),
+    ) as ItemQueryReport;
+    expect(report).toMatchObject({
+      contractVersion: 1,
+      command: "zotlit:annotation-query",
+      ok: true,
+      truncated: false,
+    });
+    const parents = ATTACHMENTS.filter(
+      (attachment) => attachment.parentItemID === annotationItem.itemID,
+    );
+    const expected = ANNOTATIONS.filter((annotation) =>
+      parents.some((parent) => parent.itemID === annotation.parentItemID),
+    );
+    expect(report.returnedCount).toBe(expected.length);
+    expect(report.rows!.map((row) => row.indexedKey).toSorted()).toEqual(
+      expected.map((annotation) => annotation.key).toSorted(),
+    );
+    expect(report.rows![0]).toMatchObject({
+      itemIndexedKey: annotationItem.key,
+      attachmentIndexedKey: expect.any(String),
+      values: {
+        type: expect.any(String),
+        colorName: expect.any(String),
+        pageIndex: expect.any(Number),
+        "item.title": annotationItem.title,
+        attachment: { path: expect.any(String), exists: true },
+      },
+    });
+    expect(report.rows![0]!.values).not.toHaveProperty("position");
+  });
+
   it("describes Item Query through zotlit:item-query-schema", async () => {
     const version = await obEval(
       vaultId,
