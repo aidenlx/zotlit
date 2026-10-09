@@ -2630,6 +2630,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ) as ItemQueryReport;
 
     it("finds broken linked files", async () => {
+      // Demo paper files are copied only to the demo Vault Case. Their linked
+      // rows remain in the configured Fixture and are also missing here.
       const answer = await query({
         filter: 'linkMode == "linked_file" && !exists',
         fields: "title,path,exists,tags",
@@ -2638,7 +2640,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       });
       expect(answer).toMatchObject({
         ok: true,
-        returnedCount: 1,
+        returnedCount: 3,
         truncated: false,
         rows: [
           {
@@ -2650,6 +2652,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               tags: ["repair-file"],
             },
           },
+          { indexedKey: "DMRGRPDF", values: { exists: false } },
+          { indexedKey: "DMIANPDF", values: { exists: false } },
         ],
       });
     });
@@ -2700,11 +2704,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       });
       expect(answer).toMatchObject({
         ok: true,
-        returnedCount: ATTACHMENTS.length,
+        returnedCount: 14,
         truncated: false,
       });
       expect(answer.libraries).toHaveLength(LIBRARIES.length);
-      for (const attachment of ATTACHMENTS) {
+      // The three image Attachments of a Note are outside the Query Dataset.
+      const attachedToItems = ATTACHMENTS.filter((attachment) =>
+        ITEMS.some((item) => item.itemID === attachment.parentItemID),
+      );
+      expect(answer.rows!.map((row) => row.indexedKey).toSorted()).toEqual(
+        attachedToItems.map((attachment) => attachment.key).toSorted(),
+      );
+      for (const attachment of attachedToItems) {
         const library = LIBRARIES.find(
           (library) => library.libraryID === attachment.libraryID,
         )!;
