@@ -480,21 +480,33 @@ function expectAnswered(id: string, report: MeasureReport): MeasureReport {
   return report;
 }
 
-async function pluginReady(): Promise<boolean> {
-  return waitFor(async () => {
+/**
+ * Wait until the plugin answers a query.
+ *
+ * @throws {Error} `failure`, with the last answer or error of the plugin.
+ */
+async function requirePluginReady(failure: string): Promise<void> {
+  let last = "no answer";
+  const ready = await waitFor(async () => {
     const answer = await cliCommand(vaultId, MEASURE_COMMAND, {
       args: {
         ...STRESS_LIBRARY,
         limit: "1",
         fields: "[]",
       },
-    }).catch(() => "");
+    }).catch((error: unknown) => {
+      last = `error: ${error instanceof Error ? error.message : String(error)}`;
+      return undefined;
+    });
+    if (answer === undefined) return false;
+    last = `answer: ${answer}`;
     try {
       return (JSON.parse(answer) as MeasureReport).ok === true;
     } catch {
       return false;
     }
   }, 240);
+  if (!ready) throw new Error(`${failure}. Last ${last}`);
 }
 
 /**
@@ -510,9 +522,9 @@ async function loadTier(items: number, groupItems?: number): Promise<void> {
     linkedAttachmentVaultDir: vaultPath,
   });
   await cli([`vault=${vaultId}`, "plugin:enable", "id=zotlit"]);
-  if (!(await pluginReady())) {
-    throw new Error(`ZotLit did not answer a query on the ${items}-Item tier`);
-  }
+  await requirePluginReady(
+    `ZotLit did not answer a query on the ${items}-Item tier`,
+  );
   // Initial fuzzy-search indexing is a separate renderer job. Wait for its
   // normal completion so this record measures ZotLit Query rather than startup.
   log("Waiting for the search index of this Fixture to finish...");
@@ -704,9 +716,9 @@ async function measureTier(raw: RawTier): Promise<void> {
       vaultId,
       "(async()=>{await app.plugins.enablePlugin('zotlit');return true;})()",
     );
-    if (!(await pluginReady())) {
-      throw new Error("ZotLit did not load again after the unload cancel");
-    }
+    await requirePluginReady(
+      "ZotLit did not load again after the unload cancel",
+    );
   }
 
   await measureTwoLibraries(raw);
