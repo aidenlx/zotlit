@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { HydratedItem } from "@zotlit/db/item-query";
 
+import { codeOfFault } from "./diagnose";
 import type { QueryItem } from "./fields";
 import { evaluate, matches } from "./filter-evaluate";
 import { hasBareForm, planFilter } from "./filter-plan";
@@ -87,15 +88,15 @@ const ARTICLE = item({
 
 function plan(expression: string): FilterPlan {
   const planned = planFilter(expression);
-  if ("code" in planned) {
-    throw new Error(`${expression}: ${planned.code}: ${planned.message}`);
+  if ("kind" in planned) {
+    throw new Error(`${expression}: ${codeOfFault(planned)}`);
   }
   return planned;
 }
 
 function problem(expression: string): FilterProblem {
   const planned = planFilter(expression);
-  if (!("code" in planned)) throw new Error(`${expression} is valid.`);
+  if (!("kind" in planned)) throw new Error(`${expression} is valid.`);
   return planned;
 }
 
@@ -1239,6 +1240,200 @@ describe("the query time zone", () => {
 });
 
 describe("validation", () => {
+  it("states the registered call and given argument count", () => {
+    expect(problem("title.contains()")).toMatchObject({
+      kind: "arity",
+      callee: {
+        name: "contains",
+        receiver: { type: "string", at: { from: 0, to: 5 }, field: "title" },
+      },
+      at: { from: 0, to: 16 },
+      given: 0,
+    });
+  });
+
+  it.each([
+    [
+      "if(true)",
+      {
+        kind: "arity",
+        callee: { name: "if" },
+        at: { from: 0, to: 8 },
+        given: 1,
+      },
+    ],
+    [
+      "tags.filter()",
+      {
+        kind: "arity",
+        callee: {
+          name: "filter",
+          receiver: {
+            type: "list",
+            at: { from: 0, to: 4 },
+            field: "tags",
+          },
+        },
+        at: { from: 0, to: 13 },
+        given: 0,
+      },
+    ],
+  ] as const)("states the arity fault for %s", (expression, expected) => {
+    expect(problem(expression)).toMatchObject(expected);
+  });
+
+  it.each([
+    [
+      "date(5)",
+      {
+        kind: "argument-type",
+        callee: { name: "date" },
+        at: { from: 5, to: 6 },
+        index: 0,
+        found: "a number",
+        expected: "a string or a date",
+      },
+    ],
+    [
+      "title.startsWith(5)",
+      {
+        kind: "argument-type",
+        callee: {
+          name: "startsWith",
+          receiver: {
+            type: "string",
+            at: { from: 0, to: 5 },
+            field: "title",
+          },
+        },
+        at: { from: 17, to: 18 },
+        index: 0,
+        found: "a number",
+        expected: "a string",
+      },
+    ],
+  ] as const)(
+    "states the argument-type fault for %s",
+    (expression, expected) => {
+      expect(problem(expression)).toMatchObject(expected);
+    },
+  );
+
+  it("states that the custom field collection is unreadable", () => {
+    expect(problem("custom")).toEqual({
+      kind: "unreadable",
+      name: "custom",
+      at: { from: 0, to: 6 },
+    });
+  });
+
+  it("states an unknown global function as facts", () => {
+    expect(problem('contains(title, "a")')).toEqual({
+      kind: "unknown",
+      role: "global",
+      name: "contains",
+      at: { from: 0, to: 8 },
+    });
+  });
+
+  it.each([
+    [
+      "now > 3",
+      {
+        kind: "unknown",
+        role: "field",
+        name: "now",
+        at: { from: 0, to: 3 },
+      },
+    ],
+    [
+      'title.includes("a")',
+      {
+        kind: "unknown",
+        role: "method",
+        name: "includes",
+        at: { from: 6, to: 14 },
+        receiver: {
+          type: "string",
+          at: { from: 0, to: 5 },
+          field: "title",
+        },
+      },
+    ],
+    [
+      "title.round()",
+      {
+        kind: "unknown",
+        role: "method",
+        name: "round",
+        at: { from: 6, to: 11 },
+        receiver: {
+          type: "string",
+          at: { from: 0, to: 5 },
+          field: "title",
+        },
+      },
+    ],
+    [
+      "title.lenght",
+      {
+        kind: "unknown",
+        role: "property",
+        name: "lenght",
+        at: { from: 6, to: 12 },
+        receiver: {
+          type: "string",
+          at: { from: 0, to: 5 },
+          field: "title",
+        },
+      },
+    ],
+    [
+      "attachments.length",
+      {
+        kind: "unknown",
+        role: "property",
+        name: "length",
+        at: { from: 12, to: 18 },
+        receiver: {
+          type: "boolean",
+          at: { from: 0, to: 11 },
+          field: "attachments",
+        },
+      },
+    ],
+    [
+      'creators.lastName == "Smith"',
+      {
+        kind: "unknown",
+        role: "property",
+        name: "lastName",
+        at: { from: 9, to: 17 },
+        receiver: {
+          type: "list",
+          at: { from: 0, to: 8 },
+          field: "creators",
+        },
+      },
+    ],
+    [
+      'creators.some(name == "Smith")',
+      {
+        kind: "unknown",
+        role: "method",
+        name: "some",
+        at: { from: 9, to: 13 },
+        receiver: {
+          type: "list",
+          at: { from: 0, to: 8 },
+          field: "creators",
+        },
+      },
+    ],
+  ] as const)("states the unknown name in %s as facts", (expression, fault) => {
+    expect(problem(expression)).toEqual(fault);
+  });
+
   it.each([
     ["", "invalid-filter", [0, 0]],
     ["   ", "invalid-filter", [3, 3]],
@@ -1401,85 +1596,12 @@ describe("validation", () => {
     ["min == 1", "unknown-field", [0, 3]],
     ['if == "a"', "unknown-field", [0, 2]],
   ] as const)("rejects %j with %s at %j", (expression, code, [from, to]) => {
-    expect(problem(expression)).toMatchObject({ code, span: { from, to } });
-  });
-
-  it("gives every problem a message and a hint", () => {
-    for (const expression of [
-      "",
-      "title.contains(/ab/)",
-      "noSuchFunction()",
-      "tags.startsWith(1)",
-      "title.startsWith()",
-      "title.startsWith(1)",
-      "title.lenght",
-      "custom",
-      "min",
-    ]) {
-      const { message, hint } = problem(expression);
-      expect(message).not.toBe("");
-      expect(hint).not.toBe("");
-    }
-  });
-
-  it("names the function and its parameters when the argument count is wrong", () => {
-    expect(problem("title.startsWith()")).toMatchObject({
-      message: "startsWith takes 1 argument, not 0.",
-      hint: "Call value.startsWith(prefix).",
+    const fault = problem(expression);
+    expect(codeOfFault(fault)).toBe(code);
+    expect(fault.kind === "syntax" ? fault.fault : fault.at).toMatchObject({
+      from,
+      to,
     });
-    expect(problem("if(true)")).toMatchObject({
-      message: "if takes 2 to 3 arguments, not 1.",
-      hint: "Call if(condition, then, else?).",
-    });
-  });
-
-  it("names the type names that isType takes when the literal is none of them", () => {
-    expect(problem('title.isType("strng")')).toMatchObject({
-      message:
-        'Argument 1 of isType is "strng"; isType takes one of "any", "null", "boolean", "number", "string", "list", "date", "duration", "regexp" there.',
-      hint: "Call value.isType(type).",
-    });
-  });
-
-  it("points at an invalid regular expression and names its pattern", () => {
-    expect(problem("/(/.matches(title)")).toMatchObject({
-      code: "invalid-filter",
-      message: expect.stringContaining("/(/"),
-      hint: expect.stringContaining("/pattern/flags"),
-    });
-    expect(problem("/a/gg.matches(title)").message).toContain("/a/gg");
-  });
-
-  it("names the owner type of matches when the subject is a text", () => {
-    expect(problem("title.matches(/a/)")).toMatchObject({
-      message: 'A string has no method "matches".',
-      hint: expect.stringContaining("matches is a method of a regexp."),
-    });
-  });
-
-  it("names the owner type of a list helper called on another type", () => {
-    expect(problem("title.sort()")).toMatchObject({
-      message: 'A string has no method "sort".',
-      hint: expect.stringContaining("sort is a method of a list."),
-    });
-  });
-
-  it("tells a method from a global function in the hint", () => {
-    expect(problem('contains(title, "a")').hint).toContain(
-      "value.contains(...)",
-    );
-    expect(problem("title.number()").hint).toContain("number(...)");
-    expect(problem("title.list()").hint).toContain("list(...)");
-  });
-
-  it("names the type a text helper belongs to when the subject has another type", () => {
-    expect(problem("tags.trim()")).toMatchObject({
-      message: 'A list has no method "trim".',
-      hint: expect.stringContaining("trim is a method of a string."),
-    });
-    expect(problem("title.toFixed(1)").hint).toContain(
-      "toFixed is a method of a number.",
-    );
   });
 
   // A branch that never runs is validated like every other part.
@@ -1494,7 +1616,7 @@ describe("validation", () => {
     ["true || title.contains(/a/)", "wrong-argument-type"],
     ["[1, noSuchFunction()].length", "unknown-function"],
   ] as const)("rejects the dead branch of %j with %s", (expression, code) => {
-    expect(problem(expression).code).toBe(code);
+    expect(codeOfFault(problem(expression))).toBe(code);
   });
 
   it.each([
@@ -1627,4 +1749,42 @@ describe("hydration needs", () => {
       { relations: ["collections"] },
     ]);
   });
+});
+
+// Failure modes: nullable cross-type values can both be null; an unknown
+// value can match; ordering stays null; a warning never changes evaluation.
+it.each([
+  ['tags == "bulk"', false, false],
+  ['tags != "bulk"', true, true],
+  ['date.year == "2019"', false, false],
+  ['dateAdded > "2020-01-01"', null, false],
+  ['number("bad") == date("bad")', true, undefined],
+  ['number("bad") != date("bad")', false, undefined],
+  ['number("bad") > date("bad")', null, false],
+  ['tags[0] == "bulk"', false, undefined],
+  ["date.year == null", true, undefined],
+  ['"a" == "b"', false, undefined],
+  ['if(true, 1, "x") == "x"', false, undefined],
+] as const)(
+  "warns only on a proven constant comparison: %s",
+  (text, value, warning) => {
+    const planned = plan(text);
+    expect(evaluate(planned.root, ARTICLE, CLOCK)).toEqual(value);
+    expect(planned.warnings).toEqual(
+      warning === undefined
+        ? []
+        : [
+            expect.objectContaining({
+              kind: "constant",
+              value: warning,
+            }),
+          ],
+    );
+  },
+);
+
+it("keeps the null value of a warned ordering inside a larger expression", () => {
+  const planned = plan('(number("bad") > date("bad")) == null');
+  expect(evaluate(planned.root, ARTICLE, CLOCK)).toBe(true);
+  expect(planned.warnings).toHaveLength(1);
 });

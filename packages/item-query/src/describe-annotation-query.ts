@@ -18,7 +18,7 @@ import { DEFAULT_ANNOTATION_SORT } from "./query-annotations";
 
 const filterCapability = (path: string): SchemaCapabilities["filter"] => {
   const plan = planAnnotationFilter(path);
-  if ("code" in plan) return null;
+  if ("kind" in plan) return null;
   const type = plan.root.valueType;
   return type === "unknown" ? "any" : type === "null" ? null : type;
 };

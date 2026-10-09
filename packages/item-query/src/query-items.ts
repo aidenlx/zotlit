@@ -14,6 +14,7 @@ import type {
 } from "@zotlit/db/item-query";
 
 import { planCandidates, readCandidates } from "./candidate-plan";
+import { diagnoseWarning } from "./diagnose";
 import type { ItemQueryError } from "./error";
 import { consumeDataset } from "./execution";
 import { matches as isMatch } from "./filter-evaluate";
@@ -76,12 +77,16 @@ export function consumeQueryItems<A, E, R>(
 > {
   return Effect.gen(function* () {
     const { libraries } = request;
-    const { query, filter, paths, sorts } = yield* planRequest(request);
+    const { query, filter, paths, sorts, warnings } =
+      yield* planRequest(request);
     const clock = yield* readQueryClock;
     const hydration = yield* openHydration({ filter, paths, sorts }, libraries);
     return yield* consumeDataset(
       {
         query,
+        warnings: warnings.map((fault) =>
+          diagnoseWarning(fault, query.filter!, { clock }),
+        ),
         libraries,
         sort: query.sort,
         scan: hydration.scan,

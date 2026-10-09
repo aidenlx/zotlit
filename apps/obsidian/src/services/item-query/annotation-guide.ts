@@ -143,10 +143,19 @@ LIMIT
 const RESULTS_SECTION = `RESULTS AND DIAGNOSTICS
 
 ENVELOPE
-  A successful answer has identity, libraries, request, returnedCount,
-  truncated, and rows. A failed answer has diagnostic.code, message, hint,
-  and, for an invalid request, location. Follow diagnostic.hint and run the
-  corrected query.
+  Contract version 2 uses the shared Query envelope. A successful answer has
+  identity, libraries, request, returnedCount, truncated, warnings, and rows.
+  warnings is always present before rows, including an empty result or export.
+  Read warnings before reporting an empty result. A definite comparison of
+  different types can be never-true or always-true; its rows still reflect
+  the expression as written.
+
+  On failure, read diagnostic.report first. Its lines show the fault, excerpt,
+  and recovery action. The diagnostic also has code, message, hint, severity,
+  found, expected, and suggestions. excerpt contains before, at, and after;
+  location names the argument and may give a JSON path or UTF-16 span.
+  diagnostic.hint repeats the recovery action. Follow the report and run
+  the corrected query.
 
 FILE EXPORT
   An inline answer is limited to ${INLINE_MAX_BYTES} UTF-8 bytes. Add
@@ -215,7 +224,8 @@ WORKFLOW
   1. Read topic=command for the command form and defaults.
   2. Use item or attachment for one document, or filter across Libraries.
   3. Choose fields. Add position only when the task needs source geometry.
-  4. On ok false, follow diagnostic.hint and run the query again.
+  4. On ok false, read diagnostic.report and correct the query. Read warnings
+     before reporting an empty result.
 
 EXAMPLE
   ${example({ item: "ART2FULL", fields: '["text","comment","pageLabel","item.title"]', limit: "all" })}

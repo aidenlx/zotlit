@@ -1,12 +1,24 @@
 import type { CliData } from "obsidian";
 import { describe, expect, it } from "vitest";
 
-import {
-  decodeItemQuery,
-  decodeAnnotationQuery,
-  decodeSchemaArguments,
-  rejectParameters,
-} from "./decode";
+import type { CliRequest } from "@/lib/cli-params";
+
+import * as decode from "./decode";
+
+/** The decoded value, or the diagnostic the handler answers with. */
+const answered =
+  <T>(decoder: (params: CliData) => CliRequest<T>) =>
+  (params: CliData) => {
+    const request = decoder(params);
+    return request.kind === "valid"
+      ? request.value
+      : decode.rejectionDiagnostic(request);
+  };
+
+const decodeItemQuery = answered(decode.decodeItemQuery);
+const decodeGuideArguments = answered(decode.decodeGuideArguments);
+const decodeCancelArguments = answered(decode.decodeCancelArguments);
+const decodeSchemaArguments = answered(decode.decodeSchemaArguments);
 
 /** The diagnostic of an argument that the decoder rejects. */
 const rejected = (parameter: string) => ({
@@ -53,12 +65,18 @@ describe("decodeItemQuery limit", () => {
     expect(decodeItemQuery({ limit: "all" })).toMatchObject({ limit: null });
   });
 
-  it.each(["0", "-1", "1.5", "ten", "", "1e3", "99999999999999999999"])(
-    "rejects limit=%j",
-    (limit) => {
-      expect(decodeItemQuery({ limit })).toMatchObject(rejected("limit"));
-    },
-  );
+  it.each([
+    "0",
+    "-1",
+    "1.5",
+    "ten",
+    "",
+    "1e3",
+    "unlimited",
+    "99999999999999999999",
+  ])("rejects limit=%j", (limit) => {
+    expect(decodeItemQuery({ limit })).toMatchObject(rejected("limit"));
+  });
 });
 
 describe("decodeItemQuery library", () => {
@@ -80,6 +98,15 @@ describe("decodeItemQuery library", () => {
       expect(decodeItemQuery({ library })).toMatchObject(rejected("library"));
     },
   );
+
+  it("answers a malformed Library before a malformed option", () => {
+    expect(decodeItemQuery({ library: "bad", limit: "0" })).toMatchObject(
+      rejected("library"),
+    );
+    expect(decodeItemQuery({ libraries: "bad", limit: "0" })).toMatchObject(
+      rejected("libraries"),
+    );
+  });
 });
 
 describe("decodeItemQuery libraries", () => {
@@ -121,6 +148,25 @@ describe("decodeItemQuery libraries", () => {
   ])("rejects libraries with %s", (_name, libraries) => {
     expect(decodeItemQuery({ libraries })).toMatchObject(rejected("libraries"));
   });
+
+  it("keeps the inner issue of a malformed Library selector", () => {
+    const request = decode.decodeItemQuery({ libraries: '["My Library"]' });
+    expect(request).toMatchObject({
+      kind: "invalid",
+      parameter: "libraries",
+      issue: {
+        path: "libraries[0]",
+        expected: expect.any(String),
+        received: expect.any(String),
+      },
+    });
+    if (request.kind !== "invalid") throw new Error("Expected rejection");
+    expect(decode.rejectionDiagnostic(request)).toMatchObject({
+      code: "invalid-argument",
+      found: '"My Library"',
+      location: { path: "libraries[0]" },
+    });
+  });
 });
 
 describe("decodeItemQuery library and libraries together", () => {
@@ -147,6 +193,12 @@ describe("decodeItemQuery library and libraries together", () => {
     },
   );
 
+  it("ignores an empty library beside libraries=all", () => {
+    expect(decodeItemQuery({ library: "", libraries: "all" })).toMatchObject({
+      libraries: { scope: { mode: "all" }, parameter: "libraries" },
+    });
+  });
+
   it("answers the diagnostic of a malformed libraries beside a valid library", () => {
     expect(
       decodeItemQuery({ library: "personal", libraries: "[]" }),
@@ -171,6 +223,69 @@ describe("decodeItemQuery fields, filter, and sort", () => {
 
   it("decodes fields=[] to identity-only rows", () => {
     expect(decodeItemQuery({ fields: "[]" })).toMatchObject({ fields: [] });
+  });
+
+  it.each([
+    {
+      name: "an unknown direction",
+      value: '[{"field":"title","direction":"ascending"}]',
+      issue: {
+        path: "sort[0].direction",
+        expected: '("asc" | "desc")',
+        received: '"ascending"',
+      },
+    },
+    {
+      name: "a missing direction",
+      value: '[{"field":"title"}]',
+      issue: {
+        path: "sort[0].direction",
+        expected: '"direction"',
+        received: "undefined",
+      },
+    },
+    {
+      name: "an object instead of an array",
+      value: '{"field":"title","direction":"asc"}',
+      issue: { path: "sort", expected: "Array", received: "Object" },
+    },
+  ])("keeps the issue for sort with $name", ({ value, issue }) => {
+    expect(decodeItemQuery({ sort: value })).toMatchObject({
+      location: { path: issue.path },
+      found: issue.received === "Object" ? value : issue.received,
+    });
+    expect(decode.decodeItemQuery({ sort: value })).toMatchObject({
+      kind: "invalid",
+      parameter: "sort",
+      issue,
+    });
+  });
+
+  it.each([
+    {
+      name: "text that is not JSON",
+      value: "title,date",
+      issue: {
+        path: "fields",
+        expected: "JSON",
+        received: expect.any(String),
+      },
+    },
+    {
+      name: "a non-text array entry",
+      value: '["title",5]',
+      issue: { path: "fields[1]", expected: "string", received: "5" },
+    },
+  ])("distinguishes fields with $name", ({ value, issue }) => {
+    expect(decodeItemQuery({ fields: value })).toMatchObject({
+      location: { path: issue.path },
+      found: issue.received === "Object" ? value : issue.received,
+    });
+    expect(decode.decodeItemQuery({ fields: value })).toMatchObject({
+      kind: "invalid",
+      parameter: "fields",
+      issue,
+    });
   });
 
   it.each([
@@ -213,31 +328,31 @@ describe("decodeItemQuery parameters", () => {
     );
   });
 
-  it("explains a vault parameter after the command name", () => {
-    expect(decodeItemQuery({ vault: "Research" })).toMatchObject({
-      ...rejected("vault"),
-      message: expect.stringContaining("before the command name"),
+  it("keeps received parameter order for a shell-split filter", () => {
+    const params = { filter: "itemType", "==": "true", '"book"': "true" };
+    expect(decode.decodeItemQuery(params)).toMatchObject({
+      kind: "invalid",
+      parameter: "==",
+      received: Object.entries(params),
+      shellSplit: true,
+    });
+    expect(decodeItemQuery(params)).toMatchObject({
+      ...rejected("=="),
+      suggestions: ["filter='itemType == \"book\"'"],
     });
   });
 
-  it("allows Obsidian's --copy switch", () => {
-    expect(decodeItemQuery({ "--copy": "true", limit: "1" })).toMatchObject({
-      limit: 1,
-    });
+  it("rejects a vault parameter after the command name", () => {
+    expect(decodeItemQuery({ vault: "Research" })).toMatchObject(
+      rejected("vault"),
+    );
   });
 
-  it.each(["filter", "limit"])(
-    "rejects --%s and explains the key=value form",
-    (parameter) => {
-      const result = decodeItemQuery({ [`--${parameter}`]: "1" });
-
-      expect(result).toMatchObject({
-        ...rejected(`--${parameter}`),
-        message: expect.stringContaining(`${parameter}=<value>`),
-        hint: expect.stringContaining(`${parameter}=<value>`),
-      });
-    },
-  );
+  it.each(["filter", "limit"])("rejects --%s", (parameter) => {
+    expect(decodeItemQuery({ [`--${parameter}`]: "1" })).toMatchObject(
+      rejected(`--${parameter}`),
+    );
+  });
 
   it("rejects a malformed switch beside a valid parameter", () => {
     expect(decodeItemQuery({ limit: "1", "--filter": "true" })).toMatchObject(
@@ -250,7 +365,6 @@ describe("decodeItemQuery parameters", () => {
     (key) => {
       expect(decodeItemQuery({ [key]: "true" })).toMatchObject({
         ...rejected(key),
-        hint: expect.stringContaining("name=value"),
       });
     },
   );
@@ -270,9 +384,8 @@ describe("decodeItemQuery parameters", () => {
 });
 
 describe("decodeSchemaArguments", () => {
-  it("accepts no parameter, and Obsidian's own -- tokens", () => {
-    expect(decodeSchemaArguments({})).toBeNull();
-    expect(decodeSchemaArguments({ "--copy": "true" })).toBeNull();
+  it("accepts no parameter", () => {
+    expect(decodeSchemaArguments({})).toStrictEqual({});
   });
 
   it.each<[CliData, string]>([
@@ -284,20 +397,71 @@ describe("decodeSchemaArguments", () => {
   });
 });
 
-describe("rejectParameters for guide and cancel", () => {
+describe("decodeGuideArguments and decodeCancelArguments", () => {
   it.each([
-    ["topic", "filter"],
-    ["id", "export-a"],
-  ])("rejects --%s and shows the accepted form", (parameter, value) => {
-    expect(
-      rejectParameters({ [`--${parameter}`]: value }, [parameter]),
-    ).toMatchObject({
+    [decodeGuideArguments, "topic", "filter"],
+    [decodeCancelArguments, "id", "export-a"],
+  ])("rejects --%s", (decode, parameter, value) => {
+    expect(decode({ [`--${parameter}`]: value })).toMatchObject({
       ...rejected(`--${parameter}`),
-      message: expect.stringContaining(`${parameter}=<value>`),
     });
+  });
+
+  it("decodes the guide topic, or null for the quickstart", () => {
+    expect(decodeGuideArguments({ topic: "filter" })).toBe("filter");
+    expect(decodeGuideArguments({})).toBeNull();
+    expect(decodeGuideArguments({ topic: "nope" })).toMatchObject(
+      rejected("topic"),
+    );
+  });
+
+  it.each<CliData>([{}, { id: "two words" }])(
+    "rejects the cancel arguments %j",
+    (params) => {
+      expect(decodeCancelArguments(params)).toMatchObject(rejected("id"));
+    },
+  );
+});
+
+it("renders decoder issue data and the recovery action in contract v2", () => {
+  const rejection = decode.decodeItemQuery({
+    sort: '[{"field":"title","direction":"ascending"}]',
+  });
+  if (rejection.kind !== "invalid") throw new Error("Expected rejection");
+  const diagnostic = decode.rejectionDiagnostic(rejection);
+  expect(diagnostic).toMatchObject({
+    severity: "error",
+    location: { path: "sort[0].direction" },
+    found: '"ascending"',
+    expected: ["asc", "desc"],
+    suggestions: ['sort=\'[{"field":"title","direction":"asc"}]\''],
+  });
+  expect(diagnostic.report[0]).toBe(diagnostic.message);
+  expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
+});
+
+it("reconstructs the real empty-key shell split without inventing removed quotes", () => {
+  const params = { filter: "itemType", "": "=", book: "true", limit: "5" };
+  const rejection = decode.decodeItemQuery(params);
+  expect(rejection).toMatchObject({
+    kind: "invalid",
+    parameter: "",
+    received: Object.entries(params),
+    shellSplit: true,
+  });
+  expect(decodeItemQuery(params)).toMatchObject({
+    suggestions: ["filter='itemType == book'"],
   });
 });
 
+it("preserves received quote characters in a reconstructed shell argument", () => {
+  const params = { filter: "title", "": "=", '"O\'Brien"': "true" };
+  expect(decodeItemQuery(params)).toMatchObject({
+    suggestions: ["filter='title == \"O'\"'\"'Brien\"'"],
+  });
+});
+
+const decodeAnnotationQuery = answered(decode.decodeAnnotationQuery);
 describe("decodeAnnotationQuery", () => {
   it("infers Libraries from Item keys and keeps the worker request JSON-only", () => {
     const decoded = decodeAnnotationQuery({
@@ -328,5 +492,41 @@ describe("decodeAnnotationQuery", () => {
     expect(decodeAnnotationQuery(params)).toMatchObject({
       code: "invalid-argument",
     });
+  });
+});
+
+it.each([
+  [{ item: '["ART2FULL", 3]' }, "item", "item[1]"],
+  [{ attachment: '["PDF2LIVE", "bad"]' }, "attachment", "attachment[1]"],
+  [{ fields: '["text", 3]' }, "fields", "fields[1]"],
+  [
+    { sort: '[{"field":"pageIndex","direction":"ascending"}]' },
+    "sort",
+    "sort[0].direction",
+  ],
+] as const)(
+  "preserves Annotation JSON issue locations for %j",
+  (params, argument, path) => {
+    expect(decodeAnnotationQuery(params)).toMatchObject({
+      code: "invalid-argument",
+      location: { argument, path },
+      found: expect.any(String),
+      expected: expect.any(Array),
+    });
+  },
+);
+
+it("preserves shell-split evidence for Annotation filters", () => {
+  const request = decode.decodeAnnotationQuery({
+    filter: "tags",
+    "==": "true",
+    '"figure"': "true",
+  });
+  expect(request).toMatchObject({ kind: "invalid", shellSplit: true });
+  expect(
+    decodeAnnotationQuery({ filter: "tags", "==": "true", '"figure"': "true" }),
+  ).toMatchObject({
+    code: "invalid-argument",
+    suggestions: ["filter='tags == \"figure\"'"],
   });
 });

@@ -2,10 +2,20 @@
 import { createHash } from "node:crypto";
 import { basename, join } from "node:path/posix";
 import { MarkdownView } from "obsidian";
-import type { App, CliData, CliHandler } from "obsidian";
+import type { App, CliHandler } from "obsidian";
+import * as v from "valibot";
 
 import { formatPlainTemplateDocument } from "@zotlit/templates/facade";
 
+import {
+  cliOneOf,
+  cliParams,
+  cliSwitch,
+  cliText,
+  decodeCliParams,
+  expectSourceParam,
+} from "@/lib/cli-params";
+import type { CliParamName } from "@/lib/cli-params";
 import { isErrno } from "@/lib/errno";
 import { getLogger } from "@/lib/log";
 import { parseProfileSelector } from "@/lib/profile-stamp";
@@ -32,7 +42,6 @@ import {
   INSPECT_SELECTORS,
   INSPECT_SOURCE_FULL,
   INSPECT_TIMEOUT_MS,
-  inspectFlags,
   TEMPLATE_INSPECT_COMMAND,
 } from "./inspect-contract";
 export { inspectFlags, TEMPLATE_INSPECT_COMMAND } from "./inspect-contract";
@@ -299,10 +308,13 @@ export function inspectInventory(deps: InspectDeps): InspectDocument[] {
   return documents;
 }
 
+/** The one target an inspection names. */
+type InspectSelection = Pick<InspectRequest, "profile" | "document">;
+
 /** Resolve one explicit target. Ambiguity is retained for the caller to report. */
 export function selectInspectDocument(
   inventory: InspectDocument[],
-  params: CliData,
+  params: InspectSelection,
   options: { profileIdentityOnly?: boolean } = {},
 ): InspectDocument[] {
   if (typeof params.profile === "string") {
@@ -353,6 +365,36 @@ export function selectInspectionNote(
   return { note: { path: file.path, key }, profile };
 }
 
+const INVALID_TARGET = INSPECT_DIAGNOSTICS.INVALID_SELECTOR.message;
+
+const target = v.optional(cliText(INVALID_TARGET));
+
+const inspectParams = v.pipe(
+  cliParams({
+    note: target,
+    profile: target,
+    document: target,
+    source: v.optional(v.picklist([INSPECT_SOURCE_FULL], INVALID_TARGET)),
+    editor: cliSwitch(INVALID_TARGET),
+    "expect-source": expectSourceParam,
+  }),
+  cliOneOf(INSPECT_SELECTORS, { many: INVALID_TARGET }),
+  // Editor source belongs to one selected document.
+  v.forward(
+    v.partialCheck(
+      [["editor"], ["note"], ["profile"], ["document"]],
+      (input) =>
+        input.editor === undefined ||
+        INSPECT_SELECTORS.some((name) => input[name] !== undefined),
+      INVALID_TARGET,
+    ),
+    ["editor"],
+  ),
+);
+
+export type InspectRequest = v.InferOutput<typeof inspectParams>;
+export type InspectParam = CliParamName<typeof inspectParams>;
+
 export function createInspectHandler(
   deps: InspectDeps,
   draft?: { source: string; path: string },
@@ -384,32 +426,32 @@ export function createInspectHandler(
         diagnostic: { code, ...INSPECT_DIAGNOSTICS[code] },
         ...context,
       });
-    const selectors = INSPECT_SELECTORS.map((name) => params[name]).filter(
-      (entry) => entry !== undefined,
-    );
+    const request = decodeCliParams(params, inspectParams, {
+      command: "template-inspect",
+    });
+    if (request.kind === "invalid")
+      return answer({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          message: request.message,
+          hint: request.hint ?? INSPECT_DIAGNOSTICS.INVALID_SELECTOR.hint,
+          details: { parameter: request.parameter },
+        },
+      });
+    const query = request.value;
     if (
-      Object.keys(params).some((key) => !(key in inspectFlags)) ||
-      selectors.length > 1 ||
-      selectors.some(
-        (value) => typeof value !== "string" || value.trim() === "",
-      ) ||
-      (params.source !== undefined && params.source !== INSPECT_SOURCE_FULL)
-    )
-      return fail("INVALID_SELECTOR");
-    if (
-      params["expect-source"] !== undefined &&
-      params["expect-source"] !== identity.source.id
+      query["expect-source"] !== undefined &&
+      query["expect-source"] !== identity.source.id
     )
       return fail("TARGET_MISMATCH");
     await Promise.all([deps.templates.ready, deps.profile.ready]);
     const draftDocument: InspectDocument | undefined =
-      draft &&
-      typeof params.document === "string" &&
-      params.document.startsWith("partial:")
+      draft && query.document?.startsWith("partial:")
         ? {
             kind: "partial",
-            id: params.document,
-            label: params.document.slice("partial:".length),
+            id: query.document,
+            label: query.document.slice("partial:".length),
             path: null,
             problems: [],
           }
@@ -426,18 +468,21 @@ export function createInspectHandler(
       return documents;
     };
     let inventory = inventoryWithDraft();
-    if (selectors.length === 0) {
-      if (params.editor !== undefined) return fail("INVALID_SELECTOR");
+    if (
+      query.note === undefined &&
+      query.profile === undefined &&
+      query.document === undefined
+    ) {
       return answer({
         ok: true,
         documents: inventory,
         problems: deps.profile.diagnostics,
       });
     }
-    let selection = params;
+    let selection: InspectSelection = query;
     let note: { path: string; key: string } | undefined;
-    if (typeof params.note === "string") {
-      const selected = selectInspectionNote(deps, params.note);
+    if (query.note !== undefined) {
+      const selected = selectInspectionNote(deps, query.note);
       if (selected.error)
         return fail(selected.error, { matches: selected.matches });
       note = selected.note;
@@ -458,7 +503,7 @@ export function createInspectHandler(
       (entry.kind === "partial" ||
         (document.kind !== "citation" && entry.kind === "citation"));
     let dependencies = inventory.filter(isDependency);
-    const editor = params.editor !== undefined;
+    const editor = query.editor === true;
     const builtinPaths = [...(draft ? [] : [document]), ...dependencies]
       .filter((entry) => entry.path === null)
       .map((entry) =>
@@ -545,7 +590,7 @@ export function createInspectHandler(
             },
           }
         : {}),
-      ...(params.source === INSPECT_SOURCE_FULL ? { source } : {}),
+      ...(query.source === INSPECT_SOURCE_FULL ? { source } : {}),
       problems: document.problems,
     });
   };

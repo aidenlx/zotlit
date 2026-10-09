@@ -34,11 +34,11 @@ function runAnnotationQuery(
   params: CliData,
 ): Promise<Record<string, unknown>> {
   const decoded = decodeAnnotationQuery(params);
-  if ("code" in decoded)
+  if (decoded.kind === "invalid")
     throw new Error(`Malformed guide query: ${decoded.message}`);
   const answer = answerItemQuery(
     { identity: IDENTITY, scope: MY_LIBRARY_SCOPE },
-    decoded,
+    decoded.value,
   ).pipe(
     Effect.scoped,
     Effect.provideService(ItemQueryDatabase, { client: scenario.db }),
@@ -65,7 +65,17 @@ describe("zotlit:annotation-query-guide", () => {
     ["keys", ["attachmentIndexedKey", "itemIndexedKey", "combine with AND"]],
     ["fields", ["position.kind", "unknown", "attachment"]],
     ["sort", ["Sortable Fields", "Sort Index", "truncated"]],
-    ["results", ["diagnostic.hint", "file.bytes", "returnedCount"]],
+    [
+      "results",
+      [
+        "diagnostic.report",
+        "diagnostic.hint",
+        "warnings",
+        "version 2",
+        "file.bytes",
+        "returnedCount",
+      ],
+    ],
     ["images", ["hasExcerptImage", "provenance", "file-unavailable"]],
     ["cancel", ["cancelRequested", "query-id", "annotations-1"]],
   ])("prints topic=%s", (topic, facts) => {
@@ -100,14 +110,24 @@ describe("zotlit:annotation-query-guide", () => {
 
     for (const args of ANNOTATION_GUIDE_EXAMPLES) {
       const answer = await runAnnotationQuery(scenario, args);
-      if (!answer.ok) failures.push({ args, answer });
+      if (
+        !answer.ok ||
+        !Array.isArray(answer.warnings) ||
+        answer.warnings.length > 0
+      )
+        failures.push({ args, answer });
     }
     for (const filter of ANNOTATION_GUIDE_FILTERS) {
       const answer = await runAnnotationQuery(scenario, {
         filter,
         fields: "[]",
       });
-      if (!answer.ok) failures.push({ filter, answer });
+      if (
+        !answer.ok ||
+        !Array.isArray(answer.warnings) ||
+        answer.warnings.length > 0
+      )
+        failures.push({ filter, answer });
     }
 
     expect(ANNOTATION_GUIDE_EXAMPLES.length).toBeGreaterThan(0);

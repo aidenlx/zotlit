@@ -23,6 +23,7 @@ import {
 import type { QueryAnnotation } from "./annotation-fields";
 import { planCandidates, readCandidatePlan } from "./candidate-plan";
 import type { CandidatePlan } from "./candidate-plan";
+import { diagnoseWarning } from "./diagnose";
 import { ItemQueryError } from "./error";
 import { consumeDataset } from "./execution";
 import type { FieldDefinition, FieldNeeds } from "./fields";
@@ -91,10 +92,16 @@ export function consumeQueryAnnotations<A, E, R>(
       request.filter === undefined
         ? null
         : planAnnotationFilter(request.filter);
-    if (plannedFilter && "code" in plannedFilter)
+    if (plannedFilter && "kind" in plannedFilter)
       return yield* new ItemQueryError({
-        ...plannedFilter,
-        location: { argument: "filter", span: plannedFilter.span },
+        fault: plannedFilter,
+        location: {
+          argument: "filter",
+          span:
+            plannedFilter.kind === "syntax"
+              ? { from: plannedFilter.fault.from, to: plannedFilter.fault.to }
+              : plannedFilter.at,
+        },
       });
     const filter = plannedFilter;
     const clock = yield* readQueryClock;
@@ -107,11 +114,14 @@ export function consumeQueryAnnotations<A, E, R>(
             annotationFieldDefinition(`item.${name}`),
           )
         : planPath(text, annotationFieldDefinition);
-      if ("code" in path)
+      if ("kind" in path)
         return yield* new ItemQueryError({
-          ...path,
-          location: { argument: "fields", index },
-          hint: "Use an Annotation Query Projection Path.",
+          fault:
+            path.kind === "unknown"
+              ? { ...path, name: text, at: { from: 0, to: text.length } }
+              : path,
+          location: { argument: "fields", index, path: `fields[${index}]` },
+          argumentText: JSON.stringify(fields),
         });
       paths.push({ ...path, text });
     }
@@ -123,10 +133,14 @@ export function consumeQueryAnnotations<A, E, R>(
       const definition = annotationFieldDefinition(sort.field);
       if (!ANNOTATION_SORT_FIELDS.has(sort.field) || !definition?.sortKey)
         return yield* new ItemQueryError({
-          code: "unsortable-field",
-          location: { argument: "sort", index },
-          message: `"${sort.field}" is not an Annotation Query Sortable Field.`,
-          hint: "Use a Sortable Field of the Annotation Query Schema.",
+          fault: {
+            kind: "unknown",
+            role: "sortable-field",
+            name: sort.field,
+            at: { from: 0, to: sort.field.length },
+          },
+          location: { argument: "sort", index, path: `sort[${index}].field` },
+          argumentText: JSON.stringify(request.sort),
         });
       sorts.push({ needs: definition.needs([]), key: definition.sortKey });
     }
@@ -190,6 +204,12 @@ export function consumeQueryAnnotations<A, E, R>(
     return yield* consumeDataset(
       {
         query,
+        warnings: (filter?.warnings ?? []).map((fault) =>
+          diagnoseWarning(fault, query.filter!, {
+            clock,
+            dataset: "annotations",
+          }),
+        ),
         libraries: request.libraries,
         sort: [...query.sort, { field: "sortIndex", direction: "asc" }],
         scan: { plan: true, load: load(false) },
@@ -271,5 +291,16 @@ export function consumeQueryAnnotations<A, E, R>(
       },
       begin,
     );
-  });
+  }).pipe(
+    Effect.mapError((error) =>
+      error instanceof ItemQueryError
+        ? new ItemQueryError({
+            fault: error.fault,
+            location: error.location,
+            argumentText: error.argumentText,
+            dataset: "annotations",
+          })
+        : error,
+    ),
+  );
 }

@@ -2,7 +2,7 @@
 name: zotlit-query
 description: "Query Zotero Items and Annotations through ZotLit in Obsidian. Use to find works by metadata, find a paper's highlights or notes, combine Annotation and parent Item filters, inspect source positions, open source documents, retrieve Excerpt Images, count matches, or export query data."
 metadata:
-  cli-contract-version: "1"
+  cli-contract-version: "2"
 ---
 
 # ZotLit Query
@@ -17,7 +17,7 @@ Item Query searches top-level Items outside the trash. Annotation Query searches
 2. Choose the query family. Run `zotlit:item-query-guide` for stored Item metadata or `zotlit:annotation-query-guide` for reading marks and notes. Read the live guide once, then use `help <command>` and guide topics for details.
 3. Run the matching schema command. Save the response and confirm `identity.vault` and `identity.source`. The response identifies a version-pinned catalog and live defaults. Follow guide topic `schema` for Item Query or the Annotation guide and its catalog for Annotation Query. Reuse a catalog while its URL is unchanged.
 4. Translate the request into Library scope, selection, returned fields, sort, and completeness. Use a small sample to check uncertain syntax or shape. Run the complete query after the expression succeeds.
-5. Check the response body. A successful shell exit can still carry `ok: false`. Follow `diagnostic.hint`, correct the named input, and retry. Retry a transient failure once.
+5. Read `diagnostic.report` first on failure. Read `warnings` before you report an empty result. Check the response body: a successful shell exit alone does not prove success. Use the report to choose the correction before retrying. Treat a plain-text error as a failed call. Retry a transient failure once; report a repeated failure with its recovery action.
 6. Complete when `identity`, `libraries`, `request`, and `truncated` match the task and you have read the rows or exported envelope. Report the Target Libraries, useful results, and whether the result is complete.
 
 ## Command families
@@ -76,7 +76,7 @@ Read the relevant Annotation Query guide topic:
 
 ### Source document and position
 
-Read `zotlit:annotation-query-guide topic=fields` before opening a source document or interpreting a position. Follow its file availability rules and position conventions. Request source geometry when the task needs it.
+Read `zotlit:annotation-query-guide topic=fields` before opening a source document or interpreting a position. Follow its file availability rules and position conventions. Confirm `attachment.exists` before reporting local availability; read the file before reporting its contents. Request source geometry when the task needs it.
 
 ### Excerpt Images
 

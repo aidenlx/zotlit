@@ -20,6 +20,7 @@ import type {
   ItemQueryLayoutError,
 } from "@zotlit/db/item-query";
 import {
+  diagnose,
   DEFAULT_FIELDS,
   DEFAULT_SORT,
   describeItemQueryCustomFields,
@@ -47,7 +48,6 @@ import type { SchemaAsset } from "@/services/template-workbench/schema";
 
 import {
   ANNOTATION_GUIDE_TOPIC_NAMES,
-  parseAnnotationGuideTopic,
   renderAnnotationGuide,
 } from "./annotation-guide";
 import type { AttachmentFileResolver } from "./attachment-files";
@@ -68,9 +68,14 @@ import {
 } from "./contract";
 import type { Diagnostic, ItemQueryCommand } from "./contract";
 import contractVersion from "./contract-version.json" with { type: "json" };
-import { invalid, rejectParameters, rejectQueryId } from "./decode";
+import {
+  decodeCancelArguments,
+  decodeGuideArguments,
+  decodeAnnotationGuideArguments,
+  rejectionDiagnostic,
+} from "./decode";
 import type { DecodedQuery, NamedLibraries } from "./decode";
-import { GUIDE_TOPIC_NAMES, parseGuideTopic, renderGuide } from "./guide";
+import { GUIDE_TOPIC_NAMES, renderGuide } from "./guide";
 import { runItemQueryTo } from "./run";
 import type { ItemQueryInstrument, TargetLibrariesUnavailable } from "./run";
 import type { QueryReply } from "./worker-protocol";
@@ -123,6 +128,7 @@ type EnvelopeTail =
       request: object;
       returnedCount: number;
       truncated: boolean;
+      warnings: QuerySummary["warnings"];
       rows?: readonly { indexedKey: string; values: object }[];
       file?: { path: string; bytes: number; format: "json" };
     }
@@ -301,38 +307,20 @@ export function answerItemQuerySchema(
 
 /** The guide is plain text; an unknown topic answers the diagnostic envelope. */
 export function itemQueryGuideHandler(params: CliData): string {
-  const rejected = rejectParameters(params, ["topic"]);
-  if (rejected) return failure(ITEM_QUERY_GUIDE_COMMAND, rejected);
-  if (params.topic === undefined) return renderGuide(null);
-  const topic = parseGuideTopic(params.topic);
-  if (topic === null) {
-    return failure(
-      ITEM_QUERY_GUIDE_COMMAND,
-      invalid(
-        "topic",
-        `topic '${params.topic}' is not a guide topic: use ${GUIDE_TOPIC_NAMES.join(", ")}.`,
-      ),
-    );
+  const topic = decodeGuideArguments(params);
+  if (topic.kind === "invalid") {
+    return failure(ITEM_QUERY_GUIDE_COMMAND, rejectionDiagnostic(topic));
   }
-  return renderGuide(topic);
+  return renderGuide(topic.value);
 }
 
 /** The Annotation guide is plain text; an unknown topic is a diagnostic. */
 export function annotationQueryGuideHandler(params: CliData): string {
-  const rejected = rejectParameters(params, ["topic"]);
-  if (rejected) return failure(ANNOTATION_QUERY_GUIDE_COMMAND, rejected);
-  if (params.topic === undefined) return renderAnnotationGuide(null);
-  const topic = parseAnnotationGuideTopic(params.topic);
-  if (topic === null) {
-    return failure(
-      ANNOTATION_QUERY_GUIDE_COMMAND,
-      invalid(
-        "topic",
-        `topic '${params.topic}' is not a guide topic: use ${ANNOTATION_GUIDE_TOPIC_NAMES.join(", ")}.`,
-      ),
-    );
+  const topic = decodeAnnotationGuideArguments(params);
+  if (topic.kind === "invalid") {
+    return failure(ANNOTATION_QUERY_GUIDE_COMMAND, rejectionDiagnostic(topic));
   }
-  return renderAnnotationGuide(topic);
+  return renderAnnotationGuide(topic.value);
 }
 
 /**
@@ -344,23 +332,15 @@ export function createItemQueryCancelHandler(
   cancel: (id: string) => boolean,
 ): CliHandler {
   return (params: CliData): string => {
-    const rejected = rejectParameters(params, ["id"]);
-    if (rejected) return failure(ITEM_QUERY_CANCEL_COMMAND, rejected);
-    if (params.id === undefined) {
-      return failure(
-        ITEM_QUERY_CANCEL_COMMAND,
-        invalid(
-          "id",
-          "id is missing: give the id of the query to cancel, as in id=<id>.",
-        ),
-      );
+    const request = decodeCancelArguments(params);
+    if (request.kind === "invalid") {
+      return failure(ITEM_QUERY_CANCEL_COMMAND, rejectionDiagnostic(request));
     }
-    const malformed = rejectQueryId(params.id);
-    if (malformed) return failure(ITEM_QUERY_CANCEL_COMMAND, malformed);
+    const id = request.value;
     return envelope(ITEM_QUERY_CANCEL_COMMAND, {
       ok: true,
-      id: params.id,
-      cancelRequested: cancel(params.id),
+      id,
+      cancelRequested: cancel(id),
     });
   };
 }
@@ -375,7 +355,7 @@ export function queryIdInUseFailure(
     diagnostic(
       "query-id-in-use",
       `A query with the id '${id}' is running in this vault.`,
-      { details: { parameter: "id" } },
+      { parameter: "id" },
     ),
   );
 }
@@ -427,7 +407,7 @@ export function answerItemQuery(
       }),
   );
   return (deps.instrument?.(operation) ?? operation).pipe(
-    answerFailure(command, named?.parameter),
+    answerFailure(command, named?.parameter, decoded.filter),
   );
 }
 
@@ -478,6 +458,7 @@ const createAnswer = Effect.fnUntraced(function* (
     request: { libraries: context.libraries.map(selectorKey), ...result.query },
     returnedCount: result.returnedCount,
     truncated: result.truncated,
+    warnings: result.warnings,
   };
   const head = envelope(context.command, { ...summary, rows: [] });
   let text = "";
@@ -561,6 +542,7 @@ function answerFailure(
   command: ItemQueryCommand,
   /** The argument that named the Target Libraries, if the caller named them. */
   parameter?: NamedLibraries["parameter"],
+  filter = "",
 ) {
   return <R>(
     run: Effect.Effect<
@@ -575,7 +557,9 @@ function answerFailure(
   ): Effect.Effect<QueryReply, never, R> =>
     run.pipe(
       Effect.catch((failed) =>
-        Effect.sync(() => inline(failureText(failed, command, parameter))),
+        Effect.sync(() =>
+          inline(failureText(failed, command, { parameter, filter })),
+        ),
       ),
       Effect.catchDefect((defect) => {
         logger.error("Item Query failed with a defect", {
@@ -598,7 +582,10 @@ function failureText(
     | ItemQueryOutputError
     | TargetLibrariesUnavailable,
   command: ItemQueryCommand,
-  parameter: NamedLibraries["parameter"] | undefined,
+  {
+    parameter,
+    filter,
+  }: { parameter: NamedLibraries["parameter"] | undefined; filter: string },
 ): string {
   if (failed._tag === "ItemQueryOutputError")
     return failure(command, failed.diagnostic);
@@ -606,12 +593,13 @@ function failureText(
     return failure(command, targetLibrariesFailure(failed, parameter));
   }
   if (failed._tag === "ItemQueryError") {
-    return failure(command, {
-      code: failed.code,
-      message: failed.message,
-      hint: failed.hint,
-      location: failed.location,
-    });
+    return failure(
+      command,
+      diagnose(failed.fault, failed.argumentText ?? filter, {
+        ...failed.location,
+        dataset: failed.dataset,
+      }),
+    );
   }
   if (failed._tag === "ItemQueryLayoutError") {
     // `@zotlit/db` logs the missing layout and the versions once per copy.
@@ -632,7 +620,7 @@ function targetLibrariesFailure(
     return diagnostic(
       "library-not-found",
       `The connected Zotero source holds no ${describeSelector(missing)}.`,
-      { details: parameter && { parameter } },
+      parameter && { parameter },
     );
   }
   if (reason === "named-none") {

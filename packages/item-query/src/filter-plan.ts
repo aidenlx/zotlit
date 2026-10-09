@@ -4,13 +4,9 @@
 import { parseExpressionAst } from "@zotlit/filter-expression";
 import type { BinaryOperator, ExpressionNode } from "@zotlit/filter-expression";
 
-import type { ItemQueryErrorCode } from "./error";
-import {
-  BUILT_IN_NAMES,
-  customFilterValue,
-  DEFAULT_FIELDS,
-  filterField,
-} from "./fields";
+import type { Callee, Fault, Receiver, Role, Span } from "./fault";
+export type { Span } from "./fault";
+import { BUILT_IN_NAMES, customFilterValue, filterField } from "./fields";
 import type {
   FieldNeeds,
   FilterValueDefinition,
@@ -21,24 +17,16 @@ import {
   GLOBAL_FUNCTION_NAMES,
   GLOBAL_FUNCTIONS,
   IF_FUNCTION,
-  METHOD_NAMES,
   methodOf,
   methodsNamed,
   parameterAt,
   parameterTypes,
   propertiesNamed,
-  PROPERTY_NAMES,
   propertyOf,
   takesType,
 } from "./filter-functions";
 import type { FunctionDefinition } from "./filter-functions";
 import type { FilterValue, FilterValueType } from "./filter-values";
-
-/** A part of the filter text, in UTF-16 offsets; `to` is exclusive. */
-export interface Span {
-  readonly from: number;
-  readonly to: number;
-}
 
 /**
  * The type of a node's value as validation knows it. Each type also holds
@@ -132,43 +120,49 @@ export type FilterNode<Item = QueryItem> = NodeBase &
 /** A validated Filter Expression. */
 export interface FilterPlan<Item = QueryItem> {
   readonly root: FilterNode<Item>;
+  readonly warnings: readonly Extract<Fault, { kind: "constant" }>[];
   /** What hydration loads before the filter runs: one entry for each field. */
   readonly needs: readonly FieldNeeds[];
   /**
    * The custom fields the filter names. The source decides whether each one
    * exists, so the engine checks them when it has read the field vocabulary.
    */
-  readonly customFields: readonly (Span & {
-    readonly name: string;
-    readonly bare: boolean;
-  })[];
+  readonly customFields: readonly FilterCustomFieldUse[];
 }
 
-export interface FilterProblem {
-  readonly code: ItemQueryErrorCode;
-  readonly span: Span;
-  readonly message: string;
-  readonly hint: string;
+interface FilterCustomFieldUse extends Span {
+  readonly name: string;
+  readonly bare: boolean;
+  readonly deferred?: Extract<Fault, { kind: "unknown" }>;
+  /** A valid property chain to check only when the source lacks its prefix. */
+  readonly dotted?: Span & { readonly name: string };
 }
+
+type FilterFailure = Extract<
+  Fault,
+  {
+    readonly kind:
+      | "plain"
+      | "unknown"
+      | "arity"
+      | "argument-type"
+      | "unreadable";
+  }
+> & { readonly at: Span };
+export type FilterProblem =
+  | FilterFailure
+  | Extract<Fault, { readonly kind: "syntax" }>;
 
 class Invalid extends Error {
-  constructor(readonly problem: FilterProblem) {
-    super(problem.message);
+  constructor(readonly problem: FilterFailure) {
+    super(problem.kind);
   }
 }
 
 const quote = (text: string): string => JSON.stringify(text);
 
 const HINTS = {
-  syntax:
-    'Write one Filter Expression, such as itemType == "book" && tags.contains("to-read"). Omit the filter to match every Item.',
-  field: `Use a field of the Item Query Schema, such as ${DEFAULT_FIELDS.join(", ")}. Field names are case-sensitive. Reach a custom field with custom["exact name"].`,
-  filterable:
-    "Use a field that the Item Query Schema lists as filterable, such as title, itemType, tags, or collections.",
   custom: 'Name one custom field, such as custom["review.status"].',
-  global: `Use a global function: ${GLOBAL_FUNCTION_NAMES.join(", ")}. Function names are case-sensitive.`,
-  method: `Use a method of the Item Query Schema: ${METHOD_NAMES.join(", ")}. Function names are case-sensitive.`,
-  property: `Use a property of the Item Query Schema: ${PROPERTY_NAMES.join(", ")}.`,
   regexp:
     "Write a regular expression as /pattern/flags with JavaScript syntax, such as /^the /i, and the flags d, g, i, m, s, u, v, and y at most once each.",
 } as const;
@@ -197,21 +191,18 @@ export function planFilter<Item = QueryItem>(
 ): FilterPlan<Item> | FilterProblem {
   const { ast, error } = parseExpressionAst(text);
   if (!ast) {
-    return {
-      code: "invalid-filter",
-      span: error,
-      message:
-        text.trim() === ""
-          ? "The filter is empty."
-          : `The filter has a syntax error at position ${error.from}.`,
-      hint: HINTS.syntax,
-    };
+    return { kind: "syntax", fault: error };
   }
   const needs: FieldNeeds[] = [];
-  const customFields: (Span & { name: string; bare: boolean })[] = [];
+  const customFields: FilterCustomFieldUse[] = [];
   try {
-    const root = new Validator(needs, customFields, registry).node(ast);
-    return { root, needs, customFields };
+    const warnings: Extract<Fault, { kind: "constant" }>[] = [];
+    const root = new Validator(
+      { needs, customFields, warnings },
+      registry,
+    ).node(ast);
+    warnings.sort((a, b) => a.at.from - b.at.from);
+    return { root, needs, customFields, warnings };
   } catch (thrown) {
     if (thrown instanceof Invalid) return thrown.problem;
     throw thrown;
@@ -235,23 +226,81 @@ const RESERVED_NAMES: ReadonlySet<string> = new Set([
   ...GLOBAL_FUNCTION_NAMES,
 ]);
 
-function fail(
-  code: ItemQueryErrorCode,
-  span: Span,
-  text: { message: string; hint: string },
-): never {
-  throw new Invalid({ code, span: { from: span.from, to: span.to }, ...text });
+function fail(fault: FilterFailure): never {
+  throw new Invalid(fault);
 }
 
-function describeCount(
-  definition: Pick<FunctionDefinition, "parameters" | "optional" | "rest">,
-): string {
-  const least = definition.parameters.length;
-  const most = least + (definition.optional?.length ?? 0);
-  const plural = (count: number) =>
-    `${count} argument${count === 1 ? "" : "s"}`;
-  if (definition.rest) return `at least ${plural(least)}`;
-  return least === most ? plural(least) : `${least} to ${plural(most)}`;
+const arity = (
+  callee: Callee,
+  at: Span,
+  given: number,
+): Extract<Fault, { readonly kind: "arity" }> => ({
+  kind: "arity",
+  callee,
+  at,
+  given,
+});
+
+const argumentType = <Item>(
+  callee: Callee,
+  args: readonly FilterNode<Item>[],
+  wrong: {
+    readonly index: number;
+    readonly found: string;
+    readonly expected: string;
+  },
+): Extract<Fault, { readonly kind: "argument-type" }> => ({
+  kind: "argument-type",
+  callee,
+  at: { from: args[wrong.index]!.from, to: args[wrong.index]!.to },
+  ...wrong,
+});
+
+const unreadable = (
+  name: string,
+  at: Span,
+): Extract<Fault, { readonly kind: "unreadable" }> => ({
+  kind: "unreadable",
+  name,
+  at,
+});
+function unknown(fact: {
+  readonly role: Role;
+  readonly name: string;
+  readonly at: Span;
+  readonly receiver?: Receiver;
+}): FilterFailure {
+  const { role, name, at, receiver } = fact;
+  return {
+    kind: "unknown",
+    role,
+    name,
+    at: { from: at.from, to: at.to },
+    ...(receiver ? { receiver } : {}),
+  };
+}
+
+function receiver<Item>(subject: FilterNode<Item>): Receiver {
+  const field = receiverField(subject);
+  return {
+    type: subject.valueType,
+    at: { from: subject.from, to: subject.to },
+    ...(field ? { field } : {}),
+  };
+}
+
+function receiverField<Item>(node: FilterNode<Item>): string | undefined {
+  switch (node.kind) {
+    case "field":
+      return node.name;
+    case "element":
+    case "method":
+    case "property":
+    case "index":
+      return receiverField(node.subject);
+    default:
+      return undefined;
+  }
 }
 
 function takesCount(
@@ -306,27 +355,28 @@ function mismatch<Item>(
   return null;
 }
 
-/** The message of a {@link mismatch} in a call of `name`. */
-function describeMismatch(
-  name: string,
-  wrong: { index: number; found: string; expected: string },
-): string {
-  return `Argument ${wrong.index + 1} of ${name} is ${wrong.found}; ${name} takes ${wrong.expected} there.`;
-}
-
 class Validator<Item> {
   readonly #needs: FieldNeeds[];
-  readonly #customFields: (Span & { name: string; bare: boolean })[];
+  readonly #customFields: FilterCustomFieldUse[];
+  readonly #warnings: Extract<Fault, { kind: "constant" }>[];
   /** The names the enclosing element expressions bind, innermost last. */
   readonly #scopes: (readonly string[])[] = [];
 
   constructor(
-    needs: FieldNeeds[],
-    customFields: (Span & { name: string; bare: boolean })[],
+    {
+      needs,
+      customFields,
+      warnings,
+    }: {
+      needs: FieldNeeds[];
+      customFields: FilterCustomFieldUse[];
+      warnings: Extract<Fault, { kind: "constant" }>[];
+    },
     readonly registry: FilterRegistry<Item>,
   ) {
     this.#needs = needs;
     this.#customFields = customFields;
+    this.#warnings = warnings;
   }
 
   node(ast: ExpressionNode): FilterNode<Item> {
@@ -393,6 +443,32 @@ class Validator<Item> {
           left = replace(left, right);
           right = replace(right, left);
         }
+        const equality = ast.operator === "==" || ast.operator === "!=";
+        const ordering = ["<", "<=", ">", ">="].includes(ast.operator);
+        const nonNull = (node: FilterNode<Item>) =>
+          node.kind === "list" ||
+          (node.kind === "literal" && node.value !== null);
+        if (
+          (ordering || (equality && (nonNull(left) || nonNull(right)))) &&
+          left.valueType !== "unknown" &&
+          right.valueType !== "unknown" &&
+          left.valueType !== right.valueType
+        ) {
+          this.#warnings.push({
+            kind: "constant",
+            value: ast.operator === "!=",
+            operator: ast.operator,
+            left: {
+              type: left.valueType,
+              at: { from: ast.left.from, to: ast.left.to },
+            },
+            right: {
+              type: right.valueType,
+              at: { from: ast.right.from, to: ast.right.to },
+            },
+            at: span,
+          });
+        }
         return {
           ...span,
           kind: "binary",
@@ -416,14 +492,17 @@ class Validator<Item> {
         if (this.#isCustomRoot(ast.object)) {
           return this.#customField(ast.property, span, false);
         }
-        return this.#property(this.node(ast.object), ast.property, span);
+        return this.#objectAccess(ast, span);
       case "array-access": {
         if (this.#isCustomRoot(ast.object)) {
           if (ast.index.type !== "string") {
-            return fail("invalid-filter", ast.index, {
+            return fail({
+              kind: "plain",
+              code: "invalid-filter",
+              at: { from: ast.index.from, to: ast.index.to },
               message:
                 "custom takes the name of one custom field as a quoted string.",
-              hint: HINTS.custom,
+              action: HINTS.custom,
             });
           }
           return this.#customField(ast.index.value, span, false);
@@ -441,15 +520,81 @@ class Validator<Item> {
     }
   }
 
+  #objectAccess(
+    ast: Extract<ExpressionNode, { type: "object-access" }>,
+    span: Span,
+  ): FilterNode<Item> {
+    const subject = this.node(ast.object);
+    // Only a chain of identifiers has the ambiguous source-field spelling.
+    // Bracket access already names an exact custom field.
+    let root: ExpressionNode = ast;
+    const parts: string[] = [];
+    while (root.type === "object-access") {
+      parts.unshift(root.property);
+      root = root.object;
+    }
+    if (
+      root.type === "identifier" &&
+      root.name !== "custom" &&
+      root.name !== this.registry.prefix
+    )
+      parts.unshift(root.name);
+    if (
+      this.registry.prefix &&
+      root.type === "identifier" &&
+      root.name === this.registry.prefix &&
+      parts[0] === "custom"
+    )
+      parts.shift();
+    const useIndex =
+      root.type === "identifier"
+        ? this.#customFields.findIndex((use) => use.from === root.from)
+        : -1;
+    const use = this.#customFields[useIndex];
+    let deferred = use?.deferred;
+    if (!deferred) {
+      try {
+        const property = this.#property(subject, ast.property, span);
+        if (use)
+          this.#customFields[useIndex] = {
+            ...use,
+            dotted: { ...span, name: parts.join(".") },
+          };
+        return property;
+      } catch (error) {
+        if (
+          !(error instanceof Invalid) ||
+          error.problem.kind !== "unknown" ||
+          error.problem.role !== "property" ||
+          !use
+        )
+          throw error;
+        deferred = error.problem;
+      }
+    }
+    const name = parts.join(".");
+    this.#customFields[useIndex] = { ...span, name, bare: use!.bare, deferred };
+    return {
+      ...span,
+      kind: "property",
+      name: ast.property,
+      subject,
+      valueType: "unknown",
+    };
+  }
+
   /** The RegExp of a literal, built once; a pattern or flag the engine rejects fails the query. */
   #regexp(ast: Extract<ExpressionNode, { type: "regexp" }>): RegExp {
     try {
       return new RegExp(ast.source, ast.flags);
     } catch (thrown) {
       const reason = thrown instanceof Error ? thrown.message : String(thrown);
-      return fail("invalid-filter", ast, {
+      return fail({
+        kind: "plain",
+        code: "invalid-filter",
+        at: { from: ast.from, to: ast.to },
         message: `The regular expression /${ast.source}/${ast.flags} is invalid: ${reason}`,
-        hint: HINTS.regexp,
+        action: HINTS.regexp,
       });
     }
   }
@@ -476,30 +621,17 @@ class Validator<Item> {
       };
     }
     if (name === "custom") {
-      return fail("unfilterable-field", span, {
-        message:
-          "custom is the set of all custom fields; a filter reads one of them.",
-        hint: HINTS.custom,
-      });
+      return fail(unreadable(name, span));
     }
     if (field) {
-      return fail("unfilterable-field", span, {
-        message: `A filter cannot read ${quote(name)}.`,
-        hint: HINTS.filterable,
-      });
+      return fail(unreadable(name, span));
     }
     if (GLOBAL_FUNCTION_NAMES.includes(name)) {
-      return fail("unknown-field", span, {
-        message: `${quote(name)} is a function, not a field.`,
-        hint: `Call it with arguments, such as ${name}(...). ${HINTS.field}`,
-      });
+      return fail(unknown({ role: "field", name, at: span }));
     }
     // Outside the built-in names: the bare form of a custom field.
     if (this.registry.prefix && !name.startsWith(`${this.registry.prefix}.`)) {
-      return fail("unknown-field", span, {
-        message: `${quote(name)} is not an Annotation Query field.`,
-        hint: "Reach parent Item fields with item.",
-      });
+      return fail(unknown({ role: "field", name, at: span }));
     }
     return this.#customField(
       this.registry.prefix ? name.slice(this.registry.prefix.length + 1) : name,
@@ -540,17 +672,25 @@ class Validator<Item> {
     const named = propertiesNamed(name);
     const nameSpan = { from: span.to - name.length, to: span.to };
     if (named.length === 0) {
-      return fail("unknown-property", nameSpan, {
-        message: `${quote(name)} is not a property of a value.`,
-        hint: HINTS.property,
-      });
+      return fail(
+        unknown({
+          role: "property",
+          name,
+          at: nameSpan,
+          receiver: receiver(subject),
+        }),
+      );
     }
     const type = subject.valueType;
     if (isDefinite(type) && !propertyOf(type, name)) {
-      return fail("unknown-property", nameSpan, {
-        message: `A ${type} has no property ${quote(name)}.`,
-        hint: `${quote(name)} is a property of a ${named.map(([owner]) => owner).join(" or a ")}. ${HINTS.property}`,
-      });
+      return fail(
+        unknown({
+          role: "property",
+          name,
+          at: nameSpan,
+          receiver: receiver(subject),
+        }),
+      );
     }
     return {
       ...span,
@@ -587,9 +727,12 @@ class Validator<Item> {
       const args = ast.args.map((arg) => this.node(arg));
       return this.#methodCall({ ...call, args }, span);
     }
-    return fail("invalid-filter", callee, {
+    return fail({
+      kind: "plain",
+      code: "invalid-filter",
+      at: { from: callee.from, to: callee.to },
       message: "A call needs the name of a function before its arguments.",
-      hint: `${HINTS.global} Call a method on a value, such as title.lower().`,
+      action: `Use a global function: ${GLOBAL_FUNCTION_NAMES.join(", ")}. Call a method on a value, such as title.lower().`,
     });
   }
 
@@ -600,28 +743,16 @@ class Validator<Item> {
     const { name, nameSpan } = call;
     const definition = name === "if" ? IF_FUNCTION : GLOBAL_FUNCTIONS.get(name);
     if (!definition) {
-      const isMethod = methodsNamed(name).length > 0;
-      return fail("unknown-function", nameSpan, {
-        message: `${quote(name)} is not a global function of Item Query.`,
-        hint: isMethod
-          ? `${name} is a method: call it on a value, such as value.${name}(...).`
-          : HINTS.global,
-      });
+      return fail(unknown({ role: "global", name, at: nameSpan }));
     }
     // Every argument is validated, also in a branch that never runs.
     const args = call.args.map((arg) => this.node(arg));
     if (!takesCount(definition, args.length)) {
-      return fail("wrong-argument-count", span, {
-        message: `${name} takes ${describeCount(definition)}, not ${args.length}.`,
-        hint: `Call ${signature(name, definition)}.`,
-      });
+      return fail(arity({ name }, span, args.length));
     }
     const wrong = mismatch(definition, args);
     if (wrong) {
-      return fail("wrong-argument-type", args[wrong.index]!, {
-        message: describeMismatch(name, wrong),
-        hint: `Call ${signature(name, definition)}.`,
-      });
+      return fail(argumentType({ name }, args, wrong));
     }
     if (name === "if") {
       const [condition, whenTrue, whenFalse = null] = args;
@@ -659,22 +790,27 @@ class Validator<Item> {
   ): readonly FunctionDefinition[] {
     const named = methodsNamed(name);
     if (named.length === 0) {
-      const isGlobal = GLOBAL_FUNCTION_NAMES.includes(name);
-      return fail("unknown-function", nameSpan, {
-        message: `${quote(name)} is not a method of Item Query.`,
-        hint: isGlobal
-          ? `${name} is a global function: call it as ${name}(...).`
-          : HINTS.method,
-      });
+      return fail(
+        unknown({
+          role: "method",
+          name,
+          at: nameSpan,
+          receiver: receiver(subject),
+        }),
+      );
     }
     const type = subject.valueType;
     if (!isDefinite(type)) return named.map(([, method]) => method);
     const method = methodOf(type, name);
     if (!method) {
-      return fail("unknown-function", nameSpan, {
-        message: `A ${type} has no method ${quote(name)}.`,
-        hint: `${name} is a method of a ${named.map(([owner]) => owner).join(" or a ")}. ${HINTS.method}`,
-      });
+      return fail(
+        unknown({
+          role: "method",
+          name,
+          at: nameSpan,
+          receiver: receiver(subject),
+        }),
+      );
     }
     return [method];
   }
@@ -714,10 +850,7 @@ class Validator<Item> {
     }
     const args = others.map((arg) => this.node(arg));
     if (!expression || !takesCount(definition, args.length + 1)) {
-      return fail("wrong-argument-count", span, {
-        message: `${name} takes ${describeCount(definition)}, not ${call.args.length}.`,
-        hint: `Call ${signature(`value.${name}`, definition)}.`,
-      });
+      return fail(arity(this.#callee(name, subject), span, call.args.length));
     }
     return {
       ...span,
@@ -746,17 +879,11 @@ class Validator<Item> {
       takesCount(method, args.length),
     );
     if (fitting.length === 0) {
-      return fail("wrong-argument-count", span, {
-        message: `${name} takes ${describeCount(candidates[0]!)}, not ${args.length}.`,
-        hint: `Call ${signature(`value.${name}`, candidates[0]!)}.`,
-      });
+      return fail(arity(this.#callee(name, subject), span, args.length));
     }
     if (fitting.every((method) => mismatch(method, args) !== null)) {
       const wrong = mismatch(fitting[0]!, args)!;
-      return fail("wrong-argument-type", args[wrong.index]!, {
-        message: describeMismatch(name, wrong),
-        hint: `Call ${signature(`value.${name}`, fitting[0]!)}.`,
-      });
+      return fail(argumentType(this.#callee(name, subject), args, wrong));
     }
     return {
       ...span,
@@ -766,6 +893,15 @@ class Validator<Item> {
       args,
       valueType: commonType(fitting.map((method) => method.returns)),
     };
+  }
+
+  #callee(name: string, subject: FilterNode<Item>): Callee {
+    const receiver: Receiver = {
+      type: subject.valueType,
+      at: { from: subject.from, to: subject.to },
+      ...(subject.kind === "field" ? { field: subject.name } : {}),
+    };
+    return { name, receiver };
   }
 }
 
@@ -827,16 +963,4 @@ function binaryType(
     case "%":
       return "number";
   }
-}
-
-function signature(
-  name: string,
-  definition: Pick<FunctionDefinition, "parameters" | "optional" | "rest">,
-): string {
-  const parts = [
-    ...definition.parameters.map((parameter) => parameter.name),
-    ...(definition.optional ?? []).map((parameter) => `${parameter.name}?`),
-    ...(definition.rest ? [`...${definition.rest.name}`] : []),
-  ];
-  return `${name}(${parts.join(", ")})`;
 }

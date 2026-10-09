@@ -786,8 +786,6 @@ describe("queryItems failures", () => {
       _tag: "ItemQueryError",
       code: "unknown-field",
       location: { argument: "fields", index: 1 },
-      message: expect.stringContaining("noSuchField"),
-      hint: expect.stringContaining("dateModified"),
     });
   });
 
@@ -838,8 +836,6 @@ describe("queryItems failures", () => {
       _tag: "ItemQueryError",
       code: "unknown-field",
       location: { argument: "fields", index: 0 },
-      message: expect.stringContaining("Review.Status"),
-      hint: expect.stringContaining("review.status"),
     });
   });
 
@@ -1371,8 +1367,6 @@ describe("queryItems sort failures", () => {
         _tag: "ItemQueryError",
         code,
         location: { argument: "sort", index: 1 },
-        message: expect.stringContaining(field),
-        hint: expect.stringContaining("dateModified"),
       });
     },
   );
@@ -1585,7 +1579,6 @@ describe("queryItems with a filter", () => {
       _tag: "ItemQueryError",
       code: "invalid-filter",
       location: { argument: "filter" },
-      hint: expect.stringContaining("Omit the filter"),
     });
   });
 
@@ -2063,26 +2056,22 @@ describe("queryItems with a filter", () => {
 
     it.each([
       // Field lookup is case-sensitive.
-      ['Mood == "calm"', [0, 4], "mood"],
-      ['Title == "x"', [0, 5], "case-sensitive"],
-      ['true && noSuchField == "x"', [8, 19], 'custom["exact name"]'],
-    ])(
-      "fails the unknown bare name in %j",
-      async (filter, [from, to], hint) => {
-        using scenario = openScenarioDatabase();
-        const error = await failure(scenario, {
-          libraries: [personal],
-          filter,
-        });
+      ['Mood == "calm"', [0, 4]],
+      ['Title == "x"', [0, 5]],
+      ['true && noSuchField == "x"', [8, 19]],
+    ])("fails the unknown bare name in %j", async (filter, [from, to]) => {
+      using scenario = openScenarioDatabase();
+      const error = await failure(scenario, {
+        libraries: [personal],
+        filter,
+      });
 
-        expect(error).toMatchObject({
-          _tag: "ItemQueryError",
-          code: "unknown-field",
-          location: { argument: "filter", span: { from, to } },
-          hint: expect.stringContaining(hint),
-        });
-      },
-    );
+      expect(error).toMatchObject({
+        _tag: "ItemQueryError",
+        code: "unknown-field",
+        location: { argument: "filter", span: { from, to } },
+      });
+    });
 
     it("fails a custom field that the source does not define", async () => {
       using scenario = openScenarioDatabase();
@@ -2095,8 +2084,6 @@ describe("queryItems with a filter", () => {
         _tag: "ItemQueryError",
         code: "unknown-field",
         location: { argument: "filter", span: { from: 22, to: 45 } },
-        message: expect.stringContaining('"Review.Status"'),
-        hint: expect.stringContaining('"review.status"'),
       });
     });
   });

@@ -2,6 +2,7 @@
 // applies the defaults and resolves each name against the registries.
 import { Effect } from "effect";
 
+import type { Diagnostic } from "./diagnose";
 import { ItemQueryError } from "./error";
 import { DEFAULT_FIELDS, fieldDefinition } from "./fields";
 import type { FieldNeeds, QueryItem, SortKey } from "./fields";
@@ -81,6 +82,7 @@ export interface QueryRow {
 }
 
 export interface QueryResult {
+  readonly warnings: readonly Diagnostic<"never-true" | "always-true">[];
   /** The normalized request. */
   readonly query: ItemQuery;
   readonly rows: readonly QueryRow[];
@@ -91,6 +93,7 @@ export interface QueryResult {
 
 /** The validated form of a request that the engine executes. */
 export interface ItemQueryPlan {
+  readonly warnings: FilterPlan["warnings"];
   readonly query: ItemQuery;
   /** `null`: every Item matches. */
   readonly filter: FilterPlan | null;
@@ -106,13 +109,9 @@ export interface PlannedSort {
   readonly key: (item: QueryItem, clock: QueryClock) => SortKey;
 }
 
-const PATH_HINTS = {
-  "invalid-path":
-    'Write the path in the template accessor grammar, such as date.year or custom["review.status"].',
-  "unknown-field": `Use a field of the Item Query Schema, such as ${DEFAULT_FIELDS.join(", ")}. Reach a custom field with custom["exact name"].`,
-  "unknown-path":
-    "Select the complete field, or a path below it that the Item Query Schema lists.",
-} as const;
+/** CLI forms for the query that counts every match with identity-only rows. */
+export const COUNT_FIELDS: readonly string[] = [];
+export const UNLIMITED_LIMIT = "all";
 
 /** The sort of a request that names no sort. */
 export const DEFAULT_SORT: readonly SortSpec[] = [
@@ -130,22 +129,29 @@ export function planRequest(
     );
     if (repeated !== -1) {
       return yield* new ItemQueryError({
-        code: "duplicate-library",
         location: { argument: "libraries", index: repeated },
-        message: `The request names the Library with the local ID ${libraryIDs[repeated]} twice.`,
-        hint: "Name each Target Library once.",
+        fault: {
+          kind: "plain",
+          code: "duplicate-library",
+          message: `The request names the Library with the local ID ${libraryIDs[repeated]} twice.`,
+          action: "Name each Target Library once.",
+        },
       });
     }
 
     let filter: FilterPlan | null = null;
     if (request.filter !== undefined) {
       const planned = planFilter(request.filter);
-      if ("code" in planned) {
+      if ("kind" in planned) {
         return yield* new ItemQueryError({
-          code: planned.code,
-          location: { argument: "filter", span: planned.span },
-          message: planned.message,
-          hint: planned.hint,
+          fault: planned,
+          location: {
+            argument: "filter",
+            span:
+              planned.kind === "syntax"
+                ? { from: planned.fault.from, to: planned.fault.to }
+                : planned.at,
+          },
         });
       }
       filter = planned;
@@ -155,12 +161,11 @@ export function planRequest(
     const paths: PlannedPath[] = [];
     for (const [index, text] of fields.entries()) {
       const path = planPath(text);
-      if ("code" in path) {
+      if ("kind" in path) {
         return yield* new ItemQueryError({
-          code: path.code,
-          location: { argument: "fields", index },
-          message: path.message,
-          hint: PATH_HINTS[path.code],
+          fault: path,
+          location: { argument: "fields", index, path: `fields[${index}]` },
+          argumentText: JSON.stringify(fields),
         });
       }
       paths.push(path);
@@ -171,14 +176,15 @@ export function planRequest(
     for (const [index, { field, direction }] of sort.entries()) {
       const definition = fieldDefinition(field);
       if (!definition?.sortKey) {
-        const known = definition !== undefined || !("code" in planPath(field));
         return yield* new ItemQueryError({
-          code: known ? "unsortable-field" : "unknown-field",
-          location: { argument: "sort", index },
-          message: known
-            ? `"${field}" is not a Sortable Field: a sort takes a top-level field with one value.`
-            : `"${field}" is not a field of Item Query.`,
-          hint: "Sort by a field that the Item Query Schema lists as sortable, such as title, date, or dateModified.",
+          location: { argument: "sort", index, path: `sort[${index}].field` },
+          argumentText: JSON.stringify(sort),
+          fault: {
+            kind: "unknown",
+            role: "sortable-field",
+            name: field,
+            at: { from: 0, to: field.length },
+          },
         });
       }
       sorts.push({
@@ -191,10 +197,14 @@ export function planRequest(
     const limit = request.limit ?? null;
     if (limit !== null && !(Number.isSafeInteger(limit) && limit > 0)) {
       return yield* new ItemQueryError({
-        code: "invalid-limit",
         location: { argument: "limit" },
-        message: `The limit ${limit} is not a positive integer.`,
-        hint: "Use a positive integer, or omit the limit to get every match.",
+        fault: {
+          kind: "plain",
+          code: "invalid-limit",
+          message: `The limit ${limit} is not a positive integer.`,
+          action:
+            "Use a positive integer, or omit the limit to get every match.",
+        },
       });
     }
 
@@ -206,6 +216,7 @@ export function planRequest(
         limit,
       },
       filter,
+      warnings: filter?.warnings ?? [],
       paths,
       sorts,
     };

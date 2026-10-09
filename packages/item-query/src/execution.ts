@@ -31,6 +31,7 @@ interface DatasetLoader<S, I> {
 /** Dataset hooks; this engine owns bounded retention, paging and delivery. */
 export interface QueryDataset<S extends ScanRow, I extends { scan: S }> {
   readonly query: ItemQuery;
+  readonly warnings: QuerySummary["warnings"];
   readonly sort: readonly SortSpec[];
   readonly libraries: readonly TargetLibrary[];
   readonly scan: DatasetLoader<S, I>;
@@ -148,6 +149,7 @@ export function consumeDataset<
     // The projection pass: only the returned rows are hydrated.
     const consumer = yield* begin({
       query,
+      warnings: dataset.warnings,
       returnedCount: returned.length,
       truncated,
     });

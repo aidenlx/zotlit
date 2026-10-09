@@ -25,6 +25,19 @@ export interface ScenarioQuery {
  * sorted query with a projection.
  */
 const FILTERS: readonly string[] = [
+  'review.status == "include"',
+  'custom.review.status == "include"',
+  'custom["reviewStatus"] == "include"',
+  'mood2 == "include"',
+  'review.status.more == "include"',
+  'custom.review.status.more == "include"',
+  'tags == "bulk" && review.status == "include"',
+  'mood.length > 0 && custom["review.status"].length > 0',
+  'tags == "bulk"',
+  'tags != "bulk"',
+  'date.year == "2019"',
+  'dateAdded > "2020-01-01"',
+  'number("bad") == date("bad")',
   "true",
   "false",
   'itemType == "book"',
@@ -594,6 +607,8 @@ export const SCENARIO_QUERIES: readonly ScenarioQuery[] = [
  * form here with values that match no Item, one Item, and several Items.
  */
 export const GENERATED_FILTER_PARTS: readonly string[] = [
+  'tags == "bulk"',
+  'tags != "bulk"',
   // Lowered leaves.
   'tags.contains("to-read")',
   'tags.contains("To-Read")',

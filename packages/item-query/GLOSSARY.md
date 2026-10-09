@@ -43,3 +43,15 @@ _Avoid_: active library, library ID, query scope
 **Query Clock**:
 The one instant and one time zone that an Item Query uses for every date function and every calendar-day comparison.
 _Avoid_: current time, system time
+
+**Fault**:
+A typed fact that Item Query states about an invalid request, or about a Filter Expression that can never match: the kind of mistake, the place, and what was found and expected there. A Fault carries no sentence.
+_Avoid_: error message, problem, hint
+
+**Diagnostic Report**:
+The lines an agent reads for one Fault: the statement, an excerpt with the place marked, notes on the value the name was read on, and the action last. Every Diagnostic Report is written from a Fault by one renderer.
+_Avoid_: rendered error, error text, stack trace
+
+**Query Warning**:
+A finding on a successful Item Query that still answered: a comparison between two values whose types can never be equal, so that part of the filter selects nothing or everything. It arrives with the Query Result, not instead of it.
+_Avoid_: soft error, lint, notice

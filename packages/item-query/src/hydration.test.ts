@@ -12,6 +12,8 @@ import {
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
+import { diagnose } from "./diagnose";
+import { ItemQueryError } from "./error";
 import { openHydration } from "./hydration";
 import type { LoadPlan } from "./hydration";
 import { planRequest } from "./request";
@@ -257,27 +259,186 @@ describe("Hydration", () => {
     {
       request: { filter: 'custom["nope"] == 1' },
       location: { argument: "filter", span: { from: 0, to: 14 } },
-      message: 'The Zotero source has no custom field named "nope".',
+      fault: {
+        kind: "unknown",
+        role: "custom-field",
+        name: "nope",
+        customFields: CUSTOM_FIELDS,
+      },
     },
     {
       request: { filter: "nope == 1" },
       location: { argument: "filter", span: { from: 0, to: 4 } },
-      message: '"nope" is not a field of Item Query.',
+      fault: {
+        kind: "unknown",
+        role: "field",
+        name: "nope",
+        at: { from: 0, to: 4 },
+      },
     },
     {
       request: { fields: ["title", 'custom["nope"]'] },
       location: { argument: "fields", index: 1 },
-      message: 'The Zotero source has no custom field named "nope".',
+      fault: {
+        kind: "unknown",
+        role: "custom-field",
+        name: "nope",
+        customFields: CUSTOM_FIELDS,
+      },
     },
   ])(
     "fails a custom field that the source does not define in $location.argument",
-    async ({ request, location, message }) => {
+    async ({ request, location, fault }) => {
       using scenario = openScenarioDatabase();
       expect(await failure(scenario, request)).toMatchObject({
         code: "unknown-field",
         location,
-        message,
+        fault,
       });
     },
   );
 });
+
+// Failure modes: dotted names must be resolved as a whole against the source,
+// known full names must fail with bracket access, and missing chains retain the
+// original property fault instead of reporting the intermediate custom name.
+it.each(["review.status", "custom.review.status"])(
+  "corrects a source custom field written as %s",
+  async (access) => {
+    using scenario = openScenarioDatabase();
+    const filter = `${access} == "include"`;
+    const error = await failure(scenario, { filter });
+    expect(error).toBeInstanceOf(ItemQueryError);
+    if (!(error instanceof ItemQueryError))
+      throw new Error("Expected query fault");
+    expect(error.fault).toMatchObject({
+      kind: "unknown",
+      role: "custom-field",
+      name: "review.status",
+      at: { from: 0, to: access.length },
+      customFields: CUSTOM_FIELDS,
+      dotted: true,
+    });
+    const diagnostic = diagnose(error.fault, filter, error.location);
+    expect(diagnostic.suggestions[0]).toBe('custom["review.status"]');
+    expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
+  },
+);
+
+it("suggests source names for an explicit misspelling", async () => {
+  using scenario = openScenarioDatabase();
+  const filter = 'custom["reviewStatus"] == "include"';
+  const error = await failure(scenario, { filter });
+  if (!(error instanceof ItemQueryError))
+    throw new Error("Expected query fault");
+  expect(error.fault).toMatchObject({
+    kind: "unknown",
+    role: "custom-field",
+    name: "reviewStatus",
+    customFields: CUSTOM_FIELDS,
+  });
+  const diagnostic = diagnose(error.fault, filter, error.location);
+  expect(diagnostic.expected).toEqual(CUSTOM_FIELDS);
+  expect(diagnostic.suggestions[0]).toBe("review.status");
+});
+
+it.each(["review.status.more", "custom.review.status.more"])(
+  "keeps the original property fault when the full chain %s is absent",
+  async (access) => {
+    using scenario = openScenarioDatabase();
+    const error = await failure(scenario, { filter: access });
+    const from = access.indexOf("status");
+    expect(error).toMatchObject({
+      fault: {
+        kind: "unknown",
+        role: "property",
+        name: "status",
+        at: { from, to: from + 6 },
+        receiver: { type: "string", at: { from: 0, to: from - 1 } },
+      },
+    });
+  },
+);
+
+it("keeps valid custom string properties and explicit bracket access", async () => {
+  using scenario = openScenarioDatabase();
+  const { hydration } = await open(scenario, {
+    filter:
+      'mood.length > 0 && custom.mood.lower() == "calm" && custom["review.status"].length > 0',
+  });
+  expect(hydration.scan.plan).toEqual(
+    loads({ custom: ["mood", "review.status"] }),
+  );
+});
+
+it("keeps an explicit custom-field property failure at validation", async () => {
+  using scenario = openScenarioDatabase();
+  const error = await failure(scenario, {
+    filter: 'custom["review.status"].absent',
+  });
+  expect(error).toMatchObject({
+    fault: {
+      kind: "unknown",
+      role: "property",
+      name: "absent",
+      at: { from: 24, to: 30 },
+    },
+  });
+});
+
+it("carries source facts for a bare unknown field", async () => {
+  using scenario = openScenarioDatabase();
+  const error = await failure(scenario, { filter: "mood2" });
+  expect(error).toMatchObject({
+    fault: {
+      kind: "unknown",
+      role: "field",
+      name: "mood2",
+      customFields: CUSTOM_FIELDS,
+    },
+  });
+});
+
+it("carries an empty source vocabulary", async () => {
+  using scenario = openScenarioDatabase();
+  scenario.sqlite.exec("update fieldsCombined set custom = 0");
+  const error = await failure(scenario, { filter: 'custom["review.status"]' });
+  expect(error).toMatchObject({
+    fault: { kind: "unknown", role: "custom-field", customFields: [] },
+  });
+});
+
+it.each(["review.status.phase", "mood.length.unit"])(
+  "resolves the complete chain %s after its first property fault",
+  async (name) => {
+    using scenario = openScenarioDatabase();
+    scenario.sqlite
+      .prepare("update fieldsCombined set fieldName = ? where fieldName = ?")
+      .run(name, "review.status");
+    const error = await failure(scenario, { filter: name });
+    expect(error).toMatchObject({
+      fault: { kind: "unknown", role: "custom-field", name, dotted: true },
+    });
+  },
+);
+
+// Failure modes: a valid property suffix can hide a dotted source name; the
+// correction must consume the full bare or custom-root chain.
+it.each(["review.length", "custom.review.length"])(
+  "corrects the complete source name %s when its prefix is absent",
+  async (access) => {
+    using scenario = openScenarioDatabase();
+    scenario.sqlite.exec(
+      "update fieldsCombined set fieldName = 'review.length' where fieldName = 'review.status'",
+    );
+    const filter = `${access} == 4`;
+    const error = await failure(scenario, { filter });
+    if (!(error instanceof ItemQueryError))
+      throw new Error("Expected query fault");
+    const diagnostic = diagnose(error.fault, filter, error.location);
+    expect(diagnostic.suggestions).toEqual(['custom["review.length"]']);
+    expect(diagnostic.location?.span).toEqual({ from: 0, to: access.length });
+    expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
+    expect(diagnostic.found).toBe("review.length");
+  },
+);

@@ -55,7 +55,7 @@ it("returns the Zotero cache path unchanged in the Item Query envelope", async (
     ),
   );
   expect(answer).toEqual({
-    contractVersion: 1,
+    contractVersion: 2,
     command: "zotlit:annotation-image",
     ok: true,
     key: "ABCDEFGH",
