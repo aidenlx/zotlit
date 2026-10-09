@@ -4,11 +4,11 @@
 //
 // Each run opens a Paired Run of its own (`openPairedEnvironment`): a new
 // Fixture, a new purged vault, and a Paired Zotero started on them, all
-// disposed when the file ends. Every test therefore starts from the Fixture
+// disposed when the test run ends. Every test therefore starts from the Fixture
 // Spec, and a developer's own Paired Run stays as it is.
 //
-// Skips cleanly (not fails) when no desktop Obsidian answers, decided at module
-// scope before collection.
+// Project setup checks desktop readiness before collection and owns teardown.
+// Skips cleanly when no desktop Obsidian answers.
 
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -22,10 +22,10 @@ import {
   describe,
   expect,
   it,
+  inject,
 } from "vitest";
 
 import { ANNOTATIONS, ATTACHMENTS } from "@zotlit/scripts/fixture";
-import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { verifyExternalAnnotationLock } from "./annotation-lock.ts";
 import { keepRendering } from "./background-throttling.ts";
@@ -44,7 +44,7 @@ import {
   waitFor,
   WINDOW_DOCUMENTS,
 } from "./obsidian-cli.ts";
-import { openPairedEnvironment } from "./paired-environment.ts";
+import type {} from "./paired-setup.ts";
 import {
   authorizationCount,
   authorize,
@@ -86,9 +86,6 @@ import {
   toolButtonOf,
   watchExcerptPixels,
 } from "./reader-gestures.ts";
-import { isObsidianReachable } from "./vault-script.ts";
-
-const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 
 /** The Fixture Attachment this scenario reads, writes and never rewrites. */
 const attachment = ATTACHMENTS.find(({ key }) => key === "RGRPDF24")!;
@@ -109,13 +106,7 @@ const KEY_SHAPE = expect.stringMatching(
   /^[0-9A-Za-z]{32}$/,
 ) as unknown as string;
 
-const environment = (await isObsidianReachable(workspaceRoot))
-  ? await openPairedEnvironment(workspaceRoot)
-  : null;
-// File scope, so it runs after every suite's own `afterAll` has used the run.
-afterAll(async () => {
-  await environment?.[Symbol.asyncDispose]();
-}, 120000);
+const environment = inject("pairedEnvironment");
 const vaultId = environment?.vaultId ?? null;
 
 const baseUrl = environment?.baseUrl ?? null;
