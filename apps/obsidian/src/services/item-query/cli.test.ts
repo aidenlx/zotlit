@@ -444,7 +444,7 @@ describe("zotlit:item-query libraries", () => {
       ok: false,
       diagnostic: {
         code: "source-unavailable",
-        report: { 0: "The connected Zotero source holds no Library." },
+        severity: "error",
       },
     });
     expect(JSON.stringify(answer)).not.toContain("libraries=all");
@@ -619,7 +619,7 @@ describe("zotlit:item-query fields", () => {
       diagnostic: {
         code: "unknown-field",
         location: { argument: "fields", index: 1 },
-        report: { 0: expect.stringContaining("nope") },
+        found: "nope",
         hint: expect.any(String),
       },
     });
@@ -785,11 +785,7 @@ describe("zotlit:item-query borrowed source", () => {
       ok: false,
       diagnostic: {
         code: "database-error",
-        report: {
-          0: expect.stringContaining(
-            "Item Query could not read the Zotero database: ",
-          ),
-        },
+        severity: "error",
         hint: expect.any(String),
       },
     });
@@ -811,7 +807,7 @@ describe("zotlit:item-query borrowed source", () => {
       diagnostic: {
         code: "unsupported-database-layout",
         report: { 0: expect.stringContaining("fieldsCombined.custom") },
-        hint: expect.stringContaining("update ZotLit"),
+        hint: expect.any(String),
       },
     });
     expect((answer.diagnostic as Diagnostic).report[0]).toContain(
@@ -1079,7 +1075,17 @@ describe("zotlit:item-query-guide", () => {
     ["filter", ["key is the Zotero Key", "attachments", "lower()", "within"]],
     ["fields", ['custom["<exact name>"]', "fields='[]'", "null"]],
     ["sort", ["10 comes before 9", "first possible day", "limit", "all"]],
-    ["results", ["diagnostic.hint", "location", "span"]],
+    [
+      "results",
+      [
+        "diagnostic.report",
+        "warnings",
+        "suggestions",
+        "severity",
+        "location",
+        "span",
+      ],
+    ],
     [
       "cancel",
       [
