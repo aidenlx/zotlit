@@ -20,6 +20,7 @@ export {
   BULK_TAG,
   bulkItemKey,
   seedBulkLibrary,
+  seedBulkAnnotations,
 } from "./bulk";
 export {
   SCENARIO_ITEMS,

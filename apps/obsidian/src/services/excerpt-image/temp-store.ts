@@ -1,5 +1,5 @@
 // Files handed to local CLI callers, published atomically and aged by last use.
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { link, mkdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,7 +18,11 @@ export async function publishExcerptPng(
   directory = excerptTempDirectory(),
 ): Promise<string> {
   await mkdir(directory, { recursive: true });
-  const path = join(directory, `${fingerprint}.png`);
+  const address = createHash("sha256")
+    .update(fingerprint)
+    .update(bytes)
+    .digest("hex");
+  const path = join(directory, `${address}.png`);
   await using stack = new AsyncDisposableStack();
   const staging = stack.adopt(
     join(directory, `.${fingerprint}-${randomUUID()}.part`),

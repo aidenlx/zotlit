@@ -27,6 +27,7 @@ import { Effect } from "effect";
 
 import type { NodeDatabaseClient } from "@/client/node";
 import { CHILD_ITEM_TYPES } from "@/lib/item-types";
+import { annotationTypeIDs, annotationTypeToName } from "@/lib/zt-annot";
 import { annotationColorsForName } from "@/lib/zt-color";
 
 import { storedNumberOf, storedIntegerOf } from "./candidate-set";
@@ -126,7 +127,7 @@ export function readAnnotationScanPage(page: {
   });
 }
 
-const slots = idSlots(HYDRATE_CHUNK_SIZE);
+const universeSlots = idSlots(SCAN_PAGE_SIZE);
 const universeRows = defineStatement<
   Record<IdSlot, number | null> & { libraryID: number }
 >("annotation-universe-rows")((db, { placeholder }) =>
@@ -136,7 +137,7 @@ const universeRows = defineStatement<
         eq(unindexed(items.libraryID), placeholder("libraryID")),
         inArray(
           items.itemID,
-          slots.names.map((name) => placeholder(name)),
+          universeSlots.names.map((name) => placeholder(name)),
         ),
         ...universe(db),
       ),
@@ -155,10 +156,11 @@ export function readAnnotationUniverseRows(chunk: {
   if (!chunk.itemIDs.length) return Effect.succeed([] as AnnotationScanRow[]);
   return universeRows.all({
     libraryID: chunk.libraryID,
-    ...slots.bind(chunk.itemIDs),
+    ...universeSlots.bind(chunk.itemIDs),
   });
 }
 
+const slots = idSlots(HYDRATE_CHUNK_SIZE);
 const details = defineStatement<Record<IdSlot, number | null>>(
   "annotation-hydrate-chunk",
 )((db, { placeholder }) =>
@@ -326,7 +328,12 @@ const annotationCandidates = (
             .where(eq(tags.name, p("value"))),
         );
       const condition = {
-        type: sql`case ${itemAnnotations.type} when 1 then 'highlight' when 2 then 'note' when 3 then 'image' when 4 then 'ink' when 5 then 'underline' when 6 then 'text' else 'unknown' end = ${p("value")}`,
+        type: sql`case ${itemAnnotations.type} ${sql.join(
+          annotationTypeIDs().map(
+            (type) => sql`when ${type} then ${annotationTypeToName(type)}`,
+          ),
+          sql` `,
+        )} else 'unknown' end = ${p("value")}`,
         color: or(
           eq(itemAnnotations.color, p("value")),
           sql`upper(${itemAnnotations.color}) in (${list})`,
