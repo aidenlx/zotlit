@@ -8,7 +8,7 @@ import { ItemQueryDatabase, readLibraries } from "@zotlit/db/item-query";
 import { openScenarioDatabase } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabaseOptions } from "@zotlit/db/test-scenario";
 import { countStatements } from "@zotlit/db/test-utils";
-import { queryItems } from "@zotlit/item-query";
+import { collectQuery, ITEMS } from "@zotlit/item-query";
 
 import { validateClient } from "./connection";
 
@@ -104,7 +104,7 @@ async function itemQueryReads(copy: Copy): Promise<boolean> {
     Effect.provideService(
       Effect.gen(function* () {
         const libraries = yield* readLibraries();
-        return yield* queryItems({
+        return yield* collectQuery(ITEMS, {
           libraries: libraries.map(({ libraryID, groupID }) => ({
             libraryID,
             groupID,

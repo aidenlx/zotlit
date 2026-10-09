@@ -5,8 +5,8 @@ import {
   SCENARIO_LIBRARIES,
 } from "@zotlit/db/test-scenario";
 
+import { ANNOTATIONS, collectQuery } from ".";
 import { describeAnnotationQuery } from "./describe-annotation-query";
-import { queryAnnotations } from "./query-annotations";
 import { runEffect } from "./test-helpers";
 
 it("publishes executable Annotation and parent Projection Paths with active-source custom fields", async () => {
@@ -47,7 +47,7 @@ it("publishes executable Annotation and parent Projection Paths with active-sour
     keys: { raw: { kind: "json" } },
   });
   const projected = await runEffect(
-    queryAnnotations({
+    collectQuery(ANNOTATIONS, {
       libraries: [SCENARIO_LIBRARIES.personal],
       limit: 1,
       fields: [...schema.fields, ...schema.customFields]

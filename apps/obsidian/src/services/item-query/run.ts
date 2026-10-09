@@ -9,11 +9,16 @@ import type {
   ItemQueryDatabaseError,
   ItemQueryLayoutError,
 } from "@zotlit/db/item-query";
-import { consumeQueryItems, consumeQueryAnnotations } from "@zotlit/item-query";
+import {
+  ANNOTATIONS,
+  AttachmentFileResolver,
+  consumeQuery,
+  ITEMS,
+} from "@zotlit/item-query";
 import type {
   ItemQueryError,
   AnnotationQueryRequest,
-  AnnotationQueryOptions,
+  ResolveAttachmentFile,
   QueryConsumer,
   QuerySummary,
 } from "@zotlit/item-query";
@@ -34,8 +39,10 @@ export type ItemQueryInstrument = <A, E, R>(
 ) => Effect.Effect<A, E, R>;
 
 /** The Libraries a run reads. */
-export interface RunLibraries extends AnnotationQueryOptions {
+export interface RunLibraries {
   readonly kind?: "annotations";
+  /** Resolves the file of an Attachment that an Annotation Query projects. */
+  readonly resolveAttachmentFile?: ResolveAttachmentFile;
   /** The Library Scope in force, or the scope that the caller names. */
   readonly scope: LibraryScope;
   /** The run needs each Library of `scope`: the caller named them. */
@@ -101,11 +108,8 @@ export function runItemQueryTo<A, E, R>(
         reason: requireEach ? "named-none" : "scope-none",
       });
     }
-    const consume =
-      options.kind === "annotations"
-        ? consumeQueryAnnotations
-        : consumeQueryItems;
-    return yield* consume(
+    return yield* consumeQuery<AnnotationQueryRequest, A, E, R>(
+      options.kind === "annotations" ? ANNOTATIONS : ITEMS,
       {
         ...request,
         libraries: available.map(({ libraryID, selector }) => ({
@@ -114,7 +118,11 @@ export function runItemQueryTo<A, E, R>(
         })),
       },
       (summary) => begin(summary, libraries),
-      options,
+    ).pipe(
+      Effect.provideService(
+        AttachmentFileResolver,
+        options.resolveAttachmentFile ?? null,
+      ),
     );
   });
 }

@@ -11,7 +11,7 @@ import type {
 import { compareStrings } from "./collation";
 import type { SortKey } from "./fields";
 import { allMatches, firstMatches } from "./matches";
-import type { QueryConsumer, QuerySummary } from "./query-items";
+import type { QueryConsumer, QuerySummary } from "./query";
 import type { ItemQuery, QueryRow, TargetLibrary, SortSpec } from "./request";
 import { ItemQueryTuning } from "./tuning";
 import type { Tuning } from "./tuning";
@@ -28,40 +28,42 @@ interface DatasetLoader<S, I> {
   readonly load: (chunk: readonly S[]) => Read<readonly I[]>;
 }
 
-/** Dataset hooks; this engine owns bounded retention, paging and delivery. */
-export interface QueryDataset<S extends ScanRow, I extends { scan: S }> {
-  readonly query: ItemQuery;
-  readonly warnings: QuerySummary["warnings"];
-  readonly sort: readonly SortSpec[];
-  readonly libraries: readonly TargetLibrary[];
-  readonly scan: DatasetLoader<S, I>;
-  readonly projection: DatasetLoader<S, I>;
-  readonly readScanPage: (page: {
-    libraryID: number;
-    afterKey: string | null;
-    size: number;
-  }) => Read<readonly S[]>;
-  readonly readUniverseRows: (chunk: {
-    libraryID: number;
-    itemIDs: readonly number[];
-  }) => Read<readonly S[]>;
+/** What the descriptor of a Query Dataset opens for one run. */
+export interface DatasetRun<I extends { scan: ScanRow }> {
+  readonly scan: DatasetLoader<I["scan"], I>;
+  readonly projection: DatasetLoader<I["scan"], I>;
   readonly candidates: (
     library: TargetLibrary,
     tuning: Tuning,
   ) => Read<ReadonlySet<number> | null>;
-  readonly matches: (item: I, library: number) => boolean;
-  readonly keys: (item: I) => readonly SortKey[];
-  readonly project: (item: I, library: TargetLibrary, scan: S) => QueryRow;
+  readonly matches: (item: I) => boolean;
+  readonly project: (
+    item: I,
+    library: TargetLibrary,
+    scan: I["scan"],
+  ) => QueryRow;
 }
 
-export function consumeDataset<
-  S extends ScanRow,
-  I extends { scan: S },
-  A,
-  E,
-  R,
->(
-  dataset: QueryDataset<S, I>,
+/** Dataset hooks; this engine owns bounded retention, paging and delivery. */
+export interface QueryRun<I extends { scan: ScanRow }> extends DatasetRun<I> {
+  readonly query: ItemQuery;
+  readonly warnings: QuerySummary["warnings"];
+  readonly sort: readonly SortSpec[];
+  readonly libraries: readonly TargetLibrary[];
+  readonly readScanPage: (page: {
+    libraryID: number;
+    afterKey: string | null;
+    size: number;
+  }) => Read<readonly I["scan"][]>;
+  readonly readUniverseRows: (chunk: {
+    libraryID: number;
+    itemIDs: readonly number[];
+  }) => Read<readonly I["scan"][]>;
+  readonly keys: (item: I) => readonly SortKey[];
+}
+
+export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
+  dataset: QueryRun<I>,
   begin: (summary: QuerySummary) => Effect.Effect<QueryConsumer<A, E, R>, E, R>,
 ): Effect.Effect<A, ItemQueryReaderError | E, ItemQueryDatabase | R> {
   return Effect.gen(function* () {
@@ -75,7 +77,7 @@ export function consumeDataset<
     );
     // The scan pass: every Item is hydrated with the filter and sort fields
     // only, and the query keeps the scan row and the sort keys of a match.
-    const compare = byKeysThenKey<S>(dataset.sort, libraries);
+    const compare = byKeysThenKey<I["scan"]>(dataset.sort, libraries);
     const matches =
       limit === null
         ? allMatches(compare, sizeWithin(tuning.mergeStepSize, Infinity))
@@ -83,13 +85,13 @@ export function consumeDataset<
     // Each page and each chunk lives in the Effect that reads it, so the query
     // holds no row of a page it has finished.
     /** Hydrate one chunk of a page and keep its matches. */
-    const takeChunk = (library: number, chunk: readonly S[]) =>
+    const takeChunk = (library: number, chunk: readonly I["scan"][]) =>
       Effect.gen(function* () {
         const items = yield* dataset.scan.load(chunk);
         yield* Effect.sync(() => {
-          const matching: Match<S>[] = [];
+          const matching: Match<I["scan"]>[] = [];
           for (const item of items) {
-            if (!dataset.matches(item, library)) continue;
+            if (!dataset.matches(item)) continue;
             const keys = dataset.keys(item);
             matching.push({ scan: item.scan, keys, library });
           }
@@ -97,7 +99,7 @@ export function consumeDataset<
         });
       });
     /** Hydrate one page of the query universe and keep its matches. */
-    const takePage = (library: number, page: readonly S[]) =>
+    const takePage = (library: number, page: readonly I["scan"][]) =>
       Effect.gen(function* () {
         const chunkSize = dataset.scan.plan ? hydrateChunkSize : scanPageSize;
         for (let start = 0; start < page.length; start += chunkSize) {

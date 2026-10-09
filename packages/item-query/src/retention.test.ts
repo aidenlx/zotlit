@@ -21,7 +21,7 @@ import {
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
-import { consumeQueryItems, queryItems } from ".";
+import { collectQuery, consumeQuery, ITEMS } from ".";
 import type { ItemQueryRequest } from ".";
 import { runEffect } from "./test-helpers";
 
@@ -100,7 +100,7 @@ describe("the rows a limited query retains", () => {
       const samples: { at: string; rows: number; hydratedItems: number }[] = [];
 
       const limited = await runEffect(
-        queryItems({ libraries: [BULK_LIBRARY], ...request }),
+        collectQuery(ITEMS, { libraries: [BULK_LIBRARY], ...request }),
         {
           client: scenario.db,
           keepStatements: false,
@@ -159,7 +159,8 @@ it("incremental delivery retains one projected batch instead of the complete res
   const projected: WeakRef<object>[] = [];
   let peak = 0;
   const run = await runEffect(
-    consumeQueryItems(
+    consumeQuery(
+      ITEMS,
       {
         libraries: [BULK_LIBRARY],
         fields: ["title", "tags"],

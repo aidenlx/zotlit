@@ -16,7 +16,7 @@ import {
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
-import { queryAnnotations, queryItems } from ".";
+import { ANNOTATIONS, collectQuery, ITEMS } from ".";
 import type { ItemQueryRequest, QueryResult } from ".";
 import { runEffect } from "./test-helpers";
 import type { Run, RunEvent, RunOptions } from "./test-helpers";
@@ -60,7 +60,7 @@ function run(
 ) {
   const { libraries = [BULK_LIBRARY], annotation = false, ...rest } = options;
   return runEffect(
-    (annotation ? queryAnnotations : queryItems)({ ...request, libraries }),
+    collectQuery(annotation ? ANNOTATIONS : ITEMS, { ...request, libraries }),
     {
       client: annotation ? annotations.db : scenario.db,
       ...rest,

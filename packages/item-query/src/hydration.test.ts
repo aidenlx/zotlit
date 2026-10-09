@@ -12,10 +12,10 @@ import {
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
-import { diagnose } from "./diagnose";
 import { ItemQueryError } from "./error";
 import { openHydration } from "./hydration";
 import type { LoadPlan } from "./hydration";
+import { ITEMS } from "./query-items";
 import { planRequest } from "./request";
 import type { ItemQueryRequest, TargetLibrary } from "./request";
 import { runEffect } from "./test-helpers";
@@ -38,7 +38,7 @@ async function open(scenario: ScenarioDatabase, request: Request) {
   let seen = 0;
   const { exit, events } = await runEffect(
     Effect.gen(function* () {
-      const plan = yield* planRequest({
+      const plan = yield* planRequest(ITEMS, {
         fields: [],
         sort: [],
         ...rest,
@@ -92,7 +92,10 @@ function readersOf(events: readonly RunEvent[]): string[] {
 async function failure(scenario: ScenarioDatabase, request: Request) {
   const { exit } = await runEffect(
     Effect.gen(function* () {
-      const plan = yield* planRequest({ ...request, libraries: [personal] });
+      const plan = yield* planRequest(ITEMS, {
+        ...request,
+        libraries: [personal],
+      });
       return yield* openHydration(plan, [personal]);
     }),
     { client: scenario.db },
@@ -319,7 +322,7 @@ it.each(["review.status", "custom.review.status"])(
       customFields: CUSTOM_FIELDS,
       dotted: true,
     });
-    const diagnostic = diagnose(error.fault, filter, error.location);
+    const diagnostic = error.diagnostic;
     expect(diagnostic.suggestions[0]).toBe('custom["review.status"]');
     expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
   },
@@ -337,7 +340,7 @@ it("suggests source names for an explicit misspelling", async () => {
     name: "reviewStatus",
     customFields: CUSTOM_FIELDS,
   });
-  const diagnostic = diagnose(error.fault, filter, error.location);
+  const diagnostic = error.diagnostic;
   expect(diagnostic.expected).toEqual(CUSTOM_FIELDS);
   expect(diagnostic.suggestions[0]).toBe("review.status");
 });
@@ -435,7 +438,7 @@ it.each(["review.length", "custom.review.length"])(
     const error = await failure(scenario, { filter });
     if (!(error instanceof ItemQueryError))
       throw new Error("Expected query fault");
-    const diagnostic = diagnose(error.fault, filter, error.location);
+    const diagnostic = error.diagnostic;
     expect(diagnostic.suggestions).toEqual(['custom["review.length"]']);
     expect(diagnostic.location?.span).toEqual({ from: 0, to: access.length });
     expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);

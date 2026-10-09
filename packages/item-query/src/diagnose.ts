@@ -1,14 +1,7 @@
 import { parseExpressionAst } from "@zotlit/filter-expression";
 import type { ExpressionNode } from "@zotlit/filter-expression";
 
-import {
-  ANNOTATION_FIELDS,
-  ANNOTATION_SORT_FIELDS,
-  DEFAULT_ANNOTATION_FIELDS,
-  annotationFieldDefinition,
-  annotationFilterRegistry,
-  planAnnotationFilter,
-} from "./annotation-fields";
+import type { QueryDataset } from "./dataset";
 import type { ItemQueryErrorCode, ItemQueryErrorLocation } from "./error";
 import type {
   Callee,
@@ -20,12 +13,6 @@ import type {
   Span,
   SyntaxFault,
 } from "./fault";
-import {
-  BUILT_IN_NAMES,
-  DEFAULT_FIELDS,
-  fieldDefinition,
-  filterField,
-} from "./fields";
 import type { ValueShape } from "./fields";
 import {
   GLOBAL_FUNCTION_NAMES,
@@ -42,18 +29,18 @@ import {
   takesType,
 } from "./filter-functions";
 import type { FunctionDefinition } from "./filter-functions";
-import { hasBareForm, planFilter } from "./filter-plan";
+import { hasBareForm } from "./filter-plan";
 import type { StaticType } from "./filter-plan";
 import { nearMatches } from "./near-match";
 import type { QueryClock } from "./query-clock";
 import { COUNT_FIELDS, UNLIMITED_LIMIT } from "./request";
 
 interface DiagnosisContext extends ItemQueryErrorLocation {
-  readonly dataset?: "annotations";
+  readonly dataset: QueryDataset<any>;
 }
 interface WarningContext {
   readonly clock: QueryClock;
-  readonly dataset?: "annotations";
+  readonly dataset: QueryDataset<any>;
 }
 
 export interface DiagnosticLocation {
@@ -116,15 +103,13 @@ export function diagnose(
       );
     }
     case "unreadable": {
-      const prefix = dataset === "annotations" ? "item." : "";
+      const prefix = dataset.customPrefix;
       const custom = fault.name === `${prefix}custom`;
       const expected = custom
         ? [`${prefix}custom["name"]`]
-        : dataset === "annotations"
-          ? DEFAULT_ANNOTATION_FIELDS.filter(
-              (name) => annotationFilterRegistry.field(name)?.filterable,
-            )
-          : DEFAULT_FIELDS.filter((name) => filterField(name)?.filterable);
+        : dataset.defaultFields.filter(
+            (name) => dataset.filterField(name)?.filterable,
+          );
       return renderDiagnostic(
         {
           code: "unfilterable-field",
@@ -133,7 +118,7 @@ export function diagnose(
             : `A filter cannot read ${JSON.stringify(fault.name)}.`,
           hint: custom
             ? `Name one custom field, such as ${prefix}custom["review.status"].`
-            : `Use a field that the ${dataset === "annotations" ? "Annotation" : "Item"} Query Schema lists as filterable, such as ${expected.join(", ")}.`,
+            : `Use a field that the ${dataset.family} Schema lists as filterable, such as ${expected.join(", ")}.`,
           location: faultLocation,
         },
         text,
@@ -146,7 +131,7 @@ export function diagnose(
           code: "invalid-filter",
           message:
             "custom takes the name of one custom field as a quoted string.",
-          hint: `Name one custom field, such as ${dataset === "annotations" ? "item." : ""}custom["review.status"].`,
+          hint: `Name one custom field, such as ${dataset.customPrefix}custom["review.status"].`,
           location: faultLocation,
         },
         text,
@@ -209,7 +194,7 @@ function describeCount(
 
 export function codeOfFault(
   fault: ItemQueryFault,
-  dataset?: "annotations",
+  dataset: QueryDataset<any>,
 ): PlainFault["code"] {
   if (fault.kind === "plain") return fault.code;
   if (fault.kind === "syntax" || fault.kind === "custom-key")
@@ -224,11 +209,11 @@ export function codeOfFault(
     case "property":
       return "unknown-property";
     case "projection-path":
-      return definitionFor(rootName(fault.name, dataset), dataset)
+      return dataset.definition(dataset.rootName(fault.name))
         ? "unknown-path"
         : "unknown-field";
     case "sortable-field":
-      return definitionFor(rootName(fault.name, dataset), dataset)
+      return dataset.definition(dataset.rootName(fault.name))
         ? "unsortable-field"
         : "unknown-field";
     case "field":
@@ -242,7 +227,7 @@ function diagnoseUnknown(
   text: string,
   { dataset, ...location }: DiagnosisContext,
 ): Diagnostic<PlainFault["code"]> {
-  const prefix = dataset === "annotations" ? "item." : "";
+  const prefix = dataset.customPrefix;
   const fault =
     prefix && sourceFault.role === "field" && sourceFault.customFields
       ? { ...sourceFault, name: prefix + sourceFault.name }
@@ -334,7 +319,7 @@ function diagnoseUnknown(
   };
 }
 
-function projectionCandidates(dataset?: "annotations"): readonly string[] {
+function projectionCandidates(dataset: QueryDataset<any>): readonly string[] {
   const paths = (path: string, shape: ValueShape): string[] => [
     path,
     ...(shape.kind === "object"
@@ -346,8 +331,8 @@ function projectionCandidates(dataset?: "annotations"): readonly string[] {
         : []),
   ];
   return unique(
-    namesFor(dataset).flatMap((name) => {
-      const definition = definitionFor(name, dataset);
+    dataset.names.flatMap((name) => {
+      const definition = dataset.definition(name);
       return definition ? paths(name, definition.shape) : [];
     }),
   );
@@ -361,13 +346,11 @@ function diagnoseRequestName(
   const sort = fault.role === "sortable-field";
   const custom = fault.role === "custom-field";
   const candidates = sort
-    ? dataset === "annotations"
-      ? [...ANNOTATION_SORT_FIELDS]
-      : BUILT_IN_NAMES.filter((name) => fieldDefinition(name)?.sortKey)
+    ? dataset.sortableFields
     : custom
       ? (fault.customFields ?? [])
       : projectionCandidates(dataset);
-  const root = rootName(fault.name, dataset);
+  const root = dataset.rootName(fault.name);
   const exact = candidates.filter(
     (name) => name.toLowerCase() === fault.name.toLowerCase(),
   );
@@ -390,7 +373,7 @@ function diagnoseRequestName(
           text,
           keys,
           custom
-            ? `${dataset === "annotations" ? "item." : ""}custom[${JSON.stringify(nearby[0])}]`
+            ? `${dataset.customPrefix}custom[${JSON.stringify(nearby[0])}]`
             : nearby[0]!,
         )
       : undefined;
@@ -424,10 +407,10 @@ function diagnoseRequestName(
   const notes = sort
     ? [
         "A Sortable Field is a top-level field with one value.",
-        `Sortable Fields include ${(dataset === "annotations" ? DEFAULT_ANNOTATION_FIELDS : DEFAULT_FIELDS).filter((name) => candidates.includes(name)).join(", ")}.`,
+        `Sortable Fields include ${dataset.defaultFields.filter((name) => candidates.includes(name)).join(", ")}.`,
       ]
     : [];
-  const definition = definitionFor(root, dataset);
+  const definition = dataset.definition(root);
   if (!sort && definition) {
     const shape =
       definition.shape.kind === "list"
@@ -464,7 +447,7 @@ function projectionEntry(text: string, index?: number): string | undefined {
 function receiverSwapCorrection(
   fault: Extract<Fault, { readonly kind: "unknown" }>,
   text: string,
-  dataset?: "annotations",
+  dataset: QueryDataset<any>,
 ): string | undefined {
   if (fault.role !== "method" || !fault.receiver) return undefined;
   const receiver = fault.receiver;
@@ -476,7 +459,7 @@ function receiverSwapCorrection(
   if (!call || call.args.length !== 1) return undefined;
   const argument = call.args[0]!;
   const argumentText = text.slice(argument.from, argument.to);
-  const argumentPlan = planFor(argumentText, dataset);
+  const argumentPlan = dataset.planFilter(argumentText);
   if ("kind" in argumentPlan || argumentPlan.root.valueType === "unknown")
     return undefined;
   const methods = methodsNamed(fault.name).filter(([owner, definition]) => {
@@ -495,7 +478,7 @@ function receiverSwapCorrection(
   const replacement = `${argumentText}.${fault.name}(${receiverText})`;
   const corrected =
     text.slice(0, call.from) + replacement + text.slice(call.to);
-  return "kind" in planFor(corrected, dataset) ? undefined : corrected;
+  return "kind" in dataset.planFilter(corrected) ? undefined : corrected;
 }
 
 function findMethodCall(
@@ -539,8 +522,8 @@ function findMethodCall(
 
 function candidatesFor(
   role: Role,
-  receiverType?: StaticType,
-  dataset?: "annotations",
+  receiverType: StaticType | undefined,
+  dataset: QueryDataset<any>,
 ): readonly string[] {
   switch (role) {
     case "field":
@@ -570,14 +553,11 @@ function candidatesFor(
   }
 }
 
-function fieldCandidates(dataset?: "annotations"): readonly string[] {
-  return namesFor(dataset).flatMap((name) => {
-    const filter =
-      dataset === "annotations"
-        ? annotationFilterRegistry.field(name)
-        : filterField(name);
+function fieldCandidates(dataset: QueryDataset<any>): readonly string[] {
+  return dataset.names.flatMap((name) => {
+    const filter = dataset.filterField(name);
     if (!filter?.filterable) return [];
-    const definition = definitionFor(name, dataset);
+    const definition = dataset.definition(name);
     if (!definition) return [name];
     const { shape } = definition;
     if (shape.kind === "list") return [name, `${name}[0]`];
@@ -597,9 +577,9 @@ const unique = (names: readonly string[]): readonly string[] => [
 
 function unknownMessage(
   fault: Extract<Fault, { readonly kind: "unknown" }>,
-  dataset?: "annotations",
+  dataset: QueryDataset<any>,
 ): string {
-  const family = dataset === "annotations" ? "Annotation Query" : "Item Query";
+  const family = dataset.family;
   const { role, name, receiver } = fault;
   const quoted = JSON.stringify(name);
   switch (role) {
@@ -635,9 +615,9 @@ function recoveryAction(
   {
     receiverType,
     dataset,
-  }: { receiverType?: StaticType; dataset?: "annotations" },
+  }: { receiverType?: StaticType; dataset: QueryDataset<any> },
 ): string {
-  const family = dataset === "annotations" ? "Annotation Query" : "Item Query";
+  const family = dataset.family;
   const joined = candidates.join(", ");
   switch (role) {
     case "field":
@@ -700,8 +680,8 @@ function suggestionAction(
 }
 
 function receiverNotes(
-  receiver?: Receiver,
-  dataset?: "annotations",
+  receiver: Receiver | undefined,
+  dataset: QueryDataset<any>,
 ): readonly string[] {
   if (!receiver) return [];
   if (receiver.type === "unknown" && !receiver.field)
@@ -713,7 +693,7 @@ function receiverNotes(
       : `a ${receiver.type}`;
   const notes = [`${subject} is ${type} in a filter.`];
   if (!receiver.field) return notes;
-  const shape = definitionFor(receiver.field, dataset)?.shape;
+  const shape = dataset.definition(receiver.field)?.shape;
   if (!shape) return notes;
   const paths = structuredPaths(receiver.field, shape);
   if (paths.length === 0) return notes;
@@ -949,7 +929,7 @@ export function diagnoseWarning(
   const diagnostic = renderDiagnostic(
     {
       code: fault.value ? "always-true" : "never-true",
-      message: `${left} is a ${fault.left.type} and ${right} is a ${fault.right.type}: ${fault.operator} between them is ${fault.value ? "always" : "never"} true.${selectsAll ? (dataset === "annotations" ? " The filter selects every Annotation." : " The filter selects every Item.") : ""}`,
+      message: `${left} is a ${fault.left.type} and ${right} is a ${fault.right.type}: ${fault.operator} between them is ${fault.value ? "always" : "never"} true.${selectsAll ? ` The filter selects every ${dataset.noun}.` : ""}`,
       hint: suggestion
         ? `Try: ${suggestion}`
         : "Compare values of the same type.",
@@ -1048,7 +1028,7 @@ function constantCorrection(
   if (!replacement) return undefined;
   const corrected =
     text.slice(0, fault.at.from) + replacement + text.slice(fault.at.to);
-  return "kind" in planFor(corrected, dataset) ? undefined : corrected;
+  return "kind" in dataset.planFilter(corrected) ? undefined : corrected;
 }
 
 /** Decoder facts are independent of the Obsidian adapter and validation library. */
@@ -1202,31 +1182,4 @@ function replaceJsonValue(
   } catch {
     return undefined;
   }
-}
-
-function namesFor(dataset?: "annotations"): readonly string[] {
-  return dataset === "annotations"
-    ? [
-        ...ANNOTATION_FIELDS.keys(),
-        "item",
-        "item.indexedKey",
-        ...BUILT_IN_NAMES.map((name) => `item.${name}`),
-      ]
-    : BUILT_IN_NAMES;
-}
-function definitionFor(name: string, dataset?: "annotations") {
-  return dataset === "annotations"
-    ? annotationFieldDefinition(name)
-    : fieldDefinition(name);
-}
-function planFor(text: string, dataset?: "annotations") {
-  return dataset === "annotations"
-    ? planAnnotationFilter(text)
-    : planFilter(text);
-}
-
-function rootName(name: string, dataset?: "annotations") {
-  const prefix =
-    dataset === "annotations" && name.startsWith("item.") ? "item." : "";
-  return prefix + name.slice(prefix.length).split(".")[0]!.split("[")[0]!;
 }

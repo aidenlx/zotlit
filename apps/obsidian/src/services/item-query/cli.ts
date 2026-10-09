@@ -20,18 +20,15 @@ import type {
   ItemQueryLayoutError,
 } from "@zotlit/db/item-query";
 import {
-  diagnose,
-  DEFAULT_FIELDS,
-  DEFAULT_SORT,
-  describeItemQueryCustomFields,
-  describeAnnotationQueryCustomFields,
-  DEFAULT_ANNOTATION_FIELDS,
-  DEFAULT_ANNOTATION_SORT,
+  ANNOTATIONS,
+  describeQueryCustomFields,
+  ITEMS,
   SLICE_BUDGET_MS,
 } from "@zotlit/item-query";
 import type {
   ItemQueryError,
   SchemaCustomField,
+  SortSpec,
   QueryRow,
   QuerySummary,
 } from "@zotlit/item-query";
@@ -139,7 +136,7 @@ type EnvelopeTail =
       customFields: readonly SchemaCustomField[];
       defaults: {
         fields: readonly string[];
-        sort: typeof DEFAULT_SORT;
+        sort: readonly SortSpec[];
         limit: number;
         libraries: { source: "library-scope" };
       };
@@ -273,11 +270,8 @@ export function answerItemQuerySchema(
       ? ANNOTATION_QUERY_SCHEMA_COMMAND
       : ITEM_QUERY_SCHEMA_COMMAND;
   const asset = kind === "annotations" ? "annotation-query" : "item-query";
-  return (
-    kind === "annotations"
-      ? describeAnnotationQueryCustomFields()
-      : describeItemQueryCustomFields()
-  ).pipe(
+  const dataset = kind === "annotations" ? ANNOTATIONS : ITEMS;
+  return describeQueryCustomFields(dataset).pipe(
     Effect.map((customFields) =>
       inline(
         envelope(command, {
@@ -289,12 +283,8 @@ export function answerItemQuerySchema(
           },
           customFields,
           defaults: {
-            fields:
-              kind === "annotations"
-                ? DEFAULT_ANNOTATION_FIELDS
-                : DEFAULT_FIELDS,
-            sort:
-              kind === "annotations" ? DEFAULT_ANNOTATION_SORT : DEFAULT_SORT,
+            fields: dataset.defaultFields,
+            sort: dataset.defaultSort,
             limit: DEFAULT_CLI_LIMIT,
             libraries: { source: "library-scope" },
           },
@@ -407,7 +397,7 @@ export function answerItemQuery(
       }),
   );
   return (deps.instrument?.(operation) ?? operation).pipe(
-    answerFailure(command, named?.parameter, decoded.filter),
+    answerFailure(command, named?.parameter),
   );
 }
 
@@ -542,7 +532,6 @@ function answerFailure(
   command: ItemQueryCommand,
   /** The argument that named the Target Libraries, if the caller named them. */
   parameter?: NamedLibraries["parameter"],
-  filter = "",
 ) {
   return <R>(
     run: Effect.Effect<
@@ -557,9 +546,7 @@ function answerFailure(
   ): Effect.Effect<QueryReply, never, R> =>
     run.pipe(
       Effect.catch((failed) =>
-        Effect.sync(() =>
-          inline(failureText(failed, command, { parameter, filter })),
-        ),
+        Effect.sync(() => inline(failureText(failed, command, parameter))),
       ),
       Effect.catchDefect((defect) => {
         logger.error("Item Query failed with a defect", {
@@ -582,10 +569,7 @@ function failureText(
     | ItemQueryOutputError
     | TargetLibrariesUnavailable,
   command: ItemQueryCommand,
-  {
-    parameter,
-    filter,
-  }: { parameter: NamedLibraries["parameter"] | undefined; filter: string },
+  parameter: NamedLibraries["parameter"] | undefined,
 ): string {
   if (failed._tag === "ItemQueryOutputError")
     return failure(command, failed.diagnostic);
@@ -593,13 +577,7 @@ function failureText(
     return failure(command, targetLibrariesFailure(failed, parameter));
   }
   if (failed._tag === "ItemQueryError") {
-    return failure(
-      command,
-      diagnose(failed.fault, failed.argumentText ?? filter, {
-        ...failed.location,
-        dataset: failed.dataset,
-      }),
-    );
+    return failure(command, failed.diagnostic);
   }
   if (failed._tag === "ItemQueryLayoutError") {
     // `@zotlit/db` logs the missing layout and the versions once per copy.

@@ -10,28 +10,35 @@ export {
   type SchemaParameter,
   type SchemaProperty,
 } from "./describe-item-query";
-export { describeItemQueryCustomFields } from "./describe-item-query-custom-fields";
+export { describeQueryCustomFields } from "./describe-item-query-custom-fields";
+export {
+  AttachmentFileResolver,
+  type QueryDataset,
+  type ResolveAttachmentFile,
+} from "./dataset";
+export { ITEMS } from "./query-items";
+export { ANNOTATIONS } from "./query-annotations";
 export {
   ItemQueryError,
   type ItemQueryErrorCode,
   type ItemQueryErrorLocation,
 } from "./error";
-export { DEFAULT_FIELDS } from "./fields";
-// The typed database failures of `queryItems`, `consumeQueryItems`, and
-// `describeItemQueryCustomFields`, from the readers of `@zotlit/db/item-query`.
+// The typed database failures of `collectQuery`, `consumeQuery`, and
+// `describeQueryCustomFields`, from the readers of `@zotlit/db/item-query`.
 export {
   ItemQueryDatabaseError,
   ItemQueryLayoutError,
 } from "@zotlit/db/item-query";
 export { QueryTimeZone } from "./query-clock";
 export {
-  queryItems,
-  consumeQueryItems,
+  collectQuery,
+  consumeQuery,
   type QueryConsumer,
   type QuerySummary,
-} from "./query-items";
-export { DEFAULT_SORT, COUNT_FIELDS, UNLIMITED_LIMIT } from "./request";
+} from "./query";
+export { COUNT_FIELDS, UNLIMITED_LIMIT } from "./request";
 export type {
+  AnnotationQueryRequest,
   ItemQuery,
   ItemQueryRequest,
   ProjectionValue,
@@ -48,17 +55,6 @@ export {
 } from "./scheduler";
 
 export {
-  queryAnnotations,
-  consumeQueryAnnotations,
-  DEFAULT_ANNOTATION_SORT,
-  type AnnotationQueryRequest,
-  type AnnotationQueryOptions,
-} from "./query-annotations";
-export { DEFAULT_ANNOTATION_FIELDS } from "./annotation-fields";
-
-export { describeAnnotationQueryCustomFields } from "./describe-item-query-custom-fields";
-export {
-  diagnose,
   diagnoseDecode,
   renderDiagnostic,
   type Diagnostic,

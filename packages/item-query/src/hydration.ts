@@ -20,13 +20,14 @@ import type {
 } from "@zotlit/db/item-query";
 
 import type { CandidateSources } from "./candidate-plan";
+import type { QueryDataset } from "./dataset";
 import { ItemQueryError } from "./error";
 import type { ItemQueryErrorLocation } from "./error";
 import type { ItemQueryFault } from "./fault";
 import type { FieldNeeds, QueryItem } from "./fields";
 import type { FilterPlan } from "./filter-plan";
 import type { PlannedPath } from "./projection";
-import type { PlannedSort, TargetLibrary } from "./request";
+import type { ItemQueryPlan, TargetLibrary } from "./request";
 
 /** What one pass loads for each Item of a chunk. */
 export interface LoadPlan {
@@ -70,10 +71,9 @@ export interface Hydration {
  * when a pass loads Collections.
  */
 export function openHydration<Item>(
-  plan: {
-    filter: FilterPlan<Item> | null;
-    paths: readonly PlannedPath<Item>[];
-    sorts: readonly Pick<PlannedSort, "needs">[];
+  plan: Pick<ItemQueryPlan<Item>, "dataset" | "query" | "sorts"> & {
+    readonly filter: FilterPlan<Item> | null;
+    readonly paths: readonly PlannedPath<Item>[];
   },
   libraries: readonly TargetLibrary[],
 ): Effect.Effect<
@@ -82,7 +82,7 @@ export function openHydration<Item>(
   ItemQueryDatabase
 > {
   return Effect.gen(function* () {
-    const { filter, paths, sorts } = plan;
+    const { dataset, filter, paths, sorts } = plan;
     const pathNeeds = paths.map((path) => path.needs);
     const scanNeeds = [
       ...(filter?.needs ?? []),
@@ -107,12 +107,14 @@ export function openHydration<Item>(
                     argument: "filter",
                     span: { from: dotted.from, to: dotted.to },
                   },
+                  argumentText: plan.query.filter ?? "",
                 }
               : {
                   name,
                   bare,
                   deferred,
                   location: { argument: "filter", span: { from, to } },
+                  argumentText: plan.query.filter ?? "",
                 },
         ),
         ...paths.flatMap(({ customField: name }, index): CustomFieldUse[] =>
@@ -136,7 +138,11 @@ export function openHydration<Item>(
         ({ name, deferred, dotted }) => dotted || deferred || !known.has(name),
       );
       if (missing) {
-        return yield* unknownCustomField(vocabulary.customFieldNames, missing);
+        return yield* unknownCustomField(
+          dataset,
+          vocabulary.customFieldNames,
+          missing,
+        );
       }
     }
     // A Collection path belongs to one Library: a leaf of the filter reads
@@ -219,6 +225,7 @@ interface CustomFieldUse {
  * field.
  */
 function unknownCustomField(
+  dataset: QueryDataset<any>,
   names: readonly string[],
   { name, bare, location, deferred, dotted, argumentText }: CustomFieldUse,
 ): Effect.Effect<never, ItemQueryError> {
@@ -235,6 +242,7 @@ function unknownCustomField(
         };
   return Effect.fail(
     new ItemQueryError({
+      dataset,
       location,
       ...(argumentText === undefined ? {} : { argumentText }),
       fault,

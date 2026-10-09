@@ -17,6 +17,7 @@ import {
   readAnnotationPosition,
 } from "./annotation-position";
 import { compareStrings } from "./collation";
+import type { SortableField } from "./dataset";
 import { fieldDefinition, filterField, customFilterValue } from "./fields";
 import type { FieldDefinition, QueryItem, ValueShape } from "./fields";
 import { timestamp } from "./filter-dates";
@@ -183,18 +184,6 @@ export function annotationFieldDefinition(
     : undefined;
 }
 
-export const ANNOTATION_SORT_FIELDS = new Set([
-  "dateAdded",
-  "dateModified",
-  "type",
-  "color",
-  "pageIndex",
-  "sortIndex",
-  "item.title",
-  "item.date",
-  "item.dateModified",
-]);
-
 for (const name of ["dateAdded", "dateModified"] as const) {
   const definition = ANNOTATION_FIELDS.get(name)!;
   ANNOTATION_FIELDS.set(name, {
@@ -215,6 +204,44 @@ for (const name of ["type", "color", "pageIndex", "sortIndex"]) {
     ...definition,
     sortKey: (item) => definition.read(item) as string | number | null,
   });
+}
+
+/**
+ * The Sortable Fields of Annotation Query. `attachment.indexedKey` orders by
+ * the Attachment's Indexed Key within its Library.
+ */
+const ANNOTATION_SORTABLE = new Map<string, SortableField<QueryAnnotation>>([
+  ...[
+    "dateAdded",
+    "dateModified",
+    "type",
+    "color",
+    "pageIndex",
+    "sortIndex",
+    "item.title",
+    "item.date",
+    "item.dateModified",
+  ].map((name) => {
+    const definition = annotationFieldDefinition(name)!;
+    return [
+      name,
+      { needs: definition.needs([]), key: definition.sortKey! },
+    ] as const;
+  }),
+  [
+    "attachment.indexedKey",
+    { needs: {}, key: (item) => item.scan.attachmentKey },
+  ],
+]);
+
+export const ANNOTATION_SORT_FIELDS: readonly string[] = [
+  ...ANNOTATION_SORTABLE.keys(),
+];
+
+export function annotationSortableField(
+  name: string,
+): SortableField<QueryAnnotation> | undefined {
+  return ANNOTATION_SORTABLE.get(name);
 }
 
 export const annotationFilterRegistry: FilterRegistry<QueryAnnotation> = {

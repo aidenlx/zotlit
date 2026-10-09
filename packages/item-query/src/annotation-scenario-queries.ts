@@ -1,4 +1,4 @@
-import type { AnnotationQueryRequest } from "./query-annotations";
+import type { AnnotationQueryRequest } from "./request";
 
 /** Every Annotation scenario request is checked against the forced scan. */
 export const ANNOTATION_SCENARIO_QUERIES: readonly Omit<

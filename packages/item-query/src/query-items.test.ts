@@ -12,10 +12,11 @@ import {
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
 import {
-  consumeQueryItems,
+  consumeQuery,
+  collectQuery,
+  ITEMS,
   ItemQueryError,
   ItemQueryScheduler,
-  queryItems,
 } from ".";
 import type { ItemQueryRequest, QueryResult, QueryRow } from ".";
 import { runEffect } from "./test-helpers";
@@ -24,7 +25,7 @@ import type { RunEvent, RunOptions } from "./test-helpers";
 const { personal, group } = SCENARIO_LIBRARIES;
 
 function run(scenario: ScenarioDatabase, request: ItemQueryRequest) {
-  return runEffect(queryItems(request), { client: scenario.db });
+  return runEffect(collectQuery(ITEMS, request), { client: scenario.db });
 }
 
 async function result(
@@ -42,7 +43,7 @@ async function failure(
   request: ItemQueryRequest,
   client = true,
 ) {
-  const { exit } = await runEffect(queryItems(request), {
+  const { exit } = await runEffect(collectQuery(ITEMS, request), {
     client: client ? scenario.db : undefined,
   });
   if (!Exit.isFailure(exit)) throw new Error("the query did not fail.");
@@ -440,7 +441,7 @@ describe("queryItems Projection Paths", () => {
       });
       for (const forceScan of [false, true]) {
         const { exit } = await runEffect(
-          queryItems({ ...request, filter: `volume == "${value}"` }),
+          collectQuery(ITEMS, { ...request, filter: `volume == "${value}"` }),
           { client: scenario.db, tuning: { forceScan } },
         );
         if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
@@ -928,7 +929,7 @@ describe("queryItems under a scheduler", () => {
 
     const stepped = await run(scenario, request);
     const production = await Effect.runPromiseExit(
-      Effect.provideService(queryItems(request), ItemQueryDatabase, {
+      Effect.provideService(collectQuery(ITEMS, request), ItemQueryDatabase, {
         client: scenario.db,
       }),
       { scheduler: new ItemQueryScheduler() },
@@ -1402,7 +1403,7 @@ describe("queryItems accessDate", () => {
     clock: { now: string; timeZone: string } = NEW_YORK,
   ): Promise<QueryResult> {
     const { exit } = await runEffect(
-      queryItems({ libraries: [personal], ...request }),
+      collectQuery(ITEMS, { libraries: [personal], ...request }),
       { client: scenario.db, ...clock },
     );
     if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
@@ -1807,7 +1808,12 @@ describe("queryItems with a filter", () => {
       clock: { now: string; timeZone: string },
     ) => {
       const { exit } = await runEffect(
-        queryItems({ libraries: [personal], filter, fields: [], sort: [] }),
+        collectQuery(ITEMS, {
+          libraries: [personal],
+          filter,
+          fields: [],
+          sort: [],
+        }),
         { client: scenario.db, ...clock },
       );
       if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
@@ -1859,7 +1865,7 @@ describe("queryItems with a filter", () => {
 
       const { exit } = await runEffect(
         Effect.provideService(
-          queryItems({
+          collectQuery(ITEMS, {
             libraries: [personal],
             filter: "now() == now() && today() == now().date()",
             fields: [],
@@ -2262,7 +2268,12 @@ describe("queryItems candidate sets", () => {
     async (filter: string, tuning?: RunOptions["tuning"]) => {
       using scenario = openScenarioDatabase();
       const { exit, events } = await runEffect(
-        queryItems({ libraries: [personal], filter, fields: [], sort: [] }),
+        collectQuery(ITEMS, {
+          libraries: [personal],
+          filter,
+          fields: [],
+          sort: [],
+        }),
         { client: scenario.db, tuning },
       );
       if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
@@ -2855,7 +2866,7 @@ describe("incremental query consumption", () => {
     async (request) => {
       using scenario = openScenarioDatabase();
       const expected = await result(scenario, request);
-      const operation = consumeQueryItems(request, (summary) =>
+      const operation = consumeQuery(ITEMS, request, (summary) =>
         Effect.sync(() => {
           const rows: QueryRow[] = [];
           return {
@@ -2894,7 +2905,8 @@ describe("incremental query consumption", () => {
     });
     let ended = false;
     const running = runEffect(
-      consumeQueryItems(
+      consumeQuery(
+        ITEMS,
         { libraries: [personal], fields: ["title"], sort: [], limit: null },
         () =>
           Effect.succeed({

@@ -9,9 +9,10 @@ import {
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
 import {
-  describeItemQueryCustomFields,
+  describeQueryCustomFields,
+  collectQuery,
+  ITEMS,
   ItemQueryScheduler,
-  queryItems,
 } from ".";
 import type {
   ItemQueryRequest,
@@ -73,7 +74,7 @@ describe("describeItemQuery custom fields", () => {
         sort: false,
       },
     ]);
-    const { exit } = await runEffect(describeItemQueryCustomFields(), {
+    const { exit } = await runEffect(describeQueryCustomFields(ITEMS), {
       client: scenario.db,
     });
     if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
@@ -440,7 +441,7 @@ describe("the Item Query Schema and queryItems", () => {
     request: Omit<ItemQueryRequest, "libraries">,
   ): Promise<string | null> {
     const { exit } = await runEffect(
-      queryItems({ libraries: [personal], limit: 1, ...request }),
+      collectQuery(ITEMS, { libraries: [personal], limit: 1, ...request }),
       // The production scheduler: these tests run several hundred queries,
       // and a pause after every operation makes each one a long chain of
       // tasks that a busy machine runs slowly.

@@ -6,17 +6,17 @@ import {
   SCENARIO_LIBRARIES,
 } from "@zotlit/db/test-scenario";
 
+import { ANNOTATIONS, collectQuery } from ".";
 import { ANNOTATION_SCENARIO_QUERIES } from "./annotation-scenario-queries";
 import { diagnose } from "./diagnose";
 import { ItemQueryError } from "./error";
-import { queryAnnotations } from "./query-annotations";
 import type { RunOptions } from "./test-helpers";
 import { runEffect } from "./test-helpers";
 
 it("returns the reading record of one Item, with three identities and default fields", async () => {
   using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
-    queryAnnotations({
+    collectQuery(ANNOTATIONS, {
       libraries: [SCENARIO_LIBRARIES.personal],
       item: ["ART2FULL"],
     }),
@@ -69,7 +69,7 @@ it("returns the reading record of one Item, with three identities and default fi
 it("projects each PDF position kind and preserves an unknown stored position", async () => {
   using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
-    queryAnnotations({
+    collectQuery(ANNOTATIONS, {
       libraries: [SCENARIO_LIBRARIES.personal],
       attachment: ["PDF2LIVE", "PDF2LINK"],
       fields: ["position"],
@@ -112,7 +112,7 @@ it("limits all Libraries as one set and projects only identities for fields=[]",
     fields: [],
     limit: 2,
   };
-  const found = await runEffect(queryAnnotations(request), {
+  const found = await runEffect(collectQuery(ANNOTATIONS, request), {
     client: scenario.db,
     tuning: { scanPageSize: 2, hydrateChunkSize: 1 },
   });
@@ -135,7 +135,7 @@ it("limits all Libraries as one set and projects only identities for fields=[]",
       },
     ],
   });
-  const scanned = await runEffect(queryAnnotations(request), {
+  const scanned = await runEffect(collectQuery(ANNOTATIONS, request), {
     client: scenario.db,
     tuning: { forceScan: true },
   });
@@ -150,7 +150,7 @@ it.each([
   "reports a typed invalid request before reading: %j",
   async (options, code) => {
     const found = await runEffect(
-      queryAnnotations({
+      collectQuery(ANNOTATIONS, {
         libraries: [SCENARIO_LIBRARIES.personal],
         ...options,
       }),
@@ -168,7 +168,7 @@ it.each([
 it("combines Annotation fields with parent dates, Tags, and projections", async () => {
   using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
-    queryAnnotations({
+    collectQuery(ANNOTATIONS, {
       libraries: [SCENARIO_LIBRARIES.personal],
       filter:
         'type == "underline" && tags.contains("method") && item.title.contains("Exact Matching") && item.date.year == 2020',
@@ -185,7 +185,7 @@ it("combines Annotation fields with parent dates, Tags, and projections", async 
 it("reads parent custom fields, relations, timestamps and identities through their Item semantics", async () => {
   using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
-    queryAnnotations({
+    collectQuery(ANNOTATIONS, {
       libraries: [SCENARIO_LIBRARIES.personal],
       item: ["ART2FULL"],
       filter:
@@ -223,7 +223,7 @@ it("matches the forced scan for every Annotation scenario, Library combination, 
     for (const request of ANNOTATION_SCENARIO_QUERIES) {
       const run = async (tuning: RunOptions["tuning"]) => {
         const { exit } = await runEffect(
-          queryAnnotations({ ...request, libraries }),
+          collectQuery(ANNOTATIONS, { ...request, libraries }),
           { client: scenario.db, tuning },
         );
         if (exit._tag === "Success")
@@ -262,7 +262,7 @@ it("caps after parent expansion and uses a bounded Annotation candidate when ava
   using scenario = openScenarioDatabase({ annotations: true });
   const run = (filter: string, capRatio: number) =>
     runEffect(
-      queryAnnotations({
+      collectQuery(ANNOTATIONS, {
         libraries: [SCENARIO_LIBRARIES.personal],
         filter,
         fields: [],
@@ -316,7 +316,7 @@ it.each(["asc", "desc"] as const)(
   async (direction) => {
     using scenario = openScenarioDatabase({ annotations: true });
     const { exit } = await runEffect(
-      queryAnnotations({
+      collectQuery(ANNOTATIONS, {
         libraries: [SCENARIO_LIBRARIES.personal],
         attachment: ["PDF2LIVE", "PDF2LINK"],
         fields: [],
@@ -345,7 +345,7 @@ it.each(["asc", "desc"] as const)(
 it("reports a never-true comparison before returning an empty Annotation result", async () => {
   using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
-    queryAnnotations({
+    collectQuery(ANNOTATIONS, {
       libraries: [SCENARIO_LIBRARIES.personal],
       filter: 'tags == "figure"',
     }),
@@ -369,7 +369,10 @@ it("corrects a dotted parent custom field with the source spelling and item pref
   using scenario = openScenarioDatabase({ annotations: true });
   const filter = 'item.review.status == "done"';
   const { exit } = await runEffect(
-    queryAnnotations({ libraries: [SCENARIO_LIBRARIES.personal], filter }),
+    collectQuery(ANNOTATIONS, {
+      libraries: [SCENARIO_LIBRARIES.personal],
+      filter,
+    }),
     { client: scenario.db },
   );
   if (exit._tag !== "Failure") throw new Error("Expected failure");
@@ -396,11 +399,11 @@ it("corrects a dotted parent custom field with the source spelling and item pref
 it("warns on definite cross-type inequality while preserving every evaluated match", async () => {
   using scenario = openScenarioDatabase({ annotations: true });
   const request = { libraries: [SCENARIO_LIBRARIES.personal], fields: [] };
-  const all = await runEffect(queryAnnotations(request), {
+  const all = await runEffect(collectQuery(ANNOTATIONS, request), {
     client: scenario.db,
   });
   const comparison = await runEffect(
-    queryAnnotations({ ...request, filter: 'tags != "figure"' }),
+    collectQuery(ANNOTATIONS, { ...request, filter: 'tags != "figure"' }),
     { client: scenario.db },
   );
   if (all.exit._tag === "Failure" || comparison.exit._tag === "Failure")
@@ -409,4 +412,24 @@ it("warns on definite cross-type inequality while preserving every evaluated mat
   expect(comparison.exit.value.warnings).toMatchObject([
     { code: "always-true", suggestions: ['!tags.contains("figure")'] },
   ]);
+});
+
+it("replays the normalized query of a default-sort Annotation Query to the same rows", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const libraries = [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group];
+  const first = await runEffect(collectQuery(ANNOTATIONS, { libraries }), {
+    client: scenario.db,
+  });
+  if (first.exit._tag === "Failure") throw new Error(String(first.exit.cause));
+  const { query, rows } = first.exit.value;
+  expect(rows.length).toBeGreaterThan(1);
+
+  const replay = await runEffect(
+    collectQuery(ANNOTATIONS, { ...query, filter: undefined, libraries }),
+    { client: scenario.db },
+  );
+  if (replay.exit._tag === "Failure")
+    throw new Error(String(replay.exit.cause));
+  expect(replay.exit.value.query).toEqual(query);
+  expect(replay.exit.value.rows).toEqual(rows);
 });

@@ -27,14 +27,26 @@ export type PathProblem = Extract<
   { kind: "plain" | "unknown" }
 >;
 
-/** Check a Projection Path against the field registry. */
+/** The field that the leading segments of a path name, and the segments after it. */
+export type PathResolver<Item = QueryItem> = (
+  segments: readonly PathSegment[],
+) =>
+  | {
+      readonly field: FieldDefinition<Item>;
+      readonly rest: readonly PathSegment[];
+    }
+  | undefined;
+
+/** The Item Query resolver: the first segment names a field of the registry. */
+export const resolveItemPath: PathResolver = ([root, ...rest]) => {
+  const field = typeof root === "string" ? fieldDefinition(root) : undefined;
+  return field && { field, rest };
+};
+
+/** Check a Projection Path against the field registry of its dataset. */
 export function planPath<Item = QueryItem>(
   text: string,
-  resolve: (
-    name: string,
-  ) => FieldDefinition<Item> | undefined = fieldDefinition as (
-    name: string,
-  ) => FieldDefinition<Item> | undefined,
+  resolve: PathResolver<Item>,
 ): PlannedPath<Item> | PathProblem {
   const parsed = parseProjectionPath(text);
   if (!parsed.ok) {
@@ -47,9 +59,8 @@ export function planPath<Item = QueryItem>(
       message: `"${text}" is not a valid Projection Path. ${parsed.message}`,
     };
   }
-  const [root, ...rest] = parsed.segments;
-  const field = typeof root === "string" ? resolve(root) : undefined;
-  if (!field) {
+  const resolved = resolve(parsed.segments);
+  if (!resolved) {
     return {
       kind: "unknown",
       role: "projection-path",
@@ -57,6 +68,7 @@ export function planPath<Item = QueryItem>(
       at: { from: 0, to: text.length },
     };
   }
+  const { field, rest } = resolved;
   let shape: ValueShape = field.shape;
   let customField: string | null = null;
   for (const [index, segment] of rest.entries()) {
