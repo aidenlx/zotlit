@@ -27,6 +27,7 @@ import {
   fromItemDate,
   timestamp,
 } from "./filter-dates";
+import type { FilterRegistry } from "./filter-plan";
 import type { FilterValue, FilterValueType } from "./filter-values";
 import { libraryField } from "./library-field";
 import type { PathSegment } from "./projection-path";
@@ -503,6 +504,11 @@ export function customFilterValue(name: string): {
     needs: { custom: [name] },
   };
 }
+
+export const itemFilterRegistry: FilterRegistry<QueryItem, FieldNeeds> = {
+  field: filterField,
+  custom: customFilterValue,
+};
 
 /** Every built-in field name, with the names only a filter reads. */
 export const BUILT_IN_NAMES: readonly string[] = [

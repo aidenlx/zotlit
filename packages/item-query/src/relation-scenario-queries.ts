@@ -53,6 +53,12 @@ export const RELATION_SCENARIO_QUERIES: readonly {
     })),
   ),
   ...[
+    'attachments.filter(value.indexedKey == "PDF2LIVEg118").length > 0',
+    'attachments.filter(value.item.indexedKey == "ART2FULLg118").length > 0',
+    'annotations.filter(value.color == "yellow").length > 0',
+    'attachments.filter(value.annotations.filter(value.color == "yellow").length > 0).length > 0',
+    'if(true, attachments, []).filter(value.title == "Full Text PDF").length > 0',
+    'if(false, attachments, annotations[0].item.attachments).filter(value.title == "Full Text PDF").length > 0',
     'annotations.filter(value.color == "#ffd400" && value.type == "image").length > 0',
     'annotations.filter(value.tags.contains("method") && index == 0).length > 0',
     'annotations.filter(value.tags.contains("method") || index == 0).length > 0',

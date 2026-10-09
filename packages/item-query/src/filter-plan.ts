@@ -6,7 +6,7 @@ import type { BinaryOperator, ExpressionNode } from "@zotlit/filter-expression";
 
 import type { Callee, Fault, Receiver, Role, Span } from "./fault";
 export type { Span } from "./fault";
-import { BUILT_IN_NAMES, customFilterValue, filterField } from "./fields";
+import { BUILT_IN_NAMES, itemFilterRegistry } from "./fields";
 import type {
   FieldNeeds,
   FilterValueDefinition,
@@ -37,6 +37,7 @@ export type StaticType = FilterValueType | "unknown";
 
 interface NodeBase extends Span {
   readonly valueType: StaticType;
+  readonly recordDataset?: FilterNavigation<never>["dataset"];
 }
 
 /** One node of a validated Filter Expression. */
@@ -188,10 +189,10 @@ export function planFilter<Item = QueryItem, Needs = FieldNeeds>(
   text: string,
   // The default is the Item Query registry, with its `QueryItem` and its
   // `FieldNeeds`.
-  registry: FilterRegistry<Item, Needs> = {
-    field: filterField,
-    custom: customFilterValue,
-  } as FilterRegistry<any, any>,
+  registry: FilterRegistry<Item, Needs> = itemFilterRegistry as FilterRegistry<
+    any,
+    any
+  >,
 ): FilterPlan<Item, Needs> | FilterProblem {
   const { ast, error } = parseExpressionAst(text);
   if (!ast) {
@@ -375,8 +376,39 @@ class Validator<Item, Needs> {
     node: FilterNode<Item>,
     navigation?: FilterNavigation<Needs>,
   ): FilterNode<Item> {
-    if (navigation) this.#navigation.set(node, navigation);
-    return node;
+    const tracked = navigation?.dataset
+      ? { ...node, recordDataset: navigation.dataset }
+      : node;
+    if (navigation) this.#navigation.set(tracked, navigation);
+    return tracked;
+  }
+
+  /** Both branches can supply the record, so retain the needs of both paths. */
+  #mergeNavigation(
+    left: FilterNavigation<Needs> | undefined,
+    right: FilterNavigation<Needs> | undefined,
+  ): FilterNavigation<Needs> | undefined {
+    if (!left || !right) return undefined;
+    if (left.element && right.element) {
+      const element = this.#mergeNavigation(left.element, right.element);
+      return element ? { element } : undefined;
+    }
+    if (left.dataset !== right.dataset || !left.member || !right.member)
+      return undefined;
+    return {
+      dataset: left.dataset,
+      equalityField: left.equalityField,
+      member: (name) => {
+        const a = left.member?.(name);
+        const b = right.member?.(name);
+        if (!a?.filterable || !b?.filterable) return a;
+        this.#needs.push(b.needs);
+        return {
+          ...a,
+          navigation: this.#mergeNavigation(a.navigation, b.navigation),
+        };
+      },
+    };
   }
 
   constructor(
@@ -437,25 +469,31 @@ class Validator<Item, Needs> {
       case "binary": {
         let left = this.node(ast.left);
         let right = this.node(ast.right);
-        if (
-          (ast.operator === "==" || ast.operator === "!=") &&
-          this.registry.equalityField
-        ) {
+        if (ast.operator === "==" || ast.operator === "!=") {
           const replace = (
             field: FilterNode<Item>,
             literal: FilterNode<Item>,
           ) => {
-            if (
-              field.kind !== "field" ||
-              literal.kind !== "literal" ||
-              typeof literal.value !== "string"
-            )
+            if (literal.kind !== "literal" || typeof literal.value !== "string")
               return field;
-            const name = this.registry.equalityField!(
-              field.name,
-              literal.value,
-            );
-            return name === field.name ? field : this.#identifier(name, field);
+            if (field.kind === "field") {
+              const name =
+                this.registry.equalityField?.(field.name, literal.value) ??
+                field.name;
+              return name === field.name
+                ? field
+                : this.#identifier(name, field);
+            }
+            if (field.kind === "property") {
+              const name =
+                this.#navigation
+                  .get(field.subject)
+                  ?.equalityField?.(field.name, literal.value) ?? field.name;
+              return name === field.name
+                ? field
+                : this.#property(field.subject, name, field);
+            }
+            return field;
           };
           left = replace(left, right);
           right = replace(right, left);
@@ -822,17 +860,30 @@ class Validator<Item, Needs> {
     }
     if (name === "if") {
       const [condition, whenTrue, whenFalse = null] = args;
-      return {
-        ...span,
-        kind: "if",
-        condition: condition!,
-        whenTrue: whenTrue!,
-        whenFalse,
-        valueType:
-          whenFalse && whenFalse.valueType === whenTrue!.valueType
-            ? whenTrue!.valueType
-            : "unknown",
-      };
+      const empty = (node: FilterNode<Item> | null) =>
+        node?.kind === "list" && node.elements.length === 0;
+      const trueNavigation = this.#navigation.get(whenTrue!);
+      const falseNavigation = whenFalse
+        ? this.#navigation.get(whenFalse)
+        : undefined;
+      return this.#track(
+        {
+          ...span,
+          kind: "if",
+          condition: condition!,
+          whenTrue: whenTrue!,
+          whenFalse,
+          valueType:
+            whenFalse && whenFalse.valueType === whenTrue!.valueType
+              ? whenTrue!.valueType
+              : "unknown",
+        },
+        empty(whenTrue!)
+          ? falseNavigation
+          : empty(whenFalse)
+            ? trueNavigation
+            : this.#mergeNavigation(trueNavigation, falseNavigation),
+      );
     }
     const global = definition as FunctionDefinition;
     return {
