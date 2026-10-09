@@ -7,9 +7,14 @@
 
 import type { CliFlag, CliFlags } from "obsidian";
 
-import type { ItemQueryError } from "@zotlit/item-query";
+import { renderDiagnostic } from "@zotlit/item-query";
+import type {
+  Diagnostic as QueryDiagnostic,
+  ItemQueryError,
+} from "@zotlit/item-query";
 
 import { createCliDiagnostics } from "@/lib/cli-diagnostic";
+import type { CliRejection } from "@/lib/cli-params";
 
 import type { ItemQueryParam } from "./decode";
 
@@ -113,16 +118,35 @@ export const DIAGNOSTIC_HINTS = {
 type AdapterDiagnosticCode = keyof typeof DIAGNOSTIC_HINTS;
 
 /** The failure of an Item Query command, as its envelope carries it. */
-export interface Diagnostic {
-  code: AdapterDiagnosticCode | ItemQueryError["code"];
-  message: string;
-  hint: string;
-  /** Where an invalid query went wrong. */
-  location?: ItemQueryError["location"];
+export interface Diagnostic extends QueryDiagnostic<
+  AdapterDiagnosticCode | ItemQueryError["code"]
+> {
   details?: { parameter: string };
 }
 
-export const { diagnostic, rejectionDiagnostic } = createCliDiagnostics<
+const base = createCliDiagnostics<
   typeof DIAGNOSTIC_HINTS,
   Diagnostic["details"]
 >(DIAGNOSTIC_HINTS, "invalid-argument");
+
+export function diagnostic(
+  code: AdapterDiagnosticCode,
+  message: string,
+  details?: Diagnostic["details"],
+): Diagnostic {
+  const value = base.diagnostic(code, message, details);
+  return { ...value, ...renderDiagnostic(value) };
+}
+
+export function rejectionDiagnostic(rejection: CliRejection): Diagnostic {
+  const value = base.rejectionDiagnostic(rejection);
+  const issue = rejection.issue;
+  return {
+    ...value,
+    ...renderDiagnostic(
+      { ...value, ...(issue ? { location: { path: issue.path } } : {}) },
+      "",
+      issue ? { found: issue.received, expected: [issue.expected] } : {},
+    ),
+  };
+}

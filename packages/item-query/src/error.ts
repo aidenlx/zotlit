@@ -1,5 +1,7 @@
 import { Data } from "effect";
 
+import type { PlainFault, Span } from "./fault";
+
 /** Stable codes of an invalid Item Query request. */
 export type ItemQueryErrorCode =
   | "duplicate-library"
@@ -21,7 +23,7 @@ export interface ItemQueryErrorLocation {
   /** The position of the entry in a list argument. */
   readonly index?: number;
   /** The part of the filter text, in UTF-16 offsets; `to` is exclusive. */
-  readonly span?: { readonly from: number; readonly to: number };
+  readonly span?: Span;
 }
 
 /**
@@ -29,9 +31,16 @@ export interface ItemQueryErrorLocation {
  * reads the database.
  */
 export class ItemQueryError extends Data.TaggedError("ItemQueryError")<{
-  readonly code: ItemQueryErrorCode;
+  readonly fault: PlainFault;
   readonly location: ItemQueryErrorLocation;
-  readonly message: string;
-  /** How the caller can repair the request. */
-  readonly hint: string;
-}> {}
+}> {
+  get code(): ItemQueryErrorCode {
+    return this.fault.code;
+  }
+  override get message(): string {
+    return this.fault.message;
+  }
+  get hint(): string {
+    return this.fault.action;
+  }
+}
