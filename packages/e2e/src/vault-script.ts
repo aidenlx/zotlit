@@ -9,12 +9,13 @@ import { promisify } from "node:util";
 import { cli } from "./obsidian-cli.ts";
 
 const execFileAsync = promisify(execFile);
+const OBSIDIAN_VERSION = "1.14.4 (installer 1.14.4)";
 
 function scriptPath(workspaceRoot: string): string {
   return join(workspaceRoot, "packages/scripts/scripts/obsidian-vault.ts");
 }
 
-/** Whether a desktop Obsidian answers with a live vault to host CLI calls. */
+/** Whether the pinned desktop Obsidian answers with a live host vault. */
 export async function isObsidianReachable(
   workspaceRoot: string,
 ): Promise<boolean> {
@@ -23,7 +24,14 @@ export async function isObsidianReachable(
     [scriptPath(workspaceRoot), "status"],
     { windowsHide: true },
   ).catch(() => undefined);
-  return result?.stdout.trim().startsWith("ready ") ?? false;
+  if (!result?.stdout.trim().startsWith("ready ")) return false;
+  const version = (await cli(["version"])).trim();
+  if (version !== OBSIDIAN_VERSION) {
+    throw new Error(
+      `End-to-end Run requires Obsidian ${OBSIDIAN_VERSION}; running ${version}. Install the pinned installer and app versions before running the suite.`,
+    );
+  }
+  return true;
 }
 
 /** Runs one `obsidian-vault.ts` command. */

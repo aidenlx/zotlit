@@ -1110,6 +1110,23 @@ An annotation.
     expect(view.getViewData()).toContain("name: Other");
     expect(modify).not.toHaveBeenCalled();
   });
+  it("keeps an item selected while an older view restoration is loading", async () => {
+    const loaded = Promise.withResolvers<void>();
+    using _restore = vi
+      .spyOn(MockTextFileView.prototype, "setState")
+      .mockImplementationOnce(() => loaded.promise);
+    const { view } = setup();
+    const restoring = view.setState(
+      { itemIndexedKey: null },
+      {} as ViewStateResult,
+    );
+    const choice = SAMPLE_ITEM_CHOICES[0]!;
+    expect(await view.selectItem(choice)).toBe(true);
+    loaded.resolve();
+    await restoring;
+    expect(view.store.getState().item).toMatchObject({ id: choice.id });
+  });
+
   it("keeps authoring and restored state available when the database fails", async () => {
     const { view, requestSave } = setup({
       zoteroReads: {
