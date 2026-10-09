@@ -4,7 +4,7 @@
 import { parseExpressionAst } from "@zotlit/filter-expression";
 import type { BinaryOperator, ExpressionNode } from "@zotlit/filter-expression";
 
-import type { PlainFault, Span } from "./fault";
+import type { Fault, PlainFault, Span } from "./fault";
 export type { Span } from "./fault";
 import {
   BUILT_IN_NAMES,
@@ -134,10 +134,12 @@ export interface FilterPlan {
   })[];
 }
 
-export type FilterProblem = PlainFault & { readonly at: Span };
+export type FilterProblem =
+  | (PlainFault & { readonly at: Span })
+  | Extract<Fault, { kind: "syntax" }>;
 
 class Invalid extends Error {
-  constructor(readonly problem: FilterProblem) {
+  constructor(readonly problem: PlainFault & { readonly at: Span }) {
     super(problem.message);
   }
 }
@@ -145,8 +147,6 @@ class Invalid extends Error {
 const quote = (text: string): string => JSON.stringify(text);
 
 const HINTS = {
-  syntax:
-    'Write one Filter Expression, such as itemType == "book" && tags.contains("to-read"). Omit the filter to match every Item.',
   field: `Use a field of the Item Query Schema, such as ${DEFAULT_FIELDS.join(", ")}. Field names are case-sensitive. Reach a custom field with custom["exact name"].`,
   filterable:
     "Use a field that the Item Query Schema lists as filterable, such as title, itemType, tags, or collections.",
@@ -166,16 +166,7 @@ const HINTS = {
 export function planFilter(text: string): FilterPlan | FilterProblem {
   const { ast, error } = parseExpressionAst(text);
   if (!ast) {
-    return {
-      kind: "plain",
-      code: "invalid-filter",
-      at: error,
-      message:
-        text.trim() === ""
-          ? "The filter is empty."
-          : `The filter has a syntax error at position ${error.from}.`,
-      action: HINTS.syntax,
-    };
+    return { kind: "syntax", fault: error };
   }
   const needs: FieldNeeds[] = [];
   const customFields: (Span & { name: string; bare: boolean })[] = [];
@@ -205,7 +196,7 @@ const RESERVED_NAMES: ReadonlySet<string> = new Set([
   ...GLOBAL_FUNCTION_NAMES,
 ]);
 
-function fail(fault: FilterProblem): never {
+function fail(fault: PlainFault & { readonly at: Span }): never {
   throw new Invalid(fault);
 }
 

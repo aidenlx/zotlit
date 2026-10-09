@@ -1233,3 +1233,21 @@ it.each(Object.keys(DIAGNOSTIC_HINTS) as (keyof typeof DIAGNOSTIC_HINTS)[])(
     expect(answer.diagnostic.excerpt).toBeUndefined();
   },
 );
+
+it("reports syntax facts and a correction through the CLI envelope", async () => {
+  using scenario = openScenarioDatabase();
+  const failed = await setup(scenario).run({
+    filter: 'itemType == "book" AND date.year > 2010',
+  });
+  const diagnostic = failed.diagnostic as Diagnostic;
+  expect(diagnostic.code).toBe("invalid-filter");
+  expect(diagnostic.location?.span).toEqual({ from: 19, to: 22 });
+  expect(diagnostic.found).toBe("AND");
+  expect(diagnostic.expected).toContain("&&");
+  expect(diagnostic.excerpt?.at).toBe("AND");
+  expect(diagnostic.suggestions[0]).toBe(
+    'itemType == "book" && date.year > 2010',
+  );
+  expect(diagnostic.report[0]).toBe(diagnostic.message);
+  expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
+});

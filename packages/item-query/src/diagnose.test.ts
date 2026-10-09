@@ -9,7 +9,7 @@ import { queryItems } from "./query-items";
 import type { ItemQueryRequest } from "./request";
 import { runEffect } from "./test-helpers";
 
-// Golden v1 sentences, with v2 excerpt and caret lines. The first 24 entries
+// Golden diagnostic reports, with excerpt and caret lines. The first 24 entries
 // are the spec's probe cases; the rest replace the former sentence tests.
 it.each(reports)("reports $name", async ({ request, report }) => {
   using scenario = openScenarioDatabase();
@@ -32,9 +32,6 @@ it.each(reports)("reports $name", async ({ request, report }) => {
   expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
   expect(diagnostic).toMatchObject({
     severity: "error",
-    found: "",
-    expected: [],
-    suggestions: [],
   });
   const span = diagnostic.location?.span;
   if (span)
@@ -74,3 +71,38 @@ it.each([
     expect(diagnostic.excerpt!.after.length).toBeLessThanOrEqual(40);
   },
 );
+
+// Syntax corrections depend on the stopped grammar's expected operators.
+it("offers an AND correction as data", () => {
+  const diagnostic = diagnose(
+    {
+      kind: "syntax",
+      fault: {
+        from: 2,
+        to: 5,
+        found: "AND",
+        expected: ["&&", "end of filter"],
+        opened: null,
+      },
+    },
+    "a AND b",
+    { argument: "filter" },
+  );
+  expect(diagnostic).toMatchObject({
+    found: "AND",
+    expected: ["&&", "end of filter"],
+    suggestions: ["a && b"],
+  });
+});
+
+it("keeps syntax suggestions empty without source text", () => {
+  const diagnostic = diagnose(
+    {
+      kind: "syntax",
+      fault: { from: 2, to: 5, found: "AND", expected: ["&&"], opened: null },
+    },
+    "",
+    { argument: "filter" },
+  );
+  expect(diagnostic.suggestions).toEqual([]);
+});

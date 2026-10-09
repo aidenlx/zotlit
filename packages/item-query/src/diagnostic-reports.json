@@ -5,10 +5,10 @@
       "filter": "itemType =="
     },
     "report": [
-      "The filter has a syntax error at position 11.",
+      "Found end of filter where the filter takes !, (, -, [, a name, a number, a regular expression, a string, false, null, true.",
       "itemType ==",
       "           ^",
-      "Write one Filter Expression, such as itemType == \"book\" && tags.contains(\"to-read\"). Omit the filter to match every Item."
+      "Use !, (, -, [, a name, a number, a regular expression, a string, false, null, true."
     ]
   },
   {
@@ -17,10 +17,10 @@
       "filter": "itemType = \"book\""
     },
     "report": [
-      "The filter has a syntax error at position 9.",
+      "Found \"=\" where the filter takes !=, %, &&, (, *, +, -, ., /, <, <=, ==, >, >=, [, ||, end of filter.",
       "itemType = \"book\"",
       "         ^",
-      "Write one Filter Expression, such as itemType == \"book\" && tags.contains(\"to-read\"). Omit the filter to match every Item."
+      "Use !=, %, &&, (, *, +, -, ., /, <, <=, ==, >, >=, [, ||, end of filter."
     ]
   },
   {
@@ -41,10 +41,10 @@
       "filter": "title contains \"climate\""
     },
     "report": [
-      "The filter has a syntax error at position 6.",
+      "Found \"contains\" where the filter takes !=, %, &&, (, *, +, -, ., /, <, <=, ==, >, >=, [, ||, end of filter.",
       "title contains \"climate\"",
-      "      ^",
-      "Write one Filter Expression, such as itemType == \"book\" && tags.contains(\"to-read\"). Omit the filter to match every Item."
+      "      ^^^^^^^^",
+      "Use !=, %, &&, (, *, +, -, ., /, <, <=, ==, >, >=, [, ||, end of filter."
     ]
   },
   {
@@ -53,10 +53,10 @@
       "filter": "itemType == \"book\" AND date.year > 2010"
     },
     "report": [
-      "The filter has a syntax error at position 19.",
+      "Found \"AND\" where the filter takes !=, %, &&, (, *, +, -, ., /, <, <=, ==, >, >=, [, ||, end of filter.",
       "itemType == \"book\" AND date.year > 2010",
-      "                     ^",
-      "Write one Filter Expression, such as itemType == \"book\" && tags.contains(\"to-read\"). Omit the filter to match every Item."
+      "                     ^^^",
+      "Try: itemType == \"book\" && date.year > 2010"
     ]
   },
   {
@@ -65,10 +65,10 @@
       "filter": "title LIKE \"%climate%\""
     },
     "report": [
-      "The filter has a syntax error at position 6.",
+      "Found \"LIKE\" where the filter takes !=, %, &&, (, *, +, -, ., /, <, <=, ==, >, >=, [, ||, end of filter.",
       "title LIKE \"%climate%\"",
-      "      ^",
-      "Write one Filter Expression, such as itemType == \"book\" && tags.contains(\"to-read\"). Omit the filter to match every Item."
+      "      ^^^^",
+      "Use !=, %, &&, (, *, +, -, ., /, <, <=, ==, >, >=, [, ||, end of filter."
     ]
   },
   {
@@ -77,10 +77,11 @@
       "filter": "title.contains(\"x\""
     },
     "report": [
-      "The filter has a syntax error at position 18.",
+      "Found end of filter where the filter takes !=, %, &&, (, ), *, +, ,, -, ., /, <, <=, ==, >, >=, [, ||.",
       "title.contains(\"x\"",
       "                    ^",
-      "Write one Filter Expression, such as itemType == \"book\" && tags.contains(\"to-read\"). Omit the filter to match every Item."
+      "              ^ Opened here; close with \")\".",
+      "Use !=, %, &&, (, ), *, +, ,, -, ., /, <, <=, ==, >, >=, [, ||."
     ]
   },
   {
@@ -89,10 +90,11 @@
       "filter": "title == \"climate"
     },
     "report": [
-      "The filter has a syntax error at position 17.",
+      "Found end of filter where the filter takes \".",
       "title == \"climate",
       "                  ^",
-      "Write one Filter Expression, such as itemType == \"book\" && tags.contains(\"to-read\"). Omit the filter to match every Item."
+      "         ^ Opened here; close with \"\\\"\".",
+      "Use \"."
     ]
   },
   {
@@ -101,10 +103,10 @@
       "filter": "\"to-read\" in tags"
     },
     "report": [
-      "The filter has a syntax error at position 10.",
+      "Found \"in\" where the filter takes !=, %, &&, (, *, +, -, ., /, <, <=, ==, >, >=, [, ||, end of filter.",
       "\"to-read\" in tags",
-      "            ^",
-      "Write one Filter Expression, such as itemType == \"book\" && tags.contains(\"to-read\"). Omit the filter to match every Item."
+      "            ^^",
+      "Use !=, %, &&, (, *, +, -, ., /, <, <=, ==, >, >=, [, ||, end of filter."
     ]
   },
   {
@@ -113,10 +115,10 @@
       "filter": "itemType == \"journalArticle\" && tags.contains(\"ml\") && date.year >= 2015 && date.year <= 2020 && title.lower().contains(\"neural\") && creators.some(lastName == \"Smith\"))"
     },
     "report": [
-      "The filter has a syntax error at position 167.",
+      "Found \")\" where the filter takes !=, %, &&, (, *, +, -, ., /, <, <=, ==, >, >=, [, ||, end of filter.",
       "\") && creators.some(lastName == \"Smith\"))",
       "                                           ^",
-      "Write one Filter Expression, such as itemType == \"book\" && tags.contains(\"to-read\"). Omit the filter to match every Item."
+      "Use !=, %, &&, (, *, +, -, ., /, <, <=, ==, >, >=, [, ||, end of filter."
     ]
   },
   {
@@ -521,10 +523,10 @@
       "filter": ""
     },
     "report": [
-      "The filter is empty.",
+      "Found end of filter where the filter takes !, (, -, [, a name, a number, a regular expression, a string, false, null, true.",
       "",
       "^",
-      "Write one Filter Expression, such as itemType == \"book\" && tags.contains(\"to-read\"). Omit the filter to match every Item."
+      "Use !, (, -, [, a name, a number, a regular expression, a string, false, null, true."
     ]
   },
   {
@@ -570,6 +572,31 @@
     "report": [
       "\"creators\" is not a Sortable Field: a sort takes a top-level field with one value.",
       "Sort by a field that the Item Query Schema lists as sortable, such as title, date, or dateModified."
+    ]
+  },
+  {
+    "name": "S12-OR-keyword",
+    "request": {
+      "filter": "true OR false"
+    },
+    "report": [
+      "Found \"OR\" where the filter takes !=, %, &&, (, *, +, -, ., /, <, <=, ==, >, >=, [, ||, end of filter.",
+      "true OR false",
+      "     ^^",
+      "Try: true || false"
+    ]
+  },
+  {
+    "name": "S13-nested-openers",
+    "request": {
+      "filter": "f([\"x"
+    },
+    "report": [
+      "Found end of filter where the filter takes \".",
+      "f([\"x",
+      "      ^",
+      "   ^ Opened here; close with \"\\\"\".",
+      "Use \"."
     ]
   }
 ]
