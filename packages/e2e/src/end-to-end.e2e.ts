@@ -2872,8 +2872,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   });
 
   it("queries an Item's reading record through zotlit:annotation-query", async () => {
+    // Own the Fixture and vault so earlier cases cannot leave this query's
+    // linked Attachment paths pointing at a vault they have removed.
+    const queryFixture = getFixtureLayout(
+      join(workspaceRoot, ".scratch", "e2e-annotation-query-fixture"),
+    );
+    const queryVaultPath = e2eVaultDir(workspaceRoot, "annotation-query-vault");
+    const queryVaultScript = vaultScript(workspaceRoot, queryFixture.root);
+    await clearVault(queryVaultScript, queryVaultPath);
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await queryVaultScript(["remove", queryVaultPath, "--purge"]);
+      await discardFixture(queryFixture);
+    });
+    const created = await queryVaultScript(["create", queryVaultPath]);
+    const queryVaultId = created.stdout.trim().split("\n")[0]!.trim();
+    await keepRendering(queryVaultId);
     const report = JSON.parse(
-      await cliCommand(vaultId, "zotlit:annotation-query", {
+      await cliCommand(queryVaultId, "zotlit:annotation-query", {
         args: { item: annotationItem.key, limit: "all" },
       }),
     ) as ItemQueryReport;
