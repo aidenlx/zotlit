@@ -297,7 +297,7 @@ describe("Query Job output", () => {
     expect(reply.receipt).toEqual({ kind: "inline" });
     expect(JSON.parse(reply.answer)).toMatchObject({
       ok: false,
-      diagnostic: { code: "output-error", message: "The disk is full." },
+      diagnostic: { code: "output-error", report: { 0: "The disk is full." } },
     });
     expect(events).toEqual(["open", "write", "write", "close", "scope-ended"]);
   });

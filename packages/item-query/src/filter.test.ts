@@ -1401,85 +1401,11 @@ describe("validation", () => {
     ["min == 1", "unknown-field", [0, 3]],
     ['if == "a"', "unknown-field", [0, 2]],
   ] as const)("rejects %j with %s at %j", (expression, code, [from, to]) => {
-    expect(problem(expression)).toMatchObject({ code, span: { from, to } });
-  });
-
-  it("gives every problem a message and a hint", () => {
-    for (const expression of [
-      "",
-      "title.contains(/ab/)",
-      "noSuchFunction()",
-      "tags.startsWith(1)",
-      "title.startsWith()",
-      "title.startsWith(1)",
-      "title.lenght",
-      "custom",
-      "min",
-    ]) {
-      const { message, hint } = problem(expression);
-      expect(message).not.toBe("");
-      expect(hint).not.toBe("");
-    }
-  });
-
-  it("names the function and its parameters when the argument count is wrong", () => {
-    expect(problem("title.startsWith()")).toMatchObject({
-      message: "startsWith takes 1 argument, not 0.",
-      hint: "Call value.startsWith(prefix).",
+    expect(problem(expression)).toMatchObject({
+      kind: "plain",
+      code,
+      at: { from, to },
     });
-    expect(problem("if(true)")).toMatchObject({
-      message: "if takes 2 to 3 arguments, not 1.",
-      hint: "Call if(condition, then, else?).",
-    });
-  });
-
-  it("names the type names that isType takes when the literal is none of them", () => {
-    expect(problem('title.isType("strng")')).toMatchObject({
-      message:
-        'Argument 1 of isType is "strng"; isType takes one of "any", "null", "boolean", "number", "string", "list", "date", "duration", "regexp" there.',
-      hint: "Call value.isType(type).",
-    });
-  });
-
-  it("points at an invalid regular expression and names its pattern", () => {
-    expect(problem("/(/.matches(title)")).toMatchObject({
-      code: "invalid-filter",
-      message: expect.stringContaining("/(/"),
-      hint: expect.stringContaining("/pattern/flags"),
-    });
-    expect(problem("/a/gg.matches(title)").message).toContain("/a/gg");
-  });
-
-  it("names the owner type of matches when the subject is a text", () => {
-    expect(problem("title.matches(/a/)")).toMatchObject({
-      message: 'A string has no method "matches".',
-      hint: expect.stringContaining("matches is a method of a regexp."),
-    });
-  });
-
-  it("names the owner type of a list helper called on another type", () => {
-    expect(problem("title.sort()")).toMatchObject({
-      message: 'A string has no method "sort".',
-      hint: expect.stringContaining("sort is a method of a list."),
-    });
-  });
-
-  it("tells a method from a global function in the hint", () => {
-    expect(problem('contains(title, "a")').hint).toContain(
-      "value.contains(...)",
-    );
-    expect(problem("title.number()").hint).toContain("number(...)");
-    expect(problem("title.list()").hint).toContain("list(...)");
-  });
-
-  it("names the type a text helper belongs to when the subject has another type", () => {
-    expect(problem("tags.trim()")).toMatchObject({
-      message: 'A list has no method "trim".',
-      hint: expect.stringContaining("trim is a method of a string."),
-    });
-    expect(problem("title.toFixed(1)").hint).toContain(
-      "toFixed is a method of a number.",
-    );
   });
 
   // A branch that never runs is validated like every other part.

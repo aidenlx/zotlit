@@ -257,26 +257,23 @@ describe("Hydration", () => {
     {
       request: { filter: 'custom["nope"] == 1' },
       location: { argument: "filter", span: { from: 0, to: 14 } },
-      message: 'The Zotero source has no custom field named "nope".',
     },
     {
       request: { filter: "nope == 1" },
       location: { argument: "filter", span: { from: 0, to: 4 } },
-      message: '"nope" is not a field of Item Query.',
     },
     {
       request: { fields: ["title", 'custom["nope"]'] },
       location: { argument: "fields", index: 1 },
-      message: 'The Zotero source has no custom field named "nope".',
     },
   ])(
     "fails a custom field that the source does not define in $location.argument",
-    async ({ request, location, message }) => {
+    async ({ request, location }) => {
       using scenario = openScenarioDatabase();
       expect(await failure(scenario, request)).toMatchObject({
         code: "unknown-field",
         location,
-        message,
+        fault: { kind: "plain", code: "unknown-field" },
       });
     },
   );

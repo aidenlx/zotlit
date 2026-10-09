@@ -144,19 +144,20 @@ describe("decodeItemQuery libraries", () => {
   });
 
   it("keeps the inner issue of a malformed Library selector", () => {
-    expect(
-      decode.decodeItemQuery({ libraries: '["My Library"]' }),
-    ).toMatchObject({
+    const request = decode.decodeItemQuery({ libraries: '["My Library"]' });
+    expect(request).toMatchObject({
       kind: "invalid",
       parameter: "libraries",
-      message:
-        '\'My Library\' in libraries is not a Library: use "personal" or "group:<groupID>".',
       issue: {
         path: "libraries[0]",
         expected: expect.any(String),
         received: expect.any(String),
       },
     });
+    if (request.kind !== "invalid") throw new Error("Expected rejection");
+    expect(decode.rejectionDiagnostic(request).report[0]).toBe(
+      '\'My Library\' in libraries is not a Library: use "personal" or "group:<groupID>".',
+    );
   });
 });
 
@@ -245,10 +246,12 @@ describe("decodeItemQuery fields, filter, and sort", () => {
       issue: { path: "sort", expected: "Array", received: "Object" },
     },
   ])("keeps the issue for sort with $name", ({ value, message, issue }) => {
+    expect(decodeItemQuery({ sort: value })).toMatchObject({
+      report: { 0: message },
+    });
     expect(decode.decodeItemQuery({ sort: value })).toMatchObject({
       kind: "invalid",
       parameter: "sort",
-      message,
       issue,
     });
   });
@@ -272,10 +275,12 @@ describe("decodeItemQuery fields, filter, and sort", () => {
       issue: { path: "fields[1]", expected: "string", received: "5" },
     },
   ])("distinguishes fields with $name", ({ value, message, issue }) => {
+    expect(decodeItemQuery({ fields: value })).toMatchObject({
+      report: { 0: message },
+    });
     expect(decode.decodeItemQuery({ fields: value })).toMatchObject({
       kind: "invalid",
       parameter: "fields",
-      message,
       issue,
     });
   });
@@ -325,8 +330,9 @@ describe("decodeItemQuery parameters", () => {
       decodeItemQuery({ filter: "itemType", "==": "true", '"book"': "true" }),
     ).toMatchObject({
       ...rejected("=="),
-      message:
-        "Unknown parameter '==': Obsidian received these parameters in order: filter, ==, \"book\".",
+      report: {
+        0: "Unknown parameter '==': Obsidian received these parameters in order: filter, ==, \"book\".",
+      },
       hint: "Quote the whole value as one shell argument.",
     });
   });
@@ -334,7 +340,7 @@ describe("decodeItemQuery parameters", () => {
   it("explains a vault parameter after the command name", () => {
     expect(decodeItemQuery({ vault: "Research" })).toMatchObject({
       ...rejected("vault"),
-      message: expect.stringContaining("before the command name"),
+      report: { 0: expect.stringContaining("before the command name") },
     });
   });
 
@@ -345,7 +351,7 @@ describe("decodeItemQuery parameters", () => {
 
       expect(result).toMatchObject({
         ...rejected(`--${parameter}`),
-        message: expect.stringContaining(`${parameter}=<value>`),
+        report: { 0: expect.stringContaining(`${parameter}=<value>`) },
         hint: expect.stringContaining(`${parameter}=<value>`),
       });
     },
@@ -402,7 +408,7 @@ describe("decodeGuideArguments and decodeCancelArguments", () => {
   ])("rejects --%s and shows the accepted form", (decode, parameter, value) => {
     expect(decode({ [`--${parameter}`]: value })).toMatchObject({
       ...rejected(`--${parameter}`),
-      message: expect.stringContaining(`${parameter}=<value>`),
+      report: { 0: expect.stringContaining(`${parameter}=<value>`) },
     });
   });
 
@@ -420,4 +426,21 @@ describe("decodeGuideArguments and decodeCancelArguments", () => {
       expect(decodeCancelArguments(params)).toMatchObject(rejected("id"));
     },
   );
+});
+
+it("renders decoder issue data and the recovery action in contract v2", () => {
+  const rejection = decode.decodeItemQuery({
+    sort: '[{"field":"title","direction":"ascending"}]',
+  });
+  if (rejection.kind !== "invalid") throw new Error("Expected rejection");
+  const diagnostic = decode.rejectionDiagnostic(rejection);
+  expect(diagnostic).toMatchObject({
+    severity: "error",
+    location: { path: "sort[0].direction" },
+    found: '"ascending"',
+    expected: ['("asc" | "desc")'],
+    suggestions: [],
+  });
+  expect(diagnostic.report).toEqual([diagnostic.message, diagnostic.hint]);
+  expect(diagnostic.excerpt).toBeUndefined();
 });

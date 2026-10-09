@@ -273,8 +273,10 @@ ENVELOPE
   and ok. The guide prints text.
   On success, the query answer has identity (the vault and the Zotero
   source), libraries, request (the query after defaults), returnedCount,
-  truncated, and rows. Each row is {"indexedKey","values"}; values has one
+  truncated, warnings, and rows. Each row is {"indexedKey","values"}; values has one
   entry for each path in request.fields.
+  warnings is an array of diagnostics, empty when there are no warnings.
+  Read warnings before you report an empty result. File receipts include it too.
   libraries lists each Library the query read, My Library first and then
   the groups by group ID. Each entry is {"type":"personal"} or
   {"type":"group","groupID","name"}. request.libraries has the same
@@ -294,10 +296,19 @@ FILE EXPORTS
 
 DIAGNOSTICS
   On failure, ok is false and diagnostic holds code, message, and hint.
-  Follow diagnostic.hint to correct the query, then run it again.
+  Read diagnostic.report first: each array entry is one line, with the
+  message first and diagnostic.hint last. A filter fault includes an excerpt
+  and a caret line between them. Follow the action to correct the query and run it again.
+  severity is error on failure and warning for a Query Warning.
+  excerpt contains before, at, and after; at is the exact marked text.
+  The caret aligns with the JSON-escaped excerpt in the pretty JSON envelope.
+  found is the received value or type; expected lists allowed forms;
+  suggestions lists corrected arguments. These are empty when unavailable.
   diagnostic.location names the argument; index is the position in fields
   or sort; span gives the characters of the filter text, from (inclusive)
-  to to (exclusive).
+  to to (exclusive), in UTF-16 offsets. location.path identifies a position
+  in a JSON argument, such as sort[0].direction. Operational failures have
+  two report lines, message and hint, and no excerpt.
   An invalid query has a code of its own, such as unknown-field. The other
   codes, each with its hint:
   ${diagnosticCodes()}`;

@@ -138,7 +138,10 @@ async function outcome(
   const error = Cause.findErrorOption(exit.cause);
   if (error._tag === "None") throw new Error(String(exit.cause));
   return wire({
-    failure: Object.assign({}, error.value, { message: error.value.message }),
+    failure:
+      error.value._tag === "ItemQueryError"
+        ? { fault: error.value.fault, location: error.value.location }
+        : error.value,
   });
 }
 

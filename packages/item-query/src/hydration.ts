@@ -191,20 +191,24 @@ function unknownCustomField(
   const bareNames = names.filter(hasBareForm);
   return Effect.fail(
     new ItemQueryError({
-      code: "unknown-field",
       location,
-      message: bare
-        ? `${JSON.stringify(name)} is not a field of Item Query.`
-        : `The Zotero source has no custom field named ${JSON.stringify(name)}.`,
-      hint: bare
-        ? `Use a field of the Item Query Schema; field names are case-sensitive.${
-            bareNames.length === 0
-              ? ""
-              : ` The custom fields with a bare name: ${bareNames.join(", ")}.`
-          } Reach every custom field with custom["exact name"].`
-        : names.length === 0
-          ? "The Zotero source has no custom fields."
-          : `Use the exact name of a custom field: ${names.map((entry) => JSON.stringify(entry)).join(", ")}.`,
+      fault: {
+        kind: "plain",
+        code: "unknown-field",
+        ...(location.span ? { at: location.span } : {}),
+        message: bare
+          ? `${JSON.stringify(name)} is not a field of Item Query.`
+          : `The Zotero source has no custom field named ${JSON.stringify(name)}.`,
+        action: bare
+          ? `Use a field of the Item Query Schema; field names are case-sensitive.${
+              bareNames.length === 0
+                ? ""
+                : ` The custom fields with a bare name: ${bareNames.join(", ")}.`
+            } Reach every custom field with custom["exact name"].`
+          : names.length === 0
+            ? "The Zotero source has no custom fields."
+            : `Use the exact name of a custom field: ${names.map((entry) => JSON.stringify(entry)).join(", ")}.`,
+      },
     }),
   );
 }

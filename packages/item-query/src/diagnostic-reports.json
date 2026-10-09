@@ -1,0 +1,575 @@
+[
+  {
+    "name": "S01-truncated",
+    "request": {
+      "filter": "itemType =="
+    },
+    "report": [
+      "The filter has a syntax error at position 11.",
+      "itemType ==",
+      "           ^",
+      "Write one Filter Expression, such as itemType == \"book\" && tags.contains(\"to-read\"). Omit the filter to match every Item."
+    ]
+  },
+  {
+    "name": "S02-single-equals",
+    "request": {
+      "filter": "itemType = \"book\""
+    },
+    "report": [
+      "The filter has a syntax error at position 9.",
+      "itemType = \"book\"",
+      "         ^",
+      "Write one Filter Expression, such as itemType == \"book\" && tags.contains(\"to-read\"). Omit the filter to match every Item."
+    ]
+  },
+  {
+    "name": "S04-unquoted-value",
+    "request": {
+      "filter": "itemType == book"
+    },
+    "report": [
+      "\"book\" is not a field of Item Query.",
+      "itemType == book",
+      "            ^^^^",
+      "Use a field of the Item Query Schema; field names are case-sensitive. The custom fields with a bare name: mood. Reach every custom field with custom[\"exact name\"]."
+    ]
+  },
+  {
+    "name": "S05-infix-contains",
+    "request": {
+      "filter": "title contains \"climate\""
+    },
+    "report": [
+      "The filter has a syntax error at position 6.",
+      "title contains \"climate\"",
+      "      ^",
+      "Write one Filter Expression, such as itemType == \"book\" && tags.contains(\"to-read\"). Omit the filter to match every Item."
+    ]
+  },
+  {
+    "name": "S06-AND-keyword",
+    "request": {
+      "filter": "itemType == \"book\" AND date.year > 2010"
+    },
+    "report": [
+      "The filter has a syntax error at position 19.",
+      "itemType == \"book\" AND date.year > 2010",
+      "                     ^",
+      "Write one Filter Expression, such as itemType == \"book\" && tags.contains(\"to-read\"). Omit the filter to match every Item."
+    ]
+  },
+  {
+    "name": "S07-LIKE",
+    "request": {
+      "filter": "title LIKE \"%climate%\""
+    },
+    "report": [
+      "The filter has a syntax error at position 6.",
+      "title LIKE \"%climate%\"",
+      "      ^",
+      "Write one Filter Expression, such as itemType == \"book\" && tags.contains(\"to-read\"). Omit the filter to match every Item."
+    ]
+  },
+  {
+    "name": "S08-missing-paren",
+    "request": {
+      "filter": "title.contains(\"x\""
+    },
+    "report": [
+      "The filter has a syntax error at position 18.",
+      "title.contains(\"x\"",
+      "                    ^",
+      "Write one Filter Expression, such as itemType == \"book\" && tags.contains(\"to-read\"). Omit the filter to match every Item."
+    ]
+  },
+  {
+    "name": "S09-unclosed-string",
+    "request": {
+      "filter": "title == \"climate"
+    },
+    "report": [
+      "The filter has a syntax error at position 17.",
+      "title == \"climate",
+      "                  ^",
+      "Write one Filter Expression, such as itemType == \"book\" && tags.contains(\"to-read\"). Omit the filter to match every Item."
+    ]
+  },
+  {
+    "name": "S10-in-operator",
+    "request": {
+      "filter": "\"to-read\" in tags"
+    },
+    "report": [
+      "The filter has a syntax error at position 10.",
+      "\"to-read\" in tags",
+      "            ^",
+      "Write one Filter Expression, such as itemType == \"book\" && tags.contains(\"to-read\"). Omit the filter to match every Item."
+    ]
+  },
+  {
+    "name": "S11-long-filter-late-error",
+    "request": {
+      "filter": "itemType == \"journalArticle\" && tags.contains(\"ml\") && date.year >= 2015 && date.year <= 2020 && title.lower().contains(\"neural\") && creators.some(lastName == \"Smith\"))"
+    },
+    "report": [
+      "The filter has a syntax error at position 167.",
+      "\") && creators.some(lastName == \"Smith\"))",
+      "                                           ^",
+      "Write one Filter Expression, such as itemType == \"book\" && tags.contains(\"to-read\"). Omit the filter to match every Item."
+    ]
+  },
+  {
+    "name": "F01-year-field",
+    "request": {
+      "filter": "year > 2015"
+    },
+    "report": [
+      "\"year\" is not a field of Item Query.",
+      "year > 2015",
+      "^^^^",
+      "Use a field of the Item Query Schema; field names are case-sensitive. The custom fields with a bare name: mood. Reach every custom field with custom[\"exact name\"]."
+    ]
+  },
+  {
+    "name": "F02-case-Title",
+    "request": {
+      "filter": "Title.contains(\"x\")"
+    },
+    "report": [
+      "\"Title\" is not a field of Item Query.",
+      "Title.contains(\"x\")",
+      "^^^^^",
+      "Use a field of the Item Query Schema; field names are case-sensitive. The custom fields with a bare name: mood. Reach every custom field with custom[\"exact name\"]."
+    ]
+  },
+  {
+    "name": "F03-dotted-custom-bare",
+    "request": {
+      "filter": "review.status == \"include\""
+    },
+    "report": [
+      "\"status\" is not a property of a value.",
+      "review.status == \"include\"",
+      "       ^^^^^^",
+      "Use a property of the Item Query Schema: length, year, month, day, hour, minute, second, millisecond, timestamp."
+    ]
+  },
+  {
+    "name": "F04-custom-dot",
+    "request": {
+      "filter": "custom.review.status == \"include\""
+    },
+    "report": [
+      "\"status\" is not a property of a value.",
+      "custom.review.status == \"include\"",
+      "              ^^^^^^",
+      "Use a property of the Item Query Schema: length, year, month, day, hour, minute, second, millisecond, timestamp."
+    ]
+  },
+  {
+    "name": "F05-custom-wrong-name",
+    "request": {
+      "filter": "custom[\"reviewStatus\"] == \"include\""
+    },
+    "report": [
+      "The Zotero source has no custom field named \"reviewStatus\".",
+      "custom[\"reviewStatus\"] == \"include\"",
+      "^^^^^^^^^^^^^^^^^^^^^^^^",
+      "Use the exact name of a custom field: \"review.status\", \"mood\", \"title\", \"publicationTitle\"."
+    ]
+  },
+  {
+    "name": "F06-js-includes",
+    "request": {
+      "filter": "title.includes(\"x\")"
+    },
+    "report": [
+      "\"includes\" is not a method of Item Query.",
+      "title.includes(\"x\")",
+      "      ^^^^^^^^",
+      "Use a method of the Item Query Schema: toString, isType, isTruthy, isEmpty, round, ceil, floor, abs, toFixed, lower, startsWith, endsWith, contains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split, flat, join, sort, unique, filter, map, reduce, within, date, time, format, relative, matches. Function names are case-sensitive."
+    ]
+  },
+  {
+    "name": "F07-global-contains",
+    "request": {
+      "filter": "contains(title, \"x\")"
+    },
+    "report": [
+      "\"contains\" is not a global function of Item Query.",
+      "contains(title, \"x\")",
+      "^^^^^^^^",
+      "contains is a method: call it on a value, such as value.contains(...)."
+    ]
+  },
+  {
+    "name": "F08-list-property",
+    "request": {
+      "filter": "creators.lastName == \"Smith\""
+    },
+    "report": [
+      "\"lastName\" is not a property of a value.",
+      "creators.lastName == \"Smith\"",
+      "         ^^^^^^^^",
+      "Use a property of the Item Query Schema: length, year, month, day, hour, minute, second, millisecond, timestamp."
+    ]
+  },
+  {
+    "name": "F09-bad-regex",
+    "request": {
+      "filter": "title.matches(/(unclosed/)"
+    },
+    "report": [
+      "The regular expression /(unclosed/ is invalid: Invalid regular expression: /(unclosed/: Unterminated group",
+      "title.matches(/(unclosed/)",
+      "              ^^^^^^^^^^^",
+      "Write a regular expression as /pattern/flags with JavaScript syntax, such as /^the /i, and the flags d, g, i, m, s, u, v, and y at most once each."
+    ]
+  },
+  {
+    "name": "F11-method-count",
+    "request": {
+      "filter": "title.contains()"
+    },
+    "report": [
+      "contains takes 1 argument, not 0.",
+      "title.contains()",
+      "^^^^^^^^^^^^^^^^",
+      "Call value.contains(text)."
+    ]
+  },
+  {
+    "name": "F12-unfilterable",
+    "request": {
+      "filter": "attachments.length > 0"
+    },
+    "report": [
+      "A boolean has no property \"length\".",
+      "attachments.length > 0",
+      "            ^^^^^^",
+      "\"length\" is a property of a string or a list. Use a property of the Item Query Schema: length, year, month, day, hour, minute, second, millisecond, timestamp."
+    ]
+  },
+  {
+    "name": "F13-function-as-field",
+    "request": {
+      "filter": "now > 3"
+    },
+    "report": [
+      "\"now\" is a function, not a field.",
+      "now > 3",
+      "^^^",
+      "Call it with arguments, such as now(...). Use a field of the Item Query Schema, such as itemType, title, creators, date, dateModified. Field names are case-sensitive. Reach a custom field with custom[\"exact name\"]."
+    ]
+  },
+  {
+    "name": "F15-creator-name",
+    "request": {
+      "filter": "creators.some(name == \"Smith\")"
+    },
+    "report": [
+      "\"some\" is not a method of Item Query.",
+      "creators.some(name == \"Smith\")",
+      "         ^^^^",
+      "Use a method of the Item Query Schema: toString, isType, isTruthy, isEmpty, round, ceil, floor, abs, toFixed, lower, startsWith, endsWith, contains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split, flat, join, sort, unique, filter, map, reduce, within, date, time, format, relative, matches. Function names are case-sensitive."
+    ]
+  },
+  {
+    "name": "Q07b-control",
+    "request": {
+      "filter": "creators.filter(value.family == \"Hopper\").length > 0"
+    },
+    "report": [
+      "\"family\" is not a property of a value.",
+      "creators.filter(value.family == \"Hopper\").length > 0",
+      "                      ^^^^^^",
+      "Use a property of the Item Query Schema: length, year, month, day, hour, minute, second, millisecond, timestamp."
+    ]
+  },
+  {
+    "name": "title.startsWith()",
+    "request": {
+      "filter": "title.startsWith()"
+    },
+    "report": [
+      "startsWith takes 1 argument, not 0.",
+      "title.startsWith()",
+      "^^^^^^^^^^^^^^^^^^",
+      "Call value.startsWith(prefix)."
+    ]
+  },
+  {
+    "name": "if(true)",
+    "request": {
+      "filter": "if(true)"
+    },
+    "report": [
+      "if takes 2 to 3 arguments, not 1.",
+      "if(true)",
+      "^^^^^^^^",
+      "Call if(condition, then, else?)."
+    ]
+  },
+  {
+    "name": "title.isType(\"strng\")",
+    "request": {
+      "filter": "title.isType(\"strng\")"
+    },
+    "report": [
+      "Argument 1 of isType is \"strng\"; isType takes one of \"any\", \"null\", \"boolean\", \"number\", \"string\", \"list\", \"date\", \"duration\", \"regexp\" there.",
+      "title.isType(\"strng\")",
+      "             ^^^^^^^^^",
+      "Call value.isType(type)."
+    ]
+  },
+  {
+    "name": "/(/.matches(title)",
+    "request": {
+      "filter": "/(/.matches(title)"
+    },
+    "report": [
+      "The regular expression /(/ is invalid: Invalid regular expression: /(/: Unterminated group",
+      "/(/.matches(title)",
+      "^^^",
+      "Write a regular expression as /pattern/flags with JavaScript syntax, such as /^the /i, and the flags d, g, i, m, s, u, v, and y at most once each."
+    ]
+  },
+  {
+    "name": "/a/gg.matches(title)",
+    "request": {
+      "filter": "/a/gg.matches(title)"
+    },
+    "report": [
+      "The regular expression /a/gg is invalid: Invalid flags supplied to RegExp constructor 'gg'",
+      "/a/gg.matches(title)",
+      "^^^^^",
+      "Write a regular expression as /pattern/flags with JavaScript syntax, such as /^the /i, and the flags d, g, i, m, s, u, v, and y at most once each."
+    ]
+  },
+  {
+    "name": "title.matches(/a/)",
+    "request": {
+      "filter": "title.matches(/a/)"
+    },
+    "report": [
+      "A string has no method \"matches\".",
+      "title.matches(/a/)",
+      "      ^^^^^^^",
+      "matches is a method of a regexp. Use a method of the Item Query Schema: toString, isType, isTruthy, isEmpty, round, ceil, floor, abs, toFixed, lower, startsWith, endsWith, contains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split, flat, join, sort, unique, filter, map, reduce, within, date, time, format, relative, matches. Function names are case-sensitive."
+    ]
+  },
+  {
+    "name": "title.sort()",
+    "request": {
+      "filter": "title.sort()"
+    },
+    "report": [
+      "A string has no method \"sort\".",
+      "title.sort()",
+      "      ^^^^",
+      "sort is a method of a list. Use a method of the Item Query Schema: toString, isType, isTruthy, isEmpty, round, ceil, floor, abs, toFixed, lower, startsWith, endsWith, contains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split, flat, join, sort, unique, filter, map, reduce, within, date, time, format, relative, matches. Function names are case-sensitive."
+    ]
+  },
+  {
+    "name": "contains(title, \"a\")",
+    "request": {
+      "filter": "contains(title, \"a\")"
+    },
+    "report": [
+      "\"contains\" is not a global function of Item Query.",
+      "contains(title, \"a\")",
+      "^^^^^^^^",
+      "contains is a method: call it on a value, such as value.contains(...)."
+    ]
+  },
+  {
+    "name": "title.number()",
+    "request": {
+      "filter": "title.number()"
+    },
+    "report": [
+      "\"number\" is not a method of Item Query.",
+      "title.number()",
+      "      ^^^^^^",
+      "number is a global function: call it as number(...)."
+    ]
+  },
+  {
+    "name": "title.list()",
+    "request": {
+      "filter": "title.list()"
+    },
+    "report": [
+      "\"list\" is not a method of Item Query.",
+      "title.list()",
+      "      ^^^^",
+      "list is a global function: call it as list(...)."
+    ]
+  },
+  {
+    "name": "tags.trim()",
+    "request": {
+      "filter": "tags.trim()"
+    },
+    "report": [
+      "A list has no method \"trim\".",
+      "tags.trim()",
+      "     ^^^^",
+      "trim is a method of a string. Use a method of the Item Query Schema: toString, isType, isTruthy, isEmpty, round, ceil, floor, abs, toFixed, lower, startsWith, endsWith, contains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split, flat, join, sort, unique, filter, map, reduce, within, date, time, format, relative, matches. Function names are case-sensitive."
+    ]
+  },
+  {
+    "name": "title.toFixed(1)",
+    "request": {
+      "filter": "title.toFixed(1)"
+    },
+    "report": [
+      "A string has no method \"toFixed\".",
+      "title.toFixed(1)",
+      "      ^^^^^^^",
+      "toFixed is a method of a number. Use a method of the Item Query Schema: toString, isType, isTruthy, isEmpty, round, ceil, floor, abs, toFixed, lower, startsWith, endsWith, contains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split, flat, join, sort, unique, filter, map, reduce, within, date, time, format, relative, matches. Function names are case-sensitive."
+    ]
+  },
+  {
+    "name": "title.startsWith(1)",
+    "request": {
+      "filter": "title.startsWith(1)"
+    },
+    "report": [
+      "Argument 1 of startsWith is a number; startsWith takes a string there.",
+      "title.startsWith(1)",
+      "                 ^",
+      "Call value.startsWith(prefix)."
+    ]
+  },
+  {
+    "name": "custom[\"nope\"] == 1",
+    "request": {
+      "filter": "custom[\"nope\"] == 1"
+    },
+    "report": [
+      "The Zotero source has no custom field named \"nope\".",
+      "custom[\"nope\"] == 1",
+      "^^^^^^^^^^^^^^^^",
+      "Use the exact name of a custom field: \"review.status\", \"mood\", \"title\", \"publicationTitle\"."
+    ]
+  },
+  {
+    "name": "nope == 1",
+    "request": {
+      "filter": "nope == 1"
+    },
+    "report": [
+      "\"nope\" is not a field of Item Query.",
+      "nope == 1",
+      "^^^^",
+      "Use a field of the Item Query Schema; field names are case-sensitive. The custom fields with a bare name: mood. Reach every custom field with custom[\"exact name\"]."
+    ]
+  },
+  {
+    "name": "Mood == \"calm\"",
+    "request": {
+      "filter": "Mood == \"calm\""
+    },
+    "report": [
+      "\"Mood\" is not a field of Item Query.",
+      "Mood == \"calm\"",
+      "^^^^",
+      "Use a field of the Item Query Schema; field names are case-sensitive. The custom fields with a bare name: mood. Reach every custom field with custom[\"exact name\"]."
+    ]
+  },
+  {
+    "name": "Title == \"x\"",
+    "request": {
+      "filter": "Title == \"x\""
+    },
+    "report": [
+      "\"Title\" is not a field of Item Query.",
+      "Title == \"x\"",
+      "^^^^^",
+      "Use a field of the Item Query Schema; field names are case-sensitive. The custom fields with a bare name: mood. Reach every custom field with custom[\"exact name\"]."
+    ]
+  },
+  {
+    "name": "true && noSuchField == \"x\"",
+    "request": {
+      "filter": "true && noSuchField == \"x\""
+    },
+    "report": [
+      "\"noSuchField\" is not a field of Item Query.",
+      "true && noSuchField == \"x\"",
+      "        ^^^^^^^^^^^",
+      "Use a field of the Item Query Schema; field names are case-sensitive. The custom fields with a bare name: mood. Reach every custom field with custom[\"exact name\"]."
+    ]
+  },
+  {
+    "name": "itemType == \"book\" || custom[\"Review.Status\"] == \"done\"",
+    "request": {
+      "filter": "itemType == \"book\" || custom[\"Review.Status\"] == \"done\""
+    },
+    "report": [
+      "The Zotero source has no custom field named \"Review.Status\".",
+      "itemType == \"book\" || custom[\"Review.Status\"] == \"done\"",
+      "                        ^^^^^^^^^^^^^^^^^^^^^^^^^",
+      "Use the exact name of a custom field: \"review.status\", \"mood\", \"title\", \"publicationTitle\"."
+    ]
+  },
+  {
+    "name": "",
+    "request": {
+      "filter": ""
+    },
+    "report": [
+      "The filter is empty.",
+      "",
+      "^",
+      "Write one Filter Expression, such as itemType == \"book\" && tags.contains(\"to-read\"). Omit the filter to match every Item."
+    ]
+  },
+  {
+    "name": "projection custom",
+    "request": {
+      "fields": ["title", "custom[\"nope\"]"]
+    },
+    "report": [
+      "The Zotero source has no custom field named \"nope\".",
+      "Use the exact name of a custom field: \"review.status\", \"mood\", \"title\", \"publicationTitle\"."
+    ]
+  },
+  {
+    "name": "unknown projection",
+    "request": {
+      "fields": ["noSuchField"]
+    },
+    "report": [
+      "\"noSuchField\" does not start with a field of Item Query.",
+      "Use a field of the Item Query Schema, such as itemType, title, creators, date, dateModified. Reach a custom field with custom[\"exact name\"]."
+    ]
+  },
+  {
+    "name": "custom case projection",
+    "request": {
+      "fields": ["custom[\"Review.Status\"]"]
+    },
+    "report": [
+      "The Zotero source has no custom field named \"Review.Status\".",
+      "Use the exact name of a custom field: \"review.status\", \"mood\", \"title\", \"publicationTitle\"."
+    ]
+  },
+  {
+    "name": "unsortable",
+    "request": {
+      "sort": [
+        {
+          "field": "creators",
+          "direction": "asc"
+        }
+      ]
+    },
+    "report": [
+      "\"creators\" is not a Sortable Field: a sort takes a top-level field with one value.",
+      "Sort by a field that the Item Query Schema lists as sortable, such as title, date, or dateModified."
+    ]
+  }
+]

@@ -46,3 +46,19 @@ export {
   SLICE_BUDGET_MS,
   type SliceObserver,
 } from "./scheduler";
+
+export {
+  diagnose,
+  renderDiagnostic,
+  type Diagnostic,
+  type DiagnosticLocation,
+} from "./diagnose";
+export type {
+  Fault,
+  PlainFault,
+  Span,
+  Role,
+  Receiver,
+  Callee,
+  SyntaxFault,
+} from "./fault";

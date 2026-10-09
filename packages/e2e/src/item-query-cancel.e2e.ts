@@ -148,7 +148,7 @@ describe.skipIf(!reachable)("Item Query cancel", () => {
     });
 
     expect(await cancel("export-a")).toEqual({
-      contractVersion: 1,
+      contractVersion: 2,
       command: "zotlit:item-query-cancel",
       ok: true,
       id: "export-a",

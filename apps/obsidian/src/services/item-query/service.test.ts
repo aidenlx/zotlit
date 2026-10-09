@@ -108,7 +108,7 @@ describe("Item Query worker jobs", () => {
     const answer = await service.schema({ library: "personal" }, signal());
 
     expect(JSON.parse(answer)).toMatchObject({
-      contractVersion: 1,
+      contractVersion: 2,
       command: "zotlit:item-query-schema",
       ok: false,
       diagnostic: {
@@ -197,6 +197,7 @@ describe("Item Query worker jobs", () => {
     expect(receipt).toMatchObject({
       ok: true,
       returnedCount: 6000,
+      warnings: [],
       file: { bytes: Buffer.byteLength(text) },
     });
     expect(JSON.parse(text).rows).toHaveLength(6000);
@@ -204,6 +205,7 @@ describe("Item Query worker jobs", () => {
       ok: true,
       returnedCount: 6000,
       truncated: false,
+      warnings: [],
     });
   });
 
@@ -314,7 +316,7 @@ describe("Item Query worker jobs", () => {
     );
 
     expect(duplicate).toMatchObject({
-      contractVersion: 1,
+      contractVersion: 2,
       command: "zotlit:item-query",
       ok: false,
       diagnostic: {

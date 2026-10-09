@@ -4,7 +4,8 @@
 import { parseExpressionAst } from "@zotlit/filter-expression";
 import type { BinaryOperator, ExpressionNode } from "@zotlit/filter-expression";
 
-import type { ItemQueryErrorCode } from "./error";
+import type { PlainFault, Span } from "./fault";
+export type { Span } from "./fault";
 import {
   BUILT_IN_NAMES,
   customFilterValue,
@@ -28,12 +29,6 @@ import {
 } from "./filter-functions";
 import type { FunctionDefinition } from "./filter-functions";
 import type { FilterValue, FilterValueType } from "./filter-values";
-
-/** A part of the filter text, in UTF-16 offsets; `to` is exclusive. */
-export interface Span {
-  readonly from: number;
-  readonly to: number;
-}
 
 /**
  * The type of a node's value as validation knows it. Each type also holds
@@ -139,12 +134,7 @@ export interface FilterPlan {
   })[];
 }
 
-export interface FilterProblem {
-  readonly code: ItemQueryErrorCode;
-  readonly span: Span;
-  readonly message: string;
-  readonly hint: string;
-}
+export type FilterProblem = PlainFault & { readonly at: Span };
 
 class Invalid extends Error {
   constructor(readonly problem: FilterProblem) {
@@ -177,13 +167,14 @@ export function planFilter(text: string): FilterPlan | FilterProblem {
   const { ast, error } = parseExpressionAst(text);
   if (!ast) {
     return {
+      kind: "plain",
       code: "invalid-filter",
-      span: error,
+      at: error,
       message:
         text.trim() === ""
           ? "The filter is empty."
           : `The filter has a syntax error at position ${error.from}.`,
-      hint: HINTS.syntax,
+      action: HINTS.syntax,
     };
   }
   const needs: FieldNeeds[] = [];
@@ -214,12 +205,8 @@ const RESERVED_NAMES: ReadonlySet<string> = new Set([
   ...GLOBAL_FUNCTION_NAMES,
 ]);
 
-function fail(
-  code: ItemQueryErrorCode,
-  span: Span,
-  text: { message: string; hint: string },
-): never {
-  throw new Invalid({ code, span: { from: span.from, to: span.to }, ...text });
+function fail(fault: FilterProblem): never {
+  throw new Invalid(fault);
 }
 
 function describeCount(
@@ -365,10 +352,13 @@ class Validator {
       case "array-access": {
         if (isCustomRoot(ast.object)) {
           if (ast.index.type !== "string") {
-            return fail("invalid-filter", ast.index, {
+            return fail({
+              kind: "plain",
+              code: "invalid-filter",
+              at: { from: ast.index.from, to: ast.index.to },
               message:
                 "custom takes the name of one custom field as a quoted string.",
-              hint: HINTS.custom,
+              action: HINTS.custom,
             });
           }
           return this.#customField(ast.index.value, span, false);
@@ -392,9 +382,12 @@ class Validator {
       return new RegExp(ast.source, ast.flags);
     } catch (thrown) {
       const reason = thrown instanceof Error ? thrown.message : String(thrown);
-      return fail("invalid-filter", ast, {
+      return fail({
+        kind: "plain",
+        code: "invalid-filter",
+        at: { from: ast.from, to: ast.to },
         message: `The regular expression /${ast.source}/${ast.flags} is invalid: ${reason}`,
-        hint: HINTS.regexp,
+        action: HINTS.regexp,
       });
     }
   }
@@ -421,22 +414,31 @@ class Validator {
       };
     }
     if (name === "custom") {
-      return fail("unfilterable-field", span, {
+      return fail({
+        kind: "plain",
+        code: "unfilterable-field",
+        at: { from: span.from, to: span.to },
         message:
           "custom is the set of all custom fields; a filter reads one of them.",
-        hint: HINTS.custom,
+        action: HINTS.custom,
       });
     }
     if (field) {
-      return fail("unfilterable-field", span, {
+      return fail({
+        kind: "plain",
+        code: "unfilterable-field",
+        at: { from: span.from, to: span.to },
         message: `A filter cannot read ${quote(name)}.`,
-        hint: HINTS.filterable,
+        action: HINTS.filterable,
       });
     }
     if (GLOBAL_FUNCTION_NAMES.includes(name)) {
-      return fail("unknown-field", span, {
+      return fail({
+        kind: "plain",
+        code: "unknown-field",
+        at: { from: span.from, to: span.to },
         message: `${quote(name)} is a function, not a field.`,
-        hint: `Call it with arguments, such as ${name}(...). ${HINTS.field}`,
+        action: `Call it with arguments, such as ${name}(...). ${HINTS.field}`,
       });
     }
     // Outside the built-in names: the bare form of a custom field.
@@ -461,16 +463,22 @@ class Validator {
     const named = propertiesNamed(name);
     const nameSpan = { from: span.to - name.length, to: span.to };
     if (named.length === 0) {
-      return fail("unknown-property", nameSpan, {
+      return fail({
+        kind: "plain",
+        code: "unknown-property",
+        at: { from: nameSpan.from, to: nameSpan.to },
         message: `${quote(name)} is not a property of a value.`,
-        hint: HINTS.property,
+        action: HINTS.property,
       });
     }
     const type = subject.valueType;
     if (isDefinite(type) && !propertyOf(type, name)) {
-      return fail("unknown-property", nameSpan, {
+      return fail({
+        kind: "plain",
+        code: "unknown-property",
+        at: { from: nameSpan.from, to: nameSpan.to },
         message: `A ${type} has no property ${quote(name)}.`,
-        hint: `${quote(name)} is a property of a ${named.map(([owner]) => owner).join(" or a ")}. ${HINTS.property}`,
+        action: `${quote(name)} is a property of a ${named.map(([owner]) => owner).join(" or a ")}. ${HINTS.property}`,
       });
     }
     return {
@@ -508,9 +516,12 @@ class Validator {
       const args = ast.args.map((arg) => this.node(arg));
       return this.#methodCall({ ...call, args }, span);
     }
-    return fail("invalid-filter", callee, {
+    return fail({
+      kind: "plain",
+      code: "invalid-filter",
+      at: { from: callee.from, to: callee.to },
       message: "A call needs the name of a function before its arguments.",
-      hint: `${HINTS.global} Call a method on a value, such as title.lower().`,
+      action: `${HINTS.global} Call a method on a value, such as title.lower().`,
     });
   }
 
@@ -522,9 +533,12 @@ class Validator {
     const definition = name === "if" ? IF_FUNCTION : GLOBAL_FUNCTIONS.get(name);
     if (!definition) {
       const isMethod = methodsNamed(name).length > 0;
-      return fail("unknown-function", nameSpan, {
+      return fail({
+        kind: "plain",
+        code: "unknown-function",
+        at: { from: nameSpan.from, to: nameSpan.to },
         message: `${quote(name)} is not a global function of Item Query.`,
-        hint: isMethod
+        action: isMethod
           ? `${name} is a method: call it on a value, such as value.${name}(...).`
           : HINTS.global,
       });
@@ -532,16 +546,22 @@ class Validator {
     // Every argument is validated, also in a branch that never runs.
     const args = call.args.map((arg) => this.node(arg));
     if (!takesCount(definition, args.length)) {
-      return fail("wrong-argument-count", span, {
+      return fail({
+        kind: "plain",
+        code: "wrong-argument-count",
+        at: { from: span.from, to: span.to },
         message: `${name} takes ${describeCount(definition)}, not ${args.length}.`,
-        hint: `Call ${signature(name, definition)}.`,
+        action: `Call ${signature(name, definition)}.`,
       });
     }
     const wrong = mismatch(definition, args);
     if (wrong) {
-      return fail("wrong-argument-type", args[wrong.index]!, {
+      return fail({
+        kind: "plain",
+        code: "wrong-argument-type",
+        at: { from: args[wrong.index]!.from, to: args[wrong.index]!.to },
         message: describeMismatch(name, wrong),
-        hint: `Call ${signature(name, definition)}.`,
+        action: `Call ${signature(name, definition)}.`,
       });
     }
     if (name === "if") {
@@ -581,9 +601,12 @@ class Validator {
     const named = methodsNamed(name);
     if (named.length === 0) {
       const isGlobal = GLOBAL_FUNCTION_NAMES.includes(name);
-      return fail("unknown-function", nameSpan, {
+      return fail({
+        kind: "plain",
+        code: "unknown-function",
+        at: { from: nameSpan.from, to: nameSpan.to },
         message: `${quote(name)} is not a method of Item Query.`,
-        hint: isGlobal
+        action: isGlobal
           ? `${name} is a global function: call it as ${name}(...).`
           : HINTS.method,
       });
@@ -592,9 +615,12 @@ class Validator {
     if (!isDefinite(type)) return named.map(([, method]) => method);
     const method = methodOf(type, name);
     if (!method) {
-      return fail("unknown-function", nameSpan, {
+      return fail({
+        kind: "plain",
+        code: "unknown-function",
+        at: { from: nameSpan.from, to: nameSpan.to },
         message: `A ${type} has no method ${quote(name)}.`,
-        hint: `${name} is a method of a ${named.map(([owner]) => owner).join(" or a ")}. ${HINTS.method}`,
+        action: `${name} is a method of a ${named.map(([owner]) => owner).join(" or a ")}. ${HINTS.method}`,
       });
     }
     return [method];
@@ -635,9 +661,12 @@ class Validator {
     }
     const args = others.map((arg) => this.node(arg));
     if (!expression || !takesCount(definition, args.length + 1)) {
-      return fail("wrong-argument-count", span, {
+      return fail({
+        kind: "plain",
+        code: "wrong-argument-count",
+        at: { from: span.from, to: span.to },
         message: `${name} takes ${describeCount(definition)}, not ${call.args.length}.`,
-        hint: `Call ${signature(`value.${name}`, definition)}.`,
+        action: `Call ${signature(`value.${name}`, definition)}.`,
       });
     }
     return {
@@ -667,16 +696,22 @@ class Validator {
       takesCount(method, args.length),
     );
     if (fitting.length === 0) {
-      return fail("wrong-argument-count", span, {
+      return fail({
+        kind: "plain",
+        code: "wrong-argument-count",
+        at: { from: span.from, to: span.to },
         message: `${name} takes ${describeCount(candidates[0]!)}, not ${args.length}.`,
-        hint: `Call ${signature(`value.${name}`, candidates[0]!)}.`,
+        action: `Call ${signature(`value.${name}`, candidates[0]!)}.`,
       });
     }
     if (fitting.every((method) => mismatch(method, args) !== null)) {
       const wrong = mismatch(fitting[0]!, args)!;
-      return fail("wrong-argument-type", args[wrong.index]!, {
+      return fail({
+        kind: "plain",
+        code: "wrong-argument-type",
+        at: { from: args[wrong.index]!.from, to: args[wrong.index]!.to },
         message: describeMismatch(name, wrong),
-        hint: `Call ${signature(`value.${name}`, fitting[0]!)}.`,
+        action: `Call ${signature(`value.${name}`, fitting[0]!)}.`,
       });
     }
     return {
