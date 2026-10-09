@@ -1,9 +1,9 @@
 import { mkdtemp, readFile, readdir, rm, stat, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 
-import { redPng } from "./__fixtures__/png";
+import { bluePng, redPng } from "./__fixtures__/png";
 import { reapExcerptTemps } from "./reap-temps";
 import { excerptTempDirectory, publishExcerptPng } from "./temp-store";
 
@@ -26,7 +26,7 @@ it("publishes a complete PNG once for concurrent uses of one fingerprint", async
   );
   expect(new Set(paths).size).toBe(1);
   expect(await readFile(paths[0]!)).toEqual(Buffer.from(redPng));
-  expect(await readdir(directory)).toEqual([`${"a".repeat(64)}.png`]);
+  expect(await readdir(directory)).toEqual([basename(paths[0]!)]);
 });
 
 it("keeps a reused PNG and reaps one unused for more than seven days", async () => {
@@ -41,8 +41,20 @@ it("keeps a reused PNG and reaps one unused for more than seven days", async () 
   await publishExcerptPng("a".repeat(64), redPng, directory);
   expect((await stat(recent)).mtimeMs).toBeGreaterThan(time * 1000);
   await reapExcerptTemps({ parent });
-  expect(await readdir(directory)).toEqual([`${"a".repeat(64)}.png`]);
+  expect(await readdir(directory)).toEqual([basename(recent)]);
   await expect(
     reapExcerptTemps({ parent: join(parent, "missing") }),
   ).resolves.toBeUndefined();
+});
+
+it("publishes refreshed pixels for the same Annotation identity", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zotlit-excerpt-test-"));
+  directories.push(directory);
+  const identity = "a".repeat(64);
+  const original = await publishExcerptPng(identity, redPng, directory);
+  const refreshed = await publishExcerptPng(identity, bluePng, directory);
+  expect(refreshed).not.toBe(original);
+  expect(await readFile(original)).toEqual(Buffer.from(redPng));
+  expect(await readFile(refreshed)).toEqual(Buffer.from(bluePng));
+  expect(await publishExcerptPng(identity, bluePng, directory)).toBe(refreshed);
 });

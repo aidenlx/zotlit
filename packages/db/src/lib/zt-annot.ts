@@ -109,6 +109,11 @@ export interface Annotation {
   parentKey: string;
 }
 
+/** Known stored type IDs, for queries that also handle unknown future IDs. */
+export function annotationTypeIDs(): readonly AnnotationType[] {
+  return Object.keys(ANNOT_TYPE).map(Number) as AnnotationType[];
+}
+
 export function annotationTypeToName(
   type: AnnotationType,
 ): ResolvedAnnotationTypeName {

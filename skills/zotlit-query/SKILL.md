@@ -61,7 +61,7 @@ Use Annotation Query for highlights, underlines, notes, image regions, ink, and 
 type == "highlight" && tags.contains("method") && item.title.contains("Review")
 ```
 
-The default row includes the quoted `text`, `comment`, color, page label and zero-based PDF page index, Tags, dates, `hasExcerptImage`, parent identities, Attachment details, Item title, and Citation Key. Use `fields='[]'` for identities alone. Add Projection Paths when the task needs other values.
+Read the live `fields` guide before choosing Projection Paths. Select the values needed for the research task.
 
 Read the relevant Annotation Query guide topic:
 
@@ -76,9 +76,7 @@ Read the relevant Annotation Query guide topic:
 
 ### Source document and position
 
-Read `values.attachment.path` to open the source document. `values.attachment.exists` reports whether that absolute path exists on this device. A linked URL or unresolved linked file has a null path.
-
-Request `position` in `fields` only when the task needs source geometry. Its `kind` distinguishes PDF rectangles, ink, text, EPUB CFI, snapshot CSS, snapshot text, and an unknown stored shape. PDF coordinates use PDF points with the origin at the bottom left. `pageIndex` is zero-based for PDF positions; `pageLabel` is the document's label.
+Read `zotlit:annotation-query-guide topic=fields` before opening a source document or interpreting a position. Follow its file availability rules and position conventions. Request source geometry when the task needs it.
 
 ### Excerpt Images
 
