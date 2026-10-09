@@ -199,8 +199,11 @@ function diagnoseUnknown(
     ? [`custom[${JSON.stringify(fault.name)}]`]
     : nearMatches(fault.name, candidates);
   const receiverSwap = receiverSwapCorrection(fault, text);
-  const hint =
-    nearby.length > 0
+  const guidance = crossRoleGuidance(fault);
+  const caseCorrection = nearby[0]?.toLowerCase() === fault.name.toLowerCase();
+  const hint = receiverSwap
+    ? `Try: ${receiverSwap}`
+    : caseCorrection
       ? suggestionAction(
           {
             role: fault.role,
@@ -213,11 +216,24 @@ function diagnoseUnknown(
           },
           nearby.length === 1,
         )
-      : receiverSwap
-        ? `Try: ${receiverSwap}`
-        : fault.customFields?.length === 0
-          ? "The connected Zotero source has no custom fields."
-          : recoveryAction(fault.role, candidates, fault.receiver?.type);
+      : guidance
+        ? guidance.action
+        : nearby.length > 0
+          ? suggestionAction(
+              {
+                role: fault.role,
+                suggestion:
+                  fault.role === "custom-field" && !fault.dotted
+                    ? `custom[${JSON.stringify(nearby[0]!)}]`
+                    : nearby[0]!,
+                text,
+                at: fault.at,
+              },
+              nearby.length === 1,
+            )
+          : fault.customFields?.length === 0
+            ? "The connected Zotero source has no custom fields."
+            : recoveryAction(fault.role, candidates, fault.receiver?.type);
   const suggestions =
     nearby.length > 0 ? nearby : receiverSwap ? [receiverSwap] : [];
   const message = unknownMessage(fault);
@@ -236,7 +252,7 @@ function diagnoseUnknown(
   );
   const notes = [
     ...receiverNotes(fault.receiver),
-    ...roleNotes(fault),
+    ...roleNotes(fault, guidance),
     ...(fault.role === "field" && fault.customFields?.some(hasBareForm)
       ? [
           `Custom fields with a bare form: ${fault.customFields.filter(hasBareForm).join(", ")}.`,
@@ -518,31 +534,63 @@ function structuredPaths(path: string, shape: ValueShape): readonly string[] {
   }
 }
 
-function roleNotes(
+interface RoleGuidance {
+  readonly note: string;
+  readonly action: string;
+}
+
+function crossRoleGuidance(
   fault: Extract<Fault, { readonly kind: "unknown" }>,
-): readonly string[] {
+): RoleGuidance | undefined {
   const { name, role } = fault;
   if (role === "field") {
     const global = name === "if" ? IF_FUNCTION : GLOBAL_FUNCTIONS.get(name);
-    return global
-      ? [
-          `\`${name}\` is a function; call it as \`${signature(name, global)}\`.`,
-        ]
-      : [];
+    if (!global) return undefined;
+    const usage = signature(name, global);
+    return {
+      note: `\`${name}\` is a function; call it as \`${usage}\`.`,
+      action: `Call it as \`${usage}\`.`,
+    };
   }
   if (role === "global" && methodsNamed(name).length > 0) {
-    return [
-      `\`${name}\` is a method; call it on a value as \`value.${name}(...)\`.`,
-    ];
+    const usage = `value.${name}(...)`;
+    return {
+      note: `\`${name}\` is a method; call it on a value as \`${usage}\`.`,
+      action: `Call it on a value as \`${usage}\`.`,
+    };
   }
   if (role === "method") {
     const global = name === "if" ? IF_FUNCTION : GLOBAL_FUNCTIONS.get(name);
-    if (global)
-      return [
-        `\`${name}\` is a global function; call it as \`${signature(name, global)}\`.`,
-      ];
+    if (global) {
+      const usage = signature(name, global);
+      return {
+        note: `\`${name}\` is a global function; call it as \`${usage}\`.`,
+        action: `Call it as \`${usage}\`.`,
+      };
+    }
     if (propertiesNamed(name).length > 0)
-      return [`\`${name}\` is a property; read it as \`value.${name}\`.`];
+      return {
+        note: `\`${name}\` is a property; read it as \`value.${name}\`.`,
+        action: `Read it as \`value.${name}\`.`,
+      };
+  }
+  if (role === "property") {
+    if (methodsNamed(name).length > 0)
+      return {
+        note: `\`${name}\` is a method; call it as \`value.${name}(...)\`.`,
+        action: `Call it as \`value.${name}(...)\`.`,
+      };
+  }
+  return undefined;
+}
+
+function roleNotes(
+  fault: Extract<Fault, { readonly kind: "unknown" }>,
+  guidance?: RoleGuidance,
+): readonly string[] {
+  if (guidance) return [guidance.note];
+  const { name, role } = fault;
+  if (role === "method") {
     const owners = methodsNamed(name).map(([owner]) => owner);
     if (owners.length > 0)
       return [
@@ -550,8 +598,6 @@ function roleNotes(
       ];
   }
   if (role === "property") {
-    if (methodsNamed(name).length > 0)
-      return [`\`${name}\` is a method; call it as \`value.${name}(...)\`.`];
     const owners = propertiesNamed(name).map(([owner]) => owner);
     if (owners.length > 0)
       return [

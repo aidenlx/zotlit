@@ -25,7 +25,7 @@ it("reports an unknown global from the function registry", () => {
   expect(diagnostic).toMatchObject({
     code: "unknown-function",
     message: '"contains" is not a global function of Item Query.',
-    hint: "Use a global function: if, number, min, max, now, today, date, duration, list.",
+    hint: "Call it on a value as `value.contains(...)`.",
     found: "contains",
     expected: [
       "if",
@@ -45,7 +45,7 @@ it("reports an unknown global from the function registry", () => {
     'contains(title, "x")',
     "^^^^^^^^",
     "`contains` is a method; call it on a value as `value.contains(...)`.",
-    "Use a global function: if, number, min, max, now, today, date, duration, list.",
+    "Call it on a value as `value.contains(...)`.",
   ]);
 });
 
@@ -149,9 +149,7 @@ it("gets a function's real signature without source text", () => {
   });
 
   expect(error.message).toBe('"now" is a function, not a field.');
-  expect(error.hint).toBe(
-    "Use a field from the Item Query Schema; field names are case-sensitive.",
-  );
+  expect(error.hint).toBe("Call it as `now()`.");
   expect(diagnose(error.fault, "", error.location).report).toContain(
     "`now` is a function; call it as `now()`.",
   );
@@ -189,9 +187,56 @@ it("names a method and property used in the other form", () => {
   expect(methodCall.report).toContain(
     "`length` is a property; read it as `value.length`.",
   );
+  expect(methodCall.hint).toBe("Read it as `value.length`.");
+  expect(methodCall.report.at(-1)).toBe(methodCall.hint);
   expect(propertyRead.report).toContain(
     "`lower` is a method; call it as `value.lower(...)`.",
   );
+  expect(propertyRead.hint).toBe("Call it as `value.lower(...)`.");
+  expect(propertyRead.report.at(-1)).toBe(propertyRead.hint);
+});
+
+it("uses a registered global signature for a global called as a method", () => {
+  const diagnostic = diagnose(
+    {
+      kind: "unknown",
+      role: "method",
+      name: "number",
+      at: { from: 6, to: 12 },
+      receiver: {
+        type: "string",
+        at: { from: 0, to: 5 },
+        field: "title",
+      },
+    },
+    "title.number()",
+    { argument: "filter" },
+  );
+
+  expect(diagnostic.hint).toBe("Call it as `number(value)`.");
+  expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
+});
+
+it("prefers an exact cross-role action to an unrelated near match", () => {
+  const diagnostic = diagnose(
+    {
+      kind: "unknown",
+      role: "method",
+      name: "max",
+      at: { from: 5, to: 8 },
+      receiver: {
+        type: "list",
+        at: { from: 0, to: 4 },
+        field: "tags",
+      },
+    },
+    "tags.max()",
+    { argument: "filter" },
+  );
+
+  expect(diagnostic.suggestions).toEqual(["map"]);
+  expect(diagnostic.hint).toBe("Call it as `max(...values)`.");
+  expect(diagnostic.report.at(-1)).toBe(diagnostic.hint);
 });
 
 it("swaps a receiver with the one argument when the registered method fits", () => {
